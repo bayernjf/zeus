@@ -88,3 +88,22 @@ export {
   InvalidItemIdError,
   UnsupportedQueryError,
 } from './realm/types.js';
+
+// --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
+export {
+  createRealmMcpHandler,
+  publicManifest,
+  manifestUri,
+  searchUri,
+  REALM_URI_SCHEME,
+  JSONRPC_VERSION,
+  SUPPORTED_PROTOCOL_VERSIONS,
+  JSON_RPC_CODES,
+} from './realm/mcp.js';
+export type {
+  JsonRpcId,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  JsonRpcError,
+  McpHandlerDeps,
+} from './realm/mcp.js';
