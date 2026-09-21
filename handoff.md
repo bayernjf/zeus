@@ -16,6 +16,8 @@ State of Zeus as of 2026-09-21.
 2. ~~起草 design-vassal-protocol.md~~ ✅ 2026-09-21 完成 v0.1。
 3. pr-helper 封臣验收（design-vassal-protocol.md §7，共 6 项）：#1 Agent Card + fealty ✅、#2 tasks/sendSubscribe 全流程 ✅（JSON-RPC + SSE，14 项单测）、#3 战报三字段 ✅、#4 escalation ✅（merge-pr / production-rollback execute 模式升级）。剩 #5 Zeus 派发侧（脱敏/吊销/审计）、#6 标准客户端守护测试（需部署后真机验证）。已知限制：任务存储为实例内存（跨调用尽力而为）、execute 模式待凭据委派。
 4. bayjf 名册改造方案（数据来源 = Agent Card + fealty，单一事实源在封臣）。
+5. Realm 契约开放问题拍板（design-realm.md §6：传输层 HTTP vs MCP；检索实现）→ 之后启动 Realm P0 实现。
+6. loom 封臣接入：草案已交 loom 侧（docs/design-a2a-vassal.md + handoff #8），待负责人四项裁决（接入/排期/skills/Key 复用）。
 
 ## Project documents
 
@@ -23,6 +25,8 @@ State of Zeus as of 2026-09-21.
 
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
+* [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.1（D1）：目录即数据库、connect/search/read/write、数据二极管执行点、藏宝图依赖 ★
+* 代码：`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验/健康探针/吊销）、`src/dispatch/`（A2 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、审计 sink）、`tests/`（15 项）
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
 * [git-commit-message.md](git-commit-message.md) — commit message 规范
@@ -33,3 +37,4 @@ State of Zeus as of 2026-09-21.
 |---|---|
 | 2026-09-21 | 产品画像 v0.1 初稿；按 agent-world 惯例建立项目文档骨架 |
 | 2026-09-21 | 封臣协议拍板为 A2A 超集；design-vassal-protocol.md v0.1 完成（fealty/intake/report-back/escalation/治理/星型拓扑/pr-helper 验收清单） |
+| 2026-09-21 | Zeus 代码动工：A1 注册中心 + A2 派发器（15 项单测）；D1 Realm 接口契约 v0.1 定稿；loom 封臣草案已交 loom 侧待裁决 |

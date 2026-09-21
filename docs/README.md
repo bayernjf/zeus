@@ -12,6 +12,7 @@
 | 理解产品矩阵如何并入 Zeus | [product-portrait.md](product-portrait.md) §7 封臣式联邦 |
 | 查看开放问题 / 缓做项 | [deferred-items.md](deferred-items.md) |
 | 接手某个模块的设计决策 | 对应 [design-\*.md](design-vassal-protocol.md)（封臣协议：A2A 超集，fealty/战报/升级/治理） |
+| 理解 Realm 数据域（目录即数据库）的接口契约 | [design-realm.md](design-realm.md)（connect/search/read/write、数据二极管、藏宝图依赖） |
 | 了解 AI 协作 / commit 约定 | [AGENTS.md](../AGENTS.md) + [git-commit-message.md](../git-commit-message.md) |
 
 ## 文档状态约定
