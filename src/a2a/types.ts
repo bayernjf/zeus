@@ -1,5 +1,9 @@
 export type RealmType = 'personal' | 'enterprise';
 
+/** fealty contract versions Zeus accepts at registration.
+ *  A mismatched version is refused, never silently accepted (design-vassal-protocol §4.5). */
+export const SUPPORTED_FEALTY_VERSIONS = ['1'] as const;
+
 export type Fealty = {
   version: string;
   swornTo: string;
@@ -24,7 +28,12 @@ export type AgentCard = {
   description?: string;
   url: string;
   version?: string;
+  /** Standard A2A provider descriptor (present on pr-helper/loom cards). */
+  provider?: { organization: string; url: string };
   capabilities?: { streaming?: boolean; pushNotifications?: boolean; stateTransitionHistory?: boolean };
+  /** Standard A2A I/O mode declarations, e.g. ['application/json']. */
+  defaultInputModes?: string[];
+  defaultOutputModes?: string[];
   skills: AgentCardSkill[];
   authentication?: { schemes?: string[] };
   preferredTransport?: string;

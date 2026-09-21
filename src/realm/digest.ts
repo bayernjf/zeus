@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 
-export function sha256Hex(input: string | Buffer): string {
-  return createHash('sha256').update(input).digest('hex');
-}
+// Re-exported for backward compatibility; the canonical home is util/crypto.
+export { sha256Hex } from '../util/crypto.js';
+import { sha256Hex } from '../util/crypto.js';
 
 /** Stable whole-realm fingerprint: order-independent over itemIds, sensitive
  *  to both item paths and contents. Used as the backup/drift baseline. */

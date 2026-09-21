@@ -14,6 +14,7 @@
  */
 
 // --- A2A protocol: standard layer + x-zeus-* supersession extensions ---
+export { SUPPORTED_FEALTY_VERSIONS } from './a2a/types.js';
 export type {
   RealmType,
   Fealty,
@@ -45,6 +46,29 @@ export type {
   PublicRosterEntry,
   RosterSnapshot,
 } from './registry/roster.js';
+
+// --- fealty signing chain v1 (R1 prerequisite; pure functions, Ed25519 + JCS subset) ---
+export {
+  canonicalJson,
+  canonicalDigest,
+  digestCard,
+  createAttestation,
+  sealSnapshot,
+  verifySignedSnapshot,
+  attestationMatchesCard,
+  Ed25519MemorySigner,
+  Ed25519Verifier,
+} from './registry/signing.js';
+export type {
+  RosterSigner,
+  RosterVerifier,
+  Attestation,
+  Seal,
+  SignedRosterSnapshot,
+  AttestationSource,
+  SealOptions,
+  VerifyResult,
+} from './registry/signing.js';
 
 // --- A2 dispatch: orchestration, data diode, revocation gate ---
 export { Dispatcher, AmbiguousSkillError } from './dispatch/dispatcher.js';

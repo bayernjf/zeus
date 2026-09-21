@@ -97,7 +97,6 @@ Zeus 注入 `x-zeus.runId` 实现全程追踪；封臣透传回传，不解释�
   "kind": "artifact",
   "x-zeus-report": {
     "summary": "3 个 review 意见，1 个阻塞",
-    "confidence": 0.8,
     "cost": { "llmTokens": 125000, "wallSeconds": 92 },
     "evidence": ["PR#42 comment 3", "..."],
     "followUps": [ { "skill": "job-agent/research", "reason": "需要确认作者意图" } ]
@@ -105,6 +104,7 @@ Zeus 注入 `x-zeus.runId` 实现全程追踪；封臣透传回传，不解释�
 }
 ```
 
+- 战报 v1 契约字段为 `summary` / `evidence` / `cost` / `followUps`（以 `src/a2a/types.ts` 的 `ZeusReport` 与验收 #3 为准）；模型自评置信度（confidence）不是 v1 字段，需要时走升级通道由驾驶员判断，不进结构化战报。
 - `summary`：给驾驶员的一句人话，直接进 Zeus 对用户的统一呈现。
 - `evidence`：可点开的证据链，战报不许"只给结论"。
 - `followUps`：封臣可推荐后续任务，但**只有 Zeus 有权决定是否派遣**——封臣不得私联其他封臣（无 P2P，星型拓扑）。

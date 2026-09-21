@@ -1,4 +1,5 @@
 import type { AgentCard, Fealty } from '../a2a/types.js';
+import { SUPPORTED_FEALTY_VERSIONS } from '../a2a/types.js';
 
 /** Dispatcher-facing view of a registered vassal. */
 export type VassalLike = {
@@ -55,6 +56,13 @@ export class VassalRegistry {
     const fealty = card['x-zeus-fealty'];
     if (!fealty || fealty.swornTo !== 'zeus' || !fealty.version) {
       throw new Error(`no vassal fealty on card (guest agent?): ${cardUrl}`);
+    }
+    // Version negotiation (§4.5): refuse an unsupported fealty version rather
+    // than silently interpreting a newer/older contract.
+    if (!(SUPPORTED_FEALTY_VERSIONS as readonly string[]).includes(fealty.version)) {
+      throw new Error(
+        `unsupported fealty.version '${fealty.version}'; supported: ${SUPPORTED_FEALTY_VERSIONS.join(', ')} — upgrade Zeus: ${cardUrl}`
+      );
     }
     options.validate?.(card);
     const taskUrl = options.taskUrl ?? defaultTaskUrl(cardUrl);
