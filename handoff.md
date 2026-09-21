@@ -12,6 +12,7 @@ State of Zeus as of 2026-09-21.
 - 封臣治理闭环打通：registry 实时目录（asVassalLookup）→ dispatcher 派发前吊销阻断 → 审计桥统一记录（2026-09-21）。
 - bayjf 封神榜设计 v0.1 完成，R0 名册投影器（internal/public 双快照）落地（2026-09-21）。
 - Realm 两个 P0 前开放问题已拍板（v0.2：对外唯一传输 MCP、P0 文件系统扫描）；Realm P0 库内实现落地（2026-09-21）。
+- 库公共入口与构建链落地（2026-09-21）：`src/index.ts` 聚合六模块公共面，`npm run build` 出 `dist/`（含 .d.ts），package.json 声明 main/types/exports。
 
 ## Active work
 
@@ -22,6 +23,13 @@ State of Zeus as of 2026-09-21.
 5. ~~Realm 契约开放问题拍板 + P0 实现~~ ✅ 2026-09-21：传输层拍板**对外唯一 MCP server**（P0 库内先行、P1 第一件事包 MCP，不做独立 HTTP API），检索拍板**P0 文件系统扫描 + 可替换 SearchBackend**（升级阈值登记 deferred #10）；契约升 v0.2。P0 已落地 `src/realm/`（FsRealmStore：connect/manifest/search/read，只读 personal，8 项测试）：确定性 realmId（realpath 派生）、connect 幂等、contentDigest 基线、文本白名单/隐藏与依赖目录剪枝/1MiB 上限/symlink 拒绝、read 路径穿越防护（路径段 + realpath 双检）。**已知边界**：search 基于 connect 快照（重连刷新），read 实时读盘（保证恢复协议正确）；Realm 状态为实例内存；无传输层；enterprise/write/tags 检索为 P1。下一步：P1 MCP server 暴露（read-realm 封臣出现时启动）。
 6. ~~loom 封臣接入~~ ✅ 2026-09-21 负责人裁决四项全按草案；loom 侧第一阶段 plan 模式已落地（Q150：`backend/app/core/a2a/` card·skills·rpc·router，12 单测 + 10 集成测试全绿，commit 0ba84d3/6404b99 在 loom dev 分支）。边界：任务进程内存、未真机联调。下一步：Zeus↔loom 联调（待部署）。
 7. ~~A4 监督台最小版 + registry 全量视图~~ ✅ 2026-09-21：`src/oversight/`（OversightDesk：收集 input-required 升级请求、approve/reject、reject 联动 cancel、按 taskId 幂等、全程审计，8 项单测）；registry 新增 `listAll()`（含已吊销封臣，带 active/revoked 状态，供监督台视角）。全量 24 项测试绿、tsc 干净。边界：纯库类，尚无 HTTP 层；approve 仅记录决议，补参重派仍由调用方执行。
+8. **库形态收尾与对外前置批次（2026-09-21 起，纯库内可闭环，不依赖部署）**：
+   - ~~公共 API 入口 + 构建产物链~~ ✅ 2026-09-21：`src/index.ts` 聚合导出六模块公共面（a2a/registry/roster/dispatch/oversight/realm，23 个运行时导出）；`tsconfig.build.json` 出 `dist/`（.js + .d.ts + sourcemap，dist 已 gitignore）；package.json 补 main/types/exports/files 与 `build` 脚本。产物冒烟通过，40 项测试绿、tsc 干净。
+   - [ ] 补写 README.md 仓库入口文档（当前根目录无 README）。
+   - [ ] deferred #7 fealty 签名链设计草案 `docs/design-fealty-signing.md`（bayjf 公开硬闸门，设计≠公开不触发触发条件）。
+   - [ ] HTTP 技术栈选型设计（handoff 悬挂项；不得与 Realm「对外唯一 MCP、不做独立 HTTP API」冲突）。
+   - [ ] Realm P1 MCP stdio 壳 + store→MCP resource/tool 1:1 映射（仅脚手架验证「接口不外泄路径」，不启动、不做鉴权/HTTP；正式启动仍待 read-realm 封臣出现）。
+   - 另登记未开工：契约⇄代码一致性审计、测试覆盖矩阵补缺、验收 #6 真机脚本、Zeus↔loom 联调脚本、CI workflow（触发验证待 push）。
 
 ## Project documents
 
@@ -31,7 +39,7 @@ State of Zeus as of 2026-09-21.
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
 * [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.1（D1）：目录即数据库、connect/search/read/write、数据二极管执行点、藏宝图依赖 ★
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
-* 代码：`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/dispatch/`（A2 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护）、`tests/`（40 项）
+* 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/dispatch/`（A2 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护）、`tests/`（40 项）
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
 * [git-commit-message.md](git-commit-message.md) — commit message 规范
@@ -49,3 +57,4 @@ State of Zeus as of 2026-09-21.
 | 2026-09-21 | bayjf 封神榜设计 v0.1（design-bayjf-roster.md）；R0 名册投影器落地（internal/public 双快照，确定性排序，JSON 可序列化）；全量 32 项测试绿（commit dadbe7b） |
 | 2026-09-21 | Realm 开放问题拍板（契约 v0.2：对外唯一 MCP 传输、P0 扫描检索 + 可替换后端，升级阈值入 deferred #10；commit f2223f8） |
 | 2026-09-21 | Realm P0 落地（src/realm/：只读 personal 数据域，connect/manifest/search/read，确定性 realmId 与幂等 connect、扫描纪律、read 路径穿越双检、快照检索/实时读分离；8 项测试，全量 40 项绿，commit 3bd6d51） |
+| 2026-09-21 | 库公共入口与构建链：src/index.ts 聚合六模块公共面（23 个运行时导出）、tsconfig.build.json 出 dist（.js/.d.ts/sourcemap）、package.json main/types/exports/files + build 脚本；产物冒烟通过，40 项测试绿、tsc 干净 |
