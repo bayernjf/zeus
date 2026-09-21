@@ -44,6 +44,38 @@ describe('VassalRegistry', () => {
     await expect(registry.register('http://guest/api/a2a/agent-card')).rejects.toThrow(/no vassal fealty/);
   });
 
+  it('refuses an unsupported fealty.version instead of silently accepting it (§4.5 version negotiation)', async () => {
+    const futureFealty = {
+      version: '999',
+      swornTo: 'zeus',
+      domain: 'pr-release-control',
+      dataRealms: [],
+      dataPolicy: 'none' as const,
+      reportBack: true,
+      escalationPolicy: 'none' as const,
+    };
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard({ 'x-zeus-fealty': futureFealty })));
+    await expect(registry.register('http://future/api/a2a/agent-card')).rejects.toThrow(/unsupported fealty\.version '999'/);
+  });
+
+  it('accepts the full standard A2A card shape that loom and pr-helper serve', async () => {
+    const fullCard = {
+      ...prHelperCard(),
+      version: '0.1.0',
+      provider: { organization: 'bayjf', url: 'https://example.com' },
+      defaultInputModes: ['application/json'],
+      defaultOutputModes: ['application/json'],
+      authentication: { schemes: ['bearer'] },
+      preferredTransport: 'JSONRPC',
+    };
+    const registry = new VassalRegistry(async () => cardResponse(fullCard));
+    const entry = await registry.register('http://vassal.internal/api/a2a/agent-card');
+    expect(entry.card.provider?.organization).toBe('bayjf');
+    expect(entry.card.defaultInputModes).toEqual(['application/json']);
+    expect(entry.card.defaultOutputModes).toEqual(['application/json']);
+    expect(entry.card.preferredTransport).toBe('JSONRPC');
+  });
+
   it('rejects malformed cards and non-200 responses', async () => {
     const registry = new VassalRegistry(async () => cardResponse({ name: 'x' }));
     await expect(registry.register('http://bad/api/a2a/agent-card')).rejects.toThrow(/invalid agent card/);
