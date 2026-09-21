@@ -61,6 +61,33 @@ describe('VassalRegistry', () => {
     expect(registry.revoke('pr-helper')).toBe(false);
   });
 
+  it('exposes a live dispatcher lookup and fires onRevoke exactly once', async () => {
+    const revokeEvents: Array<{ name: string; at: string }> = [];
+    const registry = new VassalRegistry(
+      async () => cardResponse(prHelperCard()),
+      () => new Date('2026-09-21T10:00:00.000Z'),
+      { onRevoke: (name, at) => revokeEvents.push({ name, at }) }
+    );
+    await registry.register('http://vassal.internal/api/a2a/agent-card');
+    const lookup = registry.asVassalLookup();
+
+    expect(lookup.statusOf('pr-helper')).toBe('active');
+    expect(lookup.statusOf('ghost')).toBe('unknown');
+    expect(lookup.get('pr-helper')).toMatchObject({ name: 'pr-helper', taskUrl: 'http://vassal.internal/api/a2a/tasks' });
+    expect(lookup.findBySkill('create-pr').map(v => v.name)).toEqual(['pr-helper']);
+
+    expect(registry.revoke('pr-helper')).toBe(true);
+    expect(revokeEvents).toEqual([{ name: 'pr-helper', at: '2026-09-21T10:00:00.000Z' }]);
+    // repeat revoke is a no-op and must not double-emit the governance event
+    expect(registry.revoke('pr-helper')).toBe(false);
+    expect(revokeEvents).toHaveLength(1);
+
+    // the same lookup object reflects the revoke live, no rewiring needed
+    expect(lookup.statusOf('pr-helper')).toBe('revoked');
+    expect(lookup.get('pr-helper')).toBeUndefined();
+    expect(lookup.findBySkill('create-pr')).toHaveLength(0);
+  });
+
   it('listAll keeps revoked vassals with an explicit status for the oversight deck', async () => {
     const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
     await registry.register('http://vassal.internal/api/a2a/agent-card');

@@ -1,5 +1,29 @@
 import type { AgentCard, Fealty } from '../a2a/types.js';
 
+/** Dispatcher-facing view of a registered vassal. */
+export type VassalLike = {
+  name: string;
+  taskUrl: string;
+  card: AgentCard;
+  fealty: Fealty;
+};
+
+export type VassalStatus = 'unknown' | 'active' | 'revoked';
+
+/** Live directory the dispatcher routes through. Revoked vassals are invisible
+ *  to get/findBySkill but distinguishable via statusOf for governance audit. */
+export type VassalLookup = {
+  get(name: string): VassalLike | undefined;
+  statusOf(name: string): VassalStatus;
+  findBySkill(skillId: string): VassalLike[];
+};
+
+export type RegistryHooks = {
+  /** Fired exactly once when a vassal transitions active -> revoked.
+   *  Bridge this into the dispatch audit sink. */
+  onRevoke?: (name: string, at: string) => void;
+};
+
 export type VassalEntry = {
   cardUrl: string;
   taskUrl: string;
@@ -15,7 +39,11 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 export class VassalRegistry {
   private entries = new Map<string, VassalEntry>();
 
-  constructor(private fetchImpl: FetchLike = (url, init) => fetch(url, init), private now: () => Date = () => new Date()) {}
+  constructor(
+    private fetchImpl: FetchLike = (url, init) => fetch(url, init),
+    private now: () => Date = () => new Date(),
+    private hooks: RegistryHooks = {}
+  ) {}
 
   /** Fetch the agent card at a well-known/card URL and register the vassal.
    *  Requires a valid x-zeus-fealty; a card without fealty is a guest, not a vassal. */
@@ -64,7 +92,30 @@ export class VassalRegistry {
     const entry = this.entries.get(name);
     if (!entry || entry.revoked) return false;
     entry.revoked = true;
+    this.hooks.onRevoke?.(name, this.now().toISOString());
     return true;
+  }
+
+  /** Live dispatcher view. The same object is returned every call, so a revoke
+   *  takes effect for in-flight dispatchers immediately without rewiring. */
+  asVassalLookup(): VassalLookup {
+    const toLike = (entry: VassalEntry): VassalLike => ({
+      name: entry.card.name,
+      taskUrl: entry.taskUrl,
+      card: entry.card,
+      fealty: entry.fealty,
+    });
+    return {
+      get: name => {
+        const entry = this.entries.get(name);
+        return entry && !entry.revoked ? toLike(structuredClone(entry)) : undefined;
+      },
+      statusOf: name => {
+        const entry = this.entries.get(name);
+        return entry ? (entry.revoked ? 'revoked' : 'active') : 'unknown';
+      },
+      findBySkill: skillId => this.findVassalsForSkill(skillId).map(toLike),
+    };
   }
 
   findVassalsForSkill(skillId: string): VassalEntry[] {

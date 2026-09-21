@@ -1,14 +1,23 @@
 import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
-import type { VassalLike } from './types.js';
+import type { VassalLike, VassalLookup } from './types.js';
 import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
+
+export type AuditDecision =
+  | 'dispatched'
+  | 'refused-realm-policy'
+  | 'refused-unknown-vassal'
+  | 'refused-revoked'
+  | 'vassal-revoked'
+  | 'dispatch-failed';
 
 export type AuditEntry = {
   ts: string;
-  runId: string;
   vassal: string;
-  skill: string;
-  realm: RealmType;
-  decision: 'dispatched' | 'refused-realm-policy' | 'refused-unknown-vassal' | 'dispatch-failed';
+  decision: AuditDecision;
+  /** Governance events (vassal-revoked) carry no task context. */
+  runId?: string;
+  skill?: string;
+  realm?: RealmType;
   taskId?: string;
   state?: Task['status']['state'];
   detail?: string;
@@ -32,15 +41,19 @@ export type DispatchResult =
 export type AuditSink = (entry: AuditEntry) => void;
 
 export class Dispatcher {
+  private lookup: VassalLookup;
+
   constructor(
-    private vassals: Map<string, VassalLike>,
+    directory: VassalLookup | Map<string, VassalLike>,
     private options: {
       audit: AuditSink;
       now?: () => Date;
       fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
       tokenFor?: (vassalName: string) => string | undefined;
     }
-  ) {}
+  ) {
+    this.lookup = directory instanceof Map ? mapAsLookup(directory) : directory;
+  }
 
   async dispatch(request: DispatchRequest): Promise<DispatchResult> {
     const now = this.options.now ?? (() => new Date());
@@ -48,7 +61,17 @@ export class Dispatcher {
     let vassal: VassalLike | undefined;
     let selectionDetail: string | undefined;
     if (request.vassal) {
-      vassal = this.vassals.get(request.vassal);
+      // Governance gate: a revoked vassal is blocked before any request is made
+      // or token issued, and the block is audited distinctly from "unknown".
+      if (this.lookup.statusOf(request.vassal) === 'revoked') {
+        const audit: AuditEntry = {
+          ts: now().toISOString(), runId, vassal: request.vassal, skill: request.skill, realm: request.realm,
+          decision: 'refused-revoked', detail: `vassal ${request.vassal} is revoked; dispatch blocked before token issuance`,
+        };
+        this.options.audit(audit);
+        return { ok: false, reason: audit.detail!, audit };
+      }
+      vassal = this.lookup.get(request.vassal);
     } else {
       try {
         vassal = this.selectBySkill(request.skill);
@@ -97,13 +120,13 @@ export class Dispatcher {
   }
 
   async cancel(vassalName: string, taskId: string): Promise<Task> {
-    const vassal = this.vassals.get(vassalName);
-    if (!vassal) throw new Error(`unknown vassal: ${vassalName}`);
+    const vassal = this.lookup.get(vassalName);
+    if (!vassal) throw new Error(`unknown or revoked vassal: ${vassalName}`);
     return cancelTask(vassal.taskUrl, taskId, this.options.tokenFor?.(vassalName), this.options.fetchImpl);
   }
 
   private selectBySkill(skillId: string): VassalLike | undefined {
-    const candidates = [...this.vassals.values()].filter(vassal => vassal.card.skills.some(skill => skill.id === skillId));
+    const candidates = this.lookup.findBySkill(skillId);
     if (candidates.length > 1) {
       throw new AmbiguousSkillError(`multiple vassals provide skill ${skillId}; name one explicitly: ${candidates.map(vassal => vassal.name).join(', ')}`);
     }
@@ -112,3 +135,12 @@ export class Dispatcher {
 }
 
 export class AmbiguousSkillError extends Error {}
+
+/** Adapt a static vassal map (tests / single-process wiring) to VassalLookup. */
+function mapAsLookup(map: Map<string, VassalLike>): VassalLookup {
+  return {
+    get: name => map.get(name),
+    statusOf: name => (map.has(name) ? 'active' : 'unknown'),
+    findBySkill: skillId => [...map.values()].filter(vassal => vassal.card.skills.some(skill => skill.id === skillId)),
+  };
+}

@@ -1,8 +1,3 @@
-import type { AgentCard, Fealty } from '../a2a/types.js';
-
-export type VassalLike = {
-  name: string;
-  taskUrl: string;
-  card: AgentCard;
-  fealty: Fealty;
-};
+// Vassal directory types live with the registry (A1); re-exported here so
+// dispatch-side code keeps importing them from the dispatch surface.
+export type { VassalLike, VassalLookup, VassalStatus } from '../registry/registry.js';
