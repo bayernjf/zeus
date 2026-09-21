@@ -51,6 +51,15 @@ export class VassalRegistry {
     return [...this.entries.values()].filter(entry => !entry.revoked).map(entry => structuredClone(entry));
   }
 
+  /** Oversight-deck view: every vassal including revoked ones, with an explicit
+   *  status flag. Routing uses list(); the deck needs to see retired vassals too. */
+  listAll(): Array<VassalEntry & { status: 'active' | 'revoked' }> {
+    return [...this.entries.values()].map(entry => ({
+      ...structuredClone(entry),
+      status: entry.revoked ? 'revoked' : 'active',
+    }));
+  }
+
   revoke(name: string): boolean {
     const entry = this.entries.get(name);
     if (!entry || entry.revoked) return false;

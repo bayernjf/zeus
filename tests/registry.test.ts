@@ -61,6 +61,20 @@ describe('VassalRegistry', () => {
     expect(registry.revoke('pr-helper')).toBe(false);
   });
 
+  it('listAll keeps revoked vassals with an explicit status for the oversight deck', async () => {
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
+    await registry.register('http://vassal.internal/api/a2a/agent-card');
+    expect(registry.listAll()).toHaveLength(1);
+    expect(registry.listAll()[0].status).toBe('active');
+    registry.revoke('pr-helper');
+    const all = registry.listAll();
+    expect(all).toHaveLength(1);
+    expect(all[0].status).toBe('revoked');
+    expect(all[0].card.name).toBe('pr-helper');
+    // routing-facing list still hides it
+    expect(registry.list()).toHaveLength(0);
+  });
+
   it('finds vassals by skill and by domain', async () => {
     const registry = new VassalRegistry(async url =>
       cardResponse(
