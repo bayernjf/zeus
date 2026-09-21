@@ -14,7 +14,7 @@ State of Zeus as of 2026-09-21.
 
 1. ~~拍板封臣协议形态~~ ✅ 2026-09-21 已定：A2A 超集（deferred #1 销项）。
 2. ~~起草 design-vassal-protocol.md~~ ✅ 2026-09-21 完成 v0.1。
-3. pr-helper 封臣验收（design-vassal-protocol.md §7，共 6 项）：#1 Agent Card + fealty 已发布（`api/_lib/agent-card.ts`，well-known 重写，5 项单测过），剩 #2 tasks/sendSubscribe、#3 战报、#4 escalation、#5 Zeus 派发侧、#6 标准客户端守护测试。
+3. pr-helper 封臣验收（design-vassal-protocol.md §7，共 6 项）：#1 Agent Card + fealty ✅、#2 tasks/sendSubscribe 全流程 ✅（JSON-RPC + SSE，14 项单测）、#3 战报三字段 ✅、#4 escalation ✅（merge-pr / production-rollback execute 模式升级）。剩 #5 Zeus 派发侧（脱敏/吊销/审计）、#6 标准客户端守护测试（需部署后真机验证）。已知限制：任务存储为实例内存（跨调用尽力而为）、execute 模式待凭据委派。
 4. bayjf 名册改造方案（数据来源 = Agent Card + fealty，单一事实源在封臣）。
 
 ## Project documents
