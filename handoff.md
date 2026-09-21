@@ -2,7 +2,7 @@
 
 State of Zeus as of 2026-09-21.
 
-> Zeus 处于「核心内核起步 + 技术方向展开」阶段：A1 注册中心、A2 派发器、A4 监督台最小版已落地（纯 TS 库 + vitest，**98 项测试绿**）；派发侧治理闭环、名册投影器 R0、D1 Realm P0、Realm MCP stdio 脚手架、fealty 签名链 v1 纯函数、HTTP H1（Fastify）、协议缺口补齐已落地；CI 就位。**2026-09-22 新增三份技术设计**：记忆整理协议、Supervisor/Subagent 控制模型、Agent 技术探索地图（A 组 S1–S5 裁决优先）。此前工作经 PR #1/#2 合入 `origin/main`；当前在 `dev`（领先 `origin/dev` 7，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
+> Zeus 处于「核心内核起步 + 技术方向展开」阶段：A1 注册中心、A2 派发器、A4 监督台、**E1 并发决策内核第一批（fan-out/幂等/cancel 传播/合并/规则聚合/冲突升级）**已落地（纯 TS 库 + vitest，**124 项测试绿**）；派发侧治理闭环、名册投影器 R0、D1 Realm P0、Realm MCP stdio 脚手架、fealty 签名链 v1 纯函数、HTTP H1（Fastify）、协议缺口补齐已落地；CI 就位。**2026-09-22 新增三份技术设计**：记忆整理协议、Supervisor/Subagent 控制模型、Agent 技术探索地图（A 组 S1–S5 裁决优先）。此前工作经 PR #1/#2 合入 `origin/main`；当前在 `dev`（领先 `origin/dev` 7，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
 
 ## Current state
 
@@ -66,6 +66,13 @@ State of Zeus as of 2026-09-21.
    - ~~技术探索地图~~ ✅ docs/tech-exploration-map.md v0.1。**A 组 S1–S5 已裁决优先**：上下文工程、裁决/Critic、DAG 编排、终止收敛、幂等；B（S6–S10）、C（S11–S17）全部登记待触发；Jev 模型待确认（初判 S14 候选）。
    - **下一步（待点工）**：把 A 组某条落成工程切片——建议 S3 fan-out/DAG + S5 幂等（并发内核底座），或先做 S1 上下文工程。
 
+11. ~~M2 并发决策内核第一批（E1，2026-09-22，纯库内闭环）~~ ✅：`docs/design-fan-out.md` v0.1 + `src/orchestrator/`。
+   - ✅ E1.1 一层 fan-out/join：`Orchestrator` 按技能/显式名单并行派 N 个封臣（复用 Dispatcher 治理），`Promise.allSettled`、部分失败/单路超时、failed/partial/needs-driver/completed 状态判定；
+   - ✅ E1.5 幂等与取消：intentId 重放零出站、`cancelIntent` 传播到全部非终态分支、父子 runId 全链贯穿（背压/并发上限仍 deferred #9）；
+   - ✅ E1.2 多流合并：`mergeBranches` 带来源 vassal/taskId/runId；
+   - 🚧 E1.3 规则聚合（unanimous/majority/weighted，分裂不臆断）；🚧 E1.4 冲突检测 + needs-driver 经 onConflict 回调进监督台（LLM critic/完整 DAG/进行中硬 abort/服务端 SSE 未做，见设计稿 §7）；
+   - 26 项新测试（primitives 13 + orchestrator 13），全量 124 绿、typecheck/build 过，已从 `src/index.ts` 导出。**下一步候选**：S3 完整 DAG、S2 裁决（需模型）、E2 Skill 注册中心（F7）。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
@@ -73,6 +80,7 @@ State of Zeus as of 2026-09-21.
 * [docs/tech-exploration-map.md](docs/tech-exploration-map.md) — Agent 技术探索地图：A 组五条优先（已裁决）、B/C 议题登记、Jev 待确认（S14 候选） ★
 * [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 v0.1：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、八条验收 ★
 * [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
+* [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核 v0.1（PRD E1）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级、边界 ★
 * [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
@@ -80,7 +88,7 @@ State of Zeus as of 2026-09-21.
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
 * [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — fealty 签名链设计 v0.1（deferred #7）：威胁模型、Zeus 单签 v1/封臣自签 v2、Ed25519+JCS、两层签名信封、RSK 密钥与轮换、吊销四层失效、v1 八条验收 ★
 * [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型 v0.1：网络面划分、Fastify+长驻 Node 裁决、薄传输层单向依赖、H1–H3 端点规划与验收 ★
-* 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验含版本协商/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/registry/signing.ts`（fealty 签名链 v1 纯函数：JCS 规范化、attestation/seal、Ed25519 内存签名器）、`src/util/crypto.ts`（sha256Hex 公共哈希）、`src/a2a/types.ts`（A2A 协议类型：Task/Artifact/Part 含 FilePart/事件/AgentCard/Fealty）与 `src/a2a/parts.ts`（isFilePart/artifactFileUris）、`src/http/`（Fastify H1 薄传输层：`server.ts` 三端点 + 签名接线、`serve.ts` 进程入口；全仓库唯一 import fastify 处，`./http` 子路径导出）、`src/dispatch/`（A2A 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、sla.ackSeconds 受理计时、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护；`mcp.ts`/`mcp-stdio.ts` 只读 MCP stdio 脚手架）、`scripts/acceptance-standard-a2a.mjs`（验收 #6 纯标准客户端）、`.github/workflows/ci.yml`（CI）、`tests/`（98 项，14 个测试文件）
+* 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验含版本协商/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/registry/signing.ts`（fealty 签名链 v1 纯函数：JCS 规范化、attestation/seal、Ed25519 内存签名器）、`src/util/crypto.ts`（sha256Hex 公共哈希）、`src/a2a/types.ts`（A2A 协议类型：Task/Artifact/Part 含 FilePart/事件/AgentCard/Fealty）与 `src/a2a/parts.ts`（isFilePart/artifactFileUris）、`src/http/`（Fastify H1 薄传输层：`server.ts` 三端点 + 签名接线、`serve.ts` 进程入口；全仓库唯一 import fastify 处，`./http` 子路径导出）、`src/dispatch/`（A2A 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、sla.ackSeconds 受理计时、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/orchestrator/`（E1 并发内核：Orchestrator fan-out/幂等/cancel、merge/aggregate/conflict 纯函数）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护；`mcp.ts`/`mcp-stdio.ts` 只读 MCP stdio 脚手架）、`scripts/acceptance-standard-a2a.mjs`（验收 #6 纯标准客户端）、`.github/workflows/ci.yml`（CI）、`tests/`（124 项，16 个测试文件）
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
 * [git-commit-message.md](git-commit-message.md) — commit message 规范
@@ -111,3 +119,4 @@ State of Zeus as of 2026-09-21.
 | 2026-09-21 | sla.ackSeconds 受理计时：首个 SSE 事件为受理信号，超时审计 sla-ack-breached、不阻断任务，注入式单调时钟，及时/超时/无声明三态测试（commit 9dcf2c4） |
 | 2026-09-21 | A2A 协议缺口：Artifact 增 FilePart（URI 引用，Zeus 不抓取）+ src/a2a/parts.ts；Task 增宽松 history 透传；2 项测试（commit a6c6a69） |
 | 2026-09-21 | Realm 测试 Windows 容错（无 symlink 权限时夹具降级、专属断言条件化）；全量 98 项绿、typecheck/build 过（commit 82671cc）。此前工作已经 PR #1/#2 合入 origin/main，本批 4 commit 在 dev 待 push |
+| 2026-09-22 | M2 并发决策内核第一批（design-fan-out.md + src/orchestrator/）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级监督台；E1.2 库内完成，E1.1/1.3/1.4/1.5/1.6 部分落地；26 项新测试，全量 124 绿、typecheck/build 过 |
