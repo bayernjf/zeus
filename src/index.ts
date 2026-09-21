@@ -15,6 +15,7 @@
 
 // --- A2A protocol: standard layer + x-zeus-* supersession extensions ---
 export { SUPPORTED_FEALTY_VERSIONS } from './a2a/types.js';
+export { isFilePart, artifactFileUris } from './a2a/parts.js';
 export type {
   RealmType,
   Fealty,
@@ -22,6 +23,10 @@ export type {
   AgentCard,
   TaskState,
   ZeusReport,
+  Part,
+  TextPart,
+  DataPart,
+  FilePart,
   Artifact,
   Task,
   A2AEvent,
