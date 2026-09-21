@@ -8,7 +8,7 @@ State of Zeus as of 2026-09-21.
 
 - 已完成上层方向定位与产品画像 v0.1（2026-09-21）。
 - 项目骨架文档已按 agent-world 惯例建立：AGENTS.md / handoff.md / docs/。
-- 已 `git init` 并推 GitHub private；尚未选型 HTTP 技术栈（内核仍为纯 TS 库）。
+- 已 `git init` 并推 GitHub private；HTTP 技术栈已选型（Fastify + 长驻 Node，薄传输层，H1 随 roster R1 装依赖，见 docs/design-http-transport.md）；内核仍为纯 TS 库。
 - 封臣治理闭环打通：registry 实时目录（asVassalLookup）→ dispatcher 派发前吊销阻断 → 审计桥统一记录（2026-09-21）。
 - bayjf 封神榜设计 v0.1 完成，R0 名册投影器（internal/public 双快照）落地（2026-09-21）。
 - Realm 两个 P0 前开放问题已拍板（v0.2：对外唯一传输 MCP、P0 文件系统扫描）；Realm P0 库内实现落地（2026-09-21）。
@@ -27,7 +27,7 @@ State of Zeus as of 2026-09-21.
    - ~~公共 API 入口 + 构建产物链~~ ✅ 2026-09-21：`src/index.ts` 聚合导出六模块公共面（a2a/registry/roster/dispatch/oversight/realm，23 个运行时导出）；`tsconfig.build.json` 出 `dist/`（.js + .d.ts + sourcemap，dist 已 gitignore）；package.json 补 main/types/exports/files 与 `build` 脚本。产物冒烟通过，40 项测试绿、tsc 干净。
    - ~~补写 README.md 仓库入口文档~~ ✅ 2026-09-21：根目录 README（定位、六模块说明、build/test/typecheck 命令与 Realm 最小示例、当前边界、文档导航、协作约定）。
    - ~~deferred #7 fealty 签名链设计草案~~ ✅ 2026-09-21：`docs/design-fealty-signing.md` v0.1（威胁模型 T1–T4；裁决 v1 Zeus 单签背书、v2 封臣自签交叉背书；Ed25519 + RFC 8785 JCS；条目 attestation + 快照 seal 两层信封；RSK 密钥归属/轮换；吊销四层失效含 TTL 硬过期；发布管线与接口草案；v1 八条验收）。**注意：设计完成 ≠ deferred #7 销项**，销项标准是 v1 随 R1/R2 实现并通过八条验收；触发条件「bayjf 公开前」不变。
-   - [ ] HTTP 技术栈选型设计（handoff 悬挂项；不得与 Realm「对外唯一 MCP、不做独立 HTTP API」冲突）。
+   - ~~HTTP 技术栈选型设计~~ ✅ 2026-09-21：`docs/design-http-transport.md` v0.1 拍板 Fastify + 长驻 Node（不选 serverless），薄传输层 src/http 单向依赖内核、Realm 不挂 HTTP；H1 三端点（healthz/roster public 签名快照/roster internal 鉴权）随 roster R1 装依赖，H2 驾驶员 API 待持久化。
    - [ ] Realm P1 MCP stdio 壳 + store→MCP resource/tool 1:1 映射（仅脚手架验证「接口不外泄路径」，不启动、不做鉴权/HTTP；正式启动仍待 read-realm 封臣出现）。
    - 另登记未开工：契约⇄代码一致性审计、测试覆盖矩阵补缺、验收 #6 真机脚本、Zeus↔loom 联调脚本、CI workflow（触发验证待 push）。
 
@@ -40,6 +40,7 @@ State of Zeus as of 2026-09-21.
 * [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.1（D1）：目录即数据库、connect/search/read/write、数据二极管执行点、藏宝图依赖 ★
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
 * [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — fealty 签名链设计 v0.1（deferred #7）：威胁模型、Zeus 单签 v1/封臣自签 v2、Ed25519+JCS、两层签名信封、RSK 密钥与轮换、吊销四层失效、v1 八条验收 ★
+* [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型 v0.1：网络面划分、Fastify+长驻 Node 裁决、薄传输层单向依赖、H1–H3 端点规划与验收 ★
 * 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/dispatch/`（A2 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护）、`tests/`（40 项）
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
@@ -61,3 +62,4 @@ State of Zeus as of 2026-09-21.
 | 2026-09-21 | 库公共入口与构建链：src/index.ts 聚合六模块公共面（23 个运行时导出）、tsconfig.build.json 出 dist（.js/.d.ts/sourcemap）、package.json main/types/exports/files + build 脚本；产物冒烟通过，40 项测试绿、tsc 干净 |
 | 2026-09-21 | 补写根目录 README.md（仓库入口：定位、六模块、快速开始与 Realm 示例、当前边界、文档导航） |
 | 2026-09-21 | fealty 签名链设计草案 v0.1（design-fealty-signing.md）：v1 Zeus 单签（Ed25519+JCS，条目 attestation+快照 seal，TTL 硬过期）、v2 封臣自签超集；deferred #7 设计完成，实现随 R1/R2 销项 |
+| 2026-09-21 | HTTP 传输层选型拍板（design-http-transport.md）：Fastify+长驻 Node、薄适配层、Realm 不挂 HTTP；H1 三端点随 roster R1，H2 驾驶员 API 待持久化；H0 不装依赖 |
