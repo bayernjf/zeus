@@ -17,7 +17,7 @@ State of Zeus as of 2026-09-21.
 3. pr-helper 封臣验收（design-vassal-protocol.md §7，共 6 项）：#1 Agent Card + fealty ✅、#2 tasks/sendSubscribe 全流程 ✅（JSON-RPC + SSE，14 项单测）、#3 战报三字段 ✅、#4 escalation ✅（merge-pr / production-rollback execute 模式升级）。剩 #5 Zeus 派发侧（脱敏/吊销/审计）、#6 标准客户端守护测试（需部署后真机验证）。已知限制：任务存储为实例内存（跨调用尽力而为）、execute 模式待凭据委派。
 4. bayjf 名册改造方案（数据来源 = Agent Card + fealty，单一事实源在封臣）。
 5. Realm 契约开放问题拍板（design-realm.md §6：传输层 HTTP vs MCP；检索实现）→ 之后启动 Realm P0 实现。
-6. loom 封臣接入：草案已交 loom 侧（docs/design-a2a-vassal.md + handoff #8），待负责人四项裁决（接入/排期/skills/Key 复用）。
+6. ~~loom 封臣接入~~ ✅ 2026-09-21 负责人裁决四项全按草案；loom 侧第一阶段 plan 模式已落地（Q150：`backend/app/core/a2a/` card·skills·rpc·router，12 单测 + 10 集成测试全绿，commit 0ba84d3/6404b99 在 loom dev 分支）。边界：任务进程内存、未真机联调。下一步：Zeus↔loom 联调（待部署）。
 
 ## Project documents
 
@@ -38,3 +38,4 @@ State of Zeus as of 2026-09-21.
 | 2026-09-21 | 产品画像 v0.1 初稿；按 agent-world 惯例建立项目文档骨架 |
 | 2026-09-21 | 封臣协议拍板为 A2A 超集；design-vassal-protocol.md v0.1 完成（fealty/intake/report-back/escalation/治理/星型拓扑/pr-helper 验收清单） |
 | 2026-09-21 | Zeus 代码动工：A1 注册中心 + A2 派发器（15 项单测）；D1 Realm 接口契约 v0.1 定稿；loom 封臣草案已交 loom 侧待裁决 |
+| 2026-09-21 | loom 第二封臣裁决并落地第一阶段（loom Q150，plan 模式三 skills + JSON-RPC/SSE + Q88 Key + 审计，22 项测试绿）；Zeus 仓库推 GitHub private |
