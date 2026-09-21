@@ -8,14 +8,13 @@ State of Zeus as of 2026-09-21.
 
 - 已完成上层方向定位与产品画像 v0.1（2026-09-21）。
 - 项目骨架文档已按 agent-world 惯例建立：AGENTS.md / handoff.md / docs/。
-- 尚未 `git init`，尚未选型技术栈。
+- 已 `git init` 并完成首次 docs 提交；尚未选型技术栈。
 
 ## Active work
 
 1. ★ 拍板「封臣协议」形态：直接复用 A2A 标准超集，还是自定义最小协议（见 deferred #1）。
 2. 起草 `docs/design-vassal-protocol.md`：Agent Card + 任务受理 + 战报回流 + 升级人类。
 3. 拿 pr-helper 作为第一个封臣，验证协议可行性。
-4. `git init` 并做首次 docs 提交（待用户确认）。
 
 ## Project documents
 
