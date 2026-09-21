@@ -20,6 +20,10 @@ State of Zeus as of 2026-09-21.
 - **协议缺口补齐（2026-09-21，commit 9dcf2c4 / a6c6a69）**：① dispatcher 新增 `sla-ack-breached` 审计决策——首个 SSE 流事件为受理信号，晚于 `fealty.sla.ackSeconds` 即审计（注入式单调时钟，违约不阻断任务，无 SLA 声明不计时）；② Artifact.parts 增加标准 A2A `FilePart`（URI 引用形态，Zeus 只透传呈现给驾驶员、不自动拉取，bytes 内联保留类型但 v1 不产出），新增 `src/a2a/parts.ts`（isFilePart/artifactFileUris）并从内核出口导出；③ Task 增加宽松可选 `history`（原样透传不解析，loom 不发 / pr-helper 发）。
 - **Windows 测试可移植性（2026-09-21，commit 82671cc）**：Realm 夹具在无 symlink 权限（Windows 非管理员 / 未开开发者模式，symlinkSync 抛 EPERM）时降级，symlink 专属断言条件化，其余用例恢复；安全边界在 CI 与有权限平台仍完整覆盖。全量 **98 项绿、typecheck/build 通过**（14 个测试文件）。
 
+## New inputs / 待确认
+
+- **Jev 模型（2026-09-22 负责人提及，尚未提供资料）**：性质、提供方、能力边界均未知；当前联网搜索通道 403 未能核实。**待补**：介绍链接或提供方/一句话定位后，再判断其角色（驱动模型 / 封臣模型 / 可接入的外部能力）并决定是否进入 PRD。在拿到事实前不得据此做任何设计假设。
+
 ## Active work
 
 1. ~~拍板封臣协议形态~~ ✅ 2026-09-21 已定：A2A 超集（deferred #1 销项）。
