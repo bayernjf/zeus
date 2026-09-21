@@ -163,4 +163,51 @@ describe('Dispatcher', () => {
     if (result.ok) return;
     expect(result.reason).toContain('pr-helper-2');
   });
+
+  describe('sla.ackSeconds enforcement', () => {
+    function dispatcherWithClock(
+      map: Map<string, VassalLike>,
+      fetchImpl: (url: string, init?: RequestInit) => Promise<Response>,
+      elapsed: () => number
+    ) {
+      const { log, sink } = memoryAuditSink();
+      const dispatcherInstance = new Dispatcher(map, { audit: sink, fetchImpl, elapsed });
+      return { dispatcherInstance, audit: log };
+    }
+
+    /** Two-call monotonic clock: dispatch start -> first streamed event. */
+    function steppingClock(firstEventMs: number): () => number {
+      let call = 0;
+      return () => (call++ === 0 ? 0 : firstEventMs);
+    }
+
+    it('stays silent when the first event arrives within ackSeconds', async () => {
+      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeVassalServer({}), steppingClock(100));
+      const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
+      expect(result.ok).toBe(true);
+      expect(audit.map((entry: AuditEntry) => entry.decision)).not.toContain('sla-ack-breached');
+    });
+
+    it('audits sla-ack-breached (without failing the task) when the first event is late', async () => {
+      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeVassalServer({}), steppingClock(6000));
+      const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
+
+      expect(result.ok).toBe(true);
+      const breach = audit.find((entry: AuditEntry) => entry.decision === 'sla-ack-breached');
+      expect(breach).toBeDefined();
+      expect(breach).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+      expect(breach?.detail).toContain('6000ms');
+      expect(breach?.detail).toContain('ackSeconds=5');
+    });
+
+    it('does not measure anything when the vassal declares no sla', async () => {
+      const map = new Map([['pr-helper', vassal()]]);
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeVassalServer({}), steppingClock(60_000));
+      const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
+      expect(result.ok).toBe(true);
+      expect(audit.map((entry: AuditEntry) => entry.decision)).not.toContain('sla-ack-breached');
+    });
+  });
 });
