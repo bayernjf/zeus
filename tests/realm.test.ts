@@ -14,8 +14,13 @@ import {
 describe('FsRealmStore P0', () => {
   let sandbox: string;
   let root: string;
+  // Windows denies symlink creation without admin rights or Developer Mode;
+  // when unavailable the fixture omits link.md and symlink-specific assertions
+  // degrade (the security boundary stays covered on CI / capable platforms).
+  let symlinksSupported = true;
 
   beforeEach(() => {
+    symlinksSupported = true;
     sandbox = mkdtempSync(join(tmpdir(), 'zeus-realm-'));
     root = join(sandbox, 'realm');
     mkdirSync(join(root, 'notes'), { recursive: true });
@@ -31,7 +36,11 @@ describe('FsRealmStore P0', () => {
     writeFileSync(join(root, 'node_modules', 'pkg', 'index.js'), 'module.exports = {}\n');
     // symlink escaping the root
     writeFileSync(join(sandbox, 'outside.md'), 'outside secret\n');
-    symlinkSync('../outside.md', join(root, 'link.md'));
+    try {
+      symlinkSync('../outside.md', join(root, 'link.md'));
+    } catch {
+      symlinksSupported = false;
+    }
   });
 
   afterEach(() => {
@@ -47,11 +56,12 @@ describe('FsRealmStore P0', () => {
     expect(manifest.itemCount).toBe(3);
     expect(manifest.backup.strategy).toBe('none');
     expect(manifest.contentDigest).toMatch(/^[0-9a-f]{64}$/);
-    expect(manifest.skipped?.map(s => s.itemId).sort()).toEqual(['big.md', 'image.png', 'link.md']);
+    const expectedSkipped = symlinksSupported ? ['big.md', 'image.png', 'link.md'] : ['big.md', 'image.png'];
+    expect(manifest.skipped?.map(s => s.itemId).sort()).toEqual(expectedSkipped);
     const skipReasons = Object.fromEntries(manifest.skipped!.map(s => [s.itemId, s.reason]));
     expect(skipReasons['image.png']).toContain('extension');
     expect(skipReasons['big.md']).toContain('exceeds');
-    expect(skipReasons['link.md']).toContain('symlink');
+    if (symlinksSupported) expect(skipReasons['link.md']).toContain('symlink');
 
     // idempotent reconnect: same realmId and createdAt, fresh digest
     const again = await store.connect(root, 'personal');
@@ -150,7 +160,9 @@ describe('FsRealmStore P0', () => {
     await expect(store.read(manifest.realmId, join(root, 'notes', 'diary.md'))).rejects.toBeInstanceOf(InvalidItemIdError);
     await expect(store.read(manifest.realmId, 'notes\\..\\..\\outside.md')).rejects.toBeInstanceOf(InvalidItemIdError);
     await expect(store.read(manifest.realmId, 'notes//diary.md')).rejects.toBeInstanceOf(InvalidItemIdError);
-    await expect(store.read(manifest.realmId, 'link.md')).rejects.toBeInstanceOf(InvalidItemIdError);
+    if (symlinksSupported) {
+      await expect(store.read(manifest.realmId, 'link.md')).rejects.toBeInstanceOf(InvalidItemIdError);
+    }
     await expect(store.read(manifest.realmId, 'image.png')).rejects.toBeInstanceOf(InvalidItemIdError);
     await expect(store.read(manifest.realmId, 'notes/missing.md')).rejects.toBeInstanceOf(InvalidItemIdError);
 

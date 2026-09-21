@@ -2,28 +2,30 @@
 
 > 以用户数据目录为底座、多 Agent 高效协作的操作系统：对个人，是记忆的避风港与可传承的藏宝图；对企业，是即插即用、伴随成长的「虚拟部门」。完整定位见 [docs/product-portrait.md](docs/product-portrait.md)。
 
-本仓库当前是 Zeus 的**纯 TypeScript 内核库**：封臣注册、任务派发、监督、个人数据域四块核心能力，以零运行时依赖的库形态落地；HTTP / 部署 / MCP 传输层尚未接入。
+本仓库当前是 Zeus 的**纯 TypeScript 内核库 + 薄传输面**：封臣注册、任务派发、监督、个人数据域四块核心能力以零运行时依赖的库形态落地；另附只读 Realm MCP stdio 脚手架与 HTTP H1（Fastify）薄传输层——Fastify 依赖锁在 `src/http`，内核本身保持零传输依赖。
 
 ## 内核模块
 
 | 模块 | 路径 | 职责 |
 | --- | --- | --- |
-| **a2a** | `src/a2a/` | 标准 A2A 协议类型 + `x-zeus-*` 封臣扩展（Agent Card、Task 生命周期、SSE 事件、fealty 契约、战报） |
+| **a2a** | `src/a2a/` | 标准 A2A 协议类型 + `x-zeus-*` 封臣扩展（Agent Card、Task 生命周期含 file/URI part 与 history 透传、SSE 事件、fealty 契约、战报） |
 | **registry（A1）** | `src/registry/registry.ts` | 封臣注册中心：卡片拉取注册、fealty 校验（无 fealty 即外客，拒绝入册）、健康探针、吊销、`listAll()` 全量视图、`asVassalLookup()` 实时目录 |
 | **roster（R0）** | `src/registry/roster.ts` | 封神榜名册投影器：注册中心状态 → 不可变、JSON 可序列化的 internal/public 双快照；只重塑与裁剪，不造字段 |
 | **dispatch（A2）** | `src/dispatch/` | 派发器：JSON-RPC + SSE 客户端（send / sendSubscribe / cancel）、数据二极管与按 `dataPolicy` 脱敏、派发前吊销阻断（不发请求不发 token）、审计 sink 与吊销审计桥 |
 | **oversight（A4）** | `src/oversight/` | 监督台：收集 `input-required` 升级请求，驾驶员 approve / reject；reject 联动取消封臣侧任务，全程审计 |
 | **realm（D1 P0）** | `src/realm/` | 只读 personal 数据域：`FsRealmStore` 的 connect / manifest / search / read，确定性 realmId、connect 快照检索、`contentDigest` 基线、路径穿越与 symlink 双检防护；附只读 MCP stdio 脚手架（`mcp.ts` / `mcp-stdio.ts`） |
+| **http（H1 传输面）** | `src/http/` | Fastify 薄适配层（非内核、全仓库唯一 fastify 依赖处）：`/healthz`、`/api/roster/public`（实时投影 + 签名名册快照，离线可验）、`/api/roster`（bearer 治理视图）；`serve.ts` 为进程入口，经 `zeus/http` 子路径导出 |
 
-统一公共出口在 `src/index.ts`，构建产物见下文。
+内核统一公共出口在 `src/index.ts`（不含 http 传输面），构建产物见下文。
 
 ## 快速开始
 
 ```bash
 npm install
 npm run build      # tsc 出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest，40 项
+npm test           # vitest，98 项
 npm run typecheck  # tsc --noEmit
+npm start          # 启动 HTTP H1（需先 build；ZEUS_HOST/ZEUS_PORT/ZEUS_INTERNAL_TOKEN/ZEUS_RSK_KEY 见 src/http/serve.ts）
 ```
 
 最小用法（Realm，自包含、无需网络）：
@@ -47,11 +49,26 @@ npm run build
 node dist/realm/mcp-stdio.js /path/to/your/dir   # 目录在启动时预连接授权，协议不暴露 connect/root
 ```
 
+HTTP H1 薄传输面（库用法，Fastify 依赖仅在 `zeus/http` 子路径）：
+
+```ts
+import { VassalRegistry, Ed25519MemorySigner } from 'zeus';
+import { createHttpServer } from 'zeus/http';
+
+const app = await createHttpServer({
+  registry: new VassalRegistry(),
+  signer: new Ed25519MemorySigner('zeus-rsk-dev'),
+  internalToken: process.env.ZEUS_INTERNAL_TOKEN, // 不配置则 /api/roster 不挂载
+});
+await app.listen({ host: '127.0.0.1', port: 8787 });
+// GET /healthz；GET /api/roster/public（签名快照）；GET /api/roster（bearer 治理视图）
+```
+
 ## 当前边界
 
-- **纯库阶段**：无 HTTP / 部署层；封臣任务与 Realm 状态均为实例内存。
+- **库 + 只读薄传输**：内核无状态，封臣任务与 Realm 状态均为实例内存；HTTP H1 仅三个只读端点（无写端点、无任务持久化），`serve.ts` 启动时 registry 为空（封臣注册属未来启动编排）；internal 名册视图 H1 不封签（含 revoked 行，靠 bearer 保护，封签留签名链 v1.1）。
 - **Realm 对外唯一传输为 MCP**（契约 v0.2），不做独立 HTTP API；只读 stdio 脚手架已落地（resources 映射 manifest/search/read、宿主预连接、绝对路径不出进程），正式 P1（鉴权、streamable HTTP、官方 SDK 兼容性复核）的触发条件仍是 read-realm 封臣出现。
-- 服务端 HTTP 栈已选型 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)），H0 不装依赖，H1 随名册 R1 落地。
+- 服务端 HTTP 栈为 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)），**H1 已落地**（healthz / public 签名名册 / bearer internal）；H2 驾驶员 API 待任务与升级状态持久化，H3（SSE server / 多副本 / 静态快照分发）按需立项。
 - pr-helper 验收 #6（标准 A2A 客户端守护测试）与 Zeus↔loom 真机联调均**待部署**，现状与待办以 [handoff.md](handoff.md) 为准。
 
 ## 文档
@@ -62,6 +79,8 @@ node dist/realm/mcp-stdio.js /path/to/your/dir   # 目录在启动时预连接�
 - [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议：A2A 超集、fealty / 战报 / 升级 / 治理、pr-helper 六项验收
 - [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.2
 - [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造（R0–R2、签名链公开闸门）
+- [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — 名册签名链 v1（Ed25519+JCS、条目 attestation + 快照 seal、TTL 硬过期、八条验收）
+- [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型与 H1–H3 端点规划（Fastify + 长驻 Node、薄传输层）
 - [docs/deferred-items.md](docs/deferred-items.md) — 缓做项与触发条件的单一事实源
 
 ## 协作约定

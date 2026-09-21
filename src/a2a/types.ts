@@ -55,10 +55,24 @@ export type ZeusReport = {
   followUps: Array<{ skill: string; reason: string }>;
 };
 
+export type TextPart = { kind: 'text'; text: string };
+export type DataPart = { kind: 'data'; data: Record<string, unknown> };
+/**
+ * Standard A2A FilePart (reference form). Zeus v1 only passes file URIs through
+ * to the driver — it never fetches them itself (SSRF / local-file boundary) and
+ * never inlines bytes. `bytes` (base64) is kept on the type for wire
+ * compatibility but is not emitted by Zeus v1.
+ */
+export type FilePart = {
+  kind: 'file';
+  file: { uri: string; name?: string; mimeType?: string; bytes?: string };
+};
+export type Part = TextPart | DataPart | FilePart;
+
 export type Artifact = {
   artifactId: string;
   name: string;
-  parts: Array<{ kind: 'text'; text: string } | { kind: 'data'; data: Record<string, unknown> }>;
+  parts: Part[];
   'x-zeus-report'?: ZeusReport;
 };
 
@@ -68,6 +82,12 @@ export type Task = {
   contextId: string;
   status: { state: TaskState; timestamp?: string };
   artifacts: Artifact[];
+  /**
+   * Standard A2A state-transition history (capability stateTransitionHistory).
+   * Loosely typed and passed through verbatim: Zeus v1 never parses it (loom
+   * omits it; pr-helper emits it).
+   */
+  history?: Array<Record<string, unknown>>;
   metadata?: Record<string, unknown>;
 };
 

@@ -8,7 +8,8 @@ export type AuditDecision =
   | 'refused-unknown-vassal'
   | 'refused-revoked'
   | 'vassal-revoked'
-  | 'dispatch-failed';
+  | 'dispatch-failed'
+  | 'sla-ack-breached';
 
 export type AuditEntry = {
   ts: string;
@@ -48,6 +49,8 @@ export class Dispatcher {
     private options: {
       audit: AuditSink;
       now?: () => Date;
+      /** Monotonic millisecond clock for SLA measurement; defaults to Date.now. */
+      elapsed?: () => number;
       fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
       tokenFor?: (vassalName: string) => string | undefined;
     }
@@ -98,6 +101,15 @@ export class Dispatcher {
 
     const events: A2AEvent[] = [];
     this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched' });
+
+    // SLA ack enforcement (fealty.sla.ackSeconds): the first streamed event is
+    // the acceptance signal. A breach is audited, never fatal — the task itself
+    // may still succeed; the audit trail is the governance surface.
+    const clock = this.options.elapsed ?? (() => Date.now());
+    const ackSeconds = vassal.fealty.sla?.ackSeconds;
+    const startedAt = clock();
+    let ackMeasured = false;
+
     try {
       const task = await sendTaskSubscribe(
         {
@@ -107,7 +119,24 @@ export class Dispatcher {
           runId,
           token: this.options.tokenFor?.(vassal.name),
         },
-        { onEvent: event => events.push(event) },
+        {
+          onEvent: event => {
+            events.push(event);
+            if (!ackMeasured) {
+              ackMeasured = true;
+              if (ackSeconds !== undefined) {
+                const elapsedMs = clock() - startedAt;
+                if (elapsedMs > ackSeconds * 1000) {
+                  this.options.audit({
+                    ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+                    decision: 'sla-ack-breached', taskId: event.taskId,
+                    detail: `first event after ${elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
+                  });
+                }
+              }
+            }
+          },
+        },
         this.options.fetchImpl
       );
       this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });

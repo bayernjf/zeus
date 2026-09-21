@@ -34,7 +34,13 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
     writeFileSync(join(root, 'notes', 'todo.txt'), 'buy milk\n');
     writeFileSync(join(root, 'image.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     writeFileSync(join(sandbox, 'outside.md'), 'outside secret\n');
-    symlinkSync('../outside.md', join(root, 'link.md'));
+    // Windows denies symlink creation without admin rights / Developer Mode;
+    // link.md only feeds the skip-list boundary, which realm.test.ts asserts.
+    try {
+      symlinkSync('../outside.md', join(root, 'link.md'));
+    } catch {
+      /* symlinks unavailable on this host */
+    }
 
     store = new FsRealmStore();
     const manifest = await store.connect(root, 'personal', { readOnly: true });

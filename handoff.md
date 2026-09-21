@@ -2,7 +2,7 @@
 
 State of Zeus as of 2026-09-21.
 
-> Zeus 处于「核心内核起步」阶段：A1 注册中心、A2 派发器、A4 监督台最小版已落地（纯 TS 库 + vitest，86 项测试绿）；派发侧治理闭环（吊销强制力 + 审计桥）、名册投影器 R0、**D1 Realm P0（只读 personal 数据域）**、**Realm 只读 MCP stdio 脚手架**、**fealty 签名链 v1 纯函数**已落地；契约⇄代码一致性审计完成、CI workflow 就位（本地验证全绿，触发待 push）。本文件记录项目当前状态、活跃任务与文档索引。
+> Zeus 处于「核心内核起步」阶段：A1 注册中心、A2 派发器、A4 监督台最小版已落地（纯 TS 库 + vitest，**98 项测试绿**）；派发侧治理闭环（吊销强制力 + 审计桥）、名册投影器 R0、**D1 Realm P0（只读 personal 数据域）**、**Realm 只读 MCP stdio 脚手架**、**fealty 签名链 v1 纯函数**、**HTTP H1 传输层（Fastify，public 签名快照已接线）**、**协议缺口补齐（sla.ackSeconds 计时 / file part / Task.history）**已落地；CI workflow 就位。此前工作已经 PR #1 / #2 合入 `origin/main`；本批 4 个 commit 在 `dev`（领先 `origin/dev` 4，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
 
 ## Current state
 
@@ -16,6 +16,9 @@ State of Zeus as of 2026-09-21.
 - Realm 只读 MCP stdio 脚手架落地（2026-09-21）：零新依赖，resources 映射 manifest/search/read，宿主预连接授权目录、协议不暴露 connect，绝对路径不出进程；12 项协议测试 + 真实子进程 stdio 冒烟通过。**非正式 P1 启动**（触发条件仍是 read-realm 封臣出现）。
 - fealty 签名链 v1 纯函数落地（2026-09-21）：`src/registry/signing.ts`（JCS 子集规范化、card/fealty digest、条目 attestation、快照 seal、离线 verify，node:crypto Ed25519 内存 signer/verifier），设计稿 §8.1 八条验收全部有测试；deferred #7 仍未销项（待 R1 HTTP 接线与 R2 bayjf 验签、生产密钥存放）。
 - 对外前置制品齐备（2026-09-21）：loom 契约兼容性测试（照抄 loom 真实 card/SSE fixture，6 项）、验收 #6 纯标准 A2A 客户端脚本（scripts/，mock 自测 3 项，真机执行待部署）、GitHub Actions CI（Node 20/22，本地按 CI 序列实跑全绿，push 后触发）。
+- **HTTP H1 传输层落地（2026-09-21，commit 3190a11）**：`src/http/`（Fastify 5，全仓库唯一允许 import fastify 的目录，内核零传输依赖）。`server.ts` 导出 `createHttpServer(deps)`（不 listen，测试用 inject）/ `startServer`（默认绑 127.0.0.1）；三端点：`GET /healthz`（仅 status/version/ts，无封臣与 Realm 信息）、`GET /api/roster/public`（实时 `listAll()`→public 投影→`sealSnapshot` 封签，离线可验，`Cache-Control` 对齐 seal TTL，revoked/cardUrl/taskUrl/healthDetail 不进投影条目）、`GET /api/roster`（bearer 常量时间比对，未配 internalToken 则路由不挂载→404，internal 视图不封签）。`serve.ts` 为进程入口（env 装配：ZEUS_HOST/PORT/INTERNAL_TOKEN/RSK_KEY_ID/RSK_KEY，无 PEM 时用临时内存钥并 stderr 告警）；package.json 增 `./http` 子路径导出与 `npm start`。7 项 inject 端到端测试（离线验签、条目/provenance/签名三类篡改拒绝、过期、鉴权矩阵、空名册）。
+- **协议缺口补齐（2026-09-21，commit 9dcf2c4 / a6c6a69）**：① dispatcher 新增 `sla-ack-breached` 审计决策——首个 SSE 流事件为受理信号，晚于 `fealty.sla.ackSeconds` 即审计（注入式单调时钟，违约不阻断任务，无 SLA 声明不计时）；② Artifact.parts 增加标准 A2A `FilePart`（URI 引用形态，Zeus 只透传呈现给驾驶员、不自动拉取，bytes 内联保留类型但 v1 不产出），新增 `src/a2a/parts.ts`（isFilePart/artifactFileUris）并从内核出口导出；③ Task 增加宽松可选 `history`（原样透传不解析，loom 不发 / pr-helper 发）。
+- **Windows 测试可移植性（2026-09-21，commit 82671cc）**：Realm 夹具在无 symlink 权限（Windows 非管理员 / 未开开发者模式，symlinkSync 抛 EPERM）时降级，symlink 专属断言条件化，其余用例恢复；安全边界在 CI 与有权限平台仍完整覆盖。全量 **98 项绿、typecheck/build 通过**（14 个测试文件）。
 
 ## Active work
 
@@ -32,12 +35,26 @@ State of Zeus as of 2026-09-21.
    - ~~deferred #7 fealty 签名链设计草案~~ ✅ 2026-09-21：`docs/design-fealty-signing.md` v0.1（威胁模型 T1–T4；裁决 v1 Zeus 单签背书、v2 封臣自签交叉背书；Ed25519 + RFC 8785 JCS；条目 attestation + 快照 seal 两层信封；RSK 密钥归属/轮换；吊销四层失效含 TTL 硬过期；发布管线与接口草案；v1 八条验收）。**注意：设计完成 ≠ deferred #7 销项**，销项标准是 v1 随 R1/R2 实现并通过八条验收；触发条件「bayjf 公开前」不变。
    - ~~HTTP 技术栈选型设计~~ ✅ 2026-09-21：`docs/design-http-transport.md` v0.1 拍板 Fastify + 长驻 Node（不选 serverless），薄传输层 src/http 单向依赖内核、Realm 不挂 HTTP；H1 三端点（healthz/roster public 签名快照/roster internal 鉴权）随 roster R1 装依赖，H2 驾驶员 API 待持久化。
    - ~~Realm P1 MCP stdio 壳 + store→MCP resource 映射~~ ✅ 2026-09-21：`src/realm/mcp.ts`（零依赖 JSON-RPC 处理器：initialize 版本协商、resources/list·templates/list·read，只读不声明 tools；URI `zeus-realm://{realmId}/manifest|search|item`）+ `src/realm/mcp-stdio.ts`（进程入口，argv/env 预连接授权目录、只读 connect、stderr 日志/stdout 纯协议）。**路径不外泄**：connect 不经协议暴露、manifest 剥 root、错误消息只含相对 itemId；12 项测试（tests/realm-mcp.test.ts）+ build 后真实子进程冒烟全过，全量 52 项绿。边界：未引官方 SDK，protocolVersion/模板兼容性待正式 P1 用标准 client 复核；不做鉴权/HTTP（stdio only），正式启动仍待 read-realm 封臣出现。
-   - ~~契约⇄代码一致性审计~~ ✅ 2026-09-21（对照 loom `backend/app/core/a2a/` 与 pr-helper `api/a2a/` 真实实现逐条核对）。**已修漂移 3 处**：① §4.5 fealty.version 版本协商原未实现（registry 只查字段存在）→ 新增 `SUPPORTED_FEALTY_VERSIONS=['1']`，不支持版本拒绝注册；② `AgentCard` 类型缺标准字段 `defaultInputModes`/`defaultOutputModes`/`provider`（§3.1 要求、两个封臣实发）→ 补可选字段；③ §4.3 战报示例含 `confidence` 但 `ZeusReport` 类型与 loom/pr-helper 三处实现均无（验收 #3 不含它）→ 示例对齐并注明非 v1 契约。**核对一致**：roster 字段映射与双视图裁剪、SSE 帧（`data:{jsonrpc,id,result:event|task}`）、出站 sendSubscribe 请求形态与 data.skill/runId 透传、战报四字段、defaultTaskUrl 三条路径、Realm resources/root 剥离/只读、HTTP H0 零依赖。**有意缺口（不修，已登记）**：Task.history（Zeus 消费端宽松兼容，loom 无/pr-helper 有，无故障）、file/URI artifact part（P1）、ackSeconds 强制计时（运行时 SLA 治理，R1 后）、backpressure（deferred #9）。
+   - ~~契约⇄代码一致性审计~~ ✅ 2026-09-21（对照 loom `backend/app/core/a2a/` 与 pr-helper `api/a2a/` 真实实现逐条核对）。**已修漂移 3 处**：① §4.5 fealty.version 版本协商原未实现（registry 只查字段存在）→ 新增 `SUPPORTED_FEALTY_VERSIONS=['1']`，不支持版本拒绝注册；② `AgentCard` 类型缺标准字段 `defaultInputModes`/`defaultOutputModes`/`provider`（§3.1 要求、两个封臣实发）→ 补可选字段；③ §4.3 战报示例含 `confidence` 但 `ZeusReport` 类型与 loom/pr-helper 三处实现均无（验收 #3 不含它）→ 示例对齐并注明非 v1 契约。**核对一致**：roster 字段映射与双视图裁剪、SSE 帧（`data:{jsonrpc,id,result:event|task}`）、出站 sendSubscribe 请求形态与 data.skill/runId 透传、战报四字段、defaultTaskUrl 三条路径、Realm resources/root 剥离/只读、HTTP H0 零依赖。**有意缺口（登记）**：~~Task.history（消费端宽松兼容）、file/URI artifact part、ackSeconds 强制计时~~ 三项已于 2026-09-21 下午批次补齐（见 Active work 9）；仍不修：backpressure（deferred #9）。
    - ~~测试覆盖矩阵补缺（第一批）~~ ✅ 2026-09-21：registry 补版本协商拒绝、完整标准 card 形态 2 项（9→11）；新增 tests/digest.test.ts 4 项（digestManifest 顺序无关、路径/内容敏感、Buffer/string 一致、sha256 已知向量）。全量 52→58 项绿、tsc 干净。oversight cancel 失败保持 pending、数据二极管、脱敏、吊销阻断、public 裁剪等不变量经核对已有测试覆盖。
    - ~~Zeus↔loom 契约兼容性测试~~ ✅ 2026-09-21：`tests/loom-contract.test.ts` 6 项（mock HTTP，fixture 照抄 loom 真实实现；真机端到端仍待 loom 环境）。
    - ~~验收 #6 标准客户端真机脚本~~ ✅ 2026-09-21：`scripts/acceptance-standard-a2a.mjs`（零依赖、纯标准 A2A、不认 x-zeus-*）+ `tests/acceptance-script.test.ts` 3 项 mock 自测；真机执行待 pr-helper 部署。
    - ~~签名链 v1 纯函数~~ ✅ 2026-09-21：`src/registry/signing.ts` + `src/util/crypto.ts`（sha256Hex 提升为公共 util，realm/digest re-export 保持兼容）+ `tests/signing.test.ts` 19 项（JCS 子集向量 + §8.1 八条验收）；零运行时依赖（Ed25519 用 node:crypto）。R1/R2 接线与生产密钥存放未做，deferred #7 不销项。
    - ~~CI workflow~~ ✅ 2026-09-21：`.github/workflows/ci.yml`（Node 20/22 矩阵，npm ci → typecheck → test → build，零 secret）；本地按 CI 序列实跑全绿（86 项）。**GitHub 触发待授权 push**（AGENTS.md：未明确授权不 push）。
+
+9. **HTTP H1 + 协议缺口批次（2026-09-21，纯库内闭环，不依赖部署）**：
+   - ~~A1-A2 Fastify HTTP H1 三端点~~ ✅ commit 3190a11：见 Current state「HTTP H1 传输层落地」。硬约束已验证——`src/http` 之外 grep 不到 fastify；http 只用内核公共面；不挂 Realm 路由；传输层不持业务状态；进程冒烟（healthz / public 空名册封签 / internal 401↔200 / 临时钥告警 / 默认 loopback）通过。
+   - ~~A3 签名链接线~~ ✅ 同 commit：public 端点每次实时投影并 `sealSnapshot`（seal maxAge 1h、attestation TTL 24h），sources 取 listAll 原始条目的 card/cardUrl；端到端离线验签 + 三类篡改（条目 / provenance cardUrl / seal.sig）拒绝 + 过期拒绝测试齐备。
+   - ~~B1 ackSeconds 受理计时~~ ✅ commit 9dcf2c4：`sla-ack-breached` 审计（及时 / 超时 / 无声明三态测试）。
+   - ~~B2 file/URI artifact part~~ ✅ commit a6c6a69：FilePart 类型 + `src/a2a/parts.ts` + SSE/最终快照透传测试。
+   - ~~B3 Task.history 宽松兼容~~ ✅ 同 a6c6a69：可选宽松 history 原样透传 + 测试。
+   - ~~C 全量验证 + 文档~~ ✅ commit 82671cc（Windows symlink 容错）与本次 docs：98 项绿、typecheck/build 过。
+   - **本批有意缺口（后续版本，勿当遗漏）**：
+     1. **internal roster 快照不封签**：v1 验签要求每条目都有 active attestation，而 internal 含 revoked 行；封 internal 需把 attestation 状态扩为 active|revoked（签名链 v1.1）。H1 的 internal 靠 bearer 保护。
+     2. **public 信封 attestation provenance 含 cardUrl**：这是 design-fealty-signing §4.2 / §8.1-6 的硬性要求（防同名替换，篡改 cardUrl 须验签失败）；「public 不含内部端点」约束在 roster 投影条目层满足（entries 无 cardUrl/taskUrl/healthDetail，taskUrl/healthDetail 全信封都不出现）。若未来公开页要求完全无 URL，v1.1 评估改用 cardUrl digest 锚定。
+     3. **RSK 生产密钥存放未做**：serve.ts 仅支持 env PEM 或临时内存钥（deferred #7 销项前置）。
+     4. **H1 无写端点、无 SSE server、无静态 JSON 产物分发**（design-http-transport §6，H2/H3）；serve.ts 启动时空 registry（封臣注册属未来启动编排）。
+     5. **file URI Zeus 不自动拉取**（SSRF / 本地文件边界），只呈现给驾驶员。
 
 ## Project documents
 
@@ -49,7 +66,7 @@ State of Zeus as of 2026-09-21.
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
 * [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — fealty 签名链设计 v0.1（deferred #7）：威胁模型、Zeus 单签 v1/封臣自签 v2、Ed25519+JCS、两层签名信封、RSK 密钥与轮换、吊销四层失效、v1 八条验收 ★
 * [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型 v0.1：网络面划分、Fastify+长驻 Node 裁决、薄传输层单向依赖、H1–H3 端点规划与验收 ★
-* 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验含版本协商/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/registry/signing.ts`（fealty 签名链 v1 纯函数：JCS 规范化、attestation/seal、Ed25519 内存签名器）、`src/util/crypto.ts`（sha256Hex 公共哈希）、`src/dispatch/`（A2A 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护；`mcp.ts`/`mcp-stdio.ts` 只读 MCP stdio 脚手架）、`scripts/acceptance-standard-a2a.mjs`（验收 #6 纯标准客户端）、`.github/workflows/ci.yml`（CI）、`tests/`（86 项）
+* 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验含版本协商/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/registry/signing.ts`（fealty 签名链 v1 纯函数：JCS 规范化、attestation/seal、Ed25519 内存签名器）、`src/util/crypto.ts`（sha256Hex 公共哈希）、`src/a2a/types.ts`（A2A 协议类型：Task/Artifact/Part 含 FilePart/事件/AgentCard/Fealty）与 `src/a2a/parts.ts`（isFilePart/artifactFileUris）、`src/http/`（Fastify H1 薄传输层：`server.ts` 三端点 + 签名接线、`serve.ts` 进程入口；全仓库唯一 import fastify 处，`./http` 子路径导出）、`src/dispatch/`（A2A 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、sla.ackSeconds 受理计时、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护；`mcp.ts`/`mcp-stdio.ts` 只读 MCP stdio 脚手架）、`scripts/acceptance-standard-a2a.mjs`（验收 #6 纯标准客户端）、`.github/workflows/ci.yml`（CI）、`tests/`（98 项，14 个测试文件）
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
 * [git-commit-message.md](git-commit-message.md) — commit message 规范
@@ -76,3 +93,7 @@ State of Zeus as of 2026-09-21.
 | 2026-09-21 | Zeus↔loom 契约兼容性测试（tests/loom-contract.test.ts，6 项，fixture 照抄 loom card/skills/rpc/router）；验收 #6 纯标准 A2A 客户端脚本（scripts/，3 项 mock 自测，真机待部署），全量 67 项绿 |
 | 2026-09-21 | fealty 签名链 v1 纯函数（src/registry/signing.ts：JCS 子集 + Ed25519 两层信封 + 离线验签/过期/轮换，19 项测试覆盖设计稿八条验收；sha256Hex 提升 src/util/crypto.ts），全量 86 项绿、tsc/build 干净（commit 021bc20） |
 | 2026-09-21 | GitHub Actions CI 落地（.github/workflows/ci.yml，Node 20/22：npm ci/typecheck/test/build，零 secret）；本地按 CI 序列实跑全绿，push 后触发（commit fc522b7，未 push） |
+| 2026-09-21 | HTTP H1 传输层（src/http，Fastify 5）：healthz / public 实时投影+seal 签名快照（离线可验、Cache-Control 对齐 TTL）/ internal bearer（未配 token 不挂载）；./http 导出 + npm start + serve.ts env 装配；7 项 inject 测试，内核零 fastify（commit 3190a11） |
+| 2026-09-21 | sla.ackSeconds 受理计时：首个 SSE 事件为受理信号，超时审计 sla-ack-breached、不阻断任务，注入式单调时钟，及时/超时/无声明三态测试（commit 9dcf2c4） |
+| 2026-09-21 | A2A 协议缺口：Artifact 增 FilePart（URI 引用，Zeus 不抓取）+ src/a2a/parts.ts；Task 增宽松 history 透传；2 项测试（commit a6c6a69） |
+| 2026-09-21 | Realm 测试 Windows 容错（无 symlink 权限时夹具降级、专属断言条件化）；全量 98 项绿、typecheck/build 过（commit 82671cc）。此前工作已经 PR #1/#2 合入 origin/main，本批 4 commit 在 dev 待 push |
