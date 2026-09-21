@@ -2,7 +2,7 @@
 
 State of Zeus as of 2026-09-21.
 
-> Zeus 处于「核心内核起步」阶段：A1 注册中心、A2 派发器、A4 监督台最小版已落地（纯 TS 库 + vitest，**98 项测试绿**）；派发侧治理闭环（吊销强制力 + 审计桥）、名册投影器 R0、**D1 Realm P0（只读 personal 数据域）**、**Realm 只读 MCP stdio 脚手架**、**fealty 签名链 v1 纯函数**、**HTTP H1 传输层（Fastify，public 签名快照已接线）**、**协议缺口补齐（sla.ackSeconds 计时 / file part / Task.history）**已落地；CI workflow 就位。此前工作已经 PR #1 / #2 合入 `origin/main`；本批 4 个 commit 在 `dev`（领先 `origin/dev` 4，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
+> Zeus 处于「核心内核起步 + 技术方向展开」阶段：A1 注册中心、A2 派发器、A4 监督台最小版已落地（纯 TS 库 + vitest，**98 项测试绿**）；派发侧治理闭环、名册投影器 R0、D1 Realm P0、Realm MCP stdio 脚手架、fealty 签名链 v1 纯函数、HTTP H1（Fastify）、协议缺口补齐已落地；CI 就位。**2026-09-22 新增三份技术设计**：记忆整理协议、Supervisor/Subagent 控制模型、Agent 技术探索地图（A 组 S1–S5 裁决优先）。此前工作经 PR #1/#2 合入 `origin/main`；当前在 `dev`（领先 `origin/dev` 7，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
 
 ## Current state
 
@@ -59,6 +59,12 @@ State of Zeus as of 2026-09-21.
      3. **RSK 生产密钥存放未做**：serve.ts 仅支持 env PEM 或临时内存钥（deferred #7 销项前置）。
      4. **H1 无写端点、无 SSE server、无静态 JSON 产物分发**（design-http-transport §6，H2/H3）；serve.ts 启动时空 registry（封臣注册属未来启动编排）。
      5. **file URI Zeus 不自动拉取**（SSRF / 本地文件边界），只呈现给驾驶员。
+
+10. **Agent 技术方向展开（2026-09-22，纯设计，不依赖部署）**：
+   - ~~记忆整理协议~~ ✅ docs/design-memory-consolidation.md v0.1（记忆分层、Event/Fact 结构、"事件可追加/事实经 Consolidator"、置信度按可靠度聚合、八条验收）。
+   - ~~supervisor/subagent 理解整理~~ ✅ docs/design-supervision.md v0.1（临时控制关系、WorkOrder/Handback 契约、fan-out/DAG/分层、跨度粒度、信任校准、失败四步序、责任归属）。
+   - ~~技术探索地图~~ ✅ docs/tech-exploration-map.md v0.1。**A 组 S1–S5 已裁决优先**：上下文工程、裁决/Critic、DAG 编排、终止收敛、幂等；B（S6–S10）、C（S11–S17）全部登记待触发；Jev 模型待确认（初判 S14 候选）。
+   - **下一步（待点工）**：把 A 组某条落成工程切片——建议 S3 fan-out/DAG + S5 幂等（并发内核底座），或先做 S1 上下文工程。
 
 ## Project documents
 
