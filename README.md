@@ -13,7 +13,7 @@
 | **roster（R0）** | `src/registry/roster.ts` | 封神榜名册投影器：注册中心状态 → 不可变、JSON 可序列化的 internal/public 双快照；只重塑与裁剪，不造字段 |
 | **dispatch（A2）** | `src/dispatch/` | 派发器：JSON-RPC + SSE 客户端（send / sendSubscribe / cancel）、数据二极管与按 `dataPolicy` 脱敏、派发前吊销阻断（不发请求不发 token）、审计 sink 与吊销审计桥 |
 | **oversight（A4）** | `src/oversight/` | 监督台：收集 `input-required` 升级请求，驾驶员 approve / reject；reject 联动取消封臣侧任务，全程审计 |
-| **realm（D1 P0）** | `src/realm/` | 只读 personal 数据域：`FsRealmStore` 的 connect / manifest / search / read，确定性 realmId、connect 快照检索、`contentDigest` 基线、路径穿越与 symlink 双检防护 |
+| **realm（D1 P0）** | `src/realm/` | 只读 personal 数据域：`FsRealmStore` 的 connect / manifest / search / read，确定性 realmId、connect 快照检索、`contentDigest` 基线、路径穿越与 symlink 双检防护；附只读 MCP stdio 脚手架（`mcp.ts` / `mcp-stdio.ts`） |
 
 统一公共出口在 `src/index.ts`，构建产物见下文。
 
@@ -40,10 +40,18 @@ if (hits[0]) {
 }
 ```
 
+只读 MCP stdio 脚手架（P1 预览，零新依赖；经 stdin/stdout 收发换行分隔的 JSON-RPC）：
+
+```bash
+npm run build
+node dist/realm/mcp-stdio.js /path/to/your/dir   # 目录在启动时预连接授权，协议不暴露 connect/root
+```
+
 ## 当前边界
 
 - **纯库阶段**：无 HTTP / 部署层；封臣任务与 Realm 状态均为实例内存。
-- **Realm 对外唯一传输为 MCP**（契约 v0.2 已拍板），不做独立 HTTP API；P1 才包 MCP server，正式启动触发条件是 read-realm 封臣出现。
+- **Realm 对外唯一传输为 MCP**（契约 v0.2），不做独立 HTTP API；只读 stdio 脚手架已落地（resources 映射 manifest/search/read、宿主预连接、绝对路径不出进程），正式 P1（鉴权、streamable HTTP、官方 SDK 兼容性复核）的触发条件仍是 read-realm 封臣出现。
+- 服务端 HTTP 栈已选型 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)），H0 不装依赖，H1 随名册 R1 落地。
 - pr-helper 验收 #6（标准 A2A 客户端守护测试）与 Zeus↔loom 真机联调均**待部署**，现状与待办以 [handoff.md](handoff.md) 为准。
 
 ## 文档
