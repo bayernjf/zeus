@@ -31,6 +31,7 @@
 ### #7 fealty 签名链
 - Agent Card / fealty 的发布与吊销是否需要签名链，防止伪造名册条目。
 - **触发条件**：bayjf 名册对外公开前。
+- **进展（2026-09-21）**：设计已定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 封臣自签交叉背书）。本条**设计完成但未销项**：销项标准为 v1 随 R1（签名/验签纯函数）/R2（bayjf 验签展示）实现并通过设计稿 §8.1 八条验收。
 
 ### #8 战报成本口径
 - `x-zeus-report.cost` 的单位与结算口径，跨封臣可比性。
