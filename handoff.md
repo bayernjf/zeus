@@ -14,7 +14,7 @@ State of Zeus as of 2026-09-21.
 
 1. ~~拍板封臣协议形态~~ ✅ 2026-09-21 已定：A2A 超集（deferred #1 销项）。
 2. ~~起草 design-vassal-protocol.md~~ ✅ 2026-09-21 完成 v0.1。
-3. 拿 pr-helper 作为第一个封臣，按 design-vassal-protocol.md §7 验收清单验证（共 6 项，第 6 项「纯标准 A2A 客户端可调用」是超集决策的守护测试）。
+3. pr-helper 封臣验收（design-vassal-protocol.md §7，共 6 项）：#1 Agent Card + fealty 已发布（`api/_lib/agent-card.ts`，well-known 重写，5 项单测过），剩 #2 tasks/sendSubscribe、#3 战报、#4 escalation、#5 Zeus 派发侧、#6 标准客户端守护测试。
 4. bayjf 名册改造方案（数据来源 = Agent Card + fealty，单一事实源在封臣）。
 
 ## Project documents
