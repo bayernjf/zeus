@@ -2,7 +2,7 @@
 
 State of Zeus as of 2026-09-21.
 
-> Zeus 处于「核心内核起步」阶段：A1 注册中心、A2 派发器、A4 监督台最小版已落地（纯 TS 库 + vitest，**98 项测试绿**）；派发侧治理闭环（吊销强制力 + 审计桥）、名册投影器 R0、**D1 Realm P0（只读 personal 数据域）**、**Realm 只读 MCP stdio 脚手架**、**fealty 签名链 v1 纯函数**、**HTTP H1 传输层（Fastify，public 签名快照已接线）**、**协议缺口补齐（sla.ackSeconds 计时 / file part / Task.history）**已落地；CI workflow 就位。此前工作已经 PR #1 / #2 合入 `origin/main`；本批 4 个 commit 在 `dev`（领先 `origin/dev` 4，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
+> Zeus 处于「核心内核起步 + 技术方向展开」阶段：A1 注册中心、A2 派发器、A4 监督台最小版已落地（纯 TS 库 + vitest，**98 项测试绿**）；派发侧治理闭环、名册投影器 R0、D1 Realm P0、Realm MCP stdio 脚手架、fealty 签名链 v1 纯函数、HTTP H1（Fastify）、协议缺口补齐已落地；CI 就位。**2026-09-22 新增三份技术设计**：记忆整理协议、Supervisor/Subagent 控制模型、Agent 技术探索地图（A 组 S1–S5 裁决优先）。此前工作经 PR #1/#2 合入 `origin/main`；当前在 `dev`（领先 `origin/dev` 7，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
 
 ## Current state
 
@@ -19,6 +19,10 @@ State of Zeus as of 2026-09-21.
 - **HTTP H1 传输层落地（2026-09-21，commit 3190a11）**：`src/http/`（Fastify 5，全仓库唯一允许 import fastify 的目录，内核零传输依赖）。`server.ts` 导出 `createHttpServer(deps)`（不 listen，测试用 inject）/ `startServer`（默认绑 127.0.0.1）；三端点：`GET /healthz`（仅 status/version/ts，无封臣与 Realm 信息）、`GET /api/roster/public`（实时 `listAll()`→public 投影→`sealSnapshot` 封签，离线可验，`Cache-Control` 对齐 seal TTL，revoked/cardUrl/taskUrl/healthDetail 不进投影条目）、`GET /api/roster`（bearer 常量时间比对，未配 internalToken 则路由不挂载→404，internal 视图不封签）。`serve.ts` 为进程入口（env 装配：ZEUS_HOST/PORT/INTERNAL_TOKEN/RSK_KEY_ID/RSK_KEY，无 PEM 时用临时内存钥并 stderr 告警）；package.json 增 `./http` 子路径导出与 `npm start`。7 项 inject 端到端测试（离线验签、条目/provenance/签名三类篡改拒绝、过期、鉴权矩阵、空名册）。
 - **协议缺口补齐（2026-09-21，commit 9dcf2c4 / a6c6a69）**：① dispatcher 新增 `sla-ack-breached` 审计决策——首个 SSE 流事件为受理信号，晚于 `fealty.sla.ackSeconds` 即审计（注入式单调时钟，违约不阻断任务，无 SLA 声明不计时）；② Artifact.parts 增加标准 A2A `FilePart`（URI 引用形态，Zeus 只透传呈现给驾驶员、不自动拉取，bytes 内联保留类型但 v1 不产出），新增 `src/a2a/parts.ts`（isFilePart/artifactFileUris）并从内核出口导出；③ Task 增加宽松可选 `history`（原样透传不解析，loom 不发 / pr-helper 发）。
 - **Windows 测试可移植性（2026-09-21，commit 82671cc）**：Realm 夹具在无 symlink 权限（Windows 非管理员 / 未开开发者模式，symlinkSync 抛 EPERM）时降级，symlink 专属断言条件化，其余用例恢复；安全边界在 CI 与有权限平台仍完整覆盖。全量 **98 项绿、typecheck/build 通过**（14 个测试文件）。
+
+## New inputs / 待确认
+
+- **Jev 模型（2026-09-22 负责人提及，尚未提供资料）**：性质、提供方、能力边界均未知；当前联网搜索通道 403 未能核实。**待补**：介绍链接或提供方/一句话定位后，再判断其角色（驱动模型 / 封臣模型 / 可接入的外部能力）并决定是否进入 PRD。在拿到事实前不得据此做任何设计假设。
 
 ## Active work
 
@@ -56,10 +60,20 @@ State of Zeus as of 2026-09-21.
      4. **H1 无写端点、无 SSE server、无静态 JSON 产物分发**（design-http-transport §6，H2/H3）；serve.ts 启动时空 registry（封臣注册属未来启动编排）。
      5. **file URI Zeus 不自动拉取**（SSRF / 本地文件边界），只呈现给驾驶员。
 
+10. **Agent 技术方向展开（2026-09-22，纯设计，不依赖部署）**：
+   - ~~记忆整理协议~~ ✅ docs/design-memory-consolidation.md v0.1（记忆分层、Event/Fact 结构、"事件可追加/事实经 Consolidator"、置信度按可靠度聚合、八条验收）。
+   - ~~supervisor/subagent 理解整理~~ ✅ docs/design-supervision.md v0.1（临时控制关系、WorkOrder/Handback 契约、fan-out/DAG/分层、跨度粒度、信任校准、失败四步序、责任归属）。
+   - ~~技术探索地图~~ ✅ docs/tech-exploration-map.md v0.1。**A 组 S1–S5 已裁决优先**：上下文工程、裁决/Critic、DAG 编排、终止收敛、幂等；B（S6–S10）、C（S11–S17）全部登记待触发；Jev 模型待确认（初判 S14 候选）。
+   - **下一步（待点工）**：把 A 组某条落成工程切片——建议 S3 fan-out/DAG + S5 幂等（并发内核底座），或先做 S1 上下文工程。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
 
+* [docs/tech-exploration-map.md](docs/tech-exploration-map.md) — Agent 技术探索地图：A 组五条优先（已裁决）、B/C 议题登记、Jev 待确认（S14 候选） ★
+* [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 v0.1：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、八条验收 ★
+* [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
+* [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
 * [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.1（D1）：目录即数据库、connect/search/read/write、数据二极管执行点、藏宝图依赖 ★
