@@ -7,6 +7,7 @@
  *  - roster   R0 roster projector (internal/public snapshots for bayjf)
  *  - dispatch A2 dispatcher (JSON-RPC + SSE, data diode, revocation gate, audit)
  *  - oversight A4 oversight desk (input-required escalation queue)
+ *  - orchestrator E1 fan-out decision kernel (parallel dispatch, merge, aggregate, conflict)
  *  - realm    D1 Realm P0 (read-only personal data domain, scan search)
  *
  * Transport layers (MCP / HTTP) wrap this surface; they are not part of the
@@ -97,6 +98,27 @@ export type {
   OversightAuditEntry,
   CancelTaskFn,
 } from './oversight/types.js';
+
+// --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
+export { Orchestrator, UnknownIntentError } from './orchestrator/orchestrator.js';
+export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
+export { mergeBranches } from './orchestrator/merge.js';
+export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
+export { detectConflicts } from './orchestrator/conflict.js';
+export type {
+  FanOutRequest,
+  FanOutResult,
+  FanOutStatus,
+  BranchOutcome,
+  SourcedEvent,
+  Position,
+  AggregationRule,
+  AggregatedDecision,
+  Conflict,
+  DispatchPort,
+  TargetLookup,
+  CancelBranchResult,
+} from './orchestrator/types.js';
 
 // --- D1 Realm P0 ---
 export { FsRealmStore } from './realm/store.js';
