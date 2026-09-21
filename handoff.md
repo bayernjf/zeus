@@ -64,6 +64,9 @@ State of Zeus as of 2026-09-21.
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
 
+* [docs/tech-exploration-map.md](docs/tech-exploration-map.md) — Agent 技术探索地图：A 组五条优先（已裁决）、B/C 议题登记、Jev 待确认（S14 候选） ★
+* [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 v0.1：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、八条验收 ★
+* [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
 * [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
