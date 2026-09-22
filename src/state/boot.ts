@@ -9,6 +9,7 @@ import { FsRealmStore } from '../realm/store.js';
 import type { RealmType } from '../a2a/types.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import { SkillRegistry } from '../skills/registry.js';
+import { MentorshipLedger } from '../skills/mentor.js';
 import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
 import {
@@ -76,6 +77,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const fetchImpl = options.fetchImpl;
 
   const skillRegistry = new SkillRegistry(now);
+  const mentorshipLedger = new MentorshipLedger(skillRegistry, now);
   const registry = new VassalRegistry(fetchImpl, now, {
     onRegister: entry => skillRegistry.registerFromCard(entry.card),
   });
@@ -120,7 +122,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     },
   });
   const components: KernelComponents = {
-    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry,
+    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger,
   };
 
   // Memory P1: when an intent operating on a connected realm reaches a terminal

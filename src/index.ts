@@ -187,6 +187,17 @@ export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillE
 export { validateSkillSpecShape, validatePermissionClaims, SkillValidationError } from './skills/validate-spec.js';
 export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution, SkillHardening } from './skills/types.js';
 
+// --- E2.5 Mentor skill transfer ---
+export { MentorshipLedger, MentorshipError } from './skills/mentor.js';
+export type {
+  MentorshipRecord,
+  MentorshipStatus,
+  CompetencyCheck,
+  LessonEntry,
+  CommissionMentorshipInput,
+  AssessOptions,
+} from './skills/mentor.js';
+
 // --- Memory consolidation protocol (P0: append log + pure consolidator) ---
 export {
   consolidate,

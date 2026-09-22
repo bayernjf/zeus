@@ -273,6 +273,28 @@ export class SkillRegistry {
     return [...new Set(source.flatMap(spec => spec.providedBy))].sort();
   }
 
+  /** E2.5: true when the agent is an active provider of the skill. */
+  isProvider(id: string, agentId: string): boolean {
+    return this.providersFor(id).includes(agentId);
+  }
+
+  /**
+   * E2.5: register a newly certified learner as a provider of the taught spec.
+   * Only an active spec gains a provider; certification against an
+   * uninstalled/deprecated version is refused. Idempotent per agent.
+   */
+  grantProvider(id: string, agentId: string, version?: string): SkillSpec {
+    const target = version
+      ? this.requireVersion(id, version)
+      : this.activeVersions(id)?.[0];
+    if (!target) throw new SkillNotFoundError(`skill ${id} has no active version to certify against`);
+    if (target.status !== 'active') {
+      throw new Error(`cannot certify provider for ${id}@${target.version} (${target.status})`);
+    }
+    if (!target.providedBy.includes(agentId)) target.providedBy.push(agentId);
+    return structuredClone(target);
+  }
+
   /** E2.1: serializable snapshot of every spec version. */
   exportState(): SkillSpec[] {
     return [...this.specs.values()].flat().map(spec => structuredClone(spec));
