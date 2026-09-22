@@ -103,6 +103,28 @@ export class OversightDesk {
     return status ? all.filter(entry => entry.status === status) : all;
   }
 
+  /** E5.3: serializable snapshot of the escalation queue. */
+  exportState(): Escalation[] {
+    return [...this.escalations.values()].map(entry => structuredClone(entry));
+  }
+
+  /** E5.3: replace the queue from a snapshot, rebuilding the task/conflict indexes. */
+  importState(escalations: Escalation[]): void {
+    this.escalations = new Map();
+    this.taskIndex = new Map();
+    this.conflictIndex = new Map();
+    for (const original of escalations) {
+      const entry = structuredClone(original);
+      this.escalations.set(entry.id, entry);
+      if (entry.kind === 'task-input' && entry.taskId) {
+        this.taskIndex.set(entry.taskId, entry.id);
+      } else if (entry.kind === 'intent-conflict') {
+        const key = entry.intentId ?? `${entry.runId}::${entry.skill}`;
+        this.conflictIndex.set(key, entry.id);
+      }
+    }
+  }
+
   get(id: string): Escalation | undefined {
     const entry = this.escalations.get(id);
     return entry ? structuredClone(entry) : undefined;

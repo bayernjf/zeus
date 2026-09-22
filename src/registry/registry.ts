@@ -145,6 +145,16 @@ export class VassalRegistry {
     }
     return entry.lastHealthCheck.ok;
   }
+
+  /** E5.3: serializable snapshot (including revoked vassals, for audit). */
+  exportState(): VassalEntry[] {
+    return [...this.entries.values()].map(entry => structuredClone(entry));
+  }
+
+  /** E5.3: replace registry contents from a snapshot (keyed by card.name). */
+  importState(entries: VassalEntry[]): void {
+    this.entries = new Map(entries.map(entry => [entry.card.name, structuredClone(entry)]));
+  }
 }
 
 /** Derive the JSON-RPC task endpoint from the card URL:

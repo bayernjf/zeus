@@ -30,6 +30,12 @@ export type OrchestratorOptions = {
 
 export class UnknownIntentError extends Error {}
 
+/** E5.3 persisted shape of the orchestrator's in-memory state. */
+export type OrchestratorSnapshot = {
+  intents: FanOutResult[];
+  requests: Array<{ intentId: string; request: FanOutRequest }>;
+};
+
 /**
  * Fan-out decision kernel (PRD E1): one intent fans out to N vassals in
  * parallel through the existing Dispatcher, then merges streams, aggregates
@@ -92,6 +98,21 @@ export class Orchestrator {
   getIntent(intentId: string): FanOutResult | undefined {
     const result = this.intents.get(intentId);
     return result ? structuredClone(result) : undefined;
+  }
+
+  /** E5.3: serializable snapshot of idempotent intent results plus the original
+   *  requests needed to resume/re-dispatch a branch after restart. */
+  exportState(): OrchestratorSnapshot {
+    return {
+      intents: [...this.intents.values()].map(intent => structuredClone(intent)),
+      requests: [...this.requests.entries()].map(([intentId, request]) => ({ intentId, request: structuredClone(request) })),
+    };
+  }
+
+  /** E5.3: restore intents/requests from a snapshot. */
+  importState(snapshot: OrchestratorSnapshot): void {
+    this.intents = new Map(snapshot.intents.map(intent => [intent.intentId, structuredClone(intent)]));
+    this.requests = new Map(snapshot.requests.map(({ intentId, request }) => [intentId, structuredClone(request)]));
   }
 
   /** E6.2: write the driver's conflict settlement back into the stored intent. */

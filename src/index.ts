@@ -127,6 +127,15 @@ export {
 export type { DagNode, DagSpec, DagNodeState, DagState } from './orchestrator/dag.js';
 export { DagRunner } from './orchestrator/dag-runner.js';
 export type { DagResult, DagNodeResult, DagRunnerOptions } from './orchestrator/dag-runner.js';
+export {
+  FileKernelStateStore,
+  collectKernelState,
+  applyKernelState,
+  KernelStateError,
+  KERNEL_STATE_VERSION,
+} from './state/kernel-state.js';
+export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
+export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
 export type {
   FanOutRequest,
   FanOutResult,
