@@ -137,6 +137,13 @@ State of Zeus as of 2026-09-22.
    - 跨 realm read/append 拒绝并审计（MemoryBoundaryError）；`replay(realmId, runId)` 离线回放事件与 provenance 命中的事实；exportState/fromState 验证事实源可重建。design §8 八条验收逐条覆盖，11 项 tests/memory-consolidation.test.ts；PRD v0.8。
    - **P1 待做**：Fact Store 持久化（接入 KernelSnapshot）、任务收束自动触发整理、escalations 真正进 OversightDesk、可靠度从事后结果自动回写；P2：本地 embedding 混合检索、retracted/遗忘权。
 
+19. **记忆 P1：持久化 + 自动触发（2026-09-22 ✅ 完成，全量 243 绿 / 35 文件，tsc 过，commit 66120d7）**：
+   - KernelSnapshot 增可选 `memory: MemoryState`（events + 按 realm facts），bootKernel 装配 MemoryStore 并经 collect/apply/FileStore 全链路持久化，重启事件、事实、replay 完整恢复。
+   - FanOutRequest/Result 增可选 `realmId`，intent-finished 事件带 runId/realmId；意图到达终态时 boot 自动 `consolidateRealm`，可靠度从 ConcurrencyMetrics perVassal failureRate 派生（1−failureRate，无记录 0.5）。
+   - 新增 EscalationKind `memory-dispute`（factId/conflictingFacts 字段）与 `OversightDesk.ingestMemoryDispute`（以整理器确定性 escalation id 幂等）；自动整理出的矛盾直接进监督台。
+   - `POST /api/intents` 透传 body.realmId，真实服务上自动触发可用。3 项 tests/kernel-memory-p1.test.ts（快照往返、完成即整理、矛盾升级 + 重复整理不产生重复行）；PRD v0.9。
+   - **剩余**：可靠度事后结果自动回写（目前从 failureRate 单向派生，纠错结果未回写）；P2 本地 embedding 混合检索、retracted/遗忘权、漂移对账。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：

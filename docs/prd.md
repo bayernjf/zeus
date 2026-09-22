@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.8（2026-09-22，记忆整理协议 P0：append 事件日志 + 纯整理器）**
+> 状态：**现行 v0.9（2026-09-22，记忆 P1：快照持久化 + 意图终态自动整理 + 矛盾进监督台）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -176,3 +176,4 @@
 | v0.6 | 2026-09-22 | A 批次收口四个缺口：**G1 封臣上线入口**（`POST/DELETE /api/vassals` + `ZEUS_VASSAL_SEEDS`）、**G4 Realm 连接持久化**（snapshot 增 realms、重启 reconnect、`ZEUS_REALM_ROOTS`）、**G6 E6.3 一键补参重派**（`POST .../approve-resume` + `findIntentForBranchRun`）、**G5 H3 SSE**（`GET /api/intents/:id/events` + `ProgressHub`，branch 生命周期实时事件）；E5.3/E5.5/E6.3 升 ✅；全量 217 测试绿（31 文件） |
 | v0.7 | 2026-09-22 | E2.1 Skill 显式规格落地：SkillSpec 独立于卡片（version/inputs/outputs/permissions 封闭 scope/dependencies），注册强制形状校验、依赖须已注册、拒自依赖与依赖环（validate-spec 纯函数）；SkillRegistry 接入 bootKernel（onRegister 自动导入 card skills）并随快照持久化恢复；E2.1 升 ✅；全量 229 测试绿（33 文件） |
 | v0.8 | 2026-09-22 | 记忆整理协议 P0 落地（design-memory-consolidation §7）：新增 `src/memory`——append-only 事件日志、事实无公开写入口（仅经纯函数 `consolidate`）、同事实观察去重合并累积 provenance、矛盾默认 disputed + 可确定性生成的 escalation（later-and-more-reliable 规则方可 supersede）、置信度按 Agent 历史可靠度加权（同源重复不增强、独立来源印证小幅提升）、跨 realm 读写拒绝并审计、沿 runId 离线回放事件与事实；八条首版验收逐条覆盖，11 项测试；全量 240 绿（34 文件） |
+| v0.9 | 2026-09-22 | 记忆 P1 落地：事件日志与事实纳入 KernelSnapshot（`memory` 段，重启完整恢复）；FanOutRequest/Result 与 intent-finished 事件贯通 `realmId`；意图进入终态时自动整理对应 realm（可靠度从并发指标 failureRate 派生，无记录默认 0.5），矛盾经新增 `memory-dispute` 升级类型幂等进 OversightDesk；`POST /api/intents` 透传 realmId；3 项测试；全量 243 绿（35 文件） |
