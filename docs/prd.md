@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.4（2026-09-22，MVP 评审后六切片批次库内落地）**
+> 状态：**现行 v0.5（2026-09-22，H2 驾驶员 API 落地）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -51,7 +51,7 @@
 | E1.4 | 冲突检测与消解：识别 Agent 间结论冲突，给消解路径或升级驾驶员 | P0 | ✅ | `detectConflicts` 标记规则无法消解的多立场分裂，status=needs-driver 并经 onConflict 回调进监督台、不静默选边；**冲突拍板回写已闭环**（E6.2）；更丰富的自动消解规则 / LLM critic（S2）未做 |
 | E1.5 | 并发治理：并发上限、任务队列、超时与取消传播、幂等 | P0 | 🚧 | ✅ intentId 重放幂等（同键零出站）、cancelIntent 传播到全部非终态分支、单路超时、父子 runId 全链贯穿；并发上限/队列/背压未做（deferred #9，待 ≥3 封臣压测） |
 | E1.6 | 决策可追溯：每个决策可回放参与 Agent、输入、立场、聚合过程 | P0 | 🚧 | ✅ FanOutResult 记录各分支、positions、decision.rule/reason/margin、sourced 事件与分支 runId，决策来源可辨；独立离线回放器未做 |
-| E1.7 | 并发可观测：在途任务数、各 Agent 延迟/失败率、队列深度 | P1 | 🚧 | ✅ 库内 `ConcurrencyMetrics`（`src/orchestrator/metrics.ts`）：在途数、并发峰值、队列深度、完成/失败/超时计数、各封臣延迟 min/max/avg/p50/p95 与失败率，经 Orchestrator 可选注入（5 项测试）；HTTP 指标端点随 H2，背压/有界队列前队列深度恒 0（deferred #9） |
+| E1.7 | 并发可观测：在途任务数、各 Agent 延迟/失败率、队列深度 | P1 | ✅ | 库内 `ConcurrencyMetrics`（`src/orchestrator/metrics.ts`）：在途数、并发峰值、队列深度、完成/失败/超时计数、各封臣延迟 min/max/avg/p50/p95 与失败率，经 Orchestrator 注入、`bootKernel` 默认装配（5 项测试）；**已随 H2 经 `GET /api/metrics` 暴露**。背压/有界队列落地前队列深度恒 0（deferred #9） |
 
 **容量目标（待压测基线）**：单意图并发 Agent 数、平台同时在途任务数、P95 决策延迟在 M2 压测后定值。
 
@@ -99,9 +99,9 @@
 |---|---|---|---|---|
 | E5.1 | roster internal/public 双投影 | P0 | ✅ | public 裁掉端点/探针/已吊销；确定性排序 |
 | E5.2 | H1：/healthz、/api/roster/public（seal）、/api/roster（bearer） | P0 | ✅ | 离线验签；三类篡改拒绝；未配 token 不挂载 |
-| E5.3 | 持久化注册表（替换实例内存） | P1 | 🚧 | ✅ `src/state/kernel-state.ts`：封臣注册表（含已吊销）、监督台升级队列（重建 task/conflict 幂等索引）、编排意图结果与原始请求（重启后幂等重放、resumeBranch 可用）经 `FileKernelStateStore` 原子落盘（tmp+rename）与版本校验恢复（6 项测试）；**Realm 连接状态未纳入快照、文件存储尚未接入启动装配/H2**，metrics 运行态不持久化 |
+| E5.3 | 持久化注册表（替换实例内存） | P1 | 🚧 | ✅ `src/state/kernel-state.ts`：封臣注册表（含已吊销）、监督台升级队列（重建 task/conflict 幂等索引）、编排意图结果与原始请求（重启后幂等重放、resumeBranch 可用）经 `FileKernelStateStore` 原子落盘（tmp+rename）与版本校验恢复（6 项测试）；已接入 `bootKernel` 启动装配（`ZEUS_STATE_FILE` 启动恢复、SIGINT/SIGTERM 原子落盘）。**Realm 连接状态未纳入快照**，metrics 运行态不持久化 |
 | E5.4 | bayjf R2 验签封神榜 | P1 | ⬜ | 只消费 seal 快照并客户端验签；闸门 = E4.9 |
-| E5.5 | H2 驾驶员 API + 服务端 SSE（含多 Agent 合并流） | P1 | ⬜ | 远程派发/监督/审计；E1.2 合并流可推送 |
+| E5.5 | H2 驾驶员 API + 服务端 SSE（含多 Agent 合并流） | P1 | 🚧 | ✅ **H2 驾驶员 API 已落地**（bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 整组不挂载）：`POST /api/intents` 扇出、`GET /api/intents/:id` 回查、`POST /api/intents/:id/cancel`、`GET /api/escalations` + `POST .../:id/approve|reject|resolve`（resolve 把拍板立场回写聚合决策，打通 E6.2）、`GET /api/metrics`；12 项端到端测试 `tests/http-h2.test.ts` + 进程级冒烟。**服务端 SSE 合并流推送仍 ⬜（留 H3）**；`serve.ts` 起空 registry，封臣启动注册编排未接 |
 
 ### E6. 监督台与驾驶员
 
@@ -109,7 +109,7 @@
 |---|---|---|---|---|
 | E6.1 | OversightDesk：升级队列 + approve/reject + reject 联动 cancel | P0 | ✅ | taskId 幂等；只受非终态；全程审计 |
 | E6.2 | 多 Agent 冲突升级与拍板 | P0 | ✅ | 冲突经 onConflict→`conflictsToDesk`→OversightDesk.ingestConflict 入队（按 intentId 幂等）；decideConflict 校验立场后，Orchestrator.resolveIntent 经纯函数 applyConflictResolution 把驾驶员立场回写聚合决策、清空冲突、重算状态、记 driverResolution（6 项测试） |
-| E6.3 | approve 后补参自动重派 | P1 | 🚧 | ✅ 补参重派**骨架**已落地：Orchestrator.resumeBranch 单分支带合并参数重派、整意图重算（仍 needs-driver 再升级）；"approve 一键自动触发重派"的装配/HTTP 闭环未接线（随 H2） |
+| E6.3 | approve 后补参自动重派 | P1 | 🚧 | ✅ 补参重派**骨架**已落地：Orchestrator.resumeBranch 单分支带合并参数重派、整意图重算（仍 needs-driver 再升级）；H2 已把冲突拍板决议回写打通（`POST /api/escalations/:id/resolve`），但"approve 携带补参一键自动触发 resumeBranch 重派"的 HTTP 端点仍未接线 |
 | E6.4 | 双域共存授权界面 | P2 | ⬜ | 授权粒度与审计呈现（deferred #6） |
 
 ### E7. MCP 连接器（立国三纲·连接世界）
@@ -172,3 +172,4 @@
 | v0.2 | 2026-09-22 | 核心定位修正为"高并发多 Agent 协同决策平台"：新增 E1 并发协同与决策内核；Skill 提升为独立 E2 并前置；新增容量目标、并发指标与 M2 里程碑，后续 Epic 顺延 |
 | v0.3 | 2026-09-22 | M2 第一批落地：E1.1 一层 fan-out/join、E1.2 多流合并、E1.5 幂等/cancel 传播/单路超时、E1.3 规则聚合、E1.4 冲突升级（库内，design-fan-out.md，26 项测试）；E1 状态由 ⬜/🚧 更新 |
 | v0.4 | 2026-09-22 | MVP 评审后六切片批次：E2.2 Skill 注册中心 ✅、E2.4 组队解析 ✅、E1.1 S3 完整 DAG ✅、E1.4/E6.2 冲突拍板回写 ✅、E6.3 补参重派骨架 🚧、E1.7 库内并发指标 🚧、E5.3 内核状态落盘恢复 🚧；另落地模型无关决策后端 src/decision（Jev/LLM 适配器，见 design-decision-backend v0.2）；全量 166 测试绿（22 文件） |
+| v0.5 | 2026-09-22 | H2 驾驶员 API 落地：E5.5 升 🚧（意图扇出/回查/取消、升级队列 list/approve/reject/resolve 决议回写、GET /api/metrics，bearer 保护，12 项端到端测试 + 进程级冒烟）；E1.7 升 ✅（指标经 HTTP 暴露）；E5.3 已接启动装配；修复服务端生成 intentId 的意图不落表导致无法回查/决议的缺口；全量 199 测试绿（26 文件） |
