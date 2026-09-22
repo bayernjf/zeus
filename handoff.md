@@ -173,6 +173,11 @@ State of Zeus as of 2026-09-22.
    - product-portrait §7.1 新增波次表：W1 pr-helper（首封臣打磨协议）→ W2 loom/atlas（复用已有 A2A、超集守护）→ W3 agent-world/job-agent/agent-dev（全矩阵收口）；bayjf 为验签封神榜配套（非封臣）。
    - 明确跨波门槛（前波出口达成才推广）、能力域以 Agent Card 为准不预设职责、仓库外关口须点工/授权。product-portrait 升 v0.5。
 
+25. **Agent 时代系统互联与确定性边界（2026-09-23 ✅ 落文档，纯设计探讨）**：
+   - 新增 docs/design-agentic-integration.md：核心结论——Agent 是新编排/集成层而非替代 REST，形态为"智能层（协商/非确定）+ 原语层（契约/确定）"两层。
+   - 划边界四轴（可逆性/确定性需求/可验证性/爆炸半径），边界本体是"结构化意图→确定性闸门"收口；钉死清单（权限/不可逆动作/钱与规则/状态机/审计回放/注入检查）与可交给 Agent 的"理解表达"层。
+   - 记录软肋：闸门校验太弱漏错误、太重退回写死，功夫在"最小但充分"；近中期取 Agent 做面/确定性做骨。docs/README.md 与 handoff Project documents 已索引。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
@@ -182,6 +187,7 @@ State of Zeus as of 2026-09-22.
 * [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
 * [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核 v0.1（PRD E1）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级、边界 ★
 * [docs/design-decision-backend.md](docs/design-decision-backend.md) — 决策后端抽象层 v0.2（模型无关）：DecisionBackend 端口（noul/choice/score）、两类实现家族（专用决策模型 Jev / 传统 LLM 适配）、四接线位、选择与降级、数据主权硬线 ★
+* [docs/design-agentic-integration.md](docs/design-agentic-integration.md) — Agent 时代系统互联与确定性边界 v0.1：Agent 作编排层而非替代 REST 的两层架构、划边界四轴（可逆性/确定性/可验证性/爆炸半径）、确定性闸门、钉死/交给清单、MCP·A2A·Skill 插座取舍、闸门软肋 ★
 * [docs/research-decision-layer-industry.md](docs/research-decision-layer-industry.md) — 决策层行业现状调研 v0.1（2026-09）：LLM-as-judge 主流 + 四条分化路线（专用决策模型/程序化裁决/混合路由/多模型分职）、对 design-decision-backend v0.2 的印证、来源清单
 * [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级评审 v0.1（2026-09-22）：功能性/完整度/可上线三维度、P0 覆盖统计（13✅/11🚧/2⬜）、MVP 判定（库内内核级达成、产品级未达成）、硬/软阻塞项、达到可上线 MVP 的最小路径 ★
 * [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
