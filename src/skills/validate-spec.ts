@@ -76,3 +76,20 @@ export function validateSkillSpecShape(input: SkillSpecInput): void {
 
   if (issues.length > 0) throw new SkillValidationError(issues);
 }
+
+/** Validate permission claims only; returns every problem found. Used when
+ *  hardening narrows an already-registered skill's rights. */
+export function validatePermissionClaims(claims: unknown[]): string[] {
+  const issues: string[] = [];
+  for (const claim of claims) {
+    if (typeof claim !== 'string' || !PERMISSION_RE.test(claim)) {
+      issues.push(`invalid permission claim: ${String(claim)}`);
+    } else {
+      const scope = claim.split(':')[0];
+      if (!(PERMISSION_SCOPES as readonly string[]).includes(scope)) {
+        issues.push(`unknown permission scope '${scope}'; allowed: ${PERMISSION_SCOPES.join(', ')}`);
+      }
+    }
+  }
+  return issues;
+}

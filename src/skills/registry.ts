@@ -1,6 +1,6 @@
 import type { AgentCard, AgentCardSkill } from '../a2a/types.js';
 import type { SkillSpec, SkillSpecInput, SkillStatus, TeamResolution, TeamSlot } from './types.js';
-import { validateSkillSpecShape, SkillValidationError } from './validate-spec.js';
+import { validateSkillSpecShape, validatePermissionClaims, SkillValidationError } from './validate-spec.js';
 
 /** Compare semver-ish 'major.minor.patch' strings. Returns -1/0/1; missing
  *  segments count as 0. Non-numeric segments fall back to lexical compare. */
@@ -165,6 +165,79 @@ export class SkillRegistry {
     target.status = 'deprecated';
     target.deprecatedAt = this.now().toISOString();
     return structuredClone(target);
+  }
+
+  /**
+   * E2.3 install: make a registered version effective immediately. A deprecated
+   * spec cannot be reinstalled (register a new version instead).
+   */
+  install(id: string, version?: string): SkillSpec {
+    const target = this.requireVersion(id, version);
+    if (target.status === 'deprecated') {
+      throw new Error(`skill ${id}@${target.version} is deprecated; register a new version`);
+    }
+    target.status = 'active';
+    target.installedAt = this.now().toISOString();
+    delete target.uninstalledAt;
+    return structuredClone(target);
+  }
+
+  /**
+   * E2.3 uninstall: the version immediately stops providing the skill. Team
+   * resolution reads only active specs, so a re-team after uninstall shows the
+   * skill missing — no cached grant survives.
+   */
+  uninstall(id: string, version?: string): SkillSpec {
+    const target = this.requireVersion(id, version);
+    target.status = 'uninstalled';
+    target.uninstalledAt = this.now().toISOString();
+    return structuredClone(target);
+  }
+
+  /**
+   * E2.3 harden: stack extra bounds on an installed skill. Every claimed
+   * permission must already be granted (a bare 'scope' grant may be narrowed
+   * to 'scope:action'); claims can only shrink. Constraints are merged onto
+   * any prior hardening. Hardening an uninstalled skill is refused.
+   */
+  harden(
+    id: string,
+    bounds: { permissions?: string[]; constraints?: Record<string, unknown> },
+    version?: string,
+  ): SkillSpec {
+    const target = this.requireVersion(id, version);
+    if (target.status === 'uninstalled') {
+      throw new Error(`cannot harden uninstalled skill ${id}@${target.version}`);
+    }
+    const narrowed = bounds.permissions ?? [];
+    const issues = validatePermissionClaims(narrowed);
+    const current = target.hardening?.permissions ?? target.permissions ?? [];
+    for (const claim of narrowed) {
+      const scope = claim.split(':')[0];
+      if (!current.includes(claim) && !current.includes(scope)) {
+        issues.push(`hardening cannot grant ${claim}; current effective claims: ${current.join(', ')}`);
+      }
+    }
+    if (issues.length > 0) throw new SkillValidationError(issues);
+
+    target.hardening = {
+      permissions: [...new Set(narrowed)],
+      constraints: { ...(target.hardening?.constraints ?? {}), ...(bounds.constraints ?? {}) },
+      hardenedAt: this.now().toISOString(),
+    };
+    return structuredClone(target);
+  }
+
+  /** Resolve an explicit version, or the latest one regardless of status. */
+  private requireVersion(id: string, version?: string): SkillSpec {
+    const all = this.specs.get(id);
+    if (!all) throw new SkillNotFoundError(`skill ${id} not found`);
+    if (version) {
+      const target = all.find(spec => spec.version === version);
+      if (!target) throw new SkillNotFoundError(`skill ${id}@${version} not found`);
+      return target;
+    }
+    return [...all].sort((a, b) => compareVersions(b.version, a.version))[0];
   }
 
   /**
