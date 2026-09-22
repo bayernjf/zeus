@@ -5,37 +5,26 @@
  *   ZEUS_PORT=8787 ZEUS_HOST=127.0.0.1 \
  *   ZEUS_INTERNAL_TOKEN=... \
  *   ZEUS_STATE_FILE=./data/kernel-state.json \
- *   ZEUS_RSK_KEY_ID=zeus-rsk-2026-09 ZEUS_RSK_KEY="$(cat rsk.pem)" \
+ *   ZEUS_RSK_KEY_ID=zeus-rsk-2026-09 ZEUS_RSK_KEY_FILE=./secrets/rsk-private.pem \
  *   node dist/http/serve.js
  *
  * Persistence (E5.3): when ZEUS_STATE_FILE is set the registry, oversight queue
  * and orchestrator idempotency tables are restored on boot and atomically saved
  * on graceful shutdown (SIGINT/SIGTERM). Without it the kernel stays in-memory.
  *
- * Production RSK storage (key chain / KMS) is a deployment-slice concern tracked
- * by deferred #7; without ZEUS_RSK_KEY an ephemeral in-memory key is generated
- * (dev only — restarts invalidate every signature).
+ * Production RSK: NODE_ENV=production refuses to boot without ZEUS_RSK_KEY or
+ * ZEUS_RSK_KEY_FILE (generate with scripts/gen-rsk-key.sh). Key storage/rotation
+ * is a deployment-slice concern tracked by deferred #7; without a key in other
+ * environments an ephemeral in-memory key is generated (dev only — restarts
+ * invalidate every signature).
  */
-import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { Ed25519MemorySigner } from '../registry/signing.js';
 import { bootKernel } from '../state/boot.js';
+import { loadRskSigner } from './rsk.js';
 import { createHttpServer } from './server.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
-
-function loadSigner(): Ed25519MemorySigner {
-  const keyId = process.env.ZEUS_RSK_KEY_ID ?? 'zeus-rsk-dev';
-  const pem = process.env.ZEUS_RSK_KEY;
-  if (pem) {
-    const privateKey = createPrivateKey(pem);
-    const publicKey = createPublicKey(privateKey);
-    return new Ed25519MemorySigner(keyId, privateKey, publicKey);
-  }
-  process.stderr.write('[zeus-http] ZEUS_RSK_KEY not set: generated ephemeral in-memory RSK (dev only)\n');
-  return new Ed25519MemorySigner(keyId);
-}
 
 async function main(): Promise<void> {
   const kernel = await bootKernel({
@@ -59,7 +48,7 @@ async function main(): Promise<void> {
 
   const app = await createHttpServer({
     registry: kernel.registry,
-    signer: loadSigner(),
+    signer: await loadRskSigner(),
     internalToken: process.env.ZEUS_INTERNAL_TOKEN,
     version: pkg.version,
   });
