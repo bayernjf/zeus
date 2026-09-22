@@ -12,6 +12,7 @@
 | 理解多 Agent 记忆如何沉淀与整理 | [design-memory-consolidation.md](design-memory-consolidation.md) |
 | 理解 supervisor 与 subagent 的控制关系 | [design-supervision.md](design-supervision.md) |
 | 理解一个意图如何扇出多 Agent 并行并聚合成决策 | [design-fan-out.md](design-fan-out.md)（扇出/幂等/取消传播/合并流/规则聚合/冲突升级，PRD E1） |
+| 理解"快决策层"怎么接入决策模型（Jev） | [design-decision-backend.md](design-decision-backend.md)（DecisionBackend 端口：noul/choice/score、Jev 首个实现、四接线位、数据主权硬线） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |
 | 理解个人版与企业版的差异 | [product-portrait.md](product-portrait.md) §4 用户画像 |
 | 理解产品矩阵如何并入 Zeus | [product-portrait.md](product-portrait.md) §7 封臣式联邦 |
