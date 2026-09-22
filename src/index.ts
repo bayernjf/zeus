@@ -205,6 +205,7 @@ export type {
   ConsolidationResult,
   ClaimContent,
   ConsolidateOptions,
+  MemoryState,
 } from './memory/types.js';
 export type { MemoryAuditEntry, MemoryReplay } from './memory/memory-store.js';
 

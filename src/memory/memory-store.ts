@@ -4,6 +4,7 @@ import type {
   ConsolidationResult,
   FactRecord,
   MemoryEvent,
+  MemoryState,
 } from './types.js';
 
 export { MemoryConsolidationError } from './consolidate.js';
@@ -117,7 +118,7 @@ export class MemoryStore {
    * store rebuilt from this export offers the same facts and the same
    * replay against the retained event log.
    */
-  exportState(): { events: MemoryEvent[]; facts: Array<[string, FactRecord[]]> } {
+  exportState(): MemoryState {
     return {
       events: this.events.map(e => ({ ...e })),
       facts: [...this.factsByRealm.entries()].map(([realmId, facts]) => [
@@ -127,15 +128,18 @@ export class MemoryStore {
     };
   }
 
-  static fromState(
-    state: { events: MemoryEvent[]; facts: Array<[string, FactRecord[]]> },
-    audit?: (entry: MemoryAuditEntry) => void,
-  ): MemoryStore {
-    const store = new MemoryStore(audit);
-    for (const event of state.events) store.append(event);
+  importState(state: MemoryState): void {
+    this.events.length = 0;
+    this.factsByRealm.clear();
+    for (const event of state.events) this.append(event);
     for (const [realmId, facts] of state.facts) {
-      store.factsByRealm.set(realmId, facts.map(f => ({ ...f, provenance: [...f.provenance] })));
+      this.factsByRealm.set(realmId, facts.map(f => ({ ...f, provenance: [...f.provenance] })));
     }
+  }
+
+  static fromState(state: MemoryState, audit?: (entry: MemoryAuditEntry) => void): MemoryStore {
+    const store = new MemoryStore(audit);
+    store.importState(state);
     return store;
   }
 }

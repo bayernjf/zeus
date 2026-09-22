@@ -7,8 +7,9 @@ import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
 import type { RealmType } from '../a2a/types.js';
-import { ProgressHub } from '../orchestrator/progress.js';
+import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import { SkillRegistry } from '../skills/registry.js';
+import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -61,6 +62,8 @@ export type KernelBootOptions = {
   /** G4: realm roots connected on boot. Strings are personal read-write roots;
    *  objects may set type/readOnly. Persisted roots are reconnected as well. */
   realmRoots?: Array<string | { root: string; type?: RealmType; readOnly?: boolean }>;
+  /** Audit sink for memory boundary violations (cross-realm read/append). */
+  memoryAudit?: (entry: MemoryAuditEntry) => void;
 };
 
 const noop = (): void => {};
@@ -80,6 +83,8 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const metrics = new ConcurrencyMetrics({ now });
   const progressHub = new ProgressHub();
   const realmStore = new FsRealmStore();
+  const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
+  const memoryStore = new MemoryStore(memoryAudit);
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
     audit: options.dispatchAudit ?? noop,
     now,
@@ -89,9 +94,41 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     metrics,
     onConflict: conflictsToDesk(oversight),
-    onProgress: event => progressHub.publish(event),
+    onProgress: event => {
+      progressHub.publish(event);
+      if (event.type === 'intent-finished' && event.realmId) {
+        consolidateFinishedMemory(event);
+      }
+    },
   });
-  const components: KernelComponents = { registry, oversight, orchestrator, realmStore, skillRegistry };
+  const components: KernelComponents = {
+    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore,
+  };
+
+  // Memory P1: when an intent operating on a connected realm reaches a terminal
+  // state, consolidate that realm's events; disputes become pending
+  // memory-dispute escalations rather than silent splits.
+  function consolidateFinishedMemory(
+    event: Extract<ProgressEvent, { type: 'intent-finished' }>,
+  ): void {
+    const reliability = (agentId: string): number => {
+      const stat = metrics.snapshot().perVassal[agentId];
+      if (!stat || stat.calls === 0) return 0.5;
+      return 1 - stat.failureRate;
+    };
+    const result = memoryStore.consolidateRealm(event.realmId!, { now, reliability });
+    const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
+    result.disputes.forEach((dispute, i) => {
+      oversight.ingestMemoryDispute({
+        id: result.escalations[i],
+        runId: event.runId,
+        realm,
+        factId: dispute.factId,
+        conflictingFacts: dispute.conflicting,
+        reason: dispute.reason,
+      });
+    });
+  }
 
   let store: FileKernelStateStore | null = null;
   let snapshot: KernelSnapshot | null = null;

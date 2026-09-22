@@ -5,8 +5,9 @@ import type { Conflict } from '../orchestrator/types.js';
 export type EscalationStatus = 'pending' | 'approved' | 'rejected';
 
 /** task-input: one vassal task paused at input-required (E6.1).
- *  intent-conflict: the fan-out split across stances and the rule could not conclude (E6.2). */
-export type EscalationKind = 'task-input' | 'intent-conflict';
+ *  intent-conflict: the fan-out split across stances and the rule could not conclude (E6.2).
+ *  memory-dispute: consolidation found contradictory facts it could not rule on. */
+export type EscalationKind = 'task-input' | 'intent-conflict' | 'memory-dispute';
 
 export type Escalation = {
   id: string;
@@ -32,6 +33,9 @@ export type Escalation = {
   stances?: Conflict['stances'];
   /** Set when an intent-conflict is approved: the stance the driver accepted. */
   decidedStance?: string;
+  /** memory-dispute only. */
+  factId?: string;
+  conflictingFacts?: string[];
 };
 
 export type OversightAuditEntry = {

@@ -44,8 +44,7 @@ export interface DisputeRecord {
   reason: string;
 }
 
-export interface ConsolidationResult {
-  ingested: string[];
+export interface ConsolidationResult {  ingested: string[];
   added: string[];
   merged: Array<{ factId: string; with: string[] }>;
   superseded: string[];
@@ -72,3 +71,9 @@ export interface ConsolidateOptions {
   /** Escalation ids are derived deterministically from this seed. */
   escalationId?: (dispute: DisputeRecord) => string;
 }
+
+/** Serializable memory state; the snapshot persisted with the kernel. */
+export type MemoryState = {
+  events: MemoryEvent[];
+  facts: Array<[string, FactRecord[]]>;
+};
