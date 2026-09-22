@@ -79,9 +79,48 @@ export interface ReliabilityCorrection {
   at: string;
 }
 
+/**
+ * Right-to-be-forgotten tombstone. Retracted facts stay auditable only as
+ * these records: the fact and every derived index entry are removed, while
+ * the append-only event log is preserved for governance replay. A tombstone
+ * is the traceable declaration that must propagate to snapshots/downstream.
+ */
+export interface RetractionRecord {
+  factId: string;
+  realmId: string;
+  subject: string;
+  reason: string;
+  requestedBy: string;
+  at: string;
+}
+
+/** A local/same-domain text embedder; never an out-of-realm service. */
+export interface Embedder {
+  readonly dimension: number;
+  embed(text: string): number[];
+}
+
+/** One hybrid-retrieval result, with its lexical and semantic components. */
+export interface RecallHit {
+  fact: FactRecord;
+  /** Combined hybrid score in 0..1. */
+  score: number;
+  /** BM25 lexical score, normalised against the best lexical match. */
+  lexical: number;
+  /** Cosine similarity against the query embedding. */
+  semantic: number;
+}
+
+export interface RecallSearchOptions {
+  limit?: number;
+  /** Weight on the semantic component; 1 − alpha weights lexical. Default 0.5. */
+  alpha?: number;
+}
+
 /** Serializable memory state; the snapshot persisted with the kernel. */
 export type MemoryState = {
   events: MemoryEvent[];
   facts: Array<[string, FactRecord[]]>;
   corrections?: ReliabilityCorrection[];
+  retractions?: RetractionRecord[];
 };

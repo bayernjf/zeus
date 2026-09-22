@@ -196,6 +196,7 @@ export {
   MemoryConsolidationError,
 } from './memory/consolidate.js';
 export { MemoryStore, MemoryBoundaryError } from './memory/memory-store.js';
+export { RecallIndex, LocalHashingEmbedder, tokenize, factText } from './memory/recall.js';
 export type {
   MemoryKind,
   MemoryEvent,
@@ -206,6 +207,10 @@ export type {
   ClaimContent,
   ConsolidateOptions,
   MemoryState,
+  Embedder,
+  RecallHit,
+  RecallSearchOptions,
+  RetractionRecord,
 } from './memory/types.js';
 export type { MemoryAuditEntry, MemoryReplay } from './memory/memory-store.js';
 
