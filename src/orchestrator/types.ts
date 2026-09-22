@@ -1,5 +1,6 @@
 import type { A2AEvent, RealmType, Task, TaskState } from '../a2a/types.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
+import type { DecisionBackendError, DecisionBackendKind } from '../decision/types.js';
 
 /** One vassal's participation in a fan-out intent. */
 export type BranchOutcome = {
@@ -78,6 +79,30 @@ export type FanOutResult = {
   status: FanOutStatus;
   replayed?: boolean;
   createdAt: string;
+  /** Set once a driver settles an unresolved conflict (E6.2 write-back). */
+  driverResolution?: DriverResolution;
+  /** Set when a decision backend was consulted after the rule ended in needs-driver (S2). */
+  backendArbitration?: BackendArbitration;
+};
+
+/** Record of the S2 backend arbitration attempt on an unresolved split. */
+export type BackendArbitration = {
+  concluded: boolean;
+  conclusion?: string;
+  confidence?: number;
+  calibrated?: boolean;
+  backend?: DecisionBackendKind;
+  model?: string;
+  error?: DecisionBackendError;
+  decidedAt: string;
+};
+
+/** A human driver's settlement of an intent-conflict, written back into the decision. */
+export type DriverResolution = {
+  escalationId: string;
+  stance: string;
+  note?: string;
+  decidedAt: string;
 };
 
 /** Narrow port the orchestrator drives; Dispatcher satisfies it. */

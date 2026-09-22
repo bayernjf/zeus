@@ -97,7 +97,9 @@ function brokenHandler(_req: any, _body: any, res: any) {
   json(res, 500, { message: 'boom' });
 }
 
-describe('acceptance #6 standards-only client script', () => {
+// These tests spawn a real node subprocess; under full parallel load cold start
+// can exceed vitest's default 5s timeout. Give headroom above the script's own 10s guard.
+describe('acceptance #6 standards-only client script', { timeout: 20000 }, () => {
   let healthy: { server: Server; url: string };
   let broken: { server: Server; url: string };
 

@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+.git
+.github
+data
+*.log
+.DS_Store
+.env
+handoff.md
+AGENTS.md
+CLAUDE.md
+docs
+tests

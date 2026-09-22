@@ -23,9 +23,15 @@
 ```bash
 npm install
 npm run build      # tsc 出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest，98 项
+npm test           # vitest，187 项
 npm run typecheck  # tsc --noEmit
-npm start          # 启动 HTTP H1（需先 build；ZEUS_HOST/ZEUS_PORT/ZEUS_INTERNAL_TOKEN/ZEUS_RSK_KEY 见 src/http/serve.ts）
+npm start          # 启动 HTTP H1（需先 build；env 见 .env.example，生产部署见 docs/deployment.md）
+```
+
+部署（Docker / systemd、RSK 签名密钥、状态卷与优雅退出）见 **[docs/deployment.md](docs/deployment.md)**。生产 RSK 密钥生成：
+
+```bash
+node scripts/gen-rsk-key.mjs rsk-private.pem   # 零依赖跨平台；NODE_ENV=production 无密钥拒启
 ```
 
 最小用法（Realm，自包含、无需网络）：
@@ -66,7 +72,7 @@ await app.listen({ host: '127.0.0.1', port: 8787 });
 
 ## 当前边界
 
-- **库 + 只读薄传输**：内核无状态，封臣任务与 Realm 状态均为实例内存；HTTP H1 仅三个只读端点（无写端点、无任务持久化），`serve.ts` 启动时 registry 为空（封臣注册属未来启动编排）；internal 名册视图 H1 不封签（含 revoked 行，靠 bearer 保护，封签留签名链 v1.1）。
+- **库 + 只读薄传输**：HTTP H1 仅三个只读端点（无写端点），`serve.ts` 启动时 registry 为空（封臣注册属未来启动编排）；internal 名册视图 H1 不封签（含 revoked 行，靠 bearer 保护，封签留签名链 v1.1）。内核状态（封臣含已吊销、监督台队列、意图幂等表）在配置 `ZEUS_STATE_FILE` 时启动恢复、SIGINT/SIGTERM 原子落盘（E5.3），未配置则纯内存；Realm 连接态与运行指标不持久化。
 - **Realm 对外唯一传输为 MCP**（契约 v0.2），不做独立 HTTP API；只读 stdio 脚手架已落地（resources 映射 manifest/search/read、宿主预连接、绝对路径不出进程），正式 P1（鉴权、streamable HTTP、官方 SDK 兼容性复核）的触发条件仍是 read-realm 封臣出现。
 - 服务端 HTTP 栈为 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)），**H1 已落地**（healthz / public 签名名册 / bearer internal）；H2 驾驶员 API 待任务与升级状态持久化，H3（SSE server / 多副本 / 静态快照分发）按需立项。
 - pr-helper 验收 #6（标准 A2A 客户端守护测试）与 Zeus↔loom 真机联调均**待部署**，现状与待办以 [handoff.md](handoff.md) 为准。
@@ -81,6 +87,7 @@ await app.listen({ host: '127.0.0.1', port: 8787 });
 - [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造（R0–R2、签名链公开闸门）
 - [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — 名册签名链 v1（Ed25519+JCS、条目 attestation + 快照 seal、TTL 硬过期、八条验收）
 - [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型与 H1–H3 端点规划（Fastify + 长驻 Node、薄传输层）
+- [docs/deployment.md](docs/deployment.md) — 部署手册 v0.1：Docker（多阶段/非 root/tini/健康检查/状态卷）、RSK 密钥生成与生产守卫、systemd 备选、上线检查清单
 - [docs/deferred-items.md](docs/deferred-items.md) — 缓做项与触发条件的单一事实源
 
 ## 协作约定

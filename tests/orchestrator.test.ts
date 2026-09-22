@@ -68,15 +68,14 @@ describe('Orchestrator.fanOut', () => {
     });
     const orch = newOrchestrator(port, ['loom', 'atlas']);
 
-    const started = Date.now();
     const result = await orch.fanOut({ skill: 'generate-content', params: {}, realm: 'personal' });
-    const elapsed = Date.now() - started;
 
     expect(result.status).toBe('completed');
     expect(result.branches.map(b => b.vassal)).toEqual(['loom', 'atlas']);
-    // parallel: two 15ms branches finish in well under their 30ms sum
-    expect(elapsed).toBeLessThan(28);
-    // both dispatches started within the same tick window
+    // Parallelism is proven deterministically by both dispatches starting in the
+    // same tick window (a serial run would start the second ~15ms later). We do
+    // not assert total wall-clock: under saturated CI the 15ms timers slip and
+    // make any "< 28ms" bound flaky without indicating serialization.
     expect(port.calls[1].at - port.calls[0].at).toBeLessThan(8);
     expect(port.calls.map(c => c.runId)).toEqual(['run-1:loom', 'run-1:atlas']);
     expect(result.stream.map(e => e.source.vassal)).toEqual(['loom', 'atlas']);

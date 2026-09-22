@@ -89,12 +89,13 @@ export { sendTask, sendTaskSubscribe, cancelTask, A2AClientError } from './dispa
 export type { SendTaskInput, SubscribeHandlers, FetchLike } from './dispatch/client.js';
 export { jsonlAuditSink, memoryAuditSink, revokeAuditBridge } from './dispatch/audit.js';
 
-// --- A4 oversight desk ---
-export { OversightDesk, extractEscalation } from './oversight/oversight.js';
+// --- A4 oversight desk + E6.2 conflict settlement ---
+export { OversightDesk, extractEscalation, conflictsToDesk } from './oversight/oversight.js';
 export type { OversightOptions } from './oversight/oversight.js';
 export type {
   Escalation,
   EscalationStatus,
+  EscalationKind,
   OversightAuditEntry,
   CancelTaskFn,
 } from './oversight/types.js';
@@ -105,6 +106,40 @@ export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
 export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
 export { detectConflicts } from './orchestrator/conflict.js';
+export { applyConflictResolution, recomputeResult, statusFromBranches } from './orchestrator/resolution.js';
+export { arbitrateConflict } from './orchestrator/arbitration.js';
+export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
+export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
+export type {
+  MetricsSnapshot,
+  VassalMetric,
+  LatencyStats,
+  BranchMetricEvent,
+  BranchOutcomeKind,
+  MetricsOptions,
+} from './orchestrator/metrics.js';
+export {
+  validateDag,
+  topologicalOrder,
+  topologicalLayers,
+  criticalPath,
+  dependenciesSatisfied,
+  DagValidationError,
+} from './orchestrator/dag.js';
+export type { DagNode, DagSpec, DagNodeState, DagState } from './orchestrator/dag.js';
+export { DagRunner } from './orchestrator/dag-runner.js';
+export type { DagResult, DagNodeResult, DagRunnerOptions } from './orchestrator/dag-runner.js';
+export {
+  FileKernelStateStore,
+  collectKernelState,
+  applyKernelState,
+  KernelStateError,
+  KERNEL_STATE_VERSION,
+} from './state/kernel-state.js';
+export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
+export { bootKernel } from './state/boot.js';
+export type { KernelBoot, KernelBootOptions } from './state/boot.js';
+export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
 export type {
   FanOutRequest,
   FanOutResult,
@@ -118,7 +153,37 @@ export type {
   DispatchPort,
   TargetLookup,
   CancelBranchResult,
+  DriverResolution,
+  BackendArbitration,
 } from './orchestrator/types.js';
+
+// --- Decision backend (model-agnostic port; Jev decision-model + LLM adapters) ---
+export { createJevBackend, createJevBackendFromEnv } from './decision/decision-model.js';
+export { createLlmBackend, createLlmBackendFromEnv } from './decision/llm.js';
+export { arbitrateSplit } from './decision/arbitrate.js';
+export { DecisionBackendFailure } from './decision/types.js';
+export type {
+  DecisionBackend,
+  DecisionBackendKind,
+  DecisionBackendError,
+  DecisionBackendErrorCode,
+  DecisionTrace,
+  NoulRequest,
+  NoulResult,
+  ChoiceRequest,
+  ChoiceResult,
+  ScoreRequest,
+  ScoreResult,
+  QuestionBase,
+  BackendOptions,
+} from './decision/types.js';
+export type { JevConfig } from './decision/decision-model.js';
+export type { LlmConfig } from './decision/llm.js';
+export type { ArbitrateInput, ArbitrateOutcome, SplitStance } from './decision/arbitrate.js';
+
+// --- E2 Skill registry (skills as first-class modules, independent of cards) ---
+export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
+export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution } from './skills/types.js';
 
 // --- D1 Realm P0 ---
 export { FsRealmStore } from './realm/store.js';
