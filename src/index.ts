@@ -120,6 +120,30 @@ export type {
   CancelBranchResult,
 } from './orchestrator/types.js';
 
+// --- Decision backend (model-agnostic port; Jev decision-model + LLM adapters) ---
+export { createJevBackend, createJevBackendFromEnv } from './decision/decision-model.js';
+export { createLlmBackend, createLlmBackendFromEnv } from './decision/llm.js';
+export { arbitrateSplit } from './decision/arbitrate.js';
+export { DecisionBackendFailure } from './decision/types.js';
+export type {
+  DecisionBackend,
+  DecisionBackendKind,
+  DecisionBackendError,
+  DecisionBackendErrorCode,
+  DecisionTrace,
+  NoulRequest,
+  NoulResult,
+  ChoiceRequest,
+  ChoiceResult,
+  ScoreRequest,
+  ScoreResult,
+  QuestionBase,
+  BackendOptions,
+} from './decision/types.js';
+export type { JevConfig } from './decision/decision-model.js';
+export type { LlmConfig } from './decision/llm.js';
+export type { ArbitrateInput, ArbitrateOutcome, SplitStance } from './decision/arbitrate.js';
+
 // --- E2 Skill registry (skills as first-class modules, independent of cards) ---
 export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
 export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution } from './skills/types.js';
