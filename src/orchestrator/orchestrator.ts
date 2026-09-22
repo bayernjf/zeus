@@ -116,6 +116,18 @@ export class Orchestrator {
     return result ? structuredClone(result) : undefined;
   }
 
+  /** E6.3: find the intent whose branch run matches a task-input escalation.
+   *  Branch runIds are `${parentRunId}:${vassal}`, so the escalation's runId
+   *  alone is enough to locate the stored intent. */
+  findIntentForBranchRun(branchRunId: string, vassal: string): string | undefined {
+    for (const [intentId, result] of this.intents) {
+      if (result.branches.some(branch => branch.runId === branchRunId && branch.vassal === vassal)) {
+        return intentId;
+      }
+    }
+    return undefined;
+  }
+
   /** E5.3: serializable snapshot of idempotent intent results plus the original
    *  requests needed to resume/re-dispatch a branch after restart. */
   exportState(): OrchestratorSnapshot {

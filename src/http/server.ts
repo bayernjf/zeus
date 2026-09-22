@@ -219,6 +219,32 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
 
+      // H2 (E6.3): one-click approve-and-resume — approve a task-input
+      // escalation with human-supplied parameters, then automatically re-dispatch
+      // that single branch and recompute the intent.
+      app.post('/api/escalations/:id/approve-resume', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { params?: unknown; note?: unknown };
+        if (!body.params || typeof body.params !== 'object' || Array.isArray(body.params)) {
+          return error(reply, 400, 'invalid_request', 'body.params object is required');
+        }
+        const escalation = deps.oversight!.get(id);
+        if (!escalation) return error(reply, 404, 'not_found', `unknown escalation: ${id}`);
+        if (escalation.kind !== 'task-input') {
+          return error(reply, 400, 'invalid_request', `escalation ${id} is ${escalation.kind}; only task-input can resume`);
+        }
+        const intentId = deps.orchestrator!.findIntentForBranchRun(escalation.runId, escalation.vassal);
+        if (!intentId) return error(reply, 409, 'conflict', `no stored intent branch matches escalation ${id}`);
+        const note = typeof body.note === 'string' ? body.note : undefined;
+        try {
+          const approved = deps.oversight!.approve(id, note);
+          const intent = await deps.orchestrator!.resumeBranch(intentId, escalation.vassal, body.params as Record<string, unknown>);
+          return { escalation: approved, intent };
+        } catch (e) {
+          return mapKernelError(reply, e);
+        }
+      });
+
       // H2 (E6.2): settle an intent-conflict by accepting a stance; writes the
       // driver's decision back into the aggregated result.
       if (deps.orchestrator) {
