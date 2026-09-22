@@ -150,6 +150,14 @@ State of Zeus as of 2026-09-22.
    - **E7 MCP 连接器**（commit f1a082a）：`src/mcp`——McpClient 零 SDK 走 streamable-HTTP JSON-RPC（兼容 JSON/SSE 帧）、initialize 握手 + tools/resources/prompts 发现；ConnectorRegistry declare（封闭词汇边界、重复拒）/ connect（失败 refused+审计）/ revoke（即时移出活动集）；最小权限 `mcp:<tool>` 精确放行；bootKernel 装配，KernelSnapshot 增 `connectors` 段（声明持久化、连接不自动重建立）。8 项 tests/mcp-connectors.test.ts。
    - PRD v0.10，E2.3/E7 升 ✅。
 
+21. **记忆 P2：混合检索 + 遗忘权（2026-09-22 ✅ 完成，全量 271 绿 / 38 文件，tsc 过）**：
+   - 新增 `src/memory/recall.ts`：`RecallIndex` 混合检索——BM25 词法（k1=1.2/b=0.75，按本批最佳分归一）+ 向量余弦，`alpha` 可调（默认 0.5）；中文按 Han 单字+相邻 bigram 分词。
+   - 索引为**不持久化派生物**：`buildRecall`/`sync(facts)` 随时从 Fact Store 整体重建；仅 `active`/`disputed` 入索引，`consolidateRealm` 后自动 refresh 已物化的索引。
+   - `Embedder` 端口 + 默认 `LocalHashingEmbedder`（FNV-1a signed hashing 词袋，纯本地无网络，仅离线安全底座；真实同域模型可注入）。
+   - 遗忘权：`retractFacts`（事实即刻 retracted + 索引即时摘除 + tombstone，幂等）/ `forgetSubject`（主体身份匹配下全部事实抹除）；`RetractionRecord` tombstone 随 MemoryState 持久化，Event Log append-only 保留供治理回放。
+   - 11 项 tests/memory-recall-p2.test.ts；设计文档 v0.2（§6.1/6.2 契约）、PRD v0.11。
+   - **P2 剩余**：漂移对账（drift reconciliation，快照/备份间事实对账）；真实同域 embedding 模型接入仍以 deferred #10 为触发条件。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
