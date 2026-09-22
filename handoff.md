@@ -180,6 +180,7 @@ State of Zeus as of 2026-09-22.
    - **v0.2 增补**：§6A 行业现状——软件"对 AI 原生可操作"的五种主流实践（Function Calling/MCP/Agent Loop/Computer Use/护栏）与 API-first、能力即工具、确定性执行三条原则，作为外部现状对照内部立场。
    - **v0.3 增补**：§6A.2 三层成熟度——L1 连接（能连）/ L2 工具设计（好用：粒度/schema/错误/组合）/ L3 护栏（安全），明确"做了 MCP ≠ 好用"；传统软件四步重构路径，只重构能力暴露层、保留确定性内核。
    - **v0.4 增补**：§2A 明确 Zeus 定位 = AI 原生多 Agent 团队运行时；团队侧能力、目标软件 L1–L3 前提，及"编排内核不替代执行 / 仓库外关口须授权"两条边界。
+   - **同步 PRD**：架构立场已索引进 docs/prd.md v0.14（演进日志加行，不复制全文，PRD 仍回答做什么/为什么、设计全文在本文档）。
 
 ## Project documents
 
@@ -193,7 +194,7 @@ State of Zeus as of 2026-09-22.
 * [docs/design-agentic-integration.md](docs/design-agentic-integration.md) — Agent 时代系统互联与确定性边界 v0.4：§2A Zeus 定位（AI 原生多 Agent 团队运行时）、两层架构、划边界四轴、确定性闸门、MCP·A2A·Skill 插座、§6A 五种主流实践、§6A.2 三层成熟度与四步重构、闸门软肋 ★
 * [docs/research-decision-layer-industry.md](docs/research-decision-layer-industry.md) — 决策层行业现状调研 v0.1（2026-09）：LLM-as-judge 主流 + 四条分化路线（专用决策模型/程序化裁决/混合路由/多模型分职）、对 design-decision-backend v0.2 的印证、来源清单
 * [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级评审 v0.1（2026-09-22）：功能性/完整度/可上线三维度、P0 覆盖统计（13✅/11🚧/2⬜）、MVP 判定（库内内核级达成、产品级未达成）、硬/软阻塞项、达到可上线 MVP 的最小路径 ★
-* [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
+* [docs/prd.md](docs/prd.md) — 产品需求文档 现行 v0.14：9 个 Epic、需求拆解（优先级/状态/验收标准）、里程碑与成功指标；v0.14 索引架构立场 design-agentic-integration ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
 * [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.1（D1）：目录即数据库、connect/search/read/write、数据二极管执行点、藏宝图依赖 ★

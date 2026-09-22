@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.13（2026-09-22，E2.5 Mentor 传授：带教→胜任力评估→认证登记新提供者）**
+> 状态：**现行 v0.14（2026-09-23，新增架构立场文档 design-agentic-integration：Agent 时代系统互联、确定性边界与 Zeus 团队运行时定位）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -181,3 +181,4 @@
 | v0.11 | 2026-09-22 | 记忆 P2 落地：新增 `src/memory/recall.ts`——混合检索（BM25 词法 + 向量余弦，alpha 可调，默认本地确定性 signed-hashing embedder、`Embedder` 端口可注入同域模型），召回索引为不持久化的可重建派生物，仅 active/disputed 入索引；遗忘权（`retractFacts` 即时摘除索引、`forgetSubject` 按主体抹除，tombstone 台账随快照持久化，事件日志 append-only 保留供治理回放）；11 项测试；全量 271 绿（38 文件） |
 | v0.12 | 2026-09-22 | 记忆 P2 漂移对账落地：新增 `src/memory/reconcile.ts`——`reconcileMemoryStates` 两时点快照逐字段 diff（事件增删、事实 added/removed/changed、correction/tombstone 增量）、`verifyMemoryState` 横切不变量校验（factId 可重算、provenance 可解析且不跨域、retract↔tombstone 一一配对、事实不重复），`MemoryStore.verifyIntegrity` 便捷入口；factId 计算导出复用；9 项测试；P2 三项齐；全量 280 绿（39 文件） |
 | v0.13 | 2026-09-22 | E2.5 Mentor 传授落地：新增 `src/skills/mentor.ts` `MentorshipLedger`（commission 须在册提供者、teach 记录、assess 胜任力硬门+加权阈值、认证才 grantProvider、dismiss）；SkillRegistry 增 isProvider/grantProvider；台账经 KernelSnapshot `mentorships` 段持久化；E2.5 升 ✅；新增 10 项测试；全量 290 绿（41 文件） |
+| v0.14 | 2026-09-23 | 新增架构立场文档 [design-agentic-integration](design-agentic-integration.md) v0.4（本文件不复制全文）：Agent 是新的编排/集成层而非替代 REST，两层形态=智能层（协商/非确定）压在原语层（契约/确定/可回放）之上；边界收口为「结构化意图→确定性闸门」，按可逆性/确定性需求/可验证性/爆炸半径四轴划分；行业现状五种主流实践与 L1 连接/L2 工具设计/L3 护栏三层成熟度；明确 Zeus 定位为 **AI 原生多 Agent 团队运行时**，目标软件的 Agent 可用成熟度决定团队如何调用。无代码变更 |
