@@ -10,6 +10,7 @@ import type { RealmType } from '../a2a/types.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import { SkillRegistry } from '../skills/registry.js';
 import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
+import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -64,6 +65,8 @@ export type KernelBootOptions = {
   realmRoots?: Array<string | { root: string; type?: RealmType; readOnly?: boolean }>;
   /** Audit sink for memory boundary violations (cross-realm read/append). */
   memoryAudit?: (entry: MemoryAuditEntry) => void;
+  /** Audit sink for MCP connector lifecycle events. */
+  connectorAudit?: (entry: ConnectorAuditEntry) => void;
 };
 
 const noop = (): void => {};
@@ -96,6 +99,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const realmStore = new FsRealmStore();
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
   const memoryStore = new MemoryStore(memoryAudit, now);
+  const connectorRegistry = new ConnectorRegistry(
+    now,
+    options.connectorAudit ?? noop,
+  );
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
     audit: options.dispatchAudit ?? noop,
     now,
@@ -113,7 +120,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     },
   });
   const components: KernelComponents = {
-    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore,
+    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry,
   };
 
   // Memory P1: when an intent operating on a connected realm reaches a terminal

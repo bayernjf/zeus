@@ -209,6 +209,18 @@ export type {
 } from './memory/types.js';
 export type { MemoryAuditEntry, MemoryReplay } from './memory/memory-store.js';
 
+// --- E7 MCP connectors (minimum-privilege external system connections) ---
+export { ConnectorRegistry, ConnectorError } from './mcp/connectors.js';
+export type { ConnectorAuditEntry } from './mcp/connectors.js';
+export { McpClient, McpClientError } from './mcp/client.js';
+export type {
+  ConnectorDeclaration,
+  ConnectorRecord,
+  ConnectorStatus,
+  ConnectorCapabilities,
+  McpClientDeps,
+} from './mcp/types.js';
+
 // --- D1 Realm P0 ---
 export { FsRealmStore } from './realm/store.js';
 export { sha256Hex, digestManifest } from './realm/digest.js';
