@@ -142,7 +142,13 @@ State of Zeus as of 2026-09-22.
    - FanOutRequest/Result 增可选 `realmId`，intent-finished 事件带 runId/realmId；意图到达终态时 boot 自动 `consolidateRealm`，可靠度从 ConcurrencyMetrics perVassal failureRate 派生（1−failureRate，无记录 0.5）。
    - 新增 EscalationKind `memory-dispute`（factId/conflictingFacts 字段）与 `OversightDesk.ingestMemoryDispute`（以整理器确定性 escalation id 幂等）；自动整理出的矛盾直接进监督台。
    - `POST /api/intents` 透传 body.realmId，真实服务上自动触发可用。3 项 tests/kernel-memory-p1.test.ts（快照往返、完成即整理、矛盾升级 + 重复整理不产生重复行）；PRD v0.9。
-   - **剩余**：可靠度事后结果自动回写（目前从 failureRate 单向派生，纠错结果未回写）；P2 本地 embedding 混合检索、retracted/遗忘权、漂移对账。
+   - **剩余**：P2 本地 embedding 混合检索、retracted/遗忘权、漂移对账。
+
+20. **三件批次：可靠度纠错回写 + E2.3 + E7（2026-09-22 ✅ 全部完成，全量 260 绿 / 37 文件，tsc 过）**：
+   - **可靠度纠错回写**（commit a2f3678）：OversightDesk 新增 onDecided 钩子（approve/reject/decideConflict 三路均触发）；boot 中 memory-dispute 被拍板后，对败诉事实的作者 `recordCorrections`；`reliabilityScore = max(0, base − 0.15×纠错数)`，corrections 随 MemoryState 持久化。
+   - **E2.3 Skill 生命周期**（commit b654c3c）：install（即 active，deprecated 不可装）/ uninstall（立即出 resolveTeam 与默认查询，可重装）/ harden（权限只收窄：bare scope→scope:action，越权授予拒绝；约束 merge 叠加，随 spec 落快照）。8 项 tests/skills-lifecycle.test.ts；validatePermissionClaims 抽出复用。
+   - **E7 MCP 连接器**（commit f1a082a）：`src/mcp`——McpClient 零 SDK 走 streamable-HTTP JSON-RPC（兼容 JSON/SSE 帧）、initialize 握手 + tools/resources/prompts 发现；ConnectorRegistry declare（封闭词汇边界、重复拒）/ connect（失败 refused+审计）/ revoke（即时移出活动集）；最小权限 `mcp:<tool>` 精确放行；bootKernel 装配，KernelSnapshot 增 `connectors` 段（声明持久化、连接不自动重建立）。8 项 tests/mcp-connectors.test.ts。
+   - PRD v0.10，E2.3/E7 升 ✅。
 
 ## Project documents
 
