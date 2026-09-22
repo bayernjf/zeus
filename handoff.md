@@ -123,6 +123,12 @@ State of Zeus as of 2026-09-22.
    - [x] **A4 G5 H3 服务端 SSE** ✅ commit e9002e3：新增 `src/orchestrator/progress.ts`（ProgressEvent + ProgressHub），编排器在分支 start/end 与意图完成时发事件；`GET /api/intents/:id/events` 输出 SSE（15s keepalive、已完成意图回放单事件后关闭、无 hub 未知意图 404、hijack 后 flushHeaders 保证即时响应）。5 项测试 tests/progress-hub.test.ts + tests/http-sse.test.ts（含真机端口实时流）。
    - **评审更新**：见 review-mvp-2026-09.md v0.3 与 PRD v0.6（E5.3/E5.5/E6.3 升 ✅）。**产品级可上线 MVP 仍判定未达成，但库内已无任务可闭环**——剩余关口全在仓库外/需授权：E4.8 真机验收、Zeus↔loom 联调、push+CI 首绿（需授权）、E10.4 容量压测、Jev 真实 endpoint/key 核对。
 
+17. **E2.1 Skill 显式规格与注册（2026-09-22 ✅ 完成，全量 229 绿 / 33 文件，tsc 过）**：
+   - SkillSpec 独立于 Agent Card：id/name/`version`（major.minor.patch 数值）/inputs/outputs 对象 schema/permissions（**封闭 scope 词汇** realm·execute·network·credential·mcp，`scope` 或 `scope:action`）/dependencies。
+   - 新增 `src/skills/validate-spec.ts`（纯函数 `validateSkillSpecShape`，一次收集全部问题抛 SkillValidationError）；`SkillRegistry.register` 强制形状校验 + 依赖须为已注册 skill（拒前向引用）、拒自依赖、id 级依赖图 DFS 拒绝依赖环。
+   - SkillRegistry 接入 `bootKernel`：构造后经 VassalRegistry 新增的 `onRegister` 钩子，封臣注册时自动 `registerFromCard` 导入卡片技能；SkillRegistry 增 export/importState，KernelSnapshot 增可选 `skills`，重启恢复目录。
+   - 测试：10 项 tests/skills-validation.test.ts（形状/版本/权限 scope/自依赖/未知依赖/环）+ 2 项 tests/kernel-skills-state.test.ts（装配 + 快照恢复）；validateSkillSpecShape/SkillValidationError 已从 src/index.ts 导出。PRD v0.7，E2.1 升 ✅。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：

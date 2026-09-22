@@ -183,6 +183,7 @@ export type { ArbitrateInput, ArbitrateOutcome, SplitStance } from './decision/a
 
 // --- E2 Skill registry (skills as first-class modules, independent of cards) ---
 export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
+export { validateSkillSpecShape, SkillValidationError } from './skills/validate-spec.js';
 export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution } from './skills/types.js';
 
 // --- D1 Realm P0 ---

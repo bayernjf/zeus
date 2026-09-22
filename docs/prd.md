@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.6（2026-09-22，A 批次：封臣上线入口 / Realm 持久化 / 一键重派 / H3 SSE）**
+> 状态：**现行 v0.7（2026-09-22，E2.1 Skill 规格显式声明、校验与注册）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -59,7 +59,7 @@
 
 | ID | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|
-| E2.1 | Skill 显式声明：输入/输出、权限、依赖、版本 | P0 | 🚧 | Agent Card 已含 skills 字段；须独立于卡片的 Skill 规格与注册 |
+| E2.1 | Skill 显式声明：输入/输出、权限、依赖、版本 | P0 | ✅ | SkillSpec 独立于 Agent Card：id/name/version(major.minor.patch)/inputs/outputs/permissions(封闭 scope 词汇 realm·execute·network·credential·mcp)/dependencies；`validateSkillSpecShape` 纯校验，注册强制形状校验、依赖须已注册（拒前向引用）、拒绝自依赖与依赖环；SkillRegistry 已在 `bootKernel` 装配（封臣 card 经 onRegister 钩子自动导入）并随 KernelSnapshot 持久化重启恢复，见 tests/skills-validation.test.ts、tests/kernel-skills-state.test.ts |
 | E2.2 | Skill 注册中心：登记、检索、版本化 | P0 | ✅ | `src/skills/registry.ts` SkillRegistry：id+version 唯一键、多版本共存、get 默认最新 active（显式版本可查 deprecated 供审计）、deprecate 标记不删、按名/域（findByDomain）/标签检索、registerFromCard 从卡片登记目录版本、resolveTeam 多技能组队（10 项测试） |
 | E2.3 | Skill 安装 / 加固 / 卸载断权 | P1 | ⬜ | 安装即生效；加固=叠加约束/实现；卸载立即收回权限 |
 | E2.4 | 协同决策按 Skill 自动组队：一意图映射到所需技能并选 Agent | P0 | ✅ | registry 有 findBySkill；SkillRegistry.resolveTeam 对多技能返回每技能 slot（providers/missing/ambiguous）与 complete/missingSkills/ambiguousSkills，多候选标 ambiguous 绝不静默随机选（E2.2 测试覆盖） |
@@ -174,3 +174,4 @@
 | v0.4 | 2026-09-22 | MVP 评审后六切片批次：E2.2 Skill 注册中心 ✅、E2.4 组队解析 ✅、E1.1 S3 完整 DAG ✅、E1.4/E6.2 冲突拍板回写 ✅、E6.3 补参重派骨架 🚧、E1.7 库内并发指标 🚧、E5.3 内核状态落盘恢复 🚧；另落地模型无关决策后端 src/decision（Jev/LLM 适配器，见 design-decision-backend v0.2）；全量 166 测试绿（22 文件） |
 | v0.5 | 2026-09-22 | H2 驾驶员 API 落地：E5.5 升 🚧（意图扇出/回查/取消、升级队列 list/approve/reject/resolve 决议回写、GET /api/metrics，bearer 保护，12 项端到端测试 + 进程级冒烟）；E1.7 升 ✅（指标经 HTTP 暴露）；E5.3 已接启动装配；修复服务端生成 intentId 的意图不落表导致无法回查/决议的缺口；全量 199 测试绿（26 文件） |
 | v0.6 | 2026-09-22 | A 批次收口四个缺口：**G1 封臣上线入口**（`POST/DELETE /api/vassals` + `ZEUS_VASSAL_SEEDS`）、**G4 Realm 连接持久化**（snapshot 增 realms、重启 reconnect、`ZEUS_REALM_ROOTS`）、**G6 E6.3 一键补参重派**（`POST .../approve-resume` + `findIntentForBranchRun`）、**G5 H3 SSE**（`GET /api/intents/:id/events` + `ProgressHub`，branch 生命周期实时事件）；E5.3/E5.5/E6.3 升 ✅；全量 217 测试绿（31 文件） |
+| v0.7 | 2026-09-22 | E2.1 Skill 显式规格落地：SkillSpec 独立于卡片（version/inputs/outputs/permissions 封闭 scope/dependencies），注册强制形状校验、依赖须已注册、拒自依赖与依赖环（validate-spec 纯函数）；SkillRegistry 接入 bootKernel（onRegister 自动导入 card skills）并随快照持久化恢复；E2.1 升 ✅；全量 229 测试绿（33 文件） |

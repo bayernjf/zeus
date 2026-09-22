@@ -1,5 +1,6 @@
 import type { AgentCard, AgentCardSkill } from '../a2a/types.js';
 import type { SkillSpec, SkillSpecInput, SkillStatus, TeamResolution, TeamSlot } from './types.js';
+import { validateSkillSpecShape, SkillValidationError } from './validate-spec.js';
 
 /** Compare semver-ish 'major.minor.patch' strings. Returns -1/0/1; missing
  *  segments count as 0. Non-numeric segments fall back to lexical compare. */
@@ -36,14 +37,21 @@ export class SkillRegistry {
   constructor(private now: () => Date = () => new Date()) {}
 
   register(input: SkillSpecInput): SkillSpec {
-    if (!input.id || !input.version) throw new Error('skill requires id and version');
+    validateSkillSpecShape(input);
     const versions = this.specs.get(input.id) ?? [];
     if (versions.some(spec => spec.version === input.version)) {
       throw new DuplicateSkillError(`skill ${input.id}@${input.version} already registered`);
     }
+    // Dependencies must reference already-registered skill ids, and adding this
+    // spec must not create a dependency cycle (forward references are refused,
+    // so mutually dependent skills cannot register — by design).
+    this.validateDependencies(input.id, input.dependencies ?? []);
+
     const spec: SkillSpec = {
       ...input,
       tags: input.tags ?? [],
+      dependencies: input.dependencies ?? [],
+      permissions: input.permissions ?? [],
       providedBy: input.providedBy ?? [],
       status: input.status ?? 'active',
       registeredAt: this.now().toISOString(),
@@ -51,6 +59,37 @@ export class SkillRegistry {
     versions.push(spec);
     this.specs.set(input.id, versions);
     return structuredClone(spec);
+  }
+
+  private validateDependencies(id: string, dependencies: string[]): void {
+    const issues: string[] = [];
+    for (const dep of [...new Set(dependencies)]) {
+      if (!this.specs.has(dep)) issues.push(`unknown dependency '${dep}' (register it first)`);
+    }
+    const edges = this.dependencyEdges();
+    edges.set(id, dependencies);
+    if (this.createsCycle(id, edges)) issues.push(`dependencies create a cycle involving '${id}'`);
+    if (issues.length > 0) throw new SkillValidationError(issues);
+  }
+
+  /** Id-level dependency graph: union of every version's dependencies. */
+  private dependencyEdges(): Map<string, string[]> {
+    const edges = new Map<string, string[]>();
+    for (const [id, versions] of this.specs) {
+      edges.set(id, [...new Set(versions.flatMap(spec => spec.dependencies ?? []))]);
+    }
+    return edges;
+  }
+
+  private createsCycle(start: string, edges: Map<string, string[]>): boolean {
+    const visited = new Set<string>();
+    const visit = (node: string): boolean => {
+      if (node === start && visited.size > 0) return true;
+      if (visited.has(node)) return false;
+      visited.add(node);
+      return (edges.get(node) ?? []).some(visit);
+    };
+    return (edges.get(start) ?? []).some(visit);
   }
 
   /** Import the skills advertised on a vassal Agent Card. Card skills carry no
@@ -159,6 +198,22 @@ export class SkillRegistry {
     const explicit = versions.filter(spec => spec.version !== CARD_CATALOGUE_VERSION && spec.status === 'active');
     const source = explicit.length > 0 ? explicit : versions.filter(spec => spec.status === 'active');
     return [...new Set(source.flatMap(spec => spec.providedBy))].sort();
+  }
+
+  /** E2.1: serializable snapshot of every spec version. */
+  exportState(): SkillSpec[] {
+    return [...this.specs.values()].flat().map(spec => structuredClone(spec));
+  }
+
+  /** E2.1: replace the catalogue from a snapshot, rebuilding the id map. */
+  importState(specs: SkillSpec[]): void {
+    this.specs = new Map();
+    for (const original of specs) {
+      const spec = structuredClone(original);
+      const versions = this.specs.get(spec.id) ?? [];
+      versions.push(spec);
+      this.specs.set(spec.id, versions);
+    }
   }
 
   private activeVersions(id: string): SkillSpec[] | undefined {

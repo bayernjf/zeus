@@ -7,6 +7,8 @@ import { OversightDesk } from '../oversight/oversight.js';
 import { Orchestrator, type OrchestratorSnapshot } from '../orchestrator/orchestrator.js';
 import type { RealmConnection } from '../realm/types.js';
 import type { RealmStore } from '../realm/types.js';
+import type { SkillSpec } from '../skills/types.js';
+import { SkillRegistry } from '../skills/registry.js';
 
 /**
  * E5.3 minimal kernel persistence (design-http-transport §2.2/§2.3: the H2
@@ -30,6 +32,8 @@ export type KernelSnapshot = {
   orchestrator: OrchestratorSnapshot;
   /** G4: connected realms. Optional for backward compat with v1 snapshots. */
   realms?: RealmConnection[];
+  /** E2.1: skill catalogue. Optional for backward compat. */
+  skills?: SkillSpec[];
 };
 
 export type KernelComponents = {
@@ -38,6 +42,8 @@ export type KernelComponents = {
   orchestrator: Orchestrator;
   /** G4: when assembled, its connected realms are snapshotted and reconnected. */
   realmStore?: RealmStore;
+  /** E2.1: when assembled, the skill catalogue is persisted and restored. */
+  skillRegistry?: SkillRegistry;
 };
 
 export class KernelStateError extends Error {}
@@ -49,6 +55,7 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     oversight: components.oversight.exportState(),
     orchestrator: components.orchestrator.exportState(),
     ...(components.realmStore ? { realms: components.realmStore.connections() } : {}),
+    ...(components.skillRegistry ? { skills: components.skillRegistry.exportState() } : {}),
   };
 }
 
@@ -57,6 +64,7 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
   components.registry.importState(snapshot.registry);
   components.oversight.importState(snapshot.oversight);
   components.orchestrator.importState(snapshot.orchestrator);
+  if (components.skillRegistry && snapshot.skills) components.skillRegistry.importState(snapshot.skills);
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -74,6 +82,7 @@ export class FileKernelStateStore {
       oversight: state.oversight,
       orchestrator: state.orchestrator,
       ...(state.realms ? { realms: state.realms } : {}),
+      ...(state.skills ? { skills: state.skills } : {}),
     };
     await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;

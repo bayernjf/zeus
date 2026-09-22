@@ -8,6 +8,7 @@ import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
 import type { RealmType } from '../a2a/types.js';
 import { ProgressHub } from '../orchestrator/progress.js';
+import { SkillRegistry } from '../skills/registry.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -68,7 +69,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const now = options.now ?? (() => new Date());
   const fetchImpl = options.fetchImpl;
 
-  const registry = new VassalRegistry(fetchImpl, now);
+  const skillRegistry = new SkillRegistry(now);
+  const registry = new VassalRegistry(fetchImpl, now, {
+    onRegister: entry => skillRegistry.registerFromCard(entry.card),
+  });
   const oversight = new OversightDesk({
     now,
     ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
@@ -87,7 +91,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     onConflict: conflictsToDesk(oversight),
     onProgress: event => progressHub.publish(event),
   });
-  const components: KernelComponents = { registry, oversight, orchestrator, realmStore };
+  const components: KernelComponents = { registry, oversight, orchestrator, realmStore, skillRegistry };
 
   let store: FileKernelStateStore | null = null;
   let snapshot: KernelSnapshot | null = null;
