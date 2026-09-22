@@ -8,6 +8,7 @@
  *  - dispatch A2 dispatcher (JSON-RPC + SSE, data diode, revocation gate, audit)
  *  - oversight A4 oversight desk (input-required escalation queue)
  *  - orchestrator E1 fan-out decision kernel (parallel dispatch, merge, aggregate, conflict)
+ *  - memory   memory consolidation protocol (append-only event log, fact store via consolidator)
  *  - realm    D1 Realm P0 (read-only personal data domain, scan search)
  *
  * Transport layers (MCP / HTTP) wrap this surface; they are not part of the
@@ -185,6 +186,27 @@ export type { ArbitrateInput, ArbitrateOutcome, SplitStance } from './decision/a
 export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
 export { validateSkillSpecShape, SkillValidationError } from './skills/validate-spec.js';
 export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution } from './skills/types.js';
+
+// --- Memory consolidation protocol (P0: append log + pure consolidator) ---
+export {
+  consolidate,
+  aggregateConfidence,
+  isClaimContent,
+  stableStringify,
+  MemoryConsolidationError,
+} from './memory/consolidate.js';
+export { MemoryStore, MemoryBoundaryError } from './memory/memory-store.js';
+export type {
+  MemoryKind,
+  MemoryEvent,
+  FactStatus,
+  FactRecord,
+  DisputeRecord,
+  ConsolidationResult,
+  ClaimContent,
+  ConsolidateOptions,
+} from './memory/types.js';
+export type { MemoryAuditEntry, MemoryReplay } from './memory/memory-store.js';
 
 // --- D1 Realm P0 ---
 export { FsRealmStore } from './realm/store.js';
