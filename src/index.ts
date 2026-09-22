@@ -116,6 +116,17 @@ export type {
   BranchOutcomeKind,
   MetricsOptions,
 } from './orchestrator/metrics.js';
+export {
+  validateDag,
+  topologicalOrder,
+  topologicalLayers,
+  criticalPath,
+  dependenciesSatisfied,
+  DagValidationError,
+} from './orchestrator/dag.js';
+export type { DagNode, DagSpec, DagNodeState, DagState } from './orchestrator/dag.js';
+export { DagRunner } from './orchestrator/dag-runner.js';
+export type { DagResult, DagNodeResult, DagRunnerOptions } from './orchestrator/dag-runner.js';
 export type {
   FanOutRequest,
   FanOutResult,
