@@ -7,6 +7,7 @@ import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
 import type { RealmType } from '../a2a/types.js';
+import { ProgressHub } from '../orchestrator/progress.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -31,6 +32,8 @@ import {
 export type KernelBoot = KernelComponents & {
   /** E1.7 runtime concurrency metrics (not persisted); wired into the orchestrator. */
   metrics: ConcurrencyMetrics;
+  /** H3: progress event hub feeding the SSE endpoint. */
+  progressHub: ProgressHub;
   /** Absolute or relative path of the state JSON, or null when in-memory only. */
   stateFile: string | null;
   /** True when a snapshot was found and applied during boot. */
@@ -71,6 +74,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
   });
   const metrics = new ConcurrencyMetrics({ now });
+  const progressHub = new ProgressHub();
   const realmStore = new FsRealmStore();
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
     audit: options.dispatchAudit ?? noop,
@@ -81,6 +85,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     metrics,
     onConflict: conflictsToDesk(oversight),
+    onProgress: event => progressHub.publish(event),
   });
   const components: KernelComponents = { registry, oversight, orchestrator, realmStore };
 
@@ -120,6 +125,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   return {
     ...components,
     metrics,
+    progressHub,
     stateFile: options.stateFile ?? null,
     restoredFromSnapshot: snapshot !== null,
     snapshot,

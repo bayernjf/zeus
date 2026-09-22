@@ -9,6 +9,7 @@ import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
 import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
+import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 
 /**
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
@@ -44,6 +45,8 @@ export type HttpDeps = {
   oversight?: OversightDesk;
   /** H2: concurrency metrics snapshot. */
   metrics?: ConcurrencyMetrics;
+  /** H3: per-intent progress events for the SSE stream. */
+  progressHub?: ProgressHub;
 };
 
 export type StartOptions = {
@@ -177,13 +180,61 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       });
 
       // H2: cancel every non-terminal branch of an intent.
-      app.post('/api/intents/:id/cancel', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
-        const { id } = request.params as { id: string };
+      app.post('/api/intents/:id/cancel', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {        const { id } = request.params as { id: string };
         try {
           return await deps.orchestrator!.cancelIntent(id);
         } catch (e) {
           return mapKernelError(reply, e);
         }
+      });
+
+      // H3: server-sent events for one intent's real-time progress. An intent
+      // that has already finished is replayed as one event and closed; an
+      // unknown intent 404s. The raw socket is hijacked from Fastify.
+      app.get('/api/intents/:id/events', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const stored = deps.orchestrator!.getIntent(id);
+        if (!stored && !deps.progressHub) {
+          return error(reply, 404, 'not_found', `unknown intent: ${id}`);
+        }
+
+        const raw = reply.raw;
+        const send = (event: string, data: unknown): void => {
+          raw.write(`event: ${event}\n`);
+          raw.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+        reply.hijack();
+        raw.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+        raw.flushHeaders();
+
+        if (stored) {
+          send('intent', stored);
+          raw.end();
+          return;
+        }
+
+        const unsubscribe = deps.progressHub!.subscribe(id, (event: ProgressEvent) => {
+          send(event.type, event);
+          if (event.type === 'intent-finished') {
+            finish();
+          }
+        });
+        const keepalive = setInterval(() => raw.write(': ping\n\n'), 15_000);
+        const finish = (): void => {
+          clearInterval(keepalive);
+          unsubscribe();
+          raw.end();
+        };
+        raw.on('close', () => {
+          clearInterval(keepalive);
+          unsubscribe();
+          raw.destroy();
+        });
       });
     }
 

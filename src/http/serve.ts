@@ -60,6 +60,7 @@ async function main(): Promise<void> {
     orchestrator: kernel.orchestrator,
     oversight: kernel.oversight,
     metrics: kernel.metrics,
+    progressHub: kernel.progressHub,
   });
   const port = Number(process.env.ZEUS_PORT ?? 8787);
   const host = process.env.ZEUS_HOST ?? '127.0.0.1';
