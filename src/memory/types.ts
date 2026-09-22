@@ -72,8 +72,16 @@ export interface ConsolidateOptions {
   escalationId?: (dispute: DisputeRecord) => string;
 }
 
+/** A recorded driver correction against an author; lowers future reliability. */
+export interface ReliabilityCorrection {
+  agentId: string;
+  runId: string;
+  at: string;
+}
+
 /** Serializable memory state; the snapshot persisted with the kernel. */
 export type MemoryState = {
   events: MemoryEvent[];
   facts: Array<[string, FactRecord[]]>;
+  corrections?: ReliabilityCorrection[];
 };

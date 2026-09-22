@@ -5,12 +5,15 @@ import type {
   FactRecord,
   MemoryEvent,
   MemoryState,
+  ReliabilityCorrection,
 } from './types.js';
 
 export { MemoryConsolidationError } from './consolidate.js';
 
-export class MemoryBoundaryError extends Error {
-  constructor(message: string) {
+/** Per-correction penalty applied to future reliability scoring. */
+const CORRECTION_PENALTY = 0.15;
+
+export class MemoryBoundaryError extends Error {  constructor(message: string) {
     super(message);
     this.name = 'MemoryBoundaryError';
   }
@@ -23,8 +26,7 @@ export interface MemoryAuditEntry {
   targetRealmId: string;
 }
 
-export interface MemoryReplay {
-  events: MemoryEvent[];
+export interface MemoryReplay {  events: MemoryEvent[];
   facts: FactRecord[];
 }
 
@@ -36,8 +38,10 @@ export interface MemoryReplay {
 export class MemoryStore {
   private readonly events: MemoryEvent[] = [];
   private readonly factsByRealm = new Map<string, FactRecord[]>();
+  private readonly corrections: ReliabilityCorrection[] = [];
 
-  constructor(private readonly audit: (entry: MemoryAuditEntry) => void = () => {}) {}
+  constructor(private readonly audit: (entry: MemoryAuditEntry) => void = () => {},
+              private readonly now: () => Date = () => new Date()) {}
 
   append(event: MemoryEvent): void {
     if (this.events.some(e => e.eventId === event.eventId)) return;
@@ -101,6 +105,44 @@ export class MemoryStore {
   }
 
   /**
+   * Record a driver correction: the named authors produced a claim the driver
+   * rejected. Each correction permanently lowers the author's score; this is
+   * the "被纠错" feedback the metrics failure rate cannot see.
+   */
+  recordCorrections(agentIds: string[], runId: string): void {
+    for (const agentId of [...new Set(agentIds)]) {
+      this.corrections.push({ agentId, runId, at: this.now().toISOString() });
+    }
+  }
+
+  /** Reliability score: the observed base (1 − failure rate) less a fixed
+   *  penalty per recorded correction, floored at 0. */
+  reliabilityScore(agentId: string, base: number): number {
+    const count = this.corrections.filter(c => c.agentId === agentId).length;
+    return Math.max(0, base - CORRECTION_PENALTY * count);
+  }
+
+  /** Distinct authors of the named facts, resolved via provenance events.
+   *  Searches every realm when realmId is omitted. */
+  authorsOfFacts(factIds: string[], realmId?: string): string[] {
+    const wanted = new Set(factIds);
+    const realmPairs: Array<[string, FactRecord[]]> = realmId
+      ? [[realmId, this.factsByRealm.get(realmId) ?? []]]
+      : [...this.factsByRealm.entries()];
+    const eventIds = new Set(
+      realmPairs.flatMap(([, facts]) =>
+        facts.filter(f => wanted.has(f.factId)).flatMap(f => f.provenance)),
+    );
+    return [...new Set(
+      this.events.filter(e => eventIds.has(e.eventId)).map(e => e.source.agentId),
+    )];
+  }
+
+  listCorrections(): ReliabilityCorrection[] {
+    return this.corrections.map(c => ({ ...c }));
+  }
+
+  /**
    * Offline decision replay along a runId: the run's events plus every fact
    * whose provenance cites one of those events.
    */
@@ -125,16 +167,19 @@ export class MemoryStore {
         realmId,
         facts.map(f => ({ ...f, provenance: [...f.provenance] })),
       ]),
+      corrections: this.corrections.map(c => ({ ...c })),
     };
   }
 
   importState(state: MemoryState): void {
     this.events.length = 0;
     this.factsByRealm.clear();
+    this.corrections.length = 0;
     for (const event of state.events) this.append(event);
     for (const [realmId, facts] of state.facts) {
       this.factsByRealm.set(realmId, facts.map(f => ({ ...f, provenance: [...f.provenance] })));
     }
+    for (const correction of state.corrections ?? []) this.corrections.push({ ...correction });
   }
 
   static fromState(state: MemoryState, audit?: (entry: MemoryAuditEntry) => void): MemoryStore {

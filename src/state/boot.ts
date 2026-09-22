@@ -79,12 +79,23 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const oversight = new OversightDesk({
     now,
     ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
+    onDecided: decided => {
+      if (decided.kind !== 'memory-dispute' || !decided.factId) return;
+      // Approve confirms the new fact: the conflicting facts were wrong. Reject
+      // means the new fact itself was wrong. Either way the losing authors are
+      // corrected, lowering their reliability in future consolidation.
+      const losingFacts = decided.status === 'rejected'
+        ? [decided.factId]
+        : decided.conflictingFacts ?? [];
+      const authors = memoryStore.authorsOfFacts(losingFacts);
+      memoryStore.recordCorrections(authors, decided.runId);
+    },
   });
   const metrics = new ConcurrencyMetrics({ now });
   const progressHub = new ProgressHub();
   const realmStore = new FsRealmStore();
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
-  const memoryStore = new MemoryStore(memoryAudit);
+  const memoryStore = new MemoryStore(memoryAudit, now);
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
     audit: options.dispatchAudit ?? noop,
     now,
@@ -113,8 +124,8 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   ): void {
     const reliability = (agentId: string): number => {
       const stat = metrics.snapshot().perVassal[agentId];
-      if (!stat || stat.calls === 0) return 0.5;
-      return 1 - stat.failureRate;
+      const base = !stat || stat.calls === 0 ? 0.5 : 1 - stat.failureRate;
+      return memoryStore.reliabilityScore(agentId, base);
     };
     const result = memoryStore.consolidateRealm(event.realmId!, { now, reliability });
     const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';

@@ -108,6 +108,23 @@ describe('memory P1 auto-consolidation on intent completion', () => {
     });
     expect(kernel.oversight.list().filter(e => e.kind === 'memory-dispute')).toHaveLength(1);
   });
+
+  it('records corrections when the driver settles a dispute, lowering future reliability', async () => {
+    const kernel = await bootKernel({ vassalSeeds: [CARD_URL], fetchImpl });
+    kernel.memoryStore!.append(claim('node', 'c1'));
+    kernel.memoryStore!.append({ ...claim('bun', 'c2'), source: { agentId: 'agent-b' } });
+    await kernel.orchestrator.fanOut({
+      skill: 'research', realm: 'personal', realmId: MEM_REALM, params: {},
+    });
+
+    const dispute = kernel.oversight.list().find(e => e.kind === 'memory-dispute')!;
+    // Reject the new fact ('bun', authored by agent-b): agent-b is corrected.
+    await kernel.oversight.reject(dispute.id);
+
+    const corrections = kernel.memoryStore!.listCorrections();
+    expect(corrections.map(c => c.agentId)).toEqual(['agent-b']);
+    expect(kernel.memoryStore!.reliabilityScore('agent-b', 0.5)).toBeCloseTo(0.35);
+  });
 });
 
 function restoredEvents(kernel: Awaited<ReturnType<typeof bootKernel>>): MemoryEvent[] {

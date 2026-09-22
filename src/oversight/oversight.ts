@@ -10,6 +10,8 @@ export type OversightOptions = {
   newId?: () => string;
   cancelTask?: CancelTaskFn;
   audit?: (entry: OversightAuditEntry) => void;
+  /** Fired after a driver decision is recorded (memory reliability write-back). */
+  onDecided?: (escalation: Escalation) => void;
 };
 
 /**
@@ -192,6 +194,7 @@ export class OversightDesk {
     };
     this.escalations.set(id, decided);
     this.audit(decided, 'approved', note, undefined, stance);
+    this.options.onDecided?.(decided);
     return structuredClone(decided);
   }
 
@@ -212,6 +215,7 @@ export class OversightDesk {
     };
     this.escalations.set(id, decided);
     this.audit(decided, 'rejected', note);
+    this.options.onDecided?.(decided);
     return structuredClone(decided);
   }
 
@@ -225,6 +229,7 @@ export class OversightDesk {
     };
     this.escalations.set(id, decided);
     this.audit(decided, status, note);
+    this.options.onDecided?.(decided);
     return structuredClone(decided);
   }
 
