@@ -73,11 +73,11 @@ State of Zeus as of 2026-09-21.
    - 🚧 E1.3 规则聚合（unanimous/majority/weighted，分裂不臆断）；🚧 E1.4 冲突检测 + needs-driver 经 onConflict 回调进监督台（LLM critic/完整 DAG/进行中硬 abort/服务端 SSE 未做，见设计稿 §7）；
    - 26 项新测试（primitives 13 + orchestrator 13），全量 124 绿、typecheck/build 过，已从 `src/index.ts` 导出。**下一步候选**：S3 完整 DAG、S2 裁决（需模型）、E2 Skill 注册中心（F7）。
 
-12. **Jev 模型技术选型融合（2026-09-22，纯设计）** ✅ `docs/design-decision-backend.md` v0.1：
+12. **决策后端抽象层（Decision Backend，2026-09-22，纯设计）** ✅ `docs/design-decision-backend.md` v0.2：
    - **调研核实**（联网多源交叉，含 LangChain 官方博客/Cloudflare/36氪）：Jev = TypeSafe AI "System One" 决策模型——不生成文本，输入 state + 类型化问题，输出 Choice/Score/Noul（带概率 + 置信度，RLCD 校准）；输入 $0.042/M token、输出免费、延迟 70–500ms；**角色判定：可接入外部决策能力，非驱动模型、非封臣模型**。
-   - **设计**：内核新增可替换"快决策层"端口 `DecisionBackend`（noul/choice/score 三方法），Jev 为首个实现（`src/decision/`，env 装配，未配置即 null 内核零变化）；四个接线位——① E1.3 规则无解时快仲裁（高置信采纳、低置信仍 needs-driver）；② 监督台 triage（升级噪音过滤，建议非裁决）；③ 派发 guardrail（Noul 校验，默认关闭逐 skill 开启）；④ S14 异构调度评分（只给语义不给策略）。
-   - **硬线**：内核不 import 外部 SDK；纯函数规则是底座、无后端 = 现状；state 最小化 + enterprise 域默认不出域 + 每次调用审计（DecisionTrace，沿 runId 回放）；本地/开源后端可经同一端口接入（APUS 复现候选）。
-   - 同步：tech-exploration-map S14 状态 ✅、D 节 Jev 销项（v0.2）。**下一步候选**：把端口落成工程切片（src/decision/types.ts + jev.ts + 降级测试）。
+   - **设计（模型无关，v0.2）**：内核新增可替换"决策后端"抽象端口 `DecisionBackend`（noul/choice/score 三方法），**与具体模型解耦**——两类实现家族：① 专用决策模型（Jev 首个实现，System 1 快层）；② 传统 LLM（prompt + 结构化输出适配，System 2 慢层，置信度 `calibrated:false` 约定）。`DecisionBackendKind`/`model` 入审计。四接线位——① E1.3 规则无解时仲裁（高置信采纳、低置信仍 needs-driver）；② 监督台 triage（升级噪音过滤，建议非裁决）；③ 派发 guardrail（Noul 校验，默认关闭逐 skill 开启）；④ S14 异构调度评分（只给语义不给策略）。多后端可并存（快/慢层），resolveBackend 选择维度随 S14。
+   - **硬线**：内核不 import 外部 SDK；纯函数规则是底座、无后端 = 现状；state 最小化 + enterprise 域默认不出域 + 每次调用审计（DecisionTrace 含 backend/model，沿 runId 回放）；本地/开源后端可经同一端口接入（APUS 复现候选）。
+   - 同步：tech-exploration-map 升 v0.3（S14 ✅、D 节销项）。**下一步候选**：把端口落成工程切片（src/decision/types.ts + decision-model.ts(Jev) + llm.ts + 降级测试，双 kind 验收）。
 
 ## Project documents
 
@@ -87,7 +87,7 @@ State of Zeus as of 2026-09-21.
 * [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 v0.1：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、八条验收 ★
 * [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
 * [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核 v0.1（PRD E1）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级、边界 ★
-* [docs/design-decision-backend.md](docs/design-decision-backend.md) — 快决策层 v0.1（DecisionBackend）：可替换决策后端端口（noul/choice/score）、Jev 首个实现、四接线位（聚合仲裁/监督台 triage/派发 guardrail/异构评分）、数据主权硬线 ★
+* [docs/design-decision-backend.md](docs/design-decision-backend.md) — 决策后端抽象层 v0.2（模型无关）：DecisionBackend 端口（noul/choice/score）、两类实现家族（专用决策模型 Jev / 传统 LLM 适配）、四接线位、选择与降级、数据主权硬线 ★
 * [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
@@ -128,3 +128,4 @@ State of Zeus as of 2026-09-21.
 | 2026-09-21 | Realm 测试 Windows 容错（无 symlink 权限时夹具降级、专属断言条件化）；全量 98 项绿、typecheck/build 过（commit 82671cc）。此前工作已经 PR #1/#2 合入 origin/main，本批 4 commit 在 dev 待 push |
 | 2026-09-22 | M2 并发决策内核第一批（design-fan-out.md + src/orchestrator/）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级监督台；E1.2 库内完成，E1.1/1.3/1.4/1.5/1.6 部分落地；26 项新测试，全量 124 绿、typecheck/build 过 |
 | 2026-09-22 | Jev 模型核实并落设计（design-decision-backend.md v0.1）：调研定案 Jev = TypeSafe System One 决策模型（可接入外部能力，非驱动/非封臣）；快决策层 DecisionBackend 端口（noul/choice/score）+ Jev 首个实现 + 四接线位 + 数据主权硬线；tech-exploration-map 升 v0.2（S14 ✅、D 节销项） |
+| 2026-09-22 | 决策后端抽象层升级为**模型无关**（design-decision-backend.md v0.2）：DecisionBackendKind=decision-model/llm；Jev 为专用决策模型家族首个实现（快层），传统 LLM 经 prompt+结构化输出适配同端口接入（慢层，置信度校准约定）；新增选择与降级（多后端并存）；tech-exploration-map 升 v0.3 |

@@ -35,14 +35,14 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | S11 | 工具/Skill 发现与组合 | 自动选工具、工具链拼装、工具失败恢复 | 📝 |
 | S12 | 规划：单/多 planner、重规划 | 计划竞争、计划与执行交错、replan | 📝 |
 | S13 | 长流程持久化执行 | checkpoint、崩溃恢复、断点续跑（随 H2） | 📝 |
-| S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**Jev 决策模型落此层（快决策后端，见 design-decision-backend.md）** | ✅ |
+| S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**决策后端抽象层落此层（DecisionBackend：专用决策模型 Jev 与 LLM 均可接入，见 design-decision-backend.md）** | ✅ |
 | S15 | 流式体验工程 | 部分结果先呈现、流式合并、思考态 UX | 📝 |
 | S16 | 沙箱与代码执行 | 容器/microVM 隔离、资源配额 | 📝 |
 | S17 | Agent 测试策略 | 契约测试、录制重放、mock LLM、混沌测试 | 📝（契约测试已有实践） |
 
 ## D. 待确认外部输入
 
-- ~~**Jev 模型（2026-09-22 负责人提及）**~~ ✅ 已核实并落设计：Jev = TypeSafe AI 首个公开 "System One" 决策模型（2026-09-15，创始人 Diogo Almeida 为前 OpenAI 研究员）；不吃文本，输入 state + 类型化问题，输出 Choice/Score/Noul 带概率与置信度；输入 $0.042/M token、输出免费、延迟 70–500ms；已上 Cloudflare AI 目录。**设计落点：快决策层 DecisionBackend（design-decision-backend.md），S14 快决策模型层**。Jev 是首个实现（可替换），不是驱动模型、不是封臣。
+- ~~**Jev 模型（2026-09-22 负责人提及）**~~ ✅ 已核实并落设计：Jev = TypeSafe AI 首个公开 "System One" 决策模型（2026-09-15，创始人 Diogo Almeida 为前 OpenAI 研究员）；不吃文本，输入 state + 类型化问题，输出 Choice/Score/Noul 带概率与置信度；输入 $0.042/M token、输出免费、延迟 70–500ms；已上 Cloudflare AI 目录。**设计落点：决策后端抽象层 DecisionBackend（design-decision-backend.md v0.2，模型无关）——Jev 作为专用决策模型家族的首个实现，传统 LLM 经适配器同端口接入（慢层）**；S14 落此层。
 
 ## E. 已覆盖（已有点名或设计，避免重复立项）
 
@@ -63,4 +63,5 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-09-22 | 首版：A 组五条优先（已裁决）、B/C 组 12 条登记、Jev 模型待确认（S14 候选）、已覆盖清单 |
-| v0.2 | 2026-09-22 | Jev 已核实并落设计（design-decision-backend.md，快决策层）；S14 状态 ✅ |
+| v0.2 | 2026-09-22 | Jev 已核实并落设计（design-decision-backend.md v0.1，快决策层）；S14 状态 ✅ |
+| v0.3 | 2026-09-22 | 决策后端抽象层升级为**模型无关**（design-decision-backend.md v0.2）：DecisionBackendKind=decision-model/llm，Jev 为专用决策模型家族首个实现，传统 LLM 经适配器同端口接入（慢层） |
