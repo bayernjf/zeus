@@ -169,6 +169,10 @@ State of Zeus as of 2026-09-22.
    - KernelSnapshot 增 `mentorships` 段，台账随 bootKernel 装配持久化重启恢复（collect/apply/FileStore 全链路）。
    - 9 项 tests/mentor-transfer.test.ts + 1 项 tests/kernel-mentor-state.test.ts；PRD v0.13，E2.5 升 ✅。
 
+24. **封臣接入波次表（2026-09-23 ✅ 完成，纯文档）**：
+   - product-portrait §7.1 新增波次表：W1 pr-helper（首封臣打磨协议）→ W2 loom/atlas（复用已有 A2A、超集守护）→ W3 agent-world/job-agent/agent-dev（全矩阵收口）；bayjf 为验签封神榜配套（非封臣）。
+   - 明确跨波门槛（前波出口达成才推广）、能力域以 Agent Card 为准不预设职责、仓库外关口须点工/授权。product-portrait 升 v0.5。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
