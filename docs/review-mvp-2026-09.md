@@ -12,6 +12,13 @@
 > - 非阻塞增强：**完整 DAG（S3）→ ✅**（`src/orchestrator/dag*.ts`，拓扑分层/关键路径/部分失败跳过，6 测试）；**决策后端工程切片 → ✅**（`src/decision/`，模型无关端口 + Jev/LLM 适配器 + 降级，9 测试；Jev 真实 endpoint/envelope 待有 key 真机核对）。
 > - **仍未销项（故产品级可上线 MVP 判定不变：仍未达成）**：硬阻塞 #1 部署形态、#5 生产 RSK 密钥；软阻塞 #6 E4.8 真机验收、#7 真机联调、#9 push + 云端 CI 首绿（需授权）；以及 E5.3 的启动装配接线与 Realm 持久化、E10.4 容量压测。
 
+> **【2026-09-22 A 批次（G1/G4/G5/G6）后 · 销项更新 v0.3】** 评审 v0.2 之后的库内进展（全量 **217 测试绿 / 31 文件**，tsc 过；以下为现状，原 §1–§7 快照保留不改）：
+> - **G1 封臣上线入口（致命缺口）→ ✅ 销项**：`POST /api/vassals`（拉 card + fealty 校验注册，卡片不可达 502）、`DELETE /api/vassals/:name`（吊销，未知/已吊销 404）；`ZEUS_VASSAL_SEEDS` 支持启动 seed，已在状态快照中的 URL 跳过不重复拉取。长驻服务不再以空 registry 启动。
+> - **G4 Realm 连接持久化 → ✅ 销项**：KernelSnapshot 增 `realms`（连接参数 root/realmId/type/readOnly，向后兼容可选字段）；`bootKernel` 装配 FsRealmStore，重启自动 reconnect 重建检索索引；`ZEUS_REALM_ROOTS` 支持启动连接；已持久化 root 不可达时 fail-loud 拒启，不静默丢域。
+> - **G6 E6.3 一键补参重派 → ✅ 销项**：`POST /api/escalations/:id/approve-resume` 携带 params，approve 后经新增 `Orchestrator.findIntentForBranchRun` 定位意图并自动 `resumeBranch` 重派、重算整意图。
+> - **G5 H3 服务端 SSE → ✅ 销项**：编排器发出 branch-started/branch-ended/intent-finished 进度事件到新增 `ProgressHub`；`GET /api/intents/:id/events` 输出 SSE（15s keepalive ping、已完成意图回放单事件后关闭、无 hub 时未知意图 404）；hijack 后 `flushHeaders` 保证客户端即时收到响应头。
+> - **产品级可上线 MVP 判定仍为：未达成**。剩余关口全部在仓库外或需授权，库内已无法继续闭环：E4.8 真机验收（pr-helper 部署）、Zeus↔loom 真机联调、push dev→云端 CI 首绿（需授权）、E10.4 容量压测基线、Jev 真实 endpoint/key 核对。
+
 ## 1. 验证基线（本机实跑，非转述）
 
 | 项 | 结果 | 说明 |

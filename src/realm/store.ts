@@ -1,7 +1,7 @@
 import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { digestManifest, sha256Hex } from './digest.js';
-import type { RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, SearchQuery } from './types.js';
+import type { RealmConnection, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, SearchQuery } from './types.js';
 import {
   InvalidItemIdError,
   RealmError,
@@ -135,6 +135,15 @@ export class FsRealmStore implements RealmStore {
     }
     const content = await readFile(abs, 'utf8');
     return { itemId: toPosix(relative(stored.root, real)), content, modifiedAt: st.mtime.toISOString(), bytes: Buffer.byteLength(content, 'utf8') };
+  }
+
+  connections(): RealmConnection[] {
+    return [...this.realms.values()].map(stored => ({
+      root: stored.root,
+      realmId: stored.realmId,
+      type: stored.type,
+      readOnly: stored.readOnly,
+    }));
   }
 
   private requireRealm(realmId: string): StoredRealm {

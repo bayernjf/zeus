@@ -116,6 +116,13 @@ State of Zeus as of 2026-09-22.
    - **批次收尾（2026-09-22）**：T1–T4 全部库内落地（fdb2663 / 4d99f43 / 34ad658(+docs 8bc7efd) / d0ecc85），全量 **187 绿 / 25 文件**，typecheck/build 过，Docker 真机全链路验证。**评审两条硬阻塞（部署形态、生产 RSK）已库内销项**；产品级 MVP 剩余关口全部在仓库外：真机验收 #6、Zeus↔loom 联调、push+CI 首绿（需授权）、E10.4 压测基线；T5（H2 驾驶员 API）为下一批库内候选。
    - **需用户参与（本机不可闭环）**：真机验收 #6（pr-helper 部署 Vercel）、Zeus↔loom 联调（loom 起测试环境）、push dev→CI 首绿（需授权）、E10.4 容量压测（T2 之后本机基线）。
 
+16. **A 批次：四个 MVP 缺口一口气收口（2026-09-22 ✅ 全部完成，全量 217 绿 / 31 文件，tsc 过）**：
+   - [x] **A1 G1 封臣上线入口** ✅ commit a315ff1：`POST /api/vassals`（拉 card + fealty/版本校验注册，卡片不可达 502、坏卡片/无 fealty 400）、`DELETE /api/vassals/:name`（吊销，未知/已吊销 404）；`bootKernel` 增 `vassalSeeds`，`ZEUS_VASSAL_SEEDS` 启动自动注册，已在快照中的 cardUrl 跳过不重拉。7 项测试 tests/http-vassals.test.ts。
+   - [x] **A2 G4 Realm 连接持久化** ✅ commit 47de505：KernelSnapshot 增可选 `realms: RealmConnection[]`（root/realmId/type/readOnly，向后兼容）；RealmStore 接口与 FsRealmStore 增 `connections()`；`bootKernel` 装配 FsRealmStore，重启 reconnect 快照域并连接 `ZEUS_REALM_ROOTS`，持久化 root 不可达 fail-loud 拒启。2 项测试 tests/kernel-realm-state.test.ts。
+   - [x] **A3 G6 E6.3 一键补参重派** ✅ commit b4c32e6：`POST /api/escalations/:id/approve-resume` 携带 params，approve 后经新增 `Orchestrator.findIntentForBranchRun`（按分支 runId 匹配）定位意图、自动 resumeBranch 重派重算。4 项测试 tests/http-approve-resume.test.ts。
+   - [x] **A4 G5 H3 服务端 SSE** ✅ commit e9002e3：新增 `src/orchestrator/progress.ts`（ProgressEvent + ProgressHub），编排器在分支 start/end 与意图完成时发事件；`GET /api/intents/:id/events` 输出 SSE（15s keepalive、已完成意图回放单事件后关闭、无 hub 未知意图 404、hijack 后 flushHeaders 保证即时响应）。5 项测试 tests/progress-hub.test.ts + tests/http-sse.test.ts（含真机端口实时流）。
+   - **评审更新**：见 review-mvp-2026-09.md v0.3 与 PRD v0.6（E5.3/E5.5/E6.3 升 ✅）。**产品级可上线 MVP 仍判定未达成，但库内已无任务可闭环**——剩余关口全在仓库外/需授权：E4.8 真机验收、Zeus↔loom 联调、push+CI 首绿（需授权）、E10.4 容量压测、Jev 真实 endpoint/key 核对。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：

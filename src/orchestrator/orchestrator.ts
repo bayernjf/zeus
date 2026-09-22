@@ -6,6 +6,7 @@ import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import type { DecisionBackend } from '../decision/types.js';
+import type { ProgressEvent } from './progress.js';
 import type {
   BranchOutcome,
   CancelBranchResult,
@@ -36,6 +37,8 @@ export type OrchestratorOptions = {
   allowUncalibratedArbitration?: boolean;
   /** Per-call timeout for the arbitration backend. */
   arbitrationMaxWaitMs?: number;
+  /** H3: publish branch lifecycle + intent-finished events to the SSE hub. */
+  onProgress?: (event: ProgressEvent) => void;
 };
 
 export class UnknownIntentError extends Error {}
@@ -107,6 +110,7 @@ export class Orchestrator {
     this.intents.set(intentId, result);
     this.requests.set(intentId, request);
     if (result.status === 'needs-driver') this.options.onConflict?.(result.conflicts, result);
+    this.emit({ type: 'intent-finished', intentId, status: result.status, at: this.now().toISOString() });
     return result;
   }
 
@@ -114,6 +118,18 @@ export class Orchestrator {
   getIntent(intentId: string): FanOutResult | undefined {
     const result = this.intents.get(intentId);
     return result ? structuredClone(result) : undefined;
+  }
+
+  /** E6.3: find the intent whose branch run matches a task-input escalation.
+   *  Branch runIds are `${parentRunId}:${vassal}`, so the escalation's runId
+   *  alone is enough to locate the stored intent. */
+  findIntentForBranchRun(branchRunId: string, vassal: string): string | undefined {
+    for (const [intentId, result] of this.intents) {
+      if (result.branches.some(branch => branch.runId === branchRunId && branch.vassal === vassal)) {
+        return intentId;
+      }
+    }
+    return undefined;
   }
 
   /** E5.3: serializable snapshot of idempotent intent results plus the original
@@ -161,6 +177,7 @@ export class Orchestrator {
     const arbitrated = await this.maybeArbitrate(recomputed);
     this.intents.set(intentId, arbitrated);
     if (arbitrated.status === 'needs-driver') this.options.onConflict?.(arbitrated.conflicts, arbitrated);
+    this.emit({ type: 'intent-finished', intentId, status: arbitrated.status, at: this.now().toISOString() });
     return structuredClone(arbitrated);
   }
 
@@ -206,8 +223,14 @@ export class Orchestrator {
     const metrics = this.options.metrics;
     metrics?.enqueue();
     metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
+    this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
     const branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
     metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
+    this.emit({
+      type: 'branch-ended', intentId, runId: branchRunId, vassal,
+      outcome: outcomeOf(branch), ...(branch.ok ? { state: branch.state } : {}),
+      at: this.now().toISOString(),
+    });
     return branch;
   }
 
@@ -253,6 +276,10 @@ export class Orchestrator {
 
   private now(): Date {
     return this.options.now ? this.options.now() : new Date();
+  }
+
+  private emit(event: ProgressEvent): void {
+    this.options.onProgress?.(event);
   }
 
   /** S2: consult the decision backend on a needs-driver split, if configured. */

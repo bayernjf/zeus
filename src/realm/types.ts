@@ -50,7 +50,18 @@ export interface RealmStore {
   manifest(realmId: string): Promise<RealmManifest>;
   search(realmId: string, query: SearchQuery): Promise<RealmHit[]>;
   read(realmId: string, itemId: string): Promise<RealmItem>;
+  /** G4: connect-time parameters of every connected realm, for persistence. */
+  connections(): RealmConnection[];
 }
+
+/** G4: everything needed to reconnect a realm after restart. The search index
+ *  is rebuilt on reconnect, so only the connect parameters are persisted. */
+export type RealmConnection = {
+  root: string;
+  realmId: string;
+  type: RealmType;
+  readOnly: boolean;
+};
 
 export class RealmError extends Error {
   constructor(message: string) {

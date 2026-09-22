@@ -9,6 +9,7 @@ import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
 import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
+import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 
 /**
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
@@ -44,6 +45,8 @@ export type HttpDeps = {
   oversight?: OversightDesk;
   /** H2: concurrency metrics snapshot. */
   metrics?: ConcurrencyMetrics;
+  /** H3: per-intent progress events for the SSE stream. */
+  progressHub?: ProgressHub;
 };
 
 export type StartOptions = {
@@ -100,6 +103,38 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       return projectInternalRoster(deps.registry.listAll(), now);
     });
 
+    // G1: onboard a vassal at runtime — fetch its agent card, validate fealty
+    // and register it. A card without fealty / with an unsupported version is
+    // rejected by the registry; an unreachable card is a bad-gateway, not a
+    // malformed request.
+    app.post('/api/vassals', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = (request.body ?? {}) as { cardUrl?: unknown; taskUrl?: unknown };
+      if (typeof body.cardUrl !== 'string' || body.cardUrl.trim() === '') {
+        return error(reply, 400, 'invalid_request', 'body.cardUrl is required');
+      }
+      if (body.taskUrl !== undefined && typeof body.taskUrl !== 'string') {
+        return error(reply, 400, 'invalid_request', 'body.taskUrl must be a string');
+      }
+      try {
+        const entry = await deps.registry.register(body.cardUrl, {
+          ...(typeof body.taskUrl === 'string' ? { taskUrl: body.taskUrl } : {}),
+        });
+        return reply.code(201).send(entry);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        if (/^card fetch failed/.test(detail)) return error(reply, 502, 'bad_gateway', detail);
+        return error(reply, 400, 'invalid_request', detail);
+      }
+    });
+
+    // G1: revoke a vassal. Revocation takes effect for dispatch immediately;
+    // an unknown / already-revoked name is 404.
+    app.delete('/api/vassals/:name', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const { name } = request.params as { name: string };
+      if (!deps.registry.revoke(name)) return error(reply, 404, 'not_found', `unknown vassal: ${name}`);
+      return { name, revoked: true };
+    });
+
     if (deps.orchestrator) {
       // H2: fan one intent out to the vassals providing a skill.
       app.post('/api/intents', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -145,13 +180,61 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       });
 
       // H2: cancel every non-terminal branch of an intent.
-      app.post('/api/intents/:id/cancel', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
-        const { id } = request.params as { id: string };
+      app.post('/api/intents/:id/cancel', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {        const { id } = request.params as { id: string };
         try {
           return await deps.orchestrator!.cancelIntent(id);
         } catch (e) {
           return mapKernelError(reply, e);
         }
+      });
+
+      // H3: server-sent events for one intent's real-time progress. An intent
+      // that has already finished is replayed as one event and closed; an
+      // unknown intent 404s. The raw socket is hijacked from Fastify.
+      app.get('/api/intents/:id/events', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const stored = deps.orchestrator!.getIntent(id);
+        if (!stored && !deps.progressHub) {
+          return error(reply, 404, 'not_found', `unknown intent: ${id}`);
+        }
+
+        const raw = reply.raw;
+        const send = (event: string, data: unknown): void => {
+          raw.write(`event: ${event}\n`);
+          raw.write(`data: ${JSON.stringify(data)}\n\n`);
+        };
+        reply.hijack();
+        raw.writeHead(200, {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          Connection: 'keep-alive',
+          'X-Accel-Buffering': 'no',
+        });
+        raw.flushHeaders();
+
+        if (stored) {
+          send('intent', stored);
+          raw.end();
+          return;
+        }
+
+        const unsubscribe = deps.progressHub!.subscribe(id, (event: ProgressEvent) => {
+          send(event.type, event);
+          if (event.type === 'intent-finished') {
+            finish();
+          }
+        });
+        const keepalive = setInterval(() => raw.write(': ping\n\n'), 15_000);
+        const finish = (): void => {
+          clearInterval(keepalive);
+          unsubscribe();
+          raw.end();
+        };
+        raw.on('close', () => {
+          clearInterval(keepalive);
+          unsubscribe();
+          raw.destroy();
+        });
       });
     }
 
@@ -182,6 +265,32 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const note = optionalNote(request.body);
         try {
           return await deps.oversight!.reject(id, note);
+        } catch (e) {
+          return mapKernelError(reply, e);
+        }
+      });
+
+      // H2 (E6.3): one-click approve-and-resume — approve a task-input
+      // escalation with human-supplied parameters, then automatically re-dispatch
+      // that single branch and recompute the intent.
+      app.post('/api/escalations/:id/approve-resume', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { params?: unknown; note?: unknown };
+        if (!body.params || typeof body.params !== 'object' || Array.isArray(body.params)) {
+          return error(reply, 400, 'invalid_request', 'body.params object is required');
+        }
+        const escalation = deps.oversight!.get(id);
+        if (!escalation) return error(reply, 404, 'not_found', `unknown escalation: ${id}`);
+        if (escalation.kind !== 'task-input') {
+          return error(reply, 400, 'invalid_request', `escalation ${id} is ${escalation.kind}; only task-input can resume`);
+        }
+        const intentId = deps.orchestrator!.findIntentForBranchRun(escalation.runId, escalation.vassal);
+        if (!intentId) return error(reply, 409, 'conflict', `no stored intent branch matches escalation ${id}`);
+        const note = typeof body.note === 'string' ? body.note : undefined;
+        try {
+          const approved = deps.oversight!.approve(id, note);
+          const intent = await deps.orchestrator!.resumeBranch(intentId, escalation.vassal, body.params as Record<string, unknown>);
+          return { escalation: approved, intent };
         } catch (e) {
           return mapKernelError(reply, e);
         }

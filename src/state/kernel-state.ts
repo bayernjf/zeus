@@ -5,6 +5,8 @@ import { VassalRegistry } from '../registry/registry.js';
 import type { Escalation } from '../oversight/types.js';
 import { OversightDesk } from '../oversight/oversight.js';
 import { Orchestrator, type OrchestratorSnapshot } from '../orchestrator/orchestrator.js';
+import type { RealmConnection } from '../realm/types.js';
+import type { RealmStore } from '../realm/types.js';
 
 /**
  * E5.3 minimal kernel persistence (design-http-transport §2.2/§2.3: the H2
@@ -26,12 +28,16 @@ export type KernelSnapshot = {
   registry: VassalEntry[];
   oversight: Escalation[];
   orchestrator: OrchestratorSnapshot;
+  /** G4: connected realms. Optional for backward compat with v1 snapshots. */
+  realms?: RealmConnection[];
 };
 
 export type KernelComponents = {
   registry: VassalRegistry;
   oversight: OversightDesk;
   orchestrator: Orchestrator;
+  /** G4: when assembled, its connected realms are snapshotted and reconnected. */
+  realmStore?: RealmStore;
 };
 
 export class KernelStateError extends Error {}
@@ -42,6 +48,7 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     registry: components.registry.exportState(),
     oversight: components.oversight.exportState(),
     orchestrator: components.orchestrator.exportState(),
+    ...(components.realmStore ? { realms: components.realmStore.connections() } : {}),
   };
 }
 
@@ -66,6 +73,7 @@ export class FileKernelStateStore {
       registry: state.registry,
       oversight: state.oversight,
       orchestrator: state.orchestrator,
+      ...(state.realms ? { realms: state.realms } : {}),
     };
     await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;

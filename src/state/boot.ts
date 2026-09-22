@@ -5,6 +5,9 @@ import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
+import { FsRealmStore } from '../realm/store.js';
+import type { RealmType } from '../a2a/types.js';
+import { ProgressHub } from '../orchestrator/progress.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -29,6 +32,8 @@ import {
 export type KernelBoot = KernelComponents & {
   /** E1.7 runtime concurrency metrics (not persisted); wired into the orchestrator. */
   metrics: ConcurrencyMetrics;
+  /** H3: progress event hub feeding the SSE endpoint. */
+  progressHub: ProgressHub;
   /** Absolute or relative path of the state JSON, or null when in-memory only. */
   stateFile: string | null;
   /** True when a snapshot was found and applied during boot. */
@@ -49,6 +54,12 @@ export type KernelBootOptions = {
   dispatchAudit?: AuditSink;
   /** Audit sink for oversight actions; defaults to no-op. */
   oversightAudit?: (entry: OversightAuditEntry) => void;
+  /** G1: card URLs auto-registered on boot. A URL already present (restored from
+   *  snapshot or an earlier seed) is skipped, so seeds never trigger a refetch. */
+  vassalSeeds?: string[];
+  /** G4: realm roots connected on boot. Strings are personal read-write roots;
+   *  objects may set type/readOnly. Persisted roots are reconnected as well. */
+  realmRoots?: Array<string | { root: string; type?: RealmType; readOnly?: boolean }>;
 };
 
 const noop = (): void => {};
@@ -63,6 +74,8 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
   });
   const metrics = new ConcurrencyMetrics({ now });
+  const progressHub = new ProgressHub();
+  const realmStore = new FsRealmStore();
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
     audit: options.dispatchAudit ?? noop,
     now,
@@ -72,8 +85,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     metrics,
     onConflict: conflictsToDesk(oversight),
+    onProgress: event => progressHub.publish(event),
   });
-  const components: KernelComponents = { registry, oversight, orchestrator };
+  const components: KernelComponents = { registry, oversight, orchestrator, realmStore };
 
   let store: FileKernelStateStore | null = null;
   let snapshot: KernelSnapshot | null = null;
@@ -83,9 +97,35 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     if (snapshot) applyKernelState(components, snapshot);
   }
 
+  // G4: reconnect realms restored from the snapshot, then connect the roots
+  // supplied on this boot. Connect dedupes by realpath, so overlap is harmless.
+  // A restored root that can no longer be reached fails boot loudly rather than
+  // silently dropping a data domain (the recovery promise).
+  if (snapshot?.realms) {
+    for (const connection of snapshot.realms) {
+      await realmStore.connect(connection.root, connection.type, { readOnly: connection.readOnly });
+    }
+  }
+  for (const entry of options.realmRoots ?? []) {
+    const connection = typeof entry === 'string' ? { root: entry } : entry;
+    await realmStore.connect(connection.root, connection.type ?? 'personal', {
+      ...(connection.readOnly !== undefined ? { readOnly: connection.readOnly } : {}),
+    });
+  }
+
+  if (options.vassalSeeds && options.vassalSeeds.length > 0) {
+    const known = new Set(registry.listAll().map(entry => entry.cardUrl));
+    for (const cardUrl of options.vassalSeeds) {
+      if (known.has(cardUrl)) continue;
+      await registry.register(cardUrl);
+      known.add(cardUrl);
+    }
+  }
+
   return {
     ...components,
     metrics,
+    progressHub,
     stateFile: options.stateFile ?? null,
     restoredFromSnapshot: snapshot !== null,
     snapshot,
