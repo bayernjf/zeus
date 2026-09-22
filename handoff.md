@@ -1,8 +1,8 @@
 # Handoff
 
-State of Zeus as of 2026-09-21.
+State of Zeus as of 2026-09-22.
 
-> Zeus 处于「核心内核起步 + 技术方向展开」阶段：A1 注册中心、A2 派发器、A4 监督台、**E1 并发决策内核第一批（fan-out/幂等/cancel 传播/合并/规则聚合/冲突升级）**已落地（纯 TS 库 + vitest，**124 项测试绿**）；派发侧治理闭环、名册投影器 R0、D1 Realm P0、Realm MCP stdio 脚手架、fealty 签名链 v1 纯函数、HTTP H1（Fastify）、协议缺口补齐已落地；CI 就位。**2026-09-22 新增三份技术设计**：记忆整理协议、Supervisor/Subagent 控制模型、Agent 技术探索地图（A 组 S1–S5 裁决优先）。此前工作经 PR #1/#2 合入 `origin/main`；当前在 `dev`（领先 `origin/dev` 7，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
+> Zeus 处于「核心内核成型 + 产品化缺口收窄」阶段：A1 注册中心、A2 派发器、A4 监督台、**E1 并发决策内核（fan-out/幂等/cancel/合并/规则聚合/冲突升级）**、D1 Realm P0、fealty 签名链 v1 纯函数、HTTP H1（Fastify）已落地（纯 TS 库 + vitest，**166 项测试绿 / 22 个测试文件，typecheck/build 过**）。**2026-09-22 MVP 评审后六切片批次全部库内落地**：E2.2 Skill 注册中心、模型无关决策后端 `src/decision`（Jev/LLM 适配器）、E6.2 冲突决议反馈闭环（+E6.3 补参重派骨架）、E1.7 库内并发指标、S3 完整 DAG 编排、E5.3 内核状态落盘恢复；另修两处并行负载测试抖动。四份调研/设计/评审文档（Jev 调研、决策后端 v0.2、决策层行业调研、MVP 评审）已入库。当前在 `dev`（领先 `origin/dev` 一批 commit 未 push，push 需授权）。本文件记录项目当前状态、活跃任务与文档索引。
 
 ## Current state
 
@@ -19,6 +19,14 @@ State of Zeus as of 2026-09-21.
 - **HTTP H1 传输层落地（2026-09-21，commit 3190a11）**：`src/http/`（Fastify 5，全仓库唯一允许 import fastify 的目录，内核零传输依赖）。`server.ts` 导出 `createHttpServer(deps)`（不 listen，测试用 inject）/ `startServer`（默认绑 127.0.0.1）；三端点：`GET /healthz`（仅 status/version/ts，无封臣与 Realm 信息）、`GET /api/roster/public`（实时 `listAll()`→public 投影→`sealSnapshot` 封签，离线可验，`Cache-Control` 对齐 seal TTL，revoked/cardUrl/taskUrl/healthDetail 不进投影条目）、`GET /api/roster`（bearer 常量时间比对，未配 internalToken 则路由不挂载→404，internal 视图不封签）。`serve.ts` 为进程入口（env 装配：ZEUS_HOST/PORT/INTERNAL_TOKEN/RSK_KEY_ID/RSK_KEY，无 PEM 时用临时内存钥并 stderr 告警）；package.json 增 `./http` 子路径导出与 `npm start`。7 项 inject 端到端测试（离线验签、条目/provenance/签名三类篡改拒绝、过期、鉴权矩阵、空名册）。
 - **协议缺口补齐（2026-09-21，commit 9dcf2c4 / a6c6a69）**：① dispatcher 新增 `sla-ack-breached` 审计决策——首个 SSE 流事件为受理信号，晚于 `fealty.sla.ackSeconds` 即审计（注入式单调时钟，违约不阻断任务，无 SLA 声明不计时）；② Artifact.parts 增加标准 A2A `FilePart`（URI 引用形态，Zeus 只透传呈现给驾驶员、不自动拉取，bytes 内联保留类型但 v1 不产出），新增 `src/a2a/parts.ts`（isFilePart/artifactFileUris）并从内核出口导出；③ Task 增加宽松可选 `history`（原样透传不解析，loom 不发 / pr-helper 发）。
 - **Windows 测试可移植性（2026-09-21，commit 82671cc）**：Realm 夹具在无 symlink 权限（Windows 非管理员 / 未开开发者模式，symlinkSync 抛 EPERM）时降级，symlink 专属断言条件化，其余用例恢复；安全边界在 CI 与有权限平台仍完整覆盖。全量 **98 项绿、typecheck/build 通过**（14 个测试文件）。
+- **MVP 评审后六切片批次（2026-09-22，纯库内闭环，全量 166 绿 / 22 文件）**：
+  - **E2.2 Skill 注册中心**（`src/skills/`，commit f46eff9，10 测试）：SkillRegistry id+version 唯一键、多版本共存、get 默认最新 active（显式版本可查 deprecated 供审计）、deprecate 标记不删、findByDomain/Tag、registerFromCard 把卡片 skills 登记为 catalogue 版本、resolveTeam 多技能组队（missing/ambiguous/complete，多候选标 ambiguous 绝不静默随机选）。
+  - **模型无关决策后端**（`src/decision/`，commit 81dc347，9 测试）：严格按 design-decision-backend v0.2——窄端口 DecisionBackend（noul/choice/score，Result 含 calibrated）、prepareState 数据主权守卫（enterprise 默认拒、stateKeys 白名单、redact）、createJevBackend（POST /decide，多 envelope 容忍，输入计费/超时 1500ms）、createLlmBackend（OpenAI 兼容 /chat/completions + json_object，calibrated:false）、arbitrateSplit（阈值/未校准不采纳/降级 needs-driver）。**诚实限制：Jev 真实 endpoint 路径与响应 envelope 无 key 未真机验证，代码注释标注待核对，全用注入 fetch mock 测试。**
+  - **E6.2 决议反馈闭环**（commit c2c4b35，6 测试）：Escalation 分 kind（task-input/intent-conflict）；OversightDesk.ingestConflict/decideConflict（按 intentId 幂等、立场校验、intent-conflict 的 reject 不误取消单任务）；conflictsToDesk 装配助手；纯函数 applyConflictResolution 回写聚合（清冲突/重算状态/记 driverResolution）；Orchestrator.resolveIntent + resumeBranch（E6.3 补参重派骨架：单分支带合并参数重派、整意图重算）。
+  - **E1.7 库内并发指标**（`src/orchestrator/metrics.ts`，commit e54b4ea，5 测试）：ConcurrencyMetrics 在途数/并发峰值/队列深度/完成失败超时计数/各封臣延迟 min·max·avg·p50·p95/失败率，Orchestrator 可选注入（无 metrics 时 no-op），resumeBranch 也计数；队列深度在当前无界 Promise.all 下恒 0（背压归 deferred #9）；无 HTTP 端点（随 H2）。
+  - **S3 完整 DAG 编排**（`src/orchestrator/dag.ts` + `dag-runner.ts`，commit b9134e5，6 测试）：纯图函数 validateDag（环/重复 id/未知依赖校验）/topologicalLayers/criticalPath；DagRunner 按拓扑波次执行、同波并行、每节点复用一次 Orchestrator fan-out（聚合/冲突/取消/指标不重写）、上游未完成则下游 skipped 而独立分支继续、needs-driver 冒泡、resolveParams 把上游产物下传；进程内存态，不绕过 Dispatcher，监督台仍经 onConflict 注入。
+  - **E5.3 内核状态持久化最小版**（`src/state/kernel-state.ts`，commit 79bac99，6 测试）：VassalRegistry/OversightDesk/Orchestrator 各加 exportState/importState；FileKernelStateStore 单 JSON 原子写（tmp+rename）+ 版本/结构校验；collectKernelState/applyKernelState 一键快照/恢复。重启保留：封臣（含已吊销）、升级队列（重建 task/conflict 幂等索引）、意图结果+原始请求（fanOut 幂等重放零出站、resumeBranch 可用）。**未做：Realm 连接状态未纳入、文件存储未接入进程启动装配/H2、Dispatcher 无状态无需持久化、metrics 运行态不持久化。**
+  - **测试稳定性修复**：acceptance-script 子进程套件超时 5s→20s（commit 37c65bd）；orchestrator 并行 fan-out 的墙钟断言（<28ms）在高负载 CI 抖动，改为以"两分支同 tick 窗口启动"确定性证明并行（commit 4b615e6）。连跑两次全量 166/166 稳定。
 
 ## New inputs / 待确认
 
@@ -71,13 +79,24 @@ State of Zeus as of 2026-09-21.
    - ✅ E1.5 幂等与取消：intentId 重放零出站、`cancelIntent` 传播到全部非终态分支、父子 runId 全链贯穿（背压/并发上限仍 deferred #9）；
    - ✅ E1.2 多流合并：`mergeBranches` 带来源 vassal/taskId/runId；
    - 🚧 E1.3 规则聚合（unanimous/majority/weighted，分裂不臆断）；🚧 E1.4 冲突检测 + needs-driver 经 onConflict 回调进监督台（LLM critic/完整 DAG/进行中硬 abort/服务端 SSE 未做，见设计稿 §7）；
-   - 26 项新测试（primitives 13 + orchestrator 13），全量 124 绿、typecheck/build 过，已从 `src/index.ts` 导出。**下一步候选**：S3 完整 DAG、S2 裁决（需模型）、E2 Skill 注册中心（F7）。
+   - 26 项新测试（primitives 13 + orchestrator 13），全量 124 绿、typecheck/build 过，已从 src/index.ts 导出。~~下一步候选：S3 完整 DAG、S2 裁决、E2 Skill 注册中心~~ → 均已在 Active work 13 六切片批次落地（S3 DAG、决策后端、E2.2）。
 
 12. **决策后端抽象层（Decision Backend，2026-09-22，纯设计）** ✅ `docs/design-decision-backend.md` v0.2：
    - **调研核实**（联网多源交叉，含 LangChain 官方博客/Cloudflare/36氪）：Jev = TypeSafe AI "System One" 决策模型——不生成文本，输入 state + 类型化问题，输出 Choice/Score/Noul（带概率 + 置信度，RLCD 校准）；输入 $0.042/M token、输出免费、延迟 70–500ms；**角色判定：可接入外部决策能力，非驱动模型、非封臣模型**。
    - **设计（模型无关，v0.2）**：内核新增可替换"决策后端"抽象端口 `DecisionBackend`（noul/choice/score 三方法），**与具体模型解耦**——两类实现家族：① 专用决策模型（Jev 首个实现，System 1 快层）；② 传统 LLM（prompt + 结构化输出适配，System 2 慢层，置信度 `calibrated:false` 约定）。`DecisionBackendKind`/`model` 入审计。四接线位——① E1.3 规则无解时仲裁（高置信采纳、低置信仍 needs-driver）；② 监督台 triage（升级噪音过滤，建议非裁决）；③ 派发 guardrail（Noul 校验，默认关闭逐 skill 开启）；④ S14 异构调度评分（只给语义不给策略）。多后端可并存（快/慢层），resolveBackend 选择维度随 S14。
    - **硬线**：内核不 import 外部 SDK；纯函数规则是底座、无后端 = 现状；state 最小化 + enterprise 域默认不出域 + 每次调用审计（DecisionTrace 含 backend/model，沿 runId 回放）；本地/开源后端可经同一端口接入（APUS 复现候选）。
    - 同步：tech-exploration-map 升 v0.3（S14 ✅、D 节销项）。**下一步候选**：把端口落成工程切片（src/decision/types.ts + decision-model.ts(Jev) + llm.ts + 降级测试，双 kind 验收）。
+
+13. **MVP 评审后六切片批次（2026-09-22，纯库内可闭环，全部 ✅，详见 Current state 末条）**：
+   - ✅ **E2.2 Skill 注册中心**（src/skills，f46eff9，10 测试）；顺带满足 E2.4 多技能组队/歧义不静默选边。
+   - ✅ **决策后端工程切片**（src/decision，81dc347，9 测试）：design-decision-backend v0.2 落地，模型无关端口 + Jev/LLM 双适配器 + 降级；真机 envelope 待 key 核对（限制已在代码注释与评审报告标注）。
+   - ✅ **E6.2 冲突决议反馈闭环**（c2c4b35，6 测试）：冲突入监督台→decideConflict→回写聚合；E6.3 补参重派骨架 resumeBranch 落地（自动装配随 H2，E6.3 仍 🚧）。
+   - ✅ **E1.7 库内并发指标**（e54b4ea，5 测试）：在途/峰值/队列深度/延迟分位/失败率；HTTP 端点随 H2（E1.7 PRD 状态 🚧）。
+   - ✅ **S3 完整 DAG 编排**（b9134e5，6 测试）：拓扑分层/关键路径/部分失败跳过/上游产物下传。
+   - ✅ **E5.3 持久化最小版**（79bac99，6 测试）：registry/升级队列/意图幂等表原子落盘恢复；**Realm 连接态与启动装配/H2 接线未做（E5.3 仍 🚧）**。
+   - ✅ 测试去抖两处（37c65bd / 4b615e6）；全量 166 绿 / 22 文件，typecheck/build 过，连跑两次稳定。
+   - **评审结论更新**：硬阻塞 E2.2/E6.2 销项，E5.3/E1.7 大幅缓解；**产品级可上线 MVP 仍未达成**——剩余硬阻塞=部署形态、生产 RSK 密钥；软阻塞=真机验收/联调、push+CI 首绿（需授权）；外加 E5.3 启动接线、E10.4 容量压测。见 review-mvp-2026-09.md 顶部 v0.2 销项批注。
+   - **下一步候选（库内仍可闭环）**：① E5.3 启动装配接线（进程启动 load→恢复、退出/变更时 save，长驻形态前置）；② H2 驾驶员 API（把 metrics/持久化/决议/重派接到 HTTP，design-http-transport 已规划）；③ S2 critic 把决策后端接到 E1.3 规则无解仲裁；④ 部署形态（Dockerfile + env 装配，硬阻塞 #1）。真机/压测/push 类需部署或授权，不在库内闭环范围。
 
 ## Project documents
 
@@ -97,7 +116,7 @@ State of Zeus as of 2026-09-21.
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
 * [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — fealty 签名链设计 v0.1（deferred #7）：威胁模型、Zeus 单签 v1/封臣自签 v2、Ed25519+JCS、两层签名信封、RSK 密钥与轮换、吊销四层失效、v1 八条验收 ★
 * [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型 v0.1：网络面划分、Fastify+长驻 Node 裁决、薄传输层单向依赖、H1–H3 端点规划与验收 ★
-* 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验含版本协商/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/registry/signing.ts`（fealty 签名链 v1 纯函数：JCS 规范化、attestation/seal、Ed25519 内存签名器）、`src/util/crypto.ts`（sha256Hex 公共哈希）、`src/a2a/types.ts`（A2A 协议类型：Task/Artifact/Part 含 FilePart/事件/AgentCard/Fealty）与 `src/a2a/parts.ts`（isFilePart/artifactFileUris）、`src/http/`（Fastify H1 薄传输层：`server.ts` 三端点 + 签名接线、`serve.ts` 进程入口；全仓库唯一 import fastify 处，`./http` 子路径导出）、`src/dispatch/`（A2A 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、sla.ackSeconds 受理计时、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：升级请求队列 + approve/reject）、`src/orchestrator/`（E1 并发内核：Orchestrator fan-out/幂等/cancel、merge/aggregate/conflict 纯函数）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护；`mcp.ts`/`mcp-stdio.ts` 只读 MCP stdio 脚手架）、`scripts/acceptance-standard-a2a.mjs`（验收 #6 纯标准客户端）、`.github/workflows/ci.yml`（CI）、`tests/`（124 项，16 个测试文件）
+* 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验含版本协商/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录/export·importState 快照）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/registry/signing.ts`（fealty 签名链 v1 纯函数：JCS 规范化、attestation/seal、Ed25519 内存签名器）、`src/util/crypto.ts`（sha256Hex 公共哈希）、`src/a2a/types.ts`（A2A 协议类型：Task/Artifact/Part 含 FilePart/事件/AgentCard/Fealty）与 `src/a2a/parts.ts`（isFilePart/artifactFileUris）、`src/skills/`（E2.2 Skill 注册中心：SkillRegistry 多版本/废弃/按名域标签检索/registerFromCard/resolveTeam 组队）、`src/decision/`（模型无关决策后端：DecisionBackend 窄端口、Jev 与 OpenAI 兼容 LLM 适配器、prepareState 数据主权守卫、arbitrateSplit 降级）、`src/http/`（Fastify H1 薄传输层：`server.ts` 三端点 + 签名接线、`serve.ts` 进程入口；全仓库唯一 import fastify 处，`./http` 子路径导出）、`src/dispatch/`（A2A 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、sla.ackSeconds 受理计时、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：task-input/intent-conflict 两类升级队列 + approve/reject/decideConflict + 快照导出导入）、`src/orchestrator/`（E1 并发内核：Orchestrator fan-out/幂等/cancel/resolveIntent/resumeBranch、merge/aggregate/conflict/resolution 纯函数、metrics.ts E1.7 指标、dag.ts/dag-runner.ts S3 DAG 编排）、`src/state/kernel-state.ts`（E5.3：FileKernelStateStore 原子落盘 + collect/applyKernelState 快照恢复）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护；`mcp.ts`/`mcp-stdio.ts` 只读 MCP stdio 脚手架）、`scripts/acceptance-standard-a2a.mjs`（验收 #6 纯标准客户端）、`.github/workflows/ci.yml`（CI）、`tests/`（**166 项，22 个测试文件**）
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
 * [git-commit-message.md](git-commit-message.md) — commit message 规范
@@ -133,3 +152,4 @@ State of Zeus as of 2026-09-21.
 | 2026-09-22 | 决策后端抽象层升级为**模型无关**（design-decision-backend.md v0.2）：DecisionBackendKind=decision-model/llm；Jev 为专用决策模型家族首个实现（快层），传统 LLM 经 prompt+结构化输出适配同端口接入（慢层，置信度校准约定）；新增选择与降级（多后端并存）；tech-exploration-map 升 v0.3 |
 | 2026-09-22 | 决策层行业现状调研入库（research-decision-layer-industry.md v0.1）：LLM-as-judge 主流 + 四条分化路线（专用决策模型 Jev / 程序化裁决 PAJAMA / 混合路由 / 多模型分职）+ 对决策后端设计 v0.2 的印证；18 条来源清单 |
 | 2026-09-22 | **项目级评审**（review-mvp-2026-09.md v0.1）：实跑验证 124/124 测试绿（1 例并行抖动）、typecheck/build 过；P0 26 条=13✅/11🚧/2⬜（缺口：E2.2 Skill 注册中心、E6.2 决议反馈）；判定**库内内核级 MVP 达成、产品级可上线 MVP 未达成**（阻塞：无部署形态/状态全内存/E2.2/E6.2/生产 RSK 密钥/真机闭环/E1.7 可观测/未 push）；给出 7 步最小上线路径 |
+| 2026-09-22 | **MVP 评审后六切片批次（全库内闭环，166 绿/22 文件，typecheck/build 过）**：E2.2 Skill 注册中心（f46eff9，10 测试）、模型无关决策后端 src/decision 含 Jev/LLM 适配器（81dc347，9 测试，真机 envelope 待 key 核对）、E6.2 冲突决议回写闭环 + E6.3 重派骨架（c2c4b35，6 测试）、E1.7 库内并发指标（e54b4ea，5 测试）、S3 完整 DAG 编排（b9134e5，6 测试）、E5.3 内核状态原子落盘恢复（79bac99，6 测试）；测试去抖两处（37c65bd acceptance 超时、4b615e6 并行墙钟断言）。PRD 升 v0.4，评审报告加 v0.2 销项批注：硬阻塞 E2.2/E6.2 销项、E5.3/E1.7 大幅缓解，产品级 MVP 仍未达成（部署形态/生产密钥/真机/push 仍阻塞） |
