@@ -100,6 +100,38 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       return projectInternalRoster(deps.registry.listAll(), now);
     });
 
+    // G1: onboard a vassal at runtime — fetch its agent card, validate fealty
+    // and register it. A card without fealty / with an unsupported version is
+    // rejected by the registry; an unreachable card is a bad-gateway, not a
+    // malformed request.
+    app.post('/api/vassals', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = (request.body ?? {}) as { cardUrl?: unknown; taskUrl?: unknown };
+      if (typeof body.cardUrl !== 'string' || body.cardUrl.trim() === '') {
+        return error(reply, 400, 'invalid_request', 'body.cardUrl is required');
+      }
+      if (body.taskUrl !== undefined && typeof body.taskUrl !== 'string') {
+        return error(reply, 400, 'invalid_request', 'body.taskUrl must be a string');
+      }
+      try {
+        const entry = await deps.registry.register(body.cardUrl, {
+          ...(typeof body.taskUrl === 'string' ? { taskUrl: body.taskUrl } : {}),
+        });
+        return reply.code(201).send(entry);
+      } catch (e) {
+        const detail = e instanceof Error ? e.message : String(e);
+        if (/^card fetch failed/.test(detail)) return error(reply, 502, 'bad_gateway', detail);
+        return error(reply, 400, 'invalid_request', detail);
+      }
+    });
+
+    // G1: revoke a vassal. Revocation takes effect for dispatch immediately;
+    // an unknown / already-revoked name is 404.
+    app.delete('/api/vassals/:name', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const { name } = request.params as { name: string };
+      if (!deps.registry.revoke(name)) return error(reply, 404, 'not_found', `unknown vassal: ${name}`);
+      return { name, revoked: true };
+    });
+
     if (deps.orchestrator) {
       // H2: fan one intent out to the vassals providing a skill.
       app.post('/api/intents', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {

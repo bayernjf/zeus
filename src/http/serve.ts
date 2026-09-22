@@ -29,6 +29,9 @@ const pkg = require('../../package.json') as { version: string };
 async function main(): Promise<void> {
   const kernel = await bootKernel({
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
+    ...(process.env.ZEUS_VASSAL_SEEDS
+      ? { vassalSeeds: process.env.ZEUS_VASSAL_SEEDS.split(',').map(url => url.trim()).filter(Boolean) }
+      : {}),
     dispatchAudit: entry => {
       process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
     },

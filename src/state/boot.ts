@@ -49,6 +49,9 @@ export type KernelBootOptions = {
   dispatchAudit?: AuditSink;
   /** Audit sink for oversight actions; defaults to no-op. */
   oversightAudit?: (entry: OversightAuditEntry) => void;
+  /** G1: card URLs auto-registered on boot. A URL already present (restored from
+   *  snapshot or an earlier seed) is skipped, so seeds never trigger a refetch. */
+  vassalSeeds?: string[];
 };
 
 const noop = (): void => {};
@@ -81,6 +84,15 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     store = new FileKernelStateStore(options.stateFile, now);
     snapshot = await store.load();
     if (snapshot) applyKernelState(components, snapshot);
+  }
+
+  if (options.vassalSeeds && options.vassalSeeds.length > 0) {
+    const known = new Set(registry.listAll().map(entry => entry.cardUrl));
+    for (const cardUrl of options.vassalSeeds) {
+      if (known.has(cardUrl)) continue;
+      await registry.register(cardUrl);
+      known.add(cardUrl);
+    }
   }
 
   return {
