@@ -4,6 +4,7 @@ import { Dispatcher, type AuditSink } from '../dispatch/dispatcher.js';
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
+import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -26,6 +27,8 @@ import {
  */
 
 export type KernelBoot = KernelComponents & {
+  /** E1.7 runtime concurrency metrics (not persisted); wired into the orchestrator. */
+  metrics: ConcurrencyMetrics;
   /** Absolute or relative path of the state JSON, or null when in-memory only. */
   stateFile: string | null;
   /** True when a snapshot was found and applied during boot. */
@@ -59,6 +62,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
   });
+  const metrics = new ConcurrencyMetrics({ now });
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
     audit: options.dispatchAudit ?? noop,
     now,
@@ -66,6 +70,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   });
   const orchestrator = new Orchestrator(registry.asVassalLookup(), dispatcher, {
     now,
+    metrics,
     onConflict: conflictsToDesk(oversight),
   });
   const components: KernelComponents = { registry, oversight, orchestrator };
@@ -80,6 +85,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
 
   return {
     ...components,
+    metrics,
     stateFile: options.stateFile ?? null,
     restoredFromSnapshot: snapshot !== null,
     snapshot,
