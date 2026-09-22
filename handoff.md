@@ -98,6 +98,18 @@ State of Zeus as of 2026-09-22.
    - **评审结论更新**：硬阻塞 E2.2/E6.2 销项，E5.3/E1.7 大幅缓解；**产品级可上线 MVP 仍未达成**——剩余硬阻塞=部署形态、生产 RSK 密钥；软阻塞=真机验收/联调、push+CI 首绿（需授权）；外加 E5.3 启动接线、E10.4 容量压测。见 review-mvp-2026-09.md 顶部 v0.2 销项批注。
    - **下一步候选（库内仍可闭环）**：① E5.3 启动装配接线（进程启动 load→恢复、退出/变更时 save，长驻形态前置）；② H2 驾驶员 API（把 metrics/持久化/决议/重派接到 HTTP，design-http-transport 已规划）；③ S2 critic 把决策后端接到 E1.3 规则无解仲裁；④ 部署形态（Dockerfile + env 装配，硬阻塞 #1）。真机/压测/push 类需部署或授权，不在库内闭环范围。
 
+14. **项目级 MVP 复评 + 可推进任务清单（2026-09-22，独立实跑复评）** ✅ 评审完成（结论与证据见 review-mvp-2026-09.md v0.2 之上；待办升格为 Active work 15）：
+   - 独立实跑证据（非转述）：HEAD `6011619`（dev 领先 origin/dev **9 commit** 未 push，工作树干净）；vitest **166/166 绿（22 文件）**；typecheck ✅、build ✅（dist/ 完整含 .d.ts）；**新增进程级 HTTP 冒烟**（补 review §7 限制①，原仅 inject 测试）：真实进程下 `/healthz` 200、`/api/roster/public` 返回 Ed25519 seal（keyId `zeus-rsk-dev`）、internal 无 token 401 / 带 token 200、serve log 复现「ZEUS_RSK_KEY not set → 临时内存钥」告警；冒烟后端口已清理。
+   - 判定（与 review-mvp-2026-09.md v0.2 一致）：**库内内核级 MVP ✅ 达成**（M1 全部 + M2 核心，闭环库内可走通）；**产品级可上线 MVP ❌ 未达成**——硬阻塞：部署形态（无 Dockerfile/服务管理）、生产 RSK（env PEM 已支持但无生产强制与轮换，serve.js 无钥仍降级临时钥）；软阻塞：真机验收 #6 / Zeus↔loom 联调、push+CI 首绿（需授权）、E5.3 启动接线、E10.4 容量压测。
+
+15. **可一口气推进（库内闭环、无需部署/授权；T1–T4 一批，T5 单独一批）**：
+   - [x] **T1 E5.3 启动装配接线** ✅ 2026-09-22（commit fdb2663）：新增 `src/state/boot.ts` `bootKernel()`——一次装配 registry/oversight/dispatcher/orchestrator（onConflict 已桥接监督台），`ZEUS_STATE_FILE` 存在时启动 load/applyKernelState 恢复、SIGINT/SIGTERM drain 时原子 save，无 stateFile 保持纯内存现状；serve.js 接入并打印恢复计数（vassals/escalations/intents）。4 项 boot 测试（tests/kernel-boot.test.ts），全量 170 绿；真实进程冒烟：首启落盘→SIGTERM saved→二启 restored→退出再 saved。
+   - [x] **T2 部署形态** ✅ 2026-09-22：`Dockerfile`（多阶段 node:22-slim，builder 编译 / runner 仅生产依赖，非 root uid 1000，node fetch 健康检查，/data 卷，node 作 PID 1 直接收 SIGTERM 优雅落盘）+ `.dockerignore` + `.env.example` + `docs/deployment.md`（Docker/compose/systemd、env 表、RSK 密钥与轮换、卷权限、上线检查清单）；密钥脚本改为零依赖跨平台 `scripts/gen-rsk-key.mjs`（替代 sh，容器内可跑）。**真机 docker build/run 全链路验证**：容器内生成密钥、production 无 key exit 1、挂密钥卷启动 healthz/public(seal keyId)/internal 401/健康检查 exit 0、`docker stop` SIGTERM 落盘到卷、重启 restored。
+   - [x] **T3 生产 RSK 硬化** ✅ 2026-09-22（commit 4d99f43）：新增 `src/http/rsk.ts` `loadRskSigner()`——解析顺序 ZEUS_RSK_KEY（内联 PEM）→ ZEUS_RSK_KEY_FILE（secret 挂载）→ 都无则 `NODE_ENV=production` 抛 RskConfigError 拒启（exit 1）、其余环境降级临时钥并告警；显式校验 Ed25519（RSA/坏 PEM 均拒）。新增 `scripts/gen-rsk-key.sh`（openssl Ed25519 密钥对，私钥 0600/公钥 0644，拒绝覆盖）。9 项测试（tests/rsk-loader.test.ts），全量 179 绿；进程冒烟：production 无 key exit 1、key 文件启动 seal.keyId 正确且无临时钥告警、脚本公钥离线验签 true、SIGTERM 正常落盘。
+   - [ ] **T4 S2 critic 接 E1.3 仲裁**：`src/decision/arbitrate.ts` 接入 Orchestrator 规则无解路径（候选③，模型无关端口已就绪）
+   - [ ] **T5 H2 驾驶员 API 最小版**：`/api/metrics`（E1.7 已库内）+ 驾驶员查询/approve 端点（E6.2/E6.3 接线）——体量偏大，作为第二批（候选②，design-http-transport 已规划）
+   - **需用户参与（本机不可闭环）**：真机验收 #6（pr-helper 部署 Vercel）、Zeus↔loom 联调（loom 起测试环境）、push dev→CI 首绿（需授权）、E10.4 容量压测（T2 之后本机基线）。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
@@ -116,6 +128,7 @@ State of Zeus as of 2026-09-22.
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
 * [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — fealty 签名链设计 v0.1（deferred #7）：威胁模型、Zeus 单签 v1/封臣自签 v2、Ed25519+JCS、两层签名信封、RSK 密钥与轮换、吊销四层失效、v1 八条验收 ★
 * [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型 v0.1：网络面划分、Fastify+长驻 Node 裁决、薄传输层单向依赖、H1–H3 端点规划与验收 ★
+* [docs/deployment.md](docs/deployment.md) — 部署手册 v0.1：多阶段 Dockerfile（node:22-slim/非 root/健康检查/状态卷）、RSK 密钥生成与生产守卫、Docker compose 与 systemd、卷权限、上线检查清单 ★
 * 代码：`src/index.ts`（公共 API 聚合入口，构建产物 `dist/`）、`src/registry/registry.ts`（A1 封臣注册中心：卡片拉取注册/fealty 校验含版本协商/健康探针/吊销/listAll 全量视图/asVassalLookup 实时目录/export·importState 快照）、`src/registry/roster.ts`（名册投影器：internal/public RosterSnapshot）、`src/registry/signing.ts`（fealty 签名链 v1 纯函数：JCS 规范化、attestation/seal、Ed25519 内存签名器）、`src/util/crypto.ts`（sha256Hex 公共哈希）、`src/a2a/types.ts`（A2A 协议类型：Task/Artifact/Part 含 FilePart/事件/AgentCard/Fealty）与 `src/a2a/parts.ts`（isFilePart/artifactFileUris）、`src/skills/`（E2.2 Skill 注册中心：SkillRegistry 多版本/废弃/按名域标签检索/registerFromCard/resolveTeam 组队）、`src/decision/`（模型无关决策后端：DecisionBackend 窄端口、Jev 与 OpenAI 兼容 LLM 适配器、prepareState 数据主权守卫、arbitrateSplit 降级）、`src/http/`（Fastify H1 薄传输层：`server.ts` 三端点 + 签名接线、`serve.ts` 进程入口；全仓库唯一 import fastify 处，`./http` 子路径导出）、`src/dispatch/`（A2A 派发器：JSON-RPC + SSE 客户端、数据二极管与脱敏、吊销阻断、sla.ackSeconds 受理计时、审计 sink + 吊销审计桥）、`src/oversight/`（A4 监督台：task-input/intent-conflict 两类升级队列 + approve/reject/decideConflict + 快照导出导入）、`src/orchestrator/`（E1 并发内核：Orchestrator fan-out/幂等/cancel/resolveIntent/resumeBranch、merge/aggregate/conflict/resolution 纯函数、metrics.ts E1.7 指标、dag.ts/dag-runner.ts S3 DAG 编排）、`src/state/kernel-state.ts`（E5.3：FileKernelStateStore 原子落盘 + collect/applyKernelState 快照恢复）、`src/realm/`（D1 Realm P0：FsRealmStore 只读 personal 数据域、扫描检索、contentDigest、路径穿越防护；`mcp.ts`/`mcp-stdio.ts` 只读 MCP stdio 脚手架）、`scripts/acceptance-standard-a2a.mjs`（验收 #6 纯标准客户端）、`.github/workflows/ci.yml`（CI）、`tests/`（**166 项，22 个测试文件**）
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
