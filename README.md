@@ -23,7 +23,7 @@
 ```bash
 npm install
 npm run build      # tsc 出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest，98 项
+npm test           # vitest，187 项
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP H1（需先 build；env 见 .env.example，生产部署见 docs/deployment.md）
 ```
