@@ -32,6 +32,9 @@ async function main(): Promise<void> {
     ...(process.env.ZEUS_VASSAL_SEEDS
       ? { vassalSeeds: process.env.ZEUS_VASSAL_SEEDS.split(',').map(url => url.trim()).filter(Boolean) }
       : {}),
+    ...(process.env.ZEUS_REALM_ROOTS
+      ? { realmRoots: process.env.ZEUS_REALM_ROOTS.split(',').map(root => root.trim()).filter(Boolean) }
+      : {}),
     dispatchAudit: entry => {
       process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
     },
