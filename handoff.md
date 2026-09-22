@@ -156,7 +156,12 @@ State of Zeus as of 2026-09-22.
    - `Embedder` 端口 + 默认 `LocalHashingEmbedder`（FNV-1a signed hashing 词袋，纯本地无网络，仅离线安全底座；真实同域模型可注入）。
    - 遗忘权：`retractFacts`（事实即刻 retracted + 索引即时摘除 + tombstone，幂等）/ `forgetSubject`（主体身份匹配下全部事实抹除）；`RetractionRecord` tombstone 随 MemoryState 持久化，Event Log append-only 保留供治理回放。
    - 11 项 tests/memory-recall-p2.test.ts；设计文档 v0.2（§6.1/6.2 契约）、PRD v0.11。
-   - **P2 剩余**：漂移对账（drift reconciliation，快照/备份间事实对账）；真实同域 embedding 模型接入仍以 deferred #10 为触发条件。
+   - **P2 后续**：~~漂移对账~~ ✅ 见 Active work 22；真实同域 embedding 模型接入仍以 deferred #10 为触发条件。
+
+22. **记忆 P2 漂移对账（2026-09-22 ✅ 完成，全量 280 绿 / 39 文件，tsc 过）**：
+   - 新增 `src/memory/reconcile.ts`：`reconcileMemoryStates(prev, curr)` 两时点快照纯 diff——事件追加/移除数、事实 added/removed/changed（逐字段 subject/predicate/object/status/confidence/version/provenance 的 before→after）、correction/tombstone 增量、`hasDrift` 总判定，按 realm。
+   - `verifyMemoryState(state)` 横切不变量：bad-fact-id（内容篡改致 id 不可重算）、unresolved/provenance-realm-mismatch、retracted↔tombstone 配对、duplicate/fact-realm-mismatch；空 violation 方可安全重建派生索引。`MemoryStore.verifyIntegrity()` 便捷入口。
+   - 导出 `factId` 供重算复用。9 项 tests/memory-reconcile.test.ts；设计文档 v0.3 §6.3、PRD v0.12。**记忆 P2 三项（混合检索 / 遗忘权 / 漂移对账）全部完成。**
 
 ## Project documents
 

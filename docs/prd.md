@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.11（2026-09-22，记忆 P2：BM25+向量混合检索、遗忘权 retract/tombstone）**
+> 状态：**现行 v0.12（2026-09-22，记忆 P2 漂移对账：快照逐字段 diff + 横切不变量校验，P2 三项齐）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -179,3 +179,4 @@
 | v0.9 | 2026-09-22 | 记忆 P1 落地：事件日志与事实纳入 KernelSnapshot（`memory` 段，重启完整恢复）；FanOutRequest/Result 与 intent-finished 事件贯通 `realmId`；意图进入终态时自动整理对应 realm（可靠度从并发指标 failureRate 派生，无记录默认 0.5），矛盾经新增 `memory-dispute` 升级类型幂等进 OversightDesk；`POST /api/intents` 透传 realmId；3 项测试；全量 243 绿（35 文件） |
 | v0.10 | 2026-09-22 | 三块收口：**可靠度纠错回写**（OversightDesk onDecided 钩子，驾驶员拍板 memory-dispute 后对败诉作者记 correction，每次 −0.15，随快照持久化）、**E2.3 Skill 生命周期**（install/uninstall/harden，卸载即时断权、加固只能收窄）、**E7 MCP 连接器**（零 SDK JSON-RPC client + 连接器登记/最小权限/发现/吊销，声明随快照持久化）；E2.3/E7 升 ✅；新增 17 项测试，全量 260 绿（37 文件） |
 | v0.11 | 2026-09-22 | 记忆 P2 落地：新增 `src/memory/recall.ts`——混合检索（BM25 词法 + 向量余弦，alpha 可调，默认本地确定性 signed-hashing embedder、`Embedder` 端口可注入同域模型），召回索引为不持久化的可重建派生物，仅 active/disputed 入索引；遗忘权（`retractFacts` 即时摘除索引、`forgetSubject` 按主体抹除，tombstone 台账随快照持久化，事件日志 append-only 保留供治理回放）；11 项测试；全量 271 绿（38 文件） |
+| v0.12 | 2026-09-22 | 记忆 P2 漂移对账落地：新增 `src/memory/reconcile.ts`——`reconcileMemoryStates` 两时点快照逐字段 diff（事件增删、事实 added/removed/changed、correction/tombstone 增量）、`verifyMemoryState` 横切不变量校验（factId 可重算、provenance 可解析且不跨域、retract↔tombstone 一一配对、事实不重复），`MemoryStore.verifyIntegrity` 便捷入口；factId 计算导出复用；9 项测试；P2 三项齐；全量 280 绿（39 文件） |
