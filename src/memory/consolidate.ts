@@ -55,7 +55,7 @@ function factKey(realmId: string, subject: string, predicate: string): string {
   return `${realmId}␟${subject.trim().toLowerCase()}␟${predicate.trim().toLowerCase()}`;
 }
 
-function factId(realmId: string, subject: string, predicate: string, object: unknown): string {
+export function factId(realmId: string, subject: string, predicate: string, object: unknown): string {
   return sha256Hex(`${factKey(realmId, subject, predicate)}␟${stableStringify(object)}`).slice(0, 24);
 }
 

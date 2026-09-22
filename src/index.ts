@@ -197,6 +197,17 @@ export {
 } from './memory/consolidate.js';
 export { MemoryStore, MemoryBoundaryError } from './memory/memory-store.js';
 export { RecallIndex, LocalHashingEmbedder, tokenize, factText } from './memory/recall.js';
+export {
+  reconcileMemoryStates,
+  verifyMemoryState,
+} from './memory/reconcile.js';
+export type {
+  MemoryDriftReport,
+  FactDrift,
+  FactFieldChange,
+  MemoryConsistencyViolation,
+} from './memory/reconcile.js';
+export { factId } from './memory/consolidate.js';
 export type {
   MemoryKind,
   MemoryEvent,

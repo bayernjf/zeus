@@ -1,5 +1,7 @@
 import { consolidate } from './consolidate.js';
 import { RecallIndex } from './recall.js';
+import { verifyMemoryState } from './reconcile.js';
+import type { MemoryConsistencyViolation } from './reconcile.js';
 import type {
   ConsolidateOptions,
   ConsolidationResult,
@@ -194,6 +196,11 @@ export class MemoryStore {
 
   listRetractions(): RetractionRecord[] {
     return this.retractions.map(r => ({ ...r }));
+  }
+
+  /** Cross-section invariant check over the current fact source. */
+  verifyIntegrity(): MemoryConsistencyViolation[] {
+    return verifyMemoryState(this.exportState());
   }
 
   /**
