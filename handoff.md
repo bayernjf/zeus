@@ -88,6 +88,7 @@ State of Zeus as of 2026-09-21.
 * [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
 * [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核 v0.1（PRD E1）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级、边界 ★
 * [docs/design-decision-backend.md](docs/design-decision-backend.md) — 决策后端抽象层 v0.2（模型无关）：DecisionBackend 端口（noul/choice/score）、两类实现家族（专用决策模型 Jev / 传统 LLM 适配）、四接线位、选择与降级、数据主权硬线 ★
+* [docs/research-decision-layer-industry.md](docs/research-decision-layer-industry.md) — 决策层行业现状调研 v0.1（2026-09）：LLM-as-judge 主流 + 四条分化路线（专用决策模型/程序化裁决/混合路由/多模型分职）、对 design-decision-backend v0.2 的印证、来源清单
 * [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
@@ -129,3 +130,4 @@ State of Zeus as of 2026-09-21.
 | 2026-09-22 | M2 并发决策内核第一批（design-fan-out.md + src/orchestrator/）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级监督台；E1.2 库内完成，E1.1/1.3/1.4/1.5/1.6 部分落地；26 项新测试，全量 124 绿、typecheck/build 过 |
 | 2026-09-22 | Jev 模型核实并落设计（design-decision-backend.md v0.1）：调研定案 Jev = TypeSafe System One 决策模型（可接入外部能力，非驱动/非封臣）；快决策层 DecisionBackend 端口（noul/choice/score）+ Jev 首个实现 + 四接线位 + 数据主权硬线；tech-exploration-map 升 v0.2（S14 ✅、D 节销项） |
 | 2026-09-22 | 决策后端抽象层升级为**模型无关**（design-decision-backend.md v0.2）：DecisionBackendKind=decision-model/llm；Jev 为专用决策模型家族首个实现（快层），传统 LLM 经 prompt+结构化输出适配同端口接入（慢层，置信度校准约定）；新增选择与降级（多后端并存）；tech-exploration-map 升 v0.3 |
+| 2026-09-22 | 决策层行业现状调研入库（research-decision-layer-industry.md v0.1）：LLM-as-judge 主流 + 四条分化路线（专用决策模型 Jev / 程序化裁决 PAJAMA / 混合路由 / 多模型分职）+ 对决策后端设计 v0.2 的印证；18 条来源清单 |
