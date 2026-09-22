@@ -89,12 +89,13 @@ export { sendTask, sendTaskSubscribe, cancelTask, A2AClientError } from './dispa
 export type { SendTaskInput, SubscribeHandlers, FetchLike } from './dispatch/client.js';
 export { jsonlAuditSink, memoryAuditSink, revokeAuditBridge } from './dispatch/audit.js';
 
-// --- A4 oversight desk ---
-export { OversightDesk, extractEscalation } from './oversight/oversight.js';
+// --- A4 oversight desk + E6.2 conflict settlement ---
+export { OversightDesk, extractEscalation, conflictsToDesk } from './oversight/oversight.js';
 export type { OversightOptions } from './oversight/oversight.js';
 export type {
   Escalation,
   EscalationStatus,
+  EscalationKind,
   OversightAuditEntry,
   CancelTaskFn,
 } from './oversight/types.js';
@@ -105,6 +106,7 @@ export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
 export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
 export { detectConflicts } from './orchestrator/conflict.js';
+export { applyConflictResolution, recomputeResult, statusFromBranches } from './orchestrator/resolution.js';
 export type {
   FanOutRequest,
   FanOutResult,
@@ -118,6 +120,7 @@ export type {
   DispatchPort,
   TargetLookup,
   CancelBranchResult,
+  DriverResolution,
 } from './orchestrator/types.js';
 
 // --- Decision backend (model-agnostic port; Jev decision-model + LLM adapters) ---

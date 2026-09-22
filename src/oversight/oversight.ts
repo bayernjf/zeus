@@ -1,5 +1,6 @@
 import type { A2AEvent } from '../a2a/types.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
+import type { Conflict } from '../orchestrator/types.js';
 import type { CancelTaskFn, Escalation, EscalationStatus, OversightAuditEntry } from './types.js';
 
 const FALLBACK_REASON = 'vassal requests human input';
@@ -20,6 +21,7 @@ export type OversightOptions = {
 export class OversightDesk {
   private escalations = new Map<string, Escalation>();
   private taskIndex = new Map<string, string>(); // taskId -> escalationId
+  private conflictIndex = new Map<string, string>(); // intentId (or runId+skill) -> escalationId
 
   constructor(private options: OversightOptions = {}) {}
 
@@ -43,6 +45,7 @@ export class OversightDesk {
     const { reason, options } = extractEscalation(result.events);
     const escalation: Escalation = {
       id: this.newId(),
+      kind: 'task-input',
       runId: request.runId ?? result.task.metadata?.['x-zeus-runId']?.toString() ?? 'unknown',
       vassal: request.vassal ?? result.task.metadata?.['vassal']?.toString() ?? '(auto)',
       skill: request.skill,
@@ -54,7 +57,43 @@ export class OversightDesk {
       createdAt: this.now().toISOString(),
     };
     this.escalations.set(escalation.id, escalation);
-    this.taskIndex.set(escalation.taskId, escalation.id);
+    this.taskIndex.set(escalation.taskId!, escalation.id);
+    this.audit(escalation, 'escalated');
+    return structuredClone(escalation);
+  }
+
+  /**
+   * E6.2: accept an unresolved intent-level conflict (fan-out split the rule
+   * could not conclude). Idempotent per intent (keyed by intentId when present,
+   * else runId+skill): re-ingesting the same split returns the existing record.
+   */
+  ingestConflict(input: {
+    intentId?: string;
+    runId: string;
+    skill: string;
+    realm: Escalation['realm'];
+    conflict: Conflict;
+  }): Escalation {
+    const key = input.intentId ?? `${input.runId}::${input.skill}`;
+    const existingId = this.conflictIndex.get(key);
+    if (existingId) return this.get(existingId)!;
+
+    const escalation: Escalation = {
+      id: this.newId(),
+      kind: 'intent-conflict',
+      runId: input.runId,
+      vassal: '(intent)',
+      skill: input.skill,
+      realm: input.realm,
+      reason: input.conflict.reason,
+      options: input.conflict.stances.map(stance => stance.stance),
+      status: 'pending',
+      createdAt: this.now().toISOString(),
+      ...(input.intentId ? { intentId: input.intentId } : {}),
+      stances: structuredClone(input.conflict.stances),
+    };
+    this.escalations.set(escalation.id, escalation);
+    this.conflictIndex.set(key, escalation.id);
     this.audit(escalation, 'escalated');
     return structuredClone(escalation);
   }
@@ -75,11 +114,36 @@ export class OversightDesk {
     return this.decide(id, 'approved', note);
   }
 
-  /** Driver rejects: record the decision and cancel the vassal-side task.
-   *  If the cancel call fails the escalation stays pending and the error propagates. */
+  /** E6.2: driver settles an intent-conflict by accepting one of the stances.
+   *  The accepted stance is returned for the orchestrator to write back into the
+   *  aggregated decision (applyConflictResolution). */
+  decideConflict(id: string, stance: string, note?: string): Escalation {
+    const current = this.requirePending(id);
+    if (current.kind !== 'intent-conflict') {
+      throw new Error(`escalation ${id} is ${current.kind}; use approve/reject`);
+    }
+    if (!current.stances?.some(entry => entry.stance === stance)) {
+      throw new Error(`stance "${stance}" is not one of the conflict options: ${current.options.join(', ')}`);
+    }
+    const decided: Escalation = {
+      ...current,
+      status: 'approved',
+      decidedAt: this.now().toISOString(),
+      decidedStance: stance,
+      decisionNote: note,
+    };
+    this.escalations.set(id, decided);
+    this.audit(decided, 'approved', note, undefined, stance);
+    return structuredClone(decided);
+  }
+
+  /** Driver rejects: record the decision. For a task-input escalation the
+   *  vassal-side task is cancelled; an intent-conflict has no single task to
+   *  cancel (cancelling the whole intent is the orchestrator's job), so only the
+   *  decision is recorded. If the cancel call fails the escalation stays pending. */
   async reject(id: string, note?: string): Promise<Escalation> {
     const current = this.requirePending(id);
-    if (this.options.cancelTask) {
+    if (current.kind === 'task-input' && this.options.cancelTask && current.taskId) {
       await this.options.cancelTask(current.vassal, current.taskId);
     }
     const decided: Escalation = {
@@ -115,7 +179,7 @@ export class OversightDesk {
     return entry;
   }
 
-  private audit(escalation: Escalation, action: OversightAuditEntry['action'], note?: string, detail?: string): void {
+  private audit(escalation: Escalation, action: OversightAuditEntry['action'], note?: string, detail?: string, decidedStance?: string): void {
     this.options.audit?.({
       ts: this.now().toISOString(),
       escalationId: escalation.id,
@@ -124,8 +188,25 @@ export class OversightDesk {
       action,
       ...(note ? { note } : {}),
       ...(detail ? { detail } : {}),
+      ...(decidedStance ? { decidedStance } : {}),
     });
   }
+}
+
+/**
+ * Assembly helper: bridge an Orchestrator's onConflict callback into the desk so
+ * unresolved splits enter the oversight queue automatically. The orchestrator
+ * never imports the desk (design: governance is injected, not hard-wired):
+ *   new Orchestrator(lookup, dispatcher, { onConflict: conflictsToDesk(desk) })
+ */
+export function conflictsToDesk(
+  desk: OversightDesk
+): (conflicts: Conflict[], result: { intentId: string; runId: string; skill: string; realm: Escalation['realm'] }) => void {
+  return (conflicts, result) => {
+    for (const conflict of conflicts) {
+      desk.ingestConflict({ intentId: result.intentId, runId: result.runId, skill: result.skill, realm: result.realm, conflict });
+    }
+  };
 }
 
 /** Find the terminal input-required status event and read its escalation payload. */

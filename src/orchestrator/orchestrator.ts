@@ -2,11 +2,13 @@ import type { TaskState } from '../a2a/types.js';
 import { aggregate, extractPositions } from './aggregate.js';
 import { detectConflicts } from './conflict.js';
 import { mergeBranches } from './merge.js';
+import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import type {
   BranchOutcome,
   CancelBranchResult,
   Conflict,
   DispatchPort,
+  DriverResolution,
   FanOutRequest,
   FanOutResult,
   FanOutStatus,
@@ -33,6 +35,7 @@ export class UnknownIntentError extends Error {}
  */
 export class Orchestrator {
   private intents = new Map<string, FanOutResult>();
+  private requests = new Map<string, FanOutRequest>();
 
   constructor(
     private lookup: TargetLookup,
@@ -69,14 +72,55 @@ export class Orchestrator {
       result = {
         intentId, runId, skill: request.skill, realm: request.realm, branches,
         stream: mergeBranches(branches), positions, decision, conflicts,
-        status: deriveStatus(branches, conflicts.length > 0),
+        status: statusFromBranches(branches, conflicts.length > 0),
         createdAt: this.now().toISOString(),
       };
     }
 
-    if (request.intentId) this.intents.set(request.intentId, result);
+    if (request.intentId) {
+      this.intents.set(request.intentId, result);
+      this.requests.set(request.intentId, request);
+    }
     if (result.status === 'needs-driver') this.options.onConflict?.(result.conflicts, result);
     return result;
+  }
+
+  /** Read a stored intent result (assembly / persistence use). */
+  getIntent(intentId: string): FanOutResult | undefined {
+    const result = this.intents.get(intentId);
+    return result ? structuredClone(result) : undefined;
+  }
+
+  /** E6.2: write the driver's conflict settlement back into the stored intent. */
+  resolveIntent(intentId: string, driver: Omit<DriverResolution, 'decidedAt'>): FanOutResult {
+    const current = this.intents.get(intentId);
+    if (!current) throw new UnknownIntentError(`unknown intent: ${intentId}`);
+    const resolved = applyConflictResolution(current, { ...driver, decidedAt: this.now().toISOString() });
+    this.intents.set(intentId, resolved);
+    return structuredClone(resolved);
+  }
+
+  /**
+   * E6.3 minimal re-dispatch: after a vassal task is approved with human-supplied
+   * parameters, re-run that single branch and recompute the whole intent. The
+   * other branches are untouched; the new branch replaces the old one.
+   */
+  async resumeBranch(intentId: string, vassal: string, params: Record<string, unknown>): Promise<FanOutResult> {
+    const previous = this.intents.get(intentId);
+    const original = this.requests.get(intentId);
+    if (!previous || !original) throw new UnknownIntentError(`unknown intent: ${intentId}`);
+    if (!previous.branches.some(branch => branch.vassal === vassal)) {
+      throw new Error(`intent ${intentId} has no branch for vassal ${vassal}`);
+    }
+    const resumeNo = previous.branches.filter(branch => branch.vassal === vassal).length;
+    const resumeRequest: FanOutRequest = { ...original, params: { ...original.params, ...params } };
+    const branch = await this.runBranch(vassal, resumeRequest, previous.runId, resumeNo);
+    const others = previous.branches.filter(existing => existing.vassal !== vassal);
+    const branches = [...others, branch];
+    const recomputed = recomputeResult(previous, branches, original.aggregation, this.now);
+    this.intents.set(intentId, recomputed);
+    if (recomputed.status === 'needs-driver') this.options.onConflict?.(recomputed.conflicts, recomputed);
+    return structuredClone(recomputed);
   }
 
   /** F3: cancel every non-terminal branch of an intent; terminal branches are skipped. */
@@ -105,8 +149,8 @@ export class Orchestrator {
     return { intentId, results };
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string): Promise<BranchOutcome> {
-    const branchRunId = `${parentRunId}:${vassal}`;
+  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0): Promise<BranchOutcome> {
+    const branchRunId = resumeNo > 0 ? `${parentRunId}:${vassal}:resume${resumeNo}` : `${parentRunId}:${vassal}`;
     const pending = this.dispatcher
       .dispatch({
         vassal,
@@ -156,14 +200,6 @@ export class Orchestrator {
   private newRunId(): string {
     return this.options.newRunId?.() ?? `zeus-run-${crypto.randomUUID()}`;
   }
-}
-
-function deriveStatus(branches: BranchOutcome[], hasUnresolvedConflict: boolean): FanOutStatus {
-  const succeeded = branches.filter(branch => branch.ok);
-  if (succeeded.length === 0) return 'failed';
-  if (hasUnresolvedConflict) return 'needs-driver';
-  if (succeeded.length < branches.length) return 'partial';
-  return 'completed';
 }
 
 function timeout(ms: number): Promise<void> {

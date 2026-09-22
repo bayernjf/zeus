@@ -78,6 +78,16 @@ export type FanOutResult = {
   status: FanOutStatus;
   replayed?: boolean;
   createdAt: string;
+  /** Set once a driver settles an unresolved conflict (E6.2 write-back). */
+  driverResolution?: DriverResolution;
+};
+
+/** A human driver's settlement of an intent-conflict, written back into the decision. */
+export type DriverResolution = {
+  escalationId: string;
+  stance: string;
+  note?: string;
+  decidedAt: string;
 };
 
 /** Narrow port the orchestrator drives; Dispatcher satisfies it. */
