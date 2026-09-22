@@ -100,10 +100,12 @@ export class Orchestrator {
     // split; only a still-unresolved result reaches the human driver.
     result = await this.maybeArbitrate(result);
 
-    if (request.intentId) {
-      this.intents.set(request.intentId, result);
-      this.requests.set(request.intentId, request);
-    }
+    // Store every fan-out under its final intentId (client-supplied idempotency
+    // key or server-generated id) so the driver face can read/settle intents it
+    // did not name. Replay still triggers only when the client sends a known
+    // intentId on the way in (the cache lookup above is gated on request.intentId).
+    this.intents.set(intentId, result);
+    this.requests.set(intentId, request);
     if (result.status === 'needs-driver') this.options.onConflict?.(result.conflicts, result);
     return result;
   }
