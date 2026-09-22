@@ -120,6 +120,10 @@ export type {
   CancelBranchResult,
 } from './orchestrator/types.js';
 
+// --- E2 Skill registry (skills as first-class modules, independent of cards) ---
+export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
+export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution } from './skills/types.js';
+
 // --- D1 Realm P0 ---
 export { FsRealmStore } from './realm/store.js';
 export { sha256Hex, digestManifest } from './realm/digest.js';
