@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.12（2026-09-22，记忆 P2 漂移对账：快照逐字段 diff + 横切不变量校验，P2 三项齐）**
+> 状态：**现行 v0.13（2026-09-22，E2.5 Mentor 传授：带教→胜任力评估→认证登记新提供者）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -63,7 +63,7 @@
 | E2.2 | Skill 注册中心：登记、检索、版本化 | P0 | ✅ | `src/skills/registry.ts` SkillRegistry：id+version 唯一键、多版本共存、get 默认最新 active（显式版本可查 deprecated 供审计）、deprecate 标记不删、按名/域（findByDomain）/标签检索、registerFromCard 从卡片登记目录版本、resolveTeam 多技能组队（10 项测试） |
 | E2.3 | Skill 安装 / 加固 / 卸载断权 | P1 | ✅ | `install/uninstall/harden`（src/skills/registry.ts）：安装即 active 生效；卸载立即 status=uninstalled，resolveTeam 即刻显示 missing、默认查询不可见（无缓存授权）；加固只能收窄权限（bare scope 可降到 scope:action，拒越权授予）、约束叠加合并，随 spec 持久化；deprecated 不可重装，见 tests/skills-lifecycle.test.ts（8 项） |
 | E2.4 | 协同决策按 Skill 自动组队：一意图映射到所需技能并选 Agent | P0 | ✅ | registry 有 findBySkill；SkillRegistry.resolveTeam 对多技能返回每技能 slot（providers/missing/ambiguous）与 complete/missingSkills/ambiguousSkills，多候选标 ambiguous 绝不静默随机选（E2.2 测试覆盖） |
-| E2.5 | Mentor 传授 Skill 给新 Agent/员工 | P2 | ⬜ | 带教路径可执行，学习结果可验证 |
+| E2.5 | Mentor 传授 Skill 给新 Agent/员工 | P2 | ✅ | 新增 `src/skills/mentor.ts`：`MentorshipLedger` 可审计带教路径——commission 要求 mentor 已是该技能在册提供者（非提供者/未知技能/自教均拒，技能须 active）、teach 记录传授单元、assess 以**胜任力检查而非出勤**认证（required 硬门全过 + 加权分 ≥ 阈值，默认 0.8，可自定义）；认证通过才经 `SkillRegistry.grantProvider` 把学习者登记为新提供者（进 resolveTeam），评估失败不动提供者集合；dismiss 作废；台账随 KernelSnapshot `mentorships` 段持久化重启恢复。见 tests/mentor-transfer.test.ts（9 项）、tests/kernel-mentor-state.test.ts |
 
 ### E3. Realm 数据域（数据主权底座）
 
@@ -180,3 +180,4 @@
 | v0.10 | 2026-09-22 | 三块收口：**可靠度纠错回写**（OversightDesk onDecided 钩子，驾驶员拍板 memory-dispute 后对败诉作者记 correction，每次 −0.15，随快照持久化）、**E2.3 Skill 生命周期**（install/uninstall/harden，卸载即时断权、加固只能收窄）、**E7 MCP 连接器**（零 SDK JSON-RPC client + 连接器登记/最小权限/发现/吊销，声明随快照持久化）；E2.3/E7 升 ✅；新增 17 项测试，全量 260 绿（37 文件） |
 | v0.11 | 2026-09-22 | 记忆 P2 落地：新增 `src/memory/recall.ts`——混合检索（BM25 词法 + 向量余弦，alpha 可调，默认本地确定性 signed-hashing embedder、`Embedder` 端口可注入同域模型），召回索引为不持久化的可重建派生物，仅 active/disputed 入索引；遗忘权（`retractFacts` 即时摘除索引、`forgetSubject` 按主体抹除，tombstone 台账随快照持久化，事件日志 append-only 保留供治理回放）；11 项测试；全量 271 绿（38 文件） |
 | v0.12 | 2026-09-22 | 记忆 P2 漂移对账落地：新增 `src/memory/reconcile.ts`——`reconcileMemoryStates` 两时点快照逐字段 diff（事件增删、事实 added/removed/changed、correction/tombstone 增量）、`verifyMemoryState` 横切不变量校验（factId 可重算、provenance 可解析且不跨域、retract↔tombstone 一一配对、事实不重复），`MemoryStore.verifyIntegrity` 便捷入口；factId 计算导出复用；9 项测试；P2 三项齐；全量 280 绿（39 文件） |
+| v0.13 | 2026-09-22 | E2.5 Mentor 传授落地：新增 `src/skills/mentor.ts` `MentorshipLedger`（commission 须在册提供者、teach 记录、assess 胜任力硬门+加权阈值、认证才 grantProvider、dismiss）；SkillRegistry 增 isProvider/grantProvider；台账经 KernelSnapshot `mentorships` 段持久化；E2.5 升 ✅；新增 10 项测试；全量 290 绿（41 文件） |

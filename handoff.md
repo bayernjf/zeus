@@ -163,6 +163,12 @@ State of Zeus as of 2026-09-22.
    - `verifyMemoryState(state)` 横切不变量：bad-fact-id（内容篡改致 id 不可重算）、unresolved/provenance-realm-mismatch、retracted↔tombstone 配对、duplicate/fact-realm-mismatch；空 violation 方可安全重建派生索引。`MemoryStore.verifyIntegrity()` 便捷入口。
    - 导出 `factId` 供重算复用。9 项 tests/memory-reconcile.test.ts；设计文档 v0.3 §6.3、PRD v0.12。**记忆 P2 三项（混合检索 / 遗忘权 / 漂移对账）全部完成。**
 
+23. **E2.5 Mentor 传授（2026-09-22 ✅ 完成，全量 290 绿 / 41 文件，tsc 过）**：
+   - 新增 `src/skills/mentor.ts` `MentorshipLedger`：commission（mentor 须为该技能在册 active 提供者，非提供者/未知技能/自教均拒）→ teach（记录传授单元）→ assess（胜任力检查：required 硬门全过 + 加权分 ≥ 阈值 0.8，可自定义）→ 认证才登记新提供者；dismiss 作废；终态后拒绝再改。
+   - SkillRegistry 增 `isProvider` 与 `grantProvider`（仅 active spec 可授予，按 agent 幂等）；认证后学习者进 resolveTeam，评估失败不动提供者集合——学习结果可验证。
+   - KernelSnapshot 增 `mentorships` 段，台账随 bootKernel 装配持久化重启恢复（collect/apply/FileStore 全链路）。
+   - 9 项 tests/mentor-transfer.test.ts + 1 项 tests/kernel-mentor-state.test.ts；PRD v0.13，E2.5 升 ✅。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
