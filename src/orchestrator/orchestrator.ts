@@ -3,6 +3,7 @@ import { aggregate, extractPositions } from './aggregate.js';
 import { detectConflicts } from './conflict.js';
 import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
+import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import type {
   BranchOutcome,
   CancelBranchResult,
@@ -23,6 +24,8 @@ export type OrchestratorOptions = {
   newRunId?: () => string;
   /** Called when a fan-out ends in needs-driver; wire it to OversightDesk at assembly time. */
   onConflict?: (conflicts: Conflict[], result: FanOutResult) => void;
+  /** E1.7: collect in-flight / latency / failure metrics when provided. */
+  metrics?: ConcurrencyMetrics;
 };
 
 export class UnknownIntentError extends Error {}
@@ -65,7 +68,7 @@ export class Orchestrator {
         status: 'failed', createdAt: this.now().toISOString(),
       };
     } else {
-      const branches = await Promise.all(names.map(name => this.runBranch(name, request, runId)));
+      const branches = await Promise.all(names.map(name => this.runTrackedBranch(name, request, runId, intentId)));
       const positions = extractPositions(branches);
       const decision = aggregate(positions, request.aggregation);
       const conflicts = detectConflicts(positions, decision);
@@ -114,7 +117,7 @@ export class Orchestrator {
     }
     const resumeNo = previous.branches.filter(branch => branch.vassal === vassal).length;
     const resumeRequest: FanOutRequest = { ...original, params: { ...original.params, ...params } };
-    const branch = await this.runBranch(vassal, resumeRequest, previous.runId, resumeNo);
+    const branch = await this.runTrackedBranch(vassal, resumeRequest, previous.runId, intentId, resumeNo);
     const others = previous.branches.filter(existing => existing.vassal !== vassal);
     const branches = [...others, branch];
     const recomputed = recomputeResult(previous, branches, original.aggregation, this.now);
@@ -149,8 +152,29 @@ export class Orchestrator {
     return { intentId, results };
   }
 
+  private branchRunId(parentRunId: string, vassal: string, resumeNo: number): string {
+    return resumeNo > 0 ? `${parentRunId}:${vassal}:resume${resumeNo}` : `${parentRunId}:${vassal}`;
+  }
+
+  /** runBranch plus E1.7 metric lifecycle bookkeeping. */
+  private async runTrackedBranch(
+    vassal: string,
+    request: FanOutRequest,
+    parentRunId: string,
+    intentId: string,
+    resumeNo = 0
+  ): Promise<BranchOutcome> {
+    const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
+    const metrics = this.options.metrics;
+    metrics?.enqueue();
+    metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
+    const branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
+    metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
+    return branch;
+  }
+
   private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0): Promise<BranchOutcome> {
-    const branchRunId = resumeNo > 0 ? `${parentRunId}:${vassal}:resume${resumeNo}` : `${parentRunId}:${vassal}`;
+    const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const pending = this.dispatcher
       .dispatch({
         vassal,
@@ -204,4 +228,12 @@ export class Orchestrator {
 
 function timeout(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/** Map a branch outcome to an E1.7 metric category. */
+function outcomeOf(branch: BranchOutcome): BranchOutcomeKind {
+  if (branch.timedOut) return 'timeout';
+  if (!branch.ok) return 'failed';
+  if (branch.state === 'canceled') return 'canceled';
+  return 'completed';
 }

@@ -107,6 +107,15 @@ export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
 export { detectConflicts } from './orchestrator/conflict.js';
 export { applyConflictResolution, recomputeResult, statusFromBranches } from './orchestrator/resolution.js';
+export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
+export type {
+  MetricsSnapshot,
+  VassalMetric,
+  LatencyStats,
+  BranchMetricEvent,
+  BranchOutcomeKind,
+  MetricsOptions,
+} from './orchestrator/metrics.js';
 export type {
   FanOutRequest,
   FanOutResult,
