@@ -129,6 +129,14 @@ State of Zeus as of 2026-09-22.
    - SkillRegistry 接入 `bootKernel`：构造后经 VassalRegistry 新增的 `onRegister` 钩子，封臣注册时自动 `registerFromCard` 导入卡片技能；SkillRegistry 增 export/importState，KernelSnapshot 增可选 `skills`，重启恢复目录。
    - 测试：10 项 tests/skills-validation.test.ts（形状/版本/权限 scope/自依赖/未知依赖/环）+ 2 项 tests/kernel-skills-state.test.ts（装配 + 快照恢复）；validateSkillSpecShape/SkillValidationError 已从 src/index.ts 导出。PRD v0.7，E2.1 升 ✅。
 
+18. **记忆整理协议 P0 落地（2026-09-22 ✅ 完成，全量 240 绿 / 34 文件，tsc 过，commit 37a7759）**：
+   - 新增 `src/memory`：`types.ts`（MemoryEvent/FactRecord/ConsolidationResult）、`consolidate.ts`（纯确定性整理）、`memory-store.ts`（事件日志 + 事实存储，按 realm 分区）。
+   - **追加与修改分离**：Agent 只能 append 事件；事实无公开写入口，只经 `consolidateRealm()` 产出；每条 fact 必带 provenance（eventId 列表）。
+   - 同 subject/predicate/object 的观察去重为一个 fact，provenance 累积、version 递增；矛盾 object 默认双方 `disputed` 并确定性生成 escalation，**不静默覆盖**；仅当新观察严格更晚且作者可靠度严格更高才把旧 fact 标 `superseded`。
+   - 置信度按 Agent 历史可靠度（`reliability` 注入，未知默认 0.5）加权自报值；同源重复不增强，独立作者印证 +0.05/人。
+   - 跨 realm read/append 拒绝并审计（MemoryBoundaryError）；`replay(realmId, runId)` 离线回放事件与 provenance 命中的事实；exportState/fromState 验证事实源可重建。design §8 八条验收逐条覆盖，11 项 tests/memory-consolidation.test.ts；PRD v0.8。
+   - **P1 待做**：Fact Store 持久化（接入 KernelSnapshot）、任务收束自动触发整理、escalations 真正进 OversightDesk、可靠度从事后结果自动回写；P2：本地 embedding 混合检索、retracted/遗忘权。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
