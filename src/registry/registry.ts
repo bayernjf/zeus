@@ -23,6 +23,9 @@ export type RegistryHooks = {
   /** Fired exactly once when a vassal transitions active -> revoked.
    *  Bridge this into the dispatch audit sink. */
   onRevoke?: (name: string, at: string) => void;
+  /** Fired after a vassal's card is fetched and accepted (register). Used by
+   *  boot to import the card's skills into the SkillRegistry. */
+  onRegister?: (entry: VassalEntry) => void;
 };
 
 export type VassalEntry = {
@@ -75,6 +78,7 @@ export class VassalRegistry {
       revoked: false,
     };
     this.entries.set(card.name, entry);
+    this.hooks.onRegister?.(entry);
     return structuredClone(entry);
   }
 
