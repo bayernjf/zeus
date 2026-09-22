@@ -107,6 +107,8 @@ export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
 export { detectConflicts } from './orchestrator/conflict.js';
 export { applyConflictResolution, recomputeResult, statusFromBranches } from './orchestrator/resolution.js';
+export { arbitrateConflict } from './orchestrator/arbitration.js';
+export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
 export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
 export type {
   MetricsSnapshot,
@@ -152,6 +154,7 @@ export type {
   TargetLookup,
   CancelBranchResult,
   DriverResolution,
+  BackendArbitration,
 } from './orchestrator/types.js';
 
 // --- Decision backend (model-agnostic port; Jev decision-model + LLM adapters) ---

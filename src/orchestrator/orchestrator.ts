@@ -1,9 +1,11 @@
 import type { TaskState } from '../a2a/types.js';
+import { arbitrateConflict } from './arbitration.js';
 import { aggregate, extractPositions } from './aggregate.js';
 import { detectConflicts } from './conflict.js';
 import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
+import type { DecisionBackend } from '../decision/types.js';
 import type {
   BranchOutcome,
   CancelBranchResult,
@@ -26,6 +28,14 @@ export type OrchestratorOptions = {
   onConflict?: (conflicts: Conflict[], result: FanOutResult) => void;
   /** E1.7: collect in-flight / latency / failure metrics when provided. */
   metrics?: ConcurrencyMetrics;
+  /** S2: when set, unresolved splits get one backend arbitration before escalating. */
+  decisionBackend?: DecisionBackend;
+  /** Confidence gate for backend arbitration (default 0.8). */
+  arbitrationThreshold?: number;
+  /** Permit uncalibrated (LLM) confidence to conclude (default false). */
+  allowUncalibratedArbitration?: boolean;
+  /** Per-call timeout for the arbitration backend. */
+  arbitrationMaxWaitMs?: number;
 };
 
 export class UnknownIntentError extends Error {}
@@ -86,6 +96,10 @@ export class Orchestrator {
       };
     }
 
+    // S2: give a configured decision backend one gated chance to arbitrate the
+    // split; only a still-unresolved result reaches the human driver.
+    result = await this.maybeArbitrate(result);
+
     if (request.intentId) {
       this.intents.set(request.intentId, result);
       this.requests.set(request.intentId, request);
@@ -142,9 +156,10 @@ export class Orchestrator {
     const others = previous.branches.filter(existing => existing.vassal !== vassal);
     const branches = [...others, branch];
     const recomputed = recomputeResult(previous, branches, original.aggregation, this.now);
-    this.intents.set(intentId, recomputed);
-    if (recomputed.status === 'needs-driver') this.options.onConflict?.(recomputed.conflicts, recomputed);
-    return structuredClone(recomputed);
+    const arbitrated = await this.maybeArbitrate(recomputed);
+    this.intents.set(intentId, arbitrated);
+    if (arbitrated.status === 'needs-driver') this.options.onConflict?.(arbitrated.conflicts, arbitrated);
+    return structuredClone(arbitrated);
   }
 
   /** F3: cancel every non-terminal branch of an intent; terminal branches are skipped. */
@@ -236,6 +251,26 @@ export class Orchestrator {
 
   private now(): Date {
     return this.options.now ? this.options.now() : new Date();
+  }
+
+  /** S2: consult the decision backend on a needs-driver split, if configured. */
+  private async maybeArbitrate(result: FanOutResult): Promise<FanOutResult> {
+    const backend = this.options.decisionBackend;
+    if (!backend || result.status !== 'needs-driver' || result.conflicts.length === 0) return result;
+    return arbitrateConflict({
+      result,
+      backend,
+      ...(this.options.arbitrationThreshold !== undefined
+        ? { threshold: this.options.arbitrationThreshold }
+        : {}),
+      ...(this.options.allowUncalibratedArbitration !== undefined
+        ? { allowUncalibrated: this.options.allowUncalibratedArbitration }
+        : {}),
+      ...(this.options.arbitrationMaxWaitMs !== undefined
+        ? { maxWaitMs: this.options.arbitrationMaxWaitMs }
+        : {}),
+      now: () => this.now(),
+    });
   }
 
   private newIntentId(): string {
