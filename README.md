@@ -2,7 +2,7 @@
 
 > 以用户数据目录为底座、多 Agent 高效协作的操作系统：对个人，是记忆的避风港与可传承的藏宝图；对企业，是即插即用、伴随成长的「虚拟部门」。完整定位见 [docs/product-portrait.md](docs/product-portrait.md)。
 
-本仓库当前是 Zeus 的**纯 TypeScript 内核库 + 薄传输面**：封臣注册、任务派发、监督、个人数据域、多 Agent 并发决策内核以零运行时依赖的库形态落地；另附只读 Realm MCP stdio 脚手架与 HTTP 薄传输层（Fastify）——H1 只读名册 + H2 驾驶员 API（发起意图、看决策、拍板、指标）。Fastify 依赖锁在 `src/http`，内核本身保持零传输依赖。另已落地 **Vault 藏宝图**：为连接的目录出一张只存引用的加密地图，按图能原地校验或从加密备份包恢复（E8.1/E8.2）。
+本仓库当前是 Zeus 的**纯 TypeScript 内核库 + 薄传输面**：封臣注册、任务派发、监督、个人数据域、多 Agent 并发决策内核以零运行时依赖的库形态落地；另附只读 Realm MCP stdio 脚手架与 HTTP 薄传输层（Fastify）——H1 只读名册 + H2 驾驶员 API（发起意图、看决策、拍板、指标）。Fastify 依赖锁在 `src/http`，内核本身保持零传输依赖。另已落地 **Vault 藏宝图**：为连接的目录出一张只存引用的加密地图，按图能原地校验或从加密备份包恢复（E8.1/E8.2），并提供零依赖 CLI 执行器（build/check/backup/restore，E3.7；调度由外部 cron/systemd 触发，内核不内置定时器）。
 
 ## 内核模块
 
@@ -19,7 +19,7 @@
 | **realm（D1 P0）** | `src/realm/` | 只读 personal 数据域：`FsRealmStore` 的 connect / manifest / search / read，确定性 realmId、connect 快照检索、`contentDigest` 基线、路径穿越与 symlink 双检防护；附只读 MCP stdio 脚手架（`mcp.ts` / `mcp-stdio.ts`） |
 | **state（E5.3）** | `src/state/` | 内核持久化：`kernel-state.ts` 把封臣表（含已吊销）、升级队列、意图结果+原始请求原子落盘（tmp+rename）并恢复；`boot.ts` 一次性装配 registry/dispatcher/oversight/orchestrator/metrics，配置 `ZEUS_STATE_FILE` 时启动恢复、优雅退出落盘（metrics 仅运行时不持久化） |
 | **http（H1+H2 传输面）** | `src/http/` | Fastify 薄适配层（非内核、全仓库唯一 fastify 依赖处）：H1 只读 `/healthz`、`/api/roster/public`（实时投影 + 签名名册快照，离线可验）、`/api/roster`（bearer 治理视图）；H2 驾驶员 API（bearer）`POST /api/intents`、`GET /api/intents/:id`、`POST /api/intents/:id/cancel`、`GET/POST /api/escalations`（approve/reject/resolve）、`GET /api/metrics`；`serve.ts` 为进程入口，经 `zeus/http` 子路径导出 |
-| **vault（E8.1/E8.2）** | `src/vault/` | 藏宝图与恢复协议：buildVault 出图只存引用 + 逐 item 指纹（**正文零泄漏**）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、restoreDryRun 原地校验与漂移检测、packFull 加密内容包 + restoreFromBundle 经 FsRestoreSink 跨位恢复 |
+| **vault（E8.1/E8.2/E3.7）** | `src/vault/` | 藏宝图与恢复协议：buildVault 出图只存引用 + 逐 item 指纹（**正文零泄漏**）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、restoreDryRun 原地校验与漂移检测、packFull 加密内容包 + restoreFromBundle 经 FsRestoreSink 跨位恢复；`cli.ts` 为零依赖执行器（build/check/backup/restore，退出码 0/1/2/3） |
 
 内核统一公共出口在 `src/index.ts`（不含 http 传输面），构建产物见下文。
 
@@ -28,7 +28,7 @@
 ```bash
 npm install
 npm run build      # tsc 出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest，310 项
+npm test           # vitest，322 项
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 名册 + H2 驾驶员 API；需先 build；env 见 .env.example，生产部署见 docs/deployment.md）
 ```
@@ -59,6 +59,18 @@ if (hits[0]) {
 npm run build
 node dist/realm/mcp-stdio.js /path/to/your/dir   # 目录在启动时预连接授权，协议不暴露 connect/root
 ```
+
+Vault 备份与恢复 CLI（E3.7，需先 build；密钥经 `ZEUS_VAULT_PASSPHRASE` 或 `--key-file` 提供）：
+
+```bash
+export ZEUS_VAULT_PASSPHRASE='your-passphrase'
+npm run vault -- build  --root /path/to/dir --out backups/map.json   # 出加密图（只存指纹）
+npm run vault -- check  --map backups/map.json                       # 原地漂移校验（只读；exit 2=漂移 3=root 不可达）
+npm run vault -- backup --root /path/to/dir --out-dir backups        # 加密全包（map + bundle）
+npm run vault -- restore --map backups/x.map.json --bundle backups/x.bundle.json --target /restore/dir
+```
+
+调度不在内核内：用 cron/systemd timer 周期调用 `backup`/`check`（示例见 [docs/deployment.md](docs/deployment.md) §7）。
 
 HTTP 薄传输面（库用法，Fastify 依赖仅在 `zeus/http` 子路径）。H1 只读端点无需 token；H2 驾驶员 API（写意图、拍板、指标）与 internal 名册仅在传入 `internalToken` 时挂载，统一 bearer 保护：
 
@@ -108,11 +120,11 @@ curl -s -X POST localhost:8787/api/intents/intent-xxx/cancel -H "Authorization: 
 curl -s localhost:8787/api/metrics -H "Authorization: Bearer $TOKEN"
 ```
 
-> 当前 H2 是无状态封臣目录下的内核操作面：要扇出到真实封臣，需先经启动编排把封臣注册进 registry（真机注册/联调仍待部署，见 handoff）。端到端闭环用 mock 封臣在 `tests/http-h2.test.ts` 中完整跑通（发起→扇出→冲突升级→拍板→决议回写）。
+> H2 操作面已具备完整封臣上线入口（`POST /api/vassals` 或 `ZEUS_VASSAL_SEEDS` 启动自动注册）；真机扇出到封臣仍待部署与联调（见 handoff）。端到端闭环用 mock 封臣在 `tests/http-h2.test.ts` 中完整跑通（发起→扇出→冲突升级→拍板→决议回写）。
 
 ## 当前边界
 
-- **库 + 薄传输**：HTTP 传输层不含业务逻辑——H1 三只只读端点 + H2 驾驶员 API（发起/回查/取消意图、列/拍升级、指标），写端点与 internal 名册统一 bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 时整组不挂载。`serve.ts` 启动时 registry 为空（封臣注册属未来启动编排）；internal 名册视图不封签（含 revoked 行，靠 bearer 保护，封签留签名链 v1.1）。内核状态（封臣含已吊销、监督台队列、意图结果+原始请求）在配置 `ZEUS_STATE_FILE` 时启动恢复、SIGINT/SIGTERM 原子落盘（E5.3），未配置则纯内存；Realm 连接态与运行指标不持久化。
+- **库 + 薄传输**：HTTP 传输层不含业务逻辑——H1 三只只读端点 + H2 驾驶员 API（发起/回查/取消意图、列/拍升级、指标、封臣注册/吊销），写端点与 internal 名册统一 bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 时整组不挂载。封臣可经 `POST /api/vassals` 注册或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；internal 名册视图不封签（含 revoked 行，靠 bearer 保护，封签留签名链 v1.1）。内核状态（封臣含已吊销、监督台队列、意图结果+原始请求、Realm 连接、记忆、Mentor 台账、MCP 连接器声明）在配置 `ZEUS_STATE_FILE` 时启动恢复、SIGINT/SIGTERM 原子落盘（E5.3），未配置则纯内存；运行指标不持久化。
 - **Realm 对外唯一传输为 MCP**（契约 v0.2），不做独立 HTTP API；只读 stdio 脚手架已落地（resources 映射 manifest/search/read、宿主预连接、绝对路径不出进程），正式 P1（鉴权、streamable HTTP、官方 SDK 兼容性复核）的触发条件仍是 read-realm 封臣出现。
 - 服务端 HTTP 栈为 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)）：**H1 已落地**（healthz / public 签名名册 / bearer internal），**H2 驾驶员 API 已落地**（意图扇出/回查/取消、升级队列 approve/reject/resolve 决议回写、并发指标，端到端测试见 `tests/http-h2.test.ts`）；H3（SSE server / 多副本 / 静态快照分发）按需立项。
 - pr-helper 验收 #6（标准 A2A 客户端守护测试）与 Zeus↔loom 真机联调均**待部署**，现状与待办以 [handoff.md](handoff.md) 为准。
@@ -127,7 +139,7 @@ curl -s localhost:8787/api/metrics -H "Authorization: Bearer $TOKEN"
 - [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造（R0–R2、签名链公开闸门）
 - [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — 名册签名链 v1（Ed25519+JCS、条目 attestation + 快照 seal、TTL 硬过期、八条验收）
 - [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型与 H1–H3 端点规划（Fastify + 长驻 Node、薄传输层）
-- [docs/deployment.md](docs/deployment.md) — 部署手册 v0.1：Docker（多阶段/非 root/tini/健康检查/状态卷）、RSK 密钥生成与生产守卫、systemd 备选、上线检查清单
+- [docs/deployment.md](docs/deployment.md) — 部署手册：Docker（多阶段/非 root/健康检查/状态卷）、RSK 密钥生成与生产守卫、systemd 备选、Vault 备份恢复 CLI 与 cron 示例、上线检查清单
 - [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核契约：fan-out/join、合并流、幂等、cancel、规则聚合、冲突升级、边界
 - [docs/design-decision-backend.md](docs/design-decision-backend.md) — 模型无关决策后端（Jev/LLM 适配器、置信度闸门、降级到人工）
 - [docs/design-vault.md](docs/design-vault.md) — Vault 藏宝图与恢复协议（图只存引用、AES-GCM 密钥分离、原地校验 + 加密备份包跨位恢复、漂移检测）

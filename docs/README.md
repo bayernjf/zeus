@@ -14,7 +14,7 @@
 | 理解一个意图如何扇出多 Agent 并行并聚合成决策 | [design-fan-out.md](design-fan-out.md)（扇出/幂等/取消传播/合并流/规则聚合/冲突升级，PRD E1） |
 | 理解决策后端抽象层（模型无关）怎么接入决策能力 | [design-decision-backend.md](design-decision-backend.md)（DecisionBackend 端口：noul/choice/score、两类实现家族——专用决策模型 Jev（快层）/ 传统 LLM 适配（慢层）、四接线位、数据主权硬线） |
 | 探讨 AI 时代多系统怎么沟通、Agent 与确定性原语边界划在哪 | [design-agentic-integration.md](design-agentic-integration.md)（Agent 作编排层的两层架构、划边界四轴、确定性闸门、钉死/交给清单、MCP/A2A/Skill 插座） |
-| 给数据目录出藏宝图、做备份与恢复演练 | [design-vault.md](design-vault.md)（图只存引用 + 指纹、AES-GCM 密钥分离、原地校验/漂移检测、加密备份包跨位恢复，E8.1/E8.2） |
+| 给数据目录出藏宝图、做备份与恢复演练 | [design-vault.md](design-vault.md)（图只存引用 + 指纹、AES-GCM 密钥分离、原地校验/漂移检测、加密备份包跨位恢复，E8.1/E8.2）；CLI 操作（build/check/backup/restore、cron 示例）见 [deployment.md](deployment.md) §7（E3.7） |
 | 了解行业内决策层现状与分化趋势 | [research-decision-layer-industry.md](research-decision-layer-industry.md)（LLM-as-judge 主流 + 四条分化路线、对决策后端设计的印证、来源清单） |
 | 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（功能性/完整度/可上线三维评审、MVP 判定、阻塞项与最小上线路径） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |
@@ -26,7 +26,7 @@
 | 理解 bayjf 如何从陈列馆升级为封神榜名册 | [design-bayjf-roster.md](design-bayjf-roster.md)（名册字段映射、内外双视图、签名链闸门、R0–R2） |
 | 设计/实现名册公开前的签名验签链 | [design-fealty-signing.md](design-fealty-signing.md)（威胁模型、Zeus 单签 v1、Ed25519+JCS、两层信封、吊销失效语义、验收用例） |
 | 了解 Zeus 服务端 HTTP 栈怎么选、端点怎么长 | [design-http-transport.md](design-http-transport.md)（网络面划分、Fastify+长驻裁决、薄传输层、H1–H3 端点） |
-| 把 Zeus 进程真正跑起来 / 上线（Docker、密钥、状态卷） | [deployment.md](deployment.md)（部署手册：Dockerfile 与 compose、RSK 密钥生成与生产守卫、systemd 备选、上线检查清单） |
+| 把 Zeus 进程真正跑起来 / 上线（Docker、密钥、状态卷、备份调度） | [deployment.md](deployment.md)（部署手册：Dockerfile 与 compose、RSK 密钥生成与生产守卫、systemd 备选、§7 Vault 备份恢复 CLI 与 cron、上线检查清单） |
 | 了解 AI 协作 / commit 约定 | [AGENTS.md](../AGENTS.md) + [git-commit-message.md](../git-commit-message.md) |
 
 ## 文档状态约定

@@ -8,9 +8,10 @@
 
 ## 缓做项
 
-### #2 藏宝图加密与托管方案
-- 纯本地密钥 vs 可恢复托管的取舍；密钥丢失 = 宝藏永久丢失。
+### #2 藏宝图加密与托管方案 ✅ 已销项（2026-09-23）
+- 原议题：纯本地密钥 vs 可恢复托管的取舍；密钥丢失 = 宝藏永久丢失。
 - **触发条件**：Realm 数据层与备份机制进入实施阶段。
+- **销项结论**：触发条件已满足（Vault E8.1/E8.2 + E3.7 已落地）；方案在 [design-vault.md](design-vault.md) v0.1 §9 拍板为**纯本地、密钥分离**（AES-256-GCM，scrypt 口令或 raw key，信封不含密钥），**KMS 托管/自动云备份明确列为非目标**；CLI（`src/vault/cli.ts`）只提供用户/外部脚本触发的 build/check/backup/restore。密钥丢失无后门是显式接受的产品语义。传承场景（dead-man's switch、法律框架）仍归 #3，不随本条销项。
 
 ### #3 传承（Inheritance）
 - 继承协议、密钥托管（dead-man's switch）、法律框架。
@@ -31,7 +32,7 @@
 ### #7 fealty 签名链
 - Agent Card / fealty 的发布与吊销是否需要签名链，防止伪造名册条目。
 - **触发条件**：bayjf 名册对外公开前。
-- **进展（2026-09-21）**：设计已定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 封臣自签交叉背书）。**v1 纯函数已库内实现**（`src/registry/signing.ts`：JCS 子集 canonicalJson、digestCard、createAttestation、sealSnapshot、verifySignedSnapshot、Ed25519 内存 signer/verifier；`tests/signing.test.ts` 19 项，设计稿 §8.1 八条验收全部覆盖通过）。本条**仍未销项**：剩余 R1（HTTP 发布端点产出签名快照、RSK 密钥部署侧注入）与 R2（bayjf 构建期验签展示）接线，以及生产密钥存放方案（设计稿 §9.2 开放问题）。
+- **进展（2026-09-23 更新）**：设计定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 封臣自签交叉背书）。**v1 纯函数已库内实现**（`src/registry/signing.ts`，`tests/signing.test.ts` 19 项覆盖设计稿 §8.1 八条验收）。**R1 已接线**：H1 `GET /api/roster/public` 实时投影并 sealSnapshot 封签（commit 3190a11）；**生产密钥已硬化**：`src/http/rsk.ts` 支持内联/文件注入，production 无密钥拒启（commit 4d99f43），生成脚本 `scripts/gen-rsk-key.mjs`。本条**仍未销项**：只剩 **R2（bayjf 构建期验签展示）**，触发条件「bayjf 名册对外公开前」未到点。
 
 ### #8 战报成本口径
 - `x-zeus-report.cost` 的单位与结算口径，跨封臣可比性。
