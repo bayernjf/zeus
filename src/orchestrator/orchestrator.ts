@@ -82,7 +82,9 @@ export class Orchestrator {
     let result: FanOutResult;
     if (names.length === 0) {
       result = {
-        intentId, runId, skill: request.skill, realm: request.realm, branches: [], stream: [],
+        intentId, runId, skill: request.skill, realm: request.realm,
+        ...(request.realmId ? { realmId: request.realmId } : {}),
+        branches: [], stream: [],
         positions: [], decision: aggregate([], request.aggregation), conflicts: [],
         status: 'failed', createdAt: this.now().toISOString(),
       };
@@ -92,7 +94,9 @@ export class Orchestrator {
       const decision = aggregate(positions, request.aggregation);
       const conflicts = detectConflicts(positions, decision);
       result = {
-        intentId, runId, skill: request.skill, realm: request.realm, branches,
+        intentId, runId, skill: request.skill, realm: request.realm,
+        ...(request.realmId ? { realmId: request.realmId } : {}),
+        branches,
         stream: mergeBranches(branches), positions, decision, conflicts,
         status: statusFromBranches(branches, conflicts.length > 0),
         createdAt: this.now().toISOString(),
@@ -110,7 +114,11 @@ export class Orchestrator {
     this.intents.set(intentId, result);
     this.requests.set(intentId, request);
     if (result.status === 'needs-driver') this.options.onConflict?.(result.conflicts, result);
-    this.emit({ type: 'intent-finished', intentId, status: result.status, at: this.now().toISOString() });
+    this.emit({
+      type: 'intent-finished', intentId, runId: result.runId, status: result.status,
+      ...(result.realmId ? { realmId: result.realmId } : {}),
+      at: this.now().toISOString(),
+    });
     return result;
   }
 
@@ -177,7 +185,11 @@ export class Orchestrator {
     const arbitrated = await this.maybeArbitrate(recomputed);
     this.intents.set(intentId, arbitrated);
     if (arbitrated.status === 'needs-driver') this.options.onConflict?.(arbitrated.conflicts, arbitrated);
-    this.emit({ type: 'intent-finished', intentId, status: arbitrated.status, at: this.now().toISOString() });
+    this.emit({
+      type: 'intent-finished', intentId, runId: arbitrated.runId, status: arbitrated.status,
+      ...(arbitrated.realmId ? { realmId: arbitrated.realmId } : {}),
+      at: this.now().toISOString(),
+    });
     return structuredClone(arbitrated);
   }
 

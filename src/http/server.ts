@@ -165,6 +165,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(typeof body.branchTimeoutMs === 'number' ? { branchTimeoutMs: body.branchTimeoutMs } : {}),
           ...(body.realmHits ? { realmHits: body.realmHits } : {}),
           ...(body.runId ? { runId: body.runId } : {}),
+          ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
         };
         const result = await deps.orchestrator!.fanOut(fanOutRequest);
         reply.code(200);

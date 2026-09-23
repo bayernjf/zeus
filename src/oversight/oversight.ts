@@ -10,6 +10,8 @@ export type OversightOptions = {
   newId?: () => string;
   cancelTask?: CancelTaskFn;
   audit?: (entry: OversightAuditEntry) => void;
+  /** Fired after a driver decision is recorded (memory reliability write-back). */
+  onDecided?: (escalation: Escalation) => void;
 };
 
 /**
@@ -98,6 +100,41 @@ export class OversightDesk {
     return structuredClone(escalation);
   }
 
+  /**
+   * Memory P1: accept a dispute produced by consolidation. The id is the
+   * consolidator's deterministic escalation id, so re-consolidating the same
+   * dispute (same facts) returns the existing record.
+   */
+  ingestMemoryDispute(input: {
+    id: string;
+    runId: string;
+    realm: Escalation['realm'];
+    factId: string;
+    conflictingFacts: string[];
+    reason: string;
+  }): Escalation {
+    const existing = this.get(input.id);
+    if (existing) return existing;
+
+    const escalation: Escalation = {
+      id: input.id,
+      kind: 'memory-dispute',
+      runId: input.runId,
+      vassal: '(memory)',
+      skill: '(memory)',
+      realm: input.realm,
+      reason: input.reason,
+      options: input.conflictingFacts,
+      status: 'pending',
+      createdAt: this.now().toISOString(),
+      factId: input.factId,
+      conflictingFacts: [...input.conflictingFacts],
+    };
+    this.escalations.set(escalation.id, escalation);
+    this.audit(escalation, 'escalated');
+    return structuredClone(escalation);
+  }
+
   list(status?: EscalationStatus): Escalation[] {
     const all = [...this.escalations.values()].map(entry => structuredClone(entry));
     return status ? all.filter(entry => entry.status === status) : all;
@@ -122,6 +159,7 @@ export class OversightDesk {
         const key = entry.intentId ?? `${entry.runId}::${entry.skill}`;
         this.conflictIndex.set(key, entry.id);
       }
+      // memory-dispute rows are keyed directly by their deterministic id.
     }
   }
 
@@ -156,6 +194,7 @@ export class OversightDesk {
     };
     this.escalations.set(id, decided);
     this.audit(decided, 'approved', note, undefined, stance);
+    this.options.onDecided?.(decided);
     return structuredClone(decided);
   }
 
@@ -176,6 +215,7 @@ export class OversightDesk {
     };
     this.escalations.set(id, decided);
     this.audit(decided, 'rejected', note);
+    this.options.onDecided?.(decided);
     return structuredClone(decided);
   }
 
@@ -189,6 +229,7 @@ export class OversightDesk {
     };
     this.escalations.set(id, decided);
     this.audit(decided, status, note);
+    this.options.onDecided?.(decided);
     return structuredClone(decided);
   }
 

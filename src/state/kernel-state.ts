@@ -9,6 +9,12 @@ import type { RealmConnection } from '../realm/types.js';
 import type { RealmStore } from '../realm/types.js';
 import type { SkillSpec } from '../skills/types.js';
 import { SkillRegistry } from '../skills/registry.js';
+import type { MemoryState } from '../memory/types.js';
+import { MemoryStore } from '../memory/memory-store.js';
+import type { ConnectorRecord } from '../mcp/types.js';
+import { ConnectorRegistry } from '../mcp/connectors.js';
+import type { MentorshipRecord } from '../skills/mentor.js';
+import { MentorshipLedger } from '../skills/mentor.js';
 
 /**
  * E5.3 minimal kernel persistence (design-http-transport §2.2/§2.3: the H2
@@ -34,6 +40,12 @@ export type KernelSnapshot = {
   realms?: RealmConnection[];
   /** E2.1: skill catalogue. Optional for backward compat. */
   skills?: SkillSpec[];
+  /** Memory P1: event log and fact store. Optional for backward compat. */
+  memory?: MemoryState;
+  /** E7: MCP connector declarations. Optional for backward compat. */
+  connectors?: ConnectorRecord[];
+  /** E2.5: mentorship records. Optional for backward compat. */
+  mentorships?: MentorshipRecord[];
 };
 
 export type KernelComponents = {
@@ -44,6 +56,12 @@ export type KernelComponents = {
   realmStore?: RealmStore;
   /** E2.1: when assembled, the skill catalogue is persisted and restored. */
   skillRegistry?: SkillRegistry;
+  /** Memory P1: when assembled, events/facts are persisted and restored. */
+  memoryStore?: MemoryStore;
+  /** E7: when assembled, connector declarations are persisted and restored. */
+  connectorRegistry?: ConnectorRegistry;
+  /** E2.5: when assembled, mentorship records are persisted and restored. */
+  mentorshipLedger?: MentorshipLedger;
 };
 
 export class KernelStateError extends Error {}
@@ -56,6 +74,9 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     orchestrator: components.orchestrator.exportState(),
     ...(components.realmStore ? { realms: components.realmStore.connections() } : {}),
     ...(components.skillRegistry ? { skills: components.skillRegistry.exportState() } : {}),
+    ...(components.memoryStore ? { memory: components.memoryStore.exportState() } : {}),
+    ...(components.connectorRegistry ? { connectors: components.connectorRegistry.exportState() } : {}),
+    ...(components.mentorshipLedger ? { mentorships: components.mentorshipLedger.exportState() } : {}),
   };
 }
 
@@ -65,6 +86,9 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
   components.oversight.importState(snapshot.oversight);
   components.orchestrator.importState(snapshot.orchestrator);
   if (components.skillRegistry && snapshot.skills) components.skillRegistry.importState(snapshot.skills);
+  if (components.memoryStore && snapshot.memory) components.memoryStore.importState(snapshot.memory);
+  if (components.connectorRegistry && snapshot.connectors) components.connectorRegistry.importState(snapshot.connectors);
+  if (components.mentorshipLedger && snapshot.mentorships) components.mentorshipLedger.importState(snapshot.mentorships);
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -83,6 +107,9 @@ export class FileKernelStateStore {
       orchestrator: state.orchestrator,
       ...(state.realms ? { realms: state.realms } : {}),
       ...(state.skills ? { skills: state.skills } : {}),
+      ...(state.memory ? { memory: state.memory } : {}),
+      ...(state.connectors ? { connectors: state.connectors } : {}),
+      ...(state.mentorships ? { mentorships: state.mentorships } : {}),
     };
     await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;

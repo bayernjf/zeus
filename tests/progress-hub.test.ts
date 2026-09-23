@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ProgressHub, type ProgressEvent } from '../src/orchestrator/progress.js';
 
 function finished(intentId: string): ProgressEvent {
-  return { type: 'intent-finished', intentId, status: 'completed', at: 't' };
+  return { type: 'intent-finished', intentId, runId: 'run-1', status: 'completed', at: 't' };
 }
 
 describe('ProgressHub', () => {

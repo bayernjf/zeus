@@ -8,6 +8,7 @@
  *  - dispatch A2 dispatcher (JSON-RPC + SSE, data diode, revocation gate, audit)
  *  - oversight A4 oversight desk (input-required escalation queue)
  *  - orchestrator E1 fan-out decision kernel (parallel dispatch, merge, aggregate, conflict)
+ *  - memory   memory consolidation protocol (append-only event log, fact store via consolidator)
  *  - realm    D1 Realm P0 (read-only personal data domain, scan search)
  *
  * Transport layers (MCP / HTTP) wrap this surface; they are not part of the
@@ -183,8 +184,69 @@ export type { ArbitrateInput, ArbitrateOutcome, SplitStance } from './decision/a
 
 // --- E2 Skill registry (skills as first-class modules, independent of cards) ---
 export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
-export { validateSkillSpecShape, SkillValidationError } from './skills/validate-spec.js';
-export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution } from './skills/types.js';
+export { validateSkillSpecShape, validatePermissionClaims, SkillValidationError } from './skills/validate-spec.js';
+export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution, SkillHardening } from './skills/types.js';
+
+// --- E2.5 Mentor skill transfer ---
+export { MentorshipLedger, MentorshipError } from './skills/mentor.js';
+export type {
+  MentorshipRecord,
+  MentorshipStatus,
+  CompetencyCheck,
+  LessonEntry,
+  CommissionMentorshipInput,
+  AssessOptions,
+} from './skills/mentor.js';
+
+// --- Memory consolidation protocol (P0: append log + pure consolidator) ---
+export {
+  consolidate,
+  aggregateConfidence,
+  isClaimContent,
+  stableStringify,
+  MemoryConsolidationError,
+} from './memory/consolidate.js';
+export { MemoryStore, MemoryBoundaryError } from './memory/memory-store.js';
+export { RecallIndex, LocalHashingEmbedder, tokenize, factText } from './memory/recall.js';
+export {
+  reconcileMemoryStates,
+  verifyMemoryState,
+} from './memory/reconcile.js';
+export type {
+  MemoryDriftReport,
+  FactDrift,
+  FactFieldChange,
+  MemoryConsistencyViolation,
+} from './memory/reconcile.js';
+export { factId } from './memory/consolidate.js';
+export type {
+  MemoryKind,
+  MemoryEvent,
+  FactStatus,
+  FactRecord,
+  DisputeRecord,
+  ConsolidationResult,
+  ClaimContent,
+  ConsolidateOptions,
+  MemoryState,
+  Embedder,
+  RecallHit,
+  RecallSearchOptions,
+  RetractionRecord,
+} from './memory/types.js';
+export type { MemoryAuditEntry, MemoryReplay } from './memory/memory-store.js';
+
+// --- E7 MCP connectors (minimum-privilege external system connections) ---
+export { ConnectorRegistry, ConnectorError } from './mcp/connectors.js';
+export type { ConnectorAuditEntry } from './mcp/connectors.js';
+export { McpClient, McpClientError } from './mcp/client.js';
+export type {
+  ConnectorDeclaration,
+  ConnectorRecord,
+  ConnectorStatus,
+  ConnectorCapabilities,
+  McpClientDeps,
+} from './mcp/types.js';
 
 // --- D1 Realm P0 ---
 export { FsRealmStore } from './realm/store.js';

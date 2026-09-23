@@ -129,6 +129,59 @@ State of Zeus as of 2026-09-22.
    - SkillRegistry 接入 `bootKernel`：构造后经 VassalRegistry 新增的 `onRegister` 钩子，封臣注册时自动 `registerFromCard` 导入卡片技能；SkillRegistry 增 export/importState，KernelSnapshot 增可选 `skills`，重启恢复目录。
    - 测试：10 项 tests/skills-validation.test.ts（形状/版本/权限 scope/自依赖/未知依赖/环）+ 2 项 tests/kernel-skills-state.test.ts（装配 + 快照恢复）；validateSkillSpecShape/SkillValidationError 已从 src/index.ts 导出。PRD v0.7，E2.1 升 ✅。
 
+18. **记忆整理协议 P0 落地（2026-09-22 ✅ 完成，全量 240 绿 / 34 文件，tsc 过，commit 37a7759）**：
+   - 新增 `src/memory`：`types.ts`（MemoryEvent/FactRecord/ConsolidationResult）、`consolidate.ts`（纯确定性整理）、`memory-store.ts`（事件日志 + 事实存储，按 realm 分区）。
+   - **追加与修改分离**：Agent 只能 append 事件；事实无公开写入口，只经 `consolidateRealm()` 产出；每条 fact 必带 provenance（eventId 列表）。
+   - 同 subject/predicate/object 的观察去重为一个 fact，provenance 累积、version 递增；矛盾 object 默认双方 `disputed` 并确定性生成 escalation，**不静默覆盖**；仅当新观察严格更晚且作者可靠度严格更高才把旧 fact 标 `superseded`。
+   - 置信度按 Agent 历史可靠度（`reliability` 注入，未知默认 0.5）加权自报值；同源重复不增强，独立作者印证 +0.05/人。
+   - 跨 realm read/append 拒绝并审计（MemoryBoundaryError）；`replay(realmId, runId)` 离线回放事件与 provenance 命中的事实；exportState/fromState 验证事实源可重建。design §8 八条验收逐条覆盖，11 项 tests/memory-consolidation.test.ts；PRD v0.8。
+   - **P1 待做**：Fact Store 持久化（接入 KernelSnapshot）、任务收束自动触发整理、escalations 真正进 OversightDesk、可靠度从事后结果自动回写；P2：本地 embedding 混合检索、retracted/遗忘权。
+
+19. **记忆 P1：持久化 + 自动触发（2026-09-22 ✅ 完成，全量 243 绿 / 35 文件，tsc 过，commit 66120d7）**：
+   - KernelSnapshot 增可选 `memory: MemoryState`（events + 按 realm facts），bootKernel 装配 MemoryStore 并经 collect/apply/FileStore 全链路持久化，重启事件、事实、replay 完整恢复。
+   - FanOutRequest/Result 增可选 `realmId`，intent-finished 事件带 runId/realmId；意图到达终态时 boot 自动 `consolidateRealm`，可靠度从 ConcurrencyMetrics perVassal failureRate 派生（1−failureRate，无记录 0.5）。
+   - 新增 EscalationKind `memory-dispute`（factId/conflictingFacts 字段）与 `OversightDesk.ingestMemoryDispute`（以整理器确定性 escalation id 幂等）；自动整理出的矛盾直接进监督台。
+   - `POST /api/intents` 透传 body.realmId，真实服务上自动触发可用。3 项 tests/kernel-memory-p1.test.ts（快照往返、完成即整理、矛盾升级 + 重复整理不产生重复行）；PRD v0.9。
+   - **剩余**：P2 本地 embedding 混合检索、retracted/遗忘权、漂移对账。
+
+20. **三件批次：可靠度纠错回写 + E2.3 + E7（2026-09-22 ✅ 全部完成，全量 260 绿 / 37 文件，tsc 过）**：
+   - **可靠度纠错回写**（commit a2f3678）：OversightDesk 新增 onDecided 钩子（approve/reject/decideConflict 三路均触发）；boot 中 memory-dispute 被拍板后，对败诉事实的作者 `recordCorrections`；`reliabilityScore = max(0, base − 0.15×纠错数)`，corrections 随 MemoryState 持久化。
+   - **E2.3 Skill 生命周期**（commit b654c3c）：install（即 active，deprecated 不可装）/ uninstall（立即出 resolveTeam 与默认查询，可重装）/ harden（权限只收窄：bare scope→scope:action，越权授予拒绝；约束 merge 叠加，随 spec 落快照）。8 项 tests/skills-lifecycle.test.ts；validatePermissionClaims 抽出复用。
+   - **E7 MCP 连接器**（commit f1a082a）：`src/mcp`——McpClient 零 SDK 走 streamable-HTTP JSON-RPC（兼容 JSON/SSE 帧）、initialize 握手 + tools/resources/prompts 发现；ConnectorRegistry declare（封闭词汇边界、重复拒）/ connect（失败 refused+审计）/ revoke（即时移出活动集）；最小权限 `mcp:<tool>` 精确放行；bootKernel 装配，KernelSnapshot 增 `connectors` 段（声明持久化、连接不自动重建立）。8 项 tests/mcp-connectors.test.ts。
+   - PRD v0.10，E2.3/E7 升 ✅。
+
+21. **记忆 P2：混合检索 + 遗忘权（2026-09-22 ✅ 完成，全量 271 绿 / 38 文件，tsc 过）**：
+   - 新增 `src/memory/recall.ts`：`RecallIndex` 混合检索——BM25 词法（k1=1.2/b=0.75，按本批最佳分归一）+ 向量余弦，`alpha` 可调（默认 0.5）；中文按 Han 单字+相邻 bigram 分词。
+   - 索引为**不持久化派生物**：`buildRecall`/`sync(facts)` 随时从 Fact Store 整体重建；仅 `active`/`disputed` 入索引，`consolidateRealm` 后自动 refresh 已物化的索引。
+   - `Embedder` 端口 + 默认 `LocalHashingEmbedder`（FNV-1a signed hashing 词袋，纯本地无网络，仅离线安全底座；真实同域模型可注入）。
+   - 遗忘权：`retractFacts`（事实即刻 retracted + 索引即时摘除 + tombstone，幂等）/ `forgetSubject`（主体身份匹配下全部事实抹除）；`RetractionRecord` tombstone 随 MemoryState 持久化，Event Log append-only 保留供治理回放。
+   - 11 项 tests/memory-recall-p2.test.ts；设计文档 v0.2（§6.1/6.2 契约）、PRD v0.11。
+   - **P2 后续**：~~漂移对账~~ ✅ 见 Active work 22；真实同域 embedding 模型接入仍以 deferred #10 为触发条件。
+
+22. **记忆 P2 漂移对账（2026-09-22 ✅ 完成，全量 280 绿 / 39 文件，tsc 过）**：
+   - 新增 `src/memory/reconcile.ts`：`reconcileMemoryStates(prev, curr)` 两时点快照纯 diff——事件追加/移除数、事实 added/removed/changed（逐字段 subject/predicate/object/status/confidence/version/provenance 的 before→after）、correction/tombstone 增量、`hasDrift` 总判定，按 realm。
+   - `verifyMemoryState(state)` 横切不变量：bad-fact-id（内容篡改致 id 不可重算）、unresolved/provenance-realm-mismatch、retracted↔tombstone 配对、duplicate/fact-realm-mismatch；空 violation 方可安全重建派生索引。`MemoryStore.verifyIntegrity()` 便捷入口。
+   - 导出 `factId` 供重算复用。9 项 tests/memory-reconcile.test.ts；设计文档 v0.3 §6.3、PRD v0.12。**记忆 P2 三项（混合检索 / 遗忘权 / 漂移对账）全部完成。**
+
+23. **E2.5 Mentor 传授（2026-09-22 ✅ 完成，全量 290 绿 / 41 文件，tsc 过）**：
+   - 新增 `src/skills/mentor.ts` `MentorshipLedger`：commission（mentor 须为该技能在册 active 提供者，非提供者/未知技能/自教均拒）→ teach（记录传授单元）→ assess（胜任力检查：required 硬门全过 + 加权分 ≥ 阈值 0.8，可自定义）→ 认证才登记新提供者；dismiss 作废；终态后拒绝再改。
+   - SkillRegistry 增 `isProvider` 与 `grantProvider`（仅 active spec 可授予，按 agent 幂等）；认证后学习者进 resolveTeam，评估失败不动提供者集合——学习结果可验证。
+   - KernelSnapshot 增 `mentorships` 段，台账随 bootKernel 装配持久化重启恢复（collect/apply/FileStore 全链路）。
+   - 9 项 tests/mentor-transfer.test.ts + 1 项 tests/kernel-mentor-state.test.ts；PRD v0.13，E2.5 升 ✅。
+
+24. **封臣接入波次表（2026-09-23 ✅ 完成，纯文档）**：
+   - product-portrait §7.1 新增波次表：W1 pr-helper（首封臣打磨协议）→ W2 loom/atlas（复用已有 A2A、超集守护）→ W3 agent-world/job-agent/agent-dev（全矩阵收口）；bayjf 为验签封神榜配套（非封臣）。
+   - 明确跨波门槛（前波出口达成才推广）、能力域以 Agent Card 为准不预设职责、仓库外关口须点工/授权。product-portrait 升 v0.5。
+
+25. **Agent 时代系统互联与确定性边界（2026-09-23 ✅ 落文档，纯设计探讨）**：
+   - 新增 docs/design-agentic-integration.md：核心结论——Agent 是新编排/集成层而非替代 REST，形态为"智能层（协商/非确定）+ 原语层（契约/确定）"两层。
+   - 划边界四轴（可逆性/确定性需求/可验证性/爆炸半径），边界本体是"结构化意图→确定性闸门"收口；钉死清单（权限/不可逆动作/钱与规则/状态机/审计回放/注入检查）与可交给 Agent 的"理解表达"层。
+   - 记录软肋：闸门校验太弱漏错误、太重退回写死，功夫在"最小但充分"；近中期取 Agent 做面/确定性做骨。docs/README.md 与 handoff Project documents 已索引。
+   - **v0.2 增补**：§6A 行业现状——软件"对 AI 原生可操作"的五种主流实践（Function Calling/MCP/Agent Loop/Computer Use/护栏）与 API-first、能力即工具、确定性执行三条原则，作为外部现状对照内部立场。
+   - **v0.3 增补**：§6A.2 三层成熟度——L1 连接（能连）/ L2 工具设计（好用：粒度/schema/错误/组合）/ L3 护栏（安全），明确"做了 MCP ≠ 好用"；传统软件四步重构路径，只重构能力暴露层、保留确定性内核。
+   - **v0.4 增补**：§2A 明确 Zeus 定位 = AI 原生多 Agent 团队运行时；团队侧能力、目标软件 L1–L3 前提，及"编排内核不替代执行 / 仓库外关口须授权"两条边界。
+   - **同步 PRD**：架构立场已索引进 docs/prd.md v0.14（演进日志加行，不复制全文，PRD 仍回答做什么/为什么、设计全文在本文档）。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
@@ -138,9 +191,10 @@ State of Zeus as of 2026-09-22.
 * [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
 * [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核 v0.1（PRD E1）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级、边界 ★
 * [docs/design-decision-backend.md](docs/design-decision-backend.md) — 决策后端抽象层 v0.2（模型无关）：DecisionBackend 端口（noul/choice/score）、两类实现家族（专用决策模型 Jev / 传统 LLM 适配）、四接线位、选择与降级、数据主权硬线 ★
+* [docs/design-agentic-integration.md](docs/design-agentic-integration.md) — Agent 时代系统互联与确定性边界 v0.4：§2A Zeus 定位（AI 原生多 Agent 团队运行时）、两层架构、划边界四轴、确定性闸门、MCP·A2A·Skill 插座、§6A 五种主流实践、§6A.2 三层成熟度与四步重构、闸门软肋 ★
 * [docs/research-decision-layer-industry.md](docs/research-decision-layer-industry.md) — 决策层行业现状调研 v0.1（2026-09）：LLM-as-judge 主流 + 四条分化路线（专用决策模型/程序化裁决/混合路由/多模型分职）、对 design-decision-backend v0.2 的印证、来源清单
 * [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级评审 v0.1（2026-09-22）：功能性/完整度/可上线三维度、P0 覆盖统计（13✅/11🚧/2⬜）、MVP 判定（库内内核级达成、产品级未达成）、硬/软阻塞项、达到可上线 MVP 的最小路径 ★
-* [docs/prd.md](docs/prd.md) — 产品需求文档 v0.1：9 个 Epic、~40 条需求（优先级/状态/验收标准）、里程碑与成功指标 ★
+* [docs/prd.md](docs/prd.md) — 产品需求文档 现行 v0.14：9 个 Epic、需求拆解（优先级/状态/验收标准）、里程碑与成功指标；v0.14 索引架构立场 design-agentic-integration ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
 * [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.1（D1）：目录即数据库、connect/search/read/write、数据二极管执行点、藏宝图依赖 ★

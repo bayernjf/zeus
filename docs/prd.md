@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.7（2026-09-22，E2.1 Skill 规格显式声明、校验与注册）**
+> 状态：**现行 v0.14（2026-09-23，新增架构立场文档 design-agentic-integration：Agent 时代系统互联、确定性边界与 Zeus 团队运行时定位）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -61,9 +61,9 @@
 |---|---|---|---|---|
 | E2.1 | Skill 显式声明：输入/输出、权限、依赖、版本 | P0 | ✅ | SkillSpec 独立于 Agent Card：id/name/version(major.minor.patch)/inputs/outputs/permissions(封闭 scope 词汇 realm·execute·network·credential·mcp)/dependencies；`validateSkillSpecShape` 纯校验，注册强制形状校验、依赖须已注册（拒前向引用）、拒绝自依赖与依赖环；SkillRegistry 已在 `bootKernel` 装配（封臣 card 经 onRegister 钩子自动导入）并随 KernelSnapshot 持久化重启恢复，见 tests/skills-validation.test.ts、tests/kernel-skills-state.test.ts |
 | E2.2 | Skill 注册中心：登记、检索、版本化 | P0 | ✅ | `src/skills/registry.ts` SkillRegistry：id+version 唯一键、多版本共存、get 默认最新 active（显式版本可查 deprecated 供审计）、deprecate 标记不删、按名/域（findByDomain）/标签检索、registerFromCard 从卡片登记目录版本、resolveTeam 多技能组队（10 项测试） |
-| E2.3 | Skill 安装 / 加固 / 卸载断权 | P1 | ⬜ | 安装即生效；加固=叠加约束/实现；卸载立即收回权限 |
+| E2.3 | Skill 安装 / 加固 / 卸载断权 | P1 | ✅ | `install/uninstall/harden`（src/skills/registry.ts）：安装即 active 生效；卸载立即 status=uninstalled，resolveTeam 即刻显示 missing、默认查询不可见（无缓存授权）；加固只能收窄权限（bare scope 可降到 scope:action，拒越权授予）、约束叠加合并，随 spec 持久化；deprecated 不可重装，见 tests/skills-lifecycle.test.ts（8 项） |
 | E2.4 | 协同决策按 Skill 自动组队：一意图映射到所需技能并选 Agent | P0 | ✅ | registry 有 findBySkill；SkillRegistry.resolveTeam 对多技能返回每技能 slot（providers/missing/ambiguous）与 complete/missingSkills/ambiguousSkills，多候选标 ambiguous 绝不静默随机选（E2.2 测试覆盖） |
-| E2.5 | Mentor 传授 Skill 给新 Agent/员工 | P2 | ⬜ | 带教路径可执行，学习结果可验证 |
+| E2.5 | Mentor 传授 Skill 给新 Agent/员工 | P2 | ✅ | 新增 `src/skills/mentor.ts`：`MentorshipLedger` 可审计带教路径——commission 要求 mentor 已是该技能在册提供者（非提供者/未知技能/自教均拒，技能须 active）、teach 记录传授单元、assess 以**胜任力检查而非出勤**认证（required 硬门全过 + 加权分 ≥ 阈值，默认 0.8，可自定义）；认证通过才经 `SkillRegistry.grantProvider` 把学习者登记为新提供者（进 resolveTeam），评估失败不动提供者集合；dismiss 作废；台账随 KernelSnapshot `mentorships` 段持久化重启恢复。见 tests/mentor-transfer.test.ts（9 项）、tests/kernel-mentor-state.test.ts |
 
 ### E3. Realm 数据域（数据主权底座）
 
@@ -116,8 +116,8 @@
 
 | ID | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|
-| E7.1 | 基于 MCP 的外部系统接入（resources/tools/prompts） | P1 | ⬜ | 任意允许系统经 MCP 接入；可审计、可断权 |
-| E7.2 | 连接器登记与最小权限声明 | P1 | ⬜ | 每连接器声明权限边界，默认最小授权 |
+| E7.1 | 基于 MCP 的外部系统接入（resources/tools/prompts） | P1 | ✅ | 新增 `src/mcp`：`McpClient` 零 SDK 实现 streamable-HTTP JSON-RPC（initialize 握手 + initialized 通知，兼容 application/json 与 text/event-stream 两种响应），tools/resources/list 发现能力；`ConnectorRegistry.connect` 执行握手，服务器不可达拒绝并审计（refused），`revoke` 立即移出活动集合，见 tests/mcp-connectors.test.ts（8 项） |
+| E7.2 | 连接器登记与最小权限声明 | P1 | ✅ | `declare` 强制封闭权限词汇（validatePermissionClaims）、重复声明拒绝；连接后只暴露声明边界内工具（bare `mcp` 全放行，`mcp:<tool>` 精确授权，边界外工具不出现）；连接器声明经 bootKernel 装配并随 KernelSnapshot `connectors` 段持久化恢复（连接不自动重建立） |
 
 ### E8. 个人情感层
 
@@ -175,3 +175,10 @@
 | v0.5 | 2026-09-22 | H2 驾驶员 API 落地：E5.5 升 🚧（意图扇出/回查/取消、升级队列 list/approve/reject/resolve 决议回写、GET /api/metrics，bearer 保护，12 项端到端测试 + 进程级冒烟）；E1.7 升 ✅（指标经 HTTP 暴露）；E5.3 已接启动装配；修复服务端生成 intentId 的意图不落表导致无法回查/决议的缺口；全量 199 测试绿（26 文件） |
 | v0.6 | 2026-09-22 | A 批次收口四个缺口：**G1 封臣上线入口**（`POST/DELETE /api/vassals` + `ZEUS_VASSAL_SEEDS`）、**G4 Realm 连接持久化**（snapshot 增 realms、重启 reconnect、`ZEUS_REALM_ROOTS`）、**G6 E6.3 一键补参重派**（`POST .../approve-resume` + `findIntentForBranchRun`）、**G5 H3 SSE**（`GET /api/intents/:id/events` + `ProgressHub`，branch 生命周期实时事件）；E5.3/E5.5/E6.3 升 ✅；全量 217 测试绿（31 文件） |
 | v0.7 | 2026-09-22 | E2.1 Skill 显式规格落地：SkillSpec 独立于卡片（version/inputs/outputs/permissions 封闭 scope/dependencies），注册强制形状校验、依赖须已注册、拒自依赖与依赖环（validate-spec 纯函数）；SkillRegistry 接入 bootKernel（onRegister 自动导入 card skills）并随快照持久化恢复；E2.1 升 ✅；全量 229 测试绿（33 文件） |
+| v0.8 | 2026-09-22 | 记忆整理协议 P0 落地（design-memory-consolidation §7）：新增 `src/memory`——append-only 事件日志、事实无公开写入口（仅经纯函数 `consolidate`）、同事实观察去重合并累积 provenance、矛盾默认 disputed + 可确定性生成的 escalation（later-and-more-reliable 规则方可 supersede）、置信度按 Agent 历史可靠度加权（同源重复不增强、独立来源印证小幅提升）、跨 realm 读写拒绝并审计、沿 runId 离线回放事件与事实；八条首版验收逐条覆盖，11 项测试；全量 240 绿（34 文件） |
+| v0.9 | 2026-09-22 | 记忆 P1 落地：事件日志与事实纳入 KernelSnapshot（`memory` 段，重启完整恢复）；FanOutRequest/Result 与 intent-finished 事件贯通 `realmId`；意图进入终态时自动整理对应 realm（可靠度从并发指标 failureRate 派生，无记录默认 0.5），矛盾经新增 `memory-dispute` 升级类型幂等进 OversightDesk；`POST /api/intents` 透传 realmId；3 项测试；全量 243 绿（35 文件） |
+| v0.10 | 2026-09-22 | 三块收口：**可靠度纠错回写**（OversightDesk onDecided 钩子，驾驶员拍板 memory-dispute 后对败诉作者记 correction，每次 −0.15，随快照持久化）、**E2.3 Skill 生命周期**（install/uninstall/harden，卸载即时断权、加固只能收窄）、**E7 MCP 连接器**（零 SDK JSON-RPC client + 连接器登记/最小权限/发现/吊销，声明随快照持久化）；E2.3/E7 升 ✅；新增 17 项测试，全量 260 绿（37 文件） |
+| v0.11 | 2026-09-22 | 记忆 P2 落地：新增 `src/memory/recall.ts`——混合检索（BM25 词法 + 向量余弦，alpha 可调，默认本地确定性 signed-hashing embedder、`Embedder` 端口可注入同域模型），召回索引为不持久化的可重建派生物，仅 active/disputed 入索引；遗忘权（`retractFacts` 即时摘除索引、`forgetSubject` 按主体抹除，tombstone 台账随快照持久化，事件日志 append-only 保留供治理回放）；11 项测试；全量 271 绿（38 文件） |
+| v0.12 | 2026-09-22 | 记忆 P2 漂移对账落地：新增 `src/memory/reconcile.ts`——`reconcileMemoryStates` 两时点快照逐字段 diff（事件增删、事实 added/removed/changed、correction/tombstone 增量）、`verifyMemoryState` 横切不变量校验（factId 可重算、provenance 可解析且不跨域、retract↔tombstone 一一配对、事实不重复），`MemoryStore.verifyIntegrity` 便捷入口；factId 计算导出复用；9 项测试；P2 三项齐；全量 280 绿（39 文件） |
+| v0.13 | 2026-09-22 | E2.5 Mentor 传授落地：新增 `src/skills/mentor.ts` `MentorshipLedger`（commission 须在册提供者、teach 记录、assess 胜任力硬门+加权阈值、认证才 grantProvider、dismiss）；SkillRegistry 增 isProvider/grantProvider；台账经 KernelSnapshot `mentorships` 段持久化；E2.5 升 ✅；新增 10 项测试；全量 290 绿（41 文件） |
+| v0.14 | 2026-09-23 | 新增架构立场文档 [design-agentic-integration](design-agentic-integration.md) v0.4（本文件不复制全文）：Agent 是新的编排/集成层而非替代 REST，两层形态=智能层（协商/非确定）压在原语层（契约/确定/可回放）之上；边界收口为「结构化意图→确定性闸门」，按可逆性/确定性需求/可验证性/爆炸半径四轴划分；行业现状五种主流实践与 L1 连接/L2 工具设计/L3 护栏三层成熟度；明确 Zeus 定位为 **AI 原生多 Agent 团队运行时**，目标软件的 Agent 可用成熟度决定团队如何调用。无代码变更 |

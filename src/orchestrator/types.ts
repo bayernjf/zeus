@@ -59,6 +59,9 @@ export type FanOutRequest = {
   vassals?: string[];
   params: Record<string, unknown>;
   realm: RealmType;
+  /** Connected realm this intent operates on, when one was named. Required
+   *  for memory consolidation to land in the right memory domain. */
+  realmId?: string;
   runId?: string;
   realmHits?: DispatchRequest['realmHits'];
   aggregation?: AggregationRule;
@@ -71,6 +74,7 @@ export type FanOutResult = {
   runId: string;
   skill: string;
   realm: RealmType;
+  realmId?: string;
   branches: BranchOutcome[];
   stream: SourcedEvent[];
   positions: Position[];

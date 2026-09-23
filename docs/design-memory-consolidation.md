@@ -1,6 +1,6 @@
 # 记忆整理协议设计（Memory Consolidation Protocol）
 
-> 状态：**现行（设计稿 v0.1，2026-09-22）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与契约。
+> 状态：**现行（设计稿 v0.3，2026-09-22，P2 漂移对账）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与契约。
 > 上游：[product-portrait.md](product-portrait.md) §2.1（数据主权）、[prd.md](prd.md) E1（并发决策内核）；与 [design-realm.md](design-realm.md) 同构（事实在原位、索引可重建）。
 > 本文先于 memory 模块存在，是其首份契约。
 
@@ -119,6 +119,30 @@ Agent ──append──▶ Event Log（实时，人人可写）
 - 删除/被遗忘权：Fact 可 `retracted`，索引同步移除；因已进入快照/下游的部分须可追溯声明。
 - embedding 仅本地/同域；不可得则不引入向量（deferred #10 触发条件）。
 
+### 6.1 混合检索契约（P2）
+
+- 召回索引是**派生物、不持久化**：`RecallIndex.sync(facts)` 随时从 Fact Store 整体重建（验收 #5）。
+- 混合得分 = `alpha · 语义余弦 + (1 − alpha) · BM25`（默认 alpha=0.5）；BM25 分量按本批最佳分归一到 0..1，两路可比较可组合。
+- 仅 `active` / `disputed` 事实入索引；`superseded` / `retracted` 不召回（争议事实仍可召回且自带 `disputed` 标记，提示驾驶员）。
+- Embedding 走 `Embedder` 端口（`embed(text): number[]`），默认实现 `LocalHashingEmbedder` 是确定性 signed-hashing 词袋（无网络、无语义外推，仅离线安全底座）；真实同域模型可注入，仍须满足数据不出域。
+
+### 6.2 遗忘权执行契约（P2）
+
+- `retractFacts(realmId, factIds, {reason, requestedBy})`：事实即刻 `retracted`、索引条目即时摘除，并写一条 **tombstone**（`RetractionRecord`：factId/realmId/subject/reason/requestedBy/at）。
+- `forgetSubject(realmId, subject)`：主体身份匹配（trim+小写）下的全部事实一并 retract，对应"删除关于某人的一切"。
+- Event Log 保持 append-only 不删除——治理回放所需；被遗忘的事实在任何召回中都不再出现，下游/快照中只以 tombstone 形式可追溯声明。
+- tombstone 随 MemoryState 持久化；重复 retract 幂等（已 retracted 不再产生新记录）。
+
+### 6.3 漂移对账契约（P2）
+
+- `reconcileMemoryStates(previous, current)`：两个时点快照的纯 diff，按 realm 输出——事件追加/移除数、事实 added/removed/changed（逐字段标 subject/predicate/object/status/confidence/version/provenance 的 before→after）、新增 correction 与 tombstone 数；`hasDrift` 为总判定。相同快照必报无漂移。
+- `verifyMemoryState(state)`：横切不变量校验，是记忆版 digest 对账，静默损坏显形为 violation：
+  - `bad-fact-id`：factId 无法从 realm+subject+predicate+object 重算（内容被篡改）；
+  - `unresolved-provenance` / `provenance-realm-mismatch`：provenance 指向缺失或跨域事件；
+  - `retracted-without-tombstone` / `tombstone-without-retraction`：retract 状态与 tombstone 必须一一对应；
+  - `duplicate-fact` / `fact-realm-mismatch`：事实重复或所在桶域不符。
+- 返回空 violation 才允许安全重建一切派生索引；`MemoryStore.verifyIntegrity()` 是对当前事实源的便捷入口。
+
 ## 7. 交付节奏
 
 - **P0**：Event Log（append）+ 库内规范化整理纯函数（去重/合并/disputed），无索引、personal realm。
@@ -141,3 +165,5 @@ Agent ──append──▶ Event Log（实时，人人可写）
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-09-22 | 首版：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、与并发内核/supervisor 衔接、八条验收 |
+| v0.2 | 2026-09-22 | P2 契约：§6.1 混合检索（BM25+语义余弦、可重建索引、Embedder 端口与本地 hashing 默认实现）、§6.2 遗忘权（retract/forgetSubject + tombstone 台账，事件日志保留） |
+| v0.3 | 2026-09-22 | §6.3 漂移对账：reconcileMemoryStates 快照间逐字段 diff、verifyMemoryState 横切不变量校验（factId 可重算、provenance 可解析、retract↔tombstone 配对）；P2 三项齐 |
