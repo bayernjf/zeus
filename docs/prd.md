@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.18（2026-09-24，E1.3 LLM-as-judge 对抗复核接决策后端落地）**
+> 状态：**现行 v0.19（2026-09-24，E3.5 Realm write 与驾驶员授权凭证库内落地）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -73,7 +73,7 @@
 | E3.2 | 扫描式 search + read | P0 | ✅ | 文本白名单/剪枝/1MiB 上限/symlink 拒绝；路径穿越双检拒绝 |
 | E3.3 | contentDigest 基线 | P0 | ✅ | 全量指纹稳定（顺序无关），供备份与漂移对账 |
 | E3.4 | Realm MCP server 正式暴露（streamable HTTP + 鉴权） | P1 | 🚧 stdio | stdio 壳已落地（root/connect 不出协议）；正式触发：read-realm 封臣出现 |
-| E3.5 | write 与驾驶员授权凭证 | P1 | ⬜ | personal 默认可写；enterprise 写须授权凭证并审计 |
+| E3.5 | write 与驾驶员授权凭证 | P1 | 🚧 | **库内 write 已落地**（`FsRealmStore.write` + `src/realm/grant.ts`：personal 默认可写、readOnly 连接拒写、enterprise 写须 `DriverWriteGrant` 经 `verifyDriverWriteGrant` 校验形状/绑定域/有效期；tmp+rename 原子写、延续路径穿越/symlink/文本扩展名/1MiB 防护、写后 connect 快照与 `contentDigest`/itemCount 一致、可选审计回调；22 项测试）。**仍待 P1**：enterprise realm 的 connect（当前 connect 拒 enterprise）与 MCP write tool 暴露，随 E3.4 read-realm 封臣触发 |
 | E3.6 | enterprise Realm 多租户 | P1 | ⬜ | 组织/部门/个人分级，与个人域默认二极管隔离 |
 | E3.7 | 备份策略执行器 + 漂移检测 | P2 | ✅ | `src/vault/cli.ts` 零依赖执行器（`dist/vault/cli.js` / `npm run vault`）：`build`（密封 manifest-only 图）、`check`（L0 重连现盘对账 ok/changed/missing/unexpected，只读）、`backup`（密封 map+full bundle 两文件）、`restore`（digest 绑定校验后跨位写盘并复验）；密钥经 `ZEUS_VAULT_PASSPHRASE`（scrypt）或 `--key-file`（32 字节/hex），退出码 0 健康/1 错误/2 漂移/3 root 不可达供调度器判断；12 项 tests/vault-cli.test.ts + 编译产物全链路冒烟。**调度不内置**（design-vault §9：由外部 cron/systemd timer 触发，示例见 deployment.md §7） |
 | E3.8 | 检索后端升级（倒排/向量） | P2 | ⬜ | SearchBackend 接口不变；阈值见 deferred #10 |
@@ -186,3 +186,4 @@
 | v0.16 | 2026-09-23 | E3.7 备份策略执行器落地：新增 `src/vault/cli.ts` 零依赖 CLI（build/check/backup/restore，密钥经口令 env 或 key-file，退出码 0/1/2/3），`npm run vault` 入口；deployment.md 增 §7 备份恢复与 cron 示例（调度不内置，design-vault §9 边界不变）；12 项 CLI 测试 + 编译产物全链路冒烟（出图→篡改 exit 2→全包→销毁→跨位恢复内容一致→错钥 exit 1）；E3.7 升 ✅；全量 322 绿（43 文件） |
 | v0.17 | 2026-09-24 | **E1.6 离线决策回放器**（`src/orchestrator/replay.ts`：replayDecision/replayDecisions/replaySnapshot/renderReplay，纯离线只读、确定性时间线、损坏 fail-loud，8 项测试）升 ✅；**E10.4 本机容量基线**（`scripts/bench-capacity.mjs` + `npm run bench:capacity` + docs/capacity-baseline.md：真实回环 HTTP mock 封臣群，扇出宽度/并发意图两场景，≤16 扇出墙钟≈单封臣、128 在途分支零丢失，明确 mock 近似与真机重测触发条件）升 ✅；全量 330 绿（44 文件） |
 | v0.18 | 2026-09-24 | **E1.3 LLM-as-judge 对抗复核接决策后端**：新增 `src/orchestrator/judge.ts` `judgeDecision` 纯函数（规则有结论后独立复核：同意背书、高置信分歧升级 judge-review 冲突走驾驶员闭环、低置信/未校准/故障只记录），OrchestratorOptions 增 judge* 开关组（默认关），fanOut/resumeBranch 接线，与 S2 仲裁互斥；Conflict 增 `kind:split|judge-review`、FanOutResult 增 `judgeReview`；E1.6 回放器增 judge-reviewed 时间线节点；index 公共导出；新增 14 项测试，全量 344 绿（45 文件）；E1.3 升 ✅（多方案 noul 开放生成仍待后续） |
+| v0.19 | 2026-09-24 | **E3.5 Realm write 与驾驶员授权凭证（库内部分）**：`FsRealmStore.write`（personal 默认允许、readOnly 拒、enterprise 须凭证；字符串/JSON 序列化、自动 itemId、tmp+rename 原子写、路径/symlink/扩展名/1MiB 防护、写后快照与 contentDigest 一致、审计回调），新增 `src/realm/grant.ts` `verifyDriverWriteGrant` 纯函数（missing/malformed/wrong-realm/expired 门），RealmStore 接口补 write、新增 UnauthorizedRealmWriteError/UnsupportedWriteError，index 公共导出；enterprise connect 与 MCP write tool 仍 P1；新增 22 项测试，全量 366 绿（46 文件）；E3.5 ⬜→🚧 |
