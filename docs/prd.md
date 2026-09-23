@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.16（2026-09-23，E3.7 备份策略执行器落地：Vault CLI 四子命令 + 漂移检测退出码，调度归外部 cron/systemd）**
+> 状态：**现行 v0.17（2026-09-24，E1.6 离线决策回放器 + E10.4 本机容量基线落地）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -50,10 +50,10 @@
 | E1.3 | 多 Agent 协同决策：多方案生成、加权/投票/规则聚合为一个决策建议 | P0 | 🚧 | ✅ 确定性规则聚合 unanimous/majority/weighted 已落地，输出含各方立场/权重/理由，分裂时 conclusion:null 不臆断；多方案生成与 LLM-as-judge/对抗（S2）未做 |
 | E1.4 | 冲突检测与消解：识别 Agent 间结论冲突，给消解路径或升级驾驶员 | P0 | ✅ | `detectConflicts` 标记规则无法消解的多立场分裂，status=needs-driver 并经 onConflict 回调进监督台、不静默选边；**冲突拍板回写已闭环**（E6.2）；更丰富的自动消解规则 / LLM critic（S2）未做 |
 | E1.5 | 并发治理：并发上限、任务队列、超时与取消传播、幂等 | P0 | 🚧 | ✅ intentId 重放幂等（同键零出站）、cancelIntent 传播到全部非终态分支、单路超时、父子 runId 全链贯穿；并发上限/队列/背压未做（deferred #9，待 ≥3 封臣压测） |
-| E1.6 | 决策可追溯：每个决策可回放参与 Agent、输入、立场、聚合过程 | P0 | 🚧 | ✅ FanOutResult 记录各分支、positions、decision.rule/reason/margin、sourced 事件与分支 runId，决策来源可辨；独立离线回放器未做 |
+| E1.6 | 决策可追溯：每个决策可回放参与 Agent、输入、立场、聚合过程 | P0 | ✅ | FanOutResult 记录各分支、positions、decision.rule/reason/margin、sourced 事件与分支 runId；**独立离线回放器已落地**（`src/orchestrator/replay.ts`：纯只读函数按合并流重建确定性时间线，含输入/参与方/立场/聚合/冲突/后端仲裁/驾驶员决议，replaySnapshot 从持久化快照批量回放，renderReplay 出人读文本；记录损坏 fail-loud，8 项测试） |
 | E1.7 | 并发可观测：在途任务数、各 Agent 延迟/失败率、队列深度 | P1 | ✅ | 库内 `ConcurrencyMetrics`（`src/orchestrator/metrics.ts`）：在途数、并发峰值、队列深度、完成/失败/超时计数、各封臣延迟 min/max/avg/p50/p95 与失败率，经 Orchestrator 注入、`bootKernel` 默认装配（5 项测试）；**已随 H2 经 `GET /api/metrics` 暴露**。背压/有界队列落地前队列深度恒 0（deferred #9） |
 
-**容量目标（待压测基线）**：单意图并发 Agent 数、平台同时在途任务数、P95 决策延迟在 M2 压测后定值。
+**容量目标（本机 mock 基线已产出，真机待标定）**：单意图并发 Agent 数、平台同时在途任务数、P95 决策延迟的本机回环基线见 [capacity-baseline.md](capacity-baseline.md)（舒适扇出 ≤16、验证到 128 在途分支零丢失）；真机阈值在 ≥3 真实封臣压测（deferred #9）后定值。
 
 ### E2. Skill 技能体系（一等模块）
 
@@ -144,7 +144,7 @@
 | E10.1 | CI（typecheck/test/build 矩阵） | P0 | ✅ | GitHub Actions Node 20/22 全绿（push 待授权） |
 | E10.2 | 真机部署：pr-helper + Zeus 门面 | P1 | ⬜ | 支撑 E4.8 真机验收与 Zeus↔loom 联调 |
 | E10.3 | 库公共入口与构建产物 | P0 | ✅ | src/index.ts 聚合导出；dist 含 .d.ts |
-| E10.4 | 并发压测与容量基线 | P1 | ⬜ | 产出 E1 容量目标基线，作为背压/扩容依据 |
+| E10.4 | 并发压测与容量基线 | P1 | ✅ | **本机 mock 回环基线已产出**（[capacity-baseline.md](capacity-baseline.md)，`npm run bench:capacity`）：单意图扇出 ≤16 封臣墙钟≈单封臣（内核附加 5–15ms）、128 分支同时在途零丢失、metrics 峰值准确；**真机容量（LLM/网络）待 ≥3 真实封臣 + deferred #9 有界队列后按同法重测** |
 
 ## 5. 里程碑（建议）
 
@@ -184,3 +184,4 @@
 | v0.14 | 2026-09-23 | 新增架构立场文档 [design-agentic-integration](design-agentic-integration.md) v0.4（本文件不复制全文）：Agent 是新的编排/集成层而非替代 REST，两层形态=智能层（协商/非确定）压在原语层（契约/确定/可回放）之上；边界收口为「结构化意图→确定性闸门」，按可逆性/确定性需求/可验证性/爆炸半径四轴划分；行业现状五种主流实践与 L1 连接/L2 工具设计/L3 护栏三层成熟度；明确 Zeus 定位为 **AI 原生多 Agent 团队运行时**，目标软件的 Agent 可用成熟度决定团队如何调用。无代码变更 |
 | v0.15 | 2026-09-23 | Vault 藏宝图与恢复协议落地（[design-vault](design-vault.md) v0.1）：新增 `src/vault`——buildVault 出图只存引用+逐 item 指纹（正文零泄漏）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、L0 原地 restoreDryRun 重连校验与漂移检测、L1 packFull 加密内容包 + restoreFromBundle 跨位写盘恢复（FsRestoreSink）；Realm 增只读 `entries()` 枚举；E8.1/E8.2 升 ✅、E3.7 升 🚧；新增 20 项测试，全量 310 绿（42 文件） |
 | v0.16 | 2026-09-23 | E3.7 备份策略执行器落地：新增 `src/vault/cli.ts` 零依赖 CLI（build/check/backup/restore，密钥经口令 env 或 key-file，退出码 0/1/2/3），`npm run vault` 入口；deployment.md 增 §7 备份恢复与 cron 示例（调度不内置，design-vault §9 边界不变）；12 项 CLI 测试 + 编译产物全链路冒烟（出图→篡改 exit 2→全包→销毁→跨位恢复内容一致→错钥 exit 1）；E3.7 升 ✅；全量 322 绿（43 文件） |
+| v0.17 | 2026-09-24 | **E1.6 离线决策回放器**（`src/orchestrator/replay.ts`：replayDecision/replayDecisions/replaySnapshot/renderReplay，纯离线只读、确定性时间线、损坏 fail-loud，8 项测试）升 ✅；**E10.4 本机容量基线**（`scripts/bench-capacity.mjs` + `npm run bench:capacity` + docs/capacity-baseline.md：真实回环 HTTP mock 封臣群，扇出宽度/并发意图两场景，≤16 扇出墙钟≈单封臣、128 在途分支零丢失，明确 mock 近似与真机重测触发条件）升 ✅；全量 330 绿（44 文件） |

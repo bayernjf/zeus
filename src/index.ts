@@ -108,6 +108,19 @@ export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
 export { detectConflicts } from './orchestrator/conflict.js';
 export { applyConflictResolution, recomputeResult, statusFromBranches } from './orchestrator/resolution.js';
+export {
+  replayDecision,
+  replayDecisions,
+  replaySnapshot,
+  renderReplay,
+  ReplayError,
+} from './orchestrator/replay.js';
+export type {
+  DecisionReplay,
+  ReplayStep,
+  ReplayStepKind,
+  ReplayParticipant,
+} from './orchestrator/replay.js';
 export { arbitrateConflict } from './orchestrator/arbitration.js';
 export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
 export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
