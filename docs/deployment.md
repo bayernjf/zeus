@@ -2,7 +2,7 @@
 
 长驻 Node 进程形态：Fastify HTTP 面（`dist/http/serve.js`）装配内核（registry / oversight / dispatcher / orchestrator），启动时从状态文件恢复、优雅退出时落盘。本文覆盖 Docker（推荐）与裸机 systemd 两种形态。
 
-> 当前边界（H1）：进程启动时 registry 为空，**尚无注册写端点**（封臣注册属后续启动编排）；本手册解决"进程可重复、可观测、可恢复地跑起来"，不解决封臣从哪注册。Realm 不挂 HTTP。
+> 当前边界：封臣可经 `POST /api/vassals`（H2 内部面，bearer 保护）注册，或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；Realm 不挂 HTTP。
 
 ## 1. 端点
 
@@ -102,7 +102,7 @@ chmod 600 secrets/rsk-private.pem && chown 1000:1000 secrets/rsk-private.pem
 docker logs -f zeus                      # 启动应见 listening，无 ephemeral 告警
 curl -s http://127.0.0.1:8787/healthz
 docker inspect --format '{{.State.Health.Status}}' zeus   # healthy
-docker stop zeus                         # tini 转发 SIGTERM → drain → state saved
+docker stop zeus                         # SIGTERM 直达 PID 1 的 node → drain → state saved
 docker start zeus                        # 启动日志应见 restored N vassals ...
 ```
 
@@ -157,3 +157,41 @@ WantedBy=multi-user.target
 - [ ] 端口默认只绑 loopback，TLS 在反向代理终止
 - [ ] `/healthz` 与 `/api/roster/public` 封签经独立通道验签通过
 - [ ] 真机验收 #6（标准 A2A 客户端打封臣）与 Zeus↔loom 联调已过（见 handoff Active work）
+- [ ] Vault 备份已配置外部调度（cron/systemd timer），并完成一次 restore 演练（见 §7）
+
+## 7. 备份与恢复（Vault CLI，E3.7）
+
+藏宝图与恢复协议经零依赖 CLI 执行（`dist/vault/cli.js`，或 `npm run vault -- ...`）。**内核不内置定时器**：备份动作由用户或系统调度器（cron/systemd timer）触发，这是 design-vault.md 的明确边界（自动/云端备份为非目标）。
+
+密钥（二选一，绝不作为位置参数出现在进程列表里）：
+
+- 口令：环境变量 `ZEUS_VAULT_PASSPHRASE`（scrypt 派生；可用 `--passphrase-env` 改变量名）
+- raw key：`--key-file` 指向 32 字节原始密钥或 64 位 hex 文本
+
+| 子命令 | 作用 | 产物 |
+|---|---|---|
+| `build --root <dir> --out <map.json>` | L0 出图：逐 item 指纹，正文零泄漏，密封落盘 | 加密 map（manifest-only） |
+| `check --map <map.json> [--json]` | L0 原地校验：重连 root 现盘对账，只读不改 | ok/changed/missing/unexpected 报告 |
+| `backup --root <dir> --out-dir <dir> [--name s]` | L1 全包：加密 map + 加密内容包（map 挂 bundleRef 绑定） | `<name>.map.json` + `<name>.bundle.json` |
+| `restore --map <m> --bundle <b> --target <dir>` | L1 跨位恢复：校验包与图 digest 一致后写盘并复验 | 恢复报告 |
+
+退出码（供调度器判断）：`0` 健康/可恢复 · `1` 用法/密钥/解密/IO 错误 · `2` 漂移（changed/missing/unexpected/digest 不符）· `3` root 不可达。
+
+每日备份 + 漂移校验（cron 示例，口令经受限权限的 env 文件注入）：
+
+```cron
+# /etc/cron.d/zeus-vault：每日 03:17 全包备份，03:30 原地校验
+17 3 * * * zeus set -a; . /opt/zeus/.vault-env; set +a; cd /opt/zeus && node dist/vault/cli.js backup --root /data/realm --out-dir /var/backups/zeus
+30 3 * * * zeus set -a; . /opt/zeus/.vault-env; set +a; cd /opt/zeus && node dist/vault/cli.js check --map /var/backups/zeus/latest.map.json || logger -t zeus-vault "drift detected"
+```
+
+恢复演练（灾备流程）：
+
+```bash
+# 1. 用最近一次全包恢复到新位置（包与图 digest 不符会被拒绝）
+node dist/vault/cli.js restore --map backups/vault-xxxx.map.json \
+  --bundle backups/vault-xxxx.bundle.json --target /data/realm-restored
+# 2. 退出码 0 且报告 recoverable: true 后，再切换挂载
+```
+
+注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 宝藏永久丢失，无托管后门**（见 design-vault.md §9 非目标）。
