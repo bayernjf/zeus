@@ -13,9 +13,9 @@
 | **roster（R0）** | `src/registry/roster.ts` | 封神榜名册投影器：注册中心状态 → 不可变、JSON 可序列化的 internal/public 双快照；只重塑与裁剪，不造字段 |
 | **dispatch（A2）** | `src/dispatch/` | 派发器：JSON-RPC + SSE 客户端（send / sendSubscribe / cancel）、数据二极管与按 `dataPolicy` 脱敏、派发前吊销阻断（不发请求不发 token）、审计 sink 与吊销审计桥 |
 | **oversight（A4）** | `src/oversight/` | 监督台：收集 `input-required` 任务升级与意图级冲突升级（`ingestConflict`），驾驶员 approve / reject / `decideConflict`；reject 联动取消封臣侧任务，冲突拍板立场回交编排器，全程审计、可持久化 |
-| **orchestrator（E1）** | `src/orchestrator/` | 并发决策内核：一意图 `fanOut` 多封臣并行、多流合并、确定性规则聚合（unanimous/majority/weighted）、冲突检测与升级、intentId 幂等重放、`cancelIntent` 传播、`resolveIntent` 决议回写（E6.2）、`resumeBranch` 补参重派（E6.3）、完整 DAG（`dag*.ts`）、并发指标（`metrics.ts`） |
+| **orchestrator（E1）** | `src/orchestrator/` | 并发决策内核：一意图 `fanOut` 多封臣并行、多流合并、确定性规则聚合（unanimous/majority/weighted）、冲突检测与升级、**LLM-as-judge 对抗复核**（`judge.ts`：规则有结论后独立复核，过门分歧转 judge-review 冲突回驾驶员闭环）、intentId 幂等重放、`cancelIntent` 传播、`resolveIntent` 决议回写（E6.2）、`resumeBranch` 补参重派（E6.3）、离线决策回放（`replay.ts` E1.6）、完整 DAG（`dag*.ts`）、并发指标（`metrics.ts`） |
 | **skills（E2）** | `src/skills/` | Skill 注册中心：技能登记/多版本共存/deprecate 标记、按名·域·标签检索、`registerFromCard`、`resolveTeam` 多技能组队（歧义不静默选边） |
-| **decision（S2）** | `src/decision/` | 模型无关决策后端：端口 + Jev/LLM 适配器 + 降级；规则无法收敛时先做一次带置信度闸门的后端仲裁，仍不结论才交驾驶员（`orchestrator/arbitration.ts`） |
+| **decision（S2）** | `src/decision/` | 模型无关决策后端：端口 + Jev/LLM 适配器 + 降级；规则无法收敛时先做一次带置信度闸门的后端仲裁（`orchestrator/arbitration.ts`），规则有结论后可再做一次对抗复核（`orchestrator/judge.ts`，默认关） |
 | **realm（D1 P0）** | `src/realm/` | 只读 personal 数据域：`FsRealmStore` 的 connect / manifest / search / read，确定性 realmId、connect 快照检索、`contentDigest` 基线、路径穿越与 symlink 双检防护；附只读 MCP stdio 脚手架（`mcp.ts` / `mcp-stdio.ts`） |
 | **state（E5.3）** | `src/state/` | 内核持久化：`kernel-state.ts` 把封臣表（含已吊销）、升级队列、意图结果+原始请求原子落盘（tmp+rename）并恢复；`boot.ts` 一次性装配 registry/dispatcher/oversight/orchestrator/metrics，配置 `ZEUS_STATE_FILE` 时启动恢复、优雅退出落盘（metrics 仅运行时不持久化） |
 | **http（H1+H2 传输面）** | `src/http/` | Fastify 薄适配层（非内核、全仓库唯一 fastify 依赖处）：H1 只读 `/healthz`、`/api/roster/public`（实时投影 + 签名名册快照，离线可验）、`/api/roster`（bearer 治理视图）；H2 驾驶员 API（bearer）`POST /api/intents`、`GET /api/intents/:id`、`POST /api/intents/:id/cancel`、`GET/POST /api/escalations`（approve/reject/resolve）、`GET /api/metrics`；`serve.ts` 为进程入口，经 `zeus/http` 子路径导出 |
@@ -28,7 +28,7 @@
 ```bash
 npm install
 npm run build      # tsc 出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest，322 项
+npm test           # vitest，344 项
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 名册 + H2 驾驶员 API；需先 build；env 见 .env.example，生产部署见 docs/deployment.md）
 ```

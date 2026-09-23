@@ -2,7 +2,7 @@
 
 > 状态：**现行（设计稿 v0.1，2026-09-22，M2 第一批）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
 > 上游需求：[prd.md](prd.md) E1（并发协同与决策内核）、E2.4（按技能组队）；技术议题 S3/S4/S5 见 [tech-exploration-map.md](tech-exploration-map.md)；控制关系见 [design-supervision.md](design-supervision.md)。
-> 边界：本批只做**库内、确定性、不调 LLM** 的最小闭环；持久化、服务端 SSE、LLM-as-judge、完整 DAG 均不在内（见 §7）。
+> 边界：v0.1 只做**库内、确定性、不调 LLM** 的最小闭环；持久化、服务端 SSE、完整 DAG 当时不在内（见 §7）。**LLM-as-judge 对抗复核已于 v0.18 落地（见 §5.1，`src/orchestrator/judge.ts`），与 S2 决策后端端口对接见 [design-decision-backend.md](design-decision-backend.md)。**
 
 ## 0. 一句话
 
@@ -127,7 +127,24 @@ type AggregatedDecision = {
 - `majority`（默认）：最多数且**过半** → 结论；平票/未过半 → `null`。
 - `weighted`：按 `weight`（缺省 1）累加，最高权重 stance 且达阈值（缺省 0.5）→ 结论，否则 `null`。
 
-输出始终带每个封臣的立场与权重，保证可解释；本批不做 LLM-as-judge / 对抗辩论（S2，随模型切片）。
+输出始终带每个封臣的立场与权重，保证可解释。
+
+### 5.1 LLM-as-judge 对抗复核（v0.18 补，`judge.ts` 纯函数）
+
+规则聚合得出结论**之后**，若配置了决策后端且显式开启（`judgeEnabled`，默认关），再请一个独立后端对多立场决策做对抗复核。它与 S2 仲裁（`arbitration.ts`）职责互斥、前后衔接：
+
+- **仲裁**：规则**无结论**（`conclusion === null`，needs-driver）时，请后端替代驾驶员裁决分裂。
+- **judge**：规则**有结论且 ≥2 立场**时，请后端独立复核该结论。
+
+判定与处置（`judgeDecision`，与仲裁同一套置信闸门：阈值默认 0.8、未校准 LLM 默认不采纳、后端故障不阻塞）：
+
+| 复核结果 | 处置 |
+| --- | --- |
+| 过门且同意规则结论 | 记录背书 `agreesWithRule:true`，状态不变 |
+| 过门、高置信**分歧** | **不静默覆盖规则，也不放行弱多数**：状态转 needs-driver，追加一个 `kind:'judge-review'` 的 `Conflict`（两方 stance 按字母排序，summary 分别标注规则结论与 judge 推荐及置信度），复用 F6/E6.2 监督台→驾驶员 resolve 闭环 |
+| 低置信 / 未校准（未显式放行）/ 后端故障 / 单立场 / 规则无结论 / 结论本由后端仲裁给出 | 只记录 `judged:false` 与 `reason`，状态不动（同一后端不自评其仲裁结论） |
+
+judge 记录（`FanOutResult.judgeReview`）随意图持久化，并进入 E1.6 离线回放时间线（`judge-reviewed` 节点）。judge 只产生第二意见与升级，不直接改写结论——最终拍板权在规则或驾驶员。
 
 ## 6. F6 冲突检测与升级（`conflict.ts` 纯函数 + 编排回调）
 

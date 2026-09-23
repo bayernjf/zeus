@@ -66,6 +66,8 @@ Zeus 的决策内核新增一个**与具体模型解耦的"决策后端"抽象�
 
 > 快慢两层都可用：默认快层（决策模型，高频率低利害）；高利害冲突可配慢层（LLM，产出论证与解释后仍按置信度门控）。
 
+> **落地状态（v0.18）**：本接线位的两条路径均已在库内接通——规则**无结论**时的仲裁见 `src/decision/arbitrate.ts` + `src/orchestrator/arbitration.ts`（S2）；规则**有结论后**的独立对抗复核（LLM-as-judge）见 `src/orchestrator/judge.ts`，过门分歧转 `judge-review` 冲突回 E6.2 驾驶员闭环，详见 [design-fan-out.md](design-fan-out.md) §5.1。两者共用同一置信闸门且互斥（同一后端不自评其仲裁结论）。进程装配（serve.ts 按 env 注入后端与 judge 开关）见 handoff T-C。
+
 ### 3.2 监督台 triage（E6.2 / E1.4）——拍板前过滤
 
 升级请求进监督台前，可选做 `noul`/`score` 判断：该升级**是否值得打断驾驶员**、紧急度多高、路由给谁（choice）。低价值噪音升级被过滤或降级呈现。**过滤是建议不是裁决**：最终仍按 OversightDesk 语义入队，人可查可改。triage 属高频低利害，默认用快层。
