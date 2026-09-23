@@ -45,6 +45,15 @@ export type RealmItem = {
   bytes: number;
 };
 
+/** Read-only enumeration row for every managed entry at connect time.
+ *  Carries full content; used by the Vault to draw maps / build full bundles. */
+export type RealmEntrySnapshot = {
+  itemId: string;
+  content: string;
+  modifiedAt: string;
+  bytes: number;
+};
+
 export interface RealmStore {
   connect(root: string, type: RealmType, opts?: { readOnly?: boolean }): Promise<RealmManifest>;
   manifest(realmId: string): Promise<RealmManifest>;
@@ -52,6 +61,9 @@ export interface RealmStore {
   read(realmId: string, itemId: string): Promise<RealmItem>;
   /** G4: connect-time parameters of every connected realm, for persistence. */
   connections(): RealmConnection[];
+  /** Read-only enumeration of every managed entry from the connect snapshot
+   *  (with full content), powering Vault map drawing and full bundles. */
+  entries(realmId: string): Promise<RealmEntrySnapshot[]>;
 }
 
 /** G4: everything needed to reconnect a realm after restart. The search index

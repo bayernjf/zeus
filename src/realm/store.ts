@@ -1,7 +1,7 @@
 import { lstat, readFile, readdir, realpath, stat } from 'node:fs/promises';
 import { extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { digestManifest, sha256Hex } from './digest.js';
-import type { RealmConnection, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, SearchQuery } from './types.js';
+import type { RealmConnection, RealmEntrySnapshot, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, SearchQuery } from './types.js';
 import {
   InvalidItemIdError,
   RealmError,
@@ -143,6 +143,16 @@ export class FsRealmStore implements RealmStore {
       realmId: stored.realmId,
       type: stored.type,
       readOnly: stored.readOnly,
+    }));
+  }
+
+  async entries(realmId: string): Promise<RealmEntrySnapshot[]> {
+    const stored = this.requireRealm(realmId);
+    return stored.items.map(item => ({
+      itemId: item.itemId,
+      content: item.content,
+      modifiedAt: item.modifiedAt,
+      bytes: Buffer.byteLength(item.content, 'utf8'),
     }));
   }
 
