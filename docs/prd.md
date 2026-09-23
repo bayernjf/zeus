@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.14（2026-09-23，新增架构立场文档 design-agentic-integration：Agent 时代系统互联、确定性边界与 Zeus 团队运行时定位）**
+> 状态：**现行 v0.15（2026-09-23，新增 Vault 藏宝图与恢复协议：E8.1/E8.2 落地，原地校验 + 可带走加密备份包两语义）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -75,7 +75,7 @@
 | E3.4 | Realm MCP server 正式暴露（streamable HTTP + 鉴权） | P1 | 🚧 stdio | stdio 壳已落地（root/connect 不出协议）；正式触发：read-realm 封臣出现 |
 | E3.5 | write 与驾驶员授权凭证 | P1 | ⬜ | personal 默认可写；enterprise 写须授权凭证并审计 |
 | E3.6 | enterprise Realm 多租户 | P1 | ⬜ | 组织/部门/个人分级，与个人域默认二极管隔离 |
-| E3.7 | 备份策略执行器 + 漂移检测 | P2 | ⬜ | manifest-only/full 可执行；digest 对账报漂移 |
+| E3.7 | 备份策略执行器 + 漂移检测 | P2 | 🚧 | 库内原语已备：Realm `entries()` 枚举、packFull 的 manifest-only/full 两档、restoreDryRun 的 digest 漂移对账（changed/missing/unexpected）；尚未接入 CLI/调度自动执行 |
 | E3.8 | 检索后端升级（倒排/向量） | P2 | ⬜ | SearchBackend 接口不变；阈值见 deferred #10 |
 
 ### E4. 封臣联邦（Vassal Protocol）
@@ -123,8 +123,8 @@
 
 | ID | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|
-| E8.1 | Map 藏宝图：加密 manifest + 恢复协议 | P1 | ⬜ | **按图必须真实恢复宝藏**（生命线）；只存引用 |
-| E8.2 | 藏宝图备份与备份思路 | P1 | ⬜ | 图有可用备份；恢复流程经演练 |
+| E8.1 | Map 藏宝图：加密 manifest + 恢复协议 | P1 | ✅ | `src/vault`：buildVault 从 Realm 连接出图，marks 只存 itemId + sha256 指纹（**正文零泄漏**有断言）；seal/open 走 AES-256-GCM（scrypt 口令派生或 raw 32-byte key），密钥与图分离；原地 restoreDryRun 重连校验。**按图真实恢复走通**，见 tests/vault.test.ts（20 项） |
+| E8.2 | 藏宝图备份与备份思路 | P1 | ✅ | 图经 seal 加密静态保存、可复制；packFull 产出 manifest-only / full 两档（full 带加密内容包）；restoreFromBundle 在目录被清空或换新位置时写盘恢复并复验，恢复流程经测试演练。自动/异地/云备份为非目标（design-vault §9） |
 | E8.3 | Diary 日记：记忆叙事化备份 | P2 | ⬜ | 可回溯、可导出，底层走 Realm 接口 |
 | E8.4 | 传承（dead-man switch + 密钥托管） | P3 | ⬜ | 触发可靠、可撤销；法律框架齐备（deferred #2/#3） |
 
@@ -182,3 +182,4 @@
 | v0.12 | 2026-09-22 | 记忆 P2 漂移对账落地：新增 `src/memory/reconcile.ts`——`reconcileMemoryStates` 两时点快照逐字段 diff（事件增删、事实 added/removed/changed、correction/tombstone 增量）、`verifyMemoryState` 横切不变量校验（factId 可重算、provenance 可解析且不跨域、retract↔tombstone 一一配对、事实不重复），`MemoryStore.verifyIntegrity` 便捷入口；factId 计算导出复用；9 项测试；P2 三项齐；全量 280 绿（39 文件） |
 | v0.13 | 2026-09-22 | E2.5 Mentor 传授落地：新增 `src/skills/mentor.ts` `MentorshipLedger`（commission 须在册提供者、teach 记录、assess 胜任力硬门+加权阈值、认证才 grantProvider、dismiss）；SkillRegistry 增 isProvider/grantProvider；台账经 KernelSnapshot `mentorships` 段持久化；E2.5 升 ✅；新增 10 项测试；全量 290 绿（41 文件） |
 | v0.14 | 2026-09-23 | 新增架构立场文档 [design-agentic-integration](design-agentic-integration.md) v0.4（本文件不复制全文）：Agent 是新的编排/集成层而非替代 REST，两层形态=智能层（协商/非确定）压在原语层（契约/确定/可回放）之上；边界收口为「结构化意图→确定性闸门」，按可逆性/确定性需求/可验证性/爆炸半径四轴划分；行业现状五种主流实践与 L1 连接/L2 工具设计/L3 护栏三层成熟度；明确 Zeus 定位为 **AI 原生多 Agent 团队运行时**，目标软件的 Agent 可用成熟度决定团队如何调用。无代码变更 |
+| v0.15 | 2026-09-23 | Vault 藏宝图与恢复协议落地（[design-vault](design-vault.md) v0.1）：新增 `src/vault`——buildVault 出图只存引用+逐 item 指纹（正文零泄漏）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、L0 原地 restoreDryRun 重连校验与漂移检测、L1 packFull 加密内容包 + restoreFromBundle 跨位写盘恢复（FsRestoreSink）；Realm 增只读 `entries()` 枚举；E8.1/E8.2 升 ✅、E3.7 升 🚧；新增 20 项测试，全量 310 绿（42 文件） |
