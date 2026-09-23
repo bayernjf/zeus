@@ -123,6 +123,8 @@ export type {
 } from './orchestrator/replay.js';
 export { arbitrateConflict } from './orchestrator/arbitration.js';
 export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
+export { judgeDecision } from './orchestrator/judge.js';
+export type { JudgeDecisionInput } from './orchestrator/judge.js';
 export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
 export type {
   MetricsSnapshot,
@@ -169,6 +171,7 @@ export type {
   CancelBranchResult,
   DriverResolution,
   BackendArbitration,
+  JudgeReview,
 } from './orchestrator/types.js';
 
 // --- Decision backend (model-agnostic port; Jev decision-model + LLM adapters) ---
