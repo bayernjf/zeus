@@ -286,3 +286,39 @@ export type {
   JsonRpcError,
   McpHandlerDeps,
 } from './realm/mcp.js';
+
+// --- Vault treasure map & recovery protocol (E8.1/E8.2; references only, sealed at rest) ---
+export { buildVault, parseMap, assertMap } from './vault/map.js';
+export { seal, open, validateEnvelopeShape } from './vault/cipher.js';
+export type { VaultKey } from './vault/cipher.js';
+export { inventoryFromRealm } from './vault/inventory.js';
+export { restoreDryRun, restorePlan } from './vault/restore.js';
+export {
+  packFull,
+  openBundle,
+  sealMap,
+  openMap,
+  restoreFromBundle,
+  FsRestoreSink,
+} from './vault/bundle.js';
+export type { PackedFull } from './vault/bundle.js';
+export {
+  MAP_FORMAT,
+  BUNDLE_FORMAT,
+  VAULT_VERSION,
+  VaultError,
+  VaultDecryptError,
+  VaultFormatError,
+  VaultBundleMismatchError,
+} from './vault/types.js';
+export type {
+  TreasureMap,
+  MapMark,
+  BundleRef,
+  SealedEnvelope,
+  FullBundle,
+  BundleItem,
+  RestoreReport,
+  VaultInventory,
+  RestoreSink,
+} from './vault/types.js';
