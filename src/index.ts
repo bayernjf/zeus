@@ -275,6 +275,10 @@ export type {
   RealmHit,
   SearchQuery,
   RealmItem,
+  RealmWriteItem,
+  RealmWriteResult,
+  DriverWriteGrant,
+  GrantVerification,
 } from './realm/types.js';
 export {
   RealmError,
@@ -282,7 +286,11 @@ export {
   UnsupportedRealmTypeError,
   InvalidItemIdError,
   UnsupportedQueryError,
+  UnauthorizedRealmWriteError,
+  UnsupportedWriteError,
 } from './realm/types.js';
+export { verifyDriverWriteGrant } from './realm/grant.js';
+export type { RealmWriteAuditEntry, FsRealmStoreOptions } from './realm/store.js';
 
 // --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
 export {
