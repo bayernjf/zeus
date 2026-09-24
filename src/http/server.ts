@@ -11,6 +11,11 @@ import type { EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import type { OrgRegistry } from '../org/registry.js';
+import type { MemoryStore } from '../memory/memory-store.js';
+import type { RealmStore } from '../realm/types.js';
+import { buildDiariesFromState } from '../diary/from-memory.js';
+import { persistDiary } from '../diary/persist.js';
+import { DiaryUnsupportedError } from '../diary/types.js';
 
 /**
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
@@ -50,6 +55,10 @@ export type HttpDeps = {
   progressHub?: ProgressHub;
   /** H2 (E9.3): department establishment chart and staffing. */
   orgRegistry?: OrgRegistry;
+  /** H2 (E8.3): memory source for diary read/generate. */
+  memoryStore?: MemoryStore;
+  /** H2 (E8.3): realm target for diary persistence. */
+  realmStore?: RealmStore;
 };
 
 export type StartOptions = {
@@ -387,6 +396,77 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
     }
+
+    if (deps.memoryStore) {
+      // E8.3: read diary entries (optionally one realm/date), built on demand.
+      app.get('/api/diary', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const q = request.query as { realmId?: unknown; date?: unknown; timeZone?: unknown };
+        if (q.realmId !== undefined && typeof q.realmId !== 'string') {
+          return error(reply, 400, 'invalid_request', 'query.realmId must be a string');
+        }
+        if (q.date !== undefined && !isValidDate(q.date)) {
+          return error(reply, 400, 'invalid_request', 'query.date must be YYYY-MM-DD');
+        }
+        if (q.timeZone !== undefined && typeof q.timeZone !== 'string') {
+          return error(reply, 400, 'invalid_request', 'query.timeZone must be a string');
+        }
+        try {
+          const entries = buildDiariesFromState(deps.memoryStore!.exportState(), {
+            ...(typeof q.realmId === 'string' ? { realmId: q.realmId } : {}),
+            ...(isValidDate(q.date) ? { date: q.date } : {}),
+            ...(typeof q.timeZone === 'string' ? { timeZone: q.timeZone } : {}),
+          });
+          if (q.date !== undefined && entries.length === 0) {
+            return error(reply, 404, 'not_found', `no diary for ${String(q.date)}`);
+          }
+          return { entries };
+        } catch (e) {
+          return mapDiaryError(reply, e);
+        }
+      });
+
+      // E8.3: build diaries and persist them through Realm.write.
+      app.post('/api/diary/generate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          realmId?: unknown; date?: unknown; timeZone?: unknown; dir?: unknown;
+        };
+        if (body.realmId !== undefined && typeof body.realmId !== 'string') {
+          return error(reply, 400, 'invalid_request', 'body.realmId must be a string');
+        }
+        if (body.date !== undefined && !isValidDate(body.date)) {
+          return error(reply, 400, 'invalid_request', 'body.date must be YYYY-MM-DD');
+        }
+        if (body.timeZone !== undefined && typeof body.timeZone !== 'string') {
+          return error(reply, 400, 'invalid_request', 'body.timeZone must be a string');
+        }
+        if (body.dir !== undefined && typeof body.dir !== 'string') {
+          return error(reply, 400, 'invalid_request', 'body.dir must be a string');
+        }
+        if (!deps.realmStore || typeof deps.realmStore.write !== 'function') {
+          return error(reply, 409, 'conflict', 'no writable realm connected; cannot persist diary');
+        }
+        try {
+          const entries = buildDiariesFromState(deps.memoryStore!.exportState(), {
+            ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
+            ...(isValidDate(body.date) ? { date: body.date } : {}),
+            ...(typeof body.timeZone === 'string' ? { timeZone: body.timeZone } : {}),
+          });
+          if (entries.length === 0) {
+            return error(reply, 400, 'invalid_request', 'no memory events to build a diary from');
+          }
+          const generated: Array<{ realmId: string; date: string; itemId: string }> = [];
+          for (const entry of entries) {
+            const { itemId } = await persistDiary(deps.realmStore!, entry, {
+              ...(typeof body.dir === 'string' ? { dir: body.dir } : {}),
+            });
+            generated.push({ realmId: entry.realmId, date: entry.date, itemId });
+          }
+          return reply.code(201).send({ generated });
+        } catch (e) {
+          return mapDiaryError(reply, e);
+        }
+      });
+    }
   }
 
   return app;
@@ -434,6 +514,21 @@ function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
   const detail = thrown instanceof Error ? thrown.message : String(thrown);
   if (/unknown department/i.test(detail)) return error(reply, 404, 'not_found', detail);
   if (/already|exists/i.test(detail)) return error(reply, 409, 'conflict', detail);
+  return error(reply, 400, 'invalid_request', detail);
+}
+
+/** Validate a YYYY-MM-DD date string. */
+function isValidDate(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+/** Map DiaryError to HTTP status: unsupported/no writable realm → 409,
+ *  anything else (boundary, malformed) → 400. */
+function mapDiaryError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  const detail = thrown instanceof Error ? thrown.message : String(thrown);
+  if (thrown instanceof DiaryUnsupportedError || /no write|not connected|read-only|writable/i.test(detail)) {
+    return error(reply, 409, 'conflict', detail);
+  }
   return error(reply, 400, 'invalid_request', detail);
 }
 
