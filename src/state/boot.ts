@@ -1,7 +1,12 @@
 import { VassalRegistry } from '../registry/registry.js';
 import type { FetchLike } from '../dispatch/client.js';
 import { Dispatcher, type AuditSink } from '../dispatch/dispatcher.js';
-import { jsonlAuditSink, revokeAuditBridge } from '../dispatch/audit.js';
+import {
+  DEFAULT_AUDIT_KEEP,
+  DEFAULT_AUDIT_MAX_BYTES,
+  jsonlAuditSink,
+  revokeAuditBridge,
+} from '../dispatch/audit.js';
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -47,6 +52,10 @@ export type KernelBoot = KernelComponents & {
   stateFile: string | null;
   /** E4.7: JSONL dispatch audit log path, or null when the process writes none. */
   auditFile: string | null;
+  /** Effective audit rotation ceiling for the active file (Infinity = unbounded). */
+  auditMaxBytes: number;
+  /** Effective rotated audit generations kept beside the active file. */
+  auditKeep: number;
   /** True when a snapshot was found and applied during boot. */
   restoredFromSnapshot: boolean;
   /** The applied snapshot, or null on first boot / in-memory mode. */
@@ -69,6 +78,10 @@ export type KernelBootOptions = {
    * persist the trail without losing the live log. Nothing writes it by default.
    */
   auditFile?: string;
+  /** A: audit rotation ceiling for the active JSONL file (default 64 MiB). */
+  auditMaxBytes?: number;
+  /** A: rotated audit generations kept beside the active file (default 5). */
+  auditKeep?: number;
   /** Audit sink for oversight actions; defaults to no-op. */
   oversightAudit?: (entry: OversightAuditEntry) => void;
   /** G1: card URLs auto-registered on boot. A URL already present (restored from
@@ -115,7 +128,12 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const orgRegistry = new OrgRegistry(now);
   // One audit spine: the dispatcher's decisions, the registry's revocations and
   // whatever transport the caller wants (stderr, JSONL file) all funnel here.
-  const fileSink = options.auditFile ? jsonlAuditSink(options.auditFile) : null;
+  const fileSink = options.auditFile
+    ? jsonlAuditSink(options.auditFile, {
+        ...(options.auditMaxBytes !== undefined ? { maxBytes: options.auditMaxBytes } : {}),
+        ...(options.auditKeep !== undefined ? { keep: options.auditKeep } : {}),
+      })
+    : null;
   const auditSink: AuditSink = fileSink
     ? entry => {
         fileSink(entry);
@@ -248,6 +266,8 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     progressHub,
     stateFile: options.stateFile ?? null,
     auditFile: options.auditFile ?? null,
+    auditMaxBytes: options.auditMaxBytes ?? DEFAULT_AUDIT_MAX_BYTES,
+    auditKeep: options.auditKeep ?? DEFAULT_AUDIT_KEEP,
     restoredFromSnapshot: snapshot !== null,
     snapshot,
     async saveState(): Promise<void> {
@@ -340,4 +360,26 @@ function envInteger(
     throw new KernelBootError(`${name} must be a whole number >= ${min}, got '${value}'`);
   }
   return parsed;
+}
+
+/**
+ * Audit rotation config. `0` / `off` / `unlimited` opt out of the size ceiling -
+ * a deliberate choice an operator should be able to make, not a default.
+ */
+export type ProcessAuditConfig = {
+  auditMaxBytes?: number;
+  auditKeep?: number;
+};
+
+const UNLIMITED = new Set(['0', 'off', 'unlimited', 'none']);
+
+export function resolveAuditConfig(env: NodeJS.ProcessEnv = process.env): ProcessAuditConfig {
+  const config: ProcessAuditConfig = {};
+  const rawMax = env.ZEUS_AUDIT_MAX_BYTES?.trim().toLowerCase();
+  if (rawMax !== undefined && rawMax !== '') {
+    config.auditMaxBytes = UNLIMITED.has(rawMax) ? Number.POSITIVE_INFINITY : envInteger(rawMax, 'ZEUS_AUDIT_MAX_BYTES', 1);
+  }
+  const keep = envInteger(env.ZEUS_AUDIT_KEEP, 'ZEUS_AUDIT_KEEP', 1);
+  if (keep !== undefined) config.auditKeep = keep;
+  return config;
 }

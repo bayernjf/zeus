@@ -1,3 +1,4 @@
+import { existsSync, statSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,8 +9,8 @@ import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
-import { bootKernel, KernelBootError, resolveConcurrencyConfig } from '../src/state/boot.js';
-import { readAuditLog } from '../src/dispatch/audit.js';
+import { bootKernel, KernelBootError, resolveAuditConfig, resolveConcurrencyConfig } from '../src/state/boot.js';
+import { DEFAULT_AUDIT_KEEP, DEFAULT_AUDIT_MAX_BYTES, readAuditLog } from '../src/dispatch/audit.js';
 import {
   FileKernelStateStore,
   KernelStateError,
@@ -177,5 +178,74 @@ describe('E1.5 resolveConcurrencyConfig', () => {
     expect(() => resolveConcurrencyConfig({ ZEUS_MAX_CONCURRENT_BRANCHES: '0' })).toThrow(/>= 1/);
     expect(() => resolveConcurrencyConfig({ ZEUS_MAX_CONCURRENT_BRANCHES: '2.5' })).toThrow(/ZEUS_MAX_CONCURRENT_BRANCHES/);
     expect(() => resolveConcurrencyConfig({ ZEUS_BRANCH_QUEUE_LIMIT: '-3' })).toThrow(/>= 0/);
+  });
+});
+
+describe('audit rotation config', () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-audit-boot-'));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('defaults to the sink ceiling when nothing is set', async () => {
+    const kernel = await bootKernel({ auditFile: join(dir, 'audit.jsonl') });
+    expect(kernel.auditMaxBytes).toBe(DEFAULT_AUDIT_MAX_BYTES);
+    expect(kernel.auditKeep).toBe(DEFAULT_AUDIT_KEEP);
+  });
+
+  it('honours an explicit ceiling and generation count', () => {
+    expect(resolveAuditConfig({
+      ZEUS_AUDIT_MAX_BYTES: '1048576',
+      ZEUS_AUDIT_KEEP: '3',
+    })).toEqual({ auditMaxBytes: 1048576, auditKeep: 3 });
+  });
+
+  it('treats 0/off/unlimited as a deliberate opt-out rather than a typo', () => {
+    expect(resolveAuditConfig({ ZEUS_AUDIT_MAX_BYTES: 'unlimited' })).toEqual({
+      auditMaxBytes: Number.POSITIVE_INFINITY,
+    });
+    expect(resolveAuditConfig({ ZEUS_AUDIT_MAX_BYTES: '0' })).toEqual({
+      auditMaxBytes: Number.POSITIVE_INFINITY,
+    });
+  });
+
+  it('passes the ceiling down to the sink so the file on disk actually respects it', async () => {
+    const auditFile = join(dir, 'audit.jsonl');
+    const seeds = Array.from({ length: 8 }, (_, i) => `http://127.0.0.1/v${i}/card.json`);
+    // vassal name follows the URL, so each seed registers a distinct vassal
+    const nameAwareFetch = (async (input: RequestInfo | URL) => {
+      const name = String(input).match(/\/(v\d+)\//)?.[1] ?? 'v';
+      return new Response(JSON.stringify(cardFor(name)), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const kernel = await bootKernel({
+      auditFile,
+      auditMaxBytes: 200,
+      auditKeep: 1,
+      fetchImpl: nameAwareFetch,
+      vassalSeeds: seeds,
+    });
+
+    // Each revocation writes one line through the booted sink - the exact path
+    // the ceiling has to bound.
+    for (const url of seeds) {
+      expect(kernel.registry.revoke(url.match(/\/(v\d+)\//)?.[1] ?? '')).toBe(true);
+    }
+
+    expect(statSync(auditFile).size).toBeLessThanOrEqual(400); // ceiling + one oversized write
+    expect(existsSync(`${auditFile}.1`)).toBe(true);
+    expect(existsSync(`${auditFile}.2`)).toBe(false); // keep=1 caps the generations
+    const retained = readAuditLog(auditFile).length + readAuditLog(`${auditFile}.1`).length;
+    expect(retained).toBeLessThan(8); // proof lines were actually dropped, not kept forever
+  });
+
+  it('refuses a garbage ceiling', () => {
+    expect(() => resolveAuditConfig({ ZEUS_AUDIT_MAX_BYTES: 'big' })).toThrow(KernelBootError);
+    expect(() => resolveAuditConfig({ ZEUS_AUDIT_KEEP: '0' })).toThrow(/>= 1/);
   });
 });

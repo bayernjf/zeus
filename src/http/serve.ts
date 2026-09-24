@@ -19,7 +19,7 @@
  * invalidate every signature).
  */
 import { createRequire } from 'node:module';
-import { bootKernel, resolveConcurrencyConfig, resolveDecisionConfig } from '../state/boot.js';
+import { bootKernel, resolveAuditConfig, resolveConcurrencyConfig, resolveDecisionConfig } from '../state/boot.js';
 import { loadRskSigner } from './rsk.js';
 import { createHttpServer } from './server.js';
 
@@ -34,6 +34,7 @@ async function main(): Promise<void> {
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.
   const concurrency = resolveConcurrencyConfig(process.env);
+  const audit = resolveAuditConfig(process.env);
   if (process.env.ZEUS_JUDGE_ENABLED && !decision.backend) {
     process.stderr.write(
       '[zeus-http] ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off\n'
@@ -54,6 +55,8 @@ async function main(): Promise<void> {
       ? { realmRoots: process.env.ZEUS_REALM_ROOTS.split(',').map(root => root.trim()).filter(Boolean) }
       : {}),
     ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
+    ...(audit.auditMaxBytes !== undefined ? { auditMaxBytes: audit.auditMaxBytes } : {}),
+    ...(audit.auditKeep !== undefined ? { auditKeep: audit.auditKeep } : {}),
     dispatchAudit: entry => {
       process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
     },
@@ -76,6 +79,12 @@ async function main(): Promise<void> {
     `[zeus-http] branch concurrency: ${concurrency.maxConcurrentBranches ?? 'unbounded'}` +
       `${concurrency.branchQueueLimit !== undefined ? `, queue ${concurrency.branchQueueLimit}` : ', queue unbounded'}\n`
   );
+  if (kernel.auditFile) {
+    const ceiling = kernel.auditMaxBytes === Number.POSITIVE_INFINITY
+      ? 'no ceiling'
+      : `${Math.round((kernel.auditMaxBytes ?? 0) / 1048576)}MiB x ${kernel.auditKeep ?? 0} kept`;
+    process.stderr.write(`[zeus-http] audit log: ${kernel.auditFile} (${ceiling})\n`);
+  }
 
   if (kernel.stateFile) {
     if (kernel.restoredFromSnapshot) {

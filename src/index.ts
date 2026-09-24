@@ -93,7 +93,10 @@ export {
   memoryAuditSink,
   readAuditLog,
   AuditLogError,
+  DEFAULT_AUDIT_MAX_BYTES,
+  DEFAULT_AUDIT_KEEP,
   type AuditQuery,
+  type JsonlAuditSinkOptions,
   revokeAuditBridge,
 } from './dispatch/audit.js';
 
@@ -161,8 +164,8 @@ export {
   KERNEL_STATE_VERSION,
 } from './state/kernel-state.js';
 export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
-export { bootKernel, resolveDecisionConfig, resolveConcurrencyConfig, KernelBootError } from './state/boot.js';
-export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig, ProcessConcurrencyConfig } from './state/boot.js';
+export { bootKernel, resolveDecisionConfig, resolveConcurrencyConfig, resolveAuditConfig, KernelBootError } from './state/boot.js';
+export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig, ProcessConcurrencyConfig, ProcessAuditConfig } from './state/boot.js';
 export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
 export type {
   FanOutRequest,
