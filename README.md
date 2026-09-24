@@ -195,14 +195,14 @@ curl -s 'localhost:8787/api/audit?runId=run-xxx&limit=50' -H "Authorization: Bea
 curl -s 'localhost:8787/api/audit?decision=vassal-revoked' -H "Authorization: Bearer $TOKEN"
 ```
 
-> H2 操作面已具备完整封臣上线入口（`POST /api/vassals` 或 `ZEUS_VASSAL_SEEDS` 启动自动注册）；真机扇出到封臣仍待部署与联调（见 handoff）。端到端闭环用 mock 封臣在 `tests/http-h2.test.ts` 中完整跑通（发起→扇出→冲突升级→拍板→决议回写）。
+> H2 操作面已具备完整封臣上线入口（`POST /api/vassals` 或 `ZEUS_VASSAL_SEEDS` 启动自动注册）；**封臣侧 pr-helper 早已部署在生产**（`https://pr-helper-ten.vercel.app`），缺的是对线上执行一次验收与一次真机扇出（见 handoff Active work 40）。端到端闭环用 mock 封臣在 `tests/http-h2.test.ts` 中完整跑通（发起→扇出→冲突升级→拍板→决议回写）。
 
 ## 当前边界
 
 - **库 + 薄传输**：HTTP 传输层不含业务逻辑——H1 三只只读端点 + H2 驾驶员 API（发起/回查/取消意图、列/拍升级、指标、封臣注册/吊销），写端点与 internal 名册统一 bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 时整组不挂载。封臣可经 `POST /api/vassals` 注册或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；internal 名册自签名链 v1.1 起同样发封签信封（`active|revoked` 两态 attestation，含吊销行，离线可验），响应 `Cache-Control: no-store`。内核状态（封臣含已吊销、监督台队列、意图结果+原始请求、Realm 连接、记忆、Mentor 台账、MCP 连接器声明、**Org 编制**）在配置 `ZEUS_STATE_FILE` 时启动恢复、SIGINT/SIGTERM 原子落盘（E5.3），未配置则纯内存；运行指标不持久化。
 - **Realm 对外唯一传输为 MCP**（契约 v0.2），不做独立 HTTP API；只读 stdio 脚手架已落地（resources 映射 manifest/search/read、宿主预连接、绝对路径不出进程），正式 P1（鉴权、streamable HTTP、官方 SDK 兼容性复核）的触发条件仍是 read-realm 封臣出现。
 - 服务端 HTTP 栈为 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)）：**H1 已落地**（healthz / public 签名名册 / bearer internal 签名名册），**H2 驾驶员 API 已落地**（意图扇出/回查/取消/决策回放、升级队列 approve/reject/resolve/approve-resume 决议回写、并发指标、Skills 目录与生命周期·带教台账、Org 编制与责任链、Memory 检索与遗忘权、Diary 日记），**H3 服务端 SSE 已落地**（`GET /api/intents/:id/events`）；端到端测试见 `tests/http-h2.test.ts`、`tests/http-sse.test.ts`、`tests/http-org.test.ts`、`tests/http-org-accountability.test.ts`、`tests/http-skills.test.ts`、`tests/http-memory.test.ts`、`tests/http-replay.test.ts`、`tests/http-diary.test.ts`。多副本与静态快照分发按需立项。
-- pr-helper 验收 #6（标准 A2A 客户端守护测试）与 Zeus↔loom 真机联调均**待部署**，现状与待办以 [handoff.md](handoff.md) 为准。
+- pr-helper 验收 #6（标准 A2A 客户端守护测试）：**pr-helper 本身早已部署在生产且每天使用**，这条卡的是"没人对线上跑过一次验收"，不是待部署——`BASE_URL=https://pr-helper-ten.vercel.app node scripts/acceptance-standard-a2a.mjs`（默认 skill `deployment-health`，只读）。Zeus↔loom 真机联调仍待 loom 测试环境。现状与待办以 [handoff.md](handoff.md) 为准。
 
 ## 文档
 

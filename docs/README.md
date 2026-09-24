@@ -20,7 +20,7 @@
 | 知道内核能扛多少并发、怎么复跑压测 | [capacity-baseline.md](capacity-baseline.md)（E10.4 本机 mock 回环基线 v0.2，四场景：A 扇出宽度 / B 并发意图 / C H2 门面全链路吞吐 / D 高并发取消传播；容量初步回答、`npm run bench:capacity` 复跑方法、真机重测条件） |
 | 回放一个历史决策（谁参与、什么输入、什么立场、怎么聚合的） | `src/orchestrator/replay.ts`（E1.6：replayDecision/replaySnapshot/renderReplay，从内核快照离线重建确定性时间线） |
 | 了解行业内决策层现状与分化趋势 | [research-decision-layer-industry.md](research-decision-layer-industry.md)（LLM-as-judge 主流 + 四条分化路线、对决策后端设计的印证、来源清单） |
-| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 v0.4：功能性/完整度/可上线三维评审、四场景容量证据、v0.1 五硬阻塞重判；结论=库内已无 P0 功能缺口，产品级上线仅剩仓库外真机/凭证/发布动作、最小上线路径） |
+| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 v0.5：功能性/完整度/可上线三维评审、四场景容量证据、v0.1 五硬阻塞重判；结论=库内已无 P0 功能缺口，产品级上线仅剩仓库外真机/凭证/发布动作、最小上线路径。**v0.5 更正一处归因：E4.8 卡的不是"pr-helper 未部署"（它早已上线），是从没人对线上跑过一次验收 → M3 差执行不差工程**） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |
 | 理解个人版与企业版的差异 | [product-portrait.md](product-portrait.md) §4 用户画像 |
 | 理解产品矩阵如何并入 Zeus | [product-portrait.md](product-portrait.md) §7 封臣式联邦 |
