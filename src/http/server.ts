@@ -12,6 +12,11 @@ import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import type { OrgRegistry } from '../org/registry.js';
+import type { SkillRegistry } from '../skills/registry.js';
+import { DuplicateSkillError, SkillNotFoundError } from '../skills/registry.js';
+import type { MentorshipLedger } from '../skills/mentor.js';
+import type { CompetencyCheck, MentorshipStatus } from '../skills/mentor.js';
+import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { RealmStore } from '../realm/types.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
@@ -36,6 +41,8 @@ export const DEFAULT_ATTESTATION_TTL_SECONDS = 24 * 3600;
 
 const ESCALATION_STATUSES: EscalationStatus[] = ['pending', 'approved', 'rejected'];
 const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
+const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
+const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
 
 export type HttpDeps = {
   registry: VassalRegistry;
@@ -54,6 +61,10 @@ export type HttpDeps = {
   metrics?: ConcurrencyMetrics;
   /** H3: per-intent progress events for the SSE stream. */
   progressHub?: ProgressHub;
+  /** H2 (E2.2/E2.3): skill catalogue, lifecycle and team resolution. */
+  skillRegistry?: SkillRegistry;
+  /** H2 (E2.5): mentor-commissioned skill transfer ledger. */
+  mentorshipLedger?: MentorshipLedger;
   /** H2 (E9.3): department establishment chart, staffing and accountability. */
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
@@ -625,6 +636,237 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
     }
+
+    if (deps.skillRegistry) {
+      // E2.2: the skill catalogue. Active versions by default, filterable by
+      // domain / tag / status (an explicit status reaches deprecated and
+      // uninstalled specs, which stay auditable).
+      app.get('/api/skills', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { domain?: unknown; tag?: unknown; status?: unknown };
+        if (query.status !== undefined && !SKILL_STATUSES.includes(query.status as SkillStatus)) {
+          return error(reply, 400, 'invalid_request', `query.status must be one of ${SKILL_STATUSES.join(', ')}`);
+        }
+        if (query.domain !== undefined && !isNonEmptyString(query.domain)) {
+          return error(reply, 400, 'invalid_request', 'query.domain must be a string');
+        }
+        if (query.tag !== undefined && !isNonEmptyString(query.tag)) {
+          return error(reply, 400, 'invalid_request', 'query.tag must be a string');
+        }
+        return {
+          skills: deps.skillRegistry!.list({
+            ...(isNonEmptyString(query.domain) ? { domain: query.domain } : {}),
+            ...(isNonEmptyString(query.tag) ? { tag: query.tag } : {}),
+            ...(query.status !== undefined ? { status: query.status as SkillStatus } : {}),
+          }),
+        };
+      });
+
+      app.get('/api/skills/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.query);
+        if (version === null) return error(reply, 400, 'invalid_request', 'query.version must be a string');
+        const spec = deps.skillRegistry!.get(id, version);
+        if (!spec) return error(reply, 404, 'not_found', `unknown skill: ${id}${version ? `@${version}` : ''}`);
+        return spec;
+      });
+
+      app.get('/api/skills/:id/versions', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const versions = deps.skillRegistry!.versions(id);
+        if (versions.length === 0) return error(reply, 404, 'not_found', `unknown skill: ${id}`);
+        return { versions };
+      });
+
+      // E2.1: register an explicit spec. The body is copied field by field so an
+      // arbitrary payload cannot smuggle unknown keys into the persisted
+      // catalogue; shape problems are reported by the validator, not guessed here.
+      app.post('/api/skills', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        if (!isNonEmptyString(body.id)) {
+          return error(reply, 400, 'invalid_request', 'body.id is required');
+        }
+        const input = {
+          id: body.id,
+          name: body.name,
+          description: body.description,
+          version: body.version,
+          ...(body.domain !== undefined ? { domain: body.domain } : {}),
+          ...(body.tags !== undefined ? { tags: body.tags } : {}),
+          ...(body.inputs !== undefined ? { inputs: body.inputs } : {}),
+          ...(body.outputs !== undefined ? { outputs: body.outputs } : {}),
+          ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
+          ...(body.dependencies !== undefined ? { dependencies: body.dependencies } : {}),
+          ...(body.providedBy !== undefined ? { providedBy: body.providedBy } : {}),
+          ...(body.status !== undefined ? { status: body.status } : {}),
+        } as unknown as SkillSpecInput;
+        try {
+          return reply.code(201).send(deps.skillRegistry!.register(input));
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      // E2.3: install / uninstall / deprecate one registered version. Every
+      // action takes effect for team resolution immediately — no cached grant.
+      app.post('/api/skills/:id/install', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        try {
+          return deps.skillRegistry!.install(id, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/skills/:id/uninstall', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        try {
+          return deps.skillRegistry!.uninstall(id, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/skills/:id/deprecate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        try {
+          return deps.skillRegistry!.deprecate(id, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      // E2.3: hardening can only narrow. The registry refuses a claim that is not
+      // already granted, so an over-broad request is a 400, not a silent grant.
+      app.post('/api/skills/:id/harden', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { version?: unknown; permissions?: unknown; constraints?: unknown };
+        const version = optionalVersion(body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        if (body.permissions !== undefined && !(Array.isArray(body.permissions) && body.permissions.every(c => typeof c === 'string'))) {
+          return error(reply, 400, 'invalid_request', 'body.permissions must be an array of permission claims');
+        }
+        if (body.constraints !== undefined && !isPlainObject(body.constraints)) {
+          return error(reply, 400, 'invalid_request', 'body.constraints must be an object');
+        }
+        try {
+          return deps.skillRegistry!.harden(id, {
+            ...(body.permissions ? { permissions: body.permissions as string[] } : {}),
+            ...(body.constraints ? { constraints: body.constraints as Record<string, unknown> } : {}),
+          }, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      // E2.4: map required skills onto providers. An ambiguous slot is reported
+      // for the driver to choose; it is never resolved by picking at random.
+      app.post('/api/skills/team', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as { skills?: unknown };
+        if (!(Array.isArray(body.skills) && body.skills.length > 0 && body.skills.every(isNonEmptyString))) {
+          return error(reply, 400, 'invalid_request', 'body.skills must be a non-empty array of skill ids');
+        }
+        return deps.skillRegistry!.resolveTeam(body.skills);
+      });
+    }
+
+    if (deps.mentorshipLedger) {
+      // E2.5: the auditable teaching path. Certification — not attendance — is
+      // what registers a learner as a provider.
+      app.get('/api/mentorships', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { status?: unknown; skillId?: unknown };
+        if (query.status !== undefined && !MENTORSHIP_STATUSES.includes(query.status as MentorshipStatus)) {
+          return error(reply, 400, 'invalid_request', `query.status must be one of ${MENTORSHIP_STATUSES.join(', ')}`);
+        }
+        if (query.skillId !== undefined && !isNonEmptyString(query.skillId)) {
+          return error(reply, 400, 'invalid_request', 'query.skillId must be a string');
+        }
+        return {
+          mentorships: deps.mentorshipLedger!.list({
+            ...(query.status !== undefined ? { status: query.status as MentorshipStatus } : {}),
+            ...(isNonEmptyString(query.skillId) ? { skillId: query.skillId } : {}),
+          }),
+        };
+      });
+
+      app.post('/api/mentorships', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          skillId?: unknown; mentorId?: unknown; learnerId?: unknown; version?: unknown; realmId?: unknown;
+        };
+        if (!isNonEmptyString(body.skillId)) return error(reply, 400, 'invalid_request', 'body.skillId is required');
+        if (!isNonEmptyString(body.mentorId)) return error(reply, 400, 'invalid_request', 'body.mentorId is required');
+        if (!isNonEmptyString(body.learnerId)) return error(reply, 400, 'invalid_request', 'body.learnerId is required');
+        const version = optionalVersion(body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        if (body.realmId !== undefined && !isNonEmptyString(body.realmId)) {
+          return error(reply, 400, 'invalid_request', 'body.realmId must be a string');
+        }
+        try {
+          const record = deps.mentorshipLedger!.commission({
+            skillId: body.skillId,
+            mentorId: body.mentorId,
+            learnerId: body.learnerId,
+            ...(version ? { version } : {}),
+            ...(isNonEmptyString(body.realmId) ? { realmId: body.realmId } : {}),
+          });
+          return reply.code(201).send(record);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/mentorships/:id/lessons', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { lessons?: unknown };
+        if (!isLessonList(body.lessons)) {
+          return error(reply, 400, 'invalid_request', 'body.lessons must be a non-empty array of { topic, ref? }');
+        }
+        try {
+          return deps.mentorshipLedger!.teach(id, body.lessons as Array<{ topic: string; ref?: string }>);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/mentorships/:id/assess', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { checks?: unknown; threshold?: unknown };
+        if (!isCheckList(body.checks)) {
+          return error(reply, 400, 'invalid_request', 'body.checks must be a non-empty array of { criterion, passed, score }');
+        }
+        if (body.threshold !== undefined) {
+          const threshold = parseUnitInterval(body.threshold);
+          if (threshold === undefined || threshold === 0) {
+            return error(reply, 400, 'invalid_request', 'body.threshold must be a number in (0,1]');
+          }
+        }
+        try {
+          return deps.mentorshipLedger!.assess(id, body.checks as CompetencyCheck[], {
+            ...(body.threshold !== undefined ? { threshold: Number(body.threshold) } : {}),
+          });
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/mentorships/:id/dismiss', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { reason?: unknown };
+        if (!isNonEmptyString(body.reason)) {
+          return error(reply, 400, 'invalid_request', 'body.reason is required');
+        }
+        try {
+          return deps.mentorshipLedger!.dismiss(id, body.reason);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+    }
   }
 
   return app;
@@ -703,6 +945,50 @@ function retractionContext(
 ): { reason: string; requestedBy: string } | null {
   if (!isNonEmptyString(reason) || !isNonEmptyString(requestedBy)) return null;
   return { reason, requestedBy };
+}
+
+/** Optional explicit spec version from a body or query; null when present but
+ *  not a usable string (absent means "latest", which the registry resolves). */
+function optionalVersion(source: unknown): string | undefined | null {
+  const version = (source as { version?: unknown } | null | undefined)?.version;
+  if (version === undefined) return undefined;
+  return isNonEmptyString(version) ? version : null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isLessonList(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.every(lesson =>
+    isPlainObject(lesson) &&
+    isNonEmptyString(lesson.topic) &&
+    (lesson.ref === undefined || isNonEmptyString(lesson.ref)));
+}
+
+function isCheckList(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.every(check =>
+    isPlainObject(check) &&
+    isNonEmptyString(check.criterion) &&
+    typeof check.passed === 'boolean' &&
+    typeof check.score === 'number');
+}
+
+/** Map SkillRegistry / MentorshipLedger throws to HTTP status: unknown id → 404,
+ *  duplicate or a closed/locked state → 409, anything else (invalid spec,
+ *  over-broad hardening, malformed competency check) → 400. */
+function mapCatalogueError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  const detail = thrown instanceof Error ? thrown.message : String(thrown);
+  if (thrown instanceof SkillNotFoundError || /not found/i.test(detail)) {
+    return error(reply, 404, 'not_found', detail);
+  }
+  if (
+    thrown instanceof DuplicateSkillError ||
+    /already (exists|registered)|not an active provider|not open|cannot (harden|certify|teach)|is (deprecated|certified|failed|dismissed|uninstalled)/i.test(detail)
+  ) {
+    return error(reply, 409, 'conflict', detail);
+  }
+  return error(reply, 400, 'invalid_request', detail);
 }
 
 /** Map DiaryError to HTTP status: unsupported/no writable realm → 409,

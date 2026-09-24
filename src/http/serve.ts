@@ -84,6 +84,8 @@ async function main(): Promise<void> {
     oversight: kernel.oversight,
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,
+    skillRegistry: kernel.skillRegistry,
+    mentorshipLedger: kernel.mentorshipLedger,
     orgRegistry: kernel.orgRegistry,
     memoryStore: kernel.memoryStore,
     realmStore: kernel.realmStore,
