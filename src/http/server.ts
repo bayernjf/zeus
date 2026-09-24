@@ -55,7 +55,7 @@ export type HttpDeps = {
   progressHub?: ProgressHub;
   /** H2 (E9.3): department establishment chart and staffing. */
   orgRegistry?: OrgRegistry;
-  /** H2 (E8.3): memory source for diary read/generate. */
+  /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
   memoryStore?: MemoryStore;
   /** H2 (E8.3): realm target for diary persistence. */
   realmStore?: RealmStore;
@@ -418,6 +418,102 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     }
 
     if (deps.memoryStore) {
+      // Memory face (design-memory-consolidation): the driver reads one realm's
+      // events, facts and hybrid recall, exercises the right to be forgotten and
+      // checks the fact source's integrity. There is no fact write route — facts
+      // change only through consolidation, so this face is read + retract.
+      app.get('/api/memory/events', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown; runId?: unknown };
+        if (!isNonEmptyString(query.realmId)) {
+          return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        }
+        if (query.runId !== undefined && !isNonEmptyString(query.runId)) {
+          return error(reply, 400, 'invalid_request', 'query.runId must be a string');
+        }
+        return { events: deps.memoryStore!.read(query.realmId, query.realmId, query.runId) };
+      });
+
+      app.get('/api/memory/facts', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown };
+        if (!isNonEmptyString(query.realmId)) {
+          return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        }
+        return { facts: deps.memoryStore!.facts(query.realmId, query.realmId) };
+      });
+
+      // Hybrid BM25 + vector recall over the realm's live facts. The index is a
+      // derived artifact, rebuilt from the fact source on demand.
+      app.get('/api/memory/recall', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown; q?: unknown; limit?: unknown; alpha?: unknown };
+        if (!isNonEmptyString(query.realmId)) {
+          return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        }
+        if (!isNonEmptyString(query.q)) {
+          return error(reply, 400, 'invalid_request', 'query.q is required');
+        }
+        const limit = query.limit === undefined ? undefined : parsePositiveInt(query.limit);
+        if (query.limit !== undefined && limit === undefined) {
+          return error(reply, 400, 'invalid_request', 'query.limit must be a positive integer');
+        }
+        const alpha = query.alpha === undefined ? undefined : parseUnitInterval(query.alpha);
+        if (query.alpha !== undefined && alpha === undefined) {
+          return error(reply, 400, 'invalid_request', 'query.alpha must be a number in [0,1]');
+        }
+        const hits = deps.memoryStore!.searchRecall(query.realmId, query.realmId, query.q, {
+          ...(limit !== undefined ? { limit } : {}),
+          ...(alpha !== undefined ? { alpha } : {}),
+        });
+        return { hits };
+      });
+
+      // Right to be forgotten: facts become retracted, leave the recall index
+      // immediately and gain a tombstone. Unknown / already-retracted facts are
+      // a no-op, so a repeated request is safe.
+      app.post('/api/memory/retract', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          realmId?: unknown; factIds?: unknown; reason?: unknown; requestedBy?: unknown;
+        };
+        if (!isNonEmptyString(body.realmId)) {
+          return error(reply, 400, 'invalid_request', 'body.realmId is required');
+        }
+        if (!(Array.isArray(body.factIds) && body.factIds.length > 0 && body.factIds.every(isNonEmptyString))) {
+          return error(reply, 400, 'invalid_request', 'body.factIds must be a non-empty array of fact ids');
+        }
+        const context = retractionContext(body.reason, body.requestedBy);
+        if (!context) {
+          return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
+        }
+        return { retractions: deps.memoryStore!.retractFacts(body.realmId, body.factIds, context) };
+      });
+
+      app.post('/api/memory/forget-subject', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          realmId?: unknown; subject?: unknown; reason?: unknown; requestedBy?: unknown;
+        };
+        if (!isNonEmptyString(body.realmId)) {
+          return error(reply, 400, 'invalid_request', 'body.realmId is required');
+        }
+        if (!isNonEmptyString(body.subject)) {
+          return error(reply, 400, 'invalid_request', 'body.subject is required');
+        }
+        const context = retractionContext(body.reason, body.requestedBy);
+        if (!context) {
+          return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
+        }
+        return { retractions: deps.memoryStore!.forgetSubject(body.realmId, body.subject, context) };
+      });
+
+      app.get('/api/memory/retractions', { preHandler: requireBearer }, async () => ({
+        retractions: deps.memoryStore!.listRetractions(),
+      }));
+
+      // Cross-section invariants over the current fact source; a non-empty
+      // violation list means the derived recall index must not be trusted.
+      app.get('/api/memory/integrity', { preHandler: requireBearer }, async () => {
+        const violations = deps.memoryStore!.verifyIntegrity();
+        return { ok: violations.length === 0, violations };
+      });
+
       // E8.3: read diary entries (optionally one realm/date), built on demand.
       app.get('/api/diary', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const q = request.query as { realmId?: unknown; date?: unknown; timeZone?: unknown };
@@ -540,6 +636,31 @@ function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
 /** Validate a YYYY-MM-DD date string. */
 function isValidDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/** Parse a positive integer query/body value; undefined when not one. */
+function parsePositiveInt(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/** Parse a number in [0,1]; undefined when out of range or not finite. */
+function parseUnitInterval(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : undefined;
+}
+
+/** A retraction/forget request must say why and on whose behalf. */
+function retractionContext(
+  reason: unknown,
+  requestedBy: unknown,
+): { reason: string; requestedBy: string } | null {
+  if (!isNonEmptyString(reason) || !isNonEmptyString(requestedBy)) return null;
+  return { reason, requestedBy };
 }
 
 /** Map DiaryError to HTTP status: unsupported/no writable realm → 409,
