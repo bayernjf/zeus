@@ -5,9 +5,9 @@
  * in-flight count, observed concurrency peak, per-vassal latency and failure
  * rate, and queue depth.
  *
- * Queue depth counts branches submitted but not yet started. The current kernel
- * dispatches branches unbounded (Promise.all), so it stays 0 until backpressure /
- * a bounded queue lands (deferred item: concurrency cap + queue).
+ * Queue depth counts branches submitted but not yet started. With no concurrency
+ * cap configured the kernel still dispatches every branch at once, so depth stays
+ * 0; once `maxConcurrentBranches` is set it reports the real wait line.
  */
 
 export type BranchOutcomeKind = 'completed' | 'failed' | 'timeout' | 'canceled';
@@ -91,8 +91,13 @@ export class ConcurrencyMetrics {
     this.queueDepth += 1;
   }
 
-  branchStarted(event: BranchMetricEvent): void {
+  /** A queued branch left the line without starting (refused, or gave up). */
+  dequeue(): void {
     this.queueDepth = Math.max(0, this.queueDepth - 1);
+  }
+
+  branchStarted(event: BranchMetricEvent): void {
+    this.dequeue();
     const key = ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal);
     this.active.set(key, { event, startedMs: this.clock()() });
     if (this.active.size > this.maxInFlight) this.maxInFlight = this.active.size;

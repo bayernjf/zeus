@@ -94,7 +94,15 @@ export type KernelBootOptions = {
   allowUncalibratedJudge?: boolean;
   judgeEscalateOnDisagreement?: boolean;
   judgeMaxWaitMs?: number;
-};
+  /**
+   * E1.5: cap on branches in flight across every intent (one orchestrator per
+   * process, so this is the process-wide bound). Unset = unbounded dispatch, the
+   * historical behaviour.
+   */
+  maxConcurrentBranches?: number;
+  /** Branches allowed to wait for a slot before one is refused. 0 = never queue. */
+  branchQueueLimit?: number;
+}
 
 const noop = (): void => {};
 
@@ -167,6 +175,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       ? { judgeEscalateOnDisagreement: options.judgeEscalateOnDisagreement }
       : {}),
     ...(options.judgeMaxWaitMs !== undefined ? { judgeMaxWaitMs: options.judgeMaxWaitMs } : {}),
+    ...(options.maxConcurrentBranches !== undefined
+      ? { maxConcurrentBranches: options.maxConcurrentBranches }
+      : {}),
+    ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
   });
   const components: KernelComponents = {
     registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry,
@@ -290,4 +302,42 @@ export function resolveDecisionConfig(env: NodeJS.ProcessEnv = process.env): Pro
   }
   if (envFlag(env.ZEUS_JUDGE_ALLOW_UNCALIBRATED)) config.allowUncalibratedJudge = true;
   return config;
+}
+
+/** A boot-time env value was present but unusable. */
+export class KernelBootError extends Error {}
+
+/**
+ * E1.5 process-env concurrency wiring.
+ *
+ * A cap the operator set and the process quietly ignored is worse than no cap at
+ * all — it reads as protection that is not there — so a malformed value fails
+ * the boot loudly instead of falling back to unbounded dispatch.
+ */
+export type ProcessConcurrencyConfig = {
+  maxConcurrentBranches?: number;
+  branchQueueLimit?: number;
+};
+
+export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): ProcessConcurrencyConfig {
+  const config: ProcessConcurrencyConfig = {};
+  const cap = envInteger(env.ZEUS_MAX_CONCURRENT_BRANCHES, 'ZEUS_MAX_CONCURRENT_BRANCHES', 1);
+  if (cap !== undefined) config.maxConcurrentBranches = cap;
+  // 0 is a meaningful queue limit: refuse immediately rather than wait for a slot.
+  const limit = envInteger(env.ZEUS_BRANCH_QUEUE_LIMIT, 'ZEUS_BRANCH_QUEUE_LIMIT', 0);
+  if (limit !== undefined) config.branchQueueLimit = limit;
+  return config;
+}
+
+function envInteger(
+  value: string | undefined,
+  name: string,
+  min: number,
+): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    throw new KernelBootError(`${name} must be a whole number >= ${min}, got '${value}'`);
+  }
+  return parsed;
 }

@@ -111,6 +111,7 @@ export type {
 // --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
 export { Orchestrator, UnknownIntentError } from './orchestrator/orchestrator.js';
 export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
+export { Semaphore, QueueFullError, type SlotRelease } from './orchestrator/semaphore.js';
 export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
 export { detectConflicts } from './orchestrator/conflict.js';
@@ -160,8 +161,8 @@ export {
   KERNEL_STATE_VERSION,
 } from './state/kernel-state.js';
 export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
-export { bootKernel, resolveDecisionConfig } from './state/boot.js';
-export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig } from './state/boot.js';
+export { bootKernel, resolveDecisionConfig, resolveConcurrencyConfig, KernelBootError } from './state/boot.js';
+export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig, ProcessConcurrencyConfig } from './state/boot.js';
 export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
 export type {
   FanOutRequest,

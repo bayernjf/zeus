@@ -8,7 +8,7 @@ import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
-import { bootKernel } from '../src/state/boot.js';
+import { bootKernel, KernelBootError, resolveConcurrencyConfig } from '../src/state/boot.js';
 import { readAuditLog } from '../src/dispatch/audit.js';
 import {
   FileKernelStateStore,
@@ -156,5 +156,26 @@ describe('E5.3 bootKernel assembly', () => {
     });
     expect(kernel.auditFile).toBeNull();
     expect(kernel.registry.revoke('loom')).toBe(true);
+  });
+});
+
+describe('E1.5 resolveConcurrencyConfig', () => {
+  it('leaves the kernel unbounded when nothing is configured', () => {
+    expect(resolveConcurrencyConfig({})).toEqual({});
+    expect(resolveConcurrencyConfig({ ZEUS_MAX_CONCURRENT_BRANCHES: '' })).toEqual({});
+  });
+
+  it('reads a cap and a queue limit, including a zero limit that refuses instead of waiting', () => {
+    expect(resolveConcurrencyConfig({
+      ZEUS_MAX_CONCURRENT_BRANCHES: '8',
+      ZEUS_BRANCH_QUEUE_LIMIT: '0',
+    })).toEqual({ maxConcurrentBranches: 8, branchQueueLimit: 0 });
+  });
+
+  it('fails the boot on a cap it would otherwise silently ignore', () => {
+    expect(() => resolveConcurrencyConfig({ ZEUS_MAX_CONCURRENT_BRANCHES: 'auto' })).toThrow(KernelBootError);
+    expect(() => resolveConcurrencyConfig({ ZEUS_MAX_CONCURRENT_BRANCHES: '0' })).toThrow(/>= 1/);
+    expect(() => resolveConcurrencyConfig({ ZEUS_MAX_CONCURRENT_BRANCHES: '2.5' })).toThrow(/ZEUS_MAX_CONCURRENT_BRANCHES/);
+    expect(() => resolveConcurrencyConfig({ ZEUS_BRANCH_QUEUE_LIMIT: '-3' })).toThrow(/>= 0/);
   });
 });
