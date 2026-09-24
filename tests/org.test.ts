@@ -50,6 +50,22 @@ describe('createDepartment / slug', () => {
     expect(() => slug('---')).toThrow(OrgError);
     expect(slug('QA! Dept')).toBe('qa-dept');
   });
+
+  it('establishes a department whose name has no ASCII slug', async () => {
+    const { createDepartment, departmentIdFor } = await import('../src/org/department.js');
+    const a = createDepartment({ name: '研发部', mission: '交付' }, '2026-09-25T00:00:00.000Z');
+    const b = createDepartment({ name: '研发部', mission: '交付' }, '2026-09-25T00:00:00.000Z');
+    const c = createDepartment({ name: '发布工程组', mission: '交付' }, '2026-09-25T00:00:00.000Z');
+
+    expect(a.departmentId).toBe(departmentIdFor('研发部'));
+    expect(a.departmentId).toMatch(/^dept:[a-f0-9]{8}$/);
+    expect(a.departmentId).toBe(b.departmentId); // stable, so a restart re-derives it
+    expect(a.departmentId).not.toBe(c.departmentId);
+    expect(a.name).toBe('研发部'); // display name kept verbatim
+    // latin names keep the readable slug form
+    expect(createDepartment({ name: 'QA Dept', mission: 'm' }, '2026-09-25T00:00:00.000Z').departmentId)
+      .toBe('dept:qa-dept');
+  });
 });
 
 describe('assignMember', () => {

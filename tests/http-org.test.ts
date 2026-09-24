@@ -143,6 +143,27 @@ describe('E9.3 org HTTP', () => {
     expect(dept.members.find((m: { agentId: string }) => m.agentId === 'agent-a').role).toBe('member');
   });
 
+  it('establishes and staffs a department named in Chinese, through its derived id', async () => {
+    const app = await server();
+    const created = await app.inject({
+      method: 'POST', url: '/api/org/departments', headers: AUTH,
+      payload: { name: '研发部', mission: '交付与稳定性' },
+    });
+    expect(created.statusCode).toBe(201);
+    const { departmentId } = await created.json();
+    expect(departmentId).toMatch(/^dept:[a-f0-9]{8}$/);
+
+    const staffed = await app.inject({
+      method: 'POST', url: `/api/org/departments/${departmentId}/members`, headers: AUTH,
+      payload: { agentId: 'pr-helper', role: 'lead', title: '研发主管' },
+    });
+    expect(staffed.statusCode).toBe(201);
+
+    const chart = await app.inject({ method: 'GET', url: '/api/org/chart', headers: AUTH });
+    const dept = (await chart.json()).departments.find((d: { departmentId: string }) => d.departmentId === departmentId);
+    expect(dept).toMatchObject({ name: '研发部', lead: 'pr-helper', headcount: 1 });
+  });
+
   it('strikes a post, and refuses to strike or promote someone off the roster', async () => {
     const app = await server();
     await app.inject({

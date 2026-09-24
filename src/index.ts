@@ -382,7 +382,7 @@ export type {
 } from './diary/types.js';
 
 // --- Org virtual departments (E9.3 establishment & accountability) ---
-export { createDepartment, assignMember, removeMember, setLead, slug } from './org/department.js';
+export { createDepartment, assignMember, removeMember, setLead, slug, departmentIdFor } from './org/department.js';
 export { buildOrgChart, renderOrgMarkdown } from './org/chart.js';
 export type { OrgChartView } from './org/chart.js';
 export { traceAccountability } from './org/accountability.js';

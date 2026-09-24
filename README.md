@@ -134,13 +134,20 @@ curl -s -X POST localhost:8787/api/escalations/esc-xxx/resolve \
 curl -s -X POST localhost:8787/api/intents/intent-xxx/cancel -H "Authorization: Bearer $TOKEN"
 curl -s localhost:8787/api/metrics -H "Authorization: Bearer $TOKEN"
 
-# 查看虚拟部门编制；建部门、安置成员（lead/member）
+# 查看虚拟部门编制；建部门、安置成员（lead/member）、换 lead、撤岗
+# 部门 id = dept:<名字的小写 ASCII slug>；名字无 ASCII 可提取时（如纯中文）落为 dept:<sha256 前 8 位>，
+# 中文名照样可建可管，显示名原样保留
 curl -s localhost:8787/api/org/chart -H "Authorization: Bearer $TOKEN"
 curl -s -X POST localhost:8787/api/org/departments -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"name":"研发部","mission":"交付"}'
-curl -s -X POST localhost:8787/api/org/departments/dept-yan-fa-bu/members \
+# -> { "departmentId": "dept:f706f416", "name": "研发部", ... }   （用响应里的 id 继续操作）
+curl -s -X POST localhost:8787/api/org/departments/dept:qa/members \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{"agentId":"agent-1","role":"lead","title":"研发主管"}'
+curl -s -X POST localhost:8787/api/org/departments/dept:qa/lead \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"agentId":"agent-2"}'
+curl -s -X DELETE localhost:8787/api/org/departments/dept:qa/members/agent-1 \
+  -H "Authorization: Bearer $TOKEN"
 
 # 读某日日记；生成日记并经 Realm.write 落 diary/YYYY-MM-DD.md
 curl -s 'localhost:8787/api/diary?date=2026-09-24' -H "Authorization: Bearer $TOKEN"
