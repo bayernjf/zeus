@@ -61,7 +61,7 @@ Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配
 
 1. `src/http/` 之外不得出现 fastify / Node http server 代码。
 2. `src/http/` 不得绕过内核直接读 registry/realm 内部数据结构；只用 `src/index.ts` 公共面。
-3. **HTTP 服务不挂任何 Realm 路由**（design-realm §6.1）；Realm 只经 MCP。
+3. **HTTP 服务不挂任何 Realm *内容* 路由**（design-realm §6.1）；Realm 条目内容只经 MCP。E6.4 起的精确边界见 design-realm §6.4：bearer 驾驶员面可暴露 Realm 的**治理元数据与授权记录**（`/api/domains*`），并可用 `realmSource` 让**内核代取**内容送进派发链路——后者不向客户端返回内容，因此不构成第二个 Realm 传输面。
 4. 传输层不持有业务状态：状态归内核实例，server 只是宿主。
 
 ## 4. 端点规划
