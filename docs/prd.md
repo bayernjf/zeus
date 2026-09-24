@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.23（2026-09-24，驾驶员 HTTP 补面：memory / skills+mentorship / org 责任链 / 决策回放）**
+> 状态：**现行 v0.24（2026-09-25，E1.5 有界并发队列 + E4.7 审计落盘可读 + E3.5 企业域收口 + 连接器/决策面接线 + 快照 0600）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -49,7 +49,7 @@
 | E1.2 | 多流合并：多路 SSE/结果合并为驾驶员单视图，保持来源可辨 | P0 | ✅ | `mergeBranches` 分支内保序、分支间按选择顺序拼接，每事件带来源 vassal/taskId/runId；缺路按 branchTimeout/失败策略归为 partial/failed。服务端 SSE 推送合并流属 E5.5 |
 | E1.3 | 多 Agent 协同决策：多方案生成、加权/投票/规则聚合为一个决策建议 | P0 | ✅ | ✅ 确定性规则聚合 unanimous/majority/weighted 输出各方立场/权重/理由，分裂时 conclusion:null 不臆断；**LLM-as-judge 对抗复核已落地**（`src/orchestrator/judge.ts`）：规则有结论且≥2 立场后，独立决策后端复核——高置信校准同意则背书、高置信校准分歧不静默覆盖也不放行弱多数，转 needs-driver 并开 `kind:judge-review` 冲突走 E6.2 驾驶员闭环；低置信/未校准 LLM 默认不采纳/后端故障只记录不动状态；与仲裁互斥（无结论走 arbitrate，同后端不自评）；judge 记录进 E1.6 回放时间线，14 项测试。多方案生成（noul 开放生成）仍未做 |
 | E1.4 | 冲突检测与消解：识别 Agent 间结论冲突，给消解路径或升级驾驶员 | P0 | ✅ | `detectConflicts` 标记规则无法消解的多立场分裂，status=needs-driver 并经 onConflict 回调进监督台、不静默选边；**冲突拍板回写已闭环**（E6.2）；更丰富的自动消解规则 / LLM critic（S2）未做 |
-| E1.5 | 并发治理：并发上限、任务队列、超时与取消传播、幂等 | P0 | 🚧 | ✅ intentId 重放幂等（同键零出站）、cancelIntent 传播到全部非终态分支、单路超时、父子 runId 全链贯穿；并发上限/队列/背压未做（deferred #9，待 ≥3 封臣压测） |
+| E1.5 | 并发治理：并发上限、任务队列、超时与取消传播、幂等 | P0 | ✅ | ✅ intentId 重放幂等（同键零出站）、cancelIntent 传播到全部非终态分支、单路超时、父子 runId 全链贯穿；**并发上限与有界队列已落地**（`src/orchestrator/semaphore.ts`：`maxConcurrentBranches` 进程内在途分支上界 + FIFO 等待 + `branchQueueLimit` 溢出即拒并把原因写进分支结果，租约在 finally 归还故失败不会卡死闸门；resumeBranch 走同一道门；不配上限=沿用无界行为）。`GET /api/metrics` 的 `queueDepth` 自此为真实值（此前恒 0）。**剩余归 deferred #9**：溢出时的封臣间分流/降级顺序（需 ≥3 真实封臣压测才定），PRD E4.10 同条 |
 | E1.6 | 决策可追溯：每个决策可回放参与 Agent、输入、立场、聚合过程 | P0 | ✅ | FanOutResult 记录各分支、positions、decision.rule/reason/margin、sourced 事件与分支 runId；**独立离线回放器已落地**（`src/orchestrator/replay.ts`：纯只读函数按合并流重建确定性时间线，含输入/参与方/立场/聚合/冲突/后端仲裁/驾驶员决议，replaySnapshot 从持久化快照批量回放，renderReplay 出人读文本；记录损坏 fail-loud，8 项测试）；**已上驾驶员面**（v0.23）：`GET /api/intents/:id/replay` 出 JSON 时间线、`?format=text` 出人读文本，配对 `Orchestrator.getRequest()` 取回原始派发输入，存储记录无法回放时返回 500 而非半条时间线（tests/http-replay.test.ts 6 项） |
 | E1.7 | 并发可观测：在途任务数、各 Agent 延迟/失败率、队列深度 | P1 | ✅ | 库内 `ConcurrencyMetrics`（`src/orchestrator/metrics.ts`）：在途数、并发峰值、队列深度、完成/失败/超时计数、各封臣延迟 min/max/avg/p50/p95 与失败率，经 Orchestrator 注入、`bootKernel` 默认装配（5 项测试）；**已随 H2 经 `GET /api/metrics` 暴露**。背压/有界队列落地前队列深度恒 0（deferred #9） |
 
@@ -88,7 +88,7 @@
 | E4.4 | 升级 escalation（input-required / 不可逆操作） | P0 | ✅ | 不可逆 execute 必须升级；带 approve/reject |
 | E4.5 | 数据二极管与 dataPolicy 脱敏 | P0 | ✅ | 按 fealty 裁剪；越域即拒并审计 |
 | E4.6 | 吊销强制力 | P0 | ✅ | 派发前阻断，不发请求/token；重复吊销幂等 |
-| E4.7 | 全程审计（决策链 + 治理桥 + SLA 计时） | P0 | ✅ | 审计有序；sla.ackSeconds 违约单独决策 |
+| E4.7 | 全程审计（决策链 + 治理桥 + SLA 计时） | P0 | ✅ | 审计有序；sla.ackSeconds 违约单独决策。**v0.24 补上"落盘 + 可读"**：`bootKernel({ auditFile })` / `ZEUS_AUDIT_FILE` 把每条派发决策与治理事件追加为 JSONL（同时仍转发给调用方 sink），**并把吊销桥进审计**（此前 `bootKernel` 从未接 `onRevoke`，booted 内核里"吊销一个封臣"不产生任何审计记录）；`GET /api/audit?runId|vassal|decision|limit` 回读，按字节窗口只读尾部、记录不可解析时 500 而非给一条缩短的轨迹（tests/audit.test.ts + tests/http-audit.test.ts） |
 | E4.8 | 标准客户端守护（超集不破坏标准） | P0 | 🚧 | 脚本已备；真机待 pr-helper 部署 |
 | E4.9 | fealty 签名链 v1（生产 RSK + R1/R2 接线） | P1 | 🚧 | 纯函数 + H1 public 封签 + **R1 internal 封签（v1.1：active\|revoked 两态 attestation，含吊销行的 internal 快照可封签离线验）均已接**；销项仍须生产 RSK 密钥托管/轮换与 R2 bayjf 客户端公钥验签、过八条验收（deferred #7，触发=bayjf 公开前） |
 | E4.10 | 封臣背压降级顺序 | P2 | ⬜ | ≥3 封臣在线压测（deferred #9） |
@@ -101,7 +101,7 @@
 | E5.2 | H1：/healthz、/api/roster/public（seal）、/api/roster（bearer） | P0 | ✅ | public 与 **internal 双份快照均封签、离线可验**（签名链 v1.1：attestation 扩 `active\|revoked` 两态，internal 含 revoked 行各自封签；revoked attestation 证永久吊销事实、不带硬过期，快照整体新鲜度由 seal maxAge 绑定；验签要求 attestation 状态与条目**精确匹配**，缺 source / 状态矛盾 fail-loud，仅 active 校验硬过期）；internal 响应 `Cache-Control: no-store`、bearer 常量时间比对、未配 token 整组不挂载；条目/provenance/签名三类篡改与过期均拒绝 |
 | E5.3 | 持久化注册表（替换实例内存） | P1 | ✅ | `src/state/kernel-state.ts`：封臣注册表（含已吊销）、监督台升级队列（重建 task/conflict 幂等索引）、编排意图结果与原始请求（重启后幂等重放、resumeBranch 可用）经 `FileKernelStateStore` 原子落盘（tmp+rename）与版本校验恢复；已接入 `bootKernel` 启动装配（`ZEUS_STATE_FILE` 启动恢复、SIGINT/SIGTERM 原子落盘）。**Realm 连接状态已纳入快照并重启自动 reconnect（G4 ✅）**；metrics 运行态不持久化 |
 | E5.4 | bayjf R2 验签封神榜 | P1 | ⬜ | 只消费 seal 快照并客户端验签；闸门 = E4.9 |
-| E5.5 | H2 驾驶员 API + 服务端 SSE（含多 Agent 合并流） | P1 | ✅ | **H2 驾驶员 API**（bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 整组不挂载）：`POST /api/intents` 扇出、`GET /api/intents/:id` 回查、`POST /api/intents/:id/cancel`、`GET /api/escalations` + `POST .../:id/approve|reject|resolve`（resolve 把拍板立场回写聚合决策，打通 E6.2）、`GET /api/metrics`；端到端测试 `tests/http-h2.test.ts` + 进程级冒烟。**H3 服务端 SSE 已落地**：`GET /api/intents/:id/events` 经 `ProgressHub` 实时推送 branch-started/branch-ended/intent-finished（15s keepalive、已完成意图回放、flushHeaders），见 tests/http-sse.test.ts。**封臣上线入口已接**：`POST/DELETE /api/vassals` + `ZEUS_VASSAL_SEEDS`（G1）。**v0.23 补面（"内核有、驾驶员看不见"四类一次接上，全部 bearer 保护、未配 token 整组不挂载）**：`/api/memory/{events,facts,recall,retractions,integrity}` + `POST /api/memory/{retract,forget-subject}`、`/api/skills*` 与 `/api/mentorships*`、`GET /api/org/accountability/:intentId`、`GET /api/intents/:id/replay`；Realm/Vault 仍不上 HTTP（design-realm §6.1 唯一传输 MCP、design-vault §9 CLI+外部调度） |
+| E5.5 | H2 驾驶员 API + 服务端 SSE（含多 Agent 合并流） | P1 | ✅ | **H2 驾驶员 API**（bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 整组不挂载）：`POST /api/intents` 扇出、`GET /api/intents/:id` 回查、`POST /api/intents/:id/cancel`、`GET /api/escalations` + `POST .../:id/approve|reject|resolve`（resolve 把拍板立场回写聚合决策，打通 E6.2）、`GET /api/metrics`；端到端测试 `tests/http-h2.test.ts` + 进程级冒烟。**H3 服务端 SSE 已落地**：`GET /api/intents/:id/events` 经 `ProgressHub` 实时推送 branch-started/branch-ended/intent-finished（15s keepalive、已完成意图回放、flushHeaders），见 tests/http-sse.test.ts。**封臣上线入口已接**：`POST/DELETE /api/vassals` + `ZEUS_VASSAL_SEEDS`（G1）。**v0.23 补面（"内核有、驾驶员看不见"四类一次接上，全部 bearer 保护、未配 token 整组不挂载）**：`/api/memory/{events,facts,recall,retractions,integrity}` + `POST /api/memory/{retract,forget-subject}`、`/api/skills*` 与 `/api/mentorships*`、`GET /api/org/accountability/:intentId`、`GET /api/intents/:id/replay`。**v0.24 再补三面**：`/api/connectors*`（E7 声明/读/连接/吊销，**响应一律脱敏 token，只报 `hasToken`**；握手失败 502 而非 400）、`GET /api/decision`（进程实际解析到的决策后端与 judge 闸门，此前只在 stderr 一行）、`GET /api/audit`（E4.7 审计回读，按 runId/vassal/decision 过滤，**尾部按字节窗口读**、记录损坏报 500 不给缩短的轨迹）；Realm/Vault 仍不上 HTTP（design-realm §6.1 唯一传输 MCP、design-vault §9 CLI+外部调度） |
 
 ### E6. 监督台与驾驶员
 
@@ -117,7 +117,7 @@
 | ID | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|
 | E7.1 | 基于 MCP 的外部系统接入（resources/tools/prompts） | P1 | ✅ | 新增 `src/mcp`：`McpClient` 零 SDK 实现 streamable-HTTP JSON-RPC（initialize 握手 + initialized 通知，兼容 application/json 与 text/event-stream 两种响应），tools/resources/list 发现能力；`ConnectorRegistry.connect` 执行握手，服务器不可达拒绝并审计（refused），`revoke` 立即移出活动集合，见 tests/mcp-connectors.test.ts（8 项） |
-| E7.2 | 连接器登记与最小权限声明 | P1 | ✅ | `declare` 强制封闭权限词汇（validatePermissionClaims）、重复声明拒绝；连接后只暴露声明边界内工具（bare `mcp` 全放行，`mcp:<tool>` 精确授权，边界外工具不出现）；连接器声明经 bootKernel 装配并随 KernelSnapshot `connectors` 段持久化恢复（连接不自动重建立） |
+| E7.2 | 连接器登记与最小权限声明 | P1 | ✅ | `declare` 强制封闭权限词汇（validatePermissionClaims）、重复声明拒绝；连接后只暴露声明边界内工具（bare `mcp` 全放行，`mcp:<tool>` 精确授权，边界外工具不出现）；连接器声明经 bootKernel 装配并随 KernelSnapshot `connectors` 段持久化恢复（连接不自动重建立）；**驾驶员面已接**（v0.24）：`GET /api/connectors[?status]`、`GET /api/connectors/:id`、`POST /api/connectors`（声明，可带 token）、`POST /api/connectors/:id/connect`（真跑 MCP 握手并按权限边界裁剪工具）、`DELETE /api/connectors/:id`（吊销即时生效）；**所有响应脱敏——只报 `hasToken`，绝不回显 token**（tests/http-connectors.test.ts 用真 HTTP MCP stub 断言响应体不含密钥）。附带：`GET /api/decision` 报进程实际用的决策后端与 judge 闸门（此前只有 stderr 一行） |
 
 ### E8. 个人情感层
 
@@ -128,6 +128,7 @@
 | E8.3 | Diary 日记：记忆叙事化备份 | P2 | ✅ | **已落地**（`src/diary`，[design-diary](design-diary.md) v0.1）：buildDiary 纯函数按日历天（UTC/IANA 时区）分桶、确定性排序、renderEventContent 只呈现不臆造（string / ClaimContent / 对象 / 空内容四态、超长截断标注）、可选纳入事实、算内容 digest；每行锚 eventId、provenance 覆盖全部来源，混 realm 拒绝；persistDiary 经 Realm.write 写 `diary/YYYY-MM-DD.md`（幂等）、exportDiary 稳定 JSON；buildDiariesFromState 按 realm 分组、按需（realm/date）构建；**驾驶员 HTTP**：GET /api/diary（按 realm/date 读，缺日 404）、POST /api/diary/generate（经 Realm.write 落 `diary/YYYY-MM-DD.md`，无可写 realm 409、无事件 400）。25 项测试（diary 19 + http-diary 6）含真实 realm 往返 |
 | E8.4 | 传承（dead-man switch + 密钥托管） | P3 | ⬜ | 触发可靠、可撤销；法律框架齐备（deferred #2/#3） |
 | E8.5 | 记忆整理与遗忘权（事件→事实、混合检索、擦除、漂移对账） | P1 | ✅ | **补记行**：能力在 v0.8–v0.12 已落地并验收，此前只进演进日志、PRD 无对应需求行。`src/memory`（[design-memory-consolidation](design-memory-consolidation.md) v0.3）：append-only 事件日志，**事实无公开写入口**（只经纯函数 `consolidate` 产出、逐条带 provenance）、观察去重累积、矛盾默认 disputed 并确定性升级进监督台、置信度按可靠度加权（指标 failureRate 派生 + 驾驶员纠错 −0.15/次）、跨 realm 读写拒绝并审计、沿 runId 离线回放；P2 三项齐（BM25+向量混合检索与可重建派生索引、`retractFacts`/`forgetSubject` 遗忘权 + tombstone、`reconcileMemoryStates`/`verifyMemoryState` 漂移对账与横切不变量）；随 KernelSnapshot 持久化重启恢复。**v0.23 上驾驶员面**：`/api/memory/{events,facts,recall,retractions,integrity}` + `POST /api/memory/{retract,forget-subject}`（11 项 tests/http-memory.test.ts；本面只有读与擦除，没有事实写入口） |
+| v0.24 | 2026-09-25 | **第二个"能一口气搞"批次（库内闭环 + 工程卫生，7 个 commit）**：① **E1.5 并发治理收口 ✅**——`src/orchestrator/semaphore.ts` 给 fan-out 加上进程内分支上界与 FIFO 有界队列（溢出即拒并把原因记进分支结果、租约 finally 归还、resumeBranch 同一道门；不配=沿用无界），`GET /api/metrics` 的 queueDepth 从此是真值，deferred #9 缩到"分流降级顺序"；② **E4.7 审计落盘与回读**——`ZEUS_AUDIT_FILE` → JSONL（并仍转发 stderr），`GET /api/audit` 按 runId/vassal/decision/limit 回读、按字节窗口读尾、损坏记录 500；**修掉 booted 内核里"吊销封臣不产生审计记录"**（bootKernel 从未接 `onRevoke` 治理桥，而 handoff 自 T1 起一直声称有 JSONL）；③ **E3.5 收口 ✅**——`connect` 不再拒 enterprise 且**如实存储 type**（此前 `realms.set` 硬编码 `personal`，令企业域写闸门在真实 store 上永不触发＝安全检查是装饰性的），UnsupportedRealmTypeError 随之删除；④ **E7 连接器面 + 决策面**——`/api/connectors*`（真跑握手、边界裁剪工具、**响应只报 hasToken 绝不清显 token**）、`GET /api/decision`；⑤ **安全修复**——内核状态文件写出固定 **0600**（内含连接器 bearer token 与记忆事实，此前默认 0644 本机任意账户可读）；⑥ 工程卫生——`vitest.config.ts` 全局 20s 取代三处逐套件补丁（并识破放宽救不了的那例：RSA keygen 换 EC，460ms）、CI actions 升 `@v7`、CI 首次真机双矩阵绿；⑦ 登记 deferred **#13**（内核状态文件进藏宝图：实测阻塞在 restore L0 硬绑 RealmStore + 图字段语义）、**#14**（驾驶员凭证只有校验端、无签发与签名、nonce 不比对、write 无注入时钟）、**#15**（Node 20 EOL 却仍在矩阵内、无 engines 声明）。新增 44 项测试，全量 **512 绿（60 文件）** |
 
 ### E9. 企业组织层
 
