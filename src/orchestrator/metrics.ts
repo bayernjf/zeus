@@ -50,7 +50,7 @@ export type MetricsSnapshot = {
   inFlight: number;
   /** Highest concurrently in-flight observed. */
   maxInFlight: number;
-  /** Submitted but not started; 0 under the current unbounded dispatch. */
+  /** Submitted but not started; 0 unless a concurrency cap is configured. */
   queueDepth: number;
   finished: number;
   completed: number;
@@ -94,6 +94,15 @@ export class ConcurrencyMetrics {
   /** A queued branch left the line without starting (refused, or gave up). */
   dequeue(): void {
     this.queueDepth = Math.max(0, this.queueDepth - 1);
+  }
+
+  /**
+   * Current queue depth without building a snapshot. Safe to poll from a
+   * sampler: snapshot() reallocates per-vassal stats and re-filters records,
+   * which is heavy enough to perturb the very run being measured.
+   */
+  queueDepthNow(): number {
+    return this.queueDepth;
   }
 
   branchStarted(event: BranchMetricEvent): void {
