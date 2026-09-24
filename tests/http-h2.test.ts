@@ -306,6 +306,21 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
     expect(again.statusCode).toBe(409);
   });
 
+  it('reads one escalation by id without refetching the queue', async () => {
+    const harness = await driverServer({}, []);
+    app = harness.app;
+    const created = harness.desk.ingest(
+      okResult('loom', 'input-required'),
+      { vassal: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+    );
+    const hit = await app.inject({ method: 'GET', url: `/api/escalations/${created!.id}`, headers: AUTH });
+    expect(hit.statusCode).toBe(200);
+    expect(JSON.parse(hit.body)).toMatchObject({ id: created!.id, kind: 'task-input', status: 'pending' });
+
+    expect((await app.inject({ method: 'GET', url: '/api/escalations/nope', headers: AUTH })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/escalations/nope' })).statusCode).toBe(401);
+  });
+
   it('approves a task-input escalation through the same driver face', async () => {
     const harness = await driverServer({}, []);
     app = harness.app;

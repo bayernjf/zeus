@@ -370,6 +370,15 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         };
       });
 
+      // H2: read one escalation (a caller polling a known id should not have to
+      // refetch the whole queue).
+      app.get('/api/escalations/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const escalation = deps.oversight!.get(id);
+        if (!escalation) return error(reply, 404, 'not_found', `unknown escalation: ${id}`);
+        return escalation;
+      });
+
       // H2: approve a task-input escalation (records the decision; re-dispatch is the caller's job).
       app.post('/api/escalations/:id/approve', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const { id } = request.params as { id: string };
@@ -516,6 +525,31 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return mapOrgError(reply, e);
         }
       });
+      // E9.3: move the lead. The new lead must already hold a post here; the old
+      // lead steps down to member rather than being dropped.
+      app.post('/api/org/departments/:id/lead', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { agentId?: unknown };
+        if (!isNonEmptyString(body.agentId)) {
+          return error(reply, 400, 'invalid_request', 'body.agentId is required');
+        }
+        try {
+          return deps.orgRegistry!.setLead(id, body.agentId);
+        } catch (e) {
+          return mapOrgError(reply, e);
+        }
+      });
+
+      // E9.3: strike a post. Result responsibility does not disappear silently -
+      // an intent traced to a removed agent now reports them as unassigned.
+      app.delete('/api/org/departments/:id/members/:agentId', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id, agentId } = request.params as { id: string; agentId: string };
+        try {
+          return deps.orgRegistry!.removeMember(id, agentId);
+        } catch (e) {
+          return mapOrgError(reply, e);
+        }
+      });
     }
 
     if (deps.memoryStore) {
@@ -540,6 +574,19 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'query.realmId is required');
         }
         return { facts: deps.memoryStore!.facts(query.realmId, query.realmId) };
+      });
+
+      // Offline replay of one run: its events plus every fact whose provenance
+      // cites one of them. Read-only, and still bound to a single realm.
+      app.get('/api/memory/replay', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown; runId?: unknown };
+        if (!isNonEmptyString(query.realmId)) {
+          return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        }
+        if (!isNonEmptyString(query.runId)) {
+          return error(reply, 400, 'invalid_request', 'query.runId is required');
+        }
+        return deps.memoryStore!.replay(query.realmId, query.runId);
       });
 
       // Hybrid BM25 + vector recall over the realm's live facts. The index is a
@@ -1082,11 +1129,12 @@ function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
   return error(reply, 400, 'invalid_request', detail);
 }
 
-/** Map OrgError to HTTP status: unknown department → 404, duplicate/exists →
- *  409, anything else (bad name/mission/slug) → 400. */
+/** Map OrgError to HTTP status: unknown department or a member that does not
+ *  hold a post here → 404, duplicate/exists → 409, anything else (bad
+ *  name/mission/slug) → 400. */
 function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
   const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (/unknown department/i.test(detail)) return error(reply, 404, 'not_found', detail);
+  if (/unknown department|is not in the department/i.test(detail)) return error(reply, 404, 'not_found', detail);
   if (/already|exists/i.test(detail)) return error(reply, 409, 'conflict', detail);
   return error(reply, 400, 'invalid_request', detail);
 }
