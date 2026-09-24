@@ -1,8 +1,8 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.1，2026-09-22）**。评审对象：Zeus 仓库 `dev` 分支（HEAD 4d977ca，领先 origin/dev 8 commit 未 push）。
-> 评审方法：PRD v0.3 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、设计文档与实现一致性抽查、部署/运行入口面检查。
-> 结论一句话：**库内内核级 MVP（M1+M2 核心）已达成；产品级"可上线 MVP"（M3 真机闭环）未达成**——阻塞项集中在真机部署、持久化、Skill 注册中心与决议反馈闭环。
+> 状态：**现行（评审报告 v0.4，2026-09-24）**。评审对象：Zeus 仓库 `dev` 分支（评审起点 HEAD `a7e4ce9`，与 `origin/dev` 同步；本批新增提交后将领先云端、待授权 push）。
+> 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。
+> **结论一句话（v0.4）**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机封臣部署与 loom 联调、RSK 实际托管/公钥发布、Jev key、push 后云端 CI），库内已无 P0 功能缺口。**
 
 > **【2026-09-22 六切片批次后 · 销项更新 v0.2】** 下列为评审 v0.1 之后的库内进展（全量 **166 测试绿 / 22 文件**，typecheck/build 过；以下为现状，原 §1–§7 快照保留不改）：
 > - 硬阻塞 **#3 E2.2 Skill 注册中心 → ✅ 销项**：`src/skills/`（多版本共存、deprecate 标记、按名/域/标签检索、registerFromCard、resolveTeam 多技能组队且歧义不静默选边，10 测试）。E2.4 组队解析一并 ✅。
@@ -19,7 +19,83 @@
 > - **G5 H3 服务端 SSE → ✅ 销项**：编排器发出 branch-started/branch-ended/intent-finished 进度事件到新增 `ProgressHub`；`GET /api/intents/:id/events` 输出 SSE（15s keepalive ping、已完成意图回放单事件后关闭、无 hub 时未知意图 404）；hijack 后 `flushHeaders` 保证客户端即时收到响应头。
 > - **产品级可上线 MVP 判定仍为：未达成**。剩余关口全部在仓库外或需授权，库内已无法继续闭环：E4.8 真机验收（pr-helper 部署）、Zeus↔loom 真机联调、push dev→云端 CI 首绿（需授权）、E10.4 容量压测基线、Jev 真实 endpoint/key 核对。
 
-## 1. 验证基线（本机实跑，非转述）
+## v0.4 现行评审（2026-09-24，以此节结论为准）
+
+> 原 §1–§8 为 2026-09-22 v0.1 首次评审快照（结论已被后续批次超越），原样保留于文末；v0.2/v0.3 为当时批注。**当前功能性 / 完整度 / 可上线性结论以本节为准。**
+
+### A. 验证基线（本机实跑，非转述）
+
+| 项 | 结果（2026-09-24） | 说明 |
+|---|---|---|
+| 全量测试 | **436/436 绿（52 文件）** | `npx vitest run` exit 0（v0.1 为 124/16，v0.3 为 217/31） |
+| typecheck | ✅ `tsc --noEmit` exit 0 | |
+| build | ✅ `tsc -p tsconfig.build.json` exit 0，dist 完整 | |
+| 容量压测 | ✅ 四场景全过 | A 扇出宽度 / B 并发意图 / **C H2 门面全链路** / **D 高并发取消传播**；数据见 `docs/capacity-baseline.md` v0.2 |
+| 运行入口 | `npm start`（dist/http/serve.js） | env 装配见下；H1 + internal + H2 驱动 API |
+| 部署制品 | **Dockerfile（多阶段/非 root/healthcheck/volume/SIGTERM）+ `docs/deployment.md` + `scripts/gen-rsk-key.mjs`** | 静态核查与接线核查通过；**本批未执行 `docker build/run`，真机镜像验证仍属仓库外关口** |
+| 持久化接线 | `ZEUS_STATE_FILE`：启动恢复 + SIGINT/SIGTERM 优雅保存；`ZEUS_VASSAL_SEEDS` / `ZEUS_REALM_ROOTS` 启动装配 | serve.ts 实证 |
+| 生产密钥 | `ZEUS_RSK_KEY` / `ZEUS_RSK_KEY_FILE`；**NODE_ENV=production 无钥拒启**；gen-rsk-key 零依赖生成 Ed25519（私钥 0600、拒覆盖） | 密钥实际托管/轮换/公钥发布在仓库外 |
+
+### B. 自 v0.3 以来的库内增量（2026-09-22 → 09-24，据 handoff）
+
+- 记忆体系 P0/P1/P2、Vault（打包/便携恢复/错图拒绝，见 L1 测试）；
+- E1.6 离线决策回放器、E1.3 独立 judge 对抗评审、boot 决策后端 env 装配（Jev 优先 / OpenAI 兼容 fallback / 无 key 降级 rules-only）；
+- E3.5 Realm 写路径（驾驶员授权门，库内）、E10.4 容量基线（本批扩为四场景）；
+- E8.3 Diary（叙事日志）、E9.3 Org（部门/编制/问责），及 Diary/Org 的持久化与 HTTP 暴露；
+- **签名链 v1.1（本批）**：internal 名册快照与 public 同样封签——attestation 扩 `active|revoked` 两态，revoked 行获**永久吊销 attestation（无硬过期，新鲜度由 seal maxAge 绑定）**，验签要求状态精确匹配（防提升/掩盖吊销），缺 source / 状态矛盾 fail-loud；H1 `GET /api/roster` 改发封签信封（`Cache-Control: no-store`）；
+- 部署制品面（Dockerfile / deployment.md / gen-rsk-key）在库内就绪（具体落地批次见 git 历史）。
+- 测试规模 217（v0.3）→ **436（v0.4）**。
+
+### C. 功能性现状：PRD 剩余项全部卡在仓库外 / 触发条件未到
+
+内核（fan-out/join、幂等、取消、规则聚合、冲突检测、完整 DAG）、Skill 注册中心与组队、Realm（读 + 授权写 + digest + 穿越防护）、封臣联邦（注册/fealty/派发/战报/升级/二极管/吊销/审计）、HTTP 门面（public/internal 双投影 + 双份封签 + H2 驱动 API + H3 SSE）、监督台（升级/拍板回写/补参重派）、决策后端（模型无关 + Jev/LLM + 降级 + judge + replay）、可观测、持久化、记忆/Vault/Diary/Org 均在库内落地并有测试。
+
+逐条核对 PRD 剩余 🚧/⬜，**无一项能在库内继续闭环**，分五类：
+
+| 类别 | 剩余项（PRD 编号） | 关口 / 触发条件 |
+|---|---|---|
+| 真机 / 部署 | E4.8、E10.2、Zeus↔loom 联调、协议第 6 项守护测试、Docker 镜像实构实跑 | 需真实环境与封臣部署 |
+| 密钥 / 发布 | E4.9 生产 RSK 的 R2（托管/轮换/公钥发布）、E5.4 bayjf R2 | deferred #7（bayjf 公开前） |
+| 连接 / 企业域 | E3.4 stdio MCP、E3.5 enterprise connect + MCP write、E3.6 多租户、E6.4 双域授权 | 随 read-realm 封臣 / enterprise connect |
+| 触发型容量/安全 | E1.5、E4.10 背压与有界队列；E3.8 检索升级；E9.4 外部 Agent 沙箱 | deferred #9（≥3 真封臣）/ #10（单 Realm >2 万文件或 P50>500ms）/ #5 |
+| P2/P3 与外部凭证 | E9.1/E9.2 Mentor/上岗（真机验收）、E8.4 传承（#3，P3）、Jev 真实 endpoint/key | 真机 / 外部凭证 |
+
+### D. 完整度（里程碑重判）
+
+| 里程碑 | v0.1 判定 | v0.4 判定 |
+|---|---|---|
+| **M1 内核基座** | ✅ 达成 | ✅ 达成 |
+| **M2 并发决策内核** | 🚧 核心达成、缺 E2.2/E10.4 | ✅ **达成**（E2.2 已补、E10.4 四场景基线已出；完整 DAG、模型无关决策、judge、replay 超出原 M2 范围） |
+| **M3 真机闭环** | ⬜ 未启动 | 🚧 **制品就绪、真机未验**：部署/持久化/密钥/优雅关闭在库内齐备，但从未 `docker build/run`、无真机封臣、无真机联调 |
+
+### E. 可上线性：v0.1 五硬阻塞现状重判
+
+| v0.1 硬阻塞 | 库内/制品侧（v0.4） | 仓库外残留 |
+|---|---|---|
+| 1 无部署形态 | ✅ Dockerfile（多阶段、node:22-slim、非 root、生产依赖、/data 卷、HEALTHCHECK、SIGTERM 优雅保存）+ deployment.md + env 装配 | 真机 `docker build/run` 冒烟、托管/反代/TLS |
+| 2 状态全在内存（E5.3） | ✅ kernel-state（registry/升级队列/意图/请求，tmp+rename 原子落盘）+ 启动恢复 + Realm/Diary/Org 持久化 + SIGTERM 保存 | 真机备份策略与卷挂载验证 |
+| 3 E2.2 Skill 注册中心 | ✅ `src/skills/`（多版本/弃用/检索/组队，歧义不静默） | — |
+| 4 E6.2 决议反馈闭环 | ✅ 冲突入监督台、拍板回写重算、approve-resume 一键补参重派 | — |
+| 5 签名链生产密钥（E4.9） | 🚧 **工具/接线就绪**：gen-rsk-key、env 注入、production 无钥拒启、双份封签（v1.1 含 internal） | R2：密钥实际托管/轮换、公钥对 bayjf 发布（#7） |
+
+**上线前剩余关口（均为仓库外动作，库内无法替代）**：① `docker build/run` 真机冒烟；② 部署 pr-helper 等真机封臣并跑协议第 6 项纯客户端守护测试；③ Zeus↔loom 真机联调；④ RSK 实际生成托管与公钥发布；⑤ push 本批 commit → 云端 CI 首绿（需授权）；⑥ 若启用模型裁决，配置并真机核对 Jev endpoint/key；⑦ deferred #9 触发后做背压真机标定。
+
+### F. MVP 判定（v0.4）
+
+- **库内内核级 MVP（可演示 + 制品就绪）**：✅ **达成**。M1/M2 全绿，436 测试、tsc/build 过、四场景容量基线、生产级 Dockerfile 与部署文档齐备；单意图多 Agent 并发 → 聚合 → 冲突升级 → 拍板/重派 → 持久化/恢复 → 封签发布在库内可完整走通。
+- **产品级可上线 MVP（交付真实用户）**：❌ **未达成，但阻塞性质已变**：v0.1 时是"缺 P0 功能（E2.2/E6.2/持久化/部署/密钥）"，v0.4 时这些在**代码与制品侧全部有了对应实现**；剩余的是**只能在真实环境由人执行的验收与发布动作**（真机部署/联调、密钥托管发布、凭证、CI）。**库内已无 P0 功能缺口可继续闭环。**
+- **一句话（v0.4 升级）**：Zeus 的"内核"达到了 MVP，Zeus 的"可部署制品"也已在库内齐备；Zeus 的"上线"只差在真实环境里把它**跑起来、联起来、签出去**——这三步无法在仓库内完成。
+
+### G. v0.4 评审限制（如实标注）
+
+- 未执行 `docker build/run`：Dockerfile 与 serve.ts 为静态/接线核查，镜像能否一次构建成功未实证。
+- 容量数字为 mock 回环（口径与限制见 capacity-baseline v0.2 §8），非真机性能。
+- Jev 决策后端无真实 endpoint/key，未真机核对（代码注释与 fallback 已标注）。
+- 未跑 `npm audit`；真机封臣行为无法在本机验证。
+
+---
+
+## 1. 验证基线（v0.1 原始快照，2026-09-22；现行基线见上方 v0.4-A）
 
 | 项 | 结果 | 说明 |
 |---|---|---|
@@ -119,3 +195,5 @@
 |---|---|---|
 | v0.1 | 2026-09-22 | 首次项目级评审：功能性/完整度/可上线三维度 + MVP 判定（内核级达成、产品级未达成）+ 阻塞项与最小路径 |
 | v0.2 | 2026-09-22 | 六切片批次后销项批注：E2.2/E6.2 硬阻塞销项、E5.3/E1.7 大幅缓解（库内落地、装配/HTTP 待接线）、S3 DAG 与决策后端落地；产品级 MVP 判定不变（部署形态/生产密钥/真机/push 仍阻塞）；基线升至 166 测试 / 22 文件 |
+| v0.3 | 2026-09-22 | A 批次（G1/G4/G5/G6）销项批注：封臣上线入口、Realm 连接持久化与 boot 恢复、approve-resume 补参重派、H3 服务端 SSE；基线升至 217 测试 / 31 文件；产品级 MVP 仍未达成 |
+| v0.4 | 2026-09-24 | 刷新为现行评审（436 测试 / 52 文件，tsc/build 过，容量四场景）：库内增量含记忆/Vault/replay/judge/E3.5/Diary/Org、签名链 v1.1 internal 封签、容量场景 C/D；核查到 Dockerfile + deployment.md + RSK 密钥工具 + 持久化/优雅关闭接线，v0.1 五硬阻塞在代码/制品侧均已有对应物；**重判：M1/M2 达成、M3 制品就绪真机未验，库内已无 P0 功能缺口，产品级上线仅剩仓库外真机/凭证/发布动作** |
