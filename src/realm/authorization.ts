@@ -14,6 +14,7 @@
  * The registry also compares nonces, so a revoked-or-spent credential cannot be
  * replayed by re-presentation (deferred #14's nonce gap, closed for this layer).
  */
+import { randomUUID } from 'node:crypto';
 import type { DomainDecision, DomainGrant, RealmAccess, RealmActor, TenantScope } from './types.js';
 import { formatTenant, tenantReaches } from './tenant.js';
 
@@ -188,8 +189,10 @@ export class DomainGrantRegistry {
   issue(input: Omit<DomainGrant, 'kind' | 'grantId' | 'grantedAt' | 'nonce'> & { grantId?: string; nonce?: string }): DomainGrant {
     const grantId = input.grantId?.trim() || `grant-${this.now().getTime().toString(36)}-${this.grants.size + 1}`;
     if (this.grants.has(grantId)) throw new DomainGrantError(`grant already exists: ${grantId}`);
-    const nonce = input.nonce?.trim();
-    if (!nonce) throw new DomainGrantError('a domain grant needs a nonce (it is what makes revocation checkable)');
+    // The nonce is minted here, not supplied by whoever asks: it exists so a
+    // revoked-or-spent credential can never be re-presented as fresh, and an
+    // operator inventing entropy by hand is how that guarantee gets lost.
+    const nonce = input.nonce?.trim() || randomUUID();
     if (this.seenNonces.has(nonce)) throw new DomainGrantError(`nonce already used by an earlier grant: ${nonce}`);
     if (input.access !== 'read' && input.access !== 'write') throw new DomainGrantError(`access must be read or write, got ${String(input.access)}`);
     for (const field of ['subject', 'realmId', 'grantedBy'] as const) {

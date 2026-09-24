@@ -191,12 +191,15 @@ describe('E6.4 grant registry lifecycle', () => {
     expect(entries).toEqual([`grant-issued:${issued.grantId}`]);
   });
 
-  it('refuses a grant with no nonce, and a replay of a spent nonce', () => {
+  it('mints a distinct nonce when the issuer supplies none, and refuses a replayed one', () => {
     const registry = new DomainGrantRegistry(now);
-    expect(() => registry.issue({ subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'driver', nonce: '  ' }))
-      .toThrow(DomainGrantError);
-    registry.issue({ grantId: 'a', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'driver', nonce: 'same' });
-    expect(() => registry.issue({ grantId: 'b', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'driver', nonce: 'same' }))
+    const a = registry.issue({ subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'driver' });
+    const b = registry.issue({ subject: 'jev', realmId: 'r', access: 'write', grantedBy: 'driver' });
+    expect(a.nonce).toMatch(/[0-9a-f-]{20,}/);
+    expect(a.nonce).not.toBe(b.nonce);
+    // An explicitly supplied nonce is still a claim, and a claim cannot be made twice.
+    registry.issue({ grantId: 'a1', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'driver', nonce: 'same' });
+    expect(() => registry.issue({ grantId: 'b1', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'driver', nonce: 'same' }))
       .toThrow(/already used/);
   });
 
