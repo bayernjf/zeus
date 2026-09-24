@@ -74,13 +74,13 @@ describe('T3 RSK signer loading', () => {
     ).rejects.toBeInstanceOf(RskConfigError);
   });
 
-  // Synchronous RSA-2048 keygen only to assert "not Ed25519"; it starves past
-  // the 5s default when the runner is under parallel load.
+  // Synchronous RSA-2048 keygen only to prove "not Ed25519"; it starves under
+  // parallel load (global floor in vitest.config.ts).
   it('rejects a non-Ed25519 key', async () => {
     await expect(
       loadRskSigner({ env: { ZEUS_RSK_KEY: rsaPem() }, warn: silentWarn })
     ).rejects.toThrow(/Ed25519/);
-  }, 20_000);
+  });
 
   it('reports a missing key file as a config error', async () => {
     await expect(
