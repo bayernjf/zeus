@@ -2,7 +2,7 @@
 
 > 以用户数据目录为底座、多 Agent 高效协作的操作系统：对个人，是记忆的避风港与可传承的藏宝图；对企业，是即插即用、伴随成长的「虚拟部门」。完整定位见 [docs/product-portrait.md](docs/product-portrait.md)。
 
-本仓库当前是 Zeus 的**纯 TypeScript 内核库 + 薄传输面**：封臣注册、任务派发、监督、个人数据域、多 Agent 并发决策内核以零运行时依赖的库形态落地；另附只读 Realm MCP stdio 脚手架与 HTTP 薄传输层（Fastify）——H1 只读名册 + H2 驾驶员 API（发起意图、看决策、拍板、指标）。Fastify 依赖锁在 `src/http`，内核本身保持零传输依赖。另已落地 **Vault 藏宝图**：为连接的目录出一张只存引用的加密地图，按图能原地校验或从加密备份包恢复（E8.1/E8.2），并提供零依赖 CLI 执行器（build/check/backup/restore，E3.7；调度由外部 cron/systemd 触发，内核不内置定时器）。
+本仓库当前是 Zeus 的**纯 TypeScript 内核库 + 薄传输面**：封臣注册、任务派发、监督、个人数据域、多 Agent 并发决策内核以零运行时依赖的库形态落地；另附只读 Realm MCP stdio 脚手架与 HTTP 薄传输层（Fastify）——H1 只读名册 + H2 驾驶员 API（发起意图、看决策、拍板、指标）。Fastify 依赖锁在 `src/http`，内核本身保持零传输依赖。另已落地 **Vault 藏宝图**：为连接的目录出一张只存引用的加密地图，按图能原地校验或从加密备份包恢复（E8.1/E8.2），并提供零依赖 CLI 执行器（build/check/backup/restore，E3.7；调度由外部 cron/systemd 触发，内核不内置定时器）。另落地 **Diary 日记**（E8.3：把记忆按天叙事、经 Realm 落盘/导出）与 **Org 虚拟部门编制**（E9.3：部门/岗位/主管可视，任务结果追到执行 Agent、部门 lead 与拍板驾驶员）。
 
 ## 内核模块
 
@@ -20,6 +20,8 @@
 | **state（E5.3）** | `src/state/` | 内核持久化：`kernel-state.ts` 把封臣表（含已吊销）、升级队列、意图结果+原始请求原子落盘（tmp+rename）并恢复；`boot.ts` 一次性装配 registry/dispatcher/oversight/orchestrator/metrics，配置 `ZEUS_STATE_FILE` 时启动恢复、优雅退出落盘（metrics 仅运行时不持久化） |
 | **http（H1+H2 传输面）** | `src/http/` | Fastify 薄适配层（非内核、全仓库唯一 fastify 依赖处）：H1 只读 `/healthz`、`/api/roster/public`（实时投影 + 签名名册快照，离线可验）、`/api/roster`（bearer 治理视图）；H2 驾驶员 API（bearer）`POST /api/intents`、`GET /api/intents/:id`、`POST /api/intents/:id/cancel`、`GET/POST /api/escalations`（approve/reject/resolve）、`GET /api/metrics`；`serve.ts` 为进程入口，经 `zeus/http` 子路径导出 |
 | **vault（E8.1/E8.2/E3.7）** | `src/vault/` | 藏宝图与恢复协议：buildVault 出图只存引用 + 逐 item 指纹（**正文零泄漏**）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、restoreDryRun 原地校验与漂移检测、packFull 加密内容包 + restoreFromBundle 经 FsRestoreSink 跨位恢复；`cli.ts` 为零依赖执行器（build/check/backup/restore，退出码 0/1/2/3） |
+| **diary（E8.3）** | `src/diary/` | 记忆叙事化日记：buildDiary 把记忆事件按日历天分桶、确定性排序、内容只呈现不臆造、每行锚 eventId；persistDiary 经 Realm.write 落 `diary/YYYY-MM-DD.md`（幂等），exportDiary 稳定 JSON |
+| **org（E9.3）** | `src/org/` | 虚拟部门编制与结果责任：部门单 lead/成员唯一/不可变，org chart 编制可视，traceAccountability 把任务结果追到执行 Agent、部门 lead、拍板驾驶员（无编制标 unassigned） |
 
 内核统一公共出口在 `src/index.ts`（不含 http 传输面），构建产物见下文。
 
@@ -28,7 +30,7 @@
 ```bash
 npm install
 npm run build      # tsc 出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest，366 项
+npm test           # vitest，411 项
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 名册 + H2 驾驶员 API；需先 build；env 见 .env.example，生产部署见 docs/deployment.md）
 ```
@@ -143,6 +145,8 @@ curl -s localhost:8787/api/metrics -H "Authorization: Bearer $TOKEN"
 - [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核契约：fan-out/join、合并流、幂等、cancel、规则聚合、冲突升级、边界
 - [docs/design-decision-backend.md](docs/design-decision-backend.md) — 模型无关决策后端（Jev/LLM 适配器、置信度闸门、降级到人工）
 - [docs/design-vault.md](docs/design-vault.md) — Vault 藏宝图与恢复协议（图只存引用、AES-GCM 密钥分离、原地校验 + 加密备份包跨位恢复、漂移检测）
+- [docs/design-diary.md](docs/design-diary.md) — Diary 记忆叙事化日记（事件按天分桶、内容不臆造、锚 eventId、经 Realm 落盘/导出）
+- [docs/design-org.md](docs/design-org.md) — 虚拟部门编制与结果责任（部门单 lead/成员唯一、编制可视、责任链追到 Agent/部门 lead/驾驶员）
 - [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级 MVP 评审（功能性/完整度/可上线、阻塞项与最小路径）
 - [docs/deferred-items.md](docs/deferred-items.md) — 缓做项与触发条件的单一事实源
 
