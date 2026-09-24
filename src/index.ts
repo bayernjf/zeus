@@ -153,8 +153,8 @@ export {
   KERNEL_STATE_VERSION,
 } from './state/kernel-state.js';
 export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
-export { bootKernel } from './state/boot.js';
-export type { KernelBoot, KernelBootOptions } from './state/boot.js';
+export { bootKernel, resolveDecisionConfig } from './state/boot.js';
+export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig } from './state/boot.js';
 export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
 export type {
   FanOutRequest,
