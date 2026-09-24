@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.21（2026-09-24，Diary 与 Org 接通持久化与驾驶员 HTTP）**
+> 状态：**现行 v0.22（2026-09-24，签名链 v1.1 internal 名册封签 + 容量四场景 + 评审 v0.4）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -90,7 +90,7 @@
 | E4.6 | 吊销强制力 | P0 | ✅ | 派发前阻断，不发请求/token；重复吊销幂等 |
 | E4.7 | 全程审计（决策链 + 治理桥 + SLA 计时） | P0 | ✅ | 审计有序；sla.ackSeconds 违约单独决策 |
 | E4.8 | 标准客户端守护（超集不破坏标准） | P0 | 🚧 | 脚本已备；真机待 pr-helper 部署 |
-| E4.9 | fealty 签名链 v1（生产 RSK + R1/R2 接线） | P1 | 🚧 | 纯函数与 H1 public 已接；销项须生产密钥 + 八条验收（deferred #7） |
+| E4.9 | fealty 签名链 v1（生产 RSK + R1/R2 接线） | P1 | 🚧 | 纯函数 + H1 public 封签 + **R1 internal 封签（v1.1：active\|revoked 两态 attestation，含吊销行的 internal 快照可封签离线验）均已接**；销项仍须生产 RSK 密钥托管/轮换与 R2 bayjf 客户端公钥验签、过八条验收（deferred #7，触发=bayjf 公开前） |
 | E4.10 | 封臣背压降级顺序 | P2 | ⬜ | ≥3 封臣在线压测（deferred #9） |
 
 ### E5. HTTP 门面与名册
@@ -98,7 +98,7 @@
 | ID | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|
 | E5.1 | roster internal/public 双投影 | P0 | ✅ | public 裁掉端点/探针/已吊销；确定性排序 |
-| E5.2 | H1：/healthz、/api/roster/public（seal）、/api/roster（bearer） | P0 | ✅ | 离线验签；三类篡改拒绝；未配 token 不挂载 |
+| E5.2 | H1：/healthz、/api/roster/public（seal）、/api/roster（bearer） | P0 | ✅ | public 与 **internal 双份快照均封签、离线可验**（签名链 v1.1：attestation 扩 `active\|revoked` 两态，internal 含 revoked 行各自封签；revoked attestation 证永久吊销事实、不带硬过期，快照整体新鲜度由 seal maxAge 绑定；验签要求 attestation 状态与条目**精确匹配**，缺 source / 状态矛盾 fail-loud，仅 active 校验硬过期）；internal 响应 `Cache-Control: no-store`、bearer 常量时间比对、未配 token 整组不挂载；条目/provenance/签名三类篡改与过期均拒绝 |
 | E5.3 | 持久化注册表（替换实例内存） | P1 | ✅ | `src/state/kernel-state.ts`：封臣注册表（含已吊销）、监督台升级队列（重建 task/conflict 幂等索引）、编排意图结果与原始请求（重启后幂等重放、resumeBranch 可用）经 `FileKernelStateStore` 原子落盘（tmp+rename）与版本校验恢复；已接入 `bootKernel` 启动装配（`ZEUS_STATE_FILE` 启动恢复、SIGINT/SIGTERM 原子落盘）。**Realm 连接状态已纳入快照并重启自动 reconnect（G4 ✅）**；metrics 运行态不持久化 |
 | E5.4 | bayjf R2 验签封神榜 | P1 | ⬜ | 只消费 seal 快照并客户端验签；闸门 = E4.9 |
 | E5.5 | H2 驾驶员 API + 服务端 SSE（含多 Agent 合并流） | P1 | ✅ | **H2 驾驶员 API**（bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 整组不挂载）：`POST /api/intents` 扇出、`GET /api/intents/:id` 回查、`POST /api/intents/:id/cancel`、`GET /api/escalations` + `POST .../:id/approve|reject|resolve`（resolve 把拍板立场回写聚合决策，打通 E6.2）、`GET /api/metrics`；端到端测试 `tests/http-h2.test.ts` + 进程级冒烟。**H3 服务端 SSE 已落地**：`GET /api/intents/:id/events` 经 `ProgressHub` 实时推送 branch-started/branch-ended/intent-finished（15s keepalive、已完成意图回放、flushHeaders），见 tests/http-sse.test.ts。**封臣上线入口已接**：`POST/DELETE /api/vassals` + `ZEUS_VASSAL_SEEDS`（G1） |
@@ -144,7 +144,7 @@
 | E10.1 | CI（typecheck/test/build 矩阵） | P0 | ✅ | GitHub Actions Node 20/22 全绿（push 待授权） |
 | E10.2 | 真机部署：pr-helper + Zeus 门面 | P1 | ⬜ | 支撑 E4.8 真机验收与 Zeus↔loom 联调 |
 | E10.3 | 库公共入口与构建产物 | P0 | ✅ | src/index.ts 聚合导出；dist 含 .d.ts |
-| E10.4 | 并发压测与容量基线 | P1 | ✅ | **本机 mock 回环基线已产出**（[capacity-baseline.md](capacity-baseline.md)，`npm run bench:capacity`）：单意图扇出 ≤16 封臣墙钟≈单封臣（内核附加 5–15ms）、128 分支同时在途零丢失、metrics 峰值准确；**真机容量（LLM/网络）待 ≥3 真实封臣 + deferred #9 有界队列后按同法重测** |
+| E10.4 | 并发压测与容量基线 | P1 | ✅ | **本机 mock 回环基线已产出 v0.2**（[capacity-baseline.md](capacity-baseline.md)，`npm run bench:capacity`），四场景：A 扇出宽度、B 并发意图、**C H2 门面全链路（真实 `app.listen` 回环 TCP + bearer + JSON，128 分支点门面附加仅约 5–10ms 墙钟、吞吐约低 10–15%，低并发几乎无差）**、**D 高并发取消传播（128 个 input-required 挂起分支 14–18ms 全部取消、mock farm 实收 240 个 tasks/cancel 零丢失零重复）**；单意图扇出 ≤16 墙钟≈单封臣（内核附加 5–15ms）、128 在途分支零丢失、metrics 峰值准确。**口径限制**：D 取消的是已 settle 的非终态（input-required）分支，对仍 working、fanOut 未返回的进行中意图尚无按 intentId 的一等取消；真机容量（LLM/网络）待 ≥3 真实封臣 + deferred #9 有界队列后按同法重测 |
 
 ## 5. 里程碑（建议）
 
@@ -189,3 +189,4 @@
 | v0.19 | 2026-09-24 | **E3.5 Realm write 与驾驶员授权凭证（库内部分）**：`FsRealmStore.write`（personal 默认允许、readOnly 拒、enterprise 须凭证；字符串/JSON 序列化、自动 itemId、tmp+rename 原子写、路径/symlink/扩展名/1MiB 防护、写后快照与 contentDigest 一致、审计回调），新增 `src/realm/grant.ts` `verifyDriverWriteGrant` 纯函数（missing/malformed/wrong-realm/expired 门），RealmStore 接口补 write、新增 UnauthorizedRealmWriteError/UnsupportedWriteError，index 公共导出；enterprise connect 与 MCP write tool 仍 P1；新增 22 项测试，全量 366 绿（46 文件）；E3.5 ⬜→🚧 |
 | v0.20 | 2026-09-24 | **E8.3 Diary 日记 + E9.3 虚拟部门编制落地**：`src/diary` 把记忆事件按天叙事成可回溯（每行锚 eventId）、可经 Realm.write 落盘 / 稳定 JSON 导出的日记（19 测试，design-diary）；`src/org` 建立部门编制（单 lead、成员唯一、不可变）与 traceAccountability 责任链（执行 Agent → 部门 lead → 拍板驾驶员，无编制标 unassigned，15 测试，design-org）；全量 411 绿（49 文件），E8.3/E9.3 升 ✅ |
 | v0.21 | 2026-09-24 | **Diary 与 Org 接通持久化与驾驶员 HTTP**：OrgRegistry 有状态编制纳入 KernelSnapshot 随 boot 重启恢复（8 测试）；Org HTTP（chart/建编/安置，6 测试）；buildDiariesFromState 按 realm 分组构建 + Diary HTTP（GET 读、POST generate 经 Realm.write 落盘，6 测试）；全量 431 绿（52 文件） |
+| v0.22 | 2026-09-24 | **签名链 v1.1 internal 名册封签 + 容量四场景 + 评审 v0.4**：E5.2 internal `GET /api/roster` 由裸快照改为封签信封（attestation 扩 active\|revoked 两态，revoked 证永久吊销无硬过期、新鲜度由 seal maxAge 绑定，验签状态精确匹配防提升/掩盖、缺 source 或矛盾 fail-loud，no-store），public 路径不变，signing 新增 5 项；E10.4 容量基线升 v0.2，增 C（H2 门面全链路，附加 5–10ms/吞吐约低 10–15%）与 D（128 挂起分支 14–18ms 全取消、240 cancel 零丢失）；E4.9 仍 🚧（R1 internal 已补，待生产 RSK 托管/轮换与 R2 bayjf 公钥验签，deferred #7）；项目级评审刷新到 v0.4（库内已无 P0 功能缺口，产品级上线仅剩仓库外真机/凭证/发布动作）；全量 436 绿（52 文件） |

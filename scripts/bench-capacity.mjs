@@ -25,6 +25,8 @@ import { VassalRegistry } from '../dist/registry/registry.js';
 import { Dispatcher } from '../dist/dispatch/dispatcher.js';
 import { Orchestrator } from '../dist/orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../dist/orchestrator/metrics.js';
+import { createHttpServer } from '../dist/http/server.js';
+import { Ed25519MemorySigner } from '../dist/registry/signing.js';
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
@@ -37,7 +39,9 @@ const reps = argNumber('--reps', 7);
 const FARM_SIZE = argNumber('--farm', 64);
 const widths = [1, 2, 4, 8, 16, 32, 64].filter(w => w <= FARM_SIZE);
 const concurrencyLevels = [1, 4, 8, 16, 32];
+const cancelLevels = [4, 8, 16, 32];
 const PER_INTENT = 4;
+const FACE_TOKEN = 'bench-token';
 
 function round(n, digits = 1) {
   const f = 10 ** digits;
@@ -63,8 +67,17 @@ function stats(samples) {
   };
 }
 
-/** One node:http server impersonates the whole vassal farm under /vN/tasks. */
-function startMockFarm(count, thinkDelayMs) {
+/**
+ * One node:http server impersonates the whole vassal farm under /vN/tasks.
+ * options.terminalState:
+ *   - 'completed' (default): sendSubscribe ends in a completed task with a verdict.
+ *   - 'input-required':      the task settles into a non-terminal suspended state,
+ *                            which is what F3 cancelIntent is designed to cancel.
+ * The same endpoint also serves JSON-RPC tasks/cancel with a plain JSON response.
+ */
+function startMockFarm(count, thinkDelayMs, options = {}) {
+  const terminalState = options.terminalState ?? 'completed';
+  let cancelRequests = 0;
   const server = http.createServer((req, res) => {
     if (req.method !== 'POST') {
       res.statusCode = 404;
@@ -77,8 +90,41 @@ function startMockFarm(count, thinkDelayMs) {
       res.end();
       return;
     }
-    req.on('data', () => {});
+    let raw = '';
+    req.on('data', chunk => {
+      raw += chunk;
+    });
     req.on('end', () => {
+      let rpc;
+      try {
+        rpc = JSON.parse(raw || '{}');
+      } catch {
+        res.statusCode = 400;
+        res.end();
+        return;
+      }
+
+      // tasks/cancel: same endpoint, plain JSON-RPC response returning a canceled task.
+      if (rpc.method === 'tasks/cancel') {
+        cancelRequests += 1;
+        const taskId = rpc.params?.id ?? 'unknown';
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: rpc.id ?? 3,
+            result: {
+              kind: 'task',
+              id: taskId,
+              contextId: 'ctx',
+              status: { state: 'canceled', timestamp: new Date().toISOString() },
+            },
+          })
+        );
+        return;
+      }
+
+      // tasks/sendSubscribe: an SSE stream with a working frame then a final task.
       const taskId = `task-${match[1]}-${Math.random().toString(36).slice(2, 10)}`;
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
       res.write(
@@ -86,22 +132,36 @@ function startMockFarm(count, thinkDelayMs) {
           jsonrpc: '2.0',
           id: 2,
           result: { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'working' }, final: false },
-        })}\n\n`,
+        })}\n\n`
       );
       setTimeout(() => {
-        const task = {
-          kind: 'task',
-          id: taskId,
-          contextId: 'ctx',
-          status: { state: 'completed', timestamp: new Date().toISOString() },
-          artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
-        };
-        res.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: task })}\n\n`);
+        const finalTask =
+          terminalState === 'completed'
+            ? {
+                kind: 'task',
+                id: taskId,
+                contextId: 'ctx',
+                status: { state: 'completed', timestamp: new Date().toISOString() },
+                artifacts: [
+                  { artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance: 'go' } }] },
+                ],
+              }
+            : {
+                kind: 'task',
+                id: taskId,
+                contextId: 'ctx',
+                // a suspended task carries no verdict yet; artifacts is an empty list
+                artifacts: [],
+                status: { state: terminalState, timestamp: new Date().toISOString() },
+              };
+        res.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: finalTask })}\n\n`);
       }, thinkDelayMs);
     });
   });
   return new Promise(resolve => {
-    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
+    server.listen(0, '127.0.0.1', () =>
+      resolve({ server, port: server.address().port, getCancelCount: () => cancelRequests })
+    );
   });
 }
 
@@ -147,7 +207,40 @@ function buildKernel(entries) {
     newIntentId: () => `intent-${++intentSeq}`,
     newRunId: () => `run-${++runSeq}`,
   });
-  return { orchestrator, metrics };
+  return { orchestrator, metrics, registry };
+}
+
+/** A real H2 driver face (Fastify + bearer auth + JSON) wired to the kernel. */
+async function buildFaceKernel(entries) {
+  const { orchestrator, metrics, registry } = buildKernel(entries);
+  const signer = new Ed25519MemorySigner('zeus-rsk-bench');
+  const app = await createHttpServer({ registry, signer, internalToken: FACE_TOKEN, orchestrator, metrics });
+  return { app, orchestrator, metrics };
+}
+
+function listenOnLoopback(app) {
+  return new Promise((resolve, reject) => {
+    app.listen({ port: 0, host: '127.0.0.1' }, err => {
+      if (err) return reject(err);
+      resolve(app.server);
+    });
+  });
+}
+
+async function postIntent(base, names) {
+  const response = await fetch(`${base}/api/intents`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${FACE_TOKEN}` },
+    body: JSON.stringify({
+      skill: 'bench',
+      realm: 'personal',
+      vassals: names,
+      aggregation: { kind: 'unanimous' },
+      branchTimeoutMs: delayMs * 20,
+    }),
+  });
+  if (!response.ok) throw new Error(`face intent HTTP ${response.status}: ${await response.text()}`);
+  return response.json();
 }
 
 async function benchFanoutWidth(port) {
@@ -222,6 +315,125 @@ async function benchConcurrentIntents(port) {
   return rows;
 }
 
+/**
+ * Scenario C: throughput through the real H2 driver face. Each intent goes over
+ * loopback TCP — bearer auth, Fastify routing, JSON parse/serialize — then into
+ * the same Orchestrator -> Dispatcher -> mock farm stack as scenario B. The gap
+ * between B and C is the HTTP face overhead. A fresh face (and listener) is used
+ * per concurrency level for metric isolation.
+ */
+async function benchHttpFace(port) {
+  const rows = [];
+  for (const concurrency of concurrencyLevels) {
+    const { app } = await buildFaceKernel(farmEntries(port, FARM_SIZE));
+    const server = await listenOnLoopback(app);
+    const base = `http://127.0.0.1:${server.address().port}`;
+    try {
+      // warm up the listener, undici pool and JSON paths (not measured)
+      await postIntent(base, ['vassal-0', 'vassal-1', 'vassal-2', 'vassal-3']);
+
+      const latencies = [];
+      const t0 = performance.now();
+      await Promise.all(
+        Array.from({ length: concurrency }, async (_, c) => {
+          const names = Array.from({ length: PER_INTENT }, (_, k) => `vassal-${(c * PER_INTENT + k) % FARM_SIZE}`);
+          const start = performance.now();
+          const result = await postIntent(base, names);
+          latencies.push(performance.now() - start);
+          if (result.status !== 'completed') {
+            throw new Error(`face concurrency ${concurrency}: expected completed, got ${result.status}`);
+          }
+        })
+      );
+      const wallMs = performance.now() - t0;
+      rows.push({
+        concurrentIntents: concurrency,
+        branchesPerIntent: PER_INTENT,
+        totalBranches: concurrency * PER_INTENT,
+        wallMs: round(wallMs),
+        intentsPerSecond: round((concurrency / wallMs) * 1000, 2),
+        latency: stats(latencies),
+      });
+    } finally {
+      // app.close() also closes the loopback listener returned by listen()
+      await app.close();
+    }
+  }
+  return rows;
+}
+
+/**
+ * Scenario D: high-concurrency cancellation propagation. Vassals settle tasks
+ * into the non-terminal input-required state (a task parked waiting on input).
+ * After many intents are suspended, cancelIntent fans JSON-RPC tasks/cancel out
+ * to every non-terminal branch. We assert every branch is canceled exactly once
+ * and measure cancellation throughput/wall time against a farm that acks cancels
+ * immediately. Uses its own short-think, input-required farm.
+ */
+async function benchCancellation() {
+  const { server, port, getCancelCount } = await startMockFarm(FARM_SIZE, 5, {
+    terminalState: 'input-required',
+  });
+  const rows = [];
+  try {
+    for (const intents of cancelLevels) {
+      const { orchestrator } = buildKernel(farmEntries(port, FARM_SIZE));
+      const intentIds = [];
+      await Promise.all(
+        Array.from({ length: intents }, async (_, c) => {
+          const id = `cancel-intent-${intents}-${c}`;
+          const names = Array.from({ length: PER_INTENT }, (_, k) => `vassal-${(c * PER_INTENT + k) % FARM_SIZE}`);
+          const result = await orchestrator.fanOut({
+            intentId: id,
+            skill: 'bench',
+            vassals: names,
+            params: {},
+            realm: 'personal',
+            aggregation: { kind: 'unanimous' },
+            branchTimeoutMs: 5000,
+          });
+          if (!result.branches.every(branch => branch.ok && branch.state === 'input-required')) {
+            throw new Error(
+              `cancel bench level ${intents}: expected all branches input-required, got ${JSON.stringify(
+                result.branches.map(branch => branch.state)
+              )}`
+            );
+          }
+          intentIds.push(id);
+        })
+      );
+
+      const t0 = performance.now();
+      const cancellations = await Promise.all(intentIds.map(id => orchestrator.cancelIntent(id)));
+      const wallMs = performance.now() - t0;
+
+      const totalCancelled = cancellations.reduce((n, c) => n + c.results.length, 0);
+      const allCanceled = cancellations.every(c => c.results.every(r => r.canceled));
+      if (!allCanceled || totalCancelled !== intents * PER_INTENT) {
+        throw new Error(
+          `cancel bench level ${intents}: expected ${intents * PER_INTENT} cancellations, got ${totalCancelled}`
+        );
+      }
+      rows.push({
+        suspendedIntents: intents,
+        branchesPerIntent: PER_INTENT,
+        totalCancelled,
+        wallMs: round(wallMs),
+        cancelsPerSecond: round((totalCancelled / wallMs) * 1000, 2),
+      });
+    }
+    const expectedCancels = rows.reduce((n, r) => n + r.totalCancelled, 0);
+    if (getCancelCount() !== expectedCancels) {
+      throw new Error(
+        `cancel bench: mock farm observed ${getCancelCount()} tasks/cancel requests, expected ${expectedCancels}`
+      );
+    }
+    return { rows, cancelRequestsObserved: getCancelCount() };
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+}
+
 function printTable(title, rows, columns) {
   console.log(`\n${title}`);
   const header = columns.map(c => c.label.padEnd(c.width)).join('');
@@ -263,7 +475,16 @@ async function main() {
 
     const fanoutWidth = await benchFanoutWidth(port);
     const concurrentIntents = await benchConcurrentIntents(port);
-    const report = { environment, fanoutWidth, concurrentIntents };
+    const httpFace = await benchHttpFace(port);
+    const cancellation = await benchCancellation();
+    const report = {
+      environment,
+      fanoutWidth,
+      concurrentIntents,
+      httpFace,
+      cancellation: cancellation.rows,
+      cancelRequestsObserved: cancellation.cancelRequestsObserved,
+    };
 
     if (asJson) {
       console.log(JSON.stringify(report, null, 2));
@@ -295,6 +516,29 @@ async function main() {
         { label: 'max in-flight', width: 14, get: r => r.maxInFlightBranches },
       ],
     );
+    printTable(
+      `C. H2 driver-face throughput (real loopback HTTP + bearer + JSON, ${PER_INTENT} branches/intent, ${delayMs}ms think)`,
+      httpFace,
+      [
+        { label: 'intents', width: 9, get: r => r.concurrentIntents },
+        { label: 'branches', width: 10, get: r => r.totalBranches },
+        { label: 'wall ms', width: 10, get: r => r.wallMs },
+        { label: 'intents/s', width: 11, get: r => r.intentsPerSecond },
+        { label: 'lat p50', width: 10, get: r => r.latency.p50 },
+        { label: 'lat p95', width: 10, get: r => r.latency.p95 },
+      ],
+    );
+    printTable(
+      `D. Cancellation propagation (suspended input-required intents, ${PER_INTENT} branches/intent, cancel acks immediate)`,
+      cancellation.rows,
+      [
+        { label: 'intents', width: 9, get: r => r.suspendedIntents },
+        { label: 'cancels', width: 10, get: r => r.totalCancelled },
+        { label: 'wall ms', width: 10, get: r => r.wallMs },
+        { label: 'cancels/s', width: 11, get: r => r.cancelsPerSecond },
+      ],
+    );
+    console.log(`\nCancel requests observed at mock farm: ${cancellation.cancelRequestsObserved}`);
     console.log('\nNote: mock loopback baseline bounds kernel overhead, not real-vassal (LLM/network) capacity.');
   } finally {
     await new Promise(resolve => server.close(resolve));

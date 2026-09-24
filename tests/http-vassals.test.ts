@@ -53,7 +53,7 @@ describe('G1 vassal onboarding HTTP', () => {
     expect((await res.json()).card.name).toBe('vassal-1');
 
     const roster = await app.inject({ method: 'GET', url: '/api/roster', headers: AUTH });
-    expect((await roster.json()).entries.map((v: { name: string }) => v.name)).toContain('vassal-1');
+    expect((await roster.json()).snapshot.entries.map((v: { name: string }) => v.name)).toContain('vassal-1');
   });
 
   it('requires bearer auth', async () => {
@@ -92,8 +92,8 @@ describe('G1 vassal onboarding HTTP', () => {
 
     const roster = await app.inject({ method: 'GET', url: '/api/roster', headers: AUTH });
     const body = await roster.json();
-    expect(body.entries).toHaveLength(1);
-    expect(body.entries[0].status).toBe('revoked');
+    expect(body.snapshot.entries).toHaveLength(1);
+    expect(body.snapshot.entries[0].status).toBe('revoked');
 
     const again = await app.inject({ method: 'DELETE', url: '/api/vassals/vassal-1', headers: AUTH });
     expect(again.statusCode).toBe(404);
