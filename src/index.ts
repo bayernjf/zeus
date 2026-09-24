@@ -291,7 +291,6 @@ export type {
 export {
   RealmError,
   RealmNotConnectedError,
-  UnsupportedRealmTypeError,
   InvalidItemIdError,
   UnsupportedQueryError,
   UnauthorizedRealmWriteError,

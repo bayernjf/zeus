@@ -8,7 +8,6 @@ import {
   InvalidItemIdError,
   RealmNotConnectedError,
   UnauthorizedRealmWriteError,
-  UnsupportedRealmTypeError,
   UnsupportedWriteError,
 } from '../src/realm/types.js';
 import type { DriverWriteGrant, RealmWriteAuditEntry } from '../src/index.js';
@@ -220,13 +219,78 @@ describe('E3.5 driver write grant gate (verifyDriverWriteGrant)', () => {
   });
 });
 
-describe('E3.5 enterprise realm boundary (still P1)', () => {
-  it('does not allow connecting an enterprise realm yet, so the grant gate is exercised only via the pure function', async () => {
-    const sandbox = mkdtempSync(join(tmpdir(), 'zeus-realm-ent-'));
-    const root = join(sandbox, 'realm');
+describe('E3.5 enterprise realm writes through a real store', () => {
+  let sandbox: string;
+  let root: string;
+
+  beforeEach(() => {
+    sandbox = mkdtempSync(join(tmpdir(), 'zeus-realm-ent-'));
+    root = join(sandbox, 'realm');
     mkdirSync(root, { recursive: true });
-    const store = new FsRealmStore();
-    await expect(store.connect(root, 'enterprise')).rejects.toBeInstanceOf(UnsupportedRealmTypeError);
+  });
+  afterEach(() => {
     rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  function grant(realmId: string, overrides: Partial<DriverWriteGrant> = {}): DriverWriteGrant {
+    return {
+      kind: 'driver-write',
+      realmId,
+      grantedBy: 'driver@bayjf',
+      grantedAt: '2026-09-24T10:00:00.000Z',
+      // The store verifies against the wall clock, so a "still valid" fixture
+      // grant has to stay in the future whenever the suite runs.
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      nonce: 'nonce-1',
+      ...overrides,
+    };
+  }
+
+  it('refuses an enterprise write with no grant at all', async () => {
+    const store = new FsRealmStore();
+    const manifest = await store.connect(root, 'enterprise');
+    await expect(store.write(manifest.realmId, { data: 'from the personal side\n' }))
+      .rejects.toThrow(/enterprise write requires a valid driver grant \(missing\)/);
+  });
+
+  it('accepts a valid driver grant, writes, and records who authorized it', async () => {
+    const written: RealmWriteAuditEntry[] = [];
+    const store = new FsRealmStore({ audit: entry => written.push(entry) });
+    const manifest = await store.connect(root, 'enterprise');
+    const { itemId } = await store.write(manifest.realmId, { data: 'escalation brief\n' }, grant(manifest.realmId));
+
+    expect(await store.read(manifest.realmId, itemId)).toMatchObject({ content: 'escalation brief\n' });
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({ realmId: manifest.realmId, itemId, grantedBy: 'driver@bayjf' });
+    // the write is visible to the snapshot the Vault map and search read from
+    expect((await store.manifest(manifest.realmId)).itemCount).toBe(1);
+  });
+
+  it('refuses a grant bound to another realm, an expired grant and a malformed one', async () => {
+    const store = new FsRealmStore();
+    const manifest = await store.connect(root, 'enterprise');
+    const other = { ...grant('realm-someone-else') };
+    await expect(store.write(manifest.realmId, { data: 'x\n' }, other))
+      .rejects.toThrow(/wrong-realm/);
+    await expect(store.write(manifest.realmId, { data: 'x\n' }, grant(manifest.realmId, { expiresAt: '2020-01-01T00:00:00.000Z' })))
+      .rejects.toThrow(/expired/);
+    const malformed = { ...grant(manifest.realmId), grantedBy: '' };
+    await expect(store.write(manifest.realmId, { data: 'x\n' }, malformed))
+      .rejects.toThrow(/malformed/);
+  });
+
+  it('a read-only enterprise connection stays read-only even with a grant', async () => {
+    const store = new FsRealmStore();
+    const manifest = await store.connect(root, 'enterprise', { readOnly: true });
+    await expect(store.write(manifest.realmId, { data: 'x\n' }, grant(manifest.realmId)))
+      .rejects.toBeInstanceOf(UnauthorizedRealmWriteError);
+  });
+
+  it('personal realms still need no grant, so the two domains do not blur', async () => {
+    const personalRoot = join(sandbox, 'personal');
+    mkdirSync(personalRoot, { recursive: true });
+    const store = new FsRealmStore();
+    const personal = await store.connect(personalRoot, 'personal');
+    await expect(store.write(personal.realmId, { data: 'fine\n' })).resolves.toMatchObject({ itemId: /^writes\// });
   });
 });

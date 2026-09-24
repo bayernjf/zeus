@@ -136,14 +136,6 @@ export class RealmNotConnectedError extends RealmError {
   }
 }
 
-/** P0 supports personal realms only; enterprise is P1. */
-export class UnsupportedRealmTypeError extends RealmError {
-  constructor(message: string) {
-    super(message);
-    this.name = 'UnsupportedRealmTypeError';
-  }
-}
-
 /** itemId must stay inside the realm root (path-traversal / symlink escape). */
 export class InvalidItemIdError extends RealmError {
   constructor(message: string) {

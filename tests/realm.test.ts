@@ -8,7 +8,6 @@ import {
   RealmError,
   RealmNotConnectedError,
   UnsupportedQueryError,
-  UnsupportedRealmTypeError,
 } from '../src/realm/types.js';
 
 describe('FsRealmStore P0', () => {
@@ -75,9 +74,13 @@ describe('FsRealmStore P0', () => {
     expect(otherManifest.realmId).toBe(manifest.realmId);
   });
 
-  it('refuses enterprise realms and non-existent roots (P0 scope)', async () => {
+  it('connects an enterprise realm and refuses a root that does not exist', async () => {
     const store = new FsRealmStore();
-    await expect(store.connect(root, 'enterprise')).rejects.toBeInstanceOf(UnsupportedRealmTypeError);
+    const enterprise = await store.connect(root, 'enterprise');
+    expect(enterprise.type).toBe('enterprise');
+    // the type is what the store remembers, not what it assumed at connect time
+    expect(store.connections().find(c => c.realmId === enterprise.realmId)?.type).toBe('enterprise');
+
     await expect(store.connect(join(sandbox, 'nope'), 'personal')).rejects.toBeInstanceOf(RealmError);
   });
 
