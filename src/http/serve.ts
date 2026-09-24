@@ -19,7 +19,7 @@
  * invalidate every signature).
  */
 import { createRequire } from 'node:module';
-import { bootKernel } from '../state/boot.js';
+import { bootKernel, resolveDecisionConfig } from '../state/boot.js';
 import { loadRskSigner } from './rsk.js';
 import { createHttpServer } from './server.js';
 
@@ -27,6 +27,15 @@ const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
 
 async function main(): Promise<void> {
+  // T-C: build the decision backend (Jev preferred, LLM fallback) and the
+  // opt-in E1.3 judge from process env. No keys => null => rules-only kernel,
+  // identical to the pre-backend behaviour (deployment keys are operator-owned).
+  const decision = resolveDecisionConfig(process.env);
+  if (process.env.ZEUS_JUDGE_ENABLED && !decision.backend) {
+    process.stderr.write(
+      '[zeus-http] ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off\n'
+    );
+  }
   const kernel = await bootKernel({
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
     ...(process.env.ZEUS_VASSAL_SEEDS
@@ -38,7 +47,21 @@ async function main(): Promise<void> {
     dispatchAudit: entry => {
       process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
     },
+    ...(decision.backend ? { decisionBackend: decision.backend } : {}),
+    judgeEnabled: decision.judgeEnabled,
+    ...(decision.judgeThreshold !== undefined ? { judgeThreshold: decision.judgeThreshold } : {}),
+    ...(decision.allowUncalibratedJudge !== undefined
+      ? { allowUncalibratedJudge: decision.allowUncalibratedJudge }
+      : {}),
   });
+  if (decision.backend) {
+    process.stderr.write(
+      `[zeus-http] decision backend: ${decision.backendKind}/${decision.backend.model} ` +
+        `(arbitration=on, judge=${decision.judgeEnabled ? 'on' : 'off'})\n`
+    );
+  } else {
+    process.stderr.write('[zeus-http] decision backend: not configured (arbitration/judge off, rules-only)\n');
+  }
 
   if (kernel.stateFile) {
     if (kernel.restoredFromSnapshot) {

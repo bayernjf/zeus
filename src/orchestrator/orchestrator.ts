@@ -2,6 +2,7 @@ import type { TaskState } from '../a2a/types.js';
 import { arbitrateConflict } from './arbitration.js';
 import { aggregate, extractPositions } from './aggregate.js';
 import { detectConflicts } from './conflict.js';
+import { judgeDecision } from './judge.js';
 import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
@@ -37,6 +38,16 @@ export type OrchestratorOptions = {
   allowUncalibratedArbitration?: boolean;
   /** Per-call timeout for the arbitration backend. */
   arbitrationMaxWaitMs?: number;
+  /** E1.3: adversarially review a rule-concluded multi-stance decision when true. */
+  judgeEnabled?: boolean;
+  /** Confidence gate for the judge recommendation to count (default 0.8). */
+  judgeThreshold?: number;
+  /** Permit uncalibrated (LLM) judge confidence to count (default false). */
+  allowUncalibratedJudge?: boolean;
+  /** A gated high-confidence judge disagreement escalates to the driver (default true). */
+  judgeEscalateOnDisagreement?: boolean;
+  /** Per-call timeout for the judge backend. */
+  judgeMaxWaitMs?: number;
   /** H3: publish branch lifecycle + intent-finished events to the SSE hub. */
   onProgress?: (event: ProgressEvent) => void;
 };
@@ -106,6 +117,9 @@ export class Orchestrator {
     // S2: give a configured decision backend one gated chance to arbitrate the
     // split; only a still-unresolved result reaches the human driver.
     result = await this.maybeArbitrate(result);
+    // E1.3: when enabled, an independent backend adversarially reviews a
+    // rule-concluded multi-stance decision; gated disagreement re-escalates.
+    result = await this.maybeJudge(result);
 
     // Store every fan-out under its final intentId (client-supplied idempotency
     // key or server-generated id) so the driver face can read/settle intents it
@@ -183,14 +197,15 @@ export class Orchestrator {
     const branches = [...others, branch];
     const recomputed = recomputeResult(previous, branches, original.aggregation, this.now);
     const arbitrated = await this.maybeArbitrate(recomputed);
-    this.intents.set(intentId, arbitrated);
-    if (arbitrated.status === 'needs-driver') this.options.onConflict?.(arbitrated.conflicts, arbitrated);
+    const judged = await this.maybeJudge(arbitrated);
+    this.intents.set(intentId, judged);
+    if (judged.status === 'needs-driver') this.options.onConflict?.(judged.conflicts, judged);
     this.emit({
-      type: 'intent-finished', intentId, runId: arbitrated.runId, status: arbitrated.status,
-      ...(arbitrated.realmId ? { realmId: arbitrated.realmId } : {}),
+      type: 'intent-finished', intentId, runId: judged.runId, status: judged.status,
+      ...(judged.realmId ? { realmId: judged.realmId } : {}),
       at: this.now().toISOString(),
     });
-    return structuredClone(arbitrated);
+    return structuredClone(judged);
   }
 
   /** F3: cancel every non-terminal branch of an intent; terminal branches are skipped. */
@@ -310,6 +325,25 @@ export class Orchestrator {
       ...(this.options.arbitrationMaxWaitMs !== undefined
         ? { maxWaitMs: this.options.arbitrationMaxWaitMs }
         : {}),
+      now: () => this.now(),
+    });
+  }
+
+  /** E1.3: adversarially review a rule-concluded multi-stance decision, when enabled. */
+  private async maybeJudge(result: FanOutResult): Promise<FanOutResult> {
+    const backend = this.options.decisionBackend;
+    if (!backend || !this.options.judgeEnabled) return result;
+    return judgeDecision({
+      result,
+      backend,
+      ...(this.options.judgeThreshold !== undefined ? { threshold: this.options.judgeThreshold } : {}),
+      ...(this.options.allowUncalibratedJudge !== undefined
+        ? { allowUncalibrated: this.options.allowUncalibratedJudge }
+        : {}),
+      ...(this.options.judgeEscalateOnDisagreement !== undefined
+        ? { escalateOnDisagreement: this.options.judgeEscalateOnDisagreement }
+        : {}),
+      ...(this.options.judgeMaxWaitMs !== undefined ? { maxWaitMs: this.options.judgeMaxWaitMs } : {}),
       now: () => this.now(),
     });
   }

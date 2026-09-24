@@ -26,6 +26,7 @@ import type {
   FanOutRequest,
   FanOutResult,
   FanOutStatus,
+  JudgeReview,
   Position,
   SourcedEvent,
 } from './types.js';
@@ -39,6 +40,7 @@ export type ReplayStepKind =
   | 'aggregated'
   | 'conflict-detected'
   | 'backend-arbitrated'
+  | 'judge-reviewed'
   | 'driver-resolved'
   | 'intent-finished';
 
@@ -87,6 +89,7 @@ export type DecisionReplay = {
   decision: AggregatedDecision;
   conflicts: Conflict[];
   backendArbitration?: BackendArbitration;
+  judgeReview?: JudgeReview;
   driverResolution?: DriverResolution;
   /** True when the served result was itself an idempotent replay (not a fresh fan-out). */
   replayed?: boolean;
@@ -281,6 +284,14 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
     });
   }
 
+  if (result.judgeReview) {
+    push({
+      kind: 'judge-reviewed',
+      at: result.judgeReview.decidedAt,
+      detail: judgeReviewDetail(result.judgeReview),
+    });
+  }
+
   if (result.driverResolution) {
     push({
       kind: 'driver-resolved',
@@ -329,6 +340,7 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
     decision: result.decision,
     conflicts: result.conflicts,
     ...(result.backendArbitration ? { backendArbitration: result.backendArbitration } : {}),
+    ...(result.judgeReview ? { judgeReview: result.judgeReview } : {}),
     ...(result.driverResolution ? { driverResolution: result.driverResolution } : {}),
     ...(result.replayed ? { replayed: true } : {}),
     timeline,
@@ -343,6 +355,20 @@ function backendArbitrationDetail(arbitration: BackendArbitration): Record<strin
   if (arbitration.backend) detail.backend = arbitration.backend;
   if (arbitration.model) detail.model = arbitration.model;
   if (arbitration.error) detail.error = arbitration.error;
+  return detail;
+}
+
+function judgeReviewDetail(review: JudgeReview): Record<string, unknown> {
+  const detail: Record<string, unknown> = { judged: review.judged };
+  if (review.recommended !== undefined) detail.recommended = review.recommended;
+  if (review.agreesWithRule !== undefined) detail.agreesWithRule = review.agreesWithRule;
+  if (review.escalated !== undefined) detail.escalated = review.escalated;
+  if (review.confidence !== undefined) detail.confidence = review.confidence;
+  if (review.calibrated !== undefined) detail.calibrated = review.calibrated;
+  if (review.reason) detail.reason = review.reason;
+  if (review.backend) detail.backend = review.backend;
+  if (review.model) detail.model = review.model;
+  if (review.error) detail.error = review.error;
   return detail;
 }
 
@@ -423,6 +449,16 @@ export function renderReplay(replay: DecisionReplay): string {
     lines.push(
       `  backend arbitration: concluded=${arbitration.concluded} backend=${arbitration.backend ?? '?'} model=${arbitration.model ?? '?'} confidence=${arbitration.confidence ?? '?'} calibrated=${arbitration.calibrated ?? '?'}`,
     );
+  }
+  if (replay.judgeReview) {
+    const review = replay.judgeReview;
+    if (review.judged) {
+      lines.push(
+        `  judge review: recommended="${review.recommended ?? '?'}" agreesWithRule=${review.agreesWithRule} escalated=${review.escalated === true} backend=${review.backend ?? '?'} model=${review.model ?? '?'} confidence=${review.confidence ?? '?'} calibrated=${review.calibrated ?? '?'}`,
+      );
+    } else {
+      lines.push(`  judge review: not counted (${review.reason ?? 'skipped'}) backend=${review.backend ?? '?'} model=${review.model ?? '?'}`);
+    }
   }
   if (replay.driverResolution) {
     const resolution = replay.driverResolution;

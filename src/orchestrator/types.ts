@@ -47,7 +47,11 @@ export type AggregatedDecision = {
 };
 
 export type Conflict = {
-  stances: Array<{ stance: string; vassals: string[] }>;
+  /** Default 'split': vassals disagree and the rule could not conclude.
+   *  'judge-review': a gated high-confidence judge recommendation disagrees
+   *  with a rule that had already concluded (E1.3 adversarial review). */
+  kind?: 'split' | 'judge-review';
+  stances: Array<{ stance: string; vassals: string[]; summary?: string }>;
   reason: string;
 };
 
@@ -87,6 +91,8 @@ export type FanOutResult = {
   driverResolution?: DriverResolution;
   /** Set when a decision backend was consulted after the rule ended in needs-driver (S2). */
   backendArbitration?: BackendArbitration;
+  /** Set when an LLM-as-judge adversarially reviewed a rule-concluded multi-stance decision (E1.3). */
+  judgeReview?: JudgeReview;
 };
 
 /** Record of the S2 backend arbitration attempt on an unresolved split. */
@@ -98,6 +104,26 @@ export type BackendArbitration = {
   backend?: DecisionBackendKind;
   model?: string;
   error?: DecisionBackendError;
+  decidedAt: string;
+};
+
+/** Record of the E1.3 LLM-as-judge review after the rule already produced a conclusion. */
+export type JudgeReview = {
+  /** false when skipped / below the confidence gate / uncalibrated / backend failed. */
+  judged: boolean;
+  recommended?: string;
+  probabilities?: Record<string, number>;
+  confidence?: number;
+  calibrated?: boolean;
+  /** A gated recommendation equals the rule conclusion (judicial endorsement). */
+  agreesWithRule?: boolean;
+  /** A gated, high-confidence disagreement flipped the intent to needs-driver. */
+  escalated?: boolean;
+  backend?: DecisionBackendKind;
+  model?: string;
+  error?: DecisionBackendError;
+  /** Why judging did not produce a gated recommendation. */
+  reason?: 'rule-inconclusive' | 'single-stance' | 'below-threshold' | 'uncalibrated' | 'backend-failure';
   decidedAt: string;
 };
 

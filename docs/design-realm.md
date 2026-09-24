@@ -40,7 +40,8 @@ interface RealmStore {
   read(realmId: RealmId, itemId: string): Promise<unknown>;
 
   // 写：个人域默认允许；企业域写必须带驾驶员授权凭证
-  write?(realmId: RealmId, item: { itemId?: string; data: unknown; tags?: string[] }): Promise<{ itemId: string }>;
+  // v0.19 库内已落地：第三参 grant?: DriverWriteGrant（MCP 暴露时由鉴权层注入签名凭证）
+  write?(realmId: RealmId, item: { itemId?: string; data: unknown; tags?: string[] }, grant?: DriverWriteGrant): Promise<{ itemId: string }>;
 }
 
 interface RealmHit { itemId: string; tags: string[]; snippet: string; modifiedAt: string; }
@@ -63,6 +64,7 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 
 - P0：库内 `RealmStore`：`connect / manifest / search / read`，只读，personal Realm；检索为纯文件系统扫描（可替换后端）。**不启传输**，Zeus 内核同进程调用（dispatcher 的 realmHits 注入即由本层检索供给）。
 - P1：**第一件事是把 RealmStore 包成 MCP server 暴露**（streamable HTTP + 鉴权，传输形态立项时定），让 read-realm 封臣与任意 MCP 客户端经授权读取；随后做 `write` 与授权凭证、enterprise Realm。
+  - **落地进展（v0.19）**：`write` 的库内部分与授权凭证门已先行落地（不依赖 MCP 触发条件）——`FsRealmStore.write` 与 `src/realm/grant.ts` `verifyDriverWriteGrant`：personal 默认可写、readOnly 拒写、enterprise 写须绑定本域且未过期的驾驶员凭证（形状/域/有效期纯函数校验，签名与传输鉴权仍属 MCP 层 P1）；原子写、路径/symlink/扩展名/尺寸防护、写后快照与 contentDigest 一致性、审计回调齐备。**仍未做**：enterprise realm 的 connect、MCP `tools/write` 暴露与签名凭证签发。
 - P2：备份策略执行器（full / manifest-only）与漂移检测（contentDigest 对账）；检索后端按需升级（见 §6 决策与 deferred #10）。
 
 ## 6. 决策记录（2026-09-21 拍板，P0 动工前）

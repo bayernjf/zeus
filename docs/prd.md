@@ -1,6 +1,6 @@
 # Zeus 产品需求文档（PRD）
 
-> 状态：**现行 v0.17（2026-09-24，E1.6 离线决策回放器 + E10.4 本机容量基线落地）**
+> 状态：**现行 v0.20（2026-09-24，E8.3 Diary 日记与 E9.3 虚拟部门编制落地）**
 > 上游：[product-portrait.md](product-portrait.md)（愿景与设计哲学的单一事实源，本文件不复制愿景全文）。
 > 边界：本文件回答「做什么、优先级、验收标准」；「怎么建」看 `docs/design-*.md`；「做到哪」看 [handoff.md](../handoff.md)。
 > 状态图例：✅ 已落地（有测试）｜🚧 部分落地 / 有脚手架｜⬜ 未启动。
@@ -47,7 +47,7 @@
 |---|---|---|---|---|
 | E1.1 | 单意图扇出（fan-out）：按技能/域一次并行派发多个 Agent（含封臣） | P0 | ✅ | 一层 fan-out/join 已落地（`Orchestrator` 按技能/显式名单并行派发、`Promise.allSettled`、部分失败/单路超时、failed/partial/needs-driver/completed 状态判定，见 design-fan-out.md）；**S3 完整 DAG 依赖编排已落地**（`src/orchestrator/dag.ts` 纯图函数：环/重复/未知依赖校验、拓扑分层、关键路径；`dag-runner.ts` 按波次并行、上游失败则下游跳过、needs-driver 冒泡、上游产物经 resolveParams 下传，6 项测试） |
 | E1.2 | 多流合并：多路 SSE/结果合并为驾驶员单视图，保持来源可辨 | P0 | ✅ | `mergeBranches` 分支内保序、分支间按选择顺序拼接，每事件带来源 vassal/taskId/runId；缺路按 branchTimeout/失败策略归为 partial/failed。服务端 SSE 推送合并流属 E5.5 |
-| E1.3 | 多 Agent 协同决策：多方案生成、加权/投票/规则聚合为一个决策建议 | P0 | 🚧 | ✅ 确定性规则聚合 unanimous/majority/weighted 已落地，输出含各方立场/权重/理由，分裂时 conclusion:null 不臆断；多方案生成与 LLM-as-judge/对抗（S2）未做 |
+| E1.3 | 多 Agent 协同决策：多方案生成、加权/投票/规则聚合为一个决策建议 | P0 | ✅ | ✅ 确定性规则聚合 unanimous/majority/weighted 输出各方立场/权重/理由，分裂时 conclusion:null 不臆断；**LLM-as-judge 对抗复核已落地**（`src/orchestrator/judge.ts`）：规则有结论且≥2 立场后，独立决策后端复核——高置信校准同意则背书、高置信校准分歧不静默覆盖也不放行弱多数，转 needs-driver 并开 `kind:judge-review` 冲突走 E6.2 驾驶员闭环；低置信/未校准 LLM 默认不采纳/后端故障只记录不动状态；与仲裁互斥（无结论走 arbitrate，同后端不自评）；judge 记录进 E1.6 回放时间线，14 项测试。多方案生成（noul 开放生成）仍未做 |
 | E1.4 | 冲突检测与消解：识别 Agent 间结论冲突，给消解路径或升级驾驶员 | P0 | ✅ | `detectConflicts` 标记规则无法消解的多立场分裂，status=needs-driver 并经 onConflict 回调进监督台、不静默选边；**冲突拍板回写已闭环**（E6.2）；更丰富的自动消解规则 / LLM critic（S2）未做 |
 | E1.5 | 并发治理：并发上限、任务队列、超时与取消传播、幂等 | P0 | 🚧 | ✅ intentId 重放幂等（同键零出站）、cancelIntent 传播到全部非终态分支、单路超时、父子 runId 全链贯穿；并发上限/队列/背压未做（deferred #9，待 ≥3 封臣压测） |
 | E1.6 | 决策可追溯：每个决策可回放参与 Agent、输入、立场、聚合过程 | P0 | ✅ | FanOutResult 记录各分支、positions、decision.rule/reason/margin、sourced 事件与分支 runId；**独立离线回放器已落地**（`src/orchestrator/replay.ts`：纯只读函数按合并流重建确定性时间线，含输入/参与方/立场/聚合/冲突/后端仲裁/驾驶员决议，replaySnapshot 从持久化快照批量回放，renderReplay 出人读文本；记录损坏 fail-loud，8 项测试） |
@@ -73,7 +73,7 @@
 | E3.2 | 扫描式 search + read | P0 | ✅ | 文本白名单/剪枝/1MiB 上限/symlink 拒绝；路径穿越双检拒绝 |
 | E3.3 | contentDigest 基线 | P0 | ✅ | 全量指纹稳定（顺序无关），供备份与漂移对账 |
 | E3.4 | Realm MCP server 正式暴露（streamable HTTP + 鉴权） | P1 | 🚧 stdio | stdio 壳已落地（root/connect 不出协议）；正式触发：read-realm 封臣出现 |
-| E3.5 | write 与驾驶员授权凭证 | P1 | ⬜ | personal 默认可写；enterprise 写须授权凭证并审计 |
+| E3.5 | write 与驾驶员授权凭证 | P1 | 🚧 | **库内 write 已落地**（`FsRealmStore.write` + `src/realm/grant.ts`：personal 默认可写、readOnly 连接拒写、enterprise 写须 `DriverWriteGrant` 经 `verifyDriverWriteGrant` 校验形状/绑定域/有效期；tmp+rename 原子写、延续路径穿越/symlink/文本扩展名/1MiB 防护、写后 connect 快照与 `contentDigest`/itemCount 一致、可选审计回调；22 项测试）。**仍待 P1**：enterprise realm 的 connect（当前 connect 拒 enterprise）与 MCP write tool 暴露，随 E3.4 read-realm 封臣触发 |
 | E3.6 | enterprise Realm 多租户 | P1 | ⬜ | 组织/部门/个人分级，与个人域默认二极管隔离 |
 | E3.7 | 备份策略执行器 + 漂移检测 | P2 | ✅ | `src/vault/cli.ts` 零依赖执行器（`dist/vault/cli.js` / `npm run vault`）：`build`（密封 manifest-only 图）、`check`（L0 重连现盘对账 ok/changed/missing/unexpected，只读）、`backup`（密封 map+full bundle 两文件）、`restore`（digest 绑定校验后跨位写盘并复验）；密钥经 `ZEUS_VAULT_PASSPHRASE`（scrypt）或 `--key-file`（32 字节/hex），退出码 0 健康/1 错误/2 漂移/3 root 不可达供调度器判断；12 项 tests/vault-cli.test.ts + 编译产物全链路冒烟。**调度不内置**（design-vault §9：由外部 cron/systemd timer 触发，示例见 deployment.md §7） |
 | E3.8 | 检索后端升级（倒排/向量） | P2 | ⬜ | SearchBackend 接口不变；阈值见 deferred #10 |
@@ -125,7 +125,7 @@
 |---|---|---|---|---|
 | E8.1 | Map 藏宝图：加密 manifest + 恢复协议 | P1 | ✅ | `src/vault`：buildVault 从 Realm 连接出图，marks 只存 itemId + sha256 指纹（**正文零泄漏**有断言）；seal/open 走 AES-256-GCM（scrypt 口令派生或 raw 32-byte key），密钥与图分离；原地 restoreDryRun 重连校验。**按图真实恢复走通**，见 tests/vault.test.ts（20 项） |
 | E8.2 | 藏宝图备份与备份思路 | P1 | ✅ | 图经 seal 加密静态保存、可复制；packFull 产出 manifest-only / full 两档（full 带加密内容包）；restoreFromBundle 在目录被清空或换新位置时写盘恢复并复验，恢复流程经测试演练。自动/异地/云备份为非目标（design-vault §9） |
-| E8.3 | Diary 日记：记忆叙事化备份 | P2 | ⬜ | 可回溯、可导出，底层走 Realm 接口 |
+| E8.3 | Diary 日记：记忆叙事化备份 | P2 | ✅ | **已落地**（`src/diary`，[design-diary](design-diary.md) v0.1）：buildDiary 纯函数按日历天（UTC/IANA 时区）分桶、确定性排序、renderEventContent 只呈现不臆造（string / ClaimContent / 对象 / 空内容四态、超长截断标注）、可选纳入事实、算内容 digest；每行锚 eventId、provenance 覆盖全部来源，混 realm 拒绝；persistDiary 经 Realm.write 写 `diary/YYYY-MM-DD.md`（幂等）、exportDiary 稳定 JSON。19 项测试含真实 realm 往返 |
 | E8.4 | 传承（dead-man switch + 密钥托管） | P3 | ⬜ | 触发可靠、可撤销；法律框架齐备（deferred #2/#3） |
 
 ### E9. 企业组织层
@@ -134,7 +134,7 @@
 |---|---|---|---|---|
 | E9.1 | Mentor Agent：文化/业务/职责带教 | P2 | ⬜ | 新员工首日无人工介入获得岗位上下文 |
 | E9.2 | 上岗即用流程 | P2 | ⬜ | 账号→授权→Mentor→首日任务全链路 |
-| E9.3 | 虚拟部门编制（Team）与结果责任 | P2 | ⬜ | 编制可视，任务追到 Agent 与驾驶员 |
+| E9.3 | 虚拟部门编制（Team）与结果责任 | P2 | ✅ | **已落地**（`src/org`，[design-org](design-org.md) v0.1）：Department 不可变、单 lead、成员按 agentId 唯一（createDepartment/assignMember/removeMember/setLead）；buildOrgChart/renderOrgMarkdown 编制可视；traceAccountability 把真实 FanOutResult 追到执行 Agent、部门 lead（去重）、拍板 driver，无编制 Agent 标 unassigned 不丢弃。15 项测试。编制接 KernelSnapshot 留后 |
 | E9.4 | 外部 Agent 信任分级与沙箱 | P2 | ⬜ | 首个矩阵外 Agent 接入前完成（deferred #5） |
 
 ### E10. 平台工程
@@ -185,3 +185,6 @@
 | v0.15 | 2026-09-23 | Vault 藏宝图与恢复协议落地（[design-vault](design-vault.md) v0.1）：新增 `src/vault`——buildVault 出图只存引用+逐 item 指纹（正文零泄漏）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、L0 原地 restoreDryRun 重连校验与漂移检测、L1 packFull 加密内容包 + restoreFromBundle 跨位写盘恢复（FsRestoreSink）；Realm 增只读 `entries()` 枚举；E8.1/E8.2 升 ✅、E3.7 升 🚧；新增 20 项测试，全量 310 绿（42 文件） |
 | v0.16 | 2026-09-23 | E3.7 备份策略执行器落地：新增 `src/vault/cli.ts` 零依赖 CLI（build/check/backup/restore，密钥经口令 env 或 key-file，退出码 0/1/2/3），`npm run vault` 入口；deployment.md 增 §7 备份恢复与 cron 示例（调度不内置，design-vault §9 边界不变）；12 项 CLI 测试 + 编译产物全链路冒烟（出图→篡改 exit 2→全包→销毁→跨位恢复内容一致→错钥 exit 1）；E3.7 升 ✅；全量 322 绿（43 文件） |
 | v0.17 | 2026-09-24 | **E1.6 离线决策回放器**（`src/orchestrator/replay.ts`：replayDecision/replayDecisions/replaySnapshot/renderReplay，纯离线只读、确定性时间线、损坏 fail-loud，8 项测试）升 ✅；**E10.4 本机容量基线**（`scripts/bench-capacity.mjs` + `npm run bench:capacity` + docs/capacity-baseline.md：真实回环 HTTP mock 封臣群，扇出宽度/并发意图两场景，≤16 扇出墙钟≈单封臣、128 在途分支零丢失，明确 mock 近似与真机重测触发条件）升 ✅；全量 330 绿（44 文件） |
+| v0.18 | 2026-09-24 | **E1.3 LLM-as-judge 对抗复核接决策后端**：新增 `src/orchestrator/judge.ts` `judgeDecision` 纯函数（规则有结论后独立复核：同意背书、高置信分歧升级 judge-review 冲突走驾驶员闭环、低置信/未校准/故障只记录），OrchestratorOptions 增 judge* 开关组（默认关），fanOut/resumeBranch 接线，与 S2 仲裁互斥；Conflict 增 `kind:split|judge-review`、FanOutResult 增 `judgeReview`；E1.6 回放器增 judge-reviewed 时间线节点；index 公共导出；新增 14 项测试，全量 344 绿（45 文件）；E1.3 升 ✅（多方案 noul 开放生成仍待后续） |
+| v0.19 | 2026-09-24 | **E3.5 Realm write 与驾驶员授权凭证（库内部分）**：`FsRealmStore.write`（personal 默认允许、readOnly 拒、enterprise 须凭证；字符串/JSON 序列化、自动 itemId、tmp+rename 原子写、路径/symlink/扩展名/1MiB 防护、写后快照与 contentDigest 一致、审计回调），新增 `src/realm/grant.ts` `verifyDriverWriteGrant` 纯函数（missing/malformed/wrong-realm/expired 门），RealmStore 接口补 write、新增 UnauthorizedRealmWriteError/UnsupportedWriteError，index 公共导出；enterprise connect 与 MCP write tool 仍 P1；新增 22 项测试，全量 366 绿（46 文件）；E3.5 ⬜→🚧 |
+| v0.20 | 2026-09-24 | **E8.3 Diary 日记 + E9.3 虚拟部门编制落地**：`src/diary` 把记忆事件按天叙事成可回溯（每行锚 eventId）、可经 Realm.write 落盘 / 稳定 JSON 导出的日记（19 测试，design-diary）；`src/org` 建立部门编制（单 lead、成员唯一、不可变）与 traceAccountability 责任链（执行 Agent → 部门 lead → 拍板驾驶员，无编制标 unassigned，15 测试，design-org）；全量 411 绿（49 文件），E8.3/E9.3 升 ✅ |

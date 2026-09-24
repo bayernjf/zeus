@@ -123,6 +123,8 @@ export type {
 } from './orchestrator/replay.js';
 export { arbitrateConflict } from './orchestrator/arbitration.js';
 export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
+export { judgeDecision } from './orchestrator/judge.js';
+export type { JudgeDecisionInput } from './orchestrator/judge.js';
 export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
 export type {
   MetricsSnapshot,
@@ -151,8 +153,8 @@ export {
   KERNEL_STATE_VERSION,
 } from './state/kernel-state.js';
 export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
-export { bootKernel } from './state/boot.js';
-export type { KernelBoot, KernelBootOptions } from './state/boot.js';
+export { bootKernel, resolveDecisionConfig } from './state/boot.js';
+export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig } from './state/boot.js';
 export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
 export type {
   FanOutRequest,
@@ -169,6 +171,7 @@ export type {
   CancelBranchResult,
   DriverResolution,
   BackendArbitration,
+  JudgeReview,
 } from './orchestrator/types.js';
 
 // --- Decision backend (model-agnostic port; Jev decision-model + LLM adapters) ---
@@ -272,6 +275,10 @@ export type {
   RealmHit,
   SearchQuery,
   RealmItem,
+  RealmWriteItem,
+  RealmWriteResult,
+  DriverWriteGrant,
+  GrantVerification,
 } from './realm/types.js';
 export {
   RealmError,
@@ -279,7 +286,11 @@ export {
   UnsupportedRealmTypeError,
   InvalidItemIdError,
   UnsupportedQueryError,
+  UnauthorizedRealmWriteError,
+  UnsupportedWriteError,
 } from './realm/types.js';
+export { verifyDriverWriteGrant } from './realm/grant.js';
+export type { RealmWriteAuditEntry, FsRealmStoreOptions } from './realm/store.js';
 
 // --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
 export {
@@ -335,3 +346,40 @@ export type {
   VaultInventory,
   RestoreSink,
 } from './vault/types.js';
+
+// --- Diary (E8.3 narrative memory) ---
+export { buildDiary } from './diary/build.js';
+export { renderDiaryMarkdown } from './diary/markdown.js';
+export { persistDiary, exportDiary } from './diary/persist.js';
+export {
+  renderEventContent,
+  dayBucket,
+  formatTime,
+  renderObject,
+  NO_CONTENT,
+} from './diary/render.js';
+export { DiaryError, DiaryBoundaryError, DiaryUnsupportedError } from './diary/types.js';
+export type {
+  DiaryEntry,
+  DiaryLine,
+  DiaryFact,
+  DiaryId,
+  BuildDiaryOptions,
+  PersistDiaryOptions,
+} from './diary/types.js';
+
+// --- Org virtual departments (E9.3 establishment & accountability) ---
+export { createDepartment, assignMember, removeMember, setLead, slug } from './org/department.js';
+export { buildOrgChart, renderOrgMarkdown } from './org/chart.js';
+export type { OrgChartView } from './org/chart.js';
+export { traceAccountability } from './org/accountability.js';
+export { OrgError } from './org/types.js';
+export type {
+  Department,
+  OrgMember,
+  OrgRole,
+  CreateDepartmentInput,
+  AssignMemberInput,
+  AccountabilityChain,
+  AccountabilityNode,
+} from './org/types.js';

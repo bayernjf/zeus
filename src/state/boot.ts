@@ -19,6 +19,9 @@ import {
   type KernelComponents,
   type KernelSnapshot,
 } from './kernel-state.js';
+import type { DecisionBackend } from '../decision/types.js';
+import { createJevBackendFromEnv } from '../decision/decision-model.js';
+import { createLlmBackendFromEnv } from '../decision/llm.js';
 
 /**
  * E5.3 process boot assembly (design-http-transport §2.2/§2.3: the long-running
@@ -68,6 +71,19 @@ export type KernelBootOptions = {
   memoryAudit?: (entry: MemoryAuditEntry) => void;
   /** Audit sink for MCP connector lifecycle events. */
   connectorAudit?: (entry: ConnectorAuditEntry) => void;
+  /**
+   * E1.2/E1.3 decision backend wired into the orchestrator. When present the S2
+   * critic arbitration path is live (rule-inconclusive fan-outs consult it);
+   * when omitted the kernel runs rules-only exactly as before. serve.ts builds
+   * this from process env via resolveDecisionConfig(). Tests inject a mock.
+   */
+  decisionBackend?: DecisionBackend | null;
+  /** E1.3 adversarial judge. Defaults to false; only meaningful with a backend. */
+  judgeEnabled?: boolean;
+  judgeThreshold?: number;
+  allowUncalibratedJudge?: boolean;
+  judgeEscalateOnDisagreement?: boolean;
+  judgeMaxWaitMs?: number;
 };
 
 const noop = (): void => {};
@@ -120,6 +136,16 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         consolidateFinishedMemory(event);
       }
     },
+    ...(options.decisionBackend ? { decisionBackend: options.decisionBackend } : {}),
+    ...(options.judgeEnabled ? { judgeEnabled: true } : {}),
+    ...(options.judgeThreshold !== undefined ? { judgeThreshold: options.judgeThreshold } : {}),
+    ...(options.allowUncalibratedJudge !== undefined
+      ? { allowUncalibratedJudge: options.allowUncalibratedJudge }
+      : {}),
+    ...(options.judgeEscalateOnDisagreement !== undefined
+      ? { judgeEscalateOnDisagreement: options.judgeEscalateOnDisagreement }
+      : {}),
+    ...(options.judgeMaxWaitMs !== undefined ? { judgeMaxWaitMs: options.judgeMaxWaitMs } : {}),
   });
   const components: KernelComponents = {
     registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger,
@@ -195,4 +221,51 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       await store.save(collectKernelState(components));
     },
   };
+}
+
+
+/**
+ * Process-env decision wiring for the long-running service (T-C / Active work 15
+ * T4 boundary: "process assembly not done; needs deployment env/keys").
+ *
+ * Backend precedence: the dedicated decision model (Jev, ZEUS_DECISION_*) wins,
+ * then a generic OpenAI-compatible LLM (ZEUS_LLM_*). With neither fully set the
+ * result is `backend: null` and the kernel degrades to rules-only — booting with
+ * no keys must reproduce the pre-backend behaviour rather than crash.
+ *
+ * The E1.3 judge is opt-in (ZEUS_JUDGE_ENABLED) and silently stays disabled when
+ * there is no backend to consult; arbitration itself activates as soon as a
+ * backend is present (it has no separate enable switch in the orchestrator).
+ */
+export type ProcessDecisionConfig = {
+  backend: DecisionBackend | null;
+  /** Which factory produced the backend, for an unambiguous boot log line. */
+  backendKind: 'decision-model' | 'llm' | null;
+  judgeEnabled: boolean;
+  judgeThreshold?: number;
+  allowUncalibratedJudge?: boolean;
+};
+
+const ENV_TRUE = new Set(['1', 'true', 'yes', 'on']);
+function envFlag(value: string | undefined): boolean {
+  return value !== undefined && ENV_TRUE.has(value.trim().toLowerCase());
+}
+
+export function resolveDecisionConfig(env: NodeJS.ProcessEnv = process.env): ProcessDecisionConfig {
+  const jev = createJevBackendFromEnv(env);
+  const llm = jev ? null : createLlmBackendFromEnv(env);
+  const backend = jev ?? llm;
+  const backendKind: ProcessDecisionConfig['backendKind'] = jev ? 'decision-model' : llm ? 'llm' : null;
+
+  // A judge request without a backend cannot run; keep it off rather than let
+  // the orchestrator treat every review as a backend failure.
+  const judgeEnabled = envFlag(env.ZEUS_JUDGE_ENABLED) && backend !== null;
+
+  const config: ProcessDecisionConfig = { backend, backendKind, judgeEnabled };
+  if (env.ZEUS_JUDGE_THRESHOLD) {
+    const threshold = Number(env.ZEUS_JUDGE_THRESHOLD);
+    if (Number.isFinite(threshold)) config.judgeThreshold = threshold;
+  }
+  if (envFlag(env.ZEUS_JUDGE_ALLOW_UNCALIBRATED)) config.allowUncalibratedJudge = true;
+  return config;
 }
