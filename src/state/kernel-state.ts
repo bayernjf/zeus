@@ -122,7 +122,10 @@ export class FileKernelStateStore {
     };
     await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;
-    await writeFile(tmp, JSON.stringify(snapshot, null, 2), 'utf8');
+    // The snapshot holds connector bearer tokens and the user's memory facts in
+    // plain JSON, so it is written owner-readable only; renaming over a file that
+    // an older build left world-readable tightens it on the next save.
+    await writeFile(tmp, JSON.stringify(snapshot, null, 2), { encoding: 'utf8', mode: 0o600 });
     await rename(tmp, this.filePath);
   }
 

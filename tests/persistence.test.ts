@@ -1,4 +1,4 @@
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,7 @@ import {
   applyKernelState,
   collectKernelState,
   KernelStateError,
+  KERNEL_STATE_VERSION,
   type KernelComponents,
 } from '../src/state/kernel-state.js';
 
@@ -193,11 +194,22 @@ describe('E5.3 FileKernelStateStore', () => {
     await store.save({ registry: [], oversight: [], orchestrator: { intents: [], requests: [] } });
 
     // corrupt JSON
-    const { writeFile } = await import('node:fs/promises');
     await writeFile(file, '{ not json');
     await expect(store.load()).rejects.toThrow(KernelStateError);
 
     await writeFile(file, JSON.stringify({ version: 999, registry: [], oversight: [], orchestrator: {} }));
     await expect(store.load()).rejects.toThrow(/version/);
+  });
+
+  it('keeps the snapshot owner-readable, tightening a file an older build left open', async () => {
+    const file = join(dir, 'state.json');
+    await writeFile(file, '{"version":1}');
+    await chmod(file, 0o644);
+
+    const store = new FileKernelStateStore(file);
+    await store.save({ registry: [], oversight: [], orchestrator: { intents: [], requests: [] } });
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // still readable by its owner, i.e. the round trip is unaffected
+    expect(await store.load()).toMatchObject({ version: KERNEL_STATE_VERSION });
   });
 });
