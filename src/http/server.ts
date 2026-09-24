@@ -10,6 +10,7 @@ import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
+import type { OrgRegistry } from '../org/registry.js';
 
 /**
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
@@ -47,6 +48,8 @@ export type HttpDeps = {
   metrics?: ConcurrencyMetrics;
   /** H3: per-intent progress events for the SSE stream. */
   progressHub?: ProgressHub;
+  /** H2 (E9.3): department establishment chart and staffing. */
+  orgRegistry?: OrgRegistry;
 };
 
 export type StartOptions = {
@@ -331,6 +334,59 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     if (deps.metrics) {
       app.get('/api/metrics', { preHandler: requireBearer }, async () => deps.metrics!.snapshot());
     }
+
+    if (deps.orgRegistry) {
+      // E9.3: read the org chart (sorted, serializable establishment view).
+      app.get('/api/org/chart', { preHandler: requireBearer }, async () => ({
+        departments: deps.orgRegistry!.chart(),
+      }));
+
+      // E9.3: establish a department.
+      app.post('/api/org/departments', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as { name?: unknown; mission?: unknown };
+        if (typeof body.name !== 'string' || body.name.trim() === '') {
+          return error(reply, 400, 'invalid_request', 'body.name is required');
+        }
+        if (typeof body.mission !== 'string' || body.mission.trim() === '') {
+          return error(reply, 400, 'invalid_request', 'body.mission is required');
+        }
+        try {
+          const dept = deps.orgRegistry!.createDepartment({ name: body.name, mission: body.mission });
+          return reply.code(201).send(dept);
+        } catch (e) {
+          return mapOrgError(reply, e);
+        }
+      });
+
+      // E9.3: assign (or lead) an agent into a department.
+      app.post('/api/org/departments/:id/members', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { agentId?: unknown; role?: unknown; title?: unknown; skills?: unknown };
+        if (typeof body.agentId !== 'string' || body.agentId.trim() === '') {
+          return error(reply, 400, 'invalid_request', 'body.agentId is required');
+        }
+        if (body.role !== undefined && body.role !== 'lead' && body.role !== 'member') {
+          return error(reply, 400, 'invalid_request', 'body.role must be lead | member');
+        }
+        if (body.title !== undefined && typeof body.title !== 'string') {
+          return error(reply, 400, 'invalid_request', 'body.title must be a string');
+        }
+        if (body.skills !== undefined && !(Array.isArray(body.skills) && body.skills.every(s => typeof s === 'string'))) {
+          return error(reply, 400, 'invalid_request', 'body.skills must be an array of strings');
+        }
+        try {
+          const dept = deps.orgRegistry!.assignMember(id, {
+            agentId: body.agentId,
+            ...(body.role ? { role: body.role as 'lead' | 'member' } : {}),
+            ...(typeof body.title === 'string' ? { title: body.title } : {}),
+            ...(body.skills ? { skills: body.skills as string[] } : {}),
+          });
+          return reply.code(201).send(dept);
+        } catch (e) {
+          return mapOrgError(reply, e);
+        }
+      });
+    }
   }
 
   return app;
@@ -369,6 +425,15 @@ function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
   if (/already (approved|rejected|decided)|only needs-driver|is (approved|rejected|completed|partial|failed|canceled)/i.test(detail)) {
     return error(reply, 409, 'conflict', detail);
   }
+  return error(reply, 400, 'invalid_request', detail);
+}
+
+/** Map OrgError to HTTP status: unknown department → 404, duplicate/exists →
+ *  409, anything else (bad name/mission/slug) → 400. */
+function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  const detail = thrown instanceof Error ? thrown.message : String(thrown);
+  if (/unknown department/i.test(detail)) return error(reply, 404, 'not_found', detail);
+  if (/already|exists/i.test(detail)) return error(reply, 409, 'conflict', detail);
   return error(reply, 400, 'invalid_request', detail);
 }
 
