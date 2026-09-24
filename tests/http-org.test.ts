@@ -116,4 +116,90 @@ describe('E9.3 org HTTP', () => {
     const noAuth = await app.inject({ method: 'GET', url: '/api/org/chart' });
     expect(noAuth.statusCode).toBe(401);
   });
+
+  it('moves the lead to an existing member and the old lead stays as a member', async () => {
+    const app = await server();
+    await app.inject({
+      method: 'POST', url: '/api/org/departments', headers: AUTH,
+      payload: { name: 'Engineering', mission: 'build' },
+    });
+    await app.inject({
+      method: 'POST', url: '/api/org/departments/dept:engineering/members', headers: AUTH,
+      payload: { agentId: 'agent-a', role: 'lead' },
+    });
+    await app.inject({
+      method: 'POST', url: '/api/org/departments/dept:engineering/members', headers: AUTH,
+      payload: { agentId: 'agent-b' },
+    });
+
+    const moved = await app.inject({
+      method: 'POST', url: '/api/org/departments/dept:engineering/lead', headers: AUTH,
+      payload: { agentId: 'agent-b' },
+    });
+    expect(moved.statusCode).toBe(200);
+    const dept = await moved.json();
+    expect(dept.lead).toBe('agent-b');
+    expect(dept.members.map((m: { agentId: string }) => m.agentId).sort()).toEqual(['agent-a', 'agent-b']);
+    expect(dept.members.find((m: { agentId: string }) => m.agentId === 'agent-a').role).toBe('member');
+  });
+
+  it('establishes and staffs a department named in Chinese, through its derived id', async () => {
+    const app = await server();
+    const created = await app.inject({
+      method: 'POST', url: '/api/org/departments', headers: AUTH,
+      payload: { name: '研发部', mission: '交付与稳定性' },
+    });
+    expect(created.statusCode).toBe(201);
+    const { departmentId } = await created.json();
+    expect(departmentId).toMatch(/^dept:[a-f0-9]{8}$/);
+
+    const staffed = await app.inject({
+      method: 'POST', url: `/api/org/departments/${departmentId}/members`, headers: AUTH,
+      payload: { agentId: 'pr-helper', role: 'lead', title: '研发主管' },
+    });
+    expect(staffed.statusCode).toBe(201);
+
+    const chart = await app.inject({ method: 'GET', url: '/api/org/chart', headers: AUTH });
+    const dept = (await chart.json()).departments.find((d: { departmentId: string }) => d.departmentId === departmentId);
+    expect(dept).toMatchObject({ name: '研发部', lead: 'pr-helper', headcount: 1 });
+  });
+
+  it('strikes a post, and refuses to strike or promote someone off the roster', async () => {
+    const app = await server();
+    await app.inject({
+      method: 'POST', url: '/api/org/departments', headers: AUTH,
+      payload: { name: 'Engineering', mission: 'build' },
+    });
+    await app.inject({
+      method: 'POST', url: '/api/org/departments/dept:engineering/members', headers: AUTH,
+      payload: { agentId: 'agent-a' },
+    });
+
+    const removed = await app.inject({
+      method: 'DELETE', url: '/api/org/departments/dept:engineering/members/agent-a', headers: AUTH,
+    });
+    expect(removed.statusCode).toBe(200);
+    expect((await removed.json()).members).toEqual([]);
+
+    const again = await app.inject({
+      method: 'DELETE', url: '/api/org/departments/dept:engineering/members/agent-a', headers: AUTH,
+    });
+    expect(again.statusCode).toBe(404);
+
+    const promoteStranger = await app.inject({
+      method: 'POST', url: '/api/org/departments/dept:engineering/lead', headers: AUTH,
+      payload: { agentId: 'nobody' },
+    });
+    expect(promoteStranger.statusCode).toBe(404);
+
+    const unknownDept = await app.inject({
+      method: 'DELETE', url: '/api/org/departments/dept:nope/members/agent-a', headers: AUTH,
+    });
+    expect(unknownDept.statusCode).toBe(404);
+
+    const noAgent = await app.inject({
+      method: 'POST', url: '/api/org/departments/dept:engineering/lead', headers: AUTH, payload: {},
+    });
+    expect(noAgent.statusCode).toBe(400);
+  });
 });

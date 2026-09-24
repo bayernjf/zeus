@@ -10,13 +10,15 @@
  *
  * Honest scope: these are mock-vassal loopback numbers. They bound the kernel's
  * fan-out/merge/aggregation overhead and Node's client concurrency, not real
- * vassal capacity (LLM latency, network RTT, auth). Back-pressure / bounded
- * queues remain deferred (#9, gated on >=3 real vassals).
+ * vassal capacity (LLM latency, network RTT, auth). Scenario E measures the
+ * E1.5 concurrency gate itself; which vassal an overflow branch should be
+ * re-routed to remains deferred (#9, gated on >=3 real vassals).
  *
  * Usage:
  *   npm run build && node scripts/bench-capacity.mjs           # human table
  *   node scripts/bench-capacity.mjs --json                     # machine JSON
  *   node scripts/bench-capacity.mjs --delay-ms 50 --reps 7
+ *   node scripts/bench-capacity.mjs --cap 16                   # one gate level only
  */
 import http from 'node:http';
 import os from 'node:os';
@@ -40,8 +42,29 @@ const FARM_SIZE = argNumber('--farm', 64);
 const widths = [1, 2, 4, 8, 16, 32, 64].filter(w => w <= FARM_SIZE);
 const concurrencyLevels = [1, 4, 8, 16, 32];
 const cancelLevels = [4, 8, 16, 32];
+// Scenario E measures the E1.5 concurrency gate. It is opt-in with --cap
+// because it adds 4 x 128 branches of load inside the same process as the mock
+// farm, and that farm shares one event loop with the kernel: at default reps it
+// pushes tail branches past the 20x think-delay timeout. Run `--cap` (or
+// `--cap 16`) when you specifically want the gate numbers.
+const capRequested = args.includes('--cap');
+const capArg = capRequested ? args[args.indexOf('--cap') + 1] : undefined;
+const capLevels = ['0', 'off', 'unlimited', 'inf', 'infinity'].includes(capArg)
+  ? [Number.POSITIVE_INFINITY]
+  : capArg && Number(capArg) > 0
+    ? [Number(capArg)]
+    : [Number.POSITIVE_INFINITY, 32, 16, 8];
 const PER_INTENT = 4;
 const FACE_TOKEN = 'bench-token';
+/**
+ * Stall guard, not an SLO: a branch that never settles would hang the harness
+ * forever, so each one is abandoned after this long. It must stay far above any
+ * latency the table reports, otherwise the watchdog becomes the measurement -
+ * at 20x a 50ms think delay it tripped on a contiguous tail of branches while
+ * the mock farm and the kernel shared one process under load. Reported wall
+ * clock and percentiles come from the samples, never from this number.
+ */
+const BRANCH_WATCHDOG_MS = delayMs * 40;
 
 function round(n, digits = 1) {
   const f = 10 ** digits;
@@ -195,7 +218,7 @@ function farmEntries(port, count) {
   });
 }
 
-function buildKernel(entries) {
+function buildKernel(entries, options = {}) {
   const registry = new VassalRegistry();
   registry.importState(entries);
   const metrics = new ConcurrencyMetrics();
@@ -206,6 +229,7 @@ function buildKernel(entries) {
     metrics,
     newIntentId: () => `intent-${++intentSeq}`,
     newRunId: () => `run-${++runSeq}`,
+    ...options,
   });
   return { orchestrator, metrics, registry };
 }
@@ -236,7 +260,7 @@ async function postIntent(base, names) {
       realm: 'personal',
       vassals: names,
       aggregation: { kind: 'unanimous' },
-      branchTimeoutMs: delayMs * 20,
+      branchTimeoutMs: BRANCH_WATCHDOG_MS,
     }),
   });
   if (!response.ok) throw new Error(`face intent HTTP ${response.status}: ${await response.text()}`);
@@ -257,11 +281,13 @@ async function benchFanoutWidth(port) {
         params: {},
         realm: 'personal',
         aggregation: { kind: 'unanimous' },
-        branchTimeoutMs: delayMs * 20,
+        branchTimeoutMs: BRANCH_WATCHDOG_MS,
       });
       samples.push(performance.now() - t0);
       if (result.status !== 'completed') {
-        throw new Error(`width ${width}: expected completed, got ${result.status}`);
+        const bad = result.branches.filter(b => !b.ok)
+          .map(b => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
+        throw new Error(`width ${width}: expected completed, got ${result.status}; branches: ${bad.join(', ') || 'none'}`);
       }
     }
     const s = stats(samples);
@@ -274,14 +300,25 @@ async function benchFanoutWidth(port) {
   return rows;
 }
 
-async function benchConcurrentIntents(port) {
-  const rows = [];
-  for (const concurrency of concurrencyLevels) {
-    const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE));
-    const latencies = [];
-    const t0 = performance.now();
+/**
+ * Drive `intents` simultaneous intents of PER_INTENT branches each through one
+ * orchestrator, and report wall clock and per-intent latency. Queue depth is
+ * only sampled when asked for: it is zero without a cap, and polling is extra
+ * work inside the window being measured.
+ */
+async function runConcurrentIntents(orchestrator, metrics, intents, options = {}) {
+  const latencies = [];
+  let peakQueueDepth = 0;
+  const sampler = options.sampleQueue
+    ? setInterval(() => {
+        const depth = metrics.queueDepthNow();
+        if (depth > peakQueueDepth) peakQueueDepth = depth;
+      }, 5)
+    : null;
+  const t0 = performance.now();
+  try {
     await Promise.all(
-      Array.from({ length: concurrency }, async (_, c) => {
+      Array.from({ length: intents }, async (_, c) => {
         // Spread intents across the farm; vassals may be reused, like real life.
         const names = Array.from({ length: PER_INTENT }, (_, k) => `vassal-${(c * PER_INTENT + k) % FARM_SIZE}`);
         const start = performance.now();
@@ -291,16 +328,28 @@ async function benchConcurrentIntents(port) {
           params: {},
           realm: 'personal',
           aggregation: { kind: 'unanimous' },
-          branchTimeoutMs: delayMs * 20,
+          branchTimeoutMs: BRANCH_WATCHDOG_MS,
         });
         latencies.push(performance.now() - start);
         if (result.status !== 'completed') {
-          throw new Error(`concurrency ${concurrency}: expected completed, got ${result.status}`);
+          const label = options.label ?? `concurrency ${intents}`;
+          const bad = result.branches.filter(b => !b.ok)
+            .map(b => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
+          throw new Error(`${label}: expected completed, got ${result.status}; ${bad.length} bad branch(es): ${bad.slice(0, 6).join(', ') || 'none'}`);
         }
       }),
     );
-    const wallMs = performance.now() - t0;
-    const snapshot = metrics.snapshot();
+  } finally {
+    clearInterval(sampler);
+  }
+  return { latencies, wallMs: performance.now() - t0, peakQueueDepth, snapshot: metrics.snapshot() };
+}
+
+async function benchConcurrentIntents(port) {
+  const rows = [];
+  for (const concurrency of concurrencyLevels) {
+    const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE));
+    const { latencies, wallMs, snapshot } = await runConcurrentIntents(orchestrator, metrics, concurrency);
     rows.push({
       concurrentIntents: concurrency,
       branchesPerIntent: PER_INTENT,
@@ -310,6 +359,50 @@ async function benchConcurrentIntents(port) {
       latency: stats(latencies),
       maxInFlightBranches: snapshot.maxInFlight,
       finishedBranches: snapshot.finished,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Scenario E: the E1.5 concurrency gate under scenario B's heaviest load
+ * (32 intents x 4 branches = 128 branches), run behind decreasing caps. This is
+ * where the cost of bounding in-flight work gets measured rather than assumed:
+ * wall clock and per-intent tail latency are compared against the uncapped run,
+ * and the gate itself is checked (in-flight never exceeded the cap, nothing
+ * lost, nothing refused while the wait line was unbounded).
+ */
+async function benchConcurrencyCap(port) {
+  const intents = concurrencyLevels[concurrencyLevels.length - 1];
+  const totalBranches = intents * PER_INTENT;
+  const rows = [];
+  for (const cap of capLevels) {
+    const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE), {
+      ...(Number.isFinite(cap) ? { maxConcurrentBranches: cap } : {}),
+    });
+    const { latencies, wallMs, peakQueueDepth, snapshot } = await runConcurrentIntents(
+      orchestrator, metrics, intents,
+      { sampleQueue: true, label: `scenario E cap ${Number.isFinite(cap) ? cap : 'unbounded'}` },
+    );
+    const bound = Number.isFinite(cap) ? cap : totalBranches;
+    if (snapshot.maxInFlight > bound) {
+      throw new Error(`cap ${cap}: observed ${snapshot.maxInFlight} in flight, above the bound ${bound}`);
+    }
+    if (snapshot.finished !== totalBranches) {
+      throw new Error(`cap ${cap}: finished ${snapshot.finished} of ${totalBranches} branches`);
+    }
+    if (snapshot.failed !== 0) {
+      throw new Error(`cap ${cap}: ${snapshot.failed} branches failed under an unbounded wait line`);
+    }
+    rows.push({
+      cap: Number.isFinite(cap) ? cap : 'unbounded',
+      totalBranches,
+      wallMs: round(wallMs),
+      throughputBranchesPerSecond: round((totalBranches / wallMs) * 1000, 1),
+      latency: stats(latencies),
+      maxInFlightBranches: snapshot.maxInFlight,
+      peakQueueDepth,
+      failedBranches: snapshot.failed,
     });
   }
   return rows;
@@ -468,19 +561,21 @@ async function main() {
         params: {},
         realm: 'personal',
         aggregation: { kind: 'unanimous' },
-        branchTimeoutMs: delayMs * 20,
+        branchTimeoutMs: BRANCH_WATCHDOG_MS,
       });
       if (warm.status !== 'completed') throw new Error('warm-up fan-out failed');
     }
 
     const fanoutWidth = await benchFanoutWidth(port);
     const concurrentIntents = await benchConcurrentIntents(port);
+    const concurrencyCap = capRequested ? await benchConcurrencyCap(port) : [];
     const httpFace = await benchHttpFace(port);
     const cancellation = await benchCancellation();
     const report = {
       environment,
       fanoutWidth,
       concurrentIntents,
+      concurrencyCap,
       httpFace,
       cancellation: cancellation.rows,
       cancelRequestsObserved: cancellation.cancelRequestsObserved,
@@ -516,6 +611,21 @@ async function main() {
         { label: 'max in-flight', width: 14, get: r => r.maxInFlightBranches },
       ],
     );
+    if (concurrencyCap.length > 0) {
+      printTable(
+        `E. Concurrency gate (same 128-branch load as B, behind decreasing maxConcurrentBranches caps, ${delayMs}ms think)`,
+        concurrencyCap,
+        [
+          { label: 'cap', width: 11, get: r => r.cap },
+          { label: 'wall ms', width: 10, get: r => r.wallMs },
+          { label: 'br/s', width: 9, get: r => r.throughputBranchesPerSecond },
+          { label: 'lat p50', width: 10, get: r => r.latency.p50 },
+          { label: 'lat p95', width: 10, get: r => r.latency.p95 },
+          { label: 'max inflight', width: 13, get: r => r.maxInFlightBranches },
+          { label: 'peak queue', width: 12, get: r => r.peakQueueDepth },
+        ],
+      );
+    }
     printTable(
       `C. H2 driver-face throughput (real loopback HTTP + bearer + JSON, ${PER_INTENT} branches/intent, ${delayMs}ms think)`,
       httpFace,

@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { basename, dirname, join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AuditLogError,
   jsonlAuditSink,
@@ -33,6 +33,74 @@ describe('audit sinks', () => {
     sink({ ts: 't1', vassal: 'a', decision: 'dispatched' });
     revokeAuditBridge(sink)('a', 't2');
     expect(log.map(entry => entry.decision)).toEqual(['dispatched', 'vassal-revoked']);
+  });
+});
+
+describe('jsonlAuditSink disk ceiling', () => {
+  const entry = (ts: string): Parameters<ReturnType<typeof jsonlAuditSink>>[0] => ({
+    ts, vassal: 'loom', decision: 'dispatched',
+  });
+  const sizes = (path: string) => {
+    const active = statSync(path).size;
+    const generations: string[] = [];
+    for (const name of readdirSync(dirname(path))) {
+      if (name.startsWith(basename(path) + '.')) generations.push(name);
+    }
+    return { active, generations: generations.sort() };
+  };
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'zeus-audit-rotate-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('never lets the active file grow past the ceiling, and retires the oldest first', () => {
+    const path = join(dir, 'audit.jsonl');
+    const maxBytes = 400;
+    const sink = jsonlAuditSink(path, { maxBytes, keep: 2 });
+    for (let i = 0; i < 40; i += 1) sink(entry(`t${String(i).padStart(3, '0')}`));
+
+    expect(sizes(path).active).toBeLessThanOrEqual(maxBytes);
+    // keep=2 means at most .1 and .2 - a third generation would defeat the ceiling
+    expect(sizes(path).generations).toEqual(['audit.jsonl.1', 'audit.jsonl.2']);
+    // total on disk stays inside the documented bound: ceiling * (keep + 1)
+    const total = sizes(path).generations.reduce(
+      (sum, name) => sum + statSync(join(dir, name)).size, sizes(path).active);
+    expect(total).toBeLessThanOrEqual(maxBytes * 3);
+
+    // the newest records survived in the active file...
+    const tail = readAuditLog(path);
+    expect(tail[tail.length - 1].ts).toBe('t039');
+    // ...the earliest ones left the active file...
+    expect(tail.some(e => e.ts === 't000')).toBe(false);
+    // ...and with keep=2 the oldest generation is gone entirely: the ceiling is
+    // a real bound on disk, not just a rollover that keeps everything forever.
+    const gen1 = readAuditLog(`${path}.1`);
+    const gen2 = readAuditLog(`${path}.2`);
+    expect(gen2[0].ts < gen1[0].ts).toBe(true);
+    expect(gen1[gen1.length - 1].ts < tail[0].ts).toBe(true);
+    const everything = [...gen2, ...gen1, ...tail].map(e => e.ts);
+    expect(everything).not.toContain('t000');
+    expect(everything).toContain('t039');
+    // the first retained record is later than the very first written one
+    expect(gen2[0].ts > 't000').toBe(true);
+  });
+
+  it('does not rotate when the ceiling is lifted', () => {
+    const path = join(dir, 'audit.jsonl');
+    const sink = jsonlAuditSink(path, { maxBytes: Number.POSITIVE_INFINITY, keep: 1 });
+    for (let i = 0; i < 30; i += 1) sink(entry(`t${i}`));
+    expect(existsSync(`${path}.1`)).toBe(false);
+    expect(readAuditLog(path)).toHaveLength(30);
+  });
+
+  it('rejects a ceiling it could not honour', () => {
+    const path = join(dir, 'audit.jsonl');
+    expect(() => jsonlAuditSink(path, { maxBytes: 0 })).toThrow(/maxBytes must be >= 1/);
+    expect(() => jsonlAuditSink(path, { keep: 0 })).toThrow(/keep must be a whole number/);
+    expect(() => jsonlAuditSink(path, { keep: 1.5 })).toThrow(/keep must be a whole number/);
   });
 });
 

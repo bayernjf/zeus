@@ -204,6 +204,20 @@ export class MemoryStore {
   }
 
   /**
+   * Table sizes for the operator face. exportState() clones the whole fact
+   * source, which is too heavy for a polling endpoint, so this counts only.
+   */
+  counts(): { events: number; facts: number; retractions: number; corrections: number; realms: number } {
+    return {
+      events: this.events.length,
+      facts: [...this.factsByRealm.values()].reduce((sum, facts) => sum + facts.length, 0),
+      retractions: this.retractions.length,
+      corrections: this.corrections.length,
+      realms: this.factsByRealm.size,
+    };
+  }
+
+  /**
    * Record a driver correction: the named authors produced a claim the driver
    * rejected. Each correction permanently lowers the author's score; this is
    * the "被纠错" feedback the metrics failure rate cannot see.

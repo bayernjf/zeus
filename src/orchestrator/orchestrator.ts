@@ -163,6 +163,15 @@ export class Orchestrator {
     return request ? structuredClone(request) : undefined;
   }
 
+  /**
+   * Table sizes for the operator face. exportState() deep-clones every stored
+   * intent, which is far too heavy for something a dashboard may poll, so this
+   * reports counts only.
+   */
+  counts(): { intents: number; requests: number } {
+    return { intents: this.intents.size, requests: this.requests.size };
+  }
+
   /** E6.3: find the intent whose branch run matches a task-input escalation.
    *  Branch runIds are `${parentRunId}:${vassal}`, so the escalation's runId
    *  alone is enough to locate the stored intent. */

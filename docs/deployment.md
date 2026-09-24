@@ -21,6 +21,8 @@
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含连接器 bearer token 与记忆事实，且以 uid 1000 落卷） |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
+| `ZEUS_AUDIT_MAX_BYTES` | `67108864`（64MiB） | 活动审计文件的轮转阈值；`0`/`off`/`unlimited` = 不轮转（**需自行接 logrotate，否则迟早写满盘**） |
+| `ZEUS_AUDIT_KEEP` | `5` | 轮转后保留的旧代数（`<file>.1` … `<file>.<keep>`）；磁盘总上界 = `maxBytes × (keep+1)` |
 | `ZEUS_MAX_CONCURRENT_BRANCHES` | 未设置（=无界） | E1.5 进程内在途分支上界（跨意图；一个进程一个 orchestrator）。设了就限流，溢出分支按 `branchQueueLimit` 排队或被拒；**值非法直接拒启**（被悄悄忽略的上限看起来像保护存在） |
 | `ZEUS_BRANCH_QUEUE_LIMIT` | 未设置（=等待无限） | 允许排队等槽的分支数；`0` = 不排队，槽满即拒（泄压优先于排队） |
 | `ZEUS_RSK_KEY` | 未设置 | RSK 私钥 PEM 全文（Ed25519，PKCS#8） |
@@ -157,6 +159,7 @@ WantedBy=multi-user.target
 - [ ] `NODE_ENV=production`，启动日志无 ephemeral 告警
 - [ ] `ZEUS_INTERNAL_TOKEN` 为长随机串（或明确不挂载内部路由）
 - [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含连接器 token 与记忆事实明文）：`ls -l /data/kernel-state.json`
+- [ ] `ZEUS_AUDIT_FILE` 已配置（否则审计只活在 stderr 里，重启即丢）；若把 `ZEUS_AUDIT_MAX_BYTES` 设成不轮转，确认已接外部 logrotate
 - [ ] 端口默认只绑 loopback，TLS 在反向代理终止
 - [ ] `/healthz` 与 `/api/roster/public` 封签经独立通道验签通过
 - [ ] 真机验收 #6（标准 A2A 客户端打封臣）与 Zeus↔loom 联调已过（见 handoff Active work）

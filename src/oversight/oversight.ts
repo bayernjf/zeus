@@ -1,7 +1,7 @@
 import type { A2AEvent } from '../a2a/types.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import type { Conflict } from '../orchestrator/types.js';
-import type { CancelTaskFn, Escalation, EscalationStatus, OversightAuditEntry } from './types.js';
+import type { CancelTaskFn, Escalation, EscalationKind, EscalationStatus, OversightAuditEntry } from './types.js';
 
 const FALLBACK_REASON = 'vassal requests human input';
 
@@ -135,9 +135,16 @@ export class OversightDesk {
     return structuredClone(escalation);
   }
 
-  list(status?: EscalationStatus): Escalation[] {
+  /**
+   * Queue view, optionally narrowed by status and/or kind. The kind filter
+   * matters to the driver because a missing-parameter request and a memory
+   * dispute arrive in one queue but demand completely different answers.
+   */
+  list(status?: EscalationStatus, kind?: EscalationKind): Escalation[] {
     const all = [...this.escalations.values()].map(entry => structuredClone(entry));
-    return status ? all.filter(entry => entry.status === status) : all;
+    return all.filter(entry =>
+      (status === undefined || entry.status === status) &&
+      (kind === undefined || entry.kind === kind));
   }
 
   /** E5.3: serializable snapshot of the escalation queue. */

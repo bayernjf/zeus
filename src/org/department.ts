@@ -10,16 +10,34 @@ import type {
   AssignMemberInput,
 } from './types.js';
 import { OrgError } from './types.js';
+import { sha256Hex } from '../util/crypto.js';
 
-/** Lowercase slug: non [a-z0-9] runs fold to a single dash. */
-export function slug(name: string): string {
-  const s = name
+/** ASCII slug form: non [a-z0-9] runs fold to a single dash. */
+function asciiSlug(name: string): string {
+  return name
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+/** Strict slug for callers that need a readable one; empty is a defect here. */
+export function slug(name: string): string {
+  const s = asciiSlug(name);
   if (!s) throw new OrgError('Department name yields no valid slug');
   return s;
+}
+
+/**
+ * Stable, URL-safe department id. The ASCII slug is preferred because it reads
+ * well in a path, but a name in any non-Latin script - the normal case for this
+ * product - produces no slug at all, and refusing to establish a department
+ * because its name is Chinese is not a rule anyone asked for. Those names fall
+ * back to a short digest; the display name is stored verbatim either way.
+ */
+export function departmentIdFor(name: string): string {
+  const s = asciiSlug(name);
+  return `dept:${s || sha256Hex(name).slice(0, 8)}`;
 }
 
 export function createDepartment(
@@ -33,7 +51,7 @@ export function createDepartment(
   return {
     format: 'zeus-department',
     version: 1,
-    departmentId: `dept:${slug(name)}`,
+    departmentId: departmentIdFor(name),
     name,
     mission,
     members: [],

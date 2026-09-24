@@ -93,6 +93,26 @@ describe('memory HTTP read face', () => {
     const res = await app.inject({ method: 'GET', url: '/api/memory/integrity', headers: AUTH });
     expect(await res.json()).toEqual({ ok: true, violations: [] });
   });
+
+  it('replays one run: its events plus the facts whose provenance cites them', async () => {
+    const { app } = await setup();
+    const res = await app.inject({
+      method: 'GET', url: `/api/memory/replay?realmId=${REALM}&runId=run-evt-1`, headers: AUTH,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = await res.json();
+    expect(body.events.map((e: MemoryEvent) => e.eventId)).toEqual(['evt-1']);
+    // the fact drew on evt-1, so it belongs to this run's replay
+    expect(body.facts.map((f: FactRecord) => f.subject)).toEqual(['pr-helper']);
+
+    const missingRun = await app.inject({
+      method: 'GET', url: `/api/memory/replay?realmId=${REALM}&runId=run-zzz`, headers: AUTH,
+    });
+    expect(await missingRun.json()).toEqual({ events: [], facts: [] });
+
+    const noRun = await app.inject({ method: 'GET', url: `/api/memory/replay?realmId=${REALM}`, headers: AUTH });
+    expect(noRun.statusCode).toBe(400);
+  });
 });
 
 describe('memory HTTP right to be forgotten', () => {

@@ -87,6 +87,8 @@ describe('E1.5 bounded fan-out', () => {
 
     expect(gated.maxActive).toBe(2);
     expect(metrics.snapshot()).toMatchObject({ inFlight: 2, queueDepth: 4 });
+    // the cheap accessor the capacity harness polls must agree with the snapshot
+    expect(metrics.queueDepthNow()).toBe(4);
 
     await gated.drain();
     const result = await running;
