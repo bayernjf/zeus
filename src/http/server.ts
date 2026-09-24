@@ -17,6 +17,12 @@ import { DuplicateSkillError, SkillNotFoundError } from '../skills/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
 import type { CompetencyCheck, MentorshipStatus } from '../skills/mentor.js';
 import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
+import { SkillValidationError } from '../skills/validate-spec.js';
+import type { ConnectorRegistry } from '../mcp/connectors.js';
+import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
+import type { DecisionBackendKind } from '../decision/types.js';
+import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
+import type { AuditDecision } from '../dispatch/dispatcher.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { RealmStore } from '../realm/types.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
@@ -43,6 +49,16 @@ const ESCALATION_STATUSES: EscalationStatus[] = ['pending', 'approved', 'rejecte
 const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
 const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
 const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
+const CONNECTOR_STATUSES: ConnectorStatus[] = ['declared', 'connected', 'revoked'];
+const AUDIT_DECISIONS: AuditDecision[] = [
+  'dispatched',
+  'refused-realm-policy',
+  'refused-unknown-vassal',
+  'refused-revoked',
+  'vassal-revoked',
+  'dispatch-failed',
+  'sla-ack-breached',
+];
 
 export type HttpDeps = {
   registry: VassalRegistry;
@@ -65,6 +81,12 @@ export type HttpDeps = {
   skillRegistry?: SkillRegistry;
   /** H2 (E2.5): mentor-commissioned skill transfer ledger. */
   mentorshipLedger?: MentorshipLedger;
+  /** H2 (E7): MCP connector declarations, connect and revoke. */
+  connectorRegistry?: ConnectorRegistry;
+  /** H2: the decision layer this process resolved at boot. */
+  decisionStatus?: DecisionStatus;
+  /** H2 (E4.7): JSONL dispatch + governance audit log to expose read-only. */
+  auditFile?: string;
   /** H2 (E9.3): department establishment chart, staffing and accountability. */
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
@@ -76,6 +98,20 @@ export type HttpDeps = {
 export type StartOptions = {
   host?: string;
   port?: number;
+};
+
+/**
+ * How the process resolved its decision layer at boot. Reported as
+ * configuration, not measurement: it says which backend the kernel will ask and
+ * which gates apply, which until now was only visible as one stderr line.
+ */
+export type DecisionStatus = {
+  configured: boolean;
+  kind?: DecisionBackendKind;
+  model?: string;
+  /** S2 arbitration activates with a backend; no separate enable switch. */
+  arbitration: { enabled: boolean };
+  judge: { enabled: boolean; threshold?: number; allowUncalibrated?: boolean };
 };
 
 export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance> {
@@ -867,6 +903,126 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
     }
+
+    if (deps.connectorRegistry) {
+      // E7: the connector face. Declarations are the minimum-privilege boundary,
+      // so the driver can see what was declared, attempt the handshake and revoke
+      // — but never read back the token a connector presents upstream.
+      app.get('/api/connectors', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { status?: unknown };
+        if (query.status !== undefined && !CONNECTOR_STATUSES.includes(query.status as ConnectorStatus)) {
+          return error(reply, 400, 'invalid_request', `query.status must be one of ${CONNECTOR_STATUSES.join(', ')}`);
+        }
+        return {
+          connectors: deps.connectorRegistry!
+            .list(query.status as ConnectorStatus | undefined)
+            .map(redactConnector),
+        };
+      });
+
+      app.get('/api/connectors/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const record = deps.connectorRegistry!.get(id);
+        if (!record) return error(reply, 404, 'not_found', `unknown connector: ${id}`);
+        return redactConnector(record);
+      });
+
+      // Declare takes the token in — that is the one place it is written, and the
+      // response never echoes it.
+      app.post('/api/connectors', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          id?: unknown; name?: unknown; endpoint?: unknown; permissions?: unknown; token?: unknown;
+        };
+        if (!isNonEmptyString(body.id)) {
+          return error(reply, 400, 'invalid_request', 'body.id is required');
+        }
+        if (!isNonEmptyString(body.name)) {
+          return error(reply, 400, 'invalid_request', 'body.name is required');
+        }
+        if (!isNonEmptyString(body.endpoint)) {
+          return error(reply, 400, 'invalid_request', 'body.endpoint is required');
+        }
+        if (!(Array.isArray(body.permissions) && body.permissions.every(c => typeof c === 'string'))) {
+          return error(reply, 400, 'invalid_request', 'body.permissions must be an array of permission claims');
+        }
+        if (body.token !== undefined && !isNonEmptyString(body.token)) {
+          return error(reply, 400, 'invalid_request', 'body.token must be a string');
+        }
+        try {
+          const record = deps.connectorRegistry!.declare({
+            id: body.id,
+            name: body.name,
+            endpoint: body.endpoint,
+            permissions: body.permissions as string[],
+            ...(isNonEmptyString(body.token) ? { token: body.token } : {}),
+          });
+          return reply.code(201).send(redactConnector(record));
+        } catch (e) {
+          return mapConnectorError(reply, e, 400);
+        }
+      });
+
+      // Connect runs the MCP handshake. A connector that cannot be reached or
+      // negotiated with is a bad gateway — the upstream failed, not the request.
+      app.post('/api/connectors/:id/connect', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        try {
+          const record = await deps.connectorRegistry!.connect(id);
+          return redactConnector(record);
+        } catch (e) {
+          return mapConnectorError(reply, e, 502);
+        }
+      });
+
+      app.delete('/api/connectors/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        try {
+          return redactConnector(deps.connectorRegistry!.revoke(id));
+        } catch (e) {
+          return mapConnectorError(reply, e, 400);
+        }
+      });
+    }
+
+    if (deps.decisionStatus) {
+      app.get('/api/decision', { preHandler: requireBearer }, async () => deps.decisionStatus);
+    }
+
+    if (deps.auditFile) {
+      // E4.7: read the dispatch + governance audit trail back from the JSONL the
+      // process appends to. Oldest first, newest kept when a limit trims.
+      app.get('/api/audit', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as {
+          runId?: unknown; vassal?: unknown; decision?: unknown; limit?: unknown;
+        };
+        if (query.decision !== undefined && !AUDIT_DECISIONS.includes(query.decision as AuditDecision)) {
+          return error(reply, 400, 'invalid_request', `query.decision must be one of ${AUDIT_DECISIONS.join(', ')}`);
+        }
+        if (query.runId !== undefined && !isNonEmptyString(query.runId)) {
+          return error(reply, 400, 'invalid_request', 'query.runId must be a string');
+        }
+        if (query.vassal !== undefined && !isNonEmptyString(query.vassal)) {
+          return error(reply, 400, 'invalid_request', 'query.vassal must be a string');
+        }
+        const limit = query.limit === undefined ? undefined : parsePositiveInt(query.limit);
+        if (query.limit !== undefined && limit === undefined) {
+          return error(reply, 400, 'invalid_request', 'query.limit must be a positive integer');
+        }
+        try {
+          const entries = readAuditLog(deps.auditFile!, {
+            ...(isNonEmptyString(query.runId) ? { runId: query.runId } : {}),
+            ...(isNonEmptyString(query.vassal) ? { vassal: query.vassal } : {}),
+            ...(query.decision !== undefined ? { decision: query.decision as AuditDecision } : {}),
+            ...(limit !== undefined ? { limit } : {}),
+          });
+          return { file: deps.auditFile, entries };
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { file: deps.auditFile, entries: [] };
+          if (e instanceof AuditLogError) return error(reply, 500, 'audit_unreadable', e.message);
+          throw e;
+        }
+      });
+    }
   }
 
   return app;
@@ -972,6 +1128,27 @@ function isCheckList(value: unknown): boolean {
     isNonEmptyString(check.criterion) &&
     typeof check.passed === 'boolean' &&
     typeof check.score === 'number');
+}
+
+/** Map ConnectorRegistry / MCP client throws to HTTP status: unknown id → 404,
+ *  duplicate declaration or a revoked connector → 409, out-of-vocabulary
+ *  permission claims → 400, anything else → `unreachable` (502 when a handshake
+ *  against a real endpoint failed, 400 elsewhere). */
+function mapConnectorError(reply: FastifyReply, thrown: unknown, unreachable: 400 | 502): FastifyReply {
+  const detail = thrown instanceof Error ? thrown.message : String(thrown);
+  if (thrown instanceof SkillValidationError) return error(reply, 400, 'invalid_request', detail);
+  if (/not found/i.test(detail)) return error(reply, 404, 'not_found', detail);
+  if (/already declared|is revoked/i.test(detail)) return error(reply, 409, 'conflict', detail);
+  return error(reply, unreachable, unreachable === 502 ? 'bad_gateway' : 'invalid_request', detail);
+}
+
+/** A connector record carries the bearer token it presents upstream. The driver
+ *  face reports that a token exists, never the token. */
+function redactConnector(
+  record: ConnectorRecord,
+): Omit<ConnectorRecord, 'token'> & { hasToken: boolean } {
+  const { token, ...rest } = record;
+  return { ...rest, hasToken: token !== undefined };
 }
 
 /** Map SkillRegistry / MentorshipLedger throws to HTTP status: unknown id → 404,

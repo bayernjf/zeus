@@ -6,6 +6,7 @@ import { judgeDecision } from './judge.js';
 import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
+import { Semaphore, type SlotRelease } from './semaphore.js';
 import type { DecisionBackend } from '../decision/types.js';
 import type { ProgressEvent } from './progress.js';
 import type {
@@ -50,6 +51,14 @@ export type OrchestratorOptions = {
   judgeMaxWaitMs?: number;
   /** H3: publish branch lifecycle + intent-finished events to the SSE hub. */
   onProgress?: (event: ProgressEvent) => void;
+  /**
+   * E1.5: cap on branches in flight across every intent this orchestrator
+   * serves (the long-running assembly has one orchestrator, so this is the
+   * process-wide bound). Unset = unbounded, which is the historical behaviour.
+   */
+  maxConcurrentBranches?: number;
+  /** Branches allowed to wait for a slot before one is refused. Default unbounded. */
+  branchQueueLimit?: number;
 };
 
 export class UnknownIntentError extends Error {}
@@ -69,12 +78,18 @@ export type OrchestratorSnapshot = {
 export class Orchestrator {
   private intents = new Map<string, FanOutResult>();
   private requests = new Map<string, FanOutRequest>();
+  private readonly slots: Semaphore | null;
 
   constructor(
     private lookup: TargetLookup,
     private dispatcher: DispatchPort,
     private options: OrchestratorOptions = {}
-  ) {}
+  ) {
+    const cap = options.maxConcurrentBranches;
+    this.slots = cap === undefined || !Number.isFinite(cap)
+      ? null
+      : new Semaphore(cap, options.branchQueueLimit ?? Number.POSITIVE_INFINITY);
+  }
 
   async fanOut(request: FanOutRequest): Promise<FanOutResult> {
     // F2 idempotency: a known intent replays its stored result with zero dispatch.
@@ -255,9 +270,31 @@ export class Orchestrator {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const metrics = this.options.metrics;
     metrics?.enqueue();
+
+    // E1.5: with a cap configured the branch waits here, which is what turns
+    // queue depth from a permanent 0 into a real signal.
+    let release: SlotRelease;
+    try {
+      release = await this.acquireSlot();
+    } catch (error) {
+      metrics?.dequeue();
+      return {
+        vassal,
+        runId: branchRunId,
+        ok: false,
+        events: [],
+        reason: error instanceof Error ? error.message : 'branch refused',
+      };
+    }
+
     metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
     this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
-    const branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
+    let branch: BranchOutcome;
+    try {
+      branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
+    } finally {
+      release();
+    }
     metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
     this.emit({
       type: 'branch-ended', intentId, runId: branchRunId, vassal,
@@ -265,6 +302,11 @@ export class Orchestrator {
       at: this.now().toISOString(),
     });
     return branch;
+  }
+
+  /** Immediately-resolved lease when no cap is configured. */
+  private acquireSlot(): Promise<SlotRelease> {
+    return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
   }
 
   private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0): Promise<BranchOutcome> {

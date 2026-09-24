@@ -98,8 +98,8 @@ function brokenHandler(_req: any, _body: any, res: any) {
 }
 
 // These tests spawn a real node subprocess; under full parallel load cold start
-// can exceed vitest's default 5s timeout. Give headroom above the script's own 10s guard.
-describe('acceptance #6 standards-only client script', { timeout: 20000 }, () => {
+// can exceed the 5s default (see vitest.config.ts for the global floor).
+describe('acceptance #6 standards-only client script', () => {
   let healthy: { server: Server; url: string };
   let broken: { server: Server; url: string };
 

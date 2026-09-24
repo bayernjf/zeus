@@ -10,7 +10,6 @@ import {
   RealmNotConnectedError,
   UnauthorizedRealmWriteError,
   UnsupportedQueryError,
-  UnsupportedRealmTypeError,
   UnsupportedWriteError,
 } from './types.js';
 
@@ -53,10 +52,12 @@ type StoredRealm = {
 };
 
 /**
- * P0 Realm store (design-realm.md §5): in-process, read-only, personal realms.
- * Search runs over the connect-time snapshot (index semantics, consistent
- * with contentDigest); read() reads disk live (recovery protocol must return
- * current bytes). No transport — P1 wraps this as an MCP server.
+ * Filesystem Realm store (design-realm.md §5): in-process, personal and
+ * enterprise realms. Search runs over the connect-time snapshot (index
+ * semantics, consistent with contentDigest); read() reads disk live (the
+ * recovery protocol must return current bytes). Writes are E3.5: personal by
+ * default, enterprise only behind a driver grant. No transport — the MCP face
+ * wraps this (design-realm §6.1).
  */
 export class FsRealmStore implements RealmStore {
   private realms = new Map<string, StoredRealm>();
@@ -65,9 +66,6 @@ export class FsRealmStore implements RealmStore {
   constructor(private readonly options: FsRealmStoreOptions = {}) {}
 
   async connect(root: string, type: RealmType, opts: { readOnly?: boolean } = {}): Promise<RealmManifest> {
-    if (type !== 'personal') {
-      throw new UnsupportedRealmTypeError(`realm type '${type}' is P1; P0 supports personal realms only`);
-    }
     let absRoot: string;
     try {
       absRoot = await realpath(root);
@@ -95,7 +93,7 @@ export class FsRealmStore implements RealmStore {
     };
 
     this.roots.set(absRoot, realmId);
-    this.realms.set(realmId, { realmId, type: 'personal', root: absRoot, readOnly: opts.readOnly ?? false, manifest, items });
+    this.realms.set(realmId, { realmId, type, root: absRoot, readOnly: opts.readOnly ?? false, manifest, items });
     return structuredClone(manifest);
   }
 

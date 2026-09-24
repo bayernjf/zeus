@@ -19,7 +19,7 @@
  * invalidate every signature).
  */
 import { createRequire } from 'node:module';
-import { bootKernel, resolveDecisionConfig } from '../state/boot.js';
+import { bootKernel, resolveConcurrencyConfig, resolveDecisionConfig } from '../state/boot.js';
 import { loadRskSigner } from './rsk.js';
 import { createHttpServer } from './server.js';
 
@@ -31,6 +31,9 @@ async function main(): Promise<void> {
   // opt-in E1.3 judge from process env. No keys => null => rules-only kernel,
   // identical to the pre-backend behaviour (deployment keys are operator-owned).
   const decision = resolveDecisionConfig(process.env);
+  // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
+  // because a silently ignored cap would read as protection that is not there.
+  const concurrency = resolveConcurrencyConfig(process.env);
   if (process.env.ZEUS_JUDGE_ENABLED && !decision.backend) {
     process.stderr.write(
       '[zeus-http] ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off\n'
@@ -38,12 +41,19 @@ async function main(): Promise<void> {
   }
   const kernel = await bootKernel({
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
+    ...(concurrency.maxConcurrentBranches !== undefined
+      ? { maxConcurrentBranches: concurrency.maxConcurrentBranches }
+      : {}),
+    ...(concurrency.branchQueueLimit !== undefined
+      ? { branchQueueLimit: concurrency.branchQueueLimit }
+      : {}),
     ...(process.env.ZEUS_VASSAL_SEEDS
       ? { vassalSeeds: process.env.ZEUS_VASSAL_SEEDS.split(',').map(url => url.trim()).filter(Boolean) }
       : {}),
     ...(process.env.ZEUS_REALM_ROOTS
       ? { realmRoots: process.env.ZEUS_REALM_ROOTS.split(',').map(root => root.trim()).filter(Boolean) }
       : {}),
+    ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
     dispatchAudit: entry => {
       process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
     },
@@ -62,6 +72,10 @@ async function main(): Promise<void> {
   } else {
     process.stderr.write('[zeus-http] decision backend: not configured (arbitration/judge off, rules-only)\n');
   }
+  process.stderr.write(
+    `[zeus-http] branch concurrency: ${concurrency.maxConcurrentBranches ?? 'unbounded'}` +
+      `${concurrency.branchQueueLimit !== undefined ? `, queue ${concurrency.branchQueueLimit}` : ', queue unbounded'}\n`
+  );
 
   if (kernel.stateFile) {
     if (kernel.restoredFromSnapshot) {
@@ -89,6 +103,22 @@ async function main(): Promise<void> {
     orgRegistry: kernel.orgRegistry,
     memoryStore: kernel.memoryStore,
     realmStore: kernel.realmStore,
+    connectorRegistry: kernel.connectorRegistry,
+    ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
+    // Same facts the boot log line prints, now readable over the bearer face.
+    decisionStatus: {
+      configured: decision.backend !== null,
+      ...(decision.backendKind ? { kind: decision.backendKind } : {}),
+      ...(decision.backend ? { model: decision.backend.model } : {}),
+      arbitration: { enabled: decision.backend !== null },
+      judge: {
+        enabled: decision.judgeEnabled,
+        ...(decision.judgeThreshold !== undefined ? { threshold: decision.judgeThreshold } : {}),
+        ...(decision.allowUncalibratedJudge !== undefined
+          ? { allowUncalibrated: decision.allowUncalibratedJudge }
+          : {}),
+      },
+    },
   });
   const port = Number(process.env.ZEUS_PORT ?? 8787);
   const host = process.env.ZEUS_HOST ?? '127.0.0.1';

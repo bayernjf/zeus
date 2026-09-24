@@ -1,6 +1,6 @@
 # Realm 数据域设计（D1 契约先行）
 
-> 状态：**现行（契约 v0.2，2026-09-21：传输层与检索实现已拍板，见 §6）**。P0 实现直接落 `src/realm/`（库内只读 personal Realm），不另起实现文档；MCP 暴露在 P1。产品哲学依据见 [product-portrait.md](product-portrait.md) §2.1/§2.2。
+> 状态：**现行（契约 v0.3，2026-09-25：write 与企业域 connect 已落库内，见 §5 进展；MCP 暴露仍 P1）**。P0 实现直接落 `src/realm/`（库内 RealmStore），不另起实现文档；MCP 暴露在 P1。产品哲学依据见 [product-portrait.md](product-portrait.md) §2.1/§2.2。
 
 ## 0. 一句话
 
@@ -62,9 +62,11 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 
 ## 5. 交付节奏
 
-- P0：库内 `RealmStore`：`connect / manifest / search / read`，只读，personal Realm；检索为纯文件系统扫描（可替换后端）。**不启传输**，Zeus 内核同进程调用（dispatcher 的 realmHits 注入即由本层检索供给）。
+- P0（已落，后续批次扩到写与企业域）：库内 `RealmStore`：`connect / manifest / search / read`；检索为纯文件系统扫描（可替换后端）。**不启传输**，Zeus 内核同进程调用（dispatcher 的 realmHits 注入即由本层检索供给）。
 - P1：**第一件事是把 RealmStore 包成 MCP server 暴露**（streamable HTTP + 鉴权，传输形态立项时定），让 read-realm 封臣与任意 MCP 客户端经授权读取；随后做 `write` 与授权凭证、enterprise Realm。
-  - **落地进展（v0.19）**：`write` 的库内部分与授权凭证门已先行落地（不依赖 MCP 触发条件）——`FsRealmStore.write` 与 `src/realm/grant.ts` `verifyDriverWriteGrant`：personal 默认可写、readOnly 拒写、enterprise 写须绑定本域且未过期的驾驶员凭证（形状/域/有效期纯函数校验，签名与传输鉴权仍属 MCP 层 P1）；原子写、路径/symlink/扩展名/尺寸防护、写后快照与 contentDigest 一致性、审计回调齐备。**仍未做**：enterprise realm 的 connect、MCP `tools/write` 暴露与签名凭证签发。
+  - **落地进展（v0.19）**：`write` 的库内部分与授权凭证门已先行落地（不依赖 MCP 触发条件）——`FsRealmStore.write` 与 `src/realm/grant.ts` `verifyDriverWriteGrant`：personal 默认可写、readOnly 拒写、enterprise 写须绑定本域且未过期的驾驶员凭证（形状/域/有效期纯函数校验，签名与传输鉴权仍属 MCP 层 P1）；原子写、路径/symlink/扩展名/尺寸防护、写后快照与 contentDigest 一致性、审计回调齐备。
+  - **落地进展（2026-09-25，E3.5 收口）**：`connect` 不再拒 enterprise，且**存储的类型如实记录**（此前 `realms.set` 把 type 硬编码成 `personal`，于是企业域写闸门在真实 store 上永远走不到、凭证门只在纯函数测试里被 mock 打过桩——是死代码）。现在企业域 connect→写授权→写后读回→审计记 `grantedBy` 全链路有测试；`readOnly` 连接即使持有效凭证仍拒写。二极管制仍然只在写侧与派发/决策/记忆层落地：本层不存在跨 realm 写入路径（每次读写都以单一 realmId 定址），所以"企业域→个人域禁止"在 RealmStore 层无执行点，其真实约束在 Dispatcher `dataRealms` / decision `prepareState` / MemoryStore 边界。**仍未做**：MCP `tools/write` 暴露与签发（签名）凭证。
+  - **仍未立项**：E3.6 enterprise 多租户（组织/部门/个人分级）——本层只有 personal / enterprise 两型标记，没有租户层级；`connect(root, 'enterprise')` 打开的是"企业域可挂载 + 写须授权"，不等于多租户隔离。
 - P2：备份策略执行器（full / manifest-only）与漂移检测（contentDigest 对账）；检索后端按需升级（见 §6 决策与 deferred #10）。
 
 ## 6. 决策记录（2026-09-21 拍板，P0 动工前）
@@ -101,3 +103,4 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 | --- | --- | --- |
 | v0.1 | 2026-09-21 | 初稿：五条核心不变量、RealmStore 接口契约、数据二极管执行点、藏宝图关系、P0–P2 节奏 |
 | v0.2 | 2026-09-21 | 拍板传输层（MCP server 为唯一对外传输，P0 库内先行、P1 包 MCP，不做 HTTP API）与检索实现（P0 文件系统扫描 + 可替换后端，阈值触发升级 → deferred #10） |
+| v0.3 | 2026-09-25 | §5 交付节奏补写实现进展：write + 凭证门（v0.19）；**enterprise connect 放开且存储类型如实记录**（修掉 `realms.set` 硬编码 personal 导致 E3.5 写闸门成死代码的问题），E3.5 收口、MCP write 暴露与签发凭证仍待 E3.4 触发；明确 §3 "企业域→个人域禁止" 在 RealmStore 层无执行点（本层无跨 realm 写路径），约束落在 Dispatcher / decision / MemoryStore；E3.6 多租户分级显式区别于"企业域可挂载"，仍未立项 |

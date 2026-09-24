@@ -1,6 +1,7 @@
 import { VassalRegistry } from '../registry/registry.js';
 import type { FetchLike } from '../dispatch/client.js';
 import { Dispatcher, type AuditSink } from '../dispatch/dispatcher.js';
+import { jsonlAuditSink, revokeAuditBridge } from '../dispatch/audit.js';
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -44,6 +45,8 @@ export type KernelBoot = KernelComponents & {
   progressHub: ProgressHub;
   /** Absolute or relative path of the state JSON, or null when in-memory only. */
   stateFile: string | null;
+  /** E4.7: JSONL dispatch audit log path, or null when the process writes none. */
+  auditFile: string | null;
   /** True when a snapshot was found and applied during boot. */
   restoredFromSnapshot: boolean;
   /** The applied snapshot, or null on first boot / in-memory mode. */
@@ -60,6 +63,12 @@ export type KernelBootOptions = {
   fetchImpl?: FetchLike;
   /** Audit sink for outbound dispatch decisions; defaults to no-op. */
   dispatchAudit?: AuditSink;
+  /**
+   * E4.7: path of a JSONL dispatch audit log. When set, every audit entry is
+   * appended there *and* still forwarded to `dispatchAudit`, so a deployment can
+   * persist the trail without losing the live log. Nothing writes it by default.
+   */
+  auditFile?: string;
   /** Audit sink for oversight actions; defaults to no-op. */
   oversightAudit?: (entry: OversightAuditEntry) => void;
   /** G1: card URLs auto-registered on boot. A URL already present (restored from
@@ -85,7 +94,15 @@ export type KernelBootOptions = {
   allowUncalibratedJudge?: boolean;
   judgeEscalateOnDisagreement?: boolean;
   judgeMaxWaitMs?: number;
-};
+  /**
+   * E1.5: cap on branches in flight across every intent (one orchestrator per
+   * process, so this is the process-wide bound). Unset = unbounded dispatch, the
+   * historical behaviour.
+   */
+  maxConcurrentBranches?: number;
+  /** Branches allowed to wait for a slot before one is refused. 0 = never queue. */
+  branchQueueLimit?: number;
+}
 
 const noop = (): void => {};
 
@@ -96,8 +113,18 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const skillRegistry = new SkillRegistry(now);
   const mentorshipLedger = new MentorshipLedger(skillRegistry, now);
   const orgRegistry = new OrgRegistry(now);
+  // One audit spine: the dispatcher's decisions, the registry's revocations and
+  // whatever transport the caller wants (stderr, JSONL file) all funnel here.
+  const fileSink = options.auditFile ? jsonlAuditSink(options.auditFile) : null;
+  const auditSink: AuditSink = fileSink
+    ? entry => {
+        fileSink(entry);
+        options.dispatchAudit?.(entry);
+      }
+    : (options.dispatchAudit ?? noop);
   const registry = new VassalRegistry(fetchImpl, now, {
     onRegister: entry => skillRegistry.registerFromCard(entry.card),
+    onRevoke: revokeAuditBridge(auditSink),
   });
   const oversight = new OversightDesk({
     now,
@@ -124,7 +151,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     options.connectorAudit ?? noop,
   );
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
-    audit: options.dispatchAudit ?? noop,
+    audit: auditSink,
     now,
     ...(fetchImpl ? { fetchImpl } : {}),
   });
@@ -148,6 +175,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       ? { judgeEscalateOnDisagreement: options.judgeEscalateOnDisagreement }
       : {}),
     ...(options.judgeMaxWaitMs !== undefined ? { judgeMaxWaitMs: options.judgeMaxWaitMs } : {}),
+    ...(options.maxConcurrentBranches !== undefined
+      ? { maxConcurrentBranches: options.maxConcurrentBranches }
+      : {}),
+    ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
   });
   const components: KernelComponents = {
     registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry,
@@ -216,6 +247,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     metrics,
     progressHub,
     stateFile: options.stateFile ?? null,
+    auditFile: options.auditFile ?? null,
     restoredFromSnapshot: snapshot !== null,
     snapshot,
     async saveState(): Promise<void> {
@@ -270,4 +302,42 @@ export function resolveDecisionConfig(env: NodeJS.ProcessEnv = process.env): Pro
   }
   if (envFlag(env.ZEUS_JUDGE_ALLOW_UNCALIBRATED)) config.allowUncalibratedJudge = true;
   return config;
+}
+
+/** A boot-time env value was present but unusable. */
+export class KernelBootError extends Error {}
+
+/**
+ * E1.5 process-env concurrency wiring.
+ *
+ * A cap the operator set and the process quietly ignored is worse than no cap at
+ * all — it reads as protection that is not there — so a malformed value fails
+ * the boot loudly instead of falling back to unbounded dispatch.
+ */
+export type ProcessConcurrencyConfig = {
+  maxConcurrentBranches?: number;
+  branchQueueLimit?: number;
+};
+
+export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): ProcessConcurrencyConfig {
+  const config: ProcessConcurrencyConfig = {};
+  const cap = envInteger(env.ZEUS_MAX_CONCURRENT_BRANCHES, 'ZEUS_MAX_CONCURRENT_BRANCHES', 1);
+  if (cap !== undefined) config.maxConcurrentBranches = cap;
+  // 0 is a meaningful queue limit: refuse immediately rather than wait for a slot.
+  const limit = envInteger(env.ZEUS_BRANCH_QUEUE_LIMIT, 'ZEUS_BRANCH_QUEUE_LIMIT', 0);
+  if (limit !== undefined) config.branchQueueLimit = limit;
+  return config;
+}
+
+function envInteger(
+  value: string | undefined,
+  name: string,
+  min: number,
+): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    throw new KernelBootError(`${name} must be a whole number >= ${min}, got '${value}'`);
+  }
+  return parsed;
 }
