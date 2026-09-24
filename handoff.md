@@ -2,7 +2,7 @@
 
 State of Zeus as of 2026-09-24.
 
-> Zeus 处于「核心内核成型 + 产品化缺口收窄」阶段：A1 注册中心、A2 派发器、A4 监督台、**E1 并发决策内核（fan-out/幂等/cancel/合并/规则聚合/冲突升级/S2 后端仲裁/离线决策回放）**、D1 Realm P0、fealty 签名链 v1 纯函数、HTTP H1（Fastify）+ **H2 驾驶员 API（意图扇出/回查/取消、升级队列拍板决议回写、指标、封臣上线入口、SSE）**、**Vault 藏宝图与恢复协议（E8.1/E8.2：原地校验 + 加密备份包跨位恢复）+ E3.7 CLI 执行器（build/check/backup/restore，外部调度触发）**、**E8.3 Diary 记忆叙事化日记（按天分桶、锚 eventId、经 Realm 落盘/导出，GET /api/diary 读、POST generate 落盘）、E9.3 虚拟部门编制与结果责任（部门/单 lead/编制可视，任务追到执行 Agent → 部门 lead → 拍板驾驶员；OrgRegistry 随 boot 持久化重启不丢，GET /api/org/chart、建编/安置 HTTP）**已落地（纯 TS 库 + vitest，**431 项测试绿 / 52 个测试文件，typecheck/build 过**）。**2026-09-24 收口两条此前漏在"剩余关口"里的库内/本机项**：E1.6 独立离线决策回放器（纯只读时间线重建）、E10.4 本机容量基线（真实回环 mock 封臣压测，舒适扇出 ≤16、128 在途分支零丢失）。**同日再收口三条**：E1.3 对抗式 LLM-as-judge 复核（阈值闸门 + 分歧升级，回放时间线同步）、E3.5 Realm write 与驾驶员写授权凭证（DriverWriteGrant 分域校验、tmp+rename 原子写）、boot 进程从 env 装配 decision backend/judge（Jev 优先、LLM fallback，无 key 优雅降级 rules-only）。此前批次：六切片（E2.2 Skill 注册中心、模型无关决策后端、E6.2 决议闭环、E1.7 指标、S3 DAG、E5.3 落盘）、T1–T4 产品化收口（E5.3 启动装配、Docker 部署形态 + docs/deployment.md、生产 RSK 守卫与密钥脚本、S2 critic 接 E1.3 仲裁）、T5 H2 驾驶员 API；评审硬阻塞（部署形态、生产 RSK、Skill 注册、决议回写、持久化）已库内销项，真机验收/联调在仓库外。当前在 `dev`（**领先 `origin/dev` 多个 commit（含 E1.3 judge、E3.5 write、boot decision 装配、E8.3/E9.3、org/diary 持久化与 HTTP），push 需授权；云端 CI 结果需在 GitHub 确认**）。本文件记录项目当前状态、活跃任务与文档索引。
+> Zeus 处于「核心内核成型 + 产品化缺口收窄」阶段：A1 注册中心、A2 派发器、A4 监督台、**E1 并发决策内核（fan-out/幂等/cancel/合并/规则聚合/冲突升级/S2 后端仲裁/离线决策回放）**、D1 Realm P0、fealty 签名链 v1 纯函数、HTTP H1（Fastify）+ **H2 驾驶员 API（意图扇出/回查/取消、升级队列拍板决议回写、指标、封臣上线入口、SSE）**、**Vault 藏宝图与恢复协议（E8.1/E8.2：原地校验 + 加密备份包跨位恢复）+ E3.7 CLI 执行器（build/check/backup/restore，外部调度触发）**、**E8.3 Diary 记忆叙事化日记（按天分桶、锚 eventId、经 Realm 落盘/导出，GET /api/diary 读、POST generate 落盘）、E9.3 虚拟部门编制与结果责任（部门/单 lead/编制可视，任务追到执行 Agent → 部门 lead → 拍板驾驶员；OrgRegistry 随 boot 持久化重启不丢，GET /api/org/chart、建编/安置 HTTP）**已落地（纯 TS 库 + vitest，**431 项测试绿 / 52 个测试文件，typecheck/build 过**）。**2026-09-24 收口两条此前漏在"剩余关口"里的库内/本机项**：E1.6 独立离线决策回放器（纯只读时间线重建）、E10.4 本机容量基线（真实回环 mock 封臣压测，舒适扇出 ≤16、128 在途分支零丢失）。**同日再收口三条**：E1.3 对抗式 LLM-as-judge 复核（阈值闸门 + 分歧升级，回放时间线同步）、E3.5 Realm write 与驾驶员写授权凭证（DriverWriteGrant 分域校验、tmp+rename 原子写）、boot 进程从 env 装配 decision backend/judge（Jev 优先、LLM fallback，无 key 优雅降级 rules-only）。此前批次：六切片（E2.2 Skill 注册中心、模型无关决策后端、E6.2 决议闭环、E1.7 指标、S3 DAG、E5.3 落盘）、T1–T4 产品化收口（E5.3 启动装配、Docker 部署形态 + docs/deployment.md、生产 RSK 守卫与密钥脚本、S2 critic 接 E1.3 仲裁）、T5 H2 驾驶员 API；评审硬阻塞（部署形态、生产 RSK、Skill 注册、决议回写、持久化）已库内销项，真机验收/联调在仓库外。当前在 `dev`（origin/dev 已到 `ee7b223`——E1.3 judge、E3.5 write、boot decision 装配、E8.3/E9.3 本体均**已 push**；**本地领先 origin/dev 仅 4 commit：`8636c7a` Org 持久化+boot、`db8c68c` Org HTTP、`3045c35` Diary HTTP、`b1c64a3` docs v0.21，push 需授权；云端 CI 结果需在 GitHub 确认**。2026-09-24 复核：工作树干净，431 项测试连跑两次全绿、typecheck/build 在 HEAD 干净；另观察到 1 次并行 flaky 失败（430/431），复跑两次均全绿，归已知并行/子进程冷启动抖动类，CI 观察）。本文件记录项目当前状态、活跃任务与文档索引。
 
 ## Current state
 
@@ -239,6 +239,11 @@ State of Zeus as of 2026-09-24.
    - [x] **T3 Diary HTTP**（commit 3045c35，6 测试）：新增 `src/diary/from-memory.ts` `buildDiariesFromState` 按 realm 分组按需构建；bearer 保护 GET /api/diary（realm/date 读，缺日 404）、POST /api/diary/generate（经 Realm.write 落 `diary/YYYY-MM-DD.md`，无可写 realm 409、无事件 400）；serve.ts 注入 memoryStore/realmStore。
    - 意义：Org/Diary 从「仅库原语、重启即丢、驾驶员看不见」升到与 skills/MCP 同级成熟度——编制与日记可持久化、可经 HTTP 驾驶。
 
+35. **状态复核与 push 状态修正（2026-09-24 ✅ 纯状态维护，无代码改动）**：
+   - 独立实跑核对：工作树干净，HEAD `b1c64a3`，origin/dev 在 `ee7b223`，**本地仅领先 4 commit**（`8636c7a` Org 持久化+boot、`db8c68c` Org HTTP、`3045c35` Diary HTTP、`b1c64a3` docs v0.21）；E1.3 judge/E3.5 write/boot 装配/E8.3/E9.3 本体均已 push（修正顶部此前"领先多个 commit 含上述全部"的过期声明）。
+   - 验证：`npm run typecheck` 干净、`npm run build` exit 0、vitest 全量 **431/431 绿（52 文件）连跑两次**；首跑曾现 1 例 flaky 失败（430/431），复跑两次全绿，归已知并行/子进程冷启动抖动类，未定位到固定用例，列为 CI 观察项。
+   - **待授权动作（未执行）**：push 上述 4 commit 到 origin/dev 并确认云端 CI 首绿——AGENTS.md 未授权不 push。
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
@@ -313,3 +318,4 @@ State of Zeus as of 2026-09-24.
 | 2026-09-24 | **T1 Org 编制持久化 + boot（commit 8636c7a，PRD v0.21）**：src/org/registry.ts OrgRegistry 有状态类（包原语 + chart/accountability + export/import，坏数据 fail-loud），KernelSnapshot 增 org 段、bootKernel 装配，重启部门/成员/lead 完整恢复；8 测试 |
 | 2026-09-24 | **T2 Org 驾驶员 HTTP（commit db8c68c）**：GET /api/org/chart、POST /api/org/departments、POST .../departments/:id/members（建编/安置），未知部门 404 / 重复 409 / 坏 role 400；6 测试 |
 | 2026-09-24 | **T3 Diary 驾驶员 HTTP（commit 3045c35）**：src/diary/from-memory.ts buildDiariesFromState 按 realm 分组，GET /api/diary（缺日 404）、POST /api/diary/generate 经 Realm.write 落 `diary/YYYY-MM-DD.md`（无可写 realm 409 / 无事件 400）；6 测试。全量 431 绿 / 52 文件 |
+| 2026-09-24 | **状态复核 + push 状态修正（无代码改动）**：实测本地仅领先 origin/dev 4 commit（Org/Diary 持久化与 HTTP 批次，8636c7a/db8c68c/3045c35/b1c64a3），judge/write/boot/E8.3/E9.3 本体已 push；typecheck/build 干净、431 测试连跑两次全绿（1 例 flaky 复跑即绿，列 CI 观察）；push 4 commit 待授权 |
