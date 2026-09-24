@@ -20,6 +20,7 @@
  */
 import { createRequire } from 'node:module';
 import { bootKernel, resolveAuditConfig, resolveConcurrencyConfig, resolveDecisionConfig } from '../state/boot.js';
+import { kernelStats } from '../state/stats.js';
 import { loadRskSigner } from './rsk.js';
 import { createHttpServer } from './server.js';
 
@@ -114,6 +115,7 @@ async function main(): Promise<void> {
     realmStore: kernel.realmStore,
     connectorRegistry: kernel.connectorRegistry,
     ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
+    kernelStats: () => kernelStats(kernel),
     // Same facts the boot log line prints, now readable over the bearer face.
     decisionStatus: {
       configured: decision.backend !== null,

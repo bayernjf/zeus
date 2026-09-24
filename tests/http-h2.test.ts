@@ -323,6 +323,42 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
     expect(reply.statusCode).toBe(200);
     expect(JSON.parse(reply.body)).toMatchObject({ status: 'approved', kind: 'task-input' });
   });
+
+  it('narrows the queue by kind, so a missing parameter and a memory dispute are not mixed', async () => {
+    const harness = await driverServer({}, []);
+    app = harness.app;
+    harness.desk.ingest(
+      okResult('loom', 'input-required'),
+      { vassal: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+    );
+    harness.desk.ingestMemoryDispute({
+      id: 'mem-1', runId: 'run-2', realm: 'personal', factId: 'fact-a',
+      conflictingFacts: ['fact-b'], reason: 'two agents disagree about the release date',
+    });
+
+    const all = await app.inject({ method: 'GET', url: '/api/escalations', headers: AUTH });
+    expect((await all.json()).escalations).toHaveLength(2);
+
+    for (const [kind, size] of [['task-input', 1], ['memory-dispute', 1]] as const) {
+      const filtered = await app.inject({ method: 'GET', url: `/api/escalations?kind=${kind}`, headers: AUTH });
+      const escalations = (await filtered.json()).escalations;
+      expect(escalations).toHaveLength(size);
+      expect(escalations[0].kind).toBe(kind);
+    }
+
+    const pending = await app.inject({
+      method: 'GET', url: '/api/escalations?status=pending&kind=memory-dispute', headers: AUTH,
+    });
+    expect((await pending.json()).escalations).toHaveLength(1);
+
+    const settled = await app.inject({
+      method: 'GET', url: '/api/escalations?status=approved&kind=memory-dispute', headers: AUTH,
+    });
+    expect((await settled.json()).escalations).toHaveLength(0);
+
+    const bogus = await app.inject({ method: 'GET', url: '/api/escalations?kind=nope', headers: AUTH });
+    expect(bogus.statusCode).toBe(400);
+  });
 });
 
 describe('HTTP H2 driver API — metrics', () => {

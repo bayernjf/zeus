@@ -164,6 +164,7 @@ export {
   KERNEL_STATE_VERSION,
 } from './state/kernel-state.js';
 export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
+export { kernelStats, type KernelStats } from './state/stats.js';
 export { bootKernel, resolveDecisionConfig, resolveConcurrencyConfig, resolveAuditConfig, KernelBootError } from './state/boot.js';
 export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig, ProcessConcurrencyConfig, ProcessAuditConfig } from './state/boot.js';
 export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
