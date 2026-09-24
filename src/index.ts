@@ -346,3 +346,24 @@ export type {
   VaultInventory,
   RestoreSink,
 } from './vault/types.js';
+
+// --- Diary (E8.3 narrative memory) ---
+export { buildDiary } from './diary/build.js';
+export { renderDiaryMarkdown } from './diary/markdown.js';
+export { persistDiary, exportDiary } from './diary/persist.js';
+export {
+  renderEventContent,
+  dayBucket,
+  formatTime,
+  renderObject,
+  NO_CONTENT,
+} from './diary/render.js';
+export { DiaryError, DiaryBoundaryError, DiaryUnsupportedError } from './diary/types.js';
+export type {
+  DiaryEntry,
+  DiaryLine,
+  DiaryFact,
+  DiaryId,
+  BuildDiaryOptions,
+  PersistDiaryOptions,
+} from './diary/types.js';
