@@ -1,6 +1,7 @@
 import { VassalRegistry } from '../registry/registry.js';
 import type { FetchLike } from '../dispatch/client.js';
 import { Dispatcher, type AuditSink } from '../dispatch/dispatcher.js';
+import { jsonlAuditSink, revokeAuditBridge } from '../dispatch/audit.js';
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -44,6 +45,8 @@ export type KernelBoot = KernelComponents & {
   progressHub: ProgressHub;
   /** Absolute or relative path of the state JSON, or null when in-memory only. */
   stateFile: string | null;
+  /** E4.7: JSONL dispatch audit log path, or null when the process writes none. */
+  auditFile: string | null;
   /** True when a snapshot was found and applied during boot. */
   restoredFromSnapshot: boolean;
   /** The applied snapshot, or null on first boot / in-memory mode. */
@@ -60,6 +63,12 @@ export type KernelBootOptions = {
   fetchImpl?: FetchLike;
   /** Audit sink for outbound dispatch decisions; defaults to no-op. */
   dispatchAudit?: AuditSink;
+  /**
+   * E4.7: path of a JSONL dispatch audit log. When set, every audit entry is
+   * appended there *and* still forwarded to `dispatchAudit`, so a deployment can
+   * persist the trail without losing the live log. Nothing writes it by default.
+   */
+  auditFile?: string;
   /** Audit sink for oversight actions; defaults to no-op. */
   oversightAudit?: (entry: OversightAuditEntry) => void;
   /** G1: card URLs auto-registered on boot. A URL already present (restored from
@@ -96,8 +105,18 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const skillRegistry = new SkillRegistry(now);
   const mentorshipLedger = new MentorshipLedger(skillRegistry, now);
   const orgRegistry = new OrgRegistry(now);
+  // One audit spine: the dispatcher's decisions, the registry's revocations and
+  // whatever transport the caller wants (stderr, JSONL file) all funnel here.
+  const fileSink = options.auditFile ? jsonlAuditSink(options.auditFile) : null;
+  const auditSink: AuditSink = fileSink
+    ? entry => {
+        fileSink(entry);
+        options.dispatchAudit?.(entry);
+      }
+    : (options.dispatchAudit ?? noop);
   const registry = new VassalRegistry(fetchImpl, now, {
     onRegister: entry => skillRegistry.registerFromCard(entry.card),
+    onRevoke: revokeAuditBridge(auditSink),
   });
   const oversight = new OversightDesk({
     now,
@@ -124,7 +143,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     options.connectorAudit ?? noop,
   );
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
-    audit: options.dispatchAudit ?? noop,
+    audit: auditSink,
     now,
     ...(fetchImpl ? { fetchImpl } : {}),
   });
@@ -216,6 +235,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     metrics,
     progressHub,
     stateFile: options.stateFile ?? null,
+    auditFile: options.auditFile ?? null,
     restoredFromSnapshot: snapshot !== null,
     snapshot,
     async saveState(): Promise<void> {

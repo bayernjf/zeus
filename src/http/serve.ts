@@ -44,6 +44,7 @@ async function main(): Promise<void> {
     ...(process.env.ZEUS_REALM_ROOTS
       ? { realmRoots: process.env.ZEUS_REALM_ROOTS.split(',').map(root => root.trim()).filter(Boolean) }
       : {}),
+    ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
     dispatchAudit: entry => {
       process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
     },
@@ -90,6 +91,7 @@ async function main(): Promise<void> {
     memoryStore: kernel.memoryStore,
     realmStore: kernel.realmStore,
     connectorRegistry: kernel.connectorRegistry,
+    ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
     // Same facts the boot log line prints, now readable over the bearer face.
     decisionStatus: {
       configured: decision.backend !== null,

@@ -88,7 +88,14 @@ export type {
 } from './dispatch/dispatcher.js';
 export { sendTask, sendTaskSubscribe, cancelTask, A2AClientError } from './dispatch/client.js';
 export type { SendTaskInput, SubscribeHandlers, FetchLike } from './dispatch/client.js';
-export { jsonlAuditSink, memoryAuditSink, revokeAuditBridge } from './dispatch/audit.js';
+export {
+  jsonlAuditSink,
+  memoryAuditSink,
+  readAuditLog,
+  AuditLogError,
+  type AuditQuery,
+  revokeAuditBridge,
+} from './dispatch/audit.js';
 
 // --- A4 oversight desk + E6.2 conflict settlement ---
 export { OversightDesk, extractEscalation, conflictsToDesk } from './oversight/oversight.js';

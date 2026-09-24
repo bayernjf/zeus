@@ -21,6 +21,8 @@ import { SkillValidationError } from '../skills/validate-spec.js';
 import type { ConnectorRegistry } from '../mcp/connectors.js';
 import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
 import type { DecisionBackendKind } from '../decision/types.js';
+import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
+import type { AuditDecision } from '../dispatch/dispatcher.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { RealmStore } from '../realm/types.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
@@ -48,6 +50,15 @@ const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
 const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
 const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
 const CONNECTOR_STATUSES: ConnectorStatus[] = ['declared', 'connected', 'revoked'];
+const AUDIT_DECISIONS: AuditDecision[] = [
+  'dispatched',
+  'refused-realm-policy',
+  'refused-unknown-vassal',
+  'refused-revoked',
+  'vassal-revoked',
+  'dispatch-failed',
+  'sla-ack-breached',
+];
 
 export type HttpDeps = {
   registry: VassalRegistry;
@@ -74,6 +85,8 @@ export type HttpDeps = {
   connectorRegistry?: ConnectorRegistry;
   /** H2: the decision layer this process resolved at boot. */
   decisionStatus?: DecisionStatus;
+  /** H2 (E4.7): JSONL dispatch + governance audit log to expose read-only. */
+  auditFile?: string;
   /** H2 (E9.3): department establishment chart, staffing and accountability. */
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
@@ -973,6 +986,42 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
     if (deps.decisionStatus) {
       app.get('/api/decision', { preHandler: requireBearer }, async () => deps.decisionStatus);
+    }
+
+    if (deps.auditFile) {
+      // E4.7: read the dispatch + governance audit trail back from the JSONL the
+      // process appends to. Oldest first, newest kept when a limit trims.
+      app.get('/api/audit', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as {
+          runId?: unknown; vassal?: unknown; decision?: unknown; limit?: unknown;
+        };
+        if (query.decision !== undefined && !AUDIT_DECISIONS.includes(query.decision as AuditDecision)) {
+          return error(reply, 400, 'invalid_request', `query.decision must be one of ${AUDIT_DECISIONS.join(', ')}`);
+        }
+        if (query.runId !== undefined && !isNonEmptyString(query.runId)) {
+          return error(reply, 400, 'invalid_request', 'query.runId must be a string');
+        }
+        if (query.vassal !== undefined && !isNonEmptyString(query.vassal)) {
+          return error(reply, 400, 'invalid_request', 'query.vassal must be a string');
+        }
+        const limit = query.limit === undefined ? undefined : parsePositiveInt(query.limit);
+        if (query.limit !== undefined && limit === undefined) {
+          return error(reply, 400, 'invalid_request', 'query.limit must be a positive integer');
+        }
+        try {
+          const entries = readAuditLog(deps.auditFile!, {
+            ...(isNonEmptyString(query.runId) ? { runId: query.runId } : {}),
+            ...(isNonEmptyString(query.vassal) ? { vassal: query.vassal } : {}),
+            ...(query.decision !== undefined ? { decision: query.decision as AuditDecision } : {}),
+            ...(limit !== undefined ? { limit } : {}),
+          });
+          return { file: deps.auditFile, entries };
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { file: deps.auditFile, entries: [] };
+          if (e instanceof AuditLogError) return error(reply, 500, 'audit_unreadable', e.message);
+          throw e;
+        }
+      });
     }
   }
 

@@ -9,6 +9,7 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 import { bootKernel } from '../src/state/boot.js';
+import { readAuditLog } from '../src/dispatch/audit.js';
 import {
   FileKernelStateStore,
   KernelStateError,
@@ -129,5 +130,31 @@ describe('E5.3 bootKernel assembly', () => {
     const file = join(dir, 'bad.json');
     await writeFile(file, '{ not json', 'utf8');
     await expect(bootKernel({ stateFile: file })).rejects.toBeInstanceOf(KernelStateError);
+  });
+
+  it('writes the audit spine to JSONL and still forwards each entry to the caller sink', async () => {
+    const auditFile = join(dir, 'audit.jsonl');
+    const seen: string[] = [];
+    const kernel = await bootKernel({
+      fetchImpl: mockFetch('loom'),
+      vassalSeeds: ['http://127.0.0.1/loom/card.json'],
+      auditFile,
+      dispatchAudit: entry => void seen.push(`${entry.vassal}:${entry.decision}`),
+    });
+    expect(kernel.auditFile).toBe(auditFile);
+    expect(kernel.registry.revoke('loom')).toBe(true);
+
+    // E4.7's governance bridge: a revocation is an audit event, not just a hook.
+    expect(readAuditLog(auditFile).map(e => e.decision)).toEqual(['vassal-revoked']);
+    expect(seen).toEqual(['loom:vassal-revoked']);
+  });
+
+  it('stays silent when no audit file or sink is configured', async () => {
+    const kernel = await bootKernel({
+      fetchImpl: mockFetch('loom'),
+      vassalSeeds: ['http://127.0.0.1/loom/card.json'],
+    });
+    expect(kernel.auditFile).toBeNull();
+    expect(kernel.registry.revoke('loom')).toBe(true);
   });
 });
