@@ -54,7 +54,7 @@ export type HttpDeps = {
   metrics?: ConcurrencyMetrics;
   /** H3: per-intent progress events for the SSE stream. */
   progressHub?: ProgressHub;
-  /** H2 (E9.3): department establishment chart and staffing. */
+  /** H2 (E9.3): department establishment chart, staffing and accountability. */
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
   memoryStore?: MemoryStore;
@@ -399,6 +399,18 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       app.get('/api/org/chart', { preHandler: requireBearer }, async () => ({
         departments: deps.orgRegistry!.chart(),
       }));
+
+      // E9.3: who answers for one intent's outcome — the executing agents, their
+      // department leads and the driver who settled it. Agents holding no post
+      // are reported as unassigned rather than dropped.
+      if (deps.orchestrator) {
+        app.get('/api/org/accountability/:intentId', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { intentId } = request.params as { intentId: string };
+          const result = deps.orchestrator!.getIntent(intentId);
+          if (!result) return error(reply, 404, 'not_found', `unknown intent: ${intentId}`);
+          return deps.orgRegistry!.accountability(result);
+        });
+      }
 
       // E9.3: establish a department.
       app.post('/api/org/departments', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
