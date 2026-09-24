@@ -341,7 +341,7 @@ State of Zeus as of 2026-09-25.
 * [docs/prd.md](docs/prd.md) — 产品需求文档 现行 v0.27（2026-09-25）：9 个 Epic、需求拆解（优先级/状态/验收标准）、里程碑与成功指标；v0.22 落签名链 v1.1 internal 名册封签（E5.2，含 revoked 两态 attestation）、容量四场景（E10.4 v0.2）、评审 v0.4，v0.21 接通 org/diary 持久化与驾驶员 HTTP、v0.20 落 E8.3 Diary/E9.3 Org、v0.19 落 E3.5 Realm write（grant 凭证）、v0.18 落 E1.3 adversarial judge、v0.16 落 E3.7 Vault CLI、v0.15 落 Vault 藏宝图（E8.1/E8.2 ✅）、v0.14 索引架构立场 design-agentic-integration ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
-* [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.1（D1）：目录即数据库、connect/search/read/write、数据二极管执行点、藏宝图依赖 ★
+* [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.4（D1 + E3.5/E3.6/E6.4）：目录即数据库、connect/search/read/write、数据二极管执行点、企业域三级租户与双域授权（§7）、驾驶员治理面（§6.4）、藏宝图依赖 ★
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
 * [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — fealty 签名链设计 v0.1（deferred #7）：威胁模型、Zeus 单签 v1/封臣自签 v2、Ed25519+JCS、两层签名信封、RSK 密钥与轮换、吊销四层失效、v1 八条验收 ★
 * [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型 v0.1：网络面划分、Fastify+长驻 Node 裁决、薄传输层单向依赖、H1–H3 端点规划与验收 ★
