@@ -142,7 +142,7 @@
 
 | ID | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|
-| E10.1 | CI（typecheck/test/build 矩阵） | P0 | ✅ | GitHub Actions Node 20/22 全绿（push 待授权） |
+| E10.1 | CI（typecheck/test/build 矩阵） | P0 | ✅ | `.github/workflows/ci.yml`（Node 20/22 矩阵，npm ci → typecheck → test → build，零 secret）。**2026-09-25 首次真机确认**：dev 分支 push `206af94..3e91a9a` 触发 run 36024156638，两个矩阵各约 28s **全绿**（472/472，无 flaky 复现）——此前各批次只有"本地按 CI 序列实跑全绿"，GitHub 侧结果一直未观测。遗留注解（checkout@v4/setup-node@v4 target Node 20 被强制跑在 24、ubuntu-latest 2026-10-19 迁移）登记 deferred #12 |
 | E10.2 | 真机部署：pr-helper + Zeus 门面 | P1 | ⬜ | 支撑 E4.8 真机验收与 Zeus↔loom 联调 |
 | E10.3 | 库公共入口与构建产物 | P0 | ✅ | src/index.ts 聚合导出；dist 含 .d.ts |
 | E10.4 | 并发压测与容量基线 | P1 | ✅ | **本机 mock 回环基线已产出 v0.2**（[capacity-baseline.md](capacity-baseline.md)，`npm run bench:capacity`），四场景：A 扇出宽度、B 并发意图、**C H2 门面全链路（真实 `app.listen` 回环 TCP + bearer + JSON，128 分支点门面附加仅约 5–10ms 墙钟、吞吐约低 10–15%，低并发几乎无差）**、**D 高并发取消传播（128 个 input-required 挂起分支 14–18ms 全部取消、mock farm 实收 240 个 tasks/cancel 零丢失零重复）**；单意图扇出 ≤16 墙钟≈单封臣（内核附加 5–15ms）、128 在途分支零丢失、metrics 峰值准确。**口径限制**：D 取消的是已 settle 的非终态（input-required）分支，对仍 working、fanOut 未返回的进行中意图尚无按 intentId 的一等取消；真机容量（LLM/网络）待 ≥3 真实封臣 + deferred #9 有界队列后按同法重测 |

@@ -50,3 +50,7 @@
 - 仓库无 vitest 配置文件，所有用例吃 5s 默认超时；scrypt 全量打包、RSA-2048 keygen 这类 CPU 密集用例在并行 fork 争抢下会飘红（已定位，见 handoff Active work 38）。
 - **现状**：只对 vault CLI L1 与 rsk-loader 两处按先例放宽到 20s，属打补丁。
 - **触发条件**：再次出现**新**的超时抖动用例（即放宽过的两处之外），或套件涨到 ~70 文件。届时二选一：新建 vitest 配置设全局 `testTimeout`，或把 CPU 密集用例分流到独立低并发池。
+
+### #12 CI action 版本升级（Node 20 弃用注解）
+- 首次真机 CI（run 36024156638，2026-09-25）通过，但 GitHub 注解提示 `.github/workflows/ci.yml` 用的 `actions/checkout@v4` / `actions/setup-node@v4` 仍 target Node 20、被强制跑在 Node 24（[Node 20 runner 弃用公告](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/)）；另有 `ubuntu-latest` 将于 2026-10-19 迁到 Ubuntu 26 的提示。当前只是警告，不影响结果。
+- **触发条件**：注解变成失败/红叉，或下一次因任何原因改动 `ci.yml` 时顺手升到 major 最新（checkout@v5 / setup-node@v5）并评估是否把测试矩阵从 Node 20 换成 Node 22/24（内核已在 Node 24 本机验证过 typecheck/build/test）。
