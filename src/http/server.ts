@@ -10,7 +10,13 @@ import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
+import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import type { OrgRegistry } from '../org/registry.js';
+import type { SkillRegistry } from '../skills/registry.js';
+import { DuplicateSkillError, SkillNotFoundError } from '../skills/registry.js';
+import type { MentorshipLedger } from '../skills/mentor.js';
+import type { CompetencyCheck, MentorshipStatus } from '../skills/mentor.js';
+import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { RealmStore } from '../realm/types.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
@@ -35,6 +41,8 @@ export const DEFAULT_ATTESTATION_TTL_SECONDS = 24 * 3600;
 
 const ESCALATION_STATUSES: EscalationStatus[] = ['pending', 'approved', 'rejected'];
 const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
+const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
+const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
 
 export type HttpDeps = {
   registry: VassalRegistry;
@@ -53,9 +61,13 @@ export type HttpDeps = {
   metrics?: ConcurrencyMetrics;
   /** H3: per-intent progress events for the SSE stream. */
   progressHub?: ProgressHub;
-  /** H2 (E9.3): department establishment chart and staffing. */
+  /** H2 (E2.2/E2.3): skill catalogue, lifecycle and team resolution. */
+  skillRegistry?: SkillRegistry;
+  /** H2 (E2.5): mentor-commissioned skill transfer ledger. */
+  mentorshipLedger?: MentorshipLedger;
+  /** H2 (E9.3): department establishment chart, staffing and accountability. */
   orgRegistry?: OrgRegistry;
-  /** H2 (E8.3): memory source for diary read/generate. */
+  /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
   memoryStore?: MemoryStore;
   /** H2 (E8.3): realm target for diary persistence. */
   realmStore?: RealmStore;
@@ -269,6 +281,35 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           raw.destroy();
         });
       });
+
+      // E1.6: offline replay of one stored decision — participants, dispatch
+      // input, stances, aggregation, arbitration/judge and the driver's
+      // settlement, rebuilt read-only from the persisted records. Nothing is
+      // re-dispatched and no conclusion is re-derived. ?format=text renders the
+      // human-readable timeline instead of JSON.
+      app.get('/api/intents/:id/replay', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const { format } = request.query as { format?: unknown };
+        if (format !== undefined && format !== 'json' && format !== 'text') {
+          return error(reply, 400, 'invalid_request', 'query.format must be json | text');
+        }
+        const stored = deps.orchestrator!.getIntent(id);
+        if (!stored) return error(reply, 404, 'not_found', `unknown intent: ${id}`);
+        let replay: DecisionReplay;
+        try {
+          replay = replayDecision(stored, deps.orchestrator!.getRequest(id));
+        } catch (e) {
+          // An unreplayable record is a corrupt stored decision, not a bad
+          // request: fail loud instead of serving a partial timeline.
+          if (e instanceof ReplayError) return error(reply, 500, 'replay_failed', e.message);
+          throw e;
+        }
+        if (format === 'text') {
+          reply.type('text/plain; charset=utf-8');
+          return renderReplay(replay);
+        }
+        return replay;
+      });
     }
 
     if (deps.oversight) {
@@ -370,6 +411,18 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         departments: deps.orgRegistry!.chart(),
       }));
 
+      // E9.3: who answers for one intent's outcome — the executing agents, their
+      // department leads and the driver who settled it. Agents holding no post
+      // are reported as unassigned rather than dropped.
+      if (deps.orchestrator) {
+        app.get('/api/org/accountability/:intentId', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { intentId } = request.params as { intentId: string };
+          const result = deps.orchestrator!.getIntent(intentId);
+          if (!result) return error(reply, 404, 'not_found', `unknown intent: ${intentId}`);
+          return deps.orgRegistry!.accountability(result);
+        });
+      }
+
       // E9.3: establish a department.
       app.post('/api/org/departments', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const body = (request.body ?? {}) as { name?: unknown; mission?: unknown };
@@ -418,6 +471,102 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     }
 
     if (deps.memoryStore) {
+      // Memory face (design-memory-consolidation): the driver reads one realm's
+      // events, facts and hybrid recall, exercises the right to be forgotten and
+      // checks the fact source's integrity. There is no fact write route — facts
+      // change only through consolidation, so this face is read + retract.
+      app.get('/api/memory/events', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown; runId?: unknown };
+        if (!isNonEmptyString(query.realmId)) {
+          return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        }
+        if (query.runId !== undefined && !isNonEmptyString(query.runId)) {
+          return error(reply, 400, 'invalid_request', 'query.runId must be a string');
+        }
+        return { events: deps.memoryStore!.read(query.realmId, query.realmId, query.runId) };
+      });
+
+      app.get('/api/memory/facts', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown };
+        if (!isNonEmptyString(query.realmId)) {
+          return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        }
+        return { facts: deps.memoryStore!.facts(query.realmId, query.realmId) };
+      });
+
+      // Hybrid BM25 + vector recall over the realm's live facts. The index is a
+      // derived artifact, rebuilt from the fact source on demand.
+      app.get('/api/memory/recall', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown; q?: unknown; limit?: unknown; alpha?: unknown };
+        if (!isNonEmptyString(query.realmId)) {
+          return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        }
+        if (!isNonEmptyString(query.q)) {
+          return error(reply, 400, 'invalid_request', 'query.q is required');
+        }
+        const limit = query.limit === undefined ? undefined : parsePositiveInt(query.limit);
+        if (query.limit !== undefined && limit === undefined) {
+          return error(reply, 400, 'invalid_request', 'query.limit must be a positive integer');
+        }
+        const alpha = query.alpha === undefined ? undefined : parseUnitInterval(query.alpha);
+        if (query.alpha !== undefined && alpha === undefined) {
+          return error(reply, 400, 'invalid_request', 'query.alpha must be a number in [0,1]');
+        }
+        const hits = deps.memoryStore!.searchRecall(query.realmId, query.realmId, query.q, {
+          ...(limit !== undefined ? { limit } : {}),
+          ...(alpha !== undefined ? { alpha } : {}),
+        });
+        return { hits };
+      });
+
+      // Right to be forgotten: facts become retracted, leave the recall index
+      // immediately and gain a tombstone. Unknown / already-retracted facts are
+      // a no-op, so a repeated request is safe.
+      app.post('/api/memory/retract', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          realmId?: unknown; factIds?: unknown; reason?: unknown; requestedBy?: unknown;
+        };
+        if (!isNonEmptyString(body.realmId)) {
+          return error(reply, 400, 'invalid_request', 'body.realmId is required');
+        }
+        if (!(Array.isArray(body.factIds) && body.factIds.length > 0 && body.factIds.every(isNonEmptyString))) {
+          return error(reply, 400, 'invalid_request', 'body.factIds must be a non-empty array of fact ids');
+        }
+        const context = retractionContext(body.reason, body.requestedBy);
+        if (!context) {
+          return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
+        }
+        return { retractions: deps.memoryStore!.retractFacts(body.realmId, body.factIds, context) };
+      });
+
+      app.post('/api/memory/forget-subject', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          realmId?: unknown; subject?: unknown; reason?: unknown; requestedBy?: unknown;
+        };
+        if (!isNonEmptyString(body.realmId)) {
+          return error(reply, 400, 'invalid_request', 'body.realmId is required');
+        }
+        if (!isNonEmptyString(body.subject)) {
+          return error(reply, 400, 'invalid_request', 'body.subject is required');
+        }
+        const context = retractionContext(body.reason, body.requestedBy);
+        if (!context) {
+          return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
+        }
+        return { retractions: deps.memoryStore!.forgetSubject(body.realmId, body.subject, context) };
+      });
+
+      app.get('/api/memory/retractions', { preHandler: requireBearer }, async () => ({
+        retractions: deps.memoryStore!.listRetractions(),
+      }));
+
+      // Cross-section invariants over the current fact source; a non-empty
+      // violation list means the derived recall index must not be trusted.
+      app.get('/api/memory/integrity', { preHandler: requireBearer }, async () => {
+        const violations = deps.memoryStore!.verifyIntegrity();
+        return { ok: violations.length === 0, violations };
+      });
+
       // E8.3: read diary entries (optionally one realm/date), built on demand.
       app.get('/api/diary', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const q = request.query as { realmId?: unknown; date?: unknown; timeZone?: unknown };
@@ -487,6 +636,237 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
     }
+
+    if (deps.skillRegistry) {
+      // E2.2: the skill catalogue. Active versions by default, filterable by
+      // domain / tag / status (an explicit status reaches deprecated and
+      // uninstalled specs, which stay auditable).
+      app.get('/api/skills', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { domain?: unknown; tag?: unknown; status?: unknown };
+        if (query.status !== undefined && !SKILL_STATUSES.includes(query.status as SkillStatus)) {
+          return error(reply, 400, 'invalid_request', `query.status must be one of ${SKILL_STATUSES.join(', ')}`);
+        }
+        if (query.domain !== undefined && !isNonEmptyString(query.domain)) {
+          return error(reply, 400, 'invalid_request', 'query.domain must be a string');
+        }
+        if (query.tag !== undefined && !isNonEmptyString(query.tag)) {
+          return error(reply, 400, 'invalid_request', 'query.tag must be a string');
+        }
+        return {
+          skills: deps.skillRegistry!.list({
+            ...(isNonEmptyString(query.domain) ? { domain: query.domain } : {}),
+            ...(isNonEmptyString(query.tag) ? { tag: query.tag } : {}),
+            ...(query.status !== undefined ? { status: query.status as SkillStatus } : {}),
+          }),
+        };
+      });
+
+      app.get('/api/skills/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.query);
+        if (version === null) return error(reply, 400, 'invalid_request', 'query.version must be a string');
+        const spec = deps.skillRegistry!.get(id, version);
+        if (!spec) return error(reply, 404, 'not_found', `unknown skill: ${id}${version ? `@${version}` : ''}`);
+        return spec;
+      });
+
+      app.get('/api/skills/:id/versions', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const versions = deps.skillRegistry!.versions(id);
+        if (versions.length === 0) return error(reply, 404, 'not_found', `unknown skill: ${id}`);
+        return { versions };
+      });
+
+      // E2.1: register an explicit spec. The body is copied field by field so an
+      // arbitrary payload cannot smuggle unknown keys into the persisted
+      // catalogue; shape problems are reported by the validator, not guessed here.
+      app.post('/api/skills', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        if (!isNonEmptyString(body.id)) {
+          return error(reply, 400, 'invalid_request', 'body.id is required');
+        }
+        const input = {
+          id: body.id,
+          name: body.name,
+          description: body.description,
+          version: body.version,
+          ...(body.domain !== undefined ? { domain: body.domain } : {}),
+          ...(body.tags !== undefined ? { tags: body.tags } : {}),
+          ...(body.inputs !== undefined ? { inputs: body.inputs } : {}),
+          ...(body.outputs !== undefined ? { outputs: body.outputs } : {}),
+          ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
+          ...(body.dependencies !== undefined ? { dependencies: body.dependencies } : {}),
+          ...(body.providedBy !== undefined ? { providedBy: body.providedBy } : {}),
+          ...(body.status !== undefined ? { status: body.status } : {}),
+        } as unknown as SkillSpecInput;
+        try {
+          return reply.code(201).send(deps.skillRegistry!.register(input));
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      // E2.3: install / uninstall / deprecate one registered version. Every
+      // action takes effect for team resolution immediately — no cached grant.
+      app.post('/api/skills/:id/install', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        try {
+          return deps.skillRegistry!.install(id, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/skills/:id/uninstall', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        try {
+          return deps.skillRegistry!.uninstall(id, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/skills/:id/deprecate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const version = optionalVersion(request.body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        try {
+          return deps.skillRegistry!.deprecate(id, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      // E2.3: hardening can only narrow. The registry refuses a claim that is not
+      // already granted, so an over-broad request is a 400, not a silent grant.
+      app.post('/api/skills/:id/harden', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { version?: unknown; permissions?: unknown; constraints?: unknown };
+        const version = optionalVersion(body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        if (body.permissions !== undefined && !(Array.isArray(body.permissions) && body.permissions.every(c => typeof c === 'string'))) {
+          return error(reply, 400, 'invalid_request', 'body.permissions must be an array of permission claims');
+        }
+        if (body.constraints !== undefined && !isPlainObject(body.constraints)) {
+          return error(reply, 400, 'invalid_request', 'body.constraints must be an object');
+        }
+        try {
+          return deps.skillRegistry!.harden(id, {
+            ...(body.permissions ? { permissions: body.permissions as string[] } : {}),
+            ...(body.constraints ? { constraints: body.constraints as Record<string, unknown> } : {}),
+          }, version);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      // E2.4: map required skills onto providers. An ambiguous slot is reported
+      // for the driver to choose; it is never resolved by picking at random.
+      app.post('/api/skills/team', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as { skills?: unknown };
+        if (!(Array.isArray(body.skills) && body.skills.length > 0 && body.skills.every(isNonEmptyString))) {
+          return error(reply, 400, 'invalid_request', 'body.skills must be a non-empty array of skill ids');
+        }
+        return deps.skillRegistry!.resolveTeam(body.skills);
+      });
+    }
+
+    if (deps.mentorshipLedger) {
+      // E2.5: the auditable teaching path. Certification — not attendance — is
+      // what registers a learner as a provider.
+      app.get('/api/mentorships', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { status?: unknown; skillId?: unknown };
+        if (query.status !== undefined && !MENTORSHIP_STATUSES.includes(query.status as MentorshipStatus)) {
+          return error(reply, 400, 'invalid_request', `query.status must be one of ${MENTORSHIP_STATUSES.join(', ')}`);
+        }
+        if (query.skillId !== undefined && !isNonEmptyString(query.skillId)) {
+          return error(reply, 400, 'invalid_request', 'query.skillId must be a string');
+        }
+        return {
+          mentorships: deps.mentorshipLedger!.list({
+            ...(query.status !== undefined ? { status: query.status as MentorshipStatus } : {}),
+            ...(isNonEmptyString(query.skillId) ? { skillId: query.skillId } : {}),
+          }),
+        };
+      });
+
+      app.post('/api/mentorships', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as {
+          skillId?: unknown; mentorId?: unknown; learnerId?: unknown; version?: unknown; realmId?: unknown;
+        };
+        if (!isNonEmptyString(body.skillId)) return error(reply, 400, 'invalid_request', 'body.skillId is required');
+        if (!isNonEmptyString(body.mentorId)) return error(reply, 400, 'invalid_request', 'body.mentorId is required');
+        if (!isNonEmptyString(body.learnerId)) return error(reply, 400, 'invalid_request', 'body.learnerId is required');
+        const version = optionalVersion(body);
+        if (version === null) return error(reply, 400, 'invalid_request', 'body.version must be a string');
+        if (body.realmId !== undefined && !isNonEmptyString(body.realmId)) {
+          return error(reply, 400, 'invalid_request', 'body.realmId must be a string');
+        }
+        try {
+          const record = deps.mentorshipLedger!.commission({
+            skillId: body.skillId,
+            mentorId: body.mentorId,
+            learnerId: body.learnerId,
+            ...(version ? { version } : {}),
+            ...(isNonEmptyString(body.realmId) ? { realmId: body.realmId } : {}),
+          });
+          return reply.code(201).send(record);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/mentorships/:id/lessons', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { lessons?: unknown };
+        if (!isLessonList(body.lessons)) {
+          return error(reply, 400, 'invalid_request', 'body.lessons must be a non-empty array of { topic, ref? }');
+        }
+        try {
+          return deps.mentorshipLedger!.teach(id, body.lessons as Array<{ topic: string; ref?: string }>);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/mentorships/:id/assess', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { checks?: unknown; threshold?: unknown };
+        if (!isCheckList(body.checks)) {
+          return error(reply, 400, 'invalid_request', 'body.checks must be a non-empty array of { criterion, passed, score }');
+        }
+        if (body.threshold !== undefined) {
+          const threshold = parseUnitInterval(body.threshold);
+          if (threshold === undefined || threshold === 0) {
+            return error(reply, 400, 'invalid_request', 'body.threshold must be a number in (0,1]');
+          }
+        }
+        try {
+          return deps.mentorshipLedger!.assess(id, body.checks as CompetencyCheck[], {
+            ...(body.threshold !== undefined ? { threshold: Number(body.threshold) } : {}),
+          });
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+
+      app.post('/api/mentorships/:id/dismiss', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as { reason?: unknown };
+        if (!isNonEmptyString(body.reason)) {
+          return error(reply, 400, 'invalid_request', 'body.reason is required');
+        }
+        try {
+          return deps.mentorshipLedger!.dismiss(id, body.reason);
+        } catch (e) {
+          return mapCatalogueError(reply, e);
+        }
+      });
+    }
   }
 
   return app;
@@ -540,6 +920,75 @@ function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
 /** Validate a YYYY-MM-DD date string. */
 function isValidDate(value: unknown): value is string {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/** Parse a positive integer query/body value; undefined when not one. */
+function parsePositiveInt(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/** Parse a number in [0,1]; undefined when out of range or not finite. */
+function parseUnitInterval(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 && n <= 1 ? n : undefined;
+}
+
+/** A retraction/forget request must say why and on whose behalf. */
+function retractionContext(
+  reason: unknown,
+  requestedBy: unknown,
+): { reason: string; requestedBy: string } | null {
+  if (!isNonEmptyString(reason) || !isNonEmptyString(requestedBy)) return null;
+  return { reason, requestedBy };
+}
+
+/** Optional explicit spec version from a body or query; null when present but
+ *  not a usable string (absent means "latest", which the registry resolves). */
+function optionalVersion(source: unknown): string | undefined | null {
+  const version = (source as { version?: unknown } | null | undefined)?.version;
+  if (version === undefined) return undefined;
+  return isNonEmptyString(version) ? version : null;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isLessonList(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.every(lesson =>
+    isPlainObject(lesson) &&
+    isNonEmptyString(lesson.topic) &&
+    (lesson.ref === undefined || isNonEmptyString(lesson.ref)));
+}
+
+function isCheckList(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0 && value.every(check =>
+    isPlainObject(check) &&
+    isNonEmptyString(check.criterion) &&
+    typeof check.passed === 'boolean' &&
+    typeof check.score === 'number');
+}
+
+/** Map SkillRegistry / MentorshipLedger throws to HTTP status: unknown id → 404,
+ *  duplicate or a closed/locked state → 409, anything else (invalid spec,
+ *  over-broad hardening, malformed competency check) → 400. */
+function mapCatalogueError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  const detail = thrown instanceof Error ? thrown.message : String(thrown);
+  if (thrown instanceof SkillNotFoundError || /not found/i.test(detail)) {
+    return error(reply, 404, 'not_found', detail);
+  }
+  if (
+    thrown instanceof DuplicateSkillError ||
+    /already (exists|registered)|not an active provider|not open|cannot (harden|certify|teach)|is (deprecated|certified|failed|dismissed|uninstalled)/i.test(detail)
+  ) {
+    return error(reply, 409, 'conflict', detail);
+  }
+  return error(reply, 400, 'invalid_request', detail);
 }
 
 /** Map DiaryError to HTTP status: unsupported/no writable realm → 409,

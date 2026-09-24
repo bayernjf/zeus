@@ -86,7 +86,10 @@ describe('vault CLI: build + check (manifest-only, L0)', () => {
   });
 });
 
-describe('vault CLI: backup + restore (full bundle, L1)', () => {
+// Each case seals and opens one or two full AES-GCM bundles (scrypt key
+// derivation included), which the 5s default cannot absorb under a loaded
+// parallel runner. Same class as the acceptance-script suite timeout.
+describe('vault CLI: backup + restore (full bundle, L1)', { timeout: 20_000 }, () => {
   it('packs map+bundle and restores a destroyed realm into a new target (exit 0)', async () => {
     const backup = await run(['backup', '--root', root, '--out-dir', outDir]);
     expect(backup.code).toBe(VAULT_EXIT.ok);

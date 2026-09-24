@@ -142,6 +142,12 @@ export class Orchestrator {
     return result ? structuredClone(result) : undefined;
   }
 
+  /** E1.6: the original fan-out request, so a replay can show the dispatch input. */
+  getRequest(intentId: string): FanOutRequest | undefined {
+    const request = this.requests.get(intentId);
+    return request ? structuredClone(request) : undefined;
+  }
+
   /** E6.3: find the intent whose branch run matches a task-input escalation.
    *  Branch runIds are `${parentRunId}:${vassal}`, so the escalation's runId
    *  alone is enough to locate the stored intent. */
