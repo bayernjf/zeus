@@ -150,9 +150,9 @@ describe('HTTP H1 server', () => {
     if (!verdict.ok) expect(verdict.reason).toMatch(/maxAge/);
   });
 
-  it('GET /api/roster (internal) requires bearer and exposes revoked rows plus endpoints', async () => {
+  it('GET /api/roster (internal) requires bearer, seals revoked+active rows, and verifies offline', async () => {
     const registry = await registryWithTwo();
-    const { app: server } = await serverWith(registry, 'internal-secret');
+    const { app: server, signer } = await serverWith(registry, 'internal-secret');
     app = server;
 
     const noAuth = await app.inject({ method: 'GET', url: '/api/roster' });
@@ -162,13 +162,27 @@ describe('HTTP H1 server', () => {
 
     const ok = await app.inject({ method: 'GET', url: '/api/roster', headers: { authorization: 'Bearer internal-secret' } });
     expect(ok.statusCode).toBe(200);
-    const snapshot = JSON.parse(ok.body);
-    expect(snapshot.scope).toBe('internal');
-    expect(snapshot.entries.map((e: { name: string }) => e.name).sort()).toEqual(['loom', 'pr-helper']);
-    const loom = snapshot.entries.find((e: { name: string }) => e.name === 'loom');
+    // governance view is bearer-protected and must never be cached by intermediaries
+    expect(ok.headers['cache-control']).toBe('no-store');
+
+    const envelope = JSON.parse(ok.body) as SignedRosterSnapshot;
+    expect(envelope.snapshot.scope).toBe('internal');
+    expect(envelope.snapshot.entries.map((e: { name: string }) => e.name).sort()).toEqual(['loom', 'pr-helper']);
+    const loom = envelope.snapshot.entries.find((e: { name: string }) => e.name === 'loom')!;
     expect(loom.status).toBe('revoked');
     expect(loom.cardUrl).toContain('agent-card');
     expect(loom.taskUrl).toContain('/api/a2a/tasks');
+
+    // v1.1: the internal envelope (revoked row included) seals and verifies offline
+    const verdict = await verifySignedSnapshot(envelope, signer.verifier(), new Date('2026-09-21T12:30:00.000Z'));
+    expect(verdict.ok).toBe(true);
+
+    // the revoked row carries a permanent revocation attestation (no hard expiry),
+    // the active row carries an expiring active attestation
+    expect(envelope.attestations.loom.status).toBe('revoked');
+    expect(envelope.attestations.loom.expiresAt).toBeUndefined();
+    expect(envelope.attestations['pr-helper'].status).toBe('active');
+    expect(typeof envelope.attestations['pr-helper'].expiresAt).toBe('string');
   });
 
   it('does not mount the internal route when no internal token is configured', async () => {

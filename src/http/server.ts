@@ -1,7 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { VassalRegistry } from '../registry/registry.js';
-import { projectInternalRoster, projectPublicRoster, type RosterSnapshot } from '../registry/roster.js';
+import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
 import { UnknownIntentError } from '../orchestrator/orchestrator.js';
@@ -110,9 +110,29 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       }
     };
 
-    // Internal governance roster: unsigned (contains revoked rows and endpoints).
-    app.get('/api/roster', { preHandler: requireBearer }, async (): Promise<RosterSnapshot> => {
-      return projectInternalRoster(deps.registry.listAll(), now);
+    // Internal governance roster: sealed like the public view (design-fealty-signing
+    // §4 "internal/public each sealed"), but it keeps revoked rows — those carry
+    // permanent (non-expiring) revocation attestations — plus internal endpoints
+    // and probe details. Bearer-protected and never cached by intermediaries.
+    app.get('/api/roster', { preHandler: requireBearer }, async (_request, reply) => {
+      const at = now();
+      const all = deps.registry.listAll();
+      const snapshot = projectInternalRoster(all, () => at);
+      const sources = all.map(entry => ({
+        name: entry.card.name,
+        card: entry.card,
+        cardUrl: entry.cardUrl,
+        ...(entry.revoked ? { status: 'revoked' as const } : {}),
+      }));
+      const signed: SignedRosterSnapshot = await sealSnapshot(snapshot, deps.signer, {
+        now: at,
+        maxAgeSeconds: maxAge,
+        sources,
+        attestationTtlSeconds: attestationTtl,
+      });
+      reply.header('Cache-Control', 'no-store');
+      reply.type('application/json; charset=utf-8');
+      return signed;
     });
 
     // G1: onboard a vassal at runtime — fetch its agent card, validate fealty

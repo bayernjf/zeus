@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { VassalRegistry } from '../src/registry/registry.js';
-import { projectPublicRoster } from '../src/registry/roster.js';
+import { projectInternalRoster, projectPublicRoster } from '../src/registry/roster.js';
 import {
   attestationMatchesCard,
   canonicalDigest,
@@ -329,5 +329,134 @@ describe('createAttestation', () => {
     expect(attestation.expiresAt).toBe('2026-09-21T11:00:00.000Z');
     expect(attestation.sig).toMatch(/^[A-Za-z0-9_-]+$/); // base64url, no padding
     expect(attestationMatchesCard(attestation, card)).toBe(true);
+  });
+});
+
+// --- v1.1: internal roster sealing with revoked attestations -----------------
+
+async function buildInternalFixture(
+  now: Date,
+  signer: Ed25519MemorySigner,
+  maxAgeSeconds = 3600,
+  revokeNames: string[] = ['loom']
+) {
+  const cards: Record<string, AgentCard> = { loom: loomCard(), 'pr-helper': prHelperCard() };
+  const registry = new VassalRegistry(async url => {
+    const name = url.includes('loom') ? 'loom' : 'pr-helper';
+    return new Response(JSON.stringify(cards[name]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  });
+  await registry.register('http://loom.test/api/a2a/agent-card');
+  await registry.register('http://pr.test/api/a2a/agent-card');
+  for (const name of revokeNames) registry.revoke(name);
+
+  const snapshot = projectInternalRoster(registry.listAll(), () => now);
+  const sources: AttestationSource[] = registry.listAll().map(e => ({
+    name: e.card.name,
+    card: e.card,
+    cardUrl: e.cardUrl,
+    ...(e.revoked ? { status: 'revoked' as const } : {}),
+  }));
+  const envelope = await sealSnapshot(snapshot, signer, {
+    now,
+    maxAgeSeconds,
+    attestationTtlSeconds: 86400,
+    sources,
+  });
+  return { envelope, registry };
+}
+
+describe('signed internal roster v1.1 — revoked attestations', () => {
+  it('seals and verifies an internal snapshot with active + revoked rows', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildInternalFixture(T0, signer);
+    expect(envelope.snapshot.scope).toBe('internal');
+    expect(envelope.snapshot.entries.map(e => `${e.name}:${e.status}`).sort()).toEqual([
+      'loom:revoked',
+      'pr-helper:active',
+    ]);
+
+    const result = await verifySignedSnapshot(envelope, signer.verifier(), T0);
+    expect(result.ok).toBe(true);
+
+    expect(envelope.attestations.loom.status).toBe('revoked');
+    expect(envelope.attestations.loom.expiresAt).toBeUndefined();
+    expect(envelope.attestations['pr-helper'].status).toBe('active');
+    expect(typeof envelope.attestations['pr-helper'].expiresAt).toBe('string');
+  });
+
+  it('does not hard-expire revoked attestations, while the seal maxAge still binds freshness', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    // both rows revoked, long seal age: 30 days later the permanent revocation attestations still verify
+    const { envelope: longLived } = await buildInternalFixture(T0, signer, 10 * 365 * 86400, ['loom', 'pr-helper']);
+    const thirtyDays = new Date(T0.getTime() + 30 * 86400 * 1000);
+    expect((await verifySignedSnapshot(longLived, signer.verifier(), thirtyDays)).ok).toBe(true);
+
+    // but a short seal maxAge still refuses the stale internal snapshot regardless of revoked state
+    const { envelope: shortSeal } = await buildInternalFixture(T0, signer, 3600, ['loom', 'pr-helper']);
+    const stale = await verifySignedSnapshot(shortSeal, signer.verifier(), new Date(T0.getTime() + 2 * 3600 * 1000));
+    expect(stale.ok).toBe(false);
+    if (!stale.ok) expect(stale.reason).toMatch(/maxAge/);
+  });
+
+  it('rejects an entry whose attestation status disagrees (no elevating a revoked row)', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildInternalFixture(T0, signer);
+
+    // Simulate a faulty/malicious signer: flip the revoked row to active, recompute
+    // the digest and re-seal (the test holds the key), but keep the revocation attestation.
+    const elevated = structuredClone(envelope);
+    const loomEntry = elevated.snapshot.entries.find(e => e.name === 'loom')!;
+    loomEntry.status = 'active';
+    elevated.seal.snapshotDigest = canonicalDigest(elevated.snapshot);
+    const { sig: _sealSig, ...unsignedSeal } = elevated.seal;
+    elevated.seal.sig = await signer.sign(canonicalJson(unsignedSeal));
+
+    const result = await verifySignedSnapshot(elevated, signer.verifier(), T0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/does not match entry status/);
+  });
+
+  it('fails loud when sealing lacks a source for an entry, or source status disagrees', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope, registry } = await buildInternalFixture(T0, signer);
+
+    // 1) a snapshot entry with no attestation source must not produce an unverifiable envelope
+    const partialSources: AttestationSource[] = [
+      {
+        name: 'pr-helper',
+        card: registry.listAll().find(e => e.card.name === 'pr-helper')!.card,
+        cardUrl: 'http://pr.test/api/a2a/agent-card',
+      },
+    ];
+    await expect(
+      sealSnapshot(envelope.snapshot, signer, { now: T0, maxAgeSeconds: 3600, sources: partialSources })
+    ).rejects.toThrow(/no attestation source/);
+
+    // 2) sources all default to active while the snapshot contains a revoked row
+    const allActiveSources: AttestationSource[] = registry
+      .listAll()
+      .map(e => ({ name: e.card.name, card: e.card, cardUrl: e.cardUrl }));
+    await expect(
+      sealSnapshot(envelope.snapshot, signer, { now: T0, maxAgeSeconds: 3600, sources: allActiveSources })
+    ).rejects.toThrow(/does not match roster entry status/);
+  });
+
+  it('createAttestation emits a permanent revocation attestation without expiresAt', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const attestation = await createAttestation(
+      { name: 'loom', card: loomCard(), cardUrl: 'http://loom.test/api/a2a/agent-card', status: 'revoked' },
+      signer,
+      { now: T0, ttlSeconds: 3600 }
+    );
+    expect(attestation).toMatchObject({
+      v: 1,
+      alg: 'Ed25519',
+      issuer: 'zeus',
+      status: 'revoked',
+      keyId: 'zeus-rsk-2026-09',
+    });
+    expect(attestation.expiresAt).toBeUndefined();
+    expect(attestation.sig).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(attestationMatchesCard(attestation, loomCard())).toBe(true);
   });
 });

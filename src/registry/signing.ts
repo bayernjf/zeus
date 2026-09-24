@@ -127,6 +127,8 @@ const ISSUER = 'zeus' as const;
 /** Small tolerance for clock skew when rejecting future-dated signatures (ms). */
 const CLOCK_SKEW_MS = 60_000;
 
+export type AttestationStatus = 'active' | 'revoked';
+
 export type Attestation = {
   v: 1;
   alg: 'Ed25519';
@@ -135,9 +137,17 @@ export type Attestation = {
   vassal: { name: string; cardUrl: string };
   cardDigest: string;
   fealtyDigest?: string;
-  status: 'active';
+  status: AttestationStatus;
   issuedAt: string;
-  expiresAt: string;
+  /**
+   * Hard-expiry window, present only on active attestations. Revocation is a
+   * permanent, non-replayable state (replaying a revoked attestation still
+   * correctly denies the vassal), so revoked attestations carry no per-entry
+   * expiry; freshness of an internal snapshot containing them is bound by the
+   * seal maxAge. This is the v1.1 addition that lets the internal roster (which
+   * keeps revoked rows for the governance trail) be sealed, per design-fealty-signing §4.
+   */
+  expiresAt?: string;
   sig: string;
 };
 
@@ -157,7 +167,14 @@ export type SignedRosterSnapshot = {
   seal: Seal;
 };
 
-export type AttestationSource = { name: string; card: AgentCard; cardUrl: string };
+export type AttestationSource = {
+  name: string;
+  card: AgentCard;
+  cardUrl: string;
+  /** Roster status this attestation certifies; defaults to active. Revoked
+   *  sources produce a permanent (non-expiring) revocation attestation. */
+  status?: AttestationStatus;
+};
 
 function iso(date: Date): string {
   return date.toISOString();
@@ -166,11 +183,11 @@ function iso(date: Date): string {
 export async function createAttestation(
   source: AttestationSource,
   signer: RosterSigner,
-  options: { now: Date; ttlSeconds: number }
+  options: { now: Date; ttlSeconds?: number }
 ): Promise<Attestation> {
   const { cardDigest, fealtyDigest } = digestCard(source.card);
+  const status: AttestationStatus = source.status ?? 'active';
   const issuedAt = iso(options.now);
-  const expiresAt = iso(new Date(options.now.getTime() + options.ttlSeconds * 1000));
   const unsigned = {
     v: ENVELOPE_VERSION,
     alg: ALG,
@@ -179,9 +196,13 @@ export async function createAttestation(
     vassal: { name: source.name, cardUrl: source.cardUrl },
     cardDigest,
     ...(fealtyDigest ? { fealtyDigest } : {}),
-    status: 'active' as const,
+    status,
     issuedAt,
-    expiresAt,
+    // Only active attestations carry a hard-expiry window. A revoked attestation
+    // certifies a permanent revocation fact and must not age out.
+    ...(status === 'active'
+      ? { expiresAt: iso(new Date(options.now.getTime() + (options.ttlSeconds ?? 24 * 3600) * 1000)) }
+      : {}),
   };
   const sig = await signer.sign(canonicalJson(unsigned));
   return { ...unsigned, sig };
@@ -204,12 +225,23 @@ export async function sealSnapshot(
   const attestations: Record<string, Attestation> = {};
   if (options.sources) {
     const ttlSeconds = options.attestationTtlSeconds ?? 24 * 3600;
-    for (const source of options.sources) {
-      // Only attest names actually present in this snapshot (public snapshots
-      // already exclude revoked entries at the projector).
-      if (snapshot.entries.some(entry => entry.name === source.name)) {
-        attestations[source.name] = await createAttestation(source, signer, { now: options.now, ttlSeconds });
+    const sourceByName = new Map(options.sources.map(source => [source.name, source]));
+    // Every snapshot entry must be attested, and the source status must match
+    // the projected entry status — this is what lets the internal roster (which
+    // keeps revoked rows) be sealed: active rows get active (expiring)
+    // attestations, revoked rows get permanent revocation attestations.
+    for (const entry of snapshot.entries) {
+      const source = sourceByName.get(entry.name);
+      if (!source) {
+        throw new Error(`sealSnapshot: no attestation source provided for snapshot entry "${entry.name}"`);
       }
+      const sourceStatus: AttestationStatus = source.status ?? 'active';
+      if (sourceStatus !== entry.status) {
+        throw new Error(
+          `sealSnapshot: attestation status "${sourceStatus}" does not match roster entry status "${entry.status}" for "${entry.name}"`
+        );
+      }
+      attestations[entry.name] = await createAttestation(source, signer, { now: options.now, ttlSeconds });
     }
   }
 
@@ -236,10 +268,10 @@ export type VerifyResult = { ok: true; snapshot: RosterSnapshot } | { ok: false;
 
 /**
  * Verify a signed snapshot offline: seal signature + snapshotDigest binding +
- * seal maxAge, then every entry's attestation (signature, active status, hard
- * expiry, name binding). Card-content deep verification (cardDigest vs a freshly
- * fetched card) is a separate step via attestationMatchesCard for parties that
- * hold the card.
+ * seal maxAge, then every entry's attestation (signature, exact status match,
+ * name binding; active entries also hard-expire, revoked entries do not).
+ * Card-content deep verification (cardDigest vs a freshly fetched card) is a
+ * separate step via attestationMatchesCard for parties that hold the card.
  */
 export async function verifySignedSnapshot(
   envelope: unknown,
@@ -275,26 +307,41 @@ export async function verifySignedSnapshot(
   const sealOk = await verifier.verify(seal.keyId, canonicalJson(stripSig(seal as unknown as Record<string, unknown>)), seal.sig);
   if (!sealOk) return { ok: false, reason: `seal signature verification failed (keyId=${seal.keyId})` };
 
-  // 4. One valid, active, unexpired attestation per entry.
+  // 4. One attestation per entry. Its status must exactly match the projected
+  //    entry status (an active attestation cannot cover a revoked row and vice
+  //    versa — no elevating or downgrading). Active entries carry a hard-expiry
+  //    window; revoked entries certify a permanent state and rely on the seal
+  //    maxAge for snapshot freshness.
   for (const entry of snapshot.entries) {
     const attestation = attestations[entry.name];
     if (!attestation) return { ok: false, reason: `missing attestation for vassal "${entry.name}"` };
     if (attestation.vassal?.name !== entry.name) {
       return { ok: false, reason: `attestation name binding failed for "${entry.name}"` };
     }
-    if (attestation.status !== 'active') {
-      return { ok: false, reason: `attestation for "${entry.name}" is not active` };
+    if (attestation.status !== entry.status) {
+      return {
+        ok: false,
+        reason: `attestation status "${attestation.status}" does not match entry status "${entry.status}" for "${entry.name}"`,
+      };
     }
     const attIssued = Date.parse(attestation.issuedAt);
-    const attExpires = Date.parse(attestation.expiresAt);
-    if (Number.isNaN(attIssued) || Number.isNaN(attExpires)) {
-      return { ok: false, reason: `attestation for "${entry.name}" has unparseable dates` };
+    if (Number.isNaN(attIssued)) {
+      return { ok: false, reason: `attestation for "${entry.name}" has unparseable issuedAt` };
     }
     if (now.getTime() < attIssued - CLOCK_SKEW_MS) {
       return { ok: false, reason: `attestation for "${entry.name}" issued in the future` };
     }
-    if (now.getTime() > attExpires) {
-      return { ok: false, reason: `attestation for "${entry.name}" expired (T3 replay)` };
+    if (attestation.status === 'active') {
+      if (!attestation.expiresAt) {
+        return { ok: false, reason: `active attestation for "${entry.name}" is missing expiresAt` };
+      }
+      const attExpires = Date.parse(attestation.expiresAt);
+      if (Number.isNaN(attExpires)) {
+        return { ok: false, reason: `attestation for "${entry.name}" has unparseable expiresAt` };
+      }
+      if (now.getTime() > attExpires) {
+        return { ok: false, reason: `attestation for "${entry.name}" expired (T3 replay)` };
+      }
     }
     const attOk = await verifier.verify(
       attestation.keyId,
