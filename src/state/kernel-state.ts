@@ -15,6 +15,8 @@ import type { ConnectorRecord } from '../mcp/types.js';
 import { ConnectorRegistry } from '../mcp/connectors.js';
 import type { MentorshipRecord } from '../skills/mentor.js';
 import { MentorshipLedger } from '../skills/mentor.js';
+import type { Department } from '../org/types.js';
+import type { OrgRegistry } from '../org/registry.js';
 
 /**
  * E5.3 minimal kernel persistence (design-http-transport §2.2/§2.3: the H2
@@ -46,6 +48,8 @@ export type KernelSnapshot = {
   connectors?: ConnectorRecord[];
   /** E2.5: mentorship records. Optional for backward compat. */
   mentorships?: MentorshipRecord[];
+  /** E9.3: department establishment. Optional for backward compat. */
+  org?: Department[];
 };
 
 export type KernelComponents = {
@@ -62,6 +66,8 @@ export type KernelComponents = {
   connectorRegistry?: ConnectorRegistry;
   /** E2.5: when assembled, mentorship records are persisted and restored. */
   mentorshipLedger?: MentorshipLedger;
+  /** E9.3: when assembled, the department establishment is persisted and restored. */
+  orgRegistry?: OrgRegistry;
 };
 
 export class KernelStateError extends Error {}
@@ -77,6 +83,7 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     ...(components.memoryStore ? { memory: components.memoryStore.exportState() } : {}),
     ...(components.connectorRegistry ? { connectors: components.connectorRegistry.exportState() } : {}),
     ...(components.mentorshipLedger ? { mentorships: components.mentorshipLedger.exportState() } : {}),
+    ...(components.orgRegistry ? { org: components.orgRegistry.exportState() } : {}),
   };
 }
 
@@ -89,6 +96,7 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
   if (components.memoryStore && snapshot.memory) components.memoryStore.importState(snapshot.memory);
   if (components.connectorRegistry && snapshot.connectors) components.connectorRegistry.importState(snapshot.connectors);
   if (components.mentorshipLedger && snapshot.mentorships) components.mentorshipLedger.importState(snapshot.mentorships);
+  if (components.orgRegistry && snapshot.org) components.orgRegistry.importState(snapshot.org);
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -110,6 +118,7 @@ export class FileKernelStateStore {
       ...(state.memory ? { memory: state.memory } : {}),
       ...(state.connectors ? { connectors: state.connectors } : {}),
       ...(state.mentorships ? { mentorships: state.mentorships } : {}),
+      ...(state.org ? { org: state.org } : {}),
     };
     await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;

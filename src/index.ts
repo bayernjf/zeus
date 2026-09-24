@@ -351,6 +351,8 @@ export type {
 export { buildDiary } from './diary/build.js';
 export { renderDiaryMarkdown } from './diary/markdown.js';
 export { persistDiary, exportDiary } from './diary/persist.js';
+export { buildDiariesFromState } from './diary/from-memory.js';
+export type { BuildDiariesOptions } from './diary/from-memory.js';
 export {
   renderEventContent,
   dayBucket,
@@ -373,6 +375,7 @@ export { createDepartment, assignMember, removeMember, setLead, slug } from './o
 export { buildOrgChart, renderOrgMarkdown } from './org/chart.js';
 export type { OrgChartView } from './org/chart.js';
 export { traceAccountability } from './org/accountability.js';
+export { OrgRegistry } from './org/registry.js';
 export { OrgError } from './org/types.js';
 export type {
   Department,

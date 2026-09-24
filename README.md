@@ -2,7 +2,7 @@
 
 > 以用户数据目录为底座、多 Agent 高效协作的操作系统：对个人，是记忆的避风港与可传承的藏宝图；对企业，是即插即用、伴随成长的「虚拟部门」。完整定位见 [docs/product-portrait.md](docs/product-portrait.md)。
 
-本仓库当前是 Zeus 的**纯 TypeScript 内核库 + 薄传输面**：封臣注册、任务派发、监督、个人数据域、多 Agent 并发决策内核以零运行时依赖的库形态落地；另附只读 Realm MCP stdio 脚手架与 HTTP 薄传输层（Fastify）——H1 只读名册 + H2 驾驶员 API（发起意图、看决策、拍板、指标）。Fastify 依赖锁在 `src/http`，内核本身保持零传输依赖。另已落地 **Vault 藏宝图**：为连接的目录出一张只存引用的加密地图，按图能原地校验或从加密备份包恢复（E8.1/E8.2），并提供零依赖 CLI 执行器（build/check/backup/restore，E3.7；调度由外部 cron/systemd 触发，内核不内置定时器）。另落地 **Diary 日记**（E8.3：把记忆按天叙事、经 Realm 落盘/导出）与 **Org 虚拟部门编制**（E9.3：部门/岗位/主管可视，任务结果追到执行 Agent、部门 lead 与拍板驾驶员）。
+本仓库当前是 Zeus 的**纯 TypeScript 内核库 + 薄传输面**：封臣注册、任务派发、监督、个人数据域、多 Agent 并发决策内核以零运行时依赖的库形态落地；另附只读 Realm MCP stdio 脚手架与 HTTP 薄传输层（Fastify）——H1 只读名册 + H2 驾驶员 API（发起意图、看决策、拍板、指标）。Fastify 依赖锁在 `src/http`，内核本身保持零传输依赖。另已落地 **Vault 藏宝图**：为连接的目录出一张只存引用的加密地图，按图能原地校验或从加密备份包恢复（E8.1/E8.2），并提供零依赖 CLI 执行器（build/check/backup/restore，E3.7；调度由外部 cron/systemd 触发，内核不内置定时器）。另落地 **Diary 日记**（E8.3：把记忆按天叙事、经 Realm 落盘/导出，GET /api/diary 读、POST generate 落盘）与 **Org 虚拟部门编制**（E9.3：部门/岗位/主管可视，任务结果追到执行 Agent、部门 lead 与拍板驾驶员；OrgRegistry 随 boot 持久化重启不丢，编制 chart/建编/安置、日记 read/generate 已上 H2 HTTP）。
 
 ## 内核模块
 
@@ -17,11 +17,11 @@
 | **skills（E2）** | `src/skills/` | Skill 注册中心：技能登记/多版本共存/deprecate 标记、按名·域·标签检索、`registerFromCard`、`resolveTeam` 多技能组队（歧义不静默选边） |
 | **decision（S2）** | `src/decision/` | 模型无关决策后端：端口 + Jev/LLM 适配器 + 降级；规则无法收敛时先做一次带置信度闸门的后端仲裁（`orchestrator/arbitration.ts`），规则有结论后可再做一次对抗复核（`orchestrator/judge.ts`，默认关） |
 | **realm（D1）** | `src/realm/` | personal 数据域：`FsRealmStore` 的 connect / manifest / search / read / **write（E3.5）**，确定性 realmId、connect 快照检索、`contentDigest` 基线、路径穿越与 symlink 双检防护、原子写；企业域写授权凭证门 `grant.ts`（enterprise connect/MCP 仍 P1）；附只读 MCP stdio 脚手架（`mcp.ts` / `mcp-stdio.ts`） |
-| **state（E5.3）** | `src/state/` | 内核持久化：`kernel-state.ts` 把封臣表（含已吊销）、升级队列、意图结果+原始请求原子落盘（tmp+rename）并恢复；`boot.ts` 一次性装配 registry/dispatcher/oversight/orchestrator/metrics，配置 `ZEUS_STATE_FILE` 时启动恢复、优雅退出落盘（metrics 仅运行时不持久化） |
-| **http（H1+H2 传输面）** | `src/http/` | Fastify 薄适配层（非内核、全仓库唯一 fastify 依赖处）：H1 只读 `/healthz`、`/api/roster/public`（实时投影 + 签名名册快照，离线可验）、`/api/roster`（bearer 治理视图）；H2 驾驶员 API（bearer）`POST /api/intents`、`GET /api/intents/:id`、`POST /api/intents/:id/cancel`、`GET/POST /api/escalations`（approve/reject/resolve）、`GET /api/metrics`；`serve.ts` 为进程入口，经 `zeus/http` 子路径导出 |
+| **state（E5.3）** | `src/state/` | 内核持久化：`kernel-state.ts` 把封臣表（含已吊销）、升级队列、意图结果+原始请求、**Org 编制**原子落盘（tmp+rename）并恢复；`boot.ts` 一次性装配 registry/dispatcher/oversight/orchestrator/metrics/orgRegistry，配置 `ZEUS_STATE_FILE` 时启动恢复、优雅退出落盘（metrics 仅运行时不持久化） |
+| **http（H1+H2 传输面）** | `src/http/` | Fastify 薄适配层（非内核、全仓库唯一 fastify 依赖处）：H1 只读 `/healthz`、`/api/roster/public`（实时投影 + 签名名册快照，离线可验）、`/api/roster`（bearer 治理视图）；H2 驾驶员 API（bearer）`POST /api/intents`、`GET /api/intents/:id`、`POST /api/intents/:id/cancel`、`GET/POST /api/escalations`（approve/reject/resolve）、`GET /api/metrics`、**Org**（`GET /api/org/chart`、建编/安置）、**Diary**（`GET /api/diary`、`POST /api/diary/generate`）；`serve.ts` 为进程入口，经 `zeus/http` 子路径导出 |
 | **vault（E8.1/E8.2/E3.7）** | `src/vault/` | 藏宝图与恢复协议：buildVault 出图只存引用 + 逐 item 指纹（**正文零泄漏**）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、restoreDryRun 原地校验与漂移检测、packFull 加密内容包 + restoreFromBundle 经 FsRestoreSink 跨位恢复；`cli.ts` 为零依赖执行器（build/check/backup/restore，退出码 0/1/2/3） |
-| **diary（E8.3）** | `src/diary/` | 记忆叙事化日记：buildDiary 把记忆事件按日历天分桶、确定性排序、内容只呈现不臆造、每行锚 eventId；persistDiary 经 Realm.write 落 `diary/YYYY-MM-DD.md`（幂等），exportDiary 稳定 JSON |
-| **org（E9.3）** | `src/org/` | 虚拟部门编制与结果责任：部门单 lead/成员唯一/不可变，org chart 编制可视，traceAccountability 把任务结果追到执行 Agent、部门 lead、拍板驾驶员（无编制标 unassigned） |
+| **diary（E8.3）** | `src/diary/` | 记忆叙事化日记：buildDiary 把记忆事件按日历天分桶、确定性排序、内容只呈现不臆造、每行锚 eventId；buildDiariesFromState 按 realm 分组构建；persistDiary 经 Realm.write 落 `diary/YYYY-MM-DD.md`（幂等），exportDiary 稳定 JSON；H2 暴露 `GET /api/diary`、`POST /api/diary/generate` |
+| **org（E9.3）** | `src/org/` | 虚拟部门编制与结果责任：部门单 lead/成员唯一/不可变，org chart 编制可视，traceAccountability 把任务结果追到执行 Agent、部门 lead、拍板驾驶员（无编制标 unassigned）；OrgRegistry 有状态持有编制、随 KernelSnapshot 持久化重启恢复；H2 暴露 `GET /api/org/chart`、建编/安置端点 |
 
 内核统一公共出口在 `src/index.ts`（不含 http 传输面），构建产物见下文。
 
@@ -30,7 +30,7 @@
 ```bash
 npm install
 npm run build      # tsc 出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest，411 项
+npm test           # vitest，431 项
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 名册 + H2 驾驶员 API；需先 build；env 见 .env.example，生产部署见 docs/deployment.md）
 ```
@@ -93,6 +93,8 @@ const app = await createHttpServer({
   orchestrator, // 传入即挂载意图端点
   oversight,    // 传入即挂载升级队列端点
   metrics,      // 传入即挂载 /api/metrics
+  orgRegistry,  // 传入即挂载 /api/org/* 编制端点
+  memoryStore, realmStore, // 传入即挂载 /api/diary 读取与生成端点
 });
 await app.listen({ host: '127.0.0.1', port: 8787 });
 ```
@@ -120,15 +122,28 @@ curl -s -X POST localhost:8787/api/escalations/esc-xxx/resolve \
 # 取消意图的全部非终态分支；查看并发指标
 curl -s -X POST localhost:8787/api/intents/intent-xxx/cancel -H "Authorization: Bearer $TOKEN"
 curl -s localhost:8787/api/metrics -H "Authorization: Bearer $TOKEN"
+
+# 查看虚拟部门编制；建部门、安置成员（lead/member）
+curl -s localhost:8787/api/org/chart -H "Authorization: Bearer $TOKEN"
+curl -s -X POST localhost:8787/api/org/departments -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"name":"研发部","mission":"交付"}'
+curl -s -X POST localhost:8787/api/org/departments/dept-yan-fa-bu/members \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"agentId":"agent-1","role":"lead","title":"研发主管"}'
+
+# 读某日日记；生成日记并经 Realm.write 落 diary/YYYY-MM-DD.md
+curl -s 'localhost:8787/api/diary?date=2026-09-24' -H "Authorization: Bearer $TOKEN"
+curl -s -X POST localhost:8787/api/diary/generate -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"date":"2026-09-24"}'
 ```
 
 > H2 操作面已具备完整封臣上线入口（`POST /api/vassals` 或 `ZEUS_VASSAL_SEEDS` 启动自动注册）；真机扇出到封臣仍待部署与联调（见 handoff）。端到端闭环用 mock 封臣在 `tests/http-h2.test.ts` 中完整跑通（发起→扇出→冲突升级→拍板→决议回写）。
 
 ## 当前边界
 
-- **库 + 薄传输**：HTTP 传输层不含业务逻辑——H1 三只只读端点 + H2 驾驶员 API（发起/回查/取消意图、列/拍升级、指标、封臣注册/吊销），写端点与 internal 名册统一 bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 时整组不挂载。封臣可经 `POST /api/vassals` 注册或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；internal 名册视图不封签（含 revoked 行，靠 bearer 保护，封签留签名链 v1.1）。内核状态（封臣含已吊销、监督台队列、意图结果+原始请求、Realm 连接、记忆、Mentor 台账、MCP 连接器声明）在配置 `ZEUS_STATE_FILE` 时启动恢复、SIGINT/SIGTERM 原子落盘（E5.3），未配置则纯内存；运行指标不持久化。
+- **库 + 薄传输**：HTTP 传输层不含业务逻辑——H1 三只只读端点 + H2 驾驶员 API（发起/回查/取消意图、列/拍升级、指标、封臣注册/吊销），写端点与 internal 名册统一 bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 时整组不挂载。封臣可经 `POST /api/vassals` 注册或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；internal 名册视图不封签（含 revoked 行，靠 bearer 保护，封签留签名链 v1.1）。内核状态（封臣含已吊销、监督台队列、意图结果+原始请求、Realm 连接、记忆、Mentor 台账、MCP 连接器声明、**Org 编制**）在配置 `ZEUS_STATE_FILE` 时启动恢复、SIGINT/SIGTERM 原子落盘（E5.3），未配置则纯内存；运行指标不持久化。
 - **Realm 对外唯一传输为 MCP**（契约 v0.2），不做独立 HTTP API；只读 stdio 脚手架已落地（resources 映射 manifest/search/read、宿主预连接、绝对路径不出进程），正式 P1（鉴权、streamable HTTP、官方 SDK 兼容性复核）的触发条件仍是 read-realm 封臣出现。
-- 服务端 HTTP 栈为 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)）：**H1 已落地**（healthz / public 签名名册 / bearer internal），**H2 驾驶员 API 已落地**（意图扇出/回查/取消、升级队列 approve/reject/resolve 决议回写、并发指标，端到端测试见 `tests/http-h2.test.ts`）；H3（SSE server / 多副本 / 静态快照分发）按需立项。
+- 服务端 HTTP 栈为 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)）：**H1 已落地**（healthz / public 签名名册 / bearer internal），**H2 驾驶员 API 已落地**（意图扇出/回查/取消、升级队列 approve/reject/resolve 决议回写、并发指标、Org 编制、Diary 日记，端到端测试见 `tests/http-h2.test.ts`、`tests/http-org.test.ts`、`tests/http-diary.test.ts`）；H3（SSE server / 多副本 / 静态快照分发）按需立项。
 - pr-helper 验收 #6（标准 A2A 客户端守护测试）与 Zeus↔loom 真机联调均**待部署**，现状与待办以 [handoff.md](handoff.md) 为准。
 
 ## 文档
