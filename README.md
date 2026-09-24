@@ -100,6 +100,7 @@ const app = await createHttpServer({
   connectorRegistry, // 传入即挂载 /api/connectors*
   decisionStatus,    // 传入即挂载 /api/decision（进程解析到的决策后端与闸门）
   auditFile,         // 传入即挂载 /api/audit（读回 JSONL 审计尾）
+  kernelStats,       // 传入即挂载 /api/state（内核盘点：计数与路径，非快照内容）
   memoryStore, realmStore, // 传入即挂载 /api/memory/* 与 /api/diary*
 });
 await app.listen({ host: '127.0.0.1', port: 8787 });
@@ -193,6 +194,12 @@ curl -s -X DELETE localhost:8787/api/connectors/kb -H "Authorization: Bearer $TO
 # 审计回读（E4.7，需 ZEUS_AUDIT_FILE）：按 runId / 封臣 / 决策类型过滤，读尾部
 curl -s 'localhost:8787/api/audit?runId=run-xxx&limit=50' -H "Authorization: Bearer $TOKEN"
 curl -s 'localhost:8787/api/audit?decision=vassal-revoked' -H "Authorization: Bearer $TOKEN"
+
+# 升级队列按类分流：缺参、意图冲突、记忆争议要的回答完全不同
+curl -s 'localhost:8787/api/escalations?status=pending&kind=memory-dispute' -H "Authorization: Bearer $TOKEN"
+
+# 内核盘点：现在装了多少、重启会不会丢（只有计数与路径，绝不含快照内容本身）
+curl -s localhost:8787/api/state -H "Authorization: Bearer $TOKEN"
 ```
 
 > H2 操作面已具备完整封臣上线入口（`POST /api/vassals` 或 `ZEUS_VASSAL_SEEDS` 启动自动注册）；**封臣侧 pr-helper 早已部署在生产**（`https://pr-helper-ten.vercel.app`），缺的是对线上执行一次验收与一次真机扇出（见 handoff Active work 40）。端到端闭环用 mock 封臣在 `tests/http-h2.test.ts` 中完整跑通（发起→扇出→冲突升级→拍板→决议回写）。
