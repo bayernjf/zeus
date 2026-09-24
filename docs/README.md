@@ -15,8 +15,8 @@
 | 理解决策后端抽象层（模型无关）怎么接入决策能力 | [design-decision-backend.md](design-decision-backend.md)（DecisionBackend 端口：noul/choice/score、两类实现家族——专用决策模型 Jev（快层）/ 传统 LLM 适配（慢层）、四接线位、数据主权硬线） |
 | 探讨 AI 时代多系统怎么沟通、Agent 与确定性原语边界划在哪 | [design-agentic-integration.md](design-agentic-integration.md)（Agent 作编排层的两层架构、划边界四轴、确定性闸门、钉死/交给清单、MCP/A2A/Skill 插座） |
 | 给数据目录出藏宝图、做备份与恢复演练 | [design-vault.md](design-vault.md)（图只存引用 + 指纹、AES-GCM 密钥分离、原地校验/漂移检测、加密备份包跨位恢复，E8.1/E8.2）；CLI 操作（build/check/backup/restore、cron 示例）见 [deployment.md](deployment.md) §7（E3.7） |
-| 把记忆按天写成可回溯的日记、落盘或导出 | [design-diary.md](design-diary.md)（事件按天分桶/排序、内容不臆造、锚 eventId、经 Realm.write 落 `diary/YYYY-MM-DD.md`，E8.3） |
-| 建立虚拟部门编制、把任务结果追到责任人和驾驶员 | [design-org.md](design-org.md)（部门单 lead/成员唯一、org chart 编制可视、traceAccountability 责任链，E9.3） |
+| 把记忆按天写成可回溯的日记，落盘 / 导出 / 经 HTTP 读取生成 | [design-diary.md](design-diary.md)（事件按天分桶/排序、内容不臆造、锚 eventId、经 Realm.write 落 `diary/YYYY-MM-DD.md`；H2 `GET /api/diary`、`POST /api/diary/generate`，E8.3） |
+| 建立虚拟部门编制、持久化、经 HTTP 建编安置、把任务结果追到责任人和驾驶员 | [design-org.md](design-org.md)（部门单 lead/成员唯一、org chart 编制可视、OrgRegistry 持久化重启不丢、H2 chart/建编/安置、traceAccountability 责任链，E9.3） |
 | 知道内核能扛多少并发、怎么复跑压测 | [capacity-baseline.md](capacity-baseline.md)（E10.4 本机 mock 回环基线：扇出宽度/并发意图数据、容量初步回答、`npm run bench:capacity` 复跑方法、真机重测条件） |
 | 回放一个历史决策（谁参与、什么输入、什么立场、怎么聚合的） | `src/orchestrator/replay.ts`（E1.6：replayDecision/replaySnapshot/renderReplay，从内核快照离线重建确定性时间线） |
 | 了解行业内决策层现状与分化趋势 | [research-decision-layer-industry.md](research-decision-layer-industry.md)（LLM-as-judge 主流 + 四条分化路线、对决策后端设计的印证、来源清单） |
