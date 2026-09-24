@@ -6,8 +6,11 @@ function ed25519Pem(): string {
   const { privateKey } = generateKeyPairSync('ed25519');
   return privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
 }
-function rsaPem(): string {
-  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+/** A non-Ed25519 private key. EC is generated here rather than RSA because
+ *  synchronous RSA-2048 keygen has burned past 20s under a loaded runner, and the
+ *  assertion only cares that the algorithm is wrong. */
+function nonEd25519Pem(): string {
+  const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   return privateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
 }
 
@@ -74,11 +77,9 @@ describe('T3 RSK signer loading', () => {
     ).rejects.toBeInstanceOf(RskConfigError);
   });
 
-  // Synchronous RSA-2048 keygen only to prove "not Ed25519"; it starves under
-  // parallel load (global floor in vitest.config.ts).
   it('rejects a non-Ed25519 key', async () => {
     await expect(
-      loadRskSigner({ env: { ZEUS_RSK_KEY: rsaPem() }, warn: silentWarn })
+      loadRskSigner({ env: { ZEUS_RSK_KEY: nonEd25519Pem() }, warn: silentWarn })
     ).rejects.toThrow(/Ed25519/);
   });
 
