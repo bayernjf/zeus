@@ -10,6 +10,7 @@ import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
+import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { RealmStore } from '../realm/types.js';
@@ -268,6 +269,35 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           unsubscribe();
           raw.destroy();
         });
+      });
+
+      // E1.6: offline replay of one stored decision — participants, dispatch
+      // input, stances, aggregation, arbitration/judge and the driver's
+      // settlement, rebuilt read-only from the persisted records. Nothing is
+      // re-dispatched and no conclusion is re-derived. ?format=text renders the
+      // human-readable timeline instead of JSON.
+      app.get('/api/intents/:id/replay', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const { format } = request.query as { format?: unknown };
+        if (format !== undefined && format !== 'json' && format !== 'text') {
+          return error(reply, 400, 'invalid_request', 'query.format must be json | text');
+        }
+        const stored = deps.orchestrator!.getIntent(id);
+        if (!stored) return error(reply, 404, 'not_found', `unknown intent: ${id}`);
+        let replay: DecisionReplay;
+        try {
+          replay = replayDecision(stored, deps.orchestrator!.getRequest(id));
+        } catch (e) {
+          // An unreplayable record is a corrupt stored decision, not a bad
+          // request: fail loud instead of serving a partial timeline.
+          if (e instanceof ReplayError) return error(reply, 500, 'replay_failed', e.message);
+          throw e;
+        }
+        if (format === 'text') {
+          reply.type('text/plain; charset=utf-8');
+          return renderReplay(replay);
+        }
+        return replay;
       });
     }
 
