@@ -89,6 +89,21 @@ async function main(): Promise<void> {
     orgRegistry: kernel.orgRegistry,
     memoryStore: kernel.memoryStore,
     realmStore: kernel.realmStore,
+    connectorRegistry: kernel.connectorRegistry,
+    // Same facts the boot log line prints, now readable over the bearer face.
+    decisionStatus: {
+      configured: decision.backend !== null,
+      ...(decision.backendKind ? { kind: decision.backendKind } : {}),
+      ...(decision.backend ? { model: decision.backend.model } : {}),
+      arbitration: { enabled: decision.backend !== null },
+      judge: {
+        enabled: decision.judgeEnabled,
+        ...(decision.judgeThreshold !== undefined ? { threshold: decision.judgeThreshold } : {}),
+        ...(decision.allowUncalibratedJudge !== undefined
+          ? { allowUncalibrated: decision.allowUncalibratedJudge }
+          : {}),
+      },
+    },
   });
   const port = Number(process.env.ZEUS_PORT ?? 8787);
   const host = process.env.ZEUS_HOST ?? '127.0.0.1';
