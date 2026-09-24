@@ -19,7 +19,13 @@
  * invalidate every signature).
  */
 import { createRequire } from 'node:module';
-import { bootKernel, resolveAuditConfig, resolveConcurrencyConfig, resolveDecisionConfig } from '../state/boot.js';
+import {
+  bootKernel,
+  resolveAuditConfig,
+  resolveConcurrencyConfig,
+  resolveDecisionConfig,
+  resolveRealmConfig,
+} from '../state/boot.js';
 import { kernelStats } from '../state/stats.js';
 import { loadRskSigner } from './rsk.js';
 import { createHttpServer } from './server.js';
@@ -36,6 +42,9 @@ async function main(): Promise<void> {
   // because a silently ignored cap would read as protection that is not there.
   const concurrency = resolveConcurrencyConfig(process.env);
   const audit = resolveAuditConfig(process.env);
+  // E3.6: enterprise mounts carry their tenant scope; a malformed one aborts the
+  // boot here rather than mounting an org-visible realm.
+  const realm = resolveRealmConfig(process.env);
   if (process.env.ZEUS_JUDGE_ENABLED && !decision.backend) {
     process.stderr.write(
       '[zeus-http] ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off\n'
@@ -52,9 +61,7 @@ async function main(): Promise<void> {
     ...(process.env.ZEUS_VASSAL_SEEDS
       ? { vassalSeeds: process.env.ZEUS_VASSAL_SEEDS.split(',').map(url => url.trim()).filter(Boolean) }
       : {}),
-    ...(process.env.ZEUS_REALM_ROOTS
-      ? { realmRoots: process.env.ZEUS_REALM_ROOTS.split(',').map(root => root.trim()).filter(Boolean) }
-      : {}),
+    ...(realm.realmRoots.length ? { realmRoots: realm.realmRoots } : {}),
     ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
     ...(audit.auditMaxBytes !== undefined ? { auditMaxBytes: audit.auditMaxBytes } : {}),
     ...(audit.auditKeep !== undefined ? { auditKeep: audit.auditKeep } : {}),
@@ -113,6 +120,9 @@ async function main(): Promise<void> {
     orgRegistry: kernel.orgRegistry,
     memoryStore: kernel.memoryStore,
     realmStore: kernel.realmStore,
+    // E6.4: the two data domains, their tenant scopes and the grants between them.
+    domainGrants: kernel.domainGrants,
+    realmAudit: kernel.realmAudit,
     connectorRegistry: kernel.connectorRegistry,
     ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
     kernelStats: () => kernelStats(kernel),

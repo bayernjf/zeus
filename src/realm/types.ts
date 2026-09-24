@@ -4,6 +4,25 @@ export type { RealmType };
 
 export type RealmBackupStrategy = 'none' | 'manifest-only' | 'full';
 
+/**
+ * E3.6: position in the enterprise hierarchy. Only enterprise realms carry
+ * one; the personal domain is deliberately NOT expressible as a tenant so that
+ * the personal/enterprise diode has a type-level witness.
+ */
+export type TenantScope = {
+  org: string;
+  department?: string;
+  member?: string;
+};
+
+/** Who is asking. `driver` is the human data sovereign and is never tenant-gated. */
+export type RealmActor =
+  | { kind: 'driver'; id: string }
+  | { kind: 'vassal'; id: string; tenant?: TenantScope }
+  | { kind: 'agent'; id: string; tenant?: TenantScope };
+
+export type RealmAccess = 'read' | 'write';
+
 export type RealmBackupState = {
   strategy: RealmBackupStrategy;
   lastVerifiedAt?: string;
@@ -12,6 +31,9 @@ export type RealmBackupState = {
 export type RealmManifest = {
   realmId: string;
   type: RealmType;
+  /** E3.6: enterprise realms are scoped to a position in the org hierarchy.
+   *  Personal realms never carry one (design-realm §8.1). */
+  tenant?: TenantScope;
   /** Absolute realpath of the root. Held in-process only; the future MCP
    *  exposure layer MUST omit this field before serializing to clients. */
   root: string;
@@ -89,8 +111,54 @@ export type GrantVerification =
   | { ok: true }
   | { ok: false; reason: 'missing' | 'malformed' | 'wrong-realm' | 'expired' };
 
+/**
+ * E6.4: an explicit, revocable authorization to cross a DATA DOMAIN boundary
+ * (design-realm §8.3). Two things it is NOT:
+ *  - it never loosens the enterprise tenant hierarchy (that is structural);
+ *  - it is not the E3.5 write credential — a driver still signs a
+ *    DriverWriteGrant for a specific enterprise write. This one says "this
+ *    subject may touch that domain at all", the other says "this write is
+ *    authorized".
+ * Direction is one-way: personal -> enterprise only. Enterprise -> personal has
+ * no grant shape, because there is no code path that could produce one.
+ */
+export type DomainGrant = {
+  kind: 'domain-access';
+  grantId: string;
+  /** Subject identifier: a vassal name, an agent id, or a department id. */
+  subject: string;
+  /** Realm the subject wants to reach; must be an enterprise realm. */
+  realmId: string;
+  access: RealmAccess;
+  grantedBy: string;
+  reason?: string;
+  grantedAt: string;
+  expiresAt?: string;
+  nonce: string;
+};
+
+export type DomainDecision =
+  | { ok: true; via: 'same-domain' | 'tenant-hierarchy' | 'grant'; grantId?: string }
+  | {
+      ok: false;
+      reason:
+        | 'unknown-realm'
+        | 'realm-type-mismatch'
+        | 'enterprise-to-personal'
+        | 'tenant-out-of-scope'
+        | 'no-grant'
+        | 'grant-expired'
+        | 'access-not-granted'
+        | 'read-only';
+      detail: string;
+    };
+
 export interface RealmStore {
-  connect(root: string, type: RealmType, opts?: { readOnly?: boolean }): Promise<RealmManifest>;
+  connect(
+    root: string,
+    type: RealmType,
+    opts?: { readOnly?: boolean; tenant?: string | TenantScope },
+  ): Promise<RealmManifest>;
   manifest(realmId: string): Promise<RealmManifest>;
   search(realmId: string, query: SearchQuery): Promise<RealmHit[]>;
   read(realmId: string, itemId: string): Promise<RealmItem>;
@@ -119,6 +187,8 @@ export type RealmConnection = {
   realmId: string;
   type: RealmType;
   readOnly: boolean;
+  /** E3.6: carried so a restart restores the tenant boundary, not just the mount. */
+  tenant?: TenantScope;
 };
 
 export class RealmError extends Error {

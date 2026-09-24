@@ -33,6 +33,12 @@ export type KernelStats = {
     memoryEvents: number;
     memoryFacts: number;
     realms: number;
+    /** E3.6: enterprise realms, and how many carry a tenant scope. An unscoped
+     *  enterprise realm is only reachable by the driver, so the gap matters. */
+    enterpriseRealms: number;
+    tenantScopedRealms: number;
+    /** E6.4: cross-domain grants currently on record. */
+    domainGrants: number;
   };
 };
 
@@ -44,6 +50,9 @@ export function kernelStats(kernel: KernelBoot): KernelStats {
   const vassals = kernel.registry.listAll();
   const revoked = vassals.filter(entry => entry.revoked).length;
   const memory = kernel.memoryStore!.counts();
+  const connections = kernel.realmStore!.connections();
+  const enterprise = connections.filter(entry => entry.type === 'enterprise').length;
+  const tenantScoped = connections.filter(entry => entry.tenant !== undefined).length;
   return {
     persistence: {
       enabled: kernel.stateFile !== null,
@@ -66,7 +75,10 @@ export function kernelStats(kernel: KernelBoot): KernelStats {
       departments: kernel.orgRegistry!.listDepartments().length,
       memoryEvents: memory.events,
       memoryFacts: memory.facts,
-      realms: kernel.realmStore!.connections().length,
+      realms: connections.length,
+      enterpriseRealms: enterprise,
+      tenantScopedRealms: tenantScoped,
+      domainGrants: kernel.domainGrants!.list().length,
     },
   };
 }

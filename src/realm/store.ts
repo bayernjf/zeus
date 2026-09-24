@@ -3,7 +3,8 @@ import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve,
 import { randomUUID } from 'node:crypto';
 import { digestManifest, sha256Hex } from './digest.js';
 import { verifyDriverWriteGrant } from './grant.js';
-import type { DriverWriteGrant, RealmConnection, RealmEntrySnapshot, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, RealmWriteItem, RealmWriteResult, SearchQuery } from './types.js';
+import { formatTenant, normalizeTenant } from './tenant.js';
+import type { DriverWriteGrant, RealmConnection, RealmEntrySnapshot, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, TenantScope, RealmWriteItem, RealmWriteResult, SearchQuery } from './types.js';
 import {
   InvalidItemIdError,
   RealmError,
@@ -65,7 +66,17 @@ export class FsRealmStore implements RealmStore {
 
   constructor(private readonly options: FsRealmStoreOptions = {}) {}
 
-  async connect(root: string, type: RealmType, opts: { readOnly?: boolean } = {}): Promise<RealmManifest> {
+  async connect(
+    root: string,
+    type: RealmType,
+    opts: { readOnly?: boolean; tenant?: string | TenantScope } = {},
+  ): Promise<RealmManifest> {
+    // E3.6: only the enterprise domain has tenants. Refusing the combination
+    // rather than ignoring it keeps "personal realm" a type-level statement.
+    const tenant = normalizeTenant(opts.tenant);
+    if (tenant && type !== 'enterprise') {
+      throw new RealmError(`a tenant scope belongs to an enterprise realm, not '${type}': ${formatTenant(tenant)}`);
+    }
     let absRoot: string;
     try {
       absRoot = await realpath(root);
@@ -78,11 +89,17 @@ export class FsRealmStore implements RealmStore {
     const existingId = this.roots.get(absRoot);
     const realmId = existingId ?? `realm-${sha256Hex(absRoot).slice(0, 16)}`;
     const previous = existingId ? this.realms.get(existingId) : undefined;
+    if (previous && formatTenant(previous.manifest.tenant) !== formatTenant(tenant)) {
+      throw new RealmError(
+        `reconnecting ${absRoot} would change its tenant scope (${formatTenant(previous.manifest.tenant) || '(none)'} -> ${formatTenant(tenant) || '(none)'}); disconnect is not offered in this build`,
+      );
+    }
 
     const { items, skipped } = await this.scan(absRoot);
     const manifest: RealmManifest = {
       realmId,
       type,
+      ...(tenant ? { tenant } : {}),
       root: absRoot,
       createdAt: previous?.manifest.createdAt ?? new Date().toISOString(),
       contentDigest: digestManifest(items.map(item => ({ itemId: item.itemId, content: item.content }))),
@@ -162,6 +179,7 @@ export class FsRealmStore implements RealmStore {
       realmId: stored.realmId,
       type: stored.type,
       readOnly: stored.readOnly,
+      ...(stored.manifest.tenant ? { tenant: stored.manifest.tenant } : {}),
     }));
   }
 
