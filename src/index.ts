@@ -322,6 +322,25 @@ export type {
   DomainDecision,
 } from './realm/types.js';
 
+// --- E9.1/E9.2 onboarding: the commission gate and the day-one briefing ---
+export { CommissionLedger, verifyCommission } from './onboarding/commission.js';
+export type { CommissionDeps, CommissionAuditEntry, OpenCommissionInput } from './onboarding/commission.js';
+export { composeBriefing } from './onboarding/briefing.js';
+export type { BriefingDeps, RoleBriefing } from './onboarding/briefing.js';
+export {
+  CommissionError,
+  commissionId,
+} from './onboarding/types.js';
+export type {
+  CommissionRecord,
+  CommissionStage,
+  CommissionCheck,
+  CommissionVerdict,
+  CommissionGate,
+  EvidenceGate,
+  MentorshipCheck,
+} from './onboarding/types.js';
+
 // --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
 export {
   createRealmMcpHandler,

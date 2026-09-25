@@ -15,7 +15,12 @@ export type AuditDecision =
   | 'domain-refused'
   /** E6.4: the authorization lifecycle for those crossings. */
   | 'domain-grant-issued'
-  | 'domain-grant-revoked';
+  | 'domain-grant-revoked'
+  /** E9.1/E9.2: onboarding decisions for a seat in a department. */
+  | 'commission-granted'
+  | 'commission-waived'
+  | 'commission-withdrawn'
+  | 'commission-refused';
 
 export type AuditEntry = {
   ts: string;

@@ -34,6 +34,9 @@ import {
 } from '../realm/authorization.js';
 import { RealmSourceError, resolveRealmSource, type RealmAuditEntry, type RealmSource } from '../realm/source.js';
 import { normalizeTenant } from '../realm/tenant.js';
+import { CommissionError, commissionId } from '../onboarding/types.js';
+import type { CommissionLedger } from '../onboarding/commission.js';
+import { composeBriefing } from '../onboarding/briefing.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
 import { persistDiary } from '../diary/persist.js';
 import { DiaryUnsupportedError } from '../diary/types.js';
@@ -71,6 +74,10 @@ const AUDIT_DECISIONS: AuditDecision[] = [
   'domain-refused',
   'domain-grant-issued',
   'domain-grant-revoked',
+  'commission-granted',
+  'commission-waived',
+  'commission-withdrawn',
+  'commission-refused',
   'sla-ack-breached',
 ];
 
@@ -113,6 +120,8 @@ export type HttpDeps = {
   domainGrants?: DomainGrantRegistry;
   /** E6.4: audit sink for domain crossings, fed by the kernel's audit spine. */
   realmAudit?: (entry: RealmAuditEntry) => void;
+  /** E9.1/E9.2: the commission gate and day-one briefing for department seats. */
+  commissions?: CommissionLedger;
 };
 
 export type StartOptions = {
@@ -602,6 +611,180 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return mapOrgError(reply, e);
         }
       });
+
+      if (
+        deps.commissions &&
+        deps.realmStore &&
+        deps.domainGrants &&
+        deps.mentorshipLedger &&
+        deps.skillRegistry &&
+        deps.memoryStore &&
+        deps.orchestrator
+      ) {
+        // E9.1 / E9.2 onboarding face. Mounted only when the whole composition
+        // exists - the commission gate reads five layers, and a half-assembled
+        // version of it would silently pass gates it never looked at.
+        const commissions = deps.commissions;
+        const briefDeps = () => ({
+          org: deps.orgRegistry!,
+          vassals: deps.registry.asVassalLookup(),
+          realms: deps.realmStore!,
+          grants: deps.domainGrants!,
+          mentorships: deps.mentorshipLedger!,
+          skills: deps.skillRegistry!,
+          memory: deps.memoryStore!,
+        });
+        const requireSeat = (departmentId: string, agentId: string, reply: FastifyReply) => {
+          if (!isNonEmptyString(agentId) || agentId.includes('/')) {
+            error(reply, 400, 'invalid_request', 'agentId must be a single path segment');
+            return undefined;
+          }
+          const record = commissions.get(commissionId(departmentId, agentId));
+          if (!record) {
+            error(reply, 404, 'not_found', `no commission file for ${agentId} in ${departmentId}`);
+            return undefined;
+          }
+          return record;
+        };
+
+        app.get('/api/org/departments/:id/commissions', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id } = request.params as { id: string };
+          try {
+            deps.orgRegistry!.getDepartment(id);
+          } catch (thrown) {
+            return mapOrgError(reply, thrown);
+          }
+          return {
+            commissions: commissions.list({ departmentId: id }).map(record => ({
+              ...record,
+              verdict: commissions.verify(record.id),
+            })),
+          };
+        });
+
+        app.post('/api/org/departments/:id/commissions', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id } = request.params as { id: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.agentId) || !isNonEmptyString(body.realmId) || !isNonEmptyString(body.openedBy)) {
+            return error(reply, 400, 'invalid_request', 'body.agentId, body.realmId and body.openedBy are required');
+          }
+          if (body.requiredSkills !== undefined && !(Array.isArray(body.requiredSkills) && body.requiredSkills.every(s => typeof s === 'string'))) {
+            return error(reply, 400, 'invalid_request', 'body.requiredSkills must be an array of skill ids');
+          }
+          if (body.tenant !== undefined && typeof body.tenant !== 'string') {
+            return error(reply, 400, 'invalid_request', 'body.tenant must be "org[/department[/member]]"');
+          }
+          try {
+            const record = commissions.open({
+              departmentId: id,
+              agentId: body.agentId,
+              realmId: body.realmId,
+              openedBy: body.openedBy,
+              ...(typeof body.tenant === 'string' ? { tenant: body.tenant } : {}),
+              ...(Array.isArray(body.requiredSkills) ? { requiredSkills: body.requiredSkills as string[] } : {}),
+            });
+            reply.code(201);
+            return record;
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        app.post('/api/org/departments/:id/commissions/:agentId/waive', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.reason) || !isNonEmptyString(body.by)) {
+            return error(reply, 400, 'invalid_request', 'body.reason and body.by are required to waive the mentorship stage');
+          }
+          try {
+            return commissions.waiveMentorship(commissionId(id, agentId), { reason: body.reason, by: body.by });
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        app.post('/api/org/departments/:id/commissions/:agentId/commission', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.by)) {
+            return error(reply, 400, 'invalid_request', 'body.by is required (who signed the seat off)');
+          }
+          try {
+            return commissions.commission(commissionId(id, agentId), {
+              by: body.by,
+              ...(isNonEmptyString(body.note) ? { note: body.note } : {}),
+            });
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        app.post('/api/org/departments/:id/commissions/:agentId/withdraw', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.by) || !isNonEmptyString(body.reason)) {
+            return error(reply, 400, 'invalid_request', 'body.by and body.reason are required');
+          }
+          try {
+            return commissions.withdraw(commissionId(id, agentId), { by: body.by, reason: body.reason });
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        // E9.1 acceptance: the seat's context is assembled from what the kernel
+        // already knows. Anything it cannot answer shows up in `gaps`.
+        app.get('/api/org/departments/:id/briefing/:agentId', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const record = requireSeat(id, agentId, reply);
+          if (!record) return reply;
+          try {
+            return await composeBriefing(record, briefDeps());
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        // E9.2: the chain ends in a real dispatch. An uncommissioned seat cannot
+        // take work, and the check is re-run here rather than trusted from the
+        // record, so a revocation since sign-off still stops the task.
+        app.post('/api/org/departments/:id/first-task', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id } = request.params as { id: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.agentId)) return error(reply, 400, 'invalid_request', 'body.agentId is required');
+          if (!isNonEmptyString(body.skill)) return error(reply, 400, 'invalid_request', 'body.skill is required');
+          if (body.params !== undefined && !isPlainObject(body.params)) {
+            return error(reply, 400, 'invalid_request', 'body.params must be an object');
+          }
+          const record = requireSeat(id, body.agentId, reply);
+          if (!record) return reply;
+          try {
+            commissions.assertCommissioned(record.id);
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+          const realm = deps.realmStore!.connections().find(entry => entry.realmId === record.realmId);
+          if (!realm) return error(reply, 409, 'conflict', `realm ${record.realmId} is no longer connected`);
+          const briefing = await composeBriefing(record, briefDeps());
+          const result = await deps.orchestrator!.fanOut({
+            skill: body.skill,
+            realm: realm.type,
+            params: {
+              ...((body.params ?? {}) as Record<string, unknown>),
+              onboarding: {
+                commissionId: record.id,
+                departmentId: record.departmentId,
+                briefingDigest: briefing.digest,
+                openGaps: briefing.gaps.length,
+              },
+            },
+            vassals: [record.agentId],
+            realmId: record.realmId,
+          });
+          reply.code(200);
+          return { ...result, briefing: { digest: briefing.digest, gaps: briefing.gaps } };
+        });
+      }
     }
 
     if (deps.memoryStore) {
@@ -1416,6 +1599,24 @@ function mapGrantError(reply: FastifyReply, thrown: unknown): FastifyReply {
     return error(reply, 400, 'invalid_request', message);
   }
   return mapRealmQueryError(reply, thrown);
+}
+
+/** A commission failure keeps its reason machine-readable: which gate refused is
+ *  the answer the driver needs, not an implementation detail of one. */
+function mapCommissionError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  if (thrown instanceof CommissionError) {
+    if (thrown.kind === 'gate') {
+      return reply.code(409).send({
+        error: 'commission_gate',
+        blockedOn: thrown.blocked?.blockedOn ?? null,
+        detail: thrown.message,
+        ...(thrown.blocked ? { reason: thrown.blocked.reason } : {}),
+      });
+    }
+    const status = thrown.kind === 'not-found' ? 404 : thrown.kind === 'conflict' ? 409 : 400;
+    return error(reply, status, thrown.kind === 'not-found' ? 'not_found' : 'invalid_request', thrown.message);
+  }
+  return mapOrgError(reply, thrown);
 }
 
 function mapRealmQueryError(reply: FastifyReply, thrown: unknown): FastifyReply {

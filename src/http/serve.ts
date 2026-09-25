@@ -123,6 +123,8 @@ async function main(): Promise<void> {
     // E6.4: the two data domains, their tenant scopes and the grants between them.
     domainGrants: kernel.domainGrants,
     realmAudit: kernel.realmAudit,
+    // E9.1/E9.2: the day-one briefing and the commission gate.
+    commissions: kernel.commissionLedger,
     connectorRegistry: kernel.connectorRegistry,
     ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
     kernelStats: () => kernelStats(kernel),

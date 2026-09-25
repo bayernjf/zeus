@@ -22,6 +22,7 @@ import { MentorshipLedger } from '../skills/mentor.js';
 import { OrgRegistry } from '../org/registry.js';
 import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
+import { CommissionLedger, type CommissionAuditEntry } from '../onboarding/commission.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -183,6 +184,30 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     auditSink(entry);
   };
   const domainGrants = new DomainGrantRegistry(now, grantAudit);
+  // E9.1/E9.2: the commission gate reads its evidence from the layers that own
+  // it (org roster, live vassal directory, realm boundary decisions, mentorship
+  // certifications), so nothing here can go stale in the way a cached "is this
+  // agent cleared?" flag would.
+  const commissionAudit = (entry: CommissionAuditEntry): void => {
+    auditSink({
+      ts: entry.at,
+      vassal: entry.agentId,
+      decision: entry.decision,
+      detail: `${entry.decision} ${entry.commissionId} by ${entry.by}: ${entry.detail}`,
+    });
+  };
+  const commissionLedger = new CommissionLedger(
+    {
+      org: orgRegistry,
+      vassals: registry.asVassalLookup(),
+      realms: realmStore,
+      grants: domainGrants,
+      mentorships: mentorshipLedger,
+      now,
+    },
+    now,
+    commissionAudit,
+  );
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
   const memoryStore = new MemoryStore(memoryAudit, now);
   const connectorRegistry = new ConnectorRegistry(
@@ -220,7 +245,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
   });
   const components: KernelComponents = {
-    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants,
+    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger,
   };
 
   // Memory P1: when an intent operating on a connected realm reaches a terminal
