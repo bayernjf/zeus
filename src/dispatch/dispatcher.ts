@@ -16,6 +16,11 @@ export type AuditDecision =
   /** E6.4: the authorization lifecycle for those crossings. */
   | 'domain-grant-issued'
   | 'domain-grant-revoked'
+  /** E3.5 / deferred #14: the single-use write credential for an enterprise realm. */
+  | 'driver-grant-issued'
+  /** A write that a driver grant authorized (personal writes are not logged: they
+   *  are the user writing in their own directory, and logging them buries this). */
+  | 'realm-write'
   /** E9.1/E9.2: onboarding decisions for a seat in a department. */
   | 'commission-granted'
   | 'commission-waived'

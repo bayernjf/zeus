@@ -290,6 +290,7 @@ export type {
   RealmWriteItem,
   RealmWriteResult,
   DriverWriteGrant,
+  SignedDriverWriteGrant,
   GrantVerification,
 } from './realm/types.js';
 export {
@@ -300,8 +301,23 @@ export {
   UnauthorizedRealmWriteError,
   UnsupportedWriteError,
 } from './realm/types.js';
-export { verifyDriverWriteGrant } from './realm/grant.js';
-export type { RealmWriteAuditEntry, FsRealmStoreOptions } from './realm/store.js';
+export {
+  verifyDriverWriteGrant,
+  issueDriverWriteGrant,
+  DriverGrantLedger,
+  DriverGrantError,
+  DRIVER_GRANT_DEFAULT_TTL_MS,
+  DRIVER_GRANT_MAX_TTL_MS,
+  MAX_SPENT_GRANT_NONCES,
+} from './realm/grant.js';
+export type {
+  DriverGrantAuditEntry,
+  DriverGrantLedgerOptions,
+  GrantVerificationContext,
+  IssueDriverGrantInput,
+  IssueDriverGrantOptions,
+} from './realm/grant.js';
+export type { RealmWriteAuditEntry, FsRealmStoreOptions, DriverGrantAuthority } from './realm/store.js';
 
 // --- E3.6 tenancy + E6.4 cross-domain authorization and retrieval ---
 export { parseTenant, formatTenant, normalizeTenant, tenantReaches, TenantError } from './realm/tenant.js';

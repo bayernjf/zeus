@@ -42,6 +42,13 @@ export type KernelStats = {
     /** E9.1/E9.2: commission files open, and how many are currently signed off. */
     commissions: number;
     commissioned: number;
+    /** E3.5 / deferred #14: driver write grants already consumed (replay window). */
+    spentWriteGrantNonces: number;
+  };
+  /** E3.5: how enterprise writes are authorized in this process. */
+  driverGrants: {
+    authority: 'signed' | 'shape-only';
+    keyId: string | null;
   };
 };
 
@@ -85,6 +92,11 @@ export function kernelStats(kernel: KernelBoot): KernelStats {
       domainGrants: kernel.domainGrants!.list().length,
       commissions: commissions.length,
       commissioned: commissions.filter(record => record.commissioned && !record.withdrawn).length,
+      spentWriteGrantNonces: kernel.driverGrantLedger?.size ?? 0,
+    },
+    driverGrants: {
+      authority: kernel.driverGrantAuthority,
+      keyId: kernel.driverSigner?.keyId ?? null,
     },
   };
 }

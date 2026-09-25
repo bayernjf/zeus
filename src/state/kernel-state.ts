@@ -8,6 +8,7 @@ import { Orchestrator, type OrchestratorSnapshot } from '../orchestrator/orchest
 import type { RealmConnection } from '../realm/types.js';
 import type { RealmStore } from '../realm/types.js';
 import type { DomainGrantState } from '../realm/authorization.js';
+import type { DriverGrantLedger } from '../realm/grant.js';
 import { DomainGrantRegistry } from '../realm/authorization.js';
 import type { CommissionRecord } from '../onboarding/types.js';
 import { CommissionLedger } from '../onboarding/commission.js';
@@ -58,6 +59,12 @@ export type KernelSnapshot = {
   domainGrants?: DomainGrantState;
   /** E9.1/E9.2: commission files. Optional for backward compat. */
   commissions?: CommissionRecord[];
+  /**
+   * E3.5 / deferred #14: consumed driver write-grant nonces. Optional for
+   * backward compat. Without this a restart would re-admit a grant that was
+   * already spent - the replay window is exactly the gap in persistence.
+   */
+  writeGrantNonces?: string[];
 };
 
 export type KernelComponents = {
@@ -80,6 +87,8 @@ export type KernelComponents = {
   domainGrants?: DomainGrantRegistry;
   /** E9.1/E9.2: when assembled, commission files survive a restart. */
   commissionLedger?: CommissionLedger;
+  /** E3.5 / deferred #14: consumed driver write-grant nonces survive a restart. */
+  driverGrantLedger?: DriverGrantLedger;
 };
 
 export class KernelStateError extends Error {}
@@ -98,6 +107,7 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     ...(components.orgRegistry ? { org: components.orgRegistry.exportState() } : {}),
     ...(components.domainGrants ? { domainGrants: components.domainGrants.exportState() } : {}),
     ...(components.commissionLedger ? { commissions: components.commissionLedger.exportState() } : {}),
+    ...(components.driverGrantLedger ? { writeGrantNonces: components.driverGrantLedger.exportState() } : {}),
   };
 }
 
@@ -113,6 +123,7 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
   if (components.orgRegistry && snapshot.org) components.orgRegistry.importState(snapshot.org);
   if (components.domainGrants && snapshot.domainGrants) components.domainGrants.importState(snapshot.domainGrants);
   if (components.commissionLedger && snapshot.commissions) components.commissionLedger.importState(snapshot.commissions);
+  if (components.driverGrantLedger && snapshot.writeGrantNonces) components.driverGrantLedger.importState(snapshot.writeGrantNonces);
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -137,6 +148,7 @@ export class FileKernelStateStore {
       ...(state.org ? { org: state.org } : {}),
       ...(state.domainGrants ? { domainGrants: state.domainGrants } : {}),
       ...(state.commissions ? { commissions: state.commissions } : {}),
+      ...(state.writeGrantNonces ? { writeGrantNonces: state.writeGrantNonces } : {}),
     };
     await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;
