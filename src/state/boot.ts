@@ -110,8 +110,10 @@ export type KernelBootOptions = {
   /** Audit sink for oversight actions; defaults to no-op. */
   oversightAudit?: (entry: OversightAuditEntry) => void;
   /** G1: card URLs auto-registered on boot. A URL already present (restored from
-   *  snapshot or an earlier seed) is skipped, so seeds never trigger a refetch. */
-  vassalSeeds?: string[];
+   *  snapshot or an earlier seed) is skipped, so seeds never trigger a refetch.
+   *  E4.8: an entry may be `{ cardUrl, token? }` to seed the vassal's outbound
+   *  bearer; a plain string registers with no token. */
+  vassalSeeds?: Array<string | { cardUrl: string; token?: string }>;
   /** G4: realm roots connected on boot. Strings are personal read-write roots;
    *  objects may set type/readOnly/tenant (E3.6, enterprise scopes). Persisted
    *  roots are reconnected as well. */
@@ -341,12 +343,32 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const dispatcher = new Dispatcher(registry.asVassalLookup(), {
     audit: auditSink,
     now,
+    // E4.8: the dispatcher attaches each vassal's seeded bearer. Revocations are
+    // already gated before token issuance inside dispatch, and tokenFor itself
+    // yields nothing for revoked vassals, so no path can attach a retired token.
+    tokenFor: name => registry.tokenFor(name),
     ...(fetchImpl ? { fetchImpl } : {}),
   });
   const orchestrator = new Orchestrator(registry.asVassalLookup(), dispatcher, {
     now,
     metrics,
     onConflict: conflictsToDesk(oversight),
+    // E2.2/E2.3/E2.4 (Active work 47 §E-3): auto-selected fan-out targets are
+    // filtered through the skill catalogue, so uninstall/deprecate/harden take
+    // effect on dispatch. Refusals land on the same audit spine as dispatches.
+    skillGovernor: {
+      activeProviders: skillId => skillRegistry.activeProviders(skillId),
+    },
+    onRefusal: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: '(auto)',
+        skill: entry.skill,
+        realm: entry.realm,
+        decision: entry.reason === 'skill-uninstalled' ? 'refused-skill-uninstalled' : 'refused-no-active-provider',
+        detail: entry.detail,
+      });
+    },
     onProgress: event => {
       progressHub.publish(event);
       if (event.type === 'intent-finished' && event.realmId) {
@@ -433,10 +455,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
 
   if (options.vassalSeeds && options.vassalSeeds.length > 0) {
     const known = new Set(registry.listAll().map(entry => entry.cardUrl));
-    for (const cardUrl of options.vassalSeeds) {
+    for (const seed of options.vassalSeeds) {
+      const cardUrl = typeof seed === 'string' ? seed : seed.cardUrl;
       if (known.has(cardUrl)) continue;
       try {
-        await registry.register(cardUrl);
+        await registry.register(cardUrl, {
+          ...(typeof seed !== 'string' && seed.token !== undefined ? { token: seed.token } : {}),
+        });
       } catch (error) {
         // A seed that cannot be registered is a boot-time configuration fact:
         // the operator typed a URL, and either it is unreachable or the card does
@@ -618,4 +643,29 @@ export function resolveRealmConfig(env: NodeJS.ProcessEnv = process.env): Proces
 
 function splitEnvList(value: string | undefined): string[] {
   return (value ?? '').split(',').map(entry => entry.trim()).filter(Boolean);
+}
+
+/**
+ * E4.8: parse `ZEUS_VASSAL_SEEDS` — a comma list of card URLs, optionally each
+ * carrying its vassal bearer after `|` (e.g. `"https://…/agent-card|token-1"`).
+ * `|` is unambiguous: it is not a legal raw character in an RFC 3986 URL, so a
+ * card URL can never contain it unencoded. A plain URL registers with no token.
+ */
+export type ProcessVassalSeedsConfig = NonNullable<KernelBootOptions['vassalSeeds']>;
+
+export function resolveVassalSeedsConfig(env: NodeJS.ProcessEnv = process.env): ProcessVassalSeedsConfig {
+  const seeds: ProcessVassalSeedsConfig = [];
+  for (const entry of splitEnvList(env.ZEUS_VASSAL_SEEDS)) {
+    const separator = entry.indexOf('|');
+    if (separator < 0) {
+      seeds.push(entry);
+      continue;
+    }
+    const cardUrl = entry.slice(0, separator).trim();
+    const token = entry.slice(separator + 1).trim();
+    if (!cardUrl) throw new KernelBootError(`vassal seed entry has an empty card URL: '${entry}'`);
+    if (!token) throw new KernelBootError(`vassal seed entry '${entry}' has an empty token after '|'`);
+    seeds.push({ cardUrl, token });
+  }
+  return seeds;
 }

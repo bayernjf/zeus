@@ -36,6 +36,14 @@ export type VassalEntry = {
   registeredAt: string;
   lastHealthCheck?: { at: string; ok: boolean; detail?: string };
   revoked: boolean;
+  /**
+   * E4.8: outbound bearer token for this vassal, issued at registration/seed.
+   * Persisted with the snapshot (exportState) so restarts keep dispatching, but
+   * never surfaced by the public accessors (get/list/listAll), the roster
+   * projection or any HTTP response — the only readers are Dispatcher.tokenFor
+   * (via boot) and the state file on disk.
+   */
+  token?: string;
 };
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -50,8 +58,10 @@ export class VassalRegistry {
   ) {}
 
   /** Fetch the agent card at a well-known/card URL and register the vassal.
-   *  Requires a valid x-zeus-fealty; a card without fealty is a guest, not a vassal. */
-  async register(cardUrl: string, options: { taskUrl?: string; validate?: (card: AgentCard) => void } = {}): Promise<VassalEntry> {
+   *  Requires a valid x-zeus-fealty; a card without fealty is a guest, not a vassal.
+   *  `token` is the optional outbound bearer this vassal presents on dispatch
+   *  (E4.8); it is stored for the dispatcher and the snapshot only. */
+  async register(cardUrl: string, options: { taskUrl?: string; token?: string; validate?: (card: AgentCard) => void } = {}): Promise<VassalEntry> {
     const response = await this.fetchImpl(cardUrl);
     if (!response.ok) throw new Error(`card fetch failed: ${response.status} ${cardUrl}`);
     const card = (await response.json()) as AgentCard;
@@ -82,6 +92,7 @@ export class VassalRegistry {
       fealty,
       registeredAt: this.now().toISOString(),
       revoked: false,
+      ...(options.token !== undefined ? { token: options.token } : {}),
     };
     this.entries.set(card.name, entry);
     this.hooks.onRegister?.(entry);
@@ -90,20 +101,32 @@ export class VassalRegistry {
 
   get(name: string): VassalEntry | undefined {
     const entry = this.entries.get(name);
-    return entry && !entry.revoked ? structuredClone(entry) : undefined;
+    return entry && !entry.revoked ? withoutToken(structuredClone(entry)) : undefined;
   }
 
   list(): VassalEntry[] {
-    return [...this.entries.values()].filter(entry => !entry.revoked).map(entry => structuredClone(entry));
+    return [...this.entries.values()]
+      .filter(entry => !entry.revoked)
+      .map(entry => withoutToken(structuredClone(entry)));
   }
 
   /** Oversight-deck view: every vassal including revoked ones, with an explicit
    *  status flag. Routing uses list(); the deck needs to see retired vassals too. */
   listAll(): Array<VassalEntry & { status: 'active' | 'revoked' }> {
     return [...this.entries.values()].map(entry => ({
-      ...structuredClone(entry),
+      ...withoutToken(structuredClone(entry)),
       status: entry.revoked ? 'revoked' : 'active',
     }));
+  }
+
+  /**
+   * E4.8: the dispatcher's outbound token source. Revoked vassals yield nothing
+   * even if a concurrent dispatch already passed the governance gate, so a
+   * revocation always takes effect before any bearer is attached.
+   */
+  tokenFor(name: string): string | undefined {
+    const entry = this.entries.get(name);
+    return entry && !entry.revoked ? entry.token : undefined;
   }
 
   revoke(name: string): boolean {
@@ -216,4 +239,12 @@ function describeOathValue(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'an array';
   return value === undefined ? 'nothing' : String(value);
+}
+
+/** Strip the outbound token from a clone so no public accessor (and therefore
+ *  no roster projection or HTTP response) can echo it. `exportState` keeps the
+ *  token on purpose: the state file on disk is the dispatcher's token store. */
+function withoutToken<T extends { token?: string }>(entry: T): Omit<T, 'token'> {
+  const { token, ...rest } = entry;
+  return rest;
 }

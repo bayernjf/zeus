@@ -98,6 +98,30 @@ export class ConnectorRegistry {
     return structuredClone(record);
   }
 
+  /**
+   * Active work 47 §E-4: invoke one tool on a connected connector. The call is
+   * bounded by the capability list discovered at handshake (already narrowed to
+   * the declaration's minimum-privilege boundary), so a tool the server never
+   * advertised — or the declaration never granted — cannot be invoked.
+   */
+  async callTool(
+    id: string,
+    name: string,
+    args: Record<string, unknown> = {},
+    fetchImpl?: typeof fetch,
+  ): Promise<unknown> {
+    const record = this.require(id);
+    if (record.status === 'revoked') throw new ConnectorError(`connector ${id} is revoked`);
+    if (record.status !== 'connected' || !record.capabilities) {
+      throw new ConnectorError(`connector ${id} is not connected; run the handshake first`);
+    }
+    if (!record.capabilities.tools.includes(name)) {
+      throw new ConnectorError(`connector ${id} does not expose tool '${name}' (discovered: ${record.capabilities.tools.join(', ') || 'none'})`);
+    }
+    const client = new McpClient(record.endpoint, { fetchImpl, token: record.token });
+    return client.callTool(name, args);
+  }
+
   list(status?: ConnectorRecord['status']): ConnectorRecord[] {
     const all = [...this.connectors.values()].map(record => structuredClone(record));
     return status ? all.filter(record => record.status === status) : all;

@@ -26,6 +26,7 @@ import {
   resolveConcurrencyConfig,
   resolveDecisionConfig,
   resolveRealmConfig,
+  resolveVassalSeedsConfig,
 } from '../state/boot.js';
 import { kernelStats } from '../state/stats.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
@@ -73,7 +74,7 @@ async function main(): Promise<void> {
       ? { branchQueueLimit: concurrency.branchQueueLimit }
       : {}),
     ...(process.env.ZEUS_VASSAL_SEEDS
-      ? { vassalSeeds: process.env.ZEUS_VASSAL_SEEDS.split(',').map(url => url.trim()).filter(Boolean) }
+      ? { vassalSeeds: resolveVassalSeedsConfig(process.env) }
       : {}),
     ...(realm.realmRoots.length ? { realmRoots: realm.realmRoots } : {}),
     ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),

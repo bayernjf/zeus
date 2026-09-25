@@ -31,6 +31,8 @@ beforeAll(async () => {
           return reply({ protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'kb' } });
         case 'tools/list':
           return reply({ tools: [{ name: 'search' }, { name: 'drop-table' }] });
+        case 'tools/call':
+          return reply({ content: [{ type: 'text', text: `called:${(body as { params?: { name?: string } }).params?.name}` }] });
         case 'resources/list':
           return reply({ resources: [{ uri: 'res://a', name: 'docs' }] });
         case 'prompts/list':
@@ -153,6 +155,61 @@ describe('E7 connector HTTP face', () => {
       method: 'POST', url: '/api/connectors/knowledge/connect', headers: AUTH,
     });
     expect(connectAgain.statusCode).toBe(409);
+  });
+
+  it('calls a discovered tool over the wire (Active work 47 §E-4)', async () => {
+    ({ app } = await server());
+    await app.inject({ method: 'POST', url: '/api/connectors', headers: AUTH, payload: declarationBody() });
+    await app.inject({ method: 'POST', url: '/api/connectors/knowledge/connect', headers: AUTH });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/connectors/knowledge/tools/search/call',
+      headers: AUTH,
+      payload: { arguments: { q: 'zeus' } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect((await res.json()).result).toEqual({ content: [{ type: 'text', text: 'called:search' }] });
+    expect(mcpRequests).toContain('tools/call');
+  });
+
+  it('bounds tool calls to the handshake capability list (boundary keeps drop-table out)', async () => {
+    ({ app } = await server());
+    await app.inject({ method: 'POST', url: '/api/connectors', headers: AUTH, payload: declarationBody() });
+    await app.inject({ method: 'POST', url: '/api/connectors/knowledge/connect', headers: AUTH });
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/connectors/knowledge/tools/drop-table/call',
+      headers: AUTH,
+      payload: { arguments: {} },
+    });
+    expect(res.statusCode).toBe(400);
+    expect((await res.json()).detail).toContain('does not expose tool');
+  });
+
+  it('refuses tool calls before connect and for unknown connectors, and rejects bad arguments', async () => {
+    ({ app } = await server());
+    await app.inject({ method: 'POST', url: '/api/connectors', headers: AUTH, payload: declarationBody() });
+
+    const notConnected = await app.inject({
+      method: 'POST', url: '/api/connectors/knowledge/tools/search/call', headers: AUTH,
+      payload: { arguments: {} },
+    });
+    expect(notConnected.statusCode).toBe(400);
+    expect((await notConnected.json()).detail).toContain('not connected');
+
+    const missing = await app.inject({
+      method: 'POST', url: '/api/connectors/nope/tools/search/call', headers: AUTH,
+      payload: { arguments: {} },
+    });
+    expect(missing.statusCode).toBe(404);
+
+    const badArgs = await app.inject({
+      method: 'POST', url: '/api/connectors/knowledge/tools/search/call', headers: AUTH,
+      payload: { arguments: 'nope' },
+    });
+    expect(badArgs.statusCode).toBe(400);
   });
 
   it('validates the declaration and the route ids', async () => {

@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.9，2026-09-25，deferred #13/#14 收口后重判 MVP）**。评审对象：Zeus 仓库 `dev` 分支 HEAD `f4727f1`（v0.4 起点 HEAD `a7e4ce9`；v0.5/v0.6 为纯文档更正与销项，v0.7/v0.8 含代码；**v0.9 把"操作者能不能摸到三纲"当问题重问，并据此改判阻塞性质——判定以 v0.9 为准，其下各节为历史**）。
+> 状态：**现行（评审报告 v0.10，2026-09-25，三纲执行点一批收口后重判 MVP：❌ → ✅ 库内达成）**。评审对象：Zeus 仓库 `dev` 分支 HEAD（v0.9 起点 HEAD `f4727f1`；v0.5/v0.6 为纯文档更正与销项，v0.7/v0.8/v0.9 含代码；**v0.9 把"操作者能不能摸到三纲"当问题重问，v0.10 把三纲缺的库内执行点全部写成代码——判定以 v0.10 为准，其下各节为历史**）。
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机封臣部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -54,6 +54,29 @@
 - **基线刷新**：本机与云端同口径 **587 测试 / 66 文件**，容量侧五场景（含 E1.5 闸门档）。真实进程冒烟覆盖了本批（挂载租户、访问探针、签发、重启恢复），并**在冒烟中抓到一个"587 项测试全绿但功能实际不可用"的缺陷**（签发接口要求调用方自带 nonce，而我的测试每次都传了 nonce）——这是"仅 inject 测试不足"的新证据。
 - **判定不变**：库内内核级 MVP ✅；**产品级可上线 MVP ❌**，差的仍是真实环境里的跑起来、联起来、签出去。
 - **本批留下两条诚实的尾巴**（登记而非半做）：**#17** 改租户 / 下线 Realm 无可执行路径；**#18** MCP 资源读取侧没有 actor 概念，故 §7 的规则在那条路径上暂无执行点。
+
+## v0.10 现行评审（2026-09-25，三纲执行点一批收口后重判 MVP：❌ → ✅ 库内达成）
+
+> 本轮把 v0.9 §E 第 2-4 条（当时判 ❌ 所挂的三条**库内执行点**）全部写成代码并验证。基线：**690 测试 / 72 文件**，`npx tsc --noEmit` + `npm run build` exit 0（2026-09-25 全量实跑）。本批 4 组代码 commit + docs 尚未推送。
+
+### §E 2-4 销项（逐条对照 v0.9 的"缺的那一句代码"）
+
+| v0.9 §E 序 | 缺口 | 本批落地 | 证据 |
+|---|---|---|---|
+| 2 | 封臣出站凭证：`bootKernel` 不传 `tokenFor`、全库无"每封臣一 token"概念 | `VassalEntry.token?` + `registry.tokenFor(name)`（revoked/未知 → undefined，吊销即刻断流）+ `withoutToken()` 剥 token（get/list/listAll 四视图绝不回显）+ seed 语法 `ZEUS_VASSAL_SEEDS="cardUrl|token"`（`|` 不在 RFC 3986 合法 URL 字符集、无歧义；空 token/空 URL 拒启）+ boot 接线 Dispatcher `tokenFor`；export/import 持久化 token（状态文件=派发凭证存储，0600 已保障） | `tests/vassal-token.test.ts` 8 项：存储+四视图不回显、tokenFor 语义、吊销断流、重启后 tokenFor 仍在、seed 解析拒错、boot 端到端（带 token 发 `Bearer` / 纯 URL 种子不发 Authorization） |
+| 3 | Skill 注册中心不在派发路径：卸载不夺权、hardening 只写不读、providedBy 逐字采信 | `SkillGovernor.activeProviders(skillId)` 三态——**未注册 → `undefined`（pass-through，卡片广告是唯一来源的历史行为保留）**；**注册但无 active 版本 → `[]`（=uninstalled/deprecated 全灭，是拒绝不是放行）**；`fanOut` auto 路径过闸门：`[]`→refused `skill-uninstalled` 不派发、过滤后 0 命中→refused `no-active-provider`；refusal 写进 `FanOutResult.refused` 并触发 `onRefusal` 审计桥（decision 扩 `refused-skill-uninstalled`/`refused-no-active-provider`，realm 用请求真实域）；**显式 `request.vassals` 是一等旁路**（driver 故意覆盖）；注册 spec 的 `providedBy` 收窄 auto 目标 | `tests/skill-governor.test.ts` 8 项：activeProviders 三态语义 + boot 端到端五例（卡目录 pass-through、uninstall 拒+审计、spec 收窄至 providedBy、spec 与注册封臣无交集拒、显式 vassals 旁路） |
+| 4 | MCP 服务端只有 resources、客户端 `tools/call` 0 命中、能力清单无人读取 | **服务端**（`src/realm/mcp.ts`）：`initialize` capabilities 增 `tools:{listChanged:false}`；`tools/list` 暴露 `realm.search`/`realm.read`（带 inputSchema）；`tools/call` 校验 name/arguments 且 **realmId 必须在宿主预连接白名单内**（白名单=域边界，非"写死 personal"，未连接 realm → REALM_NOT_CONNECTED）、走 store.search/read 并延续"响应与错误消息绝不含绝对路径"不变量。**客户端**（`src/mcp/client.ts` + `connectors.ts`）：`McpClient.callTool(name, args)`；`ConnectorRegistry.callTool(id, name, args)` **以握手发现且经声明边界裁剪后的 `capabilities.tools` 为唯一可调集合**（未连接/已吊销/不在清单内一律拒绝）；HTTP 面 `POST /api/connectors/:id/tools/:name/call`（body.arguments 校验、上游失败 502、本地错误 400/404） | `tests/realm-mcp.test.ts` 15 项（tools/list、tools/call 成功/白名单外/坏参数/未知工具，旧"无 tools"断言改写）；`tests/mcp-connectors.test.ts` 11 项（callTool 边界：发现可调、边界裁掉不可调、revoked/未连接拒）；`tests/http-connectors.test.ts` 12 项（HTTP call 路由 200/400/404/400） |
+
+**可失效性验证**：Skill 闸门三态用 uninstall/spec 交叉用例覆盖拒绝分支；MCP 白名单用未连接 realm 拒绝、工具边界用"上游广告但声明裁剪掉"的工具拒绝——守卫都能被真实触发。对照组（既有 665 项 + 本批其余）全绿。
+
+### F. MVP 判定（v0.10，明确回答本轮问题）
+
+- **产品核心完全可用的 MVP：✅ 库内达成。** v0.9 把 ❌ 挂着的三条库内执行点（出站凭证、Skill 上派发路径、MCP tools+调用面）本批全部闭环，§E"1–5 做完"的三件事——**给目录即用 + 能和一个真实外部 Agent 协作 + 治理面说得住**——在库内同时成立：
+  - 协作：要 bearer 的真封臣现在能被 Zeus 带着凭证派发出去（E4.8 的"跑了也在认证失败"变成"能跑"，剩"对线上跑一次"是执行不是工程）；
+  - Skill：卸载真夺权、加固真被读、auto 目标真由注册中心决定（显式 vassals 仍是一等旁路）；
+  - MCP：服务端有 tools 且以白名单为域边界，客户端调用面真实存在、能力清单有消费者。
+- **仍未执行的是仓库外动作（性质是执行与外部环境，不是代码缺口）**：E4.8 对线上跑一次验收（`BASE_URL=https://pr-helper-ten.vercel.app node scripts/acceptance-standard-a2a.mjs`）、Zeus↔loom 真机联调、docker 实构实跑、Jev endpoint/key 核对、RSK 托管与公钥发布（deferred #7）、deferred #18 MCP actor 判定（等 E3.4 真封臣，与"tools 白名单"同一落点的自然延伸）。
+- **一句话**：**"用户的资料和它的可恢复性"+"与真实外部 Agent 协作的门"两条都在库里装完了；离"可上线"只剩在真实环境里跑起来、联起来、签出去。**
 
 ## v0.9 现行评审（2026-09-25，deferred #13/#14 收口后重判：**新增一类阻塞——"缺执行点"不是"缺环境"**）
 
@@ -341,4 +364,5 @@
 | v0.6 | 2026-09-25 | **仅销项，判定不变**："push dev → 云端 CI 首绿（需授权）"这条自 v0.1 挂到 v0.5 的关口关闭——三次 push 均在 GitHub 侧出结论、**Node 20.x / 22.x 双矩阵全绿**（run 36024156638 = 472/56、36045209815 = 512/60、36061395015 = **532/61**），本地与 origin/dev 完全同步。基线由 v0.4-A 的 436/52 快照刷新为 **532/61 + tsc/build exit 0 + 容量五场景**（capacity-baseline v0.3）。新登记 deferred **#16**（`ubuntu-latest` 2026-10-19 自动换构建机，无需谁批准）。**剩余关口的性质变了**：不再有任何"等授权/等确认"项，清单全部是需要真实环境、真实凭证或真实封臣的执行项 |
 | v0.7 | 2026-09-25 | **两项库内收口 + 评审自我更正**：E3.6 企业域三级租户 ✅（`TenantScope` org/部门/成员、层级为结构性边界不可授权放宽、个人域不是租户、租户随快照持久化）与 E6.4 双域授权与审计呈现 ✅（`DomainGrant` 只管个人↔企业这一条边、企业→个人永远拒、`decideRealmAccess` 唯一判定、nonce 一次性、`resolveRealmSource` 让**内核自己进 Realm 取数并核对声明**、`/api/domains*` 运维面）；**P0 仅剩 E4.8**。**更正 §C**：v0.4 的"无一项能在库内继续闭环"被证伪两次，改为"仓库外执行类"vs"库内可做但需拍板类"两类，并点名这是评审文档自身的失效模式。基线 436（v0.4）→ 532（v0.5/v0.6）→ **587 测试 / 66 文件**；真实进程冒烟在本批抓到一个"测试全绿但签发面实际不可用"的缺陷（要求调用方自带 nonce），登记 #17/#18 两条诚实尾巴。MVP 判定不变 |
 | v0.8 | 2026-09-25 | **E9.1 / E9.2 上岗门收口 + 一条测试结构性缺口**：新组合层 `src/onboarding/` 用四道门（编制名册 / 在册未吊销封臣 / `decideRealmAccess` / E2.5 certified）决定上岗，**资格现算不缓存**，签字后吊销封臣或撤出名册会自动失效；三条严格化（出勤不算能力、空要求必须显式豁免并写理由、豁免与租户范围不得越界）；`composeBriefing` 从已有事实装配首日上下文并把**答不上来的写进 `gaps`**（`totalFacts` 与命中分开报、`canWrite` 只表域边界并单列 `writeNeedsGrant`、内容取稳定 digest）；`first-task` 过门后真走一次 `fanOut`，审计脊加 4 个 `commission-*`，上岗记录进快照。**v0.7 的两类划分当场得到验证**：被列作"库内可做、等判断"的同一批里同日做完。**结构性缺口单记**：`fix(registry)` 修掉"卡片缺 `dataRealms` 等 oath 字段能注册、派发时才 TypeError"——它在 620 项全绿下活了四天，因为测注册的不派发、测派发的不调 `register()`，两半各自绿；自此对跨模块契约改动加一条口径：**只有 inject 测试不算已验证**。基线 **620 测试 / 68 文件**，四次缺陷植入全部被接住（2 / 3 / 2 / 4 例红）。MVP 判定不变 |
+| v0.10 | 2026-09-25 | **三纲执行点收口后重判 MVP：❌ → ✅（库内达成）**。基线 **690 测试 / 72 文件**、`tsc --noEmit` + build exit 0。§E 第 2-4 条逐条落地：① **封臣出站凭证**（`VassalEntry.token?`/`tokenFor`/`withoutToken` 四视图剥 token/seed `url|token` 语法与拒错/boot 接线 Dispatcher/吊销断流/快照持久化，8 测试）；② **Skill 上派发路径**（`SkillGovernor.activeProviders` 三态：未注册 pass-through、无 active 拒绝不派发；`refused-skill-uninstalled`/`refused-no-active-provider` 审计进脊、realm 用真实域；注册 spec `providedBy` 收窄 auto 目标；显式 vassals 一等旁路，8 测试）；③ **MCP 补 tools + 客户端调用面**（服务端 `realm.search`/`realm.read` 只读工具、realmId 白名单=域边界、不泄绝对路径、initialize 广告 tools；客户端 `McpClient.callTool` + `ConnectorRegistry.callTool` 只调握手发现且经声明裁剪的工具 + `POST /api/connectors/:id/tools/:name/call`；realm-mcp 15 / mcp-connectors 11 / http-connectors 12）。**判定依据**：§E"1–5 做完"的三件事在库内同时成立——给目录即用、能带凭证协作真封臣、Skill/MCP 治理有执行点且守卫可被触发。剩余均为仓库外执行（E4.8 真机验收、loom 联调、docker 实构实跑、Jev key、RSK 托管、#18 actor 判定待 E3.4） |
 | v0.9 | 2026-09-25 | **重判 MVP：改问"操作者摸不摸得到"，于是阻塞性质被改判**。基线 **658 测试 / 70 文件**、typecheck/build exit 0、`npm audit --omit=dev` 0 漏洞（生产依赖仅 fastify）；src 80 文件 14 461 行、67 条 HTTP 路由。三纲逐条 grep + 真进程实测：① **MCP** 服务端**实测可跑**（手工 JSON-RPC 走通 `initialize`/`resources/list`/`resources/read`，越界 path 被拒、不吐绝对路径），但**只有 resources 没有 tools**、只支持 personal+readOnly（type 在 stdio 宿主里写死）、无鉴权；客户端侧 **`tools/call` 全库 0 命中** → 连接器是"声明+发现"，被边界裁剪的能力清单**无人读取**（`connectors.ts:80` 是唯一赋值点）；② **Skill 注册中心不在派发路径上**（`fanOut`→`findBySkill`→卡片自报技能，`resolveTeam` 唯一调用点是查询路由）→ **卸载不夺权**、`hardening` 只写不读、`providedBy` 逐字采信绕过认证；③ **A2A 无入站面、oath 未签名，且 `bootKernel` 构造 Dispatcher 从不传 `tokenFor`** → 真进程对任何封臣都不发 Authorization，**需要 bearer 的真封臣根本派发不出去**。**首跑实测另抓出 6 条**：C-1 按 `.env.example` 默认配置**每条派发分支的 reason 变成 `ENOENT .../audit.jsonl`**（A/B 对照证明：审计 sink 不建目录，且写盘失败被误归因为封臣失败；审计文件另为 0644 而状态文件 0600）、C-2 **我自己当天写进 deployment.md 的备份示例文件名是错的**（`kernel.json` vs 真实 `kernel-state.json`；另 §2 表少 10 行（代码读 24 个 ZEUS_*、表内只有 14 个，复测后定数）——子审计多算的一条经实测剔除）、C-3 `ZEUS_REALM_ROOTS` 两套互不兼容分隔符、C-4 `.env` 裸机不生效（无 dotenv）而示例注释让你照抄、C-5 域只能启动挂不能卸、C-6 realmId 操作员不可见。**判定：产品核心完全可用 MVP ❌**，且 v0.4 起那句"库内已无 P0 功能缺口、只剩仓库外动作"**第三次被证伪**——三纲里两条缺的是**库内执行点**。新立评审纪律一条：**凡 ✅ 句里含动词（阻止/只暴露/即刻断权/经授权），必须 grep 到该动词的读取方，否则判 ❌**。同时如实记已达到的部分：个人数据底座（给目录→检索→记忆→日记→藏宝图含内核状态文件→签名且一次性企业写凭证→审计→重启恢复）三层证据齐备。§E 给出 6 步最小集（全部库内可做）。子审计中两条与我实测不符的结论（"MCP 产物不存在"、"serve.ts 挂了静态控制台"）未采信 |
