@@ -204,4 +204,17 @@ node dist/vault/cli.js restore --map backups/vault-xxxx.map.json \
 # 2. 退出码 0 且报告 recoverable: true 后，再切换挂载
 ```
 
+备份**内核状态文件**（`kernel.json`：名册、记忆事实、连接器声明含 token、部门编制、授权台账）走文件白名单——它在每个已连接 Realm 之外：
+
+```bash
+node dist/vault/cli.js backup \
+  --files-root "$ZEUS_DATA_DIR" --files kernel.json \
+  --out-dir "$ZEUS_BACKUP_DIR" --name state
+node dist/vault/cli.js check --map "$ZEUS_BACKUP_DIR/state.map.json"   # 文件没了 → 退出码 2（漂移，可用包恢复）
+node dist/vault/cli.js restore --map "$ZEUS_BACKUP_DIR/state.map.json" \
+  --bundle "$ZEUS_BACKUP_DIR/state.bundle.json" --target /恢复目录
+```
+
+白名单**逐个点名**、绝不目录遍历：指向整个数据目录会把无界增长的 `audit.jsonl` 与 `.tmp` 一起卷进备份。点名的文件缺失/是软链/是二进制 → 出图即拒（静默漏掉你要的那个文件比没有备份更坏）。
+
 注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 宝藏永久丢失，无托管后门**（见 design-vault.md §9 非目标）。
