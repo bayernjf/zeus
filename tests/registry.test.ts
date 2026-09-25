@@ -44,6 +44,59 @@ describe('VassalRegistry', () => {
     await expect(registry.register('http://guest/api/a2a/agent-card')).rejects.toThrow(/no vassal fealty/);
   });
 
+  /**
+   * Dispatch dereferences these oath fields on every request. Before this, a
+   * card that omitted one registered cleanly and produced a TypeError from deep
+   * inside the dispatcher at task time - found by a real process, not by a mock.
+   */
+  describe('fealty oath validation', () => {
+    const registerWith = async (fealty: unknown) => {
+      const registry = new VassalRegistry(async () => cardResponse(prHelperCard({ 'x-zeus-fealty': fealty })));
+      await registry.register('http://vassal.internal/api/a2a/agent-card');
+    };
+    const oath = (over: Record<string, unknown> = {}) => ({
+      version: '1',
+      swornTo: 'zeus',
+      domain: 'pr-release-control',
+      dataRealms: ['enterprise'],
+      dataPolicy: 'read-task-scope',
+      reportBack: true,
+      escalationPolicy: 'auto',
+      ...over,
+    });
+
+    it('names the missing field instead of accepting a card it cannot honour', async () => {
+      const { dataRealms, ...noRealms } = oath();
+      void dataRealms;
+      await expect(registerWith(noRealms)).rejects.toThrow(/dataRealms must be an array of realm types, got nothing/);
+      await expect(registerWith(oath({ dataPolicy: 'read-everything' })))
+        .rejects.toThrow(/dataPolicy must be one of none, read-task-scope, read-realm, write, got "read-everything"/);
+      const { reportBack, ...noReport } = oath();
+      void reportBack;
+      await expect(registerWith(noReport)).rejects.toThrow(/reportBack must be a boolean, got nothing/);
+      await expect(registerWith(oath({ escalationPolicy: 'vibes' }))).rejects.toThrow(/escalationPolicy must be one of/);
+    });
+
+    it('refuses an unknown realm type but accepts an empty oath list', async () => {
+      await expect(registerWith(oath({ dataRealms: ['Enterprise'] })))
+        .rejects.toThrow(/dataRealms holds unknown realm types: "Enterprise"/);
+      // Swearing to no data domain at all is a legitimate (if unusual) oath; the
+      // diode then refuses every task with an explicit reason, which is honest.
+      await expect(registerWith(oath({ dataRealms: [] }))).resolves.toBeUndefined();
+    });
+
+    it('rejects an unusable SLA number and accepts a card without SLA', async () => {
+      await expect(registerWith(oath({ sla: { ackSeconds: 0 } }))).rejects.toThrow(/sla\.ackSeconds must be a positive number/);
+      await expect(registerWith(oath({ sla: { ackSeconds: 'soon' } }))).rejects.toThrow(/sla\.ackSeconds must be a positive number/);
+      await expect(registerWith(oath({ sla: undefined }))).resolves.toBeUndefined();
+    });
+
+    it('points at the card that was refused', async () => {
+      await expect(registerWith(oath({ dataPolicy: undefined })))
+        .rejects.toThrow(/http:\/\/vassal\.internal\/api\/a2a\/agent-card$/);
+    });
+  });
+
   it('refuses an unsupported fealty.version instead of silently accepting it (§4.5 version negotiation)', async () => {
     const futureFealty = {
       version: '999',
