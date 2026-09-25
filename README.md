@@ -235,7 +235,7 @@ curl -s localhost:8787/api/state -H "Authorization: Bearer $TOKEN"
 - [docs/design-vault.md](docs/design-vault.md) — Vault 藏宝图与恢复协议 v0.2（`MapSource`：Realm 或**文件白名单**，故内核状态文件也可备份；图只存引用、AES-GCM 密钥分离、`LiveSource` 原地校验 + 加密备份包跨位恢复、漂移检测）
 - [docs/design-diary.md](docs/design-diary.md) — Diary 记忆叙事化日记（事件按天分桶、内容不臆造、锚 eventId、经 Realm 落盘/导出）
 - [docs/design-org.md](docs/design-org.md) — 虚拟部门编制与结果责任（部门单 lead/成员唯一、编制可视、责任链追到 Agent/部门 lead/驾驶员）
-- [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级 MVP 评审（功能性/完整度/可上线、阻塞项与最小路径）
+- [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级 MVP 评审 v0.9（功能性/完整度/可上线 + 三纲可达性；**当前判定：产品核心完全可用 MVP ❌，两条支柱缺库内执行点**）
 - [docs/deferred-items.md](docs/deferred-items.md) — 缓做项与触发条件的单一事实源
 
 ## 协作约定
