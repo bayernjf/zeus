@@ -6,6 +6,8 @@ State of Zeus as of 2026-09-25.
 
 ## Current state
 
+- 🔴 **当前 MVP 判定（唯一事实源 = [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) §F，v0.9）：产品核心"完全可用"的 MVP = ❌ 未达到。**达标的是**个人数据底座**这一侧（给目录→检索→记忆→日记→藏宝图含内核状态文件→签名且一次性的企业写凭证→审计脊→重启恢复，665 测试 / 70 文件、typecheck/build 过、真进程冒烟与毁库演练各有复跑证据）。**未达标的是"多 Agent 协作"这一半，且缺的是库内执行点、不是仓库外环境**：① MCP 服务端只有 resources 没有 tools、只 personal+只读、无鉴权，客户端侧 `tools/call` 全库 0 命中；② Skill 注册中心不在派发路径上（`fanOut`→`findBySkill`→卡片自报技能），所以卸载不夺权、`hardening` 只写不读；③ 封臣**出站凭证从未接线**（`bootKernel` 不传 `tokenFor`）→ 要 bearer 的真封臣派发不出去，E4.8 因此从"没人跑"改判为"跑了也在这一步失败"。这三条记在 Active work 47（评审 §E 第 2-4 条）。**引用 MVP 结论只引这一处，别处一律指向这里。**
+
 - 已完成上层方向定位与产品画像 v0.1（2026-09-21）。
 - 项目骨架文档已按 agent-world 惯例建立：AGENTS.md / handoff.md / docs/。
 - 已 `git init` 并推 GitHub private；HTTP 技术栈已选型（Fastify + 长驻 Node，薄传输层，H1 随 roster R1 装依赖，见 docs/design-http-transport.md）；内核仍为纯 TS 库。
@@ -380,7 +382,7 @@ State of Zeus as of 2026-09-25.
 * [docs/design-org.md](docs/design-org.md) — 虚拟部门编制与结果责任 v0.1（E9.3）：部门单 lead/成员唯一/不可变、org chart 编制可视、traceAccountability 责任链（执行 Agent → 部门 lead → 驾驶员，无编制标 unassigned） ★
 * [docs/capacity-baseline.md](docs/capacity-baseline.md) — E10.4 本机容量基线 **v0.3**（2026-09-25）：真实回环 mock 封臣压测方法与数据，**五场景**——A 扇出宽度、B 并发意图、C H2 门面全链路吞吐（真实 TCP+bearer+JSON）、D 高并发取消传播（input-required 挂起态批量 cancel）；舒适扇出 ≤16、128 在途分支零丢失、门面附加 5–10ms、128 取消 14–18ms；mock 近似限制与真机重测触发条件；复跑 `npm run bench:capacity` ★
 * [docs/research-decision-layer-industry.md](docs/research-decision-layer-industry.md) — 决策层行业现状调研 v0.1（2026-09）：LLM-as-judge 主流 + 四条分化路线（专用决策模型/程序化裁决/混合路由/多模型分职）、对 design-decision-backend v0.2 的印证、来源清单
-* [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级评审 **现行 v0.8（2026-09-25；基线 620 绿 / 68 文件）**：功能性/完整度/可上线三维度、v0.1 五硬阻塞现状重判、**MVP 重判：M1/M2 达成、M3 制品就绪真机未验（差执行不差工程）**；v0.5 更正 E4.8 归因、v0.6 关闭"push + 云端 CI 首绿"关口、**v0.7 收口 E3.6/E6.4 并更正 §C 自身判断（"库内已无可闭环项"被证伪两次，改为"仓库外执行类"vs"库内可做但需拍板类"）、**v0.8 收口 E9.1/E9.2 上岗门并加口径"只有 inject 测试不算已验证"**；原 v0.1–v0.4 快照保留 ★
+* [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级评审 **现行 v0.9（2026-09-25；v0.9 落笔时基线 658 绿 / 70 文件，其后首跑批次 665 绿 / 70 文件）**：功能性/完整度/可上线三维度 + **三纲可达性重判**——**MVP 判定：产品核心完全可用 = ❌，且缺的是库内执行点（MCP 只有只读 resources、Skill 不在派发路径上、封臣出站凭证未接线），不再只是"等真机"**；v0.1 五硬阻塞现状重判、M1/M2 达成、M3 改判为"跑了也会在认证这一步失败"；v0.5 更正 E4.8 归因、v0.6 关闭"push + 云端 CI 首绿"关口、**v0.7 收口 E3.6/E6.4 并更正 §C 自身判断（"库内已无可闭环项"被证伪两次，改为"仓库外执行类"vs"库内可做但需拍板类"）、**v0.8 收口 E9.1/E9.2 上岗门并加口径"只有 inject 测试不算已验证"**；原 v0.1–v0.4 快照保留 ★
 * [docs/prd.md](docs/prd.md) — 产品需求文档 现行 v0.29（2026-09-25）：9 个 Epic、需求拆解（优先级/状态/验收标准）、里程碑与成功指标；v0.28 收口 E3.6 企业域三级租户 + E6.4 双域授权（**P0 仅剩 E4.8**），v0.27 编制可撤岗换 lead + 中文部门名，v0.25 更正 E4.8 归因，v0.24 E1.5 并发治理/E4.7 审计落盘/E3.5 收口，v0.22 签名链 v1.1 internal 封签 ★
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
