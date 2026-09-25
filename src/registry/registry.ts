@@ -11,6 +11,12 @@ export type VassalLike = {
 
 export type VassalStatus = 'unknown' | 'active' | 'revoked';
 
+/** The card could not be read at all — the peer is unreachable or answered with
+ *  an error status. Distinct from a card that was fetched and then refused: that
+ *  is a content problem, this one is a transport problem, and the HTTP face maps
+ *  them to different codes. */
+export class CardFetchError extends Error {}
+
 /** Live directory the dispatcher routes through. Revoked vassals are invisible
  *  to get/findBySkill but distinguishable via statusOf for governance audit. */
 export type VassalLookup = {
@@ -62,8 +68,17 @@ export class VassalRegistry {
    *  `token` is the optional outbound bearer this vassal presents on dispatch
    *  (E4.8); it is stored for the dispatcher and the snapshot only. */
   async register(cardUrl: string, options: { taskUrl?: string; token?: string; validate?: (card: AgentCard) => void } = {}): Promise<VassalEntry> {
-    const response = await this.fetchImpl(cardUrl);
-    if (!response.ok) throw new Error(`card fetch failed: ${response.status} ${cardUrl}`);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(cardUrl);
+    } catch (e) {
+      // A connection-level failure never reaches the status check below, and the
+      // underlying message (undici says just "fetch failed") names no URL — the
+      // operator has to be told which host we could not reach.
+      const reason = e instanceof Error ? e.message : String(e);
+      throw new CardFetchError(`card fetch failed: ${reason} (${cardUrl})`);
+    }
+    if (!response.ok) throw new CardFetchError(`card fetch failed: ${response.status} ${cardUrl}`);
     const card = (await response.json()) as AgentCard;
     if (!card.name || !Array.isArray(card.skills)) throw new Error(`invalid agent card: ${cardUrl}`);
     const fealty = card['x-zeus-fealty'];

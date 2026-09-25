@@ -94,6 +94,18 @@
 - **建议做法（拍板后）**：`disconnect(realmId)`（显式确认 + 写审计）与 `retargetTenant(realmId, from, to)`（要求携带旧值做比较交换，防误改），或把启动期的"租户变更"识别为一次**显式声明的迁移**而不是静默漂移。
 
 ### #18 MCP 暴露侧的主体（actor）判定
-- **缺口**：`createRealmMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `realmIds`"，handler 内部没有主体概念——因此 design-realm §7.2 的租户/域规则在 **MCP 资源读取路径上没有执行点**，只在 `realmSource`（内核代取）与访问探针上生效。
+- **缺口**：`createRealmMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `realmIds`"，handler 内部没有主体概念——因此 design-realm §7.2 的租户/域规则在 **MCP 读取路径（`resources/read` 与 v0.10 新增的 `tools/call`）上没有执行点**，只在 `realmSource`（内核代取）与访问探针上生效。
 - **为什么不在本批一起做**：接一个假 actor 进去只能证明"这段代码能被调用"，证不了真实封臣会带什么身份形态（会话级？条目级？），那是猜。
-- **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-realm 封臣出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-realm:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑。
+- **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-realm 封臣出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-realm:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑；同时定 `tools/call` 是否与 `resources/read` 共用同一份 realmId 白名单。
+
+### #19 入站 A2A 面（外部 Agent 调不进 Zeus）
+- **缺口**：Zeus 只有**出站** A2A（拉卡片、`tasks/send`、SSE 回读、`tasks/cancel`）。`src/http` 里既没有 `/.well-known/agent-card.json`，也没有任何 `tasks/*` 路由——即**别的 Agent 无法把任务派给 Zeus**，也不存在一张可供别人校验的 Zeus 卡片。v0.9 §A 判过这条（"没有入站面"），但**当时没进本清单**，于是 2026-09-25 复核才发现它是"评审说过、没人接"的失物。
+- **为什么仍然缓做**：入站面一开，就要同时回答"谁能派给我""派进来的东西落在哪个域""谁为结果负责"——这三问的答案取决于第一个真实的上游调用者（loom 或 bayjf），现在做只会得到一个没人用的空壳。且它不在 MVP 的核心叙事里：产品核心是"一个意图扇出多 Agent 并聚合"，出站已覆盖。
+- **触发条件**：① Zeus↔loom 真机联调时 loom 需要**反向**派任务给 Zeus；② bayjf 想让封神榜上的其它封臣调用 Zeus 的聚合能力；③ 出现"多 Zeus 实例协作"的需求。
+- **建议做法（拍板后）**：发一张 Zeus 自己的 agent card（形状与 fealty 与我们要求封臣的一致，吃自己的狗粮），入站 `tasks/send` 落到 H2 的意图面并复用同一根审计脊。
+
+### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致
+- **缺口**：`src/state/boot.ts:537-539` 对非数字阈值走 `Number.isFinite` 判断，不通过就**静默不写 config**、退回内置默认；而 E1.5 的并发/队列参数（`ZEUS_MAX_CONCURRENT_BRANCHES` 等）是**非法值直接拒启**。同一个"操作员把 env 写错"的失效模式，进程给两种答案。
+- **为什么不顺手统一**：`tests/boot-decision.test.ts:70-76` 已把"忽略非数字阈值"钉成契约（用例名就叫 `ignores a non-numeric threshold`）。统一成拒启=**推翻一条已锁测试**，这是口径决定而不是 bug 修复，等拍板。
+- **现状处置**：`docs/deployment.md:35` 已在该变量的表行里明写这条不一致并指向评审 §C-8，操作员看得见。
+- **触发条件**：① 决定"boot 参数一律 fail-loud"并批量改（含此条与所有现存例外）；② judge 上真机、阈值成为必须掐准的旋钮（此时配错的代价从"不敏感"变成"事故"）。

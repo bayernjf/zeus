@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry, defaultTaskUrl } from '../src/registry/registry.js';
+import { VassalRegistry, CardFetchError, defaultTaskUrl } from '../src/registry/registry.js';
 import type { AgentCard } from '../src/a2a/types.js';
 
 function cardResponse(card: unknown, status = 200): Response {
@@ -134,6 +134,20 @@ describe('VassalRegistry', () => {
     await expect(registry.register('http://bad/api/a2a/agent-card')).rejects.toThrow(/invalid agent card/);
     const down = new VassalRegistry(async () => new Response('nope', { status: 503 }));
     await expect(down.register('http://down/api/a2a/agent-card')).rejects.toThrow(/card fetch failed/);
+    // A peer that answers 5xx and a peer we cannot reach are the same class of
+    // failure to the caller: transport, not content.
+    await expect(down.register('http://down/api/a2a/agent-card')).rejects.toBeInstanceOf(CardFetchError);
+  });
+
+  // Every other failure stub in this file returns a bad Response. None of them
+  // throws, which is how a connection-level failure stayed unclassified.
+  it('classifies a connection-level failure as a transport error naming the URL', async () => {
+    const registry = new VassalRegistry(async () => {
+      throw new TypeError('fetch failed');
+    });
+    const err = await registry.register('http://gone.internal/api/a2a/agent-card').catch(e => e);
+    expect(err).toBeInstanceOf(CardFetchError);
+    expect(err.message).toContain('http://gone.internal/api/a2a/agent-card');
   });
 
   it('revokes a vassal so lookups and skill routing stop matching', async () => {

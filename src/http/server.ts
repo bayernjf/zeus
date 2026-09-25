@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { VassalRegistry } from '../registry/registry.js';
+import { CardFetchError, VassalRegistry } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -246,7 +246,11 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         return reply.code(201).send(entry);
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
-        if (/^card fetch failed/.test(detail)) return error(reply, 502, 'bad_gateway', detail);
+        // Classified by error identity, not by message shape: a transport failure
+        // is the peer's fault (502), while a card that was fetched and then
+        // refused (bad fealty, unsupported version, malformed JSON) is something
+        // the caller or the vassal can actually fix (400).
+        if (e instanceof CardFetchError) return error(reply, 502, 'bad_gateway', detail);
         return error(reply, 400, 'invalid_request', detail);
       }
     });
