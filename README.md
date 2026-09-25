@@ -9,7 +9,7 @@
 | 模块 | 路径 | 职责 |
 | --- | --- | --- |
 | **a2a** | `src/a2a/` | 标准 A2A 协议类型 + `x-zeus-*` 封臣扩展（Agent Card、Task 生命周期含 file/URI part 与 history 透传、SSE 事件、fealty 契约、战报） |
-| **registry（A1）** | `src/registry/registry.ts` | 封臣注册中心：卡片拉取注册、fealty 校验（无 fealty 即外客，拒绝入册）、健康探针、吊销、`listAll()` 全量视图、`asVassalLookup()` 实时目录 |
+| **registry（A1）** | `src/registry/registry.ts` | 封臣注册中心：卡片拉取注册、fealty 校验（无 fealty 即外客，拒绝入册；**oath 字段缺失或不合法也拒收并点名缺哪个字段**——`dataRealms`/`dataPolicy`/`reportBack`/`escalationPolicy` 是每次派发都要读的，过去能注册成功、到派发时才以 TypeError 崩）、健康探针、吊销、`listAll()` 全量视图、`asVassalLookup()` 实时目录 |
 | **roster（R0）** | `src/registry/roster.ts` | 封神榜名册投影器：注册中心状态 → 不可变、JSON 可序列化的 internal/public 双快照；只重塑与裁剪，不造字段 |
 | **dispatch（A2）** | `src/dispatch/` | 派发器：JSON-RPC + SSE 客户端（send / sendSubscribe / cancel）、数据二极管与按 `dataPolicy` 脱敏、派发前吊销阻断（不发请求不发 token）、审计 sink 与吊销审计桥 |
 | **oversight（A4）** | `src/oversight/` | 监督台：收集 `input-required` 任务升级与意图级冲突升级（`ingestConflict`），驾驶员 approve / reject / `decideConflict`；reject 联动取消封臣侧任务，冲突拍板立场回交编排器，全程审计、可持久化 |
@@ -23,7 +23,8 @@
 | **vault（E8.1/E8.2/E3.7）** | `src/vault/` | 藏宝图与恢复协议：buildVault 出图只存引用 + 逐 item 指纹（**正文零泄漏**）、AES-256-GCM seal/open（scrypt/raw key，密钥分离）、restoreDryRun 原地校验与漂移检测、packFull 加密内容包 + restoreFromBundle 经 FsRestoreSink 跨位恢复；`cli.ts` 为零依赖执行器（build/check/backup/restore，退出码 0/1/2/3） |
 | **memory（E8 记忆层）** | `src/memory/` | 记忆整理协议：append-only 事件日志，事实只经纯函数 `consolidate` 产出（无公开写入口）、观察去重累积 provenance、矛盾默认 disputed 并确定性升级进监督台、置信度按可靠度加权；`recall.ts` BM25+向量混合检索（派生索引不持久化，随时可重建）、`reconcile.ts` 两时点漂移对账与横切不变量校验、遗忘权 `retractFacts`/`forgetSubject`（tombstone 随快照持久化）；随 KernelSnapshot 持久化；H2 暴露 `/api/memory/*` |
 | **diary（E8.3）** | `src/diary/` | 记忆叙事化日记：buildDiary 把记忆事件按日历天分桶、确定性排序、内容只呈现不臆造、每行锚 eventId；buildDiariesFromState 按 realm 分组构建；persistDiary 经 Realm.write 落 `diary/YYYY-MM-DD.md`（幂等），exportDiary 稳定 JSON；H2 暴露 `GET /api/diary`、`POST /api/diary/generate` |
-| **org（E9.3）** | `src/org/` | 虚拟部门编制与结果责任：部门单 lead/成员唯一/不可变，org chart 编制可视，traceAccountability 把任务结果追到执行 Agent、部门 lead、拍板驾驶员（无编制标 unassigned）；OrgRegistry 有状态持有编制、随 KernelSnapshot 持久化重启恢复；H2 暴露 `GET /api/org/chart`、建编/安置端点 |
+| **org（E9.3）** | `src/org/` | 虚拟部门编制与结果责任：部门单 lead/成员唯一/不可变，org chart 编制可视，traceAccountability 把任务结果追到执行 Agent、部门 lead、拍板驾驶员（无编制标 unassigned）；OrgRegistry 有状态持有编制、随 KernelSnapshot 持久化重启恢复；H2 暴露 `GET /api/org/chart`、建编/安置/换 lead/撤岗端点、`GET /api/org/accountability/:intentId` 责任链 |
+| **onboarding（E9.1/E9.2）** | `src/onboarding/` | 上岗组合层（不新增原语，只负责拒绝）：**四道门现算不缓存**——seat（部门名册）/ account（在册未吊销封臣）/ authorization（realm 边界判定）/ mentorship（认证通过，出勤不算能力），记录只存"谁开档、谁签字、谁豁免了什么"，因此**签字后吊销封臣或撤出名册会自动失去资格**；`composeBriefing` 从已有事实装配首日岗位上下文（职责/责任链/已认证与还缺技能/谁能教/组织惯例=本部门记忆召回/读写边界两向），**答不上来的逐条进 `gaps`**，内容取稳定 digest 供任务溯源；`first-task` 过门后真走一次 fanOut。H2：`/api/org/departments/:id/commissions*`、`…/briefing/:agentId`、`…/first-task`（设计见 [design-onboarding](docs/design-onboarding.md)） |
 
 内核统一公共出口在 `src/index.ts`（不含 http 传输面），构建产物见下文。
 

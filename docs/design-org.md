@@ -123,7 +123,7 @@ export interface AccountabilityChain {
 
 - 本批不把部门编制接进 `KernelSnapshot`/boot（持久化接入随 E5 批次；Department 已 JSON 可序列化，提供 export/import 便利）。
 - 不做跨部门汇报线/矩阵式多头管理（v1 为单部门单 lead）。
-- 不做 E9.1 Mentor 带教、E9.2 上岗流程（独立条目）。
+- ~~不做 E9.1 Mentor 带教、E9.2 上岗流程（独立条目）~~ **已做，但不在本模块**：上岗门与首日简报住在新组合层 `src/onboarding/`，设计见 [design-onboarding.md](design-onboarding.md)；本模块只被它当作"seat 门"的证据来源（编制 + 责任链）。
 - 不做编制的 UI（产出 markdown/结构化投影，界面随产品面）。
 - 不替代 skills 任务级组队与 roster 名册。
 
