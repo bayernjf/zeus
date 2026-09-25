@@ -1,25 +1,26 @@
-import type { RealmStore } from '../realm/types.js';
+import { digestManifest } from '../realm/digest.js';
 import { sha256Hex } from '../util/crypto.js';
-import type { RestoreReport, TreasureMap } from './types.js';
+import type { LiveSource, RestoreReport, TreasureMap } from './types.js';
 
 /**
- * In-place verification (L0): reconnect the map's root, re-fingerprint every
- * mark against the live disk, and report ok / changed / missing / unexpected.
- * Never mutates anything. The root is re-scanned on connect, so the enumeration
- * reflects the current disk.
+ * In-place verification (L0): read the source the map names, re-fingerprint
+ * every mark against what is there now, and report ok / changed / missing /
+ * unexpected. Never mutates anything.
+ *
+ * The live view is a port rather than a `RealmStore`, for two reasons learned
+ * the hard way: the recovery protocol has to cover the kernel state file (which
+ * is not a Realm), and reconnecting a tenant-scoped enterprise realm *without*
+ * the map's own scope used to surface as "root unreachable" - a false alarm on
+ * a healthy corpus, reported by the one tool whose job is to say whether the
+ * treasure is still there.
  */
-export async function restoreDryRun(map: TreasureMap, store: RealmStore): Promise<RestoreReport> {
-  let liveRealmId: string;
+export async function restoreDryRun(map: TreasureMap, live: LiveSource): Promise<RestoreReport> {
+  const sourceId = map.source.kind === 'realm' ? map.source.realmId : `files:${map.source.label}`;
   let current: Array<{ itemId: string; content: string }>;
-  let contentDigestMatch = false;
   try {
-    const manifest = await store.connect(map.realm.root, map.realm.type);
-    liveRealmId = manifest.realmId;
-    const entries = await store.entries(manifest.realmId);
-    current = entries.map(entry => ({ itemId: entry.itemId, content: entry.content }));
-    contentDigestMatch = manifest.contentDigest === map.contentDigest;
-  } catch {
-    return rootUnreachableReport(map);
+    current = await live(map.source);
+  } catch (error) {
+    return unreachableReport(map, sourceId, (error as Error).message);
   }
 
   const byId = new Map(current.map(entry => [entry.itemId, entry.content]));
@@ -46,9 +47,10 @@ export async function restoreDryRun(map: TreasureMap, store: RealmStore): Promis
   const recoverable = changed.length === 0 && missing.length === 0;
 
   return {
-    realmId: liveRealmId,
+    sourceId,
+    sourceKind: map.source.kind,
     rootReachable: true,
-    contentDigestMatch,
+    contentDigestMatch: digestManifest(current) === map.contentDigest,
     total: map.marks.length,
     ok,
     changed,
@@ -62,14 +64,16 @@ export async function restoreDryRun(map: TreasureMap, store: RealmStore): Promis
 }
 
 /** Same verification as dryRun, but named for callers that want the plan + advice. */
-export function restorePlan(map: TreasureMap, store: RealmStore): Promise<RestoreReport> {
-  return restoreDryRun(map, store);
+export function restorePlan(map: TreasureMap, live: LiveSource): Promise<RestoreReport> {
+  return restoreDryRun(map, live);
 }
 
-function rootUnreachableReport(map: TreasureMap): RestoreReport {
+function unreachableReport(map: TreasureMap, sourceId: string, reason: string): RestoreReport {
   return {
-    realmId: map.realm.realmId,
+    sourceId,
+    sourceKind: map.source.kind,
     rootReachable: false,
+    unreachableReason: reason,
     contentDigestMatch: false,
     total: map.marks.length,
     ok: [],

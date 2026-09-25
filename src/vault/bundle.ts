@@ -3,7 +3,8 @@ import { dirname, join } from 'node:path';
 import { digestManifest } from '../realm/digest.js';
 import { FsRealmStore } from '../realm/store.js';
 import { open, seal, type VaultKey } from './cipher.js';
-import { buildVault, parseMap } from './map.js';
+import { assertSource, buildVault, parseMap } from './map.js';
+import { liveSourceFor } from './inventory.js';
 import { restoreDryRun } from './restore.js';
 import {
   BUNDLE_FORMAT,
@@ -42,13 +43,13 @@ export function openMap(envelope: SealedEnvelope, key: VaultKey): TreasureMap {
  */
 export async function packFull(inventory: VaultInventory, key: VaultKey, opts: { now?: () => Date } = {}): Promise<PackedFull> {
   const now = (opts.now ?? (() => new Date()))().toISOString();
-  const describe = await inventory.describe();
+  const source = await inventory.describe();
   const entries = await inventory.entries();
 
   const bundle: FullBundle = {
     format: BUNDLE_FORMAT,
     version: VAULT_VERSION,
-    realm: { realmId: describe.realmId, type: describe.type },
+    source,
     items: entries.map(entry => ({ itemId: entry.itemId, content: entry.content, modifiedAt: entry.modifiedAt })),
   };
   const sealedBundle = seal(JSON.stringify(bundle), BUNDLE_FORMAT, key);
@@ -77,7 +78,7 @@ function assertBundle(value: unknown): FullBundle {
   const bundle = value as Partial<FullBundle>;
   if (bundle.format !== BUNDLE_FORMAT) throw new VaultFormatError(`not a full bundle: ${String(bundle.format)}`);
   if (bundle.version !== VAULT_VERSION) throw new VaultFormatError(`unsupported bundle version: ${String(bundle.version)}`);
-  if (!bundle.realm || typeof bundle.realm.realmId !== 'string') throw new VaultFormatError('bundle realm descriptor is incomplete');
+  bundle.source = assertSource(bundle.source);
   if (!Array.isArray(bundle.items)) throw new VaultFormatError('bundle items must be an array');
   for (const item of bundle.items) {
     if (!item || typeof item.itemId !== 'string' || typeof item.content !== 'string') {
@@ -100,6 +101,10 @@ export async function restoreFromBundle(
   sink: RestoreSink = new FsRestoreSink()
 ) {
   const bundle = openBundle(sealedBundle, key);
+  // Validate the map's own source before writing anything: a restore that
+  // dispatches on a malformed descriptor would either fail halfway through
+  // writing or write to a target the map never named.
+  const source = assertSource(map.source);
   const recomputed = digestManifest(bundle.items.map(item => ({ itemId: item.itemId, content: item.content })));
   if (!map.bundle || recomputed !== map.bundle.digest) {
     throw new VaultBundleMismatchError('full bundle does not match the reference mounted on the map');
@@ -110,9 +115,9 @@ export async function restoreFromBundle(
     await sink.writeItem(targetRoot, item);
   }
 
+  const verifyMap: TreasureMap = { ...map, source: { ...source, root: targetRoot } };
   const verifyStore = new FsRealmStore();
-  const verifyMap: TreasureMap = { ...map, realm: { ...map.realm, root: targetRoot } };
-  return restoreDryRun(verifyMap, verifyStore);
+  return restoreDryRun(verifyMap, liveSourceFor(verifyStore));
 }
 
 function assertSafeRestorePath(itemId: string): void {
