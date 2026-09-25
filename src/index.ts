@@ -303,6 +303,25 @@ export {
 export { verifyDriverWriteGrant } from './realm/grant.js';
 export type { RealmWriteAuditEntry, FsRealmStoreOptions } from './realm/store.js';
 
+// --- E3.6 tenancy + E6.4 cross-domain authorization and retrieval ---
+export { parseTenant, formatTenant, normalizeTenant, tenantReaches, TenantError } from './realm/tenant.js';
+export {
+  decideRealmAccess,
+  verifyDomainGrant,
+  DomainGrantRegistry,
+  DomainGrantError,
+} from './realm/authorization.js';
+export type { ScopedRealm, GrantAuditEntry, DomainGrantState, GrantVerification as DomainGrantVerification } from './realm/authorization.js';
+export { resolveRealmSource, RealmSourceError } from './realm/source.js';
+export type { RealmSource, RealmAuditEntry, ResolvedRealmSource } from './realm/source.js';
+export type {
+  TenantScope,
+  RealmActor,
+  RealmAccess,
+  DomainGrant,
+  DomainDecision,
+} from './realm/types.js';
+
 // --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
 export {
   createRealmMcpHandler,

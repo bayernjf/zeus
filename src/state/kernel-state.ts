@@ -7,6 +7,8 @@ import { OversightDesk } from '../oversight/oversight.js';
 import { Orchestrator, type OrchestratorSnapshot } from '../orchestrator/orchestrator.js';
 import type { RealmConnection } from '../realm/types.js';
 import type { RealmStore } from '../realm/types.js';
+import type { DomainGrantState } from '../realm/authorization.js';
+import { DomainGrantRegistry } from '../realm/authorization.js';
 import type { SkillSpec } from '../skills/types.js';
 import { SkillRegistry } from '../skills/registry.js';
 import type { MemoryState } from '../memory/types.js';
@@ -50,6 +52,8 @@ export type KernelSnapshot = {
   mentorships?: MentorshipRecord[];
   /** E9.3: department establishment. Optional for backward compat. */
   org?: Department[];
+  /** E6.4: cross-domain grants + spent nonces. Optional for backward compat. */
+  domainGrants?: DomainGrantState;
 };
 
 export type KernelComponents = {
@@ -68,6 +72,8 @@ export type KernelComponents = {
   mentorshipLedger?: MentorshipLedger;
   /** E9.3: when assembled, the department establishment is persisted and restored. */
   orgRegistry?: OrgRegistry;
+  /** E6.4: when assembled, cross-domain grants survive a restart. */
+  domainGrants?: DomainGrantRegistry;
 };
 
 export class KernelStateError extends Error {}
@@ -84,6 +90,7 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     ...(components.connectorRegistry ? { connectors: components.connectorRegistry.exportState() } : {}),
     ...(components.mentorshipLedger ? { mentorships: components.mentorshipLedger.exportState() } : {}),
     ...(components.orgRegistry ? { org: components.orgRegistry.exportState() } : {}),
+    ...(components.domainGrants ? { domainGrants: components.domainGrants.exportState() } : {}),
   };
 }
 
@@ -97,6 +104,7 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
   if (components.connectorRegistry && snapshot.connectors) components.connectorRegistry.importState(snapshot.connectors);
   if (components.mentorshipLedger && snapshot.mentorships) components.mentorshipLedger.importState(snapshot.mentorships);
   if (components.orgRegistry && snapshot.org) components.orgRegistry.importState(snapshot.org);
+  if (components.domainGrants && snapshot.domainGrants) components.domainGrants.importState(snapshot.domainGrants);
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -119,6 +127,7 @@ export class FileKernelStateStore {
       ...(state.connectors ? { connectors: state.connectors } : {}),
       ...(state.mentorships ? { mentorships: state.mentorships } : {}),
       ...(state.org ? { org: state.org } : {}),
+      ...(state.domainGrants ? { domainGrants: state.domainGrants } : {}),
     };
     await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;

@@ -25,7 +25,15 @@ import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
 import type { AuditDecision } from '../dispatch/dispatcher.js';
 import type { KernelStats } from '../state/stats.js';
 import type { MemoryStore } from '../memory/memory-store.js';
-import type { RealmStore } from '../realm/types.js';
+import type { RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
+import { RealmError, RealmNotConnectedError, UnsupportedQueryError } from '../realm/types.js';
+import {
+  decideRealmAccess,
+  DomainGrantError,
+  type DomainGrantRegistry,
+} from '../realm/authorization.js';
+import { RealmSourceError, resolveRealmSource, type RealmAuditEntry, type RealmSource } from '../realm/source.js';
+import { normalizeTenant } from '../realm/tenant.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
 import { persistDiary } from '../diary/persist.js';
 import { DiaryUnsupportedError } from '../diary/types.js';
@@ -59,6 +67,10 @@ const AUDIT_DECISIONS: AuditDecision[] = [
   'refused-revoked',
   'vassal-revoked',
   'dispatch-failed',
+  'domain-read',
+  'domain-refused',
+  'domain-grant-issued',
+  'domain-grant-revoked',
   'sla-ack-breached',
 ];
 
@@ -97,6 +109,10 @@ export type HttpDeps = {
   memoryStore?: MemoryStore;
   /** H2 (E8.3): realm target for diary persistence. */
   realmStore?: RealmStore;
+  /** E6.4: cross-domain grant registry (the /api/domains face and realmSource). */
+  domainGrants?: DomainGrantRegistry;
+  /** E6.4: audit sink for domain crossings, fed by the kernel's audit spine. */
+  realmAudit?: (entry: RealmAuditEntry) => void;
 };
 
 export type StartOptions = {
@@ -239,6 +255,36 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'body.branchTimeoutMs must be a positive number');
         }
         const params = body.params && typeof body.params === 'object' && !Array.isArray(body.params) ? body.params : {};
+        // E6.4: kernel-resolved realm content. Preferred over pasted realmHits,
+        // because then the kernel knows which realm the content came from and can
+        // gate the crossing, instead of trusting a caller's provenance claim.
+        const sourceSpec = (request.body as { realmSource?: unknown } | undefined)?.realmSource;
+        let resolved: Awaited<ReturnType<typeof resolveRealmSource>> | undefined;
+        if (sourceSpec !== undefined) {
+          if (!deps.realmStore) {
+            return error(reply, 400, 'invalid_request', 'realmSource requires the realm store to be assembled');
+          }
+          if (body.realmHits) {
+            return error(reply, 400, 'invalid_request', 'send either realmSource or realmHits, not both');
+          }
+          const parsed = parseRealmSource(sourceSpec);
+          if (typeof parsed === 'string') return error(reply, 400, 'invalid_request', parsed);
+          try {
+            resolved = await resolveRealmSource({
+              store: deps.realmStore,
+              actor: parsed.onBehalfOf ?? { kind: 'driver', id: 'driver' },
+              source: parsed,
+              declaredRealm: body.realm,
+              ...(deps.domainGrants ? { grants: deps.domainGrants.list() } : {}),
+              ...(deps.realmAudit ? { audit: deps.realmAudit } : {}),
+            });
+          } catch (thrown) {
+            if (thrown instanceof RealmSourceError) {
+              return error(reply, 403, 'realm_source_refused', thrown.message);
+            }
+            return mapRealmQueryError(reply, thrown);
+          }
+        }
         const fanOutRequest: FanOutRequest = {
           skill: body.skill,
           realm: body.realm,
@@ -250,6 +296,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(body.realmHits ? { realmHits: body.realmHits } : {}),
           ...(body.runId ? { runId: body.runId } : {}),
           ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
+          ...(resolved
+            ? {
+                realmId: resolved.realmId,
+                realmHits: resolved.hits.map(hit => ({ itemId: hit.itemId, snippet: hit.snippet })),
+              }
+            : {}),
         };
         const result = await deps.orchestrator!.fanOut(fanOutRequest);
         reply.code(200);
@@ -1088,6 +1140,105 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
     }
+
+    if (deps.realmStore && deps.domainGrants) {
+      // E6.4: the data domains as the operator sees them — what is mounted and at
+      // which tenant level, what is authorized across the personal/enterprise
+      // edge, and whether one specific crossing would be allowed right now.
+      const realmScopeOf = (realmId: string) =>
+        deps.realmStore!.connections().find(entry => entry.realmId === realmId);
+
+      app.get('/api/domains', { preHandler: requireBearer }, async () => {
+        const realms = [];
+        for (const connection of deps.realmStore!.connections()) {
+          const manifest = await deps.realmStore!.manifest(connection.realmId);
+          realms.push({
+            realmId: connection.realmId,
+            type: connection.type,
+            ...(connection.tenant ? { tenant: connection.tenant } : {}),
+            readOnly: connection.readOnly,
+            itemCount: manifest.itemCount,
+            contentDigest: manifest.contentDigest,
+          });
+        }
+        return { realms, grants: deps.domainGrants!.list() };
+      });
+
+      // Dry run: answer "would this be allowed" without touching realm content,
+      // so an operator can check a boundary before a task trips over it.
+      app.get('/api/domains/access', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const query = request.query as { realmId?: unknown; subject?: unknown; kind?: unknown; tenant?: unknown; access?: unknown };
+        if (!isNonEmptyString(query.realmId)) return error(reply, 400, 'invalid_request', 'query.realmId is required');
+        if (!isNonEmptyString(query.subject)) return error(reply, 400, 'invalid_request', 'query.subject is required');
+        if (query.kind !== 'vassal' && query.kind !== 'agent' && query.kind !== 'driver') {
+          return error(reply, 400, 'invalid_request', 'query.kind must be driver | vassal | agent');
+        }
+        if (query.access !== undefined && query.access !== 'read' && query.access !== 'write') {
+          return error(reply, 400, 'invalid_request', 'query.access must be read | write');
+        }
+        const realm = realmScopeOf(query.realmId);
+        if (!realm) return error(reply, 404, 'not_found', `realm not connected: ${query.realmId}`);
+        let actor: RealmActor;
+        try {
+          actor = buildActor(query.kind, query.subject, query.tenant);
+        } catch (e) {
+          return error(reply, 400, 'invalid_request', (e as Error).message);
+        }
+        return decideRealmAccess({
+          actor,
+          realm,
+          access: (query.access ?? 'read') as RealmAccess,
+          grants: deps.domainGrants!.list(),
+        });
+      });
+
+      app.post('/api/domains/grants', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        for (const field of ['subject', 'realmId', 'grantedBy'] as const) {
+          if (!isNonEmptyString(body[field])) {
+            return error(reply, 400, 'invalid_request', `body.${field} is required`);
+          }
+        }
+        if (body.access !== 'read' && body.access !== 'write') {
+          return error(reply, 400, 'invalid_request', 'body.access must be "read" or "write"');
+        }
+        if (body.expiresAt !== undefined && (typeof body.expiresAt !== 'string' || Number.isNaN(Date.parse(body.expiresAt)))) {
+          return error(reply, 400, 'invalid_request', 'body.expiresAt must be an ISO date string');
+        }
+        const realm = realmScopeOf(body.realmId as string);
+        if (!realm) return error(reply, 404, 'not_found', `realm not connected: ${String(body.realmId)}`);
+        // A grant only ever opens personal -> enterprise. Asking for one against
+        // a personal realm has no meaning: the other direction is never grantable.
+        if (realm.type !== 'enterprise') {
+          return error(reply, 400, 'invalid_request', `grants authorize enterprise realms, not '${realm.type}' realms`);
+        }
+        try {
+          const grant = deps.domainGrants!.issue({
+            subject: body.subject as string,
+            realmId: body.realmId as string,
+            access: body.access as RealmAccess,
+            grantedBy: body.grantedBy as string,
+            ...(isNonEmptyString(body.reason) ? { reason: body.reason } : {}),
+            ...(typeof body.expiresAt === 'string' ? { expiresAt: body.expiresAt } : {}),
+            ...(isNonEmptyString(body.grantId) ? { grantId: body.grantId } : {}),
+            ...(isNonEmptyString(body.nonce) ? { nonce: body.nonce } : {}),
+          });
+          reply.code(201);
+          return grant;
+        } catch (thrown) {
+          return mapGrantError(reply, thrown);
+        }
+      });
+
+      app.delete('/api/domains/grants/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        try {
+          return deps.domainGrants!.revoke(id);
+        } catch (thrown) {
+          return mapGrantError(reply, thrown);
+        }
+      });
+    }
   }
 
   return app;
@@ -1200,6 +1351,82 @@ function isCheckList(value: unknown): boolean {
  *  duplicate declaration or a revoked connector → 409, out-of-vocabulary
  *  permission claims → 400, anything else → `unreachable` (502 when a handshake
  *  against a real endpoint failed, 400 elsewhere). */
+/**
+ * E6.4: parse body.realmSource. A returned string is the rejection reason
+ * (400) rather than a thrown error, so one function owns the shape rules.
+ */
+function parseRealmSource(
+  raw: unknown,
+): (RealmSource & { onBehalfOf?: RealmActor }) | string {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return 'body.realmSource must be an object with a realmId';
+  }
+  const source = raw as Record<string, unknown>;
+  if (!isNonEmptyString(source.realmId)) return 'body.realmSource.realmId is required';
+  for (const field of ['text', 'since'] as const) {
+    if (source[field] !== undefined && typeof source[field] !== 'string') {
+      return `body.realmSource.${field} must be a string`;
+    }
+  }
+  const limit = source.limit === undefined ? undefined : parsePositiveInt(source.limit);
+  if (source.limit !== undefined && limit === undefined) {
+    return 'body.realmSource.limit must be a positive integer';
+  }
+  const parsed: RealmSource & { onBehalfOf?: RealmActor } = {
+    realmId: source.realmId,
+    ...(isNonEmptyString(source.text) ? { text: source.text } : {}),
+    ...(isNonEmptyString(source.since) ? { since: source.since } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+  };
+  if (source.onBehalfOf !== undefined) {
+    const raw2 = source.onBehalfOf as Record<string, unknown>;
+    if (typeof raw2 !== 'object' || raw2 === null) return 'body.realmSource.onBehalfOf must be an object';
+    // Deliberately narrower than the access probe: a caller may ask on behalf of
+    // a vassal or agent, never as a second 'driver' — that identity is exactly
+    // the one the domain gate does not apply to.
+    if (raw2.kind !== 'vassal' && raw2.kind !== 'agent') {
+      return 'body.realmSource.onBehalfOf.kind must be "vassal" or "agent"';
+    }
+    if (!isNonEmptyString(raw2.id)) return 'body.realmSource.onBehalfOf.id is required';
+    try {
+      parsed.onBehalfOf = buildActor(raw2.kind, raw2.id, raw2.tenant);
+    } catch (e) {
+      return (e as Error).message;
+    }
+  }
+  return parsed;
+}
+
+function buildActor(kind: string, id: string, tenant: unknown): RealmActor {
+  if (kind !== 'driver' && kind !== 'vassal' && kind !== 'agent') {
+    throw new RealmError(`actor kind must be driver | vassal | agent, got ${String(kind)}`);
+  }
+  if (tenant === undefined) return { kind, id };
+  if (typeof tenant !== 'string') throw new RealmError('actor tenant must be "org[/department[/member]]"');
+  return { kind, id, tenant: normalizeTenant(tenant) };
+}
+
+function mapGrantError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  if (thrown instanceof DomainGrantError) {
+    const message = thrown.message;
+    if (message.startsWith('unknown grant')) return error(reply, 404, 'not_found', message);
+    if (message.includes('already exists') || message.includes('already used')) {
+      return error(reply, 409, 'conflict', message);
+    }
+    return error(reply, 400, 'invalid_request', message);
+  }
+  return mapRealmQueryError(reply, thrown);
+}
+
+function mapRealmQueryError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  if (thrown instanceof UnsupportedQueryError) return error(reply, 400, 'invalid_request', thrown.message);
+  if (thrown instanceof RealmNotConnectedError) return error(reply, 404, 'not_found', thrown.message);
+  if (thrown instanceof RealmSourceError) {
+    return error(reply, 403, 'realm_source_refused', thrown.message);
+  }
+  throw thrown;
+}
+
 function mapConnectorError(reply: FastifyReply, thrown: unknown, unreachable: 400 | 502): FastifyReply {
   const detail = thrown instanceof Error ? thrown.message : String(thrown);
   if (thrown instanceof SkillValidationError) return error(reply, 400, 'invalid_request', detail);

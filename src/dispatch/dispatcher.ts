@@ -9,7 +9,13 @@ export type AuditDecision =
   | 'refused-revoked'
   | 'vassal-revoked'
   | 'dispatch-failed'
-  | 'sla-ack-breached';
+  | 'sla-ack-breached'
+  /** E6.4: a subject crossed (or tried to cross) a data-domain boundary. */
+  | 'domain-read'
+  | 'domain-refused'
+  /** E6.4: the authorization lifecycle for those crossings. */
+  | 'domain-grant-issued'
+  | 'domain-grant-revoked';
 
 export type AuditEntry = {
   ts: string;

@@ -12,7 +12,10 @@ import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
-import type { RealmType } from '../a2a/types.js';
+import { DomainGrantRegistry, type GrantAuditEntry } from '../realm/authorization.js';
+import { normalizeTenant } from '../realm/tenant.js';
+import type { RealmAuditEntry } from '../realm/source.js';
+import type { RealmType, TenantScope } from '../realm/types.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import { SkillRegistry } from '../skills/registry.js';
 import { MentorshipLedger } from '../skills/mentor.js';
@@ -52,6 +55,8 @@ export type KernelBoot = KernelComponents & {
   stateFile: string | null;
   /** E4.7: JSONL dispatch audit log path, or null when the process writes none. */
   auditFile: string | null;
+  /** E6.4: feeds cross-domain read/refusal records into the audit spine. */
+  realmAudit: (entry: RealmAuditEntry) => void;
   /** Effective audit rotation ceiling for the active file (Infinity = unbounded). */
   auditMaxBytes: number;
   /** Effective rotated audit generations kept beside the active file. */
@@ -88,8 +93,9 @@ export type KernelBootOptions = {
    *  snapshot or an earlier seed) is skipped, so seeds never trigger a refetch. */
   vassalSeeds?: string[];
   /** G4: realm roots connected on boot. Strings are personal read-write roots;
-   *  objects may set type/readOnly. Persisted roots are reconnected as well. */
-  realmRoots?: Array<string | { root: string; type?: RealmType; readOnly?: boolean }>;
+   *  objects may set type/readOnly/tenant (E3.6, enterprise scopes). Persisted
+   *  roots are reconnected as well. */
+  realmRoots?: Array<string | { root: string; type?: RealmType; readOnly?: boolean; tenant?: string | TenantScope }>;
   /** Audit sink for memory boundary violations (cross-realm read/append). */
   memoryAudit?: (entry: MemoryAuditEntry) => void;
   /** Audit sink for MCP connector lifecycle events. */
@@ -162,6 +168,21 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const metrics = new ConcurrencyMetrics({ now });
   const progressHub = new ProgressHub();
   const realmStore = new FsRealmStore();
+  // E6.4: authorizations ride the same audit spine as dispatch decisions, so
+  // issuing one, revoking one and testing a boundary land in one trail.
+  const grantAudit = (entry: GrantAuditEntry): void => {
+    auditSink({
+      ts: entry.at,
+      vassal: entry.subject,
+      decision: entry.decision === 'grant-issued' ? 'domain-grant-issued' : 'domain-grant-revoked',
+      realm: 'enterprise',
+      detail: `${entry.decision} ${entry.grantId}: ${entry.access} ${entry.subject} -> ${entry.realmId} by ${entry.grantedBy}`,
+    });
+  };
+  const realmAudit = (entry: RealmAuditEntry): void => {
+    auditSink(entry);
+  };
+  const domainGrants = new DomainGrantRegistry(now, grantAudit);
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
   const memoryStore = new MemoryStore(memoryAudit, now);
   const connectorRegistry = new ConnectorRegistry(
@@ -199,7 +220,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
   });
   const components: KernelComponents = {
-    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry,
+    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants,
   };
 
   // Memory P1: when an intent operating on a connected realm reaches a terminal
@@ -238,16 +259,22 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // G4: reconnect realms restored from the snapshot, then connect the roots
   // supplied on this boot. Connect dedupes by realpath, so overlap is harmless.
   // A restored root that can no longer be reached fails boot loudly rather than
-  // silently dropping a data domain (the recovery promise).
+  // silently dropping a data domain (the recovery promise). The tenant scope is
+  // restored too — dropping it would silently widen an enterprise realm from
+  // "this department" to "reachable by any subject with no declared tenant".
   if (snapshot?.realms) {
     for (const connection of snapshot.realms) {
-      await realmStore.connect(connection.root, connection.type, { readOnly: connection.readOnly });
+      await realmStore.connect(connection.root, connection.type, {
+        readOnly: connection.readOnly,
+        ...(connection.tenant ? { tenant: connection.tenant } : {}),
+      });
     }
   }
   for (const entry of options.realmRoots ?? []) {
     const connection = typeof entry === 'string' ? { root: entry } : entry;
     await realmStore.connect(connection.root, connection.type ?? 'personal', {
       ...(connection.readOnly !== undefined ? { readOnly: connection.readOnly } : {}),
+      ...(connection.tenant !== undefined ? { tenant: connection.tenant } : {}),
     });
   }
 
@@ -266,6 +293,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     progressHub,
     stateFile: options.stateFile ?? null,
     auditFile: options.auditFile ?? null,
+    realmAudit,
     auditMaxBytes: options.auditMaxBytes ?? DEFAULT_AUDIT_MAX_BYTES,
     auditKeep: options.auditKeep ?? DEFAULT_AUDIT_KEEP,
     restoredFromSnapshot: snapshot !== null,
@@ -382,4 +410,47 @@ export function resolveAuditConfig(env: NodeJS.ProcessEnv = process.env): Proces
   const keep = envInteger(env.ZEUS_AUDIT_KEEP, 'ZEUS_AUDIT_KEEP', 1);
   if (keep !== undefined) config.auditKeep = keep;
   return config;
+}
+
+/**
+ * Realm mounts from env (G4 + E3.6).
+ *
+ * `ZEUS_REALM_ROOTS` stays what it always was: a comma list of personal roots.
+ * Enterprise mounts need a tenant scope, so they get their own variable rather
+ * than an overloaded separator inside the personal one:
+ * `ZEUS_REALM_ENTERPRISE="/srv/acme::acme,/srv/acme-eng::acme/eng"`. `::`
+ * separates path from tenant because a Windows drive letter already owns the
+ * single colon. An unusable tenant fails the boot: an enterprise realm mounted
+ * WITHOUT its scope is a silently widened data domain, the opposite of what the
+ * scope is for.
+ */
+export type ProcessRealmConfig = {
+  realmRoots: NonNullable<KernelBootOptions['realmRoots']>;
+};
+
+export function resolveRealmConfig(env: NodeJS.ProcessEnv = process.env): ProcessRealmConfig {
+  const roots: ProcessRealmConfig['realmRoots'] = [];
+  for (const entry of splitEnvList(env.ZEUS_REALM_ROOTS)) roots.push(entry);
+  for (const entry of splitEnvList(env.ZEUS_REALM_ENTERPRISE)) {
+    const separator = entry.indexOf('::');
+    if (separator < 0) {
+      throw new KernelBootError(
+        `ZEUS_REALM_ENTERPRISE entries are "<root>::<tenant>", got '${entry}' (the tenant is what keeps an enterprise realm from being org-visible)`,
+      );
+    }
+    const root = entry.slice(0, separator).trim();
+    const tenant = entry.slice(separator + 2).trim();
+    if (!root) throw new KernelBootError(`ZEUS_REALM_ENTERPRISE entry has an empty root: '${entry}'`);
+    try {
+      normalizeTenant(tenant);
+    } catch (error) {
+      throw new KernelBootError(`ZEUS_REALM_ENTERPRISE entry '${entry}' has an unusable tenant: ${(error as Error).message}`);
+    }
+    roots.push({ root, type: 'enterprise', tenant });
+  }
+  return { realmRoots: roots };
+}
+
+function splitEnvList(value: string | undefined): string[] {
+  return (value ?? '').split(',').map(entry => entry.trim()).filter(Boolean);
 }
