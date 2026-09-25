@@ -117,4 +117,13 @@ export class McpClient {
       throw error;
     }
   }
+
+  /**
+   * Active work 47 §E-4: invoke one discovered tool. The caller (ConnectorRegistry)
+   * is responsible for checking the name against the handshake's capability list;
+   * this method is the wire call and nothing more.
+   */
+  async callTool(name: string, arguments_: Record<string, unknown> = {}): Promise<unknown> {
+    return this.call('tools/call', { name, arguments: arguments_ });
+  }
 }

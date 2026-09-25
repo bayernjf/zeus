@@ -38,6 +38,8 @@ function mcpFetch(options: { sse?: boolean; fail?: boolean } = {}): typeof fetch
         return new Response(null, { status: 202 });
       case 'tools/list':
         return json({ tools: [{ name: 'search' }, { name: 'danger' }] });
+      case 'tools/call':
+        return json({ content: [{ type: 'text', text: `called:${(body as { params?: { name?: string } }).params?.name}` }] });
       case 'resources/list':
         return json({ resources: [{ uri: 'res://a', name: 'docs' }] });
       case 'prompts/list':
@@ -106,6 +108,35 @@ describe('E7 MCP connectors', () => {
     registry.revoke('knowledge');
     expect(registry.list('connected')).toEqual([]);
     await expect(registry.connect('knowledge')).rejects.toThrowError(/revoked/);
+  });
+
+  it('E7.4 (Active work 47) calls a discovered tool, bounded by the capability list', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration());
+    await registry.connect('knowledge', mcpFetch());
+    const result = await registry.callTool('knowledge', 'search', { q: 1 }, mcpFetch());
+    expect(result).toEqual({ content: [{ type: 'text', text: 'called:search' }] });
+  });
+
+  it('refuses to call a tool the handshake never discovered (or the boundary dropped)', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: ['mcp:search'] }));
+    await registry.connect('knowledge', mcpFetch());
+    // 'danger' was advertised upstream but the declaration's boundary removed it.
+    await expect(registry.callTool('knowledge', 'danger')).rejects.toThrowError(/does not expose tool 'danger'/);
+    // 'unknown-tool' was never advertised at all.
+    await expect(registry.callTool('knowledge', 'unknown-tool')).rejects.toThrowError(/does not expose tool/);
+  });
+
+  it('refuses tool calls on revoked or never-connected connectors', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration());
+    // Never connected: no capability list to bound against.
+    await expect(registry.callTool('knowledge', 'search')).rejects.toThrowError(/not connected/);
+
+    await registry.connect('knowledge', mcpFetch());
+    registry.revoke('knowledge');
+    await expect(registry.callTool('knowledge', 'search')).rejects.toThrowError(/revoked/);
   });
 
   it('survives export/import', () => {

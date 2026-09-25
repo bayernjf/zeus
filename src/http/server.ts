@@ -18,7 +18,7 @@ import type { MentorshipLedger } from '../skills/mentor.js';
 import type { CompetencyCheck, MentorshipStatus } from '../skills/mentor.js';
 import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
 import { SkillValidationError } from '../skills/validate-spec.js';
-import type { ConnectorRegistry } from '../mcp/connectors.js';
+import { ConnectorError, type ConnectorRegistry } from '../mcp/connectors.js';
 import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
 import type { DecisionBackendKind } from '../decision/types.js';
 import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
@@ -1297,6 +1297,26 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return redactConnector(deps.connectorRegistry!.revoke(id));
         } catch (e) {
           return mapConnectorError(reply, e, 400);
+        }
+      });
+
+      // Active work 47 §E-4: invoke a discovered tool. The registry already
+      // bounds the call to the handshake capability list (narrowed by the
+      // declaration's minimum-privilege boundary), so a tool the server never
+      // advertised cannot be reached. An upstream failure is a bad gateway —
+      // the connected system failed, not the request.
+      app.post('/api/connectors/:id/tools/:name/call', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id, name } = request.params as { id: string; name: string };
+        const body = (request.body ?? {}) as { arguments?: unknown };
+        if (body.arguments !== undefined && (typeof body.arguments !== 'object' || body.arguments === null || Array.isArray(body.arguments))) {
+          return error(reply, 400, 'invalid_request', 'body.arguments must be an object');
+        }
+        try {
+          const result = await deps.connectorRegistry!.callTool(id, name, body.arguments as Record<string, unknown> | undefined);
+          return { result };
+        } catch (e) {
+          if (e instanceof ConnectorError) return mapConnectorError(reply, e, 400);
+          return mapConnectorError(reply, e, 502);
         }
       });
     }

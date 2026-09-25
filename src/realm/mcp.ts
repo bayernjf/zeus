@@ -2,8 +2,10 @@
  * Minimal MCP (Model Context Protocol) JSON-RPC surface for a read-only Realm.
  *
  * Scope (P1 scaffold, design-realm.md §6.1):
- *  - resources map to manifest/search/read; write would map to tools and is
- *    intentionally absent (P0 is read-only, so the server declares no tools).
+ *  - resources map to manifest/search/read.
+ *  - tools (Active work 47 §E-4): realm.search / realm.read — read-only access
+ *    through the same store, with the realmId whitelist as the domain boundary.
+ *    No write tool exists (P0 is read-only).
  *  - This is a transport-agnostic, dependency-free message handler: it speaks
  *    newline-delimited JSON-RPC semantics but does no I/O. mcp-stdio.ts wires
  *    it to stdin/stdout. No @modelcontextprotocol/sdk dependency by design;
@@ -14,6 +16,8 @@
  *  - connect is NOT exposed over MCP; realms are pre-connected by the host.
  *  - the absolute root is stripped from every manifest before serialization
  *    and never appears in any response; only realmId + root-relative itemIds.
+ *  - tools/call follows the same rule: it accepts realmIds the host authorized
+ *    and root-relative itemIds, and error messages never carry absolute paths.
  */
 import type { RealmItem, RealmManifest, RealmStore, SearchQuery } from './types.js';
 import { InvalidItemIdError, RealmNotConnectedError, UnsupportedQueryError } from './types.js';
@@ -96,6 +100,10 @@ export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) 
           return ok(id, { resourceTemplates: RESOURCE_TEMPLATES });
         case 'resources/read':
           return ok(id, { contents: await readResource(deps.store, deps.realmIds, req.params) });
+        case 'tools/list':
+          return ok(id, { tools: REALM_TOOLS });
+        case 'tools/call':
+          return ok(id, { content: await callTool(deps.store, deps.realmIds, req.params) });
         default:
           return fail(id, METHOD_NOT_FOUND, `method not found: ${req.method}`);
       }
@@ -118,10 +126,97 @@ function initializeResult(params: unknown, serverName: string, serverVersion: st
       : PREFERRED_PROTOCOL_VERSION;
   return {
     protocolVersion: negotiated,
-    // Read-only realm: resources only, no tools (write), no prompts.
-    capabilities: { resources: { listChanged: false, subscribe: false } },
+    // Read-only realm: resources plus the two read-only tools below; no write
+    // tool, no prompts.
+    capabilities: {
+      resources: { listChanged: false, subscribe: false },
+      tools: { listChanged: false },
+    },
     serverInfo: { name: serverName, version: serverVersion },
   };
+}
+
+// --- Tools (Active work 47 §E-4): read-only access through the whitelisted
+// realmIds. The whitelist is the domain boundary: a caller cannot point a tool
+// at a realm the host did not pre-connect. ---
+
+type ToolDescriptor = {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, { type: string; description?: string }>;
+    required: string[];
+  };
+};
+
+const REALM_TOOLS: readonly ToolDescriptor[] = [
+  {
+    name: 'realm.search',
+    description: 'Search one connected realm by text; returns root-relative item metadata.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        realmId: { type: 'string', description: 'A realmId the host connected' },
+        text: { type: 'string', description: 'Substring filter over item content' },
+        since: { type: 'string', description: 'ISO timestamp; only items changed after it' },
+        limit: { type: 'number', description: 'Max hits, positive integer' },
+      },
+      required: ['realmId'],
+    },
+  },
+  {
+    name: 'realm.read',
+    description: 'Read one item by root-relative itemId from a connected realm.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        realmId: { type: 'string', description: 'A realmId the host connected' },
+        itemId: { type: 'string', description: 'Root-relative item path' },
+      },
+      required: ['realmId', 'itemId'],
+    },
+  },
+];
+
+async function callTool(store: RealmStore, realmIds: string[], params: unknown): Promise<Array<{ type: 'text'; text: string }>> {
+  const { name, arguments: args } = (params ?? {}) as { name?: unknown; arguments?: Record<string, unknown> };
+  if (typeof name !== 'string' || !REALM_TOOLS.some(tool => tool.name === name)) {
+    throw new McpParamError(`unknown tool: ${String(name)}`);
+  }
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    throw new McpParamError('tools/call requires an arguments object');
+  }
+  const realmId = args.realmId;
+  if (typeof realmId !== 'string' || !realmIds.includes(realmId)) {
+    throw new RealmNotConnectedMcpError(typeof realmId === 'string' ? realmId : '?');
+  }
+
+  if (name === 'realm.search') {
+    const query = toolSearchQuery(args);
+    const hits = await store.search(realmId, query);
+    return [{ type: 'text', text: JSON.stringify(hits) }];
+  }
+
+  const itemId = args.itemId;
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    throw new McpParamError('realm.read requires a root-relative itemId string');
+  }
+  const item: RealmItem = await store.read(realmId, itemId);
+  return [{ type: 'text', text: item.content }];
+}
+
+function toolSearchQuery(args: Record<string, unknown>): SearchQuery {
+  const query: SearchQuery = {};
+  if (typeof args.text === 'string' && args.text.trim()) query.text = args.text;
+  if (typeof args.since === 'string' && args.since.trim()) query.since = args.since;
+  if (args.limit !== undefined) {
+    if (typeof args.limit !== 'number' || !Number.isFinite(args.limit) || args.limit < 1) {
+      throw new McpParamError(`limit must be a positive number, got: ${String(args.limit)}`);
+    }
+    query.limit = Math.floor(args.limit);
+  }
+  return query;
 }
 
 // --- URI scheme: zeus-realm://<realmId>/(manifest|search|item) ---

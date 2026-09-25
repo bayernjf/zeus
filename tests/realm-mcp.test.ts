@@ -52,13 +52,13 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
     rmSync(sandbox, { recursive: true, force: true });
   });
 
-  it('initialize negotiates protocol version and advertises resources only (no tools)', async () => {
+  it('initialize negotiates protocol version and advertises resources + the two read-only tools', async () => {
     const res = await handle(rpc(1, 'initialize', { protocolVersion: '2024-11-05' }));
     expect(res?.error).toBeUndefined();
     const result = res!.result as { protocolVersion: string; capabilities: { resources?: unknown; tools?: unknown }; serverInfo: unknown };
     expect(result.protocolVersion).toBe('2024-11-05');
     expect(result.capabilities.resources).toBeDefined();
-    expect(result.capabilities.tools).toBeUndefined();
+    expect(result.capabilities.tools).toEqual({ listChanged: false });
     expect(result.serverInfo).toEqual({ name: 'zeus-realm', version: '0.1.0' });
 
     // Unknown client version -> server proposes its newest supported version.
@@ -158,7 +158,7 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
   });
 
   it('returns method-not-found for unknown methods and invalid-request for malformed messages', async () => {
-    const unknown = await handle(rpc(1, 'tools/list')); // read-only server exposes no tools
+    const unknown = await handle(rpc(1, 'prompts/list')); // read-only server exposes no prompts
     expect(unknown!.error!.code).toBe(JSON_RPC_CODES.METHOD_NOT_FOUND);
 
     const noMethod = await handle({ jsonrpc: '2.0', id: 2 });
@@ -172,5 +172,43 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
   it('ping returns an empty result', async () => {
     const res = await handle(rpc(1, 'ping'));
     expect(res!.result).toEqual({});
+  });
+
+  it('tools/list exposes realm.search and realm.read with schemas', async () => {
+    const res = await handle(rpc(1, 'tools/list'));
+    expect(res?.error).toBeUndefined();
+    const tools = (res!.result as { tools: Array<{ name: string; inputSchema: { required?: string[] } }> }).tools;
+    expect(tools.map(tool => tool.name).sort()).toEqual(['realm.read', 'realm.search']);
+    const read = tools.find(tool => tool.name === 'realm.read')!;
+    expect(read.inputSchema.required).toContain('realmId');
+    expect(read.inputSchema.required).toContain('itemId');
+  });
+
+  it('tools/call searches and reads only whitelisted realms, never absolute paths', async () => {
+    const search = await handle(rpc(1, 'tools/call', { name: 'realm.search', arguments: { realmId, text: 'hello' } }));
+    expect(search?.error).toBeUndefined();
+    const text = (search!.result as { content: Array<{ type: string; text: string }> }).content[0].text;
+    expect(JSON.parse(text).length).toBeGreaterThan(0);
+    expect(text).not.toContain(root);
+    expect(text).not.toContain(realpathSync(root));
+
+    const read = await handle(rpc(2, 'tools/call', { name: 'realm.read', arguments: { realmId, itemId: 'notes/diary.md' } }));
+    expect(read?.error).toBeUndefined();
+    expect((read!.result as { content: Array<{ type: string; text: string }> }).content[0].text).toContain('secret zeus');
+  });
+
+  it('tools/call refuses unknown tools, non-whitelisted realms, and malformed arguments', async () => {
+    const unknownTool = await handle(rpc(1, 'tools/call', { name: 'realm.write', arguments: {} }));
+    expect(unknownTool!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+    expect(unknownTool!.error!.message).toMatch(/unknown tool/);
+
+    const outside = await handle(rpc(2, 'tools/call', { name: 'realm.search', arguments: { realmId: 'not-connected' } }));
+    expect(outside!.error!.code).toBe(JSON_RPC_CODES.REALM_NOT_CONNECTED);
+
+    const noArgs = await handle(rpc(3, 'tools/call', { name: 'realm.search' }));
+    expect(noArgs!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+
+    const noItem = await handle(rpc(4, 'tools/call', { name: 'realm.read', arguments: { realmId } }));
+    expect(noItem!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
   });
 });
