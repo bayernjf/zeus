@@ -76,7 +76,16 @@ describe('kernel inventory', () => {
     const kernel = await assemble();
     const stats = kernelStats(kernel);
     expect(stats.persistence).toEqual({ enabled: false, stateFile: null, restoredFromSnapshot: false });
-    expect(stats.audit).toEqual({ file: join(dir, 'audit.jsonl'), maxBytes: 'unlimited', keep: 2 });
+    expect(stats.audit).toEqual({
+      file: join(dir, 'audit.jsonl'),
+      maxBytes: 'unlimited',
+      keep: 2,
+      // Exact on purpose: a healthy kernel must report a clean trail, so a
+      // regression that starts counting failures cannot slip through a
+      // toMatchObject.
+      failures: 0,
+      degraded: false,
+    });
     expect(stats.counts).toMatchObject({
       vassals: 1,
       vassalsRevoked: 1,

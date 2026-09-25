@@ -1,4 +1,5 @@
-import { appendFileSync, closeSync, existsSync, fstatSync, openSync, readSync, renameSync, rmSync, statSync } from 'node:fs';
+import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, renameSync, rmSync, statSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { AuditDecision, AuditEntry, AuditSink } from './dispatcher.js';
 
 /** Rotation knobs for the JSONL audit sink. */
@@ -34,6 +35,17 @@ export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}
     throw new Error(`audit keep must be a whole number >= 1, got ${String(keep)}`);
   }
 
+  // Fail at boot, not at the first dispatch: an audit path the operator
+  // configured but cannot write is a configuration error, and silently
+  // downgrading it would leave them believing they had a trail.
+  try {
+    ensureAuditFile(path);
+  } catch (error) {
+    throw new Error(
+      `cannot use the audit log at ${path}: ${error instanceof Error ? error.message : String(error)} (fix ZEUS_AUDIT_FILE or unset it)`,
+    );
+  }
+
   return entry => {
     const line = `${JSON.stringify(entry)}\n`;
     if (Number.isFinite(maxBytes)) {
@@ -41,12 +53,34 @@ export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}
       try {
         size = statSync(path).size;
       } catch {
-        size = 0; // first write: the file does not exist yet
+        size = 0; // rotated away between two entries - recreated below
       }
-      if (size + Buffer.byteLength(line) > maxBytes) rotateAuditLog(path, keep);
+      if (size + Buffer.byteLength(line) > maxBytes) {
+        rotateAuditLog(path, keep);
+        // Rotation retired the active file, so the replacement has to be
+        // re-tightened or the next line lands world-readable again.
+        ensureAuditFile(path);
+      }
     }
     appendFileSync(path, line);
   };
+}
+
+/**
+ * Make the trail exist and be owner-only.
+ *
+ * The directory is created because the sink used to assume it: with the
+ * documented default (`./data/audit.jsonl` in a fresh data dir) the very first
+ * audit write threw ENOENT, and the dispatcher's branch `catch` re-labelled that
+ * filesystem error as the reason the *vassal* failed. The mode matters for the
+ * same reason the kernel state file's does - audit lines carry realm ids, vassal
+ * names and decision detail - and `appendFileSync` alone would leave the file
+ * 0644 on a default umask.
+ */
+export function ensureAuditFile(path: string): void {
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  appendFileSync(path, '', { mode: 0o600 });
+  chmodSync(path, 0o600); // also tightens a file an older build left world-readable
 }
 
 /** Shift `<path>.n` → `<path>.n+1`, drop the overflow generation, and retire the

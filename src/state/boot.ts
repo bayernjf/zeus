@@ -75,6 +75,12 @@ export type KernelBoot = KernelComponents & {
   auditMaxBytes: number;
   /** Effective rotated audit generations kept beside the active file. */
   auditKeep: number;
+  /**
+   * Audit writes that failed after boot. Non-zero means the trail is degraded:
+   * decisions were made and answered, but not persisted. Surfaced here so a
+   * disk problem cannot hide behind a healthy-looking HTTP status.
+   */
+  readonly auditFailures: number;
   /** True when a snapshot was found and applied during boot. */
   restoredFromSnapshot: boolean;
   /** The applied snapshot, or null on first boot / in-memory mode. */
@@ -148,6 +154,9 @@ export type KernelBootOptions = {
    *  consumed driver-grant nonce) fails. Defaults to silence; serve.ts logs it,
    *  because a nonce that never reaches disk can be replayed after a restart. */
   onStateSaveError?: (message: string) => void;
+  /** Called when a persisted audit line cannot be written. Defaults to silence; a
+   *  deployment should log it, because a missing trail is a governance fact. */
+  onAuditError?: (message: string) => void;
 }
 
 const noop = (): void => {};
@@ -161,18 +170,52 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const orgRegistry = new OrgRegistry(now);
   // One audit spine: the dispatcher's decisions, the registry's revocations and
   // whatever transport the caller wants (stderr, JSONL file) all funnel here.
-  const fileSink = options.auditFile
-    ? jsonlAuditSink(options.auditFile, {
-        ...(options.auditMaxBytes !== undefined ? { maxBytes: options.auditMaxBytes } : {}),
-        ...(options.auditKeep !== undefined ? { keep: options.auditKeep } : {}),
-      })
+  const fileSink: AuditSink | null = options.auditFile
+    ? (() => {
+        try {
+          return jsonlAuditSink(options.auditFile!, {
+            ...(options.auditMaxBytes !== undefined ? { maxBytes: options.auditMaxBytes } : {}),
+            ...(options.auditKeep !== undefined ? { keep: options.auditKeep } : {}),
+          });
+        } catch (error) {
+          // Constructing the sink creates the file, so an unusable path is a
+          // boot-time configuration fact and must read like one.
+          throw new KernelBootError(
+            `audit log is unusable: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      })()
     : null;
-  const auditSink: AuditSink = fileSink
-    ? entry => {
+  let auditFailures = 0;
+  let auditFailureReported = false;
+  const warnAuditFailure = (detail: string): void => {
+    // One loud line naming the consequence, then just the count-worth of detail:
+    // a full disk fails every single entry, and per-entry noise would bury the
+    // first, informative one.
+    (options.onAuditError ?? noop)(
+      auditFailureReported
+        ? detail
+        : `${detail}; the audit trail is degraded from here on`,
+    );
+    auditFailureReported = true;
+  };
+  const auditSink: AuditSink = entry => {
+    // A failing audit write must never become the reason a dispatch reports
+    // failure. It used to: an ENOENT on the audit path surfaced as
+    // `branch.reason: "ENOENT ... audit.jsonl"` for every branch, so a disk
+    // problem was indistinguishable from a vassal problem - and the operator
+    // went looking for a broken agent. Observability that changes results is a
+    // defect, so the file write is contained here and reported as what it is.
+    if (fileSink) {
+      try {
         fileSink(entry);
-        options.dispatchAudit?.(entry);
+      } catch (error) {
+        auditFailures += 1;
+        warnAuditFailure(`audit write failed: ${error instanceof Error ? error.message : String(error)}`);
       }
-    : (options.dispatchAudit ?? noop);
+    }
+    options.dispatchAudit?.(entry);
+  };
   const registry = new VassalRegistry(fetchImpl, now, {
     onRegister: entry => skillRegistry.registerFromCard(entry.card),
     onRevoke: revokeAuditBridge(auditSink),
@@ -392,7 +435,16 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     const known = new Set(registry.listAll().map(entry => entry.cardUrl));
     for (const cardUrl of options.vassalSeeds) {
       if (known.has(cardUrl)) continue;
-      await registry.register(cardUrl);
+      try {
+        await registry.register(cardUrl);
+      } catch (error) {
+        // A seed that cannot be registered is a boot-time configuration fact:
+        // the operator typed a URL, and either it is unreachable or the card does
+        // not swear the oath. Say which, in one line, instead of a stack trace.
+        throw new KernelBootError(
+          `vassal seed failed for ${cardUrl}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
       known.add(cardUrl);
     }
   }
@@ -409,6 +461,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     driverSigner: options.driverSigner ?? null,
     auditMaxBytes: options.auditMaxBytes ?? DEFAULT_AUDIT_MAX_BYTES,
     auditKeep: options.auditKeep ?? DEFAULT_AUDIT_KEEP,
+    get auditFailures(): number {
+      return auditFailures;
+    },
     restoredFromSnapshot: snapshot !== null,
     snapshot,
     saveState: persistLiveState,

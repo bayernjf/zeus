@@ -18,6 +18,7 @@
 |---|---|---|
 | `ZEUS_HOST` | `127.0.0.1` | 监听地址；**容器内必须 `0.0.0.0`** |
 | `ZEUS_PORT` | `8787` | 监听端口 |
+| `ZEUS_VASSAL_SEEDS` | 未设置 | G1：启动时自动注册的封臣 Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。**某个 seed 拉不到或卡片没发誓 fealty → 整个进程拒启**（一行 `[zeus-http] refused to start: vassal seed failed for <url>: …`），不会静默少一个封臣 |
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含连接器 bearer token 与记忆事实，且以 uid 1000 落卷） |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
@@ -27,6 +28,12 @@
 | `ZEUS_BRANCH_QUEUE_LIMIT` | 未设置（=等待无限） | 允许排队等槽的分支数；`0` = 不排队，槽满即拒（泄压优先于排队） |
 | `ZEUS_REALM_ROOTS` | 未设置 | G4：启动时连接的个人域根目录，逗号分隔；连接参数写进状态文件，重启自动重连 |
 | `ZEUS_REALM_ENTERPRISE` | 未设置 | E3.6：企业域挂载，每项 `"<root>::<tenant>"`（tenant 为 `org[/department[/member]]`，如 `/srv/acme-eng::acme/eng`）。**缺 tenant 或写法非法直接拒启**——一个没有边界的企业域等于对整个名册可见；`::` 是因为 Windows 盘符已占用单冒号 |
+| `ZEUS_DECISION_BASE_URL` + `ZEUS_DECISION_API_KEY` | 未设置 | S2 critic 仲裁的决策后端（Jev 优先）。**两项同时给出才启用**，缺任一即 `backend: null`、内核退回 rules-only（这是设计好的降级，不是错误） |
+| `ZEUS_DECISION_MODEL` | 适配器默认 | 决策模型名，只在上面两项齐时生效 |
+| `ZEUS_LLM_BASE_URL` + `ZEUS_LLM_API_KEY` + `ZEUS_LLM_MODEL` | 未设置 | 通用 OpenAI 兼容后端，**三项齐才启用**，优先级低于 `ZEUS_DECISION_*`。这是把裁决发给外部模型的通道——注意数据出境口径 |
+| `ZEUS_JUDGE_ENABLED` | 未设置（关） | E1.3 对抗式 judge。**必须有决策后端才生效**：只设它而后端不齐时保持关闭（后端状态看 `GET /api/decision` 或启动日志那一行） |
+| `ZEUS_JUDGE_THRESHOLD` | 内置阈值 | judge 采信阈值。⚠️ **非数字值被静默忽略并退回默认阈值**——这与 `ZEUS_MAX_CONCURRENT_BRANCHES` 的"非法值拒启"不一致，已记进评审（review v0.9 §C-8），尚未统一 |
+| `ZEUS_JUDGE_ALLOW_UNCALIBRATED` | 未设置（关） | 允许未校准 judge 参与裁决；开启即放弃"先校准再采信"这条防线，只用于实验环境 |
 | `ZEUS_RSK_KEY` | 未设置 | RSK 私钥 PEM 全文（Ed25519，PKCS#8） |
 | `ZEUS_RSK_KEY_FILE` | 未设置 | RSK 私钥 PEM 文件路径（secret 挂载推荐）；与 `ZEUS_RSK_KEY` 同时存在时内联优先 |
 | `ZEUS_RSK_KEY_ID` | `zeus-rsk-dev` | 封签 keyId（验签方按 keyId 找公钥） |

@@ -28,6 +28,71 @@ describe('audit sinks', () => {
     }
   });
 
+  it('creates the directory the trail lives in, at sink construction', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-dir-'));
+    // `./data/audit.jsonl` in a fresh data directory is what the deployment docs
+    // tell an operator to configure; the sink used to assume the directory
+    // existed and the first dispatch paid for it.
+    const path = join(dir, 'data', 'nested', 'audit.jsonl');
+    try {
+      const sink = jsonlAuditSink(path);
+      sink({ ts: '2026-09-25T10:00:00.000Z', vassal: 'loom', decision: 'dispatched' });
+      expect(existsSync(path)).toBe(true);
+      expect(readFileSync(path, 'utf8').trim().split('\n')).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes owner-only, and tightens a file an older build left world-readable', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-mode-'));
+    const path = join(dir, 'audit.jsonl');
+    try {
+      writeFileSync(path, '', { mode: 0o644 });
+      jsonlAuditSink(path);
+      // Audit lines name realms, vassals and decisions; the state file already
+      // learned this lesson, and a fresh create would otherwise inherit the umask.
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+
+      rmSync(path);
+      const sink = jsonlAuditSink(path);
+      sink({ ts: 't', vassal: 'loom', decision: 'dispatched' });
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the replacement file owner-only after a rotation', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-rot-'));
+    const path = join(dir, 'audit.jsonl');
+    try {
+      const sink = jsonlAuditSink(path, { maxBytes: 200, keep: 2 });
+      for (let i = 0; i < 12; i++) {
+        sink({ ts: `2026-09-25T10:00:${String(i).padStart(2, '0')}.000Z`, vassal: 'loom', decision: 'dispatched', detail: 'x'.repeat(60) });
+      }
+      expect(readdirSync(dir).filter(name => name.startsWith('audit.jsonl'))).toEqual(
+        expect.arrayContaining(['audit.jsonl', 'audit.jsonl.1'])
+      );
+      // Rotation is where a fixed mode quietly goes wrong again: the active file
+      // is renamed away and recreated by a bare append.
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to start with an audit path it cannot use, and says what to fix', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-bad-'));
+    const blocker = join(dir, 'not-a-directory');
+    try {
+      writeFileSync(blocker, 'occupied\n');
+      expect(() => jsonlAuditSink(join(blocker, 'audit.jsonl'))).toThrow(/cannot use the audit log .*fix ZEUS_AUDIT_FILE or unset it/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('memoryAuditSink collects entries in order', () => {
     const { log, sink } = memoryAuditSink();
     sink({ ts: 't1', vassal: 'a', decision: 'dispatched' });
