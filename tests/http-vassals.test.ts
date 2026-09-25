@@ -74,6 +74,20 @@ describe('G1 vassal onboarding HTTP', () => {
     expect(res.statusCode).toBe(502);
   });
 
+  // The branch every other case missed: the host never answers at all, so fetch
+  // throws instead of returning a bad status. It is still a gateway failure, and
+  // the detail has to name the URL because the underlying message does not.
+  it('returns 502 naming the URL when the card host fails at the connection level', async () => {
+    const unreachable = 'http://gone.internal/api/a2a/agent-card';
+    const app = await server(async () => {
+      throw new TypeError('fetch failed');
+    });
+    const res = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: unreachable } });
+    expect(res.statusCode).toBe(502);
+    expect((await res.json()).error).toBe('bad_gateway');
+    expect((await res.json()).detail).toContain(unreachable);
+  });
+
   it('rejects a card without fealty', async () => {
     const guest = card();
     delete guest['x-zeus-fealty'];
