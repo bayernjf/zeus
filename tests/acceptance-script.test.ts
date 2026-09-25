@@ -54,11 +54,13 @@ function runScript(args: string[], env: NodeJS.ProcessEnv = process.env): Promis
 // Minimal faithful pr-helper shape (api/_lib/agent-card.ts + api/_lib/a2a/rpc.ts):
 // card carries x-zeus-fealty (the script must not need it), tasks/send accepts a
 // text part whose first token is the skill id, and tasks include a history array.
+// The JSON-RPC surface lives on the same path as card discovery (GET = card,
+// POST = RPC), matching pr-helper's routing.
 function healthyHandler(req: any, body: any, res: any) {
-  if (req.url === '/api/a2a/agent-card') {
+  if (req.url === '/api/a2a/agent-card' && req.method !== 'POST') {
     return json(res, 200, {
       name: 'pr-helper',
-      url: 'http://127.0.0.1/api/a2a/tasks',
+      url: 'http://127.0.0.1/api/a2a/agent-card',
       version: '0.1.0',
       provider: { organization: 'bayjf', url: 'https://github.com/jiangfeng' },
       capabilities: { streaming: true, pushNotifications: false, stateTransitionHistory: true },
@@ -72,7 +74,7 @@ function healthyHandler(req: any, body: any, res: any) {
       'x-zeus-fealty': { version: '1', swornTo: 'zeus', domain: 'pr-release-control' },
     });
   }
-  if (req.url === '/api/a2a/tasks') {
+  if (req.url === '/api/a2a/agent-card' && req.method === 'POST') {
     const skill = body?.params?.message?.parts?.[0]?.text?.trim().split(/\s+/)[0];
     if (skill !== 'deployment-health') {
       return json(res, 200, { jsonrpc: '2.0', id: body.id, error: { code: -32602, message: 'unknown skill' } });
