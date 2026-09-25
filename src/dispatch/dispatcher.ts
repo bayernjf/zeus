@@ -25,7 +25,10 @@ export type AuditDecision =
   | 'commission-granted'
   | 'commission-waived'
   | 'commission-withdrawn'
-  | 'commission-refused';
+  | 'commission-refused'
+  /** E2.2/E2.3/E2.4: the skill catalogue refused auto-selected fan-out targets. */
+  | 'refused-skill-uninstalled'
+  | 'refused-no-active-provider';
 
 export type AuditEntry = {
   ts: string;

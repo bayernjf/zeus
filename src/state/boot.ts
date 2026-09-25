@@ -353,6 +353,22 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     metrics,
     onConflict: conflictsToDesk(oversight),
+    // E2.2/E2.3/E2.4 (Active work 47 §E-3): auto-selected fan-out targets are
+    // filtered through the skill catalogue, so uninstall/deprecate/harden take
+    // effect on dispatch. Refusals land on the same audit spine as dispatches.
+    skillGovernor: {
+      activeProviders: skillId => skillRegistry.activeProviders(skillId),
+    },
+    onRefusal: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: '(auto)',
+        skill: entry.skill,
+        realm: entry.realm,
+        decision: entry.reason === 'skill-uninstalled' ? 'refused-skill-uninstalled' : 'refused-no-active-provider',
+        detail: entry.detail,
+      });
+    },
     onProgress: event => {
       progressHub.publish(event);
       if (event.type === 'intent-finished' && event.realmId) {

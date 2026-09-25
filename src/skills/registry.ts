@@ -279,6 +279,19 @@ export class SkillRegistry {
   }
 
   /**
+   * E2.2/E2.3/E2.4 (Active work 47 §E-3): governance read for the dispatch gate.
+   * Returns the catalogue's active providers, or `undefined` when the skill was
+   * never registered — only the card advertises it, so there is nothing to
+   * govern and auto-selection passes through unchanged. `[]` means registered
+   * but no active version provides it (uninstalled/deprecated everywhere), which
+   * is a refusal, not a pass-through: an uninstalled skill must stop dispatch.
+   */
+  activeProviders(id: string): string[] | undefined {
+    if (!this.specs.has(id)) return undefined;
+    return this.providersFor(id);
+  }
+
+  /**
    * E2.5: register a newly certified learner as a provider of the taught spec.
    * Only an active spec gains a provider; certification against an
    * uninstalled/deprecated version is refused. Idempotent per agent.

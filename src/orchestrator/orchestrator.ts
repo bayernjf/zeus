@@ -18,6 +18,8 @@ import type {
   FanOutRequest,
   FanOutResult,
   FanOutStatus,
+  GovernanceRefusal,
+  SkillGovernor,
   TargetLookup,
 } from './types.js';
 
@@ -59,6 +61,17 @@ export type OrchestratorOptions = {
   maxConcurrentBranches?: number;
   /** Branches allowed to wait for a slot before one is refused. Default unbounded. */
   branchQueueLimit?: number;
+  /**
+   * E2.2/E2.3/E2.4: when set, auto-selected fan-out targets (by skill) are
+   * filtered through the skill catalogue's active providers; a registered skill
+   * with no active provider is refused. Driver-named explicit vassals stay
+   * ungoverned (a deliberate override). Card-advertised skills without a
+   * catalogue record pass through unchanged.
+   */
+  skillGovernor?: SkillGovernor;
+  /** Called when the skill governor refuses an auto-selected fan-out; bridge it
+   *  into the audit spine at assembly time. */
+  onRefusal?: (entry: { skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
 };
 
 export class UnknownIntentError extends Error {}
@@ -100,10 +113,36 @@ export class Orchestrator {
 
     const intentId = request.intentId ?? this.newIntentId();
     const runId = request.runId ?? this.newRunId();
-    const names =
-      request.vassals && request.vassals.length > 0
+    const explicit = request.vassals && request.vassals.length > 0;
+    let names =
+      explicit
         ? [...new Set(request.vassals)]
         : this.lookup.findBySkill(request.skill).map(vassal => vassal.name);
+    let refused: GovernanceRefusal | undefined;
+
+    // E2.2/E2.3/E2.4 (Active work 47 §E-3): the skill catalogue governs
+    // auto-selected targets. Explicit driver-named vassals are a deliberate
+    // override and stay ungoverned; a skill with no catalogue record (never
+    // registered) is the historical pass-through.
+    if (!explicit) {
+      const providers = this.options.skillGovernor?.activeProviders(request.skill);
+      if (providers !== undefined && providers.length === 0) {
+        refused = {
+          reason: 'skill-uninstalled',
+          detail: `skill '${request.skill}' is registered but has no active provider (uninstalled or deprecated); refusing dispatch`,
+        };
+        names = [];
+      } else if (providers !== undefined) {
+        const governed = names.filter(name => providers.includes(name));
+        if (governed.length === 0) {
+          refused = {
+            reason: 'no-active-provider',
+            detail: `no vassal of skill '${request.skill}' is an active provider per the skill catalogue (card-advertised providers are not auto-selected)`,
+          };
+        }
+        names = governed;
+      }
+    }
 
     let result: FanOutResult;
     if (names.length === 0) {
@@ -113,7 +152,11 @@ export class Orchestrator {
         branches: [], stream: [],
         positions: [], decision: aggregate([], request.aggregation), conflicts: [],
         status: 'failed', createdAt: this.now().toISOString(),
+        ...(refused ? { refused } : {}),
       };
+      if (refused) {
+        this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
+      }
     } else {
       const branches = await Promise.all(names.map(name => this.runTrackedBranch(name, request, runId, intentId)));
       const positions = extractPositions(branches);

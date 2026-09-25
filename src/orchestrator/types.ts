@@ -93,6 +93,8 @@ export type FanOutResult = {
   backendArbitration?: BackendArbitration;
   /** Set when an LLM-as-judge adversarially reviewed a rule-concluded multi-stance decision (E1.3). */
   judgeReview?: JudgeReview;
+  /** Set when the skill governor refused auto-selected targets before dispatch. */
+  refused?: GovernanceRefusal;
 };
 
 /** Record of the S2 backend arbitration attempt on an unresolved split. */
@@ -144,6 +146,24 @@ export type DispatchPort = {
 /** Target selection port; VassalRegistry.asVassalLookup() satisfies it. */
 export type TargetLookup = {
   findBySkill(skillId: string): Array<{ name: string }>;
+};
+
+/**
+ * E2.2/E2.3/E2.4 governance gate over auto-selected fan-out targets
+ * (Active work 47 §E-3): the skill catalogue, not the card, decides who is an
+ * active provider. `undefined` means the skill was never registered — the card
+ * advertisement is the only record, so auto-selection passes through unchanged
+ * (unregistered = ungoverned, the historical behaviour). `[]` means registered
+ * but no active provider (uninstalled / deprecated everywhere): refusal.
+ */
+export type SkillGovernor = {
+  activeProviders(skillId: string): string[] | undefined;
+};
+
+/** Why the skill governor refused an auto-selected fan-out before dispatch. */
+export type GovernanceRefusal = {
+  reason: 'skill-uninstalled' | 'no-active-provider';
+  detail: string;
 };
 
 export type CancelBranchResult = {
