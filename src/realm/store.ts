@@ -2,8 +2,9 @@ import { lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile 
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { digestManifest, sha256Hex } from './digest.js';
-import { verifyDriverWriteGrant } from './grant.js';
+import { verifyDriverWriteGrant, type DriverGrantLedger } from './grant.js';
 import { formatTenant, normalizeTenant } from './tenant.js';
+import type { RosterVerifier } from '../registry/signing.js';
 import type { DriverWriteGrant, RealmConnection, RealmEntrySnapshot, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, TenantScope, RealmWriteItem, RealmWriteResult, SearchQuery } from './types.js';
 import {
   InvalidItemIdError,
@@ -17,6 +18,8 @@ import {
 /** Audit record for one accepted write (rejected writes throw before this). */
 export type RealmWriteAuditEntry = {
   realmId: string;
+  /** The realm's real type, so the trail cannot mislabel a personal write as an authorized one. */
+  realmType: RealmType;
   itemId: string;
   bytes: number;
   at: string;
@@ -27,6 +30,25 @@ export type RealmWriteAuditEntry = {
 export type FsRealmStoreOptions = {
   /** Receives one entry per successful write (E3.5 audit trail). */
   audit?: (entry: RealmWriteAuditEntry) => void;
+  /**
+   * Injected clock. It exists because expiry is a security check: with the wall
+   * clock hardcoded, a test could only ever write `expiresAt: 2099-...` and the
+   * "expired grant is refused" path was untestable - so it was unverified.
+   */
+  now?: () => Date;
+  /**
+   * Driver authority for enterprise writes (deferred #14). With a verifier, a
+   * grant must carry a signature by an accepted driver key and its nonce is
+   * consumed; without one, only shape/binding/expiry are checked - which is why
+   * the kernel warns when it boots a writable enterprise realm with no verifier.
+   */
+  driverGrants?: DriverGrantAuthority;
+};
+
+export type DriverGrantAuthority = {
+  verifier?: RosterVerifier;
+  acceptedKeyIds?: string[];
+  ledger?: DriverGrantLedger;
 };
 
 const TEXT_EXTENSIONS = new Set([
@@ -65,6 +87,12 @@ export class FsRealmStore implements RealmStore {
   private roots = new Map<string, string>(); // realpath root -> realmId
 
   constructor(private readonly options: FsRealmStoreOptions = {}) {}
+
+  /** Every timestamp this store produces or compares goes through here, so a
+   *  deployment (and a test) can put the write gate on a controlled clock. */
+  private now(): Date {
+    return (this.options.now ?? (() => new Date()))();
+  }
 
   async connect(
     root: string,
@@ -207,7 +235,10 @@ export class FsRealmStore implements RealmStore {
       throw new UnauthorizedRealmWriteError(`realm was connected read-only; write refused: ${realmId}`);
     }
     if (stored.type === 'enterprise') {
-      const verification = verifyDriverWriteGrant(grant, realmId);
+      const verification = await verifyDriverWriteGrant(grant, realmId, {
+        ...(this.options.now ? { now: this.options.now } : {}),
+        ...(this.options.driverGrants ?? {}),
+      });
       if (!verification.ok) {
         throw new UnauthorizedRealmWriteError(
           `enterprise write requires a valid driver grant (${verification.reason}): ${realmId}`,
@@ -218,7 +249,7 @@ export class FsRealmStore implements RealmStore {
       throw new UnsupportedWriteError('tags are not persisted by the P0 filesystem backend (tag-capable backend is P1)');
     }
 
-    const { text, itemId } = prepareWrite(item, () => new Date());
+    const { text, itemId } = prepareWrite(item, () => this.now());
     assertSafeItemId(itemId);
     if (!TEXT_EXTENSIONS.has(extname(itemId).toLowerCase())) {
       throw new UnsupportedWriteError(`unsupported file type for write: ${itemId}`);
@@ -282,6 +313,7 @@ export class FsRealmStore implements RealmStore {
 
     this.options.audit?.({
       realmId,
+      realmType: stored.type,
       itemId,
       bytes,
       at: modifiedAt,

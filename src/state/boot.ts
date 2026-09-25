@@ -12,6 +12,8 @@ import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
+import { DriverGrantLedger, type DriverGrantAuditEntry } from '../realm/grant.js';
+import type { Ed25519MemorySigner } from '../registry/signing.js';
 import { DomainGrantRegistry, type GrantAuditEntry } from '../realm/authorization.js';
 import { normalizeTenant } from '../realm/tenant.js';
 import type { RealmAuditEntry } from '../realm/source.js';
@@ -22,6 +24,7 @@ import { MentorshipLedger } from '../skills/mentor.js';
 import { OrgRegistry } from '../org/registry.js';
 import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
+import { CommissionLedger, type CommissionAuditEntry } from '../onboarding/commission.js';
 import {
   FileKernelStateStore,
   applyKernelState,
@@ -57,6 +60,17 @@ export type KernelBoot = KernelComponents & {
   auditFile: string | null;
   /** E6.4: feeds cross-domain read/refusal records into the audit spine. */
   realmAudit: (entry: RealmAuditEntry) => void;
+  /**
+   * E3.5 / deferred #14: how enterprise writes are authorized here. 'signed'
+   * means a grant must carry an Ed25519 signature by an accepted driver key;
+   * 'shape-only' means the kernel holds no driver key and can only check a
+   * grant's shape, realm binding and expiry. Reported, never assumed.
+   */
+  driverGrantAuthority: 'signed' | 'shape-only';
+  /** The driver key when one is configured; the HTTP face issues grants with it. */
+  driverSigner: Ed25519MemorySigner | null;
+  /** Feeds issued write grants into the audit spine. */
+  driverGrantAudit: (entry: DriverGrantAuditEntry) => void;
   /** Effective audit rotation ceiling for the active file (Infinity = unbounded). */
   auditMaxBytes: number;
   /** Effective rotated audit generations kept beside the active file. */
@@ -121,6 +135,19 @@ export type KernelBootOptions = {
   maxConcurrentBranches?: number;
   /** Branches allowed to wait for a slot before one is refused. 0 = never queue. */
   branchQueueLimit?: number;
+  /**
+   * E3.5 / deferred #14: the driver key. When present, an enterprise write is
+   * only honored on a grant this key signed (or one whose signer the kernel
+   * accepts), and each grant nonce is consumed once. When absent, grants are
+   * checked for shape/realm/expiry only — a vassal that can reach `write()`
+   * could then author its own "authorization", which is why `KernelBoot` reports
+   * the effective authority instead of hiding it.
+   */
+  driverSigner?: Ed25519MemorySigner;
+  /** Called when a state write triggered by an event outside shutdown (a
+   *  consumed driver-grant nonce) fails. Defaults to silence; serve.ts logs it,
+   *  because a nonce that never reaches disk can be replayed after a restart. */
+  onStateSaveError?: (message: string) => void;
 }
 
 const noop = (): void => {};
@@ -167,7 +194,51 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   });
   const metrics = new ConcurrencyMetrics({ now });
   const progressHub = new ProgressHub();
-  const realmStore = new FsRealmStore();
+  // Replaced once the state file exists below. Until then it is a no-op: a
+  // kernel without a state file has nothing to persist a consumed nonce into.
+  let persistLiveState: () => Promise<void> = async () => {};
+  // E3.5 / deferred #14: the driver trust anchor. With a signer the kernel only
+  // honors grants IT signed (or grants signed by a key it accepts) and consumes
+  // each nonce once; without one, a grant is checked for shape, realm binding and
+  // expiry only - which is why the authority is reported through stats instead of
+  // being assumed.
+  const driverGrantLedger = new DriverGrantLedger({
+    // A nonce that only lives in memory is a grant that replays after a crash,
+    // so consumption pushes the state file immediately rather than waiting for
+    // shutdown.
+    onChange: () => {
+      void persistLiveState().catch(error => {
+        (options.onStateSaveError ?? noop)(error instanceof Error ? error.message : String(error));
+      });
+    },
+  });
+  const driverGrantAuthority: 'signed' | 'shape-only' = options.driverSigner ? 'signed' : 'shape-only';
+  const realmStore = new FsRealmStore({
+    now,
+    // The nonce ledger is wired in BOTH modes: single-use is a property of the
+    // credential, not of how it was authenticated. Stopping at "we can't check
+    // the signature, so we won't check anything else either" would make the
+    // weaker mode strictly weaker still.
+    driverGrants: {
+      ledger: driverGrantLedger,
+      ...(options.driverSigner
+        ? { verifier: options.driverSigner.verifier(), acceptedKeyIds: [options.driverSigner.keyId] }
+        : {}),
+    },
+    // Only grant-authorized (enterprise) writes reach the spine: a personal write
+    // is the user writing in their own directory, and logging each one would bury
+    // the events that are actually about authorization.
+    audit: entry => {
+      if (!entry.grantedBy) return;
+      auditSink({
+        ts: entry.at,
+        vassal: entry.grantedBy,
+        decision: 'realm-write',
+        realm: entry.realmType,
+        detail: `driver-authorized write ${entry.itemId} (${entry.bytes}B) into ${entry.realmId}`,
+      });
+    },
+  });
   // E6.4: authorizations ride the same audit spine as dispatch decisions, so
   // issuing one, revoking one and testing a boundary land in one trail.
   const grantAudit = (entry: GrantAuditEntry): void => {
@@ -182,7 +253,42 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const realmAudit = (entry: RealmAuditEntry): void => {
     auditSink(entry);
   };
+  // Issuance is audited separately from the write it authorizes: the moment a
+  // human said "write this" matters even when the write never happens.
+  const driverGrantAudit = (entry: DriverGrantAuditEntry): void => {
+    auditSink({
+      ts: entry.at,
+      vassal: entry.grantedBy,
+      decision: 'driver-grant-issued',
+      realm: 'enterprise',
+      detail: `driver grant for ${entry.realmId} by ${entry.grantedBy} (key ${entry.keyId}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
+    });
+  };
   const domainGrants = new DomainGrantRegistry(now, grantAudit);
+  // E9.1/E9.2: the commission gate reads its evidence from the layers that own
+  // it (org roster, live vassal directory, realm boundary decisions, mentorship
+  // certifications), so nothing here can go stale in the way a cached "is this
+  // agent cleared?" flag would.
+  const commissionAudit = (entry: CommissionAuditEntry): void => {
+    auditSink({
+      ts: entry.at,
+      vassal: entry.agentId,
+      decision: entry.decision,
+      detail: `${entry.decision} ${entry.commissionId} by ${entry.by}: ${entry.detail}`,
+    });
+  };
+  const commissionLedger = new CommissionLedger(
+    {
+      org: orgRegistry,
+      vassals: registry.asVassalLookup(),
+      realms: realmStore,
+      grants: domainGrants,
+      mentorships: mentorshipLedger,
+      now,
+    },
+    now,
+    commissionAudit,
+  );
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
   const memoryStore = new MemoryStore(memoryAudit, now);
   const connectorRegistry = new ConnectorRegistry(
@@ -220,7 +326,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
   });
   const components: KernelComponents = {
-    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants,
+    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger,
   };
 
   // Memory P1: when an intent operating on a connected realm reaches a terminal
@@ -255,6 +361,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     snapshot = await store.load();
     if (snapshot) applyKernelState(components, snapshot);
   }
+  // Now that the state file exists, a freshly consumed nonce can reach disk.
+  persistLiveState = async (): Promise<void> => {
+    if (store) await store.save(collectKernelState(components));
+  };
 
   // G4: reconnect realms restored from the snapshot, then connect the roots
   // supplied on this boot. Connect dedupes by realpath, so overlap is harmless.
@@ -294,14 +404,14 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     stateFile: options.stateFile ?? null,
     auditFile: options.auditFile ?? null,
     realmAudit,
+    driverGrantAuthority,
+    driverGrantAudit,
+    driverSigner: options.driverSigner ?? null,
     auditMaxBytes: options.auditMaxBytes ?? DEFAULT_AUDIT_MAX_BYTES,
     auditKeep: options.auditKeep ?? DEFAULT_AUDIT_KEEP,
     restoredFromSnapshot: snapshot !== null,
     snapshot,
-    async saveState(): Promise<void> {
-      if (!store) return;
-      await store.save(collectKernelState(components));
-    },
+    saveState: persistLiveState,
   };
 }
 

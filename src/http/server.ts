@@ -25,15 +25,24 @@ import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
 import type { AuditDecision } from '../dispatch/dispatcher.js';
 import type { KernelStats } from '../state/stats.js';
 import type { MemoryStore } from '../memory/memory-store.js';
-import type { RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
-import { RealmError, RealmNotConnectedError, UnsupportedQueryError } from '../realm/types.js';
+import type { DriverWriteGrant, RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
+import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../realm/types.js';
 import {
   decideRealmAccess,
   DomainGrantError,
   type DomainGrantRegistry,
 } from '../realm/authorization.js';
 import { RealmSourceError, resolveRealmSource, type RealmAuditEntry, type RealmSource } from '../realm/source.js';
+import {
+  DriverGrantError,
+  issueDriverWriteGrant,
+  type DriverGrantAuditEntry,
+  type DriverGrantLedger,
+} from '../realm/grant.js';
 import { normalizeTenant } from '../realm/tenant.js';
+import { CommissionError, commissionId } from '../onboarding/types.js';
+import type { CommissionLedger } from '../onboarding/commission.js';
+import { composeBriefing } from '../onboarding/briefing.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
 import { persistDiary } from '../diary/persist.js';
 import { DiaryUnsupportedError } from '../diary/types.js';
@@ -71,6 +80,12 @@ const AUDIT_DECISIONS: AuditDecision[] = [
   'domain-refused',
   'domain-grant-issued',
   'domain-grant-revoked',
+  'driver-grant-issued',
+  'realm-write',
+  'commission-granted',
+  'commission-waived',
+  'commission-withdrawn',
+  'commission-refused',
   'sla-ack-breached',
 ];
 
@@ -111,8 +126,17 @@ export type HttpDeps = {
   realmStore?: RealmStore;
   /** E6.4: cross-domain grant registry (the /api/domains face and realmSource). */
   domainGrants?: DomainGrantRegistry;
+  /** E3.5 / deferred #14: consumed driver-write grant nonces (the replay ledger). */
+  driverGrantLedger?: DriverGrantLedger;
+  /** How this process authorizes enterprise writes; reported so an operator
+   *  never has to guess whether a grant was checked or merely shaped. */
+  driverGrantAuthority?: 'signed' | 'shape-only';
+  /** E3.5 / deferred #14: audit sink for issued write grants (spine-mapped by boot). */
+  driverGrantAudit?: (entry: DriverGrantAuditEntry) => void;
   /** E6.4: audit sink for domain crossings, fed by the kernel's audit spine. */
   realmAudit?: (entry: RealmAuditEntry) => void;
+  /** E9.1/E9.2: the commission gate and day-one briefing for department seats. */
+  commissions?: CommissionLedger;
 };
 
 export type StartOptions = {
@@ -602,6 +626,180 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return mapOrgError(reply, e);
         }
       });
+
+      if (
+        deps.commissions &&
+        deps.realmStore &&
+        deps.domainGrants &&
+        deps.mentorshipLedger &&
+        deps.skillRegistry &&
+        deps.memoryStore &&
+        deps.orchestrator
+      ) {
+        // E9.1 / E9.2 onboarding face. Mounted only when the whole composition
+        // exists - the commission gate reads five layers, and a half-assembled
+        // version of it would silently pass gates it never looked at.
+        const commissions = deps.commissions;
+        const briefDeps = () => ({
+          org: deps.orgRegistry!,
+          vassals: deps.registry.asVassalLookup(),
+          realms: deps.realmStore!,
+          grants: deps.domainGrants!,
+          mentorships: deps.mentorshipLedger!,
+          skills: deps.skillRegistry!,
+          memory: deps.memoryStore!,
+        });
+        const requireSeat = (departmentId: string, agentId: string, reply: FastifyReply) => {
+          if (!isNonEmptyString(agentId) || agentId.includes('/')) {
+            error(reply, 400, 'invalid_request', 'agentId must be a single path segment');
+            return undefined;
+          }
+          const record = commissions.get(commissionId(departmentId, agentId));
+          if (!record) {
+            error(reply, 404, 'not_found', `no commission file for ${agentId} in ${departmentId}`);
+            return undefined;
+          }
+          return record;
+        };
+
+        app.get('/api/org/departments/:id/commissions', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id } = request.params as { id: string };
+          try {
+            deps.orgRegistry!.getDepartment(id);
+          } catch (thrown) {
+            return mapOrgError(reply, thrown);
+          }
+          return {
+            commissions: commissions.list({ departmentId: id }).map(record => ({
+              ...record,
+              verdict: commissions.verify(record.id),
+            })),
+          };
+        });
+
+        app.post('/api/org/departments/:id/commissions', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id } = request.params as { id: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.agentId) || !isNonEmptyString(body.realmId) || !isNonEmptyString(body.openedBy)) {
+            return error(reply, 400, 'invalid_request', 'body.agentId, body.realmId and body.openedBy are required');
+          }
+          if (body.requiredSkills !== undefined && !(Array.isArray(body.requiredSkills) && body.requiredSkills.every(s => typeof s === 'string'))) {
+            return error(reply, 400, 'invalid_request', 'body.requiredSkills must be an array of skill ids');
+          }
+          if (body.tenant !== undefined && typeof body.tenant !== 'string') {
+            return error(reply, 400, 'invalid_request', 'body.tenant must be "org[/department[/member]]"');
+          }
+          try {
+            const record = commissions.open({
+              departmentId: id,
+              agentId: body.agentId,
+              realmId: body.realmId,
+              openedBy: body.openedBy,
+              ...(typeof body.tenant === 'string' ? { tenant: body.tenant } : {}),
+              ...(Array.isArray(body.requiredSkills) ? { requiredSkills: body.requiredSkills as string[] } : {}),
+            });
+            reply.code(201);
+            return record;
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        app.post('/api/org/departments/:id/commissions/:agentId/waive', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.reason) || !isNonEmptyString(body.by)) {
+            return error(reply, 400, 'invalid_request', 'body.reason and body.by are required to waive the mentorship stage');
+          }
+          try {
+            return commissions.waiveMentorship(commissionId(id, agentId), { reason: body.reason, by: body.by });
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        app.post('/api/org/departments/:id/commissions/:agentId/commission', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.by)) {
+            return error(reply, 400, 'invalid_request', 'body.by is required (who signed the seat off)');
+          }
+          try {
+            return commissions.commission(commissionId(id, agentId), {
+              by: body.by,
+              ...(isNonEmptyString(body.note) ? { note: body.note } : {}),
+            });
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        app.post('/api/org/departments/:id/commissions/:agentId/withdraw', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.by) || !isNonEmptyString(body.reason)) {
+            return error(reply, 400, 'invalid_request', 'body.by and body.reason are required');
+          }
+          try {
+            return commissions.withdraw(commissionId(id, agentId), { by: body.by, reason: body.reason });
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        // E9.1 acceptance: the seat's context is assembled from what the kernel
+        // already knows. Anything it cannot answer shows up in `gaps`.
+        app.get('/api/org/departments/:id/briefing/:agentId', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id, agentId } = request.params as { id: string; agentId: string };
+          const record = requireSeat(id, agentId, reply);
+          if (!record) return reply;
+          try {
+            return await composeBriefing(record, briefDeps());
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+        });
+
+        // E9.2: the chain ends in a real dispatch. An uncommissioned seat cannot
+        // take work, and the check is re-run here rather than trusted from the
+        // record, so a revocation since sign-off still stops the task.
+        app.post('/api/org/departments/:id/first-task', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id } = request.params as { id: string };
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (!isNonEmptyString(body.agentId)) return error(reply, 400, 'invalid_request', 'body.agentId is required');
+          if (!isNonEmptyString(body.skill)) return error(reply, 400, 'invalid_request', 'body.skill is required');
+          if (body.params !== undefined && !isPlainObject(body.params)) {
+            return error(reply, 400, 'invalid_request', 'body.params must be an object');
+          }
+          const record = requireSeat(id, body.agentId, reply);
+          if (!record) return reply;
+          try {
+            commissions.assertCommissioned(record.id);
+          } catch (thrown) {
+            return mapCommissionError(reply, thrown);
+          }
+          const realm = deps.realmStore!.connections().find(entry => entry.realmId === record.realmId);
+          if (!realm) return error(reply, 409, 'conflict', `realm ${record.realmId} is no longer connected`);
+          const briefing = await composeBriefing(record, briefDeps());
+          const result = await deps.orchestrator!.fanOut({
+            skill: body.skill,
+            realm: realm.type,
+            params: {
+              ...((body.params ?? {}) as Record<string, unknown>),
+              onboarding: {
+                commissionId: record.id,
+                departmentId: record.departmentId,
+                briefingDigest: briefing.digest,
+                openGaps: briefing.gaps.length,
+              },
+            },
+            vassals: [record.agentId],
+            realmId: record.realmId,
+          });
+          reply.code(200);
+          return { ...result, briefing: { digest: briefing.digest, gaps: briefing.gaps } };
+        });
+      }
     }
 
     if (deps.memoryStore) {
@@ -744,7 +942,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       // E8.3: build diaries and persist them through Realm.write.
       app.post('/api/diary/generate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const body = (request.body ?? {}) as {
-          realmId?: unknown; date?: unknown; timeZone?: unknown; dir?: unknown;
+          realmId?: unknown; date?: unknown; timeZone?: unknown; dir?: unknown; grant?: unknown;
         };
         if (body.realmId !== undefined && typeof body.realmId !== 'string') {
           return error(reply, 400, 'invalid_request', 'body.realmId must be a string');
@@ -761,6 +959,10 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!deps.realmStore || typeof deps.realmStore.write !== 'function') {
           return error(reply, 409, 'conflict', 'no writable realm connected; cannot persist diary');
         }
+        if (body.grant !== undefined && (typeof body.grant !== 'object' || body.grant === null)) {
+          return error(reply, 400, 'invalid_request', 'body.grant must be a driver write grant object');
+        }
+        const grant = body.grant as DriverWriteGrant | undefined;
         try {
           const entries = buildDiariesFromState(deps.memoryStore!.exportState(), {
             ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
@@ -774,6 +976,10 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           for (const entry of entries) {
             const { itemId } = await persistDiary(deps.realmStore!, entry, {
               ...(typeof body.dir === 'string' ? { dir: body.dir } : {}),
+              // An enterprise realm only accepts a diary write carrying a driver
+              // grant (POST /api/realm/write-grants); the store is what refuses or
+              // accepts it, so nothing here second-guesses the credential.
+              ...(grant !== undefined ? { grant } : {}),
             });
             generated.push({ realmId: entry.realmId, date: entry.date, itemId });
           }
@@ -1239,6 +1445,59 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
     }
+
+    if (deps.realmStore && deps.driverGrantLedger) {
+      // E3.5 / deferred #14: mint a single-use write credential for ONE enterprise
+      // realm. The kernel signs it and owns the nonce ledger, so a caller can
+      // neither author its own authorization nor replay one it already spent -
+      // which is what the shape-only check before this endpoint allowed.
+      app.post('/api/realm/write-grants', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        if (!isNonEmptyString(body.realmId)) return error(reply, 400, 'invalid_request', 'body.realmId is required');
+        if (!isNonEmptyString(body.grantedBy)) return error(reply, 400, 'invalid_request', 'body.grantedBy is required');
+        if (body.reason !== undefined && !isNonEmptyString(body.reason)) {
+          return error(reply, 400, 'invalid_request', 'body.reason must be a string');
+        }
+        if (body.ttlSeconds !== undefined && (typeof body.ttlSeconds !== 'number' || !Number.isFinite(body.ttlSeconds) || body.ttlSeconds <= 0)) {
+          return error(reply, 400, 'invalid_request', 'body.ttlSeconds must be a positive number of seconds');
+        }
+        const realm = deps.realmStore!.connections().find(entry => entry.realmId === body.realmId);
+        if (!realm) return error(reply, 404, 'not_found', `realm not connected: ${String(body.realmId)}`);
+        // Personal realms are writable by their owner without a credential; asking
+        // for one means the caller pointed at the wrong realm.
+        if (realm.type !== 'enterprise') {
+          return error(reply, 400, 'invalid_request', `write grants authorize enterprise realms, not '${realm.type}' realms`);
+        }
+        if (realm.readOnly) {
+          return error(reply, 409, 'conflict', `realm is connected read-only; no grant can authorize a write into it: ${realm.realmId}`);
+        }
+        try {
+          const grant = await issueDriverWriteGrant(
+            {
+              realmId: realm.realmId,
+              grantedBy: body.grantedBy as string,
+              ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
+              ...(typeof body.ttlSeconds === 'number' ? { ttlMs: body.ttlSeconds * 1000 } : {}),
+            },
+            { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
+          );
+          deps.driverGrantAudit?.({
+            at: grant.grantedAt,
+            decision: 'driver-grant-issued',
+            realmId: grant.realmId,
+            grantedBy: grant.grantedBy,
+            keyId: grant.keyId,
+            expiresAt: grant.expiresAt,
+            ...(grant.reason ? { reason: grant.reason } : {}),
+          });
+          reply.code(201);
+          return { grant, authority: deps.driverGrantAuthority ?? 'signed', spentNonces: deps.driverGrantLedger!.size };
+        } catch (thrown) {
+          if (thrown instanceof DriverGrantError) return error(reply, 400, 'invalid_request', thrown.message);
+          throw thrown;
+        }
+      });
+    }
   }
 
   return app;
@@ -1418,6 +1677,24 @@ function mapGrantError(reply: FastifyReply, thrown: unknown): FastifyReply {
   return mapRealmQueryError(reply, thrown);
 }
 
+/** A commission failure keeps its reason machine-readable: which gate refused is
+ *  the answer the driver needs, not an implementation detail of one. */
+function mapCommissionError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  if (thrown instanceof CommissionError) {
+    if (thrown.kind === 'gate') {
+      return reply.code(409).send({
+        error: 'commission_gate',
+        blockedOn: thrown.blocked?.blockedOn ?? null,
+        detail: thrown.message,
+        ...(thrown.blocked ? { reason: thrown.blocked.reason } : {}),
+      });
+    }
+    const status = thrown.kind === 'not-found' ? 404 : thrown.kind === 'conflict' ? 409 : 400;
+    return error(reply, status, thrown.kind === 'not-found' ? 'not_found' : 'invalid_request', thrown.message);
+  }
+  return mapOrgError(reply, thrown);
+}
+
 function mapRealmQueryError(reply: FastifyReply, thrown: unknown): FastifyReply {
   if (thrown instanceof UnsupportedQueryError) return error(reply, 400, 'invalid_request', thrown.message);
   if (thrown instanceof RealmNotConnectedError) return error(reply, 404, 'not_found', thrown.message);
@@ -1465,6 +1742,11 @@ function mapCatalogueError(reply: FastifyReply, thrown: unknown): FastifyReply {
  *  anything else (boundary, malformed) → 400. */
 function mapDiaryError(reply: FastifyReply, thrown: unknown): FastifyReply {
   const detail = thrown instanceof Error ? thrown.message : String(thrown);
+  if (thrown instanceof UnauthorizedRealmWriteError) {
+    // A well-formed request that lacked authorization is a 403, not a 400: the
+    // caller needs to know to go mint a grant, not to fix their JSON.
+    return error(reply, 403, 'forbidden', detail);
+  }
   if (thrown instanceof DiaryUnsupportedError || /no write|not connected|read-only|writable/i.test(detail)) {
     return error(reply, 409, 'conflict', detail);
   }

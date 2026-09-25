@@ -30,7 +30,7 @@ function cardFor(name: string) {
     skills: [{ id: `skill-${name}`, name: name, description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': { version: '1', swornTo: 'zeus', domain: 'test-domain' },
+    'x-zeus-fealty': { version: '1', swornTo: 'zeus', domain: 'test-domain', dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 const mockFetch = (name: string) => (async () => new Response(JSON.stringify(cardFor(name)), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;

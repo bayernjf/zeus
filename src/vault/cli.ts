@@ -8,8 +8,10 @@
  * (cron/systemd), which invokes this CLI. There is no built-in timer.
  *
  * Commands:
- *   build   --root <dir> --out <map.json>            draw + seal a manifest-only map
- *   backup  --root <dir> --out-dir <dir> [--name s]  pack sealed map + full bundle
+ *   build   --root <dir> [--type t] [--tenant org[/dept[/member]]]
+ *             | --files-root <dir> --files a.json,b.json
+ *           --out <map.json>                         draw + seal a manifest-only map
+ *   backup  (same source flags) --out-dir <dir> [--name s]  pack sealed map + full bundle
  *   check   --map <map.json> [--json]                L0 in-place verification (read-only)
  *   restore --map <map.json> --bundle <bundle.json> --target <dir> [--json]
  *
@@ -26,10 +28,17 @@ import type { RealmType } from '../a2a/types.js';
 import { FsRealmStore } from '../realm/store.js';
 import { openMap, packFull, restoreFromBundle, sealMap } from './bundle.js';
 import type { VaultKey } from './cipher.js';
-import { inventoryFromRealm } from './inventory.js';
+import { inventoryFromFiles, inventoryFromRealm, liveSourceFor } from './inventory.js';
 import { buildVault } from './map.js';
 import { restoreDryRun } from './restore.js';
-import { VaultDecryptError, VaultError, type RestoreReport, type SealedEnvelope } from './types.js';
+import {
+  VaultDecryptError,
+  VaultError,
+  type MapSource,
+  type RestoreReport,
+  type SealedEnvelope,
+  type VaultInventory,
+} from './types.js';
 
 export const VAULT_EXIT = { ok: 0, error: 1, drift: 2, unreachable: 3 } as const;
 
@@ -126,16 +135,57 @@ async function readEnvelope(path: string): Promise<SealedEnvelope> {
   return parsed as SealedEnvelope;
 }
 
-async function connectInventory(root: string, type: RealmType) {
+async function connectInventory(root: string, type: RealmType, tenant?: string) {
   const store = new FsRealmStore();
-  const manifest = await store.connect(root, type);
+  const manifest = await store.connect(root, type, tenant ? { tenant } : {});
   return { store, inventory: inventoryFromRealm(store, manifest.realmId), manifest };
+}
+
+/**
+ * The inventory the flags name: a Realm mount (`--root`, optional `--tenant`),
+ * or an explicit file whitelist (`--files-root` + `--files a.json,b.json`) - the
+ * shape needed to back up the kernel state file, which lives outside every Realm.
+ */
+async function openInventory(
+  flags: Map<string, string>,
+  realmType: RealmType,
+): Promise<{ inventory: VaultInventory; store?: FsRealmStore }> {
+  const filesRoot = flags.get('files-root');
+  const filesList = flags.get('files');
+  if (filesRoot || filesList) {
+    if (!filesRoot || !filesList) {
+      throw new CliUsageError('--files-root and --files must be given together (e.g. --files-root ./data --files kernel.json)');
+    }
+    const files = filesList.split(',').map(name => name.trim()).filter(Boolean);
+    if (files.length === 0) throw new CliUsageError('--files listed nothing');
+    const label = flags.get('label');
+    return {
+      inventory: inventoryFromFiles({
+        root: filesRoot,
+        files,
+        ...(label ? { label } : {}),
+      }),
+    };
+  }
+  const { inventory, store } = await connectInventory(requireFlag(flags, 'root'), realmType, flags.get('tenant'));
+  return { inventory, store };
+}
+
+function sourceTag(source: MapSource): string {
+  return source.kind === 'realm' ? `realm ${source.realmId}` : `files ${source.label}`;
+}
+
+function sourceShard(source: MapSource): string {
+  return source.kind === 'realm' ? source.realmId.slice(0, 8) : 'files';
 }
 
 function formatReport(report: RestoreReport): string {
   const lines: string[] = [
-    `realm:            ${report.realmId}`,
+    `source:           ${report.sourceId} (${report.sourceKind})`,
     `root reachable:   ${report.rootReachable}`,
+    ...(!report.rootReachable && report.unreachableReason
+      ? [`why:              ${report.unreachableReason}`]
+      : []),
     `digest match:     ${report.contentDigestMatch}`,
     `marks total:      ${report.total}`,
     `ok:               ${report.ok.length}`,
@@ -178,38 +228,39 @@ export async function runVaultCli(argv: string[], deps: VaultCliDeps = {}): Prom
     const asJson = flags.has('json');
 
     if (command === 'build') {
-      const root = requireFlag(flags, 'root');
       const out = requireFlag(flags, 'out');
       const key = await loadKey(flags, env);
-      const { inventory } = await connectInventory(root, realmType);
+      const { inventory } = await openInventory(flags, realmType);
       const map = await buildVault(inventory, { now });
       const sealed = sealMap(map, key);
       await mkdir(dirnameOf(out), { recursive: true });
       await writeFile(out, JSON.stringify(sealed, null, 2) + '\n', 'utf8');
       stdout = asJson
-        ? JSON.stringify({ ok: true, command, out, realmId: map.realm.realmId, items: map.realm.itemCount })
-        : `map sealed (manifest-only): ${out}\nrealm: ${map.realm.realmId}\nitems: ${map.realm.itemCount}`;
+        ? JSON.stringify({ ok: true, command, out, source: map.source, items: map.marks.length })
+        : `map sealed (manifest-only): ${out}\n${sourceTag(map.source)}\nitems: ${map.marks.length}`;
     } else if (command === 'backup') {
-      const root = requireFlag(flags, 'root');
       const outDir = requireFlag(flags, 'out-dir');
       const key = await loadKey(flags, env);
-      const { inventory, manifest } = await connectInventory(root, realmType);
+      const { inventory } = await openInventory(flags, realmType);
       const packed = await packFull(inventory, key, { now });
-      const stem = flags.get('name') ?? `vault-${manifest.realmId.slice(0, 8)}-${timestampStem(now())}`;
+      const stem = flags.get('name') ?? `vault-${sourceShard(packed.map.source)}-${timestampStem(now())}`;
       const mapPath = join(outDir, `${stem}.map.json`);
       const bundlePath = join(outDir, `${stem}.bundle.json`);
       await mkdir(outDir, { recursive: true });
       await writeFile(mapPath, JSON.stringify(packed.sealedMap, null, 2) + '\n', 'utf8');
       await writeFile(bundlePath, JSON.stringify(packed.sealedBundle, null, 2) + '\n', 'utf8');
       stdout = asJson
-        ? JSON.stringify({ ok: true, command, map: mapPath, bundle: bundlePath, realmId: manifest.realmId, items: packed.map.realm.itemCount })
-        : `full backup sealed:\n  map:    ${mapPath}\n  bundle: ${bundlePath}\nrealm: ${manifest.realmId}\nitems: ${packed.map.realm.itemCount}`;
+        ? JSON.stringify({ ok: true, command, map: mapPath, bundle: bundlePath, source: packed.map.source, items: packed.map.marks.length })
+        : `full backup sealed:\n  map:    ${mapPath}\n  bundle: ${bundlePath}\n${sourceTag(packed.map.source)}\nitems: ${packed.map.marks.length}`;
     } else if (command === 'check') {
       const mapPath = requireFlag(flags, 'map');
       const key = await loadKey(flags, env);
       const sealed = await readEnvelope(mapPath);
       const map = openMap(sealed, key);
-      const report = await restoreDryRun(map, new FsRealmStore());
+      // The map names its own source (and, for a tenant-scoped realm, its own
+      // scope), so no mount flags are needed here - and reconnecting without
+      // that scope is what used to fake an "unreachable" root.
+      const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
       code = reportExitCode(report);
       stdout = asJson ? JSON.stringify({ ok: true, command, report }) : formatReport(report);
     } else if (command === 'restore') {

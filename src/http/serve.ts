@@ -50,7 +50,16 @@ async function main(): Promise<void> {
       '[zeus-http] ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off\n'
     );
   }
+  // E3.5 / deferred #14: the same Ed25519 key that seals the roster is this
+  // process's driver key, so a write grant the kernel did not sign (or one a
+  // vassal authored) cannot authorize an enterprise write. Loaded before the
+  // kernel because the kernel needs it as the trust anchor.
+  const signer = await loadRskSigner();
   const kernel = await bootKernel({
+    driverSigner: signer,
+    onStateSaveError: message => {
+      process.stderr.write(`[zeus-http] FAILED to persist kernel state after a consumed driver grant: ${message}\n`);
+    },
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
     ...(concurrency.maxConcurrentBranches !== undefined
       ? { maxConcurrentBranches: concurrency.maxConcurrentBranches }
@@ -94,6 +103,11 @@ async function main(): Promise<void> {
     process.stderr.write(`[zeus-http] audit log: ${kernel.auditFile} (${ceiling})\n`);
   }
 
+  process.stderr.write(
+    kernel.driverGrantAuthority === 'signed'
+      ? `[zeus-http] enterprise writes: accepting only driver grants signed by "${kernel.driverSigner?.keyId}"\n`
+      : '[zeus-http] enterprise writes: NO driver key configured - grants are checked for shape/realm/expiry only, so anything that can call write() can author its own authorization\n'
+  );
   if (kernel.stateFile) {
     if (kernel.restoredFromSnapshot) {
       const intents = kernel.snapshot?.orchestrator.intents.length ?? 0;
@@ -108,7 +122,7 @@ async function main(): Promise<void> {
 
   const app = await createHttpServer({
     registry: kernel.registry,
-    signer: await loadRskSigner(),
+    signer,
     internalToken: process.env.ZEUS_INTERNAL_TOKEN,
     version: pkg.version,
     orchestrator: kernel.orchestrator,
@@ -123,6 +137,12 @@ async function main(): Promise<void> {
     // E6.4: the two data domains, their tenant scopes and the grants between them.
     domainGrants: kernel.domainGrants,
     realmAudit: kernel.realmAudit,
+    // E3.5 / deferred #14: enterprise write credentials (issue + replay ledger).
+    driverGrantLedger: kernel.driverGrantLedger,
+    driverGrantAuthority: kernel.driverGrantAuthority,
+    driverGrantAudit: kernel.driverGrantAudit,
+    // E9.1/E9.2: the day-one briefing and the commission gate.
+    commissions: kernel.commissionLedger,
     connectorRegistry: kernel.connectorRegistry,
     ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
     kernelStats: () => kernelStats(kernel),

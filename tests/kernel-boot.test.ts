@@ -29,7 +29,7 @@ function cardFor(name: string) {
     skills: [{ id: `skill-${name}`, name, description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': { version: '1', swornTo: 'zeus', domain: 'test-domain' },
+    'x-zeus-fealty': { version: '1', swornTo: 'zeus', domain: 'test-domain', dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 const mockFetch = (name: string) =>

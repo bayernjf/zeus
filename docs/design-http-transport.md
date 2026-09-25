@@ -71,7 +71,7 @@ Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配
 | H1 | `GET /healthz` | 无 | 存活探针，返回版本与时间，不含任何封臣/Realm 信息 |
 | H1 | `GET /api/roster/public` | 无 | 返回 `SignedRosterSnapshot`（public 投影 + 签名信封，fealty-signing §4）；缓存头配合 TTL |
 | H1 | `GET /api/roster` | bearer（internal） | internal 快照（含 revoked/端点/探针明细），仅供治理面 |
-| H2 | 驾驶员 API（dispatch / escalations approve·reject / registry 只读） | bearer | 随持久化与 UI 切片逐项设计，不在本文展开 |
+| H2 | 驾驶员 API（dispatch / escalations approve·reject / registry 只读）——**实际交付面远大于此规划**：另含决策回放、按 kind 分流的升级队列、并发指标、Skills 与带教、Org 编制与责任链、Memory 与遗忘权、Diary、MCP 连接器、决策后端配置、审计回读、内核盘点、**Realm 治理面 `/api/domains*`** | bearer | 逐项验收标准与路由清单见 PRD E5.5 与 README"库 + 薄传输"节，本表只留**当年规划口径**不再逐条扩写（原口径：随持久化与 UI 切片逐项设计，不在本文展开） |
 | H3（可选） | SSE 战报流、静态快照产物分发 | — | 待持久化 / CDN 需求明确 |
 
 v1 不设任何写端点（注册是 Zeus 主动拉 card、吊销是治理动作经内核/未来驾驶员面，不经匿名 HTTP 写口）。

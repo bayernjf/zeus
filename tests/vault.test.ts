@@ -7,6 +7,7 @@ import { sha256Hex } from '../src/util/crypto.js';
 import { inventoryFromRealm } from '../src/vault/inventory.js';
 import { buildVault } from '../src/vault/map.js';
 import { restoreDryRun } from '../src/vault/restore.js';
+import { liveSourceFor } from '../src/vault/inventory.js';
 import {
   FsRestoreSink,
   openBundle,
@@ -102,7 +103,7 @@ describe('seal/open: authenticated encryption with separated key', () => {
 
 describe('L0 in-place restore and drift detection', () => {
   it('verifies an untouched realm as fully recoverable', async () => {
-    const report = await restoreDryRun(map, new FsRealmStore());
+    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
     expect(report.rootReachable).toBe(true);
     expect(report.recoverable).toBe(true);
     expect(report.ok).toHaveLength(2);
@@ -111,7 +112,7 @@ describe('L0 in-place restore and drift detection', () => {
 
   it('detects a changed file', async () => {
     await writeFile(join(root, 'a.md'), '# Alpha CHANGED\n');
-    const report = await restoreDryRun(map, new FsRealmStore());
+    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
     expect(report.changed).toHaveLength(1);
     expect(report.changed[0].itemId).toBe('a.md');
     expect(report.recoverable).toBe(false);
@@ -120,21 +121,21 @@ describe('L0 in-place restore and drift detection', () => {
 
   it('detects a missing file', async () => {
     await rm(join(root, 'a.md'));
-    const report = await restoreDryRun(map, new FsRealmStore());
+    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
     expect(report.missing).toEqual(['a.md']);
     expect(report.recoverable).toBe(false);
   });
 
   it('detects an unexpected new file', async () => {
     await writeFile(join(root, 'c.md'), 'new file\n');
-    const report = await restoreDryRun(map, new FsRealmStore());
+    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
     expect(report.unexpected).toEqual(['c.md']);
     expect(report.recoverable).toBe(true); // added files do not lose the mapped marks
   });
 
   it('reports an unreachable root and advises a bundle when mounted', async () => {
-    const ghost: TreasureMap = { ...map, realm: { ...map.realm, root: join(root, 'does-not-exist') } };
-    const report = await restoreDryRun(ghost, new FsRealmStore());
+    const ghost: TreasureMap = { ...map, source: { ...map.source, root: join(root, 'does-not-exist') } };
+    const report = await restoreDryRun(ghost, liveSourceFor(new FsRealmStore()));
     expect(report.rootReachable).toBe(false);
     expect(report.recoverable).toBe(false);
     expect(report.suggestion).toBe('reconnect-or-provide-bundle');

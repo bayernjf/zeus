@@ -290,6 +290,7 @@ export type {
   RealmWriteItem,
   RealmWriteResult,
   DriverWriteGrant,
+  SignedDriverWriteGrant,
   GrantVerification,
 } from './realm/types.js';
 export {
@@ -300,8 +301,23 @@ export {
   UnauthorizedRealmWriteError,
   UnsupportedWriteError,
 } from './realm/types.js';
-export { verifyDriverWriteGrant } from './realm/grant.js';
-export type { RealmWriteAuditEntry, FsRealmStoreOptions } from './realm/store.js';
+export {
+  verifyDriverWriteGrant,
+  issueDriverWriteGrant,
+  DriverGrantLedger,
+  DriverGrantError,
+  DRIVER_GRANT_DEFAULT_TTL_MS,
+  DRIVER_GRANT_MAX_TTL_MS,
+  MAX_SPENT_GRANT_NONCES,
+} from './realm/grant.js';
+export type {
+  DriverGrantAuditEntry,
+  DriverGrantLedgerOptions,
+  GrantVerificationContext,
+  IssueDriverGrantInput,
+  IssueDriverGrantOptions,
+} from './realm/grant.js';
+export type { RealmWriteAuditEntry, FsRealmStoreOptions, DriverGrantAuthority } from './realm/store.js';
 
 // --- E3.6 tenancy + E6.4 cross-domain authorization and retrieval ---
 export { parseTenant, formatTenant, normalizeTenant, tenantReaches, TenantError } from './realm/tenant.js';
@@ -321,6 +337,25 @@ export type {
   DomainGrant,
   DomainDecision,
 } from './realm/types.js';
+
+// --- E9.1/E9.2 onboarding: the commission gate and the day-one briefing ---
+export { CommissionLedger, verifyCommission } from './onboarding/commission.js';
+export type { CommissionDeps, CommissionAuditEntry, OpenCommissionInput } from './onboarding/commission.js';
+export { composeBriefing } from './onboarding/briefing.js';
+export type { BriefingDeps, RoleBriefing } from './onboarding/briefing.js';
+export {
+  CommissionError,
+  commissionId,
+} from './onboarding/types.js';
+export type {
+  CommissionRecord,
+  CommissionStage,
+  CommissionCheck,
+  CommissionVerdict,
+  CommissionGate,
+  EvidenceGate,
+  MentorshipCheck,
+} from './onboarding/types.js';
 
 // --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
 export {

@@ -96,6 +96,11 @@ export type RealmWriteResult = {
  * The library verifies shape/realm/expiry; the MCP/HTTP layer injects a signed
  * grant after authenticating the driver (signature/transport are a P1 concern).
  */
+/**
+ * E3.5 write credential. Issued and signed by `issueDriverWriteGrant`
+ * (`src/realm/grant.ts`): the kernel mints the nonce, stamps the times and
+ * signs, so a caller can neither replay an old grant nor invent one.
+ */
 export type DriverWriteGrant = {
   kind: 'driver-write';
   realmId: string;
@@ -103,13 +108,37 @@ export type DriverWriteGrant = {
   grantedBy: string;
   reason?: string;
   grantedAt: string;
+  /** Always set on issued grants; a write credential without an expiry is not a credential. */
   expiresAt?: string;
   nonce: string;
+  /** Signing key id, present on a signed grant. */
+  keyId?: string;
+  /** Ed25519 (base64url) over the canonical grant minus `sig`. */
+  sig?: string;
 };
+
+/** A grant as produced by `issueDriverWriteGrant`: signed and time-boxed. */
+export type SignedDriverWriteGrant = DriverWriteGrant & { keyId: string; sig: string; expiresAt: string };
 
 export type GrantVerification =
   | { ok: true }
-  | { ok: false; reason: 'missing' | 'malformed' | 'wrong-realm' | 'expired' };
+  | {
+      ok: false;
+      reason:
+        | 'missing'
+        | 'malformed'
+        | 'wrong-realm'
+        | 'expired'
+        /** Issued grants always expire; an open-ended one is refused even where a trust anchor is not configured. */
+        | 'no-expiry'
+        /** No signature at all: an unsigned blob is a claim, not an authorization. */
+        | 'unsigned'
+        /** Signed by a key this kernel does not accept as a driver key. */
+        | 'unknown-key'
+        | 'bad-signature'
+        /** Already consumed by an earlier write. */
+        | 'replayed';
+    };
 
 /**
  * E6.4: an explicit, revocable authorization to cross a DATA DOMAIN boundary

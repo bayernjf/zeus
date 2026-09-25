@@ -20,6 +20,7 @@
 ### #4 企业版计费模型
 - 按「部门/编制」还是按席位计费。
 - **触发条件**：企业 Realm 多租户进入实施，且有首批意向企业用户。
+- **进展（2026-09-25）**：前半条**已经满足**——E3.6 三级租户（org/部门/成员）与 E6.4 授权粒度已在库内落地，"按部门计量"所需的边界与可审计授权记录现在都存在（`GET /api/domains` 给出台账，`/api/audit?decision=domain-*` 给出穿越记录）。后半条（首批意向企业用户）未到，故本条仍缓做；届时不必再从模型层起步。
 
 ### #5 外部 Agent 信任分级与沙箱
 - 第三方 Agent 接入的信任分级、权限沙箱边界。
@@ -61,18 +62,25 @@
 - CI 现在测 20.x/22.x，但 Node 20 上游已 EOL（2026-04），仓库 `package.json` **没有 `engines`**，Dockerfile 跑 node:22-slim，本机 dev 在 20.20.2。三者不一致，且没有任何地方写明"这个库支持哪些 Node"。
 - **触发条件**：决定结束对 Node 20 的验证时（例如本地 shell 升到 22+），或对外发布为可安装依赖之前。届时一并定：`engines.node` 写什么、矩阵换成哪两档、CI 注解是否要求 runner 版本固定。
 
-### #13 内核状态文件纳入藏宝图（非 Realm 条目源）
-- **缺口**：`ZEUS_STATE_FILE` 里现在有封臣名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。藏宝图却盖不到它：`src/vault/inventory.ts` 唯一条目源是 `inventoryFromRealm`，对 `src/vault/` 与 `docs/deployment.md` grep `stateFile|kernel.json` 零命中。**"备份是第一公民"目前只覆盖 Realm 目录**，用户最容易丢的恰恰是这份。
-- **为什么不是接线就能完（2026-09-25 实测阻塞点）**：
-  1. `src/vault/restore.ts:16` 的 L0 原地校验直接 `store.connect(map.realm.root, map.realm.type)`——恢复协议硬绑 `RealmStore`，不是绑 `VaultInventory` 端口。要盖非 Realm 源，先得让 L0 接受"可重连的条目源"。
-  2. `TreasureMap.realm: {realmId, type, root, itemCount}` 字段语义是"一个 Realm"。把文件集塞进去要么谎报（合成 `realmId` + `type:'personal'`），要么动格式（加 source 判别位 → 涉及 `VAULT_VERSION` 与既有图的兼容读取）。design-vault §9 只把"多 Realm 合图"列为非目标，没否决这件事，但也没为它留位置。
-  3. 条目纪律：状态文件是**单个已知文件**，而 Realm 侧是目录扫描。直接扫 `./data` 会把无界增长的 `audit.jsonl` 和 `*.tmp` 卷进备份——需要显式白名单语义，不是复用扫描。
-- **建议做法（拍板后）**：`VaultInventory` 加 `inventoryFromFiles({ root, files })`（itemId=相对路径、digest/bytes/modifiedAt 复用现算法）；L0 改为依赖端口的 `reconnect()` 而非 `RealmStore`；图格式加 `source: { kind:'realm'|'files', ... }` 并保持 v1 图可读；CLI `vault build|backup --files-root <dir> --files a.json,b.json`。
-- **触发条件**：① 出现真实用户数据丢失事故或灾备演练要求覆盖内核状态；② E8.4 传承（P3）立项——继承协议必须能交出名册与记忆，届时"图盖不到状态文件"直接堵死该需求；③ 下一次 `VAULT_VERSION` 因别的原因升版时顺手并入，避免两次兼容负担。
+### #13 内核状态文件纳入藏宝图（非 Realm 条目源）✅ 已销项（2026-09-25）
+- **原缺口**：`ZEUS_STATE_FILE` 里现在有封臣名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。藏宝图却盖不到它：唯一条目源是 `inventoryFromRealm`。**"备份是第一公民"当时只覆盖 Realm 目录**，用户最容易丢的恰恰是这份。
+- **触发条件回顾**：写的是①真实丢失事故/灾备演练要求 ②E8.4 传承立项 ③下次 `VAULT_VERSION` 升版顺手并入。2026-09-25 决定**不等触发条件**：这一条是"设计哲学第 1 条尚未执行"的登记，而不是一个可选增强；且当年列出的三个阻塞点在 E3.6/E6.4 之后已经各自有了落点（`MapSource` 需要 `tenant`，而 `tenant` 已经是 Realm 的一等事实）。
+- **销项结论**（设计见 [design-vault.md](design-vault.md) v0.2）：
+  1. `TreasureMap.source: MapSource`（`{kind:'realm',…,tenant?}` | `{kind:'files',label,root,files[]}`），`VAULT_VERSION` 1→2，**v1 图读入归一化、写出不兼容**；
+  2. L0 的现盘视图从 `RealmStore` 解耦成 `LiveSource` 端口（`realmLiveSource` / `fileLiveSource` / `liveSourceFor`），这是"盖非 Realm 源"的前置；
+  3. `inventoryFromFiles`：**显式白名单，绝不目录遍历**，七类硬拒（缺失 / 绝对路径 / `..` 逃逸 / 非普通文件 / 软链 / 二进制 / 超过 64 MiB）；
+  4. CLI `build|backup --files-root <dir> --files a.json,b.json`、Realm 侧 `--tenant`；`check|restore` 不再接受挂载参数——图自己声明源与 scope。
+- **顺带修掉两个真实缺陷**（都不是"接线"能发现的）：
+  - **误报**：带租户 scope 的企业 Realm，图里丢掉 `tenant`、校验时又无 scope 重连，被 catch-all 吞成 `root unreachable`——唯一的"宝藏还在吗"工具对健康语料库喊狼来了。现在 scope 随图走，且报告必带 `unreachableReason`。
+  - **containment 用错了 root**：白名单包含性判定拿"未解析的 root"比"已 realpath 的文件"，在 macOS（`/var → /private/var`）上会拒绝**每一个**白名单文件；实测由 `tests/vault-files.test.ts` 先红后绿。
+- **验收**：`kernel.json` 毁库演练走真 CLI（`backup`→`check` 0→删除→`check` 2→`restore`→字节级 sha256 相同→用恢复出的文件 `bootKernel` 且 `restoredFromSnapshot: true`），另有 `dist/vault/cli.js` 真实进程冒烟逐条核对退出码。测试 `tests/vault-files.test.ts` 12 项。
+- **不因本条销项而消失**：二进制备份、目录通配、内置默认名单——仍是非目标（design-vault §9）；**E8.4 传承**（#3）仍需要"图 + 密钥分渠道交接"的法律与叙事层，本条只给了它可交付的物证。
 
-### #14 驱动凭证的签发与校验时钟
-- E3.5 的 `DriverWriteGrant` 只有**校验**端（形状/绑定域/有效期），没有任何签发路径，也没有签名——`verifyDriverWriteGrant` 信的是"拿到的 JSON 就是驾驶员给的"。且 `FsRealmStore.write` 内部用 `new Date()` 判过期，端口层没有注入时钟，测试里"仍然有效"的凭证只能写成 `expiresAt: '2099-...'`（见 tests/realm-write.test.ts 注释）。
-- **触发条件**：MCP `tools/write` 暴露（E3.4/E3.5 剩余半边）立项时一并定：凭证签发与签名、防重放（nonce 目前不比对）、write 路径的可注入时钟。
+### #14 驱动凭证的签发与校验时钟 ✅ 已销项（2026-09-25）
+- **原缺口**：E3.5 的 `DriverWriteGrant` 只有**校验**端（形状/绑定域/有效期），没有任何签发路径，也没有签名——`verifyDriverWriteGrant` 信的是"拿到的 JSON 就是驾驶员给的"。且 `FsRealmStore.write` 内部用 `new Date()` 判过期，端口层没有注入时钟，测试里"仍然有效"的凭证只能写成 `expiresAt: '2099-…'`。
+- **触发条件回顾**：写的是"MCP `tools/write` 暴露立项时一并定"。2026-09-25 决定提前做，理由与 #13 同类：一个**任何能摸到 `write()` 的代码都能自己伪造**的授权检查不是授权检查；等 MCP 暴露时才补，等于先把门装歪再拆。
+- **销项结论**（设计见 [design-realm.md](design-realm.md) §7.7）：`issueDriverWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `registry/signing.ts`）、`verifyDriverWriteGrant` 改 async 并按 形状→realm 绑定→验签→有效期 判定（`unsigned`/`unknown-key`/`bad-signature`/`no-expiry`）、`DriverGrantLedger` 在落盘前消费 nonce 且随内核快照持久化（`writeGrantNonces`）、`FsRealmStoreOptions.now` 注入时钟。驾驶员面 `POST /api/realm/write-grants`、日记写凭证透传（缺授权 403）、审计脊 `driver-grant-issued`/`realm-write`、`GET /api/state` 报 `driverGrants.authority`。
+- **不因本条销项而消失**：**MCP `tools/write` 暴露仍未做**（E3.4/E3.5 剩余半边），其 actor 判定归 **#18**；单 owner 部署下签发方=验签方，因此这条链目前证明的是"凭证出自签发路径"，不是"第三方驾驶员签的字"（外部驾驶员只需把公钥加进 `acceptedKeyIds`，判定与账本都不用动）。
 
 ### #16 CI runner 镜像钉版（ubuntu-latest 于 2026-10-19 自动迁 Ubuntu 26）
 - **事实**：`.github/workflows/ci.yml` 的 `runs-on` 是浮动标签 `ubuntu-latest`。2026-09-25 的每一次 run（36024156638 / 36045209815 / 36061395015）都带同一条注解：该标签将于 **2026-10-19** 起指向 Ubuntu 26.04（actions/runner-images#14748）。迁移不需要我们改任何代码，但它会**在没人批准的情况下换掉整台构建机**——系统库、预装 Node、npm 与工具链版本一起变。

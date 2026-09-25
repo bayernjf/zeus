@@ -67,6 +67,12 @@ export class VassalRegistry {
         `unsupported fealty.version '${fealty.version}'; supported: ${SUPPORTED_FEALTY_VERSIONS.join(', ')} — upgrade Zeus: ${cardUrl}`
       );
     }
+    // The oath fields below are what dispatch reads on every request. A card
+    // that omits one used to register cleanly and then die later with a
+    // TypeError from the dispatcher - refusing at the boundary says which field
+    // the vassal must fix, and when it went wrong.
+    const oathProblem = fealtyOathProblem(fealty);
+    if (oathProblem) throw new Error(`invalid vassal fealty: ${oathProblem}: ${cardUrl}`);
     options.validate?.(card);
     const taskUrl = options.taskUrl ?? defaultTaskUrl(cardUrl);
     const entry: VassalEntry = {
@@ -165,4 +171,49 @@ export class VassalRegistry {
  *  .../api/a2a/agent-card → .../api/a2a/tasks */
 export function defaultTaskUrl(cardUrl: string): string {
   return cardUrl.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks').replace(/\/\.well-known\/agent(-card)?\.json\/?$/, '/api/a2a/tasks');
+}
+
+const REALM_TYPES = ['personal', 'enterprise'] as const;
+const DATA_POLICIES = ['none', 'read-task-scope', 'read-realm', 'write'] as const;
+const ESCALATION_POLICIES = ['none', 'on-failure', 'auto'] as const;
+
+/**
+ * The first defect in the part of the oath that dispatch reads on every request.
+ * An empty dataRealms array is not a defect: it means "no data at all", and the
+ * diode then refuses each task with an explicit audit reason.
+ */
+function fealtyOathProblem(fealty: Fealty): string | null {
+  const oath = fealty as unknown as Record<string, unknown>;
+  if (!Array.isArray(oath.dataRealms)) {
+    return `dataRealms must be an array of realm types, got ${describeOathValue(oath.dataRealms)}`;
+  }
+  const unknownRealms = (oath.dataRealms as unknown[]).filter(realm => !(REALM_TYPES as readonly string[]).includes(realm as string));
+  if (unknownRealms.length > 0) {
+    return `dataRealms holds unknown realm types: ${unknownRealms.map(value => describeOathValue(value)).join(', ')}`;
+  }
+  if (!(DATA_POLICIES as readonly string[]).includes(oath.dataPolicy as string)) {
+    return `dataPolicy must be one of ${DATA_POLICIES.join(', ')}, got ${describeOathValue(oath.dataPolicy)}`;
+  }
+  if (!(ESCALATION_POLICIES as readonly string[]).includes(oath.escalationPolicy as string)) {
+    return `escalationPolicy must be one of ${ESCALATION_POLICIES.join(', ')}, got ${describeOathValue(oath.escalationPolicy)}`;
+  }
+  if (typeof oath.reportBack !== 'boolean') {
+    return `reportBack must be a boolean, got ${describeOathValue(oath.reportBack)}`;
+  }
+  const sla = oath.sla as { ackSeconds?: unknown } | undefined;
+  if (
+    sla !== undefined
+    && sla.ackSeconds !== undefined
+    && (typeof sla.ackSeconds !== 'number' || !Number.isFinite(sla.ackSeconds) || sla.ackSeconds <= 0)
+  ) {
+    return `sla.ackSeconds must be a positive number of seconds, got ${describeOathValue(sla.ackSeconds)}`;
+  }
+  return null;
+}
+
+function describeOathValue(value: unknown): string {
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return value === undefined ? 'nothing' : String(value);
 }
