@@ -54,6 +54,8 @@ async function main() {
   pass(`agent card discovered: "${card.name}" with ${card.skills.length} skill(s)`);
 
   // 2. Standard tasks/send with a plain text part; no x-zeus-* fields anywhere.
+  //    The JSON-RPC surface lives on the same path as card discovery
+  //    (GET = Agent Card, POST = JSON-RPC), matching pr-helper's routing.
   const requestBody = {
     jsonrpc: '2.0',
     id: 1,
@@ -65,7 +67,7 @@ async function main() {
       },
     },
   };
-  const taskRes = await fetch(`${BASE_URL}/api/a2a/tasks`, {
+  const taskRes = await fetch(`${BASE_URL}/api/a2a/agent-card`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify(requestBody),
