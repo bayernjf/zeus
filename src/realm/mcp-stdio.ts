@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node dist/realm/mcp-stdio.js <root-dir> [<root-dir> ...]
- *   ZEUS_REALM_ROOTS=/path/a:/path/b node dist/realm/mcp-stdio.js
+ *   ZEUS_REALM_ROOTS=/path/a,/path/b node dist/realm/mcp-stdio.js
  *
  * Security model:
  *  - Roots are authorized at launch (argv/env) and pre-connected read-only.
@@ -91,8 +91,12 @@ function writeResponse(response: JsonRpcResponse): void {
 
 function collectRoots(): string[] {
   const fromArgv = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
+  // Comma-separated, exactly like the kernel reads the same variable. A colon
+  // list would shred a Windows drive path (C:\Users\...) into two bogus roots,
+  // and as long as the two doors disagree about one variable, a host can end up
+  // serving a different set of directories than the kernel was pointed at.
   const fromEnv = (process.env.ZEUS_REALM_ROOTS ?? '')
-    .split(/[:;]/)
+    .split(',')
     .map(value => value.trim())
     .filter(Boolean);
   return [...new Set([...fromArgv, ...fromEnv])];

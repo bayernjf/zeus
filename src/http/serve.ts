@@ -21,13 +21,15 @@
 import { createRequire } from 'node:module';
 import {
   bootKernel,
+  KernelBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
   resolveDecisionConfig,
   resolveRealmConfig,
 } from '../state/boot.js';
 import { kernelStats } from '../state/stats.js';
-import { loadRskSigner } from './rsk.js';
+import { loadRskSigner, RskConfigError } from './rsk.js';
+import { RealmError } from '../realm/types.js';
 import { createHttpServer } from './server.js';
 
 const require = createRequire(import.meta.url);
@@ -57,6 +59,9 @@ async function main(): Promise<void> {
   const signer = await loadRskSigner();
   const kernel = await bootKernel({
     driverSigner: signer,
+    onAuditError: message => {
+      process.stderr.write(`[zeus-http] FAILED to persist an audit entry: ${message}\n`);
+    },
     onStateSaveError: message => {
       process.stderr.write(`[zeus-http] FAILED to persist kernel state after a consumed driver grant: ${message}\n`);
     },
@@ -103,6 +108,18 @@ async function main(): Promise<void> {
     process.stderr.write(`[zeus-http] audit log: ${kernel.auditFile} (${ceiling})\n`);
   }
 
+  // The operator's first question after "is it up" is "which realms did it
+  // mount, and under which ids" - the ids otherwise only appear on the
+  // bearer face, which presupposes knowing the bearer face exists.
+  for (const connection of kernel.realmStore?.connections() ?? []) {
+    const scope = connection.tenant
+      ? ` tenant=${[connection.tenant.org, connection.tenant.department, connection.tenant.member].filter(Boolean).join('/')}`
+      : '';
+    process.stderr.write(
+      `[zeus-http] realm ${connection.realmId} type=${connection.type}${scope}` +
+        `${connection.readOnly ? ' read-only' : ' writable'} at ${connection.root}\n`
+    );
+  }
   process.stderr.write(
     kernel.driverGrantAuthority === 'signed'
       ? `[zeus-http] enterprise writes: accepting only driver grants signed by "${kernel.driverSigner?.keyId}"\n`
@@ -188,6 +205,13 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
+  // A mistyped ZEUS_REALM_ROOTS, an unusable tenant string or an unwritable
+  // audit path are configuration facts, not bugs: print the one line that names
+  // what to change and leave the stack to everything else.
+  if (error instanceof KernelBootError || error instanceof RealmError || error instanceof RskConfigError) {
+    process.stderr.write(`[zeus-http] refused to start: ${(error as Error).message}\n`);
+    process.exit(1);
+  }
   console.error(error);
   process.exit(1);
 });

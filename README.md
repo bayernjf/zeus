@@ -214,6 +214,7 @@ curl -s localhost:8787/api/state -H "Authorization: Bearer $TOKEN"
 
 ## 当前边界
 
+- **MVP 判定（单一事实源在 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) §F）**：个人数据底座侧已达标（目录即数据库、藏宝图可恢复含内核状态文件、签名且一次性的企业写凭证、审计与重启恢复）；**"多 Agent 协作"侧仍判 ❌——缺的是库内执行点而非仓库外环境**：MCP 侧只有只读 resources（无 tools、无鉴权），技能注册中心不参与派发，封臣出站凭证尚未接线。
 - **库 + 薄传输**：HTTP 传输层不含业务逻辑——H1 三只只读端点 + H2 驾驶员 API（发起/回查/取消意图、列/拍升级、指标、封臣注册/吊销），写端点与 internal 名册统一 bearer 保护，未配 `ZEUS_INTERNAL_TOKEN` 时整组不挂载。封臣可经 `POST /api/vassals` 注册或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；internal 名册自签名链 v1.1 起同样发封签信封（`active|revoked` 两态 attestation，含吊销行，离线可验），响应 `Cache-Control: no-store`。内核状态（封臣含已吊销、监督台队列、意图结果+原始请求、Realm 连接、记忆、Mentor 台账、MCP 连接器声明、**Org 编制**）在配置 `ZEUS_STATE_FILE` 时启动恢复、SIGINT/SIGTERM 原子落盘（E5.3），未配置则纯内存；运行指标不持久化。
 - **Realm 内容对外唯一传输为 MCP**（契约 v0.5），不做独立 HTTP **内容** API；只读 stdio 脚手架已落地（resources 映射 manifest/search/read、宿主预连接、绝对路径不出进程），正式 P1（鉴权、streamable HTTP、官方 SDK 兼容性复核）的触发条件仍是 read-realm 封臣出现。**边界精确化（v0.28，design-realm §6.4）**：bearer 驾驶员面可暴露 Realm 的**治理元数据与授权记录**（`GET /api/domains`、签发/吊销、不读内容的访问探针），并可用 `realmSource` 让**内核代取**内容送进派发链路——后者不向客户端返回内容，因此不构成第二个 Realm 传输面；这条区分之前写作"HTTP 不挂任何 Realm 路由"，措辞与新代码互相打脸，已更正。
 - 服务端 HTTP 栈为 Fastify + 长驻进程（[docs/design-http-transport.md](docs/design-http-transport.md)）：**H1 已落地**（healthz / public 签名名册 / bearer internal 签名名册），**H2 驾驶员 API 已落地**（意图扇出/回查/取消/决策回放、升级队列 approve/reject/resolve/approve-resume 决议回写与按 kind 分流、并发指标、Skills 目录与生命周期·带教台账、Org 编制·换 lead·撤岗与责任链、Memory 检索与遗忘权·按 run 回放、Diary 日记、**MCP 连接器声明与握手（响应脱敏，绝不回显上游 token）**、**决策后端实际配置**、**审计 JSONL 回读**、**内核盘点 `GET /api/state`（只报计数与路径）**、**Realm 治理面 `/api/domains*`（挂载与租户级、跨域授权签发/吊销、不读内容的访问探针）**），**H3 服务端 SSE 已落地**（`GET /api/intents/:id/events`）；端到端测试见 `tests/http-h2.test.ts`、`tests/http-sse.test.ts`、`tests/http-org*.test.ts`、`tests/http-skills.test.ts`、`tests/http-memory.test.ts`、`tests/http-replay.test.ts`、`tests/http-diary.test.ts`、`tests/http-connectors.test.ts`、`tests/http-audit.test.ts`、`tests/http-state.test.ts`、`tests/http-domains.test.ts`。多副本与静态快照分发按需立项。
@@ -235,7 +236,7 @@ curl -s localhost:8787/api/state -H "Authorization: Bearer $TOKEN"
 - [docs/design-vault.md](docs/design-vault.md) — Vault 藏宝图与恢复协议 v0.2（`MapSource`：Realm 或**文件白名单**，故内核状态文件也可备份；图只存引用、AES-GCM 密钥分离、`LiveSource` 原地校验 + 加密备份包跨位恢复、漂移检测）
 - [docs/design-diary.md](docs/design-diary.md) — Diary 记忆叙事化日记（事件按天分桶、内容不臆造、锚 eventId、经 Realm 落盘/导出）
 - [docs/design-org.md](docs/design-org.md) — 虚拟部门编制与结果责任（部门单 lead/成员唯一、编制可视、责任链追到 Agent/部门 lead/驾驶员）
-- [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级 MVP 评审（功能性/完整度/可上线、阻塞项与最小路径）
+- [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级 MVP 评审 v0.9（功能性/完整度/可上线 + 三纲可达性；**当前判定：产品核心完全可用 MVP ❌，两条支柱缺库内执行点**）
 - [docs/deferred-items.md](docs/deferred-items.md) — 缓做项与触发条件的单一事实源
 
 ## 协作约定

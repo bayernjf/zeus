@@ -1,8 +1,8 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.8，2026-09-25 E9.1/E9.2 收口）**。评审对象：Zeus 仓库 `dev` 分支（v0.4 起点 HEAD `a7e4ce9`；v0.5/v0.6 为纯文档更正与销项，v0.7/v0.8 含代码）。
-> 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。
-> **结论一句话（v0.4，v0.6 更新其剩余关口清单）**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机封臣部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
+> 状态：**现行（评审报告 v0.9，2026-09-25，deferred #13/#14 收口后重判 MVP）**。评审对象：Zeus 仓库 `dev` 分支 HEAD `f4727f1`（v0.4 起点 HEAD `a7e4ce9`；v0.5/v0.6 为纯文档更正与销项，v0.7/v0.8 含代码；**v0.9 把"操作者能不能摸到三纲"当问题重问，并据此改判阻塞性质——判定以 v0.9 为准，其下各节为历史**）。
+> 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
+> **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机封臣部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
 > **【2026-09-22 六切片批次后 · 销项更新 v0.2】** 下列为评审 v0.1 之后的库内进展（全量 **166 测试绿 / 22 文件**，typecheck/build 过；以下为现状，原 §1–§7 快照保留不改）：
 > - 硬阻塞 **#3 E2.2 Skill 注册中心 → ✅ 销项**：`src/skills/`（多版本共存、deprecate 标记、按名/域/标签检索、registerFromCard、resolveTeam 多技能组队且歧义不静默选边，10 测试）。E2.4 组队解析一并 ✅。
@@ -55,9 +55,113 @@
 - **判定不变**：库内内核级 MVP ✅；**产品级可上线 MVP ❌**，差的仍是真实环境里的跑起来、联起来、签出去。
 - **本批留下两条诚实的尾巴**（登记而非半做）：**#17** 改租户 / 下线 Realm 无可执行路径；**#18** MCP 资源读取侧没有 actor 概念，故 §7 的规则在那条路径上暂无执行点。
 
-## v0.4 现行评审（2026-09-24；结论仍成立，E4.8/M3 归因被上方 v0.5 更正、剩余关口清单被上方 v0.6 更新、§C 分类与基线被上方 v0.7 更新）
+## v0.9 现行评审（2026-09-25，deferred #13/#14 收口后重判：**新增一类阻塞——"缺执行点"不是"缺环境"**）
 
-> 原 §1–§8 为 2026-09-22 v0.1 首次评审快照（结论已被后续批次超越），原样保留于文末；v0.2/v0.3 为当时批注。**当前功能性 / 完整度 / 可上线性结论以本节为准。**
+> **本轮方法 changed**：不再只核对 PRD 勾选与测试数量，而是把三条产品支柱各自的**"操作者能不能走到它"**当问题问，并把首跑路径在编译产物上真跑一遍（A/B 对照，非注入式）。基线：`e74ba8d`+`2a524ee`+两个 docs commit（HEAD `f4727f1`），**658 测试 / 70 文件**、`npm run typecheck` 与 `npm run build` exit 0、`npm audit --omit=dev` **0 漏洞**（生产依赖只有 fastify 一项）；src 80 文件 14 461 行、tests 70 文件 13 164 行、HTTP 路由 67 条
+>
+> **结论一句话（v0.9）**：**产品核心"完全可用"的 MVP 判定 = ❌ 未达到，且未达到的原因变了。** v0.4–v0.8 反复说"库内已无 P0 功能缺口，只剩仓库外的真机/凭证/发布动作"——**这句话本轮第三次被证伪**：立国三纲里 **MCP 与 Skill 两条支柱缺的是库内的执行点（代码），不是环境**。具体说：一个真实用户今天**无法让 Zeus 带着凭证去调任何外部封臣**，**无法让外部 Agent 调进 Zeus**，**卸载一个 Skill 也停不掉任何一次派发**。同时首跑路径上有两个当场实测出来的阻断（见 §C-1/C-2）。
+>
+> **但也别读反了**：**个人数据底座这一侧是真达标的**——给目录、检索、记忆、日记、藏宝图（含今天补上的内核状态文件）、签名且一次性的企业写凭证、审计脊、持久化与重启恢复，全部有 HTTP/CLI 入口且被实测走通过。缺的是**协作那一半的门没装完**。
+
+### A. 三条支柱逐条判定（"实现了" 与 "摸得到" 是两件事）
+
+| 支柱 | 代码里有 | 操作者能走到的最远处 | 判定 |
+|---|---|---|---|
+| **MCP** | ① 客户端 `src/mcp/client.ts`；② 服务端 `src/realm/mcp.ts` + stdio 宿主 `mcp-stdio.ts` | 服务端**实测可跑**：`initialize`→`resources/list`→`resources/read` 全通（`zeus-realm://<id>/manifest\|search\|item`，越界 path 被拒、绝不吐绝对路径）。但它 **只有 resources、没有 tools**（`mcp.ts:122` 明写 "resources only, no tools"），且**只支持 personal + readOnly**（`mcp-stdio.ts` 里 type 是写死的 `'personal'`）→ 企业域/租户/写都进不去。**没有鉴权**（deferred #18）。客户端侧 `tools/list` 能拿，**`tools/call` 全仓库 0 处命中**（含 tests）→ 连接器是"声明+发现"，任何工具都不会被执行；`record.capabilities` 只有一处赋值（`connectors.ts:80`）、**无人读取**，§7 的边界裁剪裁的是一份没有消费者的清单 | **REACHABLE: partial**——只读个人域可演示；"接外部系统"名不副实 |
+| **Skill** | `SkillRegistry`（多版本/install/uninstall/deprecate/harden）+ `POST /api/skills*` 全套路由 + `resolveTeam` | **派发路径不看注册中心**：`Orchestrator.fanOut` 用 `lookup.findBySkill(skill)`（`orchestrator.ts:103-106`）→ `entry.card.skills.some(...)`（`registry.ts:140`），即**目标选择只读封臣卡片自报的技能**；`resolveTeam` 全仓库唯一调用点是一条查询路由 `POST /api/skills/team`（`server.ts:1127`）。后果是可证伪的：**`POST /api/skills/:id/uninstall` 停不掉任何一次真实派发**，`harden` 写的 `hardening/permissions` 在 `src/skills/` 之外没有读取者（grep 全库确认）→ 加固是只写元数据。另：`providedBy` 从请求体逐字抄入（`server.ts:1052`）且**不与名册交叉核对**，"提供者身份只能经认证获得"这句话被另一条路由绕开 | **REACHABLE: partial**——登记/检索/生命周期可操作；**它不治理任何东西** |
+| **A2A** | 卡片拉取 + fealty 校验 + JSON-RPC/SSE 客户端 + 封签名册 | 上线一个封臣：`POST /api/vassals {cardUrl}` 或 `ZEUS_VASSAL_SEEDS`，需 `x-zeus-fealty{swornTo:'zeus',version:'1'}` + 字段形状校验（`registry.ts:59-75`，今天加的 `151ab3b`）。**但 oaths 是未签名的**（`registry.ts` 里没有任何 verify/signature 路径），签名方向是反的——Zeus 封签**自己的**名册给 bayjf 验。**致命的一条**：`bootKernel` 构造 Dispatcher 时只传 `audit/now/fetchImpl`（`boot.ts` 的 `new Dispatcher(...)`），**从不传 `tokenFor`**，而 `client.ts:67` 是 `if (token) headers.Authorization = ...` → **跑起来的进程对任何封臣都不发 Authorization**，需要 bearer 的真封臣（pr-helper 就是，`scripts/acceptance-standard-a2a.mjs:18` 明确要 `TOKEN=`）在 Zeus 里**根本派发不出去**。且**没有入站面**：src/http 里没有 `/.well-known/agent-card.json`、没有任何 `tasks/*` 路由，外部 Agent 只能被动应答 | **REACHABLE: partial**——对不需要认证的本地 mock 可用；**对真实世界的一个封臣不可用** |
+
+**这一节的意思**：产品哲学第 3 条"一切能力必须能落到 MCP / Skill / A2A"当前**没有一条落到可运营的深度**。这不是文档口径松紧问题——三纲各缺一个执行点，且三个都在库内可写的范围内。
+
+> 一条**公平的反证**（评审不该只报坏消息）：`realmId` 是按 realpath 派生的确定性哈希（`store.ts:118`，实测同一目录两次连接得到同一 id），所以 MCP stdio 进程与 HTTP 内核**说的是同一套 realm 标识**——两扇门之间的寻址天然对齐，缺的只是各自的能力与鉴权，不是"对不上号"。
+
+### B. 里程碑重判（对 PRD §5 的出口标准逐条）
+
+| 里程碑 | 出口标准 | v0.9 判定 |
+|---|---|---|
+| M1 内核基座 | E3.1–3.3、E4.1–4.7、E5.1–5.2、E6.1、E10.1/10.3 | ✅ 达成（P0 实测 25 ✅ / 1 🚧，未闭合那条是 E4.8） |
+| M2 并发决策内核 | E1.1–1.6、E2.1/2.2/2.4、E10.4 | 🚧 **降级为部分达成**：内核与容量真达成，但 **E2.4 的"一意图映射到所需技能并选 Agent"实际走的是卡片自报技能**，注册中心不在路径上 → 出口标准的"技能"这一半是虚的（见 §A-Skill） |
+| M3 真机闭环 | E4.8、E10.2、Zeus↔loom、E5.3 | ❌ 仍未达成，**且原因比"没人跑一次验收"更硬**：即便去跑，也会先撞上 §A-A2A 的"不发凭证"——**E4.8 的一部分阻塞从"缺执行"变成了"缺代码"** |
+| M4 Realm 开放 | 标准 MCP client 可读 Realm；bayjf 公开验签 | 🚧 只读到一半：个人域只读 stdio **实测可被标准 JSON-RPC 客户端读**（本轮手工验过 initialize 协商与三类 resources 读取），但无鉴权、无企业域/租户、无 `tools/write`、无 streamable HTTP（E3.4 仍 🚧）；bayjf R2 未做（E5.4 ⬜） |
+| M5 情感与成长 | 藏宝图恢复演练通过；Skill 可安装/传授 | 🚧 **两条一条真一条虚**：藏宝图演练今天**真过了**（真 CLI 子进程：备份→删→退出码 2→恢复→字节级 sha256 相同→用恢复文件起内核）；"Skill 可安装/传授"有 API 与台账，但**装了不授权、卸了不夺权**（§A-Skill） |
+
+### C. 首跑路径实测（编译产物真进程，非读代码）
+
+**C-1 🔴 文档默认配置下，核心动作直接失败。** `.env.example` 同时给 `ZEUS_STATE_FILE=./data/kernel-state.json` 与 `ZEUS_AUDIT_FILE=./data/audit.jsonl`（第 14/19 行），而**没有任何人在写审计前建目录**：`jsonlAuditSink` 直接 `appendFileSync(path, line)`（`audit.ts:48`），只有状态文件那次 save 才 `mkdir`（`kernel-state.ts`）。A/B 实测（同一台机器、同一构建、只切换这一个变量）：
+
+| 配置 | `POST /api/intents`（指定一个不存在的封臣）返回的 branch.reason |
+|---|---|
+| 带 `ZEUS_AUDIT_FILE`（新目录，`data/` 不存在） | **`ENOENT: no such file or directory, open '.../data/audit.jsonl'`** |
+| 不带 `ZEUS_AUDIT_FILE` | `no registered vassal provides this skill`（这才是正确答案） |
+
+两个缺陷叠在一起：① 审计目录不会自动创建 → 按文档配置就报错；② **审计写盘失败被当作"派发失败的原因"报给操作员**（错误归因：文件系统问题伪装成封臣问题）。附带一条：审计文件用 `appendFileSync` 未指定 mode → **0644 世界可读**，而同一天之前我们刚把状态文件固定成 0600（它里面是 token 与记忆明文）；审计行含 realm/主体/决策明细，这个不一致没有理由。
+
+**C-2 🔴 我今天写进 deployment.md 的备份示例，按原样跑不通。** 评审自查：`docs/deployment.md:207,211`（commit `476353d`，本批）把内核状态文件写成 `kernel.json`，并用 `$ZEUS_DATA_DIR` / `$ZEUS_BACKUP_DIR` 两个仓库里**不存在**的变量；真实默认名是 `kernel-state.json`（`.env.example:14`、`Dockerfile:19`）。因为白名单语义是"点名而读不出即拒绝"，**照文档敲会直接失败**（这正是我们故意设计的行为——错的是文档）。`deployment.md` §2 的 env 表**少了 10 行**（复测口径：代码读 24 个 `ZEUS_*`，§2 表内只有 14 个）：`ZEUS_VASSAL_SEEDS` + 决策三件（`ZEUS_DECISION_BASE_URL/API_KEY/MODEL`）+ OpenAI 兼容三件（`ZEUS_LLM_*`）+ judge 三件（`ZEUS_JUDGE_ENABLED/THRESHOLD/ALLOW_UNCALIBRATED`）；`.env.example` 对全部 24 个是齐的，缺的是给人读的那张表。**订正**：本轮子审计曾把 `ZEUS_VASSAL_SEEDS` 也算进漏项，实测该词在 deployment.md 出现 1 次——**不成立，已剔除**；`.env.example` 对全部 25 个变量的覆盖是完整的。
+
+**C-3 🟠 同一个环境变量，两套互不兼容的语法。** `ZEUS_REALM_ROOTS`：内核按 **逗号**切（`boot.ts:564-566`），stdio MCP 按 **`[:;]`** 切（`mcp-stdio.ts:92-99`）。把 `.env.example` 里那份逗号值喂给 MCP 宿主，会被当成**一个**怪路径 → connect 失败 → 进程 exit 1（该行为实测确认其存在，非推测）。
+
+**C-4 🟠 `.env` 在裸机上根本不生效。** 全仓库无 `dotenv` 依赖、`src/` 内无任何读 `.env` 的代码；只有 `docker --env-file` 与 systemd `EnvironmentFile=` 会解析它。而 `.env.example:2` 写的是"Copy to .env and adjust"——裸机用户照做会以为配好了，实际一个变量都没读进去。
+
+**C-5 🟠 域只能启动时挂，永远不能卸。** connect 只发生在 `bootKernel`（`boot.ts` 的 realmRoots 循环 + 快照重连）；`store.ts` 的重连漂移检查明写 `disconnect is not offered in this build`。**运行时挂载/下线一个目录 = 无路径**（deferred #17 已登记，但它在"能不能日常运营"上的分量比登记时写的更重：改一次目录布局要重启，而重启时旧快照里的 root 若已挪走会**直接拒启**）。
+
+**C-6 🟡 realmId 对操作员不可见。** 启动日志打了决策/并发/审计/状态四类，**唯独不报连了哪些域、id 是什么**；`GET /api/state` 只有计数。唯一能拿到 realmId 的地方是 `GET /api/domains`——而这要求操作员已经知道 bearer 面存在。**新用户的第一句话"我的域叫什么"没有答案。**
+
+**C-7 ✅ 好消息（如实记）**：`/healthz` 与 `Dockerfile` 的 HEALTHCHECK 路径一致且真返回 200；零 env 起进程不崩（RSK 缺省走临时钥 + 响亮告警，`NODE_ENV=production` 才拒启）；Vault CLI 的 README/deployment 示例与实际 flag 名逐字对得上（`--files` 那条错是 C-2 的**文件名**错，不是 flag 错）；今天新加的写凭证面在真进程里 13 项断言全过。
+
+**C-8 🟡 同一个仓库里，"被悄悄忽略的配置值"有两套相反的处理**。`ZEUS_MAX_CONCURRENT_BRANCHES` / `ZEUS_BRANCH_QUEUE_LIMIT` / `ZEUS_AUDIT_MAX_BYTES` 非法 → **拒启**（E1.5 的理由写得很清楚：被悄悄忽略的上限读起来像保护存在）。而 `ZEUS_JUDGE_THRESHOLD='high'` → **静默退回默认阈值**，且有一条测试 `ignores a non-numeric threshold` 把这个行为**钉成契约**（`tests/boot-decision.test.ts:70-76`）。同一类失效，两种答案。本轮**没有擅自统一它**——改法是推翻一条已锁定的测试契约，属于拍板不属于修 bug；已在 `deployment.md` 的该行显式标注这处不一致。
+
+**C-9 ✅ 本轮同时修掉的（原样复跑证据见 handoff Active work 46）**：C-1（审计目录自动创建、写出 0600、轮转后重新收紧、sink 抛错**不再**进入派发结果、不可用的审计路径改为**拒启并点名变量**）、C-3（`ZEUS_REALM_ROOTS` 两扇门统一为逗号；Windows 盘符会被冒号切坏是选它的理由）、C-4（`.env` 谁来解析写进文件头）、C-6（启动日志逐条打印 realm id/类型/租户/可写性）、`ZEUS_VASSAL_SEEDS` 拉不到卡片时改为一行可读的拒启信息而不是栈回溯、deployment.md §2 补齐缺的 10 行 env。**MVP 判定不因这些改变**——它们把"能不能起来"从 ❌ 变成 ✅，但 §A 的三纲执行点缺口一条都没补，所以 §F 的结论仍是 ❌。
+
+
+
+### D. 文档比代码强的地方（本轮新增，逐条给行号）
+
+| 位置 | 现在的说法 | 实况 |
+|---|---|---|
+| `docs/prd.md:119` E7.1 ✅ | "基于 MCP 的外部系统接入（resources/tools/prompts）" | **`tools/call` 全库不存在**，工具清单只被列出来、从不被调用 |
+| `docs/prd.md:120` | "连接后只暴露声明边界内的工具" | 边界确实在裁（`connectors.ts:70-76`），但**裁完没人消费** → 该句隐含的"暴露"动作没有发生 |
+| `docs/prd.md:64` E2.3 | 行标题"卸载**断权**"；正文其实写得很准（"resolveTeam 即刻显示 missing、默认查询不可见"） | 正文成立，**标题 over-claim**：注册中心不在派发路径上，所以卸载改变的是"组队查询的答案"，不是"这次派派发得出去"。要么改标题，要么让 `fanOut` 过一次 registry |
+| `docs/prd.md:65` E2.4 ✅ | "一意图映射到所需技能并选 Agent" | 选 Agent 读的是**卡片自报技能**（`registry.ts:140`），不是技能注册中心（§A-Skill）；`resolveTeam` 不gate任何派发 |
+| `docs/prd.md:66` E2.5 | "刻意不暴露 `grantProvider`，提供者身份只能经认证获得" | **字面成立但可达等价**：`POST /api/skills` 的 `providedBy` 由请求体逐字写入（`server.ts:1052`、`types.ts:51-52` 明确允许），而 `providersOf` 读的就是它（`registry.ts:266-273`）→ 不经过任何带教认证就能成为"提供者"。**这不是安全洞**（整条面同为驾驶员 bearer），但它让"只能经认证获得"变成了一句可以绕的话——要么禁掉该字段，要么改措辞 |
+| `docs/design-realm.md:84` / `prd.md:157` M4 | "标准 MCP 客户端经授权读 Realm" | 能读，但**无授权层**（#18）、无企业域/租户、无 streamable HTTP；"经授权"三字目前不成立 |
+| `docs/product-portrait.md:39` | A2A "可互操作、可委托、可协作" | 委托是单向且**不带认证**的；协作面没有入站协议入口 |
+| `docs/product-portrait.md:141` / M3 | pr-helper "真机全链路闭环" | 从未跑过（E4.8 🚧、E10.2 ⬜），且当前代码即使跑也会在认证这一步失败（§A-A2A） |
+
+**v0.9 的纪律追加**：本轮三纲审计里，**"某个 ✅ 需求的关键动词有没有执行点"这一问法**一次性产出了 4 个装饰性检查（connector 边界、skill 卸载夺权、hardening、providedBy 认证）。凡 PRD 打 ✅ 的句子含"阻止/只暴露/即刻断权/经授权"这类**动词**，评审必须 grep 到那个动词的读取方，否则判 ❌。
+
+### E. 达到"产品核心完全可用"的最小集（按解锁面排序，全部库内可做）
+
+| 序 | 要做的事 | 现在缺的那一句代码 | 解锁 |
+|---|---|---|---|
+| 1 | ~~审计目录自动创建 + 审计失败不得改变派发结果 + 审计文件 0600~~ **✅ 已做**（同日 `bda5013`，证据见 §C-9 与 handoff Active work 46） | 构造期建目录建文件；运行期只计数不抛 + `audit.degraded` 上报；0600 且轮转后重新收紧 | C-1 已消灭（A/B 复跑：`no registered vassal provides this skill`） |
+| 2 | **封臣凭证注入（出站认证）** | `bootKernel` 的 `new Dispatcher(...)` 少一个 `tokenFor`；全库没有"每个封臣一个 token"这个概念 | M3/E4.8 从"没人跑"变成"能跑"；这是**当前最硬的一条** |
+| 3 | **让 Skill 注册中心上派发路径（或明确它不上）** | 要么 `fanOut` 的目标解析过一次 `resolveTeam`/registry 状态，要么把 E2.3/E2.4 的 ✅ 与措辞改成"目录与组队查询" | 三纲的 Skill 支柱有执行点，或文档不再这么宣称 |
+| 4 | **MCP 服务端补 `tools` + 鉴权/主体** | `mcp.ts:122` 现在明写不含 tools；#18 的 actor 判定 | M4"经授权读 Realm"、E7 的真实接入 |
+| 5 | ~~修文档首跑面~~ **✅ 已做**：状态文件名（`737c733`）、§2 env 补 10 行、`.env` 解析方写清、roots 分隔符统一、realm 挂载可见 | C-2/C-3/C-4/C-6 | 一个不读源码的人能配起来 |
+| 6 | 运行时的域挂/卸（#17）与 realmId 可见性（C-6） | `disconnect` / 启动日志与 `/api/state` 增域清单 | 日常运营不再"改目录=重启=可能拒启" |
+
+1–5 做完，我才认为"给目录即用 + 能和一个真实外部 Agent 协作 + 治理面说得住"这三件事同时成立，即**产品核心完全可用的 MVP**。6 是运营品质，可靠后可并行。
+
+### F. MVP 判定（v0.9，明确回答本轮问题）
+
+- **产品核心完全可用的 MVP：❌ 未达到。**
+- 与 v0.8 的差别不是"又少了几个功能"，而是**阻塞性质被改判**：v0.4 起一直写"库内已无 P0 功能缺口，只剩仓库外动作"——本轮 grep + 真进程实测证明**三纲中两条缺的是库内执行点**（MCP 无 tools/无鉴权、Skill 不在派发路径上），外加一条**库内缺失的出站认证**。这些都是可以今天写代码关掉的事，不该记在"等真机"的账上。
+- **已达到的部分（也说清楚，别把好消息读没了）**：个人数据底座 = 给目录→检索→记忆→日记→**连内核状态文件都能按图恢复**（今天 #13）→企业写入需要**签名且一次性**的凭证（今天 #14）→全链路审计与重启恢复。这部分 658 项测试、真 CLI 毁库演练、真进程冒烟三层证据齐。
+- **一句话**：**"用户的资料和它的可恢复性"已经 MVP；"多 Agent 协作"这个产品核心定义里的另一半，今天还不能算 MVP——它的门在库里没装完。**
+
+### G. 本轮评审的限制（如实标注）
+
+- 未执行 `docker build/run`（C-1/C-2 是裸机 dist 实跑，不代表容器内路径）。
+- 未用官方 MCP SDK 客户端连过 stdio 服务（本轮是手工 JSON-RPC 逐条发；协议版本协商与三类 resources 读取实测通过，SDK 兼容性未验）。
+- 未连接任何真实外部封臣（沙箱网络到不了 `pr-helper-ten.vercel.app`，见 v0.5）——§A-A2A 的结论来自代码路径 grep + 真进程请求，不来自真机失败样本。
+- 未跑 `npm audit` 的 dev 依赖面（生产依赖 0 漏洞）；容量口径仍沿用 capacity-baseline v0.3 的 mock 回环限制。
+- 本轮三条子审计里有一条（首跑路径）先给出的两个结论与我实测不符（"MCP 产物不存在"、"serve.ts 有静态控制台挂载"），**已按实测否决，未采信**；采信的部分全部经过我本人复验或 A/B 复现。
+
+## v0.4 现行评审（2026-09-24；结论仍成立，E4.8/M3 归因被上方 v0.5 更正、剩余关口清单被上方 v0.6 更新、§C 分类与基线被上方 v0.7 更新；**"库内已无功能缺口"这句被上方 v0.9 改判**）
+
+
+
+> 原 §1–§8 为 2026-09-22 v0.1 首次评审快照（结论已被后续批次超越），原样保留于文末；v0.2/v0.3 为当时批注。**当前功能性 / 完整度 / 可上线性结论以 v0.9 节为准。**
 
 ### A. 验证基线（本机实跑，非转述）
 
@@ -237,3 +341,4 @@
 | v0.6 | 2026-09-25 | **仅销项，判定不变**："push dev → 云端 CI 首绿（需授权）"这条自 v0.1 挂到 v0.5 的关口关闭——三次 push 均在 GitHub 侧出结论、**Node 20.x / 22.x 双矩阵全绿**（run 36024156638 = 472/56、36045209815 = 512/60、36061395015 = **532/61**），本地与 origin/dev 完全同步。基线由 v0.4-A 的 436/52 快照刷新为 **532/61 + tsc/build exit 0 + 容量五场景**（capacity-baseline v0.3）。新登记 deferred **#16**（`ubuntu-latest` 2026-10-19 自动换构建机，无需谁批准）。**剩余关口的性质变了**：不再有任何"等授权/等确认"项，清单全部是需要真实环境、真实凭证或真实封臣的执行项 |
 | v0.7 | 2026-09-25 | **两项库内收口 + 评审自我更正**：E3.6 企业域三级租户 ✅（`TenantScope` org/部门/成员、层级为结构性边界不可授权放宽、个人域不是租户、租户随快照持久化）与 E6.4 双域授权与审计呈现 ✅（`DomainGrant` 只管个人↔企业这一条边、企业→个人永远拒、`decideRealmAccess` 唯一判定、nonce 一次性、`resolveRealmSource` 让**内核自己进 Realm 取数并核对声明**、`/api/domains*` 运维面）；**P0 仅剩 E4.8**。**更正 §C**：v0.4 的"无一项能在库内继续闭环"被证伪两次，改为"仓库外执行类"vs"库内可做但需拍板类"两类，并点名这是评审文档自身的失效模式。基线 436（v0.4）→ 532（v0.5/v0.6）→ **587 测试 / 66 文件**；真实进程冒烟在本批抓到一个"测试全绿但签发面实际不可用"的缺陷（要求调用方自带 nonce），登记 #17/#18 两条诚实尾巴。MVP 判定不变 |
 | v0.8 | 2026-09-25 | **E9.1 / E9.2 上岗门收口 + 一条测试结构性缺口**：新组合层 `src/onboarding/` 用四道门（编制名册 / 在册未吊销封臣 / `decideRealmAccess` / E2.5 certified）决定上岗，**资格现算不缓存**，签字后吊销封臣或撤出名册会自动失效；三条严格化（出勤不算能力、空要求必须显式豁免并写理由、豁免与租户范围不得越界）；`composeBriefing` 从已有事实装配首日上下文并把**答不上来的写进 `gaps`**（`totalFacts` 与命中分开报、`canWrite` 只表域边界并单列 `writeNeedsGrant`、内容取稳定 digest）；`first-task` 过门后真走一次 `fanOut`，审计脊加 4 个 `commission-*`，上岗记录进快照。**v0.7 的两类划分当场得到验证**：被列作"库内可做、等判断"的同一批里同日做完。**结构性缺口单记**：`fix(registry)` 修掉"卡片缺 `dataRealms` 等 oath 字段能注册、派发时才 TypeError"——它在 620 项全绿下活了四天，因为测注册的不派发、测派发的不调 `register()`，两半各自绿；自此对跨模块契约改动加一条口径：**只有 inject 测试不算已验证**。基线 **620 测试 / 68 文件**，四次缺陷植入全部被接住（2 / 3 / 2 / 4 例红）。MVP 判定不变 |
+| v0.9 | 2026-09-25 | **重判 MVP：改问"操作者摸不摸得到"，于是阻塞性质被改判**。基线 **658 测试 / 70 文件**、typecheck/build exit 0、`npm audit --omit=dev` 0 漏洞（生产依赖仅 fastify）；src 80 文件 14 461 行、67 条 HTTP 路由。三纲逐条 grep + 真进程实测：① **MCP** 服务端**实测可跑**（手工 JSON-RPC 走通 `initialize`/`resources/list`/`resources/read`，越界 path 被拒、不吐绝对路径），但**只有 resources 没有 tools**、只支持 personal+readOnly（type 在 stdio 宿主里写死）、无鉴权；客户端侧 **`tools/call` 全库 0 命中** → 连接器是"声明+发现"，被边界裁剪的能力清单**无人读取**（`connectors.ts:80` 是唯一赋值点）；② **Skill 注册中心不在派发路径上**（`fanOut`→`findBySkill`→卡片自报技能，`resolveTeam` 唯一调用点是查询路由）→ **卸载不夺权**、`hardening` 只写不读、`providedBy` 逐字采信绕过认证；③ **A2A 无入站面、oath 未签名，且 `bootKernel` 构造 Dispatcher 从不传 `tokenFor`** → 真进程对任何封臣都不发 Authorization，**需要 bearer 的真封臣根本派发不出去**。**首跑实测另抓出 6 条**：C-1 按 `.env.example` 默认配置**每条派发分支的 reason 变成 `ENOENT .../audit.jsonl`**（A/B 对照证明：审计 sink 不建目录，且写盘失败被误归因为封臣失败；审计文件另为 0644 而状态文件 0600）、C-2 **我自己当天写进 deployment.md 的备份示例文件名是错的**（`kernel.json` vs 真实 `kernel-state.json`；另 §2 表少 10 行（代码读 24 个 ZEUS_*、表内只有 14 个，复测后定数）——子审计多算的一条经实测剔除）、C-3 `ZEUS_REALM_ROOTS` 两套互不兼容分隔符、C-4 `.env` 裸机不生效（无 dotenv）而示例注释让你照抄、C-5 域只能启动挂不能卸、C-6 realmId 操作员不可见。**判定：产品核心完全可用 MVP ❌**，且 v0.4 起那句"库内已无 P0 功能缺口、只剩仓库外动作"**第三次被证伪**——三纲里两条缺的是**库内执行点**。新立评审纪律一条：**凡 ✅ 句里含动词（阻止/只暴露/即刻断权/经授权），必须 grep 到该动词的读取方，否则判 ❌**。同时如实记已达到的部分：个人数据底座（给目录→检索→记忆→日记→藏宝图含内核状态文件→签名且一次性企业写凭证→审计→重启恢复）三层证据齐备。§E 给出 6 步最小集（全部库内可做）。子审计中两条与我实测不符的结论（"MCP 产物不存在"、"serve.ts 挂了静态控制台"）未采信 |

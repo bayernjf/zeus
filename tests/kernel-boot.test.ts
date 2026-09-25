@@ -11,6 +11,7 @@ import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 import { bootKernel, KernelBootError, resolveAuditConfig, resolveConcurrencyConfig } from '../src/state/boot.js';
 import { DEFAULT_AUDIT_KEEP, DEFAULT_AUDIT_MAX_BYTES, readAuditLog } from '../src/dispatch/audit.js';
+import { kernelStats } from '../src/state/stats.js';
 import {
   FileKernelStateStore,
   KernelStateError,
@@ -148,6 +149,60 @@ describe('E5.3 bootKernel assembly', () => {
     // E4.7's governance bridge: a revocation is an audit event, not just a hook.
     expect(readAuditLog(auditFile).map(e => e.decision)).toEqual(['vassal-revoked']);
     expect(seen).toEqual(['loom:vassal-revoked']);
+  });
+
+  it('never lets a failing audit write masquerade as a dispatch failure', async () => {
+    // The defect this guards: the audit sink threw ENOENT inside dispatch, the
+    // dispatcher's branch catch turned it into `branch.reason`, and every branch
+    // reported a filesystem problem as if the vassal had failed. Proven by an
+    // A/B against the built server before the fix; this is the regression door.
+    const auditDir = join(dir, 'audit-side');
+    const auditFile = join(auditDir, 'data', 'audit.jsonl');
+    const warnings: string[] = [];
+    const kernel = await bootKernel({
+      fetchImpl: mockFetch('loom'),
+      auditFile,
+      onAuditError: message => void warnings.push(message),
+    });
+
+    const first = await kernel.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {}, vassals: ['nope'] });
+    expect(first.branches[0]?.ok).toBe(false);
+    expect(first.branches[0]?.reason).toMatch(/vassal|skill/i);
+    expect(readAuditLog(auditFile).length).toBeGreaterThan(0);
+    expect(kernel.auditFailures).toBe(0);
+
+    // Pull the trail out from under the running process.
+    await rm(auditDir, { recursive: true, force: true });
+    const second = await kernel.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {}, vassals: ['nope'] });
+    expect(second.branches[0]?.reason).toMatch(/vassal|skill/i);
+    expect(second.branches[0]?.reason).not.toMatch(/ENOENT|EACCES|audit\.jsonl/);
+
+    expect(kernel.auditFailures).toBeGreaterThan(0);
+    expect(warnings[0]).toMatch(/degraded/i);
+    // One informative line, then the count carries the rest.
+    expect(warnings.filter(line => /degraded/i.test(line))).toHaveLength(1);
+    expect(kernelStats(kernel).audit).toMatchObject({ degraded: true, file: auditFile });
+    expect(kernelStats(kernel).audit.failures).toBe(kernel.auditFailures);
+
+    await rm(auditDir, { recursive: true, force: true });
+  });
+
+  it('names the seed URL when a vassal seed cannot register', async () => {
+    // An unreachable card at boot used to surface as a bare stack trace from
+    // main().catch; the operator still had to guess which of five URLs failed.
+    const fetchImpl = (async () => ({ ok: false, status: 503, json: async () => ({}) })) as never;
+    await expect(
+      bootKernel({ fetchImpl, vassalSeeds: ['http://127.0.0.1:9/loom/card.json'] })
+    ).rejects.toThrow(/vassal seed failed for http:\/\/127\.0\.0\.1:9\/loom\/card\.json/);
+  });
+
+  it('refuses to boot on an unusable audit path, and says so as a config error', async () => {
+    const blocker = join(dir, 'occupied');
+    await writeFile(blocker, 'not a directory\n', 'utf8');
+    // The sink creates its file at construction, so this is a boot-time fact and
+    // must not arrive as a stack trace from the first dispatch.
+    await expect(bootKernel({ auditFile: join(blocker, 'audit.jsonl') })).rejects.toBeInstanceOf(KernelBootError);
+    await expect(bootKernel({ auditFile: join(blocker, 'audit.jsonl') })).rejects.toThrow(/audit log is unusable/);
   });
 
   it('stays silent when no audit file or sink is configured', async () => {

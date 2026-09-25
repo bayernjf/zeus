@@ -19,6 +19,9 @@ export type KernelStats = {
     file: string | null;
     maxBytes: number | 'unlimited';
     keep: number;
+    /** Audit lines that could not be written since boot. */
+    failures: number;
+    degraded: boolean;
   };
   counts: {
     vassals: number;
@@ -74,6 +77,9 @@ export function kernelStats(kernel: KernelBoot): KernelStats {
       file: kernel.auditFile,
       maxBytes: kernel.auditMaxBytes === Number.POSITIVE_INFINITY ? 'unlimited' : kernel.auditMaxBytes,
       keep: kernel.auditKeep,
+      /** Non-zero = decisions were made but not persisted; the answers stand, the trail does not. */
+      failures: kernel.auditFailures,
+      degraded: kernel.auditFailures > 0,
     },
     counts: {
       vassals: vassals.length - revoked,

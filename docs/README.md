@@ -20,7 +20,7 @@
 | 知道内核能扛多少并发、怎么复跑压测 | [capacity-baseline.md](capacity-baseline.md)（E10.4 本机 mock 回环基线 **v0.3**，五场景：A 扇出宽度 / B 并发意图 / C H2 门面全链路吞吐 / D 高并发取消传播 / **E 并发闸门代价（`--cap` 显式开启）**；容量初步回答、绝对值散布与不变量、`npm run bench:capacity` 复跑方法、真机重测条件） |
 | 回放一个历史决策（谁参与、什么输入、什么立场、怎么聚合的） | `src/orchestrator/replay.ts`（E1.6：replayDecision/replaySnapshot/renderReplay，从内核快照离线重建确定性时间线） |
 | 了解行业内决策层现状与分化趋势 | [research-decision-layer-industry.md](research-decision-layer-industry.md)（LLM-as-judge 主流 + 四条分化路线、对决策后端设计的印证、来源清单） |
-| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 v0.8：功能性/完整度/可上线三维评审、v0.1 五硬阻塞重判；结论=M1/M2 达成、M3 **差执行不差工程**。**v0.5 更正 E4.8 归因（pr-helper 早已上线，卡的是没人对线上跑过一次验收）；v0.6 关闭"push + 云端 CI 首绿"关口；v0.7 收口 E3.6/E6.4，并更正 §C 自己的"库内已无可闭环项"判断 → 剩余项分"仓库外执行"与"库内可做但需拍板"两类；**v0.8 收口 E9.1/E9.2 上岗门，并记下"只有 inject 测试不算已验证"这条评审口径**） |
+| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 v0.9：功能性/完整度/可上线三维评审、v0.1 五硬阻塞重判；**v0.9 改判：产品核心完全可用 MVP = ❌，且缺的是库内执行点（MCP 无 tools/无鉴权、Skill 不在派发路径上、封臣出站凭证未接线），不再只是"等真机"。****v0.5 更正 E4.8 归因（pr-helper 早已上线，卡的是没人对线上跑过一次验收）；v0.6 关闭"push + 云端 CI 首绿"关口；v0.7 收口 E3.6/E6.4，并更正 §C 自己的"库内已无可闭环项"判断 → 剩余项分"仓库外执行"与"库内可做但需拍板"两类；**v0.8 收口 E9.1/E9.2 上岗门，并记下"只有 inject 测试不算已验证"这条评审口径**） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |
 | 理解个人版与企业版的差异 | [product-portrait.md](product-portrait.md) §4 用户画像 |
 | 理解产品矩阵如何并入 Zeus | [product-portrait.md](product-portrait.md) §7 封臣式联邦 |
