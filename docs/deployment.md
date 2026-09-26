@@ -28,6 +28,7 @@
 | `ZEUS_AUDIT_KEEP` | `5` | 轮转后保留的旧代数（`<file>.1` … `<file>.<keep>`）；磁盘总上界 = `maxBytes × (keep+1)` |
 | `ZEUS_MAX_CONCURRENT_BRANCHES` | 未设置（=无界） | E1.5 进程内在途分支上界（跨意图；一个进程一个 orchestrator）。设了就限流，溢出分支按 `branchQueueLimit` 排队或被拒；**值非法直接拒启**（被悄悄忽略的上限看起来像保护存在） |
 | `ZEUS_BRANCH_QUEUE_LIMIT` | 未设置（=等待无限） | 允许排队等槽的分支数；`0` = 不排队，槽满即拒（泄压优先于排队） |
+| `ZEUS_MAX_CONCURRENT_PER_VASSAL` | 未设置（=不分流） | #9 背压分流的**每 Agent 饱和线**（≥1）。设了才启用分流：自动选路时把已在途数达到该线的执行 Agent **改派给同技能的其他提供者**；它**不是**每 Agent 并发硬上限（限流是 `ZEUS_MAX_CONCURRENT_BRANCHES` 的职责），且必须低于全局上界才有空闲可派，否则分流永不触发。显式点名的 `vassals` 是硬绑定，永不被改派。非数字或 `<1` 拒启 |
 | `ZEUS_REALM_ROOTS` | 未设置 | G4：启动时连接的个人域根目录，逗号分隔；连接参数写进状态文件，重启自动重连 |
 | `ZEUS_REALM_ENTERPRISE` | 未设置 | E3.6：企业域挂载，每项 `"<root>::<tenant>"`（tenant 为 `org[/department[/member]]`，如 `/srv/acme-eng::acme/eng`）。**缺 tenant 或写法非法直接拒启**——一个没有边界的企业域等于对整个名册可见；`::` 是因为 Windows 盘符已占用单冒号 |
 | `ZEUS_DECISION_BASE_URL` + `ZEUS_DECISION_API_KEY` | 未设置 | S2 critic 仲裁的决策后端（Jev 优先）。**两项同时给出才启用**，缺任一即 `backend: null`、内核退回 rules-only（这是设计好的降级，不是错误） |
