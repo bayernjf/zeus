@@ -45,7 +45,7 @@ export type {
 } from './registry/registry.js';
 
 // --- R0 roster projector (bayjf 封神榜) ---
-export { projectInternalRoster, projectPublicRoster } from './registry/roster.js';
+export { projectInternalRoster, projectPublicRoster, ROSTER_SCHEMA_VERSION } from './registry/roster.js';
 export type {
   RosterHealth,
   RosterCommitments,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { VassalRegistry } from '../src/registry/registry.js';
-import { projectInternalRoster, projectPublicRoster } from '../src/registry/roster.js';
+import { projectInternalRoster, projectPublicRoster, ROSTER_SCHEMA_VERSION } from '../src/registry/roster.js';
 import {
   attestationMatchesCard,
   canonicalDigest,
@@ -458,5 +458,80 @@ describe('signed internal roster v1.1 — revoked attestations', () => {
     expect(attestation.expiresAt).toBeUndefined();
     expect(attestation.sig).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(attestationMatchesCard(attestation, loomCard())).toBe(true);
+  });
+});
+
+// --- payload schema marker and envelope version gates (deferred #22) ----------
+
+describe('roster schemaVersion and envelope version enforcement', () => {
+  it('stamps the payload schema version on both projections', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildSignedFixture(T0, signer);
+    expect(envelope.snapshot.schemaVersion).toBe(ROSTER_SCHEMA_VERSION);
+    // The marker is inside the digest-covered payload, so editing it breaks the seal.
+    const edited = structuredClone(envelope);
+    edited.snapshot.schemaVersion = ROSTER_SCHEMA_VERSION + 1;
+    const result = await verifySignedSnapshot(edited, signer.verifier(), T0);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/schemaVersion/);
+  });
+
+  it('still verifies an artifact produced before the field existed', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope: fixture, sources } = await buildSignedFixture(T0, signer);
+    // Rebuild the pre-change shape (no schemaVersion) and seal it the way the old
+    // producer would have; a current verifier must accept it, not reject history.
+    // Rest-destructure rather than `delete`, so the absence of the field is
+    // structural: what is handed to the producer is genuinely the old shape.
+    const { schemaVersion: dropped, ...legacyFields } = structuredClone(fixture.snapshot);
+    expect(dropped).toBe(ROSTER_SCHEMA_VERSION);
+    const legacy = legacyFields as unknown as typeof fixture.snapshot;
+    const legacyEnvelope = await sealSnapshot(legacy, signer, {
+      now: T0,
+      maxAgeSeconds: 3600,
+      attestationTtlSeconds: 3600,
+      sources,
+    });
+    expect(legacyEnvelope.snapshot).not.toHaveProperty('schemaVersion');
+    const result = await verifySignedSnapshot(legacyEnvelope, signer.verifier(), T0);
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects a schema version this build does not understand', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope: fixture, sources } = await buildSignedFixture(T0, signer);
+    const future = structuredClone(fixture.snapshot);
+    future.schemaVersion = 99;
+    // Signed by a future producer: digest and signature are self-consistent, so
+    // only the version gate can stop it — that gate must be the thing rejecting.
+    const envelope = await sealSnapshot(future, signer, { now: T0, maxAgeSeconds: 3600, attestationTtlSeconds: 3600, sources });
+    const result = await verifySignedSnapshot(envelope, signer.verifier(), T0);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toMatch(/unsupported roster schemaVersion 99/);
+  });
+
+  it('enforces the envelope version on the seal and on every attestation', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildSignedFixture(T0, signer);
+
+    const sealVer = structuredClone(envelope);
+    (sealVer.seal as { v: number }).v = 2;
+    const sealResult = await verifySignedSnapshot(sealVer, signer.verifier(), T0);
+    expect(sealResult.ok).toBe(false);
+    if (sealResult.ok) return;
+    expect(sealResult.reason).toMatch(/unsupported seal envelope version 2/);
+
+    const missingSealVer = structuredClone(envelope);
+    delete (missingSealVer.seal as unknown as Record<string, unknown>).v;
+    expect((await verifySignedSnapshot(missingSealVer, signer.verifier(), T0)).ok).toBe(false);
+
+    const attVer = structuredClone(envelope);
+    (attVer.attestations.loom as { v: number }).v = 2;
+    const attResult = await verifySignedSnapshot(attVer, signer.verifier(), T0);
+    expect(attResult.ok).toBe(false);
+    if (attResult.ok) return;
+    expect(attResult.reason).toMatch(/unsupported attestation envelope version 2 for "loom"/);
   });
 });
