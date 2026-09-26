@@ -84,8 +84,9 @@
 - **销项结论**（设计见 [design-realm.md](design-realm.md) §7.7）：`issueDriverWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `registry/signing.ts`）、`verifyDriverWriteGrant` 改 async 并按 形状→realm 绑定→验签→有效期 判定（`unsigned`/`unknown-key`/`bad-signature`/`no-expiry`）、`DriverGrantLedger` 在落盘前消费 nonce 且随内核快照持久化（`writeGrantNonces`）、`FsRealmStoreOptions.now` 注入时钟。操作者面 `POST /api/realm/write-grants`、日记写凭证透传（缺授权 403）、审计事件流 `driver-grant-issued`/`realm-write`、`GET /api/state` 报 `driverGrants.authority`。
 - **不因本条销项而消失**：**MCP `tools/write` 暴露仍未做**（E3.4/E3.5 剩余半边），其 actor 判定归 **#18**；单 owner 部署下签发方=验签方，因此这条链目前证明的是"凭证出自签发路径"，不是"第三方操作者签的字"（外部操作者只需把公钥加进 `acceptedKeyIds`，判定与账本都不用动）。
 
-### #16 CI runner 镜像钉版（ubuntu-latest 于 2026-10-19 自动迁 Ubuntu 26）
-- **事实**：`.github/workflows/ci.yml` 的 `runs-on` 是浮动标签 `ubuntu-latest`。2026-09-25 的每一次 run（36024156638 / 36045209815 / 36061395015）都带同一条注解：该标签将于 **2026-10-19** 起指向 Ubuntu 26.04（actions/runner-images#14748）。迁移不需要我们改任何代码，但它会**在没人批准的情况下换掉整台构建机**——系统库、预装 Node、npm 与工具链版本一起变。
+### #16 CI runner 镜像钉版 ✅ 已销项（2026-09-26）
+- **决定**：钉 `ubuntu-24.04`，不接受自动迁移。`.github/workflows/ci.yml:12` 的 `runs-on` 由浮动标签 `ubuntu-latest` 改为 `ubuntu-24.04`，并在同一处写下为什么要钉（2026-10-19 起该标签指向 Ubuntu 26.04，actions/runner-images#14748）。**代价已记账**：此后升镜像是手动动作，注释里写明"要有意地换、换完复验"。Node 矩阵（20.x/22.x）**不在本条范围内**，仍归 #15。
+- **事实（销项前）**：`.github/workflows/ci.yml` 的 `runs-on` 是浮动标签 `ubuntu-latest`。2026-09-25 的每一次 run（36024156638 / 36045209815 / 36061395015）都带同一条注解：该标签将于 **2026-10-19** 起指向 Ubuntu 26.04（actions/runner-images#14748）。迁移不需要我们改任何代码，但它会**在没人批准的情况下换掉整台构建机**——系统库、预装 Node、npm 与工具链版本一起变。
 - **为什么单列（不并进 #12）**：#12 管的是"action 自己跑在哪个 Node 运行时上"，已随 `@v7` 升级销项；runner 的 **OS 层**从来没人决定过。本项目刚拿到连续三次云端 CI 结论，此时最大的非代码回归面就是这条浮动标签。
 - **触发条件**：① 2026-10-19 之前做一次决定——钉 `ubuntu-24.04`（换确定性，代价是要记得升），或接受迁移并在切换后立刻复验一次全绿；② 任何一次 run 出现与本仓库代码无关的环境类失败（apt/预装工具/Node 解析）。
 - **与 #15 的边界**：#15 决定"测哪些 Node"，本条决定"在谁的机器上测"。
