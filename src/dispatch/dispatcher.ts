@@ -18,6 +18,9 @@ export type AuditDecision =
   | 'domain-grant-revoked'
   /** E3.5 / deferred #14: the single-use write credential for an enterprise realm. */
   | 'driver-grant-issued'
+  /** deferred #17: explicit realm boundary mutations (teardown / tenant re-scope). */
+  | 'realm-disconnected'
+  | 'realm-tenant-retargeted'
   /** A write that a driver grant authorized (personal writes are not logged: they
    *  are the user writing in their own directory, and logging them buries this). */
   | 'realm-write'

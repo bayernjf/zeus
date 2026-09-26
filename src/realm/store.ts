@@ -211,6 +211,31 @@ export class FsRealmStore implements RealmStore {
     }));
   }
 
+  async disconnect(realmId: string): Promise<void> {
+    const stored = this.realms.get(realmId);
+    if (!stored) throw new RealmNotConnectedError(`realm not connected: ${realmId} (connect before use)`);
+    this.roots.delete(stored.root);
+    this.realms.delete(realmId);
+  }
+
+  async retargetTenant(realmId: string, from: string | TenantScope, to: string | TenantScope): Promise<void> {
+    const stored = this.requireRealm(realmId);
+    if (stored.type !== 'enterprise') {
+      throw new RealmError(`only an enterprise realm carries a tenant scope, not '${stored.type}': ${realmId}`);
+    }
+    const fromScope = normalizeTenant(from);
+    const toScope = normalizeTenant(to);
+    if (!fromScope || !toScope) {
+      throw new RealmError('retarget requires both a "from" and a "to" tenant scope');
+    }
+    if (formatTenant(stored.manifest.tenant).toLowerCase() !== formatTenant(fromScope).toLowerCase()) {
+      throw new RealmError(
+        `tenant drift: realm ${realmId} is at '${formatTenant(stored.manifest.tenant)}', not '${formatTenant(fromScope)}'; retarget aborted (compare-swap)`,
+      );
+    }
+    stored.manifest = { ...stored.manifest, tenant: toScope };
+  }
+
   async entries(realmId: string): Promise<RealmEntrySnapshot[]> {
     const stored = this.requireRealm(realmId);
     return stored.items.map(item => ({

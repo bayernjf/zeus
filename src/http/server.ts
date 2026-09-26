@@ -41,7 +41,7 @@ import {
   type DriverGrantAuditEntry,
   type DriverGrantLedger,
 } from '../realm/grant.js';
-import { normalizeTenant } from '../realm/tenant.js';
+import { formatTenant, normalizeTenant } from '../realm/tenant.js';
 import { CommissionError, commissionId } from '../onboarding/types.js';
 import type { CommissionLedger } from '../onboarding/commission.js';
 import { composeBriefing } from '../onboarding/briefing.js';
@@ -1518,6 +1518,52 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         } catch (thrown) {
           return mapGrantError(reply, thrown);
         }
+      });
+
+      // deferred #17: explicit realm boundary mutations. Before these, re-scoping
+      // a tenant or tearing down a realm had no executable path short of editing
+      // kernel.json. disconnect removes a mount; retargetTenant re-scopes an
+      // enterprise realm's tenant with a compare-swap guard against stale "from".
+      app.post('/api/realms/:id/disconnect', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const realm = realmScopeOf(id);
+        if (!realm) return error(reply, 404, 'not_found', `realm not connected: ${id}`);
+        await deps.realmStore!.disconnect(id);
+        deps.realmAudit?.({
+          ts: new Date().toISOString(),
+          vassal: 'operator',
+          decision: 'realm-disconnected',
+          realm: realm.type,
+          detail: `disconnected realm ${id} (${realm.type}${realm.tenant ? ` tenant=${formatTenant(realm.tenant)}` : ''})`,
+        });
+        return { realmId: id, disconnected: true };
+      });
+
+      app.post('/api/realms/:id/retarget-tenant', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        if (!isNonEmptyString(body.from)) return error(reply, 400, 'invalid_request', 'body.from is required');
+        if (!isNonEmptyString(body.to)) return error(reply, 400, 'invalid_request', 'body.to is required');
+        const realm = realmScopeOf(id);
+        if (!realm) return error(reply, 404, 'not_found', `realm not connected: ${id}`);
+        if (realm.type !== 'enterprise') {
+          return error(reply, 400, 'invalid_request', `only enterprise realms carry a tenant scope, not '${realm.type}'`);
+        }
+        try {
+          await deps.realmStore!.retargetTenant(id, body.from as string, body.to as string);
+        } catch (thrown) {
+          if (thrown instanceof RealmError) return error(reply, 409, 'conflict', thrown.message);
+          throw thrown;
+        }
+        const updated = realmScopeOf(id);
+        deps.realmAudit?.({
+          ts: new Date().toISOString(),
+          vassal: 'operator',
+          decision: 'realm-tenant-retargeted',
+          realm: realm.type,
+          detail: `retargeted ${id} tenant ${body.from} -> ${body.to}`,
+        });
+        return { realmId: id, ...(updated?.tenant ? { tenant: updated.tenant } : {}) };
       });
     }
 

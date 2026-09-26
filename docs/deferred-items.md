@@ -106,10 +106,15 @@
 - **触发条件**：① 2026-10-19 之前做一次决定——钉 `ubuntu-24.04`（换确定性，代价是要记得升），或接受迁移并在切换后立刻复验一次全绿；② 任何一次 run 出现与本仓库代码无关的环境类失败（apt/预装工具/Node 解析）。
 - **与 #15 的边界**：#15 决定"测哪些 Node"，本条决定"在谁的机器上测"。
 
-### #17 数据域边界的显式变更操作（disconnect / 改租户）
-- **缺口**：`FsRealmStore` 只有 `connect`，没有 `disconnect`；而同一 root 带不同 tenant 重连会被拒（`would change its tenant scope`，这条本身是对的）。合起来的效果是：**调整一个企业域的租户级没有可执行路径**——只能改 env 重启，而重启时快照里存的仍是旧 tenant，照样撞上同一道漂移检查；剩下唯一的"办法"是手工编辑 `kernel.json` 或删状态文件，而对一个装着名册、记忆与连接器 token 的文件做手改不算运维方案。
-- **触发条件**：① 第一次真实的组织结构调整（部门合并 / 改名 / 员工换部门）；② 需要下线某个 Realm（员工离职、目录迁移）。
-- **建议做法（决定后）**：`disconnect(realmId)`（显式确认 + 写审计）与 `retargetTenant(realmId, from, to)`（要求携带旧值做比较交换，防误改），或把启动期的"租户变更"识别为一次**显式声明的迁移**而不是静默漂移。
+### #17 数据域边界的显式变更操作（disconnect / 改租户）✅ 已销项（2026-09-26）
+- **原缺口**：`FsRealmStore` 只有 `connect`，没有 `disconnect`；同一 root 带不同 tenant 重连会被拒（`would change its tenant scope`）。效果：调整企业域租户级没有可执行路径——只能改 env 重启，而重启时快照里存的仍是旧 tenant，照样撞漂移检查；唯一"办法"是手改 `kernel.json` 或删状态文件。
+- **做了什么**：在 `RealmStore` 接口与 `FsRealmStore` 上新增两个显式操作（未走 `connect`，故不会触发那条漂移拒绝）：
+  - `disconnect(realmId)`：从 `realms`/`roots` 内存表移除该挂载；`connections()` 随即不再列出它，下一轮快照即不再持久化。未知 realm 抛 `RealmNotConnectedError`（fail-loud，不是静默 no-op）。
+  - `retargetTenant(realmId, from, to)`：仅企业域可调用（个人域无租户概念，直接 `RealmError`）；**比较交换**——`from` 必须与当前挂载租户一致（大小写不敏感），否则以 `tenant drift ... (compare-swap)` 拒绝并中止，绝不静默移动边界；通过后更新内存 `manifest.tenant`，持久化随下次快照落盘。
+- **操作员面**：`POST /api/realms/:id/disconnect` 与 `POST /api/realms/:id/retarget-tenant`（body `{from,to}`），均走 `requireBearer`；未知 realm 404、漂移 409、个人域 400、缺参 400；两条动作各写一条 `realm-disconnected` / `realm-tenant-retargeted` 审计（`AuditDecision` 已扩）。
+- **与启动漂移检查的关系（重要）**：`retargetTenant` 改的是运行态内存。若操作员**不随之更新 `ZEUS_REALM_ENTERPRISE`**，下次启动 boot 会用 env 里的旧 tenant 重连同一 root，与快照里的新 tenant 撞上那条漂移拒绝 → **启动失败（fail-loud）**。这是预期行为：运行时改边界必须让 env 与之对齐，否则重启即暴露不一致。把启动期的租户变更识别为"显式声明的迁移而非静默漂移"是更大的改造，留作后续（本次只交付运行时显式操作）。
+- **验证**：新增 `tests/realm-operations.test.ts` **8 例**（disconnect 移除 / 未知域拒绝 / 同 root 重连无残留租户；retarget 成功 / 漂移拒绝且不变 / 个人域拒绝 / 缺参拒绝 / 大小写不敏感比较交换）+ `tests/http-realms.test.ts` **7 例**（disconnect 后 `/api/domains` 不再列出、未知 404、无 token 401、retarget 成功并反映、漂移 409 且租户不变、个人域 400、缺参 400，均验审计落点）。全量 **726 绿 / 76 文件**、typecheck/build exit 0。
+- **未做**：CLI 面同样没有这两个操作（MCP 暴露侧 actor 判定仍归 #18，disconnect/retarget 是否要在 MCP server 上暴露待 #18 一并定）；启动期的"显式声明迁移"识别未做（见上）。
 
 ### #18 MCP 暴露侧的主体（actor）判定
 - **缺口**：`createRealmMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `realmIds`"，handler 内部没有主体概念——因此 design-realm §7.2 的租户/域规则在 **MCP 读取路径（`resources/read` 与 v0.10 新增的 `tools/call`）上没有执行点**，只在 `realmSource`（内核代取）与访问探针上生效。
