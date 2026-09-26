@@ -67,13 +67,14 @@ describe('T-C resolveDecisionConfig (process env wiring)', () => {
     expect(cfg.allowUncalibratedJudge).toBe(true);
   });
 
-  it('ignores a non-numeric threshold', () => {
-    const cfg = resolveDecisionConfig({
-      ZEUS_DECISION_BASE_URL: 'http://jev.test/v1',
-      ZEUS_DECISION_API_KEY: 'k',
-      ZEUS_JUDGE_THRESHOLD: 'high',
-    });
-    expect(cfg.judgeThreshold).toBeUndefined();
+  it('rejects a non-numeric threshold instead of silently ignoring it', () => {
+    expect(() =>
+      resolveDecisionConfig({
+        ZEUS_DECISION_BASE_URL: 'http://jev.test/v1',
+        ZEUS_DECISION_API_KEY: 'k',
+        ZEUS_JUDGE_THRESHOLD: 'high',
+      }),
+    ).toThrow(/ZEUS_JUDGE_THRESHOLD/);
   });
 });
 

@@ -127,11 +127,12 @@
 - **触发条件**：① Zeus↔loom 真机联调时 loom 需要**反向**派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent 调用 Zeus 的聚合能力；③ 出现"多 Zeus 实例协作"的需求。
 - **建议做法（决定后）**：发一张 Zeus 自己的 agent card（形状与 fealty 与我们要求执行 Agent 的一致，吃自己的狗粮），入站 `tasks/send` 落到 H2 的意图面并复用同一根审计事件流。
 
-### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致
-- **缺口**：`src/state/boot.ts:537-539` 对非数字阈值走 `Number.isFinite` 判断，不通过就**静默不写 config**、退回内置默认；而 E1.5 的并发/队列参数（`ZEUS_MAX_CONCURRENT_BRANCHES` 等）是**非法值直接拒启**。同一个"操作员把 env 写错"的失效模式，进程给两种答案。
-- **为什么不顺手统一**：`tests/boot-decision.test.ts:70-76` 已把"忽略非数字阈值"钉成契约（用例名就叫 `ignores a non-numeric threshold`）。统一成拒启=**推翻一条已锁测试**，这是口径决定而不是 bug 修复，等决定。
-- **现状处置**：`docs/deployment.md:35` 已在该变量的表行里明写这条不一致并指向评审 §C-8，操作员看得见。
-- **触发条件**：① 决定"boot 参数一律 fail-loud"并批量改（含此条与所有现存例外）；② judge 上真机、阈值成为必须掐准的旋钮（此时配错的代价从"不敏感"变成"事故"）。
+### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致 ✅ 已销项（2026-09-26）
+- **原缺口**：`src/state/boot.ts` 对非数字阈值走 `Number.isFinite` 判断，不通过就**静默不写 config**、退回内置默认；而 E1.5 的并发/队列参数（`ZEUS_MAX_CONCURRENT_BRANCHES` 等）是**非法值直接拒启**。同一类"操作员把 env 写错"的失效，进程给两种答案。
+- **决定（fail-loud）**：统一为拒启。新增 `envNumber`（与 `envInteger` 同形，允许小数以容纳 0..1 阈值），`resolveDecisionConfig` 对非数字/负数阈值抛 `KernelBootError`——与并发参数同一条 fail-loud 路径，启动即 loud 失败，不再静默退回默认。
+- **推翻的契约**：`tests/boot-decision.test.ts` 原 `ignores a non-numeric threshold` 把这个静默行为钉成契约；改为 `rejects a non-numeric threshold ... toThrow(/ZEUS_JUDGE_THRESHOLD/)`。这是口径拍板不是 bug 修复，故单独成 commit、与代码同批。
+- **同步**：`docs/deployment.md` 该变量表行的 ⚠️ 不一致标注改为"非数字值拒启（与其余 boot 参数一致）"；`docs/design-naming-migration.md` 引用的"已知失效模式"改为已销项口吻；评审 §C-8 描述已不再成立（但保留为历史记录）。typecheck/test 通过。
+- **未做**：尚未把"boot 参数一律 fail-loud"扩成一条覆盖所有现存例外的总原则文档；本批只统一了阈值这一处（其余参数本就已拒启，无例外要改）。
 
 ### #21 历史标识符改名（代码 / 环境变量 / 协议字段 / 数据格式）
 - **现状**：对外文档已全量改用工程术语，但代码与环境变量里仍是历史名（`vassal` / `fealty` / `realm` / `vault` / `kernel` / `commission` / `driver-*` 审计取值 / `ZEUS_VASSAL_SEEDS` / `x-zeus-fealty`）。**方案、代价四档与逐档机制已写全**：见 [design-naming-migration.md](design-naming-migration.md)。
