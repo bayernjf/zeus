@@ -18,7 +18,8 @@
 - **状态文件有版本闸门，且是硬拒**：`src/state/kernel-state.ts:38` `KERNEL_STATE_VERSION = 1`；`:178-179` 对 `version !== 1` 直接 `throw KernelStateError('unsupported kernel state version')`。**没有 v0→v1 的迁移分支可参照**，因为还没需要过。
 - **备份格式已经做过一次同类迁移，可当模板**：`src/vault/types.ts:9` `VAULT_VERSION = 2`，v1 的图**读入时归一化、写出不兼容**。这条先例证明"双读单写"在本仓库是可实现的，但也说明它的成本是一整轮的兼容代码 + 专门测试。
 - **协议版本协商的容器已存在**：`src/a2a/types.ts:5` `SUPPORTED_FEALTY_VERSIONS = ['1']` 是**数组**，注册时对不在数组内的版本 fail-loud。也就是说"同时接受两代声明形态"在架构上是现成的，不需要新发明。
-- **签名快照没有任何版本字段**：`SignedRosterSnapshot = { snapshot, attestations, seal }`（`src/registry/signing.ts:164-168`），`RosterSnapshot = { generatedAt, scope, entries }`（`src/registry/roster.ts:40-44`），全仓库 `signing.ts` 里 grep `version` **零命中**。含义：一旦 T2 改了载荷键，**离线验签方无法区分新旧形状**，也就无法安全灰度。这条与改名无关，本身就是可验证性缺口。
+- **签名信封有版本字段，但验签路径从不读它**（本条已修，见下）：`Seal.v = 1` 与 `Attestation.v = 1` 由 `ENVELOPE_VERSION`（`src/registry/signing.ts:125`，写入点 `:192`/`:250`）产出，但 `verifySignedSnapshot` 没有任何一处检查它。**我在 v0.1 里把这条写成"签名快照没有任何版本字段"，那是不准确的**：字段在，只是装饰性的——与"只写不读的权限清单"是同一种失效。真正缺形状标记的是**载荷**：`RosterSnapshot = { generatedAt, scope, entries }`（`src/registry/roster.ts:40-44`），而改名要动的恰好是载荷。
+  - **✅ 同日已修（deferred #22 销项）**：载荷加 `schemaVersion`（落在 `seal.snapshotDigest` 覆盖的对象内，因此不必改签名输入就被签名保护），并把 `schemaVersion` / `seal.v` / `attestation.v` 三道版本闸提到验签最前面（在任何密码学之前，拒绝原因点名是哪道闸）；缺 `schemaVersion` 的旧件读作 1，仍可验签。**本文件 §3–§5 的 T2 论述以修复后的状态为前提**：将来真要改载荷，才有按 `schemaVersion` 双读的安全灰度可能。
 - **审计取值里带历史名的**：`vassal-revoked`、`driver-grant-issued`、`driver-resolved`、`driver-write`、`realm-write`、`realm-type-mismatch`、`commission-granted|waived|withdrawn|refused`、`commissioned`。这些是**已经写进用户磁盘 JSONL 的历史记录**，改词汇等于让历史与现在说两种话；`GET /api/audit?decision=...` 的过滤器也会跟着分叉。
 - **`Position.vassal` 出现在 HTTP 响应里**（`src/orchestrator/types.ts:28-33`），改名即改响应结构，属于 T4。（注意：名册投影 `RosterEntry` 用的是 `name`，**没有** `vassal` 字段，所以名册响应不在此列。）
 
@@ -58,14 +59,14 @@
 
 ## 5. 建议：改到哪一层为止
 
-**推荐：T1 选择性做 + 补签名 version 字段；T2/T3/T4 不做。**
+**推荐：T1 选择性做；T2/T3/T4 不做。**（同日前置项已完成：载荷 `schemaVersion` + 验签版本闸，见 §2 与 deferred #22。）
 
 理由，按分量排：
 
 1. **改名买不到任何能力**。改名的全部收益是"外部读者不再把 `vault` 读成 HashiCorp Vault、把 `driver` 读成设备驱动"——这个收益**已经由 README 的标识符说明 + terminology 的判定表拿到**，零风险。继续往 T2–T4 走，是在为一个已经兑现的收益再付一次不可逆的成本。
 2. **它要烧掉的正是这个产品的卖点**。Zeus 的立身之处是"你的数据丢不了、找得回、签名能长期验证"。T2 动的恰好是备份格式、状态格式与签名载荷；T4 动的恰好是已经部署在对端的协议。用可信性资产去换命名整洁，方向是反的。
 3. **T4 会让"标准客户端"这条承诺变复杂**。现在只有一条协议代次；双读之后，验收脚本、离线验签客户端、对端文档都要讨论"哪一代"。这是长期的复杂度，不是一次性的。
-4. **真正该修的缺口顺手就能修**：签名快照**没有 version 字段**（§2）。它不依赖改名就有价值——补上它，将来无论谁想改载荷，才有安全灰度的可能。这件事应当单独立项先做。
+4. **真正该修的缺口已修**：载荷缺形状标记（§2）已于同日补上 `schemaVersion` 并把三道版本闸接进验签（deferred #22 销项）。也就是说**"为了能安全改名而先做的准备"已经完成，而改名本身仍然没有排到**——这正好说明改名的收益不在功能面上，它在别处兑不了现。
 
 若仍要继续推进 T1，建议**只挑"名字真的误导"的**（`commission`、`noul`、`driver-*` 审计取值不在此列，它们属 T2），而不是把 `vassal`/`realm` 全库铲平——后两者一旦牵进 T2 的载荷与键名，收益/成本比立刻转负。
 

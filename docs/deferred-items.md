@@ -4,7 +4,7 @@
 
 ## 架构决策待定（非缓做，但需先决定）
 
-（#1 执行 Agent协议形态已决定：A2A 超集，2026-09-21，见 [design-vassal-protocol.md](design-vassal-protocol.md)——已销项）
+（#1 执行 Agent 协议形态已决定：A2A 超集，2026-09-21，见 [design-vassal-protocol.md](design-vassal-protocol.md)——已销项）
 
 ## 缓做项
 
@@ -35,16 +35,16 @@
 ### #7 fealty 签名链
 - Agent Card / fealty 的发布与吊销是否需要签名链，防止伪造名册条目。
 - **触发条件**：bayjf 名册对外公开前。
-- **进展（2026-09-24 更新）**：设计定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 执行 Agent自签交叉背书）。**v1 纯函数已库内实现**（`src/registry/signing.ts`，`tests/signing.test.ts` 24 项：覆盖设计稿 §8.1 八条验收 + 签名链 v1.1 两态封签 5 项）。**R1 已完整接线**：H1 `GET /api/roster/public` 与 bearer `GET /api/roster`（internal，含 revoked 行）均实时投影并 sealSnapshot 封签、离线可验——签名链 **v1.1（2026-09-24）** 把 attestation 扩为 `active|revoked` 两态，revoked attestation 证永久吊销事实、不带硬过期（快照新鲜度仍由 seal maxAge 绑定），验签要求状态与条目精确匹配（防提升/掩盖）、缺 source 或状态矛盾 fail-loud（public 封签 commit 3190a11）；**生产密钥已硬化**：`src/http/rsk.ts` 支持内联/文件注入，production 无密钥拒启（commit 4d99f43），生成脚本 `scripts/gen-rsk-key.mjs`。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 生产 RSK 托管/轮换与公钥发布的部署动作**，触发条件「bayjf 名册对外公开前」未到点。
+- **进展（2026-09-24 更新）**：设计定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 执行 Agent 自签交叉背书）。**v1 纯函数已库内实现**（`src/registry/signing.ts`，`tests/signing.test.ts` 24 项：覆盖设计稿 §8.1 八条验收 + 签名链 v1.1 两态封签 5 项）。**R1 已完整接线**：H1 `GET /api/roster/public` 与 bearer `GET /api/roster`（internal，含 revoked 行）均实时投影并 sealSnapshot 封签、离线可验——签名链 **v1.1（2026-09-24）** 把 attestation 扩为 `active|revoked` 两态，revoked attestation 证永久吊销事实、不带硬过期（快照新鲜度仍由 seal maxAge 绑定），验签要求状态与条目精确匹配（防提升/掩盖）、缺 source 或状态矛盾 fail-loud（public 封签 commit 3190a11）；**生产密钥已硬化**：`src/http/rsk.ts` 支持内联/文件注入，production 无密钥拒启（commit 4d99f43），生成脚本 `scripts/gen-rsk-key.mjs`。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 生产 RSK 托管/轮换与公钥发布的部署动作**，触发条件「bayjf 名册对外公开前」未到点。
 
 ### #8 结果回传成本口径
-- `x-zeus-report.cost` 的单位与结算口径，跨执行 Agent可比性。
+- `x-zeus-report.cost` 的单位与结算口径，跨执行 Agent 可比性。
 - **触发条件**：企业版计费立项时（联动 #4）。
 
-### #9 执行 Agent背压降级顺序
-- 执行 Agent饱和时 Zeus 任务队列向其他执行 Agent/队列分流的降级顺序。
+### #9 执行 Agent 背压降级顺序
+- 执行 Agent 饱和时 Zeus 任务队列向其他执行 Agent/队列分流的降级顺序。
 - **进展（2026-09-25）**：**闸门本身已落地**——`Orchestrator` 的 `maxConcurrentBranches` + `branchQueueLimit`（进程内在途分支上界、FIFO 等待、满则拒绝并把原因记进分支结果），见 handoff Active work 39 与 tests/orchestrator-backpressure.test.ts；`GET /api/metrics` 的 `queueDepth` 从此是真实值。**本条仍未销项**：剩下的问题是"该把溢出分流给谁"——拒绝顺序 / 按可靠度或延迟重排候选 / 有界排队 vs 立即降级的策略选择，需要真实执行 Agent 的行为数据才能定，凭空拍一个顺序没有依据。
-- **触发条件**：≥3 个执行 Agent在线压测（同一台机器上的 mock 不算：mock 的延迟分布与失败模式是编的，只会把一个猜测变成锁定的猜测）。
+- **触发条件**：≥3 个执行 Agent 在线压测（同一台机器上的 mock 不算：mock 的延迟分布与失败模式是编的，只会把一个猜测变成锁定的猜测）。
 
 ### #10 Realm 检索后端升级（倒排 / 向量）
 - P0 检索为纯文件系统扫描（design-realm.md §6.2），后端接口可替换；倒排索引或向量检索的立项条件。
@@ -63,7 +63,7 @@
 - **触发条件**：决定结束对 Node 20 的验证时（例如本地 shell 升到 22+），或对外发布为可安装依赖之前。届时一并定：`engines.node` 写什么、矩阵换成哪两档、CI 注解是否要求 runner 版本固定。
 
 ### #13 内核状态文件纳入备份清单（非 Realm 条目源）✅ 已销项（2026-09-25）
-- **原缺口**：`ZEUS_STATE_FILE` 里现在有执行 Agent名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。备份清单却盖不到它：唯一条目源是 `inventoryFromRealm`。**"备份是第一公民"当时只覆盖 Realm 目录**，用户最容易丢的恰恰是这份。
+- **原缺口**：`ZEUS_STATE_FILE` 里现在有执行 Agent 名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。备份清单却盖不到它：唯一条目源是 `inventoryFromRealm`。**"备份是第一公民"当时只覆盖 Realm 目录**，用户最容易丢的恰恰是这份。
 - **触发条件回顾**：写的是①真实丢失事故/灾备演练要求 ②E8.4 传承立项 ③下次 `VAULT_VERSION` 升版顺手并入。2026-09-25 决定**不等触发条件**：这一条是"设计哲学第 1 条尚未执行"的登记，而不是一个可选增强；且当年列出的三个阻塞点在 E3.6/E6.4 之后已经各自有了落点（`MapSource` 需要 `tenant`，而 `tenant` 已经是 Realm 的一等事实）。
 - **销项结论**（设计见 [design-vault.md](design-vault.md) v0.2）：
   1. `TreasureMap.source: MapSource`（`{kind:'realm',…,tenant?}` | `{kind:'files',label,root,files[]}`），`VAULT_VERSION` 1→2，**v1 图读入归一化、写出不兼容**；
@@ -95,13 +95,13 @@
 
 ### #18 MCP 暴露侧的主体（actor）判定
 - **缺口**：`createRealmMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `realmIds`"，handler 内部没有主体概念——因此 design-realm §7.2 的租户/域规则在 **MCP 读取路径（`resources/read` 与 v0.10 新增的 `tools/call`）上没有执行点**，只在 `realmSource`（内核代取）与访问探针上生效。
-- **为什么不在本批一起做**：接一个假 actor 进去只能证明"这段代码能被调用"，证不了真实执行 Agent会带什么身份形态（会话级？条目级？），那是猜。
-- **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-realm 执行 Agent出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-realm:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑；同时定 `tools/call` 是否与 `resources/read` 共用同一份 realmId 白名单。
+- **为什么不在本批一起做**：接一个假 actor 进去只能证明"这段代码能被调用"，证不了真实执行 Agent 会带什么身份形态（会话级？条目级？），那是猜。
+- **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-realm 执行 Agent 出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-realm:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑；同时定 `tools/call` 是否与 `resources/read` 共用同一份 realmId 白名单。
 
 ### #19 入站 A2A 面（外部 Agent 调不进 Zeus）
 - **缺口**：Zeus 只有**出站** A2A（拉卡片、`tasks/send`、SSE 回读、`tasks/cancel`）。`src/http` 里既没有 `/.well-known/agent-card.json`，也没有任何 `tasks/*` 路由——即**别的 Agent 无法把任务派给 Zeus**，也不存在一张可供别人校验的 Zeus 卡片。v0.9 §A 判过这条（"没有入站面"），但**当时没进本清单**，于是 2026-09-25 复核才发现它是"评审说过、没人接"的失物。
 - **为什么仍然缓做**：入站面一开，就要同时回答"谁能派给我""派进来的东西落在哪个域""谁为结果负责"——这三问的答案取决于第一个真实的上游调用者（loom 或 bayjf），现在做只会得到一个没人用的空壳。且它不在 MVP 的核心叙事里：产品核心是"一个意图扇出多 Agent 并聚合"，出站已覆盖。
-- **触发条件**：① Zeus↔loom 真机联调时 loom 需要**反向**派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent调用 Zeus 的聚合能力；③ 出现"多 Zeus 实例协作"的需求。
+- **触发条件**：① Zeus↔loom 真机联调时 loom 需要**反向**派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent 调用 Zeus 的聚合能力；③ 出现"多 Zeus 实例协作"的需求。
 - **建议做法（决定后）**：发一张 Zeus 自己的 agent card（形状与 fealty 与我们要求执行 Agent 的一致，吃自己的狗粮），入站 `tasks/send` 落到 H2 的意图面并复用同一根审计事件流。
 
 ### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致
@@ -116,8 +116,8 @@
 - **触发条件**：① 某个历史名字**实际挡住了功能**（例如新人/对端因名字误解而接错），而不是"看起来不专业"；② 出现必须新增协议代次的真实需求，此时顺路把 T4 的双读一起做；③ #22 的 version 字段落地后，若仍有改载荷的需求。
 - **硬约束（若开工）**：一个 commit 只动一档；T2 必须双读单写且提升版本号 + 实测"改前备份能在改后恢复"；T4 必须先服务端双读、**在对端确认切换前不得移除 v1 路径**。
 
-### #22 签名名册没有 schema version 字段
-- **缺口**：`SignedRosterSnapshot = { snapshot, attestations, seal }`（`src/registry/signing.ts:164-168`）、`RosterSnapshot = { generatedAt, scope, entries }`（`src/registry/roster.ts:40-44`），`signing.ts` 全文 grep `version` **零命中**。也就是说**离线验签方无法判断自己拿到的是哪一代载荷**。与改名无关，它本身就是一个可验证性缺口：将来任何载荷变化都没有安全灰度的可能，外部消费者也无法就形状做断言。
-- **为什么单列**：它属于 #21 的 T2（改签名载荷即改被签名的字节），但**与 #21 的结论解耦**——加字段是向后兼容的增量（旧件不含该字段仍可自洽验签，因为验签是对收到的对象做规范化），所以可以不等 #21 开工就先做。
-- **触发条件**：① 任何一次要动名册载荷键的需求出现之前，**必须先做这条**；② bayjf 侧或其它离线验签方要求能区分形状；③ 下一次签名链版本演进时顺路带上。
-- **建议做法（拍板后）**：在 `seal` 里加 `schemaVersion`（或 `snapshot.version`，取一，避免两处真相），验签对"缺字段"按 v1 处理并写审计；补一条测试断言"旧形状仍可验签"。
+### #22 签名名册没有 schema version 字段 ✅ 已销项（2026-09-25）
+- **原缺口**：验签方无法判断自己拿到的是哪一代载荷。**登记时我写的是"没有任何版本字段"，这句不准确**：信封里一直有 `seal.v = 1` 与 `attestation.v = 1`（`ENVELOPE_VERSION`，`signing.ts:125/155/192/250`），只是**验签路径从不检查它**——一个不被校验的版本字段是装饰性的，和 #18 那条"只写不读的清单"同一种失效。而真正会变形状的**载荷**（`RosterSnapshot.entries[]`）确实没有任何形状标记。
+- **做了什么**：① 载荷加 `schemaVersion`（`ROSTER_SCHEMA_VERSION = 1`，两个投影函数写入），位置在 `seal.snapshotDigest` 覆盖的对象内部，所以**不需要改签名输入就被签名保护**；② 验签前置三道版本闸（在任何密码学之前）：未知 `schemaVersion` / 未知 `seal.v` / 未知 `attestation.v` 各自返回点名的拒绝原因；③ **向后兼容**：缺 `schemaVersion` 的旧件读作 1（旧件本就不含该字段，摘要与签名自洽，仍能验）。
+- **验证**：`tests/signing.test.ts` 新增 4 项——两个投影都盖章、**旧形状仍可验签**（正向对照，防止"只在坏输入上测过的校验器永远可能是错的"）、`schemaVersion 99` 在**重新签名过**的情况下仍被拒（即拒绝只可能来自闸门而非摘要/签名）、`seal.v=2`/缺失与 `attestation.v=2` 各自被点名拒绝。全量 **696 绿 / 72 文件**、typecheck/build exit 0；真进程实测 `GET /api/roster` 与 `/api/roster/public` 的信封里 `"schemaVersion":1` 且 `seal.v` 不变。
+- **与 #21 的关系**：这条做完后，**将来若真要改载荷，才有安全灰度的可能**（双读按 `schemaVersion` 分流）。#21 的结论不变：仍不建议改 T2/T3/T4。
