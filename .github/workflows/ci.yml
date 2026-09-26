@@ -9,7 +9,10 @@ on:
 jobs:
   verify:
     name: typecheck / build / test (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest starts pointing at Ubuntu 26.04 on 2026-10-19
+    # (actions/runner-images#14748), which would swap the build machine without
+    # anyone approving it. Move to a newer image deliberately, and re-verify.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
