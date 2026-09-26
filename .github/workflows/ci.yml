@@ -44,6 +44,11 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # deferred #25: the core chain as a re-runnable asset rather than a review
+      # session's throwaway script. Loopback only, own key and own tokens.
+      - name: Core-chain smoke on the compiled artifact
+        run: npm run smoke:core
+
   # deferred #24: wall-clock dependency gate. Runs the full suite under a
   # simulated future clock (scripts/clock-skew-setup.mjs shifts the JS clock +2y
   # via a vitest setup file, not `sudo date -s` — runners deny CAP_SYS_TIME and an
