@@ -9,11 +9,17 @@ on:
 jobs:
   verify:
     name: typecheck / build / test (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest starts pointing at Ubuntu 26.04 on 2026-10-19
+    # (actions/runner-images#14748), which would swap the build machine without
+    # anyone approving it. Move to a newer image deliberately, and re-verify.
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        node-version: [20.x, 22.x]
+        # Matches package.json "engines" (>=22.0.0) and the Docker base image
+        # (node:22-slim). Node 20 stopped receiving releases in 2026-03; 26 is
+        # still on the current line (not LTS), so it is not in the matrix yet.
+        node-version: [22.x, 24.x]
     steps:
       - uses: actions/checkout@v7
 

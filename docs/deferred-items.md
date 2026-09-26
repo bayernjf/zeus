@@ -60,9 +60,24 @@
 - 原议题：首次真机 CI（run 36024156638）注解提示 `actions/checkout@v4` / `actions/setup-node@v4` 仍 target Node 20、被强制跑在 Node 24；另有 `ubuntu-latest` 将于 2026-10-19 迁 Ubuntu 26。
 - **销项结论**：两者升到当前 major `@v7`（查过 release notes：setup-node v5/v6 的破坏性变更集中在自动缓存与非 npm 管理器，本仓库显式 `cache: npm`；checkout v7 只阻断 `pull_request_target`/`workflow_run` 的 fork 检出，本 workflow 用 push/pull_request）。**测试矩阵保持 20.x/22.x**：本机开发 shell 实测是 Node 20.20.2，此时删掉 20 会砍掉唯一与本地一致的覆盖；矩阵该不该换成 22/24、要不要声明 `engines`，留作下面 #15 的立项问题。
 
-### #15 支持矩阵与 engines 声明
-- CI 现在测 20.x/22.x，但 Node 20 上游已 EOL（2026-04），仓库 `package.json` **没有 `engines`**，Dockerfile 跑 node:22-slim，本机 dev 在 20.20.2。三者不一致，且没有任何地方写明"这个库支持哪些 Node"。
-- **触发条件**：决定结束对 Node 20 的验证时（例如本地 shell 升到 22+），或对外发布为可安装依赖之前。届时一并定：`engines.node` 写什么、矩阵换成哪两档、CI 注解是否要求 runner 版本固定。
+### #15 支持矩阵与 engines 声明 ✅ 已销项（2026-09-26，选 B）
+- **决定（选项 B：声明与生产对齐）**：`package.json` 写 `"engines": { "node": ">=22.0.0" }`；新增 **`.npmrc`**（`engine-strict=true`，带注释说明"不加这条时 engines 只是警告"）让声明可执行；新增 **`.nvmrc`**（`22`）让"该用哪个版本"机器可读；CI 矩阵由 `[20.x, 22.x]` 换为 **`[22.x, 24.x]`**；Docker 保持 `node:22-slim`（与 22 档同线）。**代价已接受**：本机 shell 仍在 **20.20.2**，此后 `npm ci` / `npm install` 会以 **EBADENGINE 硬失败**（实测），切到 22 即恢复（`fnm use 22`，本机已装 22.23.1）；已装依赖下 `npm run` 不受影响（Node 20 上 `npm run typecheck` 仍 exit 0，实测）。Node 20 不再被声明支持——它自 **2026-03-24** 起不再有任何发布。
+- **改后验证**：`npm ci --dry-run` 在 **Node 20 上 EBADENGINE 硬失败**、在 **22.23.1 与 24.20.0 上无任何 engine 报错**（即 `engine-strict` 下传递依赖也全部兼容）；YAML 解析得 `runs-on=ubuntu-24.04`、`matrix=["22.x","24.x"]`；三档 704 绿与 22/24 真进程冒烟见下面的"进展"（拍板依据，非本批重跑）。
+- **不在本条内**：v26 何时进矩阵（当前线 `lts:false`，等进 LTS 再考虑替换 22）；runner 镜像归 #16（同日已销项）。
+- **原缺口（销项前）**：CI 测 20.x/22.x，但 Node 20 上游已 EOL（2026-04），仓库 `package.json` **没有 `engines`**，Dockerfile 跑 node:22-slim，本机 dev 在 20.20.2——四处不一致，且没有任何地方写明"这个库支持哪些 Node"。
+- **触发条件（回顾）**：写的是"决定结束对 Node 20 的验证时（例如本地 shell 升到 22+）"。**本批是不等触发条件就做的**：本地 shell 仍是 20.20.2，但拿到的实测（下面"进展"）把"该不该继续声明支持 20"变成了一个有数据的问题——一个自 2026-03-24 起不再有任何发布的运行时，继续在 CI 里给它发通行证是在凭空承担安全口径。
+- **进展（2026-09-26 实测，本批拍板依据）**：
+  - **现状四处不一致（逐个实测）**：本机 shell `node -v` = **20.20.2**；CI 矩阵 **20.x / 22.x**；Dockerfile **node:22-slim**；`package.json` **无 `engines`**，且无 `.nvmrc` / `.npmrc`（即"该用哪个版本"机器不可读）。
+  - **上游（实测 `nodejs.org/dist/index.json`）**：**v20 最后一次发布是 v20.20.2 / 2026-03-24**，其后半年零发布（与上面记的 2026-04 EOL 一致）；v22 最新 **v22.23.3（2026-09-23）**、v24 最新 **v24.21.0（2026-09-07）**，两条线仍在发；**v26 已在发**（v26.10.0 / 2026-09-21，`lts: false`＝当前线，未进 LTS）。
+  - **依赖面（实测 `node_modules` 各包 `engines`）**：fastify 5.12.5 **没有** engines 字段（npm 不会替我们拦任何东西）；vitest 3.2.7 `^18.0.0 || ^20.0.0 || >=22.0.0`；typescript 5.9.3 `>=14.17`；`@types/node` 22.20.4（**类型基线实际是 22**，与矩阵里的 20 不一致）。
+  - **三档实测（本机 fnm，按 CI 顺序 typecheck → build → test）**：**20.20.2 / 22.23.1 / 24.20.0 三档全部 704 passed / 73 文件，typecheck 与 build exit 0**；另在 **22 与 24 上各跑一次真进程冒烟**（`dist/http/serve.js` 起服务，`/healthz` 200、`GET /api/state` 200）。结论：**"代码不支持 24"这个担心不存在**——本条是纯粹的"我们声明什么、测什么"，不是兼容性工程。
+  - **下限不是随手挑的**：`docs/deployment.md` 给裸机用户的 `node --env-file=` 需要 **≥20.6**，所以任何写法的下限都不该低于 20.6。
+  - **`engines` 默认只是装饰（本条最该拍的一道）**：实测把 `engines.node` 写成 `>=22.0.0` 后在 Node 20 上 `npm ci --dry-run` 只给 **warn EBADENGINE 且 exit 0**；加上 `.npmrc` 的 `engine-strict=true` 后同一命令**硬失败 EBADENGINE**（Node 22 上无 engine 报错）。与"只写不读的清单"同一种失效，按设计约束第 2 条（每个概念必须可执行）必须连带决定。
+  - **三个选项（代价已标明）**：
+    - **A 只声明、不换挡**：矩阵仍 20.x/22.x，`engines.node: ">=20.6.0"`（+ 可选 `engine-strict`）。代价：声明支持一个已停止发布的运行时，安全口径由我们自己承担。
+    - **B 声明与生产对齐（推荐）**：`engines.node: ">=22.0.0"`，矩阵换 **22.x / 24.x**（与 Docker 的 22 同线、并 coverage 到 24），`.nvmrc` 写 22 让"该用哪个版本"机器可读，`engine-strict=true` 让声明可执行。代价：**本机 shell 现在是 20.20.2，需切成 22**（fnm 已装 22.23.1；不切则 `npm ci` 直接失败——这正是它可执行的证据）。
+    - **C 全覆盖**：矩阵 **20.x / 22.x / 24.x**，`engines.node: ">=20.6.0"`。代价：CI job 由 2 变 3（时间约 ×1.5），且继续给已停止发布的 20 发通行证。
+  - **不在本条内**：v26 何时进矩阵——等它进 LTS 再考虑替换 22，现在不加（当前线 `lts: false`）。runner 镜像归 **#16**（已于同日销项，钉 `ubuntu-24.04`），两条互不重叠。
 
 ### #13 内核状态文件纳入备份清单（非 Realm 条目源）✅ 已销项（2026-09-25）
 - **原缺口**：`ZEUS_STATE_FILE` 里现在有执行 Agent 名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。备份清单却盖不到它：唯一条目源是 `inventoryFromRealm`。**"备份是第一公民"当时只覆盖 Realm 目录**，用户最容易丢的恰恰是这份。
@@ -84,8 +99,9 @@
 - **销项结论**（设计见 [design-realm.md](design-realm.md) §7.7）：`issueDriverWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `registry/signing.ts`）、`verifyDriverWriteGrant` 改 async 并按 形状→realm 绑定→验签→有效期 判定（`unsigned`/`unknown-key`/`bad-signature`/`no-expiry`）、`DriverGrantLedger` 在落盘前消费 nonce 且随内核快照持久化（`writeGrantNonces`）、`FsRealmStoreOptions.now` 注入时钟。操作者面 `POST /api/realm/write-grants`、日记写凭证透传（缺授权 403）、审计事件流 `driver-grant-issued`/`realm-write`、`GET /api/state` 报 `driverGrants.authority`。
 - **不因本条销项而消失**：**MCP `tools/write` 暴露仍未做**（E3.4/E3.5 剩余半边），其 actor 判定归 **#18**；单 owner 部署下签发方=验签方，因此这条链目前证明的是"凭证出自签发路径"，不是"第三方操作者签的字"（外部操作者只需把公钥加进 `acceptedKeyIds`，判定与账本都不用动）。
 
-### #16 CI runner 镜像钉版（ubuntu-latest 于 2026-10-19 自动迁 Ubuntu 26）
-- **事实**：`.github/workflows/ci.yml` 的 `runs-on` 是浮动标签 `ubuntu-latest`。2026-09-25 的每一次 run（36024156638 / 36045209815 / 36061395015）都带同一条注解：该标签将于 **2026-10-19** 起指向 Ubuntu 26.04（actions/runner-images#14748）。迁移不需要我们改任何代码，但它会**在没人批准的情况下换掉整台构建机**——系统库、预装 Node、npm 与工具链版本一起变。
+### #16 CI runner 镜像钉版 ✅ 已销项（2026-09-26）
+- **决定**：钉 `ubuntu-24.04`，不接受自动迁移。`.github/workflows/ci.yml:12` 的 `runs-on` 由浮动标签 `ubuntu-latest` 改为 `ubuntu-24.04`，并在同一处写下为什么要钉（2026-10-19 起该标签指向 Ubuntu 26.04，actions/runner-images#14748）。**代价已记账**：此后升镜像是手动动作，注释里写明"要有意地换、换完复验"。Node 矩阵（20.x/22.x）**不在本条范围内**，仍归 #15。
+- **事实（销项前）**：`.github/workflows/ci.yml` 的 `runs-on` 是浮动标签 `ubuntu-latest`。2026-09-25 的每一次 run（36024156638 / 36045209815 / 36061395015）都带同一条注解：该标签将于 **2026-10-19** 起指向 Ubuntu 26.04（actions/runner-images#14748）。迁移不需要我们改任何代码，但它会**在没人批准的情况下换掉整台构建机**——系统库、预装 Node、npm 与工具链版本一起变。
 - **为什么单列（不并进 #12）**：#12 管的是"action 自己跑在哪个 Node 运行时上"，已随 `@v7` 升级销项；runner 的 **OS 层**从来没人决定过。本项目刚拿到连续三次云端 CI 结论，此时最大的非代码回归面就是这条浮动标签。
 - **触发条件**：① 2026-10-19 之前做一次决定——钉 `ubuntu-24.04`（换确定性，代价是要记得升），或接受迁移并在切换后立刻复验一次全绿；② 任何一次 run 出现与本仓库代码无关的环境类失败（apt/预装工具/Node 解析）。
 - **与 #15 的边界**：#15 决定"测哪些 Node"，本条决定"在谁的机器上测"。

@@ -2,6 +2,8 @@
 
 长驻 Node 进程形态：Fastify HTTP 面（`dist/http/serve.js`）装配内核（registry / oversight / dispatcher / orchestrator），启动时从状态文件恢复、优雅退出时落盘。本文覆盖 Docker（推荐）与裸机 systemd 两种形态。
 
+**运行时要求**：Node.js **≥ 22**（`package.json` 的 `engines.node`；仓库 `.npmrc` 开了 `engine-strict`，装依赖时越界即失败）。Docker 镜像为 `node:22-slim`，CI 在 22.x 与 24.x 双档验证；Node 20 自 2026-03-24 起不再有任何发布，**不要**把它用于生产部署。
+
 > 当前边界：执行 Agent 可经 `POST /api/vassals`（H2 内部面，bearer 保护）注册，或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；Realm 不挂 HTTP。
 
 ## 1. 端点
