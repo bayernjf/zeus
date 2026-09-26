@@ -72,7 +72,7 @@
 ```bash
 npm install
 npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest：729 项 / 76 个测试文件（以此命令的输出为准）
+npm test           # vitest：736 项 / 77 个测试文件（以此命令的输出为准）
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
 ```

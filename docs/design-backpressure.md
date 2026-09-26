@@ -1,6 +1,6 @@
 # 设计稿：执行 Agent 背压分流策略（deferred #9）
 
-- 状态：**设计稿 v0.1（2026-09-27）**，机制已定；实现与阈值调参待触发条件（≥3 个真实执行 Agent 在线压测）到位。
+- 状态：**设计稿 v0.2（2026-09-27）**，启用代码已落地；阈值调参待触发条件（≥3 个真实执行 Agent 在线压测）到位。
 - 关联：deferred #9（背压降级顺序）；E1.5 有界扇出（闸门已落地）；design-fan-out.md §7（明确不做的边界）。
 - 本文是策略的单一事实源；handoff 与 PRD 只索引，不复制全文。
 
@@ -39,9 +39,9 @@ E1.5 已落地**闸门**（`Orchestrator` 的 `maxConcurrentBranches` + `branchQ
 
 ### 3.2 缺失（策略启用前必须补的 primitive）
 
-- **per-vassal 实时在途计数**：当前 `metrics.ts:48-54` 只有全局 `inFlight` / `queueDepth`，`perVassal` 只有**历史** `failureRate`/`latency`，没有"此刻该 Agent 在途几条"。无法判定"agent A 是否饱和"。
-  - 启用改动：在 `ConcurrencyMetrics`（或独立 `PerVassalLoad`）增 `inFlightByVassal: Map<vassal, number>`，`branchStarted` +1、`branchEnded` −1；饱和判定 `inFlightByVassal[v] >= cap(v)`。
-  - `cap(v)` 默认 = `maxConcurrentBranches`；可按 skill 或 vassal 覆盖（超出本稿范围，先留扩展点）。
+- **per-vassal 实时在途计数**：**已补（v0.2）**——`ConcurrencyMetrics` 现维护 `inFlightByVassal`（`branchStarted` +1 / `branchEnded` −1），并提供 `inFlightByVassalNow` / `failureRateOf` / `p50MsOf` 访问器与 `MetricsSnapshot.inFlightByVassal`。原 `metrics.ts` 只有全局 `inFlight`/`queueDepth`、`perVassal` 只有**历史** `failureRate`/`latency`；现已补齐"此刻该 Agent 在途几条"，饱和判定 `inFlightByVassal[v] >= cap(v)` 可读。
+  - **关键设计修正（v0.2 实施时自识别）**：`cap(v)` 必须是**独立可配**的 `maxConcurrentPerVassal`，**不能默认继承全局 `maxConcurrentBranches`**。若两者相等，单 Agent 饱和即意味全局槽满、无空闲备选可投，分流永不触发。因此 `maxConcurrentPerVassal` 默认不启用（unset = 无 per-vassal 饱和检查，行为与全局闸门一致），启用时必须设到全局 `maxConcurrentBranches` 之下。
+  - 按 skill / vassal 覆盖 `cap(v)` 仍超出本稿范围，先留扩展点。
 
 ## 4. 策略
 
@@ -110,6 +110,19 @@ score(v) = w_r * (1 - failureRate(v))  -  w_l * (p50Ms(v) / LATENCY_NORMALIZER)
 
 `selectTargets` 必须纯函数（不调 LLM、不碰时钟副作用），与 `aggregate` 同级，便于单测与可恢复。
 
+### 6.1 实现状态（v0.2，2026-09-27 已落地）
+
+| 块 | 位置 | 状态 |
+|---|---|---|
+| `PerVassalLoad` 计数 | `ConcurrencyMetrics`（`src/orchestrator/metrics.ts`） | ✅ `inFlightByVassal` + 访问器 + `MetricsSnapshot.inFlightByVassal`；`branchStarted`+1 / `branchEnded`−1 |
+| 分流纯函数 `selectTargets` | `src/orchestrator/diversion.ts` | ✅ 输入 `skill / explicitVassals / initialNames / candidatePool / load / metrics / health`，输出 `plan`（含 `divertedFrom`）+ `exhausted` 审计；`DEFAULT_DIVERSION_WEIGHTS` 与 `formatExhausted` 同文件 |
+| 选靶处接线 | `orchestrator.ts:120-145` 之后 | ✅ `maxConcurrentPerVassal` 配置下调用 `selectTargets`；显式靶短路（硬钉）；`candidatePool` 取 `activeProviders(skill)`（undefined = pass-through 不分流） |
+| `branch-diverted` 事件 | `src/orchestrator/progress.ts` 联合体 + `onDiverted` 选项 | ✅ 改投时发进度事件并桥审计脊（`AuditDecision` 扩 `branch-diverted`） |
+| 拒绝原因升级 | `orchestrator.ts` 全局 `Semaphore` 拒绝分支 | ✅ 饱和靶无备选被拒时，拒绝原因附 `formatExhausted`（tried 候选状态） |
+| 配置面 | `OrchestratorOptions.maxConcurrentPerVassal` + boot `ProcessConcurrencyConfig` + env `ZEUS_MAX_CONCURRENT_PER_VASSAL` | ✅ 透传；`onDiverted` 接 `auditSink`（decision `branch-diverted`） |
+
+未做（超出本稿范围，仍挂触发条件）：`cap(v)` 按 skill/vassal 覆盖；`healthCheck` 异步探针接入 `selectTargets`（当前用同步 `statusOf` 快照，`unknown` 视作 `unhealthy`，触发条件到位后由实时探针升级精度）。
+
 ## 7. 验证
 
 - **单测**（`tests/orchestrator-diversion.test.ts`）：
@@ -132,3 +145,4 @@ score(v) = w_r * (1 - failureRate(v))  -  w_l * (p50Ms(v) / LATENCY_NORMALIZER)
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v0.1 | 2026-09-27 | 初稿：饱和信号（per-vassal 实时在途计数，待补 primitive）、分流候选集、可靠度/延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计；复用现有 `ConcurrencyMetrics.perVassal` 历史信号与 `SkillGovernor.activeProviders`；实现与阈值调参挂触发条件 ≥3 真实 Agent 压测 |
+| v0.2 | 2026-09-27 | 启用代码落地：`PerVassalLoad` 计入 `ConcurrencyMetrics`、`selectTargets` 纯函数（`diversion.ts`）、编排器选靶后接线、`branch-diverted` 事件+审计脊、全局拒绝附 tried 候选审计、配置面 `maxConcurrentPerVassal`（env `ZEUS_MAX_CONCURRENT_PER_VASSAL`）。**关键修正**：per-vassal 饱和上界必须独立于全局 `maxConcurrentBranches` 配置，否则分流永不触发。7 例单测（tests/orchestrator-diversion.test.ts）。阈值调参仍挂 ≥3 真实 Agent 压测 |
