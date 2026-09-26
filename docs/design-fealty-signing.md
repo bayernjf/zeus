@@ -171,6 +171,17 @@ design-bayjf-roster §7 给了两个候选，本文决定：
 - `VassalRegistry`（register/revoke/listAll/asVassalLookup）、`projectInternalRoster`/`projectPublicRoster`、`RosterSnapshot` 类型：全部保持现状。
 - 投影器不碰密钥、不产生签名，维持纯函数可测。
 
+### 7.1b 操作面入口（2026-09-26 补）
+
+`verifySignedSnapshot` / `attestationMatchesCard` 从 v1 起就只是**库函数**：`scripts/` 里只有验收脚本、压测脚本和 keygen，**没有任何入口能让一个人不写 TypeScript 就验一次名册**。后果具体过：`docs/deployment.md` §6 的上线检查清单里"封签经独立通道验签通过"这一项**长期无法执行**——它要求的能力没有工具。
+
+现在由 `scripts/verify-roster.mjs`（`npm run verify:roster`）补上：`--url` / `--file` 取件、`--key [keyId=]<公钥 PEM>`（可多次，供轮换期同时提供新旧两把）、`--token` 支持内部名册、`--card name=path` 做卡片深比对、`--now` 让新鲜度可复现。两条设计约束：
+
+1. **它调用库里同一套实现**（`dist/registry/signing.js`），不自己重写规范化——否则脚本会"自己验自己的副本"通过，而真实验签方拿到的是另一套判定，这类假通过比没工具更糟。
+2. **深比对必须能失败整个进程**。第一版只把 `MISMATCH` 打到 stdout、退出码仍为 0——一个不影响结论的检查就是装饰。现在任一不匹配、或给了名册里没有的 `--card`，都退 1。
+
+退出码 0/1/2 = 通过 / 被拒（stderr 给原因）/ 参数与 I/O 错；`tests/verify-roster.test.ts` 8 例覆盖正负两向（含"用同钥重签名但改内容"与"`schemaVersion` 99"这两种只有对应闸门能拦的情形）。新鲜度一例专门做成正负对：**同一份产物、同一把钥，只有 `--now` 不同**——窗口内 exit 0，越过 `maxAgeSeconds` 后 exit 1。这条对偶不是装饰：测试 fixture 最初没传 `--now`，脚本便按墙上时钟判定，4 例在封签窗口过期之后必然全红而实现一行未改（2026-09-26 实测）。
+
 ### 7.2 新增的发布管线（概念）
 
 ```

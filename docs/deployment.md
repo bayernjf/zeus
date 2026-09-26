@@ -52,6 +52,14 @@ node scripts/gen-rsk-key.mjs rsk-private.pem
 # 产物：rsk-private.pem（私钥，0600，绝不入库）+ rsk-private.public.pem（公钥，0644，分发给验签方）
 ```
 
+**发布后自检（上线检查清单的一项）**：拿公钥验一次对外名册，确认"离线可验"这条承诺在**这个部署**上成立，而不只是在单测里成立。
+
+```sh
+npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk-private.public.pem
+```
+
+退出码 0 = 通过；1 = 被拒（stderr 给具体原因：载荷版本不认识 / 摘要不绑定 / 签名不符 / 超出 maxAge / 某条目缺背书）；2 = 参数或 I/O 问题。它走的是**库里同一套验签实现**（`dist/registry/signing.js`），所以先 `npm run build`；这也意味着它同时能挡住"脚本自己实现了一遍规范化、结果两边不一致"那种假通过。
+
 **传入方式**：
 
 - 容器 / systemd 推荐挂载文件 + `ZEUS_RSK_KEY_FILE`（不必把多行 PEM 塞进环境）；
@@ -172,7 +180,7 @@ WantedBy=multi-user.target
 - [ ] **E3.6 边界自查**：每个企业域挂载都带 tenant；`GET /api/state` 里 `enterpriseRealms == tenantScopedRealms`（不等 = 有企业域没标边界，它只对操作者可达，但迟早被人当成"已经隔离了"）
 - [ ] **E6.4 授权自查**：`GET /api/domains` 的 `grants` 逐条读过——无 `expiresAt` 的长期授权必须是有意的；再用 `GET /api/domains/access` 抽查两类必答组合：企业主体读个人域（**必拒**）、未授权的个人侧主体读企业域（必拒）；`GET /api/audit?decision=domain-refused` 看有没有人正在撞边界
 - [ ] 端口默认只绑 loopback，TLS 在反向代理终止
-- [ ] `/healthz` 与 `/api/roster/public` 封签经独立通道验签通过
+- [ ] `/healthz` 与 `/api/roster/public` 封签经独立通道验签通过（`npm run verify:roster -- --url <host>/api/roster/public --key <公钥>`；只看 HTTP 200 不算过——200 只说明服务活着，不说明名册是真的）
 - [ ] 真机验收 #6（标准 A2A 客户端打执行 Agent）与 Zeus↔loom 联调已过（见 handoff Active work）
 - [ ] Vault 备份已配置外部调度（cron/systemd timer），并完成一次 restore 演练（见 §7）
 
