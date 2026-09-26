@@ -22,6 +22,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/http/serve.js",
     "vault": "node dist/vault/cli.js",
+    "verify:roster": "node scripts/verify-roster.mjs",
     "bench:capacity": "node scripts/bench-capacity.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
