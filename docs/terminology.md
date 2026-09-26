@@ -77,7 +77,7 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | `commission` | 上岗授权档案：开档、签字、豁免、撤回及其台账 | 代码、状态文件键 `commissions`、审计事件 `commission-granted\|waived\|withdrawn\|refused`、HTTP `/api/org/departments/:id/commissions*` |
 | `mentorship` / `MentorshipLedger` | 能力认证流程：逐项评估通过后，一个 Agent 才被登记为某技能的提供者 | 代码、状态文件键 `mentorships`、HTTP `/api/mentorships*` |
 | `diary` | 把记忆事件按天组织成可读记录（只呈现不臆造，每行锚定事件 ID） | 代码目录 `src/diary/`、HTTP `/api/diary*`、落盘文件 `diary/YYYY-MM-DD.md` |
-| `noul` | 决策后端端口里的**规则型**决策方法（与 `choice` / `score` 并列） | `DecisionBackend` 接口方法名 |
+| `noul` | 决策后端端口的**是非判断**方法：返回概率 + 置信度 + 是否模型标定，与 `choice`（多选一）/ `score`（分档评分）并列 | `DecisionBackend.noul`（`src/decision/types.ts:12`，`NoulResult`）。**不是本项目造的比喻**——沿用所对接决策模型（Jev）的请求字段名 |
 
 ## 破坏性面（改这些名字要付的代价）
 
