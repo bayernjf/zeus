@@ -67,6 +67,8 @@
 
 ## 快速开始
 
+要求 **Node.js ≥ 22**（`package.json` 的 `engines` 声明，`.npmrc` 开了 `engine-strict`，所以装依赖时越界会**直接失败**而不是警告；版本钉在 `.nvmrc`）。CI 与 Docker 基线同为 22 与 24。
+
 ```bash
 npm install
 npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
@@ -252,7 +254,7 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 > 状态以 [handoff.md](handoff.md) 为准；MVP 判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)。
 
 - **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
-- **已验证到什么程度**：704 项测试 / 73 个测试文件，`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 20.x / 22.x 双矩阵每次推送均绿（**本批 704 尚未推送，云端下一次才算**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
+- **已验证到什么程度**：704 项测试 / 73 个测试文件，`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**本批 704 尚未推送，云端下一次才算**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
 - **协议验收**：对生产环境的执行 Agent 跑通过一次纯标准 A2A 客户端验收（卡片发现 + 任务受理）。
 - **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）、MCP 暴露侧的主体身份判定（deferred #18，等真实读取方出现）。
 - **明确不存在的能力**：**入站 A2A 面**（外部 Agent 尚不能把任务派给 Zeus：无对外 Agent Card、无 `tasks/*` 路由），已登记 deferred #19；数据域边界的显式变更操作（下线 / 改租户）无可执行路径（#17）；部分启动参数校验口径不一致，待人工裁定（#20）。

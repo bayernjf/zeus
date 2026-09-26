@@ -60,10 +60,13 @@
 - 原议题：首次真机 CI（run 36024156638）注解提示 `actions/checkout@v4` / `actions/setup-node@v4` 仍 target Node 20、被强制跑在 Node 24；另有 `ubuntu-latest` 将于 2026-10-19 迁 Ubuntu 26。
 - **销项结论**：两者升到当前 major `@v7`（查过 release notes：setup-node v5/v6 的破坏性变更集中在自动缓存与非 npm 管理器，本仓库显式 `cache: npm`；checkout v7 只阻断 `pull_request_target`/`workflow_run` 的 fork 检出，本 workflow 用 push/pull_request）。**测试矩阵保持 20.x/22.x**：本机开发 shell 实测是 Node 20.20.2，此时删掉 20 会砍掉唯一与本地一致的覆盖；矩阵该不该换成 22/24、要不要声明 `engines`，留作下面 #15 的立项问题。
 
-### #15 支持矩阵与 engines 声明
-- CI 现在测 20.x/22.x，但 Node 20 上游已 EOL（2026-04），仓库 `package.json` **没有 `engines`**，Dockerfile 跑 node:22-slim，本机 dev 在 20.20.2。三者不一致，且没有任何地方写明"这个库支持哪些 Node"。
-- **触发条件**：决定结束对 Node 20 的验证时（例如本地 shell 升到 22+），或对外发布为可安装依赖之前。届时一并定：`engines.node` 写什么、矩阵换成哪两档、CI 注解是否要求 runner 版本固定。
-- **进展（2026-09-26，提案已备齐并实测，只等拍板）**：
+### #15 支持矩阵与 engines 声明 ✅ 已销项（2026-09-26，选 B）
+- **决定（选项 B：声明与生产对齐）**：`package.json` 写 `"engines": { "node": ">=22.0.0" }`；新增 **`.npmrc`**（`engine-strict=true`，带注释说明"不加这条时 engines 只是警告"）让声明可执行；新增 **`.nvmrc`**（`22`）让"该用哪个版本"机器可读；CI 矩阵由 `[20.x, 22.x]` 换为 **`[22.x, 24.x]`**；Docker 保持 `node:22-slim`（与 22 档同线）。**代价已接受**：本机 shell 仍在 **20.20.2**，此后 `npm ci` / `npm install` 会以 **EBADENGINE 硬失败**（实测），切到 22 即恢复（`fnm use 22`，本机已装 22.23.1）；已装依赖下 `npm run` 不受影响（Node 20 上 `npm run typecheck` 仍 exit 0，实测）。Node 20 不再被声明支持——它自 **2026-03-24** 起不再有任何发布。
+- **改后验证**：`npm ci --dry-run` 在 **Node 20 上 EBADENGINE 硬失败**、在 **22.23.1 与 24.20.0 上无任何 engine 报错**（即 `engine-strict` 下传递依赖也全部兼容）；YAML 解析得 `runs-on=ubuntu-24.04`、`matrix=["22.x","24.x"]`；三档 704 绿与 22/24 真进程冒烟见下面的"进展"（拍板依据，非本批重跑）。
+- **不在本条内**：v26 何时进矩阵（当前线 `lts:false`，等进 LTS 再考虑替换 22）；runner 镜像归 #16（同日已销项）。
+- **原缺口（销项前）**：CI 测 20.x/22.x，但 Node 20 上游已 EOL（2026-04），仓库 `package.json` **没有 `engines`**，Dockerfile 跑 node:22-slim，本机 dev 在 20.20.2——四处不一致，且没有任何地方写明"这个库支持哪些 Node"。
+- **触发条件（回顾）**：写的是"决定结束对 Node 20 的验证时（例如本地 shell 升到 22+）"。**本批是不等触发条件就做的**：本地 shell 仍是 20.20.2，但拿到的实测（下面"进展"）把"该不该继续声明支持 20"变成了一个有数据的问题——一个自 2026-03-24 起不再有任何发布的运行时，继续在 CI 里给它发通行证是在凭空承担安全口径。
+- **进展（2026-09-26 实测，本批拍板依据）**：
   - **现状四处不一致（逐个实测）**：本机 shell `node -v` = **20.20.2**；CI 矩阵 **20.x / 22.x**；Dockerfile **node:22-slim**；`package.json` **无 `engines`**，且无 `.nvmrc` / `.npmrc`（即"该用哪个版本"机器不可读）。
   - **上游（实测 `nodejs.org/dist/index.json`）**：**v20 最后一次发布是 v20.20.2 / 2026-03-24**，其后半年零发布（与上面记的 2026-04 EOL 一致）；v22 最新 **v22.23.3（2026-09-23）**、v24 最新 **v24.21.0（2026-09-07）**，两条线仍在发；**v26 已在发**（v26.10.0 / 2026-09-21，`lts: false`＝当前线，未进 LTS）。
   - **依赖面（实测 `node_modules` 各包 `engines`）**：fastify 5.12.5 **没有** engines 字段（npm 不会替我们拦任何东西）；vitest 3.2.7 `^18.0.0 || ^20.0.0 || >=22.0.0`；typescript 5.9.3 `>=14.17`；`@types/node` 22.20.4（**类型基线实际是 22**，与矩阵里的 20 不一致）。
