@@ -45,6 +45,15 @@ async function server(fetchImpl: FetchLike): Promise<FastifyInstance> {
   return createHttpServer({ registry, signer, internalToken: TOKEN });
 }
 
+/** Same, but keeps the registry handle so a test can look at what was stored. */
+async function serverWithRegistry(fetchImpl: FetchLike): Promise<{ app: FastifyInstance; registry: VassalRegistry }> {
+  const registry = new VassalRegistry(fetchImpl);
+  const signer = new Ed25519MemorySigner('zeus-rsk-test');
+  return { registry, app: await createHttpServer({ registry, signer, internalToken: TOKEN }) };
+}
+
+const SECRET = 'outbound-credential-9c1f';
+
 describe('G1 vassal onboarding HTTP', () => {
   it('registers a vassal from its card URL and it appears on the internal roster', async () => {
     const app = await server(fetchFor({ [CARD_URL]: card() }));
@@ -60,6 +69,31 @@ describe('G1 vassal onboarding HTTP', () => {
     const app = await server(fetchFor({ [CARD_URL]: card() }));
     const res = await app.inject({ method: 'POST', url: '/api/vassals', payload: { cardUrl: CARD_URL } });
     expect(res.statusCode).toBe(401);
+  });
+
+  // Runtime onboarding has to be able to carry a credential, or an agent behind a
+  // bearer-protected endpoint can only be added by restarting with a seed - and
+  // without this it would be dispatched to with no Authorization at all.
+  it('stores an outbound credential without ever echoing it back', async () => {
+    const { app, registry } = await serverWithRegistry(fetchFor({ [CARD_URL]: card() }));
+    const res = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL, token: SECRET } });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).not.toHaveProperty('token');
+    expect(res.body).not.toContain(SECRET);
+    expect(registry.tokenFor('vassal-1')).toBe(SECRET);
+
+    const roster = await app.inject({ method: 'GET', url: '/api/roster', headers: AUTH });
+    expect(roster.body).not.toContain(SECRET);
+  });
+
+  it('refuses an empty or non-string token instead of reading it as "no credential"', async () => {
+    const { app, registry } = await serverWithRegistry(fetchFor({ [CARD_URL]: card() }));
+    for (const token of ['', '   ', 42]) {
+      const res = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL, token } });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().detail).toMatch(/body.token/);
+    }
+    expect(registry.tokenFor('vassal-1')).toBeUndefined();
   });
 
   it('rejects a missing cardUrl', async () => {
