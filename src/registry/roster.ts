@@ -37,7 +37,22 @@ export type RosterEntry = {
 /** Public view: revoked vassals removed, endpoints and probe details trimmed. */
 export type PublicRosterEntry = Omit<RosterEntry, 'cardUrl' | 'taskUrl' | 'healthDetail'>;
 
+/**
+ * Payload shape marker for a roster snapshot.
+ *
+ * The seal chain has carried an envelope version (`seal.v`) since v1, but that
+ * describes the envelope, not this payload — and nothing enforced it. Renaming
+ * or restructuring a `RosterEntry` field changes the payload only, so the marker
+ * lives here. It sits inside the object that `seal.snapshotDigest` covers, so it
+ * is tamper-evident without any change to what gets signed.
+ *
+ * Artifacts produced before this field existed carry no `schemaVersion`; the
+ * verifier reads that as 1 and rejects anything it does not understand.
+ */
+export const ROSTER_SCHEMA_VERSION = 1 as const;
+
 export type RosterSnapshot<T extends RosterEntry = RosterEntry> = {
+  schemaVersion: number;
   generatedAt: string;
   scope: 'internal' | 'public';
   entries: T[];
@@ -48,6 +63,7 @@ type ListAllEntry = VassalEntry & { status: 'active' | 'revoked' };
 /** Full governance view: every vassal including revoked, with endpoints and probe detail. */
 export function projectInternalRoster(entries: ListAllEntry[], now: () => Date = () => new Date()): RosterSnapshot<RosterEntry> {
   return {
+    schemaVersion: ROSTER_SCHEMA_VERSION,
     generatedAt: now().toISOString(),
     scope: 'internal',
     entries: entries.map(toInternalEntry).sort(byName),
@@ -57,6 +73,7 @@ export function projectInternalRoster(entries: ListAllEntry[], now: () => Date =
 /** bayjf-facing view: active vassals only, internal fields stripped. */
 export function projectPublicRoster(entries: ListAllEntry[], now: () => Date = () => new Date()): RosterSnapshot<PublicRosterEntry> {
   return {
+    schemaVersion: ROSTER_SCHEMA_VERSION,
     generatedAt: now().toISOString(),
     scope: 'public',
     entries: entries

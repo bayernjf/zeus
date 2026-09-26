@@ -1,11 +1,11 @@
 # bayjf 名册改造设计（公开签名目录 Roster）
 
 > 状态：**现行（设计稿 v0.1，2026-09-21）**。实施进度记在 [handoff.md](../handoff.md)，本文只写设计与契约。
-> 上游决策：执行 Agent协议为 A2A 超集，名册新角色见 [design-vassal-protocol.md](design-vassal-protocol.md) §6。
+> 上游决策：执行 Agent 协议为 A2A 超集，名册新角色见 [design-vassal-protocol.md](design-vassal-protocol.md) §6。
 
 ## 0. 一句话
 
-bayjf 从「产品陈列馆」升级为 Zeus 的**公开签名目录**：一份可招募执行 Agent 的名册。名册上的每一个字都派生自执行 Agent自己发布的 Agent Card + fealty，**bayjf 只渲染、不手抄、不背书内容本身**；Zeus 注册中心是唯一聚合点。
+bayjf 从「产品陈列馆」升级为 Zeus 的**公开签名目录**：一份可招募执行 Agent 的名册。名册上的每一个字都派生自执行 Agent 自己发布的 Agent Card + fealty，**bayjf 只渲染、不手抄、不背书内容本身**；Zeus 注册中心是唯一聚合点。
 
 ## 1. 现状与目标
 
@@ -13,14 +13,14 @@ bayjf 从「产品陈列馆」升级为 Zeus 的**公开签名目录**：一份�
 - **目标**：
   1. 对操作者/用户：可招募的干将名册——能力域、承诺、SLA、健康状态，一眼看清"谁能干、谁值得托付数据"。
   2. 对 Zeus：注册中心的只读视图——在册状态、探针结果、吊销痕迹。
-  3. 名册是**公开的契约，不是宣传页**（design-vassal-protocol.md §4.1）：展示的承诺即执行 Agent fealty 的原文摘要，改承诺必须改 card，bayjf 无法替执行 Agent美化。
+  3. 名册是**公开的契约，不是宣传页**（design-vassal-protocol.md §4.1）：展示的承诺即执行 Agent fealty 的原文摘要，改承诺必须改 card，bayjf 无法替执行 Agent 美化。
 
 ## 2. 设计原则
 
 1. **单一事实源在执行 Agent**：条目字段全部来自 Agent Card 与 `x-zeus-fealty`，经 Zeus 注册中心聚合；bayjf 与 Zeus 之间只传**名册快照（snapshot）**，不传可编辑的条目。
-2. **执行 Agent即目录条目**：与"目录即数据库"同构——执行 Agent是事实源，名册是它的只读投影；投影可以缓存、重建、丢弃，随时可从执行 Agent重新派生。
+2. **执行 Agent 即目录条目**：与"目录即数据库"同构——执行 Agent 是事实源，名册是它的只读投影；投影可以缓存、重建、丢弃，随时可从执行 Agent 重新派生。
 3. **内外双视图，公开版最小裁剪**：内部视图用于调度与治理，公开视图裁掉端点、探针细节与已吊销者（见 §4）。
-4. **外客不入榜**：guest（无 fealty）在注册时即被注册中心拒绝，名册天然只含执行 Agent；未来若展示外客，另设"客卿"区，不与执行 Agent混排。
+4. **外客不入榜**：guest（无 fealty）在注册时即被注册中心拒绝，名册天然只含执行 Agent；未来若展示外客，另设"客卿"区，不与执行 Agent 混排。
 5. **公开即验签**：名册对外公开前，fealty 必须有签名链背书（deferred-items #7）；未验签前只对内可见。
 
 ## 3. 名册条目数据模型（字段映射）
@@ -29,8 +29,8 @@ bayjf 从「产品陈列馆」升级为 Zeus 的**公开签名目录**：一份�
 
 | 名册字段 | 来源 | 说明 |
 | --- | --- | --- |
-| `name` | `card.name` | 执行 Agent名，注册主键 |
-| `description` | `card.description` | 一句话自我介绍（执行 Agent自述，非名册编辑） |
+| `name` | `card.name` | 执行 Agent 名，注册主键 |
+| `description` | `card.description` | 一句话自我介绍（执行 Agent 自述，非名册编辑） |
 | `domain` | `fealty.domain` | 能力域，用于路由与分组 |
 | `skills[]` | `card.skills[]`（id/name/description/tags） | 可招募的具体技能 |
 | `commitments.dataRealms` | `fealty.dataRealms` | 可接触的数据域：personal / enterprise / none |
@@ -67,7 +67,7 @@ type RosterSnapshot = {
 ## 5. 数据流
 
 ```
-执行 Agent仓库（发布 Agent Card + x-zeus-fealty）
+执行 Agent 仓库（发布 Agent Card + x-zeus-fealty）
         │  拉取注册 / 健康探针
         ▼
 Zeus VassalRegistry（A1，唯一聚合点；listAll 全量视图）
@@ -82,7 +82,7 @@ Zeus VassalRegistry（A1，唯一聚合点；listAll 全量视图）
 - bayjf **不直接**拉各执行 Agent card：那会让健康探针、吊销状态、fealty 校验在 bayjf 侧再实现一遍，制造第二个事实源。
 - 快照是不可变产物：bayjf 构建时拉取（SSG）或短时缓存，不提供任何名册写接口；条目有误改执行 Agent card 重新发布，下一轮投影自然更正。
 
-## 6. 执行 Agent生命周期与名册呈现
+## 6. 执行 Agent 生命周期与名册呈现
 
 | 注册中心状态 | 名册呈现（内部） | 名册呈现（公开） |
 | --- | --- | --- |
@@ -101,7 +101,7 @@ Zeus VassalRegistry（A1，唯一聚合点；listAll 全量视图）
 - 签名链落地前：名册仅对内可见；公开页若提前上线，必须对每个条目展示"未验签"标记且不提供接入入口。
 - 候选方向（签名链立项时决定，本文不锁死）：
   1. Zeus 背书：注册时 Zeus 用名册私钥对 fealty 摘要签名，快照携带签名，bayjf 展示验签结果；
-  2. 执行 Agent自签 + Zeus 交叉背书：执行 Agent持自己的签名密钥，Zeus 记录"在册即背书"。
+  2. 执行 Agent 自签 + Zeus 交叉背书：执行 Agent 持自己的签名密钥，Zeus 记录"在册即背书"。
 - 吊销与签名联动：`revoke()` 后下一份公开快照即移除条目；已被 bayjf 静态页缓存的旧快照靠重新构建失效（R2 定义缓存 TTL 上限）。
 
 ## 8. 交付阶段

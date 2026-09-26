@@ -2,13 +2,13 @@
 
 长驻 Node 进程形态：Fastify HTTP 面（`dist/http/serve.js`）装配内核（registry / oversight / dispatcher / orchestrator），启动时从状态文件恢复、优雅退出时落盘。本文覆盖 Docker（推荐）与裸机 systemd 两种形态。
 
-> 当前边界：执行 Agent可经 `POST /api/vassals`（H2 内部面，bearer 保护）注册，或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；Realm 不挂 HTTP。
+> 当前边界：执行 Agent 可经 `POST /api/vassals`（H2 内部面，bearer 保护）注册，或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；Realm 不挂 HTTP。
 
 ## 1. 端点
 
 | 端点 | 鉴权 | 说明 |
 |---|---|---|
-| `GET /healthz` | 无 | 仅 `status/version/ts`，不含执行 Agent与 Realm 信息 |
+| `GET /healthz` | 无 | 仅 `status/version/ts`，不含执行 Agent 与 Realm 信息 |
 | `GET /api/roster/public` | 无 | 实时名册投影 + Ed25519 封签（离线可验，1h seal / 24h attestation TTL） |
 | `GET /api/roster` | bearer（`ZEUS_INTERNAL_TOKEN`） | 内部全量视图；未配 token 时该路由不挂载（404） |
 

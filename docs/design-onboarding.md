@@ -4,7 +4,7 @@
 
 ## 0. 一句话
 
-**上岗不是一张表格，是四道必须现在成立的证据**：这个 Agent 有编制位置、有执行 Agent身份、被允许读它要读的域、并且真的通过了考核——所以"已批准"这个状态**永远不缓存**，每次要用都重新查。
+**上岗不是一张表格，是四道必须现在成立的证据**：这个 Agent 有编制位置、有执行 Agent 身份、被允许读它要读的域、并且真的通过了考核——所以"已批准"这个状态**永远不缓存**，每次要用都重新查。
 
 ## 1. 为什么单独一层
 
@@ -17,7 +17,7 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 | 门 | 证据来自 | 拒绝条件 |
 | --- | --- | --- |
 | seat 编制位置 | `OrgRegistry`（E9.3） | Agent 不在该部门名册上；部门不存在 |
-| account 执行 Agent身份 | `VassalRegistry.asVassalLookup().statusOf` | 查无此执行 Agent（**有编制没卡片的 Agent 不能派活**），或已吊销 |
+| account 执行 Agent 身份 | `VassalRegistry.asVassalLookup().statusOf` | 查无此执行 Agent（**有编制没卡片的 Agent 不能派活**），或已吊销 |
 | authorization 数据域 | `decideRealmAccess`（E3.6 + E6.4） | 该 Agent 的租户级读不到那个 realm（个人侧主体须 `DomainGrant`） |
 | mentorship 能力 | `MentorshipLedger`（E2.5，status=certified） | 岗位要求的技能没有**通过考核**的记录 |
 
@@ -93,7 +93,7 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 ## 8. 非目标 / 边界
 
 - 不做"部门级默认权限模板"：现在每个座位显式带 realm（和租户）。批量模板要回答"模板改了以后已上岗的怎么办"，属新契约（未登记，因为还没人要）。
-- 不做自动带教（让 Mentor Agent 自己决定教什么）：E2.5 的台账要求可验证的考核，自动出题会把门变成走过场；等真机执行 Agent形态明确再说。
+- 不做自动带教（让 Mentor Agent 自己决定教什么）：E2.5 的台账要求可验证的考核，自动出题会把门变成走过场；等真机执行 Agent 形态明确再说。
 - 不做 UI：本节列的是 HTTP 面，界面随产品面。
 - 不做跨部门汇报线/兼职（承 design-org §8：v1 单部门单 lead）。
 - 首日任务不做结果评价（那是结果回传 E4.4 与记忆层可靠度回写的事，见 [design-memory-consolidation.md](design-memory-consolidation.md)）。
@@ -104,7 +104,7 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 - [x] E9.2：账号→授权→Mentor→首日任务全链路可在真实进程里跑通（冒烟记录见 handoff Active work 44）。
 - [x] 四道门各自的拒绝理由可读（`blockedOn` + reason），且失效可被证明。
 - [x] 上岗记录随快照恢复。
-- [ ] 真机：由真实执行 Agent当 Mentor 完成一次带教并通过考核（需 ≥1 个真实执行 Agent在线，与 E4.8 同一批）。
+- [ ] 真机：由真实执行 Agent 当 Mentor 完成一次带教并通过考核（需 ≥1 个真实执行 Agent 在线，与 E4.8 同一批）。
 
 ## 10. 演进日志
 

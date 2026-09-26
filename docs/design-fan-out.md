@@ -84,7 +84,7 @@ type DispatchPort = {
 
 ## 3. F1 扇出 + F2 幂等
 
-**选目标**：显式 `vassals` 优先；否则 `lookup.findBySkill(skill)` 全选（fan-out 语义本就是多投，**不触发**单派发器的"多执行 Agent歧义"错误）。目标为空 → `failed`。
+**选目标**：显式 `vassals` 优先；否则 `lookup.findBySkill(skill)` 全选（fan-out 语义本就是多投，**不触发**单派发器的"多执行 Agent 歧义"错误）。目标为空 → `failed`。
 
 **并行**：`Promise.allSettled` 并发逐路 `Dispatcher.dispatch`，每路传分支 runId 与同一份 params/realmHits（脱敏仍由 Dispatcher 按各执行 Agent fealty 处理）。单路异常/拒绝/超时不拖垮其它路。
 
@@ -97,7 +97,7 @@ type DispatchPort = {
 2. 存在规则无法消解的立场冲突 → `needs-driver`；
 3. 部分分支失败/超时 → `partial`；
 4. 其余 → `completed`。
-纯执行类任务（执行 Agent不回立场）不构成冲突，成功即 `completed`。
+纯执行类任务（执行 Agent 不回立场）不构成冲突，成功即 `completed`。
 
 ## 4. F4 多流合并（`merge.ts`，纯函数）
 
@@ -105,11 +105,11 @@ type DispatchPort = {
 type SourcedEvent = { source: { vassal: string; taskId?: string; runId: string }; event: A2AEvent };
 ```
 
-`mergeBranches(branches)`：分支内保持 SSE 原序，分支间按选目标顺序拼接，每个事件可反查 `source`。不做跨执行 Agent全局时间戳排序（执行 Agent时钟不可信、时间戳不保证）；需要时间序的呈现层可在拿到可信时钟后另排。
+`mergeBranches(branches)`：分支内保持 SSE 原序，分支间按选目标顺序拼接，每个事件可反查 `source`。不做跨执行 Agent 全局时间戳排序（执行 Agent 时钟不可信、时间戳不保证）；需要时间序的呈现层可在拿到可信时钟后另排。
 
 ## 5. F5 规则聚合（`aggregate.ts`，纯函数，不调 LLM）
 
-执行 Agent立场从终态 `task.artifacts` 的 data part 中提取 `stance`（或同义 `verdict`）字符串；提不到的分支记为"无立场"，不参与投票、不构成冲突。
+执行 Agent 立场从终态 `task.artifacts` 的 data part 中提取 `stance`（或同义 `verdict`）字符串；提不到的分支记为"无立场"，不参与投票、不构成冲突。
 
 ```ts
 type Position = { vassal: string; stance: string; weight?: number; rationale?: string };
@@ -159,7 +159,7 @@ judge 记录（`FanOutResult.judgeReview`）随意图持久化，并进入 E1.6 
 - 进行中 fan-out 的**硬 abort**（需把 AbortSignal 透传到 `sendTaskSubscribe`）。
 - 服务端 **SSE 合并流** / H2 操作者 API（E5.5）。
 - **LLM 裁决 / Critic / 陪审团**（S2）、终止熔断的完整策略（S4，本批仅单路超时）。
-- 背压分流（deferred #9，待 ≥3 执行 Agent压测）。
+- 背压分流（deferred #9，待 ≥3 执行 Agent 压测）。
 
 ## 8. 验收（映射 PRD）
 

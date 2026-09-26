@@ -1,6 +1,6 @@
 import { generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify, type KeyObject } from 'node:crypto';
 import type { AgentCard } from '../a2a/types.js';
-import type { RosterSnapshot } from './roster.js';
+import { ROSTER_SCHEMA_VERSION, type RosterSnapshot } from './roster.js';
 import { sha256Hex } from '../util/crypto.js';
 
 /**
@@ -288,6 +288,22 @@ export async function verifySignedSnapshot(
     return { ok: false, reason: 'envelope missing attestations' };
   }
 
+  // 0. Version gates. Both are checked before any cryptography: a verifier that
+  //    cannot understand the shape must say so rather than fail deeper with a
+  //    digest or signature error. A missing payload schemaVersion is the
+  //    pre-v1.2 artifact shape and reads as 1; a missing/foreign envelope `v` was
+  //    previously ignored, which made the field decorative — it is now enforced.
+  const schemaVersion = (snapshot as { schemaVersion?: unknown }).schemaVersion ?? 1;
+  if (schemaVersion !== ROSTER_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      reason: `unsupported roster schemaVersion ${String(schemaVersion)}; this build reads ${ROSTER_SCHEMA_VERSION}`,
+    };
+  }
+  if (seal.v !== ENVELOPE_VERSION) {
+    return { ok: false, reason: `unsupported seal envelope version ${String(seal.v)}` };
+  }
+
   // 1. Seal content binding (T4: any add/remove/reorder/scope/generatedAt edit).
   if (seal.snapshotDigest !== canonicalDigest(snapshot)) {
     return { ok: false, reason: 'snapshotDigest mismatch: snapshot content was altered' };
@@ -315,6 +331,12 @@ export async function verifySignedSnapshot(
   for (const entry of snapshot.entries) {
     const attestation = attestations[entry.name];
     if (!attestation) return { ok: false, reason: `missing attestation for vassal "${entry.name}"` };
+    if (attestation.v !== ENVELOPE_VERSION) {
+      return {
+        ok: false,
+        reason: `unsupported attestation envelope version ${String(attestation.v)} for "${entry.name}"`,
+      };
+    }
     if (attestation.vassal?.name !== entry.name) {
       return { ok: false, reason: `attestation name binding failed for "${entry.name}"` };
     }

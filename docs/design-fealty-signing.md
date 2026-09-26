@@ -14,8 +14,8 @@
 
 | 编号 | 攻击 | 后果 |
 | --- | --- | --- |
-| T1 | 伪造名册条目：攻击者发布假 card + 假 fealty，诱使第三方相信其为在册执行 Agent | 假执行 Agent冒名招募/接单 |
-| T2 | 篡改在册执行 Agent承诺：中间人改写 fealty（如 `dataPolicy: none` → `read-realm`）或 card 内容 | 名册替假承诺背书；调度方误判数据权限 |
+| T1 | 伪造名册条目：攻击者发布假 card + 假 fealty，诱使第三方相信其为在册执行 Agent | 假执行 Agent 冒名招募/接单 |
+| T2 | 篡改在册执行 Agent 承诺：中间人改写 fealty（如 `dataPolicy: none` → `read-realm`）或 card 内容 | 名册替假承诺背书；调度方误判数据权限 |
 | T3 | 重放已吊销执行 Agent：`revoke()` 后拿历史有效快照/签名继续冒充 | 叛将不下榜 |
 | T4 | 伪造/裁剪整份快照：虚构在榜名单、增删条目、隐瞒吊销、重放旧快照 | 名册整体不可信 |
 
@@ -24,7 +24,7 @@
 - **不防 Zeus 自身**：Zeus 是名册唯一聚合点与信任根（design-bayjf-roster §2.1）；RSK 私钥泄露属最高等级运行事故，靠密钥管理与轮换缓解，不在协议内解决。
 - **不解决 card 通道的传输保密/鉴权**：那是 HTTPS / mTLS / A2A 认证方案的职责（design-vassal-protocol §3.5）。
 - **不做签名的数学撤销**：数字签名签发后无法「撤回」；吊销靠**状态 + 时间维度**让旧签名不再被接受（见 §6）。
-- **不担保执行 Agent行为或 SLA**：签名只证明「某时刻在册、承诺原文如此」，不是履约担保；健康与 SLA 仍由探针与结果回传体现。
+- **不担保执行 Agent 行为或 SLA**：签名只证明「某时刻在册、承诺原文如此」，不是履约担保；健康与 SLA 仍由探针与结果回传体现。
 
 ## 2. 方案裁决
 
@@ -32,19 +32,19 @@ design-bayjf-roster §7 给了两个候选，本文决定：
 
 ### 2.1 v1 基线：**Zeus 单签背书（方向 1）**
 
-注册时 Zeus 核验 fealty，用 **Zeus 名册签名密钥（RSK, Roster Signing Key）** 对「执行 Agent身份 + card/fealty 摘要 + 在册状态 + 有效期」签名，签名随名册快照分发；验签方只需信任一个 Zeus 根公钥。
+注册时 Zeus 核验 fealty，用 **Zeus 名册签名密钥（RSK, Roster Signing Key）** 对「执行 Agent 身份 + card/fealty 摘要 + 在册状态 + 有效期」签名，签名随名册快照分发；验签方只需信任一个 Zeus 根公钥。
 
 裁决理由：
 
 1. 架构上 Zeus 本就是唯一聚合点和信任根，名册要防的是「替假承诺背书」，Zeus 对自己注册时核验过的 card 签名，语义恰好闭合。
-2. **执行 Agent零改造**：矩阵产品只需按既有超集协议发 card，不必各自管理签名密钥——符合「超集而非闭墙、矩阵改造成本最低」的总原则（design-vassal-protocol §0）。
-3. 吊销立即反映在 Zeus 下一份签名里，不依赖执行 Agent配合（与 §4.5「吊销不需要执行 Agent配合」一致）。
+2. **执行 Agent 零改造**：矩阵产品只需按既有超集协议发 card，不必各自管理签名密钥——符合「超集而非闭墙、矩阵改造成本最低」的总原则（design-vassal-protocol §0）。
+3. 吊销立即反映在 Zeus 下一份签名里，不依赖执行 Agent 配合（与 §4.5「吊销不需要执行 Agent 配合」一致）。
 
-### 2.2 v2 增强：**执行 Agent自签 + Zeus 交叉背书（方向 2），作为 v1 的超集**
+### 2.2 v2 增强：**执行 Agent 自签 + Zeus 交叉背书（方向 2），作为 v1 的超集**
 
-执行 Agent自持密钥对 card 自签（不可否认性），Zeus 再对「执行 Agent公钥指纹 + 在册状态」交叉签名。v1 数据结构预留 `vassalSig` 位置，v2 叠加而非推翻。
+执行 Agent 自持密钥对 card 自签（不可否认性），Zeus 再对「执行 Agent 公钥指纹 + 在册状态」交叉签名。v1 数据结构预留 `vassalSig` 位置，v2 叠加而非推翻。
 
-**v2 触发条件**（满足其一才立项，登记为开放问题）：出现承诺不可否认性/法律追责需求；执行 Agent要求其承诺可脱离 Zeus 独立验证；或首个矩阵外外部 Agent 生态需要自证身份（联动 deferred #5）。
+**v2 触发条件**（满足其一才立项，登记为开放问题）：出现承诺不可否认性/法律追责需求；执行 Agent 要求其承诺可脱离 Zeus 独立验证；或首个矩阵外外部 Agent 生态需要自证身份（联动 deferred #5）。
 
 ## 3. 签名对象与规范化
 
@@ -103,9 +103,27 @@ design-bayjf-roster §7 给了两个候选，本文决定：
 
 设计要点：
 
-1. **R0 的 `RosterSnapshot` / `projectInternalRoster` / `projectPublicRoster` 结构与纯函数性完全不动**；签名是外层信封，投影器保持「只重塑不造字段」的纯净。
+1. **R0 的 `projectInternalRoster` / `projectPublicRoster` 的纯函数性完全不动**；签名是外层信封，投影器保持「只重塑不造字段」的纯净。**原话还包含"`RosterSnapshot` 结构不动"这半句，v1.2 把它打破了**：载荷新增一个形状标记 `schemaVersion`（见 §4.1），因为要防的正是"载荷变了但没人能察觉"。投影器仍然纯（写入常量），但这是契约变更，记下而不是假装未发生。
 2. **条目级**让第三方拿到单个条目也能验真伪与有效期；**快照级**防增删、重排、隐瞒吊销与整份重放。公开页的根证据是 seal。
 3. internal / public 两份快照各自封签；**public 信封只含 active 条目**（投影层已过滤 revoked，attestations 不为 revoked 出条）。
+
+### 4.1 版本闸（v1.2，2026-09-25）
+
+信封从 v1 起就带 `v: 1`（`Attestation.v` 与 `Seal.v`，同一个 `ENVELOPE_VERSION`），**但验签路径从不读它**——一个不被校验的版本字段是装饰性的，挡不住任何东西。同时，真正会随演进而变形的**载荷** `RosterSnapshot = { generatedAt, scope, entries }` 连这样一个字段都没有。v1.2 把两件事一起补上：
+
+| 闸 | 位置 | 行为 |
+|---|---|---|
+| 载荷形状 | `snapshot.schemaVersion`（由两个投影器写入常量 1） | 缺字段读作 1（v1.1 及更早的件本就不含它，摘要与签名自洽，**必须仍可验**）；不等于本版本 → 拒绝，原因点名 `unsupported roster schemaVersion <值>` |
+| 信封版本 | `seal.v` | 不等于 1（含缺失）→ 拒绝 |
+| 条目版本 | `attestation.v`，逐条 | 同上，原因带条目名 |
+
+三条设计约束：
+
+1. **`schemaVersion` 放在载荷里，不放信封里**。它落在 `seal.snapshotDigest` 已覆盖的对象内，因此**不必改动签名输入就被签名保护**——改它必然破摘要；不改签名输入也就不动摇既有验签语义。两个位置只留一个真相。
+2. **闸门在任何密码学之前**（摘要、签名、TTL 都排在其后），且拒绝原因点名是哪道闸。否则"版本不认识"会表现为一个含糊的签名失败，运维无法区分"格式太新"和"被人改过"——这两种处置完全相反。
+3. **向后兼容是单向门，所以用正向对照测**。测试必须包含"旧形状仍能验签"这一条：只在坏输入上验证过的校验器，可能永远都是错的。对应 `tests/signing.test.ts` 的四例（含把 `schemaVersion: 99` **重新签名**后仍被拒——用来证明拒绝确实来自闸门，而不是摘要或签名顺带失败）。
+
+**对消费方的影响**：公开名册的 JSON 多一个键；按精确键集做严格 schema 校验的外部消费者需要放宽。`seal.v` 不变（仍是 1），因此只读签名的老验签代码路径不受影响。
 
 ## 5. 密钥归属、分发与轮换
 
@@ -117,9 +135,9 @@ design-bayjf-roster §7 给了两个候选，本文决定：
 - **公钥（Zeus 根公钥）**：随名册公开，供 bayjf 与第三方验签。分发渠道见 §9（v1 建议 well-known + 带外固定）。
 - 纯库阶段只定义 `RosterSigner` / `RosterVerifier` 接口（§7.3），不实现私钥存储。
 
-### 5.2 执行 Agent密钥（v2）
+### 5.2 执行 Agent 密钥（v2）
 
-执行 Agent自签私钥自持；公钥以 JWK 置于 card 扩展字段（建议 `x-zeus-key`），Zeus 注册时把 JWK 指纹（RFC 7638）绑进交叉背书。v1 不要求、不校验该字段。
+执行 Agent 自签私钥自持；公钥以 JWK 置于 card 扩展字段（建议 `x-zeus-key`），Zeus 注册时把 JWK 指纹（RFC 7638）绑进交叉背书。v1 不要求、不校验该字段。
 
 ### 5.3 轮换
 
@@ -141,7 +159,7 @@ design-bayjf-roster §7 给了两个候选，本文决定：
 
 关键语义：
 
-1. **吊销不是「撤销签名」，而是让签名在状态/时间维度不再被接受**。被吊销执行 Agent在 TTL 窗口内的旧静态缓存，最坏可见时间 = 其 attestation 的剩余有效期；**故 R2 必须把 TTL 压到可接受上限**（roster §7 已要求 R2 定义缓存 TTL 上限，本设计把它升级为密码学硬过期，而非仅靠重建）。
+1. **吊销不是「撤销签名」，而是让签名在状态/时间维度不再被接受**。被吊销执行 Agent 在 TTL 窗口内的旧静态缓存，最坏可见时间 = 其 attestation 的剩余有效期；**故 R2 必须把 TTL 压到可接受上限**（roster §7 已要求 R2 定义缓存 TTL 上限，本设计把它升级为密码学硬过期，而非仅靠重建）。
 2. v1 **不设在线 CRL/OCSP**：公开名册是 SSG/只读 JSON 产物，验签应离线可完成；实时吊销以「短 TTL + 下一份快照移除」覆盖。在线吊销清单端点列为 v2（R1 之后），用于需要「TTL 窗口内立即作废」的场景。
 3. **fealty/card 变更**：cardDigest 变化 → 旧 attestation 对新 card 验签失败 → 必须重新注册重签；`fealty.version` 不匹配仍按 §4.5 拒绝注册、不静默兼容。
 4. 签名的自然语言语义固定为：**「Zeus 于 issuedAt 核验并认可：此 card（含 fealty）持有者在 expiresAt 前为在册 active 执行 Agent」**——不含永久可信、不含履约担保。
@@ -196,14 +214,14 @@ Ed25519 + RFC 8785；条目 attestation（cardDigest + fealtyDigest + status + i
 2. 篡改 fealty 任一字段（dataRealms/dataPolicy/reportBack/escalationPolicy/swornTo/version）→ 摘要不符 → 失败。
 3. 篡改 skills / description / name → cardDigest 不符 → 失败。
 4. 增删条目、调整 entries 顺序、改 scope/generatedAt → seal 失败。
-5. revoked 执行 Agent不出现在 public 信封；构造含该条目的旧信封 → expiresAt/maxAge 过期拒绝。
+5. revoked 执行 Agent 不出现在 public 信封；构造含该条目的旧信封 → expiresAt/maxAge 过期拒绝。
 6. 篡改 sig 本体、用错误公钥验签 → 失败。
 7. keyId 轮换重叠期：新钥签的新信封、旧钥签的历史信封各自验证结论正确；旧钥签的「超 maxAge」信封被拒。
 8. 规范化稳定性：同一对象不同键序/空白输入，digest 一致（JCS）。
 
 ### 8.2 v2（触发条件见 §2.2，不早做）
 
-执行 Agent自签 + Zeus 交叉背书（`vassalSig`/`x-zeus-key`/JWK 指纹）；在线吊销清单端点；fealty 变更史（roster §9.2）；根公钥分发的多方治理。
+执行 Agent 自签 + Zeus 交叉背书（`vassalSig`/`x-zeus-key`/JWK 指纹）；在线吊销清单端点；fealty 变更史（roster §9.2）；根公钥分发的多方治理。
 
 ## 9. 开放问题（立项时决定，不在本文锁死）
 
@@ -217,4 +235,4 @@ Ed25519 + RFC 8785；条目 attestation（cardDigest + fealtyDigest + status + i
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
-| v0.1 | 2026-09-21 | 初稿：威胁模型；裁决 Zeus 单签为 v1 基线、执行 Agent自签为 v2 超集；Ed25519 + RFC 8785；条目 attestation + 快照 seal 两层信封；RSK 密钥归属与轮换；吊销四层失效语义；发布管线与接口草案；v1 八条验收用例 |
+| v0.1 | 2026-09-21 | 初稿：威胁模型；裁决 Zeus 单签为 v1 基线、执行 Agent 自签为 v2 超集；Ed25519 + RFC 8785；条目 attestation + 快照 seal 两层信封；RSK 密钥归属与轮换；吊销四层失效语义；发布管线与接口草案；v1 八条验收用例 |
