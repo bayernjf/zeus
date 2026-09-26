@@ -97,7 +97,8 @@ State of Zeus as of 2026-09-25.
    - ✅ E1.1 一层 fan-out/join：`Orchestrator` 按技能/显式名单并行派 N 个封臣（复用 Dispatcher 治理），`Promise.allSettled`、部分失败/单路超时、failed/partial/needs-driver/completed 状态判定；
    - ✅ E1.5 幂等与取消：intentId 重放零出站、`cancelIntent` 传播到全部非终态分支、父子 runId 全链贯穿（背压/并发上限仍 deferred #9）；
    - ✅ E1.2 多流合并：`mergeBranches` 带来源 vassal/taskId/runId；
-   - 🚧 E1.3 规则聚合（unanimous/majority/weighted，分裂不臆断）；🚧 E1.4 冲突检测 + needs-driver 经 onConflict 回调进监督台（LLM critic/完整 DAG/进行中硬 abort/服务端 SSE 未做，见设计稿 §7）；
+   - ✅ E1.3 规则聚合（unanimous/majority/weighted，分裂不臆断；LLM-as-judge 对抗复核见手头第 29 行 ✅）：`src/orchestrator/aggregate.ts` 纯函数三模式 + `extractStance/extractPositions` + `detectConflicts`；编排器 `fanOut` 经 `aggregate→detectConflicts→statusFromBranches` 接线，分裂时 `conclusion:null` + `needs-driver` + `onConflict`；judge/S2 仲裁见设计稿 §5.1/§6；
+   - 🚧 E1.4 冲突检测 + needs-driver 经 onConflict 回调进监督台——**冲突检测与升级闭环已落地**（detectConflicts + `onConflict: conflictsToDesk(oversight)`，规则无解即走 E6.2 操作者闭环），🚧 余 LLM critic/完整 DAG/进行中硬 abort/服务端 SSE 未做，见设计稿 §7；
    - 26 项新测试（primitives 13 + orchestrator 13），全量 124 绿、typecheck/build 过，已从 src/index.ts 导出。~~下一步候选：S3 完整 DAG、S2 裁决、E2 Skill 注册中心~~ → 均已在 Active work 13 六切片批次落地（S3 DAG、决策后端、E2.2）。
 
 12. **决策后端抽象层（Decision Backend，2026-09-22，纯设计）** ✅ `docs/design-decision-backend.md` v0.2：
