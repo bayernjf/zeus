@@ -110,6 +110,30 @@ describe('aggregate', () => {
     expect(below.conclusion).toBeNull();
   });
 
+  it('weighted: defaults to threshold 0.5 and weight 1 when absent', () => {
+    // 60/40 split: 0.6 >= 0.5 default threshold -> concludes
+    const decided = aggregate([pos('a', 'go', 0.6), pos('b', 'stop', 0.4)], { kind: 'weighted' });
+    expect(decided.conclusion).toBe('go');
+    expect(decided.margin?.total).toBe(1);
+    // missing weights fall back to 1 each -> 50/50 tie -> no conclusion
+    const tie = aggregate([pos('a', 'go'), pos('b', 'stop')], { kind: 'weighted' });
+    expect(tie.conclusion).toBeNull();
+  });
+
+  it('weighted: equal top weights do not win even above threshold', () => {
+    // both at exactly the threshold but tied -> null (split, never silently picks)
+    const tie = aggregate([pos('a', 'go', 0.5), pos('b', 'stop', 0.5)], { kind: 'weighted' });
+    expect(tie.conclusion).toBeNull();
+    expect(tie.reason).toMatch(/tied/);
+  });
+
+  it('majority: exactly half is not a strict majority', () => {
+    // 2 go / 2 stop: top count 2 is not strictly greater than 4/2 = 2 -> tie
+    const split = aggregate([pos('a', 'go'), pos('b', 'go'), pos('c', 'stop'), pos('d', 'stop')]);
+    expect(split.conclusion).toBeNull();
+    expect(split.reason).toMatch(/tie/);
+  });
+
   it('always echoes every position for explainability', () => {
     const decision = aggregate([pos('a', 'go'), pos('b', 'stop')]);
     expect(decision.positions).toHaveLength(2);
