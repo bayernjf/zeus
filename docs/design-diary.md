@@ -2,7 +2,7 @@
 
 - 状态：**现行 v0.1**（2026-09-24）
 - 对应 PRD：**E8.3 Diary 日记：记忆叙事化备份（P2）**
-- 关联：[design-memory-consolidation.md](design-memory-consolidation.md)（事件/事实）、[design-realm.md](design-realm.md)（Realm 数据域与 write）、[design-vault.md](design-vault.md)（藏宝图/备份）、[product-portrait.md](product-portrait.md) §2.2 藏宝图与记忆
+- 关联：[design-memory-consolidation.md](design-memory-consolidation.md)（事件/事实）、[design-realm.md](design-realm.md)（Realm 数据域与 write）、[design-vault.md](design-vault.md)（备份清单/备份）、[product-portrait.md](product-portrait.md) §2.2 备份清单与记忆
 - 一句话：**把已经记录下来的事件，按天叙事成一篇人能读、句句能回溯到源事件、并能经 Realm 写回用户目录的日记；不编造、不跨域、不另建存储。**
 
 ---
@@ -18,7 +18,7 @@ Diary 补这一层。它是**叙事化的人类可读记忆**，与 Vault 分工
 
 | | 关心什么 | 形态 | 能恢复数据吗 |
 |---|---|---|---|
-| **Vault** | 全量宝藏在哪、指纹、可恢复 | 加密图 + 备份包 | 能（恢复协议） |
+| **Vault** | 全量数据在哪、指纹、可恢复 | 加密图 + 备份包 | 能（恢复协议） |
 | **Diary** | 某天经历了什么、人能读 | 按天 markdown | 否（叙事层，不是备份） |
 
 Diary 不替代 Vault，也不做全量备份；它让记忆"可读、可回溯、可导出"。
@@ -156,7 +156,7 @@ export declare function buildDiary(events: MemoryEvent[], options?: BuildDiaryOp
 
 ```ts
 export interface PersistDiaryOptions {
-  /** enterprise realm 必填的驾驶员写授权；personal 省略。 */
+  /** enterprise realm 必填的操作者写授权；personal 省略。 */
   grant?: DriverWriteGrant;
   /** 目录前缀，默认 'diary'；最终 itemId = `${dir}/${date}.md`。 */
   dir?: string;

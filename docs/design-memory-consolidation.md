@@ -89,7 +89,7 @@ Agent ──append──▶ Event Log（实时，人人可写）
 ### 4.1 触发方式
 - **大小/时间**：事件达批量阈值或定时窗口；
 - **任务收束**：一个 runId 的任务进入终态时触发；
-- **手动**：驾驶员或 supervisor 指定整理某段记忆。
+- **手动**：操作者或 supervisor 指定整理某段记忆。
 
 ### 4.2 整理步骤
 1. **归一化**：抽取 subject/predicate/object，统一时间/实体表述。
@@ -101,7 +101,7 @@ Agent ──append──▶ Event Log（实时，人人可写）
 5. **索引更新**：写 Fact 后异步重建/更新召回索引（P0 无索引，扫描即可）。
 
 ### 4.3 置信度聚合（要点）
-- 权重来自 Agent 历史可靠度（战报/失败率记忆），不是当前自报 confidence；
+- 权重来自 Agent 历史可靠度（结果回传/失败率记忆），不是当前自报 confidence；
 - 独立来源相互印证可提升置信度；同源重复不提升；
 - 高利害事实（用于不可逆决策）阈值更高，不足即要求复核。
 
@@ -114,7 +114,7 @@ Agent ──append──▶ Event Log（实时，人人可写）
 
 ## 6. 安全与边界
 
-- Event Log / Fact Store 均按 realm 隔离；企业→个人记忆禁止，个人→企业需驾驶员授权。
+- Event Log / Fact Store 均按 realm 隔离；企业→个人记忆禁止，个人→企业需操作者授权。
 - 记忆注入 Agent 上下文前做注入检查（防被污染数据经记忆跨 Agent 传播，见技术探索地图 S8）。
 - 删除/被遗忘权：Fact 可 `retracted`，索引同步移除；因已进入快照/下游的部分须可追溯声明。
 - embedding 仅本地/同域；不可得则不引入向量（deferred #10 触发条件）。
@@ -123,7 +123,7 @@ Agent ──append──▶ Event Log（实时，人人可写）
 
 - 召回索引是**派生物、不持久化**：`RecallIndex.sync(facts)` 随时从 Fact Store 整体重建（验收 #5）。
 - 混合得分 = `alpha · 语义余弦 + (1 − alpha) · BM25`（默认 alpha=0.5）；BM25 分量按本批最佳分归一到 0..1，两路可比较可组合。
-- 仅 `active` / `disputed` 事实入索引；`superseded` / `retracted` 不召回（争议事实仍可召回且自带 `disputed` 标记，提示驾驶员）。
+- 仅 `active` / `disputed` 事实入索引；`superseded` / `retracted` 不召回（争议事实仍可召回且自带 `disputed` 标记，提示操作者）。
 - Embedding 走 `Embedder` 端口（`embed(text): number[]`），默认实现 `LocalHashingEmbedder` 是确定性 signed-hashing 词袋（无网络、无语义外推，仅离线安全底座）；真实同域模型可注入，仍须满足数据不出域。
 
 ### 6.2 遗忘权执行契约（P2）
