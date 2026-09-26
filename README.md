@@ -251,9 +251,9 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 - **数据主权的实现方式**：数据域内容对外的唯一传输是 MCP，HTTP 侧只到治理元数据与授权记录为止；`GET /api/state` 只报计数与路径，不服用含凭证与记忆明文的状态快照；上游凭证在任何响应中只以 `hasToken` 呈现。
 - **已知风险**：`ubuntu-latest` 将于 2026-10-19 自动迁移构建机镜像（#16，到期前决定钉版或迁移后复验）。
 
-## 命名说明
+## 标识符说明
 
-源码标识符里保留了一批项目早期命名（`vassal` / `vault` / `realm` / `kernel` / `commission` / `driver` / `fealty` / `roster`）。它们是内部标识符，**不代表任何第三方系统或集成**（例如 `src/vault/` 与 HashiCorp Vault 无关）。上述标识符与上表术语的逐条对应关系、以及哪些词与业界既有术语同名易混，见 [docs/terminology.md](docs/terminology.md)。环境变量名（如 `ZEUS_VASSAL_SEEDS`）是当前接口的一部分，未随文档措辞改变。
+源码与环境变量里保留了一批项目早期命名（`vassal`、`fealty`、`roster`、`realm`、`vault`、`kernel`、`driver`、`commission`、`mentorship`、`diary`、`noul`）。它们是接口的一部分，含义、出现面与"为什么不能顺手改名"逐条记在 [docs/terminology.md](docs/terminology.md) 的「历史标识符的含义」与「破坏性面」两节。一句话：**这些名字不代表任何第三方系统或集成**（例如 `src/vault/` 与 HashiCorp Vault 无关），本文档一律使用上文的工程术语，不使用这些历史名做叙述词。
 
 ## 文档
 

@@ -56,10 +56,41 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 级别 | 判据 | 本项目里的词 |
 |---|---|---|
 | **A 类：业界本名** | 行业标准里就这么叫，直说加分 | data diode、MCP / Skill / A2A、idempotency、SSE、agent card、judge（LLM-as-judge）、replay、fealty→握手/凭证契约（协议层）、vault 语义下的 digest / manifest |
-| **B 类：Zeus 自创隐喻** | 读者能看懂是比喻，但**查不到标准定义**——对外首次出现必须加注 | 封臣 / 效忠 / 战报 / 名册 / 藏宝图 / 立国三纲 / 上岗门 / 编制 / 日记 / 封神榜 |
+| **B 类：项目自创称谓** | 读者能看出是比喻，但**查不到标准定义** | 封臣 / 效忠 / 战报 / 名册 / 藏宝图 / 立国三纲 / 上岗门 / 编制 / 日记 / 封神榜 → **对外一律不用**（v0.3 口径：也不写"专业词（隐喻）"括注），改用上行专业用语 |
 | **C 类：与既有术语同名异义（最危险）** | 对外读者会**先想到另一个东西**，误读成本项目集成了它或实现了它 | **`vault`**（会读成 HashiCorp Vault）、**`kernel`**（OS 内核）、**`driver`**（设备驱动 / 测试驱动，而这里是"驾驶员=人工在环"）、**`realm`**（认证域 Kerberos/LDAP；方向相近但含义不同）、**`commission`**（英文先想"委托 / 佣金"） |
 
-**C 类的对外处理**：正文用专业词，隐喻放括号里（例："备份与恢复协议（项目内称'藏宝图'，代码里是 `src/vault/`，与 HashiCorp Vault 无关）"）。代码与内部文档不改——命名是设计哲学允许的叙事层，且全局一致、可追溯到实体。
+**B/C 类的对外处理（v0.3 口径）**：对外正文只用专业用语，**不写"专业词（隐喻）"式括注**；需要解释某个既有名字时，用下面两节的"含义 + 出现面"来解释，而不是换一个比喻。
+
+## 历史标识符的含义（读代码、配置、数据文件时需要）
+
+对外文档不再使用这些词，但它们**存在于代码、环境变量、协议字段与已落盘的数据里**，逐个说明它做什么：
+
+| 标识符 | 它是什么 | 出现面 |
+|---|---|---|
+| `vassal` / `VassalEntry` / `VassalRegistry` | 已注册、可被派发任务的外部执行 Agent 及其注册表（A2A 卡片发现、active/revoked 状态、出站凭证） | 代码、状态文件键 `registry`、HTTP 路径 `/api/vassals`、环境变量 `ZEUS_VASSAL_SEEDS`、审计事件 `vassal-revoked` |
+| `fealty` / `x-zeus-fealty` | 注册握手声明：归属、数据域、数据策略、结果回传与升级策略；缺失即拒绝注册 | **线上协议字段**（卡片 HTTP 头）、`Fealty` 类型 |
+| `roster` | 注册表状态的不可变签名投影（`entries` + 条目 attestation + 快照签名） | 代码、HTTP `/api/roster`、`/api/roster/public`、对外发布物 |
+| `realm` | 一个可连接的本地数据目录（`personal` / `enterprise`），带确定性 ID 与内容摘要 | 代码、状态文件键 `realms`、HTTP `/api/domains*`、环境变量 `ZEUS_REALM_ROOTS` / `ZEUS_REALM_ENTERPRISE`、审计事件 `realm-write` |
+| `vault` | 备份与恢复协议：只存引用与指纹的清单 + AES-256-GCM 加密内容包。**与 HashiCorp Vault 无关** | 代码目录 `src/vault/`、CLI `npm run vault`、环境变量 `ZEUS_VAULT_PASSPHRASE` |
+| `kernel` / `bootKernel` | 运行时核心的装配入口：把注册表、派发器、人工队列、编排器、指标、组织一次接起来 | 代码、状态文件 `ZEUS_STATE_FILE` |
+| `driver` / `needs-driver` / `DriverResolution` | **人工在环**：需要操作者判断的状态，与操作者给出的裁决结果 | 状态枚举、HTTP 响应字段、审计事件 `driver-grant-issued` |
+| `commission` | 上岗授权档案：开档、签字、豁免、撤回及其台账 | 代码、状态文件键 `commissions`、审计事件 `commission-granted\|waived\|withdrawn\|refused`、HTTP `/api/org/departments/:id/commissions*` |
+| `mentorship` / `MentorshipLedger` | 能力认证流程：逐项评估通过后，一个 Agent 才被登记为某技能的提供者 | 代码、状态文件键 `mentorships`、HTTP `/api/mentorships*` |
+| `diary` | 把记忆事件按天组织成可读记录（只呈现不臆造，每行锚定事件 ID） | 代码目录 `src/diary/`、HTTP `/api/diary*`、落盘文件 `diary/YYYY-MM-DD.md` |
+| `noul` | 决策后端端口里的**规则型**决策方法（与 `choice` / `score` 并列） | `DecisionBackend` 接口方法名 |
+
+## 破坏性面（改这些名字要付的代价）
+
+上面这些名字**不是纯措辞**，改名不等于重命名变量。若要把标识符也换成专业词，代价分四档，逐档需单独批准：
+
+| 档 | 对象 | 后果 |
+|---|---|---|
+| 1 纯内部标识符 | 类名 / 函数名 / 目录名（如 `VassalRegistry`、`src/vault/`） | 只影响代码内；`src` + `tests` 约 **4,000+ 处**引用，需一次全量回归（基线 692 项 / 72 文件、CI 双矩阵） |
+| 2 已落盘的数据格式 | 状态文件 JSON 键（`registry` / `realms` / `commissions` / `mentorships` / `domainGrants` / `writeGrantNonces`）、审计 JSONL 的 `decision` 取值、备份清单与加密包、**签名名册的载荷**（JCS 规范化后逐字节参与验签） | 旧文件与旧备份必须仍可读；改签名载荷会让**历史名册与已发凭证全部需重签或加兼容分支** |
+| 3 配置与环境 | 24 个 `ZEUS_*` 变量里的 `ZEUS_VASSAL_SEEDS`、`ZEUS_REALM_ROOTS`、`ZEUS_REALM_ENTERPRISE`、`ZEUS_VAULT_PASSPHRASE`、`ZEUS_RSK_KEY*` | 破坏现有 `.env`、systemd `EnvironmentFile`、`docker run --env-file` 与部署手册 |
+| 4 线上协议与路由 | 卡片头 `x-zeus-fealty`、HTTP 路径 `/api/vassals`、响应字段 `Position.vassal` 等 | **对端已部署**：生产上的 pr-helper 按这个头声明归属，改字段需两侧同步迁移并留兼容期 |
+
+**当前口径（2026-09-25 用户定）**：文档与注释措辞换专业术语；标识符、协议字段、环境变量与数据格式**不动**，需要时由本节解释含义。将来若要动第 2–4 档，按**契约变更**立项（含迁移与兼容读取），不作为文档批次的顺带项。
 
 ## 对外一句话示例
 
@@ -75,5 +106,5 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 
 - 本表只收录**已在代码/设计中存在的映射**；新增叙事命名时，落地代码前先在 `docs/design-*.md` 里写明其工程原语对应物（设计哲学第 2 条的执行要求）。
 - 术语含义以代码为准；本表与代码不一致时，改本表，不改代码。
-- **锚点是可核验声明**：每行的 `file:line` 与符号名在改动本表时都要重跑一遍确认存在（`grep -rn "<符号>" src | head`）。引用行号前先量，不要抄上一版——本仓库已有过"数字被逐份继承"的先例。
+- **锚点是可核验声明**：每行的 `file:line` 与符号名在改动本表时都要重跑一遍确认存在（`grep -rn "<符号>" src | head`）。引用行号前先量，不要抄上一版——本仓库已有过"数字被逐份继承"的先例。已知假阳性：该检查会把反引号里的**非代码词**也算成符号（如 systemd 的 `EnvironmentFile`），报 `MISSING` 时先判断它是不是代码标识符。
 - 复校一条命令（表内符号是否仍在 `src/` 里）：`grep -oE '`[A-Z][A-Za-z]+`' docs/terminology.md | tr -d '`' | sort -u | while read s; do grep -rq "class $s\|interface $s\|type $s\|const $s\|function $s" src/ || echo "MISSING $s"; done`
