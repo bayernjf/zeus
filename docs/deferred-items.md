@@ -140,12 +140,19 @@
 - **验证**：`tests/signing.test.ts` 新增 4 项——两个投影都盖章、**旧形状仍可验签**（正向对照，防止"只在坏输入上测过的校验器永远可能是错的"）、`schemaVersion 99` 在**重新签名过**的情况下仍被拒（即拒绝只可能来自闸门而非摘要/签名）、`seal.v=2`/缺失与 `attestation.v=2` 各自被点名拒绝。全量 **696 绿 / 72 文件**、typecheck/build exit 0；真进程实测 `GET /api/roster` 与 `/api/roster/public` 的信封里 `"schemaVersion":1` 且 `seal.v` 不变。
 - **与 #21 的关系**：这条做完后，**将来若真要改载荷，才有安全灰度的可能**（双读按 `schemaVersion` 分流）。#21 的结论不变：仍不建议改 T2/T3/T4。
 
-### #23 DAG 分析没有驾驶员入口（原登记被编号复用吞掉）
+### #23 DAG 分析没有驾驶员入口 ✅ 已销项（2026-09-26）
+- **决定（选项即建议做法）**：把 `src/orchestrator/dag.ts` + `dag-runner.ts` 已落地的图能力接到 H2 驾驶员面，沿依赖边从平铺扇出升级为分层执行。实现与建议做法的差异：依赖边**编码在节点 `dependsOn` 上**（不是另给 `edges` 列表）——功能等价，少一份需要保持同步的字段。
 - **能力已在**：`src/orchestrator/dag.ts` + `dag-runner.ts`（拓扑分层 `topologicalLayers`、关键路径 `criticalPath`、`validateDag`、部分失败跳过），`tests/dag.test.ts` **6 例**，且都从 `src/index.ts` 导出。
+- **落地（2026-09-26）**：
+  - `POST /api/intents` 接受可选 `dag:{nodes}`（每节点 `id` / `skill` / 可选 `vassals` / `params` / `dependsOn` / `aggregation`，顶层 `branchTimeoutMs`）；与 `body.skill` **互斥**，否则 400。结构校验（字段形状）在 `parseDagSpec`、图校验（环 / 缺失依赖 / 重复 id）在 `validateDag`（均返回 **400** 并点名环或未知节点）。提交即回 **分层计划 + 关键路径 + 每节点状态**。
+  - `GET /api/intents/:id/dag` 按 `dagId` 回读 `layers` / `criticalPath` / `state` / 每节点状态。
+  - **复用内核**：`DagRunner` 改为可接收一个**已存在的 Orchestrator**（boot 传入主 orchestrator），所以 DAG 的每个节点意图走的是**同一个** orchestrator——共享幂等表、随内核快照持久化、`GET /api/intents/:id`（节点 id 为 `${dagId}::${node}`）仍可读。不重复造一个隔离的执行器。
+  - 部分失败的跳过语义在 `DagRunner` 内保持不变（依赖未完成的节点 `skipped`，独立分支继续），与 `refused-*` 同样写进审计事件流。
+- **验证**：新增 `tests/http-dag.test.ts` **7 例**（`npx vitest run` 全量 **711 绿 / 74 文件**，typecheck/build exit 0）；其中"两阶段意图 + 节点意图可追溯"用**真进程 inject 冒烟**（真实 HTTP + 真实 orchestrator + dispatcher 管线，不是只测纯函数），覆盖你定的"只有 inject 测试不算已验证"口径。**未做**：CLI 与 MCP 面同样没有 DAG 入口（触发条件②/③未到，且 MCP 暴露侧 actor 判定仍归 #18）；DAG spec/result 在内存，不随内核快照持久化（重启后 `GET /api/intents/:id/dag` 失忆，节点意图仍在）。
+- **原登记背景（保留）**：该条曾因编号复用（`#15` 被"支持矩阵与 engines 声明"覆盖）在文件里消失，本文件顶部已立"编号只增不复用"规则。
 - **缺口（对账方式：库导出 ↔ 可操作面）**：`src/http/server.ts` 里 `dag` / `criticalPath` / `topolog` **出现 0 次**，CLI 与 MCP 面同样没有。也就是说**操作员今天无法提交一个 DAG 形状的意图，也无法读回它的分层与关键路径**——只能当库函数用。这条与 #21 无关，是"内核有、驾驶员看不见"那一类的又一个实例。
 - **为什么现在才记**：它**本来就登记过**。`handoff.md` 顶部状态段写着"C（状态文件进藏宝图）与 F（DAG 驾驶员入口）经实测是设计变更，登记 deferred #13/#15/#14 而非半做"，Active work 39 的"没做的两项"那条也把 F（S3 DAG 驾驶员入口）判为"需要先出设计稿"——三个号对应 C/F/另登记项，#13 归 C、#14 归 `DriverWriteGrant`，剩下 **#15 就是 DAG**。但 `#15` 后来被**"支持矩阵与 engines 声明"复用**，DAG 那条就在文件里消失了（此处按句子内容引用而不按行号：行号会随文件增长漂移，这本身就是这条失物能藏住的原因之一）。已在本文件顶部补"编号只增不复用"规则，防它再发生。
-- **触发条件**：① 出现一个真实的**多阶段依赖**意图（不是把同一任务并行发给几个人，而是"B 必须等 A"），此时派发形态要从平铺扇出升级为分层执行；② 需要对一次多阶段编排做**关键路径/瓶颈**分析（例如慢在哪一层）；③ 有人要按 DAG 排程做取消或重试策略。
-- **建议做法（拍板后）**：`POST /api/intents` 接受可选 `dag:{nodes,edges}` 并复用 `validateDag`（校验失败 400 并点名环或缺失依赖）；`GET /api/intents/:id/dag` 返回 `topologicalLayers` + `criticalPath`；运行经 `DagRunner`，部分失败的跳过语义与 `refused-*` 一样写进审计事件流，保持"只有 inject 测试不算已验证"的口径（要补真进程冒烟）。
+- **触发条件（回顾）**：① 出现一个真实的**多阶段依赖**意图（"B 必须等 A"）时派发从平铺扇出升级为分层执行；② 多阶段编排的关键路径/瓶颈分析；③ 按 DAG 排程做取消或重试。本条不等触发条件——库内"内核有、操作面无"的缺口本身就是可闭环的工作，且前几批一直在补这类。
 
 ### #24 墙钟依赖的测试与脚本没有可执行闸门
 - **成因（2026-09-26 实测）**：`tests/verify-roster.test.ts` 的 fixture 用固定时刻封签（`maxAgeSeconds: 3600`）却不传 `--now`，于是"验得过"这件事依赖真实时间——当天窗口一过，4 例全红而实现一行未改。已在该文件内修掉（`run()` 缺省注入 `--now`），但**同类形状没有任何东西挡**：只要新测试再写一次"固定过去时刻 + 让生产代码读墙上时钟"，它就在未来某天自动变红，或者更糟——在未来某天自动变绿。

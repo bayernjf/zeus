@@ -6,6 +6,7 @@ import { VassalRegistry } from '../src/registry/registry.js';
 import { OversightDesk } from '../src/oversight/oversight.js';
 import type { Escalation } from '../src/oversight/types.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
+import type { DagRunner } from '../src/orchestrator/dag-runner.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
@@ -163,7 +164,7 @@ describe('E5.3 FileKernelStateStore', () => {
     const port = portFor({ loom: stanceResult('loom', 'go') });
     const orchestrator = new Orchestrator(lookup, port, { newIntentId: () => 'i', newRunId: () => 'r' });
     await orchestrator.fanOut({ intentId: 'intent-disk', skill: 's', vassals: ['loom'], params: {}, realm: 'personal' });
-    const live: KernelComponents = { registry, oversight, orchestrator };
+    const live: KernelComponents = { registry, oversight, orchestrator, dagRunner: {} as DagRunner };
 
     const file = join(dir, 'kernel', 'state.json');
     const store = new FileKernelStateStore(file, () => new Date('2026-09-22T12:00:00.000Z'));
@@ -182,7 +183,7 @@ describe('E5.3 FileKernelStateStore', () => {
     const freshRegistry = new VassalRegistry(mockFetch('unused'));
     const freshOversight = new OversightDesk();
     const freshOrchestrator = new Orchestrator(lookup, port, { newIntentId: () => 'x', newRunId: () => 'x' });
-    applyKernelState({ registry: freshRegistry, oversight: freshOversight, orchestrator: freshOrchestrator }, loaded!);
+    applyKernelState({ registry: freshRegistry, oversight: freshOversight, orchestrator: freshOrchestrator, dagRunner: {} as DagRunner }, loaded!);
     expect(freshRegistry.list().map(v => v.card.name)).toEqual(['loom']);
     expect(freshOversight.list()).toHaveLength(1);
     expect(freshOrchestrator.getIntent('intent-disk')?.status).toBe('completed');

@@ -6,6 +6,8 @@ import { sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../r
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
 import { UnknownIntentError } from '../orchestrator/orchestrator.js';
 import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
+import { DagValidationError, validateDag, topologicalLayers, type DagSpec, type DagNode } from '../orchestrator/dag.js';
+import type { DagRunner } from '../orchestrator/dag-runner.js';
 import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationKind, EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
@@ -100,6 +102,8 @@ export type HttpDeps = {
   attestationTtlSeconds?: number;
   /** H2: intent fan-out / read / cancel. */
   orchestrator?: Orchestrator;
+  /** H2 / S3: DAG wave orchestration; runs a multi-stage dependency intent. */
+  dagRunner?: DagRunner;
   /** H2: escalation queue and approve/reject/resolve. */
   oversight?: OversightDesk;
   /** H2: concurrency metrics snapshot. */
@@ -267,6 +271,32 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       // H2: fan one intent out to the vassals providing a skill.
       app.post('/api/intents', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const body = (request.body ?? {}) as Partial<FanOutRequest>;
+        // S3: a multi-stage dependency intent. Runs as one DAG (wave by wave)
+        // instead of a single fan-out. Mutually exclusive with body.skill.
+        const dagInput = (request.body as { dag?: unknown } | undefined)?.dag;
+        if (dagInput !== undefined) {
+          if (body.skill !== undefined) {
+            return error(reply, 400, 'invalid_request', 'body.dag and body.skill are mutually exclusive');
+          }
+          if (body.realm !== 'personal' && body.realm !== 'enterprise') {
+            return error(reply, 400, 'invalid_request', 'body.realm must be "personal" or "enterprise"');
+          }
+          const parsedDag = parseDagSpec(dagInput);
+          if (typeof parsedDag === 'string') return error(reply, 400, 'invalid_request', parsedDag);
+          if (!deps.dagRunner) {
+            return error(reply, 503, 'unavailable', 'the DAG runner is not assembled in this process');
+          }
+          const spec: DagSpec = { ...parsedDag, realm: body.realm };
+          try {
+            const result = await deps.dagRunner.run(spec);
+            reply.code(200);
+            // Include the wave plan so the operator sees layering at submission.
+            return { ...result, layers: topologicalLayers(spec.nodes) };
+          } catch (thrown) {
+            if (thrown instanceof DagValidationError) return error(reply, 400, 'invalid_dag', thrown.message);
+            throw thrown;
+          }
+        }
         if (typeof body.skill !== 'string' || body.skill.trim() === '') {
           return error(reply, 400, 'invalid_request', 'body.skill is required');
         }
@@ -351,6 +381,27 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         } catch (e) {
           return mapKernelError(reply, e);
         }
+      });
+
+      // S3: read back a run DAG by id — its wave layering and critical path,
+      // plus each node's last state. The node intents themselves are reachable
+      // through GET /api/intents/:id (their ids are `${dagId}::${node}`).
+      app.get('/api/intents/:id/dag', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        if (!deps.dagRunner) return error(reply, 503, 'unavailable', 'the DAG runner is not assembled in this process');
+        const dag = deps.dagRunner.getDag(id);
+        if (!dag) return error(reply, 404, 'not_found', `unknown dag: ${id}`);
+        return {
+          dagId: dag.result.dagId,
+          state: dag.result.state,
+          criticalPath: dag.result.criticalPath,
+          layers: topologicalLayers(dag.spec.nodes),
+          nodes: dag.result.nodes.map(node => ({
+            nodeId: node.nodeId,
+            state: node.state,
+            ...(node.skippedReason ? { skippedReason: node.skippedReason } : {}),
+          })),
+        };
       });
 
       // H3: server-sent events for one intent's real-time progress. An intent
@@ -1539,6 +1590,56 @@ function validAggregation(rule: unknown): rule is AggregationRule {
   if (typeof rule !== 'object' || rule === null) return false;
   const kind = (rule as { kind?: unknown }).kind;
   return typeof kind === 'string' && AGGREGATION_KINDS.has(kind);
+}
+
+/** Parse and structurally validate a caller-supplied DAG spec (the `body.dag`
+ *  field). Graph validity (acyclicity, dependency existence) is left to
+ *  validateDag; this only checks field shapes. Returns a DagSpec or an error
+ *  string describing the first problem found. */
+function parseDagSpec(input: unknown): Omit<DagSpec, 'realm'> | string {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return 'body.dag must be an object';
+  }
+  const obj = input as Record<string, unknown>;
+  const nodes = obj.nodes;
+  if (!Array.isArray(nodes) || nodes.length === 0) return 'body.dag.nodes must be a non-empty array';
+  const parsedNodes: DagNode[] = [];
+  for (const raw of nodes) {
+    if (typeof raw !== 'object' || raw === null) return 'each dag node must be an object';
+    const node = raw as Record<string, unknown>;
+    if (typeof node.id !== 'string' || node.id.trim() === '') return 'each dag node must have a non-empty id';
+    if (typeof node.skill !== 'string' || node.skill.trim() === '') return `dag node ${node.id} must have a non-empty skill`;
+    const dependsOn = node.dependsOn;
+    if (dependsOn !== undefined && (!Array.isArray(dependsOn) || !dependsOn.every(d => typeof d === 'string'))) {
+      return `dag node ${node.id} dependsOn must be an array of strings`;
+    }
+    const vassals = node.vassals;
+    if (vassals !== undefined && (!Array.isArray(vassals) || !vassals.every(v => typeof v === 'string'))) {
+      return `dag node ${node.id} vassals must be an array of strings`;
+    }
+    if (node.params !== undefined && (typeof node.params !== 'object' || node.params === null || Array.isArray(node.params))) {
+      return `dag node ${node.id} params must be an object`;
+    }
+    if (node.aggregation !== undefined && !validAggregation(node.aggregation)) {
+      return `dag node ${node.id} aggregation must be unanimous | majority | weighted`;
+    }
+    parsedNodes.push({
+      id: node.id,
+      skill: node.skill,
+      ...(dependsOn ? { dependsOn: dependsOn as string[] } : {}),
+      ...(vassals ? { vassals: vassals as string[] } : {}),
+      ...(node.params ? { params: node.params as Record<string, unknown> } : {}),
+      ...(node.aggregation ? { aggregation: node.aggregation as AggregationRule } : {}),
+    });
+  }
+  const branchTimeoutMs = obj.branchTimeoutMs;
+  if (branchTimeoutMs !== undefined && (typeof branchTimeoutMs !== 'number' || branchTimeoutMs <= 0)) {
+    return 'body.dag.branchTimeoutMs must be a positive number';
+  }
+  return {
+    nodes: parsedNodes,
+    ...(typeof branchTimeoutMs === 'number' ? { branchTimeoutMs } : {}),
+  };
 }
 
 function optionalNote(body: unknown): string | undefined {

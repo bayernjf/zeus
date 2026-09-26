@@ -49,13 +49,20 @@ export type DagRunnerOptions = Omit<OrchestratorOptions, 'newIntentId' | 'newRun
 export class DagRunner {
   private orchestrator: Orchestrator;
   private activeDags = new Map<string, string[]>(); // dagId -> node intent ids
+  private dagSpecs = new Map<string, DagSpec>(); // dagId -> last spec (for layer recompute)
+  private dagResults = new Map<string, DagResult>(); // dagId -> last result (states)
 
   constructor(
     private lookup: TargetLookup,
     private dispatcher: DispatchPort,
-    private options: DagRunnerOptions = {}
+    private options: DagRunnerOptions = {},
+    /** When supplied, DAG nodes run through this shared orchestrator so their
+     *  intents share the kernel's idempotency table and persist with it. When
+     *  omitted, the runner owns an isolated orchestrator (used by the library
+     *  tests, which only care about graph math, not persistence). */
+    orchestratorArg?: Orchestrator
   ) {
-    this.orchestrator = new Orchestrator(lookup, dispatcher, {
+    this.orchestrator = orchestratorArg ?? new Orchestrator(lookup, dispatcher, {
       now: options.now,
       newRunId: options.newRunId,
       onConflict: options.onConflict,
@@ -120,7 +127,18 @@ export class DagRunner {
       startedAt,
       finishedAt,
     };
+    this.dagSpecs.set(dagId, spec);
+    this.dagResults.set(dagId, result);
     return result;
+  }
+
+  /** Read back a previously run DAG by id: the spec (for layer recomputation)
+   *  and its last result (states / critical path). Undefined if never run. */
+  getDag(dagId: string): { spec: DagSpec; result: DagResult } | undefined {
+    const spec = this.dagSpecs.get(dagId);
+    const result = this.dagResults.get(dagId);
+    if (!spec || !result) return undefined;
+    return { spec, result };
   }
 
   /** Cancel every node intent of a running/completed DAG. */
