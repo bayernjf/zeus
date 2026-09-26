@@ -57,6 +57,9 @@ export type MetricsSnapshot = {
   failed: number;
   timedOut: number;
   perVassal: Record<string, VassalMetric>;
+  /** Real-time in-flight count per vassal (defensive copy). Enables per-vassal
+   *  saturation checks (#9 backpressure diversion) without a full snapshot. */
+  inFlightByVassal: Record<string, number>;
   capturedAt: string;
 };
 
@@ -71,6 +74,13 @@ export class ConcurrencyMetrics {
   private records: BranchRecord[] = [];
   private maxInFlight = 0;
   private queueDepth = 0;
+  /** Real-time in-flight count per vassal (#9 per-vassal saturation primitive). */
+  private inFlightByVassal = new Map<string, number>();
+  /** Finished records grouped by vassal, maintained incrementally so per-vassal
+   *  history accessors do not rebuild from the flat `records` list on every call. */
+  private byVassal = new Map<string, BranchRecord[]>();
+  /** Latest VassalMetric per vassal, refreshed on branchEnded. */
+  private perVassalCache = new Map<string, VassalMetric>();
 
   constructor(private options: MetricsOptions = {}) {}
 
@@ -109,6 +119,7 @@ export class ConcurrencyMetrics {
     this.dequeue();
     const key = ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal);
     this.active.set(key, { event, startedMs: this.clock()() });
+    this.bumpInFlight(event.vassal, 1);
     if (this.active.size > this.maxInFlight) this.maxInFlight = this.active.size;
   }
 
@@ -117,12 +128,43 @@ export class ConcurrencyMetrics {
     const active = this.active.get(key);
     if (!active) return;
     this.active.delete(key);
-    this.records.push({
+    const record: BranchRecord = {
       ...active.event,
       endedAt: this.now().toISOString(),
       latencyMs: this.clock()() - active.startedMs,
       outcome,
-    });
+    };
+    this.records.push(record);
+    this.pushByVassal(record);
+    this.bumpInFlight(vassal, -1);
+  }
+
+  /** Real-time in-flight branches for a single vassal (#9 saturation check). */
+  inFlightByVassalNow(vassal: string): number {
+    return this.inFlightByVassal.get(vassal) ?? 0;
+  }
+
+  /** Historical failure rate for a vassal; 0 when no finished call is recorded. */
+  failureRateOf(vassal: string): number {
+    return this.perVassalCache.get(vassal)?.failureRate ?? 0;
+  }
+
+  /** Historical p50 latency (ms) for a vassal; null when no finished call is recorded. */
+  p50MsOf(vassal: string): number | null {
+    return this.perVassalCache.get(vassal)?.latency?.p50Ms ?? null;
+  }
+
+  private bumpInFlight(vassal: string, delta: number): void {
+    const next = (this.inFlightByVassal.get(vassal) ?? 0) + delta;
+    if (next <= 0) this.inFlightByVassal.delete(vassal);
+    else this.inFlightByVassal.set(vassal, next);
+  }
+
+  private pushByVassal(record: BranchRecord): void {
+    const list = this.byVassal.get(record.vassal) ?? [];
+    list.push(record);
+    this.byVassal.set(record.vassal, list);
+    this.perVassalCache.set(record.vassal, this.vassalStats(list));
   }
 
   /** Current in-flight branches (defensive copy). */
@@ -132,19 +174,15 @@ export class ConcurrencyMetrics {
 
   snapshot(): MetricsSnapshot {
     const finished = this.records.filter(record => record.outcome !== undefined);
-    const byVassal = new Map<string, BranchRecord[]>();
-    for (const record of finished) {
-      const list = byVassal.get(record.vassal) ?? [];
-      list.push(record);
-      byVassal.set(record.vassal, list);
-    }
     const perVassal: Record<string, VassalMetric> = {};
-    for (const [vassal, list] of byVassal) {
+    for (const [vassal, list] of this.byVassal) {
       perVassal[vassal] = this.vassalStats(list);
     }
     const completed = finished.filter(r => r.outcome === 'completed').length;
     const failed = finished.filter(r => r.outcome === 'failed').length;
     const timedOut = finished.filter(r => r.outcome === 'timeout').length;
+    const inFlightByVassal: Record<string, number> = {};
+    for (const [vassal, count] of this.inFlightByVassal) inFlightByVassal[vassal] = count;
     return {
       inFlight: this.active.size,
       maxInFlight: this.maxInFlight,
@@ -154,6 +192,7 @@ export class ConcurrencyMetrics {
       failed,
       timedOut,
       perVassal,
+      inFlightByVassal,
       capturedAt: this.now().toISOString(),
     };
   }

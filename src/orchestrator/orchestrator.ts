@@ -7,6 +7,7 @@ import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import { Semaphore, type SlotRelease } from './semaphore.js';
+import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
 import type { DecisionBackend } from '../decision/types.js';
 import type { ProgressEvent } from './progress.js';
 import type {
@@ -62,6 +63,16 @@ export type OrchestratorOptions = {
   /** Branches allowed to wait for a slot before one is refused. Default unbounded. */
   branchQueueLimit?: number;
   /**
+   * #9 per-vassal saturation cap. Distinct from `maxConcurrentBranches`: a vassal
+   * is saturated when its live in-flight count reaches this cap, and a saturated
+   * auto-selected target is re-pointed to the best available same-skill provider
+   * (see diversion.ts). MUST be set below `maxConcurrentBranches` for diversion to
+   * fire — if it equalled the global cap, a saturated agent would imply the global
+   * pool was full and no idle alternate could take a slot. Unset = no per-vassal
+   * saturation check (current behaviour, global gate unchanged).
+   */
+  maxConcurrentPerVassal?: number;
+  /**
    * E2.2/E2.3/E2.4: when set, auto-selected fan-out targets (by skill) are
    * filtered through the skill catalogue's active providers; a registered skill
    * with no active provider is refused. Driver-named explicit vassals stay
@@ -72,6 +83,9 @@ export type OrchestratorOptions = {
   /** Called when the skill governor refuses an auto-selected fan-out; bridge it
    *  into the audit spine at assembly time. */
   onRefusal?: (entry: { skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
+  /** #9: fired when a saturated/eligible-lacking target is re-pointed to an
+   *  alternate same-skill provider before dispatch; bridge into the audit spine. */
+  onDiverted?: (entry: { skill: string; realm: FanOutRequest['realm']; from: string; to: string; at: string }) => void;
 };
 
 export class UnknownIntentError extends Error {}
@@ -144,6 +158,33 @@ export class Orchestrator {
       }
     }
 
+    // #9 backpressure diversion (design-backpressure.md): with a per-vassal
+    // saturation cap configured, re-point saturated auto-selected targets to the
+    // best available same-skill provider before dispatch. Explicit driver-named
+    // vassals stay hard-pinned (a deliberate override, §4.4). The live per-vassal
+    // load is read from ConcurrencyMetrics; the score uses historical reliability
+    // and latency from the same collector.
+    let diversion: SelectTargetsResult | null = null;
+    if (names.length > 0 && this.options.maxConcurrentPerVassal !== undefined) {
+      const providers = this.options.skillGovernor?.activeProviders(request.skill);
+      diversion = selectTargets({
+        skill: request.skill,
+        explicitVassals: explicit ? request.vassals : undefined,
+        initialNames: names,
+        candidatePool: providers,
+        load: {
+          inFlightByVassal: v => this.options.metrics?.inFlightByVassalNow(v) ?? 0,
+          capOf: () => this.options.maxConcurrentPerVassal!,
+        },
+        metrics: {
+          failureRate: v => this.options.metrics?.failureRateOf(v) ?? 0,
+          p50Ms: v => this.options.metrics?.p50MsOf(v) ?? null,
+        },
+        health: { statusOf: v => this.lookup.statusOf?.(v) ?? 'unknown' },
+      });
+      names = diversion.plan.map(p => p.target);
+    }
+
     let result: FanOutResult;
     if (names.length === 0) {
       result = {
@@ -158,7 +199,18 @@ export class Orchestrator {
         this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
       }
     } else {
-      const branches = await Promise.all(names.map(name => this.runTrackedBranch(name, request, runId, intentId)));
+      const branches = await Promise.all(
+        names.map((name, i) => {
+          const entry = diversion?.plan[i];
+          const exhaustedNote =
+            entry && diversion?.exhausted ? formatExhausted(diversion.exhausted) : null;
+          return this.runTrackedBranch(
+            name, request, runId, intentId, 0,
+            entry?.divertedFrom ?? null,
+            exhaustedNote,
+          );
+        })
+      );
       const positions = extractPositions(branches);
       const decision = aggregate(positions, request.aggregation);
       const conflicts = detectConflicts(positions, decision);
@@ -317,7 +369,9 @@ export class Orchestrator {
     request: FanOutRequest,
     parentRunId: string,
     intentId: string,
-    resumeNo = 0
+    resumeNo = 0,
+    divertedFrom: string | null = null,
+    exhaustedNote: string | null = null
   ): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const metrics = this.options.metrics;
@@ -330,17 +384,26 @@ export class Orchestrator {
       release = await this.acquireSlot();
     } catch (error) {
       metrics?.dequeue();
+      const reason = error instanceof Error ? error.message : 'branch refused';
+      // #9: when the target was kept (saturated, no alternate) and still refused
+      // by the global gate, attach the tried-candidates audit (design §4.5).
       return {
         vassal,
         runId: branchRunId,
         ok: false,
         events: [],
-        reason: error instanceof Error ? error.message : 'branch refused',
+        reason: exhaustedNote ? `${reason} (${exhaustedNote})` : reason,
       };
     }
 
     metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
     this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
+    // #9: record a diversion decision alongside the branch start so the operator
+    // can trace from→to on the audit/event spine (design §4.5).
+    if (divertedFrom) {
+      this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
+      this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
+    }
     let branch: BranchOutcome;
     try {
       branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
