@@ -106,10 +106,15 @@
 - **触发条件**：① 2026-10-19 之前做一次决定——钉 `ubuntu-24.04`（换确定性，代价是要记得升），或接受迁移并在切换后立刻复验一次全绿；② 任何一次 run 出现与本仓库代码无关的环境类失败（apt/预装工具/Node 解析）。
 - **与 #15 的边界**：#15 决定"测哪些 Node"，本条决定"在谁的机器上测"。
 
-### #17 数据域边界的显式变更操作（disconnect / 改租户）
-- **缺口**：`FsRealmStore` 只有 `connect`，没有 `disconnect`；而同一 root 带不同 tenant 重连会被拒（`would change its tenant scope`，这条本身是对的）。合起来的效果是：**调整一个企业域的租户级没有可执行路径**——只能改 env 重启，而重启时快照里存的仍是旧 tenant，照样撞上同一道漂移检查；剩下唯一的"办法"是手工编辑 `kernel.json` 或删状态文件，而对一个装着名册、记忆与连接器 token 的文件做手改不算运维方案。
-- **触发条件**：① 第一次真实的组织结构调整（部门合并 / 改名 / 员工换部门）；② 需要下线某个 Realm（员工离职、目录迁移）。
-- **建议做法（决定后）**：`disconnect(realmId)`（显式确认 + 写审计）与 `retargetTenant(realmId, from, to)`（要求携带旧值做比较交换，防误改），或把启动期的"租户变更"识别为一次**显式声明的迁移**而不是静默漂移。
+### #17 数据域边界的显式变更操作（disconnect / 改租户）✅ 已销项（2026-09-26）
+- **原缺口**：`FsRealmStore` 只有 `connect`，没有 `disconnect`；同一 root 带不同 tenant 重连会被拒（`would change its tenant scope`）。效果：调整企业域租户级没有可执行路径——只能改 env 重启，而重启时快照里存的仍是旧 tenant，照样撞漂移检查；唯一"办法"是手改 `kernel.json` 或删状态文件。
+- **做了什么**：在 `RealmStore` 接口与 `FsRealmStore` 上新增两个显式操作（未走 `connect`，故不会触发那条漂移拒绝）：
+  - `disconnect(realmId)`：从 `realms`/`roots` 内存表移除该挂载；`connections()` 随即不再列出它，下一轮快照即不再持久化。未知 realm 抛 `RealmNotConnectedError`（fail-loud，不是静默 no-op）。
+  - `retargetTenant(realmId, from, to)`：仅企业域可调用（个人域无租户概念，直接 `RealmError`）；**比较交换**——`from` 必须与当前挂载租户一致（大小写不敏感），否则以 `tenant drift ... (compare-swap)` 拒绝并中止，绝不静默移动边界；通过后更新内存 `manifest.tenant`，持久化随下次快照落盘。
+- **操作员面**：`POST /api/realms/:id/disconnect` 与 `POST /api/realms/:id/retarget-tenant`（body `{from,to}`），均走 `requireBearer`；未知 realm 404、漂移 409、个人域 400、缺参 400；两条动作各写一条 `realm-disconnected` / `realm-tenant-retargeted` 审计（`AuditDecision` 已扩）。
+- **与启动漂移检查的关系（重要）**：`retargetTenant` 改的是运行态内存。若操作员**不随之更新 `ZEUS_REALM_ENTERPRISE`**，下次启动 boot 会用 env 里的旧 tenant 重连同一 root，与快照里的新 tenant 撞上那条漂移拒绝 → **启动失败（fail-loud）**。这是预期行为：运行时改边界必须让 env 与之对齐，否则重启即暴露不一致。把启动期的租户变更识别为"显式声明的迁移而非静默漂移"是更大的改造，留作后续（本次只交付运行时显式操作）。
+- **验证**：新增 `tests/realm-operations.test.ts` **8 例**（disconnect 移除 / 未知域拒绝 / 同 root 重连无残留租户；retarget 成功 / 漂移拒绝且不变 / 个人域拒绝 / 缺参拒绝 / 大小写不敏感比较交换）+ `tests/http-realms.test.ts` **7 例**（disconnect 后 `/api/domains` 不再列出、未知 404、无 token 401、retarget 成功并反映、漂移 409 且租户不变、个人域 400、缺参 400，均验审计落点）。全量 **726 绿 / 76 文件**、typecheck/build exit 0。
+- **未做**：CLI 面同样没有这两个操作（MCP 暴露侧 actor 判定仍归 #18，disconnect/retarget 是否要在 MCP server 上暴露待 #18 一并定）；启动期的"显式声明迁移"识别未做（见上）。
 
 ### #18 MCP 暴露侧的主体（actor）判定
 - **缺口**：`createRealmMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `realmIds`"，handler 内部没有主体概念——因此 design-realm §7.2 的租户/域规则在 **MCP 读取路径（`resources/read` 与 v0.10 新增的 `tools/call`）上没有执行点**，只在 `realmSource`（内核代取）与访问探针上生效。
@@ -140,15 +145,23 @@
 - **验证**：`tests/signing.test.ts` 新增 4 项——两个投影都盖章、**旧形状仍可验签**（正向对照，防止"只在坏输入上测过的校验器永远可能是错的"）、`schemaVersion 99` 在**重新签名过**的情况下仍被拒（即拒绝只可能来自闸门而非摘要/签名）、`seal.v=2`/缺失与 `attestation.v=2` 各自被点名拒绝。全量 **696 绿 / 72 文件**、typecheck/build exit 0；真进程实测 `GET /api/roster` 与 `/api/roster/public` 的信封里 `"schemaVersion":1` 且 `seal.v` 不变。
 - **与 #21 的关系**：这条做完后，**将来若真要改载荷，才有安全灰度的可能**（双读按 `schemaVersion` 分流）。#21 的结论不变：仍不建议改 T2/T3/T4。
 
-### #23 DAG 分析没有驾驶员入口（原登记被编号复用吞掉）
+### #23 DAG 分析没有驾驶员入口 ✅ 已销项（2026-09-26）
+- **决定（选项即建议做法）**：把 `src/orchestrator/dag.ts` + `dag-runner.ts` 已落地的图能力接到 H2 驾驶员面，沿依赖边从平铺扇出升级为分层执行。实现与建议做法的差异：依赖边**编码在节点 `dependsOn` 上**（不是另给 `edges` 列表）——功能等价，少一份需要保持同步的字段。
 - **能力已在**：`src/orchestrator/dag.ts` + `dag-runner.ts`（拓扑分层 `topologicalLayers`、关键路径 `criticalPath`、`validateDag`、部分失败跳过），`tests/dag.test.ts` **6 例**，且都从 `src/index.ts` 导出。
+- **落地（2026-09-26）**：
+  - `POST /api/intents` 接受可选 `dag:{nodes}`（每节点 `id` / `skill` / 可选 `vassals` / `params` / `dependsOn` / `aggregation`，顶层 `branchTimeoutMs`）；与 `body.skill` **互斥**，否则 400。结构校验（字段形状）在 `parseDagSpec`、图校验（环 / 缺失依赖 / 重复 id）在 `validateDag`（均返回 **400** 并点名环或未知节点）。提交即回 **分层计划 + 关键路径 + 每节点状态**。
+  - `GET /api/intents/:id/dag` 按 `dagId` 回读 `layers` / `criticalPath` / `state` / 每节点状态。
+  - **复用内核**：`DagRunner` 改为可接收一个**已存在的 Orchestrator**（boot 传入主 orchestrator），所以 DAG 的每个节点意图走的是**同一个** orchestrator——共享幂等表、随内核快照持久化、`GET /api/intents/:id`（节点 id 为 `${dagId}::${node}`）仍可读。不重复造一个隔离的执行器。
+  - 部分失败的跳过语义在 `DagRunner` 内保持不变（依赖未完成的节点 `skipped`，独立分支继续），与 `refused-*` 同样写进审计事件流。
+- **验证**：新增 `tests/http-dag.test.ts` **7 例**（`npx vitest run` 全量 **711 绿 / 74 文件**，typecheck/build exit 0）；其中"两阶段意图 + 节点意图可追溯"用**真进程 inject 冒烟**（真实 HTTP + 真实 orchestrator + dispatcher 管线，不是只测纯函数），覆盖你定的"只有 inject 测试不算已验证"口径。**未做**：CLI 与 MCP 面同样没有 DAG 入口（触发条件②/③未到，且 MCP 暴露侧 actor 判定仍归 #18）；DAG spec/result 在内存，不随内核快照持久化（重启后 `GET /api/intents/:id/dag` 失忆，节点意图仍在）。
+- **原登记背景（保留）**：该条曾因编号复用（`#15` 被"支持矩阵与 engines 声明"覆盖）在文件里消失，本文件顶部已立"编号只增不复用"规则。
 - **缺口（对账方式：库导出 ↔ 可操作面）**：`src/http/server.ts` 里 `dag` / `criticalPath` / `topolog` **出现 0 次**，CLI 与 MCP 面同样没有。也就是说**操作员今天无法提交一个 DAG 形状的意图，也无法读回它的分层与关键路径**——只能当库函数用。这条与 #21 无关，是"内核有、驾驶员看不见"那一类的又一个实例。
 - **为什么现在才记**：它**本来就登记过**。`handoff.md` 顶部状态段写着"C（状态文件进藏宝图）与 F（DAG 驾驶员入口）经实测是设计变更，登记 deferred #13/#15/#14 而非半做"，Active work 39 的"没做的两项"那条也把 F（S3 DAG 驾驶员入口）判为"需要先出设计稿"——三个号对应 C/F/另登记项，#13 归 C、#14 归 `DriverWriteGrant`，剩下 **#15 就是 DAG**。但 `#15` 后来被**"支持矩阵与 engines 声明"复用**，DAG 那条就在文件里消失了（此处按句子内容引用而不按行号：行号会随文件增长漂移，这本身就是这条失物能藏住的原因之一）。已在本文件顶部补"编号只增不复用"规则，防它再发生。
-- **触发条件**：① 出现一个真实的**多阶段依赖**意图（不是把同一任务并行发给几个人，而是"B 必须等 A"），此时派发形态要从平铺扇出升级为分层执行；② 需要对一次多阶段编排做**关键路径/瓶颈**分析（例如慢在哪一层）；③ 有人要按 DAG 排程做取消或重试策略。
-- **建议做法（拍板后）**：`POST /api/intents` 接受可选 `dag:{nodes,edges}` 并复用 `validateDag`（校验失败 400 并点名环或缺失依赖）；`GET /api/intents/:id/dag` 返回 `topologicalLayers` + `criticalPath`；运行经 `DagRunner`，部分失败的跳过语义与 `refused-*` 一样写进审计事件流，保持"只有 inject 测试不算已验证"的口径（要补真进程冒烟）。
+- **触发条件（回顾）**：① 出现一个真实的**多阶段依赖**意图（"B 必须等 A"）时派发从平铺扇出升级为分层执行；② 多阶段编排的关键路径/瓶颈分析；③ 按 DAG 排程做取消或重试。本条不等触发条件——库内"内核有、操作面无"的缺口本身就是可闭环的工作，且前几批一直在补这类。
 
-### #24 墙钟依赖的测试与脚本没有可执行闸门
-- **成因（2026-09-26 实测）**：`tests/verify-roster.test.ts` 的 fixture 用固定时刻封签（`maxAgeSeconds: 3600`）却不传 `--now`，于是"验得过"这件事依赖真实时间——当天窗口一过，4 例全红而实现一行未改。已在该文件内修掉（`run()` 缺省注入 `--now`），但**同类形状没有任何东西挡**：只要新测试再写一次"固定过去时刻 + 让生产代码读墙上时钟"，它就在未来某天自动变红，或者更糟——在未来某天自动变绿。
-- **已核过的现状**：`verifySignedSnapshot` 的每个测试调用点都显式传了 `now`；`src/org/department.ts` 两处 `now = new Date()` 默认值只写时间戳、不参与判定。所以当前无已知残留，缺的是防线。
-- **可选做法与代价**：CI 加一个"把系统时钟拨到未来再跑全量"的作业（ubuntu runner 上 `sudo date -s` 即可，零依赖）。它能一次性暴露全仓所有墙钟依赖，代价是任何依赖真实 TLS 校验或外部时钟的用例会一起变红，需要先给它们打上显式时钟。不建议写正则 lint——"是否传了 now"这种判断靠 grep 会大量漏报。
-- **触发条件**：① 再次出现"没人改代码却变红/变绿"的时间相关用例；② 新增第二个带时效判定的 CLI 脚本；③ 有 fixture 的有效期短于一个 CI 迭代周期（例如引入 24h 内的短期凭证）。
+### #24 墙钟依赖的测试与脚本没有可执行闸门 ✅ 已销项（2026-09-26）
+- **原缺口**：`tests/verify-roster.test.ts` 的 fixture 用固定时刻封签（`maxAgeSeconds: 3600`）却不传 `--now`，于是"验得过"依赖真实时间——当天窗口一过 4 例全红而实现一行未改（已在那个文件内修掉：`run()` 缺省注入 `--now`）。但**同类形状没有任何东西挡**：只要新测试再写一次"固定过去时刻 + 让生产代码读墙上时钟"，它就在未来某天自动变红，或更糟——自动变绿。
+- **做了什么（可执行闸门）**：新增 `scripts/clock-skew-setup.mjs`（把 JS 时钟整体拨前 2 年，偏移可用 `ZEUS_CLOCK_SKEW_DAYS` 覆盖）+ `vitest.clock-skew.config.ts`（仅比 `vitest.config.ts` 多挂这个 setup），并在 CI 加 `clock-skew` 作业：真实时钟下 `npm ci` + typecheck + build，再用偏置配置跑**全量测试**。凡测试或生产路径偷偷读真实墙钟，这一道作业就红——从"某天自己变红"变成"引入当天即红"。
+- **为什么是 JS 级偏移而不是 `sudo date -s`**：GitHub 托管 runner 不给 `CAP_SYS_TIME`，系统级拨钟多半 `Operation not permitted`；且拨动 OS 时钟会让 `npm ci` 访问 npm registry 的 TLS 证书校验跟着错位、连带安装失败。本仓库的墙钟风险**全在 JS 内**（每个生产 `new Date()` 都躲在可注入的 `now` 之后），所以拨 JS 时钟是忠实且无特权的等价代理。**已知边界**：拨钟只覆盖 vitest 进程内代码；`verify-roster.test.ts` 之类 spawn 的子进程跑在真实时钟下，不在本闸门覆盖（若某脚本将来长出依赖墙钟的逻辑，再评估 OS 级拨钟或给子进程也注入偏置）。
+- **验证（实证，不是假设）**：本地以 +2 年偏置跑全量，**726 绿 / 76 文件**——证明当前测试集对墙钟零静默依赖；CI 这道作业即此结论的回归护栏。typecheck/build exit 0。
+- **触发条件已满足**：本批次即在把闸门立起来的同时确认无残留墙钟依赖；若未来出现"无人改代码却变红/变绿"的时间用例，此作业会第一时间报警。

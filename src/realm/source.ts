@@ -28,7 +28,7 @@ export type RealmAuditEntry = {
   ts: string;
   /** The asking subject (vassal name, agent id, or driver id). */
   vassal: string;
-  decision: 'domain-read' | 'domain-refused';
+  decision: 'domain-read' | 'domain-refused' | 'realm-disconnected' | 'realm-tenant-retargeted';
   realm?: RealmType;
   detail: string;
 };

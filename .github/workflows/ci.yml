@@ -43,3 +43,35 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  # deferred #24: wall-clock dependency gate. Runs the full suite under a
+  # simulated future clock (scripts/clock-skew-setup.mjs shifts the JS clock +2y
+  # via a vitest setup file, not `sudo date -s` — runners deny CAP_SYS_TIME and an
+  # OS shift would break TLS to the npm registry). Any test or production path
+  # that silently reads the real wall clock turns red here instead of "someday,
+  # on its own". Dependencies are installed and the artifact is built on the real
+  # clock first, so only the test run is skewed.
+  clock-skew:
+    name: wall-clock dependency gate (+2y)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies (real clock)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests under a simulated future clock
+        run: npx vitest run --config vitest.clock-skew.config.ts
+

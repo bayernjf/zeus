@@ -144,6 +144,7 @@ async function main(): Promise<void> {
     internalToken: process.env.ZEUS_INTERNAL_TOKEN,
     version: pkg.version,
     orchestrator: kernel.orchestrator,
+    dagRunner: kernel.dagRunner,
     oversight: kernel.oversight,
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,

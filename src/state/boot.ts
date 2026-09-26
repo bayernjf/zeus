@@ -10,6 +10,7 @@ import {
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
+import { DagRunner } from '../orchestrator/dag-runner.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
 import { DriverGrantLedger, type DriverGrantAuditEntry } from '../realm/grant.js';
@@ -390,8 +391,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       : {}),
     ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
   });
+  // S3 DAG orchestration: runs each DAG node as a fan-out through the SAME
+  // orchestrator, so node intents share the kernel's idempotency table and
+  // persist with it. The runner only adds wave scheduling + spec/result recall.
+  const dagRunner = new DagRunner(registry.asVassalLookup(), dispatcher, { now }, orchestrator);
+
   const components: KernelComponents = {
-    registry, oversight, orchestrator, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger,
+    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger,
   };
 
   // Memory P1: when an intent operating on a connected realm reaches a terminal

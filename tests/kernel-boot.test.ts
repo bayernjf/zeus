@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { OversightDesk } from '../src/oversight/oversight.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
+import type { DagRunner } from '../src/orchestrator/dag-runner.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
@@ -114,7 +115,7 @@ describe('E5.3 bootKernel assembly', () => {
       intentId: 'intent-restore', skill: 's', vassals: ['loom'], params: {}, realm: 'personal',
     });
     const store = new FileKernelStateStore(file);
-    await store.save(collectKernelState({ registry, oversight, orchestrator }));
+    await store.save(collectKernelState({ registry, oversight, orchestrator, dagRunner: {} as DagRunner }));
 
     // Fresh boot from disk; the assembled dispatcher has no live vassal but a
     // replayed intent must never reach it.

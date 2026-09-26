@@ -193,6 +193,20 @@ export interface RealmStore {
   read(realmId: string, itemId: string): Promise<RealmItem>;
   /** G4: connect-time parameters of every connected realm, for persistence. */
   connections(): RealmConnection[];
+  /**
+   * deferred #17: tear down a mounted realm at runtime. Removes it from the
+   * in-memory mount tables so the next snapshot no longer persists it. This is
+   * the explicit path that previously forced an operator to hand-edit
+   * kernel.json (or drop state) to remove a realm.
+   */
+  disconnect(realmId: string): Promise<void>;
+  /**
+   * deferred #17: re-scope an enterprise realm's tenant. Compare-swap: `from`
+   * must match the currently mounted tenant, otherwise the call is refused as
+   * drift (so a stale `from` can never silently move a boundary). Updates the
+   * in-memory manifest; persistence follows on the next snapshot save.
+   */
+  retargetTenant(realmId: string, from: string | TenantScope, to: string | TenantScope): Promise<void>;
   /** Read-only enumeration of every managed entry from the connect snapshot
    *  (with full content), powering Vault map drawing and full bundles. */
   entries(realmId: string): Promise<RealmEntrySnapshot[]>;

@@ -5,6 +5,7 @@ import { VassalRegistry } from '../registry/registry.js';
 import type { Escalation } from '../oversight/types.js';
 import { OversightDesk } from '../oversight/oversight.js';
 import { Orchestrator, type OrchestratorSnapshot } from '../orchestrator/orchestrator.js';
+import type { DagRunner } from '../orchestrator/dag-runner.js';
 import type { RealmConnection } from '../realm/types.js';
 import type { RealmStore } from '../realm/types.js';
 import type { DomainGrantState } from '../realm/authorization.js';
@@ -71,6 +72,8 @@ export type KernelComponents = {
   registry: VassalRegistry;
   oversight: OversightDesk;
   orchestrator: Orchestrator;
+  /** S3: DAG wave orchestration over the kernel orchestrator. */
+  dagRunner: DagRunner;
   /** G4: when assembled, its connected realms are snapshotted and reconnected. */
   realmStore?: RealmStore;
   /** E2.1: when assembled, the skill catalogue is persisted and restored. */
