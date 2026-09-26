@@ -12,6 +12,7 @@
 | 理解多 Agent 记忆如何沉淀与整理 | [design-memory-consolidation.md](design-memory-consolidation.md) |
 | 理解 supervisor 与 subagent 的控制关系 | [design-supervision.md](design-supervision.md) |
 | 理解一个意图如何扇出多 Agent 并行并聚合成决策 | [design-fan-out.md](design-fan-out.md)（扇出/幂等/取消传播/合并流/规则聚合/冲突升级，PRD E1） |
+| 理解执行 Agent 饱和时如何把溢出意图分流给同技能最优提供方 | [design-backpressure.md](design-backpressure.md)（deferred #9：饱和信号、候选集过滤、可靠度×延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计） |
 | 理解决策后端抽象层（模型无关）怎么接入决策能力 | [design-decision-backend.md](design-decision-backend.md)（DecisionBackend 端口：noul/choice/score、两类实现家族——专用决策模型 Jev（快层）/ 传统 LLM 适配（慢层）、四接线位、数据主权硬线） |
 | 探讨 AI 时代多系统怎么沟通、Agent 与确定性原语边界划在哪 | [design-agentic-integration.md](design-agentic-integration.md)（Agent 作编排层的两层架构、划边界四轴、确定性闸门、钉死/交给清单、MCP/A2A/Skill 插座） |
 | 给数据目录（含内核状态文件）出备份清单、做备份与恢复演练 | [design-vault.md](design-vault.md) v0.2（`MapSource`：Realm 或文件白名单、图只存引用 + 指纹、AES-GCM 密钥分离、`LiveSource` 原地校验/漂移检测、加密备份包跨位恢复，E8.1/E8.2 + deferred #13）；CLI 操作（build/check/backup/restore、`--files` 白名单、cron 示例）见 [deployment.md](deployment.md) §7（E3.7） |

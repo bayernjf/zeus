@@ -441,6 +441,7 @@ State of Zeus as of 2026-09-27.
 * [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 v0.3：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、混合检索（§6.1）、漂移对账（§6.3）、八条验收 ★
 * [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
 * [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核 v0.1（PRD E1）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级、边界 ★
+* [docs/design-backpressure.md](docs/design-backpressure.md) — 执行 Agent 背压分流策略 v0.1（deferred #9）：饱和信号、同技能候选集、可靠度×延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计 ★
 * [docs/design-decision-backend.md](docs/design-decision-backend.md) — 决策后端抽象层 v0.2（模型无关）：DecisionBackend 端口（noul/choice/score）、两类实现家族（专用决策模型 Jev / 传统 LLM 适配）、四接线位、选择与降级、数据主权硬线 ★
 * [docs/design-agentic-integration.md](docs/design-agentic-integration.md) — Agent 时代系统互联与确定性边界 v0.4：§2A Zeus 定位（AI 原生多 Agent 团队运行时）、两层架构、划边界四轴、确定性闸门、MCP·A2A·Skill 插座、§6A 五种主流实践、§6A.2 三层成熟度与四步重构、闸门软肋 ★
 * [docs/design-vault.md](docs/design-vault.md) — Vault 藏宝图与恢复协议 v0.2（E8.1/E8.2 + deferred #13）：`MapSource`（Realm 或**文件白名单**，内核状态文件因此可备份）、图只存引用 + 逐 item 指纹（**正文零泄漏**）、AES-256-GCM 密钥分离、L0 走 `LiveSource` 端口原地校验（scope 随图走）、L1 加密备份包跨位恢复（FsRestoreSink）、digest 漂移检测、v1 图读入归一化 ★

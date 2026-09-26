@@ -46,6 +46,7 @@
 ### #9 执行 Agent 背压降级顺序
 - 执行 Agent 饱和时 Zeus 任务队列向其他执行 Agent/队列分流的降级顺序。
 - **进展（2026-09-25）**：**闸门本身已落地**——`Orchestrator` 的 `maxConcurrentBranches` + `branchQueueLimit`（进程内在途分支上界、FIFO 等待、满则拒绝并把原因记进分支结果），见 handoff Active work 39 与 tests/orchestrator-backpressure.test.ts；`GET /api/metrics` 的 `queueDepth` 从此是真实值。**本条仍未销项**：剩下的问题是"该把溢出分流给谁"——拒绝顺序 / 按可靠度或延迟重排候选 / 有界排队 vs 立即降级的策略选择，需要真实执行 Agent 的行为数据才能定，凭空拍一个顺序没有依据。
+- **策略已制定（2026-09-27，设计稿 v0.1）**：分流机制与信号已落到 [design-backpressure.md](design-backpressure.md)——① 饱和信号 = per-vassal 实时在途计数（当前 `ConcurrencyMetrics` 只有全局 `inFlight`/`queueDepth`，缺该 primitive，策略已点名启用改动）；② 同技能候选集 = `activeProviders(skill)` 过滤 active/healthy/非饱和；③ 候选重排 = 可靠度 `(1-failureRate)` × 延迟 `p50Ms` 加权评分降序（数据来自 `perVassal` 历史，纯函数可单测）；④ 显式 `request.vassals` 硬钉不分流，自动选靶可分流、无候选回退既有排队→拒绝且拒绝原因带 tried 状态审计。复用现有 `ConcurrencyMetrics.perVassal` 与 `SkillGovernor.activeProviders` 三态，不引入跨实例协调。**仍未销项**：启用代码（`PerVassalLoad` + `selectTargets` 纯函数 + 选靶处接线）与阈值调参（`cap(v)`/`queueLimit`/评分权重 `w_r,w_l`/`LATENCY_NORMALIZER`）仍挂原触发条件——需 ≥3 真实 Agent 压测才能定数，凭空拍阈值无依据。
 - **触发条件**：≥3 个执行 Agent 在线压测（同一台机器上的 mock 不算：mock 的延迟分布与失败模式是编的，只会把一个猜测变成锁定的猜测）。
 
 ### #10 Realm 检索后端升级（倒排 / 向量）
