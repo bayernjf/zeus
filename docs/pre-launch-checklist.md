@@ -1,9 +1,9 @@
 # 上线前 Checklist（Pre-launch Checklist）
 
 - 关联：项目级评审单一事实源 [review-mvp-2026-09.md](review-mvp-2026-09.md)；deferred 项清单 [deferred-items.md](deferred-items.md)；部署面 [deployment.md](deployment.md)；容量基线 [capacity-baseline.md](capacity-baseline.md)。
-- **判定（2026-09-27 复核）**：
-  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且未回退，全量 736 测试 / 77 文件绿、typecheck/build 过）。
-  - **可交付真实用户 MVP：❌ 未达成**。差的是**真实环境里的执行动作**（真实封臣注册与扇出、密钥托管发布、跨实例联调、模型裁决 key 核对），无法在仓库内闭环。
+- **判定（2026-09-27 v0.17 复核）**：
+  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且装配到真进程路径，全量 737 测试 / 77 文件绿、typecheck/build 过；P0 26/26 为逐行机械计数，签名链与离线验签四条正负对照用出货命令行复跑过）。
+  - **可交付真实用户 MVP：❌ 未达成**。差的是**真实环境里的执行动作**（真实封臣注册与扇出、密钥托管发布、跨实例联调、模型裁决 key 核对），无法在仓库内闭环；另加一条**库内可做**的前置项见 §F-7（deferred #25）。
 - 本文按"是否阻塞上线"分层。每条尽量给命令 / 出口标准 / 当前证据分级（实测 / 记录 / 待做）。
 - 设计约束红线（来自 product-portrait，任何上线动作不得违反）：数据主权在用户（给目录即用、正文不出域、备份恢复一等能力）；每个概念必须可执行；能力接入只有 MCP / Skill / A2A 三条通道，无私有旁路；个人域与企业域单向隔离、跨域读写需显式签名一次性授权。
 
@@ -47,18 +47,20 @@
 
 | # | 项 | 命令 / 动作 | 当前状态 |
 |---|---|---|---|
-| E1 | push dev → 云端 CI 首绿 | 三次历史 push 均双矩阵绿（v0.6 已发生）；**本次 #9 三笔提交需再次 push + 云端绿** | 本地领先，未 push（按 AGENTS.md 不自动 push） |
+| E1 | push dev → 云端 CI 首绿（每次推送后双矩阵绿才算销项） | `git ls-remote origin refs/heads/dev`；`git rev-list --left-right --count origin/dev...HEAD` | **2026-09-27 实测 `0 0`：此前批次已推送**；本轮之后（含 `6f86369`）仍需再推一次并确认云端绿，**云端结果本轮未验证**（`gh` 访问被权限层拦） |
 | E2 | 镜像发布到 registry | 若用容器部署 | 待做 |
 
 ## F. 每次上线前必跑的验证门（回归护栏）
 
-1. `npx vitest run` exit 0（当前 **736 测试 / 77 文件**）
-2. `npx tsc --noEmit` exit 0
-3. `npm run build` exit 0，dist 完整（验收脚本依赖编译产物）
-4. 三条接入通道执行点 grep 复核（见 review-mvp §B）：`boot.ts` tokenFor 接线、`orchestrator.ts` activeProviders 三态闸门、`mcp.ts` REALM_NOT_CONNECTED 白名单、onConflict→监督台闭环、持久化/签名链执行点均在位
-5. `docker` 真机构冒烟（B1）
-6. 时钟偏置回归：`vitest` clock-skew 作业绿（deferred #24 闸门）
+1. `npm run typecheck` exit 0
+2. `npm run build` exit 0，`dist/` 完整（**必须在测试之前**：`tests/verify-roster.test.ts` 与 §F-5 的离线验签都跑编译产物）
+3. `npm test` exit 0（当前 **737 测试 / 77 文件**；量法就是这条命令的最后一行，别从文档抄数）
+4. 三条接入通道执行点 grep 复核（见 review-mvp §B）：`boot.ts` tokenFor 接线、`orchestrator.ts` activeProviders 三态闸门、`mcp.ts` REALM_NOT_CONNECTED 白名单、onConflict→监督台闭环、持久化/签名链执行点均在位。**v0.17 追加两条"核对装配而不是核对注册"**：`serve.ts:147` 把 `dagRunner` 注入 HTTP 依赖（否则 DAG 路由在真进程里恒 503）、`boot.ts:593→408→orchestrator.ts:169` 让 `ZEUS_MAX_CONCURRENT_PER_VASSAL` 真的到达 `selectTargets`
+5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）
+6. `docker` 真机构冒烟（B1）
+7. 时钟偏置回归：`vitest` clock-skew 作业绿（deferred #24 闸门）
+8. **核心链路真进程冒烟**（§F 里目前唯一没有命令的一项，见 deferred **#25**）：起真进程 + 真 socket 走完「挂目录 → 带凭证注册 → 扇出 → 聚合 → 审计落盘 → 名册离线可验 → 吊销断流 → 重启恢复」。历史上每次都是评审临时手写、跑完即弃，**上线前应先把它固化成 `scripts/smoke-core.mjs`**
 
 ## 一句话
 
-**内核与制品已到"可演示 MVP"；上线只差真实环境里的跑起来、联起来、签出去（A1–A5 + B 系列），以及把本次新提交推到云端 CI（E1）。阈值标定（C 系列）不阻塞核心 MVP，但建议在首次真实多 Agent 负载前完成一次压测。**
+**内核与制品已到"可演示 MVP"；上线只差真实环境里的跑起来、联起来、签出去（A1–A5 + B 系列），以及把本次新提交推到云端 CI 并确认绿（E1）。此外还有一件**库内可做**的事挡在"每次上线都要靠人手工演一遍"和"一条命令就能重跑验收"之间：把核心链路的真进程冒烟固化成脚本（deferred #25，§F-8）。阈值标定（C 系列）不阻塞核心 MVP，但建议在首次真实多 Agent 负载前完成一次压测。**
