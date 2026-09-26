@@ -1,7 +1,7 @@
 # Supervisor 与 Subagent 控制关系设计（Supervision Model）
 
 > 状态：**现行（设计稿 v0.1，2026-09-22）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
-> 上游：[prd.md](prd.md) E1（并发决策内核）、E4（执行 Agent联邦）；与 [design-memory-consolidation.md](design-memory-consolidation.md) 配套（信任校准依赖记忆）。
+> 上游：[prd.md](prd.md) E1（并发决策内核）、E4（执行 Agent 联邦）；与 [design-memory-consolidation.md](design-memory-consolidation.md) 配套（信任校准依赖记忆）。
 
 ## 0. 一句话
 
@@ -57,7 +57,7 @@ interface Handback {               // subagent → supervisor
 }
 ```
 
-与执行 Agent协议对应：`sendSubscribe`=派活，`x-zeus-report`=Handback，`x-zeus-escalation`=上报边界外事项。星型拓扑保证 subagent 不私下协作，**一切汇聚经 supervisor**——这是数据二极管与可追溯性的执行点。
+与执行 Agent 协议对应：`sendSubscribe`=派活，`x-zeus-report`=Handback，`x-zeus-escalation`=上报边界外事项。星型拓扑保证 subagent 不私下协作，**一切汇聚经 supervisor**——这是数据二极管与可追溯性的执行点。
 
 ## 4. 编排形态
 

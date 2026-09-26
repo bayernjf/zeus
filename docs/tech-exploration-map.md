@@ -46,7 +46,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 
 ## E. 已覆盖（已有点名或设计，避免重复立项）
 
-- 协议层：MCP / A2A / 执行 Agent超集（design-vassal-protocol）
+- 协议层：MCP / A2A / 执行 Agent 超集（design-vassal-protocol）
 - 记忆：分层与整理协议（design-memory-consolidation）
 - 控制关系：supervisor/subagent（design-supervision）
 - 数据主权：Realm 目录底座、签名链、内外名册（design-realm / signing / roster）

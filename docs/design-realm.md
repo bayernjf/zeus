@@ -10,7 +10,7 @@ Realm 是用户指定的**一个目录**及其纳管数据：先连接、后使�
 
 1. **目录是唯一数据来源**：Zeus 对 Realm 之外的用户文件零访问；绝不扫描父目录或兄弟目录。
 2. **先连接后使用**：未完成 connect（含 manifest 建立）的 Realm，任何读写一律拒绝。
-3. **暴露接口而非文件**：Agent/执行 Agent只见本契约的 API，不见路径、不见原始文件布局。
+3. **暴露接口而非文件**：Agent/执行 Agent 只见本契约的 API，不见路径、不见原始文件布局。
 4. **Realm 有类型**：`personal` / `enterprise`，一经 connect 固定；派发任务时由 Dispatcher 对照 fealty.dataRealms 做数据二极管。企业域再按 **§7 的租户分级**（组织/部门/成员）细分，个人域不是租户。
 5. **备份是第一公民**：connect 即生成 manifest 备份基线；没有备份能力的 Realm 可以降级为只读。
 
@@ -68,7 +68,7 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 ## 5. 交付节奏
 
 - P0（已落，后续批次扩到写与企业域）：库内 `RealmStore`：`connect / manifest / search / read`；检索为纯文件系统扫描（可替换后端）。**不启传输**，Zeus 内核同进程调用（dispatcher 的 realmHits 注入即由本层检索供给）。
-- P1：**第一件事是把 RealmStore 包成 MCP server 暴露**（streamable HTTP + 鉴权，传输形态立项时定），让 read-realm 执行 Agent与任意 MCP 客户端经授权读取；随后做 `write` 与授权凭证、enterprise Realm。
+- P1：**第一件事是把 RealmStore 包成 MCP server 暴露**（streamable HTTP + 鉴权，传输形态立项时定），让 read-realm 执行 Agent 与任意 MCP 客户端经授权读取；随后做 `write` 与授权凭证、enterprise Realm。
   - **落地进展（v0.19）**：`write` 的库内部分与授权凭证门已先行落地（不依赖 MCP 触发条件）——`FsRealmStore.write` 与 `src/realm/grant.ts` `verifyDriverWriteGrant`：personal 默认可写、readOnly 拒写、enterprise 写须绑定本域且未过期的操作者凭证（形状/域/有效期纯函数校验；**签名、签发与一次性自 v0.5 起在库内**，见 §7.7）；原子写、路径/symlink/扩展名/尺寸防护、写后快照与 contentDigest 一致性、审计回调齐备。
   - **落地进展（2026-09-25，E3.5 收口）**：`connect` 不再拒 enterprise，且**存储的类型如实记录**（此前 `realms.set` 把 type 硬编码成 `personal`，于是企业域写闸门在真实 store 上永远走不到、凭证门只在纯函数测试里被 mock 打过桩——是死代码）。现在企业域 connect→写授权→写后读回→审计记 `grantedBy` 全链路有测试；`readOnly` 连接即使持有效凭证仍拒写。二极管制仍然只在写侧与派发/决策/记忆层落地：本层不存在跨 realm 写入路径（每次读写都以单一 realmId 定址），所以"企业域→个人域禁止"在 RealmStore 层无执行点，其真实约束在 Dispatcher `dataRealms` / decision `prepareState` / MemoryStore 边界。**仍未做**：MCP `tools/write` 暴露（签发/验签/防重放已于同日补上，见 §7.7 与 deferred #14 销项）。
   - **E3.6 多租户分级（2026-09-25 落地，见 §7）**：本层原有的 personal/enterprise 两型标记只是"域"，不是"租户"；`connect(root, 'enterprise')` 打开的是"企业域可挂载 + 写须授权"，不等于多租户隔离。§7 补上组织/部门/成员三级、边界判定与授权生命周期。
@@ -106,7 +106,7 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 
 §6.1 拍的是"**Realm 内容**对外只有 MCP"。E6.4 落了 `/api/domains*` 与 `POST /api/intents` 的 `realmSource` 之后，这句话需要精确化，否则代码与决策互相打脸：
 
-- **仍然禁止**：把 Realm 的条目内容做成 HTTP 读接口（没有 `GET /api/realm/items/...` 这种东西；执行 Agent要读内容只能走 MCP）。
+- **仍然禁止**：把 Realm 的条目内容做成 HTTP 读接口（没有 `GET /api/realm/items/...` 这种东西；执行 Agent 要读内容只能走 MCP）。
 - **允许并且已落**：操作者 bearer 面上暴露 Realm 的**治理元数据**（挂载了哪个域、哪级租户、是否只读、条目数、内容指纹）与**授权记录**。理由与 `GET /api/state` 同源：这些是"边界长什么样"，不是"边界里装什么"。
 - **`realmSource` 不是新传输面**：它不向客户端返回命中，只让**内核代替调用方去取**，然后把命中送进派发链路。方向上它是在收窄 §6.1 想防的东西——内容来源从"调用方自报"变成"内核亲自解析并核对声明"。
 - 一句话规则：**对外（执行 Agent/其他 Agent）→ MCP；对内（操作者自己）→ bearer HTTP，且只到元数据与授权为止。**
@@ -149,7 +149,7 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 4. 才执行 search，命中连同 realmId 一起写进派发请求（provenance 由此可查）；
 5. 放行与拒绝**都落审计**（`domain-read` / `domain-refused`，reason 作为前缀，走同一根 audit spine）。
 
-`onBehalfOf` 让"替执行 Agent取数"按**被执行 Agent 的边界**判定，而不是持 token 者的边界；且只接受 `vassal|agent`——**不接受再声称一次 `driver`**，因为 driver 恰是不受域门约束的身份，允许冒充等于给自己开后门。
+`onBehalfOf` 让"替执行 Agent 取数"按**被执行 Agent 的边界**判定，而不是持 token 者的边界；且只接受 `vassal|agent`——**不接受再声称一次 `driver`**，因为 driver 恰是不受域门约束的身份，允许冒充等于给自己开后门。
 
 操作者仍可自报 `realmHits`（用户是自己数据的主权者，这是产品底座不是漏洞），但两者**互斥**：一份意图只能有一个内容来源，否则 provenance 说不清。
 
@@ -164,13 +164,13 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 
 ### 7.6 未做（诚实边界，已登记）
 
-- **MCP 侧尚未接 actor**：`createRealmMcpHandler` 的隔离单位仍是"宿主给某个 server 预连接哪些 `realmIds`"。把 §7.2 的判定接进去需要真实 read-realm 执行 Agent触发（否则规则只能被 mock 打桩）→ deferred **#18**。
+- **MCP 侧尚未接 actor**：`createRealmMcpHandler` 的隔离单位仍是"宿主给某个 server 预连接哪些 `realmIds`"。把 §7.2 的判定接进去需要真实 read-realm 执行 Agent 触发（否则规则只能被 mock 打桩）→ deferred **#18**。
 - **没有 disconnect / 显式改边界**：改租户只能重启，而重启又会被 §7.1 的漂移检查拒启 → 缺一个显式操作 → deferred **#17**。
 - 企业域→个人域在**决策/记忆注入侧**仍按 realm type 粗粒度约束（`prepareState` / MemoryStore 边界），未接 DomainGrant 粒度。
 
 ### 7.7 企业写凭证：签发、验签与一次性（E3.5 / deferred #14，2026-09-25）
 
-**修掉的洞**：`verifyDriverWriteGrant` 此前只做形状/绑定/有效期校验，也就是说它**相信"拿到的这坨 JSON 就是操作者给的"**。而任何能摸到 `store.write()` 的代码（执行 Agent适配器、连接器、未来的 MCP handler）都能自己拼一坨——那不是凭证检查，是装饰。
+**修掉的洞**：`verifyDriverWriteGrant` 此前只做形状/绑定/有效期校验，也就是说它**相信"拿到的这坨 JSON 就是操作者给的"**。而任何能摸到 `store.write()` 的代码（执行 Agent 适配器、连接器、未来的 MCP handler）都能自己拼一坨——那不是凭证检查，是装饰。
 
 **凭证是什么**：一张**签名过的一次性写授权**——"密钥 K 授权向 realm R 写一次，T 时刻前有效"。
 
