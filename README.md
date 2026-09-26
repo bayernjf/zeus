@@ -4,12 +4,12 @@
 
 ## 这个仓库是什么
 
-当前形态是 **TypeScript 运行时内核库 + 薄 HTTP 传输层**：
+当前形态是 **TypeScript 运行时核心库 + 薄 HTTP 传输层**：
 
 - **库**（`src/`，除 `src/http/` 外零运行时依赖）：Agent 注册与派发、并发派发/汇聚、规则聚合、冲突检测与升级、模型无关的决策后端与对抗复核、离线决策回放、完整 DAG、并发治理（信号量 + 有界队列）、数据域访问与跨域授权、记忆存储与叙事日志、组织结构与问责、上岗资格校验、审计与持久化恢复。
-- **唯一生产依赖是 Fastify，且被限制在 `src/http/`**：H1 只读端点（健康检查、签名目录快照）+ H2 操作面（发起任务、回查决策、人工裁决、指标、盘点）+ H3 服务端 SSE。内核代码里 grep 不到 fastify。
+- **唯一生产依赖是 Fastify，且被限制在 `src/http/`**：H1 只读端点（健康检查、签名目录快照）+ H2 操作面（发起任务、回查决策、人工裁决、指标、盘点）+ H3 服务端 SSE。核心代码里 grep 不到 fastify。
 - **数据接入**：数据域（本地目录）通过 MCP 对外暴露，只读工具 `search` / `read` + resources，宿主预连接的白名单即边界；另有零 SDK 的 MCP 客户端做外部系统连接器。
-- **可恢复性**：备份清单（只存引用与逐条指纹）+ AES-256-GCM 加密内容包，可原地校验漂移、可跨位置恢复；运行时状态文件（含注册表、升级队列、意图结果、组织编制、授权台账）也在覆盖范围内。零依赖 CLI（`build` / `check` / `backup` / `restore`），调度交给外部 cron/systemd，内核不内置定时器。
+- **可恢复性**：备份清单（只存引用与逐条指纹）+ AES-256-GCM 加密内容包，可原地校验漂移、可跨位置恢复；运行时状态文件（含注册表、升级队列、意图结果、组织编制、授权台账）也在覆盖范围内。零依赖 CLI（`build` / `check` / `backup` / `restore`），调度交给外部 cron/systemd，核心不内置定时器。
 
 ## 术语
 
@@ -29,7 +29,7 @@
 | 决策回放（deterministic replay） | 从持久化事实重建一次决策的完整过程（参与方、输入、立场、聚合、裁决、人工裁决） | `replay.ts`、`GET /api/intents/:id/replay` |
 | 数据域（data domain） | 一个可连接的本地目录，分 `personal` 与 `enterprise` 两型；连接即建立检索索引 | `FsRealmStore` |
 | 租户范围（tenant scope） | 企业域的三级隔离：`org / department / member`；层级是结构性边界，任何凭证都不能放宽 | `TenantScope` |
-| 跨域授权（cross-domain grant） | 个人域→企业域的唯一放行通道：内核签名、绑定本域、带过期、nonce 一次性 | `DomainGrant`、`issueDriverWriteGrant` |
+| 跨域授权（cross-domain grant） | 个人域→企业域的唯一放行通道：由运行时核心签名、绑定本域、带过期、nonce 一次性 | `DomainGrant`、`issueDriverWriteGrant` |
 | 单向隔离（data diode） | 企业域内容可进入决策，反向路径不存在；执行侧只看到任务范围内的输入 | 派发侧脱敏、`decideRealmAccess` |
 | 能力目录（skill catalogue） | 显式规格的技能登记：多版本共存、检索、组队解析、安装/卸载/权限收窄即时生效 | `SkillRegistry` |
 | 能力认证（capability attestation） | 一个 Agent 被授予"某技能提供者"身份需通过逐项评估，出勤不计入能力 | `MentorshipLedger` |
@@ -50,7 +50,7 @@
 | 目录快照投影 | `src/registry/roster.ts` | 注册表 → 不可变 internal / public 双投影，只重塑与裁剪不造字段；`active` / `revoked` 两态 attestation |
 | 派发器 | `src/dispatch/` | JSON-RPC + SSE 客户端（`send` / `sendSubscribe` / `cancel`）、按数据策略脱敏、派发前吊销阻断（不发请求也不发凭证）、审计 sink 与吊销审计桥 |
 | 人工处理队列 | `src/oversight/` | 收集缺参升级与冲突升级，支持 approve / reject / resolve；reject 联动取消对端任务；裁决立场回交编排器；可持久化 |
-| 编排内核 | `src/orchestrator/` | 并行派发与汇聚、多流合并、确定性规则聚合、冲突检测与升级、对抗复核、按任务 ID 幂等重放、取消传播、并发上限与有界队列、决议回写、补参重派、离线决策回放、完整 DAG、并发指标 |
+| 编排引擎 | `src/orchestrator/` | 并行派发与汇聚、多流合并、确定性规则聚合、冲突检测与升级、对抗复核、按任务 ID 幂等重放、取消传播、并发上限与有界队列、决议回写、补参重派、离线决策回放、完整 DAG、并发指标 |
 | 能力目录 | `src/skills/` | 显式规格校验（版本 / 封闭权限词汇 / 依赖须已注册且无环）、多版本共存与弃用标记、检索与组队解析（歧义不静默选边）、安装/卸载/权限收窄、能力认证台账；派发路径读取目录裁决可用提供者 |
 | 决策后端 | `src/decision/` | 模型无关端口 + 适配器 + 降级；规则不收敛时的置信闸门仲裁 |
 | 数据域 | `src/realm/` | `FsRealmStore` 的 connect / manifest / search / read / write、确定性 realmId、内容摘要基线、路径穿越与符号链接双检、原子写；两型均可连接且类型如实存储；企业域写需签名且一次性的授权凭证，只读连接即使持凭证仍拒写；三级租户范围与跨域授权判定；只读 MCP 服务端（resources + tools）与 stdio 宿主 |
@@ -112,7 +112,7 @@ npm run vault -- backup  --root /path/to/dir --out-dir backups        # 加密�
 npm run vault -- restore --map backups/x.map.json --bundle backups/x.bundle.json --target /restore/dir
 ```
 
-备份调度不在内核内：用 cron 或 systemd timer 周期调用 `backup` / `check`（示例见 [docs/deployment.md](docs/deployment.md) §7）。
+备份调度不在运行时核心内：用 cron 或 systemd timer 周期调用 `backup` / `check`（示例见 [docs/deployment.md](docs/deployment.md) §7）。
 
 ## 用库起一个带鉴权的服务
 
