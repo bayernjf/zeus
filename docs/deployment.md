@@ -34,7 +34,7 @@
 | `ZEUS_DECISION_MODEL` | 适配器默认 | 决策模型名，只在上面两项齐时生效 |
 | `ZEUS_LLM_BASE_URL` + `ZEUS_LLM_API_KEY` + `ZEUS_LLM_MODEL` | 未设置 | 通用 OpenAI 兼容后端，**三项齐才启用**，优先级低于 `ZEUS_DECISION_*`。这是把裁决发给外部模型的通道——注意数据出境口径 |
 | `ZEUS_JUDGE_ENABLED` | 未设置（关） | E1.3 对抗式 judge。**必须有决策后端才生效**：只设它而后端不齐时保持关闭（后端状态看 `GET /api/decision` 或启动日志那一行） |
-| `ZEUS_JUDGE_THRESHOLD` | 内置阈值 | judge 采信阈值。⚠️ **非数字值被静默忽略并退回默认阈值**——这与 `ZEUS_MAX_CONCURRENT_BRANCHES` 的"非法值拒启"不一致，已记进评审（review v0.9 §C-8），尚未统一 |
+| `ZEUS_JUDGE_THRESHOLD` | 内置阈值 | judge 采信阈值。**非数字值拒启**（与 `ZEUS_MAX_CONCURRENT_BRANCHES` 等其余 boot 参数口径一致，不再静默退回默认）——统一见 deferred #20 销项 |
 | `ZEUS_JUDGE_ALLOW_UNCALIBRATED` | 未设置（关） | 允许未校准 judge 参与裁决；开启即放弃"先校准再采信"这条防线，只用于实验环境 |
 | `ZEUS_RSK_KEY` | 未设置 | RSK 私钥 PEM 全文（Ed25519，PKCS#8） |
 | `ZEUS_RSK_KEY_FILE` | 未设置 | RSK 私钥 PEM 文件路径（secret 挂载推荐）；与 `ZEUS_RSK_KEY` 同时存在时内联优先 |

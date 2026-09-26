@@ -540,10 +540,11 @@ export function resolveDecisionConfig(env: NodeJS.ProcessEnv = process.env): Pro
   const judgeEnabled = envFlag(env.ZEUS_JUDGE_ENABLED) && backend !== null;
 
   const config: ProcessDecisionConfig = { backend, backendKind, judgeEnabled };
-  if (env.ZEUS_JUDGE_THRESHOLD) {
-    const threshold = Number(env.ZEUS_JUDGE_THRESHOLD);
-    if (Number.isFinite(threshold)) config.judgeThreshold = threshold;
-  }
+  // A threshold the operator set and the process quietly ignored is the same class
+  // of failure as a silently-ignored concurrency cap (E1.5): it reads as a setting
+  // that is not there. Malformed values fail boot loudly, like the other params.
+  const threshold = envNumber(env.ZEUS_JUDGE_THRESHOLD, 'ZEUS_JUDGE_THRESHOLD', 0);
+  if (threshold !== undefined) config.judgeThreshold = threshold;
   if (envFlag(env.ZEUS_JUDGE_ALLOW_UNCALIBRATED)) config.allowUncalibratedJudge = true;
   return config;
 }
@@ -582,6 +583,20 @@ function envInteger(
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min) {
     throw new KernelBootError(`${name} must be a whole number >= ${min}, got '${value}'`);
+  }
+  return parsed;
+}
+
+/** Like envInteger but admits fractional values (e.g. a 0..1 judge threshold). */
+function envNumber(
+  value: string | undefined,
+  name: string,
+  min: number,
+): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < min) {
+    throw new KernelBootError(`${name} must be a number >= ${min}, got '${value}'`);
   }
   return parsed;
 }
