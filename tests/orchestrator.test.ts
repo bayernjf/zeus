@@ -34,15 +34,27 @@ function failResult(reason: string): DispatchResult {
 type Route = DispatchResult | ((req: DispatchRequest) => Promise<DispatchResult> | DispatchResult);
 
 function makePort(routes: Record<string, Route>, cancelFor?: Record<string, () => void>) {
-  const calls: Array<{ vassal: string; runId: string; at: number }> = [];
+  // maxInFlight counts dispatches that are inside the port at the same moment.
+  // That is the property "fan-out is parallel" actually claims, and unlike a
+  // millisecond bound it cannot be broken by a slow scheduler: the previous check
+  // ("both dispatches start within 8ms") failed at 12ms while the code was right.
+  const calls: Array<{ vassal: string; runId: string }> = [];
   const cancelCalls: Array<[string, string]> = [];
-  const port: DispatchPort & { calls: typeof calls; cancelCalls: typeof cancelCalls } = {
+  let inFlight = 0;
+  const port: DispatchPort & { calls: typeof calls; cancelCalls: typeof cancelCalls; maxInFlight: number } = {
     calls,
     cancelCalls,
+    maxInFlight: 0,
     async dispatch(req) {
-      calls.push({ vassal: req.vassal!, runId: req.runId!, at: Date.now() });
-      const route = routes[req.vassal!];
-      return typeof route === 'function' ? route(req) : route;
+      calls.push({ vassal: req.vassal!, runId: req.runId! });
+      inFlight += 1;
+      port.maxInFlight = Math.max(port.maxInFlight, inFlight);
+      try {
+        const route = routes[req.vassal!];
+        return await (typeof route === 'function' ? route(req) : route);
+      } finally {
+        inFlight -= 1;
+      }
     },
     async cancel(vassal, taskId) {
       cancelCalls.push([vassal, taskId]);
@@ -72,11 +84,24 @@ describe('Orchestrator.fanOut', () => {
 
     expect(result.status).toBe('completed');
     expect(result.branches.map(b => b.vassal)).toEqual(['loom', 'atlas']);
-    // Parallelism is proven deterministically by both dispatches starting in the
-    // same tick window (a serial run would start the second ~15ms later). We do
-    // not assert total wall-clock: under saturated CI the 15ms timers slip and
-    // make any "< 28ms" bound flaky without indicating serialization.
-    expect(port.calls[1].at - port.calls[0].at).toBeLessThan(8);
+    // Parallelism is proven structurally: the second dispatch enters the port
+    // while the first is still inside it. A serial run cannot produce that shape
+    // at any machine speed, and a saturated runner cannot fake it away — the
+    // previous check ("both start within 8ms") failed at 12ms under CPU
+    // contention while the code was correct, so it measured the scheduler.
+    expect(port.maxInFlight).toBe(2);
+    // Control: run the same two branches one after another and confirm the
+    // predicate goes the other way. Without this, the overlap assertion could
+    // pass for a serial implementation too and we would not know.
+    const serialPort = makePort({
+      loom: async () => { await delay(15); return okResult('loom'); },
+      atlas: async () => { await delay(15); return okResult('atlas'); },
+    });
+    const serialOrch = newOrchestrator(serialPort, ['loom']);
+    await serialOrch.fanOut({ skill: 'generate-content', params: {}, realm: 'personal' });
+    const second = newOrchestrator(serialPort, ['atlas']);
+    await second.fanOut({ skill: 'generate-content', params: {}, realm: 'personal' });
+    expect(serialPort.maxInFlight).toBe(1);
     expect(port.calls.map(c => c.runId)).toEqual(['run-1:loom', 'run-1:atlas']);
     expect(result.stream.map(e => e.source.vassal)).toEqual(['loom', 'atlas']);
     expect(result.stream[0].source.taskId).toBe('loom-task');
