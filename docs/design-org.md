@@ -3,7 +3,7 @@
 - 状态：**现行 v0.1**（2026-09-24）
 - 对应 PRD：**E9.3 虚拟部门编制（Team）与结果责任（P2）**
 - 关联：[design-supervision.md](design-supervision.md)（控制与责任）、[design-fan-out.md](design-fan-out.md)（意图/分支结果）、[product-portrait.md](product-portrait.md) §4 组织层
-- 一句话：**把 Agent 编进有职责、有主管的虚拟部门，让"谁在哪个部门、担什么岗"可视，并让每个任务结果都能追到执行 Agent、部门主管与拍板驾驶员。**
+- 一句话：**把 Agent 编进有职责、有主管的虚拟部门，让"谁在哪个部门、担什么岗"可视，并让每个任务结果都能追到执行 Agent、部门主管与作出裁决的操作者。**
 
 ---
 
@@ -12,7 +12,7 @@
 现有两类"组队"，都不是组织编制：
 
 - `skills` 的 `TeamResolution`：为**某个任务**按技能临时组的执行队，任务结束即散；
-- `roster`：封臣名册投影，回答"有哪些封臣"，不回答"谁属于哪个部门、谁对结果负责"。
+- `roster`：执行 Agent名册投影，回答"有哪些执行 Agent"，不回答"谁属于哪个部门、谁对结果负责"。
 
 E9.3 补**组织层**：持久的部门编制 + 责任链。它不改编排，只把已有的 Agent 与任务结果映射到组织结构上。
 
@@ -21,7 +21,7 @@ E9.3 补**组织层**：持久的部门编制 + 责任链。它不改编排，�
 1. **编制确定**：`departmentId` 由部门名确定性派生；成员按 `agentId` 在部门内唯一。
 2. **一个部门一个 lead**：lead 是该部门结果的责任人。
 3. **责任不悬空**：每个执行分支都能映射到节点；Agent 没有编制时显式标 `unassigned`（暴露"野 Agent"，不静默忽略）。
-4. **追到 Agent 与驾驶员**：责任链含执行节点、所属部门 lead、以及拍板驾驶员（若有）。
+4. **追到 Agent 与操作者**：责任链含执行节点、所属部门 lead、以及作出裁决的操作者（若有）。
 5. **只映射、不臆造**：部门/岗位来自编制数据，责任链来自真实 `FanOutResult`。
 6. **不可变**：编制变更经纯函数返回新对象（与 roster 投影风格一致）。
 
@@ -64,7 +64,7 @@ export interface AccountabilityChain {
   executing: AccountabilityNode[];
   leads: AccountabilityNode[];   // 去重的部门主管
   unassigned: string[];          // 无编制的执行 Agent
-  driver?: {                     // 拍板驾驶员（若有 driverResolution）
+  driver?: {                     // 作出裁决的操作者（若有 driverResolution）
     escalationId: string;
     stance: string;
     decidedAt: string;
@@ -107,7 +107,7 @@ export interface AccountabilityChain {
 3. `driver`：`result.driverResolution` 存在则取 escalationId/stance/decidedAt；
 4. 返回 `AccountabilityChain`（intentId/skill/status 透传）。
 
-这样一个结果可读到：**谁执行 → 谁的部门主管负责 → 哪位驾驶员拍板**。
+这样一个结果可读到：**谁执行 → 谁的部门主管负责 → 哪位操作者裁决**。
 
 ## 7. 安全红线（测试必须逐条断言）
 
@@ -131,7 +131,7 @@ export interface AccountabilityChain {
 
 - [ ] createDepartment / assignMember / removeMember / setLead 行为与不可变性正确。
 - [ ] buildOrgChart 与 renderOrgMarkdown 编制可视、排序确定。
-- [ ] traceAccountability：执行/主管/驾驶员三层责任正确，unassigned 显式。
+- [ ] traceAccountability：执行/主管/操作者三层责任正确，unassigned 显式。
 - [ ] slug 与重复/越界情形报错。
 - [ ] 全量 `vitest` 绿、`tsc --noEmit` 绿、`npm run build` 过。
 - [ ] PRD E9.3 升状态、README 模块表、handoff 与 docs/README 同步。

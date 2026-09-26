@@ -2,13 +2,13 @@
 
 长驻 Node 进程形态：Fastify HTTP 面（`dist/http/serve.js`）装配内核（registry / oversight / dispatcher / orchestrator），启动时从状态文件恢复、优雅退出时落盘。本文覆盖 Docker（推荐）与裸机 systemd 两种形态。
 
-> 当前边界：封臣可经 `POST /api/vassals`（H2 内部面，bearer 保护）注册，或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；Realm 不挂 HTTP。
+> 当前边界：执行 Agent可经 `POST /api/vassals`（H2 内部面，bearer 保护）注册，或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；Realm 不挂 HTTP。
 
 ## 1. 端点
 
 | 端点 | 鉴权 | 说明 |
 |---|---|---|
-| `GET /healthz` | 无 | 仅 `status/version/ts`，不含封臣与 Realm 信息 |
+| `GET /healthz` | 无 | 仅 `status/version/ts`，不含执行 Agent与 Realm 信息 |
 | `GET /api/roster/public` | 无 | 实时名册投影 + Ed25519 封签（离线可验，1h seal / 24h attestation TTL） |
 | `GET /api/roster` | bearer（`ZEUS_INTERNAL_TOKEN`） | 内部全量视图；未配 token 时该路由不挂载（404） |
 
@@ -18,7 +18,7 @@
 |---|---|---|
 | `ZEUS_HOST` | `127.0.0.1` | 监听地址；**容器内必须 `0.0.0.0`** |
 | `ZEUS_PORT` | `8787` | 监听端口 |
-| `ZEUS_VASSAL_SEEDS` | 未设置 | G1：启动时自动注册的封臣 Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。**某个 seed 拉不到或卡片没发誓 fealty → 整个进程拒启**（一行 `[zeus-http] refused to start: vassal seed failed for <url>: …`），不会静默少一个封臣 |
+| `ZEUS_VASSAL_SEEDS` | 未设置 | G1：启动时自动注册的执行 Agent Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。**某个 seed 拉不到或卡片没发誓 fealty → 整个进程拒启**（一行 `[zeus-http] refused to start: vassal seed failed for <url>: …`），不会静默少一个执行 Agent |
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含连接器 bearer token 与记忆事实，且以 uid 1000 落卷） |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
@@ -120,7 +120,7 @@ docker stop zeus                         # SIGTERM 直达 PID 1 的 node → dra
 docker start zeus                        # 启动日志应见 restored N vassals ...
 ```
 
-`docker stop` 的 SIGTERM 直接送达 PID 1 的 node 进程，先保存内核状态再退出；下次启动从 `/data/kernel-state.json` 恢复（registry 含已吊销封臣、监督台队列、意图幂等表）。
+`docker stop` 的 SIGTERM 直接送达 PID 1 的 node 进程，先保存内核状态再退出；下次启动从 `/data/kernel-state.json` 恢复（registry 含已吊销执行 Agent、监督台队列、意图幂等表）。
 
 ### 4.5 docker compose（可选）
 
@@ -169,16 +169,16 @@ WantedBy=multi-user.target
 - [ ] `ZEUS_INTERNAL_TOKEN` 为长随机串（或明确不挂载内部路由）
 - [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含连接器 token 与记忆事实明文）：`ls -l /data/kernel-state.json`
 - [ ] `ZEUS_AUDIT_FILE` 已配置（否则审计只活在 stderr 里，重启即丢）；若把 `ZEUS_AUDIT_MAX_BYTES` 设成不轮转，确认已接外部 logrotate
-- [ ] **E3.6 边界自查**：每个企业域挂载都带 tenant；`GET /api/state` 里 `enterpriseRealms == tenantScopedRealms`（不等 = 有企业域没标边界，它只对驾驶员可达，但迟早被人当成"已经隔离了"）
+- [ ] **E3.6 边界自查**：每个企业域挂载都带 tenant；`GET /api/state` 里 `enterpriseRealms == tenantScopedRealms`（不等 = 有企业域没标边界，它只对操作者可达，但迟早被人当成"已经隔离了"）
 - [ ] **E6.4 授权自查**：`GET /api/domains` 的 `grants` 逐条读过——无 `expiresAt` 的长期授权必须是有意的；再用 `GET /api/domains/access` 抽查两类必答组合：企业主体读个人域（**必拒**）、未授权的个人侧主体读企业域（必拒）；`GET /api/audit?decision=domain-refused` 看有没有人正在撞边界
 - [ ] 端口默认只绑 loopback，TLS 在反向代理终止
 - [ ] `/healthz` 与 `/api/roster/public` 封签经独立通道验签通过
-- [ ] 真机验收 #6（标准 A2A 客户端打封臣）与 Zeus↔loom 联调已过（见 handoff Active work）
+- [ ] 真机验收 #6（标准 A2A 客户端打执行 Agent）与 Zeus↔loom 联调已过（见 handoff Active work）
 - [ ] Vault 备份已配置外部调度（cron/systemd timer），并完成一次 restore 演练（见 §7）
 
 ## 7. 备份与恢复（Vault CLI，E3.7）
 
-藏宝图与恢复协议经零依赖 CLI 执行（`dist/vault/cli.js`，或 `npm run vault -- ...`）。**内核不内置定时器**：备份动作由用户或系统调度器（cron/systemd timer）触发，这是 design-vault.md 的明确边界（自动/云端备份为非目标）。
+备份清单与恢复协议经零依赖 CLI 执行（`dist/vault/cli.js`，或 `npm run vault -- ...`）。**内核不内置定时器**：备份动作由用户或系统调度器（cron/systemd timer）触发，这是 design-vault.md 的明确边界（自动/云端备份为非目标）。
 
 密钥（二选一，绝不作为位置参数出现在进程列表里）：
 
@@ -228,4 +228,4 @@ node dist/vault/cli.js restore --map backups/state.map.json \
 
 白名单**逐个点名**、绝不目录遍历：指向整个数据目录会把无界增长的 `audit.jsonl` 与 `.tmp` 一起卷进备份。点名的文件缺失/是软链/是二进制 → 出图即拒（静默漏掉你要的那个文件比没有备份更坏）。**所以别把文件名写死在脚本里猜**——照上面用 `basename "$ZEUS_STATE_FILE"`，它由 `ZEUS_STATE_FILE` 决定，`.env.example` 与镜像里默认都是 `kernel-state.json`。
 
-注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 宝藏永久丢失，无托管后门**（见 design-vault.md §9 非目标）。
+注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 数据永久丢失，无托管后门**（见 design-vault.md §9 非目标）。

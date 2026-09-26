@@ -1,7 +1,7 @@
 # 决策后端抽象层设计（Decision Backend）
 
 > 状态：**现行（设计稿 v0.2，2026-09-22）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
-> 上游：[tech-exploration-map.md](tech-exploration-map.md) S2（裁决/Critic）、S8（Guardrails）、S14（多模型异构调度）；[prd.md](prd.md) E1.3（规则聚合）、E1.4（冲突消解）、E6.2（升级拍板）；[design-fan-out.md](design-fan-out.md) §5/§6；[design-supervision.md](design-supervision.md) §8（开放问题：Critic 独立还是内置）。
+> 上游：[tech-exploration-map.md](tech-exploration-map.md) S2（裁决/Critic）、S8（Guardrails）、S14（多模型异构调度）；[prd.md](prd.md) E1.3（规则聚合）、E1.4（冲突消解）、E6.2（升级裁决）；[design-fan-out.md](design-fan-out.md) §5/§6；[design-supervision.md](design-supervision.md) §8（开放问题：Critic 独立还是内置）。
 > 版本说明：v0.2 起**与具体模型解耦**——决策层是抽象端口，两类实现家族并存：**专用决策模型**（首个实现 Jev）与**传统 LLM**（prompt + 结构化输出适配）。v0.1 曾以 Jev 为单一主轴，本轮改为模型无关。
 
 ## 0. 一句话
@@ -25,7 +25,7 @@ Zeus 的决策内核新增一个**与具体模型解耦的"决策后端"抽象�
 ## 2. 在架构中的位置
 
 ```
-驾驶员 / 封臣 / 未来 H2 API
+操作者 / 执行 Agent / 未来 H2 API
         │
    ┌────┴─────────────────────────────┐
    │ 决策内核（E1 并发内核）            │
@@ -66,11 +66,11 @@ Zeus 的决策内核新增一个**与具体模型解耦的"决策后端"抽象�
 
 > 快慢两层都可用：默认快层（决策模型，高频率低利害）；高利害冲突可配慢层（LLM，产出论证与解释后仍按置信度门控）。
 
-> **落地状态（v0.18）**：本接线位的两条路径均已在库内接通——规则**无结论**时的仲裁见 `src/decision/arbitrate.ts` + `src/orchestrator/arbitration.ts`（S2）；规则**有结论后**的独立对抗复核（LLM-as-judge）见 `src/orchestrator/judge.ts`，过门分歧转 `judge-review` 冲突回 E6.2 驾驶员闭环，详见 [design-fan-out.md](design-fan-out.md) §5.1。两者共用同一置信闸门且互斥（同一后端不自评其仲裁结论）。进程装配（serve.ts 按 env 注入后端与 judge 开关）见 handoff T-C。
+> **落地状态（v0.18）**：本接线位的两条路径均已在库内接通——规则**无结论**时的仲裁见 `src/decision/arbitrate.ts` + `src/orchestrator/arbitration.ts`（S2）；规则**有结论后**的独立对抗复核（LLM-as-judge）见 `src/orchestrator/judge.ts`，过门分歧转 `judge-review` 冲突回 E6.2 操作者闭环，详见 [design-fan-out.md](design-fan-out.md) §5.1。两者共用同一置信闸门且互斥（同一后端不自评其仲裁结论）。进程装配（serve.ts 按 env 注入后端与 judge 开关）见 handoff T-C。
 
-### 3.2 监督台 triage（E6.2 / E1.4）——拍板前过滤
+### 3.2 监督台 triage（E6.2 / E1.4）——裁决前过滤
 
-升级请求进监督台前，可选做 `noul`/`score` 判断：该升级**是否值得打断驾驶员**、紧急度多高、路由给谁（choice）。低价值噪音升级被过滤或降级呈现。**过滤是建议不是裁决**：最终仍按 OversightDesk 语义入队，人可查可改。triage 属高频低利害，默认用快层。
+升级请求进监督台前，可选做 `noul`/`score` 判断：该升级**是否值得打断操作者**、紧急度多高、路由给谁（choice）。低价值噪音升级被过滤或降级呈现。**过滤是建议不是裁决**：最终仍按 OversightDesk 语义入队，人可查可改。triage 属高频低利害，默认用快层。
 
 ### 3.3 派发 guardrail（S8 前置最小步）——执行前闸门
 
@@ -78,7 +78,7 @@ Zeus 的决策内核新增一个**与具体模型解耦的"决策后端"抽象�
 
 ### 3.4 异构调度评分（S14 落点）——路由辅助
 
-封臣/模型选择、分支优先级排序等场景，可用 `score` 做轻量路由打分。本设计只定义端口与语义，**不预设路由策略**（策略随 S14 工程切片定；届时可同时比较决策模型与 LLM 的评分质量/成本）。
+执行 Agent/模型选择、分支优先级排序等场景，可用 `score` 做轻量路由打分。本设计只定义端口与语义，**不预设路由策略**（策略随 S14 工程切片定；届时可同时比较决策模型与 LLM 的评分质量/成本）。
 
 ## 4. 端口设计（`src/decision/types.ts`，模型无关）
 
@@ -191,7 +191,7 @@ export type DecisionTrace = {
 
 - LLM 深度 Critic / 对抗辩论 / 陪审团（S2 慢层完整形态，需独立切片）；
 - 多后端合并批调、缓存层、自动"快层失败→慢层兜底"（随 S14 切片）；
-- 决策结果写回封臣/重派（E6.3）；
+- 决策结果写回执行 Agent/重派（E6.3）；
 - 自托管后端的部署方案（端口保留，不写部署手册）；
 - 路由策略本身（S14 只给 `score` 语义与选择维度，不给调度算法）。
 

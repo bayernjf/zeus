@@ -1,11 +1,11 @@
 # Supervisor 与 Subagent 控制关系设计（Supervision Model）
 
 > 状态：**现行（设计稿 v0.1，2026-09-22）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
-> 上游：[prd.md](prd.md) E1（并发决策内核）、E4（封臣联邦）；与 [design-memory-consolidation.md](design-memory-consolidation.md) 配套（信任校准依赖记忆）。
+> 上游：[prd.md](prd.md) E1（并发决策内核）、E4（执行 Agent联邦）；与 [design-memory-consolidation.md](design-memory-consolidation.md) 配套（信任校准依赖记忆）。
 
 ## 0. 一句话
 
-**supervisor / subagent 不是固定岗位，而是按任务临时成立的控制关系两端**：持有意图、负责分解与拍板者为 supervisor；对一个明确子目标负责、结果回交者为 subagent。任务结束关系解除；同一 Agent 在不同关系中可互换角色。
+**supervisor / subagent 不是固定岗位，而是按任务临时成立的控制关系两端**：持有意图、负责分解与裁决者为 supervisor；对一个明确子目标负责、结果回交者为 subagent。任务结束关系解除；同一 Agent 在不同关系中可互换角色。
 
 ## 1. 角色本质
 
@@ -17,9 +17,9 @@
 ### 1.2 Supervisor：承担组合责任
 四项主责：
 1. **分解**：意图 → 可并行 / 有依赖的子目标，决定粒度；
-2. **选择与授权**：按 Skill/域挑 subagent（含封臣），给凭据与数据范围；
+2. **选择与授权**：按 Skill/域挑 subagent（含执行 Agent），给凭据与数据范围；
 3. **汇聚与校验**：多路结果一致性检查、冲突识别、质量把关（非原样转交）；
-4. **拍板/升级**：可消解者自决，否则带选项上呈驾驶员。
+4. **裁决/升级**：可消解者自决，否则带选项上呈操作者。
 
 > subagent 负责"把事做对"；supervisor 负责"做对的事 + 把对的结果拼起来"。
 
@@ -57,7 +57,7 @@ interface Handback {               // subagent → supervisor
 }
 ```
 
-与封臣协议对应：`sendSubscribe`=派活，`x-zeus-report`=Handback，`x-zeus-escalation`=交回边界外事项。星型拓扑保证 subagent 不私下协作，**一切汇聚经 supervisor**——这是数据二极管与可追溯性的执行点。
+与执行 Agent协议对应：`sendSubscribe`=派活，`x-zeus-report`=Handback，`x-zeus-escalation`=上报边界外事项。星型拓扑保证 subagent 不私下协作，**一切汇聚经 supervisor**——这是数据二极管与可追溯性的执行点。
 
 ## 4. 编排形态
 
@@ -73,7 +73,7 @@ interface Handback {               // subagent → supervisor
 ## 5. 信任校准与失败语义
 
 ### 5.1 信任校准（依据记忆）
-- supervisor 不盲信、不事事复核；按 subagent 历史可靠度（战报/失败率/被纠错）选择全验或抽查；
+- supervisor 不盲信、不事事复核；按 subagent 历史可靠度（结果回传/失败率/被纠错）选择全验或抽查；
 - 新 subagent 默认高校验；持续可靠后降低复核频率；结果事后回写可靠度。
 
 ### 5.2 失败处理（决策顺序）
@@ -86,11 +86,11 @@ subagent 失败时按固定次序判定：**重试（幂等前提下）→ 换�
 
 | 概念 | 落点 |
 |---|---|
-| 驾驶员 | 最高 supervisor：意图、授权、冲突点拍板，不做手工执行 |
+| 操作者 | 最高 supervisor：意图、授权、冲突点裁决，不做手工执行 |
 | 编排 supervisor | 决策内核：fan-out、合并、聚合、冲突消解、可追溯（PRD E1） |
-| subagent | 按 Skill 组队的执行单元，含封臣（pr-helper/loom…） |
+| subagent | 按 Skill 组队的执行单元，含执行 Agent（pr-helper/loom…） |
 | Mentor | 特殊 supervisor：产物是"带出来的能力"而非一次性结果 |
-| 监督台 | 拍板接口：升级与不可自动消解冲突在此决议 |
+| 监督台 | 裁决接口：升级与不可自动消解冲突在此决议 |
 
 ## 7. 验收标准（首版）
 
