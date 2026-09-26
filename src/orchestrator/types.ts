@@ -1,4 +1,5 @@
 import type { A2AEvent, RealmType, Task, TaskState } from '../a2a/types.js';
+import type { VassalStatus } from '../registry/registry.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import type { DecisionBackendError, DecisionBackendKind } from '../decision/types.js';
 
@@ -146,6 +147,9 @@ export type DispatchPort = {
 /** Target selection port; VassalRegistry.asVassalLookup() satisfies it. */
 export type TargetLookup = {
   findBySkill(skillId: string): Array<{ name: string }>;
+  /** Optional status snapshot for #9 diversion (revoked/unknown excluded); the
+   *  registry's `VassalLookup` supplies this, but the port tolerates its absence. */
+  statusOf?: (name: string) => VassalStatus;
 };
 
 /**

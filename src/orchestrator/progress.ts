@@ -32,6 +32,17 @@ export type ProgressEvent =
       /** Present when the intent named a connected realm; drives auto-consolidation. */
       realmId?: string;
       at: string;
+    }
+  | {
+      type: 'branch-diverted';
+      intentId: string;
+      runId: string;
+      /** The originally-selected (saturated/eligible-lacking) target. */
+      from: string;
+      /** The same-skill provider the branch was re-pointed to. */
+      to: string;
+      skill: string;
+      at: string;
     };
 
 /** Per-intent pub/sub for the H3 SSE endpoint. One hub per kernel; subscribe

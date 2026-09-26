@@ -144,6 +144,9 @@ export type KernelBootOptions = {
   maxConcurrentBranches?: number;
   /** Branches allowed to wait for a slot before one is refused. 0 = never queue. */
   branchQueueLimit?: number;
+  /** #9 per-vassal saturation cap; must sit below maxConcurrentBranches for
+   *  diversion to fire. Unset = no per-vassal saturation check. */
+  maxConcurrentPerVassal?: number;
   /**
    * E3.5 / deferred #14: the driver key. When present, an enterprise write is
    * only honored on a grant this key signed (or one whose signer the kernel
@@ -370,6 +373,18 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         detail: entry.detail,
       });
     },
+    // #9: a saturated target re-pointed to an alternate same-skill provider lands
+    // on the same audit spine as refusals (design §4.5).
+    onDiverted: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: entry.to,
+        skill: entry.skill,
+        realm: entry.realm,
+        decision: 'branch-diverted',
+        detail: `target '${entry.from}' saturated/unavailable; diverted to '${entry.to}' for skill '${entry.skill}'`,
+      });
+    },
     onProgress: event => {
       progressHub.publish(event);
       if (event.type === 'intent-finished' && event.realmId) {
@@ -390,6 +405,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       ? { maxConcurrentBranches: options.maxConcurrentBranches }
       : {}),
     ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
+    ...(options.maxConcurrentPerVassal !== undefined ? { maxConcurrentPerVassal: options.maxConcurrentPerVassal } : {}),
   });
   // S3 DAG orchestration: runs each DAG node as a fan-out through the SAME
   // orchestrator, so node intents share the kernel's idempotency table and
@@ -562,6 +578,7 @@ export class KernelBootError extends Error {}
 export type ProcessConcurrencyConfig = {
   maxConcurrentBranches?: number;
   branchQueueLimit?: number;
+  maxConcurrentPerVassal?: number;
 };
 
 export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): ProcessConcurrencyConfig {
@@ -571,6 +588,10 @@ export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): 
   // 0 is a meaningful queue limit: refuse immediately rather than wait for a slot.
   const limit = envInteger(env.ZEUS_BRANCH_QUEUE_LIMIT, 'ZEUS_BRANCH_QUEUE_LIMIT', 0);
   if (limit !== undefined) config.branchQueueLimit = limit;
+  // #9: per-vassal saturation cap (>= 1). Enables diversion only when it sits
+  // below maxConcurrentBranches; a malformed value fails boot loudly.
+  const perVassal = envInteger(env.ZEUS_MAX_CONCURRENT_PER_VASSAL, 'ZEUS_MAX_CONCURRENT_PER_VASSAL', 1);
+  if (perVassal !== undefined) config.maxConcurrentPerVassal = perVassal;
   return config;
 }
 

@@ -31,7 +31,9 @@ export type AuditDecision =
   | 'commission-refused'
   /** E2.2/E2.3/E2.4: the skill catalogue refused auto-selected fan-out targets. */
   | 'refused-skill-uninstalled'
-  | 'refused-no-active-provider';
+  | 'refused-no-active-provider'
+  /** #9: a saturated/eligible-lacking target re-pointed to an alternate provider. */
+  | 'branch-diverted';
 
 export type AuditEntry = {
   ts: string;
