@@ -419,6 +419,7 @@ State of Zeus as of 2026-09-25.
 * [docs/product-portrait.md](docs/product-portrait.md) — 产品画像活文档：定位、设计哲学（目录底座/藏宝图/MCP·Skill·A2A）、个人与企业双态画像、分层架构、封臣式产品矩阵、路线图；文末演进日志 ★
 * [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 封臣协议设计（A2A 超集 v0.1）：fealty 契约 / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 六项验收清单 ★
 * [docs/design-realm.md](docs/design-realm.md) — Realm 数据域接口契约 v0.5（D1 + E3.5/E3.6/E6.4 + deferred #14）：目录即数据库、connect/search/read/write、数据二极管执行点、企业域三级租户与双域授权（§7）、**签名且一次性的企业写凭证（§7.7）**、驾驶员治理面（§6.4/§7.5）、藏宝图依赖 ★
+* [docs/design-naming-migration.md](docs/design-naming-migration.md) — 命名迁移方案 v0.1：**四档代价**（T1 内部标识符 / T2 已落盘格式 / T3 环境变量 / T4 协议与路由）+ 逐档迁移机制（双读单写、版本闸门、协议代次）+ **结论：T2/T3/T4 不做**，T1 只挑真误导的；连带登记 deferred #21（改名本身）与 **#22（签名名册缺 schema version，改名之前该先补的真缺口）**
 * [docs/design-onboarding.md](docs/design-onboarding.md) — 上岗与首日简报 v0.1（E9.1/E9.2）：四道门（编制/封臣/数据域/能力）**现算不缓存**、三条严格化、`composeBriefing` 的 gaps 与稳定 digest、first-task 真派发、运维面与可失效性验证 ★
 * [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — bayjf 封神榜名册改造 v0.1：单一事实源在封臣、字段映射、内外双视图裁剪、签名链公开闸门、R0–R2 阶段 ★
 * [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — fealty 签名链设计 v0.1（deferred #7）：威胁模型、Zeus 单签 v1/封臣自签 v2、Ed25519+JCS、两层签名信封、RSK 密钥与轮换、吊销四层失效、v1 八条验收 ★
