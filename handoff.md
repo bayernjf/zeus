@@ -350,6 +350,7 @@ State of Zeus as of 2026-09-25.
    - [x] **契约变更如实写回设计文档**：design-fealty-signing §4 原话"`RosterSnapshot` 结构与纯函数性完全不动"被这半句打破，已在原文标注并新增 **§4.1 版本闸**；命名迁移方案 §2 的不准确陈述同步改正，deferred #22 销项。
    - [x] **修自己上一轮引入的排版债**：术语清扫时 `封臣`→`执行 Agent` 在 15 份文档里造成 **138 处中英文粘连**（`执行 Agent注册`），本次统一补空格；余下 66 处是 `Agent` 后接全角标点（，（。「、）；：），本就不该加空格，**未动**。
    - **门禁如实记**：改完 src 后 `npm run typecheck` 第一次报的其实是**我自己测试代码的类型错**（`delete` 操作数必须可选，TS2790）。我当时先说过"Typecheck 干净"——那句是在**追加测试之前**测的，落地即过期；按同一量法重跑才 exit 0。另：src 篡改式反证（把闸门摘掉看测试变红）被权限层拦，故可失效性改由"重新签名仍被拒"这类不改产码的判别性断言承担。
+   - [x] **镜像重建复跑（v1.2 + 502 修完之后本轮补做）**：`docker build -t zeus:post-v1.2 .` exit 0 → 镜像内 `gen-rsk-key.mjs` 出钥（私钥 `0600`）→ 以 `ZEUS_RSK_KEY_FILE` 起容器（镜像固定 `NODE_ENV=production`，**"生产无钥拒启"这次是正向走到**）→ HEALTHCHECK `healthy` → 真 socket 实测：public 名册含 `"schemaVersion":1`、`seal.v:1`、keyId 来自密钥文件；`/api/state` 报 `persistence.enabled` + `audit.degraded=false` + **`driverGrants.authority: signed`**；`/data/audit.jsonl` 与 `kernel-state.json` 均 `-rw-------` → `docker stop`（SIGTERM）落盘 456B → 同卷重启 `restored kernel state … (vassals=0, escalations=0, intents=0)`。**离线验签也做了双向对照**：只拿 `rsk.public.pem`（外部消费者持有的东西）验容器产物 → ACCEPTED；同钥下把 `snapshot.scope` 改成 `internal` → REJECTED `snapshotDigest mismatch`。有负向对照才敢说那个 ACCEPTED 不是"校验器永远返回 ok"。用完只删自己起的容器与镜像标签。
 
 51. **README 全文改专业用语（对外口径收紧：不要比喻，也不加隐喻括注）（2026-09-25 ✅ 纯文档）**：
    > 用户对 v0.2 那句"对外用专业词、隐喻加注"的回答是「我只要专业用语，不要比喻」——加注仍把读者注意力带回隐喻，等于没换。术语对照升 **v0.3** 记下这条口径，README 按此重写。
