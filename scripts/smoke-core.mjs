@@ -356,6 +356,11 @@ try {
   record('restart restores agents and governance state', /a1=revoked/.test(statuses) && /a2=active/.test(statuses), statuses);
   const restoredRealms = await api('GET', '/api/domains');
   record('restart re-attaches the data domain', (restoredRealms.json?.realms ?? []).some(realm => realm.type === 'personal' && realm.itemCount >= 1), `realms=${(restoredRealms.json?.realms ?? []).length}`);
+  // Memory is the layer that was silently empty before deferred #27, so the
+  // restart has to be proven against it and not assumed from the roster.
+  const restoredMemory = await api('GET', '/api/memory/snapshot');
+  const restoredFacts = (restoredMemory.json?.state?.facts ?? []).reduce((total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
+  record('restart restores the memory fact source, not just the roster', (restoredMemory.json?.state?.events?.length ?? 0) >= 3 && restoredFacts >= 1, `events=${restoredMemory.json?.state?.events?.length} facts=${restoredFacts}`);
   const afterRestart = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a2'] });
   record('dispatch works after the restart', afterRestart.json?.status === 'completed', `status=${afterRestart.json?.status} agent requests=${agent('a2').requests}`);
   writeFileSync(join(work, 'roster-restored.json'), JSON.stringify(restoredRoster));
