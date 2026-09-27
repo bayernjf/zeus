@@ -1,6 +1,6 @@
 # HTTP 传输层选型设计（Zeus 服务端面）
 
-> 状态：**现行（设计稿 v0.1，2026-09-21，选型已决定）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
+> 状态：**现行（设计稿 v0.2，2026-09-27 补根公钥发布端点；选型 v0.1 2026-09-21）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
 > 边界：本文只覆盖 **Zeus 自己对外提供的 HTTP 服务端面**。Zeus 作为 A2A **客户端**调执行 Agent（`src/dispatch/client.ts`，JSON-RPC + SSE）已实现，不在此列；Realm 对外传输已另案决定为**唯一 MCP、不做 HTTP API**（[design-realm.md](design-realm.md) §6.1），本文不覆盖、不冲突。
 
 ## 0. 一句话
@@ -70,6 +70,7 @@ Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配
 | --- | --- | --- | --- |
 | H1 | `GET /healthz` | 无 | 存活探针，返回版本与时间，不含任何执行 Agent/Realm 信息 |
 | H1 | `GET /api/roster/public` | 无 | 返回 `SignedRosterSnapshot`（public 投影 + 签名信封，fealty-signing §4）；缓存头配合 TTL |
+| H1 | `GET /api/roster/keys` | 无 | 发布本进程签用的根公钥描述符（JWKS 形状 + SPKI PEM + RFC 7638 指纹，契约见 fealty-signing §5.1）。不鉴权的理由与它所签名的名册同源：需要凭证才能取到的公钥，第三方读者用不上。**它不建立信任**——信任由验签方的带外固定承担；后端导不出公钥时返回 501，不返回空 `keys[]` |
 | H1 | `GET /api/roster` | bearer（internal） | internal 快照（含 revoked/端点/探针明细），仅供治理面 |
 | H2 | 操作者 API（dispatch / escalations approve·reject / registry 只读）——**实际交付面远大于此规划**：另含决策回放、按 kind 分流的升级队列、并发指标、Skills 与带教、Org 编制与责任链、Memory 与遗忘权、Diary、MCP 连接器、决策后端配置、审计回读、内核盘点、**Realm 治理面 `/api/domains*`** | bearer | 逐项验收标准与路由清单见 PRD E5.5 与 README"库 + 薄传输"节，本表只留**当年规划口径**不再逐条扩写（原口径：随持久化与 UI 切片逐项设计，不在本文展开） |
 | H3（可选） | SSE 结果回传流、静态快照产物分发 | — | 待持久化 / CDN 需求明确 |
@@ -98,3 +99,4 @@ v1 不设任何写端点（注册是 Zeus 主动拉 card、吊销是治理动作
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v0.1 | 2026-09-21 | 初稿：划清网络面；裁决 Fastify + 长驻 Node、不选 serverless；薄传输层与单向依赖约束；Realm 不挂 HTTP；H1 三端点与验收；H2/H3 阶段 |
+| v0.2 | 2026-09-27 | H1 增第四端点 `GET /api/roster/keys`（根公钥发布，deferred #7 的"公钥发布"半边）：无鉴权、JWKS 形状、导不出公钥时 501 而非空数组，并写明"该端点不建立信任，信任来自验签方带外固定"。§4 表其余口径不动 |
