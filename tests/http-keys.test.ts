@@ -13,17 +13,24 @@ afterEach(async () => {
   app = undefined;
 });
 
-async function mount(signer: RosterSigner, internalToken?: string): Promise<FastifyInstance> {
+type MountOptions = { internalToken?: string; rosterKey?: { keyId: string; source: 'configured' | 'ephemeral' } };
+
+async function mount(signer: RosterSigner, options: string | MountOptions = {}): Promise<FastifyInstance> {
+  // A bare string is still accepted because most cases here only care about the token.
+  const { internalToken, rosterKey }: MountOptions = typeof options === 'string' ? { internalToken: options } : options;
   app = await createHttpServer({
     registry: new VassalRegistry(),
     signer,
     ...(internalToken ? { internalToken } : {}),
+    ...(rosterKey ? { rosterKey } : {}),
   });
   return app;
 }
 
 type KeyDocument = {
   issuer: string;
+  keySource?: 'configured' | 'ephemeral';
+  survivesRestart?: boolean;
   keys: Array<{
     kid: string;
     kty: string;
@@ -121,6 +128,23 @@ describe('root public key publication (design-fealty-signing §5.1)', () => {
     // An empty keys[] would read as "nothing to pin" to a verifier that ignores
     // the status code; the field must be absent, not vacuous.
     expect((res.json() as { keys?: unknown }).keys).toBeUndefined();
+  });
+
+  it('states whether the sealing key survives a restart, and stays silent when it cannot know', async () => {
+    const configured = await keys(await mount(new Ed25519MemorySigner('zeus-rsk-2026-09'), { rosterKey: { keyId: 'zeus-rsk-2026-09', source: 'configured' } }));
+    expect(configured.body.keySource).toBe('configured');
+    expect(configured.body.survivesRestart).toBe(true);
+
+    const ephemeral = await keys(await mount(new Ed25519MemorySigner('zeus-rsk-dev'), { rosterKey: { keyId: 'zeus-rsk-dev', source: 'ephemeral' } }));
+    expect(ephemeral.body.keySource).toBe('ephemeral');
+    expect(ephemeral.body.survivesRestart).toBe(false);
+
+    // An embedding process that built its own signer is not reporting a source it
+    // did not determine: the field is absent, not defaulted to something reassuring.
+    const unknown = await keys(await mount(new Ed25519MemorySigner('zeus-rsk-custom')));
+    expect(unknown.status).toBe(200);
+    expect(unknown.body.keySource).toBeUndefined();
+    expect(unknown.body.survivesRestart).toBeUndefined();
   });
 
   it('refuses to publish a non-Ed25519 root key', async () => {

@@ -76,6 +76,13 @@ const CONNECTOR_STATUSES: ConnectorStatus[] = ['declared', 'connected', 'revoked
 export type HttpDeps = {
   registry: VassalRegistry;
   signer: RosterSigner;
+  /**
+   * Whether the sealing key survives a restart, as decided by the loader that
+   * produced it (`loadRskSigner`). Reported on the public key document and in
+   * /api/state; omitted when the embedding process assembled the signer itself,
+   * because then this face genuinely does not know.
+   */
+  rosterKey?: { keyId: string; source: 'configured' | 'ephemeral' };
   /** Bearer token for the whole internal/driver face. When unset, H2 routes and GET /api/roster are not mounted. */
   internalToken?: string;
   now?: () => Date;
@@ -206,6 +213,10 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     return {
       issuer: 'zeus',
       keys: [key],
+      // A dev process falls back to a fresh in-memory key each boot and warns once
+      // on stderr; without this field a caller cannot tell that key from a custody
+      // one, and a pin made from it is void the next restart.
+      ...(deps.rosterKey ? { keySource: deps.rosterKey.source, survivesRestart: deps.rosterKey.source === 'configured' } : {}),
       trust: 'Served by the same process that produced the seals: this tells a verifier which keyId signed a roster, it does not establish that the key belongs to Zeus. Pin jwkThumbprint out of band (TOFU). A seal.keyId absent from keys[] must be rejected; a keyId present with a different thumbprint is either a rotation or an attack - check which before proceeding.',
     };
   });
@@ -1439,7 +1450,10 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     if (deps.kernelStats) {
       // "Will a restart lose anything, and what is in there?" - answered with
       // counts and paths, never with the snapshot payload.
-      app.get('/api/state', { preHandler: requireBearer }, async () => deps.kernelStats!());
+      app.get('/api/state', { preHandler: requireBearer }, async () => ({
+        ...deps.kernelStats!(),
+        ...(deps.rosterKey ? { rosterKey: deps.rosterKey } : {}),
+      }));
     }
 
     if (deps.auditFile) {

@@ -11,7 +11,7 @@
 
 | # | 项 | 出口标准 | 命令 / 动作 | 当前状态 |
 |---|---|---|---|---|
-| A1 | 真实封臣注册 + 真机扇出验收（E4.8 / M3） | 起实例 → 注册一个真实封臣（pr-helper 或 loom）→ 跑一次真机扇出，且 `branch-*` 事件与决策进 audit 脊 | `NODE_USE_ENV_PROXY=1 HTTPS_PROXY=<本机代理> BASE_URL=https://pr-helper-ten.vercel.app node scripts/acceptance-standard-a2a.mjs`（exit 0）；再走一次 `POST /api/vassals` 注册 + `POST /api/intents` 扇出 | v0.11 已 PASS 一次（**记录级证据**，本轮 2026-09-27 未复跑）；上线前需重跑一次固化为发布证据 |
+| A1 | 真实封臣注册 + 真机扇出验收（E4.8 / M3） | 起实例 → 注册一个真实封臣（pr-helper 或 loom）→ 跑一次真机扇出，且 `branch-*` 事件与决策进 audit 脊 | 两段：① 标准客户端 `NODE_USE_ENV_PROXY=1 HTTPS_PROXY=<本机代理> BASE_URL=https://pr-helper-ten.vercel.app node scripts/acceptance-standard-a2a.mjs`（exit 0）；② **注册 + 扇出 + 落账现在是一条命令**：`KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… AGENT_TOKEN=… SKILL=research npm run acceptance:fanout`（14 步，加 `--revoke-test` 共 16 步，末尾打印可粘贴的证据块；退出码 0/1/2 = 全过 / 某步失败 / 配置或用法错） | **两段命令都齐了**：② 于 2026-09-27 入库，并已在**本机真进程 + 桩 Agent** 上实跑 14/14 与 16/16（含"凭证确实送达对端"与"结论落进记忆 events 0→1、facts 0→1"的读数）。① v0.11 已 PASS 一次（**记录级证据**，本轮未复跑）。**对真实 Agent 的 ② 仍未跑**：需要该 Agent 的 card URL 与凭证，且代理要配在 Zeus 进程的环境里（拉卡片与派发都由 Zeus 发起） |
 | A2 | 生产 RSK 密钥托管 / 轮换 / 公钥发布（deferred #7 / E4.9 R2 / E5.4 bayjf R2） | 密钥落在受控位置（KMS/文件）、按 §5.4 手册有轮换次序；bayjf 名册对外公开前公钥已发布且指纹已带外公告；`NODE_ENV=production` 无钥拒启已验证 | `scripts/gen-rsk-key.mjs`（已就绪）+ `GET /api/roster/keys`（已就绪）；剩下：选托管方案、把 `jwkThumbprint` 带外公告、bayjf 侧展示 | **发布通道与运行手册已在库内**（2026-09-27，design-fealty-signing v0.2 §5.1/§5.4）；**托管选型待拍板 + 公告与 R2 展示是真实动作** |
 | A3 | Zeus↔loom 真机联调 | 用 loom 的 endpoint / agent-card 跑通一次双向 A2A | 需用户侧提供 loom endpoint / card | 待外部条件 |
 | A4 | Jev endpoint / key 真机核对 | 启用 S2 仲裁 / E1.3 judge 时，真实 endpoint 连通、key 有效、fallback 行为符合预期 | 配 `ZEUS_DECISION_*` / `ZEUS_JUDGE_*` 后实跑 | 仅当启用模型裁决；代码 fallback 已标注 |
@@ -54,7 +54,7 @@
 
 1. `npm run typecheck` exit 0
 2. `npm run build` exit 0，`dist/` 完整（**必须在测试之前**：`tests/verify-roster.test.ts` 与 §F-5 的离线验签都跑编译产物）
-3. `npm test` exit 0（当前 **779 测试 / 82 文件**；核心链路冒烟 33 步；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–183s 并可能报超时红——带负载口径重跑一次再判红）
+3. `npm test` exit 0（当前 **784 测试 / 83 文件**；核心链路冒烟 34 步；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–452s 并可能报超时红——带负载口径重跑一次再判红）
 4. 三条接入通道执行点 grep 复核（见 review-mvp §B）：`boot.ts` tokenFor 接线、`orchestrator.ts` activeProviders 三态闸门、`mcp.ts` REALM_NOT_CONNECTED 白名单、onConflict→监督台闭环、持久化/签名链执行点均在位。**v0.17 追加两条"核对装配而不是核对注册"**：`serve.ts:147` 把 `dagRunner` 注入 HTTP 依赖（否则 DAG 路由在真进程里恒 503）、`boot.ts:593→408→orchestrator.ts:169` 让 `ZEUS_MAX_CONCURRENT_PER_VASSAL` 真的到达 `selectTargets`
 5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）。报告另有 `seal fingerprint` 两行（`jwk=` / `spki=`）——**带外固定要比的就是这一行与公告值是否逐字符相同**，不必另算哈希）
 6. `docker` 真机构冒烟（B1）

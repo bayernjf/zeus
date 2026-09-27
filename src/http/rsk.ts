@@ -24,6 +24,18 @@ export type RskEnv = {
 
 export class RskConfigError extends Error {}
 
+/**
+ * What the process sealed with, and whether that key survives a restart.
+ * `ephemeral` is the fact an operator cannot otherwise see: the loader writes one
+ * warning to stderr and then behaves identically, so a dev process with a
+ * production-looking `ZEUS_RSK_KEY_ID` publishes a root key that changes on every
+ * restart - and a pin made from it is void the next time the process comes up.
+ */
+export type RskHandle = {
+  signer: Ed25519MemorySigner;
+  ephemeral: boolean;
+};
+
 export type LoadRskOptions = {
   env?: RskEnv;
   /** Injected file reader (tests). */
@@ -32,7 +44,7 @@ export type LoadRskOptions = {
   warn?: (message: string) => void;
 };
 
-export async function loadRskSigner(options: LoadRskOptions = {}): Promise<Ed25519MemorySigner> {
+export async function loadRskSigner(options: LoadRskOptions = {}): Promise<RskHandle> {
   const env = options.env ?? process.env;
   const read = options.readFile ?? ((path: string) => readFile(path, 'utf8'));
   const warn = options.warn ?? ((message: string) => process.stderr.write(`${message}\n`));
@@ -65,7 +77,7 @@ export async function loadRskSigner(options: LoadRskOptions = {}): Promise<Ed255
       );
     }
     const publicKey = createPublicKey(privateKey);
-    return new Ed25519MemorySigner(keyId, privateKey, publicKey);
+    return { signer: new Ed25519MemorySigner(keyId, privateKey, publicKey), ephemeral: false };
   }
 
   if (isProduction) {
@@ -75,5 +87,5 @@ export async function loadRskSigner(options: LoadRskOptions = {}): Promise<Ed255
   }
 
   warn('[zeus-http] ZEUS_RSK_KEY not set: generated ephemeral in-memory RSK (dev only)');
-  return new Ed25519MemorySigner(keyId);
+  return { signer: new Ed25519MemorySigner(keyId), ephemeral: true };
 }

@@ -414,6 +414,17 @@ try {
   record('dispatch works after the restart', afterRestart.json?.status === 'completed', `status=${afterRestart.json?.status} agent requests=${agent('a2').requests}`);
   writeFileSync(join(work, 'roster-restored.json'), JSON.stringify(restoredRoster));
   record('the restarted process publishes a roster that still verifies', verifyRoster(['--file', join(work, 'roster-restored.json'), '--key', publicKeyPath, '--now', restoredRoster.seal.issuedAt]).code === 0);
+  // serve.ts is the only place that decides this label, and nothing below the
+  // assembly knows it - so a unit test cannot show the wiring, only a process can.
+  const restartedKeys = await api('GET', '/api/roster/keys', undefined, {});
+  const restartedState = await api('GET', '/api/state');
+  record(
+    'a key-file process reports its root key as surviving a restart',
+    restartedKeys.json?.keySource === 'configured' && restartedKeys.json?.survivesRestart === true
+      && restartedState.json?.rosterKey?.source === 'configured'
+      && restartedState.json?.rosterKey?.keyId === restartedKeys.json?.keys?.[0]?.kid,
+    `keys=${restartedKeys.json?.keySource ?? '(absent)'} state=${restartedState.json?.rosterKey?.source ?? '(absent)'} kid=${restartedKeys.json?.keys?.[0]?.kid}`
+  );
 
   await stopProcess(proc.child);
 } catch (error) {
