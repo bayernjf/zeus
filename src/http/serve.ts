@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   // process's driver key, so a write grant the kernel did not sign (or one a
   // vassal authored) cannot authorize an enterprise write. Loaded before the
   // kernel because the kernel needs it as the trust anchor.
-  const signer = await loadRskSigner();
+  const { signer, ephemeral } = await loadRskSigner();
   const kernel = await bootKernel({
     driverSigner: signer,
     onAuditError: message => {
@@ -143,6 +143,10 @@ async function main(): Promise<void> {
   const app = await createHttpServer({
     registry: kernel.registry,
     signer,
+    // One line on stderr at boot is not a record an operator can consult later, so
+    // the fact the loader knows - whether this key survives a restart - is passed
+    // down and reported by the two faces that answer "which key is this?".
+    rosterKey: { keyId: signer.keyId, source: ephemeral ? 'ephemeral' : 'configured' },
     internalToken: process.env.ZEUS_INTERNAL_TOKEN,
     version: pkg.version,
     orchestrator: kernel.orchestrator,

@@ -143,6 +143,33 @@ describe('kernel inventory', () => {
     expect(stats.persistence).toEqual({ enabled: true, stateFile, restoredFromSnapshot: true });
   });
 
+  it('reports the roster key source when the assembly supplied it, and nothing when it did not', async () => {
+    const kernel = await assemble();
+    const withSource = await createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
+      internalToken: TOKEN,
+      kernelStats: () => kernelStats(kernel),
+      rosterKey: { keyId: 'zeus-rsk-2026-09', source: 'ephemeral' },
+    });
+    const reported = await (await withSource.inject({ method: 'GET', url: '/api/state', headers: AUTH })).json();
+    expect(reported.rosterKey).toEqual({ keyId: 'zeus-rsk-2026-09', source: 'ephemeral' });
+    await withSource.close();
+
+    // An embedding process that built its own signer must not have a reassuring
+    // default written on its behalf.
+    const withoutSource = await createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
+      internalToken: TOKEN,
+      kernelStats: () => kernelStats(kernel),
+    });
+    const bare = await (await withoutSource.inject({ method: 'GET', url: '/api/state', headers: AUTH })).json();
+    expect(bare.rosterKey).toBeUndefined();
+    expect(bare.counts).toBeTruthy(); // the rest of the inventory is unaffected
+    await withoutSource.close();
+  });
+
   it('is not mounted without a provider, and requires a bearer token', async () => {
     const noProvider = await createHttpServer({
       registry: new VassalRegistry(),
