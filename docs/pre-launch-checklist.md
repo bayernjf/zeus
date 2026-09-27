@@ -47,7 +47,7 @@
 
 | # | 项 | 命令 / 动作 | 当前状态 |
 |---|---|---|---|
-| E1 | push dev → 云端 CI 首绿（每次推送后双矩阵绿才算销项） | `git ls-remote origin refs/heads/dev`；`git rev-list --left-right --count origin/dev...HEAD` | **2026-09-27 实测 `0 0`：此前批次已推送**；本轮之后（含 `6f86369`）仍需再推一次并确认云端绿，**云端结果本轮未验证**（`gh` 访问被权限层拦） |
+| E1 | push dev → 云端 CI 首绿（每次推送后双矩阵绿才算销项） | `git ls-remote origin refs/heads/dev`；`git rev-list --count origin/dev..HEAD` | **口径：这条只能现测，写死的同步状态几分钟内就过期**（今天已实测到两次"文档说已同步、现测领先 N 个"）。2026-09-27 评审 v0.18 之后现测：本地领先 **4** 个 commit 未推（评审取证对象 `8b53c8e` 当时与 `origin/dev` 相同）。**云端 CI 结果未验证**（`gh` 被权限层拦），不从"本地全绿"推断云端绿 |
 | E2 | 镜像发布到 registry | 若用容器部署 | 待做 |
 
 ## F. 每次上线前必跑的验证门（回归护栏）
