@@ -63,12 +63,14 @@ export {
   sealSnapshot,
   verifySignedSnapshot,
   attestationMatchesCard,
+  publishRootKey,
   Ed25519MemorySigner,
   Ed25519Verifier,
 } from './registry/signing.js';
 export type {
   RosterSigner,
   RosterVerifier,
+  PublishedRootKey,
   Attestation,
   Seal,
   SignedRosterSnapshot,

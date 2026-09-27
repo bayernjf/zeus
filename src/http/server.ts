@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { CardFetchError, VassalRegistry } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
-import { sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
+import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
 import { UnknownIntentError } from '../orchestrator/orchestrator.js';
 import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
@@ -57,7 +57,7 @@ import type { MemoryState } from '../memory/types.js';
  * parameter/auth/serialization only — zero business logic, all state lives in
  * the kernel. No Realm routes (Realm is MCP-only, design-realm §6.1).
  *
- * H1 (public, no auth): /healthz, /api/roster/public.
+ * H1 (public, no auth): /healthz, /api/roster/public, /api/roster/keys.
  * H2 (internal, bearer): /api/roster plus the driver API — fan out intents,
  * read decisions, cancel, list/settle escalations, read metrics. The whole
  * internal group (and the H2 routes) is mounted only when an internal token is
@@ -175,6 +175,39 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     reply.header('Cache-Control', `public, max-age=${maxAge}`);
     reply.type('application/json; charset=utf-8');
     return signed;
+  });
+
+  // Root public key (design-fealty-signing §5.1): the material a verifier needs
+  // to check the seals above. Unauthenticated like the roster it signs — a key
+  // that required a token could not be used by a third party reading the roster.
+  app.get('/api/roster/keys', async (_request, reply) => {
+    const publicKey = deps.signer.publicKey;
+    if (!publicKey) {
+      // Loud, never empty: a verifier that saw `keys: []` could read "no keys to
+      // pin" as "nothing to check" and carry on trusting the roster.
+      await reply.code(501).type('application/json; charset=utf-8').send({
+        error: 'key-material-unavailable',
+        detail: 'this process signs with a backend that does not export its public half; publish the root key through the deployment record instead',
+      });
+      return;
+    }
+    let key;
+    try {
+      key = publishRootKey(deps.signer.keyId, publicKey);
+    } catch (error) {
+      await reply.code(501).type('application/json; charset=utf-8').send({
+        error: 'key-material-unavailable',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+    reply.header('Cache-Control', `public, max-age=${maxAge}`);
+    reply.type('application/json; charset=utf-8');
+    return {
+      issuer: 'zeus',
+      keys: [key],
+      trust: 'Served by the same process that produced the seals: this tells a verifier which keyId signed a roster, it does not establish that the key belongs to Zeus. Pin jwkThumbprint out of band (TOFU). A seal.keyId absent from keys[] must be rejected; a keyId present with a different thumbprint is either a rotation or an attack - check which before proceeding.',
+    };
   });
 
   // ---- Internal / driver face (H2): mounted only with a bearer token ----

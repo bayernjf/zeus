@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify, type KeyObject } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify, type KeyObject } from 'node:crypto';
 import type { AgentCard } from '../a2a/types.js';
 import { ROSTER_SCHEMA_VERSION, type RosterSnapshot } from './roster.js';
 import { sha256Hex } from '../util/crypto.js';
@@ -59,6 +59,11 @@ export function digestCard(card: AgentCard): { cardDigest: string; fealtyDigest?
 
 export interface RosterSigner {
   readonly keyId: string;
+  /** Public half of the signing key, when the backend can export it. Only the
+   *  publication endpoint reads this (design-fealty-signing §5.1); signing and
+   *  verification never need it, so a KMS/HSM signer may leave it undefined and
+   *  simply answer 501 there. */
+  readonly publicKey?: KeyObject;
   /** Sign canonical text, return a base64url (unpadded) Ed25519 signature. */
   sign(canonicalText: string): Promise<string>;
 }
@@ -117,6 +122,56 @@ export class Ed25519Verifier implements RosterVerifier {
       return false;
     }
   }
+}
+
+// --- key publication ----------------------------------------------------------
+
+/**
+ * What a verifier needs to check a seal without taking the publisher's word for
+ * it (design-fealty-signing §5.1/§9.3). JWKS-shaped so a standard library can
+ * read `keys[]`; the two encodings after that are for the humans and the CLIs:
+ * `spkiPem` is what `scripts/verify-roster.mjs --key` takes, and a fingerprint is
+ * what gets announced out of band, because nobody reads 43 base64 characters off
+ * a screenshot and gets them right.
+ */
+export type PublishedRootKey = {
+  kid: string;
+  kty: 'OKP';
+  crv: 'Ed25519';
+  x: string;
+  alg: 'Ed25519';
+  use: 'sig';
+  spkiPem: string;
+  /** RFC 7638 thumbprint: the value to pin out of band. */
+  jwkThumbprint: string;
+  /** Colon-hex SHA-256 over the SPKI DER, for `openssl`-style pinning checklists. */
+  spkiSha256: string;
+};
+
+export function publishRootKey(keyId: string, publicKey: KeyObject): PublishedRootKey {
+  if (publicKey.asymmetricKeyType !== 'ed25519') {
+    throw new Error(
+      `cannot publish a ${String(publicKey.asymmetricKeyType)} key as a Zeus root key: the signing chain is Ed25519 only`
+    );
+  }
+  const { x } = publicKey.export({ format: 'jwk' });
+  if (typeof x !== 'string') throw new Error('ed25519 public key exported without a JWK x coordinate');
+  const spkiPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
+  const spkiDer = publicKey.export({ type: 'spki', format: 'der' });
+  // RFC 7638 hashes only the required JWK members, lexicographically ordered —
+  // canonicalJson already sorts keys, so this is that subset and nothing else.
+  const thumbprintBase = canonicalJson({ crv: 'Ed25519', kty: 'OKP', x });
+  return {
+    kid: keyId,
+    kty: 'OKP',
+    crv: 'Ed25519',
+    x,
+    alg: 'Ed25519',
+    use: 'sig',
+    spkiPem,
+    jwkThumbprint: createHash('sha256').update(thumbprintBase, 'utf8').digest('base64url'),
+    spkiSha256: (createHash('sha256').update(spkiDer).digest('hex').match(/.{2}/g) ?? []).join(':'),
+  };
 }
 
 // --- envelope -----------------------------------------------------------------
