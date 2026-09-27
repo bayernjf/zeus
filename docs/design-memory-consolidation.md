@@ -1,6 +1,6 @@
 # 记忆整理协议设计（Memory Consolidation Protocol）
 
-> 状态：**现行（设计稿 v0.3，2026-09-22，P2 漂移对账）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与契约。
+> 状态：**现行（设计稿 v0.4，2026-09-27，新增 §8 记忆事件生产者契约提案——deferred #27 的候选触点、边界判据与待拍板四问；§8 是提案，未实现）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与契约。
 > 上游：[product-portrait.md](product-portrait.md) §2.1（数据主权）、[prd.md](prd.md) E1（并发决策内核）；与 [design-realm.md](design-realm.md) 同构（事实在原位、索引可重建）。
 > 本文先于 memory 模块存在，是其首份契约。
 
@@ -150,8 +150,63 @@ Agent ──append──▶ Event Log（实时，人人可写）
 - **P1**：Fact Store 持久化 + 任务收束自动触发 + 可靠度权重；与监督台打通冲突升级。
 - **P2**：本地 embedding + 混合检索、漂移对账、retracted/遗忘权执行。
 
-## 8. 验收标准（首版）
+## 8. 记忆事件生产者契约提案（deferred #27；**提案，未实现**）
 
+> 触发背景：2026-09-27 把 `GET /api/memory/snapshot` 与 `GET /api/diary/export` 带进真进程冒烟，第一次实跑就得到 `state.events.length = 0`、日记 `entries = []`——在真实派发三次、审计落盘 13 行之后。代码级复跑：`MemoryEvent` 只在 `src/memory/` 内部构造，模块之外 `.append(` 零命中。
+> **本节只回答一个问题：谁在什么时刻、以什么形状往记忆里写。选定并拍板后才动代码。**
+
+### 8.1 先划清边界：什么进记忆，什么只进审计脊
+
+判据（一条即可检验）：**「对某个域为真的一句陈述」才进记忆；动作与过程的事实进审计脊。**
+
+| | 进记忆事件 | 只进审计脊 |
+|---|---|---|
+| 语义 | 有人对某对象作了某个可反驳的陈述 | 内核做了一次判断/放行/拒绝/超时 |
+| 形状要求 | `kind:'claim'` 且 `content = {subject, predicate, object}`（`consolidate.ts:31-35` `isClaimContent`，**别的形状不会被折叠成事实**：`consolidate.ts:109` 只吃 claim） | 已有 `AuditDecision` 枚举（`dispatch/dispatcher.ts:6-20`：`dispatched`/`refused-*`/`dispatch-failed`/`sla-ack-breached`/`domain-*`/`driver-grant-*`/`realm-write`/`commission-*`） |
+| 需要分歧 | 需要（同一 `(realm, subject, predicate)` 出现不同 `object` 才产生 dispute，`consolidate.ts:111-115` factKey 分组） | 不需要 |
+| 可擦除 | 是（`retractFacts`/`forgetSubject`，§6.2） | 否（治理留痕优先，轮转由 `ZEUS_AUDIT_*` 管） |
+
+推论：**不要为了"让记忆看起来有数据"把审计事件复制一份进记忆**——那只会得到"事件很多、事实恒空"，并污染遗忘权的语义（用户要求擦除一个主题时，不该同时擦掉治理留痕，也不该擦不掉）。
+
+### 8.2 四条候选触点（成本与后果逐条对齐）
+
+**P1 分支结论 → claim（建议只做这条）**
+
+- **触点**：`orchestrator` 收齐 `FanOutResult.branches[]` 之后、发 `intent-finished` 之前（同一处即 `boot.ts:388-392` 已监听的 seam 上游一步）。**消费端已经接好**：`intent-finished` 且带 `realmId` → `consolidateFinishedMemory()`（`boot.ts:422-437`）→ `consolidateRealm(realmId, {now, reliability})` → disputes → `oversight.ingestMemoryDispute()`。所以这条一改，事件→事实→分歧→监督台整条链立刻有输入。
+- **事件形状**：`kind:'claim'`；`source.agentId = 分支的 vassal 名`（可靠度加权与 `reliabilityScore` 正是按 agentId 索引，`boot.ts:425-429`）；`source.taskId = task.id`；`runId`/`realmId` 沿用请求；`refs = [runId, intentId]`（+ 若带 `realmSource` 则加命中 itemId）；`occurredAt` 用分支结束时刻；`confidence` = 分支自带或 0.5 默认（注释已声明"作者自报置信度不是唯一权重"）。
+- **幂等**：`eventId = sha256(`${runId}:${vassal}:${stableStringify(object)}`)`；`memory-store.ts:56-59` 按 `eventId` 去重，因此**重放同一 run 不会产生第二份事实**。
+- **写入方式**：走 `appendFromRealm(writerRealmId, event)`（`memory-store.ts:62-75`），跨域一律 `MemoryBoundaryError` 并审计——**不能直接 `append`**，否则 §6.3/§6.2 的域边界不变量在这条新路径上形同虚设。
+- **风险（必须拍板）**：这是第一次让**第三方产出的文本常驻** `kernel-state.json`；自 deferred #13 起该文件已进备份清单（`docs/design-vault.md`），所以第三方文本会进用户的加密备份包。约束：只存结论与短 snippet（建议 ≤512 字符，超出截断并标注，沿用 diary 的截断先例），不存原始 artifact 全文。
+
+**P2 内核聚合决定 → decision 事件**：`decision` 不是 claim，**不会被折叠成事实**（§8.1），只增加可回放条目；而裁决语义在审计脊与决议回写（E6.2）里已完整存在。收益低、重叠高 → **建议不做**。
+
+**P3 域内容变化 → observation 事件**：触点是 `realm-write` 成功路径（`server.ts` 的 write-grant 消费处与 diary generate）。`observation` 同样不参与折叠，只喂检索。**它是最低风险也最低收益的一条**：做了不会让事实源长出任何东西，若采纳必须明确"只为 recall 服务"。
+
+**P4 驾驶员纠错 → 事件**：`recordCorrections`（`boot.ts:240-241`）现在只改可靠度。把人工裁决写成 claim 会破坏 `source.agentId` 的可归因性（驾驶员不是执行 Agent，可靠度模型会被污染）→ **建议不产事件**，改为在离线回放里读审计（E1.6 已可做）。
+
+### 8.3 需要拍板的四个问题（不定就写不出代码）
+
+1. **`subject` 由谁给？** 分歧能否产生，完全取决于同一 `(realm, subject, predicate)` 是否可能被多次陈述。选项：① 请求方显式 `params.subject`（必填，最干净，但把语义成本推给调用方）；② 由 `intentId` 派生（每次意图一个新主题 → **永远不会分歧**，等于白做）；③ `params.subject` 缺省时回退到 ①/② 的组合。建议 ③，并请确认回退顺序。
+2. **`predicate` 用什么？** ① `skill` 名（零新契约，但 `research` 一次会同时陈述多件事时会互相覆盖）；② `params.predicate` 显式给；③ `skill + params.key`。建议 ① 起步，需要细分时由请求带 ②。
+3. **第三方结论文本能否常驻状态文件与备份？** 若否，改为只存 `sha256(object)` + snippet；若是，长度上限定多少（建议 512）。
+4. **要不要开关？** 建议**默认开**（"每个概念必须可执行"，默认关等于默认空转），不新增 env；若确实要给运维一个退路，则新增 `ZEUS_MEMORY_FROM_BRANCHES`，并**必须同时进 `.env.example` 与 deployment §2**——`tests/config-surface.test.ts` 会在漏文档时直接把 CI 弄红。
+
+### 8.4 选定后的最小落地形状（含验收，不在本节实施）
+
+1. 生产者：`src/memory/producer.ts` 纯函数 `branchVerdictsToEvents(result): MemoryEvent[]`（无时钟无 IO，与 `aggregate`/`selectTargets` 同形，便于确定性断言）；装配点接到 orchestrator 的 `onBranchResult`/结束回调，写入走 `appendFromRealm`。
+2. 单测：① 一次三分支意图 → `snapshot.state.events.length === 3` 且 `facts > 0`；② 同一 run 重放 → 事件数不变（幂等）；③ 两分支对同一 `(subject, predicate)` 给出不同 object → 出现 dispute 并生成 `memory-dispute` 升级；④ 跨域写入被 `MemoryBoundaryError` 拒并审计；⑤ 超长结论被截断并标注。
+3. **真进程验收（关键，别只靠 inject 测试）**：`npm run smoke:core` 增加一步，断言 `snapshot.state.events.length > 0` 且 `facts` 非空、日记导出非空数组。这一条把"恒空转"从**看不见的状态**变成**会红的断言**——本轮之所以能发现它，正是因为先把读数接口接上了。
+4. 文档同步：PRD E8.5 状态列回 ✅ 并把边界写回本节；deferred #27 销项；handoff 记一条 Active work。
+
+### 8.5 我的建议
+
+**只做 P1，按 8.3 的 Q1③ / Q2① / Q3 存结论+512 上限 / Q4 默认开无 env** 落地，落地即带 8.4 的第 3 条真进程断言。理由：它是一次改动就能让"事件→事实→分歧→监督台→遗忘权"整条既有链路从空转变成立的最小闭环；P2/P4 与审计脊重叠，P3 不产生事实。
+
+
+
+## 9. 验收标准（首版）
+
+- 首版八条，逐条可判定：
 1. 无 provenance 的事实不得进入 Fact Store；
 2. Agent 无法直接写/改 Fact（只能追加事件）；
 3. 同事实重复观察只产生一个 fact 且 provenance 累积；
@@ -161,10 +216,11 @@ Agent ──append──▶ Event Log（实时，人人可写）
 7. 跨 realm 读取记忆一律被拒并审计；
 8. 沿 runId 可离线回放任一决策的事件与事实来源。
 
-## 9. 演进日志
+## 10. 演进日志
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v0.1 | 2026-09-22 | 首版：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、与并发内核/supervisor 衔接、八条验收 |
 | v0.2 | 2026-09-22 | P2 契约：§6.1 混合检索（BM25+语义余弦、可重建索引、Embedder 端口与本地 hashing 默认实现）、§6.2 遗忘权（retract/forgetSubject + tombstone 台账，事件日志保留） |
 | v0.3 | 2026-09-22 | §6.3 漂移对账：reconcileMemoryStates 快照间逐字段 diff、verifyMemoryState 横切不变量校验（factId 可重算、provenance 可解析、retract↔tombstone 配对）；P2 三项齐 |
+| v0.4 | 2026-09-27 | **§8 生产者契约提案（deferred #27）**：先划边界（「对某域为真的一句陈述」进记忆、动作与过程进审计脊；只有 `kind:claim` 且 `{subject,predicate,object}` 会被折叠成事实——`consolidate.ts:109`、`:31-35`），再列四条触点与后果。**建议只做 P1（分支结论→claim）**：消费端 `boot.ts:388-392` → `consolidateRealm` → disputes → `ingestMemoryDispute` 已经接好，缺的只是输入；幂等靠 `memory-store.ts:56-59` 的 eventId 去重；写入必须走 `appendFromRealm`（`:62-75`）才不破域边界。P2 裁决事件、P4 纠错事件因与审计脊重叠、且会污染 `source.agentId` 的可靠度归因而建议不做；P3 observation 不产事实。四个待拍板问题（subject 由谁给／predicate 粒度／第三方结论文本能否常驻状态文件与备份／要不要开关）不定就写不出代码。§9 验收与 §10 演进日志为插入本节而顺延；外部引用只涉及旧 §7，未受影响 |
