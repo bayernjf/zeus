@@ -46,8 +46,10 @@ import { CommissionError, commissionId } from '../onboarding/types.js';
 import type { CommissionLedger } from '../onboarding/commission.js';
 import { composeBriefing } from '../onboarding/briefing.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
-import { persistDiary } from '../diary/persist.js';
+import { exportDiary, persistDiary } from '../diary/persist.js';
 import { DiaryUnsupportedError } from '../diary/types.js';
+import { reconcileMemoryStates } from '../memory/reconcile.js';
+import type { MemoryState } from '../memory/types.js';
 
 /**
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
@@ -978,28 +980,58 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         return { ok: violations.length === 0, violations };
       });
 
+      // Drift reconciliation has two halves, and only one of them was reachable:
+      // `integrity` runs verifyMemoryState on the live store, while
+      // reconcileMemoryStates diffs two snapshots. Both sides of that diff come
+      // from here - a snapshot taken now, or one restored from a backup - so an
+      // operator can answer "what changed in the fact source since then".
+      app.get('/api/memory/snapshot', { preHandler: requireBearer }, async () => ({
+        capturedAt: now().toISOString(),
+        state: deps.memoryStore!.exportState(),
+      }));
+
+      app.post('/api/memory/reconcile', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as { previous?: unknown; current?: unknown };
+        const previousProblem = memoryStateProblem(body.previous, 'body.previous');
+        if (previousProblem) return error(reply, 400, 'invalid_request', previousProblem);
+        if (body.current !== undefined) {
+          const problem = memoryStateProblem(body.current, 'body.current');
+          if (problem) return error(reply, 400, 'invalid_request', problem);
+        }
+        // Read-only on both sides: this never imports a state into the running
+        // kernel, so a stale snapshot cannot overwrite live facts.
+        return reconcileMemoryStates(
+          body.previous as MemoryState,
+          (body.current ?? deps.memoryStore!.exportState()) as MemoryState
+        );
+      });
+
       // E8.3: read diary entries (optionally one realm/date), built on demand.
       app.get('/api/diary', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
-        const q = request.query as { realmId?: unknown; date?: unknown; timeZone?: unknown };
-        if (q.realmId !== undefined && typeof q.realmId !== 'string') {
-          return error(reply, 400, 'invalid_request', 'query.realmId must be a string');
-        }
-        if (q.date !== undefined && !isValidDate(q.date)) {
-          return error(reply, 400, 'invalid_request', 'query.date must be YYYY-MM-DD');
-        }
-        if (q.timeZone !== undefined && typeof q.timeZone !== 'string') {
-          return error(reply, 400, 'invalid_request', 'query.timeZone must be a string');
-        }
+        const parsed = parseDiarySelection(request.query as Record<string, unknown>);
+        if ('reject' in parsed) return error(reply, 400, 'invalid_request', parsed.reject);
         try {
-          const entries = buildDiariesFromState(deps.memoryStore!.exportState(), {
-            ...(typeof q.realmId === 'string' ? { realmId: q.realmId } : {}),
-            ...(isValidDate(q.date) ? { date: q.date } : {}),
-            ...(typeof q.timeZone === 'string' ? { timeZone: q.timeZone } : {}),
-          });
-          if (q.date !== undefined && entries.length === 0) {
-            return error(reply, 404, 'not_found', `no diary for ${String(q.date)}`);
+          const entries = buildDiariesFromState(deps.memoryStore!.exportState(), parsed.options);
+          if (parsed.options.date !== undefined && entries.length === 0) {
+            return error(reply, 404, 'not_found', `no diary for ${parsed.options.date}`);
           }
           return { entries };
+        } catch (e) {
+          return mapDiaryError(reply, e);
+        }
+      });
+
+      // The structured export the design promises: the same stable JSON the
+      // persist path serialises, handed over directly, writing to no realm.
+      app.get('/api/diary/export', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const parsed = parseDiarySelection(request.query as Record<string, unknown>);
+        if ('reject' in parsed) return error(reply, 400, 'invalid_request', parsed.reject);
+        try {
+          const entries = buildDiariesFromState(deps.memoryStore!.exportState(), parsed.options);
+          if (parsed.options.date !== undefined && entries.length === 0) {
+            return error(reply, 404, 'not_found', `no diary for ${parsed.options.date}`);
+          }
+          return reply.type('application/json').send(exportDiary(entries));
         } catch (e) {
           return mapDiaryError(reply, e);
         }
@@ -1653,6 +1685,44 @@ function validAggregation(rule: unknown): rule is AggregationRule {
  *  field). Graph validity (acyclicity, dependency existence) is left to
  *  validateDag; this only checks field shapes. Returns a DagSpec or an error
  *  string describing the first problem found. */
+/** Validate the diary selection query once, so the read and export routes
+ *  cannot drift into accepting different things. */
+function parseDiarySelection(query: Record<string, unknown>): { reject: string } | { options: { realmId?: string; date?: string; timeZone?: string } } {
+  const options: { realmId?: string; date?: string; timeZone?: string } = {};
+  if (query.realmId !== undefined) {
+    if (typeof query.realmId !== 'string') return { reject: 'query.realmId must be a string' };
+    options.realmId = query.realmId;
+  }
+  if (query.date !== undefined) {
+    if (!isValidDate(query.date)) return { reject: 'query.date must be YYYY-MM-DD' };
+    options.date = query.date;
+  }
+  if (query.timeZone !== undefined) {
+    if (typeof query.timeZone !== 'string') return { reject: 'query.timeZone must be a string' };
+    options.timeZone = query.timeZone;
+  }
+  return { options };
+}
+
+/** Structural check for a caller-supplied memory snapshot. A rejected diff is a
+ *  data question, so the message names the field and index that broke shape -
+ *  "invalid body" would send the operator looking in the wrong place. */
+function memoryStateProblem(raw: unknown, field: string): string | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return `${field} must be a memory state object`;
+  const state = raw as Record<string, unknown>;
+  if (!Array.isArray(state.events)) return `${field}.events must be an array`;
+  if (!Array.isArray(state.facts)) return `${field}.facts must be an array of [subject, facts] pairs`;
+  for (const [index, pair] of state.facts.entries()) {
+    if (!Array.isArray(pair) || pair.length !== 2 || typeof pair[0] !== 'string' || !Array.isArray(pair[1])) {
+      return `${field}.facts[${index}] must be a [subject, FactRecord[]] pair`;
+    }
+  }
+  for (const list of ['corrections', 'retractions'] as const) {
+    if (state[list] !== undefined && !Array.isArray(state[list])) return `${field}.${list} must be an array`;
+  }
+  return null;
+}
+
 function parseDagSpec(input: unknown): Omit<DagSpec, 'realm'> | string {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
     return 'body.dag must be an object';
