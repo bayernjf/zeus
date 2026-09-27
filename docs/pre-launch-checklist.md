@@ -12,7 +12,7 @@
 | # | 项 | 出口标准 | 命令 / 动作 | 当前状态 |
 |---|---|---|---|---|
 | A1 | 真实封臣注册 + 真机扇出验收（E4.8 / M3） | 起实例 → 注册一个真实封臣（pr-helper 或 loom）→ 跑一次真机扇出，且 `branch-*` 事件与决策进 audit 脊 | 两段：① 标准客户端 `NODE_USE_ENV_PROXY=1 HTTPS_PROXY=<本机代理> BASE_URL=https://pr-helper-ten.vercel.app node scripts/acceptance-standard-a2a.mjs`（exit 0）；② **注册 + 扇出 + 落账现在是一条命令**：`KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [TASK_URL=…] [AGENT_TOKEN=…] [SKILL=…] [REALM=personal\|enterprise] npm run acceptance:fanout`（14 步，加 `--revoke-test` 共 16 步，末尾打印可粘贴的证据块；退出码 0/1/2 = 全过 / 某步失败 / 配置或用法错；`TASK_URL` 与 `REALM` 于 2026-09-27 为应对"卡片自己声明的 RPC 端点"与"只服务企业域的 Agent"新增） | **① 已从"记录级"升格为"本轮实测"**：2026-09-27 走本机系统代理对线上 `pr-helper-ten.vercel.app` 复跑 → **exit 0**（卡发现 5 技能、`tasks/send` 被接受、task 停在 `input-required`）。**② 首次对真实 Agent 跑通注册与扇出，14/16**：注册 201（card fetched、fealty validated）、名册 active、审计脊 `dispatched` ×2 + `vassal-revoked`、名册离线验签 VERIFIED、吊销断流通过。两条失败**均非接线缺陷**：一是任务停在 `input-required`（pr-helper 默认 plan 模式、execute 需 Zeus 代理的 GitHub 凭据）故无立场、无记忆 claim——**属治理边界，需用户侧给凭据或换不需凭据的技能**；二是真实卡声明 `dataRealms=["enterprise"]`，需 `REALM=enterprise` + `ZEUS_REALM_ENTERPRISE` 挂企业域（初次按 personal 跑被数据主权边界正确拒绝并写审计 `refused-realm-policy`，故给 runner 加 `REALM` 旋钮）。过程中暴露一条真缺陷：内核 `defaultTaskUrl`（`registry.ts:210`）按约定改写端点、**不读卡片自己声明的 `url`**，而 pr-helper 的 JSON-RPC 面就在卡片路径上 → 用 runner 的 `TASK_URL`（内核 `POST /api/vassals` 既有 `taskUrl` 逃生口）绕开后分支 `ok=1/1`；缺陷登记 **deferred #29**。**A1 仍未销项**：差"真实 Agent 回一个结论"这一格，卡在仓库外凭据（另有桩 Agent 上的 14/14 与 16/16 作为接线自证） |
-| A2 | 生产 RSK 密钥托管 / 轮换 / 公钥发布（deferred #7 / E4.9 R2 / E5.4 bayjf R2） | 密钥落在受控位置（KMS/文件）、按 §5.4 手册有轮换次序；bayjf 名册对外公开前公钥已发布且指纹已带外公告；`NODE_ENV=production` 无钥拒启已验证 | `scripts/gen-rsk-key.mjs`（已就绪）+ `GET /api/roster/keys`（已就绪）；剩下：选托管方案、把 `jwkThumbprint` 带外公告、bayjf 侧展示 | **发布通道与运行手册已在库内**（2026-09-27，design-fealty-signing v0.2 §5.1/§5.4）；**托管选型待拍板 + 公告与 R2 展示是真实动作** |
+| A2 | 生产 RSK 密钥托管 / 轮换 / 公钥发布（deferred #7 / E4.9 R2 / E5.4 bayjf R2） | 密钥落在受控位置（KMS/文件）、按 §5.4 手册有轮换次序；bayjf 名册对外公开前公钥已发布且指纹已带外公告；`NODE_ENV=production` 无钥拒启已验证 | `scripts/gen-rsk-key.mjs`（已就绪）+ `GET /api/roster/keys`（已就绪）；剩下：选托管方案、把 `jwkThumbprint` 带外公告、bayjf 侧展示 | **发布通道与运行手册已在库内**（2026-09-27，design-fealty-signing v0.2 §5.1/§5.4）；**托管选型已拍板（2026-09-27）= secret 挂载 + 私钥文件 0600**（落地口径见 [deployment.md](deployment.md) §3「本项目选型」；B1 已在镜像内实测过该路径，含"`docker cp` 保留宿主 uid → 必须走挂载"这条教训）；**剩余全是仓库外动作**：把私钥放进真实部署的 secret 后端、`jwkThumbprint` 带外公告、bayjf 侧验签展示 |
 | A3 | Zeus↔loom 真机联调 | 用 loom 的 endpoint / agent-card 跑通一次双向 A2A | 需用户侧提供 loom endpoint / card | 待外部条件 |
 | A4 | Jev endpoint / key 真机核对 | 启用 S2 仲裁 / E1.3 judge 时，真实 endpoint 连通、key 有效、fallback 行为符合预期 | 配 `ZEUS_DECISION_*` / `ZEUS_JUDGE_*` 后实跑 | 仅当启用模型裁决；代码 fallback 已标注 |
 | A5 | 数据域边界签名发布 | bayjf 名册在对公开前，R2（公钥发布 + 客户端验签展示）完成，且 `verifySignedSnapshot` 在另一端验过 | 库内侧已就绪：`GET /api/roster/keys` 发布、`npm run verify:roster` 完整验链；待做的是外部消费方接上它 | 与 A2 同源；**剩余的是 bayjf 侧展示（R2），不是再写一份验证逻辑** |
@@ -60,6 +60,26 @@
 6. `docker` 真机构冒烟（B1）
 7. 时钟偏置回归：`vitest` clock-skew 作业绿（deferred #24 闸门）
 8. **核心链路真进程冒烟**：`npm run smoke:core`（`scripts/smoke-core.mjs`，deferred **#25** 已销项）。它起真进程 + 真 socket 走完「挂目录 → 带凭证注册 → 扇出 → 内核自己读域 → 审计落盘 → 名册离线可验（含一条 maxAge 反证）→ 发布的根公钥就是那个签名钥，且**只拿端点返回的字节就能出货验签器验过**（把 PEM 换成 JWK 串须退 2），**且同一串指纹在出钥、发布、验签三处一致**（keygen 打印 → 端点 `jwkThumbprint` → 验签报告 `seal fingerprint` 行）→ **DAG 驾驶员入口已装配**（未知意图须回 runner 自己的 404 `unknown dag`；只有 `dagRunner` 未注入时才会 503，故这一步分辨的是"装配"不是"路由在位"）→ 吊销断流 → SIGTERM 落盘 → 重启恢复」，36 步全绿才退 0；只用回环、自造密钥与令牌、不读任何真实部署的 secret，并已接进 CI（build/test 之后一步）。它第一次跑就把派发打到了没有凭证的对端——正是这条链路上"库内测试看不见、真进程才看得见"的那类缺口
+
+## G. 上线冲刺（需你提供什么 / 我做什么）
+
+把 A1–A5 与 §B 收敛成可执行排期。**「需你提供」= 只能由你或你的环境给出的输入与授权；「我做什么」= 拿到输入后我能在仓库或本机完成的动作。** 一行两侧都不为空才叫未销项——所以这张表能一眼看出哪些格子在等外部条件、哪些只是等我动手。
+
+| # | 需你提供 | 我做什么（拿到输入后） | 阻塞谁 |
+|---|---|---|---|
+| A1 | pr-helper 的 execute 凭据（GitHub token，经 Zeus 进程代理）或指定一个不需凭据的真技能；以及允许挂企业域（`ZEUS_REALM_ENTERPRISE`） | 用已入库的 `npm run acceptance:fanout`（`REALM=enterprise TASK_URL=<卡片路径> SKILL=<换过的技能>`）复跑，把 `positions=0` 与 `events 0→0` 两格转绿并留证据 | A1 销项 |
+| A2 | 真实部署的 secret 后端（或主机 + 部署目录）；带外公告渠道 | 选型已拍板（secret 挂载 + 0600，见 deployment §3）；拿到环境后按 §5.4 七步做首轮发钥与切流自检（`kid` 与新指纹逐字符相符）；公告文本我来拟 | A2 / A5 |
+| A3 | loom 的 endpoint / agent-card 及凭证 | 跑一次双向 A2A 真机联调，结果与人话结论写回 A3 行 | A3 |
+| A4 | Jev 的真实 endpoint 与 key；或明确「上线窗口不启用模型裁决」 | 启用则配 `ZEUS_DECISION_*` / `ZEUS_JUDGE_*` 实跑并核对连通、key 有效、fallback 行为；不启用则把 A4 标为非目标并写明影响面（rules-only 降级的实际表现） | A4（仅启用时） |
+| A5 | bayjf 侧（R2）由谁改、何时改 | 库内侧已闭环（发布端点 + `npm run verify:roster` 完整验链）；我交付接口契约与验签调用示例，展示本身由 bayjf 侧落地（**给契约，不代写第二份验签逻辑**） | A5 |
+| B1 / B3 | 真实生产卷的宿主路径与权限策略 | 容器内路径已在 B1 实测（审计与状态文件 0600、`node:node`）；拿到真实卷后复核宿主侧权限与挂载差异并记账 | B1 / B3 |
+| B2 | 反代 / TLS / 进程管理的真实托管形态（systemd、k8s 或反代产品） | 按 deployment.md 出对应的起停单元、TLS 终止与 `HEALTHCHECK` 配置 | B2 |
+| B4 | 上线前那一刻的 `ZEUS_*` 读取面确认 | 按 deployment.md §2 逐行核对 24 个变量，把「读到但未用」与「静默降级」的逐条列出 | B4 |
+| E1 | 每次 push 的授权 | 现测 `git rev-list --count origin/dev..HEAD` 后推送，并盯云端 CI 双矩阵绿（**口径：状态只能现测，不写死**） | E1 |
+
+**能立刻推进的**：A1 与 A2 的库内件都已入库，差的只是真实凭据与真实部署环境——你的凭据一到，A1 就是一条命令的事。其余每行都需要外部输入，没有「我自己先做着」的余地。
+
+**明确非本次冲刺范围**：C1–C3 阈值标定（需 ≥3 真实 Agent 压测，不阻塞核心 MVP）、D1–D4 非阻塞增强、E2 镜像发 registry（仅当部署形态是拉到 registry 才有意义）。
 
 ## 一句话
 
