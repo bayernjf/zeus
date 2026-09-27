@@ -207,9 +207,11 @@
 - **缓做原因**：这是**判定精度**问题不是缺口——E4.8 那类矛盾在 2026-09-26 已清零，本轮重新量也是 0；用一个会假阳性的闸门换"自动化"这个名字，不如把口径写清、把校准做在跑的那一刻。
 - **2026-09-27 复量 → 结论：不接进 CI。** 按条目自身触发条件重量：① 未见第二次"列与正文打脸"造成的误判；② `docs/prd.md` 需求行仍为 **54 行**（`^\| E[\d.]+ \|` 计数），未增长。又复跑一次词表判定（✅ 行正文含 `未实现/尚未/还没有`、⬜/🚧 行正文含 `已落地/已交付`）→ 真表报出 **2 处，逐条核对全是假阳性**：E3.4（🚧，正文"stdio 壳已落地"＝部分落地，列与正文其实一致）、E8.3（✅，正文"运行时输入依赖 deferred #27……还没有记忆事件生产者"＝已登记的依赖注记，正是 deferred #27 明文允许的 ✅ 形态）。**词表版在真表上的假阳性由 v1 的 5/54 变成本次 2/54，同一类子句语义没被词表收住**——这就是"结构判定（①，已在 `tests/doc-consistency.test.ts` 第 5 例）零假阳性可进 CI、语义判定（②）不能"的实测理由。维持口径：不进 CI，由评审每轮带校准样例跑。
 
-### #29 内核按约定推导任务端点，不读卡片自己声明的 `url`（2026-09-27 真实 Agent 扇出暴露）
-- **现状**：`defaultTaskUrl`（`registry.ts:210`）把卡片 URL 按字符串约定改写为任务端点（`…/api/a2a/agent-card` → `…/api/a2a/tasks`、`…/.well-known/agent(-card).json` → `/api/a2a/tasks`），**从不读卡片的 `url` 字段**。但 `url` 就是 A2A 语义里该 Agent 的 RPC 端点——二者冲突时内核按约定赢。线上 pr-helper 正是这种形态（卡 `notes` 明写、`url` 即卡片路径，GET=卡片、POST=JSON-RPC），于是注册 201 成功、派发时 `subscribe failed: HTTP 404`。
-- **为什么不是"顺手改"**：改默认推导去读 `url` 会改变**所有既有部署**的端点解析（含未声明 `url`、或声明得与约定不一致的卡片），优先级须先拍板（卡片声明 / 约定 / 显式覆盖三者谁赢）并给迁移口径；而 `POST /api/vassals` 的 `taskUrl` 覆盖**一直是一等逃生口**。故本轮只在验收 runner 暴露该旋钮（`TASK_URL`）让真实 Agent 能跑通，**不动内核默认推导**。
-- **同源记录**：v0.10 修过一次同一端点失配（改的是 `scripts/acceptance-standard-a2a.mjs`），但当时只修了客户端脚本、内核派发侧未动——本条记的正是"修了看得见的那一半"。
-- **触发条件**：① 出现第二个把 JSON-RPC 面放在卡片路径上的真实 Agent（第一个即 pr-helper）；或 ② 有部署因"卡片 `url` 与约定不一致"而派发失败、且无法用 `taskUrl` 覆盖（当前可覆盖）。
-- **落地时**：`registry.ts:210` 的推导须带一条"卡片声明 vs 约定"的对照用例，并核 `POST /api/vassals` 的覆盖语义；参考 [review-mvp-2026-09.md](review-mvp-2026-09.md) v0.19 与 handoff Active work 69。
+### #29 内核按约定推导任务端点，不读卡片自己声明的 `url` ✅ 已销项（2026-09-27，触发条件未到点即提前激活）
+- 原议题：`defaultTaskUrl`（`registry.ts`）把卡片 URL 按字符串约定改写为任务端点（`…/api/a2a/agent-card` → `…/api/a2a/tasks`、`…/.well-known/agent(-card).json` → `/api/a2a/tasks`），**从不读卡片的 `url` 字段**。但 `url` 就是 A2A 语义里该 Agent 的 RPC 端点——二者冲突时内核按约定赢。线上 pr-helper 正是这种形态（`url` 即卡片路径，GET=卡片、POST=JSON-RPC），于是注册 201 成功、派发时 `subscribe failed: HTTP 404`。
+- **触发条件（回顾）**：① 出现第二个把 JSON-RPC 面放在卡片路径上的真实 Agent；② 有部署因"卡片 `url` 与约定不一致"而派发失败、且无法用 `taskUrl` 覆盖。两条均**未满足**（pr-helper 是第一个，且可用 `TASK_URL` 覆盖）。
+- **提前激活的理由**：修的是"内核读错来源"这一层——卡片的 `url` 是协议自己声明的一致性来源，约定只是启发式。既然 pr-helper 已证伪"约定总是对的"，继续让内核默认猜端点，等于把每个真实 Agent 的接线成本推给操作者去配 `TASK_URL`，而这类失配在线上表现为 404 报错、不是配置缺失。改动面已全量测绘（仅 3 个路径严格的桩 + 2 处断言），风险不再需要第二条触发条件来担保。
+- **销项结论**：`register()` 的端点解析改为固定优先级 **显式覆盖 > 卡片声明 `url` > 约定兜底**（`src/registry/registry.ts`：新增 `declaredTaskUrl`，`defaultTaskUrl` 降为兜底）。卡片 `url` 为空 / 非 http(s) / 不可解析时判为"未声明"并回落约定——**旧卡片不会因 `url` 是无效值而在边界新失败**。
+- **迁移口径**：既有快照在 `importState` 时**保留存下的 `taskUrl`**，不会在升级瞬间翻转；只有新注册/重注册才走新优先级。`POST /api/vassals` 的 `taskUrl` 覆盖保留为一等显式覆盖（给"声明也不对"的卡片兜底），验收 runner 的 `TASK_URL` 旋钮同样保留。
+- **对照用例**：`tests/registry.test.ts` 新增「task endpoint resolution」三例（声明优先于约定 / 显式覆盖胜过声明 / 声明不可用回落约定），并改写既有断言（pr-helper 卡 `url` 即卡片路径，注册后 `taskUrl` = 该声明值）；路径严格的桩（`scripts/smoke-core.mjs`、`tests/kernel-memory-p1.test.ts`、`tests/governance-flow.test.ts`）改为声明真实服务端点。门禁 789 测试 / 83 文件 / 0 失败，`smoke:core` 36/36。
+- **同源记录**：v0.10 修过一次同一端点失配（改的是 `scripts/acceptance-standard-a2a.mjs`），当时只修了客户端脚本、内核派发侧未动——本条记的正是"修了看得见的那一半"。
