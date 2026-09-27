@@ -16,7 +16,7 @@ const TOKEN = 'zeus-secret';
 function prHelperCard(): AgentCard {
   return {
     name: 'pr-helper',
-    url: CARD_URL,
+    url: TASK_URL,
     skills: [{ id: 'create-pr', name: 'Create pull request', description: '', tags: [] }],
     'x-zeus-fealty': {
       version: '1',

@@ -10,7 +10,7 @@ function card(name: string, overrides: Record<string, unknown> = {}): AgentCard 
   return {
     name,
     description: `${name} vassal`,
-    url: `http://${name}.internal/api/a2a/agent-card`,
+    url: `http://${name}.internal/api/a2a/tasks`,
     skills: [{ id: `${name}-skill`, name: `${name} skill`, description: '', tags: [] }],
     'x-zeus-fealty': {
       version: '1',

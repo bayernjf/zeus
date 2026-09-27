@@ -25,7 +25,7 @@ function prHelperCard(overrides: Record<string, unknown> = {}): AgentCard {
 }
 
 describe('VassalRegistry', () => {
-  it('registers a vassal from its card URL and derives the task endpoint', async () => {
+  it('registers a vassal and dispatches to the endpoint the card itself declares', async () => {
     const fetches: string[] = [];
     const registry = new VassalRegistry(async url => {
       fetches.push(url);
@@ -34,7 +34,9 @@ describe('VassalRegistry', () => {
     const entry = await registry.register('http://vassal.internal/api/a2a/agent-card');
     expect(fetches).toEqual(['http://vassal.internal/api/a2a/agent-card']);
     expect(entry.card.name).toBe('pr-helper');
-    expect(entry.taskUrl).toBe('http://vassal.internal/api/a2a/tasks');
+    // pr-helper serves its JSON-RPC face on the card path itself; the card says
+    // so and dispatch must honour it rather than rewriting to the convention.
+    expect(entry.taskUrl).toBe('http://vassal.internal/api/a2a/agent-card');
     expect(entry.fealty.swornTo).toBe('zeus');
     expect(registry.get('pr-helper')?.fealty.domain).toBe('pr-release-control');
   });
@@ -172,7 +174,7 @@ describe('VassalRegistry', () => {
 
     expect(lookup.statusOf('pr-helper')).toBe('active');
     expect(lookup.statusOf('ghost')).toBe('unknown');
-    expect(lookup.get('pr-helper')).toMatchObject({ name: 'pr-helper', taskUrl: 'http://vassal.internal/api/a2a/tasks' });
+    expect(lookup.get('pr-helper')).toMatchObject({ name: 'pr-helper', taskUrl: 'http://vassal.internal/api/a2a/agent-card' });
     expect(lookup.findBySkill('create-pr').map(v => v.name)).toEqual(['pr-helper']);
 
     expect(registry.revoke('pr-helper')).toBe(true);
@@ -223,6 +225,32 @@ describe('VassalRegistry', () => {
     up = false;
     expect(await registry.healthCheck('pr-helper')).toBe(false);
     expect(registry.get('pr-helper')?.lastHealthCheck?.detail).toBe('connection refused');
+  });
+});
+
+describe('task endpoint resolution', () => {
+  const registerWith = (card: AgentCard, options?: { taskUrl?: string }) =>
+    new VassalRegistry(async () => cardResponse(card)).register('http://vassal.internal/api/a2a/agent-card', options);
+
+  it('prefers the endpoint the card declares over the URL convention', async () => {
+    const entry = await registerWith(prHelperCard({ url: 'http://vassal.internal/rpc' }));
+    expect(entry.taskUrl).toBe('http://vassal.internal/rpc');
+  });
+
+  it('lets an explicit taskUrl override win over the card declaration', async () => {
+    const entry = await registerWith(prHelperCard({ url: 'http://vassal.internal/rpc' }), { taskUrl: 'http://vassal.internal/override' });
+    expect(entry.taskUrl).toBe('http://vassal.internal/override');
+  });
+
+  it('falls back to the convention when the card declares no usable endpoint', async () => {
+    const blank = await registerWith(prHelperCard({ url: '   ' }));
+    expect(blank.taskUrl).toBe('http://vassal.internal/api/a2a/tasks');
+    const junk = await registerWith(prHelperCard({ url: 'not-a-url' }));
+    expect(junk.taskUrl).toBe('http://vassal.internal/api/a2a/tasks');
+    const scheme = await registerWith(prHelperCard({ url: 'ftp://vassal.internal/tasks' }));
+    expect(scheme.taskUrl).toBe('http://vassal.internal/api/a2a/tasks');
+    const missing = await registerWith(prHelperCard({ url: undefined }));
+    expect(missing.taskUrl).toBe('http://vassal.internal/api/a2a/tasks');
   });
 });
 
