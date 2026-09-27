@@ -130,8 +130,15 @@ async function main() {
   record('the deployment publishes a root public key', keys.status === 200 && !!rootKey?.jwkThumbprint, `kid=${rootKey?.kid ?? '(none)'}`);
   if (rootKey) {
     console.log(`      announce/compare: jwkThumbprint=${rootKey.jwkThumbprint}`);
-    if (rootKey.kid === 'zeus-rsk-dev') {
-      console.log('      WARN  kid is the dev default: this process may be sealing with an ephemeral key, so do not pin it (set ZEUS_RSK_KEY_ID + a key file)');
+    // The kernel reports whether its key survives a restart; only an older build
+    // (no such field) leaves the runner to infer from the default kid, and then it
+    // has to say so rather than reporting a guess as a fact.
+    if (keys.json?.keySource === 'ephemeral') {
+      console.log('      WARN  this process seals with an EPHEMERAL key: it changes on every restart, so nothing may be pinned to it (set ZEUS_RSK_KEY_FILE or ZEUS_RSK_KEY)');
+    } else if (keys.json?.keySource === 'configured') {
+      console.log('      key source: configured (a pin against this key survives a restart)');
+    } else if (rootKey.kid === 'zeus-rsk-dev') {
+      console.log('      WARN  kid is the dev default and this build reports no key source, so ephemerality cannot be determined here - check the deployment (set ZEUS_RSK_KEY_ID + a key file)');
     }
   }
 
