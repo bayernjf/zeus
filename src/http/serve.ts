@@ -13,10 +13,12 @@
  * on graceful shutdown (SIGINT/SIGTERM). Without it the kernel stays in-memory.
  *
  * Production RSK: NODE_ENV=production refuses to boot without ZEUS_RSK_KEY or
- * ZEUS_RSK_KEY_FILE (generate with scripts/gen-rsk-key.sh). Key storage/rotation
- * is a deployment-slice concern tracked by deferred #7; without a key in other
- * environments an ephemeral in-memory key is generated (dev only — restarts
- * invalidate every signature).
+ * ZEUS_RSK_KEY_FILE (generate a pair with `node scripts/gen-rsk-key.mjs`). The
+ * public half is published on the public face at GET /api/roster/keys; key
+ * storage and rotation remain a deployment-slice concern tracked by deferred #7
+ * (runbook: design-fealty-signing §5.4). Without
+ * a key in other environments an ephemeral in-memory key is generated (dev only
+ * — restarts invalidate every signature, and with it the published key).
  */
 import { createRequire } from 'node:module';
 import {
