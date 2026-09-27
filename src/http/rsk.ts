@@ -61,7 +61,7 @@ export async function loadRskSigner(options: LoadRskOptions = {}): Promise<Ed255
     }
     if (privateKey.asymmetricKeyType !== 'ed25519') {
       throw new RskConfigError(
-        `ZEUS_RSK_KEY must be an Ed25519 key (got ${privateKey.asymmetricKeyType}); generate one with scripts/gen-rsk-key.sh`
+        `ZEUS_RSK_KEY must be an Ed25519 key (got ${privateKey.asymmetricKeyType}); generate one with \`node scripts/gen-rsk-key.mjs\``
       );
     }
     const publicKey = createPublicKey(privateKey);

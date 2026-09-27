@@ -64,6 +64,15 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk
 
 退出码 0 = 通过；1 = 被拒（stderr 给具体原因：载荷版本不认识 / 摘要不绑定 / 签名不符 / 超出 maxAge / 某条目缺背书）；2 = 参数或 I/O 问题。它走的是**库里同一套验签实现**（`dist/registry/signing.js`），所以先 `npm run build`；这也意味着它同时能挡住"脚本自己实现了一遍规范化、结果两边不一致"那种假通过。
 
+**公钥发布与固定**：进程在**公开面**（与名册同样不鉴权）发布它所签用的那把公钥：
+
+```sh
+curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].spkiPem' > zeus-rsk.pem
+curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].jwkThumbprint'   # 带外公告这一串
+```
+
+`spkiPem` 就是上面 `--key` 的输入，`jwkThumbprint`（RFC 7638）是**要带外固定的值**。这条通道不建立信任：应答方就是产出封签的那个进程，它能说明名册由哪个 `keyId` 签的，不能说明这把钥属于谁——所以验签方必须把手里的公钥指纹与带外公告比对过（契约见 design-fealty-signing.md §5.1）。若后端是导不出公钥的 KMS/HSM，该端点返回 501，公钥改由部署记录发布；`keys: []` 这种"看起来没有钥要固定"的形状是设计明确禁止的。未配密钥的非生产进程每次重启换一把临时钥，其发布值不可固定。
+
 **传入方式**：
 
 - 容器 / systemd 推荐挂载文件 + `ZEUS_RSK_KEY_FILE`（不必把多行 PEM 塞进环境）；
@@ -71,7 +80,7 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk
 
 **生产守卫**：`NODE_ENV=production` 且两种方式都未提供时，进程启动即失败（exit 1，`RskConfigError`）——避免"重启后所有封签因临时钥而失效"。
 
-**轮换**（v1 单签语义，详见 design-fealty-signing.md §RSK）：换钥即换新 `ZEUS_RSK_KEY_ID`；轮换窗口内验签方需同时持有新旧公钥（按封签内 keyId 选择）。旧私钥停用后旧快照在 attestation TTL（24h）内仍可用旧公钥验。
+**轮换**：**人工执行，库里没有自动轮换**（理由与完整步骤见 design-fealty-signing.md §5.4 运行手册）。口径：换钥即换新 `ZEUS_RSK_KEY_ID`；**先带外公告新指纹、对方固定之后才切流**——反过来做会在验签方一侧留下一个与"名册被替换"无法区分的窗口；轮换窗口内验签方需同时持有新旧公钥（`--key 旧keyId=旧.pem --key 新keyId=新.pem`，按封签内 keyId 选择）。旧私钥停用后旧快照在 attestation TTL（24h）内仍可用旧公钥验，故旧私钥保留到那之后再销毁。切流后自检：`GET /api/roster/keys` 的 `kid` 已是新值、`jwkThumbprint` 与公告那串逐字符相同。
 
 ## 4. Docker（推荐）
 
@@ -176,7 +185,8 @@ WantedBy=multi-user.target
 
 ## 6. 上线前检查清单
 
-- [ ] RSK 私钥经文件挂载提供，`ZEUS_RSK_KEY_ID` 带日期/版本；公钥已交付验签方
+- [ ] RSK 私钥经文件挂载提供，`ZEUS_RSK_KEY_ID` 带日期/版本
+- [ ] `GET /api/roster/keys` 有答且 `kid` 等于 `ZEUS_RSK_KEY_ID`，其 `jwkThumbprint` 已带外公告给每个验签方（该端点自身不构成信任，见 §3；KMS 后端返回 501 时改为在部署记录里发布公钥）
 - [ ] `NODE_ENV=production`，启动日志无 ephemeral 告警
 - [ ] `ZEUS_INTERNAL_TOKEN` 为长随机串（或明确不挂载内部路由）
 - [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含连接器 token 与记忆事实明文）：`ls -l /data/kernel-state.json`

@@ -56,7 +56,7 @@
 | 数据域 | `src/realm/` | `FsRealmStore` 的 connect / manifest / search / read / write、确定性 realmId、内容摘要基线、路径穿越与符号链接双检、原子写；两型均可连接且类型如实存储；企业域写需签名且一次性的授权凭证，只读连接即使持凭证仍拒写；三级租户范围与跨域授权判定；只读 MCP 服务端（resources + tools）与 stdio 宿主 |
 | 外部系统连接器 | `src/mcp/` | 零 SDK 的 streamable-HTTP JSON-RPC 客户端（握手 + tools/resources/prompts 发现，兼容 JSON 与 SSE 帧）；连接器声明（封闭权限词汇）/ 连接（失败即拒并审计）/ 吊销，最小权限精确裁剪发现结果，且只有经握手发现并被声明裁剪后保留的工具才可调用 |
 | 状态与装配 | `src/state/` | 状态快照原子落盘与恢复（注册表含已吊销、升级队列、任务结果与原始请求、组织编制、授权台账、凭证 nonce 账本）；一次性装配运行时；优雅退出落盘 |
-| HTTP 传输层 | `src/http/` | 全仓库唯一 fastify 依赖处。H1 只读：`/healthz`、`/api/roster/public`（离线可验签）、`/api/roster`（bearer，同样签名）；H2 操作面（bearer，未配 token 时整组不挂载）：任务发起 / 回查 / 取消 / 决策回放 / 进度 SSE、人工处理队列（approve / reject / resolve / 补参重派 / 按类型分流）、并发指标、执行 Agent 注册与吊销、能力目录与认证、组织结构与问责链、记忆与遗忘权、连接器、决策后端实际配置、审计回读、运行时盘点（只报计数与路径）、数据域治理面（挂载、租户级、跨域授权签发/吊销、不读内容的访问探针）；`serve.ts` 为进程入口 |
+| HTTP 传输层 | `src/http/` | 全仓库唯一 fastify 依赖处。H1 只读：`/healthz`、`/api/roster/public`（离线可验签）、`/api/roster/keys`（根公钥发布：JWKS + SPKI PEM + 指纹，供验签方取钥，信任仍由带外固定）、`/api/roster`（bearer，同样签名）；H2 操作面（bearer，未配 token 时整组不挂载）：任务发起 / 回查 / 取消 / 决策回放 / 进度 SSE、人工处理队列（approve / reject / resolve / 补参重派 / 按类型分流）、并发指标、执行 Agent 注册与吊销、能力目录与认证、组织结构与问责链、记忆与遗忘权、连接器、决策后端实际配置、审计回读、运行时盘点（只报计数与路径）、数据域治理面（挂载、租户级、跨域授权签发/吊销、不读内容的访问探针）；`serve.ts` 为进程入口 |
 | 备份与恢复 | `src/vault/` | 清单来源可为数据域或逐一点名的文件白名单；出图只存引用与逐条指纹（正文零泄漏）；AES-256-GCM 加解密且密钥与图分离；原地校验与漂移检测；加密全包与跨位恢复；零依赖 CLI，退出码 0/1/2/3 |
 | 记忆层 | `src/memory/` | 只追加事件日志 + 纯函数派生事实、观察去重累积来源、矛盾默认争议并确定性进入人工队列、置信度按可靠度加权；BM25 + 向量混合检索（派生索引可随时重建、不持久化）；两时点漂移对账；遗忘权与撤回（墓碑随快照持久化） |
 | 叙事日志 | `src/diary/` | 事件按日历天分桶、确定性排序、每行锚定事件 ID；经数据域写路径落盘（幂等）并可稳定 JSON 导出 |
@@ -72,8 +72,8 @@
 ```bash
 npm install
 npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest：766 项 / 80 个测试文件（以此命令的输出为准）
-npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 28 步（需先 build；只用回环与自造密钥）
+npm test           # vitest：773 项 / 81 个测试文件（以此命令的输出为准）
+npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 31 步（需先 build；只用回环与自造密钥）
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
 ```
@@ -84,7 +84,12 @@ npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；�
 node scripts/gen-rsk-key.mjs rsk-private.pem   # 零依赖跨平台；NODE_ENV=production 无密钥时拒绝启动
 ```
 
-验一份已发布的名册是否真实（**只需公钥**，不信任发布它的那个服务）：
+验一份已发布的名册是否真实（**只需公钥**，不信任发布它的那个服务）。公钥可向该进程取，但**必须先与带外公告的指纹比对过**再用——发钥的就是签名的那个进程，它说不出"这把钥属于谁"：
+
+```bash
+curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].spkiPem' > zeus-rsk.pem
+curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].jwkThumbprint'   # 与公告值逐字符比对
+```
 
 ```bash
 npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk-private.public.pem
@@ -258,7 +263,7 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 > 状态以 [handoff.md](handoff.md) 为准；MVP 判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)。
 
 - **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
-- **已验证到什么程度**：766 项测试 / 80 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，28 步），`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
+- **已验证到什么程度**：773 项测试 / 81 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，31 步），`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
 - **协议验收**：对生产环境的执行 Agent 跑通过一次纯标准 A2A 客户端验收（卡片发现 + 任务受理）。
 - **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）、MCP 暴露侧的主体身份判定（deferred #18，等真实读取方出现）。
 - **明确不存在的能力**：**入站 A2A 面**（外部 Agent 尚不能把任务派给 Zeus：无对外 Agent Card、无 `tasks/*` 路由），已登记 deferred #19；数据域边界的显式变更操作（下线 / 改租户）无可执行路径（#17）；部分启动参数校验口径不一致，待人工裁定（#20）。

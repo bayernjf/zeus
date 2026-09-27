@@ -11,7 +11,8 @@
  *   boot the HTTP process -> mount a realm from a plain directory -> register an
  *   execution agent over a real socket with an outbound credential -> fan out an
  *   intent -> kernel-resolved realm content reaches the agent -> the published
- *   roster verifies offline with only the public key -> revoke cuts the wire ->
+ *   roster verifies offline with only the public key -> the published root key
+ *   is that same key -> revoke cuts the wire ->
  *   SIGTERM persists -> a restart restores.
  *
  * Rules it obeys so it can run unattended: loopback only, no external network,
@@ -32,7 +33,7 @@ import { createServer } from 'node:http';
 import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -265,6 +266,29 @@ try {
   ]);
   record('the same bytes are refused once past maxAge', stale.code === 1 && /maxAge/.test(stale.err), `exit=${stale.code} ${stale.err.trim().slice(0, 60)}`);
 
+  // The key a verifier is told to trust, checked against the key that actually
+  // signed: an empty or unrelated descriptor would pass a status-only check.
+  const keysRes = await api('GET', '/api/roster/keys', undefined, {});
+  const published = keysRes.json?.keys?.find(key => key.kid === envelope.seal?.keyId);
+  record(
+    'the root key endpoint answers unauthenticated and lists the sealing keyId',
+    keysRes.status === 200 && !!published && keysRes.json.keys.length === 1,
+    `status=${keysRes.status} kids=${(keysRes.json?.keys ?? []).map(key => key.kid).join(',')}`
+  );
+  record(
+    'the published public key is the one the roster verified against',
+    !!published && published.spkiPem.trim() === readFileSync(publicKeyPath, 'utf8').trim(),
+    `kid=${published?.kid ?? '(none found)'}`
+  );
+  const expectedThumbprint = createHash('sha256')
+    .update(`{"crv":"Ed25519","kty":"OKP","x":${JSON.stringify(published?.x ?? '')}}`, 'utf8')
+    .digest('base64url');
+  record(
+    'the pinning fingerprint recomputes from the published JWK',
+    !!published && published.jwkThumbprint === expectedThumbprint && /^[0-9a-f:]{95}$/.test(published.spkiSha256),
+    `thumbprint=${published?.jwkThumbprint?.slice(0, 12)}…`
+  );
+
   const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   record('intent fans out to every provider', fanOut.json?.status === 'completed' && fanOut.json?.branches?.length === 3, `status=${fanOut.json?.status} http=${fanOut.status} body=${fanOut.text.slice(0, 220)}`);
   record('the outbound credential reaches the agent', ['a1', 'a2', 'a3'].every(name => agent(name).auth.at(-1) === `Bearer ${VASSAL_SECRET}`), `seen: ${['a1','a2','a3'].map(n => agent(n).auth.map(x => x === `Bearer ${VASSAL_SECRET}` ? 'ok' : (x === '(none)' ? 'none' : x.slice(0, 10) + '…')).join(',')).join(' | ')}`);
@@ -274,12 +298,14 @@ try {
   const forwarded = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record('the kernel itself reads the realm and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
 
+  const leakViews = ['/api/roster', '/api/roster/public', '/api/roster/keys', '/api/state', '/api/metrics'];
   const leaks = [];
-  for (const path of ['/api/roster', '/api/roster/public', '/api/state', '/api/metrics']) {
-    const response = await api('GET', path, undefined, path === '/api/roster/public' ? {} : bearer);
+  for (const path of leakViews) {
+    const publicFace = path.startsWith('/api/roster/');
+    const response = await api('GET', path, undefined, publicFace ? {} : bearer);
     if (response.text.includes(VASSAL_SECRET)) leaks.push(path);
   }
-  record('no read view echoes the agent credential', leaks.length === 0, leaks.join(', ') || 'checked 4 views');
+  record('no read view echoes the agent credential', leaks.length === 0, leaks.join(', ') || `checked ${leakViews.length} views`);
 
   const auditMode = mode(env.ZEUS_AUDIT_FILE);
   const auditText = existsSync(env.ZEUS_AUDIT_FILE) ? readFileSync(env.ZEUS_AUDIT_FILE, 'utf8') : '';
