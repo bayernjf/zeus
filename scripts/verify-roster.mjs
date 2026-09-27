@@ -47,7 +47,9 @@ function usage(message) {
       '  --token BEARER       authorization bearer, for the internal roster only',
       '  --header NAME=VALUE  extra request header (repeatable)',
       '  --card name=PATH     deep-check that entry against a locally held Agent Card',
-      '  --now ISO            evaluation time for freshness (default: wall clock)',
+      '  --now ISO            evaluation time for freshness (default: wall clock). Carry',
+  '                       a Z or an explicit offset: a bare timestamp is read as',
+  '                       local time and can land after the seal was issued',
       '  --quiet              print only the verdict line',
       '',
       'exit: 0 verified | 1 rejected | 2 usage or I/O error',
@@ -171,29 +173,34 @@ const snapshot = envelope.snapshot ?? {};
 const issuedAt = envelope.seal?.issuedAt;
 const ageSeconds = issuedAt ? (now.getTime() - Date.parse(issuedAt)) / 1000 : null;
 
-if (!opts.quiet) {
-  console.log(`scope             ${String(snapshot.scope)}`);
-  console.log(`schemaVersion     ${String(snapshot.schemaVersion ?? '(absent: pre-v1.2 artifact, read as 1)')}`);
-  console.log(`entries           ${Array.isArray(snapshot.entries) ? snapshot.entries.length : '(none)'}`);
-  console.log(`seal keyId        ${sealKeyId}`);
-  console.log(`seal issuedAt     ${String(issuedAt)}${ageSeconds === null ? '' : ` (age ${ageSeconds.toFixed(0)}s)`}`);
-  console.log(`seal maxAge       ${String(envelope.seal?.maxAgeSeconds)}s`);
-  const statuses = Array.isArray(snapshot.entries)
-    ? snapshot.entries.map(e => `${String(e.name)}=${String(e.status)}`).join(' ') || '(empty)'
-    : '(none)';
-  console.log(`entry statuses    ${statuses}`);
-  for (const [name, card] of cards) {
-    const attestation = envelope.attestations?.[name];
-    if (!attestation) {
-      console.log(`deep check ${name}  no attestation for that name`);
-      continue;
-    }
-    entriesDeepChecked.push(name);
-    const matched = attestationMatchesCard(attestation, card);
-    // A deep check that cannot fail the run is decoration, not verification.
-    if (!matched) deepFailures.push(name);
-    console.log(`deep check ${name}  ${matched ? 'card digests match' : 'MISMATCH: card does not match the attestation'}`);
+// `--quiet` suppresses the report, never the verification: the deep checks below
+// decide the exit code, so computing them inside the print guard would turn
+// `--quiet --card` into a run that silently checks nothing and then reports a
+// reason that is not the real one.
+const say = (...line) => {
+  if (!opts.quiet) console.log(...line);
+};
+say(`scope             ${String(snapshot.scope)}`);
+say(`schemaVersion     ${String(snapshot.schemaVersion ?? '(absent: pre-v1.2 artifact, read as 1)')}`);
+say(`entries           ${Array.isArray(snapshot.entries) ? snapshot.entries.length : '(none)'}`);
+say(`seal keyId        ${sealKeyId}`);
+say(`seal issuedAt     ${String(issuedAt)}${ageSeconds === null ? '' : ` (age ${ageSeconds.toFixed(0)}s)`}`);
+say(`seal maxAge       ${String(envelope.seal?.maxAgeSeconds)}s`);
+const statuses = Array.isArray(snapshot.entries)
+  ? snapshot.entries.map(e => `${String(e.name)}=${String(e.status)}`).join(' ') || '(empty)'
+  : '(none)';
+say(`entry statuses    ${statuses}`);
+for (const [name, card] of cards) {
+  const attestation = envelope.attestations?.[name];
+  if (!attestation) {
+    say(`deep check ${name}  no attestation for that name`);
+    continue;
   }
+  entriesDeepChecked.push(name);
+  const matched = attestationMatchesCard(attestation, card);
+  // A deep check that cannot fail the run is decoration, not verification.
+  if (!matched) deepFailures.push(name);
+  say(`deep check ${name}  ${matched ? 'card digests match' : 'MISMATCH: card does not match the attestation'}`);
 }
 
 if (!result.ok) {

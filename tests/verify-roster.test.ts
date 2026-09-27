@@ -188,6 +188,27 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
     expect(unknown.stderr).toMatch(/no attestation for supplied card\(s\): ghost/);
   });
 
+  it('keeps verifying when --quiet suppresses the report', async () => {
+    const { envelopePath, keyPath, cardPath } = await publish('quiet');
+    const bad = structuredClone(JSON.parse(readFileSync(cardPath, 'utf8')));
+    bad['x-zeus-fealty'].dataPolicy = 'write';
+    const badPath = join(dir, 'quiet.card.bad.json');
+    writeFileSync(badPath, JSON.stringify(bad));
+    // --quiet hides the report only. It used to hide the deep checks too, so a
+    // quiet run against a genuine card exited 1 with "no attestation for supplied
+    // card(s)" - a reason that was not true of the artifact - and the check that
+    // decides the verdict never ran. The two sides below can only both hold with
+    // the computation outside the print guard.
+    const good = await run(['--file', envelopePath, '--key', keyPath, '--card', `pr-helper=${cardPath}`, '--quiet']);
+    expect(good.status).toBe(0);
+    // --quiet leaves exactly the verdict: the report lines are gone, the check is not.
+    expect(good.stdout).toMatch(/VERIFIED/);
+    expect(good.stdout).not.toMatch(/deep check|schemaVersion|entry statuses/);
+    const mismatch = await run(['--file', envelopePath, '--key', keyPath, '--card', `pr-helper=${badPath}`, '--quiet']);
+    expect(mismatch.status).toBe(1);
+    expect(mismatch.stderr).toMatch(/card digests do not match/);
+  });
+
   it('exits 2 on I/O and usage failures rather than reporting a verification verdict', async () => {
     const missingKey = existsSync(join(dir, 'nope.pem'));
     expect(missingKey).toBe(false);

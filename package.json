@@ -26,6 +26,7 @@
     "start": "node dist/http/serve.js",
     "vault": "node dist/vault/cli.js",
     "verify:roster": "node scripts/verify-roster.mjs",
+    "smoke:core": "node scripts/smoke-core.mjs",
     "bench:capacity": "node scripts/bench-capacity.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"

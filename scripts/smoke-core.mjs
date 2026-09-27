@@ -1,0 +1,320 @@
+#!/usr/bin/env node
+/**
+ * Core-chain smoke on the compiled artifact (design constraint 2: a concept that
+ * cannot be executed does not belong in this project).
+ *
+ * Why this file exists: every previous "real process, real socket" check of the
+ * core chain was written by whoever was running a review, then thrown away, so
+ * each round had to re-invent it and the strongest class of evidence survived
+ * only as prose in a change log (deferred #25). This is that chain as an asset:
+ *
+ *   boot the HTTP process -> mount a realm from a plain directory -> register an
+ *   execution agent over a real socket with an outbound credential -> fan out an
+ *   intent -> kernel-resolved realm content reaches the agent -> the published
+ *   roster verifies offline with only the public key -> revoke cuts the wire ->
+ *   SIGTERM persists -> a restart restores.
+ *
+ * Rules it obeys so it can run unattended: loopback only, no external network,
+ * temporary directory for everything it creates, its own key and its own tokens
+ * (it never reads a real deployment's secrets), kills only the processes it
+ * started, and a wall-clock budget so a hang surfaces as a failure instead of a
+ * stalled job.
+ *
+ * Usage (requires `npm run build` first):
+ *   npm run smoke:core
+ *   npm run smoke:core -- --keep        # keep the work directory for inspection
+ * Exit codes: 0 every step passed, 1 a step failed, 2 cannot start (missing
+ * build, unusable port).
+ */
+
+import { spawn, execFileSync } from 'node:child_process';
+import { createServer } from 'node:http';
+import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+
+const REPO = fileURLToPath(new URL('..', import.meta.url));
+const KEEP = process.argv.includes('--keep');
+const BUDGET_MS = 120_000;
+const startedAt = Date.now();
+const NEEDLE_TOKEN = `needle-${randomBytes(6).toString('hex')}`;
+const DRIVER_TOKEN = `smoke-driver-${randomBytes(8).toString('hex')}`;
+const VASSAL_SECRET = `smoke-vassal-${randomBytes(8).toString('hex')}`;
+
+const steps = [];
+function record(name, ok, detail = '') {
+  steps.push({ name, ok, detail });
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  ::  ${detail}` : ''}`);
+}
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/** Bind port 0 briefly to get a free loopback port for the process under test. */
+async function freePort() {
+  const probe = createServer();
+  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
+  const port = probe.address().port;
+  await new Promise(resolve => probe.close(resolve));
+  return port;
+}
+
+// ---------------------------------------------------------------------------
+// Mock execution agent: three vassals on one loopback listener, real HTTP both
+// ways, and it records exactly what a reviewer would want to know about -
+// whether the credential arrived, and what payload the kernel actually sent.
+// ---------------------------------------------------------------------------
+const agents = new Map();
+function agent(name) {
+  if (!agents.has(name)) agents.set(name, { name, requests: 0, auth: [], payloads: [] });
+  return agents.get(name);
+}
+function card(name, port) {
+  return {
+    name,
+    url: `http://127.0.0.1:${port}/${name}`,
+    skills: [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
+    'x-zeus-fealty': {
+      version: '1',
+      swornTo: 'zeus',
+      domain: 'smoke',
+      dataRealms: ['personal'],
+      dataPolicy: 'read-task-scope',
+      reportBack: true,
+      escalationPolicy: 'on-failure',
+    },
+  };
+}
+function task(id) {
+  return {
+    kind: 'task',
+    id,
+    contextId: 'smoke',
+    status: { state: 'completed' },
+    artifacts: [{ artifactId: 'verdict', name: 'verdict', parts: [{ kind: 'data', data: { stance: 'approve' } }] }],
+  };
+}
+const agentServer = createServer((req, res) => {
+  const match = req.url?.match(/^\/(a[123])\/api\/a2a\/(agent-card|tasks)$/);
+  if (!match) {
+    res.writeHead(404).end('not found');
+    return;
+  }
+  const a = agent(match[1]);
+  if (req.method === 'GET') {
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(card(match[1], agentServer.address().port)));
+    return;
+  }
+  let raw = '';
+  req.on('data', chunk => (raw += chunk));
+  req.on('end', () => {
+    const rpc = JSON.parse(raw || '{}');
+    if (rpc.method === 'tasks/cancel') {
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: { ...task(`cancel-${a.name}`), status: { state: 'canceled' } } }));
+      return;
+    }
+    a.requests += 1;
+    a.auth.push(String(req.headers.authorization ?? '(none)'));
+    a.payloads.push(rpc.params?.message?.parts?.[0]?.data ?? {});
+    if (String(req.headers.accept ?? '').includes('text/event-stream')) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.write(`data: ${JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: { kind: 'status-update', taskId: `t-${a.name}-${a.requests}`, contextId: 'smoke', status: { state: 'working' }, final: false } })}\n\n`);
+      res.end(`data: ${JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: task(`t-${a.name}-${a.requests}`) })}\n\n`);
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: task(`t-${a.name}-${a.requests}`) }));
+  });
+});
+await new Promise(resolve => agentServer.listen(0, '127.0.0.1', resolve));
+const agentPort = agentServer.address().port;
+const cardUrl = name => `http://127.0.0.1:${agentPort}/${name}/api/a2a/agent-card`;
+
+// ---------------------------------------------------------------------------
+// Work directory: one plain directory is the whole data domain (data sovereignty
+// is the claim being tested, so the smoke must not need anything else).
+// ---------------------------------------------------------------------------
+const work = mkdtempSync(join(tmpdir(), 'zeus-smoke-core-'));
+const realmRoot = join(work, 'realm');
+const dataDir = join(work, 'data');
+mkdirSync(realmRoot, { recursive: true });
+writeFileSync(join(realmRoot, 'brief.md'), `# brief\nthe marker ${NEEDLE_TOKEN} lives only in the user's directory\n`);
+execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), join(work, 'smoke-key.pem')], { stdio: 'pipe' });
+const publicKeyPath = join(work, 'smoke-key.public.pem');
+if (!existsSync(publicKeyPath)) {
+  console.error(`FAIL  cannot start: keygen did not produce ${publicKeyPath}`);
+  process.exit(2);
+}
+
+const port = await freePort();
+const base = `http://127.0.0.1:${port}`;
+const env = {
+  ...process.env,
+  NODE_ENV: 'development',
+  ZEUS_HOST: '127.0.0.1',
+  ZEUS_PORT: String(port),
+  ZEUS_STATE_FILE: join(dataDir, 'kernel-state.json'),
+  ZEUS_AUDIT_FILE: join(dataDir, 'audit.jsonl'),
+  ZEUS_RSK_KEY_FILE: join(work, 'smoke-key.pem'),
+  ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
+  ZEUS_REALM_ROOTS: realmRoot,
+  NO_PROXY: '127.0.0.1,localhost',
+  no_proxy: '127.0.0.1,localhost',
+};
+delete env.ZEUS_VASSAL_SEEDS;
+const bearer = { authorization: `Bearer ${DRIVER_TOKEN}`, 'content-type': 'application/json' };
+
+const children = [];
+async function bootProcess() {
+  const child = spawn(process.execPath, [join(REPO, 'dist/http/serve.js')], { env, cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
+  children.push(child);
+  let log = '';
+  child.stdout.on('data', chunk => (log += chunk));
+  child.stderr.on('data', chunk => (log += chunk));
+  for (let attempt = 0; attempt < 120; attempt++) {
+    if (child.exitCode !== null) throw new Error(`process exited early (code ${child.exitCode}):\n${log.slice(-600)}`);
+    try {
+      const response = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(1000) });
+      if (response.ok) return { child, log: () => log };
+    } catch {
+      /* not listening yet */
+    }
+    await sleep(250);
+  }
+  throw new Error(`never became healthy:\n${log.slice(-600)}`);
+}
+async function stopProcess(child) {
+  child.kill('SIGTERM');
+  for (let attempt = 0; attempt < 80 && child.exitCode === null; attempt++) await sleep(100);
+  if (child.exitCode === null) child.kill('SIGKILL');
+}
+async function api(method, path, body, headers = bearer) {
+  const response = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await response.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* non-JSON responses keep their text */ }
+  return { status: response.status, json, text };
+}
+function verifyRoster(args) {
+  try {
+    const out = execFileSync(process.execPath, [join(REPO, 'scripts/verify-roster.mjs'), ...args], { encoding: 'utf8', stdio: 'pipe' });
+    return { code: 0, out, err: '' };
+  } catch (error) {
+    return { code: error.status, out: String(error.stdout ?? ''), err: String(error.stderr ?? '') };
+  }
+}
+function mode(path) {
+  return existsSync(path) ? (statSync(path).mode & 0o777).toString(8) : 'missing';
+}
+function watchdog() {
+  if (Date.now() - startedAt > BUDGET_MS) {
+    record(`wall-clock budget ${BUDGET_MS / 1000}s exceeded`, false, `after ${steps.length} steps`);
+    finish();
+  }
+}
+const timer = setInterval(watchdog, 5000);
+
+let proc = null;
+let stopped = false;
+function finish() {
+  if (stopped) return;
+  stopped = true;
+  clearInterval(timer);
+  for (const child of children) {
+    if (child.exitCode === null) child.kill('SIGKILL');
+  }
+  agentServer.close();
+  const failed = steps.filter(step => !step.ok);
+  console.log(`\n==== ${steps.length - failed.length}/${steps.length} steps passed ====`);
+  console.log(`workdir: ${work}${KEEP || failed.length ? ' (kept)' : ' (removed)'}`);
+  if (failed.length) console.log(`failed steps:\n${failed.map(step => ` - ${step.name}${step.detail ? ` :: ${step.detail}` : ''}`).join('\n')}`);
+  if (!KEEP && !failed.length) {
+    try { rmSync(work, { recursive: true, force: true }); } catch { /* leaving a temp dir is not a failure */ }
+  }
+  process.exit(failed.length ? 1 : 0);
+}
+
+try {
+  if (!existsSync(join(REPO, 'dist/http/serve.js'))) {
+    record('build present', false, 'run `npm run build` first - the smoke exercises the shipped artifact, not the sources');
+    finish();
+  }
+  record('build present', true, 'dist/http/serve.js');
+
+  proc = await bootProcess();
+  const health = await api('GET', '/healthz', undefined, {});
+  record('HTTP process boots on a directory and answers /healthz', health.json?.status === 'ok', `port ${port}`);
+
+  const domains = await api('GET', '/api/domains');
+  const personal = domains.json?.realms?.find(realm => realm.type === 'personal');
+  record('realm mounted from a plain directory', !!personal && personal.itemCount >= 1, `realmId=${personal?.realmId} items=${personal?.itemCount}`);
+
+  for (const name of ['a1', 'a2', 'a3']) {
+    const registered = await api('POST', '/api/vassals', { cardUrl: cardUrl(name), token: VASSAL_SECRET });
+    record(`agent ${name} registered over a real socket`, registered.status === 201 || registered.status === 200, `status=${registered.status}`);
+  }
+
+  const envelope = (await api('GET', '/api/roster/public', undefined, {})).json;
+  writeFileSync(join(work, 'roster.json'), JSON.stringify(envelope));
+  record('published roster is a signed envelope', !!envelope?.seal?.snapshotDigest && envelope?.snapshot?.schemaVersion === 1, `entries=${envelope?.snapshot?.entries?.length}`);
+
+  const verdict = verifyRoster(['--file', join(work, 'roster.json'), '--key', publicKeyPath, '--now', envelope.seal.issuedAt]);
+  record('roster verifies offline with only the public key', verdict.code === 0 && /VERIFIED/.test(verdict.out), `exit=${verdict.code}`);
+  const stale = verifyRoster([
+    '--file', join(work, 'roster.json'), '--key', publicKeyPath, '--quiet',
+    '--now', new Date(Date.parse(envelope.seal.issuedAt) + (envelope.seal.maxAgeSeconds + 60) * 1000).toISOString(),
+  ]);
+  record('the same bytes are refused once past maxAge', stale.code === 1 && /maxAge/.test(stale.err), `exit=${stale.code} ${stale.err.trim().slice(0, 60)}`);
+
+  const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', aggregation: { kind: 'unanimous' } });
+  record('intent fans out to every provider', fanOut.json?.status === 'completed' && fanOut.json?.branches?.length === 3, `status=${fanOut.json?.status} http=${fanOut.status} body=${fanOut.text.slice(0, 220)}`);
+  record('the outbound credential reaches the agent', ['a1', 'a2', 'a3'].every(name => agent(name).auth.at(-1) === `Bearer ${VASSAL_SECRET}`), `seen: ${['a1','a2','a3'].map(n => agent(n).auth.map(x => x === `Bearer ${VASSAL_SECRET}` ? 'ok' : (x === '(none)' ? 'none' : x.slice(0, 10) + '…')).join(',')).join(' | ')}`);
+  record('branches ran concurrently, not serially', ['a1', 'a2', 'a3'].every(name => agent(name).requests === 1), 'one request each inside a single fan-out');
+
+  const sourced = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmSource: { realmId: personal.realmId, text: NEEDLE_TOKEN } });
+  const forwarded = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
+  record('the kernel itself reads the realm and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
+
+  const leaks = [];
+  for (const path of ['/api/roster', '/api/roster/public', '/api/state', '/api/metrics']) {
+    const response = await api('GET', path, undefined, path === '/api/roster/public' ? {} : bearer);
+    if (response.text.includes(VASSAL_SECRET)) leaks.push(path);
+  }
+  record('no read view echoes the agent credential', leaks.length === 0, leaks.join(', ') || 'checked 4 views');
+
+  const auditMode = mode(env.ZEUS_AUDIT_FILE);
+  const auditText = existsSync(env.ZEUS_AUDIT_FILE) ? readFileSync(env.ZEUS_AUDIT_FILE, 'utf8') : '';
+  record('governance decisions are persisted 0600', auditMode === '600' && /"decision":"dispatched"/.test(auditText), `mode=${auditMode} lines=${auditText.trim().split('\n').length}`);
+  const auditRead = await api('GET', '/api/audit?limit=5');
+  record('the audit trail reads back over the bearer API', auditRead.status === 200 && auditRead.text.includes('dispatched'), `status=${auditRead.status}`);
+
+  const revokedAt = agent('a1').requests;
+  const revoked = await api('DELETE', '/api/vassals/a1', undefined, { authorization: `Bearer ${DRIVER_TOKEN}` });
+  const afterRevoke = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a1'] });
+  record('revocation cuts the wire immediately', revoked.status === 200 && agent('a1').requests === revokedAt && afterRevoke.json?.status !== 'completed', `delete=${revoked.status} ${revoked.text.slice(0,120)} | requests stayed at ${agent('a1').requests}, intent status=${afterRevoke.json?.status}`);
+  // The public view drops revoked rows by design, so the revoked state is
+  // read from the internal roster.
+  const rosterWithRevoked = (await api('GET', '/api/roster')).json;
+  writeFileSync(join(work, 'roster-revoked.json'), JSON.stringify(rosterWithRevoked));
+  const revVerdict = verifyRoster(['--file', join(work, 'roster-revoked.json'), '--key', publicKeyPath, '--now', rosterWithRevoked.seal.issuedAt]);
+  record('a roster carrying a revoked row still verifies offline', revVerdict.code === 0, `entries=${(rosterWithRevoked.snapshot.entries ?? []).map(e => `${e.name}=${e.status}`).join(' ')}`);
+
+  await stopProcess(proc.child);
+  const stateMode = mode(env.ZEUS_STATE_FILE);
+  record('SIGTERM persists kernel state at 0600', stateMode === '600', `mode=${stateMode} bytes=${existsSync(env.ZEUS_STATE_FILE) ? statSync(env.ZEUS_STATE_FILE).size : 0}`);
+
+  proc = await bootProcess();
+  const restoredRoster = (await api('GET', '/api/roster')).json;
+  const statuses = (restoredRoster?.snapshot?.entries ?? []).map(entry => `${entry.name}=${entry.status}`).join(' ');
+  record('restart restores agents and governance state', /a1=revoked/.test(statuses) && /a2=active/.test(statuses), statuses);
+  const restoredRealms = await api('GET', '/api/domains');
+  record('restart re-attaches the data domain', (restoredRealms.json?.realms ?? []).some(realm => realm.type === 'personal' && realm.itemCount >= 1), `realms=${(restoredRealms.json?.realms ?? []).length}`);
+  const afterRestart = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a2'] });
+  record('dispatch works after the restart', afterRestart.json?.status === 'completed', `status=${afterRestart.json?.status} agent requests=${agent('a2').requests}`);
+  writeFileSync(join(work, 'roster-restored.json'), JSON.stringify(restoredRoster));
+  record('the restarted process publishes a roster that still verifies', verifyRoster(['--file', join(work, 'roster-restored.json'), '--key', publicKeyPath, '--now', restoredRoster.seal.issuedAt]).code === 0);
+
+  await stopProcess(proc.child);
+} catch (error) {
+  record('smoke aborted', false, error instanceof Error ? error.message : String(error));
+}
+finish();

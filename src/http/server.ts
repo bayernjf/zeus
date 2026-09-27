@@ -236,18 +236,29 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     // rejected by the registry; an unreachable card is a bad-gateway, not a
     // malformed request.
     app.post('/api/vassals', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
-      const body = (request.body ?? {}) as { cardUrl?: unknown; taskUrl?: unknown };
+      const body = (request.body ?? {}) as { cardUrl?: unknown; taskUrl?: unknown; token?: unknown };
       if (typeof body.cardUrl !== 'string' || body.cardUrl.trim() === '') {
         return error(reply, 400, 'invalid_request', 'body.cardUrl is required');
       }
       if (body.taskUrl !== undefined && typeof body.taskUrl !== 'string') {
         return error(reply, 400, 'invalid_request', 'body.taskUrl must be a string');
       }
+      // A credentialed agent onboards over this route too, not only through
+      // ZEUS_VASSAL_SEEDS: without a token here the dispatcher would call the
+      // peer with no Authorization at all and the branch would fail in a way
+      // that reads like the peer's fault. An empty string is refused rather
+      // than silently meaning "no credential".
+      if (body.token !== undefined && (typeof body.token !== 'string' || body.token.trim() === '')) {
+        return error(reply, 400, 'invalid_request', 'body.token must be a non-empty string');
+      }
       try {
         const entry = await deps.registry.register(body.cardUrl, {
           ...(typeof body.taskUrl === 'string' ? { taskUrl: body.taskUrl } : {}),
+          ...(body.token !== undefined ? { token: body.token } : {}),
         });
-        return reply.code(201).send(entry);
+        // The stored credential never comes back out of this route, or any other.
+        const { token: _omit, ...echo } = entry;
+        return reply.code(201).send(echo);
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         // Classified by error identity, not by message shape: a transport failure
@@ -307,7 +318,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'body.vassals must be an array of vassal names');
         }
         if (body.aggregation !== undefined && !validAggregation(body.aggregation)) {
-          return error(reply, 400, 'invalid_request', 'body.aggregation must be unanimous | majority | weighted');
+          return error(reply, 400, 'invalid_request', 'body.aggregation must be { kind: "unanimous" | "majority" | "weighted" }');
         }
         if (body.branchTimeoutMs !== undefined && (typeof body.branchTimeoutMs !== 'number' || body.branchTimeoutMs <= 0)) {
           return error(reply, 400, 'invalid_request', 'body.branchTimeoutMs must be a positive number');
