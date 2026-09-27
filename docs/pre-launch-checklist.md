@@ -54,12 +54,12 @@
 
 1. `npm run typecheck` exit 0
 2. `npm run build` exit 0，`dist/` 完整（**必须在测试之前**：`tests/verify-roster.test.ts` 与 §F-5 的离线验签都跑编译产物）
-3. `npm test` exit 0（当前 **774 测试 / 81 文件**；核心链路冒烟 32 步；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–183s 并可能报超时红——带负载口径重跑一次再判红）
+3. `npm test` exit 0（当前 **779 测试 / 82 文件**；核心链路冒烟 33 步；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–183s 并可能报超时红——带负载口径重跑一次再判红）
 4. 三条接入通道执行点 grep 复核（见 review-mvp §B）：`boot.ts` tokenFor 接线、`orchestrator.ts` activeProviders 三态闸门、`mcp.ts` REALM_NOT_CONNECTED 白名单、onConflict→监督台闭环、持久化/签名链执行点均在位。**v0.17 追加两条"核对装配而不是核对注册"**：`serve.ts:147` 把 `dagRunner` 注入 HTTP 依赖（否则 DAG 路由在真进程里恒 503）、`boot.ts:593→408→orchestrator.ts:169` 让 `ZEUS_MAX_CONCURRENT_PER_VASSAL` 真的到达 `selectTargets`
-5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）
+5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）。报告另有 `seal fingerprint` 两行（`jwk=` / `spki=`）——**带外固定要比的就是这一行与公告值是否逐字符相同**，不必另算哈希）
 6. `docker` 真机构冒烟（B1）
 7. 时钟偏置回归：`vitest` clock-skew 作业绿（deferred #24 闸门）
-8. **核心链路真进程冒烟**：`npm run smoke:core`（`scripts/smoke-core.mjs`，deferred **#25** 已销项）。它起真进程 + 真 socket 走完「挂目录 → 带凭证注册 → 扇出 → 内核自己读域 → 审计落盘 → 名册离线可验（含一条 maxAge 反证）→ 发布的根公钥就是那个签名钥，且**只拿端点返回的字节就能出货验签器验过**（把 PEM 换成 JWK 串须退 2）→ 吊销断流 → SIGTERM 落盘 → 重启恢复」，32 步全绿才退 0；只用回环、自造密钥与令牌、不读任何真实部署的 secret，并已接进 CI（build/test 之后一步）。它第一次跑就把派发打到了没有凭证的对端——正是这条链路上"库内测试看不见、真进程才看得见"的那类缺口
+8. **核心链路真进程冒烟**：`npm run smoke:core`（`scripts/smoke-core.mjs`，deferred **#25** 已销项）。它起真进程 + 真 socket 走完「挂目录 → 带凭证注册 → 扇出 → 内核自己读域 → 审计落盘 → 名册离线可验（含一条 maxAge 反证）→ 发布的根公钥就是那个签名钥，且**只拿端点返回的字节就能出货验签器验过**（把 PEM 换成 JWK 串须退 2），**且同一串指纹在出钥、发布、验签三处一致**（keygen 打印 → 端点 `jwkThumbprint` → 验签报告 `seal fingerprint` 行）→ 吊销断流 → SIGTERM 落盘 → 重启恢复」，33 步全绿才退 0；只用回环、自造密钥与令牌、不读任何真实部署的 secret，并已接进 CI（build/test 之后一步）。它第一次跑就把派发打到了没有凭证的对端——正是这条链路上"库内测试看不见、真进程才看得见"的那类缺口
 
 ## 一句话
 

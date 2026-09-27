@@ -72,8 +72,8 @@
 ```bash
 npm install
 npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest：774 项 / 81 个测试文件（以此命令的输出为准）
-npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 32 步（需先 build；只用回环与自造密钥）
+npm test           # vitest：779 项 / 82 个测试文件（以此命令的输出为准）
+npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 33 步（需先 build；只用回环与自造密钥）
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
 ```
@@ -89,6 +89,8 @@ node scripts/gen-rsk-key.mjs rsk-private.pem   # 零依赖跨平台；NODE_ENV=p
 ```bash
 curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].spkiPem' > zeus-rsk.pem
 curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].jwkThumbprint'   # 与公告值逐字符比对
+# 出钥时就打印这串（node scripts/gen-rsk-key.mjs），验签时它也打在报告的
+# seal fingerprint 行里：三处同串，所以"比对"不需要另算哈希
 ```
 
 ```bash
@@ -263,7 +265,7 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 > 状态以 [handoff.md](handoff.md) 为准；MVP 判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)。
 
 - **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
-- **已验证到什么程度**：774 项测试 / 81 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，32 步），`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
+- **已验证到什么程度**：779 项测试 / 82 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，33 步），`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
 - **协议验收**：对生产环境的执行 Agent 跑通过一次纯标准 A2A 客户端验收（卡片发现 + 任务受理）。
 - **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）、MCP 暴露侧的主体身份判定（deferred #18，等真实读取方出现）。
 - **明确不存在的能力**：**入站 A2A 面**（外部 Agent 尚不能把任务派给 Zeus：无对外 Agent Card、无 `tasks/*` 路由），已登记 deferred #19；数据域边界的显式变更操作（下线 / 改租户）无可执行路径（#17）；部分启动参数校验口径不一致，待人工裁定（#20）。
