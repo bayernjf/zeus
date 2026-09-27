@@ -148,4 +148,39 @@ describe('documentation consistency', () => {
     }
     expect(unbalanced, `lines with an unmatched ** (the rest of the file renders bolded):\n${unbalanced.join('\n')}`).toEqual([]);
   });
+
+  it('keeps the PRD status column a single machine-readable marker', () => {
+    const markers = new Set(['✅', '🚧', '⬜']);
+    const offenders = (text: string): string[] => {
+      const bad: string[] = [];
+      text.split('\n').forEach((line, index) => {
+        if (!line.startsWith('| E')) return;
+        const cells = line.split('\\|').join('').split('|').map(cell => cell.trim());
+        const [, id, , priority, status] = cells;
+        // Only requirement rows: a row whose third cell is not a priority is prose.
+        if (!id || !/^E[\d.]+$/.test(id) || !/^P\d$/.test(priority) || !status) return;
+        if (!markers.has(status)) bad.push(`line ${index + 1}  ${id}  status="${status}"`);
+      });
+      return bad;
+    };
+
+    // Calibration first: the checker must catch the shape this guard exists for,
+    // and must not catch the clean one. Without this, an empty result on the real
+    // table would be indistinguishable from a regex that never matches anything.
+    const sample = [
+      '| E1.1 | ok | P0 | ✅ | body |',
+      '| E3.4 | qualifier drift | P1 | 🚧 stdio | stdio 壳已落地 |',
+      '| E9.9 | two cells collapsed | P0 | ✅ 已交付 | body |',
+    ].join('\n');
+    expect(offenders(sample)).toEqual([
+      'line 2  E3.4  status="🚧 stdio"',
+      'line 3  E9.9  status="✅ 已交付"',
+    ]);
+    expect(offenders('| E1.1 | ok | P0 | ✅ | body |')).toEqual([]);
+
+    const rows = readFileSync('docs/prd.md', 'utf8').split('\n').filter(line => /^\| E[\d.]+ \| .* \| P\d \|/.test(line));
+    expect(rows.length).toBeGreaterThan(40);
+    const found = offenders(readFileSync('docs/prd.md', 'utf8'));
+    expect(found, `requirement rows whose status cell holds more than the marker (a review round reads this column mechanically):\n${found.join('\n')}`).toEqual([]);
+  });
 });
