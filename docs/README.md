@@ -21,7 +21,7 @@
 | 知道内核能扛多少并发、怎么复跑压测 | [capacity-baseline.md](capacity-baseline.md)（E10.4 本机 mock 回环基线 **v0.3**，五场景：A 扇出宽度 / B 并发意图 / C H2 门面全链路吞吐 / D 高并发取消传播 / **E 并发闸门代价（`--cap` 显式开启）**；容量初步回答、绝对值散布与不变量、`npm run bench:capacity` 复跑方法、真机重测条件） |
 | 回放一个历史决策（谁参与、什么输入、什么立场、怎么聚合的） | `src/orchestrator/replay.ts`（E1.6：replayDecision/replaySnapshot/renderReplay，从内核快照离线重建确定性时间线） |
 | 了解行业内决策层现状与分化趋势 | [research-decision-layer-industry.md](research-decision-layer-industry.md)（LLM-as-judge 主流 + 四条分化路线、对决策后端设计的印证、来源清单） |
-| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 **v0.17**：三维评审 + MVP 判定，**每轮重跑取证而不采信上一轮记录**。**当前判定：产品核心完全可用 MVP = ✅；可上线交付真实用户 = ❌**——差的不是库内功能，是真实环境的执行动作，逐条见下一行） |
+| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 **v0.18**：三维评审 + MVP 判定，**每轮重跑取证而不采信上一轮记录**。**当前判定：产品核心完全可用 MVP = ✅；可上线交付真实用户 = ❌**——差的不是库内功能，是真实环境的执行动作，逐条见下一行） |
 | 上线前要跑哪些验收、哪几条是硬阻塞、每次必跑的回归门 | [pre-launch-checklist.md](pre-launch-checklist.md)（A 硬阻塞 / B 部署运营 / C 阈值标定 / D 待拍板 / E 发布动作 / F 每次必跑的验证门；每条带证据分级：实测 / 记录 / 待做） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |
 | 理解个人版与企业版的差异 | [product-portrait.md](product-portrait.md) §4 用户画像 |
