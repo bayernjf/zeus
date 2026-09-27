@@ -165,8 +165,8 @@ delete env.ZEUS_VASSAL_SEEDS;
 const bearer = { authorization: `Bearer ${DRIVER_TOKEN}`, 'content-type': 'application/json' };
 
 const children = [];
-async function bootProcess() {
-  const child = spawn(process.execPath, [join(REPO, 'dist/http/serve.js')], { env, cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
+async function bootProcess(processEnv = env, processBase = base) {
+  const child = spawn(process.execPath, [join(REPO, 'dist/http/serve.js')], { env: processEnv, cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
   let log = '';
   child.stdout.on('data', chunk => (log += chunk));
@@ -174,7 +174,7 @@ async function bootProcess() {
   for (let attempt = 0; attempt < 120; attempt++) {
     if (child.exitCode !== null) throw new Error(`process exited early (code ${child.exitCode}):\n${log.slice(-600)}`);
     try {
-      const response = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(1000) });
+      const response = await fetch(`${processBase}/healthz`, { signal: AbortSignal.timeout(1000) });
       if (response.ok) return { child, log: () => log };
     } catch {
       /* not listening yet */
@@ -427,6 +427,45 @@ try {
   );
 
   await stopProcess(proc.child);
+
+  // The two booleans above say the process *believes* its key is ephemeral; they
+  // do not say the key actually rotates. "Restarts invalidate every seal" is the
+  // operator-facing consequence, so the check has to observe two boots and see a
+  // different root key - a loader that quietly reused one key would satisfy every
+  // label and still void nothing. Own directory, own port, no key material at all.
+  const ephemeralDir = join(work, 'ephemeral');
+  mkdirSync(ephemeralDir, { recursive: true });
+  const ephemeralPort = await freePort();
+  const ephemeralBase = `http://127.0.0.1:${ephemeralPort}`;
+  const ephemeralEnv = {
+    ...env,
+    ZEUS_PORT: String(ephemeralPort),
+    ZEUS_STATE_FILE: join(ephemeralDir, 'kernel-state.json'),
+    ZEUS_AUDIT_FILE: join(ephemeralDir, 'audit.jsonl'),
+    ZEUS_RSK_KEY_ID: 'zeus-rsk-ephemeral-smoke',
+  };
+  delete ephemeralEnv.ZEUS_RSK_KEY;
+  delete ephemeralEnv.ZEUS_RSK_KEY_FILE;
+  async function ephemeralBootKeys() {
+    const ephemeralProc = await bootProcess(ephemeralEnv, ephemeralBase);
+    try {
+      const response = await fetch(`${ephemeralBase}/api/roster/keys`);
+      const body = await response.json();
+      return { source: body?.keySource, survives: body?.survivesRestart, thumbprint: body?.keys?.[0]?.jwkThumbprint ?? '' };
+    } finally {
+      await stopProcess(ephemeralProc.child);
+    }
+  }
+  const firstEphemeral = await ephemeralBootKeys();
+  const secondEphemeral = await ephemeralBootKeys();
+  record(
+    'an ephemeral process publishes a genuinely different root key on every restart',
+    firstEphemeral.source === 'ephemeral' && firstEphemeral.survives === false
+      && secondEphemeral.source === 'ephemeral'
+      && firstEphemeral.thumbprint.length > 0 && secondEphemeral.thumbprint.length > 0
+      && firstEphemeral.thumbprint !== secondEphemeral.thumbprint,
+    `run1=${firstEphemeral.thumbprint.slice(0, 12)}… run2=${secondEphemeral.thumbprint.slice(0, 12)}… source=${firstEphemeral.source ?? '(absent)'}`
+  );
 } catch (error) {
   record('smoke aborted', false, error instanceof Error ? error.message : String(error));
 }
