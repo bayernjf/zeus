@@ -87,6 +87,8 @@ curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].jwkThumbprint'  
 
 **生产守卫**：`NODE_ENV=production` 且两种方式都未提供时，进程启动即失败（exit 1，`RskConfigError`）——避免"重启后所有封签因临时钥而失效"。
 
+**本项目选型（2026-09-27 拍板）**：**容器 / systemd 的 secret 挂载 + 私钥文件 0600**——`ZEUS_RSK_KEY_FILE` 指向只读挂载点（如 `-v <私钥文件>:/run/secrets/rsk.pem:ro`），私钥不进环境变量、不进镜像层。三条理由：① 当前部署形态就是本文件 §4 的 Docker 镜像，该路径已在 B1 实构实跑中验证过（含一条实测教训：**`docker cp` 会把宿主 uid 带进去，`USER node` 读不到 0600 密钥 → EACCES 拒启**，故秘钥必须走挂载）；② 个人版本机 0600 文件与之同构，只是宿主不同，无需维护第二条路径；③ 企业 KMS/HSM 留到出现**受治理的第二信任方**（需要"私钥不可导出 + 签名动作留审计"）时再上——届时 §5.1 的公钥发布端点返回 501、公钥改由部署记录发布，本选型不构成阻碍。轮换次序仍按 design-fealty-signing.md §5.4 七步。
+
 **轮换**：**人工执行，库里没有自动轮换**（理由与完整步骤见 design-fealty-signing.md §5.4 运行手册）。口径：换钥即换新 `ZEUS_RSK_KEY_ID`；**先带外公告新指纹、对方固定之后才切流**——反过来做会在验签方一侧留下一个与"名册被替换"无法区分的窗口；轮换窗口内验签方需同时持有新旧公钥（`--key 旧keyId=旧.pem --key 新keyId=新.pem`，按封签内 keyId 选择）。旧私钥停用后旧快照在 attestation TTL（24h）内仍可用旧公钥验，故旧私钥保留到那之后再销毁。切流后自检：`GET /api/roster/keys` 的 `kid` 已是新值、`jwkThumbprint` 与公告那串逐字符相同。
 
 ## 4. Docker（推荐）
