@@ -265,12 +265,12 @@ try {
   ]);
   record('the same bytes are refused once past maxAge', stale.code === 1 && /maxAge/.test(stale.err), `exit=${stale.code} ${stale.err.trim().slice(0, 60)}`);
 
-  const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', aggregation: { kind: 'unanimous' } });
+  const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   record('intent fans out to every provider', fanOut.json?.status === 'completed' && fanOut.json?.branches?.length === 3, `status=${fanOut.json?.status} http=${fanOut.status} body=${fanOut.text.slice(0, 220)}`);
   record('the outbound credential reaches the agent', ['a1', 'a2', 'a3'].every(name => agent(name).auth.at(-1) === `Bearer ${VASSAL_SECRET}`), `seen: ${['a1','a2','a3'].map(n => agent(n).auth.map(x => x === `Bearer ${VASSAL_SECRET}` ? 'ok' : (x === '(none)' ? 'none' : x.slice(0, 10) + '…')).join(',')).join(' | ')}`);
   record('branches ran concurrently, not serially', ['a1', 'a2', 'a3'].every(name => agent(name).requests === 1), 'one request each inside a single fan-out');
 
-  const sourced = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmSource: { realmId: personal.realmId, text: NEEDLE_TOKEN } });
+  const sourced = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, realmSource: { realmId: personal.realmId, text: NEEDLE_TOKEN }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   const forwarded = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record('the kernel itself reads the realm and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
 
@@ -293,7 +293,8 @@ try {
   // an empty baseline) rather than always answering one way.
   const snap = await api('GET', '/api/memory/snapshot');
   const baseline = snap.json?.state;
-  record('memory snapshot round-trips through JSON', snap.status === 200 && Array.isArray(baseline?.events) && Array.isArray(baseline?.facts), `events=${baseline?.events?.length} factGroups=${baseline?.facts?.length}`);
+  const factCount = (baseline?.facts ?? []).reduce((total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
+  record('finished intents produced memory claims and folded them into facts', snap.status === 200 && (baseline?.events?.length ?? 0) >= 3 && factCount >= 1, `events=${baseline?.events?.length} facts=${factCount} - deferred #27 was exactly this number being 0`);
   const selfDiff = await api('POST', '/api/memory/reconcile', { previous: baseline });
   // Direction control: a baseline holding an event the live store has never seen
   // has to come back as removals, which is the half an always-zero diff would get
@@ -330,7 +331,7 @@ try {
   const diaryBadDate = await api('GET', '/api/diary/export?date=09-23');
   record(
     'diary export matches the read view and is byte-stable',
-    exportMatchesRead && diaryExportAgain.text === diaryExport.text && diaryBadDate.status === 400,
+    exportMatchesRead && diaryExportAgain.text === diaryExport.text && diaryBadDate.status === 400 && (diaryRead.json?.entries ?? []).length > 0,
     `entries=${(diaryRead.json?.entries ?? []).length}, badDate=${diaryBadDate.status}`,
   );
 

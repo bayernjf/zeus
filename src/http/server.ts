@@ -24,7 +24,7 @@ import { ConnectorError, type ConnectorRegistry } from '../mcp/connectors.js';
 import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
 import type { DecisionBackendKind } from '../decision/types.js';
 import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
-import type { AuditDecision } from '../dispatch/dispatcher.js';
+import { AUDIT_DECISIONS, type AuditDecision } from '../dispatch/dispatcher.js';
 import type { KernelStats } from '../state/stats.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { DriverWriteGrant, RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
@@ -73,26 +73,6 @@ const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
 const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
 const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
 const CONNECTOR_STATUSES: ConnectorStatus[] = ['declared', 'connected', 'revoked'];
-const AUDIT_DECISIONS: AuditDecision[] = [
-  'dispatched',
-  'refused-realm-policy',
-  'refused-unknown-vassal',
-  'refused-revoked',
-  'vassal-revoked',
-  'dispatch-failed',
-  'domain-read',
-  'domain-refused',
-  'domain-grant-issued',
-  'domain-grant-revoked',
-  'driver-grant-issued',
-  'realm-write',
-  'commission-granted',
-  'commission-waived',
-  'commission-withdrawn',
-  'commission-refused',
-  'sla-ack-breached',
-];
-
 export type HttpDeps = {
   registry: VassalRegistry;
   signer: RosterSigner;
