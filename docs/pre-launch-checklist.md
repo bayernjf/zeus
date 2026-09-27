@@ -1,8 +1,8 @@
 # 上线前 Checklist（Pre-launch Checklist）
 
 - 关联：项目级评审单一事实源 [review-mvp-2026-09.md](review-mvp-2026-09.md)；deferred 项清单 [deferred-items.md](deferred-items.md)；部署面 [deployment.md](deployment.md)；容量基线 [capacity-baseline.md](capacity-baseline.md)。
-- **判定（2026-09-27 v0.17 复核）**：
-  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且装配到真进程路径，全量 737 测试 / 77 文件绿、typecheck/build 过；P0 26/26 为逐行机械计数，签名链与离线验签四条正负对照用出货命令行复跑过）。
+- **判定（2026-09-27 v0.18 复核）**：
+  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且装配到真进程路径，全量 774 测试 / 81 文件绿且 `npm test` 退出码 0、typecheck/build 过、核心链路冒烟 32/32；P0 26/26 为逐行机械计数，签名链五条对照与部署镜像实构实跑均用出货件亲手复跑）。
   - **可交付真实用户 MVP：❌ 未达成**。差的是**真实环境里的执行动作**（真实封臣注册与扇出、密钥托管选型与公告、跨实例联调、模型裁决 key 核对），无法在仓库内闭环。此前唯一的**库内可做**前置项（§F-8 核心链路真进程冒烟固化为资产，deferred #25）已于 2026-09-27 销项。
 - 本文按"是否阻塞上线"分层。每条尽量给命令 / 出口标准 / 当前证据分级（实测 / 记录 / 待做）。
 - 设计约束红线（来自 product-portrait，任何上线动作不得违反）：数据主权在用户（给目录即用、正文不出域、备份恢复一等能力）；每个概念必须可执行；能力接入只有 MCP / Skill / A2A 三条通道，无私有旁路；个人域与企业域单向隔离、跨域读写需显式签名一次性授权。
@@ -21,7 +21,7 @@
 
 | # | 项 | 出口标准 | 命令 / 动作 | 当前状态 |
 |---|---|---|---|---|
-| B1 | `docker build/run` 真机构冒烟 | 镜像构建过、容器 healthy、`/data` 两文件 0600、SIGTERM 保存、重启 `restored … intents=` | `docker build -t zeus .` + deployment.md §4.3 起容器 + `curl /api/state` | v0.11 已 PASS；本次零 docker 改动，上线前复跑确认 |
+| B1 | `docker build/run` 真机构冒烟 | 镜像构建过、容器 healthy、`/data` 两文件 0600、SIGTERM 保存、重启 `restored … intents=` | `docker build -t zeus .` + deployment.md §4.3 起容器 + `curl /api/state` | **v0.18 本轮实构实跑 PASS**（`zeus:review-v018`：healthy、私钥以 `-v <file>:/run/secrets/rsk.pem:ro` 挂载后 `kid` 取自 env、`GET /api/roster/keys` 发布的字节经出货 CLI 验本容器名册 VERIFIED、SIGTERM 落 `kernel-state.json` mode 0600/456B、重启 `restored … (vassals=0, escalations=0, intents=0)`）。**审计文件 0600 本轮未在镜像内验**（该次运行未设 `ZEUS_AUDIT_FILE`），由冒烟覆盖。另撞出两条守卫：钥文件不可读 → EACCES 拒启；完全不配 → 生产无钥拒启（**`docker cp` 会把宿主 uid 带进去，`USER node` 读不到——秘钥必须走挂载**） |
 | B2 | 反代 / TLS / 进程管理 | systemd 或 k8s 起停、反代终止 TLS、健康检查接 `HEALTHCHECK` | deployment.md 已备；真实托管待做 | 文档就绪，真实托管待做 |
 | B3 | 审计/状态文件权限与挂载卷 | 生产卷 `/data` 权限 0600、目录自动创建、轮转后重新收紧 | 已 `mkdirSync(...,0o700)` + `appendFileSync(...,0o600)`（audit.ts:81-82） | 代码就绪；确认生产卷权限 |
 | B4 | 启动装配 env 全量核对 | 24 个 `ZEUS_*` 都读得到、无静默忽略（除明确降级项） | deployment.md §2 已补 10 行；`.env` 解析方已写清（C-1/C-3/C-4 已修） | 文档就绪；上线前按 deployment.md §2 逐行核对 |
@@ -47,19 +47,19 @@
 
 | # | 项 | 命令 / 动作 | 当前状态 |
 |---|---|---|---|
-| E1 | push dev → 云端 CI 首绿（每次推送后双矩阵绿才算销项） | `git ls-remote origin refs/heads/dev`；`git rev-list --left-right --count origin/dev...HEAD` | **2026-09-27 实测 `0 0`：此前批次已推送**；本轮之后（含 `6f86369`）仍需再推一次并确认云端绿，**云端结果本轮未验证**（`gh` 访问被权限层拦） |
+| E1 | push dev → 云端 CI 首绿（每次推送后双矩阵绿才算销项） | `git ls-remote origin refs/heads/dev`；`git rev-list --count origin/dev..HEAD` | **口径：这条只能现测，写死的同步状态几分钟内就过期**（今天已实测到两次"文档说已同步、现测领先 N 个"）。2026-09-27 评审 v0.18 之后现测：本地领先数个 commit 未推（评审取证对象 `8b53c8e` 当时与 `origin/dev` 相同；**这里故意不写死数字——写下它的那一刻它就已经过期**）。**云端 CI 结果未验证**（`gh` 被权限层拦），不从"本地全绿"推断云端绿 |
 | E2 | 镜像发布到 registry | 若用容器部署 | 待做 |
 
 ## F. 每次上线前必跑的验证门（回归护栏）
 
 1. `npm run typecheck` exit 0
 2. `npm run build` exit 0，`dist/` 完整（**必须在测试之前**：`tests/verify-roster.test.ts` 与 §F-5 的离线验签都跑编译产物）
-3. `npm test` exit 0（当前 **773 测试 / 81 文件**；核心链路冒烟 31 步；量法就是这条命令的最后一行，别从文档抄数）
+3. `npm test` exit 0（当前 **779 测试 / 82 文件**；核心链路冒烟 33 步；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–183s 并可能报超时红——带负载口径重跑一次再判红）
 4. 三条接入通道执行点 grep 复核（见 review-mvp §B）：`boot.ts` tokenFor 接线、`orchestrator.ts` activeProviders 三态闸门、`mcp.ts` REALM_NOT_CONNECTED 白名单、onConflict→监督台闭环、持久化/签名链执行点均在位。**v0.17 追加两条"核对装配而不是核对注册"**：`serve.ts:147` 把 `dagRunner` 注入 HTTP 依赖（否则 DAG 路由在真进程里恒 503）、`boot.ts:593→408→orchestrator.ts:169` 让 `ZEUS_MAX_CONCURRENT_PER_VASSAL` 真的到达 `selectTargets`
-5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）
+5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）。报告另有 `seal fingerprint` 两行（`jwk=` / `spki=`）——**带外固定要比的就是这一行与公告值是否逐字符相同**，不必另算哈希）
 6. `docker` 真机构冒烟（B1）
 7. 时钟偏置回归：`vitest` clock-skew 作业绿（deferred #24 闸门）
-8. **核心链路真进程冒烟**：`npm run smoke:core`（`scripts/smoke-core.mjs`，deferred **#25** 已销项）。它起真进程 + 真 socket 走完「挂目录 → 带凭证注册 → 扇出 → 内核自己读域 → 审计落盘 → 名册离线可验（含一条 maxAge 反证）→ 发布的根公钥就是那个签名钥（指纹独立复算）→ 吊销断流 → SIGTERM 落盘 → 重启恢复」，31 步全绿才退 0；只用回环、自造密钥与令牌、不读任何真实部署的 secret，并已接进 CI（build/test 之后一步）。它第一次跑就把派发打到了没有凭证的对端——正是这条链路上"库内测试看不见、真进程才看得见"的那类缺口
+8. **核心链路真进程冒烟**：`npm run smoke:core`（`scripts/smoke-core.mjs`，deferred **#25** 已销项）。它起真进程 + 真 socket 走完「挂目录 → 带凭证注册 → 扇出 → 内核自己读域 → 审计落盘 → 名册离线可验（含一条 maxAge 反证）→ 发布的根公钥就是那个签名钥，且**只拿端点返回的字节就能出货验签器验过**（把 PEM 换成 JWK 串须退 2），**且同一串指纹在出钥、发布、验签三处一致**（keygen 打印 → 端点 `jwkThumbprint` → 验签报告 `seal fingerprint` 行）→ 吊销断流 → SIGTERM 落盘 → 重启恢复」，33 步全绿才退 0；只用回环、自造密钥与令牌、不读任何真实部署的 secret，并已接进 CI（build/test 之后一步）。它第一次跑就把派发打到了没有凭证的对端——正是这条链路上"库内测试看不见、真进程才看得见"的那类缺口
 
 ## 一句话
 

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { generateKeyPairSync } from 'node:crypto';
 import { afterAll, describe, expect, it } from 'vitest';
 import { projectPublicRoster } from '../src/registry/roster.js';
-import { Ed25519MemorySigner, sealSnapshot, canonicalDigest, type AttestationSource } from '../src/registry/signing.js';
+import { Ed25519MemorySigner, sealSnapshot, canonicalDigest, publishRootKey, type AttestationSource } from '../src/registry/signing.js';
 import type { AgentCard } from '../src/a2a/types.js';
 import type { VassalEntry as RegistryEntry } from '../src/registry/registry.js';
 
@@ -107,6 +107,27 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
     expect(result.stdout).toMatch(/VERIFIED/);
     expect(result.stdout).toMatch(/schemaVersion\s+1/);
     expect(result.stdout).toMatch(/entry statuses\s+pr-helper=active/);
+  });
+
+  it('shows the sealing key fingerprint on both verdicts, and --quiet shows neither', async () => {
+    const { envelopePath, keyPath, envelope, signer } = await publish('fingerprint');
+    const expected = publishRootKey(envelope.seal.keyId, signer.publicKey);
+
+    const verdicts = await Promise.all([
+      run(['--file', envelopePath, '--key', keyPath]),
+      run(['--file', envelopePath, '--key', keyPath, '--now', new Date(T0.getTime() + 7_200_000).toISOString()]),
+    ]);
+    for (const result of verdicts) {
+      expect(result.stdout).toContain(`seal fingerprint  jwk=${expected.jwkThumbprint}`);
+      expect(result.stdout).toContain(`spki=${expected.spkiSha256}`);
+    }
+    expect(verdicts[0].status).toBe(0);
+    expect(verdicts[1].status).toBe(1);
+    // The line is report, not verdict: quiet mode drops the report while still
+    // deciding - the same split the deep checks obey.
+    const quiet = await run(['--file', envelopePath, '--key', keyPath, '--quiet']);
+    expect(quiet.status).toBe(0);
+    expect(quiet.stdout).not.toMatch(/fingerprint/);
   });
 
   it('refuses a replay of a still-signed but stale seal', async () => {

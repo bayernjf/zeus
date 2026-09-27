@@ -139,7 +139,7 @@ const realmRoot = join(work, 'realm');
 const dataDir = join(work, 'data');
 mkdirSync(realmRoot, { recursive: true });
 writeFileSync(join(realmRoot, 'brief.md'), `# brief\nthe marker ${NEEDLE_TOKEN} lives only in the user's directory\n`);
-execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), join(work, 'smoke-key.pem')], { stdio: 'pipe' });
+const keygenOutput = execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), join(work, 'smoke-key.pem')], { stdio: 'pipe' }).toString();
 const publicKeyPath = join(work, 'smoke-key.public.pem');
 if (!existsSync(publicKeyPath)) {
   console.error(`FAIL  cannot start: keygen did not produce ${publicKeyPath}`);
@@ -287,6 +287,29 @@ try {
     'the pinning fingerprint recomputes from the published JWK',
     !!published && published.jwkThumbprint === expectedThumbprint && /^[0-9a-f:]{95}$/.test(published.spkiSha256),
     `thumbprint=${published?.jwkThumbprint?.slice(0, 12)}…`
+  );
+  // Byte equality would still leave the published encoding unusable: an operator
+  // who trusts this endpoint has nothing but the response body to verify with, so
+  // the shipped CLI must accept exactly those bytes.
+  writeFileSync(join(work, 'keys.json'), JSON.stringify(keysRes.json));
+  writeFileSync(join(work, 'published.pem'), published?.spkiPem ?? '');
+  const viaPublished = verifyRoster(['--file', join(work, 'roster.json'), '--key', join(work, 'published.pem'), '--now', envelope.seal.issuedAt]);
+  record(
+    'a verifier holding only the endpoint response verifies the roster with the shipped CLI',
+    viaPublished.code === 0 && /VERIFIED/.test(viaPublished.out),
+    `exit=${viaPublished.code} ${viaPublished.err.trim().split('\n')[0] ?? ''}`
+  );
+  // One string, three touchpoints: keygen prints it before anything is running,
+  // the endpoint publishes it, and the verifier displays it. An operator pinning
+  // out of band reads it at one of the three, so they had better agree.
+  const pin = published?.jwkThumbprint ?? '(none)';
+  const spkiPin = published?.spkiSha256 ?? '(none)';
+  record(
+    'the pinning value is one string across keygen, publication and verification',
+    keygenOutput.includes(pin) && keygenOutput.includes(spkiPin)
+      && verdict.out.includes(`jwk=${pin}`) && verdict.out.includes(`spki=${spkiPin}`)
+      && viaPublished.out.includes(`jwk=${pin}`),
+    `jwk=${pin.slice(0, 10)}… spki=${spkiPin.slice(0, 8)}…`
   );
 
   const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });

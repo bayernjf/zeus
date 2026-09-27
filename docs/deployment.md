@@ -54,6 +54,9 @@
 ```sh
 node scripts/gen-rsk-key.mjs rsk-private.pem
 # 产物：rsk-private.pem（私钥，0600，绝不入库）+ rsk-private.public.pem（公钥，0644，分发给验签方）
+# 并打印要带外公告的固定值：jwkThumbprint（RFC 7638，公告这一串）与 spkiSha256
+#   —— 由 dist/registry/signing.js 的 publishRootKey 算出，与 GET /api/roster/keys
+#      发布的是同一个函数，所以"公告值"与"端点值"不会各算一套
 ```
 
 **发布后自检（上线检查清单的一项）**：拿公钥验一次对外名册，确认"离线可验"这条承诺在**这个部署**上成立，而不只是在单测里成立。
@@ -63,6 +66,10 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk
 ```
 
 退出码 0 = 通过；1 = 被拒（stderr 给具体原因：载荷版本不认识 / 摘要不绑定 / 签名不符 / 超出 maxAge / 某条目缺背书）；2 = 参数或 I/O 问题。它走的是**库里同一套验签实现**（`dist/registry/signing.js`），所以先 `npm run build`；这也意味着它同时能挡住"脚本自己实现了一遍规范化、结果两边不一致"那种假通过。
+
+报告里的 `seal fingerprint` 两行就是带外要比对的串（`--quiet` 会连它一起省掉——安静模式只关报告，不关判定）：第一行是 `jwk=<RFC 7638 串>`，第二行是 `spki=<冒号分组的 SPKI DER 摘要>`。**值随钥而变**，要比对的是"公告值 vs 这行的值"是否逐字符相同。
+
+验签方要做的固定动作就一句话：**拿这行的 `jwk=` 与公告值逐字符比对**，相同才继续。工具不再要求你另算一遍哈希——公告端（keygen）、发布端（`GET /api/roster/keys`）、消费端（这里）用的是同一个函数产出的同一个串。
 
 **公钥发布与固定**：进程在**公开面**（与名册同样不鉴权）发布它所签用的那把公钥：
 

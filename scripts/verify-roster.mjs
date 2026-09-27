@@ -134,9 +134,9 @@ try {
 }
 
 // Import after parsing so argument errors never depend on the build being present.
-let Ed25519Verifier, verifySignedSnapshot, attestationMatchesCard;
+let Ed25519Verifier, verifySignedSnapshot, attestationMatchesCard, publishRootKey;
 try {
-  ({ Ed25519Verifier, verifySignedSnapshot, attestationMatchesCard } = await import('../dist/registry/signing.js'));
+  ({ Ed25519Verifier, verifySignedSnapshot, attestationMatchesCard, publishRootKey } = await import('../dist/registry/signing.js'));
 } catch {
   usage('dist/registry/signing.js is missing - run `npm run build` first');
 }
@@ -193,6 +193,15 @@ say(`scope             ${String(snapshot.scope)}`);
 say(`schemaVersion     ${String(snapshot.schemaVersion ?? '(absent: pre-v1.2 artifact, read as 1)')}`);
 say(`entries           ${Array.isArray(snapshot.entries) ? snapshot.entries.length : '(none)'}`);
 say(`seal keyId        ${sealKeyId}`);
+// The value a verifier is told to pin out of band has to be readable in the same
+// action that accepted the key - otherwise "compare it against the announcement"
+// is a chore nobody performs. Printed for the key that sealed this artifact only.
+const sealingKey = pairs.find(([id]) => id === sealKeyId)?.[1];
+if (sealingKey) {
+  const shown = publishRootKey(sealKeyId, sealingKey);
+  say(`seal fingerprint  jwk=${shown.jwkThumbprint}`);
+  say(`                  spki=${shown.spkiSha256}`);
+}
 say(`seal issuedAt     ${String(issuedAt)}${ageSeconds === null ? '' : ` (age ${ageSeconds.toFixed(0)}s)`}`);
 say(`seal maxAge       ${String(envelope.seal?.maxAgeSeconds)}s`);
 const statuses = Array.isArray(snapshot.entries)
