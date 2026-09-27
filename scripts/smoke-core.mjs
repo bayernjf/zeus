@@ -139,7 +139,7 @@ const realmRoot = join(work, 'realm');
 const dataDir = join(work, 'data');
 mkdirSync(realmRoot, { recursive: true });
 writeFileSync(join(realmRoot, 'brief.md'), `# brief\nthe marker ${NEEDLE_TOKEN} lives only in the user's directory\n`);
-execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), join(work, 'smoke-key.pem')], { stdio: 'pipe' });
+const keygenOutput = execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), join(work, 'smoke-key.pem')], { stdio: 'pipe' }).toString();
 const publicKeyPath = join(work, 'smoke-key.public.pem');
 if (!existsSync(publicKeyPath)) {
   console.error(`FAIL  cannot start: keygen did not produce ${publicKeyPath}`);
@@ -298,6 +298,18 @@ try {
     'a verifier holding only the endpoint response verifies the roster with the shipped CLI',
     viaPublished.code === 0 && /VERIFIED/.test(viaPublished.out),
     `exit=${viaPublished.code} ${viaPublished.err.trim().split('\n')[0] ?? ''}`
+  );
+  // One string, three touchpoints: keygen prints it before anything is running,
+  // the endpoint publishes it, and the verifier displays it. An operator pinning
+  // out of band reads it at one of the three, so they had better agree.
+  const pin = published?.jwkThumbprint ?? '(none)';
+  const spkiPin = published?.spkiSha256 ?? '(none)';
+  record(
+    'the pinning value is one string across keygen, publication and verification',
+    keygenOutput.includes(pin) && keygenOutput.includes(spkiPin)
+      && verdict.out.includes(`jwk=${pin}`) && verdict.out.includes(`spki=${spkiPin}`)
+      && viaPublished.out.includes(`jwk=${pin}`),
+    `jwk=${pin.slice(0, 10)}… spki=${spkiPin.slice(0, 8)}…`
   );
 
   const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
