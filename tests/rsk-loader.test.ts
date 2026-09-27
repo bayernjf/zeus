@@ -30,6 +30,15 @@ describe('T3 RSK signer loading', () => {
     expect(await signer.verifier().verify(signer.keyId, 'canonical-text', sig)).toBe(true);
   });
 
+  it('generates a different ephemeral key on each load, so a restart really voids a pin', async () => {
+    // `ephemeral: true` is a label; the operator-facing consequence is that the
+    // published root key changes between boots. Two loads stand in for two boots.
+    const first = await loadRskSigner({ env: { NODE_ENV: 'development' }, warn: silentWarn });
+    const second = await loadRskSigner({ env: { NODE_ENV: 'development' }, warn: silentWarn });
+    const pem = (signer: typeof first.signer): string => signer.publicKey.export({ type: 'spki', format: 'pem' }) as string;
+    expect(pem(first.signer)).not.toBe(pem(second.signer));
+  });
+
   it('refuses to boot in production without a key', async () => {
     await expect(
       loadRskSigner({ env: { NODE_ENV: 'production' }, warn: silentWarn })
