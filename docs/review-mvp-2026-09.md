@@ -120,7 +120,7 @@
 - **撞出了什么**：`[zeus-http] refused to start: cannot read RSK key file "/tmp/rsk.pem": EACCES: permission denied`——**拒启，错误点名变量与原因**；另一例是完全没配密钥的容器，得到 `ZEUS_RSK_KEY or ZEUS_RSK_KEY_FILE is required when NODE_ENV=production: refusing to seal the public roster with an ephemeral key (restarts would invalidate every signature)`。这两条正是"生产无可用钥不起服务"这条承诺**第一次在出货镜像上、以非单测方式走到**（此前只有 `tests/rsk-loader.test.ts` 与容器内正向启动）。
 - **改对之后实测**：按部署手册的形状 `-v <私钥>:/run/secrets/rsk.pem:ro` 挂载 → 容器 `healthy`；`GET /api/roster/keys` 返回 `kid=zeus-rsk-review-2026-09`（来自 `ZEUS_RSK_KEY_ID`）+ `kty=OKP`，其 `spkiPem` 写成的文件对同容器 `GET /api/roster/public` 的封签跑 `npm run verify:roster` → **VERIFIED、exit 0**；启动日志亦报 `enterprise writes: accepting only driver grants signed by "zeus-rsk-review-2026-09"`；`docker stop`（SIGTERM）后宿主目录出现 `kernel-state.json`，**mode `-rw-------`（0600）**，456B；再 `docker start` → `restored kernel state … (vassals=0, escalations=0, intents=0)` 且 `healthy`。
 - **诚实边界**：这两条负向结论**不在原计划内**，是失误撞出来的，所以我只把它们写成"承诺被走到"，不写成"我验证过密钥权限矩阵"。它也产出一条**运维口径**：secret 要走文件挂载，不要走 `docker cp`。
-- 审计文件的 0600 本轮**未在镜像内验**（那次运行未设 `ZEUS_AUDIT_FILE`），它由冒烟第 18 步覆盖（真进程实测 mode=600）。
+- 审计文件的 0600 本轮**未在镜像内验**（那次运行未设 `ZEUS_AUDIT_FILE`），它由冒烟一步覆盖（真进程实测 mode=600）。**该缺口已于 2026-09-27 在镜像内补测闭合**：`docker run` 设 `ZEUS_AUDIT_FILE=/data/audit.jsonl` + 私钥以文件挂载启动 → 容器内 `stat -c '%a %U:%G' /data/audit.jsonl` 得 `600 node:node`，`ls -la /data` 显示创建者即 uid 1000 的 `node`，启动日志 `[zeus-http] audit log: /data/audit.jsonl (64MiB x 5 kept)`；文件在启动时即建（`jsonlAuditSink` 构造期调 `ensureAuditFile`），故无需派发流量。诚实边界不变：这证明的是**镜像 + `USER node` + 卷**下写出的权限，真实生产卷的宿主侧权限仍是部署动作。
 
 ### G. 功能性 / 完整度 / 可上线（三维判定）
 

@@ -21,9 +21,9 @@
 
 | # | 项 | 出口标准 | 命令 / 动作 | 当前状态 |
 |---|---|---|---|---|
-| B1 | `docker build/run` 真机构冒烟 | 镜像构建过、容器 healthy、`/data` 两文件 0600、SIGTERM 保存、重启 `restored … intents=` | `docker build -t zeus .` + deployment.md §4.3 起容器 + `curl /api/state` | **v0.18 本轮实构实跑 PASS**（`zeus:review-v018`：healthy、私钥以 `-v <file>:/run/secrets/rsk.pem:ro` 挂载后 `kid` 取自 env、`GET /api/roster/keys` 发布的字节经出货 CLI 验本容器名册 VERIFIED、SIGTERM 落 `kernel-state.json` mode 0600/456B、重启 `restored … (vassals=0, escalations=0, intents=0)`）。**审计文件 0600 本轮未在镜像内验**（该次运行未设 `ZEUS_AUDIT_FILE`），由冒烟覆盖。另撞出两条守卫：钥文件不可读 → EACCES 拒启；完全不配 → 生产无钥拒启（**`docker cp` 会把宿主 uid 带进去，`USER node` 读不到——秘钥必须走挂载**） |
+| B1 | `docker build/run` 真机构冒烟 | 镜像构建过、容器 healthy、`/data` 两文件 0600、SIGTERM 保存、重启 `restored … intents=` | `docker build -t zeus .` + deployment.md §4.3 起容器 + `curl /api/state` | **v0.18 本轮实构实跑 PASS**（`zeus:review-v018`：healthy、私钥以 `-v <file>:/run/secrets/rsk.pem:ro` 挂载后 `kid` 取自 env、`GET /api/roster/keys` 发布的字节经出货 CLI 验本容器名册 VERIFIED、SIGTERM 落 `kernel-state.json` mode 0600/456B、重启 `restored … (vassals=0, escalations=0, intents=0)`）。**审计文件 0600 已于 2026-09-27 在镜像内补测**（`docker run` 设 `ZEUS_AUDIT_FILE=/data/audit.jsonl` + 私钥挂载：容器内 `stat` 得 `600 node:node`，`ls -la /data` 中创建者即 uid 1000 的 `node`，启动日志报 `audit log: /data/audit.jsonl (64MiB x 5 kept)`；空文件即建，因为 `jsonlAuditSink` 在构造时 `ensureAuditFile`）。另撞出两条守卫：钥文件不可读 → EACCES 拒启；完全不配 → 生产无钥拒启（**`docker cp` 会把宿主 uid 带进去，`USER node` 读不到——秘钥必须走挂载**） |
 | B2 | 反代 / TLS / 进程管理 | systemd 或 k8s 起停、反代终止 TLS、健康检查接 `HEALTHCHECK` | deployment.md 已备；真实托管待做 | 文档就绪，真实托管待做 |
-| B3 | 审计/状态文件权限与挂载卷 | 生产卷 `/data` 权限 0600、目录自动创建、轮转后重新收紧 | 已 `mkdirSync(...,0o700)` + `appendFileSync(...,0o600)`（audit.ts:81-82） | 代码就绪；确认生产卷权限 |
+| B3 | 审计/状态文件权限与挂载卷 | 生产卷 `/data` 权限 0600、目录自动创建、轮转后重新收紧 | 已 `mkdirSync(...,0o700)` + `appendFileSync(...,0o600)`（audit.ts:81-82）；容器内复核见 B1 的 2026-09-27 补测 | 容器内实测通过（审计文件 `600 node:node`，同 B1，另有冒烟"governance decisions are persisted 0600"一步在宿主进程覆盖）；**剩余的是真实生产卷宿主侧权限**，属部署动作 |
 | B4 | 启动装配 env 全量核对 | 24 个 `ZEUS_*` 都读得到、无静默忽略（除明确降级项） | deployment.md §2 已补 10 行；`.env` 解析方已写清（C-1/C-3/C-4 已修） | 文档就绪；上线前按 deployment.md §2 逐行核对 |
 
 ## C. 阈值与容量标定（触发条件：≥3 真实 Agent 压测；不阻塞核心 MVP，但建议上线前至少一次）
