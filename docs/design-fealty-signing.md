@@ -137,7 +137,7 @@ design-bayjf-roster §7 给了两个候选，本文决定：
   - **密钥后端无法导出公钥时返回 501，不返回空数组**：`keys: []` 会被忽略状态码的客户端读成"没有需要固定的钥"，从而继续信任名册——一个安静的"无可固定项"比一个错误码危险。`RosterSigner.publicKey` 因此是可选的，KMS/HSM 后端不实现它即可。
   - **非 Ed25519 的钥一律拒绝发布**（签名链只有 Ed25519 一种算法），错误原因点名算法，避免运维把它读成"端点坏了"。
   - **固定值只有一个来源**：`publishRootKey` 是唯一算 `jwkThumbprint`/`spkiSha256` 的函数，三个触点都调它——出钥时（`scripts/gen-rsk-key.mjs` 打印，公告用）、发布时（本端点）、验签时（`scripts/verify-roster.mjs` 的 `seal fingerprint` 行）。理由是这条契约只在下述情形成立：验签方手里的公告值与端点发布的值是**同一串**；如果三处各算一遍哈希，"逐字符比对"就会变成"比对三套实现是否巧合一致"。冒烟第 33 步把这三点相等钉成断言（keygen stdout ⊇ 端点字段 ⊇ 验签器报告）。
-  - 未配密钥的非生产进程用临时内存钥签名：它每次重启都换钥，故其发布值**不可固定**，只用于开发。生产由 `NODE_ENV=production` 无钥拒启挡住（§5.1 第 1 条）。
+  - 未配密钥的非生产进程用临时内存钥签名：它每次重启都换钥，故其发布值**不可固定**，只用于开发。这条事实不由 `kid` 推定（`ZEUS_RSK_KEY_ID` 任何人可设），而由**装载密钥的那段代码上报**：发布文档带 `keySource`（`configured` / `ephemeral`）与 `survivesRestart`，配置了持久化时 `GET /api/state` 的 `rosterKey` 同步给出。生产由 `NODE_ENV=production` 无钥拒启挡住（§5.1 第 1 条）。
 - 纯库阶段只定义 `RosterSigner` / `RosterVerifier` 接口（§7.3），不实现私钥存储。
 
 ### 5.2 执行 Agent 密钥（v2）

@@ -41,7 +41,7 @@
 | `ZEUS_RSK_KEY` | 未设置 | RSK 私钥 PEM 全文（Ed25519，PKCS#8） |
 | `ZEUS_RSK_KEY_FILE` | 未设置 | RSK 私钥 PEM 文件路径（secret 挂载推荐）；与 `ZEUS_RSK_KEY` 同时存在时内联优先 |
 | `ZEUS_RSK_KEY_ID` | `zeus-rsk-dev` | 封签 keyId（验签方按 keyId 找公钥） |
-| `NODE_ENV` | 未设置 | `production` 时无 RSK 密钥**拒绝启动**；其他环境降级临时内存钥并 stderr 告警 |
+| `NODE_ENV` | 未设置 | `production` 时无 RSK 密钥**拒绝启动**；其他环境降级临时内存钥并 stderr 告警。**这条告警只响一次**，所以该事实也被上报：`GET /api/roster/keys` 的 `keySource`（`configured` / `ephemeral`）与 `survivesRestart`，配置了持久化时 `GET /api/state` 的 `rosterKey` 同步给出 |
 
 模板见仓库根 `.env.example`。
 
@@ -194,7 +194,7 @@ WantedBy=multi-user.target
 
 - [ ] RSK 私钥经文件挂载提供，`ZEUS_RSK_KEY_ID` 带日期/版本
 - [ ] `GET /api/roster/keys` 有答且 `kid` 等于 `ZEUS_RSK_KEY_ID`，其 `jwkThumbprint` 已带外公告给每个验签方（该端点自身不构成信任，见 §3；KMS 后端返回 501 时改为在部署记录里发布公钥）
-- [ ] `NODE_ENV=production`，启动日志无 ephemeral 告警
+- [ ] `NODE_ENV=production`，启动日志无 ephemeral 告警；**并读 `GET /api/roster/keys` 的 `keySource=configured` / `survivesRestart=true` 为准**（日志会被轮转掉，这个字段不会；配置了持久化时 `GET /api/state` 的 `rosterKey` 给同一个事实）
 - [ ] `ZEUS_INTERNAL_TOKEN` 为长随机串（或明确不挂载内部路由）
 - [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含连接器 token 与记忆事实明文）：`ls -l /data/kernel-state.json`
 - [ ] `ZEUS_AUDIT_FILE` 已配置（否则审计只活在 stderr 里，重启即丢）；若把 `ZEUS_AUDIT_MAX_BYTES` 设成不轮转，确认已接外部 logrotate
