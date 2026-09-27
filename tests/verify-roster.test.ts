@@ -227,5 +227,16 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
     const unreachable = await run(['--url', 'http://127.0.0.1:9/roster', '--key', join(dir, 'io.pub.pem')]);
     expect(unreachable.status).toBe(2);
     expect(unreachable.stderr).toMatch(/cannot reach/);
+
+    // A bare timestamp is local time to the parser and UTC to the seal, which
+    // produced a confident "seal issued in the future" about a healthy artifact.
+    // Ambiguous input is a usage error, never a verification verdict.
+    const naive = await run(['--file', envelopePath, '--key', join(dir, 'io.pub.pem'), '--now', '2026-09-27T00:30:00.000']);
+    expect(naive.status).toBe(2);
+    expect(naive.stderr).toMatch(/must carry a zone/);
+    // And the same instant, written with a zone, is still a verdict (exit 1: it
+    // is past this fixture's maxAge) - the refusal is about the ambiguity only.
+    const zoned = await run(['--file', envelopePath, '--key', join(dir, 'io.pub.pem'), '--now', '2026-09-27T00:30:00.000+00:00']);
+    expect(zoned.status).toBe(1);
   });
 });
