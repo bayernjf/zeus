@@ -41,6 +41,13 @@ describe('scripts/acceptance-real-fanout.mjs', { timeout: 90_000 }, () => {
     expect(help.status).toBe(0);
     expect(help.out).toMatch(/usage:/i);
     expect(help.out).not.toContain('secret-value');
+    // The two knobs that let this run against a non-default peer are only useful
+    // if an operator can discover them; asserting them here costs no extra spawn
+    // (this case already runs the script), so the surface cannot be dropped
+    // silently. Their validation is not asserted: each would need its own cold
+    // process, and this file is already the slow exception.
+    expect(help.out).toContain('REALM=personal|enterprise');
+    expect(help.out).toContain('TASK_URL=…');
   });
 
   it('reports an unreachable target as a failed step, not a crash', () => {

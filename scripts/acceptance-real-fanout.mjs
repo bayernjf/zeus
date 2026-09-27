@@ -19,6 +19,17 @@
  *   SKILL=research \
  *   node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout 60000]
  *
+ * TASK_URL (optional): the JSON-RPC endpoint dispatch posts to, when the agent
+ * serves it somewhere other than the cardUrl convention (cardUrl …/agent-card →
+ * …/tasks). The kernel derives that convention and does NOT read the card's own
+ * `url` field, so an agent that accepts JSON-RPC at its card url (pr-helper does)
+ * needs this override or every branch dies with `subscribe failed: HTTP 404`.
+ *
+ * REALM (optional, default "personal"): the realm type the driven intent targets.
+ * A vassal only serves the data realms its fealty declares, so an agent whose
+ * card says dataRealms=["enterprise"] is refused a personal-realm intent — mount
+ * the matching realm (ZEUS_REALM_ENTERPRISE) and pass REALM=enterprise.
+ *
  * Proxy note: Zeus fetches the card and dispatches to the agent **itself**, so
  * any proxy needed to reach the agent belongs in the *Zeus process* environment
  * (NODE_USE_ENV_PROXY=1 HTTPS_PROXY=...), not in this script's.
@@ -49,7 +60,7 @@ function usageExit(reason) {
 }
 if (timeoutIndex >= 0 && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) usageExit(`--timeout must be a positive number of ms`);
 if (argv.includes('--help') || argv.includes('-h')) {
-  console.log(`usage: KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [SKILL=…] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
+  console.log(`usage: KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [TASK_URL=…] [SKILL=…] [REALM=personal|enterprise] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
   process.exit(0);
 }
 
@@ -57,11 +68,14 @@ const KERNEL_URL = (env.KERNEL_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_TOKEN = env.ZEUS_INTERNAL_TOKEN ?? '';
 const CARD_URL = env.CARD_URL ?? '';
 const AGENT_TOKEN = env.AGENT_TOKEN ?? '';
+const TASK_URL = env.TASK_URL ?? '';
 const SKILL = env.SKILL ?? 'research';
+const REALM = env.REALM ?? 'personal';
+if (REALM !== 'personal' && REALM !== 'enterprise') usageExit(`REALM must be "personal" or "enterprise", got ${REALM}`);
 if (!KERNEL_URL) usageExit('KERNEL_URL is required (e.g. http://127.0.0.1:8799)');
 if (!INTERNAL_TOKEN) usageExit('ZEUS_INTERNAL_TOKEN is required: this acceptance drives the internal/driver face');
 if (!CARD_URL) usageExit('CARD_URL is required: the agent-card URL of the real execution agent');
-for (const [name, value] of [['KERNEL_URL', KERNEL_URL], ['CARD_URL', CARD_URL]]) {
+for (const [name, value] of [['KERNEL_URL', KERNEL_URL], ['CARD_URL', CARD_URL], ...(TASK_URL ? [['TASK_URL', TASK_URL]] : [])]) {
   try {
     new URL(value);
   } catch {
@@ -105,6 +119,7 @@ const factCount = state => (Array.isArray(state?.facts) ? state.facts : [])
 async function main() {
   console.log(`target ${KERNEL_URL.replace(/^https?:\/\//, '')}  skill=${SKILL}  card=${CARD_URL.replace(/^https?:\/\//, '')}`);
   console.log(`credentials: internal token ${INTERNAL_TOKEN ? 'present' : 'missing'} (length ${INTERNAL_TOKEN.length}), agent token ${AGENT_TOKEN ? 'present' : 'absent'}  — neither value is ever printed`);
+  if (TASK_URL) console.log(`task endpoint: ${TASK_URL} (explicit override; the cardUrl convention would derive ${CARD_URL.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks')})`);
 
   // 1. Liveness, before anything is mutated.
   let health;
@@ -144,7 +159,7 @@ async function main() {
 
   // 4. Register the real agent (this is the write the test exists to perform).
   const beforeNames = (authorized.json?.snapshot?.entries ?? []).map(entry => entry.name);
-  const registered = await call('POST', '/api/vassals', { auth: true, body: { cardUrl: CARD_URL, ...(AGENT_TOKEN ? { token: AGENT_TOKEN } : {}) } });
+  const registered = await call('POST', '/api/vassals', { auth: true, body: { cardUrl: CARD_URL, ...(TASK_URL ? { taskUrl: TASK_URL } : {}), ...(AGENT_TOKEN ? { token: AGENT_TOKEN } : {}) } });
   const registerOk = registered.status === 201 || registered.status === 200 || (registered.status >= 400 && /already/i.test(registered.text));
   record('the real agent registers (card fetched, fealty validated)', registerOk, `status=${registered.status} ${clip(registered.text)}`);
   if (!registerOk) return finish();
@@ -167,7 +182,7 @@ async function main() {
   //    memory claim only lands when the intent names the realm it worked in, so
   //    the realmId is looked up rather than assumed.
   const domains = await call('GET', '/api/domains', { auth: true });
-  const personal = (domains.json?.realms ?? []).find(realm => realm.type === 'personal');
+  const target = (domains.json?.realms ?? []).find(realm => realm.type === REALM);
   const memoryBefore = await call('GET', '/api/memory/snapshot', { auth: true });
   const eventsBefore = memoryBefore.json?.state?.events?.length ?? -1;
   const factsBefore = factCount(memoryBefore.json?.state);
@@ -175,8 +190,8 @@ async function main() {
     auth: true,
     body: {
       skill: SKILL,
-      realm: 'personal',
-      ...(personal?.realmId ? { realmId: personal.realmId } : {}),
+      realm: REALM,
+      ...(target?.realmId ? { realmId: target.realmId } : {}),
       vassals: [agentName],
       params: { subject: marker, predicate: 'verdict', prompt: `Zeus acceptance ${marker}: report one short factual stance.` },
     },
@@ -184,7 +199,7 @@ async function main() {
   const intentId = fanOut.json?.intentId;
   record('the intent is accepted', [200, 201, 202].includes(fanOut.status) && !!intentId, `status=${fanOut.status} ${clip(fanOut.text)}`);
   if (!intentId) return finish();
-  if (!personal) console.log(`      NOTE  no personal realm on this deployment (memory claims are realm-scoped, so step "verdict became a claim" cannot pass; mount one with ZEUS_REALM_ROOTS)`);
+  if (!target) console.log(`      NOTE  no ${REALM} realm on this deployment (memory claims are realm-scoped, so step "verdict became a claim" cannot pass; mount one with ZEUS_REALM_ROOTS / ZEUS_REALM_ENTERPRISE)`);
   console.log(`      intentId=${intentId}${fanOut.json?.runId ? ` runId=${fanOut.json.runId}` : ''} target=${agentName}`);
 
   const deadline = Date.now() + timeoutMs;
