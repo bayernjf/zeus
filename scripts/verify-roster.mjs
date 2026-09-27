@@ -82,7 +82,16 @@ for (let i = 0; i < argv.length; i++) {
 if (!opts.url && !opts.file) usage('give either --url or --file');
 if (opts.url && opts.file) usage('--url and --file are mutually exclusive');
 if (opts.keys.length === 0) usage('at least one --key is required');
-if (opts.now && Number.isNaN(Date.parse(opts.now))) usage(`--now is not an ISO date: ${opts.now}`);
+if (opts.now) {
+  // A bare timestamp is local time to Date.parse and UTC to the envelope, so in
+  // a non-UTC deployment the same artifact reads as "seal issued in the future" -
+  // a verdict that points the operator at a server clock that is fine. Refuse the
+  // ambiguity at the door instead of reporting a wrong cause.
+  if (!/(?:Z|[+-]\d{2}:?\d{2})$/.test(opts.now)) {
+    usage(`--now must carry a zone (…Z or …+08:00), got '${opts.now}' - a bare timestamp is read as local time and would misjudge a UTC-sealed artifact`);
+  }
+  if (Number.isNaN(Date.parse(opts.now))) usage(`--now is not an ISO date: ${opts.now}`);
+}
 
 function splitSpec(spec) {
   const at = spec.indexOf('=');
