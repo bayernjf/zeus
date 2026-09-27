@@ -321,6 +321,19 @@ try {
   const forwarded = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record('the kernel itself reads the realm and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
 
+  // The DAG driver face is reachable only if serve.ts actually injects dagRunner:
+  // without it every call answers 503 "not assembled", and neither a route-presence
+  // grep nor an inject-level test can tell those two apart (deferred #23 was called
+  // out twice for exactly that gap). An id the runner has never seen has to come
+  // back as the runner's own 404, which is unreachable unless it is injected.
+  const dagProbe = await api('GET', '/api/intents/no-such-dag/dag');
+  const dagAnonymous = await api('GET', '/api/intents/no-such-dag/dag', undefined, {});
+  record(
+    'the DAG driver face is assembled in this process, not merely routed',
+    dagProbe.status === 404 && /unknown dag/.test(dagProbe.json?.detail ?? '') && dagAnonymous.status === 401,
+    `authenticated=${dagProbe.status} (${String(dagProbe.json?.detail ?? dagProbe.text).slice(0, 40)}), anonymous=${dagAnonymous.status}`,
+  );
+
   const leakViews = ['/api/roster', '/api/roster/public', '/api/roster/keys', '/api/state', '/api/metrics'];
   const leaks = [];
   for (const path of leakViews) {
