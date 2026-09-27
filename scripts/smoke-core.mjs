@@ -288,6 +288,17 @@ try {
     !!published && published.jwkThumbprint === expectedThumbprint && /^[0-9a-f:]{95}$/.test(published.spkiSha256),
     `thumbprint=${published?.jwkThumbprint?.slice(0, 12)}…`
   );
+  // Byte equality would still leave the published encoding unusable: an operator
+  // who trusts this endpoint has nothing but the response body to verify with, so
+  // the shipped CLI must accept exactly those bytes.
+  writeFileSync(join(work, 'keys.json'), JSON.stringify(keysRes.json));
+  writeFileSync(join(work, 'published.pem'), published?.spkiPem ?? '');
+  const viaPublished = verifyRoster(['--file', join(work, 'roster.json'), '--key', join(work, 'published.pem'), '--now', envelope.seal.issuedAt]);
+  record(
+    'a verifier holding only the endpoint response verifies the roster with the shipped CLI',
+    viaPublished.code === 0 && /VERIFIED/.test(viaPublished.out),
+    `exit=${viaPublished.code} ${viaPublished.err.trim().split('\n')[0] ?? ''}`
+  );
 
   const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   record('intent fans out to every provider', fanOut.json?.status === 'completed' && fanOut.json?.branches?.length === 3, `status=${fanOut.json?.status} http=${fanOut.status} body=${fanOut.text.slice(0, 220)}`);
