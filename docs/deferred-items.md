@@ -183,7 +183,13 @@
 - **建议做法**：一条测试（`tests/config-surface.test.ts`）——扫 `src/**/*.ts` 取 `ZEUS_[A-Z0-9_]+` 读点，与 `.env.example`、`deployment.md` §2 做双向差集，任一方向非空即失败；对动态读法（`env[name]`）留显式豁免表并注明原因。**双向很关键**：漏文档只是操作员看不见一个旋钮；而文档里留着早已被删掉的变量更阴——它教操作员去设一个什么都不影响的东西。
 - **触发条件**：① 任何新增或改名 `ZEUS_*` 环境变量的批次；② 下一次项目级评审（本轮已手工跑过一次，下次不该再手工）；③ 出现"照文档设了却没生效"的报障。
 
-### #27 运行进程内没有记忆事件的生产者（E8.5/E8.3 在实跑中是空转的）
+### #27 运行进程内没有记忆事件的生产者（E8.5/E8.3 在实跑中是空转的）✅ 已销项（2026-09-27）
+
+- **销项（同日，按 §8 的 P1 落地）**：`src/memory/producer.ts`（每个不同 `(作者, 立场)` 一条 claim；object 只放立场、超 512 截断；`claimSubject` 显式优先、缺省派生自 skill+问题而**绝不用 intentId**）+ `boot.ts` 在 `intent-finished` 处装配（**先写 claim，再 consolidate**，同一次意图当场成事实）。写入一律走 `appendFromRealm`，realm 已被下线时丢弃并审计 `memory-claim-skipped`。契约全文与四问答案见 [design-memory-consolidation.md](design-memory-consolidation.md) §8（文档升 v0.5）。
+- **可失效性（不是断言，是量出来的）**：`smoke:core` 新增的那一步**要求快照非空**。本改动之前它打印 `events=0 factGroups=1`、日记 `entries=0`；之后打印 **`events=6 facts=1`、日记 `entries=1`**——同一条断言在缺陷存在时是红的，这才是它有效的证明。另 10 例单测覆盖：claim 形状（过 `isClaimContent`）、派生 subject 可重复、显式 subject/predicate 优先、重放不增条数、超长截断、空立场跳过、**realm 未挂载时不写且上报审计**（这条是"并非无条件就写"的反向对照）、**未指名 realm 的意图不进记忆**。
+- **顺带修掉一条同形状的漂移**：`GET /api/audit?decision=` 的白名单此前在 server 侧手工维护，**已有 5 个决策值查不到**（`refused-skill-uninstalled`/`refused-no-active-provider`/`branch-diverted`/`realm-disconnected`/`realm-tenant-retargeted`）；现在 `AuditDecision` 类型由 `AUDIT_DECISIONS` 数组派生，单一来源，加值不会再漏。
+- **E8.5 状态列回到 ✅**（正文注明运行时生产者已就位）。
+
 - **发现方式**：把 `GET /api/memory/snapshot` 与 `GET /api/diary/export` 接进核心链路冒烟后**第一次真机实跑**：派发三条分支、审计落盘 13 行之后，`snapshot.state.events.length = 0`、`factGroups = 1`（空组）、日记 `entries = []`。
 - **代码级证据**（本轮复跑，非引用）：`MemoryEvent` 的构造只出现在 `src/memory/` 内部；`grep -rn "\.append(" src` 在 memory 模块之外**零命中**（audit sink 是另一个对象）。HTTP 面对 memory 只有读（`read`/`facts`/`replay`/`searchRecall`/`exportState`）与擦除（`retract`/`forget-subject`）；`boot.ts` 只用 `consolidateRealm`/`authorsOfFacts`/`recordCorrections`/`reliabilityScore`。**没有任何一方把执行 Agent 的回报变成事件**。
 - **后果**：E8.5 的"事件→事实→混合检索→遗忘权→漂移对账"整条链在**库里**成立（752 项测试覆盖），在**出货进程里**输入恒为空；连带 E8.3 的日记恒空。这不属于"能力没有入口"（#23/#25 那一类），而是更深一层：**能力没有数据源**。

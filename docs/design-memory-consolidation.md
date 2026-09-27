@@ -1,6 +1,6 @@
 # 记忆整理协议设计（Memory Consolidation Protocol）
 
-> 状态：**现行（设计稿 v0.4，2026-09-27，新增 §8 记忆事件生产者契约提案——deferred #27 的候选触点、边界判据与待拍板四问；§8 是提案，未实现）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与契约。
+> 状态：**现行（设计稿 v0.5，2026-09-27，§8 的生产者契约已采纳并落地，deferred #27 销项）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与契约。
 > 上游：[product-portrait.md](product-portrait.md) §2.1（数据主权）、[prd.md](prd.md) E1（并发决策内核）；与 [design-realm.md](design-realm.md) 同构（事实在原位、索引可重建）。
 > 本文先于 memory 模块存在，是其首份契约。
 
@@ -150,10 +150,10 @@ Agent ──append──▶ Event Log（实时，人人可写）
 - **P1**：Fact Store 持久化 + 任务收束自动触发 + 可靠度权重；与监督台打通冲突升级。
 - **P2**：本地 embedding + 混合检索、漂移对账、retracted/遗忘权执行。
 
-## 8. 记忆事件生产者契约提案（deferred #27；**提案，未实现**）
+## 8. 记忆事件生产者契约（deferred #27；**已按 P1 采纳并落地**）
 
 > 触发背景：2026-09-27 把 `GET /api/memory/snapshot` 与 `GET /api/diary/export` 带进真进程冒烟，第一次实跑就得到 `state.events.length = 0`、日记 `entries = []`——在真实派发三次、审计落盘 13 行之后。代码级复跑：`MemoryEvent` 只在 `src/memory/` 内部构造，模块之外 `.append(` 零命中。
-> **本节只回答一个问题：谁在什么时刻、以什么形状往记忆里写。选定并拍板后才动代码。**
+> **本节回答一个问题：谁在什么时刻、以什么形状往记忆里写。** 2026-09-27 按建议采纳 P1 并落地（`src/memory/producer.ts` + `boot.ts` 装配），四个拍板问题的答案见 §8.3 每条之后；P2/P3/P4 未做，理由仍然成立。
 
 ### 8.1 先划清边界：什么进记忆，什么只进审计脊
 
@@ -186,10 +186,10 @@ Agent ──append──▶ Event Log（实时，人人可写）
 
 ### 8.3 需要拍板的四个问题（不定就写不出代码）
 
-1. **`subject` 由谁给？** 分歧能否产生，完全取决于同一 `(realm, subject, predicate)` 是否可能被多次陈述。选项：① 请求方显式 `params.subject`（必填，最干净，但把语义成本推给调用方）；② 由 `intentId` 派生（每次意图一个新主题 → **永远不会分歧**，等于白做）；③ `params.subject` 缺省时回退到 ①/② 的组合。建议 ③，并请确认回退顺序。
-2. **`predicate` 用什么？** ① `skill` 名（零新契约，但 `research` 一次会同时陈述多件事时会互相覆盖）；② `params.predicate` 显式给；③ `skill + params.key`。建议 ① 起步，需要细分时由请求带 ②。
-3. **第三方结论文本能否常驻状态文件与备份？** 若否，改为只存 `sha256(object)` + snippet；若是，长度上限定多少（建议 512）。
-4. **要不要开关？** 建议**默认开**（"每个概念必须可执行"，默认关等于默认空转），不新增 env；若确实要给运维一个退路，则新增 `ZEUS_MEMORY_FROM_BRANCHES`，并**必须同时进 `.env.example` 与 deployment §2**——`tests/config-surface.test.ts` 会在漏文档时直接把 CI 弄红。
+1. **`subject` 由谁给？** 分歧能否产生，完全取决于同一 `(realm, subject, predicate)` 是否可能被多次陈述。选项：① 请求方显式 `params.subject`（必填，最干净，但把语义成本推给调用方）；② 由 `intentId` 派生（每次意图一个新主题 → **永远不会分歧**，等于白做）；③ `params.subject` 缺省时回退到 ①/② 的组合。建议 ③，并请确认回退顺序。 → **已定 ③，回退键 = `topic:sha256(skill ␟ 去掉 subject/predicate 后的 params)`**，绝不用 intentId（`producer.ts` `claimSubject`）。
+2. **`predicate` 用什么？** ① `skill` 名（零新契约，但 `research` 一次会同时陈述多件事时会互相覆盖）；② `params.predicate` 显式给；③ `skill + params.key`。建议 ① 起步，需要细分时由请求带 ②。 → **已定：`params.predicate` 优先，缺省用 skill 名**（`claimPredicate`）。
+3. **第三方结论文本能否常驻状态文件与备份？** 若否，改为只存 `sha256(object)` + snippet；若是，长度上限定多少（建议 512）。 → **已定：存结论本身、上限 512 字符（`MAX_STANCE_CHARS`），超出截断并加省略号**；rationale 不进 object，避免同一立场因措辞不同被算成分歧。
+4. **要不要开关？** 建议**默认开**（「每个概念必须可执行」，默认关等于默认空转），不新增 env。 → **已定：默认开、无 env**。要退路时按 #26 的闸门补：新增变量必须同时进 `.env.example` 与 deployment §2，否则 CI 直接红。
 
 ### 8.4 选定后的最小落地形状（含验收，不在本节实施）
 
@@ -224,3 +224,4 @@ Agent ──append──▶ Event Log（实时，人人可写）
 | v0.2 | 2026-09-22 | P2 契约：§6.1 混合检索（BM25+语义余弦、可重建索引、Embedder 端口与本地 hashing 默认实现）、§6.2 遗忘权（retract/forgetSubject + tombstone 台账，事件日志保留） |
 | v0.3 | 2026-09-22 | §6.3 漂移对账：reconcileMemoryStates 快照间逐字段 diff、verifyMemoryState 横切不变量校验（factId 可重算、provenance 可解析、retract↔tombstone 配对）；P2 三项齐 |
 | v0.4 | 2026-09-27 | **§8 生产者契约提案（deferred #27）**：先划边界（「对某域为真的一句陈述」进记忆、动作与过程进审计脊；只有 `kind:claim` 且 `{subject,predicate,object}` 会被折叠成事实——`consolidate.ts:109`、`:31-35`），再列四条触点与后果。**建议只做 P1（分支结论→claim）**：消费端 `boot.ts:388-392` → `consolidateRealm` → disputes → `ingestMemoryDispute` 已经接好，缺的只是输入；幂等靠 `memory-store.ts:56-59` 的 eventId 去重；写入必须走 `appendFromRealm`（`:62-75`）才不破域边界。P2 裁决事件、P4 纠错事件因与审计脊重叠、且会污染 `source.agentId` 的可靠度归因而建议不做；P3 observation 不产事实。四个待拍板问题（subject 由谁给／predicate 粒度／第三方结论文本能否常驻状态文件与备份／要不要开关）不定就写不出代码。§9 验收与 §10 演进日志为插入本节而顺延；外部引用只涉及旧 §7，未受影响 |
+| v0.5 | 2026-09-27 | **§8 采纳并落地（deferred #27 销项）**：新增 `src/memory/producer.ts`（`branchVerdictClaims`：每个不同 `(作者, 立场)` 一条 claim，object 只放立场、超 512 截断；`claimSubject` 显式优先、缺省派生自 skill+问题，**绝不用 intentId**）+ `boot.ts` 在 `intent-finished` 装配（**先写 claim 再 consolidate**，同一次意图当场成事实）；写入走 `appendFromRealm`，realm 已被下线（#17）时丢弃并审计 `memory-claim-skipped`。`AUDIT_DECISIONS` 改为**单一来源数组派生类型**（此前 server 侧另有一份手工白名单，5 个决策值无法过滤查询）。测试 10 例含**真进程断言**：`smoke:core` 现在要求快照非空，实测 `events=6 facts=1`、日记 `entries=1`（**同一断言在本改动前打印 0**，即它的可失效性证明）。 |
