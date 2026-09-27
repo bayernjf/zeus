@@ -176,6 +176,7 @@ export declare function persistDiary(
 ### 6.2 结构化导出 `exportDiary`
 
 `exportDiary(entries)` → 稳定序列化的 JSON 字符串（键排序、含 provenance/digest），供用户另存或迁移；不内置 zip/云上传（与 Vault §9 边界一致）。
+  - **操作者面（2026-09-27）**：`GET /api/diary/export?realmId=&date=&timeZone=`，与读视图 `GET /api/diary` 共用同一个选择器解析（两条路由不会各自漂移），返回这份稳定 JSON；不经 Realm 写路径。
 
 ## 7. 安全红线（测试必须逐条断言）
 

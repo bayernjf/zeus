@@ -2,38 +2,53 @@ import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
 import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
 
-export type AuditDecision =
-  | 'dispatched'
-  | 'refused-realm-policy'
-  | 'refused-unknown-vassal'
-  | 'refused-revoked'
-  | 'vassal-revoked'
-  | 'dispatch-failed'
-  | 'sla-ack-breached'
-  /** E6.4: a subject crossed (or tried to cross) a data-domain boundary. */
-  | 'domain-read'
-  | 'domain-refused'
-  /** E6.4: the authorization lifecycle for those crossings. */
-  | 'domain-grant-issued'
-  | 'domain-grant-revoked'
-  /** E3.5 / deferred #14: the single-use write credential for an enterprise realm. */
-  | 'driver-grant-issued'
-  /** deferred #17: explicit realm boundary mutations (teardown / tenant re-scope). */
-  | 'realm-disconnected'
-  | 'realm-tenant-retargeted'
-  /** A write that a driver grant authorized (personal writes are not logged: they
-   *  are the user writing in their own directory, and logging them buries this). */
-  | 'realm-write'
-  /** E9.1/E9.2: onboarding decisions for a seat in a department. */
-  | 'commission-granted'
-  | 'commission-waived'
-  | 'commission-withdrawn'
-  | 'commission-refused'
-  /** E2.2/E2.3/E2.4: the skill catalogue refused auto-selected fan-out targets. */
-  | 'refused-skill-uninstalled'
-  | 'refused-no-active-provider'
-  /** #9: a saturated/eligible-lacking target re-pointed to an alternate provider. */
-  | 'branch-diverted';
+/**
+ * Every decision the governance spine records, as one list. The HTTP filter
+ * (`GET /api/audit?decision=…`) validates against this same array, because a
+ * second hand-maintained allowlist silently rots: five decisions
+ * (`refused-skill-uninstalled`, `refused-no-active-provider`, `branch-diverted`,
+ * `realm-disconnected`, `realm-tenant-retargeted`) were written to the audit
+ * file but could not be queried, and the new one below would have been the sixth.
+ */
+export const AUDIT_DECISIONS = [
+  'dispatched',
+  'refused-realm-policy',
+  'refused-unknown-vassal',
+  'refused-revoked',
+  'vassal-revoked',
+  'dispatch-failed',
+  'sla-ack-breached',
+  // E6.4: a subject crossed (or tried to cross) a data-domain boundary.
+  'domain-read',
+  'domain-refused',
+  // E6.4: the authorization lifecycle for those crossings.
+  'domain-grant-issued',
+  'domain-grant-revoked',
+  // E3.5 / deferred #14: the single-use write credential for an enterprise realm.
+  'driver-grant-issued',
+  // deferred #17: explicit realm boundary mutations (teardown / tenant re-scope).
+  'realm-disconnected',
+  'realm-tenant-retargeted',
+  // A write that a driver grant authorized (personal writes are not logged: they
+  // are the user writing in their own directory, and logging them buries this).
+  'realm-write',
+  // E9.1/E9.2: onboarding decisions for a seat in a department.
+  'commission-granted',
+  'commission-waived',
+  'commission-withdrawn',
+  'commission-refused',
+  // E2.2/E2.3/E2.4: the skill catalogue refused auto-selected fan-out targets.
+  'refused-skill-uninstalled',
+  'refused-no-active-provider',
+  // #9: a saturated/eligible-lacking target re-pointed to an alternate provider.
+  'branch-diverted',
+  // deferred #27: finished-intent verdicts that could not become claims (the realm
+  // they belonged to was unmounted mid-flight). A dropped claim is a governance
+  // fact, so it is announced rather than swallowed.
+  'memory-claim-skipped',
+] as const;
+
+export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
 
 export type AuditEntry = {
   ts: string;

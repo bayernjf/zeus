@@ -234,6 +234,13 @@ export {
   stableStringify,
   MemoryConsolidationError,
 } from './memory/consolidate.js';
+export {
+  branchVerdictClaims,
+  claimSubject,
+  claimPredicate,
+  MAX_STANCE_CHARS,
+  type BranchClaimOptions,
+} from './memory/producer.js';
 export { MemoryStore, MemoryBoundaryError } from './memory/memory-store.js';
 export { RecallIndex, LocalHashingEmbedder, tokenize, factText } from './memory/recall.js';
 export {

@@ -130,3 +130,41 @@ describe('E8.3 diary HTTP generate', () => {
     expect(res.statusCode).toBe(400);
   });
 });
+
+describe('E8.3 diary export HTTP', () => {
+  it('exports exactly what the read route shows, as stable JSON', async () => {
+    const { app } = await setup();
+    const read = await app.inject({ method: 'GET', url: '/api/diary', headers: AUTH });
+    const exported = await app.inject({ method: 'GET', url: '/api/diary/export', headers: AUTH });
+    expect(exported.statusCode).toBe(200);
+    expect(exported.headers['content-type']).toMatch(/application\/json/);
+    // Same content as the read view, and byte-stable across calls - the export
+    // is the archiveable form, so ordering must not depend on object iteration.
+    expect(JSON.parse(exported.body)).toEqual((await read.json()).entries);
+    const again = await app.inject({ method: 'GET', url: '/api/diary/export', headers: AUTH });
+    expect(again.body).toBe(exported.body);
+  });
+
+  it('honours the realm and date selectors', async () => {
+    const { app, realmId } = await setup();
+    const scoped = await app.inject({
+      method: 'GET', url: `/api/diary/export?realmId=${realmId}&date=2026-09-23`, headers: AUTH,
+    });
+    expect(scoped.statusCode).toBe(200);
+    const entries = JSON.parse(scoped.body) as Array<{ realmId: string; date: string }>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].date).toBe('2026-09-23');
+  });
+
+  it('rejects a malformed date and 404s a day with no diary', async () => {
+    const { app } = await setup();
+    expect((await app.inject({ method: 'GET', url: '/api/diary/export?date=09-23', headers: AUTH })).statusCode).toBe(400);
+    const missing = await app.inject({ method: 'GET', url: '/api/diary/export?date=1970-01-01', headers: AUTH });
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it('requires bearer', async () => {
+    const { app } = await setup();
+    expect((await app.inject({ method: 'GET', url: '/api/diary/export' })).statusCode).toBe(401);
+  });
+});

@@ -265,12 +265,12 @@ try {
   ]);
   record('the same bytes are refused once past maxAge', stale.code === 1 && /maxAge/.test(stale.err), `exit=${stale.code} ${stale.err.trim().slice(0, 60)}`);
 
-  const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', aggregation: { kind: 'unanimous' } });
+  const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   record('intent fans out to every provider', fanOut.json?.status === 'completed' && fanOut.json?.branches?.length === 3, `status=${fanOut.json?.status} http=${fanOut.status} body=${fanOut.text.slice(0, 220)}`);
   record('the outbound credential reaches the agent', ['a1', 'a2', 'a3'].every(name => agent(name).auth.at(-1) === `Bearer ${VASSAL_SECRET}`), `seen: ${['a1','a2','a3'].map(n => agent(n).auth.map(x => x === `Bearer ${VASSAL_SECRET}` ? 'ok' : (x === '(none)' ? 'none' : x.slice(0, 10) + '…')).join(',')).join(' | ')}`);
   record('branches ran concurrently, not serially', ['a1', 'a2', 'a3'].every(name => agent(name).requests === 1), 'one request each inside a single fan-out');
 
-  const sourced = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmSource: { realmId: personal.realmId, text: NEEDLE_TOKEN } });
+  const sourced = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, realmSource: { realmId: personal.realmId, text: NEEDLE_TOKEN }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   const forwarded = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record('the kernel itself reads the realm and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
 
@@ -286,6 +286,54 @@ try {
   record('governance decisions are persisted 0600', auditMode === '600' && /"decision":"dispatched"/.test(auditText), `mode=${auditMode} lines=${auditText.trim().split('\n').length}`);
   const auditRead = await api('GET', '/api/audit?limit=5');
   record('the audit trail reads back over the bearer API', auditRead.status === 200 && auditRead.text.includes('dispatched'), `status=${auditRead.status}`);
+
+  // The two drift/export faces, checked on the compiled process rather than only
+  // in inject-level tests: a snapshot has to round-trip through JSON, and the
+  // diff has to answer both directions (no drift against itself, drift against
+  // an empty baseline) rather than always answering one way.
+  const snap = await api('GET', '/api/memory/snapshot');
+  const baseline = snap.json?.state;
+  const factCount = (baseline?.facts ?? []).reduce((total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
+  record('finished intents produced memory claims and folded them into facts', snap.status === 200 && (baseline?.events?.length ?? 0) >= 3 && factCount >= 1, `events=${baseline?.events?.length} facts=${factCount} - deferred #27 was exactly this number being 0`);
+  const selfDiff = await api('POST', '/api/memory/reconcile', { previous: baseline });
+  // Direction control: a baseline holding an event the live store has never seen
+  // has to come back as removals, which is the half an always-zero diff would get
+  // wrong. (It also shows up in the counts above: no runtime producer appends
+  // memory events, so drift cannot be induced from the dispatch path - deferred #27.)
+  const ghostDiff = await api('POST', '/api/memory/reconcile', {
+    previous: { events: [{ eventId: 'ghost-event-not-in-store' }], facts: [] },
+  });
+  record(
+    'memory reconcile answers in both directions',
+    selfDiff.status === 200 && selfDiff.json?.hasDrift === false
+      && ghostDiff.status === 200 && ghostDiff.json?.hasDrift === true
+      && ghostDiff.json?.eventsRemoved === 1,
+    `self=${selfDiff.json?.hasDrift}, ghost=${ghostDiff.json?.hasDrift}/removed ${ghostDiff.json?.eventsRemoved}`,
+  );
+  const badSnapshot = await api('POST', '/api/memory/reconcile', { previous: {} });
+  record('a malformed baseline is refused naming the field', badSnapshot.status === 400 && /body\.previous\.events/.test(badSnapshot.json?.detail ?? ''), badSnapshot.json?.detail ?? `status=${badSnapshot.status}`);
+
+  const diaryExport = await api('GET', '/api/diary/export');
+  const diaryRead = await api('GET', '/api/diary');
+  // Key order differs by design (the export is canonicalised, Fastify serialises
+  // in insertion order), so compare structures and then check the export is
+  // byte-stable across calls - that stability is the whole point of exportDiary.
+  const canonical = value => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+    }
+    return value;
+  };
+  const exportMatchesRead = diaryExport.status === 200
+    && JSON.stringify(canonical(JSON.parse(diaryExport.text))) === JSON.stringify(canonical(diaryRead.json?.entries ?? []));
+  const diaryExportAgain = await api('GET', '/api/diary/export');
+  const diaryBadDate = await api('GET', '/api/diary/export?date=09-23');
+  record(
+    'diary export matches the read view and is byte-stable',
+    exportMatchesRead && diaryExportAgain.text === diaryExport.text && diaryBadDate.status === 400 && (diaryRead.json?.entries ?? []).length > 0,
+    `entries=${(diaryRead.json?.entries ?? []).length}, badDate=${diaryBadDate.status}`,
+  );
 
   const revokedAt = agent('a1').requests;
   const revoked = await api('DELETE', '/api/vassals/a1', undefined, { authorization: `Bearer ${DRIVER_TOKEN}` });

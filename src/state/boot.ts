@@ -24,6 +24,7 @@ import { SkillRegistry } from '../skills/registry.js';
 import { MentorshipLedger } from '../skills/mentor.js';
 import { OrgRegistry } from '../org/registry.js';
 import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
+import { branchVerdictClaims } from '../memory/producer.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
 import { CommissionLedger, type CommissionAuditEntry } from '../onboarding/commission.js';
 import {
@@ -388,6 +389,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     onProgress: event => {
       progressHub.publish(event);
       if (event.type === 'intent-finished' && event.realmId) {
+        recordBranchVerdicts(event);
         consolidateFinishedMemory(event);
       }
     },
@@ -415,6 +417,47 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const components: KernelComponents = {
     registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger,
   };
+
+  // deferred #27: a finished fan-out's verdicts are the kernel's only memory
+  // producer. Written one step before consolidation so an intent folds into
+  // facts on the same tick it produced them. Claims go through
+  // appendFromRealm, never append, so the realm-boundary invariant cannot be
+  // bypassed by this new path.
+  function recordBranchVerdicts(event: Extract<ProgressEvent, { type: 'intent-finished' }>): void {
+    const realmId = event.realmId;
+    if (!realmId) return;
+    const result = orchestrator.getIntent(event.intentId);
+    const request = orchestrator.getRequest(event.intentId);
+    if (!result || !request) return;
+    // A realm disconnected mid-flight (deferred #17) must not start receiving
+    // claims afterwards: the mount table is the authority on what still exists.
+    const mounted = (realmStore?.connections() ?? []).some(connection => connection.realmId === realmId);
+    if (!mounted) {
+      auditSink({
+        ts: now().toISOString(),
+        vassal: '(kernel)',
+        skill: result.skill,
+        realm: result.realm,
+        decision: 'memory-claim-skipped',
+        detail: `intent ${result.intentId} finished on unmounted realm ${realmId}; ${result.positions.length} verdict(s) not recorded as claims`,
+      });
+      return;
+    }
+    for (const claim of branchVerdictClaims(result, request, { realmId, occurredAt: now().toISOString() })) {
+      try {
+        memoryStore.appendFromRealm(realmId, claim);
+      } catch (error) {
+        auditSink({
+          ts: now().toISOString(),
+          vassal: claim.source.agentId,
+          skill: result.skill,
+          realm: result.realm,
+          decision: 'memory-claim-skipped',
+          detail: `claim ${claim.eventId} refused for realm ${realmId}: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    }
+  }
 
   // Memory P1: when an intent operating on a connected realm reaches a terminal
   // state, consolidate that realm's events; disputes become pending
