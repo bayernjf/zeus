@@ -224,3 +224,85 @@ describe('memory HTTP mounting and auth', () => {
     expect(res.statusCode).toBe(404);
   });
 });
+
+describe('E8.5 memory drift reconciliation HTTP', () => {
+  it('hands out a snapshot the operator can diff against later', async () => {
+    const { app } = await setup();
+    const res = await app.inject({ method: 'GET', url: '/api/memory/snapshot', headers: AUTH });
+    expect(res.statusCode).toBe(200);
+    const body = await res.json() as { capturedAt: string; state: { events: unknown[]; facts: unknown[] } };
+    expect(typeof body.capturedAt).toBe('string');
+    expect(body.state.events).toHaveLength(2);
+    expect(Array.isArray(body.state.facts)).toBe(true);
+  });
+
+  it('reports what was appended and consolidated since the supplied baseline', async () => {
+    const { app, store } = await setup();
+    const snap = await app.inject({ method: 'GET', url: '/api/memory/snapshot', headers: AUTH });
+    const previous = (await snap.json()).state;
+
+    store.append(claim('evt-3', 'atlas', 'language', 'golang', 'agent-c'));
+    store.consolidateRealm(REALM);
+
+    const res = await app.inject({ method: 'POST', url: '/api/memory/reconcile', headers: AUTH, payload: { previous } });
+    expect(res.statusCode).toBe(200);
+    const report = await res.json() as { hasDrift: boolean; eventsAppended: number; factsAdded: string[] };
+    expect(report.hasDrift).toBe(true);
+    expect(report.eventsAppended).toBe(1);
+    expect(report.factsAdded.length).toBeGreaterThan(0);
+  });
+
+  it('says nothing drifted when it is nothing drifted', async () => {
+    // The clean-baseline half of the check: a diff that always reports drift is
+    // as useless as one that cannot be reached at all.
+    const { app } = await setup();
+    const snap = await app.inject({ method: 'GET', url: '/api/memory/snapshot', headers: AUTH });
+    const previous = (await snap.json()).state;
+    const report = await (await app.inject({
+      method: 'POST', url: '/api/memory/reconcile', headers: AUTH, payload: { previous },
+    })).json();
+    expect(report.hasDrift).toBe(false);
+    expect(report.eventsAppended).toBe(0);
+    expect(report.factsChanged).toEqual([]);
+  });
+
+  it('names the field that broke shape instead of a bare invalid body', async () => {
+    const { app } = await setup();
+    const missing = await app.inject({ method: 'POST', url: '/api/memory/reconcile', headers: AUTH, payload: { previous: {} } });
+    expect(missing.statusCode).toBe(400);
+    expect((await missing.json()).detail).toMatch(/body\.previous\.events/);
+
+    const badPair = await app.inject({
+      method: 'POST', url: '/api/memory/reconcile', headers: AUTH,
+      payload: { previous: { events: [], facts: [['realm-personal', null]] } },
+    });
+    expect(badPair.statusCode).toBe(400);
+    expect((await badPair.json()).detail).toMatch(/facts\[0\]/);
+  });
+
+  it('does not import the snapshot it is handed', async () => {
+    // Reconciling against a doctored baseline must not change the live store:
+    // the route is a question about the past, not a write.
+    const { app, store } = await setup();
+    const before = store.counts();
+    await app.inject({
+      method: 'POST', url: '/api/memory/reconcile', headers: AUTH,
+      payload: { previous: { events: [], facts: [] }, current: { events: [], facts: [] } },
+    });
+    expect(store.counts()).toEqual(before);
+  });
+
+  it('requires bearer and stays unmounted without a memory store', async () => {
+    const { app } = await setup();
+    expect((await app.inject({ method: 'GET', url: '/api/memory/snapshot' })).statusCode).toBe(401);
+    const bare = await createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-test'),
+      internalToken: TOKEN,
+    });
+    expect((await bare.inject({ method: 'GET', url: '/api/memory/snapshot', headers: AUTH })).statusCode).toBe(404);
+    expect((await bare.inject({
+      method: 'POST', url: '/api/memory/reconcile', headers: AUTH, payload: { previous: { events: [], facts: [] } },
+    })).statusCode).toBe(404);
+  });
+});

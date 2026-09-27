@@ -287,6 +287,53 @@ try {
   const auditRead = await api('GET', '/api/audit?limit=5');
   record('the audit trail reads back over the bearer API', auditRead.status === 200 && auditRead.text.includes('dispatched'), `status=${auditRead.status}`);
 
+  // The two drift/export faces, checked on the compiled process rather than only
+  // in inject-level tests: a snapshot has to round-trip through JSON, and the
+  // diff has to answer both directions (no drift against itself, drift against
+  // an empty baseline) rather than always answering one way.
+  const snap = await api('GET', '/api/memory/snapshot');
+  const baseline = snap.json?.state;
+  record('memory snapshot round-trips through JSON', snap.status === 200 && Array.isArray(baseline?.events) && Array.isArray(baseline?.facts), `events=${baseline?.events?.length} factGroups=${baseline?.facts?.length}`);
+  const selfDiff = await api('POST', '/api/memory/reconcile', { previous: baseline });
+  // Direction control: a baseline holding an event the live store has never seen
+  // has to come back as removals, which is the half an always-zero diff would get
+  // wrong. (It also shows up in the counts above: no runtime producer appends
+  // memory events, so drift cannot be induced from the dispatch path - deferred #27.)
+  const ghostDiff = await api('POST', '/api/memory/reconcile', {
+    previous: { events: [{ eventId: 'ghost-event-not-in-store' }], facts: [] },
+  });
+  record(
+    'memory reconcile answers in both directions',
+    selfDiff.status === 200 && selfDiff.json?.hasDrift === false
+      && ghostDiff.status === 200 && ghostDiff.json?.hasDrift === true
+      && ghostDiff.json?.eventsRemoved === 1,
+    `self=${selfDiff.json?.hasDrift}, ghost=${ghostDiff.json?.hasDrift}/removed ${ghostDiff.json?.eventsRemoved}`,
+  );
+  const badSnapshot = await api('POST', '/api/memory/reconcile', { previous: {} });
+  record('a malformed baseline is refused naming the field', badSnapshot.status === 400 && /body\.previous\.events/.test(badSnapshot.json?.detail ?? ''), badSnapshot.json?.detail ?? `status=${badSnapshot.status}`);
+
+  const diaryExport = await api('GET', '/api/diary/export');
+  const diaryRead = await api('GET', '/api/diary');
+  // Key order differs by design (the export is canonicalised, Fastify serialises
+  // in insertion order), so compare structures and then check the export is
+  // byte-stable across calls - that stability is the whole point of exportDiary.
+  const canonical = value => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+    }
+    return value;
+  };
+  const exportMatchesRead = diaryExport.status === 200
+    && JSON.stringify(canonical(JSON.parse(diaryExport.text))) === JSON.stringify(canonical(diaryRead.json?.entries ?? []));
+  const diaryExportAgain = await api('GET', '/api/diary/export');
+  const diaryBadDate = await api('GET', '/api/diary/export?date=09-23');
+  record(
+    'diary export matches the read view and is byte-stable',
+    exportMatchesRead && diaryExportAgain.text === diaryExport.text && diaryBadDate.status === 400,
+    `entries=${(diaryRead.json?.entries ?? []).length}, badDate=${diaryBadDate.status}`,
+  );
+
   const revokedAt = agent('a1').requests;
   const revoked = await api('DELETE', '/api/vassals/a1', undefined, { authorization: `Bearer ${DRIVER_TOKEN}` });
   const afterRevoke = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a1'] });
