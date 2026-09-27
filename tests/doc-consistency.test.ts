@@ -8,10 +8,13 @@ import { describe, expect, it } from 'vitest';
  * carry, a review document whose own header still pointed at an older round, a
  * status line that had accumulated 2000 characters and an odd number of bold
  * markers, and a change-log row into which a previous row's body had been
- * pasted, giving that row one extra column.
+ * pasted, giving that row one extra column. A fifth is the opening paragraph
+ * quoting a live baseline - test count, file count, smoke steps - that nothing
+ * compared against Current state, so it lagged two batches behind the state it
+ * describes.
  *
  * Those are all mechanical, which is the point: a comparison nobody can re-run
- * is a claim, not a guard. Three checks here, each with a positive control so an
+ * is a claim, not a guard. Every check here carries a positive control so an
  * empty scan cannot pass silently.
  */
 
@@ -182,5 +185,55 @@ describe('documentation consistency', () => {
     expect(rows.length).toBeGreaterThan(40);
     const found = offenders(readFileSync('docs/prd.md', 'utf8'));
     expect(found, `requirement rows whose status cell holds more than the marker (a review round reads this column mechanically):\n${found.join('\n')}`).toEqual([]);
+  });
+
+  it('keeps the header paragraph quoting the same baseline as Current state', () => {
+    // The opening paragraph quotes exactly one live baseline among dozens of
+    // historical counts, and it drifts quietly: it is prose, not a table, so the
+    // column and version checks above cannot see it. Read each side from its own
+    // section and anchor on the full sentence shape, so a historical number can
+    // never be mistaken for the current one.
+    const lines = readFileSync('handoff.md', 'utf8').split('\n');
+    const headerLine = lines.find(line => line.startsWith('> Zeus 处于')) ?? '';
+    const stateStart = lines.findIndex(line => line.startsWith('## Current state'));
+    const stateEnd = lines.findIndex(line => line.startsWith('## New inputs'));
+    const currentState = lines.slice(stateStart, stateEnd).join('\n');
+
+    const grab = (text: string, re: RegExp, what: string): RegExpMatchArray => {
+      const found = text.match(re);
+      // Positive control: a rewrite that breaks the anchor must fail loudly.
+      // Finding no numbers and reporting no drift is the failure this guard
+      // exists to prevent; it must not be the failure it commits.
+      expect(found, `${what} - anchor not found, so this check would pass by finding nothing`).not.toBeNull();
+      if (!found) throw new Error(what);
+      return found;
+    };
+
+    const header = grab(
+      headerLine,
+      /\*\*(\d+) 项测试绿 \/ (\d+) 个测试文件，typecheck 过，核心链路真机冒烟 (\d+)\/(\d+)\*\*/,
+      'the header paragraph no longer carries its inline baseline sentence'
+    );
+    const baseline = grab(
+      currentState,
+      /全量 \*\*(\d+) 测试 \/ (\d+) 文件 \/ (\d+) 失败\*\*/,
+      'Current state no longer carries its baseline line'
+    );
+    const smoke = grab(
+      currentState,
+      /核心链路真机冒烟 `npm run smoke:core` (\d+)\/(\d+)/,
+      'Current state no longer carries its smoke baseline'
+    );
+
+    const pairs: [string, string, string][] = [
+      ['tests', header[1], baseline[1]],
+      ['files', header[2], baseline[2]],
+      ['smoke passed', header[3], smoke[1]],
+      ['smoke total', header[4], smoke[2]],
+    ];
+    const drift = pairs
+      .filter(([, quoted, current]) => quoted !== current)
+      .map(([label, quoted, current]) => `${label}: header says ${quoted}, Current state says ${current}`);
+    expect(drift, `the header paragraph and Current state disagree on the baseline:\n${drift.join('\n')}`).toEqual([]);
   });
 });
