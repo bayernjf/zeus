@@ -182,3 +182,11 @@
 - **销项（2026-09-27，同轮）**：`tests/config-surface.test.ts` 三条断言落地——① 正向对照（两边集合非空，防空集合假通过）② 代码读到的每个变量必须在两处文档之一出现 ③ 文档里出现的每个变量必须真被读（含 `DYNAMIC_READS` 豁免表，新增条目必须写理由）。**它第一跑就抓到 `ZEUS_CLOCK_SKEW_DAYS`（#24 的 CI 旋钮）两处文档都没有**，已补进 deployment §2 并标明它是 CI-only、故不进 `.env.example`。
 - **建议做法**：一条测试（`tests/config-surface.test.ts`）——扫 `src/**/*.ts` 取 `ZEUS_[A-Z0-9_]+` 读点，与 `.env.example`、`deployment.md` §2 做双向差集，任一方向非空即失败；对动态读法（`env[name]`）留显式豁免表并注明原因。**双向很关键**：漏文档只是操作员看不见一个旋钮；而文档里留着早已被删掉的变量更阴——它教操作员去设一个什么都不影响的东西。
 - **触发条件**：① 任何新增或改名 `ZEUS_*` 环境变量的批次；② 下一次项目级评审（本轮已手工跑过一次，下次不该再手工）；③ 出现"照文档设了却没生效"的报障。
+
+### #27 运行进程内没有记忆事件的生产者（E8.5/E8.3 在实跑中是空转的）
+- **发现方式**：把 `GET /api/memory/snapshot` 与 `GET /api/diary/export` 接进核心链路冒烟后**第一次真机实跑**：派发三条分支、审计落盘 13 行之后，`snapshot.state.events.length = 0`、`factGroups = 1`（空组）、日记 `entries = []`。
+- **代码级证据**（本轮复跑，非引用）：`MemoryEvent` 的构造只出现在 `src/memory/` 内部；`grep -rn "\.append(" src` 在 memory 模块之外**零命中**（audit sink 是另一个对象）。HTTP 面对 memory 只有读（`read`/`facts`/`replay`/`searchRecall`/`exportState`）与擦除（`retract`/`forget-subject`）；`boot.ts` 只用 `consolidateRealm`/`authorsOfFacts`/`recordCorrections`/`reliabilityScore`。**没有任何一方把执行 Agent 的回报变成事件**。
+- **后果**：E8.5 的"事件→事实→混合检索→遗忘权→漂移对账"整条链在**库里**成立（752 项测试覆盖），在**出货进程里**输入恒为空；连带 E8.3 的日记恒空。这不属于"能力没有入口"（#23/#25 那一类），而是更深一层：**能力没有数据源**。
+- **需要决定的是设计而不是代码**：事件的产生点应在哪一层——① Dispatcher 收到 task 回报时按 report-back 落 observation/claim；② 裁决/纠偏落 decision 事件（`recordCorrections` 已在，但它只改可靠度、不产生事件）；③ 域内容变化落 observation。三者的 `eventId` 幂等与去重、realm 归属（跨域拒绝那条不变量要同样成立）、以及"哪些内容进事件、哪些留在审计脊"都需要定契约，不能顺手接一根线。
+- **触发条件**：① 任何要把记忆/日记面真正用起来的部署（现在开着会静默产出空事实源，比报错更糟）；② E8.5 升 P0 或 bayjf 名册需要事实来源时；③ 出现"为什么日记是空的"报障——本轮冒烟已给出可复现证据。
+- **口径**：在它落地前，`E8.5` 状态列应为 🚧（库内能力已验收、运行面无生产者），`E8.3` 保持 ✅ 但正文注明输入依赖本条。

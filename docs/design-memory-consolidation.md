@@ -136,6 +136,7 @@ Agent ──append──▶ Event Log（实时，人人可写）
 ### 6.3 漂移对账契约（P2）
 
 - `reconcileMemoryStates(previous, current)`：两个时点快照的纯 diff，按 realm 输出——事件追加/移除数、事实 added/removed/changed（逐字段标 subject/predicate/object/status/confidence/version/provenance 的 before→after）、新增 correction 与 tombstone 数；`hasDrift` 为总判定。相同快照必报无漂移。
+  - **操作者面（2026-09-27）**：`GET /api/memory/snapshot` 取得可留存的时点快照，`POST /api/memory/reconcile {previous, current?}` 做 diff（current 缺省为运行态）。**两侧都只读**——被传入的快照不会被导入内核，因此拿备份比对不会覆盖活数据；快照形状不合时拒绝并点名到字段与下标。
 - `verifyMemoryState(state)`：横切不变量校验，是记忆版 digest 对账，静默损坏显形为 violation：
   - `bad-fact-id`：factId 无法从 realm+subject+predicate+object 重算（内容被篡改）；
   - `unresolved-provenance` / `provenance-realm-mismatch`：provenance 指向缺失或跨域事件；
