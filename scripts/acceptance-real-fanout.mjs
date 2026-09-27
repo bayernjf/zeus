@@ -19,11 +19,11 @@
  *   SKILL=research \
  *   node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout 60000]
  *
- * TASK_URL (optional): the JSON-RPC endpoint dispatch posts to, when the agent
- * serves it somewhere other than the cardUrl convention (cardUrl …/agent-card →
- * …/tasks). The kernel derives that convention and does NOT read the card's own
- * `url` field, so an agent that accepts JSON-RPC at its card url (pr-helper does)
- * needs this override or every branch dies with `subscribe failed: HTTP 404`.
+ * TASK_URL (optional): an explicit override for the JSON-RPC endpoint dispatch
+ * posts to. Dispatch normally honours the endpoint the card itself declares
+ * (A2A AgentCard.url), and only falls back to the cardUrl convention (cardUrl
+ * …/agent-card → …/tasks) when the card declares nothing usable. Pass this when
+ * a card declares the wrong endpoint or none at all: it wins over both.
  *
  * REALM (optional, default "personal"): the realm type the driven intent targets.
  * A vassal only serves the data realms its fealty declares, so an agent whose
@@ -119,7 +119,7 @@ const factCount = state => (Array.isArray(state?.facts) ? state.facts : [])
 async function main() {
   console.log(`target ${KERNEL_URL.replace(/^https?:\/\//, '')}  skill=${SKILL}  card=${CARD_URL.replace(/^https?:\/\//, '')}`);
   console.log(`credentials: internal token ${INTERNAL_TOKEN ? 'present' : 'missing'} (length ${INTERNAL_TOKEN.length}), agent token ${AGENT_TOKEN ? 'present' : 'absent'}  — neither value is ever printed`);
-  if (TASK_URL) console.log(`task endpoint: ${TASK_URL} (explicit override; the cardUrl convention would derive ${CARD_URL.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks')})`);
+  if (TASK_URL) console.log(`task endpoint: ${TASK_URL} (explicit override; without it dispatch uses the endpoint the card declares, else ${CARD_URL.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks')})`);
 
   // 1. Liveness, before anything is mutated.
   let health;

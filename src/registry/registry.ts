@@ -99,7 +99,15 @@ export class VassalRegistry {
     const oathProblem = fealtyOathProblem(fealty);
     if (oathProblem) throw new Error(`invalid vassal fealty: ${oathProblem}: ${cardUrl}`);
     options.validate?.(card);
-    const taskUrl = options.taskUrl ?? defaultTaskUrl(cardUrl);
+    // Where dispatch posts is resolved in a fixed order: an explicit override
+    // wins outright, then the endpoint the card declares (A2A AgentCard.url is
+    // the agent's own statement of where its service lives), and only then the
+    // URL convention. pr-helper exposed why the declaration has to come first:
+    // its JSON-RPC face sits on the card path itself, so the convention derived
+    // a URL that 404s. The convention stays last so a card that declares nothing
+    // usable keeps registering the way it always did, rather than newly failing
+    // at the boundary.
+    const taskUrl = options.taskUrl ?? declaredTaskUrl(card) ?? defaultTaskUrl(cardUrl);
     const entry: VassalEntry = {
       cardUrl,
       taskUrl,
@@ -205,7 +213,23 @@ export class VassalRegistry {
   }
 }
 
-/** Derive the JSON-RPC task endpoint from the card URL:
+/** The A2A endpoint the card declares it is reachable at, when it declares one.
+ *  A blank or non-http(s) value counts as "not declared" and falls through to the
+ *  convention: a card that used to register and work through the convention must
+ *  not start failing at the boundary because its `url` is junk. */
+function declaredTaskUrl(card: AgentCard): string | undefined {
+  const declared = typeof card.url === 'string' ? card.url.trim() : '';
+  if (!declared) return undefined;
+  try {
+    const { protocol } = new URL(declared);
+    return protocol === 'http:' || protocol === 'https:' ? declared : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Fallback when a card declares no usable endpoint: derive the JSON-RPC task
+ *  endpoint from the card URL by convention:
  *  .../api/a2a/agent-card → .../api/a2a/tasks */
 export function defaultTaskUrl(cardUrl: string): string {
   return cardUrl.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks').replace(/\/\.well-known\/agent(-card)?\.json\/?$/, '/api/a2a/tasks');

@@ -12,7 +12,7 @@ const MEM_REALM = 'realm-A';
 
 const card: AgentCard = {
   name: 'vassal-1',
-  url: 'https://vassal.example',
+  url: TASK_URL,
   skills: [{ id: 'research', name: 'Research', description: 'researches', tags: [] }],
   'x-zeus-fealty': {
     version: '1', swornTo: 'zeus', domain: 'work', dataRealms: ['personal'],

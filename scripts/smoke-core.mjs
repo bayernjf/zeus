@@ -73,7 +73,7 @@ function agent(name) {
 function card(name, port) {
   return {
     name,
-    url: `http://127.0.0.1:${port}/${name}`,
+    url: `http://127.0.0.1:${port}/${name}/api/a2a/tasks`,
     skills: [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
     'x-zeus-fealty': {
       version: '1',
