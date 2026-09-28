@@ -55,7 +55,11 @@ import type { MemoryState } from '../memory/types.js';
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
  * The ONLY directory allowed to import fastify; handlers do
  * parameter/auth/serialization only — zero business logic, all state lives in
- * the kernel. No Realm routes (Realm is MCP-only, design-realm §6.1).
+ * the kernel. No Realm **content** routes: item bodies are reachable only over
+ * the MCP stdio face (design-realm §6.1). What HTTP does carry is Realm
+ * governance — `/api/realms/:id/disconnect`, `/api/realms/:id/retarget-tenant`,
+ * `/api/realm/write-grants` and the mount view `/api/domains` (no bodies, no
+ * absolute roots).
  *
  * H1 (public, no auth): /healthz, /api/roster/public, /api/roster/keys.
  * H2 (internal, bearer): /api/roster plus the driver API — fan out intents,

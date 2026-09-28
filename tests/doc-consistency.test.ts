@@ -236,4 +236,86 @@ describe('documentation consistency', () => {
       .map(([label, quoted, current]) => `${label}: header says ${quoted}, Current state says ${current}`);
     expect(drift, `the header paragraph and Current state disagree on the baseline:\n${drift.join('\n')}`).toEqual([]);
   });
+
+  it('keeps README quoting the same baseline as Current state', () => {
+    // Same class the guard above was written for, caught one file over: review
+    // v0.19 found the checklist's live baseline two batches stale, and README was
+    // two batches stale at the very same moment - its gate block is edited
+    // directly (no copy step), so nothing but an assertion makes it agree.
+    // Historical counts elsewhere in these files are untouched: each pattern is
+    // the full sentence shape, not a bare number.
+    const lines = readFileSync('handoff.md', 'utf8').split('\n');
+    const stateStart = lines.findIndex(line => line.startsWith('## Current state'));
+    const stateEnd = lines.findIndex(line => line.startsWith('## New inputs'));
+    const currentState = lines.slice(stateStart, stateEnd).join('\n');
+    const readme = readFileSync('README.md', 'utf8');
+
+    const grab = (text: string, re: RegExp, what: string): RegExpMatchArray => {
+      const found = text.match(re);
+      expect(found, `${what} - anchor not found, so this check would pass by finding nothing`).not.toBeNull();
+      if (!found) throw new Error(what);
+      return found;
+    };
+
+    const baseline = grab(currentState, /全量 \*\*(\d+) 测试 \/ (\d+) 文件 \/ \d+ 失败\*\*/, 'Current state baseline counts');
+    const smoke = grab(currentState, /核心链路真机冒烟 `npm run smoke:core` (\d+)\/(\d+)/, 'Current state smoke baseline');
+
+    const gateTests = grab(readme, /vitest：(\d+) 项 \/ (\d+) 个测试文件/, 'README gate block test counts');
+    const gateSmoke = grab(readme, /真 socket 跑完 (\d+) 步/, 'README gate block smoke steps');
+    const evidence = grab(readme, /已验证到什么程度\*\*：(\d+) 项测试 \/ (\d+) 个测试文件/, 'README evidence sentence test counts');
+    const evidenceSmoke = grab(readme, /重启恢复，(\d+) 步）/, 'README evidence sentence smoke steps');
+
+    const pairs: [string, string, string][] = [
+      ['gate tests', gateTests[1], baseline[1]],
+      ['gate files', gateTests[2], baseline[2]],
+      ['gate smoke steps', gateSmoke[1], smoke[2]],
+      ['evidence tests', evidence[1], baseline[1]],
+      ['evidence files', evidence[2], baseline[2]],
+      ['evidence smoke steps', evidenceSmoke[1], smoke[2]],
+    ];
+    const drift = pairs
+      .filter(([, quoted, current]) => quoted !== current)
+      .map(([label, quoted, current]) => `${label}: README says ${quoted}, Current state says ${current}`);
+    expect(drift, `README's live baseline disagrees with Current state:\n${drift.join('\n')}`).toEqual([]);
+  });
+
+  it('keeps the code-index test count equal to the Current state baseline', () => {
+    // The handoff index line for `tests/` quotes a bare test count and file
+    // count. It drifted (read 789 while the suite ran 790) and no gate saw it:
+    // the index-version check only reads rows that name a document version, and
+    // the header/README checks anchor their own sentences. Same class as the two
+    // guards above, one more surface over.
+    const lines = readFileSync('handoff.md', 'utf8').split('\n');
+    const stateStart = lines.findIndex(line => line.startsWith('## Current state'));
+    const stateEnd = lines.findIndex(line => line.startsWith('## New inputs'));
+    const currentState = lines.slice(stateStart, stateEnd).join('\n');
+    const codeRow = lines.find(line => line.startsWith('* 代码：')) ?? '';
+
+    const grab = (text: string, re: RegExp, what: string): RegExpMatchArray => {
+      const found = text.match(re);
+      expect(found, `${what} - anchor not found, so this check would pass by finding nothing`).not.toBeNull();
+      if (!found) throw new Error(what);
+      return found;
+    };
+
+    const index = grab(
+      codeRow,
+      /`tests\/`（\*\*(\d+) 项，(\d+) 个测试文件\*\*/,
+      'the code-index row no longer carries its tests/ count'
+    );
+    const baseline = grab(
+      currentState,
+      /全量 \*\*(\d+) 测试 \/ (\d+) 文件 \/ \d+ 失败\*\*/,
+      'Current state no longer carries its baseline line'
+    );
+
+    const pairs: [string, string, string][] = [
+      ['tests', index[1], baseline[1]],
+      ['files', index[2], baseline[2]],
+    ];
+    const drift = pairs
+      .filter(([, quoted, current]) => quoted !== current)
+      .map(([label, quoted, current]) => `${label}: code index says ${quoted}, Current state says ${current}`);
+    expect(drift, `the code-index row and Current state disagree on the baseline:\n${drift.join('\n')}`).toEqual([]);
+  });
 });

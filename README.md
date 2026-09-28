@@ -72,8 +72,8 @@
 ```bash
 npm install
 npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest：784 项 / 83 个测试文件（以此命令的输出为准）
-npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 34 步（需先 build；只用回环与自造密钥）
+npm test           # vitest：791 项 / 83 个测试文件（以此命令的输出为准）
+npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 36 步（需先 build；只用回环与自造密钥）
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
 ```
@@ -134,6 +134,8 @@ if (hits[0]) {
 npm run build
 node dist/realm/mcp-stdio.js /path/to/your/dir   # 启动时预连接并授权；协议不暴露 connect / root
 ```
+
+宿主怎么配、有哪些 URI 与工具、返回哪些错误码、边界在哪儿（只读、只有 personal 域、无鉴权、检索走连接快照）——**对接方需要的全部细节在 [docs/mcp-integration.md](docs/mcp-integration.md)**，含一轮真进程取证的请求/响应原文；Zeus 作为 MCP **客户端**（连接器，§外部系统连接器）的权限词汇与裁剪层次也写在那份文档里。
 
 备份与恢复 CLI（需先 build；密钥经 `ZEUS_VAULT_PASSPHRASE` 或 `--key-file` 提供）：
 
@@ -267,7 +269,7 @@ curl -s -X POST localhost:8787/api/connectors/kb/connect -H "Authorization: Bear
 curl -s -X POST localhost:8787/api/connectors/kb/tools/search/call \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"arguments":{"query":"x"}}'
 curl -s -X DELETE localhost:8787/api/connectors/kb -H "Authorization: Bearer $TOKEN"
-# 所有连接器响应只报 hasToken，绝不回显上游凭证
+# 所有连接器响应只报 hasToken，绝不回显上游凭证；权限词汇与裁剪层次见 docs/mcp-integration.md §2
 
 # 数据域治理面：挂载、跨域授权签发/吊销、不读内容的访问探针
 curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
@@ -280,9 +282,9 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 > 状态以 [handoff.md](handoff.md) 为准；MVP 判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)。
 
 - **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
-- **已验证到什么程度**：784 项测试 / 83 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，34 步），`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
+- **已验证到什么程度**：791 项测试 / 83 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，36 步），`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
 - **协议验收**：对生产环境的执行 Agent 跑通过一次纯标准 A2A 客户端验收（卡片发现 + 任务受理）。
-- **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）、MCP 暴露侧的主体身份判定（deferred #18，等真实读取方出现）。
+- **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）、MCP 暴露侧的主体身份判定（deferred #18，等真实读取方出现）；另两条由本轮真进程取证抓出并已登记：**连接器权限词法绑不住带下划线/点/大写的工具名**（只能退裸 `mcp`＝放行全部，deferred #30）与 **MCP 面把未声明的查询参数静默丢掉**（`?tags=` 返回未过滤结果且不报错，deferred #31）——两者的修法都是对外契约决定，且都要等真实外部 MCP 服务出现才有实测对象；对接方视角的契约与避坑见 [docs/mcp-integration.md](docs/mcp-integration.md)。
 - **明确不存在的能力**：**入站 A2A 面**（外部 Agent 尚不能把任务派给 Zeus：无对外 Agent Card、无 `tasks/*` 路由），已登记 deferred #19；数据域边界的显式变更操作（下线 / 改租户）无可执行路径（#17）；部分启动参数校验口径不一致，待人工裁定（#20）。
 - **数据主权的实现方式**：数据域内容对外的唯一传输是 MCP，HTTP 侧只到治理元数据与授权记录为止；`GET /api/state` 只报计数与路径，不服用含凭证与记忆明文的状态快照；上游凭证在任何响应中只以 `hasToken` 呈现。
 - **已知风险**：CI 构建机镜像已钉 `ubuntu-24.04`（deferred #16 于 2026-09-26 销项：`ubuntu-latest` 本会于 2026-10-19 自动迁 Ubuntu 26）。代价是升级镜像从此为手动动作，工作流内已注明。
