@@ -135,6 +135,8 @@ npm run build
 node dist/realm/mcp-stdio.js /path/to/your/dir   # 启动时预连接并授权；协议不暴露 connect / root
 ```
 
+宿主怎么配、有哪些 URI 与工具、返回哪些错误码、边界在哪儿（只读、只有 personal 域、无鉴权、检索走连接快照）——**对接方需要的全部细节在 [docs/mcp-integration.md](docs/mcp-integration.md)**，含一轮真进程取证的请求/响应原文；Zeus 作为 MCP **客户端**（连接器，§外部系统连接器）的权限词汇与裁剪层次也写在那份文档里。
+
 备份与恢复 CLI（需先 build；密钥经 `ZEUS_VAULT_PASSPHRASE` 或 `--key-file` 提供）：
 
 ```bash
@@ -267,7 +269,7 @@ curl -s -X POST localhost:8787/api/connectors/kb/connect -H "Authorization: Bear
 curl -s -X POST localhost:8787/api/connectors/kb/tools/search/call \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"arguments":{"query":"x"}}'
 curl -s -X DELETE localhost:8787/api/connectors/kb -H "Authorization: Bearer $TOKEN"
-# 所有连接器响应只报 hasToken，绝不回显上游凭证
+# 所有连接器响应只报 hasToken，绝不回显上游凭证；权限词汇与裁剪层次见 docs/mcp-integration.md §2
 
 # 数据域治理面：挂载、跨域授权签发/吊销、不读内容的访问探针
 curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
