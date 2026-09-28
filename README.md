@@ -99,17 +99,18 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk
 # 也支持 --file 验一份存档、--key keyId=path 供多把钥、--token 验内部名册、--card name=path 对某条目做卡片深比对
 ```
 
-跑一次「真实执行 Agent 上线并扇出」的验收（上线清单 A1 那条命令，14 步；`--revoke-test` 再验吊销的即时性，共 16 步）：
+跑一次「真实执行 Agent 上线并扇出」的验收（上线清单 A1 那条命令；执行型判据 13 步、投票型判据 15 步，`--revoke-test` 再验吊销即时性各 +2；A1 已于 2026-09-29 对线上 pr-helper 跑通销项）：
 
 ```bash
 KERNEL_URL=http://127.0.0.1:8799 \
 ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" \
 CARD_URL=https://<agent-host>/api/a2a/agent-card \
-AGENT_TOKEN=<该 Agent 期待的 bearer，若需要> SKILL=research \
+AGENT_TOKEN=<该 Agent 期待的 bearer，若需要> SKILL=deployment-health \
+REALM=enterprise PARAMS='{"owner":"<owner>","repo":"<repo>"}' EXPECT_STANCE=0 \
 npm run acceptance:fanout
-# 注册 → 内部名册在册 → 三视图不泄凭证 → 扇出到终端态 → 分支产出立场
-# → 审计脊里有本次 dispatched → 结论落进记忆（事件与事实计数增长）
-# → 用该部署发布的公钥离线验它自己的公开名册；末尾打印可粘贴的证据块
+# 注册 → 内部名册在册 → 三视图不泄凭证 → 扇出到终端态 → 分支带回内容（artifact）
+# → 审计日志里有本次 dispatched → 用该部署发布的公钥离线验它自己的公开名册
+# 末尾打印可粘贴的证据块；EXPECT_STANCE=0 时立场聚合与记忆 claim 显式 SKIP（执行型 Agent 不投票）
 # 退出码 0=全过 / 1=某步失败（点名是哪步与原因）/ 2=配置或用法错（不调用任何东西）
 # 注意：拉卡片与派发都由 Zeus 进程自己发起，需要代理时配在 Zeus 的环境里，不是这里
 ```
