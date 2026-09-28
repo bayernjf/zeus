@@ -1,6 +1,6 @@
 # 执行 Agent 协议设计（Vassal Protocol）— 基于 A2A 超集
 
-> 状态：**现行（设计稿 v0.1，2026-09-21）**。实施进度记在 [handoff.md](../handoff.md)，本文只写设计。
+> 状态：**现行（设计稿 v0.2，2026-09-29）**。实施进度记在 [handoff.md](../handoff.md)，本文只写设计。
 > 决策：已确定「直接复用 A2A 标准做超集，不自造最小协议」（deferred-items #1 已销项）。
 
 ## 0. 一句话定位
@@ -153,6 +153,8 @@ bayjf 从产品陈列馆升级为**对外发布的已签名 Agent 目录**：
 
 ## 7. 首个执行 Agent：pr-helper 验收清单
 
+> 验收状态（2026-09-29）：**六条全部有真机结果**。① 卡片与 skills：2026-09-25/29 标准客户端与内核注册两轮实拉确认（well-known rewrite 到 `/api/a2a/agent-card`，5 个 skills，fealty 声明在卡上）；② `tasks/sendSubscribe` 全流程：2026-09-29 真机扇出受理 → `state=completed`；③ 结果回传：`x-zeus-report.summary` 随 artifact 原样回传（`evidence`/`cost` 字段按执行 Agent 实际产物为准）；④ escalation：execute 模式与缺参数场景以 `input-required` 返回（凭据代理未实现、`Missing required parameters: owner, repo`），plan 模式为默认；⑤ Zeus 派发侧：脱敏、吊销、审计三条在 2026-09-27/29 真机验收中演示（审计 `dispatched` ×2 + `vassal-revoked`）；⑥ 纯标准客户端验收 2026-09-25 首次 PASS。**第 6 条守护通过，超集而非闭墙的设计在真机上成立。** 范围：以上均为 plan 模式 / 只读技能，不含对 GitHub 的不可逆写。
+
 | # | 验收项 |
 | --- | --- |
 | 1 | Agent Card 发布在 well-known 路径，含 review/merge 等 skills 与 fealty 声明 |
@@ -174,4 +176,5 @@ bayjf 从产品陈列馆升级为**对外发布的已签名 Agent 目录**：
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
+| v0.2 | 2026-09-29 | §7 pr-helper 验收清单六条补真机结果：标准客户端 2026-09-25 PASS、真机扇出 2026-09-29 15/15 exit 0（A1 销项）；不改协议设计——清单只记验收状态。详见 review v0.20 / handoff Active work 75 |
 | v0.1 | 2026-09-21 | 初稿：A2A 超集决策落地；fealty / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 验收清单 |
