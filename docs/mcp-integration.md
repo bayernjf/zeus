@@ -122,7 +122,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 - `contentDigest` 是**连接时快照**的内容摘要；目录被改过它不会自己变（见 §1.6）。
 - `skipped[]` 是"为什么你的某个文件不在结果里"的官方答案，逐条带原因（§1.7）。
 - URI 的 scheme 不是 `zeus-realm://` → `-32602`；hostname 不是已连接域 → `-32002`；pathname 不是 manifest/search/item → `-32602 unknown realm resource`。都实测过。
-- **`?tags=` 会被静默忽略**（实测：`search?tags=important` 返回未过滤的全量命中，不报错）。原因是资源模板里没有 `tags`，MCP 面也不把 `tags` 传给存储层——所以"标签检索不支持"这条 P0 限制（`src/realm/store.ts:151-153`）**在这条通道上看不见，别以为它生效了**。要按标签过滤请在客户端自己做，或改用 `text`。
+- **`?tags=` 会被静默忽略**（实测：`search?tags=important` 返回未过滤的全量命中，不报错）。原因是资源模板里没有 `tags`，MCP 面也不把 `tags` 传给存储层——所以"标签检索不支持"这条 P0 限制（`src/realm/store.ts:151-153`）**在这条通道上看不见，别以为它生效了**。要按标签过滤请在客户端自己做，或改用 `text`。这条静默降级已登记为 [deferred-items.md](deferred-items.md) **#31**。
 
 ### 1.5 工具参考
 
@@ -221,7 +221,7 @@ curl -s -X DELETE localhost:8787/api/connectors/kb -H "Authorization: Bearer $TO
 
 - 允许的前缀只有五个：`realm` / `execute` / `network` / `credential` / `mcp`。其他一律在**声明那一刻**被拒（库内 `validatePermissionClaims` 本轮直接实测；经 HTTP 面表现为 400，`src/http/server.ts:1992`），消息形如 `unknown permission scope 'bogus'; allowed: realm, execute, network, credential, mcp`。
 - 工具级边界的写法是 `mcp:<工具名>`；**裸 `mcp` 等于全部放行**（`src/mcp/connectors.ts:85-91`）。
-- 词汇形状受 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$` 约束（实测）：`mcp:search` ✅，而 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` **全部被判 invalid**。也就是说：**上游工具名里带下划线、点或大写字母时，你无法把它单独声明进边界**——只能退到裸 `mcp`（放行全部）或换个工具名。这是当前词汇表与真实 MCP 生态之间的一条已知摩擦，接入前先核对上游的工具名。
+- 词汇形状受 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$` 约束（实测）：`mcp:search` ✅，而 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` **全部被判 invalid**。也就是说：**上游工具名里带下划线、点或大写字母时，你无法把它单独声明进边界**——只能退到裸 `mcp`（放行全部）或换个工具名。这是当前词汇表与真实 MCP 生态之间的一条已知摩擦（登记为 [deferred-items.md](deferred-items.md) **#30**），接入前先核对上游的工具名。
 
 ### 2.2 裁剪发生在哪一层
 
@@ -247,6 +247,8 @@ Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/clie
 | 具体宿主的配置样例 | 只给了语义中立的 `command` + `args` 形状，**没有**针对任何一家宿主的实测配置 | 同上一条 |
 | `limit` 截断到 200、`text` 切词 AND 语义 | 代码级（`src/realm/store.ts:155-173`）；实测只覆盖了"超限不报错"和单/双关键词命中 | 需要给外部读者保证分页行为时补一次 201 文件的实测 |
 | 企业域 Realm 经 MCP 暴露 | 不存在该路径（stdio 写死 personal + readOnly） | deferred **#18** 决定 actor 判定时一并处理 |
+| 连接器权限词法绑不住"名字不合词法"的工具 | **已登记**：实测 `mcp:search_docs`·`mcp:Search`·`mcp:search.x` 全部判 invalid，只能退裸 `mcp`（= 放行全部）。修法（放宽词法 vs 引用上游原样字符串）是契约决定，且本库至今没有对真实外部 MCP 服务跑过一次 `connect`，没有实测对象 | deferred **#30**：第一个真实上游的工具名撞上时定 |
+| 未声明的查询参数被静默丢掉（`?tags=`） | **已登记**：实测返回未过滤结果且不报错，存储层的不支持拒绝路径在 MCP 面上走不到。拒成 `-32602` 还是接通 `tags` 都是对外口径决定 | deferred **#31**：标签检索立项，或出现一次真实误读时定 |
 
 ## 4. 复跑这份取证
 
