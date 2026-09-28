@@ -48,6 +48,9 @@ describe('scripts/acceptance-real-fanout.mjs', { timeout: 90_000 }, () => {
     // process, and this file is already the slow exception.
     expect(help.out).toContain('REALM=personal|enterprise');
     expect(help.out).toContain('TASK_URL=…');
+    // EXPECT_STANCE selects which criteria are asserted (executor content vs
+    // decision-agent stance), so an operator must be able to see that it exists.
+    expect(help.out).toContain('EXPECT_STANCE=0|1');
   });
 
   it('reports an unreachable target as a failed step, not a crash', () => {

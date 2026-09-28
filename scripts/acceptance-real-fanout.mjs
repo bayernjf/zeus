@@ -30,6 +30,26 @@
  * card says dataRealms=["enterprise"] is refused a personal-realm intent — mount
  * the matching realm (ZEUS_REALM_ENTERPRISE) and pass REALM=enterprise.
  *
+ * PARAMS (optional, JSON object): the skill parameters to send. An execution
+ * agent validates its own parameters, so the question-shaped default
+ * (subject/predicate/prompt) only suits an agent that answers questions; an
+ * agent that runs a named skill needs that skill's own params — e.g.
+ * PARAMS='{"owner":"me","repo":"x"}' for pr-helper's deployment-health, which
+ * otherwise replies input-required "Missing required parameters: owner, repo".
+ *
+ * EXPECT_STANCE (optional, default "0"): whether the target agent is expected to
+ * *vote* (return a stance in its artifact's data part) or merely to *report*.
+ * These are different claims about an agent, and the acceptance must assert the
+ * one that is true of it:
+ *   - 0 (executor): the branch must come back with content (an artifact), and
+ *     the stance-aggregation and memory-claim steps are reported as N/A — a
+ *     stance is what an agent returns when asked to decide, and an execution
+ *     agent is asked to do.
+ *   - 1 (decision): the branch must additionally contribute a stance, and that
+ *     stance must land as a memory claim.
+ * Passing 0 does not weaken the run: register/dispatch/audit/verify are asserted
+ * either way, and the content check is asserted in both.
+ *
  * Proxy note: Zeus fetches the card and dispatches to the agent **itself**, so
  * any proxy needed to reach the agent belongs in the *Zeus process* environment
  * (NODE_USE_ENV_PROXY=1 HTTPS_PROXY=...), not in this script's.
@@ -60,7 +80,7 @@ function usageExit(reason) {
 }
 if (timeoutIndex >= 0 && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) usageExit(`--timeout must be a positive number of ms`);
 if (argv.includes('--help') || argv.includes('-h')) {
-  console.log(`usage: KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [TASK_URL=…] [SKILL=…] [REALM=personal|enterprise] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
+  console.log(`usage: KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [TASK_URL=…] [SKILL=…] [REALM=personal|enterprise] [PARAMS='{"k":"v"}'] [EXPECT_STANCE=0|1] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
   process.exit(0);
 }
 
@@ -71,7 +91,21 @@ const AGENT_TOKEN = env.AGENT_TOKEN ?? '';
 const TASK_URL = env.TASK_URL ?? '';
 const SKILL = env.SKILL ?? 'research';
 const REALM = env.REALM ?? 'personal';
+const EXPECT_STANCE = env.EXPECT_STANCE ?? '0';
 if (REALM !== 'personal' && REALM !== 'enterprise') usageExit(`REALM must be "personal" or "enterprise", got ${REALM}`);
+if (EXPECT_STANCE !== '0' && EXPECT_STANCE !== '1') usageExit(`EXPECT_STANCE must be "0" (the agent reports) or "1" (the agent votes), got ${EXPECT_STANCE}`);
+// A skill's params are its own: the runner cannot guess them, so it takes the
+// object verbatim when given one and only falls back to the question-shaped
+// default for an agent that answers questions.
+let PARAMS;
+if (env.PARAMS) {
+  try {
+    PARAMS = JSON.parse(env.PARAMS);
+  } catch (error) {
+    usageExit(`PARAMS is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (PARAMS === null || typeof PARAMS !== 'object' || Array.isArray(PARAMS)) usageExit(`PARAMS must be a JSON object of skill parameters, got ${Array.isArray(PARAMS) ? 'an array' : typeof PARAMS}`);
+}
 if (!KERNEL_URL) usageExit('KERNEL_URL is required (e.g. http://127.0.0.1:8799)');
 if (!INTERNAL_TOKEN) usageExit('ZEUS_INTERNAL_TOKEN is required: this acceptance drives the internal/driver face');
 if (!CARD_URL) usageExit('CARD_URL is required: the agent-card URL of the real execution agent');
@@ -117,7 +151,7 @@ const factCount = state => (Array.isArray(state?.facts) ? state.facts : [])
   .reduce((total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
 
 async function main() {
-  console.log(`target ${KERNEL_URL.replace(/^https?:\/\//, '')}  skill=${SKILL}  card=${CARD_URL.replace(/^https?:\/\//, '')}`);
+  console.log(`target ${KERNEL_URL.replace(/^https?:\/\//, '')}  skill=${SKILL}  card=${CARD_URL.replace(/^https?:\/\//, '')}  expectStance=${EXPECT_STANCE}`);
   console.log(`credentials: internal token ${INTERNAL_TOKEN ? 'present' : 'missing'} (length ${INTERNAL_TOKEN.length}), agent token ${AGENT_TOKEN ? 'present' : 'absent'}  — neither value is ever printed`);
   if (TASK_URL) console.log(`task endpoint: ${TASK_URL} (explicit override; without it dispatch uses the endpoint the card declares, else ${CARD_URL.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks')})`);
 
@@ -193,7 +227,7 @@ async function main() {
       realm: REALM,
       ...(target?.realmId ? { realmId: target.realmId } : {}),
       vassals: [agentName],
-      params: { subject: marker, predicate: 'verdict', prompt: `Zeus acceptance ${marker}: report one short factual stance.` },
+      params: PARAMS ?? { subject: marker, predicate: 'verdict', prompt: `Zeus acceptance ${marker}: report one short factual stance.` },
     },
   });
   const intentId = fanOut.json?.intentId;
@@ -212,11 +246,23 @@ async function main() {
   const branches = Array.isArray(result?.branches) ? result.branches : [];
   record('the fan-out reached a terminal state inside the timeout', ['completed', 'failed', 'canceled', 'needs-driver'].includes(result?.status), `status=${result?.status ?? '(unknown)'} after ${timeoutMs - (deadline - Date.now())}ms`);
   record('at least one branch came back from the real agent', branches.length >= 1, `branches=${branches.length}`);
-  // A branch carries ok/state/task, not a summary: the stance is what proves the
-  // agent answered with content rather than merely accepting the call.
+  // What proves the agent did the work is that it came back with content. A
+  // stance is a different claim: it is what an agent returns when asked to
+  // decide, and an execution agent is asked to do — so which one is asserted is
+  // selected by EXPECT_STANCE rather than assumed. Asserting the stance against
+  // an executor would report a working agent as broken.
   const succeeded = branches.filter(branch => branch?.ok === true);
   const positions = Array.isArray(result?.positions) ? result.positions : [];
-  record('a branch succeeded and contributed a stance', succeeded.length >= 1 && positions.length >= 1, `ok=${succeeded.length}/${branches.length} positions=${positions.length} first=${clip(positions[0] ? `${positions[0].vassal}=${positions[0].stance}` : '(none)')}`);
+  const contentOf = branch => (Array.isArray(branch?.task?.artifacts) ? branch.task.artifacts : [])
+    .filter(artifact => Array.isArray(artifact?.parts) && artifact.parts.length >= 1);
+  const withContent = succeeded.filter(branch => contentOf(branch).length >= 1);
+  const report = withContent.flatMap(contentOf).map(artifact => artifact['x-zeus-report']).find(Boolean);
+  record('a branch succeeded and returned content (an artifact with parts)', withContent.length >= 1, `ok=${succeeded.length}/${branches.length} withContent=${withContent.length} report=${clip(report?.summary ?? '(none)')}`);
+  if (EXPECT_STANCE === '1') {
+    record('a branch contributed a stance', succeeded.length >= 1 && positions.length >= 1, `ok=${succeeded.length}/${branches.length} positions=${positions.length} first=${clip(positions[0] ? `${positions[0].vassal}=${positions[0].stance}` : '(none)')}`);
+  } else {
+    console.log(`SKIP  stance aggregation: EXPECT_STANCE=0, this agent is expected to report content, not to vote (positions=${positions.length}); the content check above is the assertion for it`);
+  }
   const failedBranches = branches.filter(branch => branch?.ok !== true);
   if (failedBranches.length) console.log(`      branch failures: ${failedBranches.map(branch => `${branch.vassal}=${clip(branch.reason)}`).join(' | ')}`);
   if (result?.refused) console.log(`      governance refusal before dispatch: ${clip(JSON.stringify(result.refused))}`);
@@ -233,7 +279,14 @@ async function main() {
   const memoryAfter = await call('GET', '/api/memory/snapshot', { auth: true });
   const eventsAfter = memoryAfter.json?.state?.events?.length ?? -1;
   const factsAfter = factCount(memoryAfter.json?.state);
-  record('the verdict became a memory claim (E8.5 producer, real agent)', eventsBefore >= 0 && eventsAfter > eventsBefore, `events ${eventsBefore} -> ${eventsAfter}, facts ${factsBefore} -> ${factsAfter}`);
+  // The E8.5 producer derives a claim from a stance, so this step only has
+  // meaning for an agent that returns one; asserting it against an executor
+  // would be asserting a step the producer correctly skipped.
+  if (EXPECT_STANCE === '1') {
+    record('the verdict became a memory claim (E8.5 producer, real agent)', eventsBefore >= 0 && eventsAfter > eventsBefore, `events ${eventsBefore} -> ${eventsAfter}, facts ${factsBefore} -> ${factsAfter}`);
+  } else {
+    console.log(`SKIP  memory claim: a claim is produced from a stance and EXPECT_STANCE=0 says this agent returns none (events ${eventsBefore} -> ${eventsAfter})`);
+  }
 
   // 8. The roster this deployment publishes must verify with only its published key.
   const publicRoster = await call('GET', '/api/roster/public');
@@ -270,7 +323,8 @@ async function main() {
   console.log('');
   console.log('evidence bundle (paste into pre-launch checklist row A1):');
   console.log(`  target=${KERNEL_URL} agent=${agentName} skill=${SKILL} marker=${marker}`);
-  console.log(`  intentId=${intentId} status=${result?.status} branches=${branches.length} ok=${succeeded.length} positions=${positions.length}`);
+  console.log(`  intentId=${intentId} status=${result?.status} branches=${branches.length} ok=${succeeded.length} withContent=${withContent.length} positions=${positions.length}`);
+  console.log(`  expected stance=${EXPECT_STANCE} (${EXPECT_STANCE === '1' ? 'decision agent: stance + memory claim asserted' : 'execution agent: content asserted, stance/claim N/A'})  report=${clip(report?.summary ?? '(none)')}`);
   console.log(`  keyId=${rootKey?.kid ?? '?'} jwkThumbprint=${rootKey?.jwkThumbprint ?? '?'}`);
   console.log(`  memory events ${eventsBefore} -> ${eventsAfter}; revoked=${revokeTest ? 'tested' : 'not tested'}`);
   return finish();
