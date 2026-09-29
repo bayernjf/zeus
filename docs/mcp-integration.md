@@ -99,7 +99,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 ```json
 {"resourceTemplates":[
   {"name":"Realm manifest","uriTemplate":"zeus-realm://{realmId}/manifest","mimeType":"application/json"},
-  {"name":"Search realm items","uriTemplate":"zeus-realm://{realmId}/search?text={text}&since={since}&limit={limit}","mimeType":"application/json"},
+  {"name":"Search realm items","uriTemplate":"zeus-realm://{realmId}/search?text={text}&since={since}&limit={limit}&tags={tags}","mimeType":"application/json"},
   {"name":"Read one realm item","uriTemplate":"zeus-realm://{realmId}/item?path={path}","mimeType":"text/plain"}]}
 ```
 
@@ -122,7 +122,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 - `contentDigest` 是**连接时快照**的内容摘要；目录被改过它不会自己变（见 §1.6）。
 - `skipped[]` 是"为什么你的某个文件不在结果里"的官方答案，逐条带原因（§1.7）。
 - URI 的 scheme 不是 `zeus-realm://` → `-32602`；hostname 不是已连接域 → `-32002`；pathname 不是 manifest/search/item → `-32602 unknown realm resource`。都实测过。
-- **`?tags=` 会被静默忽略**（实测：`search?tags=important` 返回未过滤的全量命中，不报错）。原因是资源模板里没有 `tags`，MCP 面也不把 `tags` 传给存储层——所以"标签检索不支持"这条 P0 限制（`src/realm/store.ts:151-153`）**在这条通道上看不见，别以为它生效了**。要按标签过滤请在客户端自己做，或改用 `text`。这条静默降级已登记为 [deferred-items.md](deferred-items.md) **#31**。
+- **`?tags=` 显式报错，不再静默**（2026-09-30 修复，deferred **#31** 销项）：`search?tags=important` 现在下传到存储层，由 P0 文件系统后端抛 `UnsupportedQueryError` → JSON-RPC `-32602`（"tag search is not supported in P0"），客户端会**看见这条限制**而不是拿到未过滤的全量命中。同理，**任何资源模板未声明的查询参数名**（如 `?bogus=1`）都按名拒绝为 `-32602 unsupported search parameter: bogus`；`tools/call` 的 `realm.search` 同口径（`tags` 为非空逗号分隔串、未知 `arguments` 键拒绝）。支持的 search 参数只有 `text` / `since` / `limit` / `tags`（`tags` 显式不支持）。标签检索立项阈值见 design-realm §6.2。
 
 ### 1.5 工具参考
 
@@ -248,7 +248,7 @@ Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/clie
 | `limit` 截断到 200、`text` 切词 AND 语义 | 代码级（`src/realm/store.ts:155-173`）；实测只覆盖了"超限不报错"和单/双关键词命中 | 需要给外部读者保证分页行为时补一次 201 文件的实测 |
 | 企业域 Realm 经 MCP 暴露 | 不存在该路径（stdio 写死 personal + readOnly） | deferred **#18** 决定 actor 判定时一并处理 |
 | 连接器权限词法绑不住"名字不合词法"的工具 | **已登记**：实测 `mcp:search_docs`·`mcp:Search`·`mcp:search.x` 全部判 invalid，只能退裸 `mcp`（= 放行全部）。修法（放宽词法 vs 引用上游原样字符串）是契约决定，且本库至今没有对真实外部 MCP 服务跑过一次 `connect`，没有实测对象 | deferred **#30**：第一个真实上游的工具名撞上时定 |
-| 未声明的查询参数被静默丢掉（`?tags=`） | **已登记**：实测返回未过滤结果且不报错，存储层的不支持拒绝路径在 MCP 面上走不到。拒成 `-32602` 还是接通 `tags` 都是对外口径决定 | deferred **#31**：标签检索立项，或出现一次真实误读时定 |
+| 未声明的查询参数被静默丢掉（`?tags=`） | **已修复（2026-09-30，deferred #31 销项）**：`tags` 下传到存储层显式 `-32602`（P0 不支持标签检索），任何未声明参数名按名拒绝；resource URI 与 `tools/call` 两通道同口径，17 例 MCP 测试覆盖 | 标签检索真正立项的阈值仍在 design-realm §6.2（单 Realm >2 万文件或 P50>500ms） |
 
 ## 4. 复跑这份取证
 
