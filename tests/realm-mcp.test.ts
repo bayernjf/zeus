@@ -157,6 +157,23 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
     expect(badLimit!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
   });
 
+  it('fails loud on search params the P0 backend drops or never declared (deferred #31)', async () => {
+    // tags is forwarded to the store, which rejects tag search explicitly rather
+    // than silently returning the unfiltered full result set.
+    const tags = await handle(rpc(1, 'resources/read', { uri: `zeus-realm://${realmId}/search?tags=important` }));
+    expect(tags!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+    expect(tags!.error!.message).toMatch(/tag/i);
+
+    // A parameter the resource template never declared is refused by name.
+    const unknown = await handle(rpc(2, 'resources/read', { uri: `zeus-realm://${realmId}/search?bogus=1` }));
+    expect(unknown!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+    expect(unknown!.error!.message).toMatch(/unsupported search parameter: bogus/);
+
+    // Declared params still work, proving the gate rejects by name not wholesale.
+    const ok = await handle(rpc(3, 'resources/read', { uri: `zeus-realm://${realmId}/search?text=secret&limit=2` }));
+    expect(ok?.error).toBeUndefined();
+  });
+
   it('returns method-not-found for unknown methods and invalid-request for malformed messages', async () => {
     const unknown = await handle(rpc(1, 'prompts/list')); // read-only server exposes no prompts
     expect(unknown!.error!.code).toBe(JSON_RPC_CODES.METHOD_NOT_FOUND);
@@ -210,5 +227,24 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
 
     const noItem = await handle(rpc(4, 'tools/call', { name: 'realm.read', arguments: { realmId } }));
     expect(noItem!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+  });
+
+  it('tools/call fails loud on tag search and undeclared arguments (deferred #31)', async () => {
+    const tags = await handle(
+      rpc(1, 'tools/call', { name: 'realm.search', arguments: { realmId, tags: 'important' } }),
+    );
+    expect(tags!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+    expect(tags!.error!.message).toMatch(/tag/i);
+
+    const bogus = await handle(
+      rpc(2, 'tools/call', { name: 'realm.search', arguments: { realmId, bogus: 1 } }),
+    );
+    expect(bogus!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+    expect(bogus!.error!.message).toMatch(/unsupported search parameter: bogus/);
+
+    const badTags = await handle(
+      rpc(3, 'tools/call', { name: 'realm.search', arguments: { realmId, tags: 123 } }),
+    );
+    expect(badTags!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
   });
 });

@@ -160,6 +160,7 @@ const REALM_TOOLS: readonly ToolDescriptor[] = [
         realmId: { type: 'string', description: 'A realmId the host connected' },
         text: { type: 'string', description: 'Substring filter over item content' },
         since: { type: 'string', description: 'ISO timestamp; only items changed after it' },
+        tags: { type: 'string', description: 'Comma-separated tags; NOT supported by the P0 filesystem backend and returns an explicit error' },
         limit: { type: 'number', description: 'Max hits, positive integer' },
       },
       required: ['realmId'],
@@ -208,8 +209,23 @@ async function callTool(store: RealmStore, realmIds: string[], params: unknown):
 
 function toolSearchQuery(args: Record<string, unknown>): SearchQuery {
   const query: SearchQuery = {};
+  // Same fail-loud contract as the resource URI (deferred #31): an argument the
+  // schema never declared is rejected, and tags is forwarded so the P0 backend
+  // returns its explicit "unsupported" error instead of unfiltered hits.
+  const known = new Set(['realmId', 'text', 'since', 'limit', 'tags']);
+  for (const name of Object.keys(args)) {
+    if (!known.has(name)) {
+      throw new McpParamError(`unsupported search parameter: ${name} (supported: text, since, limit, tags)`);
+    }
+  }
   if (typeof args.text === 'string' && args.text.trim()) query.text = args.text;
   if (typeof args.since === 'string' && args.since.trim()) query.since = args.since;
+  if (args.tags !== undefined) {
+    if (typeof args.tags !== 'string' || !args.tags.trim()) {
+      throw new McpParamError(`tags must be a non-empty comma-separated string, got: ${String(args.tags)}`);
+    }
+    query.tags = args.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+  }
   if (args.limit !== undefined) {
     if (typeof args.limit !== 'number' || !Number.isFinite(args.limit) || args.limit < 1) {
       throw new McpParamError(`limit must be a positive number, got: ${String(args.limit)}`);
@@ -242,7 +258,7 @@ const RESOURCE_TEMPLATES: ResourceTemplateDescriptor[] = [
   { name: 'Realm manifest', uriTemplate: 'zeus-realm://{realmId}/manifest', mimeType: 'application/json' },
   {
     name: 'Search realm items',
-    uriTemplate: 'zeus-realm://{realmId}/search?text={text}&since={since}&limit={limit}',
+    uriTemplate: 'zeus-realm://{realmId}/search?text={text}&since={since}&limit={limit}&tags={tags}',
     mimeType: 'application/json',
   },
   { name: 'Read one realm item', uriTemplate: 'zeus-realm://{realmId}/item?path={path}', mimeType: 'text/plain' },
@@ -314,6 +330,21 @@ function parseSearchQuery(url: URL): SearchQuery {
       throw new McpParamError(`limit must be a positive integer, got: ${limitRaw}`);
     }
     query.limit = Math.floor(limit);
+  }
+  const tagsRaw = url.searchParams.get('tags');
+  if (tagsRaw !== null && tagsRaw.trim()) {
+    // Forwarded rather than dropped: the P0 filesystem backend rejects tag search
+    // explicitly (UnsupportedQueryError -> -32602), so a client asking for it
+    // sees the refusal instead of silently receiving unfiltered hits (deferred #31).
+    query.tags = tagsRaw.split(',').map(tag => tag.trim()).filter(Boolean);
+  }
+  // Fail loud on parameters the resource template never declared: a dropped name
+  // would otherwise read as "filter applied" while returning the full result set.
+  const known = new Set(['text', 'since', 'limit', 'tags']);
+  for (const name of url.searchParams.keys()) {
+    if (!known.has(name)) {
+      throw new McpParamError(`unsupported search parameter: ${name} (supported: text, since, limit, tags)`);
+    }
   }
   return query;
 }
