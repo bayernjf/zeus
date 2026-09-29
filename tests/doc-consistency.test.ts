@@ -318,4 +318,50 @@ describe('documentation consistency', () => {
       .map(([label, quoted, current]) => `${label}: code index says ${quoted}, Current state says ${current}`);
     expect(drift, `the code-index row and Current state disagree on the baseline:\n${drift.join('\n')}`).toEqual([]);
   });
+
+  it('keeps narrative metaphors out of the current external-facing surfaces', () => {
+    // deferred #32: the 2026-09-25 terminology policy is "professional terms
+    // only" on external-facing prose, but each sweep was a manual grep whose
+    // population nobody could reproduce. This guard fixes the four current
+    // surfaces (deferred #32's agreed boundary): root README, the docs map,
+    // the pre-launch checklist, the PRD's current requirement rows, and the
+    // product portrait's current sections. handoff.md and design-*.md stay
+    // internal surfaces and are deliberately not scanned; change-log rows and
+    // evolution logs are excluded per the document-status convention.
+    const banned = ['封臣', '效忠', '战报', '藏宝图', '宝藏', '封神榜', '驾驶员', '拍板', '避风港', '审计脊', '立国三纲', '交回'];
+    const findings: string[] = [];
+    const scan = (file: string, text: string) => {
+      banned.forEach(word => {
+        text.split('\n').forEach((line, index) => {
+          if (line.includes(word)) findings.push(`${file}:${index + 1} 「${word}」  ${line.slice(0, 60)}`);
+        });
+      });
+    };
+
+    const fullSurface = ['README.md', 'docs/README.md', 'docs/pre-launch-checklist.md'];
+    fullSurface.forEach(file => scan(file, readFileSync(file, 'utf8')));
+
+    // PRD: current requirement rows only. Evolution-log rows are history.
+    readFileSync('docs/prd.md', 'utf8')
+      .split('\n')
+      .filter(line => /^\| E[\d.]+ \| .* \| P\d \|/.test(line))
+      .join('\n')
+      .split('\n')
+      .forEach((line, i) => scan(`docs/prd.md(E-row ${i + 1})`, line));
+
+    // Product portrait: everything before the evolution log is current prose.
+    const portrait = readFileSync('docs/product-portrait.md', 'utf8');
+    const changelogAt = portrait.search(/^## 演进日志/m);
+    expect(changelogAt, 'product portrait must carry its 演进日志 anchor').toBeGreaterThan(0);
+    scan('docs/product-portrait.md', portrait.slice(0, changelogAt));
+
+    // Positive control: a checker whose word list or scan silently matched
+    // nothing would keep passing as prose drifts back to metaphors.
+    const dirty = ['封臣 注册', 'H2 驾驶员入口', '待拍板'].join('\n');
+    const caught: string[] = [];
+    banned.forEach(word => dirty.split('\n').forEach(line => { if (line.includes(word)) caught.push(word); }));
+    expect(caught).toEqual(['封臣', '驾驶员', '拍板']);
+
+    expect(findings, `current external-facing prose still uses narrative metaphors (deferred #32):\n${findings.join('\n')}`).toEqual([]);
+  });
 });
