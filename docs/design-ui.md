@@ -2,6 +2,8 @@
 
 > 状态：**历史（设计草案，2026-09-29）**。本文只记录候选方案与取舍顺序，不是立项结论；立项条件、缺口论证与触发条件以 [deferred-items.md](deferred-items.md) **#34** 为单一事实源。
 > 约束（四个方案共同遵守）：UI 只消费现有 HTTP API 与 SSE，内核零改动；不引入 BFF 层或界面私有逻辑；定位是"监督台"（人是决策者），不是全能控制台；每个写操作都必须能在审计日志回读、与直接调 API 等价。
+>
+> 界面基础契约（design token 三层模型、light/dark 与 TUI 子集、i18n key/ICU/资源完整性、无裸值与审计等价的校验闸门）见 [design-ui-foundations.md](design-ui-foundations.md) v0.1（现行）。任何方案开工第一个页面前先实现该规范；本文不重复其内容。
 
 ## 0. 推荐落地顺序
 
@@ -99,6 +101,8 @@
 - **优点**：零浏览器依赖、零新基础设施；与现有脚本和 CLI 工作流一致；开发最快；仍满足"所有能力走 API"。
 - **缺点**：非技术用户不可达、企业采购不认可；图谱与历史趋势等可视化能力弱。
 - **定位**：Web UI 之前的过渡方案；可在 #34 触发条件未满足前先做，低成本验证交互、不锁死未来形态。
+
+> **实现进展（2026-09-30）**：方案 D 最小切片已落地（`npm run tui` → `dist/tui/cli.js`，源码 `src/tui/`）。零依赖行式终端监督台，只消费现有 bearer HTTP 面、内核零改动、无新增端点：只读监控（内核状态 / 并发指标 / 名册）、escalation 裁决（`a/x/s` approve/reject/resolve，均带 y/N 确认）、名册吊销（`d`，y/N）。严格按 [design-ui-foundations.md](design-ui-foundations.md) 实施：状态→语义 token→ANSI 一一映射（`tokens.ts`，`NO_COLOR`/非 TTY 不着色、未知状态降级不臆造）、zh-CN/en 双资源与占位符对齐由测试断言（`messages.ts`/`format.ts`）。25 项 TUI 单测（i18n/tokens/命令解析/纯渲染/控制器写操作）。此为过渡验证，不改变 deferred #34 的 Web 立项条件。
 
 ## 技术口径（适用于 A / B / C）
 

@@ -25,6 +25,7 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/http/serve.js",
     "vault": "node dist/vault/cli.js",
+    "tui": "node dist/tui/cli.js",
     "verify:roster": "node scripts/verify-roster.mjs",
     "acceptance:fanout": "node scripts/acceptance-real-fanout.mjs",
     "smoke:core": "node scripts/smoke-core.mjs",

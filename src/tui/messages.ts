@@ -1,0 +1,128 @@
+/**
+ * i18n single source of truth for the terminal supervision deck (方案 D).
+ *
+ * zh-CN is the default locale and defines the canonical key set; `en` must keep
+ * the same keys and ICU placeholders (enforced by tests/tui-i18n.test.ts). API
+ * enums (needs-driver, intentId, runId, ...) are never translated — only the
+ * labels around them are. Machine identifiers are interpolated, never replaced.
+ *
+ * TUI v1 keeps resources in a typed module so the shipped `dist` needs no asset
+ * copy step; the Web v1 will use JSON locale files per design-ui-foundations §6.
+ */
+export const zhCN = {
+  'app.title': 'Zeus 监督台',
+  'app.quit': '按 q 退出 · r 立即刷新 · ↑实时轮询',
+  'app.nodata': '暂无数据',
+  'common.loading': '加载中…',
+  'common.error.network': '无法连接 {baseUrl}：{message}',
+  'common.error.http': 'HTTP {status}：{message}',
+  'common.action.cancel': '取消',
+  'state.title': '内核状态',
+  'state.persistence': '持久化',
+  'state.persistence.on': '已开启（{file}）',
+  'state.persistence.off': '关闭（仅内存，重启丢失）',
+  'state.restored': '已从快照恢复',
+  'state.audit': '审计',
+  'state.audit.ok': '正常（{file}）',
+  'state.audit.degraded': '降级：{failures} 条未落盘',
+  'state.driverGrant': '企业写授权',
+  'state.driverGrant.signed': '签名校验（{keyId}）',
+  'state.driverGrant.shapeOnly': '仅形状校验（无驱动钥）',
+  'state.counts': 'Agent {vassals} 在线 · 吊销 {revoked} · 意图 {intents} · 裁决 {escalations} · 技能 {skills}',
+  'metrics.title': '并发指标',
+  'metrics.line':
+    '在途 {inFlight} · 峰值 {maxInFlight} · 队列 {queueDepth} · 完成 {completed} · 失败 {failed} · 超时 {timedOut}',
+  'metrics.failureRate': '失败率 {rate}',
+  'metrics.empty': '尚无分支指标',
+  'roster.title': '名册（{total}）',
+  'roster.empty': '在册执行 Agent 为空',
+  'roster.revoke': '吊销',
+  'roster.confirmRevoke': '吊销 {name}？此操作立即生效且不可恢复 (y/N)',
+  'roster.revoked': '已吊销 {name}',
+  'roster.revokeFailed': '吊销失败：{message}',
+  'escalation.title': '待裁决队列（{total}）',
+  'escalation.empty': '没有待处理的裁决',
+  'escalation.kind.task-input': '缺参',
+  'escalation.kind.intent-conflict': '立场冲突',
+  'escalation.kind.memory-dispute': '记忆争议',
+  'escalation.options': '选项',
+  'escalation.stances': '立场',
+  'escalation.prompt': '输入编号选择裁决，然后 a=批准 / x=驳回 / s=消解',
+  'escalation.selected': '已选 {id}',
+  'escalation.approve': '批准',
+  'escalation.reject': '驳回',
+  'escalation.resolve': '消解',
+  'escalation.confirm': '{action} 裁决 {id}？(y/N)',
+  'escalation.done': '{action}完成：{id}',
+  'escalation.failed': '裁决失败：{message}',
+  'intent.status.running': '进行中',
+  'intent.status.completed': '已完成',
+  'intent.status.partial': '部分完成',
+  'intent.status.failed': '失败',
+  'intent.status.needs-driver': '待裁决',
+  'intent.status.input-required': '待补参',
+  'intent.status.revoked': '已吊销',
+  'intent.status.unknown': '未知状态 {status}',
+} as const;
+
+export type MessageKey = keyof typeof zhCN;
+
+export const en: Record<MessageKey, string> = {
+  'app.title': 'Zeus supervision deck',
+  'app.quit': 'q quit · r refresh now · polling live',
+  'app.nodata': 'no data',
+  'common.loading': 'loading…',
+  'common.error.network': 'cannot reach {baseUrl}: {message}',
+  'common.error.http': 'HTTP {status}: {message}',
+  'common.action.cancel': 'Cancel',
+  'state.title': 'Kernel',
+  'state.persistence': 'persistence',
+  'state.persistence.on': 'on ({file})',
+  'state.persistence.off': 'off (in-memory, lost on restart)',
+  'state.restored': 'restored from snapshot',
+  'state.audit': 'audit',
+  'state.audit.ok': 'healthy ({file})',
+  'state.audit.degraded': 'degraded: {failures} records not persisted',
+  'state.driverGrant': 'enterprise writes',
+  'state.driverGrant.signed': 'signed ({keyId})',
+  'state.driverGrant.shapeOnly': 'shape-only (no driver key)',
+  'state.counts':
+    '{vassals} agents online · {revoked} revoked · {intents} intents · {escalations} escalations · {skills} skills',
+  'metrics.title': 'Concurrency',
+  'metrics.line':
+    'in-flight {inFlight} · peak {maxInFlight} · queued {queueDepth} · done {completed} · failed {failed} · timed out {timedOut}',
+  'metrics.failureRate': 'failure rate {rate}',
+  'metrics.empty': 'no branch metrics yet',
+  'roster.title': 'Roster ({total})',
+  'roster.empty': 'no vassals registered',
+  'roster.revoke': 'revoke',
+  'roster.confirmRevoke': 'Revoke {name}? Immediate and irreversible (y/N)',
+  'roster.revoked': 'revoked {name}',
+  'roster.revokeFailed': 'revoke failed: {message}',
+  'escalation.title': 'Pending escalations ({total})',
+  'escalation.empty': 'no pending escalations',
+  'escalation.kind.task-input': 'input needed',
+  'escalation.kind.intent-conflict': 'stance split',
+  'escalation.kind.memory-dispute': 'memory dispute',
+  'escalation.options': 'options',
+  'escalation.stances': 'stances',
+  'escalation.prompt': 'type a number to select, then a=approve / x=reject / s=resolve',
+  'escalation.selected': 'selected {id}',
+  'escalation.approve': 'approve',
+  'escalation.reject': 'reject',
+  'escalation.resolve': 'resolve',
+  'escalation.confirm': '{action} escalation {id}? (y/N)',
+  'escalation.done': '{action} done: {id}',
+  'escalation.failed': 'escalation action failed: {message}',
+  'intent.status.running': 'running',
+  'intent.status.completed': 'completed',
+  'intent.status.partial': 'partial',
+  'intent.status.failed': 'failed',
+  'intent.status.needs-driver': 'needs driver',
+  'intent.status.input-required': 'input required',
+  'intent.status.revoked': 'revoked',
+  'intent.status.unknown': 'unknown status {status}',
+};
+
+export const messages = { 'zh-CN': zhCN, en } as const;
+export type Locale = keyof typeof messages;

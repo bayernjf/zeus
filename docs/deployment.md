@@ -42,6 +42,8 @@
 | `ZEUS_RSK_KEY_FILE` | 未设置 | RSK 私钥 PEM 文件路径（secret 挂载推荐）；与 `ZEUS_RSK_KEY` 同时存在时内联优先 |
 | `ZEUS_RSK_KEY_ID` | `zeus-rsk-dev` | 封签 keyId（验签方按 keyId 找公钥） |
 | `NODE_ENV` | 未设置 | `production` 时无 RSK 密钥**拒绝启动**；其他环境降级临时内存钥并 stderr 告警。**这条告警只响一次**，所以该事实也被上报：`GET /api/roster/keys` 的 `keySource`（`configured` / `ephemeral`）与 `survivesRestart`，配置了持久化时 `GET /api/state` 的 `rosterKey` 同步给出 |
+| `ZEUS_BASE_URL` | `http://127.0.0.1:8787` | **仅终端监督台客户端 `npm run tui` 读取**，不是服务启动参数；指定要连接的 Zeus bearer HTTP 面，也可用 `--base-url` 覆盖 |
+| `ZEUS_TUI_INTERVAL_MS` | `3000` | **仅终端监督台客户端读取**；自动刷新间隔（毫秒），`0` = 只手动刷新。也可用 `--interval` 覆盖 |
 
 模板见仓库根 `.env.example`。
 
