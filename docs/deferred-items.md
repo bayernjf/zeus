@@ -223,7 +223,8 @@
 - **触发条件**：① 第一个真实外部 MCP 服务的工具名不合现有词法（实测撞上，而非推测）；② 有部署要求"按工具名单独授权"而被迫声明裸 `mcp`。
 - **建议做法（决定后）**：把 `mcp:` 后的取值域从"受词法约束的名字"改为"握手能力清单里的原样字符串"（校验只查前缀与非空，其余按上游原样比对）。代价要一并记账：声明与上游名字硬绑定，**上游改名即静默失去授权**，所以要么同时把"已声明但清单里没有"做成启动告警，要么改成按能力指纹而非名字授权。
 
-### #31 MCP 面把未声明的查询参数静默丢掉（`?tags=` 是实例）
+### #31 MCP 面把未声明的查询参数静默丢掉（`?tags=` 是实例） ✅ 已销项（2026-09-30）
+- **销项结论**：触发条件②（真实误读）以 A1 真机批次的取证形式满足——`?tags=` 返回未过滤全量且不报错已被明确记录为会误导集成方的静默降级。修法按 fail-loud 收口（`src/realm/mcp.ts`，resource URI 与 `tools/call` 两通道同口径）：① `tags` 不再丢弃，下传到存储层由 P0 文件系统后端显式抛 `UnsupportedQueryError` → JSON-RPC `-32602`（"tag search is not supported in P0"），客户端看得到限制而非拿到错结果；② 任何资源模板/参数 schema 未声明的参数名（URI 上除 `text/since/limit/tags` 外、`arguments` 上除 `realmId/text/since/limit/tags` 外）一律按名拒绝为 `-32602 unsupported search parameter: <name>`；③ `realm.search` 的 `inputSchema` 补声明 `tags`（注明 P0 后端不支持），资源模板补 `&tags={tags}`。tests/realm-mcp.test.ts 新增两例（URI 侧 tags/未知参/合法参、tools 侧 tags/未知键/非法 tags），15 → 17 例。文档同步 docs/mcp-integration.md §1.4 与 §3（原"静默忽略"改为"显式 -32602"）。**不在本条文内**：标签检索真正立项（倒排/向量后端）仍走 design-realm §6.2 / 单 Realm >2 万文件或 P50>500ms 的阈值，本条只修"静默丢参"这一失效形状。
 - **缺口**：`resources/read` 的 search URI 只解析 `text`/`since`/`limit`（`src/realm/mcp.ts:304-319`），**其余查询参数被忽略且不报错**。2026-09-28 实测：`zeus-realm://<realmId>/search?tags=important` 返回**未过滤的全量命中**。更关键的是——存储层那条"P0 不支持标签检索"的拒绝路径（`src/realm/store.ts:151-153` 抛 `UnsupportedQueryError`）在 MCP 面上**永远走不到**，因为参数根本没往下传。
 - **后果**：一个按 `?tags=` 写的客户端会拿到"看起来成功"的错误结果，并以为过滤生效。这是**静默降级**，与 #20 修掉的那类"env 写错就静默退默认"同一种失效形状。
 - **为什么本批只登记不修**：两种修法（未知参数一律拒成 `-32602`，或接通 `tags` 并显式返回"不支持"）都是对外契约的口径决定，不该由一次文档批次顺手定。本轮做的是把它写成明文行为，让集成方看得见——见 [mcp-integration.md](mcp-integration.md) §1.4 与 §3。
@@ -242,6 +243,7 @@
 - **为什么登记不做**：这是独立立项而非 A1 范围——① 机制本身有设计分叉：内核托管凭据（secret 存储、最小权限、审计）还是操作者一次性授权（短时生效、单次使用），属架构决定；② 设计约束要求"跨域读写显式、签名、一次性授权"，凭据代理必须与之一致，不能先做再补口径。
 - **触发条件**：① 第一个需要 Zeus 发起不可逆外部写操作的真实场景（不是演练）；② pr-helper 侧凭据代理接口就绪，需要 Zeus 对接。
 - **建议做法（决定后）**：优先"操作者签发的一次性短时授权"而非常驻凭据托管——凭据不落内核状态文件，授权记录进审计；同时保留 plan 模式为默认（现状），execute 必须带显式授权且不可逆技能仍由执行 Agent 升级到操作者。验收：无授权 → execute 拒绝且不发起任何外部写；授权一次 → 仅一次外部写成功、审计含授权与写操作两条记录。
+- **进展（2026-09-30，**未销项**）**：采纳上述"一次性短时授权"路线，先落**与对端解耦的纯函数安全原语** `src/delegation/execution-delegation.ts`（设计见 [design-execution-delegation.md](design-execution-delegation.md) v0.1，8 项单测）：`issueExecutionDelegation`（Ed25519 签名、绑定 grantedBy/skill/可选 vassal/capabilities 白名单、默认 TTL 5 分钟硬上限 1 小时、随机/可注入 nonce）+ `verifyAndConsumeExecutionDelegation`（形状→vassal/skill/capability 绑定→签名/keyId/信任锚 fail-closed→过期→单次消费的固定顺序；**任何失败都在消费 nonce 前返回，不烧合法重试**）+ 有界可持久化的 `ExecutionDelegationNonceLedger`。明确**不托管长期外部凭据**。**仍挂触发条件②**（pr-helper 凭据代理接口就绪）的五项接线：execute/plan 模式、Dispatcher 出站前闸门、票据投递的 A2A `x-zeus-*` 字段、HTTP 签发端点 + 新增审计 decision、nonce 账本接入 bootKernel 持久化——这些都会撞对端未定义协议，故按设计文档 §5 不臆造、留待对接。
 
 ### #34 监督台 Web UI（内核 API 之上的只读监控 + 裁决薄层）
 - **缺口**：Zeus 当前无任何图形界面（零 HTML / 前端资产），使用者只能通过 HTTP JSON API（curl / 程序调用）、TypeScript 库或 CLI 操作，默认使用者是开发者 / 运维。产品定位中的两个承诺在真实负载下无法只靠 API 兑现：① "人保留决策权"——并行多 Agent 扇出时，在 JSON 里看分歧、处理 escalation、做 approve/reject 不具可操作性；② 信任与数据主权需要可见——审计时间线、名册/吊销状态、备份状态、跨域授权记录需要可视化才能提供"可验证的安全感"。无 UI 也使产品画像中的个人用户与企业采购方不可达。
