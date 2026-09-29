@@ -28,6 +28,7 @@
 | 理解产品矩阵如何并入 Zeus | [product-portrait.md](product-portrait.md) §7 执行 Agent 式联邦 |
 | 查看开放问题 / 缓做项 | [deferred-items.md](deferred-items.md) |
 | 接手某个模块的设计决策 | 对应 [design-\*.md](design-vassal-protocol.md)（执行 Agent 协议：A2A 超集，fealty/结果回传/升级/治理） |
+| 看 UI 候选方案 | [design-ui.md](design-ui.md)（草案：A 实时监督台 / B 多视图工作台 / C 双门户 / D 终端 TUI；立项条件见 deferred #34） |
 | 理解 Realm 数据域（目录即数据库）的接口契约 | [design-realm.md](design-realm.md) v0.5（connect/search/read/write、数据二极管、企业域三级租户与双域授权 §7、**签名且一次性的企业写凭证 §7.7**、备份清单依赖） |
 | 决定要不要把历史标识符（`vassal`/`vault`/`ZEUS_*`/`x-zeus-fealty`）改成工程术语 | [design-naming-migration.md](design-naming-migration.md)（四档代价 + 逐档迁移机制 + 本轮结论 T2/T3/T4 不做）|
 | 看懂一个 Agent 怎么"上岗即用"：四道门与首日简报 | [design-onboarding.md](design-onboarding.md)（seat/account/authorization/mentorship 现算不缓存、显式豁免、first-task 真派发） |
