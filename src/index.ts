@@ -460,3 +460,19 @@ export type {
   AccountabilityChain,
   AccountabilityNode,
 } from './org/types.js';
+
+// --- Execution delegation (deferred #33): one-time, short-lived operator authorization ---
+export {
+  issueExecutionDelegation,
+  verifyAndConsumeExecutionDelegation,
+  ExecutionDelegationNonceLedger,
+  ExecutionDelegationError,
+  EXECUTION_DELEGATION_DEFAULT_TTL_MS,
+  EXECUTION_DELEGATION_MAX_TTL_MS,
+} from './delegation/execution-delegation.js';
+export type {
+  ExecutionDelegation,
+  IssueExecutionDelegationInput,
+  ExecutionDelegationVerification,
+  VerifyExecutionDelegationContext,
+} from './delegation/execution-delegation.js';
