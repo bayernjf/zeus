@@ -76,6 +76,15 @@ npm test           # vitest：826 项 / 89 个测试文件（以此命令的输�
 npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 36 步（需先 build；只用回环与自造密钥）
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
+npm run tui        # 终端监督台（UI 方案 D：只读监视 + 升级裁决 + 名册吊销；需先 build）
+```
+
+终端监督台复用既有 bearer HTTP 面，不新增内核路由、不把令牌落盘：
+
+```bash
+ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" npm run tui
+# 可选：--base-url http://127.0.0.1:8787（或 ZEUS_BASE_URL）、--token、--locale en、
+#       --interval 0（单次刷新后不轮询）、--no-color（或 NO_COLOR）
 ```
 
 环境变量见 `.env.example`；部署（Docker 多阶段非 root 镜像、签名密钥、状态卷、优雅退出、备份调度示例）见 **[docs/deployment.md](docs/deployment.md)**。签名密钥生成：
