@@ -214,7 +214,7 @@ export type { ArbitrateInput, ArbitrateOutcome, SplitStance } from './decision/a
 
 // --- E2 Skill registry (skills as first-class modules, independent of cards) ---
 export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
-export { validateSkillSpecShape, validatePermissionClaims, SkillValidationError } from './skills/validate-spec.js';
+export { validateSkillSpecShape, validatePermissionClaims, permissionClaimIssue, SkillValidationError } from './skills/validate-spec.js';
 export type { SkillSpec, SkillSpecInput, SkillStatus, TeamSlot, TeamResolution, SkillHardening } from './skills/types.js';
 
 // --- E2.5 Mentor skill transfer ---
