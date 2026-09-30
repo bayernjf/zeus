@@ -38,3 +38,10 @@ export function statusLabel(t: Translator, status: string): string {
   if (key in messages['zh-CN']) return t(key);
   return t('intent.status.unknown', { status });
 }
+
+/** Localized label for an audit decision; the enum itself stays untranslated. */
+export function auditDecisionLabel(t: Translator, decision: string): string {
+  const key = `audit.decision.${decision}` as MessageKey;
+  if (key in messages['zh-CN']) return t(key);
+  return t('audit.decision.unknown', { decision });
+}

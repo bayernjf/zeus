@@ -4,9 +4,9 @@
  * through semantic tokens (tokens.ts); labels only through the i18n translator.
  */
 import type { Translator } from './format.js';
-import { statusLabel } from './format.js';
-import { paintStatus, type Palette } from './tokens.js';
-import type { DeckSnapshot, EscalationView } from './client.js';
+import { auditDecisionLabel, statusLabel } from './format.js';
+import { auditToken, paintStatus, type Palette } from './tokens.js';
+import type { DeckSnapshot, DomainsView, EscalationView } from './client.js';
 
 export type RenderInput = {
   snapshot: DeckSnapshot;
@@ -134,6 +134,60 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
   return lines;
 }
 
+function renderTimeline(palette: Palette, t: Translator, snapshot: DeckSnapshot): string[] {
+  const entries = snapshot.audit;
+  if (entries === null) {
+    return [heading(palette, t('timeline.title', { total: 0 })), `  ${t('timeline.unavailable')}`];
+  }
+  const lines: string[] = [heading(palette, t('timeline.title', { total: entries.length }))];
+  if (entries.length === 0) {
+    lines.push(`  ${t('timeline.empty')}`);
+    return lines;
+  }
+  for (const entry of entries) {
+    const { token, known } = auditToken(entry.decision);
+    const label = auditDecisionLabel(t, entry.decision);
+    const badge = known
+      ? palette.paint(token, label)
+      : palette.paint(token, `${label} (${entry.decision})`);
+    const stamp = entry.ts ? `[${entry.ts}] ` : '';
+    const context = [entry.vassal, entry.skill, entry.state].filter(Boolean).join(' · ');
+    lines.push(`  ${stamp}${badge}  ${context}`.trimEnd());
+  }
+  return lines;
+}
+
+function renderDomains(palette: Palette, t: Translator, domains: DomainsView | null): string[] {
+  if (domains === null) {
+    return [heading(palette, t('domains.title', { realms: 0, grants: 0 })), `  ${t('domains.unavailable')}`];
+  }
+  const lines: string[] = [heading(palette, t('domains.title', { realms: domains.realms.length, grants: domains.grants.length }))];
+  if (domains.realms.length === 0) {
+    lines.push(`  ${t('domains.empty')}`);
+    return lines;
+  }
+  for (const realm of domains.realms) {
+    const typeLabel = t(realm.type === 'enterprise' ? 'domains.enterprise' : 'domains.personal');
+    const flags = [t('domains.items', { count: realm.itemCount })];
+    if (realm.readOnly) flags.push(t('domains.readOnly'));
+    if (realm.tenant) {
+      const tenantPath = [realm.tenant.org, realm.tenant.department, realm.tenant.member].filter(Boolean).join('/');
+      flags.push(t('domains.tenant', { tenant: tenantPath }));
+    }
+    lines.push(`  ${palette.paint(realm.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(realm.realmId)}  [${flags.join(' · ')}]`);
+  }
+  lines.push(`  ${t('domains.grantsTitle')}`);
+  if (domains.grants.length === 0) {
+    lines.push(`    ${t('domains.noGrants')}`);
+  } else {
+    for (const grant of domains.grants) {
+      const access = t(grant.access === 'write' ? 'domains.access.write' : 'domains.access.read');
+      lines.push(`    ${t('domains.grant', { subject: grant.subject, realmId: grant.realmId, access, grantedBy: grant.grantedBy })}`);
+    }
+  }
+  return lines;
+}
+
 /** Render the full deck to a string ready to print. */
 export function renderDeck(input: RenderInput): string {
   const { snapshot, t, palette, updatedAt } = input;
@@ -142,6 +196,8 @@ export function renderDeck(input: RenderInput): string {
     renderState(palette, t, snapshot),
     renderMetrics(palette, t, snapshot),
     renderRoster(palette, t, snapshot),
+    renderTimeline(palette, t, snapshot),
+    renderDomains(palette, t, snapshot.domains),
     renderEscalations(palette, t, snapshot),
     [rule, palette.paint('muted', t('app.quit'))],
   ];
