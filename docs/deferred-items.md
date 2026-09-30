@@ -216,7 +216,227 @@
 - **对照用例**：`tests/registry.test.ts` 新增「task endpoint resolution」三例（声明优先于约定 / 显式覆盖胜过声明 / 声明不可用回落约定），并改写既有断言（pr-helper 卡 `url` 即卡片路径，注册后 `taskUrl` = 该声明值）；路径严格的桩（`scripts/smoke-core.mjs`、`tests/kernel-memory-p1.test.ts`、`tests/governance-flow.test.ts`）改为声明真实服务端点。门禁 789 测试 / 83 文件 / 0 失败，`smoke:core` 36/36。
 - **同源记录**：v0.10 修过一次同一端点失配（改的是 `scripts/acceptance-standard-a2a.mjs`），当时只修了客户端脚本、内核派发侧未动——本条记的正是"修了看得见的那一半"。
 
-### #30 连接器权限词汇无法绑定"名字不合词法"的工具
+### #30 连接器权限词汇无法绑定"名字不合词法"的工具 ✅ 已销项（2026-09-30）
+- **销项结论（2026-09-30）**：采纳建议做法"引用上游原样字符串"，在未撞真实外部服务前提前把库内失效形状修掉（与 #29 同类：修的是"词法绑不住生态工具名"这一层，不靠等待触发）。① `src/skills/validate-spec.ts` 新增 `permissionClaimIssue()`：裸 `mcp` 与 `mcp:<工具名>` 走宽松规则——工具段允许 Unicode 字母数字及 `.`/`_`/`:`/`-`（`fetch_html`/`notion.search`/`Search`/`A1.b-2_c` 均合法），仅拒空名/空白/控制字符；其余作用域（realm/execute/network/credential）仍走封闭词法 `^[a-z][a-z-]*(:[a-z][a-z-]*)?# Deferred Items
+
+缓做/低优事项登记表。每条挂起项必须带**触发条件**；触发条件满足后移回 `handoff.md` Active work 并标注重启日期。
+
+> **编号只增不复用**：已销项的条目保留原文与编号（标 ✅ 已销项），新条目一律用下一个未用过的号。这条规则是补出来的教训——`#15` 被登记过**两次**（一次"DAG 驾驶员入口"、一次"支持矩阵与 engines 声明"），前者被后者静默覆盖，直到 2026-09-26 做一次"能力 vs 可操作面"对账时才被发现，见 **#23**。一份登记表如果能让条目无声消失，它就不是登记簿。
+
+## 架构决策待定（非缓做，但需先决定）
+
+（#1 执行 Agent 协议形态已决定：A2A 超集，2026-09-21，见 [design-vassal-protocol.md](design-vassal-protocol.md)——已销项）
+
+## 缓做项
+
+### #2 备份清单加密与托管方案 ✅ 已销项（2026-09-23）
+- 原议题：纯本地密钥 vs 可恢复托管的取舍；密钥丢失 = 数据永久丢失。
+- **触发条件**：Realm 数据层与备份机制进入实施阶段。
+- **销项结论**：触发条件已满足（Vault E8.1/E8.2 + E3.7 已落地）；方案在 [design-vault.md](design-vault.md) v0.1 §9 决定为**纯本地、密钥分离**（AES-256-GCM，scrypt 口令或 raw key，信封不含密钥），**KMS 托管/自动云备份明确列为非目标**；CLI（`src/vault/cli.ts`）只提供用户/外部脚本触发的 build/check/backup/restore。密钥丢失无后门是显式接受的产品语义。传承场景（dead-man's switch、法律框架）仍归 #3，不随本条销项。
+
+### #3 传承（Inheritance）
+- 继承协议、密钥托管（dead-man's switch）、法律框架。
+- **触发条件**：备份清单备份的情感闭环得到验证；产品进入 P3。
+
+### #4 企业版计费模型
+- 按「部门/编制」还是按席位计费。
+- **触发条件**：企业 Realm 多租户进入实施，且有首批意向企业用户。
+- **进展（2026-09-25）**：前半条**已经满足**——E3.6 三级租户（org/部门/成员）与 E6.4 授权粒度已在库内落地，"按部门计量"所需的边界与可审计授权记录现在都存在（`GET /api/domains` 给出台账，`/api/audit?decision=domain-*` 给出穿越记录）。后半条（首批意向企业用户）未到，故本条仍缓做；届时不必再从模型层起步。
+
+### #5 外部 Agent 信任分级与沙箱
+- 第三方 Agent 接入的信任分级、权限沙箱边界。
+- **触发条件**：A2A 协作层需要接入第一个本矩阵之外的外部 Agent。
+
+### #6 个人/企业双数据域授权粒度 ✅ 已销项（2026-09-25）
+- 原议题：同一员工同时持有两个 Realm 时的数据二极管授权界面与审计呈现。
+- **触发条件回顾**：写的是"首个双重身份用户出现"。2026-09-25 决定**不等用户先到就把机制做出来**，理由是反向的代价更高：没有授权面时，个人域与企业域的边界只能靠"调用方自己声明 realm 类型"，而内核从没进过任何 Realm，所以那句声明**永远无法被核对**——一个不可核对的边界就是一道装饰性的边界。
+- **销项结论**：`src/realm/authorization.ts`（`DomainGrant` + `decideRealmAccess` 单一判定 + `DomainGrantRegistry` 的 nonce 一次性与快照持久化）、`src/realm/source.ts`（内核代取内容并核对声明、放行/拒绝同一审计流审计）、操作者面 `/api/domains*` 与 `GET /api/audit?decision=domain-*`，设计见 design-realm §7。**个人域→企业域**已可显式授权并留痕，**企业域→个人域**在类型层面就没有可表达的凭证。
+- **仍不在本条范围内**（不因销项而消失）：MCP 暴露侧的 actor 判定 → **#18**；改租户边界的显式操作 → **#17**。
+
+### #7 fealty 签名链
+- Agent Card / fealty 的发布与吊销是否需要签名链，防止伪造名册条目。
+- **触发条件**：bayjf 名册对外公开前。
+- **进展（2026-09-24 更新）**：设计定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 执行 Agent 自签交叉背书）。**v1 纯函数已库内实现**（`src/registry/signing.ts`，`tests/signing.test.ts` 24 项：覆盖设计稿 §8.1 八条验收 + 签名链 v1.1 两态封签 5 项）。**R1 已完整接线**：H1 `GET /api/roster/public` 与 bearer `GET /api/roster`（internal，含 revoked 行）均实时投影并 sealSnapshot 封签、离线可验——签名链 **v1.1（2026-09-24）** 把 attestation 扩为 `active|revoked` 两态，revoked attestation 证永久吊销事实、不带硬过期（快照新鲜度仍由 seal maxAge 绑定），验签要求状态与条目精确匹配（防提升/掩盖）、缺 source 或状态矛盾 fail-loud（public 封签 commit 3190a11）；**生产密钥已硬化**：`src/http/rsk.ts` 支持内联/文件注入，production 无密钥拒启（commit 4d99f43），生成脚本 `scripts/gen-rsk-key.mjs`。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 生产 RSK 托管/轮换与公钥发布的部署动作**，触发条件「bayjf 名册对外公开前」未到点。
+- **进展（2026-09-27）**：**「公钥发布」的库内侧已闭合**——`GET /api/roster/keys`（公开面，JWKS 形状 + `spkiPem` + RFC 7638 指纹 + SPKI DER 摘要；导不出公钥的后端返回 501 而非空数组）+ 契约与"它不是信任锚"记入 design-fealty-signing v0.2 §5.1、§9-3 销项；**人工轮换与托管运行手册**写进 §5.4（含"为什么库里不做自动轮换"：自动换钥留下的窗口在验签方一侧与名册被替换不可区分）。冒烟加 3 步把"发布的钥就是签名那把"钉成断言（含指纹独立复算）。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 托管选型拍板与带外公告这个真实动作**，触发条件「bayjf 名册对外公开前」未到点。**原本要用户拍板的一件事已拍板（2026-09-27）**：私钥落在哪儿——选定 **容器 / systemd 的 secret 挂载 + 私钥文件 0600**（三档比较见 §5.4 表，落地口径写进 deployment.md §3「本项目选型」；企业 KMS/HSM 的触发条件是出现受治理的第二信任方）。故本条剩下的**全部是仓库外动作**：真实部署的 secret 后端落钥、`jwkThumbprint` 带外公告、bayjf 侧验签展示。
+- **进展（2026-09-27，第二批）**：**"要带外固定的那串"现在三个触点都能看见**——出钥时 `gen-rsk-key.mjs` 打印 `jwkThumbprint`/`spkiSha256`，发布时端点给同一函数算出的值，验签时 `verify-roster` 报告显示本次实际接受那把钥的指纹；冒烟第 33 步断言三处逐字符同串（单变量反证：让 keygen 少打印即 FAIL，其余 32 步不受影响）。**这使 §5.4 步骤 1（拿到要公告的值）与步骤 6（验签方完成比对）第一次不必自己算哈希**，并顺带补上此前在全库**零测试覆盖**的 keygen 脚本（4 例，含 0600 与拒绝覆盖）。剩余项＝公告动作与 R2 展示（**托管选型拍板已于 2026-09-27 完成，见上一条**）。
+
+### #8 结果回传成本口径
+- `x-zeus-report.cost` 的单位与结算口径，跨执行 Agent 可比性。
+- **触发条件**：企业版计费立项时（联动 #4）。
+
+### #9 执行 Agent 背压降级顺序
+- 执行 Agent 饱和时 Zeus 任务队列向其他执行 Agent/队列分流的降级顺序。
+- **进展（2026-09-25）**：**闸门本身已落地**——`Orchestrator` 的 `maxConcurrentBranches` + `branchQueueLimit`（进程内在途分支上界、FIFO 等待、满则拒绝并把原因记进分支结果），见 handoff Active work 39 与 tests/orchestrator-backpressure.test.ts；`GET /api/metrics` 的 `queueDepth` 从此是真实值。**本条仍未销项**：剩下的问题是"该把溢出分流给谁"——拒绝顺序 / 按可靠度或延迟重排候选 / 有界排队 vs 立即降级的策略选择，需要真实执行 Agent 的行为数据才能定，凭空拍一个顺序没有依据。
+- **策略已制定（2026-09-27，设计稿 v0.1）**：分流机制与信号已落到 [design-backpressure.md](design-backpressure.md)——① 饱和信号 = per-vassal 实时在途计数（当前 `ConcurrencyMetrics` 只有全局 `inFlight`/`queueDepth`，缺该 primitive，策略已点名启用改动）；② 同技能候选集 = `activeProviders(skill)` 过滤 active/healthy/非饱和；③ 候选重排 = 可靠度 `(1-failureRate)` × 延迟 `p50Ms` 加权评分降序（数据来自 `perVassal` 历史，纯函数可单测）；④ 显式 `request.vassals` 硬钉不分流，自动选靶可分流、无候选回退既有排队→拒绝且拒绝原因带 tried 状态审计。复用现有 `ConcurrencyMetrics.perVassal` 与 `SkillGovernor.activeProviders` 三态，不引入跨实例协调。**仍未销项**：启用代码（`PerVassalLoad` + `selectTargets` 纯函数 + 选靶处接线）与阈值调参（`cap(v)`/`queueLimit`/评分权重 `w_r,w_l`/`LATENCY_NORMALIZER`）仍挂原触发条件——需 ≥3 真实 Agent 压测才能定数，凭空拍阈值无依据。
+- **触发条件**：≥3 个执行 Agent 在线压测（同一台机器上的 mock 不算：mock 的延迟分布与失败模式是编的，只会把一个猜测变成锁定的猜测）。
+- **启用代码已落地（2026-09-27，设计稿 v0.2）**：`PerVassalLoad`（`ConcurrencyMetrics.inFlightByVassal` + 访问器）与 `selectTargets` 纯函数（`src/orchestrator/diversion.ts`）已接入编排器选靶路径；`maxConcurrentPerVassal` 独立可配（关键修正：必须低于全局 `maxConcurrentBranches` 否则分流永不触发），`branch-diverted` 事件入审计脊，全局拒绝原因带 tried 候选审计；7 例单测全绿。机制可闭环，**仅阈值（`w_r`/`w_l`/`LATENCY_NORMALIZER`/`cap(v)`）调参仍挂上述触发条件**——不凭空拍数。
+
+### #10 Realm 检索后端升级（倒排 / 向量）
+- P0 检索为纯文件系统扫描（design-realm.md §6.2），后端接口可替换；倒排索引或向量检索的立项条件。
+- **触发条件**：单 Realm 文件数 > 2 万，或 P50 检索 > 500ms，或语义检索成为明确需求（且本地 embedding 可行、数据不出域）。
+
+### #11 测试超时根治（全局 testTimeout / 低并发池） ✅ 已销项（2026-09-25）
+- 原议题：仓库无 vitest 配置文件，所有用例吃 5s 默认超时；scrypt 全量打包、RSA-2048 keygen 这类 CPU 密集用例在并行 fork 争抢下会飘红（成因见 handoff Active work 38）。
+- **销项结论**：新增 `vitest.config.ts` 设全局 `testTimeout` / `hookTimeout` = 20s，并删掉三处逐套件 20s 补丁。根治过程中发现放宽救不了那一例：RSA-2048 同步 keygen 在满载下冲破 20s，改为生成 EC 密钥（同样证明"不是 Ed25519"，成本约 1ms），见 commit `db98a3b`。
+
+### #12 CI action 版本升级（Node 20 弃用注解） ✅ 已销项（2026-09-25）
+- 原议题：首次真机 CI（run 36024156638）注解提示 `actions/checkout@v4` / `actions/setup-node@v4` 仍 target Node 20、被强制跑在 Node 24；另有 `ubuntu-latest` 将于 2026-10-19 迁 Ubuntu 26。
+- **销项结论**：两者升到当前 major `@v7`（查过 release notes：setup-node v5/v6 的破坏性变更集中在自动缓存与非 npm 管理器，本仓库显式 `cache: npm`；checkout v7 只阻断 `pull_request_target`/`workflow_run` 的 fork 检出，本 workflow 用 push/pull_request）。**测试矩阵保持 20.x/22.x**：本机开发 shell 实测是 Node 20.20.2，此时删掉 20 会砍掉唯一与本地一致的覆盖；矩阵该不该换成 22/24、要不要声明 `engines`，留作下面 #15 的立项问题。
+
+### #15 支持矩阵与 engines 声明 ✅ 已销项（2026-09-26，选 B）
+- **决定（选项 B：声明与生产对齐）**：`package.json` 写 `"engines": { "node": ">=22.0.0" }`；新增 **`.npmrc`**（`engine-strict=true`，带注释说明"不加这条时 engines 只是警告"）让声明可执行；新增 **`.nvmrc`**（`22`）让"该用哪个版本"机器可读；CI 矩阵由 `[20.x, 22.x]` 换为 **`[22.x, 24.x]`**；Docker 保持 `node:22-slim`（与 22 档同线）。**代价已接受**：本机 shell 仍在 **20.20.2**，此后 `npm ci` / `npm install` 会以 **EBADENGINE 硬失败**（实测），切到 22 即恢复（`fnm use 22`，本机已装 22.23.1）；已装依赖下 `npm run` 不受影响（Node 20 上 `npm run typecheck` 仍 exit 0，实测）。Node 20 不再被声明支持——它自 **2026-03-24** 起不再有任何发布。
+- **改后验证**：`npm ci --dry-run` 在 **Node 20 上 EBADENGINE 硬失败**、在 **22.23.1 与 24.20.0 上无任何 engine 报错**（即 `engine-strict` 下传递依赖也全部兼容）；YAML 解析得 `runs-on=ubuntu-24.04`、`matrix=["22.x","24.x"]`；三档 704 绿与 22/24 真进程冒烟见下面的"进展"（拍板依据，非本批重跑）。
+- **不在本条内**：v26 何时进矩阵（当前线 `lts:false`，等进 LTS 再考虑替换 22）；runner 镜像归 #16（同日已销项）。
+- **原缺口（销项前）**：CI 测 20.x/22.x，但 Node 20 上游已 EOL（2026-04），仓库 `package.json` **没有 `engines`**，Dockerfile 跑 node:22-slim，本机 dev 在 20.20.2——四处不一致，且没有任何地方写明"这个库支持哪些 Node"。
+- **触发条件（回顾）**：写的是"决定结束对 Node 20 的验证时（例如本地 shell 升到 22+）"。**本批是不等触发条件就做的**：本地 shell 仍是 20.20.2，但拿到的实测（下面"进展"）把"该不该继续声明支持 20"变成了一个有数据的问题——一个自 2026-03-24 起不再有任何发布的运行时，继续在 CI 里给它发通行证是在凭空承担安全口径。
+- **进展（2026-09-26 实测，本批拍板依据）**：
+  - **现状四处不一致（逐个实测）**：本机 shell `node -v` = **20.20.2**；CI 矩阵 **20.x / 22.x**；Dockerfile **node:22-slim**；`package.json` **无 `engines`**，且无 `.nvmrc` / `.npmrc`（即"该用哪个版本"机器不可读）。
+  - **上游（实测 `nodejs.org/dist/index.json`）**：**v20 最后一次发布是 v20.20.2 / 2026-03-24**，其后半年零发布（与上面记的 2026-04 EOL 一致）；v22 最新 **v22.23.3（2026-09-23）**、v24 最新 **v24.21.0（2026-09-07）**，两条线仍在发；**v26 已在发**（v26.10.0 / 2026-09-21，`lts: false`＝当前线，未进 LTS）。
+  - **依赖面（实测 `node_modules` 各包 `engines`）**：fastify 5.12.5 **没有** engines 字段（npm 不会替我们拦任何东西）；vitest 3.2.7 `^18.0.0 || ^20.0.0 || >=22.0.0`；typescript 5.9.3 `>=14.17`；`@types/node` 22.20.4（**类型基线实际是 22**，与矩阵里的 20 不一致）。
+  - **三档实测（本机 fnm，按 CI 顺序 typecheck → build → test）**：**20.20.2 / 22.23.1 / 24.20.0 三档全部 704 passed / 73 文件，typecheck 与 build exit 0**；另在 **22 与 24 上各跑一次真进程冒烟**（`dist/http/serve.js` 起服务，`/healthz` 200、`GET /api/state` 200）。结论：**"代码不支持 24"这个担心不存在**——本条是纯粹的"我们声明什么、测什么"，不是兼容性工程。
+  - **下限不是随手挑的**：`docs/deployment.md` 给裸机用户的 `node --env-file=` 需要 **≥20.6**，所以任何写法的下限都不该低于 20.6。
+  - **`engines` 默认只是装饰（本条最该拍的一道）**：实测把 `engines.node` 写成 `>=22.0.0` 后在 Node 20 上 `npm ci --dry-run` 只给 **warn EBADENGINE 且 exit 0**；加上 `.npmrc` 的 `engine-strict=true` 后同一命令**硬失败 EBADENGINE**（Node 22 上无 engine 报错）。与"只写不读的清单"同一种失效，按设计约束第 2 条（每个概念必须可执行）必须连带决定。
+  - **三个选项（代价已标明）**：
+    - **A 只声明、不换挡**：矩阵仍 20.x/22.x，`engines.node: ">=20.6.0"`（+ 可选 `engine-strict`）。代价：声明支持一个已停止发布的运行时，安全口径由我们自己承担。
+    - **B 声明与生产对齐（推荐）**：`engines.node: ">=22.0.0"`，矩阵换 **22.x / 24.x**（与 Docker 的 22 同线、并 coverage 到 24），`.nvmrc` 写 22 让"该用哪个版本"机器可读，`engine-strict=true` 让声明可执行。代价：**本机 shell 现在是 20.20.2，需切成 22**（fnm 已装 22.23.1；不切则 `npm ci` 直接失败——这正是它可执行的证据）。
+    - **C 全覆盖**：矩阵 **20.x / 22.x / 24.x**，`engines.node: ">=20.6.0"`。代价：CI job 由 2 变 3（时间约 ×1.5），且继续给已停止发布的 20 发通行证。
+  - **不在本条内**：v26 何时进矩阵——等它进 LTS 再考虑替换 22，现在不加（当前线 `lts: false`）。runner 镜像归 **#16**（已于同日销项，钉 `ubuntu-24.04`），两条互不重叠。
+
+### #13 内核状态文件纳入备份清单（非 Realm 条目源）✅ 已销项（2026-09-25）
+- **原缺口**：`ZEUS_STATE_FILE` 里现在有执行 Agent 名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。备份清单却盖不到它：唯一条目源是 `inventoryFromRealm`。**"备份是第一公民"当时只覆盖 Realm 目录**，用户最容易丢的恰恰是这份。
+- **触发条件回顾**：写的是①真实丢失事故/灾备演练要求 ②E8.4 传承立项 ③下次 `VAULT_VERSION` 升版顺手并入。2026-09-25 决定**不等触发条件**：这一条是"设计哲学第 1 条尚未执行"的登记，而不是一个可选增强；且当年列出的三个阻塞点在 E3.6/E6.4 之后已经各自有了落点（`MapSource` 需要 `tenant`，而 `tenant` 已经是 Realm 的一等事实）。
+- **销项结论**（设计见 [design-vault.md](design-vault.md) v0.2）：
+  1. `TreasureMap.source: MapSource`（`{kind:'realm',…,tenant?}` | `{kind:'files',label,root,files[]}`），`VAULT_VERSION` 1→2，**v1 图读入归一化、写出不兼容**；
+  2. L0 的现盘视图从 `RealmStore` 解耦成 `LiveSource` 端口（`realmLiveSource` / `fileLiveSource` / `liveSourceFor`），这是"盖非 Realm 源"的前置；
+  3. `inventoryFromFiles`：**显式白名单，绝不目录遍历**，七类硬拒（缺失 / 绝对路径 / `..` 逃逸 / 非普通文件 / 软链 / 二进制 / 超过 64 MiB）；
+  4. CLI `build|backup --files-root <dir> --files a.json,b.json`、Realm 侧 `--tenant`；`check|restore` 不再接受挂载参数——图自己声明源与 scope。
+- **顺带修掉两个真实缺陷**（都不是"接线"能发现的）：
+  - **误报**：带租户 scope 的企业 Realm，图里丢掉 `tenant`、校验时又无 scope 重连，被 catch-all 吞成 `root unreachable`——唯一的"数据还在吗"工具对健康语料库喊狼来了。现在 scope 随图走，且报告必带 `unreachableReason`。
+  - **containment 用错了 root**：白名单包含性判定拿"未解析的 root"比"已 realpath 的文件"，在 macOS（`/var → /private/var`）上会拒绝**每一个**白名单文件；实测由 `tests/vault-files.test.ts` 先红后绿。
+- **验收**：`kernel.json` 毁库演练走真 CLI（`backup`→`check` 0→删除→`check` 2→`restore`→字节级 sha256 相同→用恢复出的文件 `bootKernel` 且 `restoredFromSnapshot: true`），另有 `dist/vault/cli.js` 真实进程冒烟逐条核对退出码。测试 `tests/vault-files.test.ts` 12 项。
+- **不因本条销项而消失**：二进制备份、目录通配、内置默认名单——仍是非目标（design-vault §9）；**E8.4 传承**（#3）仍需要"图 + 密钥分渠道交接"的法律与叙事层，本条只给了它可交付的物证。
+
+### #14 驱动凭证的签发与校验时钟 ✅ 已销项（2026-09-25）
+- **原缺口**：E3.5 的 `DriverWriteGrant` 只有**校验**端（形状/绑定域/有效期），没有任何签发路径，也没有签名——`verifyDriverWriteGrant` 信的是"拿到的 JSON 就是操作者给的"。且 `FsRealmStore.write` 内部用 `new Date()` 判过期，端口层没有注入时钟，测试里"仍然有效"的凭证只能写成 `expiresAt: '2099-…'`。
+- **触发条件回顾**：写的是"MCP `tools/write` 暴露立项时一并定"。2026-09-25 决定提前做，理由与 #13 同类：一个**任何能摸到 `write()` 的代码都能自己伪造**的授权检查不是授权检查；等 MCP 暴露时才补，等于先把门装歪再拆。
+- **销项结论**（设计见 [design-realm.md](design-realm.md) §7.7）：`issueDriverWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `registry/signing.ts`）、`verifyDriverWriteGrant` 改 async 并按 形状→realm 绑定→验签→有效期 判定（`unsigned`/`unknown-key`/`bad-signature`/`no-expiry`）、`DriverGrantLedger` 在落盘前消费 nonce 且随内核快照持久化（`writeGrantNonces`）、`FsRealmStoreOptions.now` 注入时钟。操作者面 `POST /api/realm/write-grants`、日记写凭证透传（缺授权 403）、审计事件流 `driver-grant-issued`/`realm-write`、`GET /api/state` 报 `driverGrants.authority`。
+- **不因本条销项而消失**：**MCP `tools/write` 暴露仍未做**（E3.4/E3.5 剩余半边），其 actor 判定归 **#18**；单 owner 部署下签发方=验签方，因此这条链目前证明的是"凭证出自签发路径"，不是"第三方操作者签的字"（外部操作者只需把公钥加进 `acceptedKeyIds`，判定与账本都不用动）。
+
+### #16 CI runner 镜像钉版 ✅ 已销项（2026-09-26）
+- **决定**：钉 `ubuntu-24.04`，不接受自动迁移。`.github/workflows/ci.yml:12` 的 `runs-on` 由浮动标签 `ubuntu-latest` 改为 `ubuntu-24.04`，并在同一处写下为什么要钉（2026-10-19 起该标签指向 Ubuntu 26.04，actions/runner-images#14748）。**代价已记账**：此后升镜像是手动动作，注释里写明"要有意地换、换完复验"。Node 矩阵（20.x/22.x）**不在本条范围内**，仍归 #15。
+- **事实（销项前）**：`.github/workflows/ci.yml` 的 `runs-on` 是浮动标签 `ubuntu-latest`。2026-09-25 的每一次 run（36024156638 / 36045209815 / 36061395015）都带同一条注解：该标签将于 **2026-10-19** 起指向 Ubuntu 26.04（actions/runner-images#14748）。迁移不需要我们改任何代码，但它会**在没人批准的情况下换掉整台构建机**——系统库、预装 Node、npm 与工具链版本一起变。
+- **为什么单列（不并进 #12）**：#12 管的是"action 自己跑在哪个 Node 运行时上"，已随 `@v7` 升级销项；runner 的 **OS 层**从来没人决定过。本项目刚拿到连续三次云端 CI 结论，此时最大的非代码回归面就是这条浮动标签。
+- **触发条件**：① 2026-10-19 之前做一次决定——钉 `ubuntu-24.04`（换确定性，代价是要记得升），或接受迁移并在切换后立刻复验一次全绿；② 任何一次 run 出现与本仓库代码无关的环境类失败（apt/预装工具/Node 解析）。
+- **与 #15 的边界**：#15 决定"测哪些 Node"，本条决定"在谁的机器上测"。
+
+### #17 数据域边界的显式变更操作（disconnect / 改租户）✅ 已销项（2026-09-26）
+- **原缺口**：`FsRealmStore` 只有 `connect`，没有 `disconnect`；同一 root 带不同 tenant 重连会被拒（`would change its tenant scope`）。效果：调整企业域租户级没有可执行路径——只能改 env 重启，而重启时快照里存的仍是旧 tenant，照样撞漂移检查；唯一"办法"是手改 `kernel.json` 或删状态文件。
+- **做了什么**：在 `RealmStore` 接口与 `FsRealmStore` 上新增两个显式操作（未走 `connect`，故不会触发那条漂移拒绝）：
+  - `disconnect(realmId)`：从 `realms`/`roots` 内存表移除该挂载；`connections()` 随即不再列出它，下一轮快照即不再持久化。未知 realm 抛 `RealmNotConnectedError`（fail-loud，不是静默 no-op）。
+  - `retargetTenant(realmId, from, to)`：仅企业域可调用（个人域无租户概念，直接 `RealmError`）；**比较交换**——`from` 必须与当前挂载租户一致（大小写不敏感），否则以 `tenant drift ... (compare-swap)` 拒绝并中止，绝不静默移动边界；通过后更新内存 `manifest.tenant`，持久化随下次快照落盘。
+- **操作员面**：`POST /api/realms/:id/disconnect` 与 `POST /api/realms/:id/retarget-tenant`（body `{from,to}`），均走 `requireBearer`；未知 realm 404、漂移 409、个人域 400、缺参 400；两条动作各写一条 `realm-disconnected` / `realm-tenant-retargeted` 审计（`AuditDecision` 已扩）。
+- **与启动漂移检查的关系（重要）**：`retargetTenant` 改的是运行态内存。若操作员**不随之更新 `ZEUS_REALM_ENTERPRISE`**，下次启动 boot 会用 env 里的旧 tenant 重连同一 root，与快照里的新 tenant 撞上那条漂移拒绝 → **启动失败（fail-loud）**。这是预期行为：运行时改边界必须让 env 与之对齐，否则重启即暴露不一致。把启动期的租户变更识别为"显式声明的迁移而非静默漂移"是更大的改造，留作后续（本次只交付运行时显式操作）。
+- **验证**：新增 `tests/realm-operations.test.ts` **8 例**（disconnect 移除 / 未知域拒绝 / 同 root 重连无残留租户；retarget 成功 / 漂移拒绝且不变 / 个人域拒绝 / 缺参拒绝 / 大小写不敏感比较交换）+ `tests/http-realms.test.ts` **7 例**（disconnect 后 `/api/domains` 不再列出、未知 404、无 token 401、retarget 成功并反映、漂移 409 且租户不变、个人域 400、缺参 400，均验审计落点）。全量 **726 绿 / 76 文件**、typecheck/build exit 0。
+- **未做**：CLI 面同样没有这两个操作（MCP 暴露侧 actor 判定仍归 #18，disconnect/retarget 是否要在 MCP server 上暴露待 #18 一并定）；启动期的"显式声明迁移"识别未做（见上）。
+
+### #18 MCP 暴露侧的主体（actor）判定
+- **缺口**：`createRealmMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `realmIds`"，handler 内部没有主体概念——因此 design-realm §7.2 的租户/域规则在 **MCP 读取路径（`resources/read` 与 v0.10 新增的 `tools/call`）上没有执行点**，只在 `realmSource`（内核代取）与访问探针上生效。
+- **为什么不在本批一起做**：接一个假 actor 进去只能证明"这段代码能被调用"，证不了真实执行 Agent 会带什么身份形态（会话级？条目级？），那是猜。
+- **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-realm 执行 Agent 出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-realm:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑；同时定 `tools/call` 是否与 `resources/read` 共用同一份 realmId 白名单。
+
+### #19 入站 A2A 面（外部 Agent 调不进 Zeus）
+- **缺口**：Zeus 只有**出站** A2A（拉卡片、`tasks/send`、SSE 回读、`tasks/cancel`）。`src/http` 里既没有 `/.well-known/agent-card.json`，也没有任何 `tasks/*` 路由——即**别的 Agent 无法把任务派给 Zeus**，也不存在一张可供别人校验的 Zeus 卡片。v0.9 §A 判过这条（"没有入站面"），但**当时没进本清单**，于是 2026-09-25 复核才发现它是"评审说过、没人接"的失物。
+- **为什么仍然缓做**：入站面一开，就要同时回答"谁能派给我""派进来的东西落在哪个域""谁为结果负责"——这三问的答案取决于第一个真实的上游调用者（loom 或 bayjf），现在做只会得到一个没人用的空壳。且它不在 MVP 的核心叙事里：产品核心是"一个意图扇出多 Agent 并聚合"，出站已覆盖。
+- **触发条件**：① Zeus↔loom 真机联调时 loom 需要**反向**派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent 调用 Zeus 的聚合能力；③ 出现"多 Zeus 实例协作"的需求。
+- **建议做法（决定后）**：发一张 Zeus 自己的 agent card（形状与 fealty 与我们要求执行 Agent 的一致，吃自己的狗粮），入站 `tasks/send` 落到 H2 的意图面并复用同一根审计事件流。
+
+### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致 ✅ 已销项（2026-09-26）
+- **原缺口**：`src/state/boot.ts` 对非数字阈值走 `Number.isFinite` 判断，不通过就**静默不写 config**、退回内置默认；而 E1.5 的并发/队列参数（`ZEUS_MAX_CONCURRENT_BRANCHES` 等）是**非法值直接拒启**。同一类"操作员把 env 写错"的失效，进程给两种答案。
+- **决定（fail-loud）**：统一为拒启。新增 `envNumber`（与 `envInteger` 同形，允许小数以容纳 0..1 阈值），`resolveDecisionConfig` 对非数字/负数阈值抛 `KernelBootError`——与并发参数同一条 fail-loud 路径，启动即 loud 失败，不再静默退回默认。
+- **推翻的契约**：`tests/boot-decision.test.ts` 原 `ignores a non-numeric threshold` 把这个静默行为钉成契约；改为 `rejects a non-numeric threshold ... toThrow(/ZEUS_JUDGE_THRESHOLD/)`。这是口径拍板不是 bug 修复，故单独成 commit、与代码同批。
+- **同步**：`docs/deployment.md` 该变量表行的 ⚠️ 不一致标注改为"非数字值拒启（与其余 boot 参数一致）"；`docs/design-naming-migration.md` 引用的"已知失效模式"改为已销项口吻；评审 §C-8 描述已不再成立（但保留为历史记录）。typecheck/test 通过。
+- **未做**：尚未把"boot 参数一律 fail-loud"扩成一条覆盖所有现存例外的总原则文档；本批只统一了阈值这一处（其余参数本就已拒启，无例外要改）。
+
+### #21 历史标识符改名（代码 / 环境变量 / 协议字段 / 数据格式）
+- **现状**：对外文档已全量改用工程术语，但代码与环境变量里仍是历史名（`vassal` / `fealty` / `realm` / `vault` / `kernel` / `commission` / `driver-*` 审计取值 / `ZEUS_VASSAL_SEEDS` / `x-zeus-fealty`）。**方案、代价四档与逐档机制已写全**：见 [design-naming-migration.md](design-naming-migration.md)。
+- **本轮结论（2026-09-25）**：**T2 数据格式、T3 环境变量、T4 协议字段与路由全部不做**。理由不是"太难"，是**收益已经拿到手**：外部误读的风险由 README 的标识符说明 + 术语表解决；而 T2/T4 要烧掉的正是"备份可恢复、签名可长期验证、对端已部署"这三项可信性资产。T1（纯内部标识符）可选，但只挑"名字真的误导"的。
+- **触发条件**：① 某个历史名字**实际挡住了功能**（例如新人/对端因名字误解而接错），而不是"看起来不专业"；② 出现必须新增协议代次的真实需求，此时顺路把 T4 的双读一起做；③ #22 的 version 字段落地后，若仍有改载荷的需求。
+- **硬约束（若开工）**：一个 commit 只动一档；T2 必须双读单写且提升版本号 + 实测"改前备份能在改后恢复"；T4 必须先服务端双读、**在对端确认切换前不得移除 v1 路径**。
+
+### #22 签名名册没有 schema version 字段 ✅ 已销项（2026-09-25）
+- **原缺口**：验签方无法判断自己拿到的是哪一代载荷。**登记时我写的是"没有任何版本字段"，这句不准确**：信封里一直有 `seal.v = 1` 与 `attestation.v = 1`（`ENVELOPE_VERSION`，`signing.ts:125/155/192/250`），只是**验签路径从不检查它**——一个不被校验的版本字段是装饰性的，和 #18 那条"只写不读的清单"同一种失效。而真正会变形状的**载荷**（`RosterSnapshot.entries[]`）确实没有任何形状标记。
+- **做了什么**：① 载荷加 `schemaVersion`（`ROSTER_SCHEMA_VERSION = 1`，两个投影函数写入），位置在 `seal.snapshotDigest` 覆盖的对象内部，所以**不需要改签名输入就被签名保护**；② 验签前置三道版本闸（在任何密码学之前）：未知 `schemaVersion` / 未知 `seal.v` / 未知 `attestation.v` 各自返回点名的拒绝原因；③ **向后兼容**：缺 `schemaVersion` 的旧件读作 1（旧件本就不含该字段，摘要与签名自洽，仍能验）。
+- **验证**：`tests/signing.test.ts` 新增 4 项——两个投影都盖章、**旧形状仍可验签**（正向对照，防止"只在坏输入上测过的校验器永远可能是错的"）、`schemaVersion 99` 在**重新签名过**的情况下仍被拒（即拒绝只可能来自闸门而非摘要/签名）、`seal.v=2`/缺失与 `attestation.v=2` 各自被点名拒绝。全量 **696 绿 / 72 文件**、typecheck/build exit 0；真进程实测 `GET /api/roster` 与 `/api/roster/public` 的信封里 `"schemaVersion":1` 且 `seal.v` 不变。
+- **与 #21 的关系**：这条做完后，**将来若真要改载荷，才有安全灰度的可能**（双读按 `schemaVersion` 分流）。#21 的结论不变：仍不建议改 T2/T3/T4。
+
+### #23 DAG 分析没有驾驶员入口 ✅ 已销项（2026-09-26）
+- **决定（选项即建议做法）**：把 `src/orchestrator/dag.ts` + `dag-runner.ts` 已落地的图能力接到 H2 驾驶员面，沿依赖边从平铺扇出升级为分层执行。实现与建议做法的差异：依赖边**编码在节点 `dependsOn` 上**（不是另给 `edges` 列表）——功能等价，少一份需要保持同步的字段。
+- **能力已在**：`src/orchestrator/dag.ts` + `dag-runner.ts`（拓扑分层 `topologicalLayers`、关键路径 `criticalPath`、`validateDag`、部分失败跳过），`tests/dag.test.ts` **6 例**，且都从 `src/index.ts` 导出。
+- **落地（2026-09-26）**：
+  - `POST /api/intents` 接受可选 `dag:{nodes}`（每节点 `id` / `skill` / 可选 `vassals` / `params` / `dependsOn` / `aggregation`，顶层 `branchTimeoutMs`）；与 `body.skill` **互斥**，否则 400。结构校验（字段形状）在 `parseDagSpec`、图校验（环 / 缺失依赖 / 重复 id）在 `validateDag`（均返回 **400** 并点名环或未知节点）。提交即回 **分层计划 + 关键路径 + 每节点状态**。
+  - `GET /api/intents/:id/dag` 按 `dagId` 回读 `layers` / `criticalPath` / `state` / 每节点状态。
+  - **复用内核**：`DagRunner` 改为可接收一个**已存在的 Orchestrator**（boot 传入主 orchestrator），所以 DAG 的每个节点意图走的是**同一个** orchestrator——共享幂等表、随内核快照持久化、`GET /api/intents/:id`（节点 id 为 `${dagId}::${node}`）仍可读。不重复造一个隔离的执行器。
+  - 部分失败的跳过语义在 `DagRunner` 内保持不变（依赖未完成的节点 `skipped`，独立分支继续），与 `refused-*` 同样写进审计事件流。
+- **验证**：新增 `tests/http-dag.test.ts` **7 例**（`npx vitest run` 全量 **711 绿 / 74 文件**，typecheck/build exit 0）；其中"两阶段意图 + 节点意图可追溯"用**真进程 inject 冒烟**（真实 HTTP + 真实 orchestrator + dispatcher 管线，不是只测纯函数），覆盖你定的"只有 inject 测试不算已验证"口径。**未做**：CLI 与 MCP 面同样没有 DAG 入口（触发条件②/③未到，且 MCP 暴露侧 actor 判定仍归 #18）；DAG spec/result 在内存，不随内核快照持久化（重启后 `GET /api/intents/:id/dag` 失忆，节点意图仍在）。
+- **原登记背景（保留）**：该条曾因编号复用（`#15` 被"支持矩阵与 engines 声明"覆盖）在文件里消失，本文件顶部已立"编号只增不复用"规则。
+- **原缺口（登记时的判断，2026-09-26 已闭合——保留原文只为追溯，读到这里请以本条 ✅ 标题为准）**：`src/http/server.ts` 里 `dag` / `criticalPath` / `topolog` **出现 0 次**，CLI 与 MCP 面同样没有。也就是说**操作员今天无法提交一个 DAG 形状的意图，也无法读回它的分层与关键路径**——只能当库函数用。这条与 #21 无关，是"内核有、驾驶员看不见"那一类的又一个实例。**现状**：HTTP 两面已有（`POST /api/intents` 的 `dag:{nodes}` 与 `GET /api/intents/:id/dag`，2026-09-27 实测 server.ts 内 `dag` 出现 32 次），仍缺的是 CLI 与 MCP 面（上面那条"未做"未变）。
+- **为什么现在才记**：它**本来就登记过**。`handoff.md` 顶部状态段写着"C（状态文件进藏宝图）与 F（DAG 驾驶员入口）经实测是设计变更，登记 deferred #13/#15/#14 而非半做"，Active work 39 的"没做的两项"那条也把 F（S3 DAG 驾驶员入口）判为"需要先出设计稿"——三个号对应 C/F/另登记项，#13 归 C、#14 归 `DriverWriteGrant`，剩下 **#15 就是 DAG**。但 `#15` 后来被**"支持矩阵与 engines 声明"复用**，DAG 那条就在文件里消失了（此处按句子内容引用而不按行号：行号会随文件增长漂移，这本身就是这条失物能藏住的原因之一）。已在本文件顶部补"编号只增不复用"规则，防它再发生。
+- **触发条件（回顾）**：① 出现一个真实的**多阶段依赖**意图（"B 必须等 A"）时派发从平铺扇出升级为分层执行；② 多阶段编排的关键路径/瓶颈分析；③ 按 DAG 排程做取消或重试。本条不等触发条件——库内"内核有、操作面无"的缺口本身就是可闭环的工作，且前几批一直在补这类。
+
+### #24 墙钟依赖的测试与脚本没有可执行闸门 ✅ 已销项（2026-09-26）
+- **原缺口**：`tests/verify-roster.test.ts` 的 fixture 用固定时刻封签（`maxAgeSeconds: 3600`）却不传 `--now`，于是"验得过"依赖真实时间——当天窗口一过 4 例全红而实现一行未改（已在那个文件内修掉：`run()` 缺省注入 `--now`）。但**同类形状没有任何东西挡**：只要新测试再写一次"固定过去时刻 + 让生产代码读墙上时钟"，它就在未来某天自动变红，或更糟——自动变绿。
+- **做了什么（可执行闸门）**：新增 `scripts/clock-skew-setup.mjs`（把 JS 时钟整体拨前 2 年，偏移可用 `ZEUS_CLOCK_SKEW_DAYS` 覆盖）+ `vitest.clock-skew.config.ts`（仅比 `vitest.config.ts` 多挂这个 setup），并在 CI 加 `clock-skew` 作业：真实时钟下 `npm ci` + typecheck + build，再用偏置配置跑**全量测试**。凡测试或生产路径偷偷读真实墙钟，这一道作业就红——从"某天自己变红"变成"引入当天即红"。
+- **为什么是 JS 级偏移而不是 `sudo date -s`**：GitHub 托管 runner 不给 `CAP_SYS_TIME`，系统级拨钟多半 `Operation not permitted`；且拨动 OS 时钟会让 `npm ci` 访问 npm registry 的 TLS 证书校验跟着错位、连带安装失败。本仓库的墙钟风险**全在 JS 内**（每个生产 `new Date()` 都躲在可注入的 `now` 之后），所以拨 JS 时钟是忠实且无特权的等价代理。**已知边界**：拨钟只覆盖 vitest 进程内代码；`verify-roster.test.ts` 之类 spawn 的子进程跑在真实时钟下，不在本闸门覆盖（若某脚本将来长出依赖墙钟的逻辑，再评估 OS 级拨钟或给子进程也注入偏置）。
+- **验证（实证，不是假设）**：本地以 +2 年偏置跑全量，**726 绿 / 76 文件**——证明当前测试集对墙钟零静默依赖；CI 这道作业即此结论的回归护栏。typecheck/build exit 0。
+- **触发条件已满足**：本批次即在把闸门立起来的同时确认无残留墙钟依赖；若未来出现"无人改代码却变红/变绿"的时间用例，此作业会第一时间报警。
+
+### #25 核心链路的真进程端到端冒烟没有可重跑资产 ✅ 已销项（2026-09-27）
+- **缺口**：本文档反复用到的那类最强证据——**起真进程、走真 socket，把「给一个目录 → 挂域 → 带凭证注册执行 Agent → 扇出 → 聚合 → 审计落盘 → 封签名册离线可验 → 吊销断流 → 重启恢复」一次走完**——历史上做过很多次（v0.30「编译产物真进程冒烟 13 项」、v0.12「真 socket 7 条复核」、镜像实构实跑），但**每次都是评审会话临时手写、跑完即弃**，仓库里只留下结论没有留下脚本。后果在 v0.17 评审时显形：想再手写一次时被权限层拦（判为「未被要求的新可执行代码」），于是那一格证据只能回退到「历史记录」而不是「本轮实测」。
+- **为什么值得做**：设计约束第 2 条要求「每个概念必须可执行」，而「核心链路可用」正是最该可执行的一句。它同时是 pre-launch checklist §F 回归护栏里唯一没有命令的那一项（其余四项都有命令）。
+
+- **销项（2026-09-27，同轮）**：`scripts/smoke-core.mjs` + `npm run smoke:core` 落地并接进 CI（build/test 之后一步），**23 步全绿**。它第一次跑就抓到一条真缺口：`POST /api/vassals` 只收 `cardUrl`/`taskUrl`，**运行时上线的执行 Agent 拿不到出站凭证**——派发静默不带 `Authorization`。已补 `body.token`（存储后任何视图不回显，`tests/http-vassals.test.ts` 2 例锁住），并顺带把 `body.aggregation` 的 400 文案改成点名形状（原文案读起来像要字符串，实际要 `{kind}`）。可失效性记录：开发过程中它先在 18/23、20/23、21/23 处失败（错误 payload 形状、凭证没上路、把 revoked 行读错视图），且把 `dist/` 移走后退 1 并给出可读原因——**它不是一条只会绿的闸门**。
+- **建议做法**：新增 `scripts/smoke-core.mjs`（零依赖、只用回环、mock 执行 Agent 由脚本自己起）；断言逐条打印 + 退出码非 0 即失败；密钥与令牌一律临时目录内自造，**不读 `data/` 下任何真实凭证**；接进 CI 作为 build 之后的一步（本地 runner 需要能监听端口，GH runner 可以）。
+- **触发条件**：① 下一次项目级评审（本轮已经付过一次代价）；② `src/http` 装配路径或派发主链路有改动，需要判断「编译产物是否还能整体跑通」；③ 上线前回归（checklist §F 目前只能靠人手工跑）。
+
+### #26 配置面双向对照没有闸门（本轮由评审手工跑出一次）✅ 已销项（2026-09-27）
+- **现状**：2026-09-27 评审 v0.17 做过一次双向对照——代码里 `env.ZEUS_*` / `process.env.ZEUS_*` 读到 **25 个**变量，`.env.example` 与 `docs/deployment.md` §2 **两处都缺的有 1 个**：`ZEUS_MAX_CONCURRENT_PER_VASSAL`（#9 分流的唯一操作入口，本轮已补进两处）；**反向 0 个**（文档写了而代码不读），这一半说明匹配口径对得上，"缺 1 个"不是解析偏差造出来的。真正的问题是**这次对照存在于评审会话里，不存在于仓库里**：下一批加 env 时同样会漏，而"新 env 必须同时进两处文档"这条约定目前只靠人记得（v0.31 批次就补过一次 10 行）。
+- **销项（2026-09-27，同轮）**：`tests/config-surface.test.ts` 三条断言落地——① 正向对照（两边集合非空，防空集合假通过）② 代码读到的每个变量必须在两处文档之一出现 ③ 文档里出现的每个变量必须真被读（含 `DYNAMIC_READS` 豁免表，新增条目必须写理由）。**它第一跑就抓到 `ZEUS_CLOCK_SKEW_DAYS`（#24 的 CI 旋钮）两处文档都没有**，已补进 deployment §2 并标明它是 CI-only、故不进 `.env.example`。
+- **建议做法**：一条测试（`tests/config-surface.test.ts`）——扫 `src/**/*.ts` 取 `ZEUS_[A-Z0-9_]+` 读点，与 `.env.example`、`deployment.md` §2 做双向差集，任一方向非空即失败；对动态读法（`env[name]`）留显式豁免表并注明原因。**双向很关键**：漏文档只是操作员看不见一个旋钮；而文档里留着早已被删掉的变量更阴——它教操作员去设一个什么都不影响的东西。
+- **触发条件**：① 任何新增或改名 `ZEUS_*` 环境变量的批次；② 下一次项目级评审（本轮已手工跑过一次，下次不该再手工）；③ 出现"照文档设了却没生效"的报障。
+
+### #27 运行进程内没有记忆事件的生产者（E8.5/E8.3 在实跑中是空转的）✅ 已销项（2026-09-27）
+
+- **销项（同日，按 §8 的 P1 落地）**：`src/memory/producer.ts`（每个不同 `(作者, 立场)` 一条 claim；object 只放立场、超 512 截断；`claimSubject` 显式优先、缺省派生自 skill+问题而**绝不用 intentId**）+ `boot.ts` 在 `intent-finished` 处装配（**先写 claim，再 consolidate**，同一次意图当场成事实）。写入一律走 `appendFromRealm`，realm 已被下线时丢弃并审计 `memory-claim-skipped`。契约全文与四问答案见 [design-memory-consolidation.md](design-memory-consolidation.md) §8（文档升 v0.5）。
+- **可失效性（不是断言，是量出来的）**：`smoke:core` 新增的那一步**要求快照非空**。本改动之前它打印 `events=0 factGroups=1`、日记 `entries=0`；之后打印 **`events=6 facts=1`、日记 `entries=1`**——同一条断言在缺陷存在时是红的，这才是它有效的证明。另 10 例单测覆盖：claim 形状（过 `isClaimContent`）、派生 subject 可重复、显式 subject/predicate 优先、重放不增条数、超长截断、空立场跳过、**realm 未挂载时不写且上报审计**（这条是"并非无条件就写"的反向对照）、**未指名 realm 的意图不进记忆**。
+- **顺带修掉一条同形状的漂移**：`GET /api/audit?decision=` 的白名单此前在 server 侧手工维护，**已有 5 个决策值查不到**（`refused-skill-uninstalled`/`refused-no-active-provider`/`branch-diverted`/`realm-disconnected`/`realm-tenant-retargeted`）；现在 `AuditDecision` 类型由 `AUDIT_DECISIONS` 数组派生，单一来源，加值不会再漏。
+- **E8.5 状态列回到 ✅**（正文注明运行时生产者已就位）。
+
+- **发现方式**：把 `GET /api/memory/snapshot` 与 `GET /api/diary/export` 接进核心链路冒烟后**第一次真机实跑**：派发三条分支、审计落盘 13 行之后，`snapshot.state.events.length = 0`、`factGroups = 1`（空组）、日记 `entries = []`。
+- **代码级证据**（本轮复跑，非引用）：`MemoryEvent` 的构造只出现在 `src/memory/` 内部；`grep -rn "\.append(" src` 在 memory 模块之外**零命中**（audit sink 是另一个对象）。HTTP 面对 memory 只有读（`read`/`facts`/`replay`/`searchRecall`/`exportState`）与擦除（`retract`/`forget-subject`）；`boot.ts` 只用 `consolidateRealm`/`authorsOfFacts`/`recordCorrections`/`reliabilityScore`。**没有任何一方把执行 Agent 的回报变成事件**。
+- **后果**：E8.5 的"事件→事实→混合检索→遗忘权→漂移对账"整条链在**库里**成立（752 项测试覆盖），在**出货进程里**输入恒为空；连带 E8.3 的日记恒空。这不属于"能力没有入口"（#23/#25 那一类），而是更深一层：**能力没有数据源**。
+- **需要决定的是设计而不是代码**：事件的产生点应在哪一层——① Dispatcher 收到 task 回报时按 report-back 落 observation/claim；② 裁决/纠偏落 decision 事件（`recordCorrections` 已在，但它只改可靠度、不产生事件）；③ 域内容变化落 observation。三者的 `eventId` 幂等与去重、realm 归属（跨域拒绝那条不变量要同样成立）、以及"哪些内容进事件、哪些留在审计脊"都需要定契约，不能顺手接一根线。
+- **触发条件**：① 任何要把记忆/日记面真正用起来的部署（现在开着会静默产出空事实源，比报错更糟）；② E8.5 升 P0 或 bayjf 名册需要事实来源时；③ 出现"为什么日记是空的"报障——本轮冒烟已给出可复现证据。
+- **提案已出（2026-09-27）**：见 [design-memory-consolidation.md](design-memory-consolidation.md) **§8**——边界判据（陈述进记忆、动作进审计脊）、四条触点与后果（建议只做 P1「分支结论→claim」，因为消费端 `boot.ts:388-392` 起那条链已接好，缺的只是输入），以及**四个不定就写不出代码的拍板问题**：`subject` 由谁给、`predicate` 粒度、第三方结论文本能否常驻状态文件与备份、要不要开关。落地时按 §8.4 第 3 条给 `smoke:core` 加一步「事件数必须非零」的断言，把恒空转变成会红的闸门。
+- **口径**：在它落地前，`E8.5` 状态列应为 🚧（库内能力已验收、运行面无生产者），`E8.3` 保持 ✅ 但正文注明输入依赖本条。
+
+### #28 「状态列 vs 正文」冲突检测器还是一次性脚本（评审 v0.18 本轮手工跑出）
+- **现状**：本轮把 PRD §4 的 54 行需求做了两种机械读取——① 状态列形状（**已入库为断言**：`tests/doc-consistency.test.ts` 第 5 例，内置"必 FLAG 两行 / 必干净一行"的校准）；② 状态列与正文是否互相打脸（**未入库**，判定规则写在 [review-mvp-2026-09.md](review-mvp-2026-09.md) §B）。
+- **为什么本轮没把它写成断言**：② 的规则要求子句级语义。本轮第一次跑（14 字窗口 + 词表）在真表上报出 **5 处**，逐条核对全是过去时陈述（"此前 `bootKernel` 从未接 `onRevoke`"）或条件句（"不可用即拒启"），把窗口换成"所在子句含过去/修复标记即豁免"后才归零。词表进 CI 的代价是**下一批合理措辞会让门禁红**，而这条检查的价值恰恰依赖它不被人为放宽——所以先留口径在文档里，由评审每轮带校准样例跑。
+- **触发条件**：① 出现第二次"列与正文打脸"造成的实际误判（例如有人按 🚧 列去排优先级、而该项早已关闭）；或 ② PRD 需求行数量增长到手工一轮读取成本明显高于维护词表的成本（当前 54 行）。
+- **缓做原因**：这是**判定精度**问题不是缺口——E4.8 那类矛盾在 2026-09-26 已清零，本轮重新量也是 0；用一个会假阳性的闸门换"自动化"这个名字，不如把口径写清、把校准做在跑的那一刻。
+- **2026-09-27 复量 → 结论：不接进 CI。** 按条目自身触发条件重量：① 未见第二次"列与正文打脸"造成的误判；② `docs/prd.md` 需求行仍为 **54 行**（`^\| E[\d.]+ \|` 计数），未增长。又复跑一次词表判定（✅ 行正文含 `未实现/尚未/还没有`、⬜/🚧 行正文含 `已落地/已交付`）→ 真表报出 **2 处，逐条核对全是假阳性**：E3.4（🚧，正文"stdio 壳已落地"＝部分落地，列与正文其实一致）、E8.3（✅，正文"运行时输入依赖 deferred #27……还没有记忆事件生产者"＝已登记的依赖注记，正是 deferred #27 明文允许的 ✅ 形态）。**词表版在真表上的假阳性由 v1 的 5/54 变成本次 2/54，同一类子句语义没被词表收住**——这就是"结构判定（①，已在 `tests/doc-consistency.test.ts` 第 5 例）零假阳性可进 CI、语义判定（②）不能"的实测理由。维持口径：不进 CI，由评审每轮带校准样例跑。
+
+### #29 内核按约定推导任务端点，不读卡片自己声明的 `url` ✅ 已销项（2026-09-27，触发条件未到点即提前激活）
+- 原议题：`defaultTaskUrl`（`registry.ts`）把卡片 URL 按字符串约定改写为任务端点（`…/api/a2a/agent-card` → `…/api/a2a/tasks`、`…/.well-known/agent(-card).json` → `/api/a2a/tasks`），**从不读卡片的 `url` 字段**。但 `url` 就是 A2A 语义里该 Agent 的 RPC 端点——二者冲突时内核按约定赢。线上 pr-helper 正是这种形态（`url` 即卡片路径，GET=卡片、POST=JSON-RPC），于是注册 201 成功、派发时 `subscribe failed: HTTP 404`。
+- **触发条件（回顾）**：① 出现第二个把 JSON-RPC 面放在卡片路径上的真实 Agent；② 有部署因"卡片 `url` 与约定不一致"而派发失败、且无法用 `taskUrl` 覆盖。两条均**未满足**（pr-helper 是第一个，且可用 `TASK_URL` 覆盖）。
+- **提前激活的理由**：修的是"内核读错来源"这一层——卡片的 `url` 是协议自己声明的一致性来源，约定只是启发式。既然 pr-helper 已证伪"约定总是对的"，继续让内核默认猜端点，等于把每个真实 Agent 的接线成本推给操作者去配 `TASK_URL`，而这类失配在线上表现为 404 报错、不是配置缺失。改动面已全量测绘（仅 3 个路径严格的桩 + 2 处断言），风险不再需要第二条触发条件来担保。
+- **销项结论**：`register()` 的端点解析改为固定优先级 **显式覆盖 > 卡片声明 `url` > 约定兜底**（`src/registry/registry.ts`：新增 `declaredTaskUrl`，`defaultTaskUrl` 降为兜底）。卡片 `url` 为空 / 非 http(s) / 不可解析时判为"未声明"并回落约定——**旧卡片不会因 `url` 是无效值而在边界新失败**。
+- **迁移口径**：既有快照在 `importState` 时**保留存下的 `taskUrl`**，不会在升级瞬间翻转；只有新注册/重注册才走新优先级。`POST /api/vassals` 的 `taskUrl` 覆盖保留为一等显式覆盖（给"声明也不对"的卡片兜底），验收 runner 的 `TASK_URL` 旋钮同样保留。
+- **对照用例**：`tests/registry.test.ts` 新增「task endpoint resolution」三例（声明优先于约定 / 显式覆盖胜过声明 / 声明不可用回落约定），并改写既有断言（pr-helper 卡 `url` 即卡片路径，注册后 `taskUrl` = 该声明值）；路径严格的桩（`scripts/smoke-core.mjs`、`tests/kernel-memory-p1.test.ts`、`tests/governance-flow.test.ts`）改为声明真实服务端点。门禁 789 测试 / 83 文件 / 0 失败，`smoke:core` 36/36。
+- **同源记录**：v0.10 修过一次同一端点失配（改的是 `scripts/acceptance-standard-a2a.mjs`），当时只修了客户端脚本、内核派发侧未动——本条记的正是"修了看得见的那一半"。
+
+### #30 连接器权限词汇无法绑定"名字不合词法"的工具 ✅ 已销项（2026-09-30）
+，词表不放宽。`validateSkillSpecShape` 与 `validatePermissionClaims` 两处复用同一判定。② 绑定仍为**精确、大小写敏感**的字符串相等（`withinBoundary` 本就是 `mcp:${name}` 原样比对，无需改），与上游 `tools/list` 一一对应。③ 防改名静默失权：连接握手后，声明了但上游清单没有的 `mcp:<工具名>` 产生新审计动作 `boundary-unmatched`（`ConnectorAuditEntry.action` 扩枚举，含未发现工具名列表），声明早于连接不报错、但改名/下线在连接时可见。④ 测试 +4（skills-validation 2：原名工具名合法/空与控制字符非法且非 mcp 作用域仍封闭；mcp-connectors 2：原名三件套经握手精确裁剪且未授权工具拒调、失配工具发 `boundary-unmatched` 审计且命中工具仍可用），活基线 850/90 → **854/90**。⑤ 文档：mcp-integration §2.1 与缺口表更新。**仍不在本条文内**：对真实外部 MCP 服务的 connect（E7 至今只用自造上游夹具，真实实连仍待外部服务端出现）；按能力指纹而非名字授权未做（当前以审计告警兜底改名问题）。
 - **缺口**：工具级边界的写法是 `mcp:<工具名>`，而整个声明串要先过 Skill 的封闭词法（`src/skills/validate-spec.ts:15-17`：`^[a-z][a-z-]*(:[a-z][a-z-]*)?$`，作用域只允许 `realm`/`execute`/`network`/`credential`/`mcp`）。于是**上游工具名里带下划线、点、大写的，一条都声明不进去**——2026-09-28 直接对 `validatePermissionClaims` 实测：`mcp:search` 通过，而 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` **四条全部判 invalid**（经 HTTP 面表现为 400）。真实 MCP 生态里 `fetch_html`、`notion.search` 这类命名很常见。
 - **后果**：想给这类工具开最小权限，只能退到裸 `mcp`——而裸 `mcp` 的语义是"放行该连接器握手发现到的**全部**工具"（`src/mcp/connectors.ts:85-91`）。也就是"要么全给，要么给不了"，与"每条能力都要落到权限声明里"的设计约束相反。
 - **为什么本批只登记不修**：修法有两种（放宽词法，或把声明改成"引用上游原样字符串"），这是**契约决定**不是补漏；且当前没有任何真实连接器因此接不上——本库至今没有对真实外部 MCP 服务跑过一次 `connect`（E7 的实连仍待外部服务端出现）。用一个自造上游去证明"放宽后能用"，证的只是我自己写的假设。

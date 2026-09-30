@@ -92,6 +92,56 @@ describe('E7 MCP connectors', () => {
     expect(connected.capabilities!.tools).toEqual(['search']);
   });
 
+  it('deferred #30: binds minimum privilege to upstream tool names verbatim (underscore/dot/capital)', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(
+      declaration({
+        id: 'upstream',
+        permissions: ['mcp:fetch_html', 'mcp:notion.search', 'mcp:Search'],
+      }),
+    );
+    const upstreamFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { method: string; id?: number };
+      const json = (value: unknown): Response =>
+        new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: value }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      switch (body.method) {
+        case 'initialize':
+          return json({ protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'up' } });
+        case 'notifications/initialized':
+          return new Response(null, { status: 202 });
+        case 'tools/list':
+          return json({
+            tools: [{ name: 'fetch_html' }, { name: 'notion.search' }, { name: 'Search' }, { name: 'drop_table' }],
+          });
+        case 'resources/list':
+          return json({ resources: [] });
+        case 'prompts/list':
+          return json({ prompts: [] });
+        default:
+          return new Response('not found', { status: 404 });
+      }
+    }) as typeof fetch;
+    const connected = await registry.connect('upstream', upstreamFetch);
+    expect(connected.capabilities!.tools).toEqual(['fetch_html', 'notion.search', 'Search']);
+    await expect(registry.callTool('upstream', 'drop_table')).rejects.toThrowError(/does not expose tool/);
+  });
+
+  it('deferred #30: audits granted mcp tools the handshake did not discover (upstream rename is visible, not silent)', async () => {
+    const audits: ConnectorAuditEntry[] = [];
+    const registry = new ConnectorRegistry(now, entry => audits.push(entry));
+    registry.declare(declaration({ permissions: ['mcp:search', 'mcp:fetch_html'] }));
+    await registry.connect('knowledge', mcpFetch());
+    const unmatched = audits.filter(a => a.action === 'boundary-unmatched');
+    expect(unmatched).toHaveLength(1);
+    expect(unmatched[0].detail).toContain('fetch_html');
+    // The one that did match stays usable.
+    const connected = registry.get('knowledge')!;
+    expect(connected.capabilities!.tools).toEqual(['search']);
+  });
+
   it('refuses connection when the server is unreachable and audits it', async () => {
     const audits: ConnectorAuditEntry[] = [];
     const registry = new ConnectorRegistry(now, entry => audits.push(entry));

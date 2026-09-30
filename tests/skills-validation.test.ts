@@ -46,6 +46,24 @@ describe('E2.1 skill spec validation', () => {
     expect(registered.permissions).toHaveLength(3);
   });
 
+  it('deferred #30: accepts mcp grants naming upstream tools verbatim (underscore, dot, capital)', () => {
+    const registry = new SkillRegistry();
+    const registered = registry.register(
+      spec({ permissions: ['mcp:fetch_html', 'mcp:notion.search', 'mcp:Search', 'mcp:A1.b-2_c'] }),
+    );
+    expect(registered.permissions).toHaveLength(4);
+  });
+
+  it('deferred #30: rejects empty/whitespace/control mcp tool names while keeping non-mcp scopes closed', () => {
+    const registry = new SkillRegistry();
+    expect(() => registry.register(spec({ permissions: ['mcp:'] }))).toThrow(/mcp tool grant/);
+    expect(() => registry.register(spec({ permissions: ['mcp: bad'] }))).toThrow(/mcp tool grant/);
+    expect(() => registry.register(spec({ permissions: ['mcp:bad\x00name'] }))).toThrow(/mcp tool grant/);
+    // The closed vocabulary still governs every non-mcp scope.
+    expect(() => registry.register(spec({ permissions: ['network:fetch_html'] }))).toThrow(/invalid permission claim/);
+    expect(() => registry.register(spec({ permissions: ['root:all'] }))).toThrow(/unknown permission scope|invalid permission claim/);
+  });
+
   it('rejects inputs/outputs that are not object descriptors', () => {
     const registry = new SkillRegistry();
     expect(() => registry.register(spec({ inputs: ['x'] as unknown as Record<string, unknown> }))).toThrow(/inputs/);

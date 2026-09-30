@@ -14,8 +14,39 @@ import type { SkillSpecInput } from './types.js';
  *  cannot invent rights the governance layer does not understand. */
 const PERMISSION_SCOPES = ['realm', 'execute', 'network', 'credential', 'mcp'] as const;
 
+/** Non-mcp scopes keep the closed lowercase vocabulary: `scope` or `scope:action`. */
 const PERMISSION_RE = /^[a-z][a-z-]*(:[a-z][a-z-]*)?$/;
+/**
+ * deferred #30: an `mcp:<tool>` grant names an upstream MCP tool verbatim.
+ * Real MCP servers name tools with underscores, dots and capitals
+ * (`fetch_html`, `notion.search`, `Search`), so the part after `mcp:` is not
+ * run through the closed skill vocabulary — it is compared against the
+ * handshake capability list as-is. We only reject the shapes that could never
+ * be a tool name: empty, surrounding whitespace, control chars.
+ */
+const MCP_TOOL_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N}._:-]*$/u;
 const VERSION_RE = /^\d+\.\d+\.\d+$/;
+
+/** Validate one permission claim against its scope's rules. Returns an issue
+ *  message, or null when the claim is well-formed.
+ *  - `mcp` / `mcp:<upstream-tool>`: the tool segment is the upstream name
+ *    verbatim (underscores/dots/capitals allowed; deferred #30).
+ *  - every other scope: closed lowercase vocabulary, `scope[:action]`. */
+export function permissionClaimIssue(claim: unknown): string | null {
+  if (typeof claim !== 'string') return `invalid permission claim: ${String(claim)}`;
+  if (claim === 'mcp') return null;
+  if (claim.startsWith('mcp:')) {
+    const tool = claim.slice(4);
+    if (!MCP_TOOL_NAME_RE.test(tool)) return `invalid mcp tool grant (name must match the upstream tool verbatim): ${claim}`;
+    return null;
+  }
+  if (!PERMISSION_RE.test(claim)) return `invalid permission claim: ${claim}`;
+  const scope = claim.split(':')[0];
+  if (!(PERMISSION_SCOPES as readonly string[]).includes(scope)) {
+    return `unknown permission scope '${scope}'; allowed: ${PERMISSION_SCOPES.join(', ')}`;
+  }
+  return null;
+}
 
 export class SkillValidationError extends Error {
   constructor(readonly issues: string[]) {
@@ -54,14 +85,8 @@ export function validateSkillSpecShape(input: SkillSpecInput): void {
       issues.push('permissions must be an array');
     } else {
       for (const claim of input.permissions) {
-        if (typeof claim !== 'string' || !PERMISSION_RE.test(claim)) {
-          issues.push(`invalid permission claim: ${String(claim)}`);
-        } else {
-          const scope = claim.split(':')[0];
-          if (!(PERMISSION_SCOPES as readonly string[]).includes(scope)) {
-            issues.push(`unknown permission scope '${scope}'; allowed: ${PERMISSION_SCOPES.join(', ')}`);
-          }
-        }
+        const issue = permissionClaimIssue(claim);
+        if (issue) issues.push(issue);
       }
     }
   }
@@ -82,14 +107,8 @@ export function validateSkillSpecShape(input: SkillSpecInput): void {
 export function validatePermissionClaims(claims: unknown[]): string[] {
   const issues: string[] = [];
   for (const claim of claims) {
-    if (typeof claim !== 'string' || !PERMISSION_RE.test(claim)) {
-      issues.push(`invalid permission claim: ${String(claim)}`);
-    } else {
-      const scope = claim.split(':')[0];
-      if (!(PERMISSION_SCOPES as readonly string[]).includes(scope)) {
-        issues.push(`unknown permission scope '${scope}'; allowed: ${PERMISSION_SCOPES.join(', ')}`);
-      }
-    }
+    const issue = permissionClaimIssue(claim);
+    if (issue) issues.push(issue);
   }
   return issues;
 }

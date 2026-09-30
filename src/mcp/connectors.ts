@@ -10,7 +10,7 @@ import type {
 export interface ConnectorAuditEntry {
   at: string;
   connectorId: string;
-  action: 'declared' | 'connected' | 'revoked' | 'refused';
+  action: 'declared' | 'connected' | 'revoked' | 'refused' | 'boundary-unmatched';
   detail?: string;
 }
 
@@ -68,6 +68,17 @@ export class ConnectorRegistry {
     // Minimum privilege: the declaration may enumerate fewer tools than the
     // server exposes; only declared capability names remain usable.
     if (record.permissions.length > 0) {
+      // deferred #30: granted names are upstream strings verbatim, so a rename
+      // upstream would silently drop a tool out of the boundary. Announce every
+      // granted mcp:<tool> the handshake did not discover rather than hiding it.
+      const discovered = new Set(capabilities.tools);
+      const unmatched = record.permissions
+        .filter(claim => claim.startsWith('mcp:'))
+        .map(claim => claim.slice(4))
+        .filter(tool => !discovered.has(tool));
+      if (unmatched.length > 0) {
+        this.log('boundary-unmatched', id, `granted tools not discovered upstream: ${unmatched.join(', ')}`);
+      }
       capabilities = {
         tools: capabilities.tools.filter(t => this.withinBoundary(id, 'tool', t)),
         resources: capabilities.resources,
