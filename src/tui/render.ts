@@ -166,7 +166,7 @@ function renderDomains(palette: Palette, t: Translator, domains: DomainsView | n
     lines.push(`  ${t('domains.empty')}`);
     return lines;
   }
-  for (const realm of domains.realms) {
+  domains.realms.forEach((realm, realmIndex) => {
     const typeLabel = t(realm.type === 'enterprise' ? 'domains.enterprise' : 'domains.personal');
     const flags = [t('domains.items', { count: realm.itemCount })];
     if (realm.readOnly) flags.push(t('domains.readOnly'));
@@ -174,17 +174,18 @@ function renderDomains(palette: Palette, t: Translator, domains: DomainsView | n
       const tenantPath = [realm.tenant.org, realm.tenant.department, realm.tenant.member].filter(Boolean).join('/');
       flags.push(t('domains.tenant', { tenant: tenantPath }));
     }
-    lines.push(`  ${palette.paint(realm.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(realm.realmId)}  [${flags.join(' · ')}]`);
-  }
+    lines.push(`  ${palette.paint('muted', `#${realmIndex + 1}`)} ${palette.paint(realm.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(realm.realmId)}  [${flags.join(' · ')}]`);
+  });
   lines.push(`  ${t('domains.grantsTitle')}`);
   if (domains.grants.length === 0) {
     lines.push(`    ${t('domains.noGrants')}`);
   } else {
-    for (const grant of domains.grants) {
+    domains.grants.forEach((grant, grantIndex) => {
       const access = t(grant.access === 'write' ? 'domains.access.write' : 'domains.access.read');
-      lines.push(`    ${t('domains.grant', { subject: grant.subject, realmId: grant.realmId, access, grantedBy: grant.grantedBy })}`);
-    }
+      lines.push(`    ${palette.paint('muted', `#${grantIndex + 1}`)} ${t('domains.grant', { subject: grant.subject, realmId: grant.realmId, access, grantedBy: grant.grantedBy })}`);
+    });
   }
+  lines.push(`  ${palette.paint('muted', t('domains.grantPrompt'))}`);
   return lines;
 }
 

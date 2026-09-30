@@ -27,4 +27,26 @@ describe('TUI command parser', () => {
     expect(COMMAND_HELP).toContain('approve');
     expect(COMMAND_HELP).toContain('revoke');
   });
+
+  it('parses grant issuance with realm#, subject, access token and optional issuer', () => {
+    expect(parseCommand('g2 loom r')).toEqual({
+      kind: 'grantIssue', realmIndex: 2, subject: 'loom', access: 'read', grantedBy: 'operator',
+    });
+    expect(parseCommand('G 1 Agent-X W alice')).toEqual({
+      kind: 'grantIssue', realmIndex: 1, subject: 'Agent-X', access: 'write', grantedBy: 'alice',
+    });
+    // Machine identifiers keep their case even though the verb is case-folded.
+    expect(parseCommand('g1 Pr-Helper read ops bot')).toMatchObject({ subject: 'Pr-Helper', grantedBy: 'ops bot' });
+  });
+
+  it('parses grant revocation by grant index', () => {
+    expect(parseCommand('k3')).toEqual({ kind: 'grantRevoke', grantIndex: 3 });
+  });
+
+  it('rejects malformed grant commands with a specific error token', () => {
+    expect(parseCommand('g1')).toEqual({ error: 'grant-needs-args' });
+    expect(parseCommand('g0 loom r')).toEqual({ error: 'bad-index' });
+    expect(parseCommand('g1 loom x')).toEqual({ error: 'grant-bad-access' });
+    expect(parseCommand('k0')).toEqual({ error: 'bad-index' });
+  });
 });
