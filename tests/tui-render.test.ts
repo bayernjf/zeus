@@ -157,6 +157,8 @@ describe('TUI pure render', () => {
     expect(out).toContain('租户 acme/eng');
     expect(out).toContain('只读');
     expect(out).toContain('loom → acme-eng（读，operator）');
+    expect(out).toContain('#2');
+    expect(out).toContain('g<企业域#>');
   });
 
   it('renders domains unavailable vs empty distinctly', () => {

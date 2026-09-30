@@ -81,4 +81,35 @@ describe('TUI HTTP client', () => {
     );
     await expect(client.timeline()).rejects.toBeInstanceOf(ApiError);
   });
+
+  it('issues a grant with a JSON body and surfaces a 4xx failure', async () => {
+    const calls: Call[] = [];
+    const fetchImpl = vi.fn(async (url: string, init?: Init) => {
+      calls.push({ url, init });
+      return okJson({ grantId: 'g-9', subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' });
+    });
+    const client = createDeckClient('http://kernel', 'tok', fetchImpl);
+    const grant = await client.issueGrant({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
+    expect(grant.grantId).toBe('g-9');
+    expect(calls[0].url).toBe('http://kernel/api/domains/grants');
+    expect(calls[0].init?.method).toBe('POST');
+    expect(JSON.parse(calls[0].init?.body ?? '{}')).toEqual({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
+
+    const bad = createDeckClient('http://kernel', 'tok', vi.fn(async () => ({
+      ok: false, status: 400, json: async () => ({ error: { message: 'grants authorize enterprise realms' } }),
+    })));
+    await expect(bad.issueGrant({ subject: 'x', realmId: 'p', access: 'read', grantedBy: 'op' })).rejects.toBeInstanceOf(ApiError);
+  });
+
+  it('revokes a grant by encoded grantId on DELETE', async () => {
+    const calls: Call[] = [];
+    const fetchImpl = vi.fn(async (url: string, init?: Init) => {
+      calls.push({ url, init });
+      return okJson({});
+    });
+    const client = createDeckClient('http://kernel', 'tok', fetchImpl);
+    await client.revokeGrant('grant x/1');
+    expect(calls[0].url).toBe('http://kernel/api/domains/grants/grant%20x%2F1');
+    expect(calls[0].init?.method).toBe('DELETE');
+  });
 });

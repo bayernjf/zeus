@@ -106,6 +106,17 @@ export type DeckClient = {
   timeline(limit?: number): Promise<AuditView[]>;
   /** Read-only mounted realms and cross-domain grant ledger. */
   domains(): Promise<DomainsView>;
+  /** Issue a personal -> enterprise cross-domain grant (audited by the kernel). */
+  issueGrant(input: {
+    subject: string;
+    realmId: string;
+    access: 'read' | 'write';
+    grantedBy: string;
+    reason?: string;
+    expiresAt?: string;
+  }): Promise<DomainsView['grants'][number]>;
+  /** Revoke a cross-domain grant by its grantId. */
+  revokeGrant(grantId: string): Promise<void>;
   revoke(name: string): Promise<void>;
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
@@ -168,6 +179,19 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
       return body.entries;
     },
     domains: async () => getJson<DomainsView>('/api/domains'),
+    issueGrant: async input => {
+      const res = await fetchImpl(`${baseUrl}/api/domains/grants`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+      return (await res.json()) as DomainsView['grants'][number];
+    },
+    revokeGrant: async grantId => {
+      const res = await fetchImpl(`${baseUrl}/api/domains/grants/${encodeURIComponent(grantId)}`, { method: 'DELETE', headers });
+      if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+    },
     revoke: async name => {
       const res = await fetchImpl(`${baseUrl}/api/vassals/${encodeURIComponent(name)}`, { method: 'DELETE', headers });
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));

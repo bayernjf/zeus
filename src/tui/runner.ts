@@ -113,6 +113,52 @@ export function createDeck(options: RunnerOptions): DeckController {
       return true;
     }
 
+    if (parsed.kind === 'grantIssue') {
+      const realms = snapshot.domains?.realms ?? [];
+      const realm = realms[parsed.realmIndex - 1];
+      if (!realm) {
+        io.print(`${t('domains.grantFailed', { message: `realm #${parsed.realmIndex}` })}\n`);
+        return true;
+      }
+      if (realm.type !== 'enterprise') {
+        io.print(`${t('domains.grantEnterpriseOnly')}\n`);
+        return true;
+      }
+      const access = parsed.access === 'write' ? t('domains.access.write') : t('domains.access.read');
+      const promptLine = t('domains.confirmGrant', { subject: parsed.subject, realmId: realm.realmId, access });
+      if (!(await confirm(promptLine))) return true;
+      try {
+        await client.issueGrant({
+          subject: parsed.subject,
+          realmId: realm.realmId,
+          access: parsed.access,
+          grantedBy: parsed.grantedBy,
+        });
+        io.print(`${t('domains.granted', { subject: parsed.subject, realmId: realm.realmId })}\n`);
+      } catch (error) {
+        io.print(`${t('domains.grantFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
+    if (parsed.kind === 'grantRevoke') {
+      const grant = snapshot.domains?.grants[parsed.grantIndex - 1];
+      if (!grant) {
+        io.print(`${t('domains.grantFailed', { message: `grant #${parsed.grantIndex}` })}\n`);
+        return true;
+      }
+      if (!(await confirm(t('domains.confirmRevokeGrant', { grantId: grant.grantId })))) return true;
+      try {
+        await client.revokeGrant(grant.grantId);
+        io.print(`${t('domains.grantRevoked', { grantId: grant.grantId })}\n`);
+      } catch (error) {
+        io.print(`${t('domains.grantFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
     const esc = snapshot.escalations[parsed.index - 1];
     if (!esc) {
       io.print(`${t('escalation.failed', { message: `#${parsed.index}` })}\n`);

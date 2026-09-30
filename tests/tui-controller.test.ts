@@ -4,7 +4,15 @@ import type { DeckClient, DeckSnapshot } from '../src/tui/client.js';
 
 const baseSnapshot: DeckSnapshot = {
   audit: [],
-  domains: null,
+  domains: {
+    realms: [
+      { realmId: 'realm-personal-1', type: 'personal', readOnly: false, itemCount: 2, contentDigest: 'sha256:p' },
+      { realmId: 'realm-acme-1', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 4, contentDigest: 'sha256:e' },
+    ],
+    grants: [
+      { grantId: 'grant-1', subject: 'loom', realmId: 'realm-acme-1', access: 'read', grantedBy: 'operator', grantedAt: '', nonce: 'n-1' },
+    ],
+  },
   roster: {
     generatedAt: '',
     entries: [
@@ -61,9 +69,11 @@ function makeHarness(answers: string[]) {
     reject: vi.fn(async () => undefined),
     resolve: vi.fn(async () => undefined),
     revoke: vi.fn(async () => undefined),
+    issueGrant: vi.fn(async () => ({ grantId: 'grant-new' })),
+    revokeGrant: vi.fn(async () => undefined),
   } as unknown as DeckClient;
   const deck = createDeck({ client, io, locale: 'en', color: false });
-  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn> }, deck, printed };
+  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn> }, deck, printed };
 }
 
 describe('TUI controller writes go through the API with a confirm gate', () => {
@@ -110,5 +120,51 @@ describe('TUI controller writes go through the API with a confirm gate', () => {
     expect(await h.deck.handle('q')).toBe(false);
     expect(await h.deck.handle('zzz')).toBe(true);
     expect(h.printed.join('')).toContain('approve');
+  });
+
+  it('issues a cross-domain grant on an enterprise realm only after y', async () => {
+    const { client, deck } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('g2 loom r');
+    expect(client.issueGrant).toHaveBeenCalledWith({
+      subject: 'loom',
+      realmId: 'realm-acme-1',
+      access: 'read',
+      grantedBy: 'operator',
+    });
+  });
+
+  it('does not issue a grant against a personal realm and never calls the API', async () => {
+    const { client, deck, printed } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('g1 loom r');
+    expect(client.issueGrant).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('enterprise realms only');
+  });
+
+  it('does not issue when the confirm is declined', async () => {
+    const { client, deck } = makeHarness(['n']);
+    await deck.refresh();
+    await deck.handle('g2 loom w alice');
+    expect(client.issueGrant).not.toHaveBeenCalled();
+  });
+
+  it('revokes a grant by its ledger index only after y', async () => {
+    const { client, deck } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('k1');
+    expect(client.revokeGrant).toHaveBeenCalledWith('grant-1');
+  });
+
+  it('keeps machine identifiers case-sensitive in grant issuance', async () => {
+    const { client, deck } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('g2 Pr-Helper r Operator-X');
+    expect(client.issueGrant).toHaveBeenCalledWith({
+      subject: 'Pr-Helper',
+      realmId: 'realm-acme-1',
+      access: 'read',
+      grantedBy: 'Operator-X',
+    });
   });
 });
