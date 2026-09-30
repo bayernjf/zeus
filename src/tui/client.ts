@@ -19,6 +19,7 @@ export type DeckSnapshot = {
   escalations: EscalationView[];
   metrics: MetricsView | null;
   state: StateView | null;
+  audit: AuditView[] | null;
 };
 
 export type RosterView = {
@@ -61,8 +62,23 @@ export type StateView = {
   driverGrants?: { authority: 'signed' | 'shape-only'; keyId: string | null };
 };
 
+/** One audit-log row as returned by GET /api/audit (the fan-out timeline). */
+export type AuditView = {
+  ts: string;
+  vassal: string;
+  decision: string;
+  runId?: string;
+  skill?: string;
+  realm?: string;
+  taskId?: string;
+  state?: string;
+  detail?: string;
+};
+
 export type DeckClient = {
   snapshot(): Promise<DeckSnapshot>;
+  /** Read-only fan-out/decision timeline. */
+  timeline(limit?: number): Promise<AuditView[]>;
   revoke(name: string): Promise<void>;
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
@@ -99,11 +115,12 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
 
   return {
     async snapshot(): Promise<DeckSnapshot> {
-      const [rosterEnv, escEnv, metricsEnv, stateEnv] = await Promise.allSettled([
+      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv] = await Promise.allSettled([
         getJson<{ snapshot: RosterView }>('/api/roster'),
         getJson<{ escalations: EscalationView[] }>('/api/escalations?status=pending'),
         getJson<MetricsView>('/api/metrics'),
         getJson<StateView>('/api/state'),
+        getJson<{ entries: AuditView[] }>('/api/audit?limit=12'),
       ]);
       // Roster + escalations are core; their failure aborts the render. Metrics/
       // state are additive and degrade to null if that face is not mounted.
@@ -114,7 +131,12 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         escalations: escEnv.value.escalations,
         metrics: metricsEnv.status === 'fulfilled' ? metricsEnv.value : null,
         state: stateEnv.status === 'fulfilled' ? stateEnv.value : null,
+        audit: auditEnv.status === 'fulfilled' ? auditEnv.value.entries : null,
       };
+    },
+    timeline: async (limit = 12) => {
+      const body = await getJson<{ entries: AuditView[] }>(`/api/audit?limit=${encodeURIComponent(limit)}`);
+      return body.entries;
     },
     revoke: async name => {
       const res = await fetchImpl(`${baseUrl}/api/vassals/${encodeURIComponent(name)}`, { method: 'DELETE', headers });

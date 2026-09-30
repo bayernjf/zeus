@@ -8,6 +8,10 @@ const t = makeTranslator('zh-CN');
 const palette = makePalette(false);
 
 const snapshot: DeckSnapshot = {
+  audit: [
+    { ts: '00:00:01', vassal: 'pr-helper', decision: 'dispatched', skill: 'deployment-health' },
+    { ts: '00:00:02', vassal: 'loom', decision: 'refused-revoked', skill: 'research' },
+  ],
   roster: {
     generatedAt: '2026-09-30T00:00:00.000Z',
     entries: [
@@ -88,6 +92,7 @@ describe('TUI pure render', () => {
 
   it('renders empty-state copy and omits metrics block when null', () => {
     const empty: DeckSnapshot = {
+      audit: [],
       roster: { generatedAt: '', entries: [] },
       escalations: [],
       metrics: null,
@@ -103,5 +108,34 @@ describe('TUI pure render', () => {
     expect(escalationOptions(snapshot.escalations[1])).toEqual(['postgres', 'sqlite']);
     expect(escalationOptions(snapshot.escalations[0])).toEqual(['provide params', 'skip']);
     expect(skillList({ skills: [{ id: 'a' }, { name: 'b' }] })).toBe('a,b');
+  });
+
+  it('renders the fan-out timeline with localized decision labels and raw context', () => {
+    const out = renderDeck({ snapshot, t, palette, updatedAt: '00:00:00' });
+    expect(out).toContain('扇出 / 决策时间线（最近 2）');
+    expect(out).toContain('已派发');
+    expect(out).toContain('已吊销执行 Agent 阻断');
+    expect(out).toContain('loom · research');
+    expect(out).toContain('pr-helper · deployment-health');
+    // The machine enum stays beside the translated label nowhere; here only
+    // known labels are rendered without a raw-decision fallback suffix.
+    expect(out).not.toContain('(dispatched)');
+  });
+
+  it('shows the unknown-decision fallback with the raw enum, never inventing a label', () => {
+    const future: DeckSnapshot = {
+      ...snapshot,
+      audit: [{ ts: '00:00:03', vassal: 'pr-helper', decision: 'quorum-new-thing' }],
+    };
+    const out = renderDeck({ snapshot: future, t, palette, updatedAt: '00:00:00' });
+    expect(out).toContain('未知审计类型 quorum-new-thing');
+    expect(out).toContain('(quorum-new-thing)');
+  });
+
+  it('renders timeline empty vs unavailable distinctly', () => {
+    const emptyAudit: DeckSnapshot = { ...snapshot, audit: [] };
+    expect(renderDeck({ snapshot: emptyAudit, t, palette, updatedAt: '' })).toContain('尚无扇出记录');
+    const unavailable: DeckSnapshot = { ...snapshot, audit: null };
+    expect(renderDeck({ snapshot: unavailable, t, palette, updatedAt: '' })).toContain('审计面不可用');
   });
 });

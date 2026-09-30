@@ -4,8 +4,8 @@
  * through semantic tokens (tokens.ts); labels only through the i18n translator.
  */
 import type { Translator } from './format.js';
-import { statusLabel } from './format.js';
-import { paintStatus, type Palette } from './tokens.js';
+import { auditDecisionLabel, statusLabel } from './format.js';
+import { auditToken, paintStatus, type Palette } from './tokens.js';
 import type { DeckSnapshot, EscalationView } from './client.js';
 
 export type RenderInput = {
@@ -134,6 +134,29 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
   return lines;
 }
 
+function renderTimeline(palette: Palette, t: Translator, snapshot: DeckSnapshot): string[] {
+  const entries = snapshot.audit;
+  if (entries === null) {
+    return [heading(palette, t('timeline.title', { total: 0 })), `  ${t('timeline.unavailable')}`];
+  }
+  const lines: string[] = [heading(palette, t('timeline.title', { total: entries.length }))];
+  if (entries.length === 0) {
+    lines.push(`  ${t('timeline.empty')}`);
+    return lines;
+  }
+  for (const entry of entries) {
+    const { token, known } = auditToken(entry.decision);
+    const label = auditDecisionLabel(t, entry.decision);
+    const badge = known
+      ? palette.paint(token, label)
+      : palette.paint(token, `${label} (${entry.decision})`);
+    const stamp = entry.ts ? `[${entry.ts}] ` : '';
+    const context = [entry.vassal, entry.skill, entry.state].filter(Boolean).join(' · ');
+    lines.push(`  ${stamp}${badge}  ${context}`.trimEnd());
+  }
+  return lines;
+}
+
 /** Render the full deck to a string ready to print. */
 export function renderDeck(input: RenderInput): string {
   const { snapshot, t, palette, updatedAt } = input;
@@ -142,6 +165,7 @@ export function renderDeck(input: RenderInput): string {
     renderState(palette, t, snapshot),
     renderMetrics(palette, t, snapshot),
     renderRoster(palette, t, snapshot),
+    renderTimeline(palette, t, snapshot),
     renderEscalations(palette, t, snapshot),
     [rule, palette.paint('muted', t('app.quit'))],
   ];

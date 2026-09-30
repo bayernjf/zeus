@@ -48,12 +48,51 @@ const STATUS_TOKEN: Record<string, SemanticColor> = {
   revoked: 'muted',
 };
 
+/**
+ * One canonical audit decision -> semantic token entry (single place, like
+ * STATUS_TOKEN). Governance refusals are warnings (the policy worked);
+ * transport/execution failures are danger; normal flow stays quiet.
+ */
+const AUDIT_TOKEN: Record<string, SemanticColor> = {
+  dispatched: 'accent',
+  'dispatch-failed': 'danger',
+  'sla-ack-breached': 'warning',
+  'vassal-revoked': 'danger',
+  'refused-realm-policy': 'warning',
+  'refused-unknown-vassal': 'warning',
+  'refused-revoked': 'warning',
+  'refused-skill-uninstalled': 'warning',
+  'refused-no-active-provider': 'warning',
+  'branch-diverted': 'info',
+  'domain-read': 'info',
+  'domain-refused': 'warning',
+  'domain-grant-issued': 'info',
+  'domain-grant-revoked': 'warning',
+  'driver-grant-issued': 'info',
+  'realm-write': 'info',
+  'realm-disconnected': 'warning',
+  'realm-tenant-retargeted': 'warning',
+  'commission-granted': 'info',
+  'commission-waived': 'info',
+  'commission-withdrawn': 'warning',
+  'commission-refused': 'warning',
+  'memory-claim-skipped': 'warning',
+};
+
 export type StatusToken = { token: SemanticColor; known: boolean };
 
 /** Resolve a raw status enum to its semantic token. Unknown -> fallback + known:false. */
 export function statusToken(status: string): StatusToken {
   if (Object.prototype.hasOwnProperty.call(STATUS_TOKEN, status)) {
     return { token: STATUS_TOKEN[status], known: true };
+  }
+  return { token: 'unknown', known: false };
+}
+
+/** Resolve a raw audit decision to its semantic token. Unknown -> fallback. */
+export function auditToken(decision: string): StatusToken {
+  if (Object.prototype.hasOwnProperty.call(AUDIT_TOKEN, decision)) {
+    return { token: AUDIT_TOKEN[decision], known: true };
   }
   return { token: 'unknown', known: false };
 }

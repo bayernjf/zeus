@@ -3,6 +3,7 @@ import { createDeck, type RunnerIo } from '../src/tui/runner.js';
 import type { DeckClient, DeckSnapshot } from '../src/tui/client.js';
 
 const baseSnapshot: DeckSnapshot = {
+  audit: [],
   roster: {
     generatedAt: '',
     entries: [
