@@ -50,6 +50,31 @@ describe('TUI HTTP client', () => {
     expect(call?.init?.headers?.authorization).toBe('Bearer tok');
   });
 
+  it('fetches mounted realms and the grant ledger from /api/domains', async () => {
+    const payload = {
+      realms: [{ realmId: 'acme', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 3, contentDigest: 'sha256:x' }],
+      grants: [{ grantId: 'g-1', subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' }],
+    };
+    const { calls, client } = mockClient(url =>
+      url === 'http://kernel/api/domains'
+        ? okJson(payload)
+        : okJson({}),
+    );
+    const domains = await client.domains();
+    expect(domains).toEqual(payload);
+    expect(calls.some(c => c.url === 'http://kernel/api/domains')).toBe(true);
+  });
+
+  it('degrades domains to null in the snapshot when the face is not mounted', async () => {
+    const { client } = mockClient(url => {
+      if (url.endsWith('/api/domains')) return fail503;
+      return snapshotRoute()(url);
+    });
+    const snap = await client.snapshot();
+    expect(snap.domains).toBeNull();
+    expect(snap.roster.entries).toEqual([]);
+  });
+
   it('surfaces non-2xx responses as ApiError with the server message', async () => {
     const { client } = mockClient(url =>
       url.includes('/api/audit') ? { ok: false, status: 404, json: async () => ({ error: { message: 'unknown intent' } }) } : okJson({}),

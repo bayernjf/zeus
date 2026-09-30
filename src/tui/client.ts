@@ -20,6 +20,7 @@ export type DeckSnapshot = {
   metrics: MetricsView | null;
   state: StateView | null;
   audit: AuditView[] | null;
+  domains: DomainsView | null;
 };
 
 export type RosterView = {
@@ -75,10 +76,36 @@ export type AuditView = {
   detail?: string;
 };
 
+/** GET /api/domains: mounted realms plus the personal->enterprise grant ledger. */
+export type DomainsView = {
+  realms: Array<{
+    realmId: string;
+    type: 'personal' | 'enterprise';
+    /** Structured enterprise tenant as served by GET /api/domains. */
+    tenant?: { org: string; department?: string; member?: string };
+    readOnly: boolean;
+    itemCount: number;
+    contentDigest: string;
+  }>;
+  grants: Array<{
+    grantId: string;
+    subject: string;
+    realmId: string;
+    access: 'read' | 'write';
+    grantedBy: string;
+    reason?: string;
+    grantedAt: string;
+    expiresAt?: string;
+    nonce: string;
+  }>;
+};
+
 export type DeckClient = {
   snapshot(): Promise<DeckSnapshot>;
   /** Read-only fan-out/decision timeline. */
   timeline(limit?: number): Promise<AuditView[]>;
+  /** Read-only mounted realms and cross-domain grant ledger. */
+  domains(): Promise<DomainsView>;
   revoke(name: string): Promise<void>;
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
@@ -115,12 +142,13 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
 
   return {
     async snapshot(): Promise<DeckSnapshot> {
-      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv] = await Promise.allSettled([
+      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv] = await Promise.allSettled([
         getJson<{ snapshot: RosterView }>('/api/roster'),
         getJson<{ escalations: EscalationView[] }>('/api/escalations?status=pending'),
         getJson<MetricsView>('/api/metrics'),
         getJson<StateView>('/api/state'),
         getJson<{ entries: AuditView[] }>('/api/audit?limit=12'),
+        getJson<DomainsView>('/api/domains'),
       ]);
       // Roster + escalations are core; their failure aborts the render. Metrics/
       // state are additive and degrade to null if that face is not mounted.
@@ -132,12 +160,14 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         metrics: metricsEnv.status === 'fulfilled' ? metricsEnv.value : null,
         state: stateEnv.status === 'fulfilled' ? stateEnv.value : null,
         audit: auditEnv.status === 'fulfilled' ? auditEnv.value.entries : null,
+        domains: domainsEnv.status === 'fulfilled' ? domainsEnv.value : null,
       };
     },
     timeline: async (limit = 12) => {
       const body = await getJson<{ entries: AuditView[] }>(`/api/audit?limit=${encodeURIComponent(limit)}`);
       return body.entries;
     },
+    domains: async () => getJson<DomainsView>('/api/domains'),
     revoke: async name => {
       const res = await fetchImpl(`${baseUrl}/api/vassals/${encodeURIComponent(name)}`, { method: 'DELETE', headers });
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));

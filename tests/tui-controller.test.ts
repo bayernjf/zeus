@@ -4,6 +4,7 @@ import type { DeckClient, DeckSnapshot } from '../src/tui/client.js';
 
 const baseSnapshot: DeckSnapshot = {
   audit: [],
+  domains: null,
   roster: {
     generatedAt: '',
     entries: [

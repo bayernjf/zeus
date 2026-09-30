@@ -12,6 +12,15 @@ const snapshot: DeckSnapshot = {
     { ts: '00:00:01', vassal: 'pr-helper', decision: 'dispatched', skill: 'deployment-health' },
     { ts: '00:00:02', vassal: 'loom', decision: 'refused-revoked', skill: 'research' },
   ],
+  domains: {
+    realms: [
+      { realmId: 'notes-personal', type: 'personal', readOnly: false, itemCount: 12, contentDigest: 'sha256:aaa' },
+      { realmId: 'acme-eng', type: 'enterprise', tenant: { org: 'acme', department: 'eng' }, readOnly: true, itemCount: 5, contentDigest: 'sha256:bbb' },
+    ],
+    grants: [
+      { grantId: 'g-1', subject: 'loom', realmId: 'acme-eng', access: 'read', grantedBy: 'operator', grantedAt: '2026-09-30T00:00:00.000Z', nonce: 'n1' },
+    ],
+  },
   roster: {
     generatedAt: '2026-09-30T00:00:00.000Z',
     entries: [
@@ -93,6 +102,7 @@ describe('TUI pure render', () => {
   it('renders empty-state copy and omits metrics block when null', () => {
     const empty: DeckSnapshot = {
       audit: [],
+      domains: null,
       roster: { generatedAt: '', entries: [] },
       escalations: [],
       metrics: null,
@@ -137,5 +147,23 @@ describe('TUI pure render', () => {
     expect(renderDeck({ snapshot: emptyAudit, t, palette, updatedAt: '' })).toContain('尚无扇出记录');
     const unavailable: DeckSnapshot = { ...snapshot, audit: null };
     expect(renderDeck({ snapshot: unavailable, t, palette, updatedAt: '' })).toContain('审计面不可用');
+  });
+
+  it('renders mounted realms, tenant/read-only flags and the grant ledger', () => {
+    const out = renderDeck({ snapshot, t, palette, updatedAt: '00:00:00' });
+    expect(out).toContain('数据域与跨域授权（域 2 · 授权 1）');
+    expect(out).toContain('notes-personal');
+    expect(out).toContain('acme-eng');
+    expect(out).toContain('租户 acme/eng');
+    expect(out).toContain('只读');
+    expect(out).toContain('loom → acme-eng（读，operator）');
+  });
+
+  it('renders domains unavailable vs empty distinctly', () => {
+    const unavailable: DeckSnapshot = { ...snapshot, domains: null };
+    expect(renderDeck({ snapshot: unavailable, t, palette, updatedAt: '' })).toContain('数据域面不可用');
+    const empty: DeckSnapshot = { ...snapshot, domains: { realms: [], grants: [] } };
+    const out = renderDeck({ snapshot: empty, t, palette, updatedAt: '' });
+    expect(out).toContain('未挂载数据域');
   });
 });

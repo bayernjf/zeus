@@ -6,7 +6,7 @@
 import type { Translator } from './format.js';
 import { auditDecisionLabel, statusLabel } from './format.js';
 import { auditToken, paintStatus, type Palette } from './tokens.js';
-import type { DeckSnapshot, EscalationView } from './client.js';
+import type { DeckSnapshot, DomainsView, EscalationView } from './client.js';
 
 export type RenderInput = {
   snapshot: DeckSnapshot;
@@ -157,6 +157,37 @@ function renderTimeline(palette: Palette, t: Translator, snapshot: DeckSnapshot)
   return lines;
 }
 
+function renderDomains(palette: Palette, t: Translator, domains: DomainsView | null): string[] {
+  if (domains === null) {
+    return [heading(palette, t('domains.title', { realms: 0, grants: 0 })), `  ${t('domains.unavailable')}`];
+  }
+  const lines: string[] = [heading(palette, t('domains.title', { realms: domains.realms.length, grants: domains.grants.length }))];
+  if (domains.realms.length === 0) {
+    lines.push(`  ${t('domains.empty')}`);
+    return lines;
+  }
+  for (const realm of domains.realms) {
+    const typeLabel = t(realm.type === 'enterprise' ? 'domains.enterprise' : 'domains.personal');
+    const flags = [t('domains.items', { count: realm.itemCount })];
+    if (realm.readOnly) flags.push(t('domains.readOnly'));
+    if (realm.tenant) {
+      const tenantPath = [realm.tenant.org, realm.tenant.department, realm.tenant.member].filter(Boolean).join('/');
+      flags.push(t('domains.tenant', { tenant: tenantPath }));
+    }
+    lines.push(`  ${palette.paint(realm.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(realm.realmId)}  [${flags.join(' · ')}]`);
+  }
+  lines.push(`  ${t('domains.grantsTitle')}`);
+  if (domains.grants.length === 0) {
+    lines.push(`    ${t('domains.noGrants')}`);
+  } else {
+    for (const grant of domains.grants) {
+      const access = t(grant.access === 'write' ? 'domains.access.write' : 'domains.access.read');
+      lines.push(`    ${t('domains.grant', { subject: grant.subject, realmId: grant.realmId, access, grantedBy: grant.grantedBy })}`);
+    }
+  }
+  return lines;
+}
+
 /** Render the full deck to a string ready to print. */
 export function renderDeck(input: RenderInput): string {
   const { snapshot, t, palette, updatedAt } = input;
@@ -166,6 +197,7 @@ export function renderDeck(input: RenderInput): string {
     renderMetrics(palette, t, snapshot),
     renderRoster(palette, t, snapshot),
     renderTimeline(palette, t, snapshot),
+    renderDomains(palette, t, snapshot.domains),
     renderEscalations(palette, t, snapshot),
     [rule, palette.paint('muted', t('app.quit'))],
   ];
