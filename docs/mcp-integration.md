@@ -199,7 +199,21 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ## 2. Zeus 作为 MCP 客户端：连接器（connector）
 
-外部系统已经实现了 MCP over HTTP？Zeus 侧用连接器接入，四个动作：**声明 → 握手（发现 + 裁剪）→ 调用 → 吊销**。全部在 bearer 保护的 H2 面上（长驻服务 `dist/http/serve.js` 总是装配该面；只用库时要显式注入 `connectorRegistry`）。
+外部系统实现了 MCP（streamable HTTP 或本地 stdio）？Zeus 侧用连接器接入，四个动作：**声明 → 握手（发现 + 裁剪）→ 调用 → 吊销**。全部在 bearer 保护的 H2 面上（长驻服务 `dist/http/serve.js` 总是装配该面；只用库时要显式注入 `connectorRegistry`）。
+
+连接器支持两种 transport，二选一：
+
+- **http**（默认）：`endpoint` 为 streamable-HTTP URL，可选 `token`（出站 Bearer）。
+- **stdio**：`command` + 可选 `args` / `env`，Zeus 拉起本地子进程，走换行分隔 JSON-RPC。用于本地优先、没有 HTTP 面的 MCP server（如 work-learn 的 stdio server、Zeus 自己的 `dist/realm/mcp-stdio.js`）。声明与调用时 `endpoint` 与 `command` 互斥；`env` 的值（可能含凭证）不回显，HTTP 面只返回 `envKeys`。
+
+stdio 声明示例（经 HTTP 面）：
+
+```bash
+curl -s -X POST localhost:8787/api/connectors -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"id":"local-notes","name":"Local Notes","command":"node","args":["dist/realm/mcp-stdio.js","/abs/notes"],"permissions":["mcp:realm.search"]}'
+```
+
+**实测（2026-10-01，Node 22.23.1）**：以真实 `dist/realm/mcp-stdio.js`（指向临时目录）为上游，经 `ConnectorRegistry` stdio transport 完成真机握手与调用——`connect` 后工具清单裁剪为声明内的 `realm.search`（`realm.read` 被边界排除），`realm.search` 对真实文件返回命中，未声明的 `realm.read` 调用被拒（`does not expose tool 'realm.read'`）。握手与单次调用各自起独立子进程、完成即关闭，Zeus 不保持到连接器的长连（与 HTTP transport 同语义）。
 
 ```bash
 TOKEN=…    # ZEUS_INTERNAL_TOKEN
@@ -471,7 +485,7 @@ Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/clie
 | 具体宿主的配置样例 | 只给了语义中立的 `command` + `args` 形状，**没有**针对任何一家宿主的实测配置 | 同上一条 |
 | `limit` 截断到 200、`text` 切词 AND 语义 | 代码级（`src/realm/store.ts:155-173`）；实测只覆盖了"超限不报错"和单/双关键词命中 | 需要给外部读者保证分页行为时补一次 201 文件的实测 |
 | 企业域 Realm 经 MCP 暴露 | 不存在该路径（stdio 写死 personal + readOnly） | deferred **#18** 决定 actor 判定时一并处理 |
-| 连接器权限词法绑不住"名字不合词法"的工具 | **已修复（2026-09-30，deferred #30）**：`mcp:<工具名>` 改为引用上游握手清单的原样字符串（下划线/点/大写均合法、精确大小写匹配），非 mcp 作用域保持封闭词法；声明了但上游清单没有的工具在连接时产生 `boundary-unmatched` 审计事件，防上游改名静默失权。仍未做：对**真实外部** MCP 服务的 connect（E7 至今只用自造上游测试） | 库内已闭环；真实上游实连待 E7 外部服务端出现 |
+| 连接器权限词法绑不住"名字不合词法"的工具 | **已修复（2026-09-30，deferred #30）**：`mcp:<工具名>` 改为引用上游握手清单的原样字符串（下划线/点/大写均合法、精确大小写匹配），非 mcp 作用域保持封闭词法；声明了但上游清单没有的工具在连接时产生 `boundary-unmatched` 审计事件，防上游改名静默失权。**真实上游 connect（2026-10-01）**：stdio transport 新增后，对**真实** `dist/realm/mcp-stdio.js`（非自造夹具）完成握手/裁剪/调用/边界拒绝实测（见 §2）。仍未做：对**第三方仓库**（work-learn stdio server）的 connect——其本地 stdio 形态依赖 `better-sqlite3` 原生模块，当前工作树该模块未构建（Node 20/22 均报无 bindings），且远程形态需 Supabase 凭证；对非 Zeus 自有的 HTTP MCP 服务也尚未实连 | work-learn 本机依赖可运行（或其远程 MCP 有可用凭证）时复跑；届时把 21 个工具的最小权限声明形状记进本节 |
 | 未声明的查询参数被静默丢掉（`?tags=`） | **已修复（2026-09-30，deferred #31 销项）**：`tags` 下传到存储层显式 `-32602`（P0 不支持标签检索），任何未声明参数名按名拒绝；resource URI 与 `tools/call` 两通道同口径，17 例 MCP 测试覆盖 | 标签检索真正立项的阈值仍在 design-realm §6.2（单 Realm >2 万文件或 P50>500ms） |
 
 ## 4. 复跑这份取证

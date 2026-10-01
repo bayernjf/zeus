@@ -101,6 +101,52 @@ describe('E7 connector HTTP face', () => {
     expect(connectors.get('knowledge')?.token).toBe(CONNECTOR_TOKEN);
   });
 
+  it('accepts a stdio connector declaration (command/args/env) and never echoes env values', async () => {
+    ({ app } = await server());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      headers: AUTH,
+      payload: {
+        id: 'local-realm',
+        name: 'Local Realm',
+        command: 'node',
+        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
+        env: { ZEUS_REALM_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
+        permissions: ['mcp:realm.search'],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    const body = await res.json();
+    expect(body).toMatchObject({ id: 'local-realm', status: 'declared', command: 'node' });
+    expect(body.endpoint).toBeUndefined();
+    expect(body.envKeys).toEqual(['ZEUS_REALM_ROOTS', 'SECRET']);
+    expect(res.body).not.toContain('hidden-value');
+    expect(body.args).toEqual(['dist/realm/mcp-stdio.js', '/tmp/notes']);
+  });
+
+  it('rejects connector declarations missing both endpoint and command, and rejects both set', async () => {
+    ({ app } = await server());
+    const neither = await app.inject({
+      method: 'POST', url: '/api/connectors', headers: AUTH,
+      payload: { id: 'x', name: 'X', permissions: ['mcp'] },
+    });
+    expect(neither.statusCode).toBe(400);
+    expect((await neither.json()).detail).toMatch(/endpoint.*command|command.*endpoint/);
+
+    const both = await app.inject({
+      method: 'POST', url: '/api/connectors', headers: AUTH,
+      payload: { id: 'y', name: 'Y', endpoint: mcpUrl, command: 'node', permissions: ['mcp'] },
+    });
+    expect(both.statusCode).toBe(400);
+
+    const badArgs = await app.inject({
+      method: 'POST', url: '/api/connectors', headers: AUTH,
+      payload: { id: 'z', name: 'Z', command: 'node', args: [1, 2], permissions: ['mcp'] },
+    });
+    expect(badArgs.statusCode).toBe(400);
+  });
+
   it('connects over the wire and reports only capabilities inside the boundary', async () => {
     ({ app } = await server());
     await app.inject({ method: 'POST', url: '/api/connectors', headers: AUTH, payload: declarationBody() });

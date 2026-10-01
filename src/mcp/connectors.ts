@@ -1,6 +1,7 @@
 import { validatePermissionClaims } from '../skills/validate-spec.js';
 import { SkillValidationError } from '../skills/validate-spec.js';
 import { McpClient } from './client.js';
+import { McpStdioClient } from './stdio-client.js';
 import type {
   ConnectorCapabilities,
   ConnectorDeclaration,
@@ -37,8 +38,47 @@ export class ConnectorRegistry {
     const issues = validatePermissionClaims(input.permissions);
     if (issues.length > 0) throw new SkillValidationError(issues);
 
+    const isStdio =
+      input.transport?.type === 'stdio' ||
+      (input.transport?.type !== 'http' && typeof input.command === 'string' && input.command.trim().length > 0);
+    if (isStdio) {
+      const command = input.transport?.type === 'stdio' ? input.transport.command : input.command;
+      if (typeof command !== 'string' || command.trim().length === 0) {
+        throw new ConnectorError('stdio connector requires a non-empty command');
+      }
+    } else if (typeof input.endpoint !== 'string' || input.endpoint.trim().length === 0) {
+      throw new ConnectorError('http connector requires a non-empty endpoint');
+    }
+
+    const normalised: ConnectorDeclaration = isStdio
+      ? {
+          id: input.id,
+          name: input.name,
+          command:
+            input.transport?.type === 'stdio' ? input.transport.command : input.command!,
+          args:
+            input.transport?.type === 'stdio'
+              ? input.transport.args
+              : input.args,
+          env:
+            input.transport?.type === 'stdio' ? input.transport.env : input.env,
+          permissions: input.permissions,
+        }
+      : {
+          id: input.id,
+          name: input.name,
+          endpoint:
+            input.transport?.type === 'http' ? input.transport.endpoint : input.endpoint!,
+          permissions: input.permissions,
+          ...(input.transport?.type === 'http' && input.transport.token
+            ? { token: input.transport.token }
+            : input.token
+              ? { token: input.token }
+              : {}),
+        };
+
     const record: ConnectorRecord = {
-      ...input,
+      ...normalised,
       permissions: [...new Set(input.permissions)],
       status: 'declared',
       declaredAt: this.now().toISOString(),
@@ -59,7 +99,20 @@ export class ConnectorRegistry {
 
     let capabilities: ConnectorCapabilities;
     try {
-      capabilities = await new McpClient(record.endpoint, { fetchImpl, token: record.token }).initialize();
+      if (this.isStdio(record)) {
+        const stdio = new McpStdioClient({
+          command: record.command!,
+          args: record.args,
+          env: record.env,
+        });
+        try {
+          capabilities = await stdio.initialize();
+        } finally {
+          stdio.close();
+        }
+      } else {
+        capabilities = await new McpClient(record.endpoint!, { fetchImpl, token: record.token }).initialize();
+      }
     } catch (error) {
       this.log('refused', id, error instanceof Error ? error.message : 'handshake failed');
       throw error;
@@ -101,6 +154,12 @@ export class ConnectorRegistry {
     );
   }
 
+  private isStdio(record: ConnectorRecord): boolean {
+    if (record.transport?.type === 'stdio') return true;
+    if (record.transport?.type === 'http') return false;
+    return typeof record.command === 'string' && record.command.trim().length > 0;
+  }
+
   /** Revoke: the connector immediately disappears from active lookups. */
   revoke(id: string): ConnectorRecord {
     const record = this.require(id);
@@ -129,7 +188,15 @@ export class ConnectorRegistry {
     if (!record.capabilities.tools.includes(name)) {
       throw new ConnectorError(`connector ${id} does not expose tool '${name}' (discovered: ${record.capabilities.tools.join(', ') || 'none'})`);
     }
-    const client = new McpClient(record.endpoint, { fetchImpl, token: record.token });
+    if (this.isStdio(record)) {
+      const client = new McpStdioClient({ command: record.command!, args: record.args, env: record.env });
+      try {
+        return await client.callTool(name, args);
+      } finally {
+        client.close();
+      }
+    }
+    const client = new McpClient(record.endpoint!, { fetchImpl, token: record.token });
     return client.callTool(name, args);
   }
 

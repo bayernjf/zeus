@@ -1360,6 +1360,13 @@ State of Zeus as of 2026-09-29.
    - [x] **不纳入或暂缓**：one-code 定位为状态传感器/通知出口（MCP 只读，待场景）、termana 为操作者端入口；word-base/word-picker/splity/shareit/tab-manager 待真实跨产品使用意图再作 MCP 连接器；one-world、vfx-todo、soft-desk、toclick、flowkit 不纳入（flowkit/atlas/agent-world/agent-dev 自身为编排运行时，接入只允许经 Agent Card 暴露执行能力，编排语义不进 Zeus）；ai-agent-learning 与各 `*-landing` 为内容/页面资产。
    - [x] **文档**：product-portrait 升 **v0.8**（§7.1 表格 +2 行、推进规则 +1 条、演进日志 v0.8）；本文件 Project documents 索引同步。**未 push（等用户授权）**
 
+84. **E7 出站连接器补 stdio transport：work-learn 样板接入的工程前提，真实 stdio 上游首次 connect（2026-10-01 ✅ 完成，全量 862 绿 / 91 文件，`smoke:core` 36/36，typecheck/build exit 0）**：
+   - [x] **缺口取证**：推进 work-learn（portrait v0.8 首个 MCP + Skill 样板）时实测确认——Zeus 出站连接器（E7）此前只有 streamable HTTP 一种 transport（`ConnectorDeclaration.endpoint` 为 URL），而 work-learn 本地优先的默认形态是 **stdio MCP**（`packages/mcp-server`，21 个工具、本地 SQLite、无 token）；不补 stdio，本地优先产品在工程上没有接入路径。其本机 stdio server 因 `better-sqlite3` 原生模块当前工作树未构建（Node 20/22 均报无 bindings）无法直接当上游，故改用 Zeus 自有的**真实** stdio server `dist/realm/mcp-stdio.js` 取证（非自造夹具）。
+   - [x] **实现**：`src/mcp/stdio-client.ts` 新增——换行分隔 JSON-RPC 2.0 over 子进程，initialize/notifications/tools·resources·prompts list/tools-call，进程退出/error 拒绝在途请求，`spawnImpl` 可注入；`src/mcp/types.ts` 的 `ConnectorDeclaration` 扩 `command`/`args`/`env` 与显式 `transport`，`endpoint` 改可选（http 与 stdio 二选一）；`ConnectorRegistry.declare` 做两态归一化与形状校验，`connect`/`callTool` 按 transport 分流，握手与单次调用各自起独立子进程、完成即关闭（与 HTTP「不保持连接器长连」同语义，真机首跑正是挂在这点——握手后不关进程导致事件循环不退出，已修）。HTTP 面 `POST /api/connectors` 接受 stdio 声明，`endpoint` 与 `command` 互斥校验，`env` 值不回显只给 `envKeys`（防凭证明文进响应）。
+   - [x] **真机取证（Node 22.23.1）**：对临时目录起真实 `mcp-stdio.js`，`connect` → 工具裁剪为声明内 `realm.search`（真实上游的 `realm.read` 被边界排除）、资源发现 2 条 manifest/search；`realm.search {text:"auth"}` 对真实文件返回命中；越界调 `realm.read` 被拒 `does not expose tool 'realm.read'`。
+   - [x] **测试 +8（文件数 90→91）**：新增 `tests/mcp-stdio-client.test.ts` 4 例（握手发现/工具调用参数/JSON-RPC 错误上抛/进程早退拒绝在途）；mcp-connectors +2（stdio 声明、两态缺失校验）；http-connectors +2（stdio 声明含 env 脱敏、互斥与 args 形状 400）。活基线 854/90 → **862/91**。
+   - [x] **文档**：mcp-integration §2 补 stdio 用法 + 真机证据、§3 诚实边界更新（真实 stdio 上游已验；第三方 work-learn 实连仍卡在其原生依赖/远程凭证）；design-realm §6.1 客户端现状补 stdio。**work-learn 21 工具的最小权限声明形状待其本机依赖可运行后实连登记。未 push（等用户授权）**
+
 ## Project documents
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
