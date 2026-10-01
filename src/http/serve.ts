@@ -23,6 +23,7 @@
 import { createRequire } from 'node:module';
 import {
   bootKernel,
+  concurrencyBootOptions,
   KernelBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
@@ -69,12 +70,9 @@ async function main(): Promise<void> {
       process.stderr.write(`[zeus-http] FAILED to persist kernel state after a consumed driver grant: ${message}\n`);
     },
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
-    ...(concurrency.maxConcurrentBranches !== undefined
-      ? { maxConcurrentBranches: concurrency.maxConcurrentBranches }
-      : {}),
-    ...(concurrency.branchQueueLimit !== undefined
-      ? { branchQueueLimit: concurrency.branchQueueLimit }
-      : {}),
+    // A-01: the resolved config goes across whole; copying it by hand is how the
+    // per-vassal cap was validated at boot and then never reached the kernel.
+    ...concurrencyBootOptions(concurrency),
     ...(process.env.ZEUS_VASSAL_SEEDS
       ? { vassalSeeds: resolveVassalSeedsConfig(process.env) }
       : {}),
@@ -102,7 +100,8 @@ async function main(): Promise<void> {
   }
   process.stderr.write(
     `[zeus-http] branch concurrency: ${concurrency.maxConcurrentBranches ?? 'unbounded'}` +
-      `${concurrency.branchQueueLimit !== undefined ? `, queue ${concurrency.branchQueueLimit}` : ', queue unbounded'}\n`
+      `${concurrency.branchQueueLimit !== undefined ? `, queue ${concurrency.branchQueueLimit}` : ', queue unbounded'}` +
+      `${concurrency.maxConcurrentPerVassal !== undefined ? `, per-vassal ${concurrency.maxConcurrentPerVassal}` : ', per-vassal unbounded'}\n`
   );
   if (kernel.auditFile) {
     const ceiling = kernel.auditMaxBytes === Number.POSITIVE_INFINITY

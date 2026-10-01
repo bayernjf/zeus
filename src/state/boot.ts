@@ -638,6 +638,22 @@ export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): 
   return config;
 }
 
+/**
+ * A-01: the resolved concurrency config is handed to bootKernel as a whole.
+ *
+ * The process used to copy it field by field, which is how
+ * ZEUS_MAX_CONCURRENT_PER_VASSAL came to be parsed and validated at boot
+ * (resolveConcurrencyConfig) and then dropped before reaching the orchestrator:
+ * the operator set a cap, the boot accepted it, and the runtime never enforced
+ * it. A whole-object spread puts every present field on the kernel options and
+ * keeps every future field doing the same.
+ */
+export function concurrencyBootOptions(
+  concurrency: ProcessConcurrencyConfig,
+): Pick<KernelBootOptions, 'maxConcurrentBranches' | 'branchQueueLimit' | 'maxConcurrentPerVassal'> {
+  return { ...concurrency };
+}
+
 function envInteger(
   value: string | undefined,
   name: string,

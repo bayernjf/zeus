@@ -10,7 +10,13 @@ import type { DagRunner } from '../src/orchestrator/dag-runner.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
-import { bootKernel, KernelBootError, resolveAuditConfig, resolveConcurrencyConfig } from '../src/state/boot.js';
+import {
+  bootKernel,
+  concurrencyBootOptions,
+  KernelBootError,
+  resolveAuditConfig,
+  resolveConcurrencyConfig,
+} from '../src/state/boot.js';
 import { DEFAULT_AUDIT_KEEP, DEFAULT_AUDIT_MAX_BYTES, readAuditLog } from '../src/dispatch/audit.js';
 import { kernelStats } from '../src/state/stats.js';
 import {
@@ -227,6 +233,25 @@ describe('E1.5 resolveConcurrencyConfig', () => {
       ZEUS_MAX_CONCURRENT_BRANCHES: '8',
       ZEUS_BRANCH_QUEUE_LIMIT: '0',
     })).toEqual({ maxConcurrentBranches: 8, branchQueueLimit: 0 });
+  });
+
+  it('hands every resolved concurrency field to the kernel, not just the two oldest (A-01)', () => {
+    const resolved = resolveConcurrencyConfig({
+      ZEUS_MAX_CONCURRENT_BRANCHES: '8',
+      ZEUS_BRANCH_QUEUE_LIMIT: '2',
+      ZEUS_MAX_CONCURRENT_PER_VASSAL: '1',
+    });
+    expect(resolved).toEqual({
+      maxConcurrentBranches: 8,
+      branchQueueLimit: 2,
+      maxConcurrentPerVassal: 1,
+    });
+    // Assembly must not reproduce the resolved config by hand: that copy is how
+    // the per-vassal cap passed boot validation and never reached the
+    // orchestrator, leaving the operator with a cap that did not exist.
+    expect(concurrencyBootOptions(resolved)).toEqual(resolved);
+    // An unset field stays absent rather than arriving as an explicit undefined.
+    expect(concurrencyBootOptions({})).toEqual({});
   });
 
   it('fails the boot on a cap it would otherwise silently ignore', () => {
