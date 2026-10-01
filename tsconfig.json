@@ -7,7 +7,18 @@
     "noUnusedLocals": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "allowJs": true
   },
-  "include": ["src", "tests", "vitest.config.ts", "vitest.clock-skew.config.ts"]
+  // The two shipped scripts opt themselves in with `// @ts-check`; the remaining
+  // scripts/*.mjs stay unchecked until someone decides their checking level
+  // (deferred #37).
+  "include": [
+    "src",
+    "tests",
+    "vitest.config.ts",
+    "vitest.clock-skew.config.ts",
+    "scripts/gen-rsk-key.mjs",
+    "scripts/smoke-core.mjs"
+  ]
 }
