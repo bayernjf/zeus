@@ -333,7 +333,7 @@ export type {
 export type { RealmWriteAuditEntry, FsRealmStoreOptions, DriverGrantAuthority } from './realm/store.js';
 
 // --- E3.6 tenancy + E6.4 cross-domain authorization and retrieval ---
-export { parseTenant, formatTenant, normalizeTenant, tenantReaches, TenantError } from './realm/tenant.js';
+export { parseTenant, formatTenant, normalizeTenant, tenantKey, tenantReaches, TenantError } from './realm/tenant.js';
 export {
   decideRealmAccess,
   verifyDomainGrant,

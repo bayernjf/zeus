@@ -119,6 +119,21 @@ describe('E3.5 FsRealmStore.write (personal realm)', () => {
     expect(readdirSync(join(root, '..')).includes('outside.md')).toBe(true);
   });
 
+  it('does not build a directory tree through a symlinked parent that escapes the root', async () => {
+    if (!symlinksSupported) return;
+    const outsideDir = join(sandbox, 'outside-dir');
+    mkdirSync(outsideDir);
+    symlinkSync(outsideDir, join(root, 'linked'));
+    const store = new FsRealmStore();
+    const manifest = await connected(store);
+    // The parent does not exist yet, so a naive mkdir-first path would create
+    // 'deep/' outside the root before any containment check could refuse it.
+    await expect(
+      store.write(manifest.realmId, { itemId: 'linked/deep/new.md', data: 'escaped\n' }),
+    ).rejects.toBeInstanceOf(InvalidItemIdError);
+    expect(existsSync(join(outsideDir, 'deep'))).toBe(false);
+  });
+
   it('refreshes manifest digest/itemCount, search and entries after write', async () => {
     const store = new FsRealmStore();
     const before = await connected(store);
@@ -347,6 +362,22 @@ describe('E3.5 enterprise realm writes through a real store', () => {
     // itemId is derived from the clock, which is what makes a deterministic
     // fixture possible at all.
     expect(itemId).toMatch(/^writes\/2026-09-24T10-00-00/);
+  });
+
+  it('does not burn the grant on a write it cannot honour', async () => {
+    const ledger = new DriverGrantLedger();
+    const store = new FsRealmStore({ now: clock, driverGrants: { ledger } });
+    const manifest = await store.connect(root, 'enterprise');
+    const g = grant(manifest.realmId);
+    // Rejected by shape validation, before any write: the single-use
+    // authorization must survive, or a typo in the path would cost the driver a
+    // fresh grant and, with a real ledger, look like a replay.
+    await expect(store.write(manifest.realmId, { itemId: 'bin.dat', data: 'x' }, g))
+      .rejects.toBeInstanceOf(UnsupportedWriteError);
+    expect(ledger.isSpent(g.nonce)).toBe(false);
+    await expect(store.write(manifest.realmId, { itemId: 'brief.md', data: 'ok\n' }, g))
+      .resolves.toMatchObject({ itemId: 'brief.md' });
+    expect(ledger.isSpent(g.nonce)).toBe(true);
   });
 
   it('a read-only enterprise connection stays read-only even with a grant', async () => {

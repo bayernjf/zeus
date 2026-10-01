@@ -74,6 +74,21 @@ describe('FsRealmStore P0', () => {
     expect(otherManifest.realmId).toBe(manifest.realmId);
   });
 
+  it('bounds the snapshot and says so instead of silently indexing a partial realm', async () => {
+    const store = new FsRealmStore({ scanLimits: { maxItems: 2 } });
+    const manifest = await store.connect(root, 'personal');
+    expect(manifest.itemCount).toBe(2);
+    expect(manifest.skipped?.some(s => s.reason.includes('scan stopped at the item-count bound'))).toBe(true);
+    // The partial snapshot is what search sees, and the truncation is visible
+    // rather than being mistaken for a small realm.
+    expect(await store.search(manifest.realmId, {})).toHaveLength(2);
+
+    const byteBound = new FsRealmStore({ scanLimits: { maxTotalBytes: 1 } });
+    const truncated = await byteBound.connect(root, 'personal');
+    expect(truncated.itemCount).toBe(0);
+    expect(truncated.skipped?.some(s => s.reason.includes('total-size bound'))).toBe(true);
+  });
+
   it('connects an enterprise realm and refuses a root that does not exist', async () => {
     const store = new FsRealmStore();
     const enterprise = await store.connect(root, 'enterprise');

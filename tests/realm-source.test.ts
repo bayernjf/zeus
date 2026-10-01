@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FsRealmStore } from '../src/realm/store.js';
 import { DomainGrantRegistry } from '../src/realm/authorization.js';
 import { RealmSourceError, resolveRealmSource, type RealmAuditEntry } from '../src/realm/source.js';
-import type { RealmActor } from '../src/realm/types.js';
+import type { RealmActor, RealmStore } from '../src/realm/types.js';
 
 const NOW = new Date('2026-09-25T00:00:00.000Z');
 const now = () => NOW;
@@ -143,6 +143,27 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
   it('names an unconnected realm instead of returning an empty result', async () => {
     await expect(ask({ realmId: 'realm-does-not-exist' })).rejects.toBeInstanceOf(RealmSourceError);
     await expect(ask({ realmId: 'realm-does-not-exist' })).rejects.toMatchObject({ decision: { reason: 'unknown-realm' } });
+  });
+
+  it('surfaces a store fault instead of relabelling it as an unconnected realm', async () => {
+    const broken = {
+      manifest: async () => {
+        throw new Error('EIO: manifest unreadable');
+      },
+      connections: () => [],
+    } as unknown as RealmStore;
+    const faults: RealmAuditEntry[] = [];
+    await expect(
+      resolveRealmSource({
+        store: broken,
+        actor: driver,
+        source: { realmId: deptRealmId },
+        audit: entry => faults.push(entry),
+        now,
+      }),
+    ).rejects.toThrow(/EIO: manifest unreadable/);
+    // A store fault is not a boundary refusal, so it must not be audited as one.
+    expect(faults).toHaveLength(0);
   });
 
   it('refuses a write ask against a read-only mount', async () => {

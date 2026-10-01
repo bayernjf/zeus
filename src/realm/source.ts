@@ -16,6 +16,7 @@ import { decideRealmAccess, type ScopedRealm } from './authorization.js';
 import { formatTenant } from './tenant.js';
 import type { RealmAccess, RealmActor, RealmHit, RealmStore, RealmType, SearchQuery } from './types.js';
 import type { DomainDecision, DomainGrant } from './types.js';
+import { RealmNotConnectedError } from './types.js';
 
 export type RealmSource = {
   realmId: string;
@@ -93,7 +94,12 @@ export async function resolveRealmSource(input: ResolveRealmSourceInput): Promis
       ...(manifest.tenant ? { tenant: manifest.tenant } : {}),
       readOnly: input.store.connections().find(entry => entry.realmId === manifest.realmId)?.readOnly ?? false,
     };
-  } catch {
+  } catch (error) {
+    // Only "not mounted" is an unknown realm. A store fault (I/O, corrupt
+    // manifest) is a different incident with a different remedy, so relabelling
+    // every failure as "not connected" would send the operator to the wrong
+    // place and hide the real error.
+    if (!(error instanceof RealmNotConnectedError)) throw error;
     return refuse({ ok: false, reason: 'unknown-realm', detail: `realm not connected: ${source.realmId}` });
   }
 
