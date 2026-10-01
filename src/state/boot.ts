@@ -251,6 +251,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // Replaced once the state file exists below. Until then it is a no-op: a
   // kernel without a state file has nothing to persist a consumed nonce into.
   let persistLiveState: () => Promise<void> = async () => {};
+  // Tail of the save chain. Every save writes the same `.tmp` path, so two
+  // overlapping saves can interleave content or lose a rename (the loser's tmp
+  // is already gone) - chaining them keeps the file equal to the newest state.
+  let persistTail: Promise<void> = Promise.resolve();
   // E3.5 / deferred #14: the driver trust anchor. With a signer the kernel only
   // honors grants IT signed (or grants signed by a key it accepts) and consumes
   // each nonce once; without one, a grant is checked for shape, realm binding and
@@ -302,6 +306,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       decision: entry.decision === 'grant-issued' ? 'domain-grant-issued' : 'domain-grant-revoked',
       realm: 'enterprise',
       detail: `${entry.decision} ${entry.grantId}: ${entry.access} ${entry.subject} -> ${entry.realmId} by ${entry.grantedBy}`,
+    });
+    // Issuing or revoking a grant changes who may cross a domain boundary, so it
+    // reaches disk now rather than at the next graceful shutdown: a crash would
+    // otherwise resurrect a revoked grant (or drop a live one) on the next boot,
+    // both of which silently widen access.
+    void persistLiveState().catch(error => {
+      (options.onStateSaveError ?? noop)(error instanceof Error ? error.message : String(error));
     });
   };
   const realmAudit = (entry: RealmAuditEntry): void => {
@@ -497,7 +508,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   }
   // Now that the state file exists, a freshly consumed nonce can reach disk.
   persistLiveState = async (): Promise<void> => {
-    if (store) await store.save(collectKernelState(components));
+    const target = store;
+    if (!target) return;
+    // Serialize: the next snapshot is collected only after the previous save has
+    // landed, so a burst of governance changes cannot race on one `.tmp` file.
+    const run = persistTail.then(() => target.save(collectKernelState(components)));
+    persistTail = run.catch(() => {});
+    await run;
   };
 
   // G4: reconnect realms restored from the snapshot, then connect the roots

@@ -11,8 +11,14 @@
  *   enterprise -> enterprise the tenant subtree rule, structural and NOT
  *                            grant-loosenable
  *
- * The registry also compares nonces, so a revoked-or-spent credential cannot be
- * replayed by re-presentation (deferred #14's nonce gap, closed for this layer).
+ * A grant is honored only while it is in the registry's live list: `list()`
+ * returns grants that have not been revoked, so a revoked credential is not
+ * re-presentable. The nonce set is an issuance-uniqueness guard (a nonce cannot
+ * be re-used by a later grant, even after the original is revoked), NOT a
+ * consumption ledger - these grants stay valid until they expire or are
+ * revoked, because they mean "this subject may touch that domain" and not "this
+ * one crossing is authorized". The single-use credential is E3.5's
+ * DriverWriteGrant, not this one.
  */
 import { randomUUID } from 'node:crypto';
 import type { DomainDecision, DomainGrant, RealmAccess, RealmActor, TenantScope } from './types.js';
@@ -157,14 +163,19 @@ export type GrantAuditEntry = {
   grantedBy: string;
 };
 
-/** What the kernel persists: the live grants plus every spent nonce, so a
- *  restart cannot silently widen access or re-admit a replayed credential. */
+/** What the kernel persists: the live grants plus every nonce ever issued, so a
+ *  restart neither widens access (a revoked grant stays revoked) nor re-admits
+ *  a nonce for a new grant. */
 export type DomainGrantState = { grants: DomainGrant[]; spentNonces: string[] };
 
 /**
  * Live set of cross-domain grants. In-memory with an exportable snapshot (the
- * kernel persists it, so a restart neither silently widens nor silently drops
- * an authorization).
+ * kernel persists it on every issue/revoke, so a restart neither silently
+ * widens nor silently drops an authorization).
+ *
+ * `seenNonces` holds every nonce this registry ever minted, live or revoked
+ * (hence the persisted key `spentNonces`); it exists to keep nonces unique
+ * across grants, not to mark a grant consumed - see the file header.
  */
 export class DomainGrantRegistry {
   private grants = new Map<string, DomainGrant>();
