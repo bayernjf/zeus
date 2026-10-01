@@ -18,7 +18,6 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
   let grants: DomainGrantRegistry;
   let audit: RealmAuditEntry[];
   let deptRealmId: string;
-  let mktRealmId: string;
   let personalRealmId: string;
   let readOnlyRealmId: string;
 
@@ -40,11 +39,11 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
       'enterprise',
       { tenant: 'acme/eng' },
     )).realmId;
-    mktRealmId = (await store.connect(
+    await store.connect(
       make('mkt', { 'campaign.md': 'compiler spend on ads\n' }),
       'enterprise',
       { tenant: 'acme/mkt' },
-    )).realmId;
+    );
     personalRealmId = (await store.connect(
       make('me', { 'diary.md': 'my private compiler diary\n' }),
       'personal',

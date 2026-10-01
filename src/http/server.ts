@@ -5,12 +5,12 @@ import { projectInternalRoster, projectPublicRoster } from '../registry/roster.j
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
 import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
-import { DagValidationError, validateDag, topologicalLayers, type DagSpec, type DagNode } from '../orchestrator/dag.js';
+import { DagValidationError, topologicalLayers, type DagSpec, type DagNode } from '../orchestrator/dag.js';
 import type { DagRunner } from '../orchestrator/dag-runner.js';
 import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationKind, EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
-import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
+import { ProgressHub } from '../orchestrator/progress.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';

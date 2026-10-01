@@ -276,7 +276,6 @@ describe('readAuditLog', () => {
       writeFileSync(path, `${first}\n${second}\n${third}\n`);
       // Window starts at the first byte of the third line: that line is complete,
       // and dropping it would silently lose a record.
-      const offset = Buffer.byteLength(`${first}\n${second}\n`);
       expect(readAuditLog(path, {}, { readBytes: Buffer.byteLength(`${third}\n`) }).map(e => e.ts))
         .toEqual(['third']);
     } finally {

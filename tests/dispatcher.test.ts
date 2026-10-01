@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Dispatcher, type AuditEntry } from '../src/dispatch/dispatcher.js';
 import { memoryAuditSink } from '../src/dispatch/audit.js';
-import type { AgentCard, Fealty, Task } from '../src/a2a/types.js';
+import type { Fealty, Task } from '../src/a2a/types.js';
 import type { VassalLike, VassalLookup } from '../src/dispatch/types.js';
 
 function fealty(overrides: Partial<Fealty> = {}): Fealty {

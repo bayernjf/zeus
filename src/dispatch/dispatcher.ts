@@ -1,6 +1,6 @@
 import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
-import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
+import { sendTaskSubscribe, cancelTask } from './client.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
 /**

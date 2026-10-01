@@ -172,7 +172,7 @@ export function readAuditLog(
     if (offset > 0 && !startsAtLineBoundary(fd, offset)) lines.shift();
 
     const entries: AuditEntry[] = [];
-    for (const [index, line] of lines.entries()) {
+    for (const line of lines) {
       const text = line.trim();
       if (text === '') continue;
       let parsed: unknown;

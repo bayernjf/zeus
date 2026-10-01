@@ -19,7 +19,6 @@ import type {
   DriverResolution,
   FanOutRequest,
   FanOutResult,
-  FanOutStatus,
   GovernanceRefusal,
   SkillGovernor,
   TargetLookup,

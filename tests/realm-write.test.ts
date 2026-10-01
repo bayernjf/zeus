@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FsRealmStore } from '../src/realm/store.js';
-import { verifyDriverWriteGrant, issueDriverWriteGrant, DriverGrantLedger, DriverGrantError } from '../src/realm/grant.js';
+import { verifyDriverWriteGrant, issueDriverWriteGrant, DriverGrantLedger } from '../src/realm/grant.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   InvalidItemIdError,

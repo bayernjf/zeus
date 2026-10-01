@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ConcurrencyMetrics, percentile } from '../src/orchestrator/metrics.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
-import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
+import type { DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
