@@ -4,7 +4,6 @@ import { CardFetchError, VassalRegistry, VassalRevokedError } from '../registry/
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
-import { UnknownIntentError } from '../orchestrator/orchestrator.js';
 import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
 import { DagValidationError, validateDag, topologicalLayers, type DagSpec, type DagNode } from '../orchestrator/dag.js';
 import type { DagRunner } from '../orchestrator/dag-runner.js';
@@ -15,7 +14,6 @@ import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
-import { DuplicateSkillError, SkillNotFoundError } from '../skills/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
 import type { CompetencyCheck, MentorshipStatus } from '../skills/mentor.js';
 import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
@@ -45,6 +43,7 @@ import { formatTenant, normalizeTenant } from '../realm/tenant.js';
 import { CommissionError, commissionId } from '../onboarding/types.js';
 import type { CommissionLedger } from '../onboarding/commission.js';
 import { composeBriefing } from '../onboarding/briefing.js';
+import { DomainError, type DomainErrorKind } from '../util/domain-error.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
 import { exportDiary, persistDiary } from '../diary/persist.js';
 import { DiaryUnsupportedError } from '../diary/types.js';
@@ -1844,27 +1843,39 @@ function error(reply: FastifyReply, status: number, code: string, detail: string
   return reply.code(status).send({ error: code, detail });
 }
 
-/** Map kernel throws to HTTP status: unknown id → 404, already decided / wrong
- *  state → 409, anything else (bad stance, malformed request) → 400. */
-function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (thrown instanceof UnknownIntentError || /unknown (intent|escalation)/i.test(detail)) {
-    return error(reply, 404, 'not_found', detail);
-  }
-  if (/already (approved|rejected|decided)|only needs-driver|is (approved|rejected|completed|partial|failed|canceled)/i.test(detail)) {
-    return error(reply, 409, 'conflict', detail);
-  }
-  return error(reply, 400, 'invalid_request', detail);
+/** A domain failure names what went wrong; the transport decides what that is
+ *  worth. A refused precondition gate is a conflict. The commission path keeps
+ *  its own richer response shape (`mapCommissionError`), so `gate` only needs a
+ *  sane default here. */
+function statusForKind(kind: DomainErrorKind): { status: number; code: string } {
+  if (kind === 'not-found') return { status: 404, code: 'not_found' };
+  if (kind === 'conflict' || kind === 'gate') return { status: 409, code: 'conflict' };
+  return { status: 400, code: 'invalid_request' };
 }
 
-/** Map OrgError to HTTP status: unknown department or a member that does not
- *  hold a post here → 404, duplicate/exists → 409, anything else (bad
- *  name/mission/slug) → 400. */
+function messageOf(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : String(thrown);
+}
+
+/** Classify an orchestrator / oversight failure. Read from the error type,
+ *  never from its message: rewriting "unknown intent" as "no such intent" must
+ *  not silently turn a 404 into a 400. */
+export function classifyKernelError(thrown: unknown): { status: number; code: string } {
+  return thrown instanceof DomainError ? statusForKind(thrown.kind) : { status: 400, code: 'invalid_request' };
+}
+
+export function classifyOrgError(thrown: unknown): { status: number; code: string } {
+  return thrown instanceof DomainError ? statusForKind(thrown.kind) : { status: 400, code: 'invalid_request' };
+}
+
+function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  const { status, code } = classifyKernelError(thrown);
+  return error(reply, status, code, messageOf(thrown));
+}
+
 function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (/unknown department|is not in the department/i.test(detail)) return error(reply, 404, 'not_found', detail);
-  if (/already|exists/i.test(detail)) return error(reply, 409, 'conflict', detail);
-  return error(reply, 400, 'invalid_request', detail);
+  const { status, code } = classifyOrgError(thrown);
+  return error(reply, status, code, messageOf(thrown));
 }
 
 /** Validate a YYYY-MM-DD date string. */
@@ -2022,12 +2033,22 @@ function mapRealmQueryError(reply: FastifyReply, thrown: unknown): FastifyReply 
   throw thrown;
 }
 
+/** Classify a connector-registry failure. A `SkillValidationError` is a bad
+ *  declaration (400); a typed domain failure carries its own kind; anything else
+ *  is the transport outcome the caller passed in — a failed handshake against a
+ *  real endpoint is 502, a local misuse 400. */
+export function classifyConnectorError(
+  thrown: unknown,
+  unreachable: 400 | 502,
+): { status: number; code: string } {
+  if (thrown instanceof SkillValidationError) return { status: 400, code: 'invalid_request' };
+  if (thrown instanceof DomainError) return statusForKind(thrown.kind);
+  return { status: unreachable, code: unreachable === 502 ? 'bad_gateway' : 'invalid_request' };
+}
+
 function mapConnectorError(reply: FastifyReply, thrown: unknown, unreachable: 400 | 502): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (thrown instanceof SkillValidationError) return error(reply, 400, 'invalid_request', detail);
-  if (/not found/i.test(detail)) return error(reply, 404, 'not_found', detail);
-  if (/already declared|is revoked/i.test(detail)) return error(reply, 409, 'conflict', detail);
-  return error(reply, unreachable, unreachable === 502 ? 'bad_gateway' : 'invalid_request', detail);
+  const { status, code } = classifyConnectorError(thrown, unreachable);
+  return error(reply, status, code, messageOf(thrown));
 }
 
 /** A connector record carries the bearer token it presents upstream. The driver
@@ -2044,21 +2065,17 @@ function redactConnector(
   };
 }
 
-/** Map SkillRegistry / MentorshipLedger throws to HTTP status: unknown id → 404,
- *  duplicate or a closed/locked state → 409, anything else (invalid spec,
- *  over-broad hardening, malformed competency check) → 400. */
+/** Classify a skill-catalogue / mentorship failure: unknown id → 404, a
+ *  duplicate or a closed/locked state → 409, an invalid spec or malformed
+ *  competency check → 400. The kind rides on the error type. */
+export function classifyCatalogueError(thrown: unknown): { status: number; code: string } {
+  if (thrown instanceof SkillValidationError) return { status: 400, code: 'invalid_request' };
+  return thrown instanceof DomainError ? statusForKind(thrown.kind) : { status: 400, code: 'invalid_request' };
+}
+
 function mapCatalogueError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (thrown instanceof SkillNotFoundError || /not found/i.test(detail)) {
-    return error(reply, 404, 'not_found', detail);
-  }
-  if (
-    thrown instanceof DuplicateSkillError ||
-    /already (exists|registered)|not an active provider|not open|cannot (harden|certify|teach)|is (deprecated|certified|failed|dismissed|uninstalled)/i.test(detail)
-  ) {
-    return error(reply, 409, 'conflict', detail);
-  }
-  return error(reply, 400, 'invalid_request', detail);
+  const { status, code } = classifyCatalogueError(thrown);
+  return error(reply, status, code, messageOf(thrown));
 }
 
 /** Map DiaryError to HTTP status: unsupported/no writable realm → 409,

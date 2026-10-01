@@ -1,9 +1,12 @@
 import type { A2AEvent } from '../a2a/types.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import type { Conflict } from '../orchestrator/types.js';
+import { DomainError } from '../util/domain-error.js';
 import type { CancelTaskFn, Escalation, EscalationKind, EscalationStatus, OversightAuditEntry } from './types.js';
 
 const FALLBACK_REASON = 'vassal requests human input';
+
+export class OversightError extends DomainError {}
 
 export type OversightOptions = {
   now?: () => Date;
@@ -187,10 +190,10 @@ export class OversightDesk {
   decideConflict(id: string, stance: string, note?: string): Escalation {
     const current = this.requirePending(id);
     if (current.kind !== 'intent-conflict') {
-      throw new Error(`escalation ${id} is ${current.kind}; use approve/reject`);
+      throw new OversightError(`escalation ${id} is ${current.kind}; use approve/reject`);
     }
     if (!current.stances?.some(entry => entry.stance === stance)) {
-      throw new Error(`stance "${stance}" is not one of the conflict options: ${current.options.join(', ')}`);
+      throw new OversightError(`stance "${stance}" is not one of the conflict options: ${current.options.join(', ')}`);
     }
     const decided: Escalation = {
       ...current,
@@ -242,9 +245,9 @@ export class OversightDesk {
 
   private requirePending(id: string): Escalation {
     const entry = this.escalations.get(id);
-    if (!entry) throw new Error(`unknown escalation: ${id}`);
+    if (!entry) throw new OversightError(`unknown escalation: ${id}`, 'not-found');
     if (entry.status !== 'pending') {
-      throw new Error(`escalation ${id} already ${entry.status}`);
+      throw new OversightError(`escalation ${id} already ${entry.status}`, 'conflict');
     }
     return entry;
   }

@@ -9,6 +9,7 @@ import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import { Semaphore, type SlotRelease } from './semaphore.js';
 import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
 import type { DecisionBackend } from '../decision/types.js';
+import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
 import type {
   BranchOutcome,
@@ -88,7 +89,11 @@ export type OrchestratorOptions = {
   onDiverted?: (entry: { skill: string; realm: FanOutRequest['realm']; from: string; to: string; at: string }) => void;
 };
 
-export class UnknownIntentError extends Error {}
+export class UnknownIntentError extends DomainError {
+  constructor(message: string) {
+    super(message, 'not-found');
+  }
+}
 
 /** E5.3 persisted shape of the orchestrator's in-memory state. */
 export type OrchestratorSnapshot = {

@@ -67,10 +67,10 @@ export function assignMember(
   const agentId = input.agentId?.trim();
   if (!agentId) throw new OrgError('agentId is required');
   if (dept.members.some(m => m.agentId === agentId)) {
-    throw new OrgError(`Agent ${agentId} is already in the department`);
+    throw new OrgError(`Agent ${agentId} is already in the department`, 'conflict');
   }
   const role = input.role ?? 'member';
-  if (role === 'lead' && dept.lead) throw new OrgError('Department already has a lead');
+  if (role === 'lead' && dept.lead) throw new OrgError('Department already has a lead', 'conflict');
 
   const member: OrgMember = { agentId, role, joinedAt: now };
   if (input.title?.trim()) member.title = input.title.trim();
@@ -83,7 +83,7 @@ export function assignMember(
 
 export function removeMember(dept: Department, agentId: string): Department {
   if (!dept.members.some(m => m.agentId === agentId)) {
-    throw new OrgError(`Agent ${agentId} is not in the department`);
+    throw new OrgError(`Agent ${agentId} is not in the department`, 'not-found');
   }
   const next: Department = { ...dept, members: dept.members.filter(m => m.agentId !== agentId) };
   if (dept.lead === agentId) next.lead = undefined;
@@ -93,7 +93,7 @@ export function removeMember(dept: Department, agentId: string): Department {
 /** Promote an existing member to lead; the previous lead becomes a member. */
 export function setLead(dept: Department, agentId: string): Department {
   if (!dept.members.some(m => m.agentId === agentId)) {
-    throw new OrgError(`Agent ${agentId} is not in the department`);
+    throw new OrgError(`Agent ${agentId} is not in the department`, 'not-found');
   }
   const members = dept.members.map(m => {
     if (m.agentId === agentId) return { ...m, role: 'lead' as const };

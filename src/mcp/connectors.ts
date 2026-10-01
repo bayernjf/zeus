@@ -1,5 +1,6 @@
 import { validatePermissionClaims } from '../skills/validate-spec.js';
 import { SkillValidationError } from '../skills/validate-spec.js';
+import { DomainError } from '../util/domain-error.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 import { McpClient } from './client.js';
 import { McpStdioClient } from './stdio-client.js';
@@ -16,7 +17,7 @@ export interface ConnectorAuditEntry {
   detail?: string;
 }
 
-export class ConnectorError extends Error {}
+export class ConnectorError extends DomainError {}
 
 /**
  * E7 connector registry: declarations are the minimum-privilege boundary,
@@ -34,7 +35,7 @@ export class ConnectorRegistry {
 
   declare(input: ConnectorDeclaration): ConnectorRecord {
     if (this.connectors.has(input.id)) {
-      throw new ConnectorError(`connector ${input.id} already declared`);
+      throw new ConnectorError(`connector ${input.id} already declared`, 'conflict');
     }
     const issues = validatePermissionClaims(input.permissions);
     if (issues.length > 0) throw new SkillValidationError(issues);
@@ -102,7 +103,7 @@ export class ConnectorRegistry {
     fetchImpl?: typeof fetch,
   ): Promise<ConnectorRecord> {
     const record = this.require(id);
-    if (record.status === 'revoked') throw new ConnectorError(`connector ${id} is revoked`);
+    if (record.status === 'revoked') throw new ConnectorError(`connector ${id} is revoked`, 'conflict');
 
     let capabilities: ConnectorCapabilities;
     try {
@@ -180,7 +181,7 @@ export class ConnectorRegistry {
     fetchImpl?: typeof fetch,
   ): Promise<unknown> {
     const record = this.require(id);
-    if (record.status === 'revoked') throw new ConnectorError(`connector ${id} is revoked`);
+    if (record.status === 'revoked') throw new ConnectorError(`connector ${id} is revoked`, 'conflict');
     if (record.status !== 'connected' || !record.capabilities) {
       throw new ConnectorError(`connector ${id} is not connected; run the handshake first`);
     }
@@ -244,7 +245,7 @@ export class ConnectorRegistry {
 
   private require(id: string): ConnectorRecord {
     const record = this.connectors.get(id);
-    if (!record) throw new ConnectorError(`connector ${id} not found`);
+    if (!record) throw new ConnectorError(`connector ${id} not found`, 'not-found');
     return record;
   }
 
