@@ -58,6 +58,7 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'dispatch-failed': 'danger',
   'sla-ack-breached': 'warning',
   'vassal-revoked': 'danger',
+  'vassal-reinstated': 'accent',
   'refused-realm-policy': 'warning',
   'refused-unknown-vassal': 'warning',
   'refused-revoked': 'warning',

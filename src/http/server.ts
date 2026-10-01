@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { CardFetchError, VassalRegistry } from '../registry/registry.js';
+import { CardFetchError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -296,6 +296,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         // refused (bad fealty, unsupported version, malformed JSON) is something
         // the caller or the vassal can actually fix (400).
         if (e instanceof CardFetchError) return error(reply, 502, 'bad_gateway', detail);
+        // A-02: a revoked name cannot be brought back by re-registering, so this
+        // is a state conflict (409), not a malformed request (400).
+        if (e instanceof VassalRevokedError) return error(reply, 409, 'conflict', detail);
         return error(reply, 400, 'invalid_request', detail);
       }
     });
@@ -306,6 +309,17 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       const { name } = request.params as { name: string };
       if (!deps.registry.revoke(name)) return error(reply, 404, 'not_found', `unknown vassal: ${name}`);
       return { name, revoked: true };
+    });
+
+    // A-02: the one explicit way back. A revocation is sticky against
+    // re-registration; restoring the vassal is a separate, audited act. Unknown
+    // names and already-active vassals are 404 (nothing to restore).
+    app.post('/api/vassals/:name/reinstate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const { name } = request.params as { name: string };
+      if (!deps.registry.reinstate(name)) {
+        return error(reply, 404, 'not_found', `no revoked vassal named '${name}'`);
+      }
+      return { name, revoked: false };
     });
 
     if (deps.orchestrator) {

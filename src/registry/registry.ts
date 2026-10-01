@@ -17,6 +17,11 @@ export type VassalStatus = 'unknown' | 'active' | 'revoked';
  *  them to different codes. */
 export class CardFetchError extends Error {}
 
+/** A-02: a revocation is sticky, so re-registering a revoked name is refused
+ *  rather than silently clearing the revocation and swapping the outbound URL
+ *  and credential. Restoring a vassal is a separate, explicit act (reinstate). */
+export class VassalRevokedError extends Error {}
+
 /** Live directory the dispatcher routes through. Revoked vassals are invisible
  *  to get/findBySkill but distinguishable via statusOf for governance audit. */
 export type VassalLookup = {
@@ -29,6 +34,9 @@ export type RegistryHooks = {
   /** Fired exactly once when a vassal transitions active -> revoked.
    *  Bridge this into the dispatch audit sink. */
   onRevoke?: (name: string, at: string) => void;
+  /** Fired exactly once when a vassal transitions revoked -> active. A-02: a
+   *  revocation is only undone by this audited, explicit act. */
+  onReinstate?: (name: string, at: string) => void;
   /** Fired after a vassal's card is fetched and accepted (register). Used by
    *  boot to import the card's skills into the SkillRegistry. */
   onRegister?: (entry: VassalEntry) => void;
@@ -117,6 +125,15 @@ export class VassalRegistry {
       revoked: false,
       ...(options.token !== undefined ? { token: options.token } : {}),
     };
+    // A-02: revocation is sticky. Re-registering used to rebuild the entry with
+    // revoked:false, so one POST undid a governance act and could also swap the
+    // outbound taskUrl and token. A revoked name must be restored explicitly.
+    const existing = this.entries.get(card.name);
+    if (existing?.revoked) {
+      throw new VassalRevokedError(
+        `vassal '${card.name}' is revoked; re-registering does not clear a revocation — reinstate it explicitly first: ${cardUrl}`
+      );
+    }
     this.entries.set(card.name, entry);
     this.hooks.onRegister?.(entry);
     return structuredClone(entry);
@@ -157,6 +174,20 @@ export class VassalRegistry {
     if (!entry || entry.revoked) return false;
     entry.revoked = true;
     this.hooks.onRevoke?.(name, this.now().toISOString());
+    return true;
+  }
+
+  /**
+   * A-02: the only way back from a revocation. Explicit and audited, so the
+   * governance record shows a restore rather than having a re-registration
+   * quietly erase it. The stored card/credential are kept as they were: a
+   * restore changes the access decision, not the vassal's identity.
+   */
+  reinstate(name: string): boolean {
+    const entry = this.entries.get(name);
+    if (!entry || !entry.revoked) return false;
+    entry.revoked = false;
+    this.hooks.onReinstate?.(name, this.now().toISOString());
     return true;
   }
 

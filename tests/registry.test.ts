@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry, CardFetchError, defaultTaskUrl } from '../src/registry/registry.js';
+import { VassalRegistry, CardFetchError, VassalRevokedError, defaultTaskUrl } from '../src/registry/registry.js';
 import type { AgentCard } from '../src/a2a/types.js';
 
 function cardResponse(card: unknown, status = 200): Response {
@@ -187,6 +187,42 @@ describe('VassalRegistry', () => {
     expect(lookup.statusOf('pr-helper')).toBe('revoked');
     expect(lookup.get('pr-helper')).toBeUndefined();
     expect(lookup.findBySkill('create-pr')).toHaveLength(0);
+  });
+
+  it('refuses to re-register a revoked name so a POST cannot undo a revocation (A-02)', async () => {
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
+    await registry.register('http://vassal.internal/api/a2a/agent-card', { token: 'bearer-a' });
+    expect(registry.revoke('pr-helper')).toBe(true);
+
+    const err = await registry
+      .register('http://attacker.internal/api/a2a/agent-card', { token: 'bearer-b' })
+      .catch(e => e);
+    expect(err).toBeInstanceOf(VassalRevokedError);
+    // The rejected registration must leave the revoked entry exactly as it was:
+    // same declared card URL, same stored credential, still revoked.
+    const [entry] = registry.listAll();
+    expect(entry).toMatchObject({ status: 'revoked' });
+    expect(entry.cardUrl).toBe('http://vassal.internal/api/a2a/agent-card');
+    expect(registry.tokenFor('pr-helper')).toBeUndefined();
+  });
+
+  it('restores a revoked vassal only through an explicit, audited reinstate (A-02)', async () => {
+    const events: Array<{ name: string; at: string }> = [];
+    const registry = new VassalRegistry(
+      async () => cardResponse(prHelperCard()),
+      () => new Date('2026-10-01T10:00:00.000Z'),
+      { onReinstate: (name, at) => events.push({ name, at }) }
+    );
+    await registry.register('http://vassal.internal/api/a2a/agent-card');
+    expect(registry.revoke('pr-helper')).toBe(true);
+
+    expect(registry.reinstate('pr-helper')).toBe(true);
+    expect(events).toEqual([{ name: 'pr-helper', at: '2026-10-01T10:00:00.000Z' }]);
+    // routable again, and the transition is a one-shot: repeat / unknown names are no-ops
+    expect(registry.get('pr-helper')).toBeDefined();
+    expect(registry.reinstate('pr-helper')).toBe(false);
+    expect(registry.reinstate('ghost')).toBe(false);
+    expect(events).toHaveLength(1);
   });
 
   it('listAll keeps revoked vassals with an explicit status for the oversight deck', async () => {

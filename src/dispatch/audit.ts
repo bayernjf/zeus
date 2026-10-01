@@ -193,3 +193,16 @@ export function revokeAuditBridge(audit: AuditSink): (name: string, at: string) 
       detail: 'vassal access revoked; demoted to guest/blocked, no further tokens issued',
     });
 }
+
+/** A-02: bridge the explicit restore of a revoked vassal into the same trail.
+ *  Re-registration no longer clears a revocation, so this is the only event
+ *  that can show a revocation was undone. Wire as VassalRegistry's onReinstate. */
+export function reinstateAuditBridge(audit: AuditSink): (name: string, at: string) => void {
+  return (name, at) =>
+    audit({
+      ts: at,
+      vassal: name,
+      decision: 'vassal-reinstated',
+      detail: 'vassal access restored by an explicit reinstate; not a side effect of re-registration',
+    });
+}

@@ -35,7 +35,7 @@ export type {
 } from './a2a/types.js';
 
 // --- A1 vassal registry ---
-export { VassalRegistry, defaultTaskUrl } from './registry/registry.js';
+export { VassalRegistry, defaultTaskUrl, CardFetchError, VassalRevokedError } from './registry/registry.js';
 export type {
   VassalEntry,
   VassalLike,
@@ -100,6 +100,7 @@ export {
   type AuditQuery,
   type JsonlAuditSinkOptions,
   revokeAuditBridge,
+  reinstateAuditBridge,
 } from './dispatch/audit.js';
 
 // --- A4 oversight desk + E6.2 conflict settlement ---

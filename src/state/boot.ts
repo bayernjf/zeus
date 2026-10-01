@@ -5,6 +5,7 @@ import {
   DEFAULT_AUDIT_KEEP,
   DEFAULT_AUDIT_MAX_BYTES,
   jsonlAuditSink,
+  reinstateAuditBridge,
   revokeAuditBridge,
 } from '../dispatch/audit.js';
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
@@ -226,6 +227,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const registry = new VassalRegistry(fetchImpl, now, {
     onRegister: entry => skillRegistry.registerFromCard(entry.card),
     onRevoke: revokeAuditBridge(auditSink),
+    // A-02: the counterpart event — a revocation is only undone by an explicit
+    // reinstate, so both directions land on the same audit trail.
+    onReinstate: reinstateAuditBridge(auditSink),
   });
   const oversight = new OversightDesk({
     now,

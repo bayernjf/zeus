@@ -16,6 +16,8 @@ export const AUDIT_DECISIONS = [
   'refused-unknown-vassal',
   'refused-revoked',
   'vassal-revoked',
+  // A-02: the explicit, audited act that is the only way back from a revocation.
+  'vassal-reinstated',
   'dispatch-failed',
   'sla-ack-breached',
   // E6.4: a subject crossed (or tried to cross) a data-domain boundary.
