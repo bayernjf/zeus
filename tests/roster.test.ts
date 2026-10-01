@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { projectInternalRoster, projectPublicRoster, type RosterEntry } from '../src/registry/roster.js';
+import { canonicalDigest } from '../src/registry/signing.js';
 import type { AgentCard } from '../src/a2a/types.js';
 import type { VassalEntry } from '../src/registry/registry.js';
 
@@ -117,5 +118,28 @@ describe('RosterProjector', () => {
     const pub = projectPublicRoster(registry.listAll());
     expect(pub.entries.map(e => e.name)).toEqual(['pr-helper']);
     expect(pub.entries[0].description).toBe('reviews prs');
+  });
+
+  // A projection is handed out as immutable state that later gets sealed, so a
+  // consumer must not be able to reach the registry through it. Sharing the
+  // nested skill tags let exactly that happen — and every later snapshotDigest
+  // then differed from the one that had been sealed.
+  it('hands out copies, so a consumer cannot mutate registry state or a sealed digest', () => {
+    const source = card('atlas');
+    source.skills[0].tags.push('original');
+    const all = [entry({ card: source, fealty: source['x-zeus-fealty']!, revoked: false })];
+    const now = () => new Date('2026-09-21T10:00:00.000Z');
+    const before = canonicalDigest(projectInternalRoster(all, now));
+
+    const internal = projectInternalRoster(all, now);
+    internal.entries[0].skills[0].tags.push('mutated');
+    internal.entries[0].commitments.dataRealms.push('personal');
+    const pub = projectPublicRoster(all, now);
+    pub.entries[0].skills[0].tags.push('via-public');
+
+    expect(source.skills[0].tags).toEqual(['original']);
+    expect(source['x-zeus-fealty']!.dataRealms).toEqual(['enterprise']);
+    // Re-projecting the same registry state reproduces the sealed digest.
+    expect(canonicalDigest(projectInternalRoster(all, now))).toBe(before);
   });
 });

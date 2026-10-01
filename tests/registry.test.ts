@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry, CardFetchError, VassalRevokedError, defaultTaskUrl, type VassalEntry } from '../src/registry/registry.js';
+import { VassalRegistry, CardFetchError, VassalRevokedError, defaultTaskUrl, type RegistryHooks } from '../src/registry/registry.js';
 import type { AgentCard } from '../src/a2a/types.js';
 
 function cardResponse(card: unknown, status = 200): Response {
@@ -97,6 +97,14 @@ describe('VassalRegistry', () => {
       await expect(registerWith(oath({ dataPolicy: undefined })))
         .rejects.toThrow(/http:\/\/vassal\.internal\/api\/a2a\/agent-card$/);
     });
+
+    // domain is the grouping key routing and the roster project on: an empty or
+    // missing one quietly put every such vassal in the same nameless bucket.
+    it('refuses an oath whose domain is empty or missing', async () => {
+      await expect(registerWith(oath({ domain: '' }))).rejects.toThrow(/domain must be a non-empty string, got ""/);
+      await expect(registerWith(oath({ domain: '   ' }))).rejects.toThrow(/domain must be a non-empty string/);
+      await expect(registerWith(oath({ domain: undefined }))).rejects.toThrow(/domain must be a non-empty string, got nothing/);
+    });
   });
 
   it('refuses an unsupported fealty.version instead of silently accepting it (§4.5 version negotiation)', async () => {
@@ -168,14 +176,14 @@ describe('VassalRegistry', () => {
   });
 
   it('never hands the outbound token to the caller or the onRegister hook', async () => {
-    const seen: VassalEntry[] = [];
+    const seen: Array<Parameters<NonNullable<RegistryHooks['onRegister']>>[0]> = [];
     const registry = new VassalRegistry(async () => cardResponse(prHelperCard()), () => new Date(), {
       onRegister: entry => seen.push(entry),
     });
     const entry = await registry.register('http://vassal.internal/api/a2a/agent-card', { token: 'outbound-credential' });
-    expect(entry.token).toBeUndefined();
+    expect(entry).not.toHaveProperty('token');
     expect(seen).toHaveLength(1);
-    expect(seen[0].token).toBeUndefined();
+    expect(seen[0]).not.toHaveProperty('token');
     // The dispatcher and the on-disk snapshot stay the only readers.
     expect(registry.tokenFor('pr-helper')).toBe('outbound-credential');
     expect(registry.exportState()[0].token).toBe('outbound-credential');
@@ -301,6 +309,39 @@ describe('VassalRegistry', () => {
     up = false;
     expect(await registry.healthCheck('pr-helper')).toBe(false);
     expect(registry.get('pr-helper')?.lastHealthCheck?.detail).toBe('connection refused');
+  });
+
+  // The probe reason is text the peer's transport (or the OS) writes, and it is
+  // then persisted to the state file and carried inside the signed roster
+  // snapshot. Bound and flatten it before it gets there.
+  it('bounds and flattens a probe failure before it is persisted and signed', async () => {
+    let calls = 0;
+    const registry = new VassalRegistry(async () => {
+      calls += 1;
+      if (calls === 1) return cardResponse(prHelperCard());
+      throw new Error(`dial tcp 10.1.2.3:443: connect: connection refused\n\u0007${'x'.repeat(500)}`);
+    });
+    await registry.register('http://vassal.internal/api/a2a/agent-card');
+    expect(await registry.healthCheck('pr-helper')).toBe(false);
+    const detail = registry.get('pr-helper')?.lastHealthCheck?.detail ?? '';
+    expect(detail.startsWith('dial tcp 10.1.2.3:443: connect: connection refused')).toBe(true);
+    expect(detail.length).toBeLessThanOrEqual(200);
+    expect(detail).not.toMatch(/[\u0000-\u001f\u007f]/);
+  });
+
+  // The accessors strip the outbound bearer, so their declared type must not
+  // promise it either. Compile-time guard: if any of these signatures regains
+  // `token?`, `npm run typecheck` fails on the assignments below.
+  it('declares no token on the accessors that strip it', async () => {
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
+    await registry.register('http://vassal.internal/api/a2a/agent-card', { token: 'outbound-credential' });
+    type Guard<T> = 'token' extends keyof T ? 'leaked' : 'clean';
+    const fromGet: Guard<NonNullable<ReturnType<typeof registry.get>>> = 'clean';
+    const fromList: Guard<ReturnType<typeof registry.list>[number]> = 'clean';
+    const fromListAll: Guard<ReturnType<typeof registry.listAll>[number]> = 'clean';
+    const fromSkill: Guard<ReturnType<typeof registry.findVassalsForSkill>[number]> = 'clean';
+    expect([fromGet, fromList, fromListAll, fromSkill]).toEqual(['clean', 'clean', 'clean', 'clean']);
+    expect(registry.get('pr-helper')).not.toHaveProperty('token');
   });
 });
 

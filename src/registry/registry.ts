@@ -14,6 +14,15 @@ export type VassalLike = {
   revoked?: boolean;
 };
 
+/**
+ * C-audit: what every public accessor actually returns. The outbound bearer is
+ * deliberately dropped by `withoutToken`, so a return type that still carried
+ * `token?` was lying — and a caller could read a field that is never there. The
+ * type now matches the value, so a new field added to `VassalEntry` fails to
+ * compile here instead of silently widening the public shape.
+ */
+export type PublicVassalEntry = Omit<VassalEntry, 'token'>;
+
 export type VassalStatus = 'unknown' | 'active' | 'revoked';
 
 /** The card could not be read at all — the peer is unreachable or answered with
@@ -43,8 +52,9 @@ export type RegistryHooks = {
    *  revocation is only undone by this audited, explicit act. */
   onReinstate?: (name: string, at: string) => void;
   /** Fired after a vassal's card is fetched and accepted (register). Used by
-   *  boot to import the card's skills into the SkillRegistry. */
-  onRegister?: (entry: VassalEntry) => void;
+   *  boot to import the card's skills into the SkillRegistry. Carries the same
+   *  token-stripped shape the public accessors return. */
+  onRegister?: (entry: PublicVassalEntry) => void;
 };
 
 export type VassalEntry = {
@@ -80,7 +90,7 @@ export class VassalRegistry {
    *  Requires a valid x-zeus-fealty; a card without fealty is a guest, not a vassal.
    *  `token` is the optional outbound bearer this vassal presents on dispatch
    *  (E4.8); it is stored for the dispatcher and the snapshot only. */
-  async register(cardUrl: string, options: { taskUrl?: string; token?: string; validate?: (card: AgentCard) => void } = {}): Promise<VassalEntry> {
+  async register(cardUrl: string, options: { taskUrl?: string; token?: string; validate?: (card: AgentCard) => void } = {}): Promise<PublicVassalEntry> {
     // A-12: the caller names where we fetch from, so the URL is untrusted input.
     // Refuse a non-public target before the request leaves the process, not after
     // its body has been read into the roster.
@@ -171,12 +181,12 @@ export class VassalRegistry {
     return publicEntry;
   }
 
-  get(name: string): VassalEntry | undefined {
+  get(name: string): PublicVassalEntry | undefined {
     const entry = this.entries.get(name);
     return entry && !entry.revoked ? withoutToken(structuredClone(entry)) : undefined;
   }
 
-  list(): VassalEntry[] {
+  list(): PublicVassalEntry[] {
     return [...this.entries.values()]
       .filter(entry => !entry.revoked)
       .map(entry => withoutToken(structuredClone(entry)));
@@ -184,7 +194,7 @@ export class VassalRegistry {
 
   /** Oversight-deck view: every vassal including revoked ones, with an explicit
    *  status flag. Routing uses list(); the deck needs to see retired vassals too. */
-  listAll(): Array<VassalEntry & { status: 'active' | 'revoked' }> {
+  listAll(): Array<PublicVassalEntry & { status: 'active' | 'revoked' }> {
     return [...this.entries.values()].map(entry => ({
       ...withoutToken(structuredClone(entry)),
       status: entry.revoked ? 'revoked' : 'active',
@@ -245,11 +255,11 @@ export class VassalRegistry {
     };
   }
 
-  findVassalsForSkill(skillId: string): VassalEntry[] {
+  findVassalsForSkill(skillId: string): PublicVassalEntry[] {
     return this.list().filter(entry => entry.card.skills.some(skill => skill.id === skillId));
   }
 
-  findVassalsForDomain(domain: string): VassalEntry[] {
+  findVassalsForDomain(domain: string): PublicVassalEntry[] {
     return this.list().filter(entry => entry.fealty.domain === domain);
   }
 
@@ -260,7 +270,12 @@ export class VassalRegistry {
       const response = await this.fetchImpl(entry.cardUrl);
       entry.lastHealthCheck = { at: this.now().toISOString(), ok: response.ok, detail: response.ok ? undefined : `HTTP ${response.status}` };
     } catch (error) {
-      entry.lastHealthCheck = { at: this.now().toISOString(), ok: false, detail: error instanceof Error ? error.message : 'fetch failed' };
+      // C-audit: this text is written by the peer's transport (or the OS), and it
+      // then lands in the state file and inside the signed roster snapshot. Bound
+      // and flatten it first, so an unbounded, multi-line or control-character
+      // reason cannot bloat or corrupt either artifact.
+      const reason = error instanceof Error ? error.message : 'fetch failed';
+      entry.lastHealthCheck = { at: this.now().toISOString(), ok: false, detail: sanitizeProbeDetail(reason) };
     }
     return entry.lastHealthCheck.ok;
   }
@@ -309,6 +324,11 @@ const ESCALATION_POLICIES = ['none', 'on-failure', 'auto'] as const;
  */
 function fealtyOathProblem(fealty: Fealty): string | null {
   const oath = fealty as unknown as Record<string, unknown>;
+  // domain is the grouping key routing and the roster project on, so an empty or
+  // missing one silently puts every such vassal in the same nameless bucket.
+  if (typeof oath.domain !== 'string' || oath.domain.trim() === '') {
+    return `domain must be a non-empty string, got ${describeOathValue(oath.domain)}`;
+  }
   if (!Array.isArray(oath.dataRealms)) {
     return `dataRealms must be an array of realm types, got ${describeOathValue(oath.dataRealms)}`;
   }
@@ -334,6 +354,17 @@ function fealtyOathProblem(fealty: Fealty): string | null {
     return `sla.ackSeconds must be a positive number of seconds, got ${describeOathValue(sla.ackSeconds)}`;
   }
   return null;
+}
+
+/** Upper bound on a recorded probe failure detail, in characters. */
+const PROBE_DETAIL_LIMIT = 200;
+
+/** Flatten and bound a probe failure reason before it is persisted and signed.
+ *  The text originates outside this process, so its length, line count and
+ *  character set are all peer-controlled. */
+function sanitizeProbeDetail(raw: string): string {
+  const flattened = raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return flattened.length > PROBE_DETAIL_LIMIT ? `${flattened.slice(0, PROBE_DETAIL_LIMIT - 1)}…` : flattened;
 }
 
 function describeOathValue(value: unknown): string {

@@ -38,6 +38,7 @@ export type {
 export { VassalRegistry, defaultTaskUrl, CardFetchError, VassalRevokedError } from './registry/registry.js';
 export type {
   VassalEntry,
+  PublicVassalEntry,
   VassalLike,
   VassalLookup,
   VassalStatus,
