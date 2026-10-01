@@ -217,6 +217,28 @@ curl -s -X POST localhost:8787/api/connectors -H "Authorization: Bearer $TOKEN" 
 
 **第三方真实 MCP 实连（2026-10-01，work-learn，Node 20.20.2 + tsx）**：首个非 Zeus 自有的上游——本机 `packages/mcp-server/src/server.ts`（stdio，临时 `WORK_LEARN_DB_PATH`，无 token 本地 SQLite 形态）。裸 `mcp` 声明握手发现其全部 **21 个工具**、0 resources、0 prompts；最小权限声明 `['mcp:search_corpus','mcp:get_review_items']` 连接后工具清单**精确裁剪为这两个**，`get_review_items` 真实返回 `[]`，未声明的 `save_material` 调用被边界拒绝。再以 `['mcp:create_session','mcp:save_material','mcp:search_corpus']` 声明跑通**跨独立子进程的写后读端到端**：`create_session` → `save_material` 写入一条材料 → `search_corpus {query:'stdio transport'}` 真实命中该条（持久化经本地 SQLite，不依赖进程存活）。前置条件是 work-learn 的 `better-sqlite3` 原生模块已按 Node 20 ABI 安装（prebuild-install），server 需用 Node 20 启动。
 
+#### 2.2 最小权限分组样板：work-learn 的 21 个工具
+
+上游工具名一律按 `tools/list` 的原样字符串写进 `mcp:<工具名>`（下划线、精确大小写）。21 个工具按读写性质分四档，声明时只取当前任务需要的那一档；裸 `mcp`（全部 21 个）只用于首次发现，不作为运行态边界。
+
+| 档位 | 工具 | 性质 |
+|---|---|---|
+| **read（只读，可安全常驻）** | `search_corpus`、`get_review_items`、`generate_practice`、`get_practice_history`、`get_user_patterns`、`get_reuse_summary`、`list_expressions`、`suggest_reuse`、`suggest_reuse_candidates` | 查询/出题/建议，不改数据。`suggest_*` 只返回候选、不自动落库 |
+| **review-write（复习闭环写）** | `mark_mastered`、`snooze_review`、`record_practice` | 改动复习调度与练习记录，只影响本人语料的状态，不新建正文 |
+| **ingest（采集写）** | `create_session`、`save_material`、`save_question_translation`、`record_reuse` | 新建会话/材料/提问/复用事件。`save_*` 是正文入口，按需短时授予 |
+| **admin（管理与模型生成，影响面最大）** | `configure_reuse_nudges`（改全局提醒设置）、`cluster_intents` / `merge_intents` / `split_intent`（意图台账重组，合并/拆分删除源意图）、`generate_adaptive_practice`（可选 LLM 出口，配置了 `WORK_LEARN_LLM_*` 时正文会出本机） | 配置变更、台账结构性写、可能触发出站模型调用 |
+
+声明示例（只给「查语料 + 取复习项」的只读宿主）：
+
+```json
+{"id":"worklearn-read","name":"Work Learn Read","command":"node",
+ "args":["/abs/path/work-learn/packages/mcp-server/src/server.ts"],
+ "env":{"WORK_LEARN_DB_PATH":"/abs/path/work-learn.db"},
+ "permissions":["mcp:search_corpus","mcp:get_review_items","mcp:generate_practice"]}
+```
+
+要点：① `generate_practice` 不调模型（纯本地从已存材料生成），归 read；`generate_adaptive_practice` 在配置 LLM 时会把正文送外部，归 admin，二者不要混授；② 采集链路 `create_session → save_*` 是写操作，仅在确有「AI 对话整理入库」场景时授予；③ 意图重组三工具会删除/合并意图，属不可逆结构性写，默认不授。
+
 ```bash
 TOKEN=…    # ZEUS_INTERNAL_TOKEN
 # 1) 声明：权限边界写在声明里，凭证只在这一次进得去
