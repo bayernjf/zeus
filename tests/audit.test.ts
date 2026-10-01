@@ -82,6 +82,24 @@ describe('audit sinks', () => {
     }
   });
 
+  it('tightens a rotated generation an older build left world-readable', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-gen-mode-'));
+    const path = join(dir, 'audit.jsonl');
+    try {
+      // A generation written before the 0600 create keeps its loose mode through
+      // the rename; rotation has to re-tighten it on the way past.
+      writeFileSync(`${path}.1`, 'legacy\n', { mode: 0o644 });
+      writeFileSync(path, 'active\n', { mode: 0o600 });
+      const sink = jsonlAuditSink(path, { maxBytes: 1, keep: 3 });
+      sink({ ts: 't', vassal: 'loom', decision: 'dispatched' });
+
+      expect(statSync(`${path}.2`).mode & 0o777).toBe(0o600);
+      expect(statSync(`${path}.1`).mode & 0o777).toBe(0o600);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('refuses to start with an audit path it cannot use, and says what to fix', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-bad-'));
     const blocker = join(dir, 'not-a-directory');
@@ -223,6 +241,44 @@ describe('readAuditLog', () => {
       const offset = Buffer.byteLength(lines[0]) + 1 + 5;
       const tail = readAuditLog(path, {}, { readBytes: Buffer.byteLength(content) - offset });
       expect(tail.map(e => e.ts)).toEqual(['new']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('drops a lone partial tail line instead of reporting it as corruption', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-partial-'));
+    const path = join(dir, 'audit.jsonl');
+    try {
+      const line = (ts: string) => JSON.stringify({ ts, vassal: ts, decision: 'dispatched' });
+      const first = line('first');
+      const second = line('second');
+      writeFileSync(path, `${first}\n${second}`);
+      // Start the window 5 bytes into the second line; the window then holds a
+      // single, necessarily partial line. That is a truncated read, not a
+      // malformed record, so it is dropped rather than thrown.
+      const offset = Buffer.byteLength(first) + 1 + 5;
+      expect(readAuditLog(path, {}, { readBytes: Buffer.byteLength(first) + 1 + Buffer.byteLength(second) - offset }))
+        .toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the first line when the window begins exactly on a line boundary', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-boundary-'));
+    const path = join(dir, 'audit.jsonl');
+    try {
+      const line = (ts: string) => JSON.stringify({ ts, vassal: ts, decision: 'dispatched' });
+      const first = line('first');
+      const second = line('second');
+      const third = line('third');
+      writeFileSync(path, `${first}\n${second}\n${third}\n`);
+      // Window starts at the first byte of the third line: that line is complete,
+      // and dropping it would silently lose a record.
+      const offset = Buffer.byteLength(`${first}\n${second}\n`);
+      expect(readAuditLog(path, {}, { readBytes: Buffer.byteLength(`${third}\n`) }).map(e => e.ts))
+        .toEqual(['third']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

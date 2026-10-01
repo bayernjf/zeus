@@ -62,7 +62,10 @@ export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}
         ensureAuditFile(path);
       }
     }
-    appendFileSync(path, line);
+    // `mode` only bites when the append creates the file - which is exactly the
+    // rotation race: another writer can retire the active file between our
+    // `ensureAuditFile` and this write, and a bare append would recreate it 0644.
+    appendFileSync(path, line, { mode: 0o600 });
   };
 }
 
@@ -93,8 +96,23 @@ export function rotateAuditLog(path: string, keep: number = DEFAULT_AUDIT_KEEP):
     const to = `${path}.${gen + 1}`;
     rmSync(to, { force: true }); // rename over an existing file fails on Windows
     renameSync(from, to);
+    // A generation written by a build that predates the 0600 create keeps its
+    // old mode through the rename; tighten it on the way through. Best effort:
+    // a generation that vanished underneath us is not a rotation failure.
+    try {
+      chmodSync(to, 0o600);
+    } catch {
+      /* concurrent rotation retired it */
+    }
   }
-  if (existsSync(path)) renameSync(path, `${path}.1`);
+  if (existsSync(path)) {
+    renameSync(path, `${path}.1`);
+    try {
+      chmodSync(`${path}.1`, 0o600);
+    } catch {
+      /* concurrent rotation retired it */
+    }
+  }
 }
 
 /** Filters for reading a persisted audit trail back. */
@@ -135,10 +153,23 @@ export function readAuditLog(
     const want = Math.min(size, readBytes);
     const offset = size - want;
     const buffer = Buffer.alloc(want);
-    if (want > 0) readSync(fd, buffer, 0, want, offset);
+    // readSync is allowed to return short (signal interruption, a file that
+    // shrank underneath us); a single call would silently parse a half-window.
+    let filled = 0;
+    while (filled < want) {
+      const read = readSync(fd, buffer, filled, want - filled, offset + filled);
+      if (read === 0) break;
+      filled += read;
+    }
+    const window = buffer.subarray(0, filled).toString('utf8');
 
-    const lines = buffer.toString('utf8').split('\n');
-    if (offset > 0 && lines.length > 1) lines.shift();
+    const lines = window.split('\n');
+    // Drop the first line only when the window did not begin on a line boundary:
+    // then it is necessarily partial, and JSON.parse would report a truncated
+    // read as corruption. The old `lines.length > 1` guard left the single-line
+    // case behind, so a window holding one partial line threw instead of being
+    // treated as a truncation.
+    if (offset > 0 && !startsAtLineBoundary(fd, offset)) lines.shift();
 
     const entries: AuditEntry[] = [];
     for (const [index, line] of lines.entries()) {
@@ -166,6 +197,13 @@ export function readAuditLog(
   } finally {
     closeSync(fd);
   }
+}
+
+/** True when `offset` is the first byte of a line, i.e. the byte before it is a
+ *  newline - so the window's first line is complete and must not be dropped. */
+function startsAtLineBoundary(fd: number, offset: number): boolean {
+  const previous = Buffer.alloc(1);
+  return readSync(fd, previous, 0, 1, offset - 1) === 1 && previous[0] === 0x0a;
 }
 
 function isAuditEntry(value: unknown): value is AuditEntry {
