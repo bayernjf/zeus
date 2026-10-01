@@ -36,6 +36,9 @@ export type Escalation = {
   /** memory-dispute only. */
   factId?: string;
   conflictingFacts?: string[];
+  /** memory-dispute only: the connected realm the disputed facts belong to, so
+   *  the reliability write-back can resolve authors without a cross-domain scan. */
+  realmId?: string;
 };
 
 export type OversightAuditEntry = {

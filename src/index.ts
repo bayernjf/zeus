@@ -244,7 +244,7 @@ export {
   MAX_STANCE_CHARS,
   type BranchClaimOptions,
 } from './memory/producer.js';
-export { MemoryStore, MemoryBoundaryError } from './memory/memory-store.js';
+export { MemoryStore, MemoryBoundaryError, MemoryEventConflictError } from './memory/memory-store.js';
 export { RecallIndex, LocalHashingEmbedder, tokenize, factText } from './memory/recall.js';
 export {
   reconcileMemoryStates,

@@ -83,6 +83,16 @@ export function aggregateConfidence(events: MemoryEvent[], opts: ConsolidateOpti
   let totalWeight = 0;
   for (const [agentId, group] of byAgent) {
     const reliability = reliabilityOf(opts, agentId);
+    for (const event of group) {
+      // A self-report outside 0..1 (including NaN, which fails both comparisons)
+      // would silently poison the weighted mean of every event sharing it, and
+      // the old code only clamped the upper bound at the very end.
+      if (!(event.confidence >= 0 && event.confidence <= 1)) {
+        throw new MemoryConsolidationError(
+          `confidence out of range for event ${event.eventId}`,
+        );
+      }
+    }
     // Same-author repeats collapse to their mean self-report — no boost.
     const selfReport = group.reduce((sum, e) => sum + e.confidence, 0) / group.length;
     weighted += reliability * selfReport;

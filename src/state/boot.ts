@@ -236,13 +236,17 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
     onDecided: decided => {
       if (decided.kind !== 'memory-dispute' || !decided.factId) return;
+      // A dispute recorded before realmId was carried cannot resolve authors
+      // without a cross-realm scan, so its correction is skipped rather than
+      // guessed. New disputes always carry it (see consolidateFinishedMemory).
+      if (!decided.realmId) return;
       // Approve confirms the new fact: the conflicting facts were wrong. Reject
       // means the new fact itself was wrong. Either way the losing authors are
       // corrected, lowering their reliability in future consolidation.
       const losingFacts = decided.status === 'rejected'
         ? [decided.factId]
         : decided.conflictingFacts ?? [];
-      const authors = memoryStore.authorsOfFacts(losingFacts);
+      const authors = memoryStore.authorsOfFacts(decided.realmId, losingFacts);
       memoryStore.recordCorrections(authors, decided.runId);
     },
   });
@@ -492,6 +496,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         id: result.escalations[i],
         runId: event.runId,
         realm,
+        realmId: event.realmId,
         factId: dispute.factId,
         conflictingFacts: dispute.conflicting,
         reason: dispute.reason,

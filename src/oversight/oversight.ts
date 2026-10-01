@@ -112,6 +112,7 @@ export class OversightDesk {
     id: string;
     runId: string;
     realm: Escalation['realm'];
+    realmId?: string;
     factId: string;
     conflictingFacts: string[];
     reason: string;
@@ -132,6 +133,7 @@ export class OversightDesk {
       createdAt: this.now().toISOString(),
       factId: input.factId,
       conflictingFacts: [...input.conflictingFacts],
+      ...(input.realmId ? { realmId: input.realmId } : {}),
     };
     this.escalations.set(escalation.id, escalation);
     this.audit(escalation, 'escalated');
