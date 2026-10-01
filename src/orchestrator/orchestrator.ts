@@ -105,6 +105,14 @@ export type OrchestratorSnapshot = {
 export class Orchestrator {
   private intents = new Map<string, FanOutResult>();
   private requests = new Map<string, FanOutRequest>();
+  /**
+   * A-11: intents whose fan-out is still running, registered before the first
+   * branch is dispatched so a cancel arriving mid-flight resolves instead of
+   * throwing UnknownIntentError. Held apart from `intents` (settled results) so
+   * a replay never reads a half-built result and nothing partial is persisted.
+   * Settled branches are published into the placeholder as they come back.
+   */
+  private inFlight = new Map<string, FanOutResult>();
   private readonly slots: Semaphore | null;
 
   constructor(
@@ -199,18 +207,42 @@ export class Orchestrator {
         this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
       }
     } else {
-      const branches = await Promise.all(
-        names.map((name, i) => {
-          const entry = diversion?.plan[i];
-          const exhaustedNote =
-            entry && diversion?.exhausted ? formatExhausted(diversion.exhausted) : null;
-          return this.runTrackedBranch(
-            name, request, runId, intentId, 0,
-            entry?.divertedFrom ?? null,
-            exhaustedNote,
-          );
-        })
-      );
+      // A-11: publish the intent before the first branch is dispatched so a
+      // cancel arriving during the fan-out finds it. Previously the intent was
+      // only stored once every branch had settled, so an in-flight cancel always
+      // threw UnknownIntentError and degraded to an after-the-fact compensation.
+      // The placeholder's status is never surfaced (replay/persistence read only
+      // `intents`); it exists so cancelIntent has branches to act on.
+      this.inFlight.set(intentId, {
+        intentId, runId, skill: request.skill, realm: request.realm,
+        ...(request.realmId ? { realmId: request.realmId } : {}),
+        branches: names.map(name => ({
+          vassal: name,
+          runId: this.branchRunId(runId, name, 0),
+          ok: false,
+          events: [],
+        })),
+        stream: [], positions: [], decision: aggregate([], request.aggregation),
+        conflicts: [], status: 'failed', createdAt: this.now().toISOString(),
+      });
+
+      let branches: BranchOutcome[];
+      try {
+        branches = await Promise.all(
+          names.map((name, i) => {
+            const entry = diversion?.plan[i];
+            const exhaustedNote =
+              entry && diversion?.exhausted ? formatExhausted(diversion.exhausted) : null;
+            return this.runTrackedBranch(
+              name, request, runId, intentId, 0,
+              entry?.divertedFrom ?? null,
+              exhaustedNote,
+            );
+          })
+        );
+      } finally {
+        this.inFlight.delete(intentId);
+      }
       const positions = extractPositions(branches);
       const decision = aggregate(positions, request.aggregation);
       const conflicts = detectConflicts(positions, decision);
@@ -333,30 +365,73 @@ export class Orchestrator {
     return structuredClone(judged);
   }
 
-  /** F3: cancel every non-terminal branch of an intent; terminal branches are skipped. */
+  /**
+   * F3: cancel every non-terminal branch of an intent; terminal branches are skipped.
+   *
+   * A-11: an intent is reachable from the moment its first branch is dispatched
+   * (see `inFlight`), not only once the whole fan-out settles. Settled branches
+   * are cancelled through the dispatcher and the outcome is written back into the
+   * branch state and the recomputed aggregate, so a cancelled stance stops
+   * counting instead of surviving into the next `resumeBranch` recompute. A
+   * branch whose stream has not ended yet exposes no task id and is not
+   * cancellable here: aborting a live outbound request needs an AbortSignal
+   * through the dispatcher port (design-fan-out §7, still deferred).
+   */
   async cancelIntent(intentId: string): Promise<{ intentId: string; results: CancelBranchResult[] }> {
-    const result = this.intents.get(intentId);
-    if (!result) throw new UnknownIntentError(`unknown intent: ${intentId}`);
+    const settled = this.intents.get(intentId);
+    const source = settled ?? this.inFlight.get(intentId);
+    if (!source) throw new UnknownIntentError(`unknown intent: ${intentId}`);
 
-    const cancellable = result.branches.filter(
-      branch => branch.ok && branch.taskId && branch.state && !TERMINAL_STATES.has(branch.state)
+    const cancellable = source.branches.filter(
+      branch => branch.ok && branch.taskId && !isTerminalState(branch.state)
     );
-    const results = await Promise.all(
-      cancellable.map(async branch => {
-        try {
-          await this.dispatcher.cancel(branch.vassal, branch.taskId!);
-          return { vassal: branch.vassal, taskId: branch.taskId!, canceled: true } satisfies CancelBranchResult;
-        } catch (error) {
-          return {
-            vassal: branch.vassal,
-            taskId: branch.taskId!,
-            canceled: false,
-            reason: error instanceof Error ? error.message : 'cancel failed',
-          } satisfies CancelBranchResult;
-        }
-      })
-    );
+    const results = await Promise.all(cancellable.map(branch => this.cancelBranch(branch)));
+    if (settled) this.writeBackCancellations(intentId, settled, results);
     return { intentId, results };
+  }
+
+  /** Cancel one branch's task; a successful cancel marks the branch cancelled. */
+  private async cancelBranch(branch: BranchOutcome): Promise<CancelBranchResult> {
+    const taskId = branch.taskId!;
+    try {
+      await this.dispatcher.cancel(branch.vassal, taskId);
+      branch.ok = false;
+      branch.state = 'canceled';
+      branch.reason = 'canceled by the driver';
+      return { vassal: branch.vassal, taskId, canceled: true };
+    } catch (error) {
+      return {
+        vassal: branch.vassal,
+        taskId,
+        canceled: false,
+        reason: error instanceof Error ? error.message : 'cancel failed',
+      };
+    }
+  }
+
+  /**
+   * A-11: re-derive the stored result after branches were cancelled, so the
+   * cancelled stance leaves the aggregate and the status reflects the change.
+   * No-op when nothing was actually cancelled.
+   */
+  private writeBackCancellations(intentId: string, settled: FanOutResult, results: CancelBranchResult[]): void {
+    if (!results.some(result => result.canceled)) return;
+    this.intents.set(
+      intentId,
+      recomputeResult(settled, settled.branches, this.requests.get(intentId)?.aggregation, () => this.now())
+    );
+  }
+
+  /**
+   * A-11: expose a settled branch (with its task id) to `cancelIntent` while its
+   * siblings are still running. No-op for a finalized fan-out or a branch that
+   * never got a task id.
+   */
+  private publishBranch(intentId: string, branch: BranchOutcome): void {
+    const live = this.inFlight.get(intentId);
+    if (!live || !branch.ok || !branch.taskId) return;
+    const index = live.branches.findIndex(entry => entry.runId === branch.runId);
+    if (index !== -1) live.branches[index] = branch;
   }
 
   private branchRunId(parentRunId: string, vassal: string, resumeNo: number): string {
@@ -415,6 +490,9 @@ export class Orchestrator {
     } finally {
       release();
     }
+    // A-11: make the settled branch (now carrying its task id) visible to a
+    // cancel that arrives before the sibling branches finish.
+    this.publishBranch(intentId, branch);
     metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
     this.emit({
       type: 'branch-ended', intentId, runId: branchRunId, vassal,
@@ -529,10 +607,17 @@ function timeout(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** A-11: a branch is terminal when it settled on a final state; a branch with no
+ *  state yet (or cancelled) is still cancelable, which is why this tolerates
+ *  `undefined` instead of demanding a state. */
+function isTerminalState(state: BranchOutcome['state']): boolean {
+  return state !== undefined && TERMINAL_STATES.has(state);
+}
+
 /** Map a branch outcome to an E1.7 metric category. */
 function outcomeOf(branch: BranchOutcome): BranchOutcomeKind {
   if (branch.timedOut) return 'timeout';
-  if (!branch.ok) return 'failed';
   if (branch.state === 'canceled') return 'canceled';
+  if (!branch.ok) return 'failed';
   return 'completed';
 }

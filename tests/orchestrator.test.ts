@@ -229,4 +229,62 @@ describe('Orchestrator.cancelIntent', () => {
     expect(cancellation.results[0]).toMatchObject({ vassal: 'loom', canceled: false, reason: 'vassal unreachable' });
     await expect(orch.cancelIntent('nope')).rejects.toBeInstanceOf(UnknownIntentError);
   });
+
+  it('reaches an intent whose fan-out is still running instead of throwing UnknownIntentError', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const port = makePort({ loom: async () => { await gate; return okResult('loom', 'completed'); } });
+    const orch = newOrchestrator(port, ['loom']);
+
+    const running = orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'personal' });
+    // The branch is still streaming: it has no task id yet, so there is nothing
+    // to cancel — but the intent must be reachable (it was not before A-11).
+    const cancellation = await orch.cancelIntent('X');
+    expect(cancellation).toEqual({ intentId: 'X', results: [] });
+    expect(port.cancelCalls).toHaveLength(0);
+
+    release!();
+    await running;
+  });
+
+  it('cancels a branch that settled while its siblings were still running, and drops its stance', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const port = makePort({
+      loom: okResult('loom', 'input-required', 'approve'),
+      atlas: async () => { await gate; return okResult('atlas', 'completed', 'ship'); },
+    });
+    const orch = newOrchestrator(port, ['loom', 'atlas']);
+
+    const running = orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
+    await delay(5); // loom settles; atlas is still streaming
+    const cancellation = await orch.cancelIntent('X');
+    expect(cancellation.results).toEqual([{ vassal: 'loom', taskId: 'loom-task', canceled: true }]);
+
+    release!();
+    const result = await running;
+    // The cancel survives the fan-out finalising: the cancelled branch no longer
+    // votes and the aggregate is derived without its stance.
+    expect(result.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
+    expect(result.positions.map(position => position.vassal)).toEqual(['atlas']);
+    expect(result.decision.conclusion).toBe('ship');
+    expect(result.status).toBe('partial');
+  });
+
+  it('writes a cancellation back into a settled intent so the cancelled stance is recomputed away', async () => {
+    const port = makePort({
+      loom: okResult('loom', 'input-required', 'approve'),
+      atlas: okResult('atlas', 'completed', 'ship'),
+    });
+    const orch = newOrchestrator(port, ['loom', 'atlas']);
+    await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
+    expect(orch.getIntent('X')!.positions.map(position => position.vassal).sort()).toEqual(['atlas', 'loom']);
+
+    await orch.cancelIntent('X');
+
+    const after = orch.getIntent('X')!;
+    expect(after.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
+    expect(after.positions.map(position => position.vassal)).toEqual(['atlas']);
+    expect(after.status).toBe('partial');
+  });
 });
