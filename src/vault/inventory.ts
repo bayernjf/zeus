@@ -85,7 +85,11 @@ async function readWhitelist(source: FilesSource, maxBytes: number, tolerateUnre
   // through a symlink (/var -> /private/var on macOS, a mounted data dir on a
   // server) realpaths to a different prefix than its own files, so comparing
   // resolved files to an unresolved root made every file look like an escape.
-  const realRoot = await realpath(absRoot).catch(() => absRoot);
+  //
+  // A root that cannot even be resolved is a fault, not a naming detail: falling
+  // back to the unresolved path would turn "the mount is gone" into "every
+  // whitelisted file escaped the root", which reads as a hostile map.
+  const realRoot = await realpath(absRoot);
   const listed: Array<{ itemId: string; content: string; modifiedAt: string; bytes: number }> = [];
   for (const name of source.files) {
     try {
@@ -130,7 +134,13 @@ async function readWhitelistedFile(realRoot: string, name: string, maxBytes: num
 export function realmLiveSource(store: RealmStore): LiveSource {
   return async source => {
     if (source.kind !== 'realm') throw new VaultError(`this map needs a file source, not a realm: ${source.kind}`);
-    const manifest = await store.connect(source.root, source.type, source.tenant ? { tenant: source.tenant } : {});
+    // Verification only reads. Reconnecting read-only means a recovery check
+    // cannot create directories, write an index or otherwise touch a realm the
+    // operator mounted for inspection.
+    const manifest = await store.connect(source.root, source.type, {
+      ...(source.tenant ? { tenant: source.tenant } : {}),
+      readOnly: true,
+    });
     return store.entries(manifest.realmId);
   };
 }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -171,6 +171,22 @@ describe('vault CLI: key handling and usage errors', () => {
     expect((await run(['frobnicate'])).code).toBe(VAULT_EXIT.error);
     expect((await run(['build', '--root', root])).code).toBe(VAULT_EXIT.error);
     expect((await run(['restore', '--map', 'a', '--bundle', 'b'])).code).toBe(VAULT_EXIT.error);
+  });
+});
+
+describe('vault CLI: published artifacts are written atomically', () => {
+  it('does not follow a symlink planted at the output path', async () => {
+    const victim = join(work, 'victim.txt');
+    await writeFile(victim, 'a file that is not a vault artifact\n');
+    await mkdir(outDir, { recursive: true });
+    await symlink(victim, mapPath);
+
+    const built = await run(['build', '--root', root, '--out', mapPath]);
+    expect(built.code).toBe(VAULT_EXIT.ok);
+    // A truncating write would have followed the link and destroyed the victim.
+    expect(await readFile(victim, 'utf8')).toBe('a file that is not a vault artifact\n');
+    expect((await lstat(mapPath)).isSymbolicLink()).toBe(false);
+    expect(JSON.parse(await readFile(mapPath, 'utf8')).format).toBe('zeus-treasure-map');
   });
 });
 

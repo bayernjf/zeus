@@ -70,6 +70,13 @@ export type SealedEnvelope = {
   alg: 'aes-256-gcm';
   kdf: 'scrypt' | 'none';
   format: string;
+  /**
+   * The scrypt cost this envelope was sealed with. Absent means the envelope
+   * predates the field (the tool's older, lower-cost default), so it is opened
+   * with that legacy cost instead of today's. Recorded so a future cost increase
+   * does not orphan backups written before it.
+   */
+  kdfParams?: { N: number; r: number; p: number };
   salt: string;
   iv: string;
   tag: string;
