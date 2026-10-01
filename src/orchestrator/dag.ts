@@ -136,10 +136,22 @@ export function criticalPath(nodes: DagNode[]): string[] {
   return path;
 }
 
+/**
+ * The first dependency of `node` that has not completed, or undefined when every
+ * dependency is satisfied. Single implementation behind both the exported
+ * predicate and the runner's skip path, so the two can never disagree.
+ */
+export function firstUnsatisfiedDependency(
+  node: DagNode,
+  statusOf: (id: string) => DagNodeState | undefined,
+): string | undefined {
+  return (node.dependsOn ?? []).find(dep => statusOf(dep) !== 'completed');
+}
+
 /** Node ids whose dependencies are all satisfied (or already known-failed). The
  *  runner uses this when executing layer by layer. */
 export function dependenciesSatisfied(node: DagNode, statusOf: (id: string) => DagNodeState | undefined): boolean {
-  return (node.dependsOn ?? []).every(dep => statusOf(dep) === 'completed');
+  return firstUnsatisfiedDependency(node, statusOf) === undefined;
 }
 
 export type DagNodeState = 'pending' | 'running' | 'completed' | 'failed' | 'needs-driver' | 'skipped';

@@ -4,6 +4,7 @@ import { Orchestrator, type OrchestratorOptions } from './orchestrator.js';
 import type { DispatchPort, TargetLookup } from './types.js';
 import {
   criticalPath,
+  firstUnsatisfiedDependency,
   topologicalLayers,
   validateDag,
   type DagNode,
@@ -129,7 +130,7 @@ export class DagRunner {
       await Promise.all(
         layer.map(async id => {
           const node = byId.get(id)!;
-          const blockedBy = (node.dependsOn ?? []).find(dep => nodeStates.get(dep) !== 'completed');
+          const blockedBy = firstUnsatisfiedDependency(node, dep => nodeStates.get(dep));
           if (blockedBy) {
             nodeStates.set(id, 'skipped');
             nodeResults.set(id, { nodeId: id, state: 'skipped', skippedReason: `dependency ${blockedBy} did not complete` });

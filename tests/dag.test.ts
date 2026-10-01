@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { DagRunner, DagIdInUseError } from '../src/orchestrator/dag-runner.js';
 import {
   criticalPath,
+  dependenciesSatisfied,
+  firstUnsatisfiedDependency,
   topologicalLayers,
   validateDag,
   DagValidationError,
   type DagNode,
+  type DagNodeState,
   type DagSpec,
 } from '../src/orchestrator/dag.js';
 import type { Orchestrator } from '../src/orchestrator/orchestrator.js';
@@ -68,6 +71,21 @@ describe('DAG graph functions', () => {
     expect(topologicalLayers(nodes)).toEqual([['A'], ['B', 'C'], ['D']]);
     // critical path is A-C-D (3 nodes), longer than A-B (2).
     expect(criticalPath(nodes)).toEqual(['A', 'C', 'D']);
+  });
+
+  it('names the first unsatisfied dependency through one shared check', () => {
+    const node: DagNode = { id: 'C', skill: 'c', dependsOn: ['A', 'B'] };
+    const states = new Map<string, DagNodeState>([['A', 'completed'], ['B', 'failed']]);
+    const statusOf = (id: string) => states.get(id);
+
+    expect(firstUnsatisfiedDependency(node, statusOf)).toBe('B');
+    expect(dependenciesSatisfied(node, statusOf)).toBe(false);
+
+    states.set('B', 'completed');
+    expect(firstUnsatisfiedDependency(node, statusOf)).toBeUndefined();
+    expect(dependenciesSatisfied(node, statusOf)).toBe(true);
+    // a node with no dependencies is always ready
+    expect(dependenciesSatisfied({ id: 'X', skill: 'x' }, statusOf)).toBe(true);
   });
 });
 
