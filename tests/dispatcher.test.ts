@@ -266,6 +266,28 @@ describe('Dispatcher', () => {
       expect(breach?.detail).toContain('ackSeconds=5');
     });
 
+    it('audits sla-ack-breached for a peer that returns only a terminal snapshot', async () => {
+      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
+      // No intermediate events at all: the only acceptance signal is the snapshot.
+      const fetchImpl = async () => sseResponse([], task('completed'));
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fetchImpl, steppingClock(6000));
+      const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
+
+      expect(result.ok).toBe(true);
+      const breach = audit.find((entry: AuditEntry) => entry.decision === 'sla-ack-breached');
+      expect(breach).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+      expect(breach?.detail).toContain('6000ms');
+    });
+
+    it('stays silent for a prompt non-streaming peer', async () => {
+      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
+      const fetchImpl = async () => sseResponse([], task('completed'));
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fetchImpl, steppingClock(100));
+      const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
+      expect(result.ok).toBe(true);
+      expect(audit.map((entry: AuditEntry) => entry.decision)).not.toContain('sla-ack-breached');
+    });
+
     it('does not measure anything when the vassal declares no sla', async () => {
       const map = new Map([['pr-helper', vassal()]]);
       const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeVassalServer({}), steppingClock(60_000));

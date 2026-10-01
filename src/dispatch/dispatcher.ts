@@ -172,9 +172,12 @@ export class Dispatcher {
 
     const events: A2AEvent[] = [];
 
-    // SLA ack enforcement (fealty.sla.ackSeconds): the first streamed event is
-    // the acceptance signal. A breach is audited, never fatal — the task itself
-    // may still succeed; the audit trail is the governance surface.
+    // SLA ack enforcement (fealty.sla.ackSeconds): acceptance is the first
+    // streamed event, or - for a peer that streams nothing and just returns its
+    // terminal snapshot - the arrival of that snapshot. Without the fallback a
+    // slow non-streaming peer escaped sla-ack-breached entirely. A breach is
+    // audited, never fatal: the task may still succeed, and the audit trail is
+    // the governance surface.
     const clock = this.options.elapsed ?? (() => Date.now());
     const ackSeconds = vassal.fealty.sla?.ackSeconds;
     const startedAt = clock();
@@ -211,11 +214,15 @@ export class Dispatcher {
       return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatch-failed', detail } };
     }
 
-    if (ack && ackSeconds !== undefined && ack.elapsedMs > ackSeconds * 1000) {
+    // A peer that streamed no intermediate event still accepted the task by
+    // returning it; that completion is the only acceptance signal available.
+    if (!ack) ack = { elapsedMs: clock() - startedAt, taskId: task.id };
+
+    if (ackSeconds !== undefined && ack.elapsedMs > ackSeconds * 1000) {
       this.options.audit({
         ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
         decision: 'sla-ack-breached', taskId: ack.taskId,
-        detail: `first event after ${ack.elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
+        detail: `accepted after ${ack.elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
       });
     }
     this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });
