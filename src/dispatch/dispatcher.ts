@@ -117,6 +117,19 @@ export class Dispatcher {
         return { ok: false, reason: audit.detail!, audit };
       }
       vassal = this.lookup.get(request.vassal);
+      // Naming a vassal is not a licence to ask it for anything: the skill must
+      // be one its card declares, or any registered agent could be made to run
+      // any skill and the per-skill authorization would be nominal. Auto-select
+      // already routes through findBySkill; this is the explicit-name path.
+      if (vassal && !vassal.card.skills.some(skill => skill.id === request.skill)) {
+        const audit: AuditEntry = {
+          ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+          decision: 'refused-skill-uninstalled',
+          detail: `vassal ${vassal.name} does not declare skill ${request.skill}`,
+        };
+        this.options.audit(audit);
+        return { ok: false, reason: audit.detail!, audit };
+      }
     } else {
       try {
         vassal = this.selectBySkill(request.skill);

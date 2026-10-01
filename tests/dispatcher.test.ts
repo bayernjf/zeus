@@ -150,8 +150,18 @@ describe('Dispatcher', () => {
     expect(body.params.message.parts[0].data.realmHits).toEqual([{ itemId: 'hit-1', snippet: 'pr context' }]);
   });
 
+  it('refuses an explicitly named vassal that does not declare the skill', async () => {
+    const seenBodies: unknown[] = [];
+    const { dispatcherInstance, audit } = dispatcher(new Map([['pr-helper', vassal()]]), fakeVassalServer({ seenBodies }));
+    const result = await dispatcherInstance.dispatch({ vassal: 'pr-helper', skill: 'merge-pr', params: {}, realm: 'enterprise' });
+
+    expect(result.ok).toBe(false);
+    expect(audit[0].decision).toBe('refused-skill-uninstalled');
+    expect(seenBodies).toHaveLength(0);
+  });
+
   it('audits escalations as input-required terminal states', async () => {
-    const map = new Map([['pr-helper', vassal()]]);
+    const map = new Map([['pr-helper', vassal({ card: { name: 'pr-helper', url: '', skills: [{ id: 'create-pr', name: '', description: '', tags: [] }, { id: 'merge-pr', name: '', description: '', tags: [] }] } })]]);
     const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ escalate: true }));
     const result = await dispatcherInstance.dispatch({ vassal: 'pr-helper', skill: 'merge-pr', params: { mode: 'execute' }, realm: 'enterprise' });
 
