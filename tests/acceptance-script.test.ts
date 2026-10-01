@@ -60,7 +60,9 @@ function healthyHandler(req: any, body: any, res: any) {
   if (req.url === '/api/a2a/agent-card' && req.method !== 'POST') {
     return json(res, 200, {
       name: 'pr-helper',
-      url: 'http://127.0.0.1/api/a2a/agent-card',
+      // A real deployment advertises an absolute url pointing at itself;
+      // derive it from the request Host so the ephemeral mock port works.
+      url: `http://${req.headers.host}/api/a2a/agent-card`,
       version: '0.1.0',
       provider: { organization: 'bayjf', url: 'https://github.com/jiangfeng' },
       capabilities: { streaming: true, pushNotifications: false, stateTransitionHistory: true },
@@ -99,20 +101,64 @@ function brokenHandler(_req: any, _body: any, res: any) {
   json(res, 500, { message: 'boom' });
 }
 
+// loom/atlas shape: GET card is served on /api/a2a/agent-card, while JSON-RPC
+// lives on the separate task endpoint advertised by the card's standard url.
+function separateTaskEndpointHandler(req: any, body: any, res: any) {
+  if (req.url === '/api/a2a/agent-card' && req.method !== 'POST') {
+    return json(res, 200, {
+      name: 'loom-or-atlas',
+      url: '/api/a2a/tasks',
+      version: '0.1.0',
+      provider: { organization: 'bayjf' },
+      capabilities: { streaming: true, pushNotifications: false, stateTransitionHistory: true },
+      defaultInputModes: ['application/json'],
+      defaultOutputModes: ['application/json'],
+      skills: [
+        { id: 'diagnose-run', name: 'Diagnose a run', description: '', tags: ['plan-only'] },
+      ],
+      authentication: { schemes: ['bearer'] },
+      preferredTransport: 'JSONRPC',
+      'x-zeus-fealty': { version: '1', swornTo: 'zeus' },
+    });
+  }
+  if (req.url === '/api/a2a/tasks' && req.method === 'POST') {
+    const skill = body?.params?.message?.parts?.[0]?.text?.trim().split(/\s+/)[0];
+    if (skill !== 'diagnose-run') {
+      return json(res, 200, { jsonrpc: '2.0', id: body.id, error: { code: -32602, message: 'unknown skill' } });
+    }
+    return json(res, 200, {
+      jsonrpc: '2.0',
+      id: body.id,
+      result: {
+        kind: 'task',
+        id: 'task-mock-2',
+        contextId: 'ctx-mock-2',
+        history: [],
+        status: { state: 'completed' },
+        artifacts: [],
+      },
+    });
+  }
+  json(res, 404, { message: 'not found' });
+}
+
 // These tests spawn a real node subprocess; under full parallel load cold start
 // can exceed the 5s default (see vitest.config.ts for the global floor).
 describe('acceptance #6 standards-only client script', () => {
   let healthy: { server: Server; url: string };
   let broken: { server: Server; url: string };
+  let separateEndpoint: { server: Server; url: string };
 
   beforeAll(async () => {
     healthy = await startServer(healthyHandler);
     broken = await startServer(brokenHandler);
+    separateEndpoint = await startServer(separateTaskEndpointHandler);
   });
 
   afterAll(() => {
     healthy.server.close();
     broken.server.close();
+    separateEndpoint.server.close();
   });
 
   it('exits 0 and passes against a standard A2A endpoint without touching x-zeus-*', async () => {
@@ -121,6 +167,13 @@ describe('acceptance #6 standards-only client script', () => {
     expect(run.stdout).toContain('agent card discovered: "pr-helper"');
     expect(run.stdout).toContain('state=completed');
     expect(run.stdout).toContain('PASS: acceptance #6');
+  });
+
+  it('posts RPC to the card url when the task endpoint differs from discovery', async () => {
+    const run = await runScript([separateEndpoint.url, 'diagnose-run']);
+    expect(run.status, `stderr: ${run.stderr}\nstdout: ${run.stdout}`).toBe(0);
+    expect(run.stdout).toContain('agent card discovered: "loom-or-atlas"');
+    expect(run.stdout).toContain('state=completed');
   });
 
   it('exits 1 with diagnostics when the card endpoint is down', async () => {

@@ -215,6 +215,30 @@ curl -s -X POST localhost:8787/api/connectors -H "Authorization: Bearer $TOKEN" 
 
 **实测（2026-10-01，Node 22.23.1）**：以真实 `dist/realm/mcp-stdio.js`（指向临时目录）为上游，经 `ConnectorRegistry` stdio transport 完成真机握手与调用——`connect` 后工具清单裁剪为声明内的 `realm.search`（`realm.read` 被边界排除），`realm.search` 对真实文件返回命中，未声明的 `realm.read` 调用被拒（`does not expose tool 'realm.read'`）。握手与单次调用各自起独立子进程、完成即关闭，Zeus 不保持到连接器的长连（与 HTTP transport 同语义）。
 
+**第三方真实 MCP 实连（2026-10-01，work-learn，Node 20.20.2 + tsx）**：首个非 Zeus 自有的上游——本机 `packages/mcp-server/src/server.ts`（stdio，临时 `WORK_LEARN_DB_PATH`，无 token 本地 SQLite 形态）。裸 `mcp` 声明握手发现其全部 **21 个工具**、0 resources、0 prompts；最小权限声明 `['mcp:search_corpus','mcp:get_review_items']` 连接后工具清单**精确裁剪为这两个**，`get_review_items` 真实返回 `[]`，未声明的 `save_material` 调用被边界拒绝。再以 `['mcp:create_session','mcp:save_material','mcp:search_corpus']` 声明跑通**跨独立子进程的写后读端到端**：`create_session` → `save_material` 写入一条材料 → `search_corpus {query:'stdio transport'}` 真实命中该条（持久化经本地 SQLite，不依赖进程存活）。前置条件是 work-learn 的 `better-sqlite3` 原生模块已按 Node 20 ABI 安装（prebuild-install），server 需用 Node 20 启动。
+
+#### 2.2 最小权限分组样板：work-learn 的 21 个工具
+
+上游工具名一律按 `tools/list` 的原样字符串写进 `mcp:<工具名>`（下划线、精确大小写）。21 个工具按读写性质分四档，声明时只取当前任务需要的那一档；裸 `mcp`（全部 21 个）只用于首次发现，不作为运行态边界。
+
+| 档位 | 工具 | 性质 |
+|---|---|---|
+| **read（只读，可安全常驻）** | `search_corpus`、`get_review_items`、`generate_practice`、`get_practice_history`、`get_user_patterns`、`get_reuse_summary`、`list_expressions`、`suggest_reuse`、`suggest_reuse_candidates` | 查询/出题/建议，不改数据。`suggest_*` 只返回候选、不自动落库 |
+| **review-write（复习闭环写）** | `mark_mastered`、`snooze_review`、`record_practice` | 改动复习调度与练习记录，只影响本人语料的状态，不新建正文 |
+| **ingest（采集写）** | `create_session`、`save_material`、`save_question_translation`、`record_reuse` | 新建会话/材料/提问/复用事件。`save_*` 是正文入口，按需短时授予 |
+| **admin（管理与模型生成，影响面最大）** | `configure_reuse_nudges`（改全局提醒设置）、`cluster_intents` / `merge_intents` / `split_intent`（意图台账重组，合并/拆分删除源意图）、`generate_adaptive_practice`（可选 LLM 出口，配置了 `WORK_LEARN_LLM_*` 时正文会出本机） | 配置变更、台账结构性写、可能触发出站模型调用 |
+
+声明示例（只给「查语料 + 取复习项」的只读宿主）：
+
+```json
+{"id":"worklearn-read","name":"Work Learn Read","command":"node",
+ "args":["/abs/path/work-learn/packages/mcp-server/src/server.ts"],
+ "env":{"WORK_LEARN_DB_PATH":"/abs/path/work-learn.db"},
+ "permissions":["mcp:search_corpus","mcp:get_review_items","mcp:generate_practice"]}
+```
+
+要点：① `generate_practice` 不调模型（纯本地从已存材料生成），归 read；`generate_adaptive_practice` 在配置 LLM 时会把正文送外部，归 admin，二者不要混授；② 采集链路 `create_session → save_*` 是写操作，仅在确有「AI 对话整理入库」场景时授予；③ 意图重组三工具会删除/合并意图，属不可逆结构性写，默认不授。
+
 ```bash
 TOKEN=…    # ZEUS_INTERNAL_TOKEN
 # 1) 声明：权限边界写在声明里，凭证只在这一次进得去
@@ -485,7 +509,7 @@ Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/clie
 | 具体宿主的配置样例 | 只给了语义中立的 `command` + `args` 形状，**没有**针对任何一家宿主的实测配置 | 同上一条 |
 | `limit` 截断到 200、`text` 切词 AND 语义 | 代码级（`src/realm/store.ts:155-173`）；实测只覆盖了"超限不报错"和单/双关键词命中 | 需要给外部读者保证分页行为时补一次 201 文件的实测 |
 | 企业域 Realm 经 MCP 暴露 | 不存在该路径（stdio 写死 personal + readOnly） | deferred **#18** 决定 actor 判定时一并处理 |
-| 连接器权限词法绑不住"名字不合词法"的工具 | **已修复（2026-09-30，deferred #30）**：`mcp:<工具名>` 改为引用上游握手清单的原样字符串（下划线/点/大写均合法、精确大小写匹配），非 mcp 作用域保持封闭词法；声明了但上游清单没有的工具在连接时产生 `boundary-unmatched` 审计事件，防上游改名静默失权。**真实上游 connect（2026-10-01）**：stdio transport 新增后，对**真实** `dist/realm/mcp-stdio.js`（非自造夹具）完成握手/裁剪/调用/边界拒绝实测（见 §2）。仍未做：对**第三方仓库**（work-learn stdio server）的 connect——其本地 stdio 形态依赖 `better-sqlite3` 原生模块，当前工作树该模块未构建（Node 20/22 均报无 bindings），且远程形态需 Supabase 凭证；对非 Zeus 自有的 HTTP MCP 服务也尚未实连 | work-learn 本机依赖可运行（或其远程 MCP 有可用凭证）时复跑；届时把 21 个工具的最小权限声明形状记进本节 |
+| 连接器权限词法绑不住"名字不合词法"的工具 | **已修复（2026-09-30，deferred #30）**：`mcp:<工具名>` 改为引用上游握手清单的原样字符串（下划线/点/大写均合法、精确大小写匹配），非 mcp 作用域保持封闭词法；声明了但上游清单没有的工具在连接时产生 `boundary-unmatched` 审计事件，防上游改名静默失权。**真实上游 connect（2026-10-01）**：先对**真实** `dist/realm/mcp-stdio.js`（非自造夹具）完成握手/裁剪/调用/边界拒绝实测；同日对**第三方** work-learn stdio server 完成实连——21 工具全发现、最小权限精确裁剪、跨子进程写后读命中（见 §2）。仍未做：work-learn 的**远程 HTTP MCP**（`POST /api/mcp`，需 Supabase/JWT/PAT 凭证）实连；对非 Zeus 自有的其他 HTTP MCP 服务也尚未实连 | 远程 MCP 有可用凭证时复跑，记录 Bearer 认证与无状态 streamable-HTTP 形状 |
 | 未声明的查询参数被静默丢掉（`?tags=`） | **已修复（2026-09-30，deferred #31 销项）**：`tags` 下传到存储层显式 `-32602`（P0 不支持标签检索），任何未声明参数名按名拒绝；resource URI 与 `tools/call` 两通道同口径，17 例 MCP 测试覆盖 | 标签检索真正立项的阈值仍在 design-realm §6.2（单 Realm >2 万文件或 P50>500ms） |
 
 ## 4. 复跑这份取证

@@ -1,6 +1,6 @@
 # 执行 Agent 协议设计（Vassal Protocol）— 基于 A2A 超集
 
-> 状态：**现行（设计稿 v0.2，2026-09-29）**。实施进度记在 [handoff.md](../handoff.md)，本文只写设计。
+> 状态：**现行（设计稿 v0.4，2026-10-01）**。实施进度记在 [handoff.md](../handoff.md)，本文只写设计。
 > 决策：已确定「直接复用 A2A 标准做超集，不自造最小协议」（deferred-items #1 已销项）。
 
 ## 0. 一句话定位
@@ -168,6 +168,30 @@ bayjf 从产品陈列馆升级为**对外发布的已签名 Agent 目录**：
 
 第 6 条是整个「超集而非闭墙」决策的守护测试，**不通过则协议设计失败**。
 
+## 7A. 第二个执行 Agent：loom 协议级真机联调
+
+> 联调状态（2026-10-01）：**协议级通过，W2 不关账**。loom 后端 `app/core/a2a/`（其自身 Q150 第一阶段，先于本次对账存在）与 Zeus 真实客户端在本机端到端跑通，**loom 侧零代码改动**——这是协议对「一个不是照 Zeus 模板写、而是独立实现的 A2A 服务」的第一次超集守护。
+>
+> 取证形状：Zeus 侧用真实 `VassalRegistry.register` + `dispatch/client`（非自造夹具）；loom 侧挂**真实** a2a router（`card.py`/`rpc.py`/`router.py` 原样），最小 uvicorn 服务只 override 了鉴权（`require_agent_key`）与审计（`append_audit`）两个 DB 依赖，任务逻辑/SSE/fealty 全部是生产代码。
+>
+> 逐条结果：① 注册闸——well-known 卡片经 fealty 校验通过（`version:"1"`、`swornTo:"zeus"`、`dataRealms:["enterprise"]`、`dataPolicy:"read-task-scope"`、`escalationPolicy:"auto"`、`sla.ackSeconds:10` 全部落在 Zeus 受控词表内），卡片声明的 `url` 被直接解析为任务端点（与 #29「卡片 url 优先于约定」一致，无需 `TASK_URL` 覆盖）；② sendSubscribe——SSE 四帧 `submitted → working → artifact-update → completed(final)` 被 Zeus `consumeSseStream` 正确拆解，收尾帧是整个 JSON-RPC 响应（`{result:task}`），与事件帧 `{result:event}` 同构；③ 结果回传——`x-zeus-report` 含 summary/evidence/cost（plan 模式 `llmTokens:0`）；④ escalation——缺必填参数（`compliance-check` 只给 tenant_id 缺 content_id）回终态 `input-required`，Zeus 不当作错误抛出；⑤ 非流式 `tasks/send` 与流式结果等价（同报告、同终态）。
+>
+> **诚实边界（为什么 W2 不关账）**：本次是本机协议级验证，不是 loom 生产栈验收——没有真实 PostgreSQL、Agent Key 由 override 放行、审计未落库、未走网关/TLS；loom 三个 skill 都是 plan-only（不触链、不花 token、不改 Gate）。仍待：loom 生产部署上的同口径回归、atlas 同波接入、纯标准 A2A 客户端（不认 x-zeus-*）对 loom 的第 6 条式守护复验。
+
+## 7B. 第三个执行 Agent：atlas 从零按协议接入
+
+> 联调状态（2026-10-01）：**协议级通过，W2 仍不关账**。与 loom 形成对照：loom 证明协议能对账一个**先于 Zeus 独立存在的 A2A 实现**（loom 零改动），atlas 证明同一套已定型协议能被一个**此前零 A2A 代码的仓库从零复制接入**——接入侧新增 `src/atlas/a2a/`（card/skills/rpc/router 四件），形状逐字节沿用 §7A 已真机对齐的 loom Q150 实现，Zeus 侧零协议改动。
+>
+> 取证形状：atlas 侧 uvicorn 127.0.0.1:8933 起真实 FastAPI（dev 档 + `ATLAS_PUBLIC_BASE_URL`，挂真实 router）；Zeus 侧同样是真实 `VassalRegistry.register` + `dispatch/client`，非自造夹具。
+>
+> 逐条结果（与 §7A 同口径）：① 注册闸——三卡片发现端点（`/api/a2a/agent-card` + 两个 well-known）同卡，fealty 五字段全在受控词表内，区别仅在 `domain: "ops-orchestration"`（区别于 loom 的 content-production，验证 Zeus 按 domain 路由、不为具体产品预设职责）；② sendSubscribe——SSE 四帧与收尾 `{result:task}` 帧拆解一致；③ 结果回传——`x-zeus-report` 中 plan 的 `cost.llmTokens=0`；④ 缺必填参数（plan-approval-flow 缺 tenant_id/flow_name）回 `input-required`；⑤ `tasks/send` 与订阅终态等价。
+>
+> plan-only 铁律：两个 skill（plan-approval-flow / diagnose-run）只产行动方案 artifact，不起编排 run、不改图、不调 LLM、不裁决人工审批；任务台账纯内存（30 分钟 TTL、500 上限）；任务端点独立 `ATLAS_A2A_TASK_TOKEN` Bearer（prod fail-closed，非 prod 无 token 放行并 WARNING），与 atlas 平台会话及渠道凭证物理分离。atlas 侧 11 项单测全绿、后端全量回归 2159 passed / 136 skipped；落地与 ADR T32 见 atlas 仓 docs/90。
+>
+> **纯标准 A2A 客户端守护（2026-10-01）**：用 `scripts/acceptance-standard-a2a.mjs`（只读 card.name/skills/url，发纯 text part 的 tasks/send，不发任何 x-zeus-*）对 atlas 真机执行——**首跑即抓到真实超集缺口**：`_parse_skill_and_params` 只认 Zeus 的 data part，纯标准 text 调用被 `-32602 message needs a data part` 拒绝，等于「只懂标准协议的调用方不可调用」，违反本节「超集而非闭墙」承诺。atlas 已按 pr-helper `parseSkillAndParams` 口径修复（无 data part 时取首个非空 text 首分词作 skill、参数为空，缺参由 skill 层回合法终态 input-required），修复后守护 **exit 0**（atlas 仓 commit `255064b`，13 单测、全量 2161 passed）。守护脚本同步改为按卡片标准 `url` 字段派发任务（原硬编码 pr-helper 发现路径），并补 loom/atlas 分端点形状用例。**loom 存在同源缺口**：其 `backend/app/core/a2a/rpc.py` 的 `_parse_skill_and_params` 与 atlas 修复前逐字节相同（只认 data part），纯标准 text 调用同样会被 -32602 拒；loom 是只读对账仓库，本轮不改代码，待其按同口径补 text 兜底后再对 loom 复跑本守护。
+>
+> **W2 剩余（不关账原因不变）**：loom 与 atlas 的生产栈部署验收（真实 PG/密钥/审计/网关 TLS）均未做；纯标准客户端守护已对 atlas 真机通过、对 loom 因上述同源缺口未通过（待 loom 修）；atlas 第二阶段（真 LLM/起真实 run/任务持久化/多调用方机器账号）另点工。
+
 ## 8. 开放问题（登记到 deferred-items）
 
 - fealty 的发布与吊销是否需要签名链（防伪造名册条目）→ 触发条件：名册对外公开前。
@@ -178,5 +202,7 @@ bayjf 从产品陈列馆升级为**对外发布的已签名 Agent 目录**：
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
+| v0.4 | 2026-10-01 | §7B 补纯标准 A2A 客户端守护真机结果：首跑抓到 atlas/loom 只认 data part、纯标准 text 调用被 -32602 拒的超集缺口；atlas 已按 pr-helper 口径加 text 首分词兜底并复跑 exit 0，loom 同源缺口待对账仓库修。契约设计（超集承诺）未变，变的是被守护证伪后的接入侧实现 |
+| v0.3 | 2026-10-01 | 新增 §7A loom（对账一个先于 Zeus 独立存在的 A2A 实现，loom 零改动）与 §7B atlas（零 A2A 代码仓库按已定型形状从零接入，Zeus 零协议改动）两次协议级真机验证记录；fealty/SSE/input-required/report 契约本身未变。W2 生产栈验收与标准客户端超集守护复验未做，不关账 |
 | v0.2 | 2026-09-29 | §7 pr-helper 验收清单六条补真机结果：标准客户端 2026-09-25 PASS、真机扇出 2026-09-29 15/15 exit 0（A1 销项）；不改协议设计——清单只记验收状态。详见 review v0.20 / handoff Active work 75 |
 | v0.1 | 2026-09-21 | 初稿：A2A 超集决策落地；fealty / intake / report-back / escalation / 治理 / 星型拓扑 / pr-helper 验收清单 |
