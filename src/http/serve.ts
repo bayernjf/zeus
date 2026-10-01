@@ -194,7 +194,7 @@ async function main(): Promise<void> {
   );
 
   let shuttingDown = false;
-  const shutdown = async (signal: string): Promise<void> => {
+  const shutdown = async (signal: string, exitCode = 0): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     process.stderr.write(`[zeus-http] ${signal} received, draining...\n`);
@@ -205,10 +205,18 @@ async function main(): Promise<void> {
       process.stderr.write(`[zeus-http] failed to save kernel state: ${error instanceof Error ? error.message : String(error)}\n`);
     }
     await app.close();
-    process.exit(0);
+    process.exit(exitCode);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  // A throw from outside a request handler (a hijacked SSE socket, a timer) has
+  // nowhere to go: without this listener Node prints the stack and exits at
+  // once, losing everything since the last save. Route it through the same
+  // drain-and-save path, and keep the non-zero exit so the failure is visible.
+  process.on('uncaughtException', error => {
+    process.stderr.write(`[zeus-http] uncaught exception: ${error.stack ?? String(error)}\n`);
+    void shutdown('uncaughtException', 1);
+  });
 }
 
 main().catch(error => {

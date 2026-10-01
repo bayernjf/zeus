@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
 import type { FastifyInstance } from 'fastify';
-import { createHttpServer } from '../src/http/server.js';
+import { createHttpServer, streamIntentProgress, type EventStreamSocket } from '../src/http/server.js';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../src/orchestrator/metrics.js';
-import { ProgressHub } from '../src/orchestrator/progress.js';
+import { ProgressHub, type ProgressEvent } from '../src/orchestrator/progress.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
@@ -123,4 +124,74 @@ describe('H3 SSE intent events', () => {
     await done;
     await app.close();
   }, 30000);
+});
+
+/** A hijacked response socket, minus the network: an EventEmitter plus the
+ *  handful of members the SSE wiring touches. */
+class FakeSocket extends EventEmitter {
+  chunks: string[] = [];
+  ended = false;
+  destroyed = false;
+  writableEnded = false;
+  write(chunk: string): boolean {
+    this.chunks.push(chunk);
+    return true;
+  }
+  end(): void {
+    this.ended = true;
+    this.writableEnded = true;
+  }
+  destroy(): void {
+    this.destroyed = true;
+  }
+}
+
+const started: ProgressEvent = {
+  type: 'branch-started', intentId: 'i', runId: 'r', vassal: 'v', skill: 's', at: '2026-10-01T00:00:00.000Z',
+};
+const finished: ProgressEvent = {
+  type: 'intent-finished', intentId: 'i', runId: 'r', status: 'completed', at: '2026-10-01T00:00:01.000Z',
+};
+
+describe('hijacked SSE stream lifecycle', () => {
+  const socketOf = (): FakeSocket & EventStreamSocket => new FakeSocket() as FakeSocket & EventStreamSocket;
+
+  it('survives a peer reset without an unhandled error event', () => {
+    const hub = new ProgressHub();
+    const socket = socketOf();
+    streamIntentProgress(socket, hub, 'i');
+    // Once hijacked there is no other listener for this socket: an 'error' with
+    // no handler is rethrown by EventEmitter and kills the process.
+    expect(() => socket.emit('error', new Error('ECONNRESET'))).not.toThrow();
+    expect(socket.destroyed).toBe(true);
+    // Writes after teardown are dropped, not thrown.
+    socket.emit('close');
+    hub.publish(started);
+    expect(socket.chunks).toEqual([]);
+  });
+
+  it('streams progress and tears down on the terminal event', () => {
+    const hub = new ProgressHub();
+    const socket = socketOf();
+    streamIntentProgress(socket, hub, 'i');
+    hub.publish(started);
+    expect(socket.chunks.join('')).toContain('event: branch-started');
+    hub.publish(finished);
+    expect(socket.chunks.join('')).toContain('event: intent-finished');
+    expect(socket.ended).toBe(true);
+    // The subscription is released: a later publish writes nothing further.
+    const before = socket.chunks.length;
+    hub.publish(started);
+    expect(socket.chunks.length).toBe(before);
+  });
+
+  it('drops writes once the socket is no longer writable', () => {
+    const hub = new ProgressHub();
+    const socket = socketOf();
+    socket.writableEnded = true;
+    streamIntentProgress(socket, hub, 'i');
+    hub.publish(started);
+    expect(socket.chunks).toEqual([]);
+    socket.emit('close');
+  });
 });

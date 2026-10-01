@@ -476,10 +476,6 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
 
         const raw = reply.raw;
-        const send = (event: string, data: unknown): void => {
-          raw.write(`event: ${event}\n`);
-          raw.write(`data: ${JSON.stringify(data)}\n\n`);
-        };
         reply.hijack();
         raw.writeHead(200, {
           'Content-Type': 'text/event-stream; charset=utf-8',
@@ -490,28 +486,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         raw.flushHeaders();
 
         if (stored) {
-          send('intent', stored);
+          raw.write('event: intent\n');
+          raw.write(`data: ${JSON.stringify(stored)}\n\n`);
           raw.end();
           return;
         }
 
-        const unsubscribe = deps.progressHub!.subscribe(id, (event: ProgressEvent) => {
-          send(event.type, event);
-          if (event.type === 'intent-finished') {
-            finish();
-          }
-        });
-        const keepalive = setInterval(() => raw.write(': ping\n\n'), 15_000);
-        const finish = (): void => {
-          clearInterval(keepalive);
-          unsubscribe();
-          raw.end();
-        };
-        raw.on('close', () => {
-          clearInterval(keepalive);
-          unsubscribe();
-          raw.destroy();
-        });
+        streamIntentProgress(raw, deps.progressHub!, id);
       });
 
       // E1.6: offline replay of one stored decision — participants, dispatch
@@ -2102,4 +2083,51 @@ export function constantTimeEqual(
   const a = createHash('sha256').update(presented, 'utf8').digest();
   const b = createHash('sha256').update(expected, 'utf8').digest();
   return compare(a, b);
+}
+
+/** The subset of a hijacked response socket the live SSE stream touches. */
+export interface EventStreamSocket {
+  readonly writableEnded: boolean;
+  readonly destroyed: boolean;
+  write(chunk: string): boolean;
+  end(): void;
+  destroy(): void;
+  on(event: 'close' | 'error', listener: (error?: Error) => void): unknown;
+}
+
+/**
+ * Wire a hijacked response to one intent's progress stream.
+ *
+ * Once `reply.hijack()` runs the socket is outside Fastify's error handling, so
+ * two hazards are handled here rather than by the framework: (1) a peer reset
+ * emits 'error', and an 'error' with no listener rethrows as an uncaught
+ * exception that takes the whole process down; (2) a write after the peer is
+ * gone (`writableEnded`/`destroyed`) throws. Teardown is idempotent so a normal
+ * finish and a later 'close' do not double-unsubscribe.
+ */
+export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, id: string): void {
+  let closed = false;
+  const write = (chunk: string): void => {
+    if (closed || raw.writableEnded || raw.destroyed) return;
+    raw.write(chunk);
+  };
+  const send = (event: string, data: unknown): void => {
+    write(`event: ${event}\n`);
+    write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+  const stop = (end: boolean): void => {
+    if (closed) return;
+    closed = true;
+    clearInterval(keepalive);
+    unsubscribe();
+    if (end) raw.end();
+    else raw.destroy();
+  };
+  const unsubscribe = hub.subscribe(id, event => {
+    send(event.type, event);
+    if (event.type === 'intent-finished') stop(true);
+  });
+  const keepalive = setInterval(() => write(': ping\n\n'), 15_000);
+  raw.on('close', () => stop(false));
+  raw.on('error', () => stop(false));
 }
