@@ -171,7 +171,6 @@ export class Dispatcher {
     const token = this.options.tokenFor?.(vassal.name);
 
     const events: A2AEvent[] = [];
-    this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched' });
 
     // SLA ack enforcement (fealty.sla.ackSeconds): the first streamed event is
     // the acceptance signal. A breach is audited, never fatal — the task itself

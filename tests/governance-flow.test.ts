@@ -119,10 +119,10 @@ describe('Acceptance #5 governance loop', () => {
     expect(auto.audit.decision).toBe('refused-unknown-vassal');
     expect(seen).toHaveLength(2);
 
-    // complete audit trail, in order
+    // complete audit trail, in order — one 'dispatched' per successful dispatch
     expect(log.map((entry: AuditEntry) => entry.decision)).toEqual([
-      'dispatched', 'dispatched', // run-1
-      'dispatched', 'dispatched', // run-2
+      'dispatched', // run-1
+      'dispatched', // run-2
       'vassal-revoked',
       'refused-revoked', // run-3 named
       'refused-unknown-vassal', // run-4 auto-selected

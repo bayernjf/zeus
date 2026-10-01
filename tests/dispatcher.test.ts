@@ -83,8 +83,11 @@ describe('Dispatcher', () => {
     expect(body.params.message.parts[0].data.skill).toBe('create-pr');
 
     const decisions = audit.map((entry: AuditEntry) => entry.decision);
-    expect(decisions).toEqual(['dispatched', 'dispatched']);
-    expect(audit[1]).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1', state: 'completed' });
+    // One dispatch, one record. A second, taskId-less 'dispatched' used to be
+    // written before the request left, so every governance view that counts by
+    // decision read double.
+    expect(decisions).toEqual(['dispatched']);
+    expect(audit[0]).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1', state: 'completed' });
   });
 
   it('refuses personal-realm tasks for an enterprise-only vassal (data diode)', async () => {
@@ -106,9 +109,9 @@ describe('Dispatcher', () => {
     let writes = 0;
     const sink = (entry: AuditEntry): void => {
       writes += 1;
-      // First write is the pre-dispatch record; the second is the post-dispatch
-      // one, which now sits outside the transport try/catch.
-      if (writes === 2) throw new Error('ENOSPC: audit volume is full');
+      // The single success record sits outside the transport try/catch, so a
+      // failure to write it must escape as itself rather than be relabelled.
+      if (writes === 1) throw new Error('ENOSPC: audit volume is full');
       log.push(entry);
     };
     const d = new Dispatcher(new Map([['pr-helper', vassal()]]), { audit: sink, fetchImpl: fakeVassalServer({ seenBodies }) });
@@ -204,7 +207,7 @@ describe('Dispatcher', () => {
     expect(result.task.status.state).toBe('input-required');
     const escalation = result.events[0] as Record<string, unknown>;
     expect(escalation['x-zeus-escalation']).toMatchObject({ level: 'driver' });
-    expect(audit[1].state).toBe('input-required');
+    expect(audit[0].state).toBe('input-required');
   });
 
   it('sends the bearer token when configured', async () => {
