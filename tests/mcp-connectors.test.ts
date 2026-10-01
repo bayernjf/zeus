@@ -254,6 +254,25 @@ describe('A-08 MCP client response correlation', () => {
 });
 
 describe('A-09 connector minimum privilege is fail-closed', () => {
+  it('bounds resources and prompts by the same declaration as tools', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: ['mcp:search'] }));
+    const connected = await registry.connect('knowledge', mcpFetch());
+    // The handshake advertises `docs` and `brief` as well; neither was granted,
+    // so neither may cross the boundary. The bound used to stop at tools, which
+    // left the whole resource and prompt surface exposed behind a one-tool grant.
+    expect(connected.capabilities).toEqual({ tools: ['search'], resources: [], prompts: [] });
+
+    // A bare `mcp` grant is the only thing that covers the discovered surface.
+    const open = new ConnectorRegistry(now);
+    open.declare(declaration());
+    expect((await open.connect('knowledge', mcpFetch())).capabilities).toEqual({
+      tools: ['search', 'danger'],
+      resources: ['docs'],
+      prompts: ['brief'],
+    });
+  });
+
   it('exposes no tool when the declaration grants no permission', async () => {
     const registry = new ConnectorRegistry(now);
     registry.declare(declaration({ permissions: [] }));
@@ -267,11 +286,36 @@ describe('A-09 connector minimum privilege is fail-closed', () => {
     registry.declare(declaration({ permissions: ['mcp:search'] }));
     const tampered = registry.exportState();
     tampered[0].status = 'connected';
-    tampered[0].capabilities = { tools: ['search', 'danger', 'exfiltrate'], resources: [], prompts: [] };
+    tampered[0].capabilities = {
+      tools: ['search', 'danger', 'exfiltrate'],
+      resources: ['docs', 'payroll'],
+      prompts: ['brief', 'exfiltrate'],
+    };
 
     registry.importState(tampered);
 
-    expect(registry.get('knowledge')!.capabilities!.tools).toEqual(['search']);
+    expect(registry.get('knowledge')!.capabilities).toEqual({ tools: ['search'], resources: [], prompts: [] });
     await expect(registry.callTool('knowledge', 'danger')).rejects.toThrowError(/not granted|does not expose tool/);
+  });
+});
+
+describe('E7 connector credentials do not cross into the persisted state', () => {
+  it('keeps the bearer token in memory and out of every export', () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ token: 'upstream-credential' }));
+
+    // The state file - and every backup bundle drawn from it - is plaintext, so
+    // the token must not appear in the record that is written there.
+    const exported = registry.exportState();
+    expect(exported[0]).not.toHaveProperty('token');
+    expect(JSON.stringify(exported)).not.toContain('upstream-credential');
+    // It is still held where the outbound request needs it.
+    expect(registry.get('knowledge')!.token).toBe('upstream-credential');
+
+    // A restore brings the declaration back, not the credential.
+    const restored = new ConnectorRegistry(now);
+    restored.importState(registry.exportState());
+    expect(restored.get('knowledge')).toMatchObject({ endpoint: ENDPOINT, permissions: ['mcp'] });
+    expect(restored.get('knowledge')!.token).toBeUndefined();
   });
 });

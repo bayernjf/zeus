@@ -8,6 +8,7 @@ import type {
   ConnectorCapabilities,
   ConnectorDeclaration,
   ConnectorRecord,
+  PersistedConnectorRecord,
 } from './types.js';
 
 export interface ConnectorAuditEntry {
@@ -222,8 +223,18 @@ export class ConnectorRegistry {
     return record ? structuredClone(record) : undefined;
   }
 
-  exportState(): ConnectorRecord[] {
-    return [...this.connectors.values()].map(record => structuredClone(record));
+  /**
+   * Persistable form: everything but the bearer token. The state file - and so
+   * every backup bundle drawn from it - is a plaintext document, which is the
+   * wrong side of the credential boundary. The token stays in memory; after a
+   * restore the operator re-declares the connector with it.
+   */
+  exportState(): PersistedConnectorRecord[] {
+    return [...this.connectors.values()].map(record => {
+      // Omit-by-destructuring: `token` is dropped, `rest` is what persists.
+      const { token, ...rest } = record;
+      return structuredClone(rest);
+    });
   }
 
   /**
@@ -231,7 +242,7 @@ export class ConnectorRegistry {
    * connector's rights — the capability list is re-narrowed to its declaration
    * on import, exactly as a fresh handshake would have produced it.
    */
-  importState(records: ConnectorRecord[]): void {
+  importState(records: PersistedConnectorRecord[]): void {
     this.connectors = new Map(
       records.map(record => {
         const restored = structuredClone(record);
@@ -255,23 +266,28 @@ export class ConnectorRegistry {
 }
 
 /**
- * A-09: a tool is usable only when the declaration granted it. Bounds are
- * `mcp:<tool>` for a single tool and a bare `mcp` for all of them. Anything else
- * — including a record carrying no permissions at all — authorises nothing, so
- * the boundary can never be widened by declaring less.
+ * A-09: a capability is usable only when the declaration granted it. Bounds are
+ * `mcp:<name>` for one upstream name and a bare `mcp` for all of them. The same
+ * predicate applies to tools, resources and prompts: the bound used to be
+ * enforced on tools alone, so a declaration granting `mcp:search` still left the
+ * server's whole resource and prompt surface exposed.
+ *
+ * Anything else — including a record carrying no permissions at all —
+ * authorises nothing, so the boundary can never be widened by declaring less.
  */
-function withinDeclaredBoundary(permissions: readonly string[], tool: string): boolean {
-  return permissions.some(claim => claim === `mcp:${tool}` || claim === 'mcp');
+function withinDeclaredBoundary(permissions: readonly string[], name: string): boolean {
+  return permissions.some(claim => claim === `mcp:${name}` || claim === 'mcp');
 }
 
-/** A-09: keep only the discovered tools the declaration granted. */
+/** A-09: keep only the discovered capabilities the declaration granted. */
 function narrowCapabilities(
   permissions: readonly string[],
   capabilities: ConnectorCapabilities,
 ): ConnectorCapabilities {
+  const granted = (names: string[]): string[] => names.filter(name => withinDeclaredBoundary(permissions, name));
   return {
-    tools: capabilities.tools.filter(tool => withinDeclaredBoundary(permissions, tool)),
-    resources: capabilities.resources,
-    prompts: capabilities.prompts,
+    tools: granted(capabilities.tools),
+    resources: granted(capabilities.resources),
+    prompts: granted(capabilities.prompts),
   };
 }

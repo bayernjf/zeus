@@ -17,7 +17,7 @@ import type { SkillSpec } from '../skills/types.js';
 import { SkillRegistry } from '../skills/registry.js';
 import type { MemoryState } from '../memory/types.js';
 import { MemoryStore } from '../memory/memory-store.js';
-import type { ConnectorRecord } from '../mcp/types.js';
+import type { PersistedConnectorRecord } from '../mcp/types.js';
 import { ConnectorRegistry } from '../mcp/connectors.js';
 import type { MentorshipRecord } from '../skills/mentor.js';
 import { MentorshipLedger } from '../skills/mentor.js';
@@ -50,8 +50,8 @@ export type KernelSnapshot = {
   skills?: SkillSpec[];
   /** Memory P1: event log and fact store. Optional for backward compat. */
   memory?: MemoryState;
-  /** E7: MCP connector declarations. Optional for backward compat. */
-  connectors?: ConnectorRecord[];
+  /** E7: MCP connector declarations (never their bearer tokens). Optional for backward compat. */
+  connectors?: PersistedConnectorRecord[];
   /** E2.5: mentorship records. Optional for backward compat. */
   mentorships?: MentorshipRecord[];
   /** E9.3: department establishment. Optional for backward compat. */

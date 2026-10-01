@@ -156,9 +156,9 @@ describe('E7 connector HTTP face', () => {
     expect(res.statusCode).toBe(200);
     const record = await res.json();
     expect(record.status).toBe('connected');
-    expect(record.capabilities.tools).toEqual(['search']);
-    expect(record.capabilities.resources).toEqual(['docs']);
-    expect(record.capabilities.prompts).toEqual(['brief']);
+    // The declaration granted `mcp:search` and nothing else, so the resource and
+    // prompt lists the server advertised are outside the boundary too.
+    expect(record.capabilities).toEqual({ tools: ['search'], resources: [], prompts: [] });
     expect(mcpRequests).toContain('initialize');
     expect(mcpRequests).toContain('tools/list');
   });
