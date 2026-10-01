@@ -64,7 +64,7 @@ export function recomputeResult(
   const positions = extractPositions(branches);
   const decision = aggregate(positions, aggregation);
   const conflicts = detectConflicts(positions, decision);
-  return {
+  const recomputed: FanOutResult = {
     ...previous,
     branches,
     stream: mergeBranches(branches),
@@ -74,6 +74,14 @@ export function recomputeResult(
     status: statusFromBranches(branches, conflicts.length > 0),
     createdAt: previous.createdAt,
   };
+  // The settlement records describe the superseded branch set. Keeping them
+  // would leave a result whose new decision contradicts its recorded
+  // arbitration/judge/driver settlement, so drop them; the caller re-derives
+  // them (maybeArbitrate/maybeJudge) or the intent returns to the driver.
+  delete recomputed.driverResolution;
+  delete recomputed.judgeReview;
+  delete recomputed.backendArbitration;
+  return recomputed;
 }
 
 export function statusFromBranches(branches: BranchOutcome[], hasUnresolvedConflict: boolean): FanOutStatus {

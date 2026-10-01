@@ -4,7 +4,7 @@ import type { Conflict, DispatchPort, FanOutResult, TargetLookup } from '../src/
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 import { OversightDesk, conflictsToDesk } from '../src/oversight/oversight.js';
-import { applyConflictResolution } from '../src/orchestrator/resolution.js';
+import { applyConflictResolution, recomputeResult } from '../src/orchestrator/resolution.js';
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
@@ -114,6 +114,25 @@ describe('E6.2 end-to-end: fan-out split -> desk -> write-back', () => {
       conflicts: [], status: 'completed', createdAt: 't',
     };
     expect(() => applyConflictResolution(completed, { escalationId: 'e', stance: 'go', decidedAt: 't' })).toThrow(/only needs-driver/);
+  });
+});
+
+describe('E6.3 recompute drops the settlement records of the superseded branch set', () => {
+  it('clears driver resolution, judge review and backend arbitration before re-deriving', () => {
+    const previous: FanOutResult = {
+      intentId: 'i', runId: 'r', skill: 's', realm: 'personal', branches: [], stream: [], positions: [],
+      decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'driver settled' },
+      conflicts: [], status: 'completed', createdAt: 't',
+      driverResolution: { escalationId: 'esc-1', stance: 'go', decidedAt: 't' },
+      judgeReview: { judged: true, recommended: 'go', agreesWithRule: true, decidedAt: 't' },
+      backendArbitration: { concluded: true, conclusion: 'go', decidedAt: 't' },
+    };
+
+    const recomputed = recomputeResult(previous, previous.branches, { kind: 'majority' }, () => new Date('2026-01-01T00:00:00.000Z'));
+
+    expect(recomputed.driverResolution).toBeUndefined();
+    expect(recomputed.judgeReview).toBeUndefined();
+    expect(recomputed.backendArbitration).toBeUndefined();
   });
 });
 
