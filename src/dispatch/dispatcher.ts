@@ -49,6 +49,9 @@ export const AUDIT_DECISIONS = [
   // they belonged to was unmounted mid-flight). A dropped claim is a governance
   // fact, so it is announced rather than swallowed.
   'memory-claim-skipped',
+  // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
+  // leave no trace at all, so the governance surface could not see a branch ended.
+  'cancel-requested',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
@@ -78,7 +81,7 @@ export type DispatchRequest = {
 };
 
 export type DispatchResult =
-  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: Array<{ itemId: string }> }
+  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: Array<{ itemId: string; snippet: string }> }
   | { ok: false; reason: string; audit: AuditEntry };
 
 export type AuditSink = (entry: AuditEntry) => void;
@@ -230,9 +233,32 @@ export class Dispatcher {
   }
 
   async cancel(vassalName: string, taskId: string): Promise<Task> {
+    const now = this.options.now ?? (() => new Date());
+    // A cancellation is a governance action, not a side channel: it must not
+    // reach a vassal the revocation gate blocks, and it must be as visible on the
+    // trail as the dispatch it ends. Both refusals are audited before throwing so
+    // the reason is recorded, not just returned to a caller that may swallow it.
+    const status = this.lookup.statusOf(vassalName);
+    if (status === 'revoked') {
+      const audit: AuditEntry = {
+        ts: now().toISOString(), vassal: vassalName, taskId,
+        decision: 'refused-revoked', detail: `cancel refused: vassal ${vassalName} is revoked; no request sent`,
+      };
+      this.options.audit(audit);
+      throw new Error(audit.detail!);
+    }
     const vassal = this.lookup.get(vassalName);
-    if (!vassal) throw new Error(`unknown or revoked vassal: ${vassalName}`);
-    return cancelTask(vassal.taskUrl, taskId, this.options.tokenFor?.(vassalName), this.options.fetchImpl);
+    if (!vassal) {
+      const audit: AuditEntry = {
+        ts: now().toISOString(), vassal: vassalName, taskId,
+        decision: 'refused-unknown-vassal', detail: `cancel refused: ${vassalName} is not a registered vassal`,
+      };
+      this.options.audit(audit);
+      throw new Error(audit.detail!);
+    }
+    const task = await cancelTask(vassal.taskUrl, taskId, this.options.tokenFor?.(vassalName), this.options.fetchImpl);
+    this.options.audit({ ts: now().toISOString(), vassal: vassalName, taskId, decision: 'cancel-requested', state: task.status.state });
+    return task;
   }
 
   private selectBySkill(skillId: string): VassalLike | undefined {

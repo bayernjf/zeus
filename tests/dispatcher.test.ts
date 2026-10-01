@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Dispatcher, type AuditEntry } from '../src/dispatch/dispatcher.js';
+import { Dispatcher, type AuditEntry, type DispatchResult } from '../src/dispatch/dispatcher.js';
 import { memoryAuditSink } from '../src/dispatch/audit.js';
 import type { Fealty, Task } from '../src/a2a/types.js';
 import type { VassalLike, VassalLookup } from '../src/dispatch/types.js';
@@ -226,6 +226,65 @@ describe('Dispatcher', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toContain('pr-helper-2');
+  });
+
+  // The declared hit shape dropped `snippet` while every returned hit carries one,
+  // so a consumer could not read a field that is always there. Type-level guard:
+  // it fails `tsc --noEmit`, not the runtime assertion.
+  it('declares the snippet on the injected hits it returns', () => {
+    type Hit = Extract<DispatchResult, { ok: true }>['injectedHits'][number];
+    type HasSnippet = 'snippet' extends keyof Hit ? 'yes' : 'no';
+    const declared: HasSnippet = 'yes';
+    expect(declared).toBe('yes');
+  });
+
+  describe('cancel', () => {
+    it('audits a forwarded cancellation so the governance surface sees it', async () => {
+      const map = new Map([['pr-helper', vassal()]]);
+      const fetches: string[] = [];
+      const fetchImpl = async (url: string): Promise<Response> => {
+        fetches.push(url);
+        return new Response(JSON.stringify({ jsonrpc: '2.0', id: 3, result: task('canceled') }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+      const { log, sink } = memoryAuditSink();
+      const d = new Dispatcher(map, { audit: sink, fetchImpl });
+
+      const cancelled = await d.cancel('pr-helper', 'task-1');
+
+      expect(fetches).toEqual(['http://pr-helper.internal/api/a2a/tasks']);
+      expect(cancelled.status.state).toBe('canceled');
+      // A dispatch is audited; a cancellation used to vanish from the trail.
+      expect(log.map(entry => entry.decision)).toEqual(['cancel-requested']);
+      expect(log[0]).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+    });
+
+    it('refuses to cancel through a revoked vassal, and audits the refusal', async () => {
+      const map = new Map([['pr-helper', vassal({ revoked: true })]]);
+      const { log, sink } = memoryAuditSink();
+      let reached = false;
+      const d = new Dispatcher(map, {
+        audit: sink,
+        fetchImpl: async () => {
+          reached = true;
+          return new Response('{}', { status: 200 });
+        },
+      });
+
+      await expect(d.cancel('pr-helper', 'task-1')).rejects.toThrow(/revoked/);
+      expect(reached).toBe(false);
+      expect(log.map(entry => entry.decision)).toEqual(['refused-revoked']);
+      expect(log[0]).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+    });
+
+    it('audits a cancel aimed at a vassal that is not registered', async () => {
+      const { log, sink } = memoryAuditSink();
+      const d = new Dispatcher(new Map<string, VassalLike>(), { audit: sink, fetchImpl: fakeVassalServer({}) });
+      await expect(d.cancel('ghost', 'task-1')).rejects.toThrow(/ghost/);
+      expect(log.map(entry => entry.decision)).toEqual(['refused-unknown-vassal']);
+    });
   });
 
   describe('sla.ackSeconds enforcement', () => {
