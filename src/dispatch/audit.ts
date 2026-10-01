@@ -28,7 +28,11 @@ export const DEFAULT_AUDIT_KEEP = 5;
 export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}): AuditSink {
   const maxBytes = options.maxBytes ?? DEFAULT_AUDIT_MAX_BYTES;
   const keep = options.keep ?? DEFAULT_AUDIT_KEEP;
-  if (Number.isFinite(maxBytes) && maxBytes < 1) {
+  // `Infinity` is the documented opt-out; anything else must be a usable size.
+  // NaN used to pass the old `Number.isFinite(maxBytes) && maxBytes < 1` guard and
+  // then make the rotation branch unreachable, so a typo silently turned the bound
+  // off rather than failing at boot.
+  if (maxBytes !== Number.POSITIVE_INFINITY && !(Number.isFinite(maxBytes) && maxBytes >= 1)) {
     throw new Error(`audit maxBytes must be >= 1 or Infinity, got ${String(maxBytes)}`);
   }
   if (!Number.isInteger(keep) || keep < 1) {
@@ -161,7 +165,8 @@ export function readAuditLog(
       if (read === 0) break;
       filled += read;
     }
-    const window = buffer.subarray(0, filled).toString('utf8');
+    const bytes = buffer.subarray(0, filled);
+    const window = bytes.toString('utf8');
 
     const lines = window.split('\n');
     // Drop the first line only when the window did not begin on a line boundary:
@@ -169,10 +174,22 @@ export function readAuditLog(
     // read as corruption. The old `lines.length > 1` guard left the single-line
     // case behind, so a window holding one partial line threw instead of being
     // treated as a truncation.
-    if (offset > 0 && !startsAtLineBoundary(fd, offset)) lines.shift();
+    const droppedFirst = offset > 0 && !startsAtLineBoundary(fd, offset);
+
+    // Byte offset of each line's first byte within the window, read off the buffer
+    // itself: a window that starts mid-sequence decodes its leading bytes to one
+    // replacement character, so summing re-encoded string lengths would drift.
+    const lineStarts = [0];
+    for (let i = 0; i < bytes.length; i += 1) if (bytes[i] === 0x0a) lineStarts.push(i + 1);
 
     const entries: AuditEntry[] = [];
-    for (const line of lines) {
+    // Report each line's own byte offset. The window origin was used for every
+    // line, pointing an operator at a good record while the corrupt one sat
+    // further down the file.
+    for (let i = 0; i < lines.length; i += 1) {
+      if (droppedFirst && i === 0) continue;
+      const line = lines[i];
+      const at = offset + lineStarts[i];
       const text = line.trim();
       if (text === '') continue;
       let parsed: unknown;
@@ -180,11 +197,11 @@ export function readAuditLog(
         parsed = JSON.parse(text);
       } catch (error) {
         throw new AuditLogError(
-          `unreadable audit record at byte ${offset + 1} of ${path}: ${error instanceof Error ? error.message : String(error)}`,
+          `unreadable audit record at byte ${at + 1} of ${path}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
       if (!isAuditEntry(parsed)) {
-        throw new AuditLogError(`audit record at byte ${offset + 1} of ${path} is missing ts/vassal/decision`);
+        throw new AuditLogError(`audit record at byte ${at + 1} of ${path} is missing ts/vassal/decision`);
       }
       entries.push(parsed);
     }

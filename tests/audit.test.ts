@@ -185,6 +185,15 @@ describe('jsonlAuditSink disk ceiling', () => {
     expect(() => jsonlAuditSink(path, { keep: 0 })).toThrow(/keep must be a whole number/);
     expect(() => jsonlAuditSink(path, { keep: 1.5 })).toThrow(/keep must be a whole number/);
   });
+
+  // NaN slipped through the old `Number.isFinite(maxBytes) && maxBytes < 1` guard
+  // and then made the rotation branch unreachable: a silent opt-out of the one
+  // knob that exists to bound the file, which nobody configured.
+  it('refuses a ceiling that is neither a size nor the Infinity opt-out', () => {
+    const path = join(dir, 'audit.jsonl');
+    expect(() => jsonlAuditSink(path, { maxBytes: Number.NaN })).toThrow(/maxBytes must be >= 1 or Infinity/);
+    expect(() => jsonlAuditSink(path, { maxBytes: Number.NEGATIVE_INFINITY })).toThrow(/maxBytes must be >= 1 or Infinity/);
+  });
 });
 
 describe('readAuditLog', () => {
@@ -292,6 +301,30 @@ describe('readAuditLog', () => {
 
       write(path, `${JSON.stringify({ ts: 'ok', decision: 'dispatched' })}\n`);
       expect(() => readAuditLog(path)).toThrow(/missing ts\/vassal\/decision/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // The reported position used to be the window origin for every line, so an
+  // operator was pointed at a perfectly good record while the corrupt one sat
+  // further down the file untouched.
+  it('names the byte offset of the unreadable record, not the start of the window', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-offset-'));
+    const path = join(dir, 'audit.jsonl');
+    try {
+      const good = JSON.stringify({ ts: 'ok', vassal: 'loom', decision: 'dispatched' });
+      const bad = '{ not json }';
+      writeFileSync(path, `${good}\n${bad}\n`);
+      const firstBadByte = Buffer.byteLength(good) + 1; // the '\n' after line 1
+      expect(() => readAuditLog(path)).toThrow(
+        new RegExp(`unreadable audit record at byte ${firstBadByte + 1} of`)
+      );
+      // A malformed record fails the same way, and is positioned the same way.
+      writeFileSync(path, `${good}\n${JSON.stringify({ ts: 'oops' })}\n`);
+      expect(() => readAuditLog(path)).toThrow(
+        new RegExp(`audit record at byte ${firstBadByte + 1} of`)
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
