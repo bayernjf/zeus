@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner, verifySignedSnapshot } from '../src/registry/signing.js';
-import { createHttpServer } from '../src/http/server.js';
+import { timingSafeEqual } from 'node:crypto';
+import { createHttpServer, constantTimeEqual } from '../src/http/server.js';
 import type { AgentCard } from '../src/a2a/types.js';
 import type { SignedRosterSnapshot } from '../src/registry/signing.js';
 
@@ -202,5 +203,28 @@ describe('HTTP H1 server', () => {
     expect(envelope.snapshot.entries).toEqual([]);
     const verdict = await verifySignedSnapshot(envelope, signer.verifier(), new Date('2026-09-21T12:30:00.000Z'));
     expect(verdict.ok).toBe(true);
+  });
+});
+
+describe('bearer token comparison (length-safe)', () => {
+  it('accepts the exact token and rejects everything else', () => {
+    expect(constantTimeEqual('internal-secret', 'internal-secret')).toBe(true);
+    expect(constantTimeEqual('internal-secret', 'internal-secretx')).toBe(false);
+    expect(constantTimeEqual('', 'internal-secret')).toBe(false);
+  });
+
+  it('reduces both sides to equal-length digests before comparing', () => {
+    // The guard under test is "no early return on a length mismatch". An obvious
+    // `a.length !== b.length` short-circuit never reaches the comparator for
+    // differently-sized inputs, leaking the expected token's length by timing.
+    const widths: Array<[number, number]> = [];
+    const result = constantTimeEqual('short', 'a-far-longer-expected-token', (a, b) => {
+      widths.push([a.length, b.length]);
+      return timingSafeEqual(a, b);
+    });
+    expect(result).toBe(false);
+    expect(widths).toHaveLength(1);
+    expect(widths[0][0]).toBe(32);
+    expect(widths[0][0]).toBe(widths[0][1]);
   });
 });

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { CardFetchError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
@@ -2077,11 +2077,23 @@ function mapDiaryError(reply: FastifyReply, thrown: unknown): FastifyReply {
   return error(reply, 400, 'invalid_request', detail);
 }
 
-/** Length-safe constant-time comparison for bearer tokens. */
-function constantTimeEqual(presented: string, expected: string): boolean {
-  if (!presented) return false;
-  const a = Buffer.from(presented, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+/**
+ * Constant-time comparison for bearer tokens.
+ *
+ * Both sides are reduced to a fixed-length SHA-256 digest before comparing, so
+ * the comparison never short-circuits on a length mismatch. Returning early
+ * when the lengths differ (the obvious `Buffer.from(...).length !== ...` shape)
+ * is a length oracle: the response time tells an attacker how long the expected
+ * token is, which is exactly the half of the secret a length-safe compare is
+ * supposed to hide. `compare` is injectable so a test can assert the digest
+ * path is taken regardless of input lengths.
+ */
+export function constantTimeEqual(
+  presented: string,
+  expected: string,
+  compare: (a: Buffer, b: Buffer) => boolean = timingSafeEqual
+): boolean {
+  const a = createHash('sha256').update(presented, 'utf8').digest();
+  const b = createHash('sha256').update(expected, 'utf8').digest();
+  return compare(a, b);
 }
