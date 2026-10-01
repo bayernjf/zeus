@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConnectorRegistry, ConnectorError, type ConnectorAuditEntry } from '../src/mcp/connectors.js';
+import { McpClient } from '../src/mcp/client.js';
 import type { ConnectorDeclaration } from '../src/mcp/types.js';
 
 const ENDPOINT = 'https://mcp.example/mcp';
@@ -219,3 +220,37 @@ describe('E7 MCP connectors', () => {
     expect(() => registry.declare(declaration({ endpoint: undefined }))).toThrowError(/endpoint|command/);
   });
 });
+
+describe('A-08 MCP client response correlation', () => {
+  it('fails loud when no frame carries the request id', async () => {
+    const strayId: typeof fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { id: number };
+      return new Response(
+        JSON.stringify({ jsonrpc: '2.0', id: body.id + 100, result: { tools: [] } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+    const client = new McpClient(ENDPOINT, { fetchImpl: strayId });
+    await expect(client.initialize()).rejects.toThrowError(/request id/);
+  });
+
+  it('picks the frame whose id matches, ignoring an earlier stale result', async () => {
+    const frames: typeof fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { id: number };
+      // A notification (no id) and a stale response precede the real one, which
+      // is exactly the SSE shape the old "first frame with a result" lookup got
+      // wrong.
+      const sse = [
+        `data: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/message' })}`,
+        `data: ${JSON.stringify({ jsonrpc: '2.0', id: 999, result: { tools: [{ name: 'stale' }] } })}`,
+        `data: ${JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { tools: [{ name: 'fresh' }] } })}`,
+      ].join('\n\n') + '\n\n';
+      return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    }) as typeof fetch;
+    const client = new McpClient(ENDPOINT, { fetchImpl: frames });
+    const capabilities = await client.initialize();
+    expect(capabilities.tools).toEqual(['fresh']);
+  });
+});
+
+// A09TESTS

@@ -15,6 +15,8 @@ export class McpClientError extends Error {}
 let requestCounter = 0;
 
 interface RpcResponse {
+  id?: number | string;
+  method?: string;
   result?: unknown;
   error?: { code: number; message: string };
 }
@@ -67,9 +69,16 @@ export class McpClient {
       ? parseSse(body)
       : [JSON.parse(body) as RpcResponse];
 
-    const match = responses.find(r => Object.prototype.hasOwnProperty.call(r, 'result') || r.error);
-    if (match?.error) throw new McpClientError(`MCP ${method} error ${match.error.code}: ${match.error.message}`);
-    return match?.result;
+    // A-08: correlate by JSON-RPC id. Matching on "the first frame carrying a
+    // result" returned another call's payload whenever a server interleaved a
+    // notification or a stale frame — a silent wrong answer, not an error. A
+    // stream that never carries our id is a failure, not an empty result.
+    const match = responses.find(r => r.id === id);
+    if (!match) {
+      throw new McpClientError(`MCP ${method} response did not match request id ${id} (${responses.length} frame(s) received)`);
+    }
+    if (match.error) throw new McpClientError(`MCP ${method} error ${match.error.code}: ${match.error.message}`);
+    return match.result;
   }
 
   private async notify(method: string, params?: unknown): Promise<void> {
