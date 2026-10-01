@@ -117,6 +117,14 @@ export class FsRealmStore implements RealmStore {
     const existingId = this.roots.get(absRoot);
     const realmId = existingId ?? `realm-${sha256Hex(absRoot).slice(0, 16)}`;
     const previous = existingId ? this.realms.get(existingId) : undefined;
+    if (previous && previous.type !== type) {
+      // The type is a boundary: a personal realm is writable by default, while
+      // the enterprise domain is gated by a driver grant. Letting a reconnect
+      // switch the label would silently drop the gate (realm §8.1).
+      throw new RealmError(
+        `reconnecting ${absRoot} would change its realm type (${previous.type} -> ${type}); disconnect is not offered in this build`,
+      );
+    }
     if (previous && formatTenant(previous.manifest.tenant) !== formatTenant(tenant)) {
       throw new RealmError(
         `reconnecting ${absRoot} would change its tenant scope (${formatTenant(previous.manifest.tenant) || '(none)'} -> ${formatTenant(tenant) || '(none)'}); disconnect is not offered in this build`,
@@ -137,8 +145,13 @@ export class FsRealmStore implements RealmStore {
       backup: { strategy: 'none' },
     };
 
+    // readOnly only tightens: a realm mounted read-only stays read-only across
+    // every reconnect. Otherwise a later caller that omits the flag (the vault
+    // live-source path, or a boot restore) would silently upgrade a snapshot's
+    // read-only mount to writable.
+    const readOnly = (previous?.readOnly ?? false) || (opts.readOnly ?? false);
     this.roots.set(absRoot, realmId);
-    this.realms.set(realmId, { realmId, type, root: absRoot, readOnly: opts.readOnly ?? false, manifest, items });
+    this.realms.set(realmId, { realmId, type, root: absRoot, readOnly, manifest, items });
     return structuredClone(manifest);
   }
 

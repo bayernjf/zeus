@@ -93,6 +93,30 @@ describe('FsRealmStore P0', () => {
     expect(after.realmId).toBe(before.realmId);
   });
 
+  it('refuses a reconnect that would relabel a mounted realm type', async () => {
+    const store = new FsRealmStore();
+    const personal = await store.connect(root, 'personal');
+    await expect(store.connect(root, 'enterprise')).rejects.toThrow(/would change its realm type/);
+    // The mount is untouched: a refused reconnect must not have mutated it.
+    expect(store.connections().find(c => c.realmId === personal.realmId)?.type).toBe('personal');
+
+    const enterpriseStore = new FsRealmStore();
+    await enterpriseStore.connect(root, 'enterprise');
+    await expect(enterpriseStore.connect(root, 'personal')).rejects.toThrow(/would change its realm type/);
+  });
+
+  it('keeps a read-only mount read-only across reconnects that omit the flag', async () => {
+    const store = new FsRealmStore();
+    const manifest = await store.connect(root, 'personal', { readOnly: true });
+    // A later reconnect with no flag (vault live-source, boot restore) must not
+    // silently promote the mount back to writable.
+    await store.connect(root, 'personal');
+    expect(store.connections().find(c => c.realmId === manifest.realmId)?.readOnly).toBe(true);
+    await expect(store.write!(manifest.realmId, { data: 'x', itemId: 'notes/new.md' })).rejects.toThrow(
+      /connected read-only/,
+    );
+  });
+
   it('enforces connect-before-use (invariant 2)', async () => {
     const store = new FsRealmStore();
     await expect(store.manifest('realm-ghost')).rejects.toBeInstanceOf(RealmNotConnectedError);
