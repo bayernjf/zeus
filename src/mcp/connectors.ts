@@ -118,40 +118,29 @@ export class ConnectorRegistry {
       throw error;
     }
 
-    // Minimum privilege: the declaration may enumerate fewer tools than the
-    // server exposes; only declared capability names remain usable.
-    if (record.permissions.length > 0) {
-      // deferred #30: granted names are upstream strings verbatim, so a rename
-      // upstream would silently drop a tool out of the boundary. Announce every
-      // granted mcp:<tool> the handshake did not discover rather than hiding it.
-      const discovered = new Set(capabilities.tools);
-      const unmatched = record.permissions
-        .filter(claim => claim.startsWith('mcp:'))
-        .map(claim => claim.slice(4))
-        .filter(tool => !discovered.has(tool));
-      if (unmatched.length > 0) {
-        this.log('boundary-unmatched', id, `granted tools not discovered upstream: ${unmatched.join(', ')}`);
-      }
-      capabilities = {
-        tools: capabilities.tools.filter(t => this.withinBoundary(id, 'tool', t)),
-        resources: capabilities.resources,
-        prompts: capabilities.prompts,
-      };
+    // A-09 minimum privilege: the declaration may enumerate fewer tools than the
+    // server exposes, and only declared ones stay usable. The narrowing runs even
+    // when the declaration grants nothing — an empty permission list means no
+    // tool, so "declare nothing" cannot widen the boundary to the whole handshake
+    // (fail-closed; it used to be skipped, which is what made the bypass work).
+    // deferred #30: granted names are upstream strings verbatim, so an upstream
+    // rename would silently drop a tool out of the boundary. Announce every
+    // granted mcp:<tool> the handshake did not discover rather than hiding it.
+    const discovered = new Set(capabilities.tools);
+    const unmatched = record.permissions
+      .filter(claim => claim.startsWith('mcp:'))
+      .map(claim => claim.slice(4))
+      .filter(tool => !discovered.has(tool));
+    if (unmatched.length > 0) {
+      this.log('boundary-unmatched', id, `granted tools not discovered upstream: ${unmatched.join(', ')}`);
     }
+    capabilities = narrowCapabilities(record.permissions, capabilities);
 
     record.status = 'connected';
     record.connectedAt = this.now().toISOString();
     record.capabilities = capabilities;
     this.log('connected', id);
     return structuredClone(record);
-  }
-
-  private withinBoundary(connectorId: string, kind: string, name: string): boolean {
-    const record = this.connectors.get(connectorId)!;
-    // Tool-level bounds are expressed as mcp:<tool>; bare mcp grants everything.
-    return record.permissions.some(
-      claim => claim === `mcp:${name}` || claim === 'mcp' || claim === kind,
-    );
   }
 
   private isStdio(record: ConnectorRecord): boolean {
@@ -185,6 +174,16 @@ export class ConnectorRegistry {
     if (record.status !== 'connected' || !record.capabilities) {
       throw new ConnectorError(`connector ${id} is not connected; run the handshake first`);
     }
+    // A-09: re-derive the boundary from the declaration on every call instead of
+    // trusting the capability list stored at handshake — a snapshot restored by
+    // importState (or a widened stored list) is not proof the declaration granted
+    // the tool. Both must hold: the declaration granted it and the server
+    // advertised it.
+    if (!withinDeclaredBoundary(record.permissions, name)) {
+      throw new ConnectorError(
+        `connector ${id} does not expose tool '${name}': the declaration did not grant it (permissions: ${record.permissions.join(', ') || 'none'})`,
+      );
+    }
     if (!record.capabilities.tools.includes(name)) {
       throw new ConnectorError(`connector ${id} does not expose tool '${name}' (discovered: ${record.capabilities.tools.join(', ') || 'none'})`);
     }
@@ -214,8 +213,21 @@ export class ConnectorRegistry {
     return [...this.connectors.values()].map(record => structuredClone(record));
   }
 
+  /**
+   * A-09: restore records without letting a hand-edited snapshot widen a
+   * connector's rights — the capability list is re-narrowed to its declaration
+   * on import, exactly as a fresh handshake would have produced it.
+   */
   importState(records: ConnectorRecord[]): void {
-    this.connectors = new Map(records.map(record => [record.id, structuredClone(record)]));
+    this.connectors = new Map(
+      records.map(record => {
+        const restored = structuredClone(record);
+        if (restored.capabilities) {
+          restored.capabilities = narrowCapabilities(restored.permissions, restored.capabilities);
+        }
+        return [restored.id, restored];
+      })
+    );
   }
 
   private require(id: string): ConnectorRecord {
@@ -227,4 +239,26 @@ export class ConnectorRegistry {
   private log(action: ConnectorAuditEntry['action'], id: string, detail?: string): void {
     this.audit({ at: this.now().toISOString(), connectorId: id, action, ...(detail ? { detail } : {}) });
   }
+}
+
+/**
+ * A-09: a tool is usable only when the declaration granted it. Bounds are
+ * `mcp:<tool>` for a single tool and a bare `mcp` for all of them. Anything else
+ * — including a record carrying no permissions at all — authorises nothing, so
+ * the boundary can never be widened by declaring less.
+ */
+function withinDeclaredBoundary(permissions: readonly string[], tool: string): boolean {
+  return permissions.some(claim => claim === `mcp:${tool}` || claim === 'mcp');
+}
+
+/** A-09: keep only the discovered tools the declaration granted. */
+function narrowCapabilities(
+  permissions: readonly string[],
+  capabilities: ConnectorCapabilities,
+): ConnectorCapabilities {
+  return {
+    tools: capabilities.tools.filter(tool => withinDeclaredBoundary(permissions, tool)),
+    resources: capabilities.resources,
+    prompts: capabilities.prompts,
+  };
 }

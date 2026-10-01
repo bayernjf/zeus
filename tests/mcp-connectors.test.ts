@@ -253,4 +253,25 @@ describe('A-08 MCP client response correlation', () => {
   });
 });
 
-// A09TESTS
+describe('A-09 connector minimum privilege is fail-closed', () => {
+  it('exposes no tool when the declaration grants no permission', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: [] }));
+    const connected = await registry.connect('knowledge', mcpFetch());
+    expect(connected.capabilities!.tools).toEqual([]);
+    await expect(registry.callTool('knowledge', 'search')).rejects.toThrowError(/not granted|does not expose tool/);
+  });
+
+  it('re-narrows imported capabilities to the declared boundary', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: ['mcp:search'] }));
+    const tampered = registry.exportState();
+    tampered[0].status = 'connected';
+    tampered[0].capabilities = { tools: ['search', 'danger', 'exfiltrate'], resources: [], prompts: [] };
+
+    registry.importState(tampered);
+
+    expect(registry.get('knowledge')!.capabilities!.tools).toEqual(['search']);
+    await expect(registry.callTool('knowledge', 'danger')).rejects.toThrowError(/not granted|does not expose tool/);
+  });
+});
