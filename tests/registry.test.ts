@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry, CardFetchError, VassalRevokedError, defaultTaskUrl } from '../src/registry/registry.js';
+import { VassalRegistry, CardFetchError, VassalRevokedError, defaultTaskUrl, type VassalEntry } from '../src/registry/registry.js';
 import type { AgentCard } from '../src/a2a/types.js';
 
 function cardResponse(card: unknown, status = 200): Response {
@@ -139,6 +139,46 @@ describe('VassalRegistry', () => {
     // A peer that answers 5xx and a peer we cannot reach are the same class of
     // failure to the caller: transport, not content.
     await expect(down.register('http://down/api/a2a/agent-card')).rejects.toBeInstanceOf(CardFetchError);
+  });
+
+  // A 200 from a peer that is serving something other than a card. This is a
+  // transport failure — the peer failed to answer the question — not a malformed
+  // request, and the HTTP face maps it to 502 accordingly.
+  it('treats a 200 whose body is not JSON as a transport failure', async () => {
+    const registry = new VassalRegistry(
+      async () => new Response('<html>maintenance</html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
+    );
+    const err = await registry.register('http://vassal.internal/api/a2a/agent-card').catch(e => e);
+    expect(err).toBeInstanceOf(CardFetchError);
+    expect(err.message).toMatch(/not JSON/);
+    expect(err.message).toContain('http://vassal.internal/api/a2a/agent-card');
+  });
+
+  // A-12 guards every outbound face; this pins that an explicit taskUrl override
+  // goes through the same guard as the card URL, so neither can name a target
+  // the dispatcher would then POST JSON-RPC to.
+  it('refuses a taskUrl override that is not an http(s) absolute URL', async () => {
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
+    await expect(
+      registry.register('http://vassal.internal/api/a2a/agent-card', { taskUrl: 'ftp://vassal.internal/tasks' })
+    ).rejects.toThrow(/http or https/);
+    await expect(registry.register('http://vassal.internal/api/a2a/agent-card', { taskUrl: '' })).rejects.toThrow(
+      /absolute URL/
+    );
+  });
+
+  it('never hands the outbound token to the caller or the onRegister hook', async () => {
+    const seen: VassalEntry[] = [];
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()), () => new Date(), {
+      onRegister: entry => seen.push(entry),
+    });
+    const entry = await registry.register('http://vassal.internal/api/a2a/agent-card', { token: 'outbound-credential' });
+    expect(entry.token).toBeUndefined();
+    expect(seen).toHaveLength(1);
+    expect(seen[0].token).toBeUndefined();
+    // The dispatcher and the on-disk snapshot stay the only readers.
+    expect(registry.tokenFor('pr-helper')).toBe('outbound-credential');
+    expect(registry.exportState()[0].token).toBe('outbound-credential');
   });
 
   // Every other failure stub in this file returns a bad Response. None of them

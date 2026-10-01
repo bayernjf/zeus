@@ -303,15 +303,17 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(typeof body.taskUrl === 'string' ? { taskUrl: body.taskUrl } : {}),
           ...(body.token !== undefined ? { token: body.token } : {}),
         });
-        // The stored credential never comes back out of this route, or any other.
-        const { token: _omit, ...echo } = entry;
-        return reply.code(201).send(echo);
+        // The registry already hands back an entry without the stored credential,
+        // so this route (and every other) echoes a token-free view by construction.
+        return reply.code(201).send(entry);
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         // Classified by error identity, not by message shape: a transport failure
-        // is the peer's fault (502), while a card that was fetched and then
-        // refused (bad fealty, unsupported version, malformed JSON) is something
-        // the caller or the vassal can actually fix (400).
+        // is the peer's fault (502) — including a 200 whose body is not JSON,
+        // which is the peer failing to serve a card — while a card that was
+        // fetched and parsed but refused on content (bad fealty, unsupported
+        // version, a body that is not a card) is something the caller or the
+        // vassal can actually fix (400).
         if (e instanceof CardFetchError) return error(reply, 502, 'bad_gateway', detail);
         // A-02: a revoked name cannot be brought back by re-registering, so this
         // is a state conflict (409), not a malformed request (400).

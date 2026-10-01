@@ -96,8 +96,22 @@ export class VassalRegistry {
       throw new CardFetchError(`card fetch failed: ${reason} (${cardUrl})`);
     }
     if (!response.ok) throw new CardFetchError(`card fetch failed: ${response.status} ${cardUrl}`);
-    const card = (await response.json()) as AgentCard;
-    if (!card.name || !Array.isArray(card.skills)) throw new Error(`invalid agent card: ${cardUrl}`);
+    let card: AgentCard;
+    try {
+      card = (await response.json()) as AgentCard;
+    } catch (e) {
+      // A 200 whose body is not JSON is the peer failing to serve a card: the
+      // same transport class as an error status, so it maps to 502. Left
+      // outside this catch, the SyntaxError escaped as a 400 "invalid_request"
+      // and blamed the caller for the peer's response.
+      const reason = e instanceof Error ? e.message : String(e);
+      throw new CardFetchError(`card fetch returned a body that is not JSON: ${reason} (${cardUrl})`);
+    }
+    // A JSON body that is not a card (including the literal `null`/scalar a peer
+    // could return) is a content problem, refused with the field it lacks.
+    if (!card || typeof card !== 'object' || !card.name || !Array.isArray(card.skills)) {
+      throw new Error(`invalid agent card: ${cardUrl}`);
+    }
     const fealty = card['x-zeus-fealty'];
     if (!fealty || fealty.swornTo !== 'zeus' || !fealty.version) {
       throw new Error(`no vassal fealty on card (guest agent?): ${cardUrl}`);
@@ -148,8 +162,13 @@ export class VassalRegistry {
       );
     }
     this.entries.set(card.name, entry);
-    this.hooks.onRegister?.(entry);
-    return structuredClone(entry);
+    // E4.8: the stored bearer belongs to the dispatcher and the state file, so
+    // neither the caller's return value nor a hook payload carries it. Stripping
+    // it here rather than at each call site means a new caller cannot leak the
+    // credential by echoing back what register handed it.
+    const publicEntry = withoutToken(structuredClone(entry));
+    this.hooks.onRegister?.(publicEntry);
+    return publicEntry;
   }
 
   get(name: string): VassalEntry | undefined {

@@ -122,6 +122,18 @@ describe('G1 vassal onboarding HTTP', () => {
     expect((await res.json()).detail).toContain(unreachable);
   });
 
+  // A peer answering 200 with something that is not a card is the same class of
+  // gateway failure as a 5xx: the caller's cardUrl was fine, the peer's answer
+  // was not a card. It must not be reported as a malformed request.
+  it('returns 502 when the card URL answers 200 with a body that is not JSON', async () => {
+    const app = await server(
+      async () => new Response('<html>maintenance</html>', { status: 200, headers: { 'content-type': 'text/html' } })
+    );
+    const res = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL } });
+    expect(res.statusCode).toBe(502);
+    expect((await res.json()).error).toBe('bad_gateway');
+  });
+
   it('rejects a card without fealty', async () => {
     const guest = card();
     delete guest['x-zeus-fealty'];
