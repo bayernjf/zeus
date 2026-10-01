@@ -40,7 +40,11 @@ export type VassalMetric = {
   completed: number;
   failed: number;
   timedOut: number;
-  /** failed + timedOut over finished calls. */
+  /** Canceled by the driver; neither a success nor a failure of the vassal. */
+  canceled: number;
+  /** failed + timedOut over finished calls that produced a verdict; canceled
+   *  calls are excluded from both the numerator and the denominator, so a
+   *  driver's cancel never dilutes (or inflates) a vassal's reliability. */
   failureRate: number;
   latency: LatencyStats | null;
 };
@@ -56,6 +60,8 @@ export type MetricsSnapshot = {
   completed: number;
   failed: number;
   timedOut: number;
+  /** Canceled branches. Present so `finished` equals the four outcome buckets. */
+  canceled: number;
   perVassal: Record<string, VassalMetric>;
   /** Real-time in-flight count per vassal (defensive copy). Enables per-vassal
    *  saturation checks (#9 backpressure diversion) without a full snapshot. */
@@ -118,8 +124,15 @@ export class ConcurrencyMetrics {
   branchStarted(event: BranchMetricEvent): void {
     this.dequeue();
     const key = ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal);
+    const alreadyActive = this.active.has(key);
     this.active.set(key, { event, startedMs: this.clock()() });
-    this.bumpInFlight(event.vassal, 1);
+    // A repeated start for a key that never ended (two branches sharing
+    // intentId+runId, e.g. a recycled resume runId) would otherwise leave the
+    // vassal permanently in flight: the counter is bumped twice but the single
+    // `branchEnded` decrements once, and #9 diversion then reads the vassal as
+    // saturated forever. Counting the key once keeps `inFlightByVassal` equal to
+    // the live entries in `active`.
+    if (!alreadyActive) this.bumpInFlight(event.vassal, 1);
     if (this.active.size > this.maxInFlight) this.maxInFlight = this.active.size;
   }
 
@@ -181,6 +194,7 @@ export class ConcurrencyMetrics {
     const completed = finished.filter(r => r.outcome === 'completed').length;
     const failed = finished.filter(r => r.outcome === 'failed').length;
     const timedOut = finished.filter(r => r.outcome === 'timeout').length;
+    const canceled = finished.filter(r => r.outcome === 'canceled').length;
     const inFlightByVassal: Record<string, number> = {};
     for (const [vassal, count] of this.inFlightByVassal) inFlightByVassal[vassal] = count;
     return {
@@ -191,6 +205,7 @@ export class ConcurrencyMetrics {
       completed,
       failed,
       timedOut,
+      canceled,
       perVassal,
       inFlightByVassal,
       capturedAt: this.now().toISOString(),
@@ -201,13 +216,18 @@ export class ConcurrencyMetrics {
     const failures = list.filter(r => r.outcome === 'failed').length;
     const timeouts = list.filter(r => r.outcome === 'timeout').length;
     const completed = list.filter(r => r.outcome === 'completed').length;
+    const canceled = list.filter(r => r.outcome === 'canceled').length;
+    // Canceled calls are excluded from the rate: the driver's decision to cancel
+    // is not evidence about the vassal, and #9 diversion scores on this value.
+    const verdicts = failures + timeouts + completed;
     const latencies = list.map(r => r.latencyMs).filter((n): n is number => typeof n === 'number').sort((a, b) => a - b);
     return {
       calls: list.length,
       completed,
       failed: failures,
       timedOut: timeouts,
-      failureRate: list.length ? (failures + timeouts) / list.length : 0,
+      canceled,
+      failureRate: verdicts ? (failures + timeouts) / verdicts : 0,
       latency: latencies.length ? latencyStats(latencies) : null,
     };
   }
