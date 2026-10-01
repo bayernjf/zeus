@@ -4,8 +4,14 @@
  * The kernel used to dispatch every branch of every intent at once
  * (`Promise.all`), so "concurrency control" meant nothing and the queue-depth
  * metric was permanently 0. This is the smallest thing that makes both true:
- * a fixed number of leases, a FIFO wait line, and a hard limit on how long a
- * branch is willing to stand in it.
+ * a fixed number of leases, a FIFO wait line, and a bound on how many branches
+ * may stand in it (`queueLimit`; further arrivals are refused with
+ * QueueFullError).
+ *
+ * There is deliberately no wait timeout here: a branch that has been handed a
+ * slot waits for it, and bounding that wait is the caller's job (the branch
+ * dispatch timeout). `queueLimit` is the last global backstop against an
+ * unbounded line, not a per-waiter deadline.
  *
  * One semaphore per Orchestrator, which is per process in the long-running
  * assembly - so the cap bounds in-flight branches across all intents, which is
@@ -37,6 +43,12 @@ export class Semaphore {
   ) {
     if (!Number.isInteger(max) || max < 1) {
       throw new Error(`semaphore needs a whole max of at least 1, got ${String(max)}`);
+    }
+    // A non-integer or negative queueLimit is not a limit this class can honour:
+    // `waiters.length >= NaN` is never true, so the queue silently becomes
+    // unbounded. Refuse it at construction instead.
+    if (!(queueLimit === Number.POSITIVE_INFINITY || (Number.isInteger(queueLimit) && queueLimit >= 0))) {
+      throw new Error(`semaphore queue limit must be a whole number of at least 0 (or Infinity), got ${String(queueLimit)}`);
     }
   }
 
