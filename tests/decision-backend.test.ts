@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createJevBackend } from '../src/decision/decision-model.js';
 import { createLlmBackend } from '../src/decision/llm.js';
 import { arbitrateSplit } from '../src/decision/arbitrate.js';
+import { judgeDecision } from '../src/orchestrator/judge.js';
 import { DecisionBackendFailure } from '../src/decision/types.js';
 import type { DecisionBackend, DecisionTrace } from '../src/decision/types.js';
+import type { FanOutResult } from '../src/orchestrator/types.js';
 
 const fixedNow = () => new Date('2026-09-22T00:00:00.000Z');
 
@@ -144,6 +146,19 @@ describe('data sovereignty (design §8)', () => {
     expect(JSON.stringify(seenBodies[0])).not.toContain('leak');
   });
 
+  it('lets a call declare its own stateKeys, overriding the backend default', async () => {
+    const seenBodies: unknown[] = [];
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      seenBodies.push(JSON.parse(String(init?.body)));
+      return jsonResponse(200, { answers: { q_noul: { probability: 0.5, confidence: 0.9 } } });
+    });
+    // no configured whitelist: the call's own declaration is the only one
+    const backend = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow });
+    await backend.noul({ question: 'q', instructions: 'i', runId: 'r', realm: 'personal', state: { a: 1, secret: 2 }, stateKeys: ['a'] });
+    expect(seenBodies[0]).toMatchObject({ state: { a: 1 } });
+    expect(JSON.stringify(seenBodies[0])).not.toContain('secret');
+  });
+
   it('applies the redact hook after whitelist filtering', async () => {
     let sent: any;
     const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
@@ -206,5 +221,46 @@ describe('arbitrateSplit (design §3.1 gating)', () => {
     const outcome = await arbitrateSplit({ backend: spy.backend, stances: [{ stance: 'go', vassals: ['a'] }], runId: 'r', realm: 'personal', ruleReason: '' });
     expect(spy.calls).toBe(0);
     expect(outcome.concluded).toBe(false);
+  });
+
+  it('reaches a real backend with its evidence, not an empty state', async () => {
+    let prompt = '';
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      prompt = String(JSON.parse(String(init?.body)).messages[1].content);
+      return jsonResponse(200, {
+        choices: [{ message: { content: JSON.stringify({ choice: 'go', probabilities: { go: 0.9, hold: 0.1 }, confidence: 0.9 }) } }],
+      });
+    });
+    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow });
+    await arbitrateSplit({ backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie on the review' });
+    // the arbitration state is what the backend decides over; an empty {} would
+    // mean the model is choosing with no evidence
+    expect(prompt).toContain('ruleReason');
+    expect(prompt).toContain('tie on the review');
+    expect(prompt).toContain('stances');
+  });
+});
+
+describe('judgeDecision evidence', () => {
+  it('reaches a real backend with the rule conclusion and positions', async () => {
+    let prompt = '';
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      prompt = String(JSON.parse(String(init?.body)).messages[1].content);
+      return jsonResponse(200, {
+        choices: [{ message: { content: JSON.stringify({ choice: 'reject', probabilities: { approve: 0.1, reject: 0.9 }, confidence: 0.5 }) } }],
+      });
+    });
+    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow });
+    const result: FanOutResult = {
+      intentId: 'i', runId: 'r', skill: 's', realm: 'personal',
+      branches: [], stream: [],
+      positions: [{ vassal: 'a', stance: 'approve' }, { vassal: 'b', stance: 'reject' }],
+      decision: { rule: 'majority', conclusion: 'approve', positions: [], reason: '2 approve vs 1 reject' },
+      conflicts: [], status: 'completed', createdAt: 't',
+    };
+    await judgeDecision({ result, backend, now: fixedNow });
+    expect(prompt).toContain('ruleConclusion');
+    expect(prompt).toContain('2 approve vs 1 reject');
+    expect(prompt).toContain('positions');
   });
 });

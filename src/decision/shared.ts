@@ -20,7 +20,9 @@ export function prepareState(
   if (typeof request.state === 'string') {
     return { state: request.state, stateKeys: [] };
   }
-  const whitelist = options.stateKeys ?? [];
+  // A call that builds its own state names its fields per call; the backend's
+  // configured whitelist is the fallback, and it defaults to empty (fail-closed).
+  const whitelist = request.stateKeys ?? options.stateKeys ?? [];
   const filtered: Record<string, unknown> = {};
   for (const key of whitelist) {
     if (key in request.state) filtered[key] = request.state[key];

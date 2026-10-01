@@ -19,6 +19,14 @@ export type DecisionBackend = {
 export type QuestionBase = {
   /** Minimal state needed for the judgement only (see design §8). */
   state: Record<string, unknown> | string;
+  /**
+   * The state fields this call deliberately exposes (design §8: every call has
+   * to name its fields). Takes precedence over the backend's configured
+   * `stateKeys`; omitted means the backend's whitelist applies, which defaults
+   * to empty — so a caller that builds its own state must declare the keys it
+   * put in it, or the backend receives no evidence.
+   */
+  stateKeys?: string[];
   /** Human-readable decision criteria. */
   instructions: string;
   runId: string;
