@@ -131,7 +131,9 @@ describe('E5.3 component snapshots', () => {
     const restored = new Orchestrator(lookup, countingPort, { newIntentId: () => 'x', newRunId: () => 'x' });
     restored.importState(orch.exportState());
 
-    const replayed = await restored.fanOut({ intentId: 'intent-keep', skill: 's', vassals: ['loom', 'atlas'], params: {}, realm: 'personal' });
+    // A replay repeats the same request (F2 rejects a reused key that names a
+    // different params payload); the point here is that no dispatch happens.
+    const replayed = await restored.fanOut({ intentId: 'intent-keep', skill: 's', vassals: ['loom', 'atlas'], params: { ticket: 'OPS-1' }, realm: 'personal' });
     expect(replayed.replayed).toBe(true);
     expect(dispatchCalls).toBe(0); // idempotent: no re-dispatch after restart
 

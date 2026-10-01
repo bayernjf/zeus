@@ -95,6 +95,13 @@ export class UnknownIntentError extends DomainError {
   }
 }
 
+/** F2: a client-supplied intentId was reused for a materially different request. */
+export class IntentRequestConflictError extends DomainError {
+  constructor(message: string) {
+    super(message, 'conflict');
+  }
+}
+
 /** E5.3 persisted shape of the orchestrator's in-memory state. */
 export type OrchestratorSnapshot = {
   intents: FanOutResult[];
@@ -118,6 +125,17 @@ export class Orchestrator {
    * Settled branches are published into the placeholder as they come back.
    */
   private inFlight = new Map<string, FanOutResult>();
+  /**
+   * F2 single-flight: fan-outs in flight keyed by their client-supplied intentId.
+   * Without this, two concurrent calls carrying the same key both miss the result
+   * cache (it is written only when the fan-out settles) and dispatch every branch
+   * twice. The stored request lets the second caller be checked against the first
+   * before it joins.
+   */
+  private pending = new Map<string, { request: FanOutRequest; work: Promise<FanOutResult> }>();
+  /** E6.3 single-flight: resumes in flight keyed by `intentId::vassal`, so two
+   *  approvals of the same escalation cannot re-dispatch the branch twice. */
+  private resuming = new Map<string, Promise<FanOutResult>>();
   private readonly slots: Semaphore | null;
 
   constructor(
@@ -133,11 +151,34 @@ export class Orchestrator {
 
   async fanOut(request: FanOutRequest): Promise<FanOutResult> {
     // F2 idempotency: a known intent replays its stored result with zero dispatch.
+    // A key already in flight joins that fan-out instead of starting a second one,
+    // and either way the incoming request must agree with the one already on
+    // record — a reused key naming a different skill/params/realm is a client bug,
+    // not a replay, and silently answering it with the old result would hide it.
     if (request.intentId) {
       const cached = this.intents.get(request.intentId);
-      if (cached) return { ...cached, replayed: true };
+      if (cached) {
+        this.assertSameRequest(request, this.requests.get(request.intentId));
+        return { ...structuredClone(cached), replayed: true };
+      }
+      const inFlight = this.pending.get(request.intentId);
+      if (inFlight) {
+        this.assertSameRequest(request, inFlight.request);
+        return inFlight.work.then(result => ({ ...structuredClone(result), replayed: true }));
+      }
     }
 
+    const work = this.fanOutNew(request);
+    if (request.intentId === undefined) return work;
+    this.pending.set(request.intentId, { request, work });
+    try {
+      return await work;
+    } finally {
+      this.pending.delete(request.intentId);
+    }
+  }
+
+  private async fanOutNew(request: FanOutRequest): Promise<FanOutResult> {
     const intentId = request.intentId ?? this.newIntentId();
     const runId = request.runId ?? this.newRunId();
     const explicit = request.vassals && request.vassals.length > 0;
@@ -346,13 +387,26 @@ export class Orchestrator {
    * other branches are untouched; the new branch replaces the old one.
    */
   async resumeBranch(intentId: string, vassal: string, params: Record<string, unknown>): Promise<FanOutResult> {
+    const key = `${intentId}::${vassal}`;
+    const inFlight = this.resuming.get(key);
+    if (inFlight) return inFlight.then(result => structuredClone(result));
+    const work = this.resumeBranchNew(intentId, vassal, params);
+    this.resuming.set(key, work);
+    try {
+      return await work;
+    } finally {
+      this.resuming.delete(key);
+    }
+  }
+
+  private async resumeBranchNew(intentId: string, vassal: string, params: Record<string, unknown>): Promise<FanOutResult> {
     const previous = this.intents.get(intentId);
     const original = this.requests.get(intentId);
     if (!previous || !original) throw new UnknownIntentError(`unknown intent: ${intentId}`);
     if (!previous.branches.some(branch => branch.vassal === vassal)) {
       throw new Error(`intent ${intentId} has no branch for vassal ${vassal}`);
     }
-    const resumeNo = previous.branches.filter(branch => branch.vassal === vassal).length;
+    const resumeNo = this.nextResumeNo(previous, vassal);
     const resumeRequest: FanOutRequest = { ...original, params: { ...original.params, ...params } };
     const branch = await this.runTrackedBranch(vassal, resumeRequest, previous.runId, intentId, resumeNo);
     const others = previous.branches.filter(existing => existing.vassal !== vassal);
@@ -443,6 +497,44 @@ export class Orchestrator {
     return resumeNo > 0 ? `${parentRunId}:${vassal}:resume${resumeNo}` : `${parentRunId}:${vassal}`;
   }
 
+  /**
+   * The next resume ordinal for a branch. The stored branch's runId carries the
+   * last one (`…:vassal:resumeN`), so counting replacements is not enough: the
+   * replaced branch is the only one kept, which is why the previous count always
+   * returned 1 and a second resume reused the first one's run id — overwriting
+   * the metric entry, colliding in the replay timeline and mis-targeting cancels.
+   */
+  private nextResumeNo(previous: FanOutResult, vassal: string): number {
+    const base = `${previous.runId}:${vassal}`;
+    const prefix = `${base}:resume`;
+    let highest = 0;
+    for (const branch of previous.branches) {
+      if (branch.vassal !== vassal || !branch.runId.startsWith(prefix)) continue;
+      const ordinal = Number(branch.runId.slice(prefix.length));
+      if (Number.isInteger(ordinal)) highest = Math.max(highest, ordinal);
+    }
+    return highest + 1;
+  }
+
+  /**
+   * F2: reject a reused idempotency key that names a different request, instead
+   * of answering it with the first request's result. Compared on the fields that
+   * select which work runs and where it runs — `skill`, `params`, `realm`,
+   * `realmId`, `vassals`. Tuning knobs (`aggregation`, `branchTimeoutMs`,
+   * `realmHits`) do not change the dispatched work and a replay may omit them;
+   * `runId` and the key itself are transport bookkeeping.
+   */
+  private assertSameRequest(incoming: FanOutRequest, stored: FanOutRequest | undefined): void {
+    if (!stored) return;
+    const fields: Array<keyof FanOutRequest> = ['skill', 'params', 'realm', 'realmId', 'vassals'];
+    const differing = fields.filter(field => !sameValue(incoming[field], stored[field]));
+    if (differing.length > 0) {
+      throw new IntentRequestConflictError(
+        `intent ${incoming.intentId} is already registered with a different ${differing.join(', ')}; an idempotency key must identify one request`,
+      );
+    }
+  }
+
   /** runBranch plus E1.7 metric lifecycle bookkeeping. */
   private async runTrackedBranch(
     vassal: string,
@@ -528,16 +620,29 @@ export class Orchestrator {
         reason: error instanceof Error ? error.message : 'dispatch rejected',
       }));
 
+    const timeoutMs = request.branchTimeoutMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const settled = request.branchTimeoutMs
+      const settled = timeoutMs
         ? await Promise.race([
             pending.then(outcome => ({ kind: 'settled' as const, outcome })),
-            timeout(request.branchTimeoutMs).then(() => ({ kind: 'timeout' as const })),
+            new Promise<{ kind: 'timeout' }>(resolve => {
+              timer = setTimeout(() => resolve({ kind: 'timeout' }), timeoutMs);
+            }),
           ])
         : await pending.then(outcome => ({ kind: 'settled' as const, outcome }));
 
       if (settled.kind === 'timeout') {
-        return { vassal, runId: branchRunId, ok: false, events: [], timedOut: true, reason: `branch timed out after ${request.branchTimeoutMs}ms` };
+        // Giving up on the wait does not cancel the outbound request, and the
+        // timed-out branch carries no task id — so nothing the driver can reach
+        // would ever cancel the vassal-side task. Settle the late result in the
+        // background and best-effort cancel it, instead of leaving an orphan
+        // running against a vassal the kernel has already stopped accounting for.
+        void pending.then(outcome => {
+          if (!outcome.ok) return;
+          void this.dispatcher.cancel(vassal, outcome.task.id).catch(() => {});
+        });
+        return { vassal, runId: branchRunId, ok: false, events: [], timedOut: true, reason: `branch timed out after ${timeoutMs}ms` };
       }
       const outcome = settled.outcome;
       if (outcome.ok) {
@@ -549,6 +654,10 @@ export class Orchestrator {
       return { vassal, runId: branchRunId, ok: false, events: [], reason: outcome.reason };
     } catch (error) {
       return { vassal, runId: branchRunId, ok: false, events: [], reason: error instanceof Error ? error.message : 'branch failed' };
+    } finally {
+      // The losing branch of `Promise.race` is not cancelled by the race, so an
+      // uncleared timer kept the event loop alive after the intent had settled.
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
 
@@ -608,8 +717,23 @@ export class Orchestrator {
   }
 }
 
-function timeout(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+/** Order-insensitive deep equality for JSON-shaped values (idempotency guard). */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  return stableStringify(a) === stableStringify(b);
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
 }
 
 /** A-11: a branch is terminal when it settled on a final state; a branch with no

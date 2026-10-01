@@ -115,7 +115,7 @@ export type {
 } from './oversight/types.js';
 
 // --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
-export { Orchestrator, UnknownIntentError } from './orchestrator/orchestrator.js';
+export { Orchestrator, UnknownIntentError, IntentRequestConflictError } from './orchestrator/orchestrator.js';
 export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
 export { Semaphore, QueueFullError, type SlotRelease } from './orchestrator/semaphore.js';
 export { mergeBranches } from './orchestrator/merge.js';
