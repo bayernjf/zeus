@@ -396,16 +396,21 @@ export class Orchestrator {
       };
     }
 
-    metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
-    this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
-    // #9: record a diversion decision alongside the branch start so the operator
-    // can trace from→to on the audit/event spine (design §4.5).
-    if (divertedFrom) {
-      this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
-      this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
-    }
+    // A-10: everything after a successful acquire lives inside this try, so a
+    // throw from the start-of-branch bookkeeping (metrics, event emit, or the
+    // onDiverted hook — boot wires onProgress to SSE broadcast + audit write +
+    // memory consolidation) still returns the lease. When release() only guarded
+    // runBranch, one such throw stranded the slot for the process lifetime.
     let branch: BranchOutcome;
     try {
+      metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
+      this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
+      // #9: record a diversion decision alongside the branch start so the operator
+      // can trace from→to on the audit/event spine (design §4.5).
+      if (divertedFrom) {
+        this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
+        this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
+      }
       branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
     } finally {
       release();

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Orchestrator, type OrchestratorOptions } from '../src/orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../src/orchestrator/metrics.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
@@ -179,5 +179,36 @@ describe('E1.5 bounded fan-out', () => {
     expect(gated.started.filter(name => name === 'a')).toHaveLength(2);
     await gated.drain();
     expect((await resumed).branches.find(b => b.vassal === 'a')?.ok).toBe(true);
+  });
+
+  // A-10: the lease used to sit outside the try that guarded the run itself, so
+  // a throw from the start-of-branch bookkeeping (metrics, event emit, or the
+  // onDiverted hook — boot wires onProgress to SSE broadcast + audit write +
+  // memory consolidation) stranded the slot. One slot plus a zero-length queue
+  // turns that leak into a kernel that refuses every later intent.
+  it('returns the slot when the branch start bookkeeping throws (A-10)', async () => {
+    const gated = gatedPort();
+    const metrics = new ConcurrencyMetrics();
+    const observer = vi.spyOn(metrics, 'branchStarted').mockImplementation(() => {
+      throw new Error('observer blew up');
+    });
+    const orchestrator = new Orchestrator(lookupFor(['a']), gated.port, {
+      metrics,
+      maxConcurrentBranches: 1,
+      branchQueueLimit: 0,
+      newIntentId: () => 'intent-1',
+      newRunId: () => 'run-1',
+    });
+
+    await expect(orchestrator.fanOut(request)).rejects.toThrow(/observer blew up/);
+
+    // The slot has to come back: with a leak the next intent would be refused
+    // outright (queue limit 0) and never reach a vassal at all.
+    observer.mockRestore();
+    const running = orchestrator.fanOut(request);
+    await flush();
+    expect(gated.started).toEqual(['a']);
+    await gated.drain();
+    expect((await running).status).toBe('completed');
   });
 });
