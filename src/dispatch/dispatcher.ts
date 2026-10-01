@@ -154,6 +154,22 @@ export class Dispatcher {
     // Redaction: realm content injection is bounded by fealty.dataPolicy
     const injectedHits = vassal.fealty.dataPolicy === 'none' ? [] : (request.realmHits ?? []);
 
+    // Re-affirm the revocation gate at the moment the credential is read.
+    // `tokenFor` yields nothing for a revoked vassal, and a request that leaves
+    // without its bearer is a governance decision that failed open: the
+    // revocation happened, and the dispatch should have been refused, not sent
+    // anonymously. The gate above only ran when the vassal was named explicitly,
+    // so this check covers both selection paths.
+    if (this.lookup.statusOf(vassal.name) === 'revoked') {
+      const audit: AuditEntry = {
+        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+        decision: 'refused-revoked', detail: `vassal ${vassal.name} was revoked before its credential was issued; dispatch blocked`,
+      };
+      this.options.audit(audit);
+      return { ok: false, reason: audit.detail!, audit };
+    }
+    const token = this.options.tokenFor?.(vassal.name);
+
     const events: A2AEvent[] = [];
     this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched' });
 
@@ -180,7 +196,7 @@ export class Dispatcher {
           skill: request.skill,
           params: { ...request.params, ...(injectedHits.length ? { realmHits: injectedHits } : {}) },
           runId,
-          token: this.options.tokenFor?.(vassal.name),
+          token,
         },
         {
           onEvent: event => {

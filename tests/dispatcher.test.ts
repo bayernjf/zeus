@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Dispatcher, type AuditEntry } from '../src/dispatch/dispatcher.js';
 import { memoryAuditSink } from '../src/dispatch/audit.js';
 import type { AgentCard, Fealty, Task } from '../src/a2a/types.js';
-import type { VassalLike } from '../src/dispatch/types.js';
+import type { VassalLike, VassalLookup } from '../src/dispatch/types.js';
 
 function fealty(overrides: Partial<Fealty> = {}): Fealty {
   return { version: '1', swornTo: 'zeus', domain: 'pr-release-control', dataRealms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto', ...overrides };
@@ -148,6 +148,26 @@ describe('Dispatcher', () => {
     expect(result.ok).toBe(true);
     const body = seenBodies[0] as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
     expect(body.params.message.parts[0].data.realmHits).toEqual([{ itemId: 'hit-1', snippet: 'pr context' }]);
+  });
+
+  it('refuses when the vassal is revoked between the gate and credential issuance', async () => {
+    const active = vassal();
+    let statusCalls = 0;
+    const lookup: VassalLookup = {
+      get: () => active,
+      // 'active' for the governance gate, 'revoked' by the time the credential is read
+      statusOf: () => (statusCalls++ === 0 ? 'active' : 'revoked'),
+      findBySkill: () => [active],
+    };
+    const seenBodies: unknown[] = [];
+    const { log, sink } = memoryAuditSink();
+    const d = new Dispatcher(lookup, { audit: sink, fetchImpl: fakeVassalServer({ seenBodies }), tokenFor: () => 'zeus-secret' });
+
+    const result = await d.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise' });
+
+    expect(result.ok).toBe(false);
+    expect(log[0].decision).toBe('refused-revoked');
+    expect(seenBodies).toHaveLength(0);
   });
 
   it('refuses an explicitly named vassal that does not declare the skill', async () => {
