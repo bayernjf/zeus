@@ -168,6 +168,16 @@ bayjf 从产品陈列馆升级为**对外发布的已签名 Agent 目录**：
 
 第 6 条是整个「超集而非闭墙」决策的守护测试，**不通过则协议设计失败**。
 
+## 7A. 第二个执行 Agent：loom 协议级真机联调
+
+> 联调状态（2026-10-01）：**协议级通过，W2 不关账**。loom 后端 `app/core/a2a/`（其自身 Q150 第一阶段，先于本次对账存在）与 Zeus 真实客户端在本机端到端跑通，**loom 侧零代码改动**——这是协议对「一个不是照 Zeus 模板写、而是独立实现的 A2A 服务」的第一次超集守护。
+>
+> 取证形状：Zeus 侧用真实 `VassalRegistry.register` + `dispatch/client`（非自造夹具）；loom 侧挂**真实** a2a router（`card.py`/`rpc.py`/`router.py` 原样），最小 uvicorn 服务只 override 了鉴权（`require_agent_key`）与审计（`append_audit`）两个 DB 依赖，任务逻辑/SSE/fealty 全部是生产代码。
+>
+> 逐条结果：① 注册闸——well-known 卡片经 fealty 校验通过（`version:"1"`、`swornTo:"zeus"`、`dataRealms:["enterprise"]`、`dataPolicy:"read-task-scope"`、`escalationPolicy:"auto"`、`sla.ackSeconds:10` 全部落在 Zeus 受控词表内），卡片声明的 `url` 被直接解析为任务端点（与 #29「卡片 url 优先于约定」一致，无需 `TASK_URL` 覆盖）；② sendSubscribe——SSE 四帧 `submitted → working → artifact-update → completed(final)` 被 Zeus `consumeSseStream` 正确拆解，收尾帧是整个 JSON-RPC 响应（`{result:task}`），与事件帧 `{result:event}` 同构；③ 结果回传——`x-zeus-report` 含 summary/evidence/cost（plan 模式 `llmTokens:0`）；④ escalation——缺必填参数（`compliance-check` 只给 tenant_id 缺 content_id）回终态 `input-required`，Zeus 不当作错误抛出；⑤ 非流式 `tasks/send` 与流式结果等价（同报告、同终态）。
+>
+> **诚实边界（为什么 W2 不关账）**：本次是本机协议级验证，不是 loom 生产栈验收——没有真实 PostgreSQL、Agent Key 由 override 放行、审计未落库、未走网关/TLS；loom 三个 skill 都是 plan-only（不触链、不花 token、不改 Gate）。仍待：loom 生产部署上的同口径回归、atlas 同波接入、纯标准 A2A 客户端（不认 x-zeus-*）对 loom 的第 6 条式守护复验。
+
 ## 8. 开放问题（登记到 deferred-items）
 
 - fealty 的发布与吊销是否需要签名链（防伪造名册条目）→ 触发条件：名册对外公开前。
