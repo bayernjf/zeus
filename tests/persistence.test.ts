@@ -202,6 +202,16 @@ describe('E5.3 FileKernelStateStore', () => {
     await expect(store.load()).rejects.toThrow(/version/);
   });
 
+  it('creates the snapshot directory owner-only', async () => {
+    // The snapshot carries connector bearer tokens and the user's memory facts;
+    // a 0755 directory (the umask default) would let another local user list and
+    // read it.
+    const nested = join(dir, 'nested');
+    const store = new FileKernelStateStore(join(nested, 'state.json'));
+    await store.save({ registry: [], oversight: [], orchestrator: { intents: [], requests: [] } });
+    expect((await stat(nested)).mode & 0o777).toBe(0o700);
+  });
+
   it('keeps the snapshot owner-readable, tightening a file an older build left open', async () => {
     const file = join(dir, 'state.json');
     await writeFile(file, '{"version":1}');
