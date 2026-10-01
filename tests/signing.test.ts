@@ -12,6 +12,8 @@ import {
   sealSnapshot,
   verifySignedSnapshot,
   type AttestationSource,
+  type RosterVerifier,
+  type SealOptions,
   type SignedRosterSnapshot,
 } from '../src/registry/signing.js';
 import type { AgentCard } from '../src/a2a/types.js';
@@ -55,6 +57,14 @@ describe('canonicalJson (RFC 8785 JCS subset)', () => {
   it('refuses non-JSON values (undefined/function/bigint)', () => {
     expect(() => canonicalJson(undefined)).toThrow(/cannot canonicalize/);
     expect(() => canonicalJson(1n)).toThrow(/cannot canonicalize/);
+  });
+
+  // Without toJSON, Object.keys(new Date()) is empty, so every Date canonicalized
+  // to `{}` — a Date and an empty object shared a digest (silent collision).
+  it('serializes through toJSON, so a Date is its ISO string and not an empty object', () => {
+    expect(canonicalJson(new Date('2026-09-26T09:00:00.000Z'))).toBe('"2026-09-26T09:00:00.000Z"');
+    expect(canonicalJson({ at: new Date(0) })).toBe('{"at":"1970-01-01T00:00:00.000Z"}');
+    expect(canonicalDigest(new Date(0))).not.toBe(canonicalDigest({}));
   });
 });
 
@@ -458,6 +468,50 @@ describe('signed internal roster v1.1 — revoked attestations', () => {
     expect(attestation.expiresAt).toBeUndefined();
     expect(attestation.sig).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(attestationMatchesCard(attestation, loomCard())).toBe(true);
+  });
+});
+
+describe('verifier failures and missing seal sources', () => {
+  // VerifyResult contract: every refusal is a reason, never a throw. A verifier
+  // that reaches a KMS or the network can fail outright, and that failure must
+  // not escape past the envelope check as an exception.
+  it('reports a throwing verifier as a failed verification instead of letting it escape', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildSignedFixture(T0, signer);
+
+    const brokenSeal: RosterVerifier = {
+      verify: async () => {
+        throw new Error('kms unreachable');
+      },
+    };
+    const sealResult = await verifySignedSnapshot(envelope, brokenSeal, T0);
+    expect(sealResult.ok).toBe(false);
+    if (!sealResult.ok) expect(sealResult.reason).toMatch(/could not run.*kms unreachable/);
+
+    // Same contract on the per-entry path: the seal is verified first, so pass
+    // that one through and fail only on the attestations behind it.
+    const real = signer.verifier();
+    let calls = 0;
+    const brokenEntry: RosterVerifier = {
+      verify: async (keyId, text, sig) => {
+        calls += 1;
+        if (calls > 1) throw new Error('kms unreachable');
+        return real.verify(keyId, text, sig);
+      },
+    };
+    const entryResult = await verifySignedSnapshot(envelope, brokenEntry, T0);
+    expect(entryResult.ok).toBe(false);
+    if (!entryResult.ok) expect(entryResult.reason).toMatch(/attestation verification could not run.*kms unreachable/);
+  });
+
+  it('refuses an entry with no attestation source instead of emitting attestations: {}', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildSignedFixture(T0, signer);
+    // `sources` is required by the type now; a JS caller can still omit it, and
+    // that used to produce an envelope no verifier would ever accept.
+    const omitted = { now: T0, maxAgeSeconds: 3600 } as SealOptions;
+    await expect(sealSnapshot(envelope.snapshot, signer, omitted)).rejects.toThrow(/no attestation source/);
+    await expect(sealSnapshot(envelope.snapshot, signer, { ...omitted, sources: [] })).rejects.toThrow(/no attestation source/);
   });
 });
 

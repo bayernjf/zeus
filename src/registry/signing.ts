@@ -22,6 +22,14 @@ import { sha256Hex } from '../util/crypto.js';
 
 export function canonicalJson(value: unknown): string {
   if (value === null) return 'null';
+  // JSON.stringify serializes through toJSON before looking at own keys, and a
+  // digest has to cover what a producer actually writes. Without this a Date -
+  // or any object carrying a toJSON - was canonicalized by Object.keys() into
+  // `{}`, so two different values shared one digest (with a Date always
+  // colliding with the empty object).
+  if (typeof value === 'object' && typeof (value as { toJSON?: unknown }).toJSON === 'function') {
+    return canonicalJson((value as { toJSON: () => unknown }).toJSON());
+  }
   if (typeof value === 'string') return JSON.stringify(value);
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (typeof value === 'number') {
@@ -266,8 +274,11 @@ export async function createAttestation(
 export type SealOptions = {
   now: Date;
   maxAgeSeconds: number;
-  /** Entry cards to attest; every snapshot entry must have a matching source on a public seal. */
-  sources?: AttestationSource[];
+  /** Entry cards to attest; every snapshot entry must have a matching source — a
+   *  seal without sources produced `attestations: {}`, an artifact no verifier
+   *  can accept. Required, so omitting it is a compile error rather than a
+   *  silently unverifiable artifact. */
+  sources: AttestationSource[];
   /** Per-entry attestation TTL (hard expiry), seconds. */
   attestationTtlSeconds?: number;
 };
@@ -278,26 +289,27 @@ export async function sealSnapshot(
   options: SealOptions
 ): Promise<SignedRosterSnapshot> {
   const attestations: Record<string, Attestation> = {};
-  if (options.sources) {
-    const ttlSeconds = options.attestationTtlSeconds ?? 24 * 3600;
-    const sourceByName = new Map(options.sources.map(source => [source.name, source]));
-    // Every snapshot entry must be attested, and the source status must match
-    // the projected entry status — this is what lets the internal roster (which
-    // keeps revoked rows) be sealed: active rows get active (expiring)
-    // attestations, revoked rows get permanent revocation attestations.
-    for (const entry of snapshot.entries) {
-      const source = sourceByName.get(entry.name);
-      if (!source) {
-        throw new Error(`sealSnapshot: no attestation source provided for snapshot entry "${entry.name}"`);
-      }
-      const sourceStatus: AttestationStatus = source.status ?? 'active';
-      if (sourceStatus !== entry.status) {
-        throw new Error(
-          `sealSnapshot: attestation status "${sourceStatus}" does not match roster entry status "${entry.status}" for "${entry.name}"`
-        );
-      }
-      attestations[entry.name] = await createAttestation(source, signer, { now: options.now, ttlSeconds });
+  const ttlSeconds = options.attestationTtlSeconds ?? 24 * 3600;
+  // `sources` is required by the type; the fallback covers a caller reaching
+  // this from plain JS, which then gets the explicit per-entry refusal below
+  // instead of a TypeError out of `.map`.
+  const sourceByName = new Map((options.sources ?? []).map(source => [source.name, source]));
+  // Every snapshot entry must be attested, and the source status must match the
+  // projected entry status — this is what lets the internal roster (which keeps
+  // revoked rows) be sealed: active rows get active (expiring) attestations,
+  // revoked rows get permanent revocation attestations.
+  for (const entry of snapshot.entries) {
+    const source = sourceByName.get(entry.name);
+    if (!source) {
+      throw new Error(`sealSnapshot: no attestation source provided for snapshot entry "${entry.name}"`);
     }
+    const sourceStatus: AttestationStatus = source.status ?? 'active';
+    if (sourceStatus !== entry.status) {
+      throw new Error(
+        `sealSnapshot: attestation status "${sourceStatus}" does not match roster entry status "${entry.status}" for "${entry.name}"`
+      );
+    }
+    attestations[entry.name] = await createAttestation(source, signer, { now: options.now, ttlSeconds });
   }
 
   const issuedAt = iso(options.now);
@@ -317,6 +329,10 @@ export async function sealSnapshot(
 function stripSig(value: Record<string, unknown>): Record<string, unknown> {
   const { sig: _sig, ...unsigned } = value;
   return unsigned;
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export type VerifyResult = { ok: true; snapshot: RosterSnapshot } | { ok: false; reason: string };
@@ -374,8 +390,15 @@ export async function verifySignedSnapshot(
     return { ok: false, reason: 'snapshot seal past maxAgeSeconds' };
   }
 
-  // 3. Seal signature.
-  const sealOk = await verifier.verify(seal.keyId, canonicalJson(stripSig(seal as unknown as Record<string, unknown>)), seal.sig);
+  // 3. Seal signature. VerifyResult promises a reason and never a throw: a
+  //    KMS/network-backed verifier that fails has to be reported as a failed
+  //    verification, not escape past the caller as an exception.
+  let sealOk: boolean;
+  try {
+    sealOk = await verifier.verify(seal.keyId, canonicalJson(stripSig(seal as unknown as Record<string, unknown>)), seal.sig);
+  } catch (error) {
+    return { ok: false, reason: `seal signature verification could not run (keyId=${seal.keyId}): ${describeError(error)}` };
+  }
   if (!sealOk) return { ok: false, reason: `seal signature verification failed (keyId=${seal.keyId})` };
 
   // 4. One attestation per entry. Its status must exactly match the projected
@@ -420,11 +443,19 @@ export async function verifySignedSnapshot(
         return { ok: false, reason: `attestation for "${entry.name}" expired (T3 replay)` };
       }
     }
-    const attOk = await verifier.verify(
-      attestation.keyId,
-      canonicalJson(stripSig(attestation as unknown as Record<string, unknown>)),
-      attestation.sig
-    );
+    let attOk: boolean;
+    try {
+      attOk = await verifier.verify(
+        attestation.keyId,
+        canonicalJson(stripSig(attestation as unknown as Record<string, unknown>)),
+        attestation.sig
+      );
+    } catch (error) {
+      return {
+        ok: false,
+        reason: `attestation verification could not run for "${entry.name}" (keyId=${attestation.keyId}): ${describeError(error)}`,
+      };
+    }
     if (!attOk) return { ok: false, reason: `attestation signature failed for "${entry.name}" (keyId=${attestation.keyId})` };
   }
 
