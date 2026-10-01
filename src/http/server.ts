@@ -1375,6 +1375,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       app.post('/api/connectors', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const body = (request.body ?? {}) as {
           id?: unknown; name?: unknown; endpoint?: unknown; permissions?: unknown; token?: unknown;
+          command?: unknown; args?: unknown; env?: unknown;
         };
         if (!isNonEmptyString(body.id)) {
           return error(reply, 400, 'invalid_request', 'body.id is required');
@@ -1382,20 +1383,41 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!isNonEmptyString(body.name)) {
           return error(reply, 400, 'invalid_request', 'body.name is required');
         }
-        if (!isNonEmptyString(body.endpoint)) {
-          return error(reply, 400, 'invalid_request', 'body.endpoint is required');
-        }
         if (!(Array.isArray(body.permissions) && body.permissions.every(c => typeof c === 'string'))) {
           return error(reply, 400, 'invalid_request', 'body.permissions must be an array of permission claims');
         }
         if (body.token !== undefined && !isNonEmptyString(body.token)) {
           return error(reply, 400, 'invalid_request', 'body.token must be a string');
         }
+        const hasEndpoint = isNonEmptyString(body.endpoint);
+        const hasCommand = isNonEmptyString(body.command);
+        if (!hasEndpoint && !hasCommand) {
+          return error(reply, 400, 'invalid_request', 'one of body.endpoint (http) or body.command (stdio) is required');
+        }
+        if (hasEndpoint && hasCommand) {
+          return error(reply, 400, 'invalid_request', 'body.endpoint and body.command are mutually exclusive');
+        }
+        if (body.args !== undefined && !(Array.isArray(body.args) && body.args.every(a => typeof a === 'string'))) {
+          return error(reply, 400, 'invalid_request', 'body.args must be an array of strings');
+        }
+        if (body.env !== undefined && !(typeof body.env === 'object' && body.env !== null
+          && Object.entries(body.env).every(([k, v]) => typeof k === 'string' && typeof v === 'string'))) {
+          return error(reply, 400, 'invalid_request', 'body.env must be an object of string values');
+        }
         try {
+          const endpoint = hasEndpoint ? (body.endpoint as string) : undefined;
+          const command = hasCommand ? (body.command as string) : undefined;
           const record = deps.connectorRegistry!.declare({
             id: body.id,
             name: body.name,
-            endpoint: body.endpoint,
+            ...(endpoint ? { endpoint } : {}),
+            ...(hasCommand
+              ? {
+                  command,
+                  ...(Array.isArray(body.args) ? { args: body.args as string[] } : {}),
+                  ...(body.env ? { env: body.env as Record<string, string> } : {}),
+                }
+              : {}),
             permissions: body.permissions as string[],
             ...(isNonEmptyString(body.token) ? { token: body.token } : {}),
           });
@@ -1999,9 +2021,14 @@ function mapConnectorError(reply: FastifyReply, thrown: unknown, unreachable: 40
  *  face reports that a token exists, never the token. */
 function redactConnector(
   record: ConnectorRecord,
-): Omit<ConnectorRecord, 'token'> & { hasToken: boolean } {
-  const { token, ...rest } = record;
-  return { ...rest, hasToken: token !== undefined };
+): Omit<ConnectorRecord, 'token' | 'env'> & { hasToken: boolean; envKeys?: string[] } {
+  const { token, env, ...rest } = record;
+  return {
+    ...rest,
+    hasToken: token !== undefined,
+    // stdio env may carry credentials; expose key names only, never values.
+    ...(env ? { envKeys: Object.keys(env) } : {}),
+  };
 }
 
 /** Map SkillRegistry / MentorshipLedger throws to HTTP status: unknown id → 404,

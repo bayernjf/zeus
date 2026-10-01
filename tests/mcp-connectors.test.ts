@@ -196,4 +196,26 @@ describe('E7 MCP connectors', () => {
     restored.importState(registry.exportState());
     expect(restored.get('knowledge')!.endpoint).toBe(ENDPOINT);
   });
+
+  it('declares a stdio connector (command, no endpoint) and records it', () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({
+      id: 'local-notes',
+      name: 'Local notes',
+      endpoint: undefined,
+      command: 'node',
+      args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
+      env: { ZEUS_REALM_ROOTS: '/tmp/notes' },
+      permissions: ['mcp:realm.search'],
+    }));
+    const record = registry.get('local-notes')!;
+    expect(record.command).toBe('node');
+    expect(record.endpoint).toBeUndefined();
+    expect(record.args).toEqual(['dist/realm/mcp-stdio.js', '/tmp/notes']);
+  });
+
+  it('rejects a declaration with neither endpoint nor command', () => {
+    const registry = new ConnectorRegistry(now);
+    expect(() => registry.declare(declaration({ endpoint: undefined }))).toThrowError(/endpoint|command/);
+  });
 });

@@ -277,11 +277,14 @@ export type { MemoryAuditEntry, MemoryReplay } from './memory/memory-store.js';
 export { ConnectorRegistry, ConnectorError } from './mcp/connectors.js';
 export type { ConnectorAuditEntry } from './mcp/connectors.js';
 export { McpClient, McpClientError } from './mcp/client.js';
+export { McpStdioClient, McpStdioError } from './mcp/stdio-client.js';
+export type { StdioSpawnOptions } from './mcp/stdio-client.js';
 export type {
   ConnectorDeclaration,
   ConnectorRecord,
   ConnectorStatus,
   ConnectorCapabilities,
+  ConnectorTransport,
   McpClientDeps,
 } from './mcp/types.js';
 
