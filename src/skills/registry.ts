@@ -216,7 +216,9 @@ export class SkillRegistry {
    * E2.3 harden: stack extra bounds on an installed skill. Every claimed
    * permission must already be granted (a bare 'scope' grant may be narrowed
    * to 'scope:action'); claims can only shrink. Constraints are merged onto
-   * any prior hardening. Hardening an uninstalled skill is refused.
+   * any prior hardening, and a call that omits `permissions` keeps the prior
+   * effective claims so it adds bounds without revoking them. Hardening an
+   * uninstalled skill is refused.
    */
   harden(
     id: string,
@@ -239,7 +241,7 @@ export class SkillRegistry {
     if (issues.length > 0) throw new SkillValidationError(issues);
 
     target.hardening = {
-      permissions: [...new Set(narrowed)],
+      permissions: [...new Set(bounds.permissions ?? current)],
       constraints: { ...(target.hardening?.constraints ?? {}), ...(bounds.constraints ?? {}) },
       hardenedAt: this.now().toISOString(),
     };
