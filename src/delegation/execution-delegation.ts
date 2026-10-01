@@ -131,9 +131,17 @@ export async function issueExecutionDelegation(
 /**
  * Bounded consumed-nonce set. Failed verification never consumes a nonce, so a
  * malformed or expired attempt cannot burn a valid later retry.
+ *
+ * Eviction is expiry-aware: a delegation can live for up to an hour
+ * (EXECUTION_DELEGATION_MAX_TTL_MS), so a plain oldest-first trim could retire a
+ * nonce that is still inside its validity window and reopen the replay hole this
+ * ledger exists to close. Nonces whose delegation has already expired are free
+ * to forget and go first; oldest-first remains the fallback for the documented
+ * capacity bound when nothing has expired.
  */
 export class ExecutionDelegationNonceLedger {
-  private readonly spent = new Set<string>();
+  /** nonce -> the delegation's expiry (ms epoch); Infinity when unknown. */
+  private readonly spent = new Map<string, number>();
   private readonly order: string[] = [];
 
   constructor(private readonly limit = 10_000, private readonly onChange?: () => void) {}
@@ -142,15 +150,30 @@ export class ExecutionDelegationNonceLedger {
     return this.spent.has(nonce);
   }
 
-  consume(nonce: string): boolean {
+  /**
+   * Consume a nonce. `expiresAt` is when the delegation it belongs to stops
+   * being valid (ms epoch); past that the nonce no longer needs remembering.
+   */
+  consume(nonce: string, expiresAt?: number): boolean {
     if (this.spent.has(nonce)) return false;
-    this.spent.add(nonce);
+    this.spent.set(nonce, expiresAt ?? Number.POSITIVE_INFINITY);
     this.order.push(nonce);
-    while (this.order.length > this.limit) {
-      this.spent.delete(this.order.shift()!);
-    }
+    this.evict(Date.now());
     this.onChange?.();
     return true;
+  }
+
+  /** Trim to the bound, dropping already-expired nonces before any live one. */
+  private evict(now: number): void {
+    if (this.order.length <= this.limit) return;
+    const keep: string[] = [];
+    for (const nonce of this.order) {
+      if ((this.spent.get(nonce) ?? Number.POSITIVE_INFINITY) <= now) this.spent.delete(nonce);
+      else keep.push(nonce);
+    }
+    this.order.length = 0;
+    this.order.push(...keep);
+    while (this.order.length > this.limit) this.spent.delete(this.order.shift()!);
   }
 
   get size(): number {
@@ -166,7 +189,9 @@ export class ExecutionDelegationNonceLedger {
     this.order.length = 0;
     for (const nonce of nonces ?? []) {
       if (typeof nonce === 'string' && nonce.trim() && !this.spent.has(nonce)) {
-        this.spent.add(nonce);
+        // Restored nonces carry no expiry; treat them as still valid so a restart
+        // never silently reopens a replay that was already closed.
+        this.spent.set(nonce, Number.POSITIVE_INFINITY);
         this.order.push(nonce);
       }
     }
@@ -225,6 +250,8 @@ export async function verifyAndConsumeExecutionDelegation(
   const now = (context.now ?? (() => new Date()))();
   if (now.getTime() > Date.parse(delegation.expiresAt)) return { ok: false, reason: 'expired' };
 
-  if (!context.ledger.consume(delegation.nonce)) return { ok: false, reason: 'replayed' };
+  // Record the delegation's expiry so the ledger can retire this nonce as soon
+  // as it stops being replayable, rather than evicting it on age alone.
+  if (!context.ledger.consume(delegation.nonce, Date.parse(delegation.expiresAt))) return { ok: false, reason: 'replayed' };
   return { ok: true, nonce: delegation.nonce };
 }
