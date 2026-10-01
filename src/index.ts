@@ -45,7 +45,7 @@ export type {
   RegistryHooks,
 } from './registry/registry.js';
 
-// --- R0 roster projector (bayjf 封神榜) ---
+// --- R0 roster projector (bayjf 公开签名名册) ---
 export { projectInternalRoster, projectPublicRoster, ROSTER_SCHEMA_VERSION } from './registry/roster.js';
 export type {
   RosterHealth,
