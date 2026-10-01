@@ -267,6 +267,7 @@
 - **为什么登记不做**：三项都是**语义变更**型迁移——数组下标由 `T` 变 `T | undefined`、可选属性由"可缺省"变为"不可显式传 `undefined`"、未用参数需改名为 `_x` 或删除。一处 flag 改动牵动大量调用面，与 A/B 级"行为缺陷"不是同一类工作；塞进某一个原子修复会让 diff 不可审。
 - **触发条件**：① 下一次大范围重构（集中改 `listAll`/遍历路径）时顺手迁移；② 出现一次由"下标越界返回 `undefined` 未被处理"或"可选属性被显式传 `undefined`"造成的真实缺陷。
 - **建议做法（决定后）**：按 flag 逐个原子迁移（`noUnusedParameters` 7 处最小 → `exactOptionalPropertyTypes` 40 处 → `noUncheckedIndexedAccess` 400 处），每步单独提交并跑全量门禁；迁移前先确认 `tsconfig.build.json` 的 `include: ["src"]` 面受不受影响，或一并收口。
+- **进展（2026-10-02，最小档已迁移，本条仍未销项）**：`noUnusedParameters` 已启用并清零——实测 8 处（登记 7 处 + `bench-capacity.mjs` 的 `startMockFarm(count,…)` 参数，后者是 deferred #37 后半段把 scripts 纳入检查后新暴露的），全部按 `_` 前缀改名收口（公共导出 `createTraceSink` 的 `backend`/`model`、`recomputeResult` 的 `now` 保留签名只改名，测试 mock 回调同法）。启用后 `npm run typecheck` 与 `npm run build` exit 0、`npm test` 1012 / 94 全绿、`smoke:core` 36/36。**中档量法刷新**：`exactOptionalPropertyTypes` 现量 **45 处**（登记 40 + 新纳入脚本/近期新增面 5），`noUncheckedIndexedAccess` 仍为 400 档；两档待触发条件。
 
 ### #37 `scripts/*.mjs` 未纳入类型检查
 - **缺口**：`tsconfig.json` 的 `include` 覆盖 `src`、`tests` 与两个 vitest 配置；7 个 `scripts/*.mjs`（验收 / 压测 / 冒烟 / 密钥生成 / 时钟偏移 / 代理设置等）不受任何静态检查。实测开启 `allowJs + checkJs` 后 scripts 报 **216** 条诊断（量法：仓库根临时建 standalone probe tsconfig，`allowJs:true, checkJs:true`，`include` 加 `scripts`，`tsc -p` 跑完即删；两个 vitest 配置的对应诊断数为 0，已并入 b46 的 `include`）。
