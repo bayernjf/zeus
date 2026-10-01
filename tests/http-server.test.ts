@@ -158,8 +158,14 @@ describe('HTTP H1 server', () => {
 
     const noAuth = await app.inject({ method: 'GET', url: '/api/roster' });
     expect(noAuth.statusCode).toBe(401);
+    // RFC 6750 §3: the challenge names the scheme; no credentials means no error
+    // code, only the realm-shaped challenge.
+    expect(noAuth.headers['www-authenticate']).toBe('Bearer');
     const wrongAuth = await app.inject({ method: 'GET', url: '/api/roster', headers: { authorization: 'Bearer nope' } });
     expect(wrongAuth.statusCode).toBe(401);
+    // A token *was* presented and rejected: the client is told which failure this
+    // is, instead of having to guess whether it forgot the header.
+    expect(wrongAuth.headers['www-authenticate']).toContain('error="invalid_token"');
 
     const ok = await app.inject({ method: 'GET', url: '/api/roster', headers: { authorization: 'Bearer internal-secret' } });
     expect(ok.statusCode).toBe(200);

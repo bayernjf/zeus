@@ -237,8 +237,20 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     const requireBearer = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
       const header = request.headers.authorization ?? '';
       const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!presented) {
+        // RFC 6750 §3: a 401 from a bearer-protected resource carries a
+        // WWW-Authenticate challenge. With no credentials to reject there is no
+        // error code - the challenge alone tells the client to send a token.
+        await reply.code(401).header('WWW-Authenticate', 'Bearer').send({ error: 'unauthorized' });
+        return;
+      }
       if (!constantTimeEqual(presented, expected)) {
-        await reply.code(401).send({ error: 'unauthorized' });
+        // Credentials were presented and rejected: say so, so a client can tell
+        // "I forgot the token" from "my token is stale" without guessing.
+        await reply
+          .code(401)
+          .header('WWW-Authenticate', 'Bearer error="invalid_token"')
+          .send({ error: 'unauthorized' });
       }
     };
 
