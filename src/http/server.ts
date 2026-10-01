@@ -195,8 +195,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     const publicKey = deps.signer.publicKey;
     if (!publicKey) {
       // Loud, never empty: a verifier that saw `keys: []` could read "no keys to
-      // pin" as "nothing to check" and carry on trusting the roster.
-      await reply.code(501).type('application/json; charset=utf-8').send({
+      // pin" as "nothing to check" and carry on trusting the roster. The status
+      // is a server error, not 501: this route IS implemented, the process just
+      // cannot produce its key material. 501 would tell a client "this feature is
+      // not supported here", leaving it unable to tell a broken deployment from a
+      // version that never had the endpoint.
+      await reply.code(500).type('application/json; charset=utf-8').send({
         error: 'key-material-unavailable',
         detail: 'this process signs with a backend that does not export its public half; publish the root key through the deployment record instead',
       });
@@ -206,7 +210,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     try {
       key = publishRootKey(deps.signer.keyId, publicKey);
     } catch (error) {
-      await reply.code(501).type('application/json; charset=utf-8').send({
+      // Same reasoning as the branch above: the route exists and was asked a
+      // well-formed question; the server cannot answer it.
+      await reply.code(500).type('application/json; charset=utf-8').send({
         error: 'key-material-unavailable',
         detail: error instanceof Error ? error.message : String(error),
       });

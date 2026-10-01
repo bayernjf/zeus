@@ -62,7 +62,7 @@ export interface RosterSigner {
   /** Public half of the signing key, when the backend can export it. Only the
    *  publication endpoint reads this (design-fealty-signing §5.1); signing and
    *  verification never need it, so a KMS/HSM signer may leave it undefined and
-   *  simply answer 501 there. */
+   *  simply answer 500 there. */
   readonly publicKey?: KeyObject;
   /** Sign canonical text, return a base64url (unpadded) Ed25519 signature. */
   sign(canonicalText: string): Promise<string>;

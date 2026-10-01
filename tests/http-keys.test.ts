@@ -123,7 +123,10 @@ describe('root public key publication (design-fealty-signing §5.1)', () => {
   it('fails loudly when the signing backend exports no public half', async () => {
     const opaque: RosterSigner = { keyId: 'zeus-rsk-kms', sign: async () => 'never-signed-in-this-test' };
     const res = await (await mount(opaque)).inject({ method: 'GET', url: '/api/roster/keys' });
-    expect(res.statusCode).toBe(501);
+    // 500, not 501: the endpoint is implemented and was asked a valid question;
+    // 501 would tell the client "not implemented" and hide a broken deployment
+    // behind a version-shaped excuse.
+    expect(res.statusCode).toBe(500);
     expect(res.json()).toMatchObject({ error: 'key-material-unavailable' });
     // An empty keys[] would read as "nothing to pin" to a verifier that ignores
     // the status code; the field must be absent, not vacuous.
@@ -155,7 +158,7 @@ describe('root public key publication (design-fealty-signing §5.1)', () => {
       sign: async () => 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
     };
     const res = await (await mount(offSpec)).inject({ method: 'GET', url: '/api/roster/keys' });
-    expect(res.statusCode).toBe(501);
+    expect(res.statusCode).toBe(500);
     expect((res.json() as { detail: string }).detail).toMatch(/Ed25519/);
   });
 
