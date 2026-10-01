@@ -243,11 +243,21 @@ function iso(date: Date): string {
   return date.toISOString();
 }
 
+function isPositiveSeconds(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
 export async function createAttestation(
   source: AttestationSource,
   signer: RosterSigner,
   options: { now: Date; ttlSeconds?: number }
 ): Promise<Attestation> {
+  // C-audit: a non-positive TTL produces an attestation that is already expired
+  // at the instant it is signed (and NaN never expires at all). Both are artifacts
+  // no consumer can act on, so refuse them at the producer.
+  if (options.ttlSeconds !== undefined && !isPositiveSeconds(options.ttlSeconds)) {
+    throw new Error(`createAttestation: ttlSeconds must be a positive number of seconds, got ${String(options.ttlSeconds)}`);
+  }
   const { cardDigest, fealtyDigest } = digestCard(source.card);
   const status: AttestationStatus = source.status ?? 'active';
   const issuedAt = iso(options.now);
@@ -288,6 +298,17 @@ export async function sealSnapshot(
   signer: RosterSigner,
   options: SealOptions
 ): Promise<SignedRosterSnapshot> {
+  // C-audit: maxAgeSeconds is the freshness bound the verifier enforces. A
+  // non-positive value seals an artifact that is stale the moment it is issued,
+  // and NaN removes the bound entirely — the one thing the field exists to do.
+  if (!isPositiveSeconds(options.maxAgeSeconds)) {
+    throw new Error(`sealSnapshot: maxAgeSeconds must be a positive number of seconds, got ${String(options.maxAgeSeconds)}`);
+  }
+  if (options.attestationTtlSeconds !== undefined && !isPositiveSeconds(options.attestationTtlSeconds)) {
+    throw new Error(
+      `sealSnapshot: attestationTtlSeconds must be a positive number of seconds, got ${String(options.attestationTtlSeconds)}`
+    );
+  }
   const attestations: Record<string, Attestation> = {};
   const ttlSeconds = options.attestationTtlSeconds ?? 24 * 3600;
   // `sources` is required by the type; the fallback covers a caller reaching
@@ -401,6 +422,15 @@ export async function verifySignedSnapshot(
   }
   if (!sealOk) return { ok: false, reason: `seal signature verification failed (keyId=${seal.keyId})` };
 
+  // C-audit: the seal covers the snapshot, not the attestation map, so a row that
+  // no entry binds rode along unread. Refuse an attestation the snapshot does not
+  // account for rather than silently ignoring it.
+  const boundNames = new Set(snapshot.entries.map(entry => entry.name));
+  const unbound = Object.keys(attestations).filter(name => !boundNames.has(name));
+  if (unbound.length > 0) {
+    return { ok: false, reason: `attestations carry rows no snapshot entry binds: ${unbound.join(', ')}` };
+  }
+
   // 4. One attestation per entry. Its status must exactly match the projected
   //    entry status (an active attestation cannot cover a revoked row and vice
   //    versa — no elevating or downgrading). Active entries carry a hard-expiry
@@ -413,6 +443,22 @@ export async function verifySignedSnapshot(
       return {
         ok: false,
         reason: `unsupported attestation envelope version ${String(attestation.v)} for "${entry.name}"`,
+      };
+    }
+    // C-audit: alg, issuer and keyId used to be decorative — nothing compared
+    // them with the envelope, so an attestation could declare a different
+    // algorithm or a foreign issuer and still verify, and one signed by a
+    // different trusted key than the seal passed as well.
+    if (attestation.alg !== ALG) {
+      return { ok: false, reason: `attestation for "${entry.name}" declares alg "${String(attestation.alg)}", expected "${ALG}"` };
+    }
+    if (attestation.issuer !== ISSUER) {
+      return { ok: false, reason: `attestation for "${entry.name}" declares issuer "${String(attestation.issuer)}", expected "${ISSUER}"` };
+    }
+    if (attestation.keyId !== seal.keyId) {
+      return {
+        ok: false,
+        reason: `attestation for "${entry.name}" is signed by keyId "${String(attestation.keyId)}", not the seal keyId "${String(seal.keyId)}"`,
       };
     }
     if (attestation.vassal?.name !== entry.name) {

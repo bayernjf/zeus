@@ -589,3 +589,72 @@ describe('roster schemaVersion and envelope version enforcement', () => {
     expect(attResult.reason).toMatch(/unsupported attestation envelope version 2 for "loom"/);
   });
 });
+
+// --- C-audit: seal parameters and the attestation fields the verifier ignored --
+
+describe('seal and attestation envelope validation', () => {
+  const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+  const source = (): AttestationSource => ({ name: 'loom', card: loomCard(), cardUrl: 'http://loom.test/api/a2a/agent-card' });
+
+  // maxAgeSeconds is the freshness bound the verifier enforces; a non-positive
+  // one seals an artifact that is stale the moment it is issued, and NaN removes
+  // the bound entirely.
+  it('refuses a seal freshness bound that cannot bound anything', async () => {
+    await expect(buildSignedFixture(T0, signer, 0)).rejects.toThrow(/maxAgeSeconds must be a positive number/);
+    await expect(buildSignedFixture(T0, signer, -60)).rejects.toThrow(/maxAgeSeconds must be a positive number/);
+    await expect(buildSignedFixture(T0, signer, Number.NaN)).rejects.toThrow(/maxAgeSeconds must be a positive number/);
+    await expect(buildSignedFixture(T0, signer, 3600, 0)).rejects.toThrow(/attestationTtlSeconds must be a positive number/);
+  });
+
+  it('refuses an attestation TTL that expires it at the moment it is issued', async () => {
+    await expect(createAttestation(source(), signer, { now: T0, ttlSeconds: 0 })).rejects.toThrow(/ttlSeconds must be a positive number/);
+    await expect(createAttestation(source(), signer, { now: T0, ttlSeconds: Number.NaN })).rejects.toThrow(/ttlSeconds must be a positive number/);
+    await expect(createAttestation(source(), signer, { now: T0, ttlSeconds: 3600 })).resolves.toBeTruthy();
+  });
+
+  /** Re-sign an attestation after editing it, so its signature stays valid and
+   *  the field under test is the only thing wrong with it. */
+  const reSign = async (attestation: Record<string, unknown>) => {
+    const { sig, ...unsigned } = attestation;
+    void sig;
+    return { ...unsigned, sig: await signer.sign(canonicalJson(unsigned)) };
+  };
+
+  it('refuses an attestation whose algorithm or issuer disagrees with the envelope', async () => {
+    for (const field of [{ alg: 'none' }, { issuer: 'someone-else' }]) {
+      const { envelope } = await buildSignedFixture(T0, signer);
+      const tampered = structuredClone(envelope) as unknown as { attestations: Record<string, Record<string, unknown>> };
+      Object.assign(tampered.attestations.loom, field);
+      tampered.attestations.loom = await reSign(tampered.attestations.loom);
+      const result = await verifySignedSnapshot(tampered, signer.verifier(), T0);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toMatch(/^attestation for "loom" declares/);
+    }
+  });
+
+  it('refuses an attestation signed by a key other than the seal key', async () => {
+    const other = new Ed25519MemorySigner('zeus-rsk-other');
+    const { envelope } = await buildSignedFixture(T0, signer);
+    envelope.attestations.loom.keyId = other.keyId;
+    const { sig, ...unsigned } = envelope.attestations.loom as unknown as Record<string, unknown>;
+    void sig;
+    envelope.attestations.loom.sig = await other.sign(canonicalJson(unsigned));
+    // The other key is trusted by the verifier, so only the seal-key binding can
+    // refuse this envelope.
+    const result = await verifySignedSnapshot(envelope, signer.verifier([other.keyId, other.publicKey]), T0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/not the seal keyId/);
+  });
+
+  it('refuses an attestation row that no snapshot entry binds', async () => {
+    const { envelope } = await buildSignedFixture(T0, signer);
+    envelope.attestations.ghost = await createAttestation(
+      { name: 'ghost', card: loomCard(), cardUrl: 'http://ghost.test/api/a2a/agent-card' },
+      signer,
+      { now: T0, ttlSeconds: 3600 }
+    );
+    const result = await verifySignedSnapshot(envelope, signer.verifier(), T0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/rows no snapshot entry binds: ghost/);
+  });
+});
