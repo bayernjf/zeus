@@ -76,8 +76,11 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
       return toLine(e, text);
     });
 
+    // A-07: a retracted fact is a tombstone, not content. Rendering it here
+    // would write the withdrawn claim into the diary file on disk, creating a
+    // second retention the memory store no longer holds.
     const matchedFacts = (options.facts ?? [])
-      .filter(f => f.realmId === realmId)
+      .filter(f => f.realmId === realmId && f.status !== 'retracted')
       .filter(
         f => f.provenance.some(id => dayEventIds.has(id)) || dayBucket(f.updatedAt, tz) === date,
       )
