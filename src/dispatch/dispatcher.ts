@@ -150,14 +150,18 @@ export class Dispatcher {
     const clock = this.options.elapsed ?? (() => Date.now());
     const ackSeconds = vassal.fealty.sla?.ackSeconds;
     const startedAt = clock();
-    let ackMeasured = false;
+    let ack: { elapsedMs: number; taskId: string } | undefined;
 
+    // Only the outbound request lives inside this catch. Every audit write stays
+    // outside it: writing the trail is bookkeeping, and a full disk must not be
+    // recorded as the *vassal* failing to serve the task.
+    let task: Task;
     try {
       // A-12: defense in depth. The registry validates taskUrl at registration,
       // but dispatch is the moment the request actually leaves the process, so
       // the same guard runs here — a stale or restored entry cannot bypass it.
       assertOutboundUrlAllowed(vassal.taskUrl);
-      const task = await sendTaskSubscribe(
+      task = await sendTaskSubscribe(
         {
           taskUrl: vassal.taskUrl,
           skill: request.skill,
@@ -168,30 +172,26 @@ export class Dispatcher {
         {
           onEvent: event => {
             events.push(event);
-            if (!ackMeasured) {
-              ackMeasured = true;
-              if (ackSeconds !== undefined) {
-                const elapsedMs = clock() - startedAt;
-                if (elapsedMs > ackSeconds * 1000) {
-                  this.options.audit({
-                    ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
-                    decision: 'sla-ack-breached', taskId: event.taskId,
-                    detail: `first event after ${elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
-                  });
-                }
-              }
-            }
+            if (!ack) ack = { elapsedMs: clock() - startedAt, taskId: event.taskId };
           },
         },
         this.options.fetchImpl
       );
-      this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });
-      return { ok: true, task, events, injectedHits };
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'dispatch failed';
       this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatch-failed', detail });
       return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatch-failed', detail } };
     }
+
+    if (ack && ackSeconds !== undefined && ack.elapsedMs > ackSeconds * 1000) {
+      this.options.audit({
+        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+        decision: 'sla-ack-breached', taskId: ack.taskId,
+        detail: `first event after ${ack.elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
+      });
+    }
+    this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });
+    return { ok: true, task, events, injectedHits };
   }
 
   async cancel(vassalName: string, taskId: string): Promise<Task> {

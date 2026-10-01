@@ -100,6 +100,23 @@ describe('Dispatcher', () => {
     expect(seenBodies).toHaveLength(0);
   });
 
+  it('does not relabel an audit-write failure as a vassal dispatch failure', async () => {
+    const seenBodies: unknown[] = [];
+    const log: AuditEntry[] = [];
+    let writes = 0;
+    const sink = (entry: AuditEntry): void => {
+      writes += 1;
+      // First write is the pre-dispatch record; the second is the post-dispatch
+      // one, which now sits outside the transport try/catch.
+      if (writes === 2) throw new Error('ENOSPC: audit volume is full');
+      log.push(entry);
+    };
+    const d = new Dispatcher(new Map([['pr-helper', vassal()]]), { audit: sink, fetchImpl: fakeVassalServer({ seenBodies }) });
+
+    await expect(d.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' })).rejects.toThrow(/ENOSPC/);
+    expect(log.map(entry => entry.decision)).not.toContain('dispatch-failed');
+  });
+
   it('refuses unknown vassals and unknown skills', async () => {
     const { dispatcherInstance, audit } = dispatcher(new Map(), fakeVassalServer({}));
     const byName = await dispatcherInstance.dispatch({ vassal: 'ghost', skill: 'create-pr', params: {}, realm: 'enterprise' });
