@@ -503,7 +503,17 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   let snapshot: KernelSnapshot | null = null;
   if (options.stateFile) {
     store = new FileKernelStateStore(options.stateFile, now);
-    snapshot = await store.load();
+    try {
+      snapshot = await store.load();
+    } catch (error) {
+      // A corrupt or wrong-version snapshot is a configuration fact the operator
+      // must act on (restore a backup, or delete the file), not a bug. Wrapping it
+      // keeps it on `serve.ts`'s refused-to-start path - one line naming what to
+      // fix - instead of falling through to a raw stack trace.
+      throw new KernelBootError(
+        `kernel state file is unusable: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
     if (snapshot) applyKernelState(components, snapshot);
   }
   // Now that the state file exists, a freshly consumed nonce can reach disk.

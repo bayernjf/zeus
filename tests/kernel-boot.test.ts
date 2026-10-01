@@ -21,7 +21,6 @@ import { DEFAULT_AUDIT_KEEP, DEFAULT_AUDIT_MAX_BYTES, readAuditLog } from '../sr
 import { kernelStats } from '../src/state/stats.js';
 import {
   FileKernelStateStore,
-  KernelStateError,
   collectKernelState,
 } from '../src/state/kernel-state.js';
 
@@ -135,10 +134,14 @@ describe('E5.3 bootKernel assembly', () => {
     expect(replay.status).toBe('completed');
   });
 
-  it('rejects a corrupt snapshot during boot', async () => {
+  it('rejects a corrupt snapshot during boot as a configuration fact, not a bug', async () => {
     const file = join(dir, 'bad.json');
     await writeFile(file, '{ not json', 'utf8');
-    await expect(bootKernel({ stateFile: file })).rejects.toBeInstanceOf(KernelStateError);
+    // KernelBootError, not the underlying KernelStateError: a corrupt snapshot is
+    // something the operator must act on, so it belongs on serve.ts's
+    // refused-to-start path (one line naming what to fix) rather than a stack trace.
+    await expect(bootKernel({ stateFile: file })).rejects.toBeInstanceOf(KernelBootError);
+    await expect(bootKernel({ stateFile: file })).rejects.toThrow(/kernel state file is unusable/);
   });
 
   it('writes the audit spine to JSONL and still forwards each entry to the caller sink', async () => {
