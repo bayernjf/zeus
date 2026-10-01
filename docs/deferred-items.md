@@ -2,7 +2,7 @@
 
 缓做/低优事项登记表。每条挂起项必须带**触发条件**；触发条件满足后移回 `handoff.md` Active work 并标注重启日期。
 
-> **编号只增不复用**：已销项的条目保留原文与编号（标 ✅ 已销项），新条目一律用下一个未用过的号。这条规则是补出来的教训——`#15` 被登记过**两次**（一次"DAG 驾驶员入口"、一次"支持矩阵与 engines 声明"），前者被后者静默覆盖，直到 2026-09-26 做一次"能力 vs 可操作面"对账时才被发现，见 **#23**。一份登记表如果能让条目无声消失，它就不是登记簿。
+> **编号只增不复用**：已销项的条目保留原文与编号（标 ✅ 已销项），新条目一律用下一个未用过的号。这条规则是补出来的教训——`#15` 被登记过**两次**（一次"DAG 操作者入口"、一次"支持矩阵与 engines 声明"），前者被后者静默覆盖，直到 2026-09-26 做一次"能力 vs 可操作面"对账时才被发现，见 **#23**。一份登记表如果能让条目无声消失，它就不是登记簿。
 
 ## 架构决策待定（非缓做，但需先决定）
 
@@ -38,8 +38,8 @@
 - Agent Card / fealty 的发布与吊销是否需要签名链，防止伪造名册条目。
 - **触发条件**：bayjf 名册对外公开前。
 - **进展（2026-09-24 更新）**：设计定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 执行 Agent 自签交叉背书）。**v1 纯函数已库内实现**（`src/registry/signing.ts`，`tests/signing.test.ts` 24 项：覆盖设计稿 §8.1 八条验收 + 签名链 v1.1 两态封签 5 项）。**R1 已完整接线**：H1 `GET /api/roster/public` 与 bearer `GET /api/roster`（internal，含 revoked 行）均实时投影并 sealSnapshot 封签、离线可验——签名链 **v1.1（2026-09-24）** 把 attestation 扩为 `active|revoked` 两态，revoked attestation 证永久吊销事实、不带硬过期（快照新鲜度仍由 seal maxAge 绑定），验签要求状态与条目精确匹配（防提升/掩盖）、缺 source 或状态矛盾 fail-loud（public 封签 commit 3190a11）；**生产密钥已硬化**：`src/http/rsk.ts` 支持内联/文件注入，production 无密钥拒启（commit 4d99f43），生成脚本 `scripts/gen-rsk-key.mjs`。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 生产 RSK 托管/轮换与公钥发布的部署动作**，触发条件「bayjf 名册对外公开前」未到点。
-- **进展（2026-09-27）**：**「公钥发布」的库内侧已闭合**——`GET /api/roster/keys`（公开面，JWKS 形状 + `spkiPem` + RFC 7638 指纹 + SPKI DER 摘要；导不出公钥的后端返回 501 而非空数组）+ 契约与"它不是信任锚"记入 design-fealty-signing v0.2 §5.1、§9-3 销项；**人工轮换与托管运行手册**写进 §5.4（含"为什么库里不做自动轮换"：自动换钥留下的窗口在验签方一侧与名册被替换不可区分）。冒烟加 3 步把"发布的钥就是签名那把"钉成断言（含指纹独立复算）。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 托管选型拍板与带外公告这个真实动作**，触发条件「bayjf 名册对外公开前」未到点。**原本要用户拍板的一件事已拍板（2026-09-27）**：私钥落在哪儿——选定 **容器 / systemd 的 secret 挂载 + 私钥文件 0600**（三档比较见 §5.4 表，落地口径写进 deployment.md §3「本项目选型」；企业 KMS/HSM 的触发条件是出现受治理的第二信任方）。故本条剩下的**全部是仓库外动作**：真实部署的 secret 后端落钥、`jwkThumbprint` 带外公告、bayjf 侧验签展示。
-- **进展（2026-09-27，第二批）**：**"要带外固定的那串"现在三个触点都能看见**——出钥时 `gen-rsk-key.mjs` 打印 `jwkThumbprint`/`spkiSha256`，发布时端点给同一函数算出的值，验签时 `verify-roster` 报告显示本次实际接受那把钥的指纹；冒烟第 33 步断言三处逐字符同串（单变量反证：让 keygen 少打印即 FAIL，其余 32 步不受影响）。**这使 §5.4 步骤 1（拿到要公告的值）与步骤 6（验签方完成比对）第一次不必自己算哈希**，并顺带补上此前在全库**零测试覆盖**的 keygen 脚本（4 例，含 0600 与拒绝覆盖）。剩余项＝公告动作与 R2 展示（**托管选型拍板已于 2026-09-27 完成，见上一条**）。
+- **进展（2026-09-27）**：**「公钥发布」的库内侧已闭合**——`GET /api/roster/keys`（公开面，JWKS 形状 + `spkiPem` + RFC 7638 指纹 + SPKI DER 摘要；导不出公钥的后端返回 501 而非空数组）+ 契约与"它不是信任锚"记入 design-fealty-signing v0.2 §5.1、§9-3 销项；**人工轮换与托管运行手册**写进 §5.4（含"为什么库里不做自动轮换"：自动换钥留下的窗口在验签方一侧与名册被替换不可区分）。冒烟加 3 步把"发布的钥就是签名那把"钉成断言（含指纹独立复算）。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 托管选型决策与带外公告这个真实动作**，触发条件「bayjf 名册对外公开前」未到点。**原本要用户决策的一件事已决策（2026-09-27）**：私钥落在哪儿——选定 **容器 / systemd 的 secret 挂载 + 私钥文件 0600**（三档比较见 §5.4 表，落地口径写进 deployment.md §3「本项目选型」；企业 KMS/HSM 的触发条件是出现受治理的第二信任方）。故本条剩下的**全部是仓库外动作**：真实部署的 secret 后端落钥、`jwkThumbprint` 带外公告、bayjf 侧验签展示。
+- **进展（2026-09-27，第二批）**：**"要带外固定的那串"现在三个触点都能看见**——出钥时 `gen-rsk-key.mjs` 打印 `jwkThumbprint`/`spkiSha256`，发布时端点给同一函数算出的值，验签时 `verify-roster` 报告显示本次实际接受那把钥的指纹；冒烟第 33 步断言三处逐字符同串（单变量反证：让 keygen 少打印即 FAIL，其余 32 步不受影响）。**这使 §5.4 步骤 1（拿到要公告的值）与步骤 6（验签方完成比对）第一次不必自己算哈希**，并顺带补上此前在全库**零测试覆盖**的 keygen 脚本（4 例，含 0600 与拒绝覆盖）。剩余项＝公告动作与 R2 展示（**托管选型决策已于 2026-09-27 完成，见上一条**）。
 
 ### #8 结果回传成本口径
 - `x-zeus-report.cost` 的单位与结算口径，跨执行 Agent 可比性。
@@ -50,7 +50,7 @@
 - **进展（2026-09-25）**：**闸门本身已落地**——`Orchestrator` 的 `maxConcurrentBranches` + `branchQueueLimit`（进程内在途分支上界、FIFO 等待、满则拒绝并把原因记进分支结果），见 handoff Active work 39 与 tests/orchestrator-backpressure.test.ts；`GET /api/metrics` 的 `queueDepth` 从此是真实值。**本条仍未销项**：剩下的问题是"该把溢出分流给谁"——拒绝顺序 / 按可靠度或延迟重排候选 / 有界排队 vs 立即降级的策略选择，需要真实执行 Agent 的行为数据才能定，凭空拍一个顺序没有依据。
 - **策略已制定（2026-09-27，设计稿 v0.1）**：分流机制与信号已落到 [design-backpressure.md](design-backpressure.md)——① 饱和信号 = per-vassal 实时在途计数（当前 `ConcurrencyMetrics` 只有全局 `inFlight`/`queueDepth`，缺该 primitive，策略已点名启用改动）；② 同技能候选集 = `activeProviders(skill)` 过滤 active/healthy/非饱和；③ 候选重排 = 可靠度 `(1-failureRate)` × 延迟 `p50Ms` 加权评分降序（数据来自 `perVassal` 历史，纯函数可单测）；④ 显式 `request.vassals` 硬钉不分流，自动选靶可分流、无候选回退既有排队→拒绝且拒绝原因带 tried 状态审计。复用现有 `ConcurrencyMetrics.perVassal` 与 `SkillGovernor.activeProviders` 三态，不引入跨实例协调。**仍未销项**：启用代码（`PerVassalLoad` + `selectTargets` 纯函数 + 选靶处接线）与阈值调参（`cap(v)`/`queueLimit`/评分权重 `w_r,w_l`/`LATENCY_NORMALIZER`）仍挂原触发条件——需 ≥3 真实 Agent 压测才能定数，凭空拍阈值无依据。
 - **触发条件**：≥3 个执行 Agent 在线压测（同一台机器上的 mock 不算：mock 的延迟分布与失败模式是编的，只会把一个猜测变成锁定的猜测）。
-- **启用代码已落地（2026-09-27，设计稿 v0.2）**：`PerVassalLoad`（`ConcurrencyMetrics.inFlightByVassal` + 访问器）与 `selectTargets` 纯函数（`src/orchestrator/diversion.ts`）已接入编排器选靶路径；`maxConcurrentPerVassal` 独立可配（关键修正：必须低于全局 `maxConcurrentBranches` 否则分流永不触发），`branch-diverted` 事件入审计脊，全局拒绝原因带 tried 候选审计；7 例单测全绿。机制可闭环，**仅阈值（`w_r`/`w_l`/`LATENCY_NORMALIZER`/`cap(v)`）调参仍挂上述触发条件**——不凭空拍数。
+- **启用代码已落地（2026-09-27，设计稿 v0.2）**：`PerVassalLoad`（`ConcurrencyMetrics.inFlightByVassal` + 访问器）与 `selectTargets` 纯函数（`src/orchestrator/diversion.ts`）已接入编排器选靶路径；`maxConcurrentPerVassal` 独立可配（关键修正：必须低于全局 `maxConcurrentBranches` 否则分流永不触发），`branch-diverted` 事件入审计链，全局拒绝原因带 tried 候选审计；7 例单测全绿。机制可闭环，**仅阈值（`w_r`/`w_l`/`LATENCY_NORMALIZER`/`cap(v)`）调参仍挂上述触发条件**——不凭空拍数。
 
 ### #10 Realm 检索后端升级（倒排 / 向量）
 - P0 检索为纯文件系统扫描（design-realm.md §6.2），后端接口可替换；倒排索引或向量检索的立项条件。
@@ -66,11 +66,11 @@
 
 ### #15 支持矩阵与 engines 声明 ✅ 已销项（2026-09-26，选 B）
 - **决定（选项 B：声明与生产对齐）**：`package.json` 写 `"engines": { "node": ">=22.0.0" }`；新增 **`.npmrc`**（`engine-strict=true`，带注释说明"不加这条时 engines 只是警告"）让声明可执行；新增 **`.nvmrc`**（`22`）让"该用哪个版本"机器可读；CI 矩阵由 `[20.x, 22.x]` 换为 **`[22.x, 24.x]`**；Docker 保持 `node:22-slim`（与 22 档同线）。**代价已接受**：本机 shell 仍在 **20.20.2**，此后 `npm ci` / `npm install` 会以 **EBADENGINE 硬失败**（实测），切到 22 即恢复（`fnm use 22`，本机已装 22.23.1）；已装依赖下 `npm run` 不受影响（Node 20 上 `npm run typecheck` 仍 exit 0，实测）。Node 20 不再被声明支持——它自 **2026-03-24** 起不再有任何发布。
-- **改后验证**：`npm ci --dry-run` 在 **Node 20 上 EBADENGINE 硬失败**、在 **22.23.1 与 24.20.0 上无任何 engine 报错**（即 `engine-strict` 下传递依赖也全部兼容）；YAML 解析得 `runs-on=ubuntu-24.04`、`matrix=["22.x","24.x"]`；三档 704 绿与 22/24 真进程冒烟见下面的"进展"（拍板依据，非本批重跑）。
+- **改后验证**：`npm ci --dry-run` 在 **Node 20 上 EBADENGINE 硬失败**、在 **22.23.1 与 24.20.0 上无任何 engine 报错**（即 `engine-strict` 下传递依赖也全部兼容）；YAML 解析得 `runs-on=ubuntu-24.04`、`matrix=["22.x","24.x"]`；三档 704 绿与 22/24 真进程冒烟见下面的"进展"（决策依据，非本批重跑）。
 - **不在本条内**：v26 何时进矩阵（当前线 `lts:false`，等进 LTS 再考虑替换 22）；runner 镜像归 #16（同日已销项）。
 - **原缺口（销项前）**：CI 测 20.x/22.x，但 Node 20 上游已 EOL（2026-04），仓库 `package.json` **没有 `engines`**，Dockerfile 跑 node:22-slim，本机 dev 在 20.20.2——四处不一致，且没有任何地方写明"这个库支持哪些 Node"。
 - **触发条件（回顾）**：写的是"决定结束对 Node 20 的验证时（例如本地 shell 升到 22+）"。**本批是不等触发条件就做的**：本地 shell 仍是 20.20.2，但拿到的实测（下面"进展"）把"该不该继续声明支持 20"变成了一个有数据的问题——一个自 2026-03-24 起不再有任何发布的运行时，继续在 CI 里给它发通行证是在凭空承担安全口径。
-- **进展（2026-09-26 实测，本批拍板依据）**：
+- **进展（2026-09-26 实测，本批决策依据）**：
   - **现状四处不一致（逐个实测）**：本机 shell `node -v` = **20.20.2**；CI 矩阵 **20.x / 22.x**；Dockerfile **node:22-slim**；`package.json` **无 `engines`**，且无 `.nvmrc` / `.npmrc`（即"该用哪个版本"机器不可读）。
   - **上游（实测 `nodejs.org/dist/index.json`）**：**v20 最后一次发布是 v20.20.2 / 2026-03-24**，其后半年零发布（与上面记的 2026-04 EOL 一致）；v22 最新 **v22.23.3（2026-09-23）**、v24 最新 **v24.21.0（2026-09-07）**，两条线仍在发；**v26 已在发**（v26.10.0 / 2026-09-21，`lts: false`＝当前线，未进 LTS）。
   - **依赖面（实测 `node_modules` 各包 `engines`）**：fastify 5.12.5 **没有** engines 字段（npm 不会替我们拦任何东西）；vitest 3.2.7 `^18.0.0 || ^20.0.0 || >=22.0.0`；typescript 5.9.3 `>=14.17`；`@types/node` 22.20.4（**类型基线实际是 22**，与矩阵里的 20 不一致）。
@@ -134,7 +134,7 @@
 ### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致 ✅ 已销项（2026-09-26）
 - **原缺口**：`src/state/boot.ts` 对非数字阈值走 `Number.isFinite` 判断，不通过就**静默不写 config**、退回内置默认；而 E1.5 的并发/队列参数（`ZEUS_MAX_CONCURRENT_BRANCHES` 等）是**非法值直接拒启**。同一类"操作员把 env 写错"的失效，进程给两种答案。
 - **决定（fail-loud）**：统一为拒启。新增 `envNumber`（与 `envInteger` 同形，允许小数以容纳 0..1 阈值），`resolveDecisionConfig` 对非数字/负数阈值抛 `KernelBootError`——与并发参数同一条 fail-loud 路径，启动即 loud 失败，不再静默退回默认。
-- **推翻的契约**：`tests/boot-decision.test.ts` 原 `ignores a non-numeric threshold` 把这个静默行为钉成契约；改为 `rejects a non-numeric threshold ... toThrow(/ZEUS_JUDGE_THRESHOLD/)`。这是口径拍板不是 bug 修复，故单独成 commit、与代码同批。
+- **推翻的契约**：`tests/boot-decision.test.ts` 原 `ignores a non-numeric threshold` 把这个静默行为钉成契约；改为 `rejects a non-numeric threshold ... toThrow(/ZEUS_JUDGE_THRESHOLD/)`。这是口径决策不是 bug 修复，故单独成 commit、与代码同批。
 - **同步**：`docs/deployment.md` 该变量表行的 ⚠️ 不一致标注改为"非数字值拒启（与其余 boot 参数一致）"；`docs/design-naming-migration.md` 引用的"已知失效模式"改为已销项口吻；评审 §C-8 描述已不再成立（但保留为历史记录）。typecheck/test 通过。
 - **未做**：尚未把"boot 参数一律 fail-loud"扩成一条覆盖所有现存例外的总原则文档；本批只统一了阈值这一处（其余参数本就已拒启，无例外要改）。
 
@@ -150,8 +150,8 @@
 - **验证**：`tests/signing.test.ts` 新增 4 项——两个投影都盖章、**旧形状仍可验签**（正向对照，防止"只在坏输入上测过的校验器永远可能是错的"）、`schemaVersion 99` 在**重新签名过**的情况下仍被拒（即拒绝只可能来自闸门而非摘要/签名）、`seal.v=2`/缺失与 `attestation.v=2` 各自被点名拒绝。全量 **696 绿 / 72 文件**、typecheck/build exit 0；真进程实测 `GET /api/roster` 与 `/api/roster/public` 的信封里 `"schemaVersion":1` 且 `seal.v` 不变。
 - **与 #21 的关系**：这条做完后，**将来若真要改载荷，才有安全灰度的可能**（双读按 `schemaVersion` 分流）。#21 的结论不变：仍不建议改 T2/T3/T4。
 
-### #23 DAG 分析没有驾驶员入口 ✅ 已销项（2026-09-26）
-- **决定（选项即建议做法）**：把 `src/orchestrator/dag.ts` + `dag-runner.ts` 已落地的图能力接到 H2 驾驶员面，沿依赖边从平铺扇出升级为分层执行。实现与建议做法的差异：依赖边**编码在节点 `dependsOn` 上**（不是另给 `edges` 列表）——功能等价，少一份需要保持同步的字段。
+### #23 DAG 分析没有操作者入口 ✅ 已销项（2026-09-26）
+- **决定（选项即建议做法）**：把 `src/orchestrator/dag.ts` + `dag-runner.ts` 已落地的图能力接到 H2 操作者面，沿依赖边从平铺扇出升级为分层执行。实现与建议做法的差异：依赖边**编码在节点 `dependsOn` 上**（不是另给 `edges` 列表）——功能等价，少一份需要保持同步的字段。
 - **能力已在**：`src/orchestrator/dag.ts` + `dag-runner.ts`（拓扑分层 `topologicalLayers`、关键路径 `criticalPath`、`validateDag`、部分失败跳过），`tests/dag.test.ts` **6 例**，且都从 `src/index.ts` 导出。
 - **落地（2026-09-26）**：
   - `POST /api/intents` 接受可选 `dag:{nodes}`（每节点 `id` / `skill` / 可选 `vassals` / `params` / `dependsOn` / `aggregation`，顶层 `branchTimeoutMs`）；与 `body.skill` **互斥**，否则 400。结构校验（字段形状）在 `parseDagSpec`、图校验（环 / 缺失依赖 / 重复 id）在 `validateDag`（均返回 **400** 并点名环或未知节点）。提交即回 **分层计划 + 关键路径 + 每节点状态**。
@@ -160,8 +160,8 @@
   - 部分失败的跳过语义在 `DagRunner` 内保持不变（依赖未完成的节点 `skipped`，独立分支继续），与 `refused-*` 同样写进审计事件流。
 - **验证**：新增 `tests/http-dag.test.ts` **7 例**（`npx vitest run` 全量 **711 绿 / 74 文件**，typecheck/build exit 0）；其中"两阶段意图 + 节点意图可追溯"用**真进程 inject 冒烟**（真实 HTTP + 真实 orchestrator + dispatcher 管线，不是只测纯函数），覆盖你定的"只有 inject 测试不算已验证"口径。**未做**：CLI 与 MCP 面同样没有 DAG 入口（触发条件②/③未到，且 MCP 暴露侧 actor 判定仍归 #18）；DAG spec/result 在内存，不随内核快照持久化（重启后 `GET /api/intents/:id/dag` 失忆，节点意图仍在）。
 - **原登记背景（保留）**：该条曾因编号复用（`#15` 被"支持矩阵与 engines 声明"覆盖）在文件里消失，本文件顶部已立"编号只增不复用"规则。
-- **原缺口（登记时的判断，2026-09-26 已闭合——保留原文只为追溯，读到这里请以本条 ✅ 标题为准）**：`src/http/server.ts` 里 `dag` / `criticalPath` / `topolog` **出现 0 次**，CLI 与 MCP 面同样没有。也就是说**操作员今天无法提交一个 DAG 形状的意图，也无法读回它的分层与关键路径**——只能当库函数用。这条与 #21 无关，是"内核有、驾驶员看不见"那一类的又一个实例。**现状**：HTTP 两面已有（`POST /api/intents` 的 `dag:{nodes}` 与 `GET /api/intents/:id/dag`，2026-09-27 实测 server.ts 内 `dag` 出现 32 次），仍缺的是 CLI 与 MCP 面（上面那条"未做"未变）。
-- **为什么现在才记**：它**本来就登记过**。`handoff.md` 顶部状态段写着"C（状态文件进藏宝图）与 F（DAG 驾驶员入口）经实测是设计变更，登记 deferred #13/#15/#14 而非半做"，Active work 39 的"没做的两项"那条也把 F（S3 DAG 驾驶员入口）判为"需要先出设计稿"——三个号对应 C/F/另登记项，#13 归 C、#14 归 `DriverWriteGrant`，剩下 **#15 就是 DAG**。但 `#15` 后来被**"支持矩阵与 engines 声明"复用**，DAG 那条就在文件里消失了（此处按句子内容引用而不按行号：行号会随文件增长漂移，这本身就是这条失物能藏住的原因之一）。已在本文件顶部补"编号只增不复用"规则，防它再发生。
+- **原缺口（登记时的判断，2026-09-26 已闭合——保留原文只为追溯，读到这里请以本条 ✅ 标题为准）**：`src/http/server.ts` 里 `dag` / `criticalPath` / `topolog` **出现 0 次**，CLI 与 MCP 面同样没有。也就是说**操作员今天无法提交一个 DAG 形状的意图，也无法读回它的分层与关键路径**——只能当库函数用。这条与 #21 无关，是"内核有、操作者看不见"那一类的又一个实例。**现状**：HTTP 两面已有（`POST /api/intents` 的 `dag:{nodes}` 与 `GET /api/intents/:id/dag`，2026-09-27 实测 server.ts 内 `dag` 出现 32 次），仍缺的是 CLI 与 MCP 面（上面那条"未做"未变）。
+- **为什么现在才记**：它**本来就登记过**。`handoff.md` 顶部状态段写着"C（状态文件进备份与恢复协议）与 F（DAG 操作者入口）经实测是设计变更，登记 deferred #13/#15/#14 而非半做"，Active work 39 的"没做的两项"那条也把 F（S3 DAG 操作者入口）判为"需要先出设计稿"——三个号对应 C/F/另登记项，#13 归 C、#14 归 `DriverWriteGrant`，剩下 **#15 就是 DAG**。但 `#15` 后来被**"支持矩阵与 engines 声明"复用**，DAG 那条就在文件里消失了（此处按句子内容引用而不按行号：行号会随文件增长漂移，这本身就是这条失物能藏住的原因之一）。已在本文件顶部补"编号只增不复用"规则，防它再发生。
 - **触发条件（回顾）**：① 出现一个真实的**多阶段依赖**意图（"B 必须等 A"）时派发从平铺扇出升级为分层执行；② 多阶段编排的关键路径/瓶颈分析；③ 按 DAG 排程做取消或重试。本条不等触发条件——库内"内核有、操作面无"的缺口本身就是可闭环的工作，且前几批一直在补这类。
 
 ### #24 墙钟依赖的测试与脚本没有可执行闸门 ✅ 已销项（2026-09-26）
@@ -195,9 +195,9 @@
 - **发现方式**：把 `GET /api/memory/snapshot` 与 `GET /api/diary/export` 接进核心链路冒烟后**第一次真机实跑**：派发三条分支、审计落盘 13 行之后，`snapshot.state.events.length = 0`、`factGroups = 1`（空组）、日记 `entries = []`。
 - **代码级证据**（本轮复跑，非引用）：`MemoryEvent` 的构造只出现在 `src/memory/` 内部；`grep -rn "\.append(" src` 在 memory 模块之外**零命中**（audit sink 是另一个对象）。HTTP 面对 memory 只有读（`read`/`facts`/`replay`/`searchRecall`/`exportState`）与擦除（`retract`/`forget-subject`）；`boot.ts` 只用 `consolidateRealm`/`authorsOfFacts`/`recordCorrections`/`reliabilityScore`。**没有任何一方把执行 Agent 的回报变成事件**。
 - **后果**：E8.5 的"事件→事实→混合检索→遗忘权→漂移对账"整条链在**库里**成立（752 项测试覆盖），在**出货进程里**输入恒为空；连带 E8.3 的日记恒空。这不属于"能力没有入口"（#23/#25 那一类），而是更深一层：**能力没有数据源**。
-- **需要决定的是设计而不是代码**：事件的产生点应在哪一层——① Dispatcher 收到 task 回报时按 report-back 落 observation/claim；② 裁决/纠偏落 decision 事件（`recordCorrections` 已在，但它只改可靠度、不产生事件）；③ 域内容变化落 observation。三者的 `eventId` 幂等与去重、realm 归属（跨域拒绝那条不变量要同样成立）、以及"哪些内容进事件、哪些留在审计脊"都需要定契约，不能顺手接一根线。
+- **需要决定的是设计而不是代码**：事件的产生点应在哪一层——① Dispatcher 收到 task 回报时按 report-back 落 observation/claim；② 裁决/纠偏落 decision 事件（`recordCorrections` 已在，但它只改可靠度、不产生事件）；③ 域内容变化落 observation。三者的 `eventId` 幂等与去重、realm 归属（跨域拒绝那条不变量要同样成立）、以及"哪些内容进事件、哪些留在审计链"都需要定契约，不能顺手接一根线。
 - **触发条件**：① 任何要把记忆/日记面真正用起来的部署（现在开着会静默产出空事实源，比报错更糟）；② E8.5 升 P0 或 bayjf 名册需要事实来源时；③ 出现"为什么日记是空的"报障——本轮冒烟已给出可复现证据。
-- **提案已出（2026-09-27）**：见 [design-memory-consolidation.md](design-memory-consolidation.md) **§8**——边界判据（陈述进记忆、动作进审计脊）、四条触点与后果（建议只做 P1「分支结论→claim」，因为消费端 `boot.ts:388-392` 起那条链已接好，缺的只是输入），以及**四个不定就写不出代码的拍板问题**：`subject` 由谁给、`predicate` 粒度、第三方结论文本能否常驻状态文件与备份、要不要开关。落地时按 §8.4 第 3 条给 `smoke:core` 加一步「事件数必须非零」的断言，把恒空转变成会红的闸门。
+- **提案已出（2026-09-27）**：见 [design-memory-consolidation.md](design-memory-consolidation.md) **§8**——边界判据（陈述进记忆、动作进审计链）、四条触点与后果（建议只做 P1「分支结论→claim」，因为消费端 `boot.ts:388-392` 起那条链已接好，缺的只是输入），以及**四个不定就写不出代码的决策问题**：`subject` 由谁给、`predicate` 粒度、第三方结论文本能否常驻状态文件与备份、要不要开关。落地时按 §8.4 第 3 条给 `smoke:core` 加一步「事件数必须非零」的断言，把恒空转变成会红的闸门。
 - **口径**：在它落地前，`E8.5` 状态列应为 🚧（库内能力已验收、运行面无生产者），`E8.3` 保持 ✅ 但正文注明输入依赖本条。
 
 ### #28 「状态列 vs 正文」冲突检测器还是一次性脚本（评审 v0.18 本轮手工跑出）
@@ -233,12 +233,12 @@
 - **与既有条目的边界**：**#18** 管"谁是主体（actor）判定"，本条管"参数丢失"，两者不相干；`tools/call` 侧的非法 `limit` **是**会报错的（实测 `-32602`），所以本条只关于"未在资源模板里声明的参数名"。
 
 ### #32 现行叙述层仍留着叙事隐喻（措辞清扫的残余范围没有边界文件清单） ✅ 已销项（2026-09-30）
-- **销项结论（2026-09-30）**：触发条件③满足——「现行面无隐喻」从手工 grep 升级为可复跑闸门（`tests/doc-consistency.test.ts` 第 9 例）。按登记的四现行面边界清扫：`docs/pre-launch-checklist.md` 封臣 7→执行 Agent（含「真实执行 Agent 注册」「作为执行 Agent 入他人网格」等）、驾驶员 2（「DAG 驾驶员入口」→操作者入口）、拍板 4（选型已确定/上线窗口前决定/待决定）；`docs/README.md` 场景表「D 待拍板」→「D 待决定」；`docs/prd.md` 现行需求行 E1.1「H2 驾驶员入口」→操作者入口。清扫后逐词复跑量法，四现行面 + portrait 演进日志前现行段对 12 个禁用词（封臣/效忠/战报/藏宝图/宝藏/封神榜/驾驶员/拍板/避风港/审计脊/立国三纲/交回）计数全部为 0。**未动**：handoff 与各文档的历史行/演进日志（文档状态约定）、代码标识符与协议字段（`vassal`/`fealty`/`x-zeus-*`/`/api/vassals` 等，代价四档见 terminology）、`src/tui/` 消息资源（内部界面，非对外文档面）。新闸门扫描面 = 根 README + docs/README + checklist 全文、PRD 现行 E 行、portrait 演进日志之前；带正控（植入「封臣注册/H2 驾驶员入口/待拍板」三词必被抓，实测 fail 后还原 9/9 绿）。活基线 826/89 → 827/89（+1 即该闸门）。
-- **缺口**：术语清扫（Active work 28–30）**没留下"哪些现行文件仍未扫"的边界清单**，于是没人知道残余有多大。2026-09-28 现测（只数现行叙述所在的文件；计数=含该词的行数）：`docs/pre-launch-checklist.md` 封臣 3、驾驶员 2、拍板 4；`docs/product-portrait.md` 封臣 3、藏宝图 2、封神榜 2、驾驶员 1、拍板 1；`docs/prd.md` 的**现行需求行**驾驶员 1（封臣 0）；`docs/README.md` 拍板 1；`README.md` 五条词全为 0。**量法可复跑**：`grep -c 封臣 docs/pre-launch-checklist.md`，PRD 只数需求行用 `grep '^| E' docs/prd.md | grep -c 驾驶员`。
-- **两条测量陷阱，记下来免得下轮再踩**：① **`handoff.md` 不计入残余**——它含这些词的行绝大多数是「Recent changes / Active work」的历史行，按文档状态约定历史行不改，把它的出现数当"待改量"会误导（本轮量得 封臣 80、驾驶员 47、拍板 45、藏宝图 16）。② **登记项会污染自己的读数**——本条正文一旦写下这些词，全文计数就 +1（实测：写完本条前后 handoff 的封臣从 79 变 80）。所以任何"残余还有多少"的结论都必须**按文件、按现行段落量**，不能全库 `grep -r` 一把梭。
+- **销项结论（2026-09-30）**：触发条件③满足——「现行面无隐喻」从手工 grep 升级为可复跑闸门（`tests/doc-consistency.test.ts` 第 9 例）。按登记的四现行面边界清扫：`docs/pre-launch-checklist.md` 叙事隐喻 7→执行 Agent（含「真实执行 Agent 注册」「作为执行 Agent 入他人网格」等）、2→操作者（「DAG 操作者入口」→操作者入口）、4→确定/决定（选型已确定/上线窗口前决定/待决定）；`docs/README.md` 场景表 D 行→「D 待决定」；`docs/prd.md` 现行需求行 E1.1→操作者入口。清扫后逐词复跑量法，四现行面 + portrait 演进日志前现行段对 12 个禁用叙事隐喻词计数全部为 0（清单见 terminology.md）。**未动**：handoff 与各文档的历史行/演进日志（文档状态约定）、代码标识符与协议字段（`vassal`/`fealty`/`x-zeus-*`/`/api/vassals` 等，代价四档见 terminology）、`src/tui/` 消息资源（内部界面，非对外文档面）。新闸门扫描面 = 根 README + docs/README + checklist 全文、PRD 现行 E 行、portrait 演进日志之前；带正控（植入三个叙事隐喻样本必被抓，实测 fail 后还原 9/9 绿）。活基线 826/89 → 827/89（+1 即该闸门）。
+- **缺口**：术语清扫（Active work 28–30）**没留下"哪些现行文件仍未扫"的边界清单**，于是没人知道残余有多大。2026-09-28 现测（只数现行叙述所在的文件；计数=含该词的行数）：`docs/pre-launch-checklist.md` 叙事隐喻 3、2、4；`docs/product-portrait.md` 叙事隐喻 3、2、2、1、1；`docs/prd.md` 的**现行需求行**叙事隐喻 1（0）；`docs/README.md` 1；`README.md` 全为 0。**量法可复跑**：按 terminology.md 禁用词清单逐词 grep（PRD 只数需求行用 `grep '^| E' docs/prd.md`）。
+- **两条测量陷阱，记下来免得下轮再踩**：① **`handoff.md` 不计入残余**——它含这些词的行绝大多数是「Recent changes / Active work」的历史行，按文档状态约定历史行不改，把它的出现数当"待改量"会误导（本轮量得 叙事隐喻 188 处）。② **登记项会污染自己的读数**——本条正文一旦写下这些词，全文计数就 +1（实测：写完本条前后 handoff 的叙事隐喻计数 +1）。所以任何"残余还有多少"的结论都必须**按文件、按现行段落量**，不能全库 `grep -r` 一把梭。
 - **为什么登记不修**：这三档词里每一条都要逐条判"是现行叙述、是历史日志、还是代码标识符/协议字段"，批量替换会改错语义（AGENTS.md 明文禁例：把"越界"当"越权"换掉就是错的；判定表在 [terminology.md](terminology.md)）。把一次跨文件措辞改造混进本批（MCP 契约文档）会让 diff 不可审。
-- **触发条件**：① 下一次要把 portrait / checklist 给外部读者看；② 出现一次真实误解——对端或新人按"封臣 / 驾驶员"的字面去理解产品关系；③ 决定把"历史行与现行行分层改写"做成可复跑的检查（与 #28 同一类工具化问题）。
-- **建议做法（决定后）**：只改四个现行面（checklist、portrait、prd 的现行需求行、docs/README 那一处"待拍板"），`handoff.md` 的历史行不动；改前后各跑一次上面的量法做逐词对照，并复跑 `tests/doc-consistency.test.ts`（粗体配对与列数在措辞替换里最容易破）。
+- **触发条件**：① 下一次要把 portrait / checklist 给外部读者看；② 出现一次真实误解——对端或新人按"执行 Agent / 操作者"的字面去理解产品关系；③ 决定把"历史行与现行行分层改写"做成可复跑的检查（与 #28 同一类工具化问题）。
+- **建议做法（决定后）**：只改四个现行面（checklist、portrait、prd 的现行需求行、docs/README 那一处"待决策"），`handoff.md` 的历史行不动；改前后各跑一次上面的量法做逐词对照，并复跑 `tests/doc-consistency.test.ts`（粗体配对与列数在措辞替换里最容易破）。
 
 ### #33 执行型 Agent 的凭据代理机制（execute 模式无法落地不可逆操作）
 - **缺口**：2026-09-29 对线上 pr-helper 跑真机扇出（A1）时在真机上确认——pr-helper 的 execute 模式返回 `input-required`（"Credential delegation is not implemented yet"），即执行 Agent 期待由 Zeus 侧代理外部系统凭据（如 GitHub token），而 Zeus 当前**没有凭据代理机制**：出站派发不带调用方凭据，`VassalEntry` 只保存 Agent 自己的 bearer。结果是执行型 Agent 的**不可逆操作**（merge / production rollback 等）在工程上无路径发起；plan 模式不受影响（本轮 15/15 即 plan 模式）。

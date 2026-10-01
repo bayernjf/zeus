@@ -131,7 +131,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
-| A2A 超集协议：卡片、fealty 版本协商、SSE 流、战报字段 | `a2a/types.ts` `dispatch/client.ts` | ✅ |
+| A2A 超集协议：卡片、fealty 版本协商、SSE 流、任务产物回传字段 | `a2a/types.ts` `dispatch/client.ts` | ✅ |
 | 名册内外双视图投影与公开封签 | `registry/roster.ts` `registry/signing.ts` | ✅ |
 | Ed25519 + JCS 两层信封（条目 attestation + 快照 seal），离线可验 | `registry/signing.ts` | ✅ |
 | 吊销强制力：派发前阻断、凭据即刻断流、四视图不回显 | `registry/registry.ts` `dispatch/dispatcher.ts` | ✅ |
