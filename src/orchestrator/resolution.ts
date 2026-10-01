@@ -59,7 +59,7 @@ export function recomputeResult(
   previous: FanOutResult,
   branches: BranchOutcome[],
   aggregation: FanOutRequest['aggregation'],
-  now: () => Date
+  _now: () => Date
 ): FanOutResult {
   const positions = extractPositions(branches);
   const decision = aggregate(positions, aggregation);

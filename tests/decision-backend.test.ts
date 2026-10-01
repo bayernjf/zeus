@@ -17,7 +17,7 @@ describe('Jev decision-model adapter', () => {
   it('maps noul/choice/score to typed primitives, calibrated, with trace and input-only cost', async () => {
     const calls: RequestInit[] = [];
     const traces: DecisionTrace[] = [];
-    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       calls.push(init!);
       const body = JSON.parse(String(init?.body));
       const name = Object.keys(body.questions)[0];

@@ -121,11 +121,11 @@ function stats(samples) {
  * The same endpoint also serves JSON-RPC tasks/cancel with a plain JSON response.
  */
 /**
- * @param {number} count
+ * @param {number} _count
  * @param {number} thinkDelayMs
  * @param {{ terminalState?: string }} [options]
  */
-function startMockFarm(count, thinkDelayMs, options = {}) {
+function startMockFarm(_count, thinkDelayMs, options = {}) {
   const terminalState = options.terminalState ?? 'completed';
   let cancelRequests = 0;
   const server = http.createServer((req, res) => {

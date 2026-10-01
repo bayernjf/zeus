@@ -17,7 +17,7 @@ function declaration(overrides: Partial<ConnectorDeclaration> = {}): ConnectorDe
 }
 
 function mcpFetch(options: { sse?: boolean; fail?: boolean } = {}): typeof fetch {
-  return (async (input: RequestInfo | URL, init?: RequestInit) => {
+  return (async (_input: RequestInfo | URL, init?: RequestInit) => {
     const body = JSON.parse(String(init?.body)) as { method: string; id?: number };
     const json = (value: unknown): Response =>
       options.sse
@@ -101,7 +101,7 @@ describe('E7 MCP connectors', () => {
         permissions: ['mcp:fetch_html', 'mcp:notion.search', 'mcp:Search'],
       }),
     );
-    const upstreamFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const upstreamFetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as { method: string; id?: number };
       const json = (value: unknown): Response =>
         new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result: value }), {
