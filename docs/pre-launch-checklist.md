@@ -2,7 +2,7 @@
 
 - 关联：项目级评审单一事实源 [review-mvp-2026-09.md](review-mvp-2026-09.md)；deferred 项清单 [deferred-items.md](deferred-items.md)；部署面 [deployment.md](deployment.md)；容量基线 [capacity-baseline.md](capacity-baseline.md)。
 - **判定（评审 v0.19 下的判；下面两行的计数是活基线，每批现测更新，量法见 §F-3）**：
-  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且装配到真进程路径，全量 1012 测试 / 94 文件绿且 `npm test` 退出码 0、typecheck/build 过、核心链路冒烟 36/36（v0.19 复核时为 35/35，其后 Active work 69 增"DAG 操作者入口已装配"一步）；P0 26/26 为逐行机械计数，签名链五条对照与部署镜像实构实跑均用出货件亲手复跑——**部署镜像已在当前 HEAD `6179688` 重新实构实跑（`zeus:review-6179688`），不继承 v0.19 的 `zeus:review-v019` 结论**，另加一次独立边界探针 6/6）。
+  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且装配到真进程路径，全量 1015 测试 / 94 文件绿且 `npm test` 退出码 0、typecheck/build 过、核心链路冒烟 36/36（v0.19 复核时为 35/35，其后 Active work 69 增"DAG 操作者入口已装配"一步）；P0 26/26 为逐行机械计数，签名链五条对照与部署镜像实构实跑均用出货件亲手复跑——**部署镜像已在当前 HEAD `6179688` 重新实构实跑（`zeus:review-6179688`），不继承 v0.19 的 `zeus:review-v019` 结论**，另加一次独立边界探针 6/6）。
   - **可交付真实用户 MVP：❌ 未达成**。差的是**真实环境里的执行动作**：密钥托管落地与公钥公告（A2）、跨实例联调（A3）、模型裁决 key 核对（A4）、bayjf 侧验签展示（A5），以及真实生产环境（B 系列），均无法在仓库内闭环。**A1「真实执行 Agent 注册 + 真机扇出」已于 2026-09-29 对线上 pr-helper 实跑通过并销项，不再计入**（15/15，exit 0，见 A1 行）。此前唯一的**库内可做**前置项（§F-8 核心链路真进程冒烟固化为资产，deferred #25）已于 2026-09-27 销项。
 - 本文按"是否阻塞上线"分层。每条尽量给命令 / 出口标准 / 当前证据分级（实测 / 记录 / 待做）。
 - 设计约束红线（来自 product-portrait，任何上线动作不得违反）：数据主权在用户（给目录即用、正文不出域、备份恢复一等能力）；每个概念必须可执行；能力接入只有 MCP / Skill / A2A 三条通道，无私有旁路；个人域与企业域单向隔离、跨域读写需显式签名一次性授权。
@@ -56,7 +56,7 @@
 
 1. `npm run typecheck` exit 0
 2. `npm run build` exit 0，`dist/` 完整（**必须在测试之前**：`tests/verify-roster.test.ts` 与 §F-5 的离线验签都跑编译产物）
-3. `npm test` exit 0（当前 **1012 测试 / 94 文件**；核心链路冒烟 36 步；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–452s 并可能报超时红——带负载口径重跑一次再判红）
+3. `npm test` exit 0（当前 **1015 测试 / 94 文件**；核心链路冒烟 36 步；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–452s 并可能报超时红——带负载口径重跑一次再判红）
 4. 三条接入通道执行点 grep 复核（见 review-mvp §B）：`boot.ts` tokenFor 接线、`orchestrator.ts` activeProviders 三态闸门、`mcp.ts` REALM_NOT_CONNECTED 白名单、onConflict→监督台闭环、持久化/签名链执行点均在位。**v0.17 追加两条"核对装配而不是核对注册"**：`serve.ts:147` 把 `dagRunner` 注入 HTTP 依赖（否则 DAG 路由在真进程里恒 503）、`boot.ts:593→408→orchestrator.ts:169` 让 `ZEUS_MAX_CONCURRENT_PER_VASSAL` 真的到达 `selectTargets`
 5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）。报告另有 `seal fingerprint` 两行（`jwk=` / `spki=`）——**带外固定要比的就是这一行与公告值是否逐字符相同**，不必另算哈希）
 6. `docker` 真机构冒烟（B1）
