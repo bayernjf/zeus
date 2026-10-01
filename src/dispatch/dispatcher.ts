@@ -1,6 +1,7 @@
 import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
 import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
+import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
 /**
  * Every decision the governance spine records, as one list. The HTTP filter
@@ -152,6 +153,10 @@ export class Dispatcher {
     let ackMeasured = false;
 
     try {
+      // A-12: defense in depth. The registry validates taskUrl at registration,
+      // but dispatch is the moment the request actually leaves the process, so
+      // the same guard runs here — a stale or restored entry cannot bypass it.
+      assertOutboundUrlAllowed(vassal.taskUrl);
       const task = await sendTaskSubscribe(
         {
           taskUrl: vassal.taskUrl,

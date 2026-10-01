@@ -1,5 +1,6 @@
 import { validatePermissionClaims } from '../skills/validate-spec.js';
 import { SkillValidationError } from '../skills/validate-spec.js';
+import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 import { McpClient } from './client.js';
 import { McpStdioClient } from './stdio-client.js';
 import type {
@@ -77,6 +78,12 @@ export class ConnectorRegistry {
               : {}),
         };
 
+    // A-12: an http connector's endpoint is caller-supplied and the handshake
+    // POSTs to it. Refuse a non-public target here so a declaration can never
+    // name the metadata endpoint; the check also runs at connect/call time, so a
+    // snapshot restored by importState cannot smuggle one in.
+    if (!isStdio) assertOutboundUrlAllowed(normalised.endpoint!);
+
     const record: ConnectorRecord = {
       ...normalised,
       permissions: [...new Set(input.permissions)],
@@ -99,6 +106,9 @@ export class ConnectorRegistry {
 
     let capabilities: ConnectorCapabilities;
     try {
+      // A-12: re-check at the outbound moment, not only at declare — a record
+      // restored from a hand-edited snapshot never passed declare().
+      if (!this.isStdio(record)) assertOutboundUrlAllowed(record.endpoint!);
       if (this.isStdio(record)) {
         const stdio = new McpStdioClient({
           command: record.command!,
@@ -195,6 +205,8 @@ export class ConnectorRegistry {
         client.close();
       }
     }
+    // A-12: the tool call is another outbound POST to the same endpoint.
+    assertOutboundUrlAllowed(record.endpoint!);
     const client = new McpClient(record.endpoint!, { fetchImpl, token: record.token });
     return client.callTool(name, args);
   }

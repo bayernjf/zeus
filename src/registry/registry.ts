@@ -1,5 +1,6 @@
 import type { AgentCard, Fealty } from '../a2a/types.js';
 import { SUPPORTED_FEALTY_VERSIONS } from '../a2a/types.js';
+import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
 /** Dispatcher-facing view of a registered vassal. */
 export type VassalLike = {
@@ -76,6 +77,10 @@ export class VassalRegistry {
    *  `token` is the optional outbound bearer this vassal presents on dispatch
    *  (E4.8); it is stored for the dispatcher and the snapshot only. */
   async register(cardUrl: string, options: { taskUrl?: string; token?: string; validate?: (card: AgentCard) => void } = {}): Promise<VassalEntry> {
+    // A-12: the caller names where we fetch from, so the URL is untrusted input.
+    // Refuse a non-public target before the request leaves the process, not after
+    // its body has been read into the roster.
+    assertOutboundUrlAllowed(cardUrl);
     let response: Response;
     try {
       response = await this.fetchImpl(cardUrl);
@@ -116,6 +121,10 @@ export class VassalRegistry {
     // usable keeps registering the way it always did, rather than newly failing
     // at the boundary.
     const taskUrl = options.taskUrl ?? declaredTaskUrl(card) ?? defaultTaskUrl(cardUrl);
+    // A-12: dispatch posts to taskUrl on every branch. A card (or a taskUrl
+    // override) can point it at a private host just as the cardUrl can, so it is
+    // held to the same guard before it is stored and later trusted.
+    assertOutboundUrlAllowed(taskUrl);
     const entry: VassalEntry = {
       cardUrl,
       taskUrl,
