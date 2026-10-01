@@ -170,11 +170,22 @@ export function consolidate(
   let nextFacts = facts.map(f => ({ ...f, provenance: [...f.provenance] }));
   const seen = new Set<string>();
 
+  // A-06: a retracted fact stays in the source list as a tombstone, and the
+  // append-only event log keeps the claim that produced it. Without a
+  // suppression set the same claim is grouped again below and rebuilt as a
+  // brand-new fact (same deterministic id), silently undoing the retraction on
+  // the next automatic consolidation. A tombstone outlives the retraction, so
+  // the suppression holds until the fact is explicitly reinstated.
+  const tombstoned = new Set(
+    nextFacts.filter(f => f.status === 'retracted').map(f => f.factId),
+  );
+
   for (const group of groupClaims(events)) {
     const { subject, predicate, object, events: claimEvents } = group;
     const id = factId(events[0]?.realmId ?? '', subject, predicate, object);
     if (seen.has(id)) continue;
     seen.add(id);
+    if (tombstoned.has(id)) continue;
 
     const candidateTime = latestOccurredAt(claimEvents);
     const candidateReliability = meanReliability(claimEvents, options);

@@ -153,6 +153,22 @@ describe('Memory P2 right to be forgotten', () => {
     expect(store.listRetractions()).toHaveLength(1);
   });
 
+  // A-06: consolidation is fired automatically on an intent terminal state, and
+  // the append-only event log still holds the retracted claim. Replaying it must
+  // not rebuild the withdrawn fact (same deterministic id) as a live one.
+  it('keeps a retracted fact retracted across a later consolidation (A-06)', () => {
+    const store = settledStore([claim('e1', 'user', 'language', 'typescript')]);
+    const [factId] = store.facts('personal', 'personal').map(f => f.factId);
+    store.retractFacts('personal', [factId], { reason: 'gdpr', requestedBy: 'driver' });
+
+    store.consolidateRealm('personal');
+
+    const facts = store.facts('personal', 'personal').filter(f => f.factId === factId);
+    expect(facts).toHaveLength(1);
+    expect(facts[0].status).toBe('retracted');
+    expect(store.searchRecall('personal', 'personal', 'typescript')).toEqual([]);
+  });
+
   it('tombstones persist and the index rebuilds from the fact source', () => {
     const store = settledStore([
       claim('e1', 'alice', 'phone', 'secret'),
