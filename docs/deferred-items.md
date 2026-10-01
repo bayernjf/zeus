@@ -273,6 +273,7 @@
 - **为什么登记不做**：216 条里相当部分是 JS 惯用法噪声（隐式 `any` 参数、可选链前的收窄），先要定"检查到什么档"——只保真机脚本（`gen-rsk-key`/`smoke-core`）还是全部——属工程口径决定，不是补漏。
 - **触发条件**：① 某个 script 因类型错误在真机跑挂而单测看不见；② 决定把验收 / 冒烟脚本提升为"受检资产"。
 - **建议做法（决定后）**：先给 `scripts/gen-rsk-key.mjs` 与 `scripts/smoke-core.mjs` 两个出货级脚本加 `// @ts-check` + JSDoc，再评估其余五个是否跟进。
+- **进展（2026-10-01，按建议做法的前半段执行，本条仍未销项）**：两个出货级脚本已受检——`tsconfig.json` 开 `allowJs` 并把这两个文件列入 `include`，`checkJs` 保持关闭（按文件 opt-in，不是仓库级开关）。实测：出货级两脚本在 `allowJs+checkJs` probe 下由 **53 条**诊断降到 **0**（`gen-rsk-key.mjs` 原本就是 0，53 条全在 `smoke-core.mjs`），全部以标注收口而非放宽代码——`boundPort()` 处理 `address()` 的 null / 管道形态、环境表类型化使 `delete` 继承变量成为合法操作、`verifyRoster` 点名 `execFileSync` 抛出的形状，其余是 JSON 回调的参数与返回标注。**缺陷植入**：把 keygen 的输出路径强转为 number，检查器在该文件报 3 条；还原后归 0。行为不变：`npm run smoke:core` 仍 36/36、`npm test` 1012 / 94 全绿。**剩余范围**（本条保持未销项的原因）：其余五个 `scripts/*.mjs`（`acceptance-real-fanout` / `acceptance-standard-a2a` / `bench-capacity` / `clock-skew-setup` / `verify-roster`）仍不受检，全量 216 条诊断里剩下的部分仍待定档位。
 
 ### #38 CI 静态质量闸门缺位（lint / 依赖漏洞扫描 / secret 扫描）
 - **缺口**：`package.json` 无 `lint` 脚本，`.github/workflows/ci.yml` 只跑 typecheck / build / test / clock-skew / smoke。当前没有 lint（风格与常见错误）、依赖漏洞扫描、secret 扫描三道基础设施级闸门。
