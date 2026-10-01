@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DagRunner } from '../src/orchestrator/dag-runner.js';
+import { DagRunner, DagIdInUseError } from '../src/orchestrator/dag-runner.js';
 import {
   criticalPath,
   topologicalLayers,
@@ -8,7 +8,8 @@ import {
   type DagNode,
   type DagSpec,
 } from '../src/orchestrator/dag.js';
-import type { DispatchPort } from '../src/orchestrator/types.js';
+import type { Orchestrator } from '../src/orchestrator/orchestrator.js';
+import type { DispatchPort, FanOutResult } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 
@@ -153,5 +154,131 @@ describe('DagRunner', () => {
     ];
     await runner.run(baseSpec(nodes));
     expect(seen[1]).toMatchObject({ fromA: 'v1' });
+  });
+});
+
+function fanOutFor(intentId: string): FanOutResult {
+  return {
+    intentId, runId: 'r', skill: 's', realm: 'personal', branches: [], stream: [], positions: [],
+    decision: { rule: 'unanimous', conclusion: 'go', positions: [], reason: 'ok' },
+    conflicts: [], status: 'completed', createdAt: 't',
+  };
+}
+
+/** A stand-in orchestrator that records node fan-outs and cancellations. */
+function stubOrchestrator(overrides: {
+  fanOut?: (req: { intentId?: string }) => Promise<FanOutResult>;
+  cancelIntent?: (id: string) => Promise<void>;
+}): Orchestrator {
+  return {
+    async fanOut(req: { intentId?: string }) { return overrides.fanOut ? overrides.fanOut(req) : fanOutFor(req.intentId!); },
+    async cancelIntent(id: string) { return overrides.cancelIntent ? overrides.cancelIntent(id) : undefined; },
+  } as unknown as Orchestrator;
+}
+
+const noopPort: DispatchPort = { async dispatch() { return completed('v', 's'); }, async cancel() {} };
+
+describe('DagRunner lifecycle guards', () => {
+  it('registers node intents before the run settles, so cancelDag reaches them mid-run', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const cancelled: string[] = [];
+    const orchestrator = stubOrchestrator({
+      fanOut: async req => { await gate; return fanOutFor(req.intentId!); },
+      cancelIntent: async id => { cancelled.push(id); },
+    });
+    const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
+    const spec: DagSpec = { dagId: 'D-cancel', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+
+    const running = runner.run(spec);
+    await delay(0); // the node has started; its intent must already be registered
+    await runner.cancelDag('D-cancel');
+    expect(cancelled).toEqual(['D-cancel::A']);
+
+    release();
+    await running;
+  });
+
+  it('fails only the throwing node and lets independent siblings finish', async () => {
+    const orchestrator = stubOrchestrator({
+      fanOut: async req => {
+        if (req.intentId!.endsWith('::B')) throw new Error('node exploded');
+        return fanOutFor(req.intentId!);
+      },
+    });
+    const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
+    const result = await runner.run({
+      dagId: 'D-throw',
+      realm: 'personal',
+      nodes: [
+        { id: 'A', skill: 'a' },
+        { id: 'B', skill: 'b' },
+        { id: 'C', skill: 'c', dependsOn: ['B'] },
+      ],
+    });
+    const byId = new Map(result.nodes.map(n => [n.nodeId, n]));
+    expect(byId.get('A')?.state).toBe('completed');
+    expect(byId.get('B')?.state).toBe('failed');
+    expect(byId.get('B')?.error).toMatch(/exploded/);
+    expect(byId.get('C')?.state).toBe('skipped');
+  });
+
+  it('refuses to re-run a settled dag id instead of replaying it', async () => {
+    let calls = 0;
+    const orchestrator = stubOrchestrator({ fanOut: async req => { calls += 1; return fanOutFor(req.intentId!); } });
+    const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
+    const spec: DagSpec = { dagId: 'D-reuse', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+
+    await runner.run(spec);
+    expect(calls).toBe(1);
+    await expect(runner.run(spec)).rejects.toBeInstanceOf(DagIdInUseError);
+    expect(calls).toBe(1); // the refused run dispatched nothing
+  });
+
+  it('collapses concurrent runs that share a dag id into one wave', async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const orchestrator = stubOrchestrator({ fanOut: async req => { calls += 1; await gate; return fanOutFor(req.intentId!); } });
+    const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
+    const spec: DagSpec = { dagId: 'D-concurrent', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+
+    const first = runner.run(spec);
+    const second = runner.run(spec);
+    release();
+    const [a, b] = await Promise.all([first, second]);
+    expect(calls).toBe(1);
+    expect(b).toBe(a); // the second caller joined the first run
+  });
+
+  it('mints reproducible-proof dag and run ids (uuid, not Math.random)', async () => {
+    const runner = new DagRunner(lookup, noopPort, {});
+    const result = await runner.run({ realm: 'personal', nodes: [{ id: 'A', skill: 's' }] });
+    expect(result.dagId).toMatch(/^dag-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(result.runId).toMatch(/^run-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it('passes concurrency limits through to the isolated orchestrator', async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const port: DispatchPort = {
+      async dispatch() {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await delay(15);
+        inFlight -= 1;
+        return completed('v', 's');
+      },
+      async cancel() {},
+    };
+    const nodes: DagNode[] = [
+      { id: 'A', skill: 'a', vassals: ['v1'] },
+      { id: 'B', skill: 'b', vassals: ['v2'] },
+    ];
+    const runner = new DagRunner(lookup, port, { newRunId: () => 'r1', maxConcurrentBranches: 1 });
+    await runner.run(baseSpec(nodes));
+    // The cap is honoured only if the runner forwarded it to the orchestrator it
+    // built; dropping the option leaves the two branches unbounded (maxInFlight 2).
+    expect(maxInFlight).toBe(1);
   });
 });

@@ -157,7 +157,7 @@ export {
   DagValidationError,
 } from './orchestrator/dag.js';
 export type { DagNode, DagSpec, DagNodeState, DagState } from './orchestrator/dag.js';
-export { DagRunner } from './orchestrator/dag-runner.js';
+export { DagRunner, DagIdInUseError } from './orchestrator/dag-runner.js';
 export type { DagResult, DagNodeResult, DagRunnerOptions } from './orchestrator/dag-runner.js';
 export {
   FileKernelStateStore,

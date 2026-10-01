@@ -1,7 +1,7 @@
+import { DomainError } from '../util/domain-error.js';
 import type { FanOutResult } from './types.js';
 import { Orchestrator, type OrchestratorOptions } from './orchestrator.js';
 import type { DispatchPort, TargetLookup } from './types.js';
-import type { ConcurrencyMetrics } from './metrics.js';
 import {
   criticalPath,
   topologicalLayers,
@@ -12,12 +12,24 @@ import {
   type DagState,
 } from './dag.js';
 
+/** A dagId that already ran cannot be re-run in place: its node intents are
+ *  `${dagId}::${nodeId}`, so a second run would hit the orchestrator's idempotency
+ *  table and silently return the first run's node results with zero dispatch. */
+export class DagIdInUseError extends DomainError {
+  constructor(message: string) {
+    super(message, 'conflict');
+  }
+}
+
 export type DagNodeResult = {
   nodeId: string;
   state: DagNodeState;
   /** Present when the node actually ran; absent when skipped. */
   fanOut?: FanOutResult;
   skippedReason?: string;
+  /** The message of an unexpected throw while running the node (its dependents
+   *  are skipped and unrelated branches keep going). */
+  error?: string;
 };
 
 export type DagResult = {
@@ -49,12 +61,13 @@ export type DagRunnerOptions = Omit<OrchestratorOptions, 'newIntentId' | 'newRun
 export class DagRunner {
   private orchestrator: Orchestrator;
   private activeDags = new Map<string, string[]>(); // dagId -> node intent ids
+  private runningDags = new Map<string, Promise<DagResult>>(); // dagId -> in-flight run (single-flight)
   private dagSpecs = new Map<string, DagSpec>(); // dagId -> last spec (for layer recompute)
   private dagResults = new Map<string, DagResult>(); // dagId -> last result (states)
 
   constructor(
-    private lookup: TargetLookup,
-    private dispatcher: DispatchPort,
+    lookup: TargetLookup,
+    dispatcher: DispatchPort,
     private options: DagRunnerOptions = {},
     /** When supplied, DAG nodes run through this shared orchestrator so their
      *  intents share the kernel's idempotency table and persist with it. When
@@ -62,26 +75,55 @@ export class DagRunner {
      *  tests, which only care about graph math, not persistence). */
     orchestratorArg?: Orchestrator
   ) {
-    this.orchestrator = orchestratorArg ?? new Orchestrator(lookup, dispatcher, {
-      now: options.now,
-      newRunId: options.newRunId,
-      onConflict: options.onConflict,
-      metrics: options.metrics as ConcurrencyMetrics | undefined,
-    });
+    // Full option pass-through (not a four-field subset): the isolated
+    // orchestrator must honour the same concurrency caps, governance and
+    // decision-backend configuration as the shared one, per DagRunnerOptions.
+    this.orchestrator = orchestratorArg ?? new Orchestrator(lookup, dispatcher, options);
   }
 
+  /**
+   * Run a DAG. A caller-supplied dagId is single-flight: a concurrent second
+   * `run` with the same id joins the first instead of dispatching every node
+   * twice, and a dagId whose run has settled is refused rather than silently
+   * replaying the first run's node results with zero work.
+   */
   async run(spec: DagSpec): Promise<DagResult> {
+    const explicitId = spec.dagId;
+    if (explicitId !== undefined) {
+      const inFlight = this.runningDags.get(explicitId);
+      if (inFlight) return inFlight;
+      if (this.dagResults.has(explicitId)) {
+        throw new DagIdInUseError(
+          `dag ${explicitId} has already run; submit a new dag id to run the graph again (its node intents are keyed by dag id)`,
+        );
+      }
+    }
+    const work = this.runNew(spec);
+    if (explicitId === undefined) return work;
+    this.runningDags.set(explicitId, work);
+    try {
+      return await work;
+    } finally {
+      this.runningDags.delete(explicitId);
+    }
+  }
+
+  private async runNew(spec: DagSpec): Promise<DagResult> {
     const ordered = validateDag(spec.nodes);
     const byId = new Map(ordered.map(node => [node.id, node]));
     const layers = topologicalLayers(ordered);
-    const dagId = spec.dagId ?? this.options.newDagId?.() ?? `dag-${Math.random().toString(36).slice(2, 10)}`;
-    const runId = this.options.newRunId?.() ?? `run-${Math.random().toString(36).slice(2, 10)}`;
+    const dagId = spec.dagId ?? this.options.newDagId?.() ?? `dag-${crypto.randomUUID()}`;
+    const runId = this.options.newRunId?.() ?? `run-${crypto.randomUUID()}`;
     const startedAt = (this.options.now ? this.options.now() : new Date()).toISOString();
 
     const nodeResults = new Map<string, DagNodeResult>();
     const nodeStates = new Map<string, DagNodeState>();
     const upstream = new Map<string, FanOutResult>();
     const intentIds: string[] = [];
+    // Registered before the first dispatch, not after the last wave: a cancel
+    // arriving mid-run must find the node intents, otherwise cancelDag is a
+    // silent no-op while the nodes it names are still running.
+    this.activeDags.set(dagId, intentIds);
 
     for (const layer of layers) {
       await Promise.all(
@@ -95,27 +137,34 @@ export class DagRunner {
           }
 
           nodeStates.set(id, 'running');
-          const params = this.options.resolveParams ? this.options.resolveParams(node, new Map(upstream)) : node.params ?? {};
-          const intentId = `${dagId}::${id}`;
-          intentIds.push(intentId);
-          const fanOut = await this.orchestrator.fanOut({
-            intentId,
-            skill: node.skill,
-            vassals: node.vassals,
-            params,
-            realm: spec.realm,
-            aggregation: node.aggregation,
-            branchTimeoutMs: spec.branchTimeoutMs,
-          });
-          upstream.set(id, fanOut);
-          const state = mapFanOutState(fanOut.status);
-          nodeStates.set(id, state);
-          nodeResults.set(id, { nodeId: id, state, fanOut });
+          try {
+            const params = this.options.resolveParams ? this.options.resolveParams(node, new Map(upstream)) : node.params ?? {};
+            const intentId = `${dagId}::${id}`;
+            intentIds.push(intentId);
+            const fanOut = await this.orchestrator.fanOut({
+              intentId,
+              skill: node.skill,
+              vassals: node.vassals,
+              params,
+              realm: spec.realm,
+              aggregation: node.aggregation,
+              branchTimeoutMs: spec.branchTimeoutMs,
+            });
+            upstream.set(id, fanOut);
+            const state = mapFanOutState(fanOut.status);
+            nodeStates.set(id, state);
+            nodeResults.set(id, { nodeId: id, state, fanOut });
+          } catch (thrown) {
+            // One node's unexpected throw fails that node; its dependents are
+            // skipped and unrelated branches keep going, instead of rejecting
+            // the whole wave and discarding every sibling's result.
+            nodeStates.set(id, 'failed');
+            nodeResults.set(id, { nodeId: id, state: 'failed', error: errorMessage(thrown) });
+          }
         })
       );
     }
 
-    this.activeDags.set(dagId, intentIds);
     const finishedAt = (this.options.now ? this.options.now() : new Date()).toISOString();
     const result: DagResult = {
       dagId,
@@ -168,4 +217,8 @@ function aggregateDagState(states: Map<string, DagNodeState>): DagState {
   if (list.every(state => state === 'completed')) return 'completed';
   if (list.some(state => state === 'completed')) return 'partial';
   return 'failed';
+}
+
+function errorMessage(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : String(thrown);
 }
