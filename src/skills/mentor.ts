@@ -1,4 +1,5 @@
 import { sha256Hex } from '../util/crypto.js';
+import { DomainError } from '../util/domain-error.js';
 import type { SkillRegistry } from './registry.js';
 import { SkillNotFoundError } from './registry.js';
 
@@ -67,7 +68,7 @@ export interface AssessOptions {
   threshold?: number;
 }
 
-export class MentorshipError extends Error {}
+export class MentorshipError extends DomainError {}
 
 const DEFAULT_PASS_SCORE = 0.8;
 
@@ -90,10 +91,10 @@ export class MentorshipLedger {
       : this.skillRegistry.get(input.skillId);
     if (!spec) throw new SkillNotFoundError(`skill ${input.skillId} not found`);
     if (spec.status !== 'active') {
-      throw new MentorshipError(`cannot teach ${input.skillId}@${spec.version} (${spec.status})`);
+      throw new MentorshipError(`cannot teach ${input.skillId}@${spec.version} (${spec.status})`, 'conflict');
     }
     if (!this.skillRegistry.isProvider(input.skillId, input.mentorId)) {
-      throw new MentorshipError(`${input.mentorId} is not an active provider of ${input.skillId}`);
+      throw new MentorshipError(`${input.mentorId} is not an active provider of ${input.skillId}`, 'conflict');
     }
     if (input.mentorId === input.learnerId) {
       throw new MentorshipError('mentor and learner must be different agents');
@@ -103,7 +104,7 @@ export class MentorshipLedger {
       `${spec.version}␟${input.skillId}␟${input.mentorId}␟${input.learnerId}`,
     ).slice(0, 12)}`;
     if (this.records.has(id)) {
-      throw new MentorshipError(`mentorship ${id} already exists`);
+      throw new MentorshipError(`mentorship ${id} already exists`, 'conflict');
     }
 
     const record: MentorshipRecord = {
@@ -211,9 +212,9 @@ export class MentorshipLedger {
 
   private requireOpen(id: string): MentorshipRecord {
     const record = this.records.get(id);
-    if (!record) throw new MentorshipError(`mentorship ${id} not found`);
+    if (!record) throw new MentorshipError(`mentorship ${id} not found`, 'not-found');
     if (record.status !== 'teaching') {
-      throw new MentorshipError(`mentorship ${id} is ${record.status}, not open`);
+      throw new MentorshipError(`mentorship ${id} is ${record.status}, not open`, 'conflict');
     }
     return record;
   }

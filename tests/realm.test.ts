@@ -74,6 +74,21 @@ describe('FsRealmStore P0', () => {
     expect(otherManifest.realmId).toBe(manifest.realmId);
   });
 
+  it('bounds the snapshot and says so instead of silently indexing a partial realm', async () => {
+    const store = new FsRealmStore({ scanLimits: { maxItems: 2 } });
+    const manifest = await store.connect(root, 'personal');
+    expect(manifest.itemCount).toBe(2);
+    expect(manifest.skipped?.some(s => s.reason.includes('scan stopped at the item-count bound'))).toBe(true);
+    // The partial snapshot is what search sees, and the truncation is visible
+    // rather than being mistaken for a small realm.
+    expect(await store.search(manifest.realmId, {})).toHaveLength(2);
+
+    const byteBound = new FsRealmStore({ scanLimits: { maxTotalBytes: 1 } });
+    const truncated = await byteBound.connect(root, 'personal');
+    expect(truncated.itemCount).toBe(0);
+    expect(truncated.skipped?.some(s => s.reason.includes('total-size bound'))).toBe(true);
+  });
+
   it('connects an enterprise realm and refuses a root that does not exist', async () => {
     const store = new FsRealmStore();
     const enterprise = await store.connect(root, 'enterprise');
@@ -91,6 +106,30 @@ describe('FsRealmStore P0', () => {
     const after = await store.connect(root, 'personal');
     expect(after.contentDigest).not.toBe(before.contentDigest);
     expect(after.realmId).toBe(before.realmId);
+  });
+
+  it('refuses a reconnect that would relabel a mounted realm type', async () => {
+    const store = new FsRealmStore();
+    const personal = await store.connect(root, 'personal');
+    await expect(store.connect(root, 'enterprise')).rejects.toThrow(/would change its realm type/);
+    // The mount is untouched: a refused reconnect must not have mutated it.
+    expect(store.connections().find(c => c.realmId === personal.realmId)?.type).toBe('personal');
+
+    const enterpriseStore = new FsRealmStore();
+    await enterpriseStore.connect(root, 'enterprise');
+    await expect(enterpriseStore.connect(root, 'personal')).rejects.toThrow(/would change its realm type/);
+  });
+
+  it('keeps a read-only mount read-only across reconnects that omit the flag', async () => {
+    const store = new FsRealmStore();
+    const manifest = await store.connect(root, 'personal', { readOnly: true });
+    // A later reconnect with no flag (vault live-source, boot restore) must not
+    // silently promote the mount back to writable.
+    await store.connect(root, 'personal');
+    expect(store.connections().find(c => c.realmId === manifest.realmId)?.readOnly).toBe(true);
+    await expect(store.write!(manifest.realmId, { data: 'x', itemId: 'notes/new.md' })).rejects.toThrow(
+      /connected read-only/,
+    );
   });
 
   it('enforces connect-before-use (invariant 2)', async () => {

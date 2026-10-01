@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ConcurrencyMetrics, percentile } from '../src/orchestrator/metrics.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
-import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
+import type { DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
@@ -73,6 +73,48 @@ describe('ConcurrencyMetrics collector', () => {
     const snap = metrics.snapshot();
     expect(snap.timedOut).toBe(1);
     expect(snap.perVassal.a.failureRate).toBe(1);
+  });
+
+  it('counts canceled branches so finished equals the outcome buckets', () => {
+    const metrics = new ConcurrencyMetrics();
+    metrics.branchStarted({ intentId: 'i', runId: 'r:a', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchEnded('i', 'r:a', 'a', 'completed');
+    metrics.branchStarted({ intentId: 'i', runId: 'r:b', vassal: 'b', skill: 's', startedAt: 't' });
+    metrics.branchEnded('i', 'r:b', 'b', 'canceled');
+
+    const snap = metrics.snapshot();
+    expect(snap.canceled).toBe(1);
+    expect(snap.completed + snap.failed + snap.timedOut + snap.canceled).toBe(snap.finished);
+    expect(snap.perVassal.b.canceled).toBe(1);
+  });
+
+  it('keeps canceled branches out of the failure rate', () => {
+    const metrics = new ConcurrencyMetrics();
+    metrics.branchStarted({ intentId: 'i', runId: 'r:ok', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchEnded('i', 'r:ok', 'a', 'completed');
+    metrics.branchStarted({ intentId: 'i', runId: 'r:bad', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchEnded('i', 'r:bad', 'a', 'failed');
+    metrics.branchStarted({ intentId: 'i', runId: 'r:cancel', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchEnded('i', 'r:cancel', 'a', 'canceled');
+
+    // One failure out of two verdicts; the cancel neither helps nor hurts.
+    expect(metrics.snapshot().perVassal.a.failureRate).toBe(0.5);
+  });
+
+  it('does not double-count a repeated start key, so in-flight stays balanced', () => {
+    const metrics = new ConcurrencyMetrics();
+    const event = { intentId: 'i', runId: 'r:a', vassal: 'a', skill: 's', startedAt: 't' };
+    metrics.branchStarted(event);
+    // A recycled runId collides with a live key; the second start must not push
+    // the vassal's in-flight count above the number of live entries.
+    metrics.branchStarted(event);
+    expect(metrics.inFlightByVassalNow('a')).toBe(1);
+
+    metrics.branchEnded('i', 'r:a', 'a', 'completed');
+    const snap = metrics.snapshot();
+    expect(snap.inFlight).toBe(0);
+    expect(snap.inFlightByVassal.a ?? 0).toBe(0);
+    expect(snap.perVassal.a.calls).toBe(1);
   });
 });
 

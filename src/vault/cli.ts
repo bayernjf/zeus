@@ -21,7 +21,8 @@
  *
  * Exit codes: 0 ok/recoverable · 1 usage/key/decrypt/io error · 2 drift detected · 3 root unreachable
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
+import { writeFileAtomic } from './fs.js';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { RealmType } from '../a2a/types.js';
@@ -234,7 +235,7 @@ export async function runVaultCli(argv: string[], deps: VaultCliDeps = {}): Prom
       const map = await buildVault(inventory, { now });
       const sealed = sealMap(map, key);
       await mkdir(dirnameOf(out), { recursive: true });
-      await writeFile(out, JSON.stringify(sealed, null, 2) + '\n', 'utf8');
+      await writeFileAtomic(out, JSON.stringify(sealed, null, 2) + '\n');
       stdout = asJson
         ? JSON.stringify({ ok: true, command, out, source: map.source, items: map.marks.length })
         : `map sealed (manifest-only): ${out}\n${sourceTag(map.source)}\nitems: ${map.marks.length}`;
@@ -247,8 +248,8 @@ export async function runVaultCli(argv: string[], deps: VaultCliDeps = {}): Prom
       const mapPath = join(outDir, `${stem}.map.json`);
       const bundlePath = join(outDir, `${stem}.bundle.json`);
       await mkdir(outDir, { recursive: true });
-      await writeFile(mapPath, JSON.stringify(packed.sealedMap, null, 2) + '\n', 'utf8');
-      await writeFile(bundlePath, JSON.stringify(packed.sealedBundle, null, 2) + '\n', 'utf8');
+      await writeFileAtomic(mapPath, JSON.stringify(packed.sealedMap, null, 2) + '\n');
+      await writeFileAtomic(bundlePath, JSON.stringify(packed.sealedBundle, null, 2) + '\n');
       stdout = asJson
         ? JSON.stringify({ ok: true, command, map: mapPath, bundle: bundlePath, source: packed.map.source, items: packed.map.marks.length })
         : `full backup sealed:\n  map:    ${mapPath}\n  bundle: ${bundlePath}\n${sourceTag(packed.map.source)}\nitems: ${packed.map.marks.length}`;

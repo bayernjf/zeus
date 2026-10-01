@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +33,10 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await rm(sandbox, { recursive: true, force: true });
+  // The snapshot persist is fire-and-forget (the write path must not block on
+  // fsync), so its temp file can land while this teardown is unlinking the
+  // sandbox. Retry the ENOTEMPTY instead of failing the test on that race.
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 });
 });
 
 async function realmRoot(name: string, content = 'note\n'): Promise<string> {
@@ -115,6 +118,18 @@ describe('E3.5 nonce ledger (DriverGrantLedger)', () => {
     expect(saves).toBe(2);
   });
 
+  it('fires onChange even when the accepted nonce evicts an old one', () => {
+    let saves = 0;
+    const ledger = new DriverGrantLedger({ limit: 2, onChange: () => { saves += 1; } });
+    ledger.consume('a');
+    ledger.consume('b');
+    ledger.consume('c'); // window full: accepting 'c' evicts 'a'
+    // Every accepted nonce must reach disk; gating the save on "no eviction"
+    // left 'c' off disk exactly when the window was full.
+    expect(saves).toBe(3);
+    expect(ledger.exportState()).toEqual(['b', 'c']);
+  });
+
   it('keeps a bounded window and says which nonce it dropped', () => {
     const evicted: string[] = [];
     const ledger = new DriverGrantLedger({ limit: 2, onEvict: nonce => evicted.push(nonce) });
@@ -192,10 +207,13 @@ describe('E3.5 the booted kernel authorizes enterprise writes with signatures', 
     const grant = await issueDriverWriteGrant({ realmId, grantedBy: 'driver@bayjf' }, { signer, now });
 
     await writerFor(kernel)(realmId, { itemId: 'notes/y.md', data: 'once\n' }, grant);
-    // No saveState() call: consumption itself must push the nonce to disk.
-    await new Promise(resolve => setImmediate(resolve));
-    const persisted = JSON.parse(await readFile(stateFile, 'utf8')) as { writeGrantNonces?: string[] };
-    expect(persisted.writeGrantNonces).toContain(grant.nonce);
+    // No saveState() call: consumption itself must push the nonce to disk. The
+    // persist is fire-and-forget — the write path must not block on fsync — so wait
+    // for the file to catch up instead of assuming one event-loop tick is enough.
+    await vi.waitFor(async () => {
+      const persisted = JSON.parse(await readFile(stateFile, 'utf8')) as { writeGrantNonces?: string[] };
+      expect(persisted.writeGrantNonces).toContain(grant.nonce);
+    });
 
     const restarted = await boot(stateFile, root, signer);
     await expect(writerFor(restarted)(realmId, { itemId: 'notes/y.md', data: 'twice\n' }, grant))

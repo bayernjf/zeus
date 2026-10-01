@@ -131,7 +131,9 @@ describe('E5.3 component snapshots', () => {
     const restored = new Orchestrator(lookup, countingPort, { newIntentId: () => 'x', newRunId: () => 'x' });
     restored.importState(orch.exportState());
 
-    const replayed = await restored.fanOut({ intentId: 'intent-keep', skill: 's', vassals: ['loom', 'atlas'], params: {}, realm: 'personal' });
+    // A replay repeats the same request (F2 rejects a reused key that names a
+    // different params payload); the point here is that no dispatch happens.
+    const replayed = await restored.fanOut({ intentId: 'intent-keep', skill: 's', vassals: ['loom', 'atlas'], params: { ticket: 'OPS-1' }, realm: 'personal' });
     expect(replayed.replayed).toBe(true);
     expect(dispatchCalls).toBe(0); // idempotent: no re-dispatch after restart
 
@@ -200,6 +202,16 @@ describe('E5.3 FileKernelStateStore', () => {
 
     await writeFile(file, JSON.stringify({ version: 999, registry: [], oversight: [], orchestrator: {} }));
     await expect(store.load()).rejects.toThrow(/version/);
+  });
+
+  it('creates the snapshot directory owner-only', async () => {
+    // The snapshot carries connector bearer tokens and the user's memory facts;
+    // a 0755 directory (the umask default) would let another local user list and
+    // read it.
+    const nested = join(dir, 'nested');
+    const store = new FileKernelStateStore(join(nested, 'state.json'));
+    await store.save({ registry: [], oversight: [], orchestrator: { intents: [], requests: [] } });
+    expect((await stat(nested)).mode & 0o777).toBe(0o700);
   });
 
   it('keeps the snapshot owner-readable, tightening a file an older build left open', async () => {

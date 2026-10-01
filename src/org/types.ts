@@ -5,6 +5,8 @@
  * department leads and the deciding driver.
  */
 
+import { DomainError, type DomainErrorKind } from '../util/domain-error.js';
+
 export type OrgRole = 'lead' | 'member';
 
 export interface OrgMember {
@@ -56,9 +58,9 @@ export interface AssignMemberInput {
   skills?: string[];
 }
 
-export class OrgError extends Error {
-  constructor(message: string) {
-    super(message);
+export class OrgError extends DomainError {
+  constructor(message: string, kind: DomainErrorKind = 'invalid') {
+    super(message, kind);
     this.name = 'OrgError';
   }
 }

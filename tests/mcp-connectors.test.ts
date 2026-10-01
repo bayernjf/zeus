@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ConnectorRegistry, ConnectorError, type ConnectorAuditEntry } from '../src/mcp/connectors.js';
+import { McpClient } from '../src/mcp/client.js';
 import type { ConnectorDeclaration } from '../src/mcp/types.js';
 
 const ENDPOINT = 'https://mcp.example/mcp';
@@ -217,5 +218,104 @@ describe('E7 MCP connectors', () => {
   it('rejects a declaration with neither endpoint nor command', () => {
     const registry = new ConnectorRegistry(now);
     expect(() => registry.declare(declaration({ endpoint: undefined }))).toThrowError(/endpoint|command/);
+  });
+});
+
+describe('A-08 MCP client response correlation', () => {
+  it('fails loud when no frame carries the request id', async () => {
+    const strayId: typeof fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { id: number };
+      return new Response(
+        JSON.stringify({ jsonrpc: '2.0', id: body.id + 100, result: { tools: [] } }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as typeof fetch;
+    const client = new McpClient(ENDPOINT, { fetchImpl: strayId });
+    await expect(client.initialize()).rejects.toThrowError(/request id/);
+  });
+
+  it('picks the frame whose id matches, ignoring an earlier stale result', async () => {
+    const frames: typeof fetch = (async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as { id: number };
+      // A notification (no id) and a stale response precede the real one, which
+      // is exactly the SSE shape the old "first frame with a result" lookup got
+      // wrong.
+      const sse = [
+        `data: ${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/message' })}`,
+        `data: ${JSON.stringify({ jsonrpc: '2.0', id: 999, result: { tools: [{ name: 'stale' }] } })}`,
+        `data: ${JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { tools: [{ name: 'fresh' }] } })}`,
+      ].join('\n\n') + '\n\n';
+      return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    }) as typeof fetch;
+    const client = new McpClient(ENDPOINT, { fetchImpl: frames });
+    const capabilities = await client.initialize();
+    expect(capabilities.tools).toEqual(['fresh']);
+  });
+});
+
+describe('A-09 connector minimum privilege is fail-closed', () => {
+  it('bounds resources and prompts by the same declaration as tools', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: ['mcp:search'] }));
+    const connected = await registry.connect('knowledge', mcpFetch());
+    // The handshake advertises `docs` and `brief` as well; neither was granted,
+    // so neither may cross the boundary. The bound used to stop at tools, which
+    // left the whole resource and prompt surface exposed behind a one-tool grant.
+    expect(connected.capabilities).toEqual({ tools: ['search'], resources: [], prompts: [] });
+
+    // A bare `mcp` grant is the only thing that covers the discovered surface.
+    const open = new ConnectorRegistry(now);
+    open.declare(declaration());
+    expect((await open.connect('knowledge', mcpFetch())).capabilities).toEqual({
+      tools: ['search', 'danger'],
+      resources: ['docs'],
+      prompts: ['brief'],
+    });
+  });
+
+  it('exposes no tool when the declaration grants no permission', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: [] }));
+    const connected = await registry.connect('knowledge', mcpFetch());
+    expect(connected.capabilities!.tools).toEqual([]);
+    await expect(registry.callTool('knowledge', 'search')).rejects.toThrowError(/not granted|does not expose tool/);
+  });
+
+  it('re-narrows imported capabilities to the declared boundary', async () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: ['mcp:search'] }));
+    const tampered = registry.exportState();
+    tampered[0].status = 'connected';
+    tampered[0].capabilities = {
+      tools: ['search', 'danger', 'exfiltrate'],
+      resources: ['docs', 'payroll'],
+      prompts: ['brief', 'exfiltrate'],
+    };
+
+    registry.importState(tampered);
+
+    expect(registry.get('knowledge')!.capabilities).toEqual({ tools: ['search'], resources: [], prompts: [] });
+    await expect(registry.callTool('knowledge', 'danger')).rejects.toThrowError(/not granted|does not expose tool/);
+  });
+});
+
+describe('E7 connector credentials do not cross into the persisted state', () => {
+  it('keeps the bearer token in memory and out of every export', () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ token: 'upstream-credential' }));
+
+    // The state file - and every backup bundle drawn from it - is plaintext, so
+    // the token must not appear in the record that is written there.
+    const exported = registry.exportState();
+    expect(exported[0]).not.toHaveProperty('token');
+    expect(JSON.stringify(exported)).not.toContain('upstream-credential');
+    // It is still held where the outbound request needs it.
+    expect(registry.get('knowledge')!.token).toBe('upstream-credential');
+
+    // A restore brings the declaration back, not the credential.
+    const restored = new ConnectorRegistry(now);
+    restored.importState(registry.exportState());
+    expect(restored.get('knowledge')).toMatchObject({ endpoint: ENDPOINT, permissions: ['mcp'] });
+    expect(restored.get('knowledge')!.token).toBeUndefined();
   });
 });

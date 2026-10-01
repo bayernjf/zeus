@@ -55,9 +55,12 @@ const STATUS_TOKEN: Record<string, SemanticColor> = {
  */
 const AUDIT_TOKEN: Record<string, SemanticColor> = {
   dispatched: 'accent',
+  // The lifecycle counterpart of `dispatched`: a branch ending on purpose.
+  'cancel-requested': 'accent',
   'dispatch-failed': 'danger',
   'sla-ack-breached': 'warning',
   'vassal-revoked': 'danger',
+  'vassal-reinstated': 'accent',
   'refused-realm-policy': 'warning',
   'refused-unknown-vassal': 'warning',
   'refused-revoked': 'warning',

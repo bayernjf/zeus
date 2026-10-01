@@ -1,21 +1,19 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { CardFetchError, VassalRegistry } from '../registry/registry.js';
+import { CardFetchError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
-import { UnknownIntentError } from '../orchestrator/orchestrator.js';
 import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
-import { DagValidationError, validateDag, topologicalLayers, type DagSpec, type DagNode } from '../orchestrator/dag.js';
+import { DagValidationError, topologicalLayers, type DagSpec, type DagNode } from '../orchestrator/dag.js';
 import type { DagRunner } from '../orchestrator/dag-runner.js';
 import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationKind, EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
-import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
+import { ProgressHub } from '../orchestrator/progress.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
-import { DuplicateSkillError, SkillNotFoundError } from '../skills/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
 import type { CompetencyCheck, MentorshipStatus } from '../skills/mentor.js';
 import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
@@ -45,6 +43,7 @@ import { formatTenant, normalizeTenant } from '../realm/tenant.js';
 import { CommissionError, commissionId } from '../onboarding/types.js';
 import type { CommissionLedger } from '../onboarding/commission.js';
 import { composeBriefing } from '../onboarding/briefing.js';
+import { DomainError, type DomainErrorKind } from '../util/domain-error.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
 import { exportDiary, persistDiary } from '../diary/persist.js';
 import { DiaryUnsupportedError } from '../diary/types.js';
@@ -195,8 +194,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     const publicKey = deps.signer.publicKey;
     if (!publicKey) {
       // Loud, never empty: a verifier that saw `keys: []` could read "no keys to
-      // pin" as "nothing to check" and carry on trusting the roster.
-      await reply.code(501).type('application/json; charset=utf-8').send({
+      // pin" as "nothing to check" and carry on trusting the roster. The status
+      // is a server error, not 501: this route IS implemented, the process just
+      // cannot produce its key material. 501 would tell a client "this feature is
+      // not supported here", leaving it unable to tell a broken deployment from a
+      // version that never had the endpoint.
+      await reply.code(500).type('application/json; charset=utf-8').send({
         error: 'key-material-unavailable',
         detail: 'this process signs with a backend that does not export its public half; publish the root key through the deployment record instead',
       });
@@ -206,7 +209,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     try {
       key = publishRootKey(deps.signer.keyId, publicKey);
     } catch (error) {
-      await reply.code(501).type('application/json; charset=utf-8').send({
+      // Same reasoning as the branch above: the route exists and was asked a
+      // well-formed question; the server cannot answer it.
+      await reply.code(500).type('application/json; charset=utf-8').send({
         error: 'key-material-unavailable',
         detail: error instanceof Error ? error.message : String(error),
       });
@@ -231,8 +236,20 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     const requireBearer = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {
       const header = request.headers.authorization ?? '';
       const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
+      if (!presented) {
+        // RFC 6750 §3: a 401 from a bearer-protected resource carries a
+        // WWW-Authenticate challenge. With no credentials to reject there is no
+        // error code - the challenge alone tells the client to send a token.
+        await reply.code(401).header('WWW-Authenticate', 'Bearer').send({ error: 'unauthorized' });
+        return;
+      }
       if (!constantTimeEqual(presented, expected)) {
-        await reply.code(401).send({ error: 'unauthorized' });
+        // Credentials were presented and rejected: say so, so a client can tell
+        // "I forgot the token" from "my token is stale" without guessing.
+        await reply
+          .code(401)
+          .header('WWW-Authenticate', 'Bearer error="invalid_token"')
+          .send({ error: 'unauthorized' });
       }
     };
 
@@ -286,16 +303,21 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(typeof body.taskUrl === 'string' ? { taskUrl: body.taskUrl } : {}),
           ...(body.token !== undefined ? { token: body.token } : {}),
         });
-        // The stored credential never comes back out of this route, or any other.
-        const { token: _omit, ...echo } = entry;
-        return reply.code(201).send(echo);
+        // The registry already hands back an entry without the stored credential,
+        // so this route (and every other) echoes a token-free view by construction.
+        return reply.code(201).send(entry);
       } catch (e) {
         const detail = e instanceof Error ? e.message : String(e);
         // Classified by error identity, not by message shape: a transport failure
-        // is the peer's fault (502), while a card that was fetched and then
-        // refused (bad fealty, unsupported version, malformed JSON) is something
-        // the caller or the vassal can actually fix (400).
+        // is the peer's fault (502) — including a 200 whose body is not JSON,
+        // which is the peer failing to serve a card — while a card that was
+        // fetched and parsed but refused on content (bad fealty, unsupported
+        // version, a body that is not a card) is something the caller or the
+        // vassal can actually fix (400).
         if (e instanceof CardFetchError) return error(reply, 502, 'bad_gateway', detail);
+        // A-02: a revoked name cannot be brought back by re-registering, so this
+        // is a state conflict (409), not a malformed request (400).
+        if (e instanceof VassalRevokedError) return error(reply, 409, 'conflict', detail);
         return error(reply, 400, 'invalid_request', detail);
       }
     });
@@ -306,6 +328,17 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       const { name } = request.params as { name: string };
       if (!deps.registry.revoke(name)) return error(reply, 404, 'not_found', `unknown vassal: ${name}`);
       return { name, revoked: true };
+    });
+
+    // A-02: the one explicit way back. A revocation is sticky against
+    // re-registration; restoring the vassal is a separate, audited act. Unknown
+    // names and already-active vassals are 404 (nothing to restore).
+    app.post('/api/vassals/:name/reinstate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const { name } = request.params as { name: string };
+      if (!deps.registry.reinstate(name)) {
+        return error(reply, 404, 'not_found', `no revoked vassal named '${name}'`);
+      }
+      return { name, revoked: false };
     });
 
     if (deps.orchestrator) {
@@ -456,10 +489,6 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
 
         const raw = reply.raw;
-        const send = (event: string, data: unknown): void => {
-          raw.write(`event: ${event}\n`);
-          raw.write(`data: ${JSON.stringify(data)}\n\n`);
-        };
         reply.hijack();
         raw.writeHead(200, {
           'Content-Type': 'text/event-stream; charset=utf-8',
@@ -470,28 +499,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         raw.flushHeaders();
 
         if (stored) {
-          send('intent', stored);
+          raw.write('event: intent\n');
+          raw.write(`data: ${JSON.stringify(stored)}\n\n`);
           raw.end();
           return;
         }
 
-        const unsubscribe = deps.progressHub!.subscribe(id, (event: ProgressEvent) => {
-          send(event.type, event);
-          if (event.type === 'intent-finished') {
-            finish();
-          }
-        });
-        const keepalive = setInterval(() => raw.write(': ping\n\n'), 15_000);
-        const finish = (): void => {
-          clearInterval(keepalive);
-          unsubscribe();
-          raw.end();
-        };
-        raw.on('close', () => {
-          clearInterval(keepalive);
-          unsubscribe();
-          raw.destroy();
-        });
+        streamIntentProgress(raw, deps.progressHub!, id);
       });
 
       // E1.6: offline replay of one stored decision — participants, dispatch
@@ -1831,27 +1845,39 @@ function error(reply: FastifyReply, status: number, code: string, detail: string
   return reply.code(status).send({ error: code, detail });
 }
 
-/** Map kernel throws to HTTP status: unknown id → 404, already decided / wrong
- *  state → 409, anything else (bad stance, malformed request) → 400. */
-function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (thrown instanceof UnknownIntentError || /unknown (intent|escalation)/i.test(detail)) {
-    return error(reply, 404, 'not_found', detail);
-  }
-  if (/already (approved|rejected|decided)|only needs-driver|is (approved|rejected|completed|partial|failed|canceled)/i.test(detail)) {
-    return error(reply, 409, 'conflict', detail);
-  }
-  return error(reply, 400, 'invalid_request', detail);
+/** A domain failure names what went wrong; the transport decides what that is
+ *  worth. A refused precondition gate is a conflict. The commission path keeps
+ *  its own richer response shape (`mapCommissionError`), so `gate` only needs a
+ *  sane default here. */
+function statusForKind(kind: DomainErrorKind): { status: number; code: string } {
+  if (kind === 'not-found') return { status: 404, code: 'not_found' };
+  if (kind === 'conflict' || kind === 'gate') return { status: 409, code: 'conflict' };
+  return { status: 400, code: 'invalid_request' };
 }
 
-/** Map OrgError to HTTP status: unknown department or a member that does not
- *  hold a post here → 404, duplicate/exists → 409, anything else (bad
- *  name/mission/slug) → 400. */
+function messageOf(thrown: unknown): string {
+  return thrown instanceof Error ? thrown.message : String(thrown);
+}
+
+/** Classify an orchestrator / oversight failure. Read from the error type,
+ *  never from its message: rewriting "unknown intent" as "no such intent" must
+ *  not silently turn a 404 into a 400. */
+export function classifyKernelError(thrown: unknown): { status: number; code: string } {
+  return thrown instanceof DomainError ? statusForKind(thrown.kind) : { status: 400, code: 'invalid_request' };
+}
+
+export function classifyOrgError(thrown: unknown): { status: number; code: string } {
+  return thrown instanceof DomainError ? statusForKind(thrown.kind) : { status: 400, code: 'invalid_request' };
+}
+
+function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  const { status, code } = classifyKernelError(thrown);
+  return error(reply, status, code, messageOf(thrown));
+}
+
 function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (/unknown department|is not in the department/i.test(detail)) return error(reply, 404, 'not_found', detail);
-  if (/already|exists/i.test(detail)) return error(reply, 409, 'conflict', detail);
-  return error(reply, 400, 'invalid_request', detail);
+  const { status, code } = classifyOrgError(thrown);
+  return error(reply, status, code, messageOf(thrown));
 }
 
 /** Validate a YYYY-MM-DD date string. */
@@ -2009,12 +2035,22 @@ function mapRealmQueryError(reply: FastifyReply, thrown: unknown): FastifyReply 
   throw thrown;
 }
 
+/** Classify a connector-registry failure. A `SkillValidationError` is a bad
+ *  declaration (400); a typed domain failure carries its own kind; anything else
+ *  is the transport outcome the caller passed in — a failed handshake against a
+ *  real endpoint is 502, a local misuse 400. */
+export function classifyConnectorError(
+  thrown: unknown,
+  unreachable: 400 | 502,
+): { status: number; code: string } {
+  if (thrown instanceof SkillValidationError) return { status: 400, code: 'invalid_request' };
+  if (thrown instanceof DomainError) return statusForKind(thrown.kind);
+  return { status: unreachable, code: unreachable === 502 ? 'bad_gateway' : 'invalid_request' };
+}
+
 function mapConnectorError(reply: FastifyReply, thrown: unknown, unreachable: 400 | 502): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (thrown instanceof SkillValidationError) return error(reply, 400, 'invalid_request', detail);
-  if (/not found/i.test(detail)) return error(reply, 404, 'not_found', detail);
-  if (/already declared|is revoked/i.test(detail)) return error(reply, 409, 'conflict', detail);
-  return error(reply, unreachable, unreachable === 502 ? 'bad_gateway' : 'invalid_request', detail);
+  const { status, code } = classifyConnectorError(thrown, unreachable);
+  return error(reply, status, code, messageOf(thrown));
 }
 
 /** A connector record carries the bearer token it presents upstream. The driver
@@ -2031,21 +2067,17 @@ function redactConnector(
   };
 }
 
-/** Map SkillRegistry / MentorshipLedger throws to HTTP status: unknown id → 404,
- *  duplicate or a closed/locked state → 409, anything else (invalid spec,
- *  over-broad hardening, malformed competency check) → 400. */
+/** Classify a skill-catalogue / mentorship failure: unknown id → 404, a
+ *  duplicate or a closed/locked state → 409, an invalid spec or malformed
+ *  competency check → 400. The kind rides on the error type. */
+export function classifyCatalogueError(thrown: unknown): { status: number; code: string } {
+  if (thrown instanceof SkillValidationError) return { status: 400, code: 'invalid_request' };
+  return thrown instanceof DomainError ? statusForKind(thrown.kind) : { status: 400, code: 'invalid_request' };
+}
+
 function mapCatalogueError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
-  if (thrown instanceof SkillNotFoundError || /not found/i.test(detail)) {
-    return error(reply, 404, 'not_found', detail);
-  }
-  if (
-    thrown instanceof DuplicateSkillError ||
-    /already (exists|registered)|not an active provider|not open|cannot (harden|certify|teach)|is (deprecated|certified|failed|dismissed|uninstalled)/i.test(detail)
-  ) {
-    return error(reply, 409, 'conflict', detail);
-  }
-  return error(reply, 400, 'invalid_request', detail);
+  const { status, code } = classifyCatalogueError(thrown);
+  return error(reply, status, code, messageOf(thrown));
 }
 
 /** Map DiaryError to HTTP status: unsupported/no writable realm → 409,
@@ -2063,11 +2095,70 @@ function mapDiaryError(reply: FastifyReply, thrown: unknown): FastifyReply {
   return error(reply, 400, 'invalid_request', detail);
 }
 
-/** Length-safe constant-time comparison for bearer tokens. */
-function constantTimeEqual(presented: string, expected: string): boolean {
-  if (!presented) return false;
-  const a = Buffer.from(presented, 'utf8');
-  const b = Buffer.from(expected, 'utf8');
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
+/**
+ * Constant-time comparison for bearer tokens.
+ *
+ * Both sides are reduced to a fixed-length SHA-256 digest before comparing, so
+ * the comparison never short-circuits on a length mismatch. Returning early
+ * when the lengths differ (the obvious `Buffer.from(...).length !== ...` shape)
+ * is a length oracle: the response time tells an attacker how long the expected
+ * token is, which is exactly the half of the secret a length-safe compare is
+ * supposed to hide. `compare` is injectable so a test can assert the digest
+ * path is taken regardless of input lengths.
+ */
+export function constantTimeEqual(
+  presented: string,
+  expected: string,
+  compare: (a: Buffer, b: Buffer) => boolean = timingSafeEqual
+): boolean {
+  const a = createHash('sha256').update(presented, 'utf8').digest();
+  const b = createHash('sha256').update(expected, 'utf8').digest();
+  return compare(a, b);
+}
+
+/** The subset of a hijacked response socket the live SSE stream touches. */
+export interface EventStreamSocket {
+  readonly writableEnded: boolean;
+  readonly destroyed: boolean;
+  write(chunk: string): boolean;
+  end(): void;
+  destroy(): void;
+  on(event: 'close' | 'error', listener: (error?: Error) => void): unknown;
+}
+
+/**
+ * Wire a hijacked response to one intent's progress stream.
+ *
+ * Once `reply.hijack()` runs the socket is outside Fastify's error handling, so
+ * two hazards are handled here rather than by the framework: (1) a peer reset
+ * emits 'error', and an 'error' with no listener rethrows as an uncaught
+ * exception that takes the whole process down; (2) a write after the peer is
+ * gone (`writableEnded`/`destroyed`) throws. Teardown is idempotent so a normal
+ * finish and a later 'close' do not double-unsubscribe.
+ */
+export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, id: string): void {
+  let closed = false;
+  const write = (chunk: string): void => {
+    if (closed || raw.writableEnded || raw.destroyed) return;
+    raw.write(chunk);
+  };
+  const send = (event: string, data: unknown): void => {
+    write(`event: ${event}\n`);
+    write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+  const stop = (end: boolean): void => {
+    if (closed) return;
+    closed = true;
+    clearInterval(keepalive);
+    unsubscribe();
+    if (end) raw.end();
+    else raw.destroy();
+  };
+  const unsubscribe = hub.subscribe(id, event => {
+    send(event.type, event);
+    if (event.type === 'intent-finished') stop(true);
+  });
+  const keepalive = setInterval(() => write(': ping\n\n'), 15_000);
+  raw.on('close', () => stop(false));
+  raw.on('error', () => stop(false));
 }

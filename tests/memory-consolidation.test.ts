@@ -186,6 +186,56 @@ describe('memory consolidation P0', () => {
       consolidate([claim('a', 'p', 'v')], [], { reliability: { 'agent-a': 1.5 } }),
     ).toThrowError(/out of range/);
   });
+
+  it('#12 refuses to silently drop a different event that reuses an eventId', () => {
+    const store = new MemoryStore();
+    const first = claim('Zeus', 'runs-on', 'node', { eventId: 'evt-fixed' });
+    store.append(first);
+    store.append({ ...first }); // identical replay: the same assertion re-stated
+    expect(store.exportState().events).toHaveLength(1);
+
+    // Same id, different content is a producer bug, not a dedupe: the log must
+    // not erase it. Under the old code this returned silently.
+    expect(() =>
+      store.append(claim('Zeus', 'runs-on', 'bun', { eventId: 'evt-fixed' })),
+    ).toThrowError(/already exists with different content/);
+    expect(store.exportState().events).toHaveLength(1);
+  });
+
+  it('#13 stamps audit entries with the injected clock, not wall time', () => {
+    const audits: MemoryAuditEntry[] = [];
+    const frozen = new Date('2026-01-02T03:04:05.000Z');
+    const store = new MemoryStore(entry => audits.push(entry), () => frozen);
+
+    expect(() => store.read(OTHER, REALM)).toThrowError(MemoryBoundaryMessage(OTHER, REALM));
+    expect(audits).toHaveLength(1);
+    expect(audits[0].at).toBe(frozen.toISOString());
+  });
+
+  it('#14 resolves fact authors only within the named realm, never by scanning every domain', () => {
+    const store = new MemoryStore();
+    store.append(claim('Zeus', 'runs-on', 'node', { realmId: REALM, source: { agentId: 'author-a' } }));
+    store.append(claim('Zeus', 'runs-on', 'node', {
+      eventId: 'evt-b', realmId: OTHER, source: { agentId: 'author-b' },
+    }));
+    store.consolidateRealm(REALM);
+    store.consolidateRealm(OTHER);
+
+    const [inRealm] = store.facts(REALM, REALM);
+    const [elsewhere] = store.facts(OTHER, OTHER);
+    expect(store.authorsOfFacts(REALM, [inRealm.factId])).toEqual(['author-a']);
+    // A fact that lives only in the other realm is invisible here: no cross-domain
+    // scan to attribute it (the old realm-optional form searched every realm).
+    expect(store.authorsOfFacts(REALM, [elsewhere.factId])).toEqual([]);
+  });
+
+  it('#15 refuses a self-reported confidence outside 0..1 instead of letting it skew the mean', () => {
+    for (const bad of [-0.1, 1.5, Number.NaN]) {
+      expect(() =>
+        aggregateConfidence([claim('x', 'p', 'v', { confidence: bad })], {}),
+      ).toThrowError(/confidence out of range/);
+    }
+  });
 });
 
 function MemoryBoundaryMessage(reader: string, target: string): string {

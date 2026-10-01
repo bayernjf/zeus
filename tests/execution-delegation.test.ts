@@ -145,6 +145,19 @@ describe('deferred #33 one-time execution delegation primitive', () => {
     expect(await verifyAndConsumeExecutionDelegation(d, ctx({ vassal: 'loom' }))).toEqual({ ok: false, reason: 'replayed' });
   });
 
+  it('retires an expired nonce before a live one, so a valid delegation is never evicted early', () => {
+    const now = Date.now();
+    const ledger = new ExecutionDelegationNonceLedger(2);
+    // Oldest entry is still inside its validity window; a newer one has expired.
+    expect(ledger.consume('live-old', now + 60_000)).toBe(true);
+    expect(ledger.consume('expired', now - 1)).toBe(true);
+    expect(ledger.consume('live-new', now + 60_000)).toBe(true);
+
+    expect(ledger.isSpent('live-old')).toBe(true);
+    expect(ledger.isSpent('expired')).toBe(false);
+    expect(ledger.size).toBe(2);
+  });
+
   it('persists and restores the consumed-nonce ledger across a restart', () => {
     const ledger = new ExecutionDelegationNonceLedger();
     expect(ledger.consume('n1')).toBe(true);

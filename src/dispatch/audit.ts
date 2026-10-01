@@ -28,7 +28,11 @@ export const DEFAULT_AUDIT_KEEP = 5;
 export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}): AuditSink {
   const maxBytes = options.maxBytes ?? DEFAULT_AUDIT_MAX_BYTES;
   const keep = options.keep ?? DEFAULT_AUDIT_KEEP;
-  if (Number.isFinite(maxBytes) && maxBytes < 1) {
+  // `Infinity` is the documented opt-out; anything else must be a usable size.
+  // NaN used to pass the old `Number.isFinite(maxBytes) && maxBytes < 1` guard and
+  // then make the rotation branch unreachable, so a typo silently turned the bound
+  // off rather than failing at boot.
+  if (maxBytes !== Number.POSITIVE_INFINITY && !(Number.isFinite(maxBytes) && maxBytes >= 1)) {
     throw new Error(`audit maxBytes must be >= 1 or Infinity, got ${String(maxBytes)}`);
   }
   if (!Number.isInteger(keep) || keep < 1) {
@@ -62,7 +66,10 @@ export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}
         ensureAuditFile(path);
       }
     }
-    appendFileSync(path, line);
+    // `mode` only bites when the append creates the file - which is exactly the
+    // rotation race: another writer can retire the active file between our
+    // `ensureAuditFile` and this write, and a bare append would recreate it 0644.
+    appendFileSync(path, line, { mode: 0o600 });
   };
 }
 
@@ -93,8 +100,23 @@ export function rotateAuditLog(path: string, keep: number = DEFAULT_AUDIT_KEEP):
     const to = `${path}.${gen + 1}`;
     rmSync(to, { force: true }); // rename over an existing file fails on Windows
     renameSync(from, to);
+    // A generation written by a build that predates the 0600 create keeps its
+    // old mode through the rename; tighten it on the way through. Best effort:
+    // a generation that vanished underneath us is not a rotation failure.
+    try {
+      chmodSync(to, 0o600);
+    } catch {
+      /* concurrent rotation retired it */
+    }
   }
-  if (existsSync(path)) renameSync(path, `${path}.1`);
+  if (existsSync(path)) {
+    renameSync(path, `${path}.1`);
+    try {
+      chmodSync(`${path}.1`, 0o600);
+    } catch {
+      /* concurrent rotation retired it */
+    }
+  }
 }
 
 /** Filters for reading a persisted audit trail back. */
@@ -135,13 +157,39 @@ export function readAuditLog(
     const want = Math.min(size, readBytes);
     const offset = size - want;
     const buffer = Buffer.alloc(want);
-    if (want > 0) readSync(fd, buffer, 0, want, offset);
+    // readSync is allowed to return short (signal interruption, a file that
+    // shrank underneath us); a single call would silently parse a half-window.
+    let filled = 0;
+    while (filled < want) {
+      const read = readSync(fd, buffer, filled, want - filled, offset + filled);
+      if (read === 0) break;
+      filled += read;
+    }
+    const bytes = buffer.subarray(0, filled);
+    const window = bytes.toString('utf8');
 
-    const lines = buffer.toString('utf8').split('\n');
-    if (offset > 0 && lines.length > 1) lines.shift();
+    const lines = window.split('\n');
+    // Drop the first line only when the window did not begin on a line boundary:
+    // then it is necessarily partial, and JSON.parse would report a truncated
+    // read as corruption. The old `lines.length > 1` guard left the single-line
+    // case behind, so a window holding one partial line threw instead of being
+    // treated as a truncation.
+    const droppedFirst = offset > 0 && !startsAtLineBoundary(fd, offset);
+
+    // Byte offset of each line's first byte within the window, read off the buffer
+    // itself: a window that starts mid-sequence decodes its leading bytes to one
+    // replacement character, so summing re-encoded string lengths would drift.
+    const lineStarts = [0];
+    for (let i = 0; i < bytes.length; i += 1) if (bytes[i] === 0x0a) lineStarts.push(i + 1);
 
     const entries: AuditEntry[] = [];
-    for (const [index, line] of lines.entries()) {
+    // Report each line's own byte offset. The window origin was used for every
+    // line, pointing an operator at a good record while the corrupt one sat
+    // further down the file.
+    for (let i = 0; i < lines.length; i += 1) {
+      if (droppedFirst && i === 0) continue;
+      const line = lines[i];
+      const at = offset + lineStarts[i];
       const text = line.trim();
       if (text === '') continue;
       let parsed: unknown;
@@ -149,11 +197,11 @@ export function readAuditLog(
         parsed = JSON.parse(text);
       } catch (error) {
         throw new AuditLogError(
-          `unreadable audit record at byte ${offset + 1} of ${path}: ${error instanceof Error ? error.message : String(error)}`,
+          `unreadable audit record at byte ${at + 1} of ${path}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
       if (!isAuditEntry(parsed)) {
-        throw new AuditLogError(`audit record at byte ${offset + 1} of ${path} is missing ts/vassal/decision`);
+        throw new AuditLogError(`audit record at byte ${at + 1} of ${path} is missing ts/vassal/decision`);
       }
       entries.push(parsed);
     }
@@ -166,6 +214,13 @@ export function readAuditLog(
   } finally {
     closeSync(fd);
   }
+}
+
+/** True when `offset` is the first byte of a line, i.e. the byte before it is a
+ *  newline - so the window's first line is complete and must not be dropped. */
+function startsAtLineBoundary(fd: number, offset: number): boolean {
+  const previous = Buffer.alloc(1);
+  return readSync(fd, previous, 0, 1, offset - 1) === 1 && previous[0] === 0x0a;
 }
 
 function isAuditEntry(value: unknown): value is AuditEntry {
@@ -191,5 +246,18 @@ export function revokeAuditBridge(audit: AuditSink): (name: string, at: string) 
       vassal: name,
       decision: 'vassal-revoked',
       detail: 'vassal access revoked; demoted to guest/blocked, no further tokens issued',
+    });
+}
+
+/** A-02: bridge the explicit restore of a revoked vassal into the same trail.
+ *  Re-registration no longer clears a revocation, so this is the only event
+ *  that can show a revocation was undone. Wire as VassalRegistry's onReinstate. */
+export function reinstateAuditBridge(audit: AuditSink): (name: string, at: string) => void {
+  return (name, at) =>
+    audit({
+      ts: at,
+      vassal: name,
+      decision: 'vassal-reinstated',
+      detail: 'vassal access restored by an explicit reinstate; not a side effect of re-registration',
     });
 }

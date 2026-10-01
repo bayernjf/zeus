@@ -67,6 +67,16 @@ describe('E2.3 skill install / harden / uninstall', () => {
     expect(again.hardening!.constraints).toEqual({ readOnly: true, maxRuntimeMs: 1000 });
   });
 
+  it('keeps the effective claims when a hardening states only constraints', () => {
+    const registry = new SkillRegistry(now);
+    registry.register(spec());
+    registry.harden('code-review', { permissions: ['realm:read'], constraints: { readOnly: true } });
+
+    const boundsOnly = registry.harden('code-review', { constraints: { maxRuntimeMs: 1000 } });
+    expect(boundsOnly.hardening!.permissions).toEqual(['realm:read']);
+    expect(boundsOnly.hardening!.constraints).toEqual({ readOnly: true, maxRuntimeMs: 1000 });
+  });
+
   it('hardening cannot grant rights the skill did not hold', () => {
     const registry = new SkillRegistry(now);
     registry.register(spec());

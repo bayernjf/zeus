@@ -9,6 +9,7 @@ import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import { Semaphore, type SlotRelease } from './semaphore.js';
 import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
 import type { DecisionBackend } from '../decision/types.js';
+import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
 import type {
   BranchOutcome,
@@ -18,7 +19,6 @@ import type {
   DriverResolution,
   FanOutRequest,
   FanOutResult,
-  FanOutStatus,
   GovernanceRefusal,
   SkillGovernor,
   TargetLookup,
@@ -88,7 +88,18 @@ export type OrchestratorOptions = {
   onDiverted?: (entry: { skill: string; realm: FanOutRequest['realm']; from: string; to: string; at: string }) => void;
 };
 
-export class UnknownIntentError extends Error {}
+export class UnknownIntentError extends DomainError {
+  constructor(message: string) {
+    super(message, 'not-found');
+  }
+}
+
+/** F2: a client-supplied intentId was reused for a materially different request. */
+export class IntentRequestConflictError extends DomainError {
+  constructor(message: string) {
+    super(message, 'conflict');
+  }
+}
 
 /** E5.3 persisted shape of the orchestrator's in-memory state. */
 export type OrchestratorSnapshot = {
@@ -105,6 +116,25 @@ export type OrchestratorSnapshot = {
 export class Orchestrator {
   private intents = new Map<string, FanOutResult>();
   private requests = new Map<string, FanOutRequest>();
+  /**
+   * A-11: intents whose fan-out is still running, registered before the first
+   * branch is dispatched so a cancel arriving mid-flight resolves instead of
+   * throwing UnknownIntentError. Held apart from `intents` (settled results) so
+   * a replay never reads a half-built result and nothing partial is persisted.
+   * Settled branches are published into the placeholder as they come back.
+   */
+  private inFlight = new Map<string, FanOutResult>();
+  /**
+   * F2 single-flight: fan-outs in flight keyed by their client-supplied intentId.
+   * Without this, two concurrent calls carrying the same key both miss the result
+   * cache (it is written only when the fan-out settles) and dispatch every branch
+   * twice. The stored request lets the second caller be checked against the first
+   * before it joins.
+   */
+  private pending = new Map<string, { request: FanOutRequest; work: Promise<FanOutResult> }>();
+  /** E6.3 single-flight: resumes in flight keyed by `intentId::vassal`, so two
+   *  approvals of the same escalation cannot re-dispatch the branch twice. */
+  private resuming = new Map<string, Promise<FanOutResult>>();
   private readonly slots: Semaphore | null;
 
   constructor(
@@ -120,11 +150,34 @@ export class Orchestrator {
 
   async fanOut(request: FanOutRequest): Promise<FanOutResult> {
     // F2 idempotency: a known intent replays its stored result with zero dispatch.
+    // A key already in flight joins that fan-out instead of starting a second one,
+    // and either way the incoming request must agree with the one already on
+    // record — a reused key naming a different skill/params/realm is a client bug,
+    // not a replay, and silently answering it with the old result would hide it.
     if (request.intentId) {
       const cached = this.intents.get(request.intentId);
-      if (cached) return { ...cached, replayed: true };
+      if (cached) {
+        this.assertSameRequest(request, this.requests.get(request.intentId));
+        return { ...structuredClone(cached), replayed: true };
+      }
+      const inFlight = this.pending.get(request.intentId);
+      if (inFlight) {
+        this.assertSameRequest(request, inFlight.request);
+        return inFlight.work.then(result => ({ ...structuredClone(result), replayed: true }));
+      }
     }
 
+    const work = this.fanOutNew(request);
+    if (request.intentId === undefined) return work;
+    this.pending.set(request.intentId, { request, work });
+    try {
+      return await work;
+    } finally {
+      this.pending.delete(request.intentId);
+    }
+  }
+
+  private async fanOutNew(request: FanOutRequest): Promise<FanOutResult> {
     const intentId = request.intentId ?? this.newIntentId();
     const runId = request.runId ?? this.newRunId();
     const explicit = request.vassals && request.vassals.length > 0;
@@ -199,18 +252,42 @@ export class Orchestrator {
         this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
       }
     } else {
-      const branches = await Promise.all(
-        names.map((name, i) => {
-          const entry = diversion?.plan[i];
-          const exhaustedNote =
-            entry && diversion?.exhausted ? formatExhausted(diversion.exhausted) : null;
-          return this.runTrackedBranch(
-            name, request, runId, intentId, 0,
-            entry?.divertedFrom ?? null,
-            exhaustedNote,
-          );
-        })
-      );
+      // A-11: publish the intent before the first branch is dispatched so a
+      // cancel arriving during the fan-out finds it. Previously the intent was
+      // only stored once every branch had settled, so an in-flight cancel always
+      // threw UnknownIntentError and degraded to an after-the-fact compensation.
+      // The placeholder's status is never surfaced (replay/persistence read only
+      // `intents`); it exists so cancelIntent has branches to act on.
+      this.inFlight.set(intentId, {
+        intentId, runId, skill: request.skill, realm: request.realm,
+        ...(request.realmId ? { realmId: request.realmId } : {}),
+        branches: names.map(name => ({
+          vassal: name,
+          runId: this.branchRunId(runId, name, 0),
+          ok: false,
+          events: [],
+        })),
+        stream: [], positions: [], decision: aggregate([], request.aggregation),
+        conflicts: [], status: 'failed', createdAt: this.now().toISOString(),
+      });
+
+      let branches: BranchOutcome[];
+      try {
+        branches = await Promise.all(
+          names.map((name, i) => {
+            const entry = diversion?.plan[i];
+            const exhaustedNote =
+              entry && diversion?.exhausted ? formatExhausted(diversion.exhausted) : null;
+            return this.runTrackedBranch(
+              name, request, runId, intentId, 0,
+              entry?.divertedFrom ?? null,
+              exhaustedNote,
+            );
+          })
+        );
+      } finally {
+        this.inFlight.delete(intentId);
+      }
       const positions = extractPositions(branches);
       const decision = aggregate(positions, request.aggregation);
       const conflicts = detectConflicts(positions, decision);
@@ -309,13 +386,26 @@ export class Orchestrator {
    * other branches are untouched; the new branch replaces the old one.
    */
   async resumeBranch(intentId: string, vassal: string, params: Record<string, unknown>): Promise<FanOutResult> {
+    const key = `${intentId}::${vassal}`;
+    const inFlight = this.resuming.get(key);
+    if (inFlight) return inFlight.then(result => structuredClone(result));
+    const work = this.resumeBranchNew(intentId, vassal, params);
+    this.resuming.set(key, work);
+    try {
+      return await work;
+    } finally {
+      this.resuming.delete(key);
+    }
+  }
+
+  private async resumeBranchNew(intentId: string, vassal: string, params: Record<string, unknown>): Promise<FanOutResult> {
     const previous = this.intents.get(intentId);
     const original = this.requests.get(intentId);
     if (!previous || !original) throw new UnknownIntentError(`unknown intent: ${intentId}`);
     if (!previous.branches.some(branch => branch.vassal === vassal)) {
       throw new Error(`intent ${intentId} has no branch for vassal ${vassal}`);
     }
-    const resumeNo = previous.branches.filter(branch => branch.vassal === vassal).length;
+    const resumeNo = this.nextResumeNo(previous, vassal);
     const resumeRequest: FanOutRequest = { ...original, params: { ...original.params, ...params } };
     const branch = await this.runTrackedBranch(vassal, resumeRequest, previous.runId, intentId, resumeNo);
     const others = previous.branches.filter(existing => existing.vassal !== vassal);
@@ -333,34 +423,115 @@ export class Orchestrator {
     return structuredClone(judged);
   }
 
-  /** F3: cancel every non-terminal branch of an intent; terminal branches are skipped. */
+  /**
+   * F3: cancel every non-terminal branch of an intent; terminal branches are skipped.
+   *
+   * A-11: an intent is reachable from the moment its first branch is dispatched
+   * (see `inFlight`), not only once the whole fan-out settles. Settled branches
+   * are cancelled through the dispatcher and the outcome is written back into the
+   * branch state and the recomputed aggregate, so a cancelled stance stops
+   * counting instead of surviving into the next `resumeBranch` recompute. A
+   * branch whose stream has not ended yet exposes no task id and is not
+   * cancellable here: aborting a live outbound request needs an AbortSignal
+   * through the dispatcher port (design-fan-out §7, still deferred).
+   */
   async cancelIntent(intentId: string): Promise<{ intentId: string; results: CancelBranchResult[] }> {
-    const result = this.intents.get(intentId);
-    if (!result) throw new UnknownIntentError(`unknown intent: ${intentId}`);
+    const settled = this.intents.get(intentId);
+    const source = settled ?? this.inFlight.get(intentId);
+    if (!source) throw new UnknownIntentError(`unknown intent: ${intentId}`);
 
-    const cancellable = result.branches.filter(
-      branch => branch.ok && branch.taskId && branch.state && !TERMINAL_STATES.has(branch.state)
+    const cancellable = source.branches.filter(
+      branch => branch.ok && branch.taskId && !isTerminalState(branch.state)
     );
-    const results = await Promise.all(
-      cancellable.map(async branch => {
-        try {
-          await this.dispatcher.cancel(branch.vassal, branch.taskId!);
-          return { vassal: branch.vassal, taskId: branch.taskId!, canceled: true } satisfies CancelBranchResult;
-        } catch (error) {
-          return {
-            vassal: branch.vassal,
-            taskId: branch.taskId!,
-            canceled: false,
-            reason: error instanceof Error ? error.message : 'cancel failed',
-          } satisfies CancelBranchResult;
-        }
-      })
-    );
+    const results = await Promise.all(cancellable.map(branch => this.cancelBranch(branch)));
+    if (settled) this.writeBackCancellations(intentId, settled, results);
     return { intentId, results };
+  }
+
+  /** Cancel one branch's task; a successful cancel marks the branch cancelled. */
+  private async cancelBranch(branch: BranchOutcome): Promise<CancelBranchResult> {
+    const taskId = branch.taskId!;
+    try {
+      await this.dispatcher.cancel(branch.vassal, taskId);
+      branch.ok = false;
+      branch.state = 'canceled';
+      branch.reason = 'canceled by the driver';
+      return { vassal: branch.vassal, taskId, canceled: true };
+    } catch (error) {
+      return {
+        vassal: branch.vassal,
+        taskId,
+        canceled: false,
+        reason: error instanceof Error ? error.message : 'cancel failed',
+      };
+    }
+  }
+
+  /**
+   * A-11: re-derive the stored result after branches were cancelled, so the
+   * cancelled stance leaves the aggregate and the status reflects the change.
+   * No-op when nothing was actually cancelled.
+   */
+  private writeBackCancellations(intentId: string, settled: FanOutResult, results: CancelBranchResult[]): void {
+    if (!results.some(result => result.canceled)) return;
+    this.intents.set(
+      intentId,
+      recomputeResult(settled, settled.branches, this.requests.get(intentId)?.aggregation, () => this.now())
+    );
+  }
+
+  /**
+   * A-11: expose a settled branch (with its task id) to `cancelIntent` while its
+   * siblings are still running. No-op for a finalized fan-out or a branch that
+   * never got a task id.
+   */
+  private publishBranch(intentId: string, branch: BranchOutcome): void {
+    const live = this.inFlight.get(intentId);
+    if (!live || !branch.ok || !branch.taskId) return;
+    const index = live.branches.findIndex(entry => entry.runId === branch.runId);
+    if (index !== -1) live.branches[index] = branch;
   }
 
   private branchRunId(parentRunId: string, vassal: string, resumeNo: number): string {
     return resumeNo > 0 ? `${parentRunId}:${vassal}:resume${resumeNo}` : `${parentRunId}:${vassal}`;
+  }
+
+  /**
+   * The next resume ordinal for a branch. The stored branch's runId carries the
+   * last one (`…:vassal:resumeN`), so counting replacements is not enough: the
+   * replaced branch is the only one kept, which is why the previous count always
+   * returned 1 and a second resume reused the first one's run id — overwriting
+   * the metric entry, colliding in the replay timeline and mis-targeting cancels.
+   */
+  private nextResumeNo(previous: FanOutResult, vassal: string): number {
+    const base = `${previous.runId}:${vassal}`;
+    const prefix = `${base}:resume`;
+    let highest = 0;
+    for (const branch of previous.branches) {
+      if (branch.vassal !== vassal || !branch.runId.startsWith(prefix)) continue;
+      const ordinal = Number(branch.runId.slice(prefix.length));
+      if (Number.isInteger(ordinal)) highest = Math.max(highest, ordinal);
+    }
+    return highest + 1;
+  }
+
+  /**
+   * F2: reject a reused idempotency key that names a different request, instead
+   * of answering it with the first request's result. Compared on the fields that
+   * select which work runs and where it runs — `skill`, `params`, `realm`,
+   * `realmId`, `vassals`. Tuning knobs (`aggregation`, `branchTimeoutMs`,
+   * `realmHits`) do not change the dispatched work and a replay may omit them;
+   * `runId` and the key itself are transport bookkeeping.
+   */
+  private assertSameRequest(incoming: FanOutRequest, stored: FanOutRequest | undefined): void {
+    if (!stored) return;
+    const fields: Array<keyof FanOutRequest> = ['skill', 'params', 'realm', 'realmId', 'vassals'];
+    const differing = fields.filter(field => !sameValue(incoming[field], stored[field]));
+    if (differing.length > 0) {
+      throw new IntentRequestConflictError(
+        `intent ${incoming.intentId} is already registered with a different ${differing.join(', ')}; an idempotency key must identify one request`,
+      );
+    }
   }
 
   /** runBranch plus E1.7 metric lifecycle bookkeeping. */
@@ -396,20 +567,28 @@ export class Orchestrator {
       };
     }
 
-    metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
-    this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
-    // #9: record a diversion decision alongside the branch start so the operator
-    // can trace from→to on the audit/event spine (design §4.5).
-    if (divertedFrom) {
-      this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
-      this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
-    }
+    // A-10: everything after a successful acquire lives inside this try, so a
+    // throw from the start-of-branch bookkeeping (metrics, event emit, or the
+    // onDiverted hook — boot wires onProgress to SSE broadcast + audit write +
+    // memory consolidation) still returns the lease. When release() only guarded
+    // runBranch, one such throw stranded the slot for the process lifetime.
     let branch: BranchOutcome;
     try {
+      metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
+      this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
+      // #9: record a diversion decision alongside the branch start so the operator
+      // can trace from→to on the audit/event spine (design §4.5).
+      if (divertedFrom) {
+        this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
+        this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
+      }
       branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
     } finally {
       release();
     }
+    // A-11: make the settled branch (now carrying its task id) visible to a
+    // cancel that arrives before the sibling branches finish.
+    this.publishBranch(intentId, branch);
     metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
     this.emit({
       type: 'branch-ended', intentId, runId: branchRunId, vassal,
@@ -440,16 +619,29 @@ export class Orchestrator {
         reason: error instanceof Error ? error.message : 'dispatch rejected',
       }));
 
+    const timeoutMs = request.branchTimeoutMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const settled = request.branchTimeoutMs
+      const settled = timeoutMs
         ? await Promise.race([
             pending.then(outcome => ({ kind: 'settled' as const, outcome })),
-            timeout(request.branchTimeoutMs).then(() => ({ kind: 'timeout' as const })),
+            new Promise<{ kind: 'timeout' }>(resolve => {
+              timer = setTimeout(() => resolve({ kind: 'timeout' }), timeoutMs);
+            }),
           ])
         : await pending.then(outcome => ({ kind: 'settled' as const, outcome }));
 
       if (settled.kind === 'timeout') {
-        return { vassal, runId: branchRunId, ok: false, events: [], timedOut: true, reason: `branch timed out after ${request.branchTimeoutMs}ms` };
+        // Giving up on the wait does not cancel the outbound request, and the
+        // timed-out branch carries no task id — so nothing the driver can reach
+        // would ever cancel the vassal-side task. Settle the late result in the
+        // background and best-effort cancel it, instead of leaving an orphan
+        // running against a vassal the kernel has already stopped accounting for.
+        void pending.then(outcome => {
+          if (!outcome.ok) return;
+          void this.dispatcher.cancel(vassal, outcome.task.id).catch(() => {});
+        });
+        return { vassal, runId: branchRunId, ok: false, events: [], timedOut: true, reason: `branch timed out after ${timeoutMs}ms` };
       }
       const outcome = settled.outcome;
       if (outcome.ok) {
@@ -461,6 +653,10 @@ export class Orchestrator {
       return { vassal, runId: branchRunId, ok: false, events: [], reason: outcome.reason };
     } catch (error) {
       return { vassal, runId: branchRunId, ok: false, events: [], reason: error instanceof Error ? error.message : 'branch failed' };
+    } finally {
+      // The losing branch of `Promise.race` is not cancelled by the race, so an
+      // uncleared timer kept the event loop alive after the intent had settled.
+      if (timer !== undefined) clearTimeout(timer);
     }
   }
 
@@ -520,14 +716,36 @@ export class Orchestrator {
   }
 }
 
-function timeout(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+/** Order-insensitive deep equality for JSON-shaped values (idempotency guard). */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  return stableStringify(a) === stableStringify(b);
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'undefined';
+}
+
+/** A-11: a branch is terminal when it settled on a final state; a branch with no
+ *  state yet (or cancelled) is still cancelable, which is why this tolerates
+ *  `undefined` instead of demanding a state. */
+function isTerminalState(state: BranchOutcome['state']): boolean {
+  return state !== undefined && TERMINAL_STATES.has(state);
 }
 
 /** Map a branch outcome to an E1.7 metric category. */
 function outcomeOf(branch: BranchOutcome): BranchOutcomeKind {
   if (branch.timedOut) return 'timeout';
-  if (!branch.ok) return 'failed';
   if (branch.state === 'canceled') return 'canceled';
+  if (!branch.ok) return 'failed';
   return 'completed';
 }

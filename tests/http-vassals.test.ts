@@ -122,6 +122,18 @@ describe('G1 vassal onboarding HTTP', () => {
     expect((await res.json()).detail).toContain(unreachable);
   });
 
+  // A peer answering 200 with something that is not a card is the same class of
+  // gateway failure as a 5xx: the caller's cardUrl was fine, the peer's answer
+  // was not a card. It must not be reported as a malformed request.
+  it('returns 502 when the card URL answers 200 with a body that is not JSON', async () => {
+    const app = await server(
+      async () => new Response('<html>maintenance</html>', { status: 200, headers: { 'content-type': 'text/html' } })
+    );
+    const res = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL } });
+    expect(res.statusCode).toBe(502);
+    expect((await res.json()).error).toBe('bad_gateway');
+  });
+
   it('rejects a card without fealty', async () => {
     const guest = card();
     delete guest['x-zeus-fealty'];
@@ -144,6 +156,28 @@ describe('G1 vassal onboarding HTTP', () => {
     expect(body.snapshot.entries[0].status).toBe('revoked');
 
     const again = await app.inject({ method: 'DELETE', url: '/api/vassals/vassal-1', headers: AUTH });
+    expect(again.statusCode).toBe(404);
+  });
+
+  // A-02: re-registering used to rebuild the entry with revoked:false, so one
+  // POST undid a revocation and could re-point where dispatch went.
+  it('refuses to re-register a revoked vassal and restores it only via reinstate (A-02)', async () => {
+    const { app, registry } = await serverWithRegistry(fetchFor({ [CARD_URL]: card() }));
+    await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL } });
+    await app.inject({ method: 'DELETE', url: '/api/vassals/vassal-1', headers: AUTH });
+
+    const reRegister = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL } });
+    expect(reRegister.statusCode).toBe(409);
+    expect((await reRegister.json()).error).toBe('conflict');
+    expect(registry.get('vassal-1')).toBeUndefined();
+
+    const reinstate = await app.inject({ method: 'POST', url: '/api/vassals/vassal-1/reinstate', headers: AUTH });
+    expect(reinstate.statusCode).toBe(200);
+    expect((await reinstate.json()).revoked).toBe(false);
+    expect(registry.get('vassal-1')).toBeDefined();
+
+    // an already-active (or unknown) name is not something to restore
+    const again = await app.inject({ method: 'POST', url: '/api/vassals/vassal-1/reinstate', headers: AUTH });
     expect(again.statusCode).toBe(404);
   });
 });

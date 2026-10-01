@@ -1,4 +1,4 @@
-import { consolidate } from './consolidate.js';
+import { consolidate, stableStringify } from './consolidate.js';
 import { RecallIndex } from './recall.js';
 import { verifyMemoryState } from './reconcile.js';
 import type { MemoryConsistencyViolation } from './reconcile.js';
@@ -23,6 +23,20 @@ const CORRECTION_PENALTY = 0.15;
 export class MemoryBoundaryError extends Error {  constructor(message: string) {
     super(message);
     this.name = 'MemoryBoundaryError';
+  }
+}
+
+/**
+ * The append-only log already holds a different event under this id. An id is
+ * spent once: a replay of identical content is the same assertion re-stated
+ * (a no-op), but the same id carrying different content is a producer bug that
+ * the log must not swallow - dropping it would erase an event from a log the
+ * design promises never loses one.
+ */
+export class MemoryEventConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MemoryEventConflictError';
   }
 }
 
@@ -54,7 +68,13 @@ export class MemoryStore {
               private readonly options: { embedder?: Embedder } = {}) {}
 
   append(event: MemoryEvent): void {
-    if (this.events.some(e => e.eventId === event.eventId)) return;
+    const existing = this.events.find(e => e.eventId === event.eventId);
+    if (existing) {
+      if (stableStringify(existing) === stableStringify(event)) return;
+      throw new MemoryEventConflictError(
+        `event ${event.eventId} already exists with different content`,
+      );
+    }
     this.events.push(event);
   }
 
@@ -62,7 +82,7 @@ export class MemoryStore {
   appendFromRealm(writerRealmId: string, event: MemoryEvent): void {
     if (writerRealmId !== event.realmId) {
       this.audit({
-        at: new Date().toISOString(),
+        at: this.now().toISOString(),
         reason: 'cross-realm-append',
         readerRealmId: writerRealmId,
         targetRealmId: event.realmId,
@@ -77,7 +97,7 @@ export class MemoryStore {
   read(readerRealmId: string, targetRealmId: string, runId?: string): MemoryEvent[] {
     if (readerRealmId !== targetRealmId) {
       this.audit({
-        at: new Date().toISOString(),
+        at: this.now().toISOString(),
         reason: 'cross-realm-read',
         readerRealmId,
         targetRealmId,
@@ -94,7 +114,7 @@ export class MemoryStore {
   facts(readerRealmId: string, targetRealmId: string): FactRecord[] {
     if (readerRealmId !== targetRealmId) {
       this.audit({
-        at: new Date().toISOString(),
+        at: this.now().toISOString(),
         reason: 'cross-realm-read',
         readerRealmId,
         targetRealmId,
@@ -235,16 +255,17 @@ export class MemoryStore {
     return Math.max(0, base - CORRECTION_PENALTY * count);
   }
 
-  /** Distinct authors of the named facts, resolved via provenance events.
-   *  Searches every realm when realmId is omitted. */
-  authorsOfFacts(factIds: string[], realmId?: string): string[] {
+  /**
+   * Distinct authors of the named facts in one realm, resolved via their
+   * provenance events. Scoped to a single realm on purpose: an optional realm
+   * used to scan every domain, which is exactly the cross-realm read the
+   * boundary refuses everywhere else, and it left no audit trail.
+   */
+  authorsOfFacts(realmId: string, factIds: string[]): string[] {
     const wanted = new Set(factIds);
-    const realmPairs: Array<[string, FactRecord[]]> = realmId
-      ? [[realmId, this.factsByRealm.get(realmId) ?? []]]
-      : [...this.factsByRealm.entries()];
+    const facts = this.factsByRealm.get(realmId) ?? [];
     const eventIds = new Set(
-      realmPairs.flatMap(([, facts]) =>
-        facts.filter(f => wanted.has(f.factId)).flatMap(f => f.provenance)),
+      facts.filter(f => wanted.has(f.factId)).flatMap(f => f.provenance),
     );
     return [...new Set(
       this.events.filter(e => eventIds.has(e.eventId)).map(e => e.source.agentId),

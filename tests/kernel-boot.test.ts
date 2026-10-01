@@ -10,12 +10,17 @@ import type { DagRunner } from '../src/orchestrator/dag-runner.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
-import { bootKernel, KernelBootError, resolveAuditConfig, resolveConcurrencyConfig } from '../src/state/boot.js';
+import {
+  bootKernel,
+  concurrencyBootOptions,
+  KernelBootError,
+  resolveAuditConfig,
+  resolveConcurrencyConfig,
+} from '../src/state/boot.js';
 import { DEFAULT_AUDIT_KEEP, DEFAULT_AUDIT_MAX_BYTES, readAuditLog } from '../src/dispatch/audit.js';
 import { kernelStats } from '../src/state/stats.js';
 import {
   FileKernelStateStore,
-  KernelStateError,
   collectKernelState,
 } from '../src/state/kernel-state.js';
 
@@ -129,10 +134,14 @@ describe('E5.3 bootKernel assembly', () => {
     expect(replay.status).toBe('completed');
   });
 
-  it('rejects a corrupt snapshot during boot', async () => {
+  it('rejects a corrupt snapshot during boot as a configuration fact, not a bug', async () => {
     const file = join(dir, 'bad.json');
     await writeFile(file, '{ not json', 'utf8');
-    await expect(bootKernel({ stateFile: file })).rejects.toBeInstanceOf(KernelStateError);
+    // KernelBootError, not the underlying KernelStateError: a corrupt snapshot is
+    // something the operator must act on, so it belongs on serve.ts's
+    // refused-to-start path (one line naming what to fix) rather than a stack trace.
+    await expect(bootKernel({ stateFile: file })).rejects.toBeInstanceOf(KernelBootError);
+    await expect(bootKernel({ stateFile: file })).rejects.toThrow(/kernel state file is unusable/);
   });
 
   it('writes the audit spine to JSONL and still forwards each entry to the caller sink', async () => {
@@ -227,6 +236,25 @@ describe('E1.5 resolveConcurrencyConfig', () => {
       ZEUS_MAX_CONCURRENT_BRANCHES: '8',
       ZEUS_BRANCH_QUEUE_LIMIT: '0',
     })).toEqual({ maxConcurrentBranches: 8, branchQueueLimit: 0 });
+  });
+
+  it('hands every resolved concurrency field to the kernel, not just the two oldest (A-01)', () => {
+    const resolved = resolveConcurrencyConfig({
+      ZEUS_MAX_CONCURRENT_BRANCHES: '8',
+      ZEUS_BRANCH_QUEUE_LIMIT: '2',
+      ZEUS_MAX_CONCURRENT_PER_VASSAL: '1',
+    });
+    expect(resolved).toEqual({
+      maxConcurrentBranches: 8,
+      branchQueueLimit: 2,
+      maxConcurrentPerVassal: 1,
+    });
+    // Assembly must not reproduce the resolved config by hand: that copy is how
+    // the per-vassal cap passed boot validation and never reached the
+    // orchestrator, leaving the operator with a cap that did not exist.
+    expect(concurrencyBootOptions(resolved)).toEqual(resolved);
+    // An unset field stays absent rather than arriving as an explicit undefined.
+    expect(concurrencyBootOptions({})).toEqual({});
   });
 
   it('fails the boot on a cap it would otherwise silently ignore', () => {

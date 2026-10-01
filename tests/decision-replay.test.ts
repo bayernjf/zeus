@@ -29,6 +29,15 @@ function statusEvent(taskId: string, state: TaskState, timestamp?: string): A2AE
   };
 }
 
+function artifactEvent(taskId: string, artifactId: string): A2AEvent {
+  return {
+    kind: 'artifact-update',
+    taskId,
+    contextId: 'ctx',
+    artifact: { artifactId, name: 'verdict', parts: [{ kind: 'data', data: { stance: 'go' } }] },
+  };
+}
+
 function stanceResult(vassal: string, stance: string, state: TaskState = 'completed'): DispatchResult {
   const task: Task = {
     kind: 'task',
@@ -310,5 +319,58 @@ describe('E1.6 offline decision replay', () => {
     expect(replay.decision.conclusion).toBe('go');
     // replaying the same immutable record twice yields identical timelines
     expect(replayDecision(structuredClone(resolved)).timeline).toEqual(replay.timeline);
+  });
+
+  it('inherits the last known timestamp for artifact events so the timeline has no gap', () => {
+    const result: FanOutResult = {
+      intentId: 'i',
+      runId: 'r',
+      skill: 's',
+      realm: 'personal',
+      branches: [{ vassal: 'loom', runId: 'run-loom', taskId: 't-loom', ok: true, state: 'working', events: [] }],
+      stream: [
+        {
+          source: { vassal: 'loom', runId: 'run-loom', taskId: 't-loom' },
+          event: statusEvent('t-loom', 'working', '2026-01-01T00:00:00.000Z'),
+        },
+        {
+          source: { vassal: 'loom', runId: 'run-loom', taskId: 't-loom' },
+          event: artifactEvent('t-loom', 'a1'),
+        },
+      ],
+      positions: [],
+      decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'ok' },
+      conflicts: [],
+      status: 'completed',
+      createdAt: 't0',
+    };
+
+    const replay = replayDecision(result);
+    const artifactStep = replay.timeline.find(
+      step => step.kind === 'branch-event' && step.detail.event === 'artifact-update',
+    )!;
+    expect(artifactStep.at).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('renders without throwing when the recorded input is not serializable (cycle)', () => {
+    const params: Record<string, unknown> = { ticket: 'OPS-1' };
+    params.self = params;
+    const result: FanOutResult = {
+      intentId: 'i',
+      runId: 'r',
+      skill: 's',
+      realm: 'personal',
+      branches: [],
+      stream: [],
+      positions: [],
+      decision: { rule: 'majority', conclusion: null, positions: [], reason: 'no stances' },
+      conflicts: [],
+      status: 'failed',
+      createdAt: 't0',
+    };
+    const request: FanOutRequest = { intentId: 'i', skill: 's', params, realm: 'personal' };
+
+    const text = renderReplay(replayDecision(result, request));
+    expect(text).toContain('input=');
   });
 });

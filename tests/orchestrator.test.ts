@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Orchestrator, UnknownIntentError } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, FanOutResult, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
@@ -152,6 +152,30 @@ describe('Orchestrator.fanOut', () => {
     expect(result.status).toBe('partial');
   });
 
+  it('disarms the branch deadline once the branch settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const port = makePort({ loom: okResult('loom') });
+      const orch = newOrchestrator(port, ['loom']);
+      const result = await orch.fanOut({ intentId: 'T', skill: 'x', params: {}, realm: 'personal', branchTimeoutMs: 60_000 });
+      expect(result.branches[0].ok).toBe(true);
+      // the deadline lost the race and must not stay armed for the next minute
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('best-effort cancels a task that outlived its branch timeout', async () => {
+    const port = makePort({ atlas: async () => { await delay(25); return okResult('atlas'); } });
+    const orch = newOrchestrator(port, ['atlas']);
+    const result = await orch.fanOut({ intentId: 'T', skill: 'x', params: {}, realm: 'personal', branchTimeoutMs: 5 });
+    expect(result.branches[0].timedOut).toBe(true);
+
+    await delay(50);
+    expect(port.cancelCalls).toEqual([['atlas', 'atlas-task']]);
+  });
+
   it('aggregates unanimous stances into a conclusion', async () => {
     const port = makePort({ loom: okResult('loom', 'completed', 'approve'), atlas: okResult('atlas', 'completed', 'approve') });
     const orch = newOrchestrator(port, ['loom', 'atlas']);
@@ -192,6 +216,60 @@ describe('Orchestrator idempotency', () => {
     await orch.fanOut({ skill: 'x', params: {}, realm: 'personal' });
     expect(port.calls).toHaveLength(2);
   });
+
+  it('rejects a reused intentId that names a different request', async () => {
+    const port = makePort({ loom: okResult('loom') });
+    const orch = newOrchestrator(port, ['loom']);
+    await orch.fanOut({ intentId: 'X', skill: 'x', params: { a: 1 }, realm: 'personal' });
+
+    await expect(orch.fanOut({ intentId: 'X', skill: 'y', params: { a: 1 }, realm: 'personal' }))
+      .rejects.toMatchObject({ kind: 'conflict' });
+    await expect(orch.fanOut({ intentId: 'X', skill: 'x', params: { a: 2 }, realm: 'personal' }))
+      .rejects.toMatchObject({ kind: 'conflict' });
+    // key order is not a different request
+    await expect(orch.fanOut({ intentId: 'X', skill: 'x', params: { a: 1 }, realm: 'personal' }))
+      .resolves.toMatchObject({ replayed: true });
+    expect(port.calls).toHaveLength(1);
+  });
+
+  it('collapses concurrent fan-outs that share an intentId into one dispatch set', async () => {
+    const port = makePort({ loom: async () => { await delay(15); return okResult('loom'); } });
+    const orch = newOrchestrator(port, ['loom']);
+    const request = { intentId: 'X', skill: 'x', params: {}, realm: 'personal' as const };
+
+    const [first, second] = await Promise.all([orch.fanOut(request), orch.fanOut(request)]);
+
+    expect(first.intentId).toBe(second.intentId);
+    expect(port.calls).toHaveLength(1);
+  });
+});
+
+describe('Orchestrator.resumeBranch', () => {
+  it('advances the resume run id so a second resume does not reuse the first', async () => {
+    const port = makePort({ loom: okResult('loom') });
+    const orch = newOrchestrator(port, ['loom']);
+    await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'personal' });
+
+    await orch.resumeBranch('X', 'loom', { note: 'one' });
+    const second = await orch.resumeBranch('X', 'loom', { note: 'two' });
+
+    expect(port.calls.map(c => c.runId)).toEqual(['run-1:loom', 'run-1:loom:resume1', 'run-1:loom:resume2']);
+    expect(second.branches[0].runId).toBe('run-1:loom:resume2');
+  });
+
+  it('collapses concurrent resumes of the same branch into one dispatch', async () => {
+    const port = makePort({ loom: async () => { await delay(15); return okResult('loom'); } });
+    const orch = newOrchestrator(port, ['loom']);
+    await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'personal' });
+
+    const [first, second] = await Promise.all([
+      orch.resumeBranch('X', 'loom', { note: 'one' }),
+      orch.resumeBranch('X', 'loom', { note: 'one' }),
+    ]);
+
+    expect(first.branches[0].runId).toBe(second.branches[0].runId);
+    expect(port.calls).toHaveLength(2);
+  });
 });
 
 describe('Orchestrator.cancelIntent', () => {
@@ -228,5 +306,63 @@ describe('Orchestrator.cancelIntent', () => {
     const cancellation = await orch.cancelIntent('X');
     expect(cancellation.results[0]).toMatchObject({ vassal: 'loom', canceled: false, reason: 'vassal unreachable' });
     await expect(orch.cancelIntent('nope')).rejects.toBeInstanceOf(UnknownIntentError);
+  });
+
+  it('reaches an intent whose fan-out is still running instead of throwing UnknownIntentError', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const port = makePort({ loom: async () => { await gate; return okResult('loom', 'completed'); } });
+    const orch = newOrchestrator(port, ['loom']);
+
+    const running = orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'personal' });
+    // The branch is still streaming: it has no task id yet, so there is nothing
+    // to cancel — but the intent must be reachable (it was not before A-11).
+    const cancellation = await orch.cancelIntent('X');
+    expect(cancellation).toEqual({ intentId: 'X', results: [] });
+    expect(port.cancelCalls).toHaveLength(0);
+
+    release!();
+    await running;
+  });
+
+  it('cancels a branch that settled while its siblings were still running, and drops its stance', async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const port = makePort({
+      loom: okResult('loom', 'input-required', 'approve'),
+      atlas: async () => { await gate; return okResult('atlas', 'completed', 'ship'); },
+    });
+    const orch = newOrchestrator(port, ['loom', 'atlas']);
+
+    const running = orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
+    await delay(5); // loom settles; atlas is still streaming
+    const cancellation = await orch.cancelIntent('X');
+    expect(cancellation.results).toEqual([{ vassal: 'loom', taskId: 'loom-task', canceled: true }]);
+
+    release!();
+    const result = await running;
+    // The cancel survives the fan-out finalising: the cancelled branch no longer
+    // votes and the aggregate is derived without its stance.
+    expect(result.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
+    expect(result.positions.map(position => position.vassal)).toEqual(['atlas']);
+    expect(result.decision.conclusion).toBe('ship');
+    expect(result.status).toBe('partial');
+  });
+
+  it('writes a cancellation back into a settled intent so the cancelled stance is recomputed away', async () => {
+    const port = makePort({
+      loom: okResult('loom', 'input-required', 'approve'),
+      atlas: okResult('atlas', 'completed', 'ship'),
+    });
+    const orch = newOrchestrator(port, ['loom', 'atlas']);
+    await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
+    expect(orch.getIntent('X')!.positions.map(position => position.vassal).sort()).toEqual(['atlas', 'loom']);
+
+    await orch.cancelIntent('X');
+
+    const after = orch.getIntent('X')!;
+    expect(after.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
+    expect(after.positions.map(position => position.vassal)).toEqual(['atlas']);
+    expect(after.status).toBe('partial');
   });
 });

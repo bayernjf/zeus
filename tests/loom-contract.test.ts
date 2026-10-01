@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { Dispatcher } from '../src/dispatch/dispatcher.js';
-import { A2AClientError, cancelTask, sendTask, sendTaskSubscribe } from '../src/dispatch/client.js';
+import { cancelTask, sendTask, sendTaskSubscribe } from '../src/dispatch/client.js';
 import { memoryAuditSink } from '../src/dispatch/audit.js';
 import { OversightDesk } from '../src/oversight/oversight.js';
 import type { AgentCard, Task } from '../src/a2a/types.js';
@@ -96,7 +96,6 @@ type SeenRequest = { url: string; method: string; auth: string | null; accept: s
 
 function loomFetch(seen: SeenRequest[], options: { requireAuth?: boolean } = {}) {
   const tasks = new Map<string, Task['status']['state']>();
-  let rpcId = 100;
 
   const ts = () => '2026-09-21T12:00:00Z';
 

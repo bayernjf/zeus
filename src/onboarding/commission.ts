@@ -25,7 +25,6 @@ import {
   commissionId,
   CommissionError,
   type CommissionCheck,
-  type CommissionGate,
   type EvidenceGate,
   type CommissionRecord,
   type CommissionStage,

@@ -66,6 +66,25 @@ describe('E3.6 regression: a tenant-scoped realm map verifies against a mounted 
   });
 });
 
+describe('#13 a verification pass mounts the realm read-only', () => {
+  it('reconnects read-only, so a check cannot write to the realm it inspects', async () => {
+    const root = join(sandbox, 'ro');
+    await mkdir(root, { recursive: true });
+    await writeFile(join(root, 'a.md'), 'mine\n');
+    const store = new FsRealmStore();
+    const manifest = await store.connect(root, 'personal');
+    const map = await buildVault(inventoryFromRealm(store, manifest.realmId));
+
+    const verifier = new FsRealmStore();
+    const report = await restoreDryRun(map, realmLiveSource(verifier));
+    expect(report.rootReachable).toBe(true);
+    expect(report.recoverable).toBe(true);
+    // The map is a read-only view of the treasure: verifying it must not mount
+    // the realm writable as a side effect.
+    expect(verifier.connections()[0].readOnly).toBe(true);
+  });
+});
+
 describe('#13 files source: backing up what no Realm covers', () => {
   async function corpus() {
     const root = join(sandbox, 'data');
@@ -134,6 +153,19 @@ describe('#13 files source: backing up what no Realm covers', () => {
     expect(report.unreachableReason).toMatch(/root-relative POSIX path/);
     const absolute = { ...map, source: { ...map.source, files: ['/etc/passwd'] } };
     await expect(fileLiveSource()(absolute.source)).rejects.toThrow(/root-relative POSIX path/);
+  });
+
+  it('reports a root it cannot resolve as unreachable, not as an empty corpus', async () => {
+    const root = await corpus();
+    const map = await buildVault(inventoryFromFiles({ root, files: ['kernel.json'] }), { now });
+    const gone = { ...map, source: { ...map.source, root: join(sandbox, 'not-mounted') } };
+    // Treating the unresolvable root as a plain string would make every
+    // whitelisted file look merely absent, i.e. "your files are gone" instead of
+    // "this mount is gone" - two very different next actions.
+    await expect(fileLiveSource()(gone.source)).rejects.toThrow(/no such file|ENOENT/);
+    const report = await restoreDryRun(gone, fileLiveSource());
+    expect(report.rootReachable).toBe(false);
+    expect(report.unreachableReason).toMatch(/no such file|ENOENT/);
   });
 
   it('packs and restores a files bundle into a fresh location', async () => {

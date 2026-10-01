@@ -5,6 +5,7 @@ import {
   DEFAULT_AUDIT_KEEP,
   DEFAULT_AUDIT_MAX_BYTES,
   jsonlAuditSink,
+  reinstateAuditBridge,
   revokeAuditBridge,
 } from '../dispatch/audit.js';
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
@@ -226,19 +227,26 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const registry = new VassalRegistry(fetchImpl, now, {
     onRegister: entry => skillRegistry.registerFromCard(entry.card),
     onRevoke: revokeAuditBridge(auditSink),
+    // A-02: the counterpart event — a revocation is only undone by an explicit
+    // reinstate, so both directions land on the same audit trail.
+    onReinstate: reinstateAuditBridge(auditSink),
   });
   const oversight = new OversightDesk({
     now,
     ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
     onDecided: decided => {
       if (decided.kind !== 'memory-dispute' || !decided.factId) return;
+      // A dispute recorded before realmId was carried cannot resolve authors
+      // without a cross-realm scan, so its correction is skipped rather than
+      // guessed. New disputes always carry it (see consolidateFinishedMemory).
+      if (!decided.realmId) return;
       // Approve confirms the new fact: the conflicting facts were wrong. Reject
       // means the new fact itself was wrong. Either way the losing authors are
       // corrected, lowering their reliability in future consolidation.
       const losingFacts = decided.status === 'rejected'
         ? [decided.factId]
         : decided.conflictingFacts ?? [];
-      const authors = memoryStore.authorsOfFacts(losingFacts);
+      const authors = memoryStore.authorsOfFacts(decided.realmId, losingFacts);
       memoryStore.recordCorrections(authors, decided.runId);
     },
   });
@@ -247,6 +255,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // Replaced once the state file exists below. Until then it is a no-op: a
   // kernel without a state file has nothing to persist a consumed nonce into.
   let persistLiveState: () => Promise<void> = async () => {};
+  // Tail of the save chain. Every save writes the same `.tmp` path, so two
+  // overlapping saves can interleave content or lose a rename (the loser's tmp
+  // is already gone) - chaining them keeps the file equal to the newest state.
+  let persistTail: Promise<void> = Promise.resolve();
   // E3.5 / deferred #14: the driver trust anchor. With a signer the kernel only
   // honors grants IT signed (or grants signed by a key it accepts) and consumes
   // each nonce once; without one, a grant is checked for shape, realm binding and
@@ -298,6 +310,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       decision: entry.decision === 'grant-issued' ? 'domain-grant-issued' : 'domain-grant-revoked',
       realm: 'enterprise',
       detail: `${entry.decision} ${entry.grantId}: ${entry.access} ${entry.subject} -> ${entry.realmId} by ${entry.grantedBy}`,
+    });
+    // Issuing or revoking a grant changes who may cross a domain boundary, so it
+    // reaches disk now rather than at the next graceful shutdown: a crash would
+    // otherwise resurrect a revoked grant (or drop a live one) on the next boot,
+    // both of which silently widen access.
+    void persistLiveState().catch(error => {
+      (options.onStateSaveError ?? noop)(error instanceof Error ? error.message : String(error));
     });
   };
   const realmAudit = (entry: RealmAuditEntry): void => {
@@ -477,6 +496,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         id: result.escalations[i],
         runId: event.runId,
         realm,
+        realmId: event.realmId,
         factId: dispute.factId,
         conflictingFacts: dispute.conflicting,
         reason: dispute.reason,
@@ -488,12 +508,28 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   let snapshot: KernelSnapshot | null = null;
   if (options.stateFile) {
     store = new FileKernelStateStore(options.stateFile, now);
-    snapshot = await store.load();
+    try {
+      snapshot = await store.load();
+    } catch (error) {
+      // A corrupt or wrong-version snapshot is a configuration fact the operator
+      // must act on (restore a backup, or delete the file), not a bug. Wrapping it
+      // keeps it on `serve.ts`'s refused-to-start path - one line naming what to
+      // fix - instead of falling through to a raw stack trace.
+      throw new KernelBootError(
+        `kernel state file is unusable: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
     if (snapshot) applyKernelState(components, snapshot);
   }
   // Now that the state file exists, a freshly consumed nonce can reach disk.
   persistLiveState = async (): Promise<void> => {
-    if (store) await store.save(collectKernelState(components));
+    const target = store;
+    if (!target) return;
+    // Serialize: the next snapshot is collected only after the previous save has
+    // landed, so a burst of governance changes cannot race on one `.tmp` file.
+    const run = persistTail.then(() => target.save(collectKernelState(components)));
+    persistTail = run.catch(() => {});
+    await run;
   };
 
   // G4: reconnect realms restored from the snapshot, then connect the roots
@@ -636,6 +672,22 @@ export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): 
   const perVassal = envInteger(env.ZEUS_MAX_CONCURRENT_PER_VASSAL, 'ZEUS_MAX_CONCURRENT_PER_VASSAL', 1);
   if (perVassal !== undefined) config.maxConcurrentPerVassal = perVassal;
   return config;
+}
+
+/**
+ * A-01: the resolved concurrency config is handed to bootKernel as a whole.
+ *
+ * The process used to copy it field by field, which is how
+ * ZEUS_MAX_CONCURRENT_PER_VASSAL came to be parsed and validated at boot
+ * (resolveConcurrencyConfig) and then dropped before reaching the orchestrator:
+ * the operator set a cap, the boot accepted it, and the runtime never enforced
+ * it. A whole-object spread puts every present field on the kernel options and
+ * keeps every future field doing the same.
+ */
+export function concurrencyBootOptions(
+  concurrency: ProcessConcurrencyConfig,
+): Pick<KernelBootOptions, 'maxConcurrentBranches' | 'branchQueueLimit' | 'maxConcurrentPerVassal'> {
+  return { ...concurrency };
 }
 
 function envInteger(

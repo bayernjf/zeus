@@ -12,6 +12,15 @@ RUN npm run build
 # The server never spawns child processes, so node running as PID 1 receives
 # SIGTERM directly and its graceful-shutdown handler (kernel state save) runs;
 # add `docker run --init` (or init: true in compose) only if that changes.
+#
+# Required on first run: a roster signing key, or the kernel refuses to start
+# (by design - an unsigned kernel would publish a roster nothing can pin).
+# Provide either ZEUS_RSK_KEY (inline PEM) or ZEUS_RSK_KEY_FILE (path to a
+# mounted PEM), plus ZEUS_RSK_KEY_ID to label it. Generate one with the
+# zero-dependency script baked into this image:
+#   docker run --rm -v "$PWD/data:/data" <image> \
+#     node scripts/gen-rsk-key.mjs /data/rsk.key
+# then start with -e ZEUS_RSK_KEY_FILE=/data/rsk.key. See docs/deployment.md.
 FROM node:22-slim AS runner
 ENV NODE_ENV=production \
     ZEUS_HOST=0.0.0.0 \

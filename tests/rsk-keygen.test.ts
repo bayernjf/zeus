@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { createPublicKey, randomUUID } from 'node:crypto';
+import { createPublicKey } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

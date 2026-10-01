@@ -3,13 +3,16 @@
  * Zeus terminal supervision deck (UI design option D).
  *
  * Read-only monitoring + escalation settlement + roster revocation over the
- * existing bearer HTTP face. No kernel route is added and no token is written
- * to disk; pass it by env or flag for one process only.
+ * existing bearer HTTP face. No kernel route is added and the bearer token is
+ * read from the environment only — never from a flag, which would be visible in
+ * `ps` output and the shell history. This mirrors the vault CLI's rule for key
+ * material.
  *
  *   ZEUS_INTERNAL_TOKEN=... npm run tui
- *   node dist/tui/cli.js --base-url http://127.0.0.1:8787 --token ... --locale en
+ *   ZEUS_INTERNAL_TOKEN=... node dist/tui/cli.js --base-url http://127.0.0.1:8787 --locale en
  */
 import { createInterface } from 'node:readline/promises';
+import { pathToFileURL } from 'node:url';
 import { createDeckClient } from './client.js';
 import { createDeck } from './runner.js';
 import { resolveLocale } from './format.js';
@@ -23,7 +26,7 @@ type CliArgs = {
   intervalMs: number;
 };
 
-function parseArgs(argv: string[]): CliArgs {
+export function parseArgs(argv: string[]): CliArgs {
   const flags = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 1) {
     const current = argv[i];
@@ -38,6 +41,11 @@ function parseArgs(argv: string[]): CliArgs {
       }
     }
   }
+  if (flags.has('token')) {
+    // A secret on the command line is readable from `ps` and lands in the shell
+    // history; refuse it rather than quietly accepting a leaky invocation.
+    throw new Error('--token is not accepted: set ZEUS_INTERNAL_TOKEN instead (a flag is visible in `ps` and the shell history)');
+  }
   const intervalMs = Number(flags.get('interval') ?? process.env.ZEUS_TUI_INTERVAL_MS ?? '3000');
   if (!Number.isFinite(intervalMs) || intervalMs < 0) {
     throw new Error('--interval must be a non-negative number of milliseconds');
@@ -45,7 +53,7 @@ function parseArgs(argv: string[]): CliArgs {
   const localeArg = flags.get('locale') ?? process.env.LC_ALL ?? process.env.LANG;
   return {
     baseUrl: (flags.get('base-url') ?? process.env.ZEUS_BASE_URL ?? 'http://127.0.0.1:8787').replace(/\/$/, ''),
-    token: flags.get('token') ?? process.env.ZEUS_INTERNAL_TOKEN,
+    token: process.env.ZEUS_INTERNAL_TOKEN,
     locale: resolveLocale(localeArg),
     color: flags.has('no-color') ? false : process.env.NO_COLOR == null,
     intervalMs,
@@ -55,7 +63,7 @@ function parseArgs(argv: string[]): CliArgs {
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!args.token) {
-    process.stdout.write('missing bearer token: set ZEUS_INTERNAL_TOKEN or pass --token\n');
+    process.stdout.write('missing bearer token: set ZEUS_INTERNAL_TOKEN\n');
     process.exitCode = 2;
     return;
   }
@@ -74,21 +82,47 @@ async function main(): Promise<void> {
   });
 
   await controller.refresh();
-  if (args.intervalMs > 0) {
-    setInterval(() => {
-      void controller.refresh();
-    }, args.intervalMs).unref();
-  }
+
+  // The auto-refresh and the input line share one stdout. A refresh that lands
+  // while `rl.question` has a prompt on screen paints over the operator's
+  // half-typed line and corrupts the echo, so polling is stopped before the
+  // prompt is drawn and restarted once the line has been read. `inFlight` is
+  // drained first: a tick already fetching must finish before the prompt opens.
+  let timer: NodeJS.Timeout | null = null;
+  let inFlight: Promise<void> = Promise.resolve();
+  const startPolling = (): void => {
+    if (args.intervalMs <= 0 || timer) return;
+    timer = setInterval(() => {
+      inFlight = controller.refresh().catch(error => {
+        process.stdout.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      });
+    }, args.intervalMs);
+    timer.unref();
+  };
+  const stopPolling = async (): Promise<void> => {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    await inFlight;
+  };
+  startPolling();
 
   let running = true;
   while (running) {
+    await stopPolling();
     const line = await rl.question('');
+    startPolling();
     running = await controller.handle(line);
   }
+  await stopPolling();
   rl.close();
 }
 
-main().catch(error => {
-  process.stdout.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+// Only run as a process when invoked directly (not under vitest / imports).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch(error => {
+    process.stdout.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

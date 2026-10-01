@@ -78,4 +78,15 @@ describe('E1.5 semaphore', () => {
     expect(() => new Semaphore(1.5)).toThrow(/whole max/);
     expect(() => new Semaphore(-1)).toThrow(/whole max/);
   });
+
+  it('rejects a queue limit it cannot honour, instead of turning the line unbounded', () => {
+    // `waiters.length >= NaN` is never true, so an unchecked NaN silently makes
+    // the queue unlimited — the opposite of what the caller asked for.
+    expect(() => new Semaphore(1, Number.NaN)).toThrow(/queue limit/);
+    expect(() => new Semaphore(1, -1)).toThrow(/queue limit/);
+    expect(() => new Semaphore(1, 1.5)).toThrow(/queue limit/);
+    // 0 waiters (refuse as soon as the gate is busy) and Infinity stay valid
+    expect(() => new Semaphore(1, 0)).not.toThrow();
+    expect(() => new Semaphore(1, Number.POSITIVE_INFINITY)).not.toThrow();
+  });
 });

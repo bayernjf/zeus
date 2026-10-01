@@ -2,7 +2,20 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner, verifySignedSnapshot } from '../src/registry/signing.js';
-import { createHttpServer } from '../src/http/server.js';
+import { timingSafeEqual } from 'node:crypto';
+import {
+  classifyCatalogueError,
+  classifyConnectorError,
+  classifyKernelError,
+  classifyOrgError,
+  createHttpServer,
+  constantTimeEqual,
+} from '../src/http/server.js';
+import { DomainError } from '../src/util/domain-error.js';
+import { UnknownIntentError } from '../src/orchestrator/orchestrator.js';
+import { DuplicateSkillError, SkillNotFoundError } from '../src/skills/registry.js';
+import { OrgError } from '../src/org/types.js';
+import { ConnectorError } from '../src/mcp/connectors.js';
 import type { AgentCard } from '../src/a2a/types.js';
 import type { SignedRosterSnapshot } from '../src/registry/signing.js';
 
@@ -157,8 +170,14 @@ describe('HTTP H1 server', () => {
 
     const noAuth = await app.inject({ method: 'GET', url: '/api/roster' });
     expect(noAuth.statusCode).toBe(401);
+    // RFC 6750 §3: the challenge names the scheme; no credentials means no error
+    // code, only the realm-shaped challenge.
+    expect(noAuth.headers['www-authenticate']).toBe('Bearer');
     const wrongAuth = await app.inject({ method: 'GET', url: '/api/roster', headers: { authorization: 'Bearer nope' } });
     expect(wrongAuth.statusCode).toBe(401);
+    // A token *was* presented and rejected: the client is told which failure this
+    // is, instead of having to guess whether it forgot the header.
+    expect(wrongAuth.headers['www-authenticate']).toContain('error="invalid_token"');
 
     const ok = await app.inject({ method: 'GET', url: '/api/roster', headers: { authorization: 'Bearer internal-secret' } });
     expect(ok.statusCode).toBe(200);
@@ -202,5 +221,73 @@ describe('HTTP H1 server', () => {
     expect(envelope.snapshot.entries).toEqual([]);
     const verdict = await verifySignedSnapshot(envelope, signer.verifier(), new Date('2026-09-21T12:30:00.000Z'));
     expect(verdict.ok).toBe(true);
+  });
+});
+
+describe('bearer token comparison (length-safe)', () => {
+  it('accepts the exact token and rejects everything else', () => {
+    expect(constantTimeEqual('internal-secret', 'internal-secret')).toBe(true);
+    expect(constantTimeEqual('internal-secret', 'internal-secretx')).toBe(false);
+    expect(constantTimeEqual('', 'internal-secret')).toBe(false);
+  });
+
+  it('reduces both sides to equal-length digests before comparing', () => {
+    // The guard under test is "no early return on a length mismatch". An obvious
+    // `a.length !== b.length` short-circuit never reaches the comparator for
+    // differently-sized inputs, leaking the expected token's length by timing.
+    const widths: Array<[number, number]> = [];
+    const result = constantTimeEqual('short', 'a-far-longer-expected-token', (a, b) => {
+      widths.push([a.length, b.length]);
+      return timingSafeEqual(a, b);
+    });
+    expect(result).toBe(false);
+    expect(widths).toHaveLength(1);
+    expect(widths[0][0]).toBe(32);
+    expect(widths[0][0]).toBe(widths[0][1]);
+  });
+});
+
+describe('domain error -> HTTP status classification', () => {
+  // The messages below deliberately share no keyword with the retired mapper
+  // regexes ("unknown department", "not found", "already ..."): a mapper that
+  // still decides by message text returns 400 for every one of them.
+  it('reads the kind off the type, whatever the message says', () => {
+    expect(classifyKernelError(new DomainError('totally unrelated wording', 'not-found')))
+      .toEqual({ status: 404, code: 'not_found' });
+    expect(classifyOrgError(new DomainError('totally unrelated wording', 'not-found')))
+      .toEqual({ status: 404, code: 'not_found' });
+    expect(classifyCatalogueError(new DomainError('totally unrelated wording', 'conflict')))
+      .toEqual({ status: 409, code: 'conflict' });
+    expect(classifyConnectorError(new DomainError('totally unrelated wording', 'conflict'), 400))
+      .toEqual({ status: 409, code: 'conflict' });
+  });
+
+  it('classifies the real domain errors by class, not by message text', () => {
+    expect(classifyKernelError(new UnknownIntentError('anything at all')))
+      .toEqual({ status: 404, code: 'not_found' });
+    expect(classifyCatalogueError(new SkillNotFoundError('anything at all')))
+      .toEqual({ status: 404, code: 'not_found' });
+    expect(classifyCatalogueError(new DuplicateSkillError('anything at all')))
+      .toEqual({ status: 409, code: 'conflict' });
+    expect(classifyOrgError(new OrgError('anything at all', 'not-found')))
+      .toEqual({ status: 404, code: 'not_found' });
+    expect(classifyConnectorError(new ConnectorError('anything at all', 'conflict'), 400))
+      .toEqual({ status: 409, code: 'conflict' });
+  });
+
+  it('does not classify an untyped throw by its message', () => {
+    expect(classifyKernelError(new Error('unknown intent: x')))
+      .toEqual({ status: 400, code: 'invalid_request' });
+    expect(classifyOrgError(new Error('Unknown department dept:nope')))
+      .toEqual({ status: 400, code: 'invalid_request' });
+    expect(classifyCatalogueError(new Error('skill s not found')))
+      .toEqual({ status: 400, code: 'invalid_request' });
+  });
+
+  it('keeps the caller-supplied handshake outcome for a non-domain throw', () => {
+    expect(classifyConnectorError(new Error('connection refused'), 502))
+      .toEqual({ status: 502, code: 'bad_gateway' });
+    expect(classifyConnectorError(new Error('connection refused'), 400))
+      .toEqual({ status: 400, code: 'invalid_request' });
   });
 });

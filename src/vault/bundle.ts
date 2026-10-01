@@ -1,5 +1,6 @@
-import { mkdir, utimes, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { mkdir, realpath, utimes } from 'node:fs/promises';
+import { basename, dirname, join, resolve } from 'node:path';
+import { ensureDirInsideRoot, isInsideRoot, writeFileAtomic } from './fs.js';
 import { digestManifest } from '../realm/digest.js';
 import { FsRealmStore } from '../realm/store.js';
 import { open, seal, type VaultKey } from './cipher.js';
@@ -126,14 +127,32 @@ function assertSafeRestorePath(itemId: string): void {
   }
 }
 
-/** Filesystem restore sink: create parent dirs, write content, restore mtime. */
+/**
+ * Filesystem restore sink: create parent dirs, publish the item atomically,
+ * restore mtime.
+ *
+ * Every path decision is made on resolved paths: the target root is resolved
+ * once, the parent chain is verified inside it before it is created, and the
+ * item is published by rename so an existing symlink at the item path is
+ * replaced instead of followed.
+ */
 export class FsRestoreSink implements RestoreSink {
   async writeItem(targetRoot: string, item: { itemId: string; content: string; modifiedAt: string }): Promise<void> {
     assertSafeRestorePath(item.itemId);
-    const abs = join(targetRoot, item.itemId);
-    await mkdir(dirname(abs), { recursive: true });
-    await writeFile(abs, item.content, 'utf8');
+    const absRoot = resolve(targetRoot);
+    await mkdir(absRoot, { recursive: true });
+    const root = await realpath(absRoot);
+    const abs = join(root, item.itemId);
+    if (!isInsideRoot(root, abs)) {
+      throw new VaultFormatError(`restore item escapes the target root: ${item.itemId}`);
+    }
+    const realParent = await ensureDirInsideRoot(root, dirname(abs), `restore target for ${item.itemId}`);
+    const target = join(realParent, basename(abs));
+    if (!isInsideRoot(root, target)) {
+      throw new VaultFormatError(`restore item resolves outside the target root: ${item.itemId}`);
+    }
+    await writeFileAtomic(target, item.content);
     const mtimeSec = Date.parse(item.modifiedAt) / 1000;
-    if (!Number.isNaN(mtimeSec)) await utimes(abs, mtimeSec, mtimeSec);
+    if (!Number.isNaN(mtimeSec)) await utimes(target, mtimeSec, mtimeSec);
   }
 }

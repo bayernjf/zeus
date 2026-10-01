@@ -1,5 +1,6 @@
 import type { AgentCard, AgentCardSkill } from '../a2a/types.js';
 import type { SkillSpec, SkillSpecInput, SkillStatus, TeamResolution, TeamSlot } from './types.js';
+import { DomainError } from '../util/domain-error.js';
 import { validateSkillSpecShape, validatePermissionClaims, SkillValidationError } from './validate-spec.js';
 
 /** Compare semver-ish 'major.minor.patch' strings. Returns -1/0/1; missing
@@ -21,8 +22,25 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export class SkillNotFoundError extends Error {}
-export class DuplicateSkillError extends Error {}
+export class SkillNotFoundError extends DomainError {
+  constructor(message: string) {
+    super(message, 'not-found');
+  }
+}
+
+export class DuplicateSkillError extends DomainError {
+  constructor(message: string) {
+    super(message, 'conflict');
+  }
+}
+
+/** A state conflict on the catalogue: a version deprecated, a skill not
+ *  installed, a provider that cannot be certified - distinct from a duplicate. */
+export class SkillConflictError extends DomainError {
+  constructor(message: string) {
+    super(message, 'conflict');
+  }
+}
 
 /**
  * E2.2 Skill registry: catalogue of skill specs independent of vassal cards.
@@ -174,7 +192,7 @@ export class SkillRegistry {
   install(id: string, version?: string): SkillSpec {
     const target = this.requireVersion(id, version);
     if (target.status === 'deprecated') {
-      throw new Error(`skill ${id}@${target.version} is deprecated; register a new version`);
+      throw new SkillConflictError(`skill ${id}@${target.version} is deprecated; register a new version`);
     }
     target.status = 'active';
     target.installedAt = this.now().toISOString();
@@ -198,7 +216,9 @@ export class SkillRegistry {
    * E2.3 harden: stack extra bounds on an installed skill. Every claimed
    * permission must already be granted (a bare 'scope' grant may be narrowed
    * to 'scope:action'); claims can only shrink. Constraints are merged onto
-   * any prior hardening. Hardening an uninstalled skill is refused.
+   * any prior hardening, and a call that omits `permissions` keeps the prior
+   * effective claims so it adds bounds without revoking them. Hardening an
+   * uninstalled skill is refused.
    */
   harden(
     id: string,
@@ -207,7 +227,7 @@ export class SkillRegistry {
   ): SkillSpec {
     const target = this.requireVersion(id, version);
     if (target.status === 'uninstalled') {
-      throw new Error(`cannot harden uninstalled skill ${id}@${target.version}`);
+      throw new SkillConflictError(`cannot harden uninstalled skill ${id}@${target.version}`);
     }
     const narrowed = bounds.permissions ?? [];
     const issues = validatePermissionClaims(narrowed);
@@ -221,7 +241,7 @@ export class SkillRegistry {
     if (issues.length > 0) throw new SkillValidationError(issues);
 
     target.hardening = {
-      permissions: [...new Set(narrowed)],
+      permissions: [...new Set(bounds.permissions ?? current)],
       constraints: { ...(target.hardening?.constraints ?? {}), ...(bounds.constraints ?? {}) },
       hardenedAt: this.now().toISOString(),
     };
@@ -302,7 +322,7 @@ export class SkillRegistry {
       : this.activeVersions(id)?.[0];
     if (!target) throw new SkillNotFoundError(`skill ${id} has no active version to certify against`);
     if (target.status !== 'active') {
-      throw new Error(`cannot certify provider for ${id}@${target.version} (${target.status})`);
+      throw new SkillConflictError(`cannot certify provider for ${id}@${target.version} (${target.status})`);
     }
     if (!target.providedBy.includes(agentId)) target.providedBy.push(agentId);
     return structuredClone(target);

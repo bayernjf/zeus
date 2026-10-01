@@ -117,6 +117,19 @@ describe('branchVerdictClaims (the claim contract)', () => {
   it('produces nothing for an intent with no stances, so an empty fan-out cannot fake a fact source', () => {
     expect(branchVerdictClaims(fanOut({ positions: [] }), request(), claimOptions)).toEqual([]);
   });
+
+  it('#16 keys a claim by realm too, so one run across two realms does not collide', () => {
+    const result = fanOut();
+    const req = request();
+    const personal = branchVerdictClaims(result, req, { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' });
+    const enterprise = branchVerdictClaims(result, req, { realmId: 'realm-b', occurredAt: '2026-09-27T00:00:00.000Z' });
+    // Same run, same vassal, same stance - but a different realm is a different
+    // claim, or the second realm's event would be dropped by dedupe.
+    expect(personal[0].eventId).not.toBe(enterprise[0].eventId);
+    // Within one realm the id is still stable, so a replay stays idempotent.
+    const replay = branchVerdictClaims(result, req, { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' });
+    expect(replay[0].eventId).toBe(personal[0].eventId);
+  });
 });
 
 describe('runtime producer (bootKernel, end to end)', () => {

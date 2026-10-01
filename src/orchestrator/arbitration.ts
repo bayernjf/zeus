@@ -20,7 +20,6 @@ export type ArbitrateConflictInput = {
   threshold?: number;
   allowUncalibrated?: boolean;
   maxWaitMs?: number;
-  stateKeys?: string[];
   now: () => Date;
 };
 
@@ -38,7 +37,6 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
     ...(input.threshold !== undefined ? { threshold: input.threshold } : {}),
     ...(input.allowUncalibrated !== undefined ? { allowUncalibrated: input.allowUncalibrated } : {}),
     ...(input.maxWaitMs !== undefined ? { maxWaitMs: input.maxWaitMs } : {}),
-    ...(input.stateKeys ? { stateKeys: input.stateKeys } : {}),
   });
   const decidedAt = now().toISOString();
 

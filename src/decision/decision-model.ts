@@ -33,8 +33,7 @@ export type JevConfig = BackendOptions & {
   defaultTimeoutMs?: number;
 };
 
-// Jev published list price: $0.042 per 1M input tokens, output free. Cents per 1M = 4.2.
-const JEV_INPUT_CENTS_PER_MILLION = 4.2;
+// Jev published list price: $0.042 per 1M input tokens, output free (design §5).
 const DEFAULT_TIMEOUT_MS = 1500;
 
 export function createJevBackend(config: JevConfig): DecisionBackend {

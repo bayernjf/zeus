@@ -94,7 +94,9 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
     return {
       ...base,
       conclusion: top.stance,
-      margin: { winner: top.stance, winnerCount: top.weight, total: totalWeight },
+      // The margin reports voters, not weight, so it reads the same as majority
+      // (the weight split stays visible in `reason`).
+      margin: { winner: top.stance, winnerCount: groups.get(top.stance)!.length, total: positions.length },
       reason: `weighted: "${top.stance}" ${top.weight}/${totalWeight} >= threshold ${threshold}`,
     };
   }

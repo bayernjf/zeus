@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { TenantError, formatTenant, parseTenant, tenantReaches } from '../src/realm/tenant.js';
+import { TenantError, formatTenant, parseTenant, tenantKey, tenantReaches } from '../src/realm/tenant.js';
 import { FsRealmStore } from '../src/realm/store.js';
 import { RealmError } from '../src/realm/types.js';
 
@@ -47,6 +47,23 @@ describe('E3.6 tenant hierarchy rule (tenantReaches)', () => {
   it('folds case so one org typed two ways is still one tenant', () => {
     expect(tenantReaches(t('ACME/ENG'), t('acme/eng'))).toBe(true);
   });
+
+  it('keeps a department and a member of the same name apart', () => {
+    // Both scopes render as 'acme/eng'. Identity cannot be the rendered path, or
+    // a department-scoped subject would silently reach a member-scoped realm.
+    const department = { org: 'acme', department: 'eng' };
+    const member = { org: 'acme', member: 'eng' };
+    expect(formatTenant(department)).toBe(formatTenant(member));
+    expect(tenantKey(department)).not.toBe(tenantKey(member));
+
+    expect(tenantReaches(department, member)).toBe(false);
+    expect(tenantReaches(member, department)).toBe(false);
+    // A scope broad enough to contain either level still reaches both.
+    expect(tenantReaches({ org: 'acme' }, member)).toBe(true);
+    expect(tenantReaches({ org: 'acme' }, department)).toBe(true);
+    // ...but a member never reaches down into a department subtree.
+    expect(tenantReaches(member, { org: 'acme', department: 'eng', member: 'zhang' })).toBe(false);
+  });
 });
 
 describe('E3.6 connect records the tenant and refuses to mis-label a domain', () => {
@@ -89,6 +106,19 @@ describe('E3.6 connect records the tenant and refuses to mis-label a domain', ()
     await expect(store.connect(dept, 'enterprise', { tenant: 'acme/eng' })).resolves.toMatchObject({
       tenant: { org: 'acme', department: 'eng' },
     });
+  });
+
+  it('refuses a reconnect and a retarget that move the boundary between levels', async () => {
+    const store = new FsRealmStore();
+    const mounted = await store.connect(dept, 'enterprise', { tenant: { org: 'acme', department: 'eng' } });
+    // Same rendered path, different level: this is a re-scope, not a rename.
+    await expect(store.connect(dept, 'enterprise', { tenant: { org: 'acme', member: 'eng' } }))
+      .rejects.toThrow(/would change its tenant scope/);
+    await expect(store.retargetTenant(mounted.realmId, { org: 'acme', member: 'eng' }, { org: 'acme' }))
+      .rejects.toThrow(/tenant drift/);
+    // A case difference is still the same tenant, so the compare-swap accepts it.
+    await expect(store.retargetTenant(mounted.realmId, { org: 'ACME', department: 'ENG' }, { org: 'acme', department: 'eng' }))
+      .resolves.toBeUndefined();
   });
 
   it('leaves an enterprise realm unscoped when no tenant is given, and says so', async () => {

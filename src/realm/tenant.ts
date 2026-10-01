@@ -31,8 +31,29 @@ function fold(segment: string): string {
   return segment.toLowerCase();
 }
 
+/** Display segments, in level order. Display only — see keySegments for identity. */
 function segmentsOf(scope: TenantScope): string[] {
   return [scope.org, scope.department, scope.member].filter((part): part is string => part !== undefined);
+}
+
+/**
+ * Identity segments: each carries its level, so `{org, department: 'eng'}` and
+ * `{org, member: 'eng'}` — both of which render as `acme/eng` — are different
+ * tenants. Segment text alone cannot express the level, so a scope could be
+ * re-pointed at another level without any check noticing, which is exactly the
+ * kind of boundary move the tenancy rule exists to refuse.
+ */
+function keySegments(scope: TenantScope): string[] {
+  const segments = [`o:${fold(scope.org)}`];
+  if (scope.department !== undefined) segments.push(`d:${fold(scope.department)}`);
+  if (scope.member !== undefined) segments.push(`m:${fold(scope.member)}`);
+  return segments;
+}
+
+/** Stable, level-tagged, case-folded identity of a scope ('' when absent).
+ *  This — not the rendered path — is what boundary equality is decided on. */
+export function tenantKey(tenant?: TenantScope): string {
+  return tenant ? keySegments(tenant).join('/') : '';
 }
 
 /** Parse 'acme' | 'acme/eng' | 'acme/eng/zhang'. Segment text is kept verbatim. */
@@ -80,7 +101,7 @@ export function normalizeTenant(tenant: string | TenantScope | undefined): Tenan
  * showed no test could tell it was there, i.e. it was not enforcing anything.
  */
 export function tenantReaches(subject: TenantScope, target: TenantScope): boolean {
-  const left = segmentsOf(subject).map(fold);
-  const right = segmentsOf(target).map(fold);
+  const left = keySegments(subject);
+  const right = keySegments(target);
   return left.every((segment, index) => segment === right[index]);
 }

@@ -94,7 +94,11 @@ function toInternalEntry(entry: ListAllEntry): RosterEntry {
     name: card.name,
     ...(card.description ? { description: card.description } : {}),
     domain: fealty.domain,
-    skills: card.skills.map(skill => ({ ...skill })),
+    // C-audit: deep-copy every mutable field. A projection that shared an array
+    // with the registry (nested skill tags especially) let a consumer mutate
+    // registry state through what looks like an immutable snapshot — and every
+    // later snapshotDigest then differed from the one that was sealed.
+    skills: structuredClone(card.skills),
     commitments: {
       dataRealms: [...fealty.dataRealms],
       dataPolicy: fealty.dataPolicy,
@@ -116,8 +120,8 @@ function toPublicEntry(entry: RosterEntry): PublicRosterEntry {
     name: entry.name,
     ...(entry.description !== undefined ? { description: entry.description } : {}),
     domain: entry.domain,
-    skills: entry.skills,
-    commitments: entry.commitments,
+    skills: structuredClone(entry.skills),
+    commitments: structuredClone(entry.commitments),
     ...(entry.sla !== undefined ? { sla: entry.sla } : {}),
     status: entry.status,
     health: entry.health,

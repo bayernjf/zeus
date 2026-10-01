@@ -49,6 +49,16 @@ export interface ConnectorRecord extends ConnectorDeclaration {
   capabilities?: ConnectorCapabilities;
 }
 
+/**
+ * The persistable form of a connector record: everything except the bearer
+ * token. The kernel state file is a plaintext document, and every backup bundle
+ * is built from it, so a credential must not cross that boundary. The token
+ * lives in memory for the life of the process; a connector restored from a
+ * snapshot comes back without one and has to be re-declared to authenticate
+ * upstream again.
+ */
+export type PersistedConnectorRecord = Omit<ConnectorRecord, 'token'>;
+
 export interface McpClientDeps {
   fetchImpl?: typeof fetch;
   token?: string;

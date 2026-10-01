@@ -124,6 +124,26 @@ describe('buildDiary', () => {
     expect(entries[0].markdown).toContain('## Facts');
   });
 
+  // A-07: the diary is written back into the realm directory, so a retracted
+  // fact rendered here becomes a second retention of content the memory store
+  // has already withdrawn.
+  it('omits a retracted fact even when its provenance hits the day (A-07)', () => {
+    const events = [event({ eventId: 'evt-1', occurredAt: '2026-09-23T09:00:00.000Z' })];
+    const facts = [
+      fact({ factId: 'fct-live', provenance: ['evt-1'], updatedAt: '2026-09-23T10:00:00.000Z' }),
+      fact({
+        factId: 'fct-gone',
+        provenance: ['evt-1'],
+        updatedAt: '2026-09-23T10:00:00.000Z',
+        status: 'retracted',
+      }),
+    ];
+    const entries = buildDiary(events, { facts });
+    expect(entries[0].facts.map(f => f.factId)).toEqual(['fct-live']);
+    expect(entries[0].provenance).not.toContain('fct-gone');
+    expect(entries[0].markdown).not.toContain('fct-gone');
+  });
+
   it('omits the Facts section when there are no facts', () => {
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z' })]);
     expect(entries[0].facts).toEqual([]);

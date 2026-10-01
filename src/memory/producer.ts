@@ -75,7 +75,10 @@ export function branchVerdictClaims(
     const stance = typeof position.stance === 'string' ? position.stance.trim() : '';
     if (!stance) continue;
     const object = claimObject(stance);
-    const eventId = sha256Hex(`${result.runId}␟${position.vassal}␟${object}`);
+    // The realm is part of the id: without it the same run operating on two
+    // realms derived the identical eventId, and the second realm's claim was
+    // dropped by dedupe as if it were a replay of the first.
+    const eventId = sha256Hex(`${options.realmId}␟${result.runId}␟${position.vassal}␟${object}`);
     if (seen.has(eventId)) continue;
     seen.add(eventId);
     const branch = result.branches.find(entry => entry.vassal === position.vassal);

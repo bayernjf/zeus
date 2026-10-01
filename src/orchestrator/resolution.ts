@@ -1,4 +1,5 @@
 import { aggregate, extractPositions } from './aggregate.js';
+import { DomainError, type DomainErrorKind } from '../util/domain-error.js';
 import { detectConflicts } from './conflict.js';
 import { mergeBranches } from './merge.js';
 import type {
@@ -17,14 +18,20 @@ import type {
  * a partially-failed one is 'partial'). The original positions are preserved so
  * the human override stays auditable.
  */
+export class IntentResolutionError extends DomainError {
+  constructor(message: string, kind: DomainErrorKind = 'invalid') {
+    super(message, kind);
+  }
+}
+
 export function applyConflictResolution(result: FanOutResult, driver: Omit<DriverResolution, 'decidedAt'> & { decidedAt?: string }): FanOutResult {
   if (result.status !== 'needs-driver') {
-    throw new Error(`intent ${result.intentId} is ${result.status}; only needs-driver intents accept a driver decision`);
+    throw new IntentResolutionError(`intent ${result.intentId} is ${result.status}; only needs-driver intents accept a driver decision`, 'conflict');
   }
   const conflict = result.conflicts.find(c => c.stances.some(s => s.stance === driver.stance));
   if (!conflict) {
     const options = result.conflicts.flatMap(c => c.stances.map(s => s.stance));
-    throw new Error(`stance "${driver.stance}" is not among the conflict options: ${options.join(', ')}`);
+    throw new IntentResolutionError(`stance "${driver.stance}" is not among the conflict options: ${options.join(', ')}`);
   }
   const supporters = conflict.stances.find(s => s.stance === driver.stance)?.vassals ?? [];
   const resolution: DriverResolution = {
@@ -57,7 +64,7 @@ export function recomputeResult(
   const positions = extractPositions(branches);
   const decision = aggregate(positions, aggregation);
   const conflicts = detectConflicts(positions, decision);
-  return {
+  const recomputed: FanOutResult = {
     ...previous,
     branches,
     stream: mergeBranches(branches),
@@ -67,6 +74,14 @@ export function recomputeResult(
     status: statusFromBranches(branches, conflicts.length > 0),
     createdAt: previous.createdAt,
   };
+  // The settlement records describe the superseded branch set. Keeping them
+  // would leave a result whose new decision contradicts its recorded
+  // arbitration/judge/driver settlement, so drop them; the caller re-derives
+  // them (maybeArbitrate/maybeJudge) or the intent returns to the driver.
+  delete recomputed.driverResolution;
+  delete recomputed.judgeReview;
+  delete recomputed.backendArbitration;
+  return recomputed;
 }
 
 export function statusFromBranches(branches: BranchOutcome[], hasUnresolvedConflict: boolean): FanOutStatus {

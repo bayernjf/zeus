@@ -1,6 +1,7 @@
 import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
-import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
+import { sendTaskSubscribe, cancelTask } from './client.js';
+import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
 /**
  * Every decision the governance spine records, as one list. The HTTP filter
@@ -16,6 +17,8 @@ export const AUDIT_DECISIONS = [
   'refused-unknown-vassal',
   'refused-revoked',
   'vassal-revoked',
+  // A-02: the explicit, audited act that is the only way back from a revocation.
+  'vassal-reinstated',
   'dispatch-failed',
   'sla-ack-breached',
   // E6.4: a subject crossed (or tried to cross) a data-domain boundary.
@@ -46,6 +49,9 @@ export const AUDIT_DECISIONS = [
   // they belonged to was unmounted mid-flight). A dropped claim is a governance
   // fact, so it is announced rather than swallowed.
   'memory-claim-skipped',
+  // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
+  // leave no trace at all, so the governance surface could not see a branch ended.
+  'cancel-requested',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
@@ -75,7 +81,7 @@ export type DispatchRequest = {
 };
 
 export type DispatchResult =
-  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: Array<{ itemId: string }> }
+  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: Array<{ itemId: string; snippet: string }> }
   | { ok: false; reason: string; audit: AuditEntry };
 
 export type AuditSink = (entry: AuditEntry) => void;
@@ -114,6 +120,19 @@ export class Dispatcher {
         return { ok: false, reason: audit.detail!, audit };
       }
       vassal = this.lookup.get(request.vassal);
+      // Naming a vassal is not a licence to ask it for anything: the skill must
+      // be one its card declares, or any registered agent could be made to run
+      // any skill and the per-skill authorization would be nominal. Auto-select
+      // already routes through findBySkill; this is the explicit-name path.
+      if (vassal && !vassal.card.skills.some(skill => skill.id === request.skill)) {
+        const audit: AuditEntry = {
+          ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+          decision: 'refused-skill-uninstalled',
+          detail: `vassal ${vassal.name} does not declare skill ${request.skill}`,
+        };
+        this.options.audit(audit);
+        return { ok: false, reason: audit.detail!, audit };
+      }
     } else {
       try {
         vassal = this.selectBySkill(request.skill);
@@ -138,59 +157,108 @@ export class Dispatcher {
     // Redaction: realm content injection is bounded by fealty.dataPolicy
     const injectedHits = vassal.fealty.dataPolicy === 'none' ? [] : (request.realmHits ?? []);
 
-    const events: A2AEvent[] = [];
-    this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched' });
+    // Re-affirm the revocation gate at the moment the credential is read.
+    // `tokenFor` yields nothing for a revoked vassal, and a request that leaves
+    // without its bearer is a governance decision that failed open: the
+    // revocation happened, and the dispatch should have been refused, not sent
+    // anonymously. The gate above only ran when the vassal was named explicitly,
+    // so this check covers both selection paths.
+    if (this.lookup.statusOf(vassal.name) === 'revoked') {
+      const audit: AuditEntry = {
+        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+        decision: 'refused-revoked', detail: `vassal ${vassal.name} was revoked before its credential was issued; dispatch blocked`,
+      };
+      this.options.audit(audit);
+      return { ok: false, reason: audit.detail!, audit };
+    }
+    const token = this.options.tokenFor?.(vassal.name);
 
-    // SLA ack enforcement (fealty.sla.ackSeconds): the first streamed event is
-    // the acceptance signal. A breach is audited, never fatal — the task itself
-    // may still succeed; the audit trail is the governance surface.
+    const events: A2AEvent[] = [];
+
+    // SLA ack enforcement (fealty.sla.ackSeconds): acceptance is the first
+    // streamed event, or - for a peer that streams nothing and just returns its
+    // terminal snapshot - the arrival of that snapshot. Without the fallback a
+    // slow non-streaming peer escaped sla-ack-breached entirely. A breach is
+    // audited, never fatal: the task may still succeed, and the audit trail is
+    // the governance surface.
     const clock = this.options.elapsed ?? (() => Date.now());
     const ackSeconds = vassal.fealty.sla?.ackSeconds;
     const startedAt = clock();
-    let ackMeasured = false;
+    let ack: { elapsedMs: number; taskId: string } | undefined;
 
+    // Only the outbound request lives inside this catch. Every audit write stays
+    // outside it: writing the trail is bookkeeping, and a full disk must not be
+    // recorded as the *vassal* failing to serve the task.
+    let task: Task;
     try {
-      const task = await sendTaskSubscribe(
+      // A-12: defense in depth. The registry validates taskUrl at registration,
+      // but dispatch is the moment the request actually leaves the process, so
+      // the same guard runs here — a stale or restored entry cannot bypass it.
+      assertOutboundUrlAllowed(vassal.taskUrl);
+      task = await sendTaskSubscribe(
         {
           taskUrl: vassal.taskUrl,
           skill: request.skill,
           params: { ...request.params, ...(injectedHits.length ? { realmHits: injectedHits } : {}) },
           runId,
-          token: this.options.tokenFor?.(vassal.name),
+          token,
         },
         {
           onEvent: event => {
             events.push(event);
-            if (!ackMeasured) {
-              ackMeasured = true;
-              if (ackSeconds !== undefined) {
-                const elapsedMs = clock() - startedAt;
-                if (elapsedMs > ackSeconds * 1000) {
-                  this.options.audit({
-                    ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
-                    decision: 'sla-ack-breached', taskId: event.taskId,
-                    detail: `first event after ${elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
-                  });
-                }
-              }
-            }
+            if (!ack) ack = { elapsedMs: clock() - startedAt, taskId: event.taskId };
           },
         },
         this.options.fetchImpl
       );
-      this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });
-      return { ok: true, task, events, injectedHits };
     } catch (error) {
       const detail = error instanceof Error ? error.message : 'dispatch failed';
       this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatch-failed', detail });
       return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatch-failed', detail } };
     }
+
+    // A peer that streamed no intermediate event still accepted the task by
+    // returning it; that completion is the only acceptance signal available.
+    if (!ack) ack = { elapsedMs: clock() - startedAt, taskId: task.id };
+
+    if (ackSeconds !== undefined && ack.elapsedMs > ackSeconds * 1000) {
+      this.options.audit({
+        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+        decision: 'sla-ack-breached', taskId: ack.taskId,
+        detail: `accepted after ${ack.elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
+      });
+    }
+    this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });
+    return { ok: true, task, events, injectedHits };
   }
 
   async cancel(vassalName: string, taskId: string): Promise<Task> {
+    const now = this.options.now ?? (() => new Date());
+    // A cancellation is a governance action, not a side channel: it must not
+    // reach a vassal the revocation gate blocks, and it must be as visible on the
+    // trail as the dispatch it ends. Both refusals are audited before throwing so
+    // the reason is recorded, not just returned to a caller that may swallow it.
+    const status = this.lookup.statusOf(vassalName);
+    if (status === 'revoked') {
+      const audit: AuditEntry = {
+        ts: now().toISOString(), vassal: vassalName, taskId,
+        decision: 'refused-revoked', detail: `cancel refused: vassal ${vassalName} is revoked; no request sent`,
+      };
+      this.options.audit(audit);
+      throw new Error(audit.detail!);
+    }
     const vassal = this.lookup.get(vassalName);
-    if (!vassal) throw new Error(`unknown or revoked vassal: ${vassalName}`);
-    return cancelTask(vassal.taskUrl, taskId, this.options.tokenFor?.(vassalName), this.options.fetchImpl);
+    if (!vassal) {
+      const audit: AuditEntry = {
+        ts: now().toISOString(), vassal: vassalName, taskId,
+        decision: 'refused-unknown-vassal', detail: `cancel refused: ${vassalName} is not a registered vassal`,
+      };
+      this.options.audit(audit);
+      throw new Error(audit.detail!);
+    }
+    const task = await cancelTask(vassal.taskUrl, taskId, this.options.tokenFor?.(vassalName), this.options.fetchImpl);
+    this.options.audit({ ts: now().toISOString(), vassal: vassalName, taskId, decision: 'cancel-requested', state: task.status.state });
+    return task;
   }
 
   private selectBySkill(skillId: string): VassalLike | undefined {
@@ -204,11 +272,23 @@ export class Dispatcher {
 
 export class AmbiguousSkillError extends Error {}
 
-/** Adapt a static vassal map (tests / single-process wiring) to VassalLookup. */
+/** Adapt a static vassal map (tests / single-process wiring) to VassalLookup.
+ *  An entry may carry `revoked: true`; the adapter honors it exactly the way
+ *  VassalRegistry.asVassalLookup does — invisible to get/findBySkill, reported
+ *  by statusOf. Previously the status was hard-coded `active`, so a Map-wired
+ *  dispatcher had no revocation gate at all. */
 function mapAsLookup(map: Map<string, VassalLike>): VassalLookup {
   return {
-    get: name => map.get(name),
-    statusOf: name => (map.has(name) ? 'active' : 'unknown'),
-    findBySkill: skillId => [...map.values()].filter(vassal => vassal.card.skills.some(skill => skill.id === skillId)),
+    get: name => {
+      const vassal = map.get(name);
+      return vassal && !vassal.revoked ? vassal : undefined;
+    },
+    statusOf: name => {
+      const vassal = map.get(name);
+      if (!vassal) return 'unknown';
+      return vassal.revoked ? 'revoked' : 'active';
+    },
+    findBySkill: skillId =>
+      [...map.values()].filter(vassal => !vassal.revoked && vassal.card.skills.some(skill => skill.id === skillId)),
   };
 }

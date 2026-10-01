@@ -3,7 +3,7 @@ import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve,
 import { randomUUID } from 'node:crypto';
 import { digestManifest, sha256Hex } from './digest.js';
 import { verifyDriverWriteGrant, type DriverGrantLedger } from './grant.js';
-import { formatTenant, normalizeTenant } from './tenant.js';
+import { formatTenant, normalizeTenant, tenantKey } from './tenant.js';
 import type { RosterVerifier } from '../registry/signing.js';
 import type { DriverWriteGrant, RealmConnection, RealmEntrySnapshot, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, TenantScope, RealmWriteItem, RealmWriteResult, SearchQuery } from './types.js';
 import {
@@ -43,6 +43,14 @@ export type FsRealmStoreOptions = {
    * the kernel warns when it boots a writable enterprise realm with no verifier.
    */
   driverGrants?: DriverGrantAuthority;
+  /**
+   * Upper bounds on the connect-time snapshot. The scan holds every managed
+   * item's full text in memory for the lifetime of the mount, so an unbounded
+   * walk lets one large directory tree decide the kernel's memory footprint.
+   * Truncation is recorded in `manifest.skipped` rather than passed off as a
+   * complete snapshot.
+   */
+  scanLimits?: { maxItems?: number; maxTotalBytes?: number };
 };
 
 export type DriverGrantAuthority = {
@@ -60,6 +68,8 @@ const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git']);
 const MAX_FILE_BYTES = 1024 * 1024; // 1 MiB
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+const DEFAULT_MAX_SCAN_ITEMS = 5_000;
+const DEFAULT_MAX_SCAN_BYTES = 256 * 1024 * 1024; // 256 MiB
 
 type ScannedItem = { itemId: string; content: string; modifiedAt: string };
 type Skipped = { itemId: string; reason: string };
@@ -117,7 +127,15 @@ export class FsRealmStore implements RealmStore {
     const existingId = this.roots.get(absRoot);
     const realmId = existingId ?? `realm-${sha256Hex(absRoot).slice(0, 16)}`;
     const previous = existingId ? this.realms.get(existingId) : undefined;
-    if (previous && formatTenant(previous.manifest.tenant) !== formatTenant(tenant)) {
+    if (previous && previous.type !== type) {
+      // The type is a boundary: a personal realm is writable by default, while
+      // the enterprise domain is gated by a driver grant. Letting a reconnect
+      // switch the label would silently drop the gate (realm §8.1).
+      throw new RealmError(
+        `reconnecting ${absRoot} would change its realm type (${previous.type} -> ${type}); disconnect is not offered in this build`,
+      );
+    }
+    if (previous && tenantKey(previous.manifest.tenant) !== tenantKey(tenant)) {
       throw new RealmError(
         `reconnecting ${absRoot} would change its tenant scope (${formatTenant(previous.manifest.tenant) || '(none)'} -> ${formatTenant(tenant) || '(none)'}); disconnect is not offered in this build`,
       );
@@ -137,8 +155,13 @@ export class FsRealmStore implements RealmStore {
       backup: { strategy: 'none' },
     };
 
+    // readOnly only tightens: a realm mounted read-only stays read-only across
+    // every reconnect. Otherwise a later caller that omits the flag (the vault
+    // live-source path, or a boot restore) would silently upgrade a snapshot's
+    // read-only mount to writable.
+    const readOnly = (previous?.readOnly ?? false) || (opts.readOnly ?? false);
     this.roots.set(absRoot, realmId);
-    this.realms.set(realmId, { realmId, type, root: absRoot, readOnly: opts.readOnly ?? false, manifest, items });
+    this.realms.set(realmId, { realmId, type, root: absRoot, readOnly, manifest, items });
     return structuredClone(manifest);
   }
 
@@ -228,7 +251,7 @@ export class FsRealmStore implements RealmStore {
     if (!fromScope || !toScope) {
       throw new RealmError('retarget requires both a "from" and a "to" tenant scope');
     }
-    if (formatTenant(stored.manifest.tenant).toLowerCase() !== formatTenant(fromScope).toLowerCase()) {
+    if (tenantKey(stored.manifest.tenant) !== tenantKey(fromScope)) {
       throw new RealmError(
         `tenant drift: realm ${realmId} is at '${formatTenant(stored.manifest.tenant)}', not '${formatTenant(fromScope)}'; retarget aborted (compare-swap)`,
       );
@@ -258,17 +281,6 @@ export class FsRealmStore implements RealmStore {
     const stored = this.requireRealm(realmId);
     if (stored.readOnly) {
       throw new UnauthorizedRealmWriteError(`realm was connected read-only; write refused: ${realmId}`);
-    }
-    if (stored.type === 'enterprise') {
-      const verification = await verifyDriverWriteGrant(grant, realmId, {
-        ...(this.options.now ? { now: this.options.now } : {}),
-        ...(this.options.driverGrants ?? {}),
-      });
-      if (!verification.ok) {
-        throw new UnauthorizedRealmWriteError(
-          `enterprise write requires a valid driver grant (${verification.reason}): ${realmId}`,
-        );
-      }
     }
     if (item.tags && item.tags.length > 0) {
       throw new UnsupportedWriteError('tags are not persisted by the P0 filesystem backend (tag-capable backend is P1)');
@@ -303,14 +315,23 @@ export class FsRealmStore implements RealmStore {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
 
-    // Create parent dirs and confirm they resolve inside the root (defeats a
-    // symlinked parent directory escaping the root).
-    const parent = dirname(abs);
-    await mkdir(parent, { recursive: true });
-    const realParent = await realpath(parent);
-    if (!isInsideRoot(stored.root, realParent)) {
-      throw new InvalidItemIdError(`target directory resolves outside the realm root: ${itemId}`);
+    // Everything above this line is shape/size/path validation, and it runs
+    // BEFORE the enterprise grant is consumed: a write that cannot be honored
+    // must not burn the single-use driver authorization it arrived with.
+    if (stored.type === 'enterprise') {
+      const verification = await verifyDriverWriteGrant(grant, realmId, {
+        ...(this.options.now ? { now: this.options.now } : {}),
+        ...(this.options.driverGrants ?? {}),
+      });
+      if (!verification.ok) {
+        throw new UnauthorizedRealmWriteError(
+          `enterprise write requires a valid driver grant (${verification.reason}): ${realmId}`,
+        );
+      }
     }
+
+    const parent = dirname(abs);
+    const realParent = await prepareParentDir(stored.root, parent, itemId);
 
     // Atomic write: exclusive temp file in the same directory, then rename.
     const tmp = join(realParent, `.${basename(abs)}.zeus-tmp-${randomUUID().slice(0, 8)}`);
@@ -356,10 +377,25 @@ export class FsRealmStore implements RealmStore {
   private async scan(root: string): Promise<{ items: ScannedItem[]; skipped: Skipped[] }> {
     const items: ScannedItem[] = [];
     const skipped: Skipped[] = [];
+    const maxItems = this.options.scanLimits?.maxItems ?? DEFAULT_MAX_SCAN_ITEMS;
+    const maxBytes = this.options.scanLimits?.maxTotalBytes ?? DEFAULT_MAX_SCAN_BYTES;
+    let totalBytes = 0;
+    let stopped = false;
 
     const walk = async (dir: string, relDir: string): Promise<void> => {
+      if (stopped) return;
+      // A realm whose snapshot is cut short must say so: a silent partial index
+      // reads exactly like a small realm, and search would quietly miss content.
+      const stop = (bound: string): void => {
+        stopped = true;
+        skipped.push({
+          itemId: relDir || '.',
+          reason: `scan stopped at the ${bound} bound (${items.length} items, ${totalBytes} bytes); snapshot is truncated and the rest of the realm is not indexed`,
+        });
+      };
       const dirents = await readdir(dir, { withFileTypes: true });
       for (const dirent of dirents) {
+        if (stopped) return;
         const itemId = posix.join(relDir, dirent.name);
         if (dirent.isSymbolicLink()) {
           skipped.push({ itemId, reason: 'symlink skipped (P0 does not follow links)' });
@@ -384,7 +420,16 @@ export class FsRealmStore implements RealmStore {
             skipped.push({ itemId, reason: `size ${st.size} exceeds ${MAX_FILE_BYTES} bytes` });
             continue;
           }
+          if (items.length >= maxItems) {
+            stop('item-count');
+            return;
+          }
+          if (totalBytes + st.size > maxBytes) {
+            stop('total-size');
+            return;
+          }
           const content = await readFile(abs, 'utf8');
+          totalBytes += st.size;
           items.push({ itemId, content, modifiedAt: st.mtime.toISOString() });
         }
       }
@@ -430,6 +475,38 @@ function assertSafeItemId(itemId: string): void {
   if (parts.includes('..') || parts.includes('')) {
     throw new InvalidItemIdError(`unsafe itemId (traversal or empty segment): ${itemId}`);
   }
+}
+
+/**
+ * Verify the directory a write lands in resolves inside the root, then create
+ * it. Order matters: `mkdir({recursive:true})` walks through symlinked
+ * ancestors, so a check placed after the mkdir would be preceded by the very
+ * directory creation it is meant to prevent - a symlinked directory inside the
+ * root would get a tree built outside it before the guard ever ran. The deepest
+ * ancestor that already exists is therefore resolved and checked first.
+ */
+async function prepareParentDir(root: string, parent: string, itemId: string): Promise<string> {
+  let existing = parent;
+  for (;;) {
+    try {
+      await lstat(existing);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const up = dirname(existing);
+      if (up === existing) throw new InvalidItemIdError(`no realm-root ancestor for: ${itemId}`);
+      existing = up;
+    }
+  }
+  if (!isInsideRoot(root, await realpath(existing))) {
+    throw new InvalidItemIdError(`target directory resolves outside the realm root: ${itemId}`);
+  }
+  await mkdir(parent, { recursive: true });
+  const realParent = await realpath(parent);
+  if (!isInsideRoot(root, realParent)) {
+    throw new InvalidItemIdError(`target directory resolves outside the realm root: ${itemId}`);
+  }
+  return realParent;
 }
 
 function isInsideRoot(root: string, abs: string): boolean {

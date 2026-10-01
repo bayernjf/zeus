@@ -25,7 +25,7 @@ export class OrgRegistry {
   createDepartment(input: CreateDepartmentInput): Department {
     const dept = createDepartment(input, this.now().toISOString());
     if (this.departments.some(d => d.departmentId === dept.departmentId)) {
-      throw new OrgError(`Department ${dept.departmentId} already exists`);
+      throw new OrgError(`Department ${dept.departmentId} already exists`, 'conflict');
     }
     this.departments.push(dept);
     return dept;
@@ -84,7 +84,7 @@ export class OrgRegistry {
 
   private indexOf(departmentId: string): number {
     const idx = this.departments.findIndex(d => d.departmentId === departmentId);
-    if (idx === -1) throw new OrgError(`Unknown department ${departmentId}`);
+    if (idx === -1) throw new OrgError(`Unknown department ${departmentId}`, 'not-found');
     return idx;
   }
 }

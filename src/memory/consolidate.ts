@@ -83,6 +83,16 @@ export function aggregateConfidence(events: MemoryEvent[], opts: ConsolidateOpti
   let totalWeight = 0;
   for (const [agentId, group] of byAgent) {
     const reliability = reliabilityOf(opts, agentId);
+    for (const event of group) {
+      // A self-report outside 0..1 (including NaN, which fails both comparisons)
+      // would silently poison the weighted mean of every event sharing it, and
+      // the old code only clamped the upper bound at the very end.
+      if (!(event.confidence >= 0 && event.confidence <= 1)) {
+        throw new MemoryConsolidationError(
+          `confidence out of range for event ${event.eventId}`,
+        );
+      }
+    }
     // Same-author repeats collapse to their mean self-report — no boost.
     const selfReport = group.reduce((sum, e) => sum + e.confidence, 0) / group.length;
     weighted += reliability * selfReport;
@@ -170,11 +180,22 @@ export function consolidate(
   let nextFacts = facts.map(f => ({ ...f, provenance: [...f.provenance] }));
   const seen = new Set<string>();
 
+  // A-06: a retracted fact stays in the source list as a tombstone, and the
+  // append-only event log keeps the claim that produced it. Without a
+  // suppression set the same claim is grouped again below and rebuilt as a
+  // brand-new fact (same deterministic id), silently undoing the retraction on
+  // the next automatic consolidation. A tombstone outlives the retraction, so
+  // the suppression holds until the fact is explicitly reinstated.
+  const tombstoned = new Set(
+    nextFacts.filter(f => f.status === 'retracted').map(f => f.factId),
+  );
+
   for (const group of groupClaims(events)) {
     const { subject, predicate, object, events: claimEvents } = group;
     const id = factId(events[0]?.realmId ?? '', subject, predicate, object);
     if (seen.has(id)) continue;
     seen.add(id);
+    if (tombstoned.has(id)) continue;
 
     const candidateTime = latestOccurredAt(claimEvents);
     const candidateReliability = meanReliability(claimEvents, options);

@@ -31,7 +31,6 @@ export type ArbitrateInput = {
   threshold?: number;
   /** Permit uncalibrated (LLM self-reported) confidence to auto-conclude. Default false. */
   allowUncalibrated?: boolean;
-  stateKeys?: string[];
   maxWaitMs?: number;
 };
 
@@ -67,6 +66,10 @@ export async function arbitrateSplit(input: ArbitrateInput): Promise<ArbitrateOu
       instructions:
         input.ruleReason || 'Choose the stance best supported by the vassal positions; express calibrated uncertainty.',
       state,
+      // This call builds its own state; name the fields so the backend's
+      // data-sovereignty whitelist (default empty) does not strip every field
+      // and leave the arbitration deciding on no evidence.
+      stateKeys: ['ruleReason', 'stances'],
       options,
       runId: input.runId,
       realm: input.realm,

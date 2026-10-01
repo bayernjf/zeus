@@ -1,6 +1,6 @@
 # 功能清单（Feature Inventory）
 
-状态：**现行 v0.1**（2026-09-30 随首轮代码审计建立，基线 854 测试 / 90 文件）
+状态：**现行 v0.2**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件）
 
 > 本文件是 Zeus **全部功能点的资产台账**：有什么、在哪、什么状态。缺陷台账在 [audit-2026-09.md](audit-2026-09.md)。需求优先级与验收标准在 [prd.md](prd.md)；"做到哪了"在 [handoff.md](../handoff.md)。本文件只回答"有什么"，不记进度。
 
@@ -84,14 +84,14 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 | --- | --- | --- |
 | 一层扇出/汇聚：按技能或显式名单并行派发 N 个执行 Agent | `orchestrator/orchestrator.ts` | ✅ |
 | 意图幂等：同 intentId 重放零出站 | `orchestrator.ts:121-126` | ✅ |
-| 取消传播到全部非终态分支 | `orchestrator.ts:337-359` | 🚧（触达不到在飞分支，见 audit A-11） |
+| 取消传播到全部非终态分支 | `orchestrator.ts:337-359` | ✅（A-11 已修：意图在首个分支派发前落最小可取消态，取消结果回写分支与聚合） |
 | 多流合并（带来源 vassal/taskId/runId） | `orchestrator/merge.ts` | ✅ |
 | 规则聚合：unanimous / majority / weighted，分裂不臆断 | `orchestrator/aggregate.ts` | ✅ |
 | 冲突检测与升级进监督台 | `orchestrator/conflict.ts` + `oversight` | ✅ |
 | 决策后端仲裁（规则无解时按置信度闸门采纳） | `orchestrator/arbitration.ts` | ✅ |
 | 对抗式复核（阈值闸门 + 分歧升级） | `orchestrator/judge.ts` | ✅ |
 | 并发闸：信号量 + 有界 FIFO 队列，队列深度为真值 | `orchestrator/semaphore.ts` | ✅ |
-| 饱和分流给同技能最优提供方 | `orchestrator/diversion.ts` | ✅（per-vassal 上限未接线，见 audit A-01） |
+| 饱和分流给同技能最优提供方 | `orchestrator/diversion.ts` | ✅ |
 | 离线决策回放（纯只读时间线重建） | `orchestrator/replay.ts` | ✅ |
 | 并发指标：在途/峰值/队列深度/延迟分位/失败率 | `orchestrator/metrics.ts` | ✅ |
 | 完整 DAG：拓扑分层、关键路径、上游失败跳过下游、产物下传 | `orchestrator/dag.ts` `dag-runner.ts` | ✅ |
@@ -172,7 +172,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 | --- | --- | --- |
 | MCP 客户端：streamable-HTTP JSON-RPC、握手发现（tools/resources/prompts） | `mcp/client.ts` | ✅ |
 | 连接器注册表：声明（封闭权限词汇）/ 连接 / 吊销即时移出 | `mcp/connectors.ts` | ✅ |
-| 最小权限：能力按声明裁剪，`mcp:<tool>` 精确放行 | `mcp/connectors.ts` | 🚧（空声明即绕过，见 audit A-09） |
+| 最小权限：能力按声明裁剪，`mcp:<tool>` 精确放行 | `mcp/connectors.ts` | ✅（A-09 已修：空权限 = 空能力，调用时按声明重推导） |
 | 工具调用面与上游失败 502 | `POST /api/connectors/:id/tools/:name/call` | ✅ |
 | 服务端 tools/list + tools/call（域白名单） | `realm/mcp.ts` | ✅ |
 
@@ -185,11 +185,11 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 | 置信度按 Agent 可靠度加权，同源重复不增强 | `memory/consolidate.ts` | ✅ |
 | 跨域读写拒绝并审计 | `memory/memory-store.ts` | ✅ |
 | 混合检索：BM25 + 本地哈希向量，可调 alpha，中文分词 | `memory/recall.ts` | ✅ |
-| 遗忘权：撤回事实、抹除主体、tombstone 持久化 | `memory/memory-store.ts` | 🚧（可被整理复活，见 audit A-06） |
+| 遗忘权：撤回事实、抹除主体、tombstone 持久化 | `memory/memory-store.ts` | ✅（A-06 已修：整理期维护 tombstone 抑制集，撤回主体在墓碑存在期间不重建） |
 | 漂移对账：两时点 diff + 横切完整性校验 | `memory/reconcile.ts` | ✅ |
 | 可靠度纠错回写 | `memory/memory-store.ts` + oversight 钩子 | ✅ |
 | 记忆事件生产者（扇出结论沉淀为 claim） | `memory/producer.ts` | ✅ |
-| 叙事化日记：按天分桶、锚 eventId、落盘/导出/HTTP 生成 | `diary/` | 🚧（不排除已撤回事实，见 audit A-07） |
+| 叙事化日记：按天分桶、锚 eventId、落盘/导出/HTTP 生成 | `diary/` | ✅（A-07 已修：渲染排除 `status === 'retracted'` 的事实） |
 | 真实同域 embedding 模型接入 | 未实现 | ⬜（deferred #10 触发） |
 
 ### 3.9 组织层（E9）
@@ -214,19 +214,16 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 | 容量基线 harness 与五场景数据 | `scripts/bench-capacity.mjs` + `docs/capacity-baseline.md` | ✅ |
 | 容器部署形态（多阶段、非 root、健康检查、状态卷） | `Dockerfile` + `docs/deployment.md` | ✅ |
 | CI：Node 双矩阵 typecheck → test → build + 独立时钟偏移 job | `.github/workflows/ci.yml` | ✅ |
-| 文档一致性断言（8 项机械校验） | `tests/doc-consistency.test.ts` | ✅ |
+| 文档一致性断言（9 项机械校验） | `tests/doc-consistency.test.ts` | ✅ |
 
 ## 4. 已实现但未接线的功能
 
-这一类不在 PRD 的 ⬜ 里，因此最容易在盘点时被算成"已完成"。它们是**能力齐备但没接到主路径上**：
+这一类不在 PRD 的 ⬜ 里，因此最容易在盘点时被算成"已完成"。它们是**能力齐备但没接到主路径上**。2026-10-01 的 A 级修复批把原列 6 项中的 per-vassal 并发上限（A-01）、跨域授权 nonce 防重放（A-04）、连接器空权限 fail-closed（A-09）三项接上了主路径，下表为剩余 3 项：
 
 | 功能 | 位置 | 缺的那一步 |
 | --- | --- | --- |
-| per-vassal 并发上限 | `orchestrator.ts:168-177` 已实现 | `serve.ts` 未透传（audit A-01） |
 | 执行授权票据派发闸门 | `delegation/` 原语已落 | 派发路径与 A2A 投递未接线（deferred #33） |
 | 数据二极管按 `dataPolicy` 收缩范围 | `dispatcher.ts:139` | 只区分 `none`，两档等价 |
-| 跨域授权 nonce 防重放 | `realm/authorization.ts` | 决策路径不查账本（audit A-04） |
-| 连接器空权限 fail-closed | `mcp/connectors.ts:70` | 空声明跳过裁剪（audit A-09） |
 | `startServer()` | `http/server.ts:1703` | 无调用方，且未从 `index.ts` 导出 |
 
 ## 5. 配置面（环境变量）
@@ -242,7 +239,8 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 | `ZEUS_RSK_KEY` / `_FILE` / `ZEUS_RSK_KEY_ID` | 无 / `zeus-rsk-dev` | 名册封印密钥 |
 | `NODE_ENV` | — | `production` 且无密钥时拒启 |
 | `ZEUS_MAX_CONCURRENT_BRANCHES` / `ZEUS_BRANCH_QUEUE_LIMIT` | 无界 / 无界 | 全局并发闸与排队上限 |
-| `ZEUS_MAX_CONCURRENT_PER_VASSAL` | 无 | per-vassal 饱和上限（**当前未生效**） |
+| `ZEUS_MAX_CONCURRENT_PER_VASSAL` | 无 | per-vassal 饱和上限（A-01 已接线到编排器） |
+| `ZEUS_OUTBOUND_ALLOW_HOSTS` | 无 | A-12：出站 URL 守卫的显式放行名单（逗号分隔，`.suffix` 整段后缀匹配），跳过非公网地址检查 |
 | `ZEUS_REALM_ROOTS` / `ZEUS_REALM_ENTERPRISE` | 无 | 个人域根（逗号分隔）/ 企业域挂载 `root::tenant` |
 | `ZEUS_JUDGE_ENABLED` / `_THRESHOLD` / `_ALLOW_UNCALIBRATED` | false / 无 / false | 对抗式复核开关与闸门 |
 | `ZEUS_DECISION_API_KEY` / `_BASE_URL` / `_MODEL` | 无 | Jev 决策后端 |
@@ -254,4 +252,4 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 
 - 新增功能点 → 更新本文件对应域的表，并在 [handoff.md](../handoff.md) 记录实施进度（本文件不记进度）。
 - 功能状态与 [audit-2026-09.md](audit-2026-09.md) 冲突时，以代码为准；审计报告的 A 级条目即"✅ 但有条件"。
-- 本文件随代码变化过期：基线 854 测试 / 90 文件，HEAD `111f6c3`。
+- 本文件随代码变化过期：基线 909 测试 / 92 文件，HEAD `b1cf1a6`（A 级修复批末笔）。

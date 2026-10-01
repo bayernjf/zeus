@@ -12,9 +12,12 @@ import {
   sealSnapshot,
   verifySignedSnapshot,
   type AttestationSource,
+  type RosterVerifier,
+  type SealOptions,
   type SignedRosterSnapshot,
 } from '../src/registry/signing.js';
 import type { AgentCard } from '../src/a2a/types.js';
+import { SHA256_LABEL, sha256Hex, sha256Labeled } from '../src/util/crypto.js';
 
 // --- JCS subset vectors -------------------------------------------------------
 
@@ -55,6 +58,14 @@ describe('canonicalJson (RFC 8785 JCS subset)', () => {
   it('refuses non-JSON values (undefined/function/bigint)', () => {
     expect(() => canonicalJson(undefined)).toThrow(/cannot canonicalize/);
     expect(() => canonicalJson(1n)).toThrow(/cannot canonicalize/);
+  });
+
+  // Without toJSON, Object.keys(new Date()) is empty, so every Date canonicalized
+  // to `{}` — a Date and an empty object shared a digest (silent collision).
+  it('serializes through toJSON, so a Date is its ISO string and not an empty object', () => {
+    expect(canonicalJson(new Date('2026-09-26T09:00:00.000Z'))).toBe('"2026-09-26T09:00:00.000Z"');
+    expect(canonicalJson({ at: new Date(0) })).toBe('{"at":"1970-01-01T00:00:00.000Z"}');
+    expect(canonicalDigest(new Date(0))).not.toBe(canonicalDigest({}));
   });
 });
 
@@ -98,6 +109,20 @@ describe('digestCard', () => {
     const changed = card();
     changed['x-zeus-fealty']!.dataPolicy = 'none';
     expect(digestCard(changed).fealtyDigest).not.toBe(base.fealtyDigest);
+  });
+});
+
+// --- C-audit: the algorithm label and the algorithm live together -------------
+
+describe('canonicalDigest algorithm label', () => {
+  // The `sha256:` prefix used to be retyped in the signing module while the
+  // primitive lived in util/crypto, so the two could drift: a swap of the hash
+  // would leave every signature still claiming `sha256:`. The label is now a
+  // property of the shared helper, and this pins the signing digest to it.
+  it('takes its algo prefix from the shared helper rather than retyping it', () => {
+    expect(SHA256_LABEL).toBe('sha256:');
+    expect(sha256Labeled('abc')).toBe(`${SHA256_LABEL}${sha256Hex('abc')}`);
+    expect(canonicalDigest({ b: 2, a: 1 })).toBe(sha256Labeled(canonicalJson({ b: 2, a: 1 })));
   });
 });
 
@@ -461,6 +486,50 @@ describe('signed internal roster v1.1 — revoked attestations', () => {
   });
 });
 
+describe('verifier failures and missing seal sources', () => {
+  // VerifyResult contract: every refusal is a reason, never a throw. A verifier
+  // that reaches a KMS or the network can fail outright, and that failure must
+  // not escape past the envelope check as an exception.
+  it('reports a throwing verifier as a failed verification instead of letting it escape', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildSignedFixture(T0, signer);
+
+    const brokenSeal: RosterVerifier = {
+      verify: async () => {
+        throw new Error('kms unreachable');
+      },
+    };
+    const sealResult = await verifySignedSnapshot(envelope, brokenSeal, T0);
+    expect(sealResult.ok).toBe(false);
+    if (!sealResult.ok) expect(sealResult.reason).toMatch(/could not run.*kms unreachable/);
+
+    // Same contract on the per-entry path: the seal is verified first, so pass
+    // that one through and fail only on the attestations behind it.
+    const real = signer.verifier();
+    let calls = 0;
+    const brokenEntry: RosterVerifier = {
+      verify: async (keyId, text, sig) => {
+        calls += 1;
+        if (calls > 1) throw new Error('kms unreachable');
+        return real.verify(keyId, text, sig);
+      },
+    };
+    const entryResult = await verifySignedSnapshot(envelope, brokenEntry, T0);
+    expect(entryResult.ok).toBe(false);
+    if (!entryResult.ok) expect(entryResult.reason).toMatch(/attestation verification could not run.*kms unreachable/);
+  });
+
+  it('refuses an entry with no attestation source instead of emitting attestations: {}', async () => {
+    const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+    const { envelope } = await buildSignedFixture(T0, signer);
+    // `sources` is required by the type now; a JS caller can still omit it, and
+    // that used to produce an envelope no verifier would ever accept.
+    const omitted = { now: T0, maxAgeSeconds: 3600 } as SealOptions;
+    await expect(sealSnapshot(envelope.snapshot, signer, omitted)).rejects.toThrow(/no attestation source/);
+    await expect(sealSnapshot(envelope.snapshot, signer, { ...omitted, sources: [] })).rejects.toThrow(/no attestation source/);
+  });
+});
+
 // --- payload schema marker and envelope version gates (deferred #22) ----------
 
 describe('roster schemaVersion and envelope version enforcement', () => {
@@ -533,5 +602,74 @@ describe('roster schemaVersion and envelope version enforcement', () => {
     expect(attResult.ok).toBe(false);
     if (attResult.ok) return;
     expect(attResult.reason).toMatch(/unsupported attestation envelope version 2 for "loom"/);
+  });
+});
+
+// --- C-audit: seal parameters and the attestation fields the verifier ignored --
+
+describe('seal and attestation envelope validation', () => {
+  const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
+  const source = (): AttestationSource => ({ name: 'loom', card: loomCard(), cardUrl: 'http://loom.test/api/a2a/agent-card' });
+
+  // maxAgeSeconds is the freshness bound the verifier enforces; a non-positive
+  // one seals an artifact that is stale the moment it is issued, and NaN removes
+  // the bound entirely.
+  it('refuses a seal freshness bound that cannot bound anything', async () => {
+    await expect(buildSignedFixture(T0, signer, 0)).rejects.toThrow(/maxAgeSeconds must be a positive number/);
+    await expect(buildSignedFixture(T0, signer, -60)).rejects.toThrow(/maxAgeSeconds must be a positive number/);
+    await expect(buildSignedFixture(T0, signer, Number.NaN)).rejects.toThrow(/maxAgeSeconds must be a positive number/);
+    await expect(buildSignedFixture(T0, signer, 3600, 0)).rejects.toThrow(/attestationTtlSeconds must be a positive number/);
+  });
+
+  it('refuses an attestation TTL that expires it at the moment it is issued', async () => {
+    await expect(createAttestation(source(), signer, { now: T0, ttlSeconds: 0 })).rejects.toThrow(/ttlSeconds must be a positive number/);
+    await expect(createAttestation(source(), signer, { now: T0, ttlSeconds: Number.NaN })).rejects.toThrow(/ttlSeconds must be a positive number/);
+    await expect(createAttestation(source(), signer, { now: T0, ttlSeconds: 3600 })).resolves.toBeTruthy();
+  });
+
+  /** Re-sign an attestation after editing it, so its signature stays valid and
+   *  the field under test is the only thing wrong with it. */
+  const reSign = async (attestation: Record<string, unknown>) => {
+    const { sig, ...unsigned } = attestation;
+    void sig;
+    return { ...unsigned, sig: await signer.sign(canonicalJson(unsigned)) };
+  };
+
+  it('refuses an attestation whose algorithm or issuer disagrees with the envelope', async () => {
+    for (const field of [{ alg: 'none' }, { issuer: 'someone-else' }]) {
+      const { envelope } = await buildSignedFixture(T0, signer);
+      const tampered = structuredClone(envelope) as unknown as { attestations: Record<string, Record<string, unknown>> };
+      Object.assign(tampered.attestations.loom, field);
+      tampered.attestations.loom = await reSign(tampered.attestations.loom);
+      const result = await verifySignedSnapshot(tampered, signer.verifier(), T0);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toMatch(/^attestation for "loom" declares/);
+    }
+  });
+
+  it('refuses an attestation signed by a key other than the seal key', async () => {
+    const other = new Ed25519MemorySigner('zeus-rsk-other');
+    const { envelope } = await buildSignedFixture(T0, signer);
+    envelope.attestations.loom.keyId = other.keyId;
+    const { sig, ...unsigned } = envelope.attestations.loom as unknown as Record<string, unknown>;
+    void sig;
+    envelope.attestations.loom.sig = await other.sign(canonicalJson(unsigned));
+    // The other key is trusted by the verifier, so only the seal-key binding can
+    // refuse this envelope.
+    const result = await verifySignedSnapshot(envelope, signer.verifier([other.keyId, other.publicKey]), T0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/not the seal keyId/);
+  });
+
+  it('refuses an attestation row that no snapshot entry binds', async () => {
+    const { envelope } = await buildSignedFixture(T0, signer);
+    envelope.attestations.ghost = await createAttestation(
+      { name: 'ghost', card: loomCard(), cardUrl: 'http://ghost.test/api/a2a/agent-card' },
+      signer,
+      { now: T0, ttlSeconds: 3600 }
+    );
+    const result = await verifySignedSnapshot(envelope, signer.verifier(), T0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/rows no snapshot entry binds: ghost/);
   });
 });

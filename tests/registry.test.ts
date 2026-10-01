@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry, CardFetchError, defaultTaskUrl } from '../src/registry/registry.js';
+import { VassalRegistry, CardFetchError, VassalRevokedError, defaultTaskUrl, type RegistryHooks } from '../src/registry/registry.js';
 import type { AgentCard } from '../src/a2a/types.js';
 
 function cardResponse(card: unknown, status = 200): Response {
@@ -97,6 +97,14 @@ describe('VassalRegistry', () => {
       await expect(registerWith(oath({ dataPolicy: undefined })))
         .rejects.toThrow(/http:\/\/vassal\.internal\/api\/a2a\/agent-card$/);
     });
+
+    // domain is the grouping key routing and the roster project on: an empty or
+    // missing one quietly put every such vassal in the same nameless bucket.
+    it('refuses an oath whose domain is empty or missing', async () => {
+      await expect(registerWith(oath({ domain: '' }))).rejects.toThrow(/domain must be a non-empty string, got ""/);
+      await expect(registerWith(oath({ domain: '   ' }))).rejects.toThrow(/domain must be a non-empty string/);
+      await expect(registerWith(oath({ domain: undefined }))).rejects.toThrow(/domain must be a non-empty string, got nothing/);
+    });
   });
 
   it('refuses an unsupported fealty.version instead of silently accepting it (§4.5 version negotiation)', async () => {
@@ -139,6 +147,46 @@ describe('VassalRegistry', () => {
     // A peer that answers 5xx and a peer we cannot reach are the same class of
     // failure to the caller: transport, not content.
     await expect(down.register('http://down/api/a2a/agent-card')).rejects.toBeInstanceOf(CardFetchError);
+  });
+
+  // A 200 from a peer that is serving something other than a card. This is a
+  // transport failure — the peer failed to answer the question — not a malformed
+  // request, and the HTTP face maps it to 502 accordingly.
+  it('treats a 200 whose body is not JSON as a transport failure', async () => {
+    const registry = new VassalRegistry(
+      async () => new Response('<html>maintenance</html>', { status: 200, headers: { 'Content-Type': 'text/html' } })
+    );
+    const err = await registry.register('http://vassal.internal/api/a2a/agent-card').catch(e => e);
+    expect(err).toBeInstanceOf(CardFetchError);
+    expect(err.message).toMatch(/not JSON/);
+    expect(err.message).toContain('http://vassal.internal/api/a2a/agent-card');
+  });
+
+  // A-12 guards every outbound face; this pins that an explicit taskUrl override
+  // goes through the same guard as the card URL, so neither can name a target
+  // the dispatcher would then POST JSON-RPC to.
+  it('refuses a taskUrl override that is not an http(s) absolute URL', async () => {
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
+    await expect(
+      registry.register('http://vassal.internal/api/a2a/agent-card', { taskUrl: 'ftp://vassal.internal/tasks' })
+    ).rejects.toThrow(/http or https/);
+    await expect(registry.register('http://vassal.internal/api/a2a/agent-card', { taskUrl: '' })).rejects.toThrow(
+      /absolute URL/
+    );
+  });
+
+  it('never hands the outbound token to the caller or the onRegister hook', async () => {
+    const seen: Array<Parameters<NonNullable<RegistryHooks['onRegister']>>[0]> = [];
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()), () => new Date(), {
+      onRegister: entry => seen.push(entry),
+    });
+    const entry = await registry.register('http://vassal.internal/api/a2a/agent-card', { token: 'outbound-credential' });
+    expect(entry).not.toHaveProperty('token');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).not.toHaveProperty('token');
+    // The dispatcher and the on-disk snapshot stay the only readers.
+    expect(registry.tokenFor('pr-helper')).toBe('outbound-credential');
+    expect(registry.exportState()[0].token).toBe('outbound-credential');
   });
 
   // Every other failure stub in this file returns a bad Response. None of them
@@ -189,6 +237,42 @@ describe('VassalRegistry', () => {
     expect(lookup.findBySkill('create-pr')).toHaveLength(0);
   });
 
+  it('refuses to re-register a revoked name so a POST cannot undo a revocation (A-02)', async () => {
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
+    await registry.register('http://vassal.internal/api/a2a/agent-card', { token: 'bearer-a' });
+    expect(registry.revoke('pr-helper')).toBe(true);
+
+    const err = await registry
+      .register('http://attacker.internal/api/a2a/agent-card', { token: 'bearer-b' })
+      .catch(e => e);
+    expect(err).toBeInstanceOf(VassalRevokedError);
+    // The rejected registration must leave the revoked entry exactly as it was:
+    // same declared card URL, same stored credential, still revoked.
+    const [entry] = registry.listAll();
+    expect(entry).toMatchObject({ status: 'revoked' });
+    expect(entry.cardUrl).toBe('http://vassal.internal/api/a2a/agent-card');
+    expect(registry.tokenFor('pr-helper')).toBeUndefined();
+  });
+
+  it('restores a revoked vassal only through an explicit, audited reinstate (A-02)', async () => {
+    const events: Array<{ name: string; at: string }> = [];
+    const registry = new VassalRegistry(
+      async () => cardResponse(prHelperCard()),
+      () => new Date('2026-10-01T10:00:00.000Z'),
+      { onReinstate: (name, at) => events.push({ name, at }) }
+    );
+    await registry.register('http://vassal.internal/api/a2a/agent-card');
+    expect(registry.revoke('pr-helper')).toBe(true);
+
+    expect(registry.reinstate('pr-helper')).toBe(true);
+    expect(events).toEqual([{ name: 'pr-helper', at: '2026-10-01T10:00:00.000Z' }]);
+    // routable again, and the transition is a one-shot: repeat / unknown names are no-ops
+    expect(registry.get('pr-helper')).toBeDefined();
+    expect(registry.reinstate('pr-helper')).toBe(false);
+    expect(registry.reinstate('ghost')).toBe(false);
+    expect(events).toHaveLength(1);
+  });
+
   it('listAll keeps revoked vassals with an explicit status for the oversight deck', async () => {
     const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
     await registry.register('http://vassal.internal/api/a2a/agent-card');
@@ -225,6 +309,39 @@ describe('VassalRegistry', () => {
     up = false;
     expect(await registry.healthCheck('pr-helper')).toBe(false);
     expect(registry.get('pr-helper')?.lastHealthCheck?.detail).toBe('connection refused');
+  });
+
+  // The probe reason is text the peer's transport (or the OS) writes, and it is
+  // then persisted to the state file and carried inside the signed roster
+  // snapshot. Bound and flatten it before it gets there.
+  it('bounds and flattens a probe failure before it is persisted and signed', async () => {
+    let calls = 0;
+    const registry = new VassalRegistry(async () => {
+      calls += 1;
+      if (calls === 1) return cardResponse(prHelperCard());
+      throw new Error(`dial tcp 10.1.2.3:443: connect: connection refused\n\u0007${'x'.repeat(500)}`);
+    });
+    await registry.register('http://vassal.internal/api/a2a/agent-card');
+    expect(await registry.healthCheck('pr-helper')).toBe(false);
+    const detail = registry.get('pr-helper')?.lastHealthCheck?.detail ?? '';
+    expect(detail.startsWith('dial tcp 10.1.2.3:443: connect: connection refused')).toBe(true);
+    expect(detail.length).toBeLessThanOrEqual(200);
+    expect(detail).not.toMatch(/[\u0000-\u001f\u007f]/);
+  });
+
+  // The accessors strip the outbound bearer, so their declared type must not
+  // promise it either. Compile-time guard: if any of these signatures regains
+  // `token?`, `npm run typecheck` fails on the assignments below.
+  it('declares no token on the accessors that strip it', async () => {
+    const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
+    await registry.register('http://vassal.internal/api/a2a/agent-card', { token: 'outbound-credential' });
+    type Guard<T> = 'token' extends keyof T ? 'leaked' : 'clean';
+    const fromGet: Guard<NonNullable<ReturnType<typeof registry.get>>> = 'clean';
+    const fromList: Guard<ReturnType<typeof registry.list>[number]> = 'clean';
+    const fromListAll: Guard<ReturnType<typeof registry.listAll>[number]> = 'clean';
+    const fromSkill: Guard<ReturnType<typeof registry.findVassalsForSkill>[number]> = 'clean';
+    expect([fromGet, fromList, fromListAll, fromSkill]).toEqual(['clean', 'clean', 'clean', 'clean']);
+    expect(registry.get('pr-helper')).not.toHaveProperty('token');
   });
 });
 

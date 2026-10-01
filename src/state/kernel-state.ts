@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { VassalEntry } from '../registry/registry.js';
 import { VassalRegistry } from '../registry/registry.js';
@@ -17,7 +17,7 @@ import type { SkillSpec } from '../skills/types.js';
 import { SkillRegistry } from '../skills/registry.js';
 import type { MemoryState } from '../memory/types.js';
 import { MemoryStore } from '../memory/memory-store.js';
-import type { ConnectorRecord } from '../mcp/types.js';
+import type { PersistedConnectorRecord } from '../mcp/types.js';
 import { ConnectorRegistry } from '../mcp/connectors.js';
 import type { MentorshipRecord } from '../skills/mentor.js';
 import { MentorshipLedger } from '../skills/mentor.js';
@@ -50,8 +50,8 @@ export type KernelSnapshot = {
   skills?: SkillSpec[];
   /** Memory P1: event log and fact store. Optional for backward compat. */
   memory?: MemoryState;
-  /** E7: MCP connector declarations. Optional for backward compat. */
-  connectors?: ConnectorRecord[];
+  /** E7: MCP connector declarations (never their bearer tokens). Optional for backward compat. */
+  connectors?: PersistedConnectorRecord[];
   /** E2.5: mentorship records. Optional for backward compat. */
   mentorships?: MentorshipRecord[];
   /** E9.3: department establishment. Optional for backward compat. */
@@ -153,13 +153,33 @@ export class FileKernelStateStore {
       ...(state.commissions ? { commissions: state.commissions } : {}),
       ...(state.writeGrantNonces ? { writeGrantNonces: state.writeGrantNonces } : {}),
     };
-    await mkdir(dirname(this.filePath), { recursive: true });
-    const tmp = `${this.filePath}.tmp`;
+    const dir = dirname(this.filePath);
     // The snapshot holds connector bearer tokens and the user's memory facts in
-    // plain JSON, so it is written owner-readable only; renaming over a file that
-    // an older build left world-readable tightens it on the next save.
-    await writeFile(tmp, JSON.stringify(snapshot, null, 2), { encoding: 'utf8', mode: 0o600 });
+    // plain JSON. A 0755 directory (the umask default) lets any local user list
+    // and read it, so the directory is created owner-only. mkdir does not
+    // re-chmod a directory that already exists.
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    const tmp = `${this.filePath}.tmp`;
+    // Durability, not only atomicity: fsync the temp file so its bytes reach the
+    // disk before the rename publishes it, then fsync the directory so the rename
+    // itself survives a power loss. rename() orders the operations but does not
+    // flush them, so without the fsyncs the old comment's "atomic" write can
+    // still lose the whole snapshot. Owner-readable only applies on create;
+    // renaming over a file an older build left world-readable tightens it.
+    const handle = await open(tmp, 'w', 0o600);
+    try {
+      await handle.writeFile(JSON.stringify(snapshot, null, 2), { encoding: 'utf8' });
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await rename(tmp, this.filePath);
+    const dirHandle = await open(dir, 'r');
+    try {
+      await dirHandle.sync();
+    } finally {
+      await dirHandle.close();
+    }
   }
 
   /** Load and validate; returns null when no snapshot file exists yet. */

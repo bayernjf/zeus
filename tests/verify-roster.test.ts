@@ -59,7 +59,7 @@ async function publish(name = 'roster') {
   writeFileSync(envelopePath, JSON.stringify(envelope));
   writeFileSync(keyPath, signer.publicKey.export({ type: 'spki', format: 'pem' }));
   writeFileSync(join(dir, `${name}.card.json`), JSON.stringify(card));
-  return { envelope, envelopePath, keyPath, cardPath: join(dir, `${name}.card.json`), signer };
+  return { envelope, envelopePath, keyPath, cardPath: join(dir, `${name}.card.json`), signer, sources };
 }
 
 function run(args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
@@ -178,12 +178,12 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
   });
 
   it('rejects a payload from a newer schema version instead of verifying it', async () => {
-    const { envelope, envelopePath, signer } = await publish('future');
+    const { envelope, envelopePath, signer, sources } = await publish('future');
     const edited = structuredClone(envelope);
     edited.snapshot.schemaVersion = 99;
     // A future producer signs its own shape, so digest and signature are both
     // self-consistent here: only the version gate can refuse it.
-    const resealed = await sealSnapshot(edited.snapshot, signer, { now: T0, maxAgeSeconds: 3600 });
+    const resealed = await sealSnapshot(edited.snapshot, signer, { now: T0, maxAgeSeconds: 3600, sources });
     writeFileSync(envelopePath, JSON.stringify(resealed));
     const result = await run(['--file', envelopePath, '--key', join(dir, 'future.pub.pem')]);
     expect(result.status).toBe(1);

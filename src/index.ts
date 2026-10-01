@@ -35,9 +35,10 @@ export type {
 } from './a2a/types.js';
 
 // --- A1 vassal registry ---
-export { VassalRegistry, defaultTaskUrl } from './registry/registry.js';
+export { VassalRegistry, defaultTaskUrl, CardFetchError, VassalRevokedError } from './registry/registry.js';
 export type {
   VassalEntry,
+  PublicVassalEntry,
   VassalLike,
   VassalLookup,
   VassalStatus,
@@ -100,6 +101,7 @@ export {
   type AuditQuery,
   type JsonlAuditSinkOptions,
   revokeAuditBridge,
+  reinstateAuditBridge,
 } from './dispatch/audit.js';
 
 // --- A4 oversight desk + E6.2 conflict settlement ---
@@ -114,7 +116,7 @@ export type {
 } from './oversight/types.js';
 
 // --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
-export { Orchestrator, UnknownIntentError } from './orchestrator/orchestrator.js';
+export { Orchestrator, UnknownIntentError, IntentRequestConflictError } from './orchestrator/orchestrator.js';
 export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
 export { Semaphore, QueueFullError, type SlotRelease } from './orchestrator/semaphore.js';
 export { mergeBranches } from './orchestrator/merge.js';
@@ -156,7 +158,7 @@ export {
   DagValidationError,
 } from './orchestrator/dag.js';
 export type { DagNode, DagSpec, DagNodeState, DagState } from './orchestrator/dag.js';
-export { DagRunner } from './orchestrator/dag-runner.js';
+export { DagRunner, DagIdInUseError } from './orchestrator/dag-runner.js';
 export type { DagResult, DagNodeResult, DagRunnerOptions } from './orchestrator/dag-runner.js';
 export {
   FileKernelStateStore,
@@ -243,7 +245,7 @@ export {
   MAX_STANCE_CHARS,
   type BranchClaimOptions,
 } from './memory/producer.js';
-export { MemoryStore, MemoryBoundaryError } from './memory/memory-store.js';
+export { MemoryStore, MemoryBoundaryError, MemoryEventConflictError } from './memory/memory-store.js';
 export { RecallIndex, LocalHashingEmbedder, tokenize, factText } from './memory/recall.js';
 export {
   reconcileMemoryStates,
@@ -332,7 +334,7 @@ export type {
 export type { RealmWriteAuditEntry, FsRealmStoreOptions, DriverGrantAuthority } from './realm/store.js';
 
 // --- E3.6 tenancy + E6.4 cross-domain authorization and retrieval ---
-export { parseTenant, formatTenant, normalizeTenant, tenantReaches, TenantError } from './realm/tenant.js';
+export { parseTenant, formatTenant, normalizeTenant, tenantKey, tenantReaches, TenantError } from './realm/tenant.js';
 export {
   decideRealmAccess,
   verifyDomainGrant,

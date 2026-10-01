@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createCipheriv, randomBytes, scryptSync } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FsRealmStore } from '../src/realm/store.js';
@@ -23,6 +25,7 @@ import {
   type SealedEnvelope,
   type TreasureMap,
 } from '../src/vault/types.js';
+import { open as openEnvelope, seal as sealEnvelope } from '../src/vault/cipher.js';
 
 const SECRET_A = '# Alpha\nunique-secret-token-AAA\n';
 const SECRET_B = 'Bravo content BBB\n';
@@ -207,4 +210,87 @@ describe('restore sink hardening', () => {
       sink.writeItem(root, { itemId: '/abs/evil.txt', content: 'x', modifiedAt: new Date().toISOString() })
     ).rejects.toThrow(VaultFormatError);
   });
+
+  it('refuses to build a tree through a symlinked parent that leaves the root', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'zeus-vault-outside-'));
+    try {
+      await symlink(outside, join(root, 'linked'));
+      const sink = new FsRestoreSink();
+      // `linked/...` is a legal itemId, so only the resolved-parent check stands
+      // between a hostile bundle and a tree written outside the target root.
+      await expect(
+        sink.writeItem(root, { itemId: 'linked/deep/new.md', content: 'x', modifiedAt: new Date().toISOString() })
+      ).rejects.toThrow(VaultFormatError);
+      expect(existsSync(join(outside, 'deep'))).toBe(false);
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces a symlinked item path instead of writing through it', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'zeus-vault-victim-'));
+    const victim = join(outside, 'victim.md');
+    try {
+      await writeFile(victim, 'do not touch me\n');
+      await symlink(victim, join(root, 'planted.md'));
+      const sink = new FsRestoreSink();
+      await sink.writeItem(root, { itemId: 'planted.md', content: 'restored\n', modifiedAt: new Date().toISOString() });
+      expect((await lstat(join(root, 'planted.md'))).isSymbolicLink()).toBe(false);
+      expect(await readFile(join(root, 'planted.md'), 'utf8')).toBe('restored\n');
+      expect(await readFile(victim, 'utf8')).toBe('do not touch me\n');
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
 });
+
+describe('sealed envelope: the scrypt cost travels with the envelope', () => {
+  it('records the cost it sealed with, and still opens one that predates the field', () => {
+    const plaintext = JSON.stringify(map);
+    const sealed = sealEnvelope(plaintext, 'zeus-treasure-map', 'passphrase');
+    expect(sealed.kdfParams).toEqual({ N: 131_072, r: 8, p: 1 });
+    expect(openEnvelope(sealed, 'passphrase')).toBe(plaintext);
+    // A raw key skips the KDF, so there is no cost to record.
+    expect(sealEnvelope(plaintext, 'zeus-treasure-map', Buffer.alloc(32, 7)).kdfParams).toBeUndefined();
+
+    // A backup written before the field existed was sealed at Node's default
+    // cost. It must keep opening - that is the whole reason the cost is carried
+    // forward instead of hard-coded: raising N must not orphan old backups.
+    const legacy = sealAtLegacyCost(plaintext);
+    expect(legacy.kdfParams).toBeUndefined();
+    expect(openEnvelope(legacy, 'passphrase')).toBe(plaintext);
+  });
+
+  it('refuses a cost it should not be asked to pay', () => {
+    const sealed = sealEnvelope('x', 'zeus-treasure-map', 'passphrase');
+    for (const kdfParams of [
+      { N: 3, r: 8, p: 1 }, // not a power of two
+      { N: 2 ** 21, r: 8, p: 1 }, // above the accepted ceiling
+      { N: 131_072, r: 0, p: 1 }, // r must be at least 1
+      { N: 131_072.5, r: 8, p: 1 }, // not an integer
+    ]) {
+      expect(() => openEnvelope({ ...sealed, kdfParams }, 'passphrase')).toThrow(VaultFormatError);
+    }
+  });
+});
+
+/**
+ * Seal exactly the way this tool did before it recorded `kdfParams`:
+ * `scryptSync` with Node's default cost (N=2^14, r=8, p=1).
+ */
+function sealAtLegacyCost(plaintext: string): SealedEnvelope {
+  const salt = randomBytes(16);
+  const key = scryptSync('passphrase', salt, 32);
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  return {
+    alg: 'aes-256-gcm',
+    kdf: 'scrypt',
+    format: 'zeus-treasure-map',
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    ciphertext: ciphertext.toString('base64'),
+  };
+}

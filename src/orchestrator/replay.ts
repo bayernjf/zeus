@@ -145,6 +145,10 @@ function buildBranchSteps(
 
   const dispatched = new Set<string>();
   const finished = new Set<string>();
+  // Only status updates carry a timestamp; an artifact update has none. Remember
+  // each run's last known timestamp and let the events without one inherit it,
+  // so the rendered timeline has no gaps.
+  const lastAt = new Map<string, string>();
 
   for (const sourced of result.stream) {
     const runId = sourced.source.runId;
@@ -154,11 +158,14 @@ function buildBranchSteps(
     if (!branch) {
       throw new ReplayError(`stream event references unknown branch runId ${runId} on intent ${result.intentId}`);
     }
+    const own = eventTimestamp(sourced);
+    if (own !== undefined) lastAt.set(runId, own);
+    const at = own ?? lastAt.get(runId);
     if (!dispatched.has(runId)) {
       dispatched.add(runId);
       push({
         kind: 'branch-dispatched',
-        at: eventTimestamp(sourced),
+        at,
         vassal: branch.vassal,
         runId,
         taskId: sourced.source.taskId ?? branch.taskId,
@@ -167,7 +174,7 @@ function buildBranchSteps(
     }
     push({
       kind: 'branch-event',
-      at: eventTimestamp(sourced),
+      at,
       vassal: branch.vassal,
       runId,
       taskId: sourced.source.taskId ?? branch.taskId,
@@ -177,7 +184,7 @@ function buildBranchSteps(
       finished.add(runId);
       push({
         kind: 'branch-finished',
-        at: eventTimestamp(sourced),
+        at,
         vassal: branch.vassal,
         runId,
         taskId: sourced.source.taskId ?? branch.taskId,
@@ -468,6 +475,15 @@ export function renderReplay(replay: DecisionReplay): string {
   return lines.join('\n');
 }
 
+/**
+ * Stringify for the human-readable transcript. The recorded input is arbitrary
+ * JSON from the request, so it can be cyclic (or otherwise unserializable): a
+ * single bad value must not abort the whole render, so fall back to a marker.
+ */
 function safeStringify(value: unknown): string {
-  return JSON.stringify(value, null, 0);
+  try {
+    return JSON.stringify(value, null, 0) ?? String(value);
+  } catch {
+    return '[unserializable]';
+  }
 }

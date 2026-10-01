@@ -29,9 +29,16 @@ describe('TUI i18n contract (design-ui-foundations §5)', () => {
     }
   });
 
-  it('interpolates params and fails loud on a missing param', () => {
+  it('interpolates params and leaves a missing param as its literal placeholder', () => {
     expect(format('hi {name}', { name: 'zeus' })).toBe('hi zeus');
-    expect(() => format('hi {name}')).toThrow(/missing parameter/);
+    expect(format('hi {name}')).toBe('hi {name}');
+  });
+
+  it('renders a key absent from both tables as the key itself', () => {
+    const enT = makeTranslator('en');
+    const zhT = makeTranslator('zh-CN');
+    expect(enT('not.a.real.key' as MessageKey)).toBe('not.a.real.key');
+    expect(zhT('not.a.real.key' as MessageKey)).toBe('not.a.real.key');
   });
 
   it('translates and resolves locales by BCP 47 prefix', () => {

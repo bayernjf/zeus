@@ -23,6 +23,7 @@
 import { createRequire } from 'node:module';
 import {
   bootKernel,
+  concurrencyBootOptions,
   KernelBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
@@ -69,12 +70,9 @@ async function main(): Promise<void> {
       process.stderr.write(`[zeus-http] FAILED to persist kernel state after a consumed driver grant: ${message}\n`);
     },
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
-    ...(concurrency.maxConcurrentBranches !== undefined
-      ? { maxConcurrentBranches: concurrency.maxConcurrentBranches }
-      : {}),
-    ...(concurrency.branchQueueLimit !== undefined
-      ? { branchQueueLimit: concurrency.branchQueueLimit }
-      : {}),
+    // A-01: the resolved config goes across whole; copying it by hand is how the
+    // per-vassal cap was validated at boot and then never reached the kernel.
+    ...concurrencyBootOptions(concurrency),
     ...(process.env.ZEUS_VASSAL_SEEDS
       ? { vassalSeeds: resolveVassalSeedsConfig(process.env) }
       : {}),
@@ -102,7 +100,8 @@ async function main(): Promise<void> {
   }
   process.stderr.write(
     `[zeus-http] branch concurrency: ${concurrency.maxConcurrentBranches ?? 'unbounded'}` +
-      `${concurrency.branchQueueLimit !== undefined ? `, queue ${concurrency.branchQueueLimit}` : ', queue unbounded'}\n`
+      `${concurrency.branchQueueLimit !== undefined ? `, queue ${concurrency.branchQueueLimit}` : ', queue unbounded'}` +
+      `${concurrency.maxConcurrentPerVassal !== undefined ? `, per-vassal ${concurrency.maxConcurrentPerVassal}` : ', per-vassal unbounded'}\n`
   );
   if (kernel.auditFile) {
     const ceiling = kernel.auditMaxBytes === Number.POSITIVE_INFINITY
@@ -195,7 +194,7 @@ async function main(): Promise<void> {
   );
 
   let shuttingDown = false;
-  const shutdown = async (signal: string): Promise<void> => {
+  const shutdown = async (signal: string, exitCode = 0): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
     process.stderr.write(`[zeus-http] ${signal} received, draining...\n`);
@@ -206,10 +205,18 @@ async function main(): Promise<void> {
       process.stderr.write(`[zeus-http] failed to save kernel state: ${error instanceof Error ? error.message : String(error)}\n`);
     }
     await app.close();
-    process.exit(0);
+    process.exit(exitCode);
   };
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
+  // A throw from outside a request handler (a hijacked SSE socket, a timer) has
+  // nowhere to go: without this listener Node prints the stack and exits at
+  // once, losing everything since the last save. Route it through the same
+  // drain-and-save path, and keep the non-zero exit so the failure is visible.
+  process.on('uncaughtException', error => {
+    process.stderr.write(`[zeus-http] uncaught exception: ${error.stack ?? String(error)}\n`);
+    void shutdown('uncaughtException', 1);
+  });
 }
 
 main().catch(error => {

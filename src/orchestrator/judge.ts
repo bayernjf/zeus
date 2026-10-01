@@ -29,7 +29,6 @@ export type JudgeDecisionInput = {
   allowUncalibrated?: boolean;
   /** A gated disagreement escalates to the driver (default true). */
   escalateOnDisagreement?: boolean;
-  stateKeys?: string[];
   maxWaitMs?: number;
   now: () => Date;
 };
@@ -88,6 +87,10 @@ export async function judgeDecision(input: JudgeDecisionInput): Promise<FanOutRe
       instructions:
         'Weigh every vassal rationale against the rule conclusion; pick the best-supported stance; express calibrated uncertainty.',
       state,
+      // The judge builds its own review state; name its fields so the backend's
+      // data-sovereignty whitelist (default empty) does not strip every field
+      // and turn the review into a coin flip over no evidence.
+      stateKeys: ['rule', 'ruleConclusion', 'ruleReason', 'positions'],
       options,
       runId: result.runId,
       realm: result.realm,
