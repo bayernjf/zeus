@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /**
  * Core-chain smoke on the compiled artifact (design constraint 2: a concept that
  * cannot be executed does not belong in this project).
@@ -44,19 +45,35 @@ const NEEDLE_TOKEN = `needle-${randomBytes(6).toString('hex')}`;
 const DRIVER_TOKEN = `smoke-driver-${randomBytes(8).toString('hex')}`;
 const VASSAL_SECRET = `smoke-vassal-${randomBytes(8).toString('hex')}`;
 
+/** @type {{ name: string, ok: boolean, detail: string }[]} */
 const steps = [];
+/** @param {string} name @param {boolean} ok @param {string} [detail] */
 function record(name, ok, detail = '') {
   steps.push({ name, ok, detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  ::  ${detail}` : ''}`);
 }
+/** @param {number} ms */
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * The bound port of a listening server, or nothing when it is not listening
+ * (a pipe or an already-closed server answers with a string or null).
+ * @param {import('node:http').Server} server
+ * @returns {number | undefined}
+ */
+function boundPort(server) {
+  const address = server.address();
+  if (!address || typeof address === 'string') return undefined;
+  return address.port;
+}
 
 /** Bind port 0 briefly to get a free loopback port for the process under test. */
 async function freePort() {
   const probe = createServer();
-  await new Promise(resolve => probe.listen(0, '127.0.0.1', resolve));
-  const port = probe.address().port;
-  await new Promise(resolve => probe.close(resolve));
+  await new Promise(resolve => probe.listen(0, '127.0.0.1', () => resolve(undefined)));
+  const port = boundPort(probe);
+  await new Promise(resolve => probe.close(() => resolve(undefined)));
+  if (port === undefined) throw new Error('probe server never bound to a port');
   return port;
 }
 
@@ -65,11 +82,18 @@ async function freePort() {
 // ways, and it records exactly what a reviewer would want to know about -
 // whether the credential arrived, and what payload the kernel actually sent.
 // ---------------------------------------------------------------------------
+/** @typedef {{ name: string, requests: number, auth: string[], payloads: unknown[] }} AgentRecord */
+/** @type {Map<string, AgentRecord>} */
 const agents = new Map();
+/** @param {string} name @returns {AgentRecord} */
 function agent(name) {
-  if (!agents.has(name)) agents.set(name, { name, requests: 0, auth: [], payloads: [] });
-  return agents.get(name);
+  const existing = agents.get(name);
+  if (existing) return existing;
+  const created = { name, requests: 0, auth: [], payloads: [] };
+  agents.set(name, created);
+  return created;
 }
+/** @param {string} name @param {number} port */
 function card(name, port) {
   return {
     name,
@@ -86,6 +110,7 @@ function card(name, port) {
     },
   };
 }
+/** @param {string} id */
 function task(id) {
   return {
     kind: 'task',
@@ -103,7 +128,12 @@ const agentServer = createServer((req, res) => {
   }
   const a = agent(match[1]);
   if (req.method === 'GET') {
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(card(match[1], agentServer.address().port)));
+    const servingPort = boundPort(agentServer);
+    if (servingPort === undefined) {
+      res.writeHead(500).end('agent server has no bound port');
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(card(match[1], servingPort)));
     return;
   }
   let raw = '';
@@ -126,8 +156,13 @@ const agentServer = createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: rpc.id, result: task(`t-${a.name}-${a.requests}`) }));
   });
 });
-await new Promise(resolve => agentServer.listen(0, '127.0.0.1', resolve));
-const agentPort = agentServer.address().port;
+await new Promise(resolve => agentServer.listen(0, '127.0.0.1', () => resolve(undefined)));
+const agentPort = boundPort(agentServer);
+if (agentPort === undefined) {
+  console.error('FAIL  cannot start: the mock agent server never bound to a port');
+  process.exit(2);
+}
+/** @param {string} name */
 const cardUrl = name => `http://127.0.0.1:${agentPort}/${name}/api/a2a/agent-card`;
 
 // ---------------------------------------------------------------------------
@@ -148,23 +183,30 @@ if (!existsSync(publicKeyPath)) {
 
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
+const stateFile = join(dataDir, 'kernel-state.json');
+const auditFile = join(dataDir, 'audit.jsonl');
+/** @type {Record<string, string | undefined>} */
 const env = {
   ...process.env,
   NODE_ENV: 'development',
   ZEUS_HOST: '127.0.0.1',
   ZEUS_PORT: String(port),
-  ZEUS_STATE_FILE: join(dataDir, 'kernel-state.json'),
-  ZEUS_AUDIT_FILE: join(dataDir, 'audit.jsonl'),
+  ZEUS_STATE_FILE: stateFile,
+  ZEUS_AUDIT_FILE: auditFile,
   ZEUS_RSK_KEY_FILE: join(work, 'smoke-key.pem'),
   ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
   ZEUS_REALM_ROOTS: realmRoot,
   NO_PROXY: '127.0.0.1,localhost',
   no_proxy: '127.0.0.1,localhost',
 };
+// A seed the smoke does not control would register an agent nobody asked for.
 delete env.ZEUS_VASSAL_SEEDS;
+/** @type {Record<string, string>} */
 const bearer = { authorization: `Bearer ${DRIVER_TOKEN}`, 'content-type': 'application/json' };
 
+/** @type {import('node:child_process').ChildProcess[]} */
 const children = [];
+/** @param {NodeJS.ProcessEnv} [processEnv] @param {string} [processBase] */
 async function bootProcess(processEnv = env, processBase = base) {
   const child = spawn(process.execPath, [join(REPO, 'dist/http/serve.js')], { env: processEnv, cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
@@ -183,11 +225,18 @@ async function bootProcess(processEnv = env, processBase = base) {
   }
   throw new Error(`never became healthy:\n${log.slice(-600)}`);
 }
+/** @param {import('node:child_process').ChildProcess} child */
 async function stopProcess(child) {
   child.kill('SIGTERM');
   for (let attempt = 0; attempt < 80 && child.exitCode === null; attempt++) await sleep(100);
   if (child.exitCode === null) child.kill('SIGKILL');
 }
+/**
+ * @param {string} method
+ * @param {string} path
+ * @param {unknown} [body]
+ * @param {Record<string, string>} [headers]
+ */
 async function api(method, path, body, headers = bearer) {
   const response = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await response.text();
@@ -195,14 +244,19 @@ async function api(method, path, body, headers = bearer) {
   try { json = JSON.parse(text); } catch { /* non-JSON responses keep their text */ }
   return { status: response.status, json, text };
 }
+/** @param {string[]} args */
 function verifyRoster(args) {
   try {
     const out = execFileSync(process.execPath, [join(REPO, 'scripts/verify-roster.mjs'), ...args], { encoding: 'utf8', stdio: 'pipe' });
     return { code: 0, out, err: '' };
   } catch (error) {
-    return { code: error.status, out: String(error.stdout ?? ''), err: String(error.stderr ?? '') };
+    // execFileSync rejects with an Error carrying the child's exit code and
+    // buffers; those extra fields are not on the Error type.
+    const failure = /** @type {{ status?: number, stdout?: unknown, stderr?: unknown }} */ (error);
+    return { code: failure.status ?? 1, out: String(failure.stdout ?? ''), err: String(failure.stderr ?? '') };
   }
 }
+/** @param {string} path */
 function mode(path) {
   return existsSync(path) ? (statSync(path).mode & 0o777).toString(8) : 'missing';
 }
@@ -214,6 +268,7 @@ function watchdog() {
 }
 const timer = setInterval(watchdog, 5000);
 
+/** @type {Awaited<ReturnType<typeof bootProcess>> | null} */
 let proc = null;
 let stopped = false;
 function finish() {
@@ -246,7 +301,7 @@ try {
   record('HTTP process boots on a directory and answers /healthz', health.json?.status === 'ok', `port ${port}`);
 
   const domains = await api('GET', '/api/domains');
-  const personal = domains.json?.realms?.find(realm => realm.type === 'personal');
+  const personal = domains.json?.realms?.find(/** @param {{ type?: string, realmId?: string, itemCount?: number }} realm */ realm => realm.type === 'personal');
   record('realm mounted from a plain directory', !!personal && personal.itemCount >= 1, `realmId=${personal?.realmId} items=${personal?.itemCount}`);
 
   for (const name of ['a1', 'a2', 'a3']) {
@@ -269,11 +324,12 @@ try {
   // The key a verifier is told to trust, checked against the key that actually
   // signed: an empty or unrelated descriptor would pass a status-only check.
   const keysRes = await api('GET', '/api/roster/keys', undefined, {});
-  const published = keysRes.json?.keys?.find(key => key.kid === envelope.seal?.keyId);
+  /** @typedef {{ kid?: string, spkiPem?: string, jwkThumbprint?: string, spkiSha256?: string, x?: string }} PublishedKey */
+  const published = keysRes.json?.keys?.find(/** @param {PublishedKey} key */ key => key.kid === envelope.seal?.keyId);
   record(
     'the root key endpoint answers unauthenticated and lists the sealing keyId',
     keysRes.status === 200 && !!published && keysRes.json.keys.length === 1,
-    `status=${keysRes.status} kids=${(keysRes.json?.keys ?? []).map(key => key.kid).join(',')}`
+    `status=${keysRes.status} kids=${(keysRes.json?.keys ?? []).map(/** @param {PublishedKey} key */ key => key.kid).join(',')}`
   );
   record(
     'the published public key is the one the roster verified against',
@@ -314,7 +370,7 @@ try {
 
   const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   record('intent fans out to every provider', fanOut.json?.status === 'completed' && fanOut.json?.branches?.length === 3, `status=${fanOut.json?.status} http=${fanOut.status} body=${fanOut.text.slice(0, 220)}`);
-  record('the outbound credential reaches the agent', ['a1', 'a2', 'a3'].every(name => agent(name).auth.at(-1) === `Bearer ${VASSAL_SECRET}`), `seen: ${['a1','a2','a3'].map(n => agent(n).auth.map(x => x === `Bearer ${VASSAL_SECRET}` ? 'ok' : (x === '(none)' ? 'none' : x.slice(0, 10) + '…')).join(',')).join(' | ')}`);
+  record('the outbound credential reaches the agent', ['a1', 'a2', 'a3'].every(name => agent(name).auth.at(-1) === `Bearer ${VASSAL_SECRET}`), `seen: ${['a1','a2','a3'].map(n => agent(n).auth.map(/** @param {string} x */ x => x === `Bearer ${VASSAL_SECRET}` ? 'ok' : (x === '(none)' ? 'none' : x.slice(0, 10) + '…')).join(',')).join(' | ')}`);
   record('branches ran concurrently, not serially', ['a1', 'a2', 'a3'].every(name => agent(name).requests === 1), 'one request each inside a single fan-out');
 
   const sourced = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, realmSource: { realmId: personal.realmId, text: NEEDLE_TOKEN }, params: { subject: 'smoke-target', predicate: 'verdict' } });
@@ -343,8 +399,8 @@ try {
   }
   record('no read view echoes the agent credential', leaks.length === 0, leaks.join(', ') || `checked ${leakViews.length} views`);
 
-  const auditMode = mode(env.ZEUS_AUDIT_FILE);
-  const auditText = existsSync(env.ZEUS_AUDIT_FILE) ? readFileSync(env.ZEUS_AUDIT_FILE, 'utf8') : '';
+  const auditMode = mode(auditFile);
+  const auditText = existsSync(auditFile) ? readFileSync(auditFile, 'utf8') : '';
   record('governance decisions are persisted 0600', auditMode === '600' && /"decision":"dispatched"/.test(auditText), `mode=${auditMode} lines=${auditText.trim().split('\n').length}`);
   const auditRead = await api('GET', '/api/audit?limit=5');
   record('the audit trail reads back over the bearer API', auditRead.status === 200 && auditRead.text.includes('dispatched'), `status=${auditRead.status}`);
@@ -355,7 +411,14 @@ try {
   // an empty baseline) rather than always answering one way.
   const snap = await api('GET', '/api/memory/snapshot');
   const baseline = snap.json?.state;
-  const factCount = (baseline?.facts ?? []).reduce((total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
+  const factCount = (baseline?.facts ?? []).reduce(
+    /**
+     * @param {number} total
+     * @param {any} pair
+     */
+    (total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0),
+    0,
+  );
   record('finished intents produced memory claims and folded them into facts', snap.status === 200 && (baseline?.events?.length ?? 0) >= 3 && factCount >= 1, `events=${baseline?.events?.length} facts=${factCount} - deferred #27 was exactly this number being 0`);
   const selfDiff = await api('POST', '/api/memory/reconcile', { previous: baseline });
   // Direction control: a baseline holding an event the live store has never seen
@@ -380,10 +443,12 @@ try {
   // Key order differs by design (the export is canonicalised, Fastify serialises
   // in insertion order), so compare structures and then check the export is
   // byte-stable across calls - that stability is the whole point of exportDiary.
+  /** @param {unknown} value @returns {unknown} */
   const canonical = value => {
     if (Array.isArray(value)) return value.map(canonical);
     if (value && typeof value === 'object') {
-      return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+      const record = /** @type {Record<string, unknown>} */ (value);
+      return Object.fromEntries(Object.keys(record).sort().map(key => [key, canonical(record[key])]));
     }
     return value;
   };
@@ -406,22 +471,39 @@ try {
   const rosterWithRevoked = (await api('GET', '/api/roster')).json;
   writeFileSync(join(work, 'roster-revoked.json'), JSON.stringify(rosterWithRevoked));
   const revVerdict = verifyRoster(['--file', join(work, 'roster-revoked.json'), '--key', publicKeyPath, '--now', rosterWithRevoked.seal.issuedAt]);
-  record('a roster carrying a revoked row still verifies offline', revVerdict.code === 0, `entries=${(rosterWithRevoked.snapshot.entries ?? []).map(e => `${e.name}=${e.status}`).join(' ')}`);
+  record(
+    'a roster carrying a revoked row still verifies offline',
+    revVerdict.code === 0,
+    `entries=${(rosterWithRevoked.snapshot.entries ?? []).map(/** @param {{ name?: string, status?: string }} e */ e => `${e.name}=${e.status}`).join(' ')}`,
+  );
 
   await stopProcess(proc.child);
-  const stateMode = mode(env.ZEUS_STATE_FILE);
-  record('SIGTERM persists kernel state at 0600', stateMode === '600', `mode=${stateMode} bytes=${existsSync(env.ZEUS_STATE_FILE) ? statSync(env.ZEUS_STATE_FILE).size : 0}`);
+  const stateMode = mode(stateFile);
+  record('SIGTERM persists kernel state at 0600', stateMode === '600', `mode=${stateMode} bytes=${existsSync(stateFile) ? statSync(stateFile).size : 0}`);
 
   proc = await bootProcess();
   const restoredRoster = (await api('GET', '/api/roster')).json;
-  const statuses = (restoredRoster?.snapshot?.entries ?? []).map(entry => `${entry.name}=${entry.status}`).join(' ');
+  const statuses = (restoredRoster?.snapshot?.entries ?? [])
+    .map(/** @param {{ name?: string, status?: string }} entry */ entry => `${entry.name}=${entry.status}`)
+    .join(' ');
   record('restart restores agents and governance state', /a1=revoked/.test(statuses) && /a2=active/.test(statuses), statuses);
   const restoredRealms = await api('GET', '/api/domains');
-  record('restart re-attaches the data domain', (restoredRealms.json?.realms ?? []).some(realm => realm.type === 'personal' && realm.itemCount >= 1), `realms=${(restoredRealms.json?.realms ?? []).length}`);
+  record(
+    'restart re-attaches the data domain',
+    (restoredRealms.json?.realms ?? []).some(/** @param {{ type?: string, itemCount?: number }} realm */ realm => realm.type === 'personal' && (realm.itemCount ?? 0) >= 1),
+    `realms=${(restoredRealms.json?.realms ?? []).length}`,
+  );
   // Memory is the layer that was silently empty before deferred #27, so the
   // restart has to be proven against it and not assumed from the roster.
   const restoredMemory = await api('GET', '/api/memory/snapshot');
-  const restoredFacts = (restoredMemory.json?.state?.facts ?? []).reduce((total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
+  const restoredFacts = (restoredMemory.json?.state?.facts ?? []).reduce(
+    /**
+     * @param {number} total
+     * @param {any} pair
+     */
+    (total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0),
+    0,
+  );
   record('restart restores the memory fact source, not just the roster', (restoredMemory.json?.state?.events?.length ?? 0) >= 3 && restoredFacts >= 1, `events=${restoredMemory.json?.state?.events?.length} facts=${restoredFacts}`);
   const afterRestart = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a2'] });
   record('dispatch works after the restart', afterRestart.json?.status === 'completed', `status=${afterRestart.json?.status} agent requests=${agent('a2').requests}`);
@@ -450,6 +532,7 @@ try {
   mkdirSync(ephemeralDir, { recursive: true });
   const ephemeralPort = await freePort();
   const ephemeralBase = `http://127.0.0.1:${ephemeralPort}`;
+  /** @type {Record<string, string | undefined>} */
   const ephemeralEnv = {
     ...env,
     ZEUS_PORT: String(ephemeralPort),

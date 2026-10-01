@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 // Generate the Zeus RSK (Roster Signing Key), an Ed25519 keypair in PEM.
 //
 //   node scripts/gen-rsk-key.mjs [path]
