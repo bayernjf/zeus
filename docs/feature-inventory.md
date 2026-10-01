@@ -1,6 +1,6 @@
 # 功能清单（Feature Inventory）
 
-状态：**现行 v0.2**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件）
+状态：**现行 v0.2**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件）
 
 > 本文件是 Zeus **全部功能点的资产台账**：有什么、在哪、什么状态。缺陷台账在 [audit-2026-09.md](audit-2026-09.md)。需求优先级与验收标准在 [prd.md](prd.md)；"做到哪了"在 [handoff.md](../handoff.md)。本文件只回答"有什么"，不记进度。
 
@@ -105,7 +105,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 凭据委
 | 显式技能规格（id/版本/schema/权限/依赖）与形状校验 | `skills/validate-spec.ts` | ✅ |
 | 技能注册中心：多版本共存、默认取最新 active、deprecated 保留可审计 | `skills/registry.ts` | ✅ |
 | 从执行 Agent 卡片导入技能目录 | `registerFromCard` + boot 钩子 | ✅ |
-| 生命周期：install / uninstall / deprecate / harden（权限只收窄） | `skills/registry.ts` | ✅ |
+| 生命周期：install / uninstall / deprecate / harden（权限只收窄；省略 `permissions` 的加固沿用既有有效声明） | `skills/registry.ts` | ✅ |
 | 多技能组队，歧义不静默选边 | `resolveTeam` | ✅ |
 | 派发前技能闸门（三态：未注册放行 / 注册无 active 拒绝） | `activeProviders` + dispatcher | ✅ |
 | 带教台账：立项/授课/胜任力评估/作废 | `skills/mentor.ts` | ✅ |
