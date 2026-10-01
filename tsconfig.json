@@ -10,15 +10,20 @@
     "types": ["node"],
     "allowJs": true
   },
-  // The two shipped scripts opt themselves in with `// @ts-check`; the remaining
-  // scripts/*.mjs stay unchecked until someone decides their checking level
-  // (deferred #37).
+  // All shipped scripts opt themselves in with `// @ts-check` (deferred #37 closed:
+  // verify-roster, acceptance-real-fanout, acceptance-standard-a2a, bench-capacity,
+  // clock-skew-setup joined gen-rsk-key and smoke-core in 2026-10).
   "include": [
     "src",
     "tests",
     "vitest.config.ts",
     "vitest.clock-skew.config.ts",
     "scripts/gen-rsk-key.mjs",
-    "scripts/smoke-core.mjs"
+    "scripts/smoke-core.mjs",
+    "scripts/verify-roster.mjs",
+    "scripts/acceptance-real-fanout.mjs",
+    "scripts/acceptance-standard-a2a.mjs",
+    "scripts/bench-capacity.mjs",
+    "scripts/clock-skew-setup.mjs"
   ]
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /**
  * E10.4 local capacity baseline harness (PRD E10.4).
  *
@@ -32,6 +33,11 @@ import { Ed25519MemorySigner } from '../dist/registry/signing.js';
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
+/**
+ * @param {string} flag
+ * @param {number} fallback
+ * @returns {number}
+ */
 const argNumber = (flag, fallback) => {
   const idx = args.indexOf(flag);
   return idx >= 0 && args[idx + 1] ? Number(args[idx + 1]) : fallback;
@@ -48,12 +54,14 @@ const cancelLevels = [4, 8, 16, 32];
 // pushes tail branches past the 20x think-delay timeout. Run `--cap` (or
 // `--cap 16`) when you specifically want the gate numbers.
 const capRequested = args.includes('--cap');
-const capArg = capRequested ? args[args.indexOf('--cap') + 1] : undefined;
-const capLevels = ['0', 'off', 'unlimited', 'inf', 'infinity'].includes(capArg)
-  ? [Number.POSITIVE_INFINITY]
-  : capArg && Number(capArg) > 0
-    ? [Number(capArg)]
-    : [Number.POSITIVE_INFINITY, 32, 16, 8];
+const capArg = capRequested ? (args[args.indexOf('--cap') + 1] ?? '') : undefined;
+const capLevels = capArg
+  ? ['0', 'off', 'unlimited', 'inf', 'infinity'].includes(capArg)
+    ? [Number.POSITIVE_INFINITY]
+    : Number(capArg) > 0
+      ? [Number(capArg)]
+      : [Number.POSITIVE_INFINITY, 32, 16, 8]
+  : [Number.POSITIVE_INFINITY, 32, 16, 8];
 const PER_INTENT = 4;
 const FACE_TOKEN = 'bench-token';
 /**
@@ -66,11 +74,21 @@ const FACE_TOKEN = 'bench-token';
  */
 const BRANCH_WATCHDOG_MS = delayMs * 40;
 
+/**
+ * @param {number} n
+ * @param {number} [digits]
+ * @returns {number}
+ */
 function round(n, digits = 1) {
   const f = 10 ** digits;
   return Math.round(n * f) / f;
 }
 
+/**
+ * @param {number[]} sorted
+ * @param {number} p
+ * @returns {number}
+ */
 function percentile(sorted, p) {
   if (sorted.length === 0) return 0;
   // nearest-rank
@@ -78,6 +96,10 @@ function percentile(sorted, p) {
   return sorted[rank - 1];
 }
 
+/**
+ * @param {number[]} samples
+ * @returns {{ min: number, p50: number, p95: number, max: number, avg: number }}
+ */
 function stats(samples) {
   const sorted = [...samples].sort((a, b) => a - b);
   const avg = sorted.reduce((sum, n) => sum + n, 0) / sorted.length;
@@ -98,6 +120,11 @@ function stats(samples) {
  *                            which is what F3 cancelIntent is designed to cancel.
  * The same endpoint also serves JSON-RPC tasks/cancel with a plain JSON response.
  */
+/**
+ * @param {number} count
+ * @param {number} thinkDelayMs
+ * @param {{ terminalState?: string }} [options]
+ */
 function startMockFarm(count, thinkDelayMs, options = {}) {
   const terminalState = options.terminalState ?? 'completed';
   let cancelRequests = 0;
@@ -114,7 +141,7 @@ function startMockFarm(count, thinkDelayMs, options = {}) {
       return;
     }
     let raw = '';
-    req.on('data', chunk => {
+    req.on('data', (/** @type {unknown} */ chunk) => {
       raw += chunk;
     });
     req.on('end', () => {
@@ -183,11 +210,19 @@ function startMockFarm(count, thinkDelayMs, options = {}) {
   });
   return new Promise(resolve => {
     server.listen(0, '127.0.0.1', () =>
-      resolve({ server, port: server.address().port, getCancelCount: () => cancelRequests })
+      resolve({
+        server,
+        port: /** @type {import('node:net').AddressInfo} */ (server.address()).port,
+        getCancelCount: () => cancelRequests,
+      })
     );
   });
 }
 
+/**
+ * @param {number} port
+ * @param {number} count
+ */
 function farmEntries(port, count) {
   const fealty = {
     version: '1',
@@ -218,6 +253,10 @@ function farmEntries(port, count) {
   });
 }
 
+/**
+ * @param {any[]} entries
+ * @param {any} [options]
+ */
 function buildKernel(entries, options = {}) {
   const registry = new VassalRegistry();
   registry.importState(entries);
@@ -235,6 +274,9 @@ function buildKernel(entries, options = {}) {
 }
 
 /** A real H2 driver face (Fastify + bearer auth + JSON) wired to the kernel. */
+/**
+ * @param {any[]} entries
+ */
 async function buildFaceKernel(entries) {
   const { orchestrator, metrics, registry } = buildKernel(entries);
   const signer = new Ed25519MemorySigner('zeus-rsk-bench');
@@ -242,15 +284,22 @@ async function buildFaceKernel(entries) {
   return { app, orchestrator, metrics };
 }
 
+/**
+ * @param {any} app
+ */
 function listenOnLoopback(app) {
   return new Promise((resolve, reject) => {
-    app.listen({ port: 0, host: '127.0.0.1' }, err => {
+    app.listen({ port: 0, host: '127.0.0.1' }, (/** @type {any} */ err) => {
       if (err) return reject(err);
       resolve(app.server);
     });
   });
 }
 
+/**
+ * @param {string} base
+ * @param {string[]} names
+ */
 async function postIntent(base, names) {
   const response = await fetch(`${base}/api/intents`, {
     method: 'POST',
@@ -267,11 +316,16 @@ async function postIntent(base, names) {
   return response.json();
 }
 
+/**
+ * @param {number} port
+ */
 async function benchFanoutWidth(port) {
+  /** @type {any[]} */
   const rows = [];
   for (const width of widths) {
     const { orchestrator } = buildKernel(farmEntries(port, FARM_SIZE));
     const names = Array.from({ length: width }, (_, i) => `vassal-${i}`);
+    /** @type {number[]} */
     const samples = [];
     for (let r = 0; r < reps; r++) {
       const t0 = performance.now();
@@ -285,8 +339,8 @@ async function benchFanoutWidth(port) {
       });
       samples.push(performance.now() - t0);
       if (result.status !== 'completed') {
-        const bad = result.branches.filter(b => !b.ok)
-          .map(b => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
+        const bad = result.branches.filter((/** @type {any} */ b) => !b.ok)
+          .map((/** @type {any} */ b) => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
         throw new Error(`width ${width}: expected completed, got ${result.status}; branches: ${bad.join(', ') || 'none'}`);
       }
     }
@@ -306,7 +360,14 @@ async function benchFanoutWidth(port) {
  * only sampled when asked for: it is zero without a cap, and polling is extra
  * work inside the window being measured.
  */
+/**
+ * @param {any} orchestrator
+ * @param {any} metrics
+ * @param {number} intents
+ * @param {{ sampleQueue?: boolean, label?: string }} [options]
+ */
 async function runConcurrentIntents(orchestrator, metrics, intents, options = {}) {
+  /** @type {number[]} */
   const latencies = [];
   let peakQueueDepth = 0;
   const sampler = options.sampleQueue
@@ -333,19 +394,23 @@ async function runConcurrentIntents(orchestrator, metrics, intents, options = {}
         latencies.push(performance.now() - start);
         if (result.status !== 'completed') {
           const label = options.label ?? `concurrency ${intents}`;
-          const bad = result.branches.filter(b => !b.ok)
-            .map(b => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
+          const bad = result.branches.filter((/** @type {any} */ b) => !b.ok)
+            .map((/** @type {any} */ b) => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
           throw new Error(`${label}: expected completed, got ${result.status}; ${bad.length} bad branch(es): ${bad.slice(0, 6).join(', ') || 'none'}`);
         }
       }),
     );
   } finally {
-    clearInterval(sampler);
+    if (sampler) clearInterval(sampler);
   }
   return { latencies, wallMs: performance.now() - t0, peakQueueDepth, snapshot: metrics.snapshot() };
 }
 
+/**
+ * @param {number} port
+ */
 async function benchConcurrentIntents(port) {
+  /** @type {any[]} */
   const rows = [];
   for (const concurrency of concurrencyLevels) {
     const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE));
@@ -372,9 +437,13 @@ async function benchConcurrentIntents(port) {
  * and the gate itself is checked (in-flight never exceeded the cap, nothing
  * lost, nothing refused while the wait line was unbounded).
  */
+/**
+ * @param {number} port
+ */
 async function benchConcurrencyCap(port) {
   const intents = concurrencyLevels[concurrencyLevels.length - 1];
   const totalBranches = intents * PER_INTENT;
+  /** @type {any[]} */
   const rows = [];
   for (const cap of capLevels) {
     const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE), {
@@ -415,16 +484,21 @@ async function benchConcurrencyCap(port) {
  * between B and C is the HTTP face overhead. A fresh face (and listener) is used
  * per concurrency level for metric isolation.
  */
+/**
+ * @param {number} port
+ */
 async function benchHttpFace(port) {
+  /** @type {any[]} */
   const rows = [];
   for (const concurrency of concurrencyLevels) {
     const { app } = await buildFaceKernel(farmEntries(port, FARM_SIZE));
     const server = await listenOnLoopback(app);
-    const base = `http://127.0.0.1:${server.address().port}`;
+    const base = `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}`;
     try {
       // warm up the listener, undici pool and JSON paths (not measured)
       await postIntent(base, ['vassal-0', 'vassal-1', 'vassal-2', 'vassal-3']);
 
+      /** @type {number[]} */
       const latencies = [];
       const t0 = performance.now();
       await Promise.all(
@@ -467,10 +541,12 @@ async function benchCancellation() {
   const { server, port, getCancelCount } = await startMockFarm(FARM_SIZE, 5, {
     terminalState: 'input-required',
   });
+  /** @type {any[]} */
   const rows = [];
   try {
     for (const intents of cancelLevels) {
       const { orchestrator } = buildKernel(farmEntries(port, FARM_SIZE));
+      /** @type {string[]} */
       const intentIds = [];
       await Promise.all(
         Array.from({ length: intents }, async (_, c) => {
@@ -485,10 +561,10 @@ async function benchCancellation() {
             aggregation: { kind: 'unanimous' },
             branchTimeoutMs: 5000,
           });
-          if (!result.branches.every(branch => branch.ok && branch.state === 'input-required')) {
+          if (!result.branches.every((/** @type {any} */ branch) => branch.ok && branch.state === 'input-required')) {
             throw new Error(
               `cancel bench level ${intents}: expected all branches input-required, got ${JSON.stringify(
-                result.branches.map(branch => branch.state)
+                result.branches.map((/** @type {any} */ branch) => branch.state)
               )}`
             );
           }
@@ -527,6 +603,11 @@ async function benchCancellation() {
   }
 }
 
+/**
+ * @param {string} title
+ * @param {any[]} rows
+ * @param {Array<{ label: string, width: number, get: (row: any) => any }>} columns
+ */
 function printTable(title, rows, columns) {
   console.log(`\n${title}`);
   const header = columns.map(c => c.label.padEnd(c.width)).join('');
@@ -655,7 +736,7 @@ async function main() {
   }
 }
 
-main().catch(error => {
+main().catch((/** @type {unknown} */ error) => {
   console.error(error);
   process.exitCode = 1;
 });
