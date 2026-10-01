@@ -33,7 +33,10 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await rm(sandbox, { recursive: true, force: true });
+  // The snapshot persist is fire-and-forget (the write path must not block on
+  // fsync), so its temp file can land while this teardown is unlinking the
+  // sandbox. Retry the ENOTEMPTY instead of failing the test on that race.
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 });
 });
 
 async function realmRoot(name: string, content = 'note\n'): Promise<string> {
