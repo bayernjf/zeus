@@ -41,15 +41,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build precedes typecheck: the shipped scripts (scripts/*.mjs) import the
+      # compiled artifact (dist/*) at runtime and are under typecheck, so in a
+      # clean checkout the artifact must exist before `tsc --noEmit` can resolve
+      # those imports (TS2307 otherwise).
+      - name: Build
+        run: npm run build
+
       - name: Typecheck
         run: npm run typecheck
 
       # Build precedes test: tests/verify-roster.test.ts spawns a script that
       # verifies with the shipped artifact (dist/registry/signing.js) rather than a
       # second implementation, so the artifact has to exist before that suite runs.
-      - name: Build
-        run: npm run build
-
       - name: Unit tests
         run: npm test
 
@@ -81,11 +85,13 @@ jobs:
       - name: Install dependencies (real clock)
         run: npm ci
 
-      - name: Typecheck
-        run: npm run typecheck
-
+      # Same ordering as the verify job: typecheck resolves the shipped scripts'
+      # dist/* imports, so build first.
       - name: Build
         run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Unit tests under a simulated future clock
         run: npx vitest run --config vitest.clock-skew.config.ts

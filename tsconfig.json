@@ -5,9 +5,26 @@
     "moduleResolution": "NodeNext",
     "strict": true,
     "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["node"],
+    "allowJs": true
   },
-  "include": ["src", "tests", "vitest.config.ts", "vitest.clock-skew.config.ts"]
+  // All shipped scripts opt themselves in with `// @ts-check` (deferred #37 closed:
+  // verify-roster, acceptance-real-fanout, acceptance-standard-a2a, bench-capacity,
+  // clock-skew-setup joined gen-rsk-key and smoke-core in 2026-10).
+  "include": [
+    "src",
+    "tests",
+    "vitest.config.ts",
+    "vitest.clock-skew.config.ts",
+    "scripts/gen-rsk-key.mjs",
+    "scripts/smoke-core.mjs",
+    "scripts/verify-roster.mjs",
+    "scripts/acceptance-real-fanout.mjs",
+    "scripts/acceptance-standard-a2a.mjs",
+    "scripts/bench-capacity.mjs",
+    "scripts/clock-skew-setup.mjs"
+  ]
 }

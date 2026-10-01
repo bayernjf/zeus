@@ -320,7 +320,11 @@ export class Orchestrator {
       ...(result.realmId ? { realmId: result.realmId } : {}),
       at: this.now().toISOString(),
     });
-    return result;
+    // C-audit 12: the stored result is also served by getIntent()/snapshot().
+    // Returning the stored reference would let the caller mutate shared nested
+    // arrays (branches, positions, conflicts) through the fan-out reply and
+    // corrupt later replays; the caller gets an independent copy.
+    return structuredClone(result);
   }
 
   /** Read a stored intent result (assembly / persistence use). */

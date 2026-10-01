@@ -72,6 +72,28 @@ describe('OrgRegistry establishment operations', () => {
     expect(chain.leads.map(n => n.agentId)).toEqual(['agent-b']);
     expect(chain.unassigned).toEqual(['agent-c']);
   });
+
+  it('returns independent copies from every read, so mutating them cannot corrupt org state (C-audit 20)', () => {
+    const org = new OrgRegistry();
+    const dept = org.createDepartment({ name: 'Engineering', mission: 'build' });
+    org.assignMember('dept:engineering', { agentId: 'agent-a' });
+
+    // createDepartment's reply must not alias the stored department.
+    dept.members.push({ agentId: 'phantom', title: 'nope' } as never);
+    expect(org.getDepartment('dept:engineering').members.map(m => m.agentId)).toEqual(['agent-a']);
+
+    // getDepartment must not alias the stored department.
+    const read = org.getDepartment('dept:engineering');
+    read.members.push({ agentId: 'phantom', title: 'nope' } as never);
+    read.lead = 'phantom';
+    expect(org.getDepartment('dept:engineering').lead).toBeUndefined();
+    expect(org.getDepartment('dept:engineering').members.map(m => m.agentId)).toEqual(['agent-a']);
+
+    // listDepartments must not alias the stored departments.
+    const listed = org.listDepartments();
+    listed[0]!.members.push({ agentId: 'phantom', title: 'nope' } as never);
+    expect(org.getDepartment('dept:engineering').members.map(m => m.agentId)).toEqual(['agent-a']);
+  });
 });
 
 describe('OrgRegistry export/import', () => {

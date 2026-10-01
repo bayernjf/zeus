@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /**
  * A1 acceptance: register a REAL execution agent into a running Zeus and drive
  * one fan-out through it (docs/pre-launch-checklist.md row A1, milestone M3).
@@ -74,6 +75,10 @@ const revokeTest = argv.includes('--revoke-test');
 const timeoutIndex = argv.indexOf('--timeout');
 const timeoutMs = timeoutIndex >= 0 ? Number(argv[timeoutIndex + 1]) : 60_000;
 
+/**
+ * @param {string} reason
+ * @returns {never}
+ */
 function usageExit(reason) {
   console.error(`[CONFIG] ${reason}`);
   process.exit(2);
@@ -97,6 +102,7 @@ if (EXPECT_STANCE !== '0' && EXPECT_STANCE !== '1') usageExit(`EXPECT_STANCE mus
 // A skill's params are its own: the runner cannot guess them, so it takes the
 // object verbatim when given one and only falls back to the question-shaped
 // default for an agent that answers questions.
+/** @type {Record<string, unknown> | undefined} */
 let PARAMS;
 if (env.PARAMS) {
   try {
@@ -117,7 +123,13 @@ for (const [name, value] of [['KERNEL_URL', KERNEL_URL], ['CARD_URL', CARD_URL],
   }
 }
 
+/** @type {Array<{ name: string, ok: boolean }>} */
 const steps = [];
+/**
+ * @param {string} name
+ * @param {boolean} ok
+ * @param {string} [detail]
+ */
 function record(name, ok, detail = '') {
   steps.push({ name, ok });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? `  ::  ${detail}` : ''}`);
@@ -125,8 +137,15 @@ function record(name, ok, detail = '') {
 }
 
 const marker = `fanout-${randomBytes(4).toString('hex')}`;
+/** @type {Record<string, string>} */
 const bearer = { authorization: `Bearer ${INTERNAL_TOKEN}` };
 
+/**
+ * @param {string} method
+ * @param {string} path
+ * @param {{ auth?: boolean, body?: unknown }} [options]
+ * @returns {Promise<{ status: number, text: string, json: any }>}
+ */
 async function call(method, path, { auth = false, body } = {}) {
   const url = `${KERNEL_URL}${path}`;
   const response = await fetch(url, {
@@ -135,6 +154,7 @@ async function call(method, path, { auth = false, body } = {}) {
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const text = await response.text();
+  /** @type {any} */
   let json;
   try {
     json = JSON.parse(text);
@@ -143,12 +163,12 @@ async function call(method, path, { auth = false, body } = {}) {
   }
   return { status: response.status, text, json };
 }
-const clip = value => String(value ?? '').replace(/\s+/g, ' ').slice(0, 160);
+const clip = (/** @type {unknown} */ value) => String(value ?? '').replace(/\s+/g, ' ').slice(0, 160);
 // The snapshot exports facts as [realmId, FactRecord[]] pairs, so a count has to
 // walk the pairs; reading a scalar field that is not there would report 0 and
 // look like "the producer is broken" when it is the reader that is wrong.
-const factCount = state => (Array.isArray(state?.facts) ? state.facts : [])
-  .reduce((total, pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
+const factCount = (/** @type {any} */ state) => (Array.isArray(state?.facts) ? state.facts : [])
+  .reduce((/** @type {number} */ total, /** @type {any} */ pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
 
 async function main() {
   console.log(`target ${KERNEL_URL.replace(/^https?:\/\//, '')}  skill=${SKILL}  card=${CARD_URL.replace(/^https?:\/\//, '')}  expectStance=${EXPECT_STANCE}`);
@@ -192,21 +212,22 @@ async function main() {
   }
 
   // 4. Register the real agent (this is the write the test exists to perform).
-  const beforeNames = (authorized.json?.snapshot?.entries ?? []).map(entry => entry.name);
+  const beforeNames = (authorized.json?.snapshot?.entries ?? []).map((/** @type {any} */ entry) => entry.name);
   const registered = await call('POST', '/api/vassals', { auth: true, body: { cardUrl: CARD_URL, ...(TASK_URL ? { taskUrl: TASK_URL } : {}), ...(AGENT_TOKEN ? { token: AGENT_TOKEN } : {}) } });
   const registerOk = registered.status === 201 || registered.status === 200 || (registered.status >= 400 && /already/i.test(registered.text));
   record('the real agent registers (card fetched, fealty validated)', registerOk, `status=${registered.status} ${clip(registered.text)}`);
   if (!registerOk) return finish();
 
-  const agentName = registered.json?.card?.name ?? registered.json?.name ?? beforeNames.find(name => name !== undefined && CARD_URL.includes(name)) ?? '(from roster)';
+  const agentName = registered.json?.card?.name ?? registered.json?.name ?? beforeNames.find((/** @type {string} */ name) => name !== undefined && CARD_URL.includes(name)) ?? '(from roster)';
   const afterRoster = await call('GET', '/api/roster', { auth: true });
-  const entry = (afterRoster.json?.snapshot?.entries ?? []).find(candidate => candidate.name === agentName);
+  const entry = (afterRoster.json?.snapshot?.entries ?? []).find((/** @type {any} */ candidate) => candidate.name === agentName);
   record('the agent is listed active in the internal roster', !!entry && entry.status === 'active', `name=${agentName} status=${entry?.status ?? '(absent)'}`);
 
   // 5. The credential must not come back out through any read view.
   const echoes = [];
   if (AGENT_TOKEN) {
-    for (const [label, response] of [['/api/roster', afterRoster], ['/api/roster/public', await call('GET', '/api/roster/public')], ['/api/state', await call('GET', '/api/state', { auth: true })]]) {
+    const views = /** @type {Array<[string, { text: string }]>} */ ([['/api/roster', afterRoster], ['/api/roster/public', await call('GET', '/api/roster/public')], ['/api/state', await call('GET', '/api/state', { auth: true })]]);
+    for (const [label, response] of views) {
       if (response.text.includes(AGENT_TOKEN)) echoes.push(label);
     }
   }
@@ -216,7 +237,7 @@ async function main() {
   //    memory claim only lands when the intent names the realm it worked in, so
   //    the realmId is looked up rather than assumed.
   const domains = await call('GET', '/api/domains', { auth: true });
-  const target = (domains.json?.realms ?? []).find(realm => realm.type === REALM);
+  const target = (domains.json?.realms ?? []).find((/** @type {any} */ realm) => realm.type === REALM);
   const memoryBefore = await call('GET', '/api/memory/snapshot', { auth: true });
   const eventsBefore = memoryBefore.json?.state?.events?.length ?? -1;
   const factsBefore = factCount(memoryBefore.json?.state);
@@ -251,30 +272,30 @@ async function main() {
   // decide, and an execution agent is asked to do — so which one is asserted is
   // selected by EXPECT_STANCE rather than assumed. Asserting the stance against
   // an executor would report a working agent as broken.
-  const succeeded = branches.filter(branch => branch?.ok === true);
+  const succeeded = branches.filter((/** @type {any} */ branch) => branch?.ok === true);
   const positions = Array.isArray(result?.positions) ? result.positions : [];
-  const contentOf = branch => (Array.isArray(branch?.task?.artifacts) ? branch.task.artifacts : [])
-    .filter(artifact => Array.isArray(artifact?.parts) && artifact.parts.length >= 1);
-  const withContent = succeeded.filter(branch => contentOf(branch).length >= 1);
-  const report = withContent.flatMap(contentOf).map(artifact => artifact['x-zeus-report']).find(Boolean);
+  const contentOf = (/** @type {any} */ branch) => (Array.isArray(branch?.task?.artifacts) ? branch.task.artifacts : [])
+    .filter((/** @type {any} */ artifact) => Array.isArray(artifact?.parts) && artifact.parts.length >= 1);
+  const withContent = succeeded.filter((/** @type {any} */ branch) => contentOf(branch).length >= 1);
+  const report = withContent.flatMap(contentOf).map((/** @type {any} */ artifact) => artifact['x-zeus-report']).find(Boolean);
   record('a branch succeeded and returned content (an artifact with parts)', withContent.length >= 1, `ok=${succeeded.length}/${branches.length} withContent=${withContent.length} report=${clip(report?.summary ?? '(none)')}`);
   if (EXPECT_STANCE === '1') {
     record('a branch contributed a stance', succeeded.length >= 1 && positions.length >= 1, `ok=${succeeded.length}/${branches.length} positions=${positions.length} first=${clip(positions[0] ? `${positions[0].vassal}=${positions[0].stance}` : '(none)')}`);
   } else {
     console.log(`SKIP  stance aggregation: EXPECT_STANCE=0, this agent is expected to report content, not to vote (positions=${positions.length}); the content check above is the assertion for it`);
   }
-  const failedBranches = branches.filter(branch => branch?.ok !== true);
-  if (failedBranches.length) console.log(`      branch failures: ${failedBranches.map(branch => `${branch.vassal}=${clip(branch.reason)}`).join(' | ')}`);
+  const failedBranches = branches.filter((/** @type {any} */ branch) => branch?.ok !== true);
+  if (failedBranches.length) console.log(`      branch failures: ${failedBranches.map((/** @type {any} */ branch) => `${branch.vassal}=${clip(branch.reason)}`).join(' | ')}`);
   if (result?.refused) console.log(`      governance refusal before dispatch: ${clip(JSON.stringify(result.refused))}`);
 
   // 7. Governance facts written by that same run. The audit trail is filtered
   //    client-side here because a deployment may hold a long file: the claim is
   //    "an entry for *this* run exists", not "the newest entries mention it".
-  const branchRuns = new Set(branches.map(branch => branch.runId).filter(Boolean));
+  const branchRuns = new Set(branches.map((/** @type {any} */ branch) => branch.runId).filter(Boolean));
   const audit = await call('GET', '/api/audit?limit=50', { auth: true });
   const entries = audit.json?.entries ?? [];
-  const mine = entries.filter(entry => entry.decision === 'dispatched' && (branchRuns.has(entry.runId) || entry.vassal === agentName));
-  record('the dispatch is on the audit trail, bound to this run', audit.status === 200 && mine.length >= 1, `status=${audit.status} entries=${entries.length} forThisRun=${mine.length} auditFile=${audit.json?.file ?? '(none configured)'} decisions=${[...new Set(entries.map(entry => entry.decision))].join(',') || '(none)'}`);
+  const mine = entries.filter((/** @type {any} */ entry) => entry.decision === 'dispatched' && (branchRuns.has(entry.runId) || entry.vassal === agentName));
+  record('the dispatch is on the audit trail, bound to this run', audit.status === 200 && mine.length >= 1, `status=${audit.status} entries=${entries.length} forThisRun=${mine.length} auditFile=${audit.json?.file ?? '(none configured)'} decisions=${[...new Set(entries.map((/** @type {any} */ entry) => entry.decision))].join(',') || '(none)'}`);
 
   const memoryAfter = await call('GET', '/api/memory/snapshot', { auth: true });
   const eventsAfter = memoryAfter.json?.state?.events?.length ?? -1;
@@ -302,7 +323,8 @@ async function main() {
         verified = /VERIFIED/.test(out);
         verifyNote = out.match(/(VERIFIED|REJECTED[^\n]*)/)?.[1] ?? '(no verdict)';
       } catch (error) {
-        verifyNote = clip(String(error.stderr ?? error.message));
+        const err = /** @type {{ stderr?: unknown, message?: unknown }} */ (error);
+        verifyNote = clip(String(err.stderr ?? err.message ?? error));
       }
     }
     record('the live roster verifies offline against the published key', verified, clip(verifyNote));

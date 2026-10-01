@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /**
  * Offline roster verification (design-fealty-signing.md §4/§4.1, PRD E4.9/E5.4).
  *
@@ -34,6 +35,10 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { createPublicKey } from 'node:crypto';
 
+/**
+ * @param {string} [message]
+ * @returns {never}
+ */
 function usage(message) {
   if (message) console.error(`error: ${message}`);
   console.error(
@@ -59,6 +64,18 @@ function usage(message) {
 }
 
 const argv = process.argv.slice(2);
+/**
+ * @typedef {Object} RosterOptions
+ * @property {string} [url]
+ * @property {string} [file]
+ * @property {string[]} keys
+ * @property {string[]} cards
+ * @property {string[]} headers
+ * @property {string} [token]
+ * @property {string} [now]
+ * @property {boolean} [quiet]
+ */
+/** @type {RosterOptions} */
 const opts = { keys: [], cards: [], headers: [] };
 
 for (let i = 0; i < argv.length; i++) {
@@ -93,6 +110,10 @@ if (opts.now) {
   if (Number.isNaN(Date.parse(opts.now))) usage(`--now is not an ISO date: ${opts.now}`);
 }
 
+/**
+ * @param {string} spec
+ * @returns {{ keyId: string | null, path: string }}
+ */
 function splitSpec(spec) {
   const at = spec.indexOf('=');
   // A bare path has no '='; "keyId=path" does. Windows paths would break this,
@@ -105,6 +126,7 @@ async function loadEnvelope() {
     if (!existsSync(opts.file)) usage(`no such file: ${opts.file}`);
     return readFileSync(opts.file, 'utf8');
   }
+  /** @type {Record<string, string>} */
   const headers = {};
   for (const h of opts.headers) {
     const at = h.indexOf('=');
@@ -112,9 +134,10 @@ async function loadEnvelope() {
     headers[h.slice(0, at)] = h.slice(at + 1);
   }
   if (opts.token) headers.authorization = `Bearer ${opts.token}`;
+  /** @type {Response | undefined} */
   let response;
   try {
-    response = await fetch(opts.url, { headers });
+    response = await fetch(/** @type {string} */ (opts.url), { headers });
   } catch (e) {
     console.error(`error: cannot reach ${opts.url}: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(2);
@@ -144,24 +167,30 @@ try {
 const sealKeyId = envelope?.seal?.keyId;
 if (!sealKeyId) usage('artifact has no seal.keyId - is this a signed roster envelope?');
 
+/** @type {Array<[string, import('node:crypto').KeyObject]>} */
 const pairs = [];
 for (const spec of opts.keys) {
   const { keyId, path } = splitSpec(spec);
   if (!existsSync(path)) usage(`no such key file: ${path}`);
+  /** @type {import('node:crypto').KeyObject | undefined} */
   let key;
   try {
     key = createPublicKey(readFileSync(path, 'utf8'));
   } catch (e) {
     usage(`cannot read public key ${path}: ${e instanceof Error ? e.message : String(e)}`);
   }
+  if (!key) usage(`public key ${path} did not load`);
   if (key.asymmetricKeyType !== 'ed25519') usage(`public key ${path} is ${String(key.asymmetricKeyType)}, expected ed25519`);
   // An unlabelled key is assumed to belong to the keyId in the seal; a labelled
   // one is registered under its own id, which lets several keys be offered.
   pairs.push([keyId ?? sealKeyId, key]);
 }
 
+/** @type {string[]} */
 const entriesDeepChecked = [];
+/** @type {string[]} */
 const deepFailures = [];
+/** @type {Map<string, any>} */
 const cards = new Map();
 for (const spec of opts.cards) {
   const { keyId: name, path } = splitSpec(spec);
@@ -174,8 +203,7 @@ for (const spec of opts.cards) {
   }
 }
 
-const verifier = new Ed25519Verifier(pairs);
-const now = opts.now ? new Date(opts.now) : new Date();
+const verifier = new Ed25519Verifier(pairs);const now = opts.now ? new Date(opts.now) : new Date();
 const result = await verifySignedSnapshot(envelope, verifier, now);
 
 const snapshot = envelope.snapshot ?? {};
@@ -186,6 +214,9 @@ const ageSeconds = issuedAt ? (now.getTime() - Date.parse(issuedAt)) / 1000 : nu
 // decide the exit code, so computing them inside the print guard would turn
 // `--quiet --card` into a run that silently checks nothing and then reports a
 // reason that is not the real one.
+/**
+ * @param {...unknown} line
+ */
 const say = (...line) => {
   if (!opts.quiet) console.log(...line);
 };
@@ -205,7 +236,7 @@ if (sealingKey) {
 say(`seal issuedAt     ${String(issuedAt)}${ageSeconds === null ? '' : ` (age ${ageSeconds.toFixed(0)}s)`}`);
 say(`seal maxAge       ${String(envelope.seal?.maxAgeSeconds)}s`);
 const statuses = Array.isArray(snapshot.entries)
-  ? snapshot.entries.map(e => `${String(e.name)}=${String(e.status)}`).join(' ') || '(empty)'
+  ? snapshot.entries.map((/** @type {any} */ e) => `${String(e?.name)}=${String(e?.status)}`).join(' ') || '(empty)'
   : '(none)';
 say(`entry statuses    ${statuses}`);
 for (const [name, card] of cards) {

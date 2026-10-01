@@ -217,7 +217,20 @@ export class OversightDesk {
   async reject(id: string, note?: string): Promise<Escalation> {
     const current = this.requirePending(id);
     if (current.kind === 'task-input' && this.options.cancelTask && current.taskId) {
-      await this.options.cancelTask(current.vassal, current.taskId);
+      try {
+        await this.options.cancelTask(current.vassal, current.taskId);
+      } catch (error) {
+        // C-audit 22: a failed downstream cancel is governance-relevant (the
+        // vassal-side task is still alive), so it must reach the audit trail
+        // instead of dying with the thrown error. The escalation stays pending:
+        // the caller can retry the rejection.
+        const reason = error instanceof Error ? error.message : String(error);
+        this.audit(current, 'rejected', note, `task cancel failed: ${reason}`);
+        throw new OversightError(
+          `cannot reject ${id}: task cancel failed (${reason}); escalation stays pending`,
+          'conflict',
+        );
+      }
     }
     const decided: Escalation = {
       ...current,

@@ -103,7 +103,12 @@ export class MentorshipLedger {
     const id = `mentor-${sha256Hex(
       `${spec.version}␟${input.skillId}␟${input.mentorId}␟${input.learnerId}`,
     ).slice(0, 12)}`;
-    if (this.records.has(id)) {
+    // C-audit 19: the id is a pure function of the tuple, so a dismissed pairing
+    // collides with its own past forever and can never be re-opened. Only a
+    // dismissed record may be replaced by a fresh commission of the same tuple;
+    // a certified or failed one stays a conflict (its history is the record).
+    const existing = this.records.get(id);
+    if (existing && existing.status !== 'dismissed') {
       throw new MentorshipError(`mentorship ${id} already exists`, 'conflict');
     }
 

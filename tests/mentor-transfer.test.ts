@@ -122,6 +122,22 @@ describe('E2.5 Mentor skill transfer', () => {
     expect(() => ledger.teach(record.id, [{ topic: 'x' }])).toThrowError(MentorshipError);
   });
 
+  it('re-opens the same pairing after a dismissal (C-audit 19)', () => {
+    const registry = registryWithMentor();
+    const ledger = new MentorshipLedger(registry);
+    const first = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    ledger.dismiss(first.id, 'not a fit');
+    // The id is a pure function of the tuple, so a re-commission collides with
+    // the dismissed record; it must be allowed to replace it, teaching from
+    // scratch. A certified/failed pairing stays a conflict.
+    const reopened = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    expect(reopened.id).toBe(first.id);
+    expect(reopened.status).toBe('teaching');
+    expect(reopened.lessons).toEqual([]);
+    expect(ledger.list()).toHaveLength(1);
+    expect(() => ledger.teach(reopened.id, [{ topic: 'y' }])).not.toThrow();
+  });
+
   it('survives export/import of the ledger', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);

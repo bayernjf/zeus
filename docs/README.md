@@ -8,7 +8,7 @@
 | --- | --- |
 | 知道 Zeus 是什么、愿景与设计哲学 | [product-portrait.md](product-portrait.md) ★ |
 | 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) ★（11 个能力域 × 75 条 HTTP 路由 × 4 类 CLI × 116 处库导出；含「已实现但未接线」专节） |
-| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.3（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条与 B 级 34 条已于 2026-10-01 全部修复**，C 级 22 条仍未修） |
+| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.3（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）） |
 | 查看需求拆解、优先级与验收标准 | [prd.md](prd.md) ★ |
 | 梳理 Agent 技术议题与探索优先级 | [tech-exploration-map.md](tech-exploration-map.md) ★ |
 | 理解多 Agent 记忆如何沉淀与整理 | [design-memory-consolidation.md](design-memory-consolidation.md) |

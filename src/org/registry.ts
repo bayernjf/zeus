@@ -28,36 +28,40 @@ export class OrgRegistry {
       throw new OrgError(`Department ${dept.departmentId} already exists`, 'conflict');
     }
     this.departments.push(dept);
-    return dept;
+    return structuredClone(dept);
   }
 
   assignMember(departmentId: string, input: AssignMemberInput): Department {
     const idx = this.indexOf(departmentId);
     const next = assignMember(this.departments[idx], input, this.now().toISOString());
     this.departments[idx] = next;
-    return next;
+    return structuredClone(next);
   }
 
   removeMember(departmentId: string, agentId: string): Department {
     const idx = this.indexOf(departmentId);
     const next = removeMember(this.departments[idx], agentId);
     this.departments[idx] = next;
-    return next;
+    return structuredClone(next);
   }
 
   setLead(departmentId: string, agentId: string): Department {
     const idx = this.indexOf(departmentId);
     const next = setLead(this.departments[idx], agentId);
     this.departments[idx] = next;
-    return next;
+    return structuredClone(next);
   }
 
+  // C-audit 20: the accessors below returned the stored object (or a shallow
+  // array of stored objects), so a consumer could mutate org state through a
+  // read and change later charts and accountability traces. Each returns an
+  // independent copy; mutation is only possible through the write methods.
   getDepartment(departmentId: string): Department {
-    return this.departments[this.indexOf(departmentId)];
+    return structuredClone(this.departments[this.indexOf(departmentId)]);
   }
 
   listDepartments(): Department[] {
-    return [...this.departments];
+    return this.departments.map(d => structuredClone(d));
   }
 
   chart(): OrgChartView[] {

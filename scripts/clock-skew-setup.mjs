@@ -1,3 +1,4 @@
+// @ts-check
 // Wall-clock dependency gate (deferred #24).
 //
 // Loaded as a vitest setup file ONLY by the `clock-skew` CI job. It shifts the
@@ -20,6 +21,9 @@ const OFFSET_MS = SkewDays * 24 * 60 * 60 * 1000;
 const RealDate = Date;
 
 class SkewedDate extends RealDate {
+  /**
+   * @param {...(string | number)} args
+   */
   constructor(...args) {
     if (args.length === 0) {
       super(RealDate.now() + OFFSET_MS);
@@ -33,4 +37,4 @@ class SkewedDate extends RealDate {
   }
 }
 
-globalThis.Date = SkewedDate;
+globalThis.Date = /** @type {DateConstructor} */ (SkewedDate);

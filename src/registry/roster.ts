@@ -2,7 +2,7 @@ import type { AgentCardSkill, Fealty, RealmType } from '../a2a/types.js';
 import type { VassalEntry } from './registry.js';
 
 /**
- * Roster projector (bayjf 封神榜, design-bayjf-roster.md R0):
+ * Roster projector (bayjf 公开签名名册, design-bayjf-roster.md R0):
  * a pure projection from registry state to immutable, JSON-serializable roster
  * snapshots. The vassal's Agent Card + fealty is the single source of truth;
  * the projector only reshapes and trims, it never invents fields.

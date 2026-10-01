@@ -77,7 +77,7 @@ export type TraceSink = {
   emit(partial: Omit<DecisionTrace, 'decidedAt' | 'latencyMs'> & { latencyMs: number }): void;
 };
 
-export function createTraceSink(options: BackendOptions, now: () => Date, backend: DecisionBackendKind, model: string): TraceSink {
+export function createTraceSink(options: BackendOptions, now: () => Date, _backend: DecisionBackendKind, _model: string): TraceSink {
   return {
     emit(partial) {
       options.onTrace?.({ ...partial, decidedAt: now().toISOString() });

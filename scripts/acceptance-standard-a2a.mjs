@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /**
  * Acceptance #6 guard script (design-vassal-protocol.md §7, item 6):
  * "A standards-only A2A client that knows nothing about x-zeus-* must still be
@@ -33,10 +34,16 @@ const SKILL = process.argv[3] || process.env.SKILL || 'deployment-health';
 
 const VALID_STATES = ['submitted', 'working', 'input-required', 'completed', 'failed', 'canceled'];
 
+/**
+ * @param {string} message
+ */
 function fail(message) {
   console.error(`[FAIL] ${message}`);
   process.exit(1);
 }
+/**
+ * @param {string} message
+ */
 function pass(message) {
   console.log(`[PASS] ${message}`);
 }
@@ -45,6 +52,7 @@ if (!BASE_URL) {
   fail('BASE_URL is required, e.g. BASE_URL=https://pr-helper.example.com node scripts/acceptance-standard-a2a.mjs');
 }
 
+/** @type {Record<string, string>} */
 const authHeaders = TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {};
 
 async function main() {
@@ -77,9 +85,11 @@ async function main() {
       },
     },
   };
+  /** @type {Record<string, string>} */
+  const requestHeaders = { 'Content-Type': 'application/json', ...authHeaders };
   const taskRes = await fetch(taskEndpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders },
+    headers: requestHeaders,
     body: JSON.stringify(requestBody),
   });
   if (!taskRes.ok) fail(`tasks/send failed: HTTP ${taskRes.status}`);

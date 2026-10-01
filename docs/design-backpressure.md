@@ -90,7 +90,7 @@ score(v) = w_r * (1 - failureRate(v))  -  w_l * (p50Ms(v) / LATENCY_NORMALIZER)
 
 ### 4.5 拒绝与审计
 
-- 当 `candidates` 枯竭而分支被拒时，拒绝原因从单纯的 `concurrency limit N reached` 升级为带审计的负载说明，记录**已尝试的备选及其各自状态**（saturated / unhealthy / revoked / none-active），使"为什么这个意图没派出去"在审计脊上可追，而非只报一个全局计数。
+- 当 `candidates` 枯竭而分支被拒时，拒绝原因从单纯的 `concurrency limit N reached` 升级为带审计的负载说明，记录**已尝试的备选及其各自状态**（saturated / unhealthy / revoked / none-active），使"为什么这个意图没派出去"在审计链上可追，而非只报一个全局计数。
 - 分流成功（改投）同样记一条事件（如 `branch-diverted`，含 from→to），与既有 `refused-*` 同进审计事件流。
 
 ## 5. 与现有闸门的接口
@@ -117,7 +117,7 @@ score(v) = w_r * (1 - failureRate(v))  -  w_l * (p50Ms(v) / LATENCY_NORMALIZER)
 | `PerVassalLoad` 计数 | `ConcurrencyMetrics`（`src/orchestrator/metrics.ts`） | ✅ `inFlightByVassal` + 访问器 + `MetricsSnapshot.inFlightByVassal`；`branchStarted`+1 / `branchEnded`−1 |
 | 分流纯函数 `selectTargets` | `src/orchestrator/diversion.ts` | ✅ 输入 `skill / explicitVassals / initialNames / candidatePool / load / metrics / health`，输出 `plan`（含 `divertedFrom`）+ `exhausted` 审计；`DEFAULT_DIVERSION_WEIGHTS` 与 `formatExhausted` 同文件 |
 | 选靶处接线 | `orchestrator.ts:120-145` 之后 | ✅ `maxConcurrentPerVassal` 配置下调用 `selectTargets`；显式靶短路（硬钉）；`candidatePool` 取 `activeProviders(skill)`（undefined = pass-through 不分流） |
-| `branch-diverted` 事件 | `src/orchestrator/progress.ts` 联合体 + `onDiverted` 选项 | ✅ 改投时发进度事件并桥审计脊（`AuditDecision` 扩 `branch-diverted`） |
+| `branch-diverted` 事件 | `src/orchestrator/progress.ts` 联合体 + `onDiverted` 选项 | ✅ 改投时发进度事件并桥审计链（`AuditDecision` 扩 `branch-diverted`） |
 | 拒绝原因升级 | `orchestrator.ts` 全局 `Semaphore` 拒绝分支 | ✅ 饱和靶无备选被拒时，拒绝原因附 `formatExhausted`（tried 候选状态） |
 | 配置面 | `OrchestratorOptions.maxConcurrentPerVassal` + boot `ProcessConcurrencyConfig` + env `ZEUS_MAX_CONCURRENT_PER_VASSAL` | ✅ 透传；`onDiverted` 接 `auditSink`（decision `branch-diverted`） |
 
@@ -145,4 +145,4 @@ score(v) = w_r * (1 - failureRate(v))  -  w_l * (p50Ms(v) / LATENCY_NORMALIZER)
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v0.1 | 2026-09-27 | 初稿：饱和信号（per-vassal 实时在途计数，待补 primitive）、分流候选集、可靠度/延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计；复用现有 `ConcurrencyMetrics.perVassal` 历史信号与 `SkillGovernor.activeProviders`；实现与阈值调参挂触发条件 ≥3 真实 Agent 压测 |
-| v0.2 | 2026-09-27 | 启用代码落地：`PerVassalLoad` 计入 `ConcurrencyMetrics`、`selectTargets` 纯函数（`diversion.ts`）、编排器选靶后接线、`branch-diverted` 事件+审计脊、全局拒绝附 tried 候选审计、配置面 `maxConcurrentPerVassal`（env `ZEUS_MAX_CONCURRENT_PER_VASSAL`）。**关键修正**：per-vassal 饱和上界必须独立于全局 `maxConcurrentBranches` 配置，否则分流永不触发。7 例单测（tests/orchestrator-diversion.test.ts）。阈值调参仍挂 ≥3 真实 Agent 压测 |
+| v0.2 | 2026-09-27 | 启用代码落地：`PerVassalLoad` 计入 `ConcurrencyMetrics`、`selectTargets` 纯函数（`diversion.ts`）、编排器选靶后接线、`branch-diverted` 事件+审计链、全局拒绝附 tried 候选审计、配置面 `maxConcurrentPerVassal`（env `ZEUS_MAX_CONCURRENT_PER_VASSAL`）。**关键修正**：per-vassal 饱和上界必须独立于全局 `maxConcurrentBranches` 配置，否则分流永不触发。7 例单测（tests/orchestrator-diversion.test.ts）。阈值调参仍挂 ≥3 真实 Agent 压测 |

@@ -17,7 +17,7 @@ function cardFor(name: string): AgentCard {
 }
 
 /** Fetch mock serving N vassal cards and recording who gets dispatched. */
-function fetchFor(names: string[], calls: string[]): typeof fetch {
+function fetchFor(_names: string[], calls: string[]): typeof fetch {
   return (async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/api/a2a/agent-card')) {
