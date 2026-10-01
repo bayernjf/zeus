@@ -107,6 +107,25 @@ describe('Orchestrator.fanOut', () => {
     expect(result.stream[0].source.taskId).toBe('loom-task');
   });
 
+  it('returns an independent copy, so mutating the reply cannot corrupt the stored result (C-audit 12)', async () => {
+    const port = makePort({
+      loom: async () => okResult('loom'),
+      atlas: async () => okResult('atlas'),
+    });
+    const orch = newOrchestrator(port, ['loom', 'atlas']);
+
+    const result = await orch.fanOut({ skill: 'generate-content', params: {}, realm: 'personal' });
+    // The fan-out reply and getIntent() share nested arrays if the reply is the
+    // stored reference; a caller that mutates what it was handed would then
+    // corrupt later replays. Both reads must stay isolated.
+    result.branches.push({ vassal: 'tampered', runId: 'x', ok: false, events: [] } as never);
+    result.positions.push({ vassal: 'tampered', stance: 'go' } as never);
+
+    const stored = orch.getIntent('intent-1');
+    expect(stored!.branches.map(b => b.vassal)).toEqual(['loom', 'atlas']);
+    expect(stored!.positions).toEqual([]);
+  });
+
   it('honours an explicit vassal list and ignores other skill providers', async () => {
     const port = makePort({ loom: okResult('loom'), atlas: okResult('atlas') });
     const orch = newOrchestrator(port, ['loom', 'atlas']);

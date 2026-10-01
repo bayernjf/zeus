@@ -123,8 +123,10 @@ describe('OversightDesk decisions', () => {
     expect(deskInstance.list('rejected')).toHaveLength(1);
   });
 
-  it('keeps the escalation pending when the cancel call fails', async () => {
+  it('keeps the escalation pending when the cancel call fails, and records the failure on the audit trail', async () => {
+    const auditEvents: OversightAuditEntry[] = [];
     const deskInstance = desk({
+      audit: e => auditEvents.push(e),
       cancelTask: async () => {
         throw new Error('vassal unreachable');
       },
@@ -133,6 +135,14 @@ describe('OversightDesk decisions', () => {
 
     await expect(deskInstance.reject('esc-1')).rejects.toThrow(/vassal unreachable/);
     expect(deskInstance.list('pending')).toHaveLength(1);
+    // C-audit 22: a failed downstream cancel is governance-relevant and must
+    // reach the audit trail with the reason, even though the escalation stayed
+    // pending and no rejection was recorded.
+    expect(auditEvents.at(-1)).toMatchObject({
+      escalationId: 'esc-1',
+      action: 'rejected',
+      detail: 'task cancel failed: vassal unreachable',
+    });
   });
 
   it('refuses to decide an unknown or already-decided escalation', () => {
