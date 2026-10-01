@@ -114,10 +114,17 @@ describe('aggregate', () => {
     // 60/40 split: 0.6 >= 0.5 default threshold -> concludes
     const decided = aggregate([pos('a', 'go', 0.6), pos('b', 'stop', 0.4)], { kind: 'weighted' });
     expect(decided.conclusion).toBe('go');
-    expect(decided.margin?.total).toBe(1);
+    expect(decided.margin).toEqual({ winner: 'go', winnerCount: 1, total: 2 });
     // missing weights fall back to 1 each -> 50/50 tie -> no conclusion
     const tie = aggregate([pos('a', 'go'), pos('b', 'stop')], { kind: 'weighted' });
     expect(tie.conclusion).toBeNull();
+  });
+
+  it('weighted: reports the margin in voters, like the majority rule', () => {
+    // "go" carries 1.0 of 1.1 weight -> concludes, but only 2 of 3 vassals voted go
+    const decided = aggregate([pos('a', 'go', 0.8), pos('b', 'go', 0.2), pos('c', 'stop', 0.1)], { kind: 'weighted' });
+    expect(decided.conclusion).toBe('go');
+    expect(decided.margin).toEqual({ winner: 'go', winnerCount: 2, total: 3 });
   });
 
   it('weighted: equal top weights do not win even above threshold', () => {
