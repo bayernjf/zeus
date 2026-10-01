@@ -115,6 +115,18 @@ describe('E3.5 nonce ledger (DriverGrantLedger)', () => {
     expect(saves).toBe(2);
   });
 
+  it('fires onChange even when the accepted nonce evicts an old one', () => {
+    let saves = 0;
+    const ledger = new DriverGrantLedger({ limit: 2, onChange: () => { saves += 1; } });
+    ledger.consume('a');
+    ledger.consume('b');
+    ledger.consume('c'); // window full: accepting 'c' evicts 'a'
+    // Every accepted nonce must reach disk; gating the save on "no eviction"
+    // left 'c' off disk exactly when the window was full.
+    expect(saves).toBe(3);
+    expect(ledger.exportState()).toEqual(['b', 'c']);
+  });
+
   it('keeps a bounded window and says which nonce it dropped', () => {
     const evicted: string[] = [];
     const ledger = new DriverGrantLedger({ limit: 2, onEvict: nonce => evicted.push(nonce) });

@@ -140,16 +140,18 @@ export class DriverGrantLedger {
     if (this.spent.has(nonce)) return false;
     this.spent.add(nonce);
     this.order.push(nonce);
-    let evicted = false;
     while (this.order.length > this.limit) {
       const oldest = this.order.shift();
       if (oldest !== undefined) {
         this.spent.delete(oldest);
         this.onEvict(oldest);
-        evicted = true;
       }
     }
-    if (!evicted) this.onChange?.();
+    // Persist on every accepted nonce, eviction or not. `onChange` is the only
+    // path that gets the consumed set to disk, and an eviction is part of that
+    // change - gating it on "no eviction" left the just-consumed nonce off disk
+    // exactly when the window was full, so a crash re-admitted a spent grant.
+    this.onChange?.();
     return true;
   }
 
