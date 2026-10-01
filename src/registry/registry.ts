@@ -8,6 +8,10 @@ export type VassalLike = {
   taskUrl: string;
   card: AgentCard;
   fealty: Fealty;
+  /** Present when the wiring carries revocation (a static Map for tests and
+   *  single-process wiring); the registry's own lookups drop revoked entries
+   *  instead of flagging them. */
+  revoked?: boolean;
 };
 
 export type VassalStatus = 'unknown' | 'active' | 'revoked';

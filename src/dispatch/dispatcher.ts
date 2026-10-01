@@ -240,11 +240,23 @@ export class Dispatcher {
 
 export class AmbiguousSkillError extends Error {}
 
-/** Adapt a static vassal map (tests / single-process wiring) to VassalLookup. */
+/** Adapt a static vassal map (tests / single-process wiring) to VassalLookup.
+ *  An entry may carry `revoked: true`; the adapter honors it exactly the way
+ *  VassalRegistry.asVassalLookup does — invisible to get/findBySkill, reported
+ *  by statusOf. Previously the status was hard-coded `active`, so a Map-wired
+ *  dispatcher had no revocation gate at all. */
 function mapAsLookup(map: Map<string, VassalLike>): VassalLookup {
   return {
-    get: name => map.get(name),
-    statusOf: name => (map.has(name) ? 'active' : 'unknown'),
-    findBySkill: skillId => [...map.values()].filter(vassal => vassal.card.skills.some(skill => skill.id === skillId)),
+    get: name => {
+      const vassal = map.get(name);
+      return vassal && !vassal.revoked ? vassal : undefined;
+    },
+    statusOf: name => {
+      const vassal = map.get(name);
+      if (!vassal) return 'unknown';
+      return vassal.revoked ? 'revoked' : 'active';
+    },
+    findBySkill: skillId =>
+      [...map.values()].filter(vassal => !vassal.revoked && vassal.card.skills.some(skill => skill.id === skillId)),
   };
 }

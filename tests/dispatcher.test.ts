@@ -150,6 +150,20 @@ describe('Dispatcher', () => {
     expect(body.params.message.parts[0].data.realmHits).toEqual([{ itemId: 'hit-1', snippet: 'pr context' }]);
   });
 
+  it('honors a revoked entry in a Map-wired lookup', async () => {
+    const seenBodies: unknown[] = [];
+    const map = new Map([['pr-helper', vassal({ revoked: true })]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+
+    const named = await dispatcherInstance.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise' });
+    const auto = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
+
+    expect(named.ok).toBe(false);
+    expect(auto.ok).toBe(false);
+    expect(audit.map(entry => entry.decision)).toEqual(['refused-revoked', 'refused-unknown-vassal']);
+    expect(seenBodies).toHaveLength(0);
+  });
+
   it('refuses when the vassal is revoked between the gate and credential issuance', async () => {
     const active = vassal();
     let statusCalls = 0;
