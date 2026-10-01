@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -204,10 +204,13 @@ describe('E3.5 the booted kernel authorizes enterprise writes with signatures', 
     const grant = await issueDriverWriteGrant({ realmId, grantedBy: 'driver@bayjf' }, { signer, now });
 
     await writerFor(kernel)(realmId, { itemId: 'notes/y.md', data: 'once\n' }, grant);
-    // No saveState() call: consumption itself must push the nonce to disk.
-    await new Promise(resolve => setImmediate(resolve));
-    const persisted = JSON.parse(await readFile(stateFile, 'utf8')) as { writeGrantNonces?: string[] };
-    expect(persisted.writeGrantNonces).toContain(grant.nonce);
+    // No saveState() call: consumption itself must push the nonce to disk. The
+    // persist is fire-and-forget — the write path must not block on fsync — so wait
+    // for the file to catch up instead of assuming one event-loop tick is enough.
+    await vi.waitFor(async () => {
+      const persisted = JSON.parse(await readFile(stateFile, 'utf8')) as { writeGrantNonces?: string[] };
+      expect(persisted.writeGrantNonces).toContain(grant.nonce);
+    });
 
     const restarted = await boot(stateFile, root, signer);
     await expect(writerFor(restarted)(realmId, { itemId: 'notes/y.md', data: 'twice\n' }, grant))
