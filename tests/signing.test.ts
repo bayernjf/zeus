@@ -17,6 +17,7 @@ import {
   type SignedRosterSnapshot,
 } from '../src/registry/signing.js';
 import type { AgentCard } from '../src/a2a/types.js';
+import { SHA256_LABEL, sha256Hex, sha256Labeled } from '../src/util/crypto.js';
 
 // --- JCS subset vectors -------------------------------------------------------
 
@@ -108,6 +109,20 @@ describe('digestCard', () => {
     const changed = card();
     changed['x-zeus-fealty']!.dataPolicy = 'none';
     expect(digestCard(changed).fealtyDigest).not.toBe(base.fealtyDigest);
+  });
+});
+
+// --- C-audit: the algorithm label and the algorithm live together -------------
+
+describe('canonicalDigest algorithm label', () => {
+  // The `sha256:` prefix used to be retyped in the signing module while the
+  // primitive lived in util/crypto, so the two could drift: a swap of the hash
+  // would leave every signature still claiming `sha256:`. The label is now a
+  // property of the shared helper, and this pins the signing digest to it.
+  it('takes its algo prefix from the shared helper rather than retyping it', () => {
+    expect(SHA256_LABEL).toBe('sha256:');
+    expect(sha256Labeled('abc')).toBe(`${SHA256_LABEL}${sha256Hex('abc')}`);
+    expect(canonicalDigest({ b: 2, a: 1 })).toBe(sha256Labeled(canonicalJson({ b: 2, a: 1 })));
   });
 });
 

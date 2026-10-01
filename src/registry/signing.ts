@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync, sign as cryptoSign, verify as cryptoVerify, type KeyObject } from 'node:crypto';
 import type { AgentCard } from '../a2a/types.js';
 import { ROSTER_SCHEMA_VERSION, type RosterSnapshot } from './roster.js';
-import { sha256Hex } from '../util/crypto.js';
+import { sha256Labeled } from '../util/crypto.js';
 
 /**
  * fealty signing chain v1 — pure functions per docs/design-fealty-signing.md.
@@ -50,9 +50,9 @@ export function canonicalJson(value: unknown): string {
   throw new Error(`JCS: cannot canonicalize value of type ${typeof value}`);
 }
 
-/** `"sha256:" + hex(sha256(JCS(value)))`. */
+/** `"sha256:" + hex(sha256(JCS(value)))`; the label comes from the shared helper. */
 export function canonicalDigest(value: unknown): string {
-  return `sha256:${sha256Hex(canonicalJson(value))}`;
+  return sha256Labeled(canonicalJson(value));
 }
 
 export function digestCard(card: AgentCard): { cardDigest: string; fealtyDigest?: string } {
