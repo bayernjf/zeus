@@ -11,6 +11,12 @@
  *   - sends a standard `tasks/send` JSON-RPC call with a plain text part (the
  *     skill id is the first whitespace token, the standard fallback pr-helper's
  *     rpc.parseSkillAndParams implements);
+ *   - posts JSON-RPC to the task endpoint advertised by the card's standard
+ *     `url` field (resolved against BASE_URL when relative), which is how a
+ *     standards-only client is meant to discover the endpoint; when the card
+ *     carries no usable `url` it falls back to the discovery path (pr-helper
+ *     serves GET card + POST RPC on the same path). This keeps one guard script
+ *     valid across pr-helper, loom and atlas despite their different paths;
  *   - never sends x-zeus-runId or any extension metadata.
  *
  * Usage (after pr-helper is deployed):
@@ -54,8 +60,12 @@ async function main() {
   pass(`agent card discovered: "${card.name}" with ${card.skills.length} skill(s)`);
 
   // 2. Standard tasks/send with a plain text part; no x-zeus-* fields anywhere.
-  //    The JSON-RPC surface lives on the same path as card discovery
-  //    (GET = Agent Card, POST = JSON-RPC), matching pr-helper's routing.
+  //    The task endpoint is the card's standard `url` field (A2A discovery
+  //    contract); relative urls resolve against BASE_URL. pr-helper's card
+  //    advertises the same path as discovery, so it needs no special case.
+  const taskEndpoint = card.url
+    ? new URL(card.url, `${BASE_URL}/`).toString().replace(/\/+$/, '')
+    : cardUrl;
   const requestBody = {
     jsonrpc: '2.0',
     id: 1,
@@ -67,7 +77,7 @@ async function main() {
       },
     },
   };
-  const taskRes = await fetch(`${BASE_URL}/api/a2a/agent-card`, {
+  const taskRes = await fetch(taskEndpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify(requestBody),
