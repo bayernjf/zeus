@@ -751,6 +751,16 @@ State of Zeus as of 2026-09-29.
    - [x] **启用**：`tsconfig.json` 正式开启 `exactOptionalPropertyTypes: true`，`npx tsc --noEmit` 0 错。
    - [x] **验证**：全量 **1015/94 绿**、`smoke:core` 36/36、typecheck/build exit 0。7 个原子 commit（orchestrator / dispatch+smoke / mcp / http / kernel / tests / tsconfig）。**deferred #36 现剩唯一一档：`noUncheckedIndexedAccess`（400 处，仍待触发条件）。**
 
+95. **deferred #39 销项：镜像构建冒烟进 CI（2026-10-02 ✅ 完成）**：
+   - [x] CI 新增独立 `image-smoke` job（ubuntu-24.04）：`docker build`（不 push）+ 两条运行时冒烟——镜像内零依赖密钥脚本 `gen-rsk-key.mjs` 可生成密钥、编译产物 `require('./dist/index.js')` 可加载。Dockerfile 或产物变更从此在每次推送时验证，评审轮不再手工实构。
+   - [x] 本地实构实跑两条冒烟命令通过后清理镜像。`acceptance:fanout` 线上验收按登记保持"评审轮手工跑 + 记录"，不入门禁。
+
+96. **deferred #38 销项：lint / audit / secret 扫描三道静态质量闸门（2026-10-02 ✅ 完成）**：
+   - [x] **ESLint 基线**（eslint@10 flat config + typescript-eslint@8 recommended，新增 devDeps）：只留 error 级，`no-unused-vars`（tsc 已拥有）与 `no-explicit-any`（24 处既有协议载荷诚实口径，deferred #37 同款策略）关闭；跑通后违规仅 24 any + 1 prefer-const + 1 @ts-ignore（改 @ts-expect-error，typecheck 确认下行确实报错），`npm run lint` exit 0。
+   - [x] **依赖漏洞扫描**：`lint:audit` = `npm audit --omit=dev`，官方 registry 实测 **0 漏洞**（本机 npmmirror 不支持 audit 端点，CI 用官方 registry 不受影响）。
+   - [x] **secret 扫描**：零依赖 `scripts/scan-secrets.mjs`（10 组保守模式），默认扫全部 tracked、`--diff <base>` 扫变更集；全量 247 文件 clean，负向植入（tracked 文件加假 `ghp_` token）命中且 exit 1；脚本按 #37 口径纳入 `@ts-check` + tsconfig include。
+   - [x] CI verify job 接入三步（Lint / Production dependency audit / Secret scan），三个原子 commit。**全量 1015 / 94 绿**、typecheck/build exit 0。
+
 93. **PR #63 CI 失败修复：typecheck 移到 build 之后（2026-10-02 ✅ 完成）**：
    - [x] **现象**：PR #63（pr-helper 开、dev→main）6 个 CI check 全 fail（Node 22.x/24.x 的 typecheck/build/test + wall-clock gate ×2），失败日志唯一错误 `scripts/gen-rsk-key.mjs(50,38): error TS2307: Cannot find module '../dist/registry/signing.js'`（runs 36907293234 / 36907286454）。
    - [x] **根因**：H1 把 scripts/*.mjs 纳入 typecheck 后，脚本 import 编译产物 `dist/*`（bench-capacity 6 处静态 import、gen-rsk-key/verify-roster 各 1 处 try/catch 动态 import）；CI 两个 job 都是 typecheck 先于 build，干净 checkout 无 dist → TS2307。本地绿是因为本地残留 dist——本机复现对照：`rm -rf dist` 后 typecheck 即挂，build 后即绿。

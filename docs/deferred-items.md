@@ -283,9 +283,11 @@
 - **为什么登记不做**：三道都**要先选型并新增依赖**（ESLint 配置面、`npm audit`/OSV 策略、gitleaks 之类），属工具决定；在一个没有 lint 基线的仓库里一次性接入，会把全部历史风格问题倒进 CI。
 - **触发条件**：① 首次外部贡献者提交（需要客观风格底线）；② 出现一次依赖链漏洞或误提交密钥的真实事件。
 - **建议做法（决定后）**：三道各自独立提交；lint 先"只报 error 级、不阻断 warning"，漏洞扫描先只对生产依赖，secret 扫描先只扫变更集。
+- **销项（2026-10-02，三道全部落地，本条已销项）**：① **ESLint 基线**（eslint@10 flat config + typescript-eslint@8 recommended，devDeps 新增）——只留 error 级：recommended 中与 tsconfig 重复的 `no-unused-vars` 关掉，`no-explicit-any` 基线关掉（24 处既有协议载荷 `any` 是 deferred #37 已登记的诚实口径，待专项迁移再开）；跑通后仅两类违规（24 any + 1 prefer-const + 1 @ts-ignore 改 @ts-expect-error），全部按此策略收口，`npm run lint` exit 0。② **生产依赖漏洞扫描**：`lint:audit` = `npm audit --omit=dev`，官方 registry 实测 0 漏洞（本机 npmmirror 镜像不支持 audit 端点，CI 用官方 registry 不受影响）。③ **secret 扫描**：零依赖 `scripts/scan-secrets.mjs`（10 组保守模式：私钥头/GitHub PAT/gho/npm/Slack/AWS/Anthropic/Google/OpenAI），默认扫全部 tracked、`--diff <base>` 只扫变更集，命中 exit 1 带 file:line；全量 247 文件 clean，负向植入（tracked 文件加假 `ghp_` token）命中且 exit 1；脚本按 #37 口径纳入 `@ts-check` + tsconfig include。CI 三步已接入 verify job（Lint / Production dependency audit / Secret scan），三个原子 commit（ESLint 基线 / audit+secrets / CI 集成）。
 
 ### #39 CI 未覆盖的构建与线上验收闸门（部署镜像构建冒烟、`acceptance:fanout`）
 - **缺口**：`npm run smoke:core` 已在 CI 覆盖"编译产物真进程 + 真 socket 核心链"，但 **Docker 镜像构建**只在评审轮手工实构实跑（Dockerfile 改动无 CI 验证），**`acceptance:fanout`** 需线上真实外部执行 Agent（`CARD_URL=https://pr-helper-ten.vercel.app/...`）与出网许可，不适合当每次推送的 pass/fail 门。
 - **为什么登记不做**：镜像构建冒烟要在 CI 里跑 `docker build`（runner 能力与成本）；线上验收依赖外部服务可用性与代理，属**外部条件**而非库内缺口。
 - **触发条件**：① Dockerfile 改动引入一次镜像构建失败、到上线才发现；② CI 环境提供可用的外部 Agent 或带 Docker 的 runner。
 - **建议做法（决定后）**：镜像冒烟先行（CI 加一步 `docker build`，不 push 镜像）；线上验收保持"评审轮手工跑 + 记录"，不入门禁。
+- **销项（2026-10-02，镜像冒烟落地，本条已销项）**：CI 新增独立 `image-smoke` job（ubuntu-24.04，docker build 不 push + 两条运行时冒烟：镜像内零依赖密钥脚本 `gen-rsk-key.mjs` 可生成密钥、编译产物 `require('./dist/index.js')` 可加载）——Dockerfile 或产物变更从此在每次推送时验证。本地实构实跑两条冒烟命令通过后清理镜像。`acceptance:fanout` 线上验收按建议保持"评审轮手工跑 + 记录"，不入门禁。
