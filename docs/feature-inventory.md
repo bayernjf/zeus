@@ -1,6 +1,6 @@
 # 功能清单（Feature Inventory）
 
-状态：**现行 v0.4**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项，基线 1017 测试 / 94 文件）
+状态：**现行 v0.5**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项；2026-10-02 **评审 v0.21 修正规模普查**：路由 75 → 76（3 公开 + 73 bearer，分组表之和 70 → 73）、库导出口径改为 **118 条 export 语句 / 运行时 213 个导出**，三段计数入库为断言；基线 1018 测试 / 94 文件）
 
 > 本文件是 Zeus **全部功能点的资产台账**：有什么、在哪、什么状态。缺陷台账在 [audit-2026-09.md](audit-2026-09.md)。需求优先级与验收标准在 [prd.md](prd.md)；"做到哪了"在 [handoff.md](../handoff.md)。本文件只回答"有什么"，不记进度。
 
@@ -23,14 +23,16 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 
 | 入口 | 形态 | 规模 | 鉴权 |
 | --- | --- | --- | --- |
-| HTTP 门面 | Fastify 长驻进程，`npm start` | **75 条路由**（3 公开 + 72 bearer） | 公开 3 条无鉴权；其余同一 bearer |
+| HTTP 门面 | Fastify 长驻进程，`npm start` | **76 条路由**（3 公开 + 73 bearer） | 公开 3 条无鉴权；其余同一 bearer |
 | 终端面板 TUI | `npm run tui` | 11 类命令 | `--token` |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
-| 库公共面 | `import 'zeus'` | 116 处导出 | 不适用 |
+| 库公共面 | `import 'zeus'` | **118 条 export 语句**（构建产物运行时 213 个导出） | 不适用 |
 | MCP 服务端 | `src/realm/mcp-stdio.ts` | 3 资源模板 + 2 工具 | 宿主预授权目录 |
 | 脚本 | `scripts/` | 8 个 | 不适用 |
 
-### 2.1 HTTP 路由（75 条）
+### 2.1 HTTP 路由（76 条）
+
+量法：`src/http/server.ts` 里 `app.<verb>('<path>'` 的注册数（每条注册一路由，无重复注册；`tests/doc-consistency.test.ts` 已把本行与下表之和钉成断言，故三个数字不会再各自漂移）。
 
 公开面（始终挂载，无鉴权）：
 
@@ -44,12 +46,12 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 
 | 组 | 条数 | 代表路由 |
 | --- | --- | --- |
-| 名册与执行 Agent | 3 | `GET /api/roster`、`POST /api/vassals`、`DELETE /api/vassals/:name` |
+| 名册与执行 Agent | 4 | `GET /api/roster`、`POST /api/vassals`、`DELETE /api/vassals/:name`、`POST /api/vassals/:name/reinstate` |
 | 意图与编排 | 6 | `POST /api/intents`、`GET /api/intents/:id`、`POST /:id/cancel`、`GET /:id/dag`、`GET /:id/events`（SSE）、`GET /:id/replay` |
 | 监督台 | 6 | `GET /api/escalations`、`GET /:id`、`POST /:id/approve`、`/reject`、`/approve-resume`、`/resolve` |
 | 指标与状态 | 3 | `GET /api/metrics`、`GET /api/state`、`GET /api/audit` |
-| 组织编制 | 9 | `GET /api/org/chart`、`GET /api/org/accountability/:intentId`、部门建编/安置、上岗与首日简报、`POST /:id/first-task` |
-| 记忆 | 12 | `/api/memory/{events,facts,replay,recall}`、`/retract`、`/forget-subject`、`/retractions`、`/integrity`、`/snapshot`、`/reconcile` |
+| 组织编制 | 13 | `GET /api/org/chart`、`GET /api/org/accountability/:intentId`、部门建编/安置/设 lead/移除成员、带教立项/授课/豁免/撤回/台账、`GET /:id/briefing/:agentId`、`POST /:id/first-task` |
+| 记忆 | 10 | `/api/memory/{events,facts,replay,recall}`、`/retract`、`/forget-subject`、`/retractions`、`/integrity`、`/snapshot`、`/reconcile` |
 | 日记 | 3 | `GET /api/diary`、`GET /api/diary/export`、`POST /api/diary/generate` |
 | 技能与带教 | 14 | `/api/skills` 目录与版本、`install`/`uninstall`/`deprecate`/`harden`/`team`、`/api/mentorships` 全生命周期 |
 | 连接器 | 6 | `/api/connectors` 声明/连接/吊销、`POST /api/connectors/:id/tools/:name/call` |

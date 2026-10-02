@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.20，2026-09-29，A1 销项更新：对线上 pr-helper 实跑真实执行 Agent 注册 + 真机扇出 **15/15 exit 0**，只记这一条；判定维持"核心 MVP ✅ / 可上线 ❌"，活基线 791 / 83、冒烟 36/36 未变）**。上一条 v0.19（2026-09-27，评审对象 HEAD `25c601c`：门禁 786 / 83 且 `npm test` exit 0、核心链路冒烟 35/35、P0 逐行机械计数 26/26、签名链五条对照复跑、出货件自 v0.18 起动过（`src/http/rsk.ts`/`serve.ts`/`server.ts`）故部署镜像重新实构实跑、另加一次独立边界探针 6/6；判定相同）。再上一条 v0.18（评审对象 `8b53c8e`，判定相同）。**历轮全文与取证细节在本文件各版本节内，本行不复制。**
+> 状态：**现行（评审报告 v0.21，2026-10-02，评审对象 HEAD `0a867f8`：核心 MVP ✅ / 可上线 ❌ 维持。本轮不采信上轮记录，重新机械计数（54 行需求 / P0 26/26）、用出货 CLI 复跑签名链七条对照、起真进程做边界矩阵与装配核对（一次性探针 20/20），并抓到 feature-inventory 的规模普查三个数字互不一致（75 vs 76 路由、分组表只加到 70、"116 处导出"既非 118 条 export 语句也非运行时 213）——已修并入库为断言（doc-consistency 第 10 例，三段各自缺陷植入验证）；本批改了出货件故镜像层不该继承，但本机到 registry 的网络路径不通而未重拍（诊断与落点见 §F）。上一条 v0.20（2026-09-29，A1 销项更新，只记那一条；活基线 791 / 83、冒烟 36/36）。再上一条 v0.19（2026-09-27，对象 `25c601c`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机执行 Agent 部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -149,6 +149,100 @@
 - **实测证据**：`CARD_URL=…/api/a2a/agent-card`（**不传 `TASK_URL`**，内核读卡片声明的 `url` 解析出 `taskUrl`，deferred #29 的修复在真机上再确认）→ 注册 201、名册 active → `PARAMS='{"owner":"jiangfeng","repo":"zeus"}'` 扇出 → 分支 `ok=1/1`、`withContent=1`、`x-zeus-report.summary` 原样回传、`decision={"rule":"majority","positions":[],"conclusion":null,"reason":"no vassal returned a stance; nothing to aggregate"}`（聚合器如实报告"无可聚合"）→ 审计日志 `dispatched` ×2 + `vassal-revoked` → 名册离线验签 VERIFIED → 吊销后公开名册即刻消失 → SIGTERM 后 `orchestrator.intents` 两条落盘（completed 那条含分支与 decision）。
 - **范围界定（不夸大）**：pr-helper 在 plan 模式作答，故本项证明的是**真机扇出闭环 + 执行型 Agent 内容回传**，**不含**对 GitHub 的不可逆写操作（凭据代理机制已登记为 deferred #33，不在 A1 出口标准内）。
 - **对判定的影响**：M3 的"真实外部执行 Agent 受调度 ❌"一半翻转为 ✅（M3 现只剩 Zeus↔loom 联调）；核心 MVP 维持 ✅，可上线维持 ❌（§A 剩余 A2–A5 + B 系列均为仓库外动作）。活基线 791 / 83、冒烟 36/36 未变。详细批次记录见 handoff Active work 75 与 PRD v0.60。
+
+## v0.21 复核（2026-10-02，评审对象 HEAD `0a867f8`：**核心 MVP ✅ / 可上线 ❌ 维持**；抓到 feature-inventory 的规模普查三个数字互不一致并入库为断言；改了出货件但镜像层因本机到 registry 的网络路径不通而未重拍，限制与落点写在 §F）
+
+> 本轮方法沿用 v0.17 之后的规矩：**上一轮的记录不作依据**，凡判定里含动词的条目重新取证。与往轮的两处方法差别：① **`gh` 本轮可用**（此前几轮记录"被拦"），故 CI 侧不再是空白（§G）；② 镜像层**未能重拍**，因此本轮的"出货件未受影响"这句话**只说得出进程/构建级证据，说不出容器级证据**（§F 逐条列明）。
+
+### A. 验证基线（本机实跑，非转述）
+
+| 项 | 读数 | 备注 |
+| --- | --- | --- |
+| HEAD / 工作树 | `0a867f8`，`git status --porcelain` 零行 | 本批 3 个 commit 均在本地，`origin/dev..HEAD` = 3 |
+| `npm run build` / `npm run typecheck` | 各自 **exit 0** | 先 build 后跑测试（`tests/*` 动态 import `dist/`） |
+| `npm test` | **993 绿 / 25 失败 / 1018 总量** | 25 例**逐条按失败原因**复核，全落在三个 Windows 环境性家族：目录 fsync EPERM 17 / chmod 0600 断言 4 / symlink EPERM 4 |
+| `npm run smoke:core` | **31/36** | 失败 5 步（0600 chmod ×2 + SIGTERM 持久化连锁 ×3）。**stash 对照**：在未改动的工作树上跑同一条冒烟，失败 5 步逐条相同 → 与本批 diff 无关 |
+| `tests/doc-consistency.test.ts` | **10/10** | 含本轮新增第 10 例（§E） |
+| `tests/config-surface.test.ts` | 3/3 | 配置面双向对照未回退 |
+| 独立边界探针 | **20/20** | 一次性脚本（真进程 + 真 socket + 出货 CLI），跑完即删；内容见 §C/§D |
+
+**"25 例是环境性"这句话本轮不是断言、是量出来的**：逐条读失败原因分类（`EPERM: fsync` / `expected 438 to be 384` 之类 / `EPERM: symlink`），并且 Linux 侧全绿有独立来源（§G 的 CI）。这与 v0.19/v0.20 用 stash 对照得到的结论一致，且本轮多了一层 CI 交叉验证。
+
+### B. 需求覆盖：机械核对，不读叙述
+
+- `docs/prd.md` 需求行 **54 行**（正则 `^\| E[\d.]+ \| .* \| P\d \|`），按单元格机械分类：**P0 26/26 ✅**；P1 ✅13 / 🚧2 / ⬜2，P2 ✅7 / ⬜3，P3 ⬜1。
+- 非 P0 未闭合 **8 条**：`E3.4`、`E3.8`、`E4.9`、`E4.10`、`E5.4`、`E8.4`、`E9.4`、`E10.2`——**与 v0.17 / v0.18 / v0.19 / v0.20 同集合**，既无新增也未回退。
+- feature-inventory §1 的"✅46 / 🚧2 / ⬜6"与本轮机械计数**逐项相符**。
+
+### C. 装配核对：核"装配"而不是核"注册"
+
+| 主张 | 本轮取证（真进程，非读代码） | 结果 |
+| --- | --- | --- |
+| 起步路径绑的是文档承诺的默认值，且真的 listen | 本批把 `startServer` 接成单一起步原语；探针在 `ZEUS_PORT=0` 下**只从进程日志**取到 `http://127.0.0.1:57630`（旧代码会打印请求值 `0`），并在该地址上跑通全部端点 | ✅ |
+| DAG 路由**已装配**（不是"路由在位"） | `GET /api/intents/<unknown>/dag` 带 bearer → **404 `unknown dag`**；503 只在 `dagRunner` 未注入时出现 | ✅ |
+| 公开面无鉴权、内部面要 bearer | `/healthz`、`/api/roster/public`、`/api/roster/keys` → 200；`/api/roster` 无 bearer 401 / 带 bearer 200；`POST /api/intents` 无 bearer 401 | ✅ |
+| 公开投影剔除内部字段 | 注册一张真卡后 `snapshot.entries` 恰好 1 条，字段为 `name,description,domain,skills,commitments,status,health,registeredAt`，**无 `cardUrl`/`taskUrl`** | ✅ |
+| provenance 仍在（防同名替换） | `attestations[<name>].vassal.cardUrl` = 注册时那张卡的 URL | ✅ |
+| `/healthz` 不泄业务信息 | 响应体仅 `{status,version,ts}` | ✅ |
+
+### D. 签名链与离线验签：出货命令复跑（本轮**七条**）
+
+全部经 `scripts/verify-roster.mjs`（出货实现，不是复写的规范化）：
+
+| # | 对照 | 退出码 | 点名原因 |
+| --- | --- | --- | --- |
+| 1 | 正向：真封出来的信封 + 公钥 | **0** | `VERIFIED … signature, digest binding, freshness and per-entry attestations all check out` |
+| 2 | 同一份字节，`--now` 推过 `maxAgeSeconds` | **1** | `snapshot seal past maxAgeSeconds` |
+| 3 | 改载荷（`snapshot.entries[0].domain`） | **1** | `snapshotDigest mismatch: snapshot content was altered` |
+| 4 | 换 provenance（`attestations[name].vassal.cardUrl`） | **1** | `attestation signature failed for "…"` |
+| 5 | 陌生钥 | **1** | `seal signature verification failed` |
+| 6 | **只用** `GET /api/roster/keys` 返回的 `keys[0].spkiPem` | **0** | VERIFIED（"发布的钥就是签名那把"） |
+| 7 | 负对照：把 JWK 那条记录当 PEM 传 | **2** | `DECODER routines::unsupported` |
+| 附 | 深比对 `--card <name>=<file>` | **0** | 逐字段重算卡片摘要通过 |
+
+- **三触点同串**（deferred #7 库内侧的收口条件）：`gen-rsk-key.mjs` 打印的 `jwkThumbprint` = 发布端点 `keys[0].jwkThumbprint` = 验签报告 `jwk=` 行，三处逐字符相同。
+- **端点形状校正（本轮实测，已补进文档）**：`/api/roster/keys` 是 **JWKS**——`{issuer, keys:[{kid,kty,crv,x,alg,use,spkiPem,jwkThumbprint,spkiSha256}], keySource, survivesRestart, trust}`；信封是 `{snapshot:{schemaVersion,generatedAt,scope,entries}, attestations, seal}`。此前文档只说"JWKS 形状""载荷带 `schemaVersion`"，没写嵌套位置，集成方只能靠试。
+
+### E. 本轮抓到并已修：feature-inventory 的规模普查三个数字互不一致（已入库为断言）
+
+- **文档写 `75 条路由（3 公开 + 72 bearer）`，实测 `76（3 + 73）`**：A-02 撤销粘性修复（`bb9a38a`）新增的 `POST /api/vassals/:name/reinstate` 没进普查。
+- **同一张分组表相加只有 70**（名册与执行 Agent 3≠4、组织编制 9≠13、记忆 12≠10）——**文档与自己的表头都不一致**，而两张表谁对没人知道。
+- **`116 处导出`** 既不等于 `src/index.ts` 的 **118 条 export 语句**，也不等于构建产物的 **213** 个运行时导出（量法：`node -e "import('./dist/index.js').then(m=>console.log(Object.keys(m).length))"`）。
+- **已修并入库**：`tests/doc-consistency.test.ts` **第 10 例**把三段钉死——① 表头三元组 = `src/http/server.ts` 的注册数（含公开/bearer 拆分）；② 分组表"条数"列之和 = bearer 面；③ `**N 条 export 语句**` = `src/index.ts` 的 `^export` 行数。feature-inventory §2.1 同时写明量法与"该行已被断言钉住"。
+- **三段各自缺陷植入（不是只测坏输入）**：把表头改回 75/72 → `expected [ '75','3','72' ] to deeply equal [ '76','3','73' ]`；把记忆行改回 12 → `route groups sum to 75, the bearer face has 73`；把导出改回 116 → `expected '116' to be '118'`。三次都只红该例、还原后 10/10 绿。
+- 一处顺带修正：同一文件的 PRD 🚧 两条之一写作「E4.9 凭据委派」，而 PRD 的 E4.9 是签名链（凭据代理归 deferred #33）。
+
+### F. 部署镜像：本轮**未**重拍（本机网络受限，如实记，不冒充"已跑"）
+
+- **为什么不继承**：本批改了出货件 `src/http/serve.ts`。按 v0.19 的先例（"出货件动过则镜像层不继承"），这一格必须重拍才谈得上覆盖。
+- **实测失败点**：`docker build` 在 `#2 [internal] load metadata for docker.io/library/node:22-slim` 处失败——`failed to fetch oauth token: Post "https://auth.docker.io/token": dial tcp 31.13.96.208:443: connectex: … timed out`；`docker images` **本地零缓存**，没有可离线复用的基础镜像。
+- **诊断出的是环境事实、不是代码问题**：本机 `127.0.0.1:7897` 代理**可达 Docker Hub**（`registry-1.docker.io/v2/` → HTTP 401，`auth.docker.io/token` → HTTP 200），而 Docker Desktop 的 `settings-store.json` **没有任何代理配置**。修法是给 Docker Desktop 配代理（用户侧环境动作）；**我未擅自改用户的 Docker 配置**。
+- **该项的设计落点是 CI**：`.github/workflows/ci.yml` 有独立 `image build + smoke` job，且对已推送 HEAD 是绿的（§G）。本批的镜像证据随下次推送由 CI 给出。
+- **本机能给的替代证据已跑**（不夸大其覆盖面）：`npm run build` exit 0；`dist/http/serve.js` 真进程 + 真 socket 走通核心链路（smoke 31/36，失败项全为 Windows 语义不可表达者，且与改动前逐条相同）；独立探针 20/20（§C/§D）。**容器级属性（非 root、卷权限、SIGTERM 落盘、healthcheck）本轮没有本地证据**。
+
+### G. CI 现测（本轮 `gh` 可用）
+
+- `gh run list --branch dev`：run **37027110404**（push，HEAD `b61043d`）**4/4 job 成功**——`wall-clock dependency gate (+2y)` 51s、**`image build + smoke` 41s**、`typecheck / build / test (Node 24.x)` 48s、`typecheck / build / test (Node 22.x)` 56s；同 HEAD 的 PR 流水线 37027148185 同绿。
+- 三条意义：① 本机那 25 例"环境性失败"在 **Linux 侧全绿**得到独立确认；② 镜像冒烟在 CI 有落点且当前是绿的；③ E1 的现行读数是"**已推送的 HEAD 绿**，本批 3 个 commit 未推（等授权）"。
+- **口径不变**：状态只能现测（`gh run list` / `git rev-list --count origin/dev..HEAD`），任何写死的同步状态几分钟后就会过期。
+
+### H. 功能性 / 完整度 / 可上线（三维判定）
+
+- **功能性**：P0 26/26 ✅、全库无已知 P0 未闭合项。"已实现但未接线" **3 → 2**（本批销掉 `startServer()`；余下两条各有明确前置：执行授权票据派发闸门等对端凭据接口（deferred #33），数据二极管按 `dataPolicy` 收缩需先定对外字段契约）。
+- **完整度**：三条接入通道执行点在位（出站凭证注入、Skill 三态闸门、MCP 服务端 tools + 客户端裁剪）；签名链、备份恢复、记忆/日记、编制/责任链、TUI 三类页面均在位；CI 六道闸门（typecheck/build/test/smoke/lint/audit/secret/时钟偏置/镜像）齐。
+- **可上线**：**❌ 未达成**。剩余项全部是仓库外动作——A2 密钥托管落地与带外公告、A3 生产栈联调、A4 决策后端 key、A5 bayjf 侧 R2、B1–B4 真实部署（卷权限/反代 TLS/进程管理/env 逐行核对）、E2 镜像发 registry；外加不阻塞核心的阈值标定（C1–C3，需 ≥3 真实执行 Agent 压测）。
+
+### I. MVP 判定（明确回答本轮问题）
+
+- **产品核心「完全可用」MVP：✅ 维持**（库内核 + 制品；证据见 §A–§D，其中真机扇出沿用 2026-09-29 的记录，本轮未复跑，见 §J）。
+- **可交付真实用户 MVP：❌ 维持**（差的是真实环境里的执行动作，见 §H）。
+- **与 v0.20 的差别只有两处**：① 库内"已实现但未接线" 3 → 2；② feature-inventory 的普查缺陷修复并入库为断言。**判定不变，且本轮没有把任何一条外部动作记成完成**（镜像层那格显式记为未重拍）。
+
+### J. 本轮评审限制（如实标注）
+
+- **未跑**：真实执行 Agent 真机扇出（需线上网络与授权；A1 结论沿用记录）、Docker 镜像实构实跑（§F）、Zeus↔loom 生产栈联调（外部条件）、本机 Linux 侧全量测试（由 CI 覆盖，非本机复现）。
+- **本机代理 7897 可达外网但没有用于线上验收**——那是需要显式授权的对外动作，不在本轮范围。
+- **本机写权限问题已排除**：进入本轮前 `pwsh` 完全不可用（沙箱在工作区根缺 `WRITE_OWNER`），用 `diagnose-windows-sandbox-acl` 的脚本修好并复验（改动仅一条：给当前用户补完全控制，文件内容与所有者未动；恢复命令已留存）。这一条与本项目代码无关，但**它决定了本轮能否取证**，故记账。
 
 ## v0.18 复核（2026-09-27，评审 deferred #7 那半边入库之后的仓库：**核心 MVP ✅ / 可上线 ❌ 维持**；抓到三条陈述层缺陷并同日修掉（其中一条藏在**已销项**条目里），另有一次配置失误撞出的生产守卫实测，加一条被闸门逮住的、我自己写坏的索引行）
 
