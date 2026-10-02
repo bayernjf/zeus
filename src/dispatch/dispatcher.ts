@@ -1,5 +1,6 @@
 import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
+import type { RealmHit } from '../realm/types.js';
 import { sendTaskSubscribe, cancelTask } from './client.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
@@ -52,6 +53,14 @@ export const AUDIT_DECISIONS = [
   // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
   // leave no trace at all, so the governance surface could not see a branch ended.
   'cancel-requested',
+  // design-realm §3.1: realm content was refused because fealty.dataPolicy does
+  // not admit its origin (none accepts none; read-task-scope only kernel-resolved;
+  // hits without a declared origin fail closed). The refusal is the policy
+  // working, so it is visible rather than a silent drop.
+  'refused-data-policy',
+  // design-realm §3.1: realm content was injected, recording the policy, the
+  // origin and the count so "what did this task give that agent" can be traced.
+  'content-injected',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
@@ -76,12 +85,17 @@ export type DispatchRequest = {
   params: Record<string, unknown>;
   realm: RealmType;
   runId?: string;
-  /** Realm content offered to the vassal; redacted per fealty.dataPolicy before injection */
-  realmHits?: Array<{ itemId: string; snippet: string }>;
+  /** Realm content offered to the vassal; gated by fealty.dataPolicy on *origin* (design-realm §3.1). */
+  realmHits?: RealmHit[];
+  /** Where the hits came from. Required whenever realmHits is non-empty; a
+   *  request whose hits carry no origin fails closed (the kernel can verify
+   *  kernel-resolved hits as task-scoped, and can verify nothing about
+   *  caller-asserted ones). */
+  realmHitsOrigin?: 'kernel-resolved' | 'caller-asserted';
 };
 
 export type DispatchResult =
-  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: Array<{ itemId: string; snippet: string }> }
+  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: RealmHit[] }
   | { ok: false; reason: string; audit: AuditEntry };
 
 export type AuditSink = (entry: AuditEntry) => void;
@@ -154,8 +168,46 @@ export class Dispatcher {
       return { ok: false, reason: audit.detail!, audit };
     }
 
-    // Redaction: realm content injection is bounded by fealty.dataPolicy
-    const injectedHits = vassal.fealty.dataPolicy === 'none' ? [] : (request.realmHits ?? []);
+    // design-realm §3.1: fealty.dataPolicy gates the *origin* the realm hits may
+    // come from, not the field set (which is the same across policies). The two
+    // failure modes — hits that cannot be traced to a declared origin, and a
+    // policy that does not admit the origin — refuse the dispatch instead of
+    // silently dropping content (the "silent downgrade is a failure shape" rule
+    // from #20/#31). Refusals are audited, so a policy that blocked content is
+    // visible as the policy working, not as a gap.
+    const hits = request.realmHits;
+    const origin = request.realmHitsOrigin;
+    const policy = vassal.fealty.dataPolicy;
+    let injectedHits: RealmHit[] = [];
+    if (hits && hits.length > 0) {
+      if (!origin) {
+        const audit: AuditEntry = {
+          ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+          decision: 'refused-data-policy',
+          detail: `fealty.dataPolicy=${policy}: ${hits.length} realm hits carry no origin; dispatch refused (fail-closed)`,
+        };
+        this.options.audit(audit);
+        return { ok: false, reason: audit.detail!, audit };
+      }
+      if (policy === 'none' || (policy === 'read-task-scope' && origin === 'caller-asserted')) {
+        const why = policy === 'none'
+          ? `fealty.dataPolicy=none does not accept realm content`
+          : `fealty.dataPolicy=read-task-scope accepts only kernel-resolved hits; self-asserted hits cannot be verified as task-scoped`;
+        const audit: AuditEntry = {
+          ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+          decision: 'refused-data-policy',
+          detail: `${why} (origin=${origin})`,
+        };
+        this.options.audit(audit);
+        return { ok: false, reason: audit.detail!, audit };
+      }
+      injectedHits = hits;
+      this.options.audit({
+        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+        decision: 'content-injected',
+        detail: `fealty.dataPolicy=${policy}, origin=${origin}, hits=${hits.length}`,
+      });
+    }
 
     // Re-affirm the revocation gate at the moment the credential is read.
     // `tokenFor` yields nothing for a revoked vassal, and a request that leaves
