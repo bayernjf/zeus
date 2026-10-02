@@ -238,7 +238,7 @@ async function stopProcess(child) {
  * @param {Record<string, string>} [headers]
  */
 async function api(method, path, body, headers = bearer) {
-  const response = await fetch(base + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  const response = await fetch(base + path, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   const text = await response.text();
   let json = null;
   try { json = JSON.parse(text); } catch { /* non-JSON responses keep their text */ }
