@@ -28,6 +28,7 @@
     "scripts/acceptance-standard-a2a.mjs",
     "scripts/bench-capacity.mjs",
     "scripts/clock-skew-setup.mjs",
-    "scripts/scan-secrets.mjs"
+    "scripts/scan-secrets.mjs",
+    "scripts/verify-decision-backend.mjs"
   ]
 }
