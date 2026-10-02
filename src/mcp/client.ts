@@ -48,7 +48,7 @@ export class McpClient {
     this.token = deps.token;
   }
 
-  private token?: string;
+  private token: string | undefined;
 
   private async call(method: string, params?: unknown): Promise<unknown> {
     const id = ++requestCounter;
