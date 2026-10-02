@@ -8,6 +8,7 @@ import { ExecutionDelegationNonceLedger } from '../src/delegation/execution-dele
 import { VassalRegistry } from '../src/registry/registry.js';
 import { OversightDesk } from '../src/oversight/oversight.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
+import type { DagRunner } from '../src/orchestrator/dag-runner.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 
 const lookup: TargetLookup = { findBySkill: () => [] };
@@ -23,6 +24,9 @@ function components(ledger?: ExecutionDelegationNonceLedger): KernelComponents {
     registry: new VassalRegistry(),
     oversight: new OversightDesk(),
     orchestrator: new Orchestrator(lookup, unusedPort),
+    // The snapshot round-trip under test touches neither DAG state; the runner
+    // is a required component, so it is stubbed the way persistence.test.ts does.
+    dagRunner: {} as DagRunner,
     ...(ledger ? { executionDelegationLedger: ledger } : {}),
   };
 }
