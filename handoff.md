@@ -737,7 +737,7 @@ State of Zeus as of 2026-09-29.
 91. **deferred #36 最小档：`noUnusedParameters` 启用并清零（2026-10-02 ✅ 完成，全量 1012 绿 / 94 文件，`smoke:core` 36/36，typecheck/build exit 0）**：
    - [x] **实测 8 处**（登记 7 处 + `bench-capacity.mjs` 的 `startMockFarm(count,…)`——后者是 Active work 90 把 scripts 纳入检查后新暴露的），全部按 `_` 前缀改名收口：公共导出 `createTraceSink` 的 `backend`/`model` 与 `recomputeResult` 的 `now` 保留签名只改名（位置参数调用方不受影响）；测试 mock 回调 `_url`/`_input` 同法；`fetchFor(names, calls)` 的 `names` 改名 `_names`（其回调 `input` 实际在用，还原了我初轮的一处误改）。
    - [x] **门禁**：`noUnusedParameters: true` 写入 `tsconfig.json` 后 `npm run typecheck` / `npm run build` exit 0、`npm test` **1012 / 94 / 0**、`npm run smoke:core` **36/36**（本批只改参数名，行为不变）。
-   - [x] **中档量法刷新**：`exactOptionalPropertyTypes` 现量 **45 处**（登记 40 + 新纳入脚本/近期新增面 5）、`noUncheckedIndexedAccess` 仍 400 档——deferred #36 剩两档待触发条件，不销项。
+   - [x] **中档量法刷新**：`exactOptionalPropertyTypes` 现量 **41 处**（登记 40 + 新纳入脚本面 1）、`noUncheckedIndexedAccess` 仍 400 档——deferred #36 剩两档待触发条件，不销项。
    - [x] **文档同步**：[docs/deferred-items.md](docs/deferred-items.md) #36 记进展与量法刷新；本文件本条 + 更改记录。**未 push（等用户授权）**
 92. **审计 C 级 21 条缺陷修复（2026-10-02 ✅ 完成，全量 1015 绿 / 94 文件，`smoke:core` 36/36，typecheck/build exit 0）**：
    - [x] **先核对台账**：读 `docs/audit-2026-09.md` §5（22 条登记、18 已修、21 未修）后发现 **1–17 条早在 2026-10-01 晚间已随 A/B 修复批次落地、台账未同步**（C1–C4=`ce98a94`、C5–C6=`efe9566`、C7=`e2bbd57`、C8–C9=`c7798de`、C10–C11=`e17f449`、C13–C14=`3119d1b`、C15=`67e0463`、C16=`d096bca`、C17=`ca7e060`，C18=`f9d9958` 台账已标）；C21 经复读确认代码已有守卫（企业域无 tenant 拒绝、请求未给 tenant 落回域自身 tenant），无需改动。**实际需要动手的只有 4 条**：C12 残余（fan-out 主返回路径仍返回存储引用）、C19（带教 id 纯函数使 dismissed 同组合永久冲突）、C20（Org 读取返回内部对象引用）、C22（监督台审计 `detail` 形参无调用点）。
@@ -771,7 +771,7 @@ State of Zeus as of 2026-09-29.
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
 
-* [docs/feature-inventory.md](docs/feature-inventory.md) — 功能清单 **v0.2**（2026-10-01）：全量功能点资产台账——11 个能力域、75 条 HTTP 路由、4 类 CLI、7 个脚本、116 处库导出、配置面；含「**已实现但未接线**」专节（执行授权票据派发闸门、数据二极管按 dataPolicy 收缩、`startServer()` 共 3 项；A-01/A-04/A-09 三项已接线移出）★
+* [docs/feature-inventory.md](docs/feature-inventory.md) — 功能清单 **v0.3**（2026-10-02）：全量功能点资产台账——11 个能力域、75 条 HTTP 路由、4 类 CLI、8 个脚本、116 处库导出、配置面；含「**已实现但未接线**」专节（执行授权票据派发闸门、数据二极管按 dataPolicy 收缩、`startServer()` 共 3 项；A-01/A-04/A-09 三项已接线移出）★
 * [docs/audit-2026-09.md](docs/audit-2026-09.md) — 项目级代码审计 **v0.3**（2026-09-30 首轮全量静态审计、2026-10-01 两批复检）：**A 12 / B 34 / C 22** 条缺陷，逐条 `file:line` 定位；**A 级 12 条与 B 级 34 条已全部修复**（每条修复前做缺陷植入验证，§3/§8 附证据与 commit），**C 级 22 条全部修复（2026-10-02）**——1–17 条于 2026-10-01 晚间已随 A/B 批次落地（§5 附 commit 对照，台账当时未同步）、12 残余/19/20/22 于 2026-10-02 修复（§8 附缺陷植入证据）、21 条经复读确认已有守卫；三条共性成因（重入路径无守卫 / 配置装配少透传 / 异步时序）、12 条"已核验成立的高风险面"、文档与实现矛盾清单、修复优先级与复检命令 ★
 * [docs/tech-exploration-map.md](docs/tech-exploration-map.md) — Agent 技术探索地图 v0.3：A 组五条优先（已裁决）、B/C 议题登记、S14 Jev 已落设计、决策后端抽象层改为模型无关 ★
 * [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 **v0.5**（§8 生产者契约已采纳落地，deferred #27 销项）：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、混合检索（§6.1）、漂移对账（§6.3）、八条验收 ★
