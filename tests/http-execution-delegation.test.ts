@@ -151,10 +151,13 @@ describe('HTTP deferred #33 — the execution-delegation issue endpoint', () => 
     await h.app.close();
   });
 
-  it('is not mounted without a signer (404)', async () => {
+  it('is not mounted without an internal token (404)', async () => {
+    // The signer is a required dependency of this face, so the route's mounting
+    // condition is the internal token: without it the whole internal group is
+    // absent and the endpoint does not exist.
     const app = await createHttpServer({
       registry: new VassalRegistry(),
-      internalToken: TOKEN,
+      signer: new Ed25519MemorySigner('k'),
     });
     const res = await app.inject({
       method: 'POST',
