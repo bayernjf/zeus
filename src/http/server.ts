@@ -1732,11 +1732,22 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
   return app;
 }
 
-/** Start the long-lived process. Personal edition binds loopback by default
- *  (design-http-transport §2.1); enterprise sits behind a gateway. */
+/** Personal-edition bind defaults (design-http-transport §2.1): loopback only.
+ *  They live here, next to the start primitive, and the process entry imports
+ *  them - while both sides kept their own copy, the published default and the
+ *  documented one were free to disagree. */
+export const DEFAULT_HTTP_HOST = '127.0.0.1';
+export const DEFAULT_HTTP_PORT = 8787;
+
+/** Start the long-lived process: create the service face, then listen. This is
+ *  the single start primitive - the process entry calls it instead of repeating
+ *  createHttpServer + listen with a second set of defaults. Callers that want an
+ *  ephemeral port (tests, probes) pass `port: 0` and read the bound port back
+ *  from `app.server.address()`. Enterprise sits behind a gateway
+ *  (design-http-transport §2.1). */
 export async function startServer(deps: HttpDeps, options: StartOptions = {}): Promise<FastifyInstance> {
   const app = await createHttpServer(deps);
-  await app.listen({ host: options.host ?? '127.0.0.1', port: options.port ?? 0 });
+  await app.listen({ host: options.host ?? DEFAULT_HTTP_HOST, port: options.port ?? DEFAULT_HTTP_PORT });
   return app;
 }
 
