@@ -45,7 +45,7 @@ function stanceResult(vassal: string, stance: string): DispatchResult {
   return { ok: true, task, events: [event], injectedHits: [] };
 }
 function portFor(routes: Record<string, DispatchResult>): DispatchPort {
-  return { async dispatch(req: DispatchRequest) { return routes[req.vassal!]; }, async cancel() {} };
+  return { async dispatch(req: DispatchRequest) { return routes[req.vassal!]!; }, async cancel() {} };
 }
 const lookup: TargetLookup = { findBySkill: () => [] };
 

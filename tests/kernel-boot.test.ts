@@ -58,7 +58,7 @@ function stanceResult(vassal: string, stance: string): DispatchResult {
 }
 const portFor = (routes: Record<string, DispatchResult>): DispatchPort => ({
   async dispatch(req: DispatchRequest) {
-    return routes[req.vassal!];
+    return routes[req.vassal!]!;
   },
   async cancel() {},
 });

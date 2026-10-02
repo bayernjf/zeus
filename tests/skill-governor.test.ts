@@ -21,13 +21,13 @@ function fetchFor(_names: string[], calls: string[]): typeof fetch {
   return (async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes('/api/a2a/agent-card')) {
-      const name = url.split('/')[3];
+      const name = url.split('/')[3]!;
       return new Response(JSON.stringify(cardFor(name)), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
     }
-    const name = url.split('/')[3];
+    const name = url.split('/')[3]!;
     calls.push(name);
     const task = {
       kind: 'task',

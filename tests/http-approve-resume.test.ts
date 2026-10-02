@@ -49,7 +49,7 @@ async function setup(): Promise<Harness> {
 
   await orchestrator.fanOut({ skill: 'research', realm: 'personal', params: {} });
   // The paused branch surfaces as a task-input escalation at the desk.
-  desk.ingest(seen[0], { vassal: 'v1', skill: 'research', realm: 'personal', runId: 'run-1:v1', params: {} });
+  desk.ingest(seen[0]!, { vassal: 'v1', skill: 'research', realm: 'personal', runId: 'run-1:v1', params: {} });
 
   const app = await createHttpServer({
     registry, signer, internalToken: TOKEN, orchestrator, oversight: desk, metrics,

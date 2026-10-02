@@ -80,7 +80,7 @@ describe('Dispatcher', () => {
 
     const body = seenBodies[0] as { params: { message: { metadata: Record<string, string>; parts: Array<{ data: Record<string, unknown> }> } } };
     expect(body.params.message.metadata['x-zeus-runId']).toMatch(/^zeus-run-/);
-    expect(body.params.message.parts[0].data.skill).toBe('create-pr');
+    expect(body.params.message.parts[0]!.data.skill).toBe('create-pr');
 
     const decisions = audit.map((entry: AuditEntry) => entry.decision);
     // One dispatch, one record. A second, taskId-less 'dispatched' used to be

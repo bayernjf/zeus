@@ -149,7 +149,7 @@ describe('DagRunner', () => {
     const runner = new DagRunner(lookup, port, { newRunId: () => 'r1' });
     const result = await runner.run(baseSpec([{ id: 'A', skill: 's', vassals: ['v-yes', 'v-no'] }]));
     expect(result.state).toBe('needs-driver');
-    expect(result.nodes[0].state).toBe('needs-driver');
+    expect(result.nodes[0]!.state).toBe('needs-driver');
   });
 
   it('passes upstream results to downstream params via resolveParams', async () => {

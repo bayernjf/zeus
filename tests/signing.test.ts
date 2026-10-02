@@ -206,7 +206,7 @@ describe('signed roster snapshot — design-fealty-signing §8.1', () => {
     const tampered = structuredClone(cards.loom!);
     tampered['x-zeus-fealty']!.dataPolicy = 'write';
     expect(attestationMatchesCard(attestation, tampered)).toBe(false);
-    expect(attestationMatchesCard(attestation, cards.loom)).toBe(true);
+    expect(attestationMatchesCard(attestation, cards.loom!)).toBe(true);
 
     // tampering with the projected commitments inside the snapshot breaks the seal
     const edited = structuredClone(envelope);

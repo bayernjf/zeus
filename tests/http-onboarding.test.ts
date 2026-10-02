@@ -227,12 +227,12 @@ describe('HTTP E9.2 - the commission face', () => {
     const entries = granted.json().entries as Array<{ vassal: string; detail: string }>;
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({ vassal: 'new-hire' });
-    expect(entries[0].detail).toContain('acme/eng');
+    expect(entries[0]!.detail).toContain('acme/eng');
 
     const waivedEntry = await face.app.inject({ method: 'GET', url: '/api/audit?decision=commission-waived', headers: AUTH });
     const waivers = waivedEntry.json().entries as Array<{ detail: string }>;
     expect(waivers).toHaveLength(1);
-    expect(waivers[0].detail).toContain('supervised internship');
+    expect(waivers[0]!.detail).toContain('supervised internship');
 
     const state = await face.app.inject({ method: 'GET', url: '/api/state', headers: AUTH });
     expect(state.json().counts).toMatchObject({ commissions: 1, commissioned: 1 });

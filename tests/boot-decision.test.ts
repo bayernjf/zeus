@@ -108,7 +108,7 @@ function cardFor(name: string) {
 function vassalFetch(stances: Record<string, 'approve' | 'reject'>): typeof fetch {
   return (async (input: any) => {
     const url = String(input);
-    const name = url.split('/')[3];
+    const name = url.split('/')[3]!;
     if (url.includes('/api/a2a/agent-card')) {
       return new Response(JSON.stringify(cardFor(name)), {
         status: 200,
