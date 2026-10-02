@@ -157,7 +157,7 @@ export function consolidate(
   options: ConsolidateOptions = {},
 ): ConsolidateOutput {
   if (events.length > 0) {
-    const realmId = events[0].realmId;
+    const realmId = events[0]!.realmId; // guarded by the length check above
     if (events.some(e => e.realmId !== realmId)) {
       throw new MemoryConsolidationError('consolidation cannot mix events from multiple realms');
     }
@@ -232,7 +232,7 @@ export function consolidate(
 
     const newFact: FactRecord = {
       factId: id,
-      realmId: claimEvents[0].realmId,
+      realmId: claimEvents[0]!.realmId, // a claim group always contains ≥1 event
       subject,
       predicate,
       object,

@@ -71,7 +71,8 @@ export class LocalHashingEmbedder implements Embedder {
       const hash = fnv1a(token);
       const bucket = hash % this.dimension;
       const sign = (hash & 0x800000) === 0 ? 1 : -1;
-      vector[bucket] += sign;
+      // bucket = hash % dimension, so it always indexes within the vector.
+      vector[bucket]! += sign;
     }
     const norm = Math.hypot(...vector);
     return norm > 0 ? vector.map(v => v / norm) : vector;
@@ -80,7 +81,9 @@ export class LocalHashingEmbedder implements Embedder {
 
 function cosine(a: number[], b: number[]): number {
   let sum = 0;
-  for (let i = 0; i < a.length; i++) sum += a[i] * b[i];
+  // Both vectors come from the same embedder dimension; `?? 0` keeps a
+  // length mismatch from leaking NaN into a rank.
+  for (let i = 0; i < a.length; i++) sum += (a[i] ?? 0) * (b[i] ?? 0);
   return sum;
 }
 
