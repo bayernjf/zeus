@@ -150,6 +150,15 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 - **`realmSource` 不是新传输面**：它不向客户端返回命中，只让**内核代替调用方去取**，然后把命中送进派发链路。方向上它是在收窄 §6.1 想防的东西——内容来源从"调用方自报"变成"内核亲自解析并核对声明"。
 - 一句话规则：**对外（执行 Agent/其他 Agent）→ MCP；对内（操作者自己）→ bearer HTTP，且只到元数据与授权为止。**
 
+### 6.5 MCP 暴露侧主体判定（deferred #18 裁定，2026-10-03）
+
+deferred #18 的四个待定问题裁定如下（方向固化；实现随 E3.4 正式暴露立项，本轮不写代码）：
+
+1. **主体身份形态 = 会话级 actor**：`createRealmMcpHandler` 在既有 `realmIds` 白名单之上增加可选 `actor`（宿主显式声明的调用方身份：`{ name, realmIds? }`）。stdio 环境无 OAuth subject；HTTP header 与 OAuth subject 形态留给 E3.4 streamable HTTP 化时按实际传输层定。未声明 actor 的调用保持现状：anonymous，只能访问宿主预连接白名单内的 realm。
+2. **`zeus-realm:` URI 不编码租户**：资源寻址面只承载 realmId；租户（TenantScope，§7.1）由宿主连接时声明。理由：租户进 URI 会把企业分级信息暴露进寻址面，并使 URI 与挂载状态耦合（同一 realm 改租户后 URI 语义漂移）。
+3. **不与签发凭证合并**：读取路径的边界 = 宿主白名单（进程内信任）；写路径已有签名且一次性的 DriverWriteGrant（§7.7）。MCP 读取面不引入验签——那需要把公钥/信任锚搬进 MCP 会话，扩大暴露面；当前无真实读取方，若 E3.4 立项出现跨宿主身份需求再复议。
+4. **`tools/call` 与 `resources/read` 共用同一份 realmId 白名单**：现状已如此（同一 handler 实例只有一个隔离单位，`src/realm/mcp.ts` 的 `callTool`/`readResource`/`parseRealmUri` 均消费同一 `realmIds`），本裁定固化——避免两套边界各自漂移。
+
 ## 7. 企业域分级与双域授权（E3.6 / E6.4，2026-09-25 落地）
 
 > 一句话：**层级是结构边界（不可授权放宽），域边界才是授权的对象**。把这两件事分开，是为了避免"一张凭证溶解整个租户模型"。
