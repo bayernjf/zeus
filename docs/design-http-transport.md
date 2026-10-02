@@ -1,6 +1,6 @@
 # HTTP 传输层选型设计（Zeus 服务端面）
 
-> 状态：**现行（设计稿 v0.3，2026-09-27 补根公钥发布端点与其 `keySource` 事实字段；选型 v0.1 2026-09-21）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
+> 状态：**现行（设计稿 v0.4，2026-10-02 补 §2.1 的绑定默认值与起步入口；v0.3 2026-09-27 补根公钥发布端点与其 `keySource` 事实字段；选型 v0.1 2026-09-21）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
 > 边界：本文只覆盖 **Zeus 自己对外提供的 HTTP 服务端面**。Zeus 作为 A2A **客户端**调执行 Agent（`src/dispatch/client.ts`，JSON-RPC + SSE）已实现，不在此列；Realm 对外传输已另案决定为**唯一 MCP、不做 HTTP API**（[design-realm.md](design-realm.md) §6.1），本文不覆盖、不冲突。
 
 ## 0. 一句话
@@ -28,6 +28,7 @@ Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配
 - **框架：Fastify（v4+，ESM）**，作为 Zeus 唯一的服务端 HTTP 运行时依赖。
 - **形态：长驻 Node 进程**（个人版绑 `127.0.0.1`；企业版容器化、置于网关后、不直接发布宿主端口——与 loom Q145 受控试点部署形态一致）。
 - **不选 serverless / Vercel 作为 v1 形态**。
+- **绑定默认值与起步入口（2026-10-02 定案）**：个人版默认 `127.0.0.1:8787`，`ZEUS_HOST` / `ZEUS_PORT` 只作覆盖；**默认值只有一份**——`server.ts` 的 `DEFAULT_HTTP_HOST` / `DEFAULT_HTTP_PORT`，由 `startServer(deps, options)` 消费，进程入口 `serve.ts` 调它而不是自己再写一遍 `8787`。日志报的是 socket **实际绑定**地址（`app.server.address()`）而非请求值，因为 `ZEUS_PORT=0` 时两者不同，而日志是操作者唯一能读到真实端口的地方。这条写进设计稿的原因是一次真实分叉：`startServer` 曾长期零调用方且默认 `port: 0`（随机端口），与文档、`.env.example`、`deployment.md` 三处写的 8787 不一致（审计 §6 与评审 v0.21）。
 
 ### 2.2 理由
 
@@ -101,3 +102,4 @@ v1 不设任何写端点（注册是 Zeus 主动拉 card、吊销是治理动作
 | v0.1 | 2026-09-21 | 初稿：划清网络面；裁决 Fastify + 长驻 Node、不选 serverless；薄传输层与单向依赖约束；Realm 不挂 HTTP；H1 三端点与验收；H2/H3 阶段 |
 | v0.2 | 2026-09-27 | H1 增第四端点 `GET /api/roster/keys`（根公钥发布，deferred #7 的"公钥发布"半边）：无鉴权、JWKS 形状、导不出公钥时 501 而非空数组，并写明"该端点不建立信任，信任来自验签方带外固定"。§4 表其余口径不动 |
 | v0.3 | 2026-09-27 | 同端点增 `keySource` / `survivesRestart` 两个事实字段（装配层经 `HttpDeps.rosterKey` 传入；未告知则省略，不给默认），`GET /api/state` 在有持久化盘点时同步出现 `rosterKey`。动机：非生产进程无密钥会降级为每次重启都换的临时内存钥，而这件事实此前只写一次 stderr |
+| v0.4 | 2026-10-02 | **§2.1 补"绑定默认值与起步入口"**：默认 `127.0.0.1:8787` 且**只有一份**（`DEFAULT_HTTP_HOST` / `DEFAULT_HTTP_PORT`，由 `startServer` 消费、`serve.ts` 调它），日志报 socket 实际绑定地址。动机是一次真实分叉：`startServer` 长期零调用方且默认 `port: 0`，与文档/`.env.example`/`deployment.md` 写的 8787 不一致（审计 §6、评审 v0.21；本批把该函数接成单一起步原语并加两条断言）。此前本文档完全不提进程入口与默认值，而默认值是对外可依赖的事实 |
