@@ -18,7 +18,8 @@ function failed(): DispatchResult {
 function portFor(routes: Record<string, DispatchResult>): DispatchPort {
   return {
     async dispatch(req) {
-      return routes[req.vassal!];
+      // Test routes cover every vassal the test dispatches to.
+      return routes[req.vassal!]!;
     },
     async cancel() {},
   };
@@ -61,9 +62,9 @@ describe('ConcurrencyMetrics collector', () => {
     expect(done.finished).toBe(2);
     expect(done.completed).toBe(1);
     expect(done.failed).toBe(1);
-    expect(done.perVassal.a).toMatchObject({ calls: 1, completed: 1, failureRate: 0 });
-    expect(done.perVassal.b).toMatchObject({ calls: 1, failed: 1, failureRate: 1 });
-    expect(done.perVassal.a.latency?.count).toBe(1);
+    expect(done.perVassal.a!).toMatchObject({ calls: 1, completed: 1, failureRate: 0 });
+    expect(done.perVassal.b!).toMatchObject({ calls: 1, failed: 1, failureRate: 1 });
+    expect(done.perVassal.a!.latency?.count).toBe(1);
   });
 
   it('classifies timeouts separately from failures', () => {
@@ -72,7 +73,7 @@ describe('ConcurrencyMetrics collector', () => {
     metrics.branchEnded('i', 'r:a', 'a', 'timeout');
     const snap = metrics.snapshot();
     expect(snap.timedOut).toBe(1);
-    expect(snap.perVassal.a.failureRate).toBe(1);
+    expect(snap.perVassal.a!.failureRate).toBe(1);
   });
 
   it('counts canceled branches so finished equals the outcome buckets', () => {
@@ -85,7 +86,7 @@ describe('ConcurrencyMetrics collector', () => {
     const snap = metrics.snapshot();
     expect(snap.canceled).toBe(1);
     expect(snap.completed + snap.failed + snap.timedOut + snap.canceled).toBe(snap.finished);
-    expect(snap.perVassal.b.canceled).toBe(1);
+    expect(snap.perVassal.b!.canceled).toBe(1);
   });
 
   it('keeps canceled branches out of the failure rate', () => {
@@ -98,7 +99,7 @@ describe('ConcurrencyMetrics collector', () => {
     metrics.branchEnded('i', 'r:cancel', 'a', 'canceled');
 
     // One failure out of two verdicts; the cancel neither helps nor hurts.
-    expect(metrics.snapshot().perVassal.a.failureRate).toBe(0.5);
+    expect(metrics.snapshot().perVassal.a!.failureRate).toBe(0.5);
   });
 
   it('does not double-count a repeated start key, so in-flight stays balanced', () => {
@@ -114,7 +115,7 @@ describe('ConcurrencyMetrics collector', () => {
     const snap = metrics.snapshot();
     expect(snap.inFlight).toBe(0);
     expect(snap.inFlightByVassal.a ?? 0).toBe(0);
-    expect(snap.perVassal.a.calls).toBe(1);
+    expect(snap.perVassal.a!.calls).toBe(1);
   });
 });
 
@@ -134,10 +135,10 @@ describe('E1.7 Orchestrator integration', () => {
     expect(snap.completed).toBe(1);
     expect(snap.failed).toBe(1);
     expect(snap.maxInFlight).toBe(2);
-    expect(snap.perVassal.loom.calls).toBe(1);
-    expect(snap.perVassal.atlas.failed).toBe(1);
-    expect(snap.perVassal.atlas.failureRate).toBe(1);
-    expect(snap.perVassal.loom.latency?.count).toBe(1);
+    expect(snap.perVassal.loom!.calls).toBe(1);
+    expect(snap.perVassal.atlas!.failed).toBe(1);
+    expect(snap.perVassal.atlas!.failureRate).toBe(1);
+    expect(snap.perVassal.loom!.latency?.count).toBe(1);
     // unbounded dispatch: nothing stays queued after the fan-out resolves
     expect(snap.queueDepth).toBe(0);
   });
