@@ -96,3 +96,24 @@ jobs:
       - name: Unit tests under a simulated future clock
         run: npx vitest run --config vitest.clock-skew.config.ts
 
+  # deferred #39: the shipping image only got built by hand in review rounds, so
+  # a Dockerfile change could break the build without CI noticing. Smoke it on
+  # every push: build (no push), then verify the runner stage can actually run —
+  # the zero-dependency keygen script bakes into the image, and the compiled
+  # artifact loads. Ubuntu runners ship Docker with buildx default; nothing here
+  # needs the extra binfmt/emulation or a registry login.
+  image-smoke:
+    name: image build + smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t zeus:ci .
+
+      - name: Smoke the image
+        run: |
+          docker run --rm --entrypoint sh zeus:ci -c 'node scripts/gen-rsk-key.mjs /tmp/rsk.key && test -s /tmp/rsk.key'
+          docker run --rm --entrypoint node zeus:ci -e "require('./dist/index.js')"
+
