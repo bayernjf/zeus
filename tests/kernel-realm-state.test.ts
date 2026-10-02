@@ -18,13 +18,13 @@ describe('G4 realm connection persistence', () => {
     const root = await realpath(await freshRoot());
 
     const first = await bootKernel({ stateFile, realmRoots: [root] });
-    const connection = first.realmStore!.connections()[0];
+    const connection = first.realmStore!.connections()[0]!;
     expect(connection.root).toBe(root);
     expect((await first.realmStore!.search(connection.realmId, { text: 'hello' }))).toHaveLength(1);
     await first.saveState();
 
     const restarted = await bootKernel({ stateFile });
-    const restored = restarted.realmStore!.connections()[0];
+    const restored = restarted.realmStore!.connections()[0]!;
     expect(restored.root).toBe(root);
     expect(restored.realmId).toBe(connection.realmId);
     expect((await restarted.realmStore!.search(restored.realmId, { text: 'world' }))).toHaveLength(1);

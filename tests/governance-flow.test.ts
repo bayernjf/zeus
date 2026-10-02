@@ -90,13 +90,13 @@ describe('Acceptance #5 governance loop', () => {
     const first = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: { repo: 'app' }, realm: 'enterprise', runId: 'run-1' });
     expect(first.ok).toBe(true);
     expect(seen).toHaveLength(1);
-    expect(seen[0].auth).toBe(`Bearer ${TOKEN}`);
+    expect(seen[0]!.auth).toBe(`Bearer ${TOKEN}`);
 
     // 2) redaction: read-task-scope vassal receives only the task-scoped hits offered by the caller
     const second = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-2', realmHits: [{ itemId: 'hit-9', snippet: 'pr context' }] });
     expect(second.ok).toBe(true);
-    const secondBody = seen[1].body as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
-    expect(secondBody.params.message.parts[0].data.realmHits).toEqual([{ itemId: 'hit-9', snippet: 'pr context' }]);
+    const secondBody = seen[1]!.body as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
+    expect(secondBody.params.message.parts[0]!.data.realmHits).toEqual([{ itemId: 'hit-9', snippet: 'pr context' }]);
     expect(tokenRequests).toBe(2);
 
     // 3) revocation: governance event lands on the audit trail

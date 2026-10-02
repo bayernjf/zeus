@@ -65,7 +65,7 @@ describe('RosterProjector', () => {
     expect(snapshot.scope).toBe('internal');
     expect(snapshot.entries.map(e => e.name)).toEqual(['atlas', 'loom', 'pr-helper']);
 
-    const atlas = snapshot.entries[0];
+    const atlas = snapshot.entries[0]!;
     expect(atlas).toMatchObject({
       name: 'atlas',
       description: 'maps things',
@@ -77,10 +77,10 @@ describe('RosterProjector', () => {
     });
     expect(atlas.commitments).toEqual({ dataRealms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' });
     expect(atlas.sla).toEqual({ ackSeconds: 5 });
-    expect(atlas.skills[0].id).toBe('atlas-skill');
+    expect(atlas.skills[0]!.id).toBe('atlas-skill');
 
-    expect(snapshot.entries[1].health).toBe('unknown'); // no probe yet
-    const revoked = snapshot.entries[2];
+    expect(snapshot.entries[1]!.health).toBe('unknown'); // no probe yet
+    const revoked = snapshot.entries[2]!;
     expect(revoked.status).toBe('revoked');
     expect(revoked.health).toBe('unhealthy');
     expect(revoked.healthDetail).toBe('HTTP 503');
@@ -97,7 +97,7 @@ describe('RosterProjector', () => {
       expect(e.status).toBe('active');
     }
     // fealty commitments remain verbatim
-    expect(snapshot.entries[0].commitments.escalationPolicy).toBe('auto');
+    expect(snapshot.entries[0]!.commitments.escalationPolicy).toBe('auto');
     // snapshot is JSON-serializable
     expect(() => JSON.stringify(snapshot)).not.toThrow();
   });
@@ -117,7 +117,7 @@ describe('RosterProjector', () => {
 
     const pub = projectPublicRoster(registry.listAll());
     expect(pub.entries.map(e => e.name)).toEqual(['pr-helper']);
-    expect(pub.entries[0].description).toBe('reviews prs');
+    expect(pub.entries[0]!.description).toBe('reviews prs');
   });
 
   // A projection is handed out as immutable state that later gets sealed, so a
@@ -126,18 +126,18 @@ describe('RosterProjector', () => {
   // then differed from the one that had been sealed.
   it('hands out copies, so a consumer cannot mutate registry state or a sealed digest', () => {
     const source = card('atlas');
-    source.skills[0].tags.push('original');
+    source.skills[0]!.tags.push('original');
     const all = [entry({ card: source, fealty: source['x-zeus-fealty']!, revoked: false })];
     const now = () => new Date('2026-09-21T10:00:00.000Z');
     const before = canonicalDigest(projectInternalRoster(all, now));
 
     const internal = projectInternalRoster(all, now);
-    internal.entries[0].skills[0].tags.push('mutated');
-    internal.entries[0].commitments.dataRealms.push('personal');
+    internal.entries[0]!.skills[0]!.tags.push('mutated');
+    internal.entries[0]!.commitments.dataRealms.push('personal');
     const pub = projectPublicRoster(all, now);
-    pub.entries[0].skills[0].tags.push('via-public');
+    pub.entries[0]!.skills[0]!.tags.push('via-public');
 
-    expect(source.skills[0].tags).toEqual(['original']);
+    expect(source.skills[0]!.tags).toEqual(['original']);
     expect(source['x-zeus-fealty']!.dataRealms).toEqual(['enterprise']);
     // Re-projecting the same registry state reproduces the sealed digest.
     expect(canonicalDigest(projectInternalRoster(all, now))).toBe(before);

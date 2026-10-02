@@ -201,16 +201,16 @@ describe('signed roster snapshot — design-fealty-signing §8.1', () => {
   it('#2 fails deep verification when a fealty field is tampered on the card', async () => {
     const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
     const { envelope, cards } = await buildSignedFixture(T0, signer);
-    const attestation = envelope.attestations.loom;
+    const attestation = envelope.attestations.loom!; // fixture keeps loom in the roster
 
-    const tampered = structuredClone(cards.loom);
+    const tampered = structuredClone(cards.loom!);
     tampered['x-zeus-fealty']!.dataPolicy = 'write';
     expect(attestationMatchesCard(attestation, tampered)).toBe(false);
     expect(attestationMatchesCard(attestation, cards.loom)).toBe(true);
 
     // tampering with the projected commitments inside the snapshot breaks the seal
     const edited = structuredClone(envelope);
-    (edited.snapshot.entries[0].commitments as { dataPolicy?: string }).dataPolicy = 'write';
+    (edited.snapshot.entries[0]!.commitments as { dataPolicy?: string }).dataPolicy = 'write';
     const result = await verifySignedSnapshot(edited, signer.verifier(), T0);
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -220,13 +220,13 @@ describe('signed roster snapshot — design-fealty-signing §8.1', () => {
   it('#3 fails deep verification when skills / description / name are tampered', async () => {
     const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
     const { envelope, cards } = await buildSignedFixture(T0, signer);
-    const attestation = envelope.attestations['pr-helper'];
+    const attestation = envelope.attestations['pr-helper']!;
 
-    const skillTampered = structuredClone(cards['pr-helper']);
-    skillTampered.skills[0].id = 'backdoor';
+    const skillTampered = structuredClone(cards['pr-helper']!);
+    skillTampered.skills[0]!.id = 'backdoor';
     expect(attestationMatchesCard(attestation, skillTampered)).toBe(false);
 
-    const descTampered = structuredClone(cards['pr-helper']);
+    const descTampered = structuredClone(cards['pr-helper']!);
     descTampered.description = 'changed';
     expect(attestationMatchesCard(attestation, descTampered)).toBe(false);
   });
@@ -403,10 +403,10 @@ describe('signed internal roster v1.1 — revoked attestations', () => {
     const result = await verifySignedSnapshot(envelope, signer.verifier(), T0);
     expect(result.ok).toBe(true);
 
-    expect(envelope.attestations.loom.status).toBe('revoked');
-    expect(envelope.attestations.loom.expiresAt).toBeUndefined();
-    expect(envelope.attestations['pr-helper'].status).toBe('active');
-    expect(typeof envelope.attestations['pr-helper'].expiresAt).toBe('string');
+    expect(envelope.attestations.loom!.status).toBe('revoked');
+    expect(envelope.attestations.loom!.expiresAt).toBeUndefined();
+    expect(envelope.attestations['pr-helper']!.status).toBe('active');
+    expect(typeof envelope.attestations['pr-helper']!.expiresAt).toBe('string');
   });
 
   it('does not hard-expire revoked attestations, while the seal maxAge still binds freshness', async () => {
@@ -639,8 +639,8 @@ describe('seal and attestation envelope validation', () => {
     for (const field of [{ alg: 'none' }, { issuer: 'someone-else' }]) {
       const { envelope } = await buildSignedFixture(T0, signer);
       const tampered = structuredClone(envelope) as unknown as { attestations: Record<string, Record<string, unknown>> };
-      Object.assign(tampered.attestations.loom, field);
-      tampered.attestations.loom = await reSign(tampered.attestations.loom);
+      Object.assign(tampered.attestations.loom!, field);
+      tampered.attestations.loom = await reSign(tampered.attestations.loom!);
       const result = await verifySignedSnapshot(tampered, signer.verifier(), T0);
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toMatch(/^attestation for "loom" declares/);
@@ -650,10 +650,10 @@ describe('seal and attestation envelope validation', () => {
   it('refuses an attestation signed by a key other than the seal key', async () => {
     const other = new Ed25519MemorySigner('zeus-rsk-other');
     const { envelope } = await buildSignedFixture(T0, signer);
-    envelope.attestations.loom.keyId = other.keyId;
+    envelope.attestations.loom!.keyId = other.keyId;
     const { sig, ...unsigned } = envelope.attestations.loom as unknown as Record<string, unknown>;
     void sig;
-    envelope.attestations.loom.sig = await other.sign(canonicalJson(unsigned));
+    envelope.attestations.loom!.sig = await other.sign(canonicalJson(unsigned));
     // The other key is trusted by the verifier, so only the seal-key binding can
     // refuse this envelope.
     const result = await verifySignedSnapshot(envelope, signer.verifier([other.keyId, other.publicKey]), T0);

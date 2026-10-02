@@ -166,7 +166,7 @@ describe('E2.3 skill lifecycle HTTP', () => {
     const resolution = await team(a, ['code-review']);
     expect(resolution.complete).toBe(false);
     expect(resolution.ambiguousSkills).toEqual(['code-review']);
-    expect(resolution.slots[0].providers).toEqual(['atlas', 'mentor-a']);
+    expect(resolution.slots[0]!.providers).toEqual(['atlas', 'mentor-a']);
   });
 
   it('rejects a bad status filter, a bad team payload and no auth', async () => {
@@ -224,7 +224,7 @@ describe('E2.5 mentorship HTTP', () => {
     expect((await assessed.json())).toMatchObject({ status: 'certified', score: 0.9 });
 
     const resolution = await team(a, ['code-review']);
-    expect(resolution.slots[0].providers).toEqual(['learner-b', 'mentor-a']);
+    expect(resolution.slots[0]!.providers).toEqual(['learner-b', 'mentor-a']);
 
     const listed = await a.inject({ method: 'GET', url: '/api/mentorships?status=certified', headers: AUTH });
     expect((await listed.json()).mentorships).toHaveLength(1);
@@ -243,7 +243,7 @@ describe('E2.5 mentorship HTTP', () => {
     expect(body.failureReason).toContain('below threshold 0.8');
 
     const resolution = await team(a, ['code-review']);
-    expect(resolution.slots[0].providers).toEqual(['mentor-a']);
+    expect(resolution.slots[0]!.providers).toEqual(['mentor-a']);
   });
 
   it('dismisses an open mentorship and refuses to act on a closed one', async () => {
