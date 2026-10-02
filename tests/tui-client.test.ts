@@ -8,7 +8,7 @@ type ResponseLike = { ok: boolean; status: number; json(): Promise<unknown> };
 function mockClient(route: (url: string) => ResponseLike | Promise<ResponseLike>): { calls: Call[]; client: ReturnType<typeof createDeckClient> } {
   const calls: Call[] = [];
   const fetchImpl = vi.fn(async (url: string, init?: Init) => {
-    calls.push({ url, init });
+    calls.push({ url, ...(init !== undefined ? { init } : {}) });
     return route(url);
   });
   return { calls, client: createDeckClient('http://kernel', 'tok', fetchImpl) };
@@ -85,7 +85,7 @@ describe('TUI HTTP client', () => {
   it('issues a grant with a JSON body and surfaces a 4xx failure', async () => {
     const calls: Call[] = [];
     const fetchImpl = vi.fn(async (url: string, init?: Init) => {
-      calls.push({ url, init });
+      calls.push({ url, ...(init !== undefined ? { init } : {}) });
       return okJson({ grantId: 'g-9', subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' });
     });
     const client = createDeckClient('http://kernel', 'tok', fetchImpl);
@@ -104,7 +104,7 @@ describe('TUI HTTP client', () => {
   it('revokes a grant by encoded grantId on DELETE', async () => {
     const calls: Call[] = [];
     const fetchImpl = vi.fn(async (url: string, init?: Init) => {
-      calls.push({ url, init });
+      calls.push({ url, ...(init !== undefined ? { init } : {}) });
       return okJson({});
     });
     const client = createDeckClient('http://kernel', 'tok', fetchImpl);

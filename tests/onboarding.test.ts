@@ -235,12 +235,13 @@ describe('E9.2 the four evidence gates', () => {
       mentorships: harness.mentorships,
       now,
     };
-    const ungranted = verifyCommission({ ...record, tenant: undefined }, deps);
+    const { tenant: _omitted, ...withoutTenant } = record;
+    const ungranted = verifyCommission(withoutTenant, deps);
     expect(ungranted.checks.authorization.ok).toBe(false);
     expect(ungranted.checks.authorization.reason).toMatch(/no read grant for enterprise realm/);
 
     harness.grants.issue({ subject: 'new-hire', realmId: harness.engRealmId, access: 'read', grantedBy: 'driver' });
-    expect(verifyCommission({ ...record, tenant: undefined }, deps).checks.authorization.ok).toBe(true);
+    expect(verifyCommission(withoutTenant, deps).checks.authorization.ok).toBe(true);
   });
 
   it('mentorship: attendance is not competency - only certification opens the gate', async () => {
