@@ -3,6 +3,11 @@ import { Dispatcher, type AuditEntry, type DispatchResult } from '../src/dispatc
 import { memoryAuditSink } from '../src/dispatch/audit.js';
 import type { Fealty, Task } from '../src/a2a/types.js';
 import type { VassalLike, VassalLookup } from '../src/dispatch/types.js';
+import type { RealmHit } from '../src/realm/types.js';
+
+function hit(itemId: string, snippet: string): RealmHit {
+  return { itemId, tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet };
+}
 
 function fealty(overrides: Partial<Fealty> = {}): Fealty {
   return { version: '1', swornTo: 'zeus', domain: 'pr-release-control', dataRealms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto', ...overrides };
@@ -129,28 +134,82 @@ describe('Dispatcher', () => {
     expect(audit.map(entry => entry.decision)).toEqual(['refused-unknown-vassal', 'refused-unknown-vassal']);
   });
 
-  it('redacts realm content when fealty.dataPolicy is none', async () => {
+  it('refuses realm content for a none-policy vassal instead of dropping it silently', async () => {
     const seenBodies: unknown[] = [];
     const map = new Map([['loom', vassal({ name: 'loom', fealty: fealty({ domain: 'content-production', dataRealms: ['personal'], dataPolicy: 'none' }), card: { name: 'loom', url: '', skills: [{ id: 'generate-content', name: '', description: '', tags: [] }] } })]]);
-    const { dispatcherInstance } = dispatcher(map, fakeVassalServer({ seenBodies }));
-    const result = await dispatcherInstance.dispatch({ skill: 'generate-content', params: {}, realm: 'personal', realmHits: [{ itemId: 'diary-1', snippet: 'secret' }] });
+    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const result = await dispatcherInstance.dispatch({ skill: 'generate-content', params: {}, realm: 'personal', realmHits: [hit('diary-1', 'secret')], realmHitsOrigin: 'caller-asserted' });
+
+    // design-realm §3.1: none accepts no realm content at all; the request is
+    // refused and audited rather than silently stripped.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.audit.decision).toBe('refused-data-policy');
+    expect(result.audit.detail).toMatch(/dataPolicy=none/);
+    expect(seenBodies).toHaveLength(0);
+    expect(audit.map(entry => entry.decision)).toEqual(['refused-data-policy']);
+  });
+
+  it('refuses self-asserted hits for a read-task-scope vassal (only kernel-resolved may pass)', async () => {
+    const seenBodies: unknown[] = [];
+    const map = new Map([['pr-helper', vassal()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: [hit('hit-1', 'pr context')], realmHitsOrigin: 'caller-asserted' });
+
+    // "Belongs to this task" is only verifiable when the kernel itself resolved
+    // the hits; a caller's claim cannot be checked, so it is refused outright.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.audit.decision).toBe('refused-data-policy');
+    expect(result.audit.detail).toMatch(/self-asserted/);
+    expect(result.audit.detail).toMatch(/read-task-scope/);
+    expect(seenBodies).toHaveLength(0);
+    expect(audit.map(entry => entry.decision)).toEqual(['refused-data-policy']);
+  });
+
+  it('injects kernel-resolved hits for a read-task-scope vassal and audits the injection', async () => {
+    const seenBodies: unknown[] = [];
+    const map = new Map([['pr-helper', vassal()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const hits = [hit('hit-1', 'pr context')];
+    const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: hits, realmHitsOrigin: 'kernel-resolved' });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.injectedHits).toEqual([]);
+    expect(result.injectedHits).toEqual(hits);
     const body = seenBodies[0] as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
-    expect(body.params.message.parts[0]!.data.realmHits).toBeUndefined();
+    expect(body.params.message.parts[0]!.data.realmHits).toEqual(hits);
+    const injected = audit.find(entry => entry.decision === 'content-injected');
+    expect(injected).toBeDefined();
+    expect(injected?.detail).toMatch(/dataPolicy=read-task-scope, origin=kernel-resolved, hits=1/);
   });
 
-  it('injects task-scoped realm hits for read-task-scope vassals', async () => {
+  it('injects caller-asserted hits for a read-realm vassal (the operator is the data sovereign)', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal()]]);
-    const { dispatcherInstance } = dispatcher(map, fakeVassalServer({ seenBodies }));
-    const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: [{ itemId: 'hit-1', snippet: 'pr context' }] });
+    const map = new Map([['pr-helper', vassal({ fealty: fealty({ dataPolicy: 'read-realm' }) })]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const hits = [hit('hit-1', 'pr context')];
+    const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: hits, realmHitsOrigin: 'caller-asserted' });
 
     expect(result.ok).toBe(true);
+    if (!result.ok) return;
     const body = seenBodies[0] as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
-    expect(body.params.message.parts[0]!.data.realmHits).toEqual([{ itemId: 'hit-1', snippet: 'pr context' }]);
+    expect(body.params.message.parts[0]!.data.realmHits).toEqual(hits);
+    expect(audit.map(entry => entry.decision)).toContain('content-injected');
+  });
+
+  it('fails closed when hits carry no origin', async () => {
+    const map = new Map([['pr-helper', vassal()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({}));
+    const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: [hit('hit-1', 'pr context')] });
+
+    // A path that forgets to tag provenance must not silently degrade into
+    // "anything goes"; the dispatch is refused instead.
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.audit.decision).toBe('refused-data-policy');
+    expect(result.audit.detail).toMatch(/no origin/);
+    expect(audit.map(entry => entry.decision)).toEqual(['refused-data-policy']);
   });
 
   it('honors a revoked entry in a Map-wired lookup', async () => {

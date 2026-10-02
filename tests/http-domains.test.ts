@@ -228,7 +228,12 @@ describe('HTTP E6.4 — intent dispatch with kernel-resolved realm content', () 
     expect(res.json()).toMatchObject({ realm: 'enterprise', realmId: h.engRealmId });
 
     const dispatched = h.seen.requests[0];
-    expect(dispatched?.realmHits).toEqual([{ itemId: 'doc.md', snippet: 'compiler design' }]);
+    // The full hit shape travels (design-realm §3.1: the field set does not vary
+    // by policy), and the origin tag survives the assembly layer so the dispatch
+    // gate can distinguish kernel-resolved from caller-asserted content.
+    expect(dispatched?.realmHitsOrigin).toBe('kernel-resolved');
+    expect(dispatched?.realmHits).toHaveLength(1);
+    expect(dispatched?.realmHits?.[0]).toMatchObject({ itemId: 'doc.md', snippet: 'compiler design' });
     expect(h.audit.map(entry => entry.decision)).toEqual(['domain-read']);
   });
 
