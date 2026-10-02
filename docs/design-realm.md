@@ -1,6 +1,6 @@
 # Realm 数据域设计（D1 契约先行）
 
-> 状态：**现行（契约 v0.6，2026-10-02：write、企业域 connect、企业域租户分级与双域授权（§7）、签名且一次性的企业写凭证（§7.7）已落库内；新增 §3.1 `dataPolicy` 收缩契约（口径已定、实现待落）；MCP 暴露仍 P1）**。P0 实现直接落 `src/realm/`（库内 RealmStore），不另起实现文档；MCP 暴露在 P1。产品哲学依据见 [product-portrait.md](product-portrait.md) §2.1/§2.2。
+> 状态：**现行（契约 v0.7，2026-10-03：write、企业域 connect、企业域租户分级与双域授权（§7）、签名且一次性的企业写凭证（§7.7）已落库内；§3.1 `dataPolicy` 收缩契约已落地（2026-10-03，含 `realmHitsOrigin` 与两条审计值）；MCP 暴露仍 P1）**。P0 实现直接落 `src/realm/`（库内 RealmStore），不另起实现文档；MCP 暴露在 P1。产品哲学依据见 [product-portrait.md](product-portrait.md) §2.1/§2.2。
 
 ## 0. 一句话
 
@@ -61,7 +61,7 @@ interface RealmHit { itemId: string; tags: string[]; snippet: string; modifiedAt
 | 个人域 → 企业域 | 未经操作者显式授权，禁止（企业合规） |
 | 企业域 → 个人域 | 禁止，无例外 |
 
-### 3.1 `dataPolicy` 收缩契约（2026-10-02 定案；实现待落，登记在 [feature-inventory](feature-inventory.md) §4）
+### 3.1 `dataPolicy` 收缩契约（2026-10-02 定案；2026-10-03 已落地，验收见 [handoff](../handoff.md) Active work 103）
 
 **为什么单列**：上面那张表只写了各档的**意图**，没写**哪几个字段、哪种来源**可以出去，于是实现只做到"`none` 不注入、其余原样注入"——`read-task-scope` 与 `read-realm` 的产物逐字节相同（审计 §4.2 row3 与 feature-inventory「已实现但未接线」登记的是同一件事）。字段集与来源一旦对外，就是执行 Agent 依赖的行为契约，所以先在这里定案，再动代码。
 
@@ -248,3 +248,4 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 | v0.4 | 2026-09-25 | **E3.6 + E6.4 落地**：新增 §7（企业域三级 `TenantScope`、"层级是结构边界 / 域边界才是授权对象"的分工、`decideRealmAccess` 单一判定与精确 reason、nonce 一次性 + 快照持久化、`resolveRealmSource` 让内核自己进 Realm 从而能核对"声明的域 vs 内容真实的域"、操作者面与 `ZEUS_REALM_ENTERPRISE`）；§6.4 把 §6.1 的"Realm 对外只有 MCP"精确化为**内容 vs 治理元数据**；§1 不变量 4 补租户一层；§2 契约加 `tenant` 与新原语的位置说明。仍未做（§7.6，登记 deferred #17/#18）：MCP 侧 actor 判定、显式改边界（disconnect）。 |
 | v0.5 | 2026-09-25 | **deferred #14 销项（新增 §7.7）**：`DriverWriteGrant` 从"形状校验"升级为**签名且一次性的凭证**——`issueDriverWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `registry/signing.ts` 的 `RosterSigner`）、`verifyDriverWriteGrant` 改 async 且按 形状→realm 绑定→**验签**→有效期 判定（`unsigned` / `unknown-key` / `bad-signature` / `no-expiry`）、`DriverGrantLedger` 在落盘前消费 nonce 且**随内核快照持久化**（`writeGrantNonces`，否则重启即重放）、`FsRealmStoreOptions.now` 注入时钟（此前"仍然有效"的测试凭证只能写成 `expiresAt: 2099-…`）。运维面：`POST /api/realm/write-grants`、日记写凭证透传（缺授权 → **403**，不是 400/500）、审计事件流 `driver-grant-issued` + `realm-write`、`GET /api/state` 报 `driverGrants.authority`（`signed` / `shape-only` 不靠猜）。§5 两处"签发仍未做"与 §2 契约注释同步收口。三个守卫各做过缺陷植入验证（见 handoff Active work 45）。 |
 | v0.6 | 2026-10-02 | **新增 §3.1 `dataPolicy` 收缩契约（审计 §4.2 row3 的口径定案）**：四个取值的语义此前只有一句意图描述，实现只判 `none`，`read-task-scope` 与 `read-realm` 产物逐字节相同。本节先立三条判据（内容面 ≠ 写授权面；执行 Agent 取正文的正当路径目前只有随任务注入，故不做"一律剥正文"的伪收紧；可核对的差别在**来源**），再给四档的**允许来源 / 外送字段 / 越界行为**表：`none` 与 `read-task-scope` 收到不可核对的请求一律**拒绝派发**（不再是静默丢弃），`read-realm` / `write` 允许操作者自报。要求实现补 **`realmHitsOrigin`**（内核解析 vs 调用方自报——现在两条路径在进入 Dispatcher 前已汇成一个数组，来源丢失，契约无法判定）、新增审计值 `refused-data-policy` / `content-injected`、并列五条验收（含"命中非空而来源缺失即拒"的正向对照与真进程实收体断言）。**兼容后果如实写明**：内核解析 + `read-task-scope` 的存量 Agent（pr-helper、loom）不受影响，变化的是调用方自报路径。**仍在实现前**：条目长度上限是否设（数值不凭空拍），实现落在 feature-inventory §4 那一行。 |
+| v0.7 | 2026-10-03 | **§3.1 实现落地（审计 §4.2 row3 闭合，Active work 103）**：Dispatcher 按 policy×origin 判四档（命中非空且无 origin → fail-closed 拒派发；`none` 一律拒；`read-task-scope` 仅收内核解析；`read-realm`/`write` 允许操作者自报），注入点从"`none` 之外一律放行"改为契约判定，放行/拒绝都写审计（`refused-data-policy` / `content-injected`，detail 点名 policy、来源与条数）；HTTP 装配层补 `realmHitsOrigin` 标记（caller-asserted / kernel-resolved）并把内核解析的命中**全字段**透传（不再丢 tags/modifiedAt）；`FanOutRequest` 与 Dispatcher 间来源透传。五条验收全过（三态单测、来源缺失正控、两条审计、真进程实收 + 自报拒绝无出网请求、缺陷植入 4 红）。兼容红线满足：内核解析 + `read-task-scope` 的存量 Agent 行为不变。条目长度上限仍未设（数值不凭空拍）。 |
