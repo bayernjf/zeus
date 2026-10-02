@@ -26,6 +26,7 @@
     "scripts/acceptance-real-fanout.mjs",
     "scripts/acceptance-standard-a2a.mjs",
     "scripts/bench-capacity.mjs",
-    "scripts/clock-skew-setup.mjs"
+    "scripts/clock-skew-setup.mjs",
+    "scripts/scan-secrets.mjs"
   ]
 }

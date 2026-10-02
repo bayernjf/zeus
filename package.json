@@ -32,7 +32,9 @@
     "bench:capacity": "node scripts/bench-capacity.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "lint:audit": "npm audit --omit=dev",
+    "lint:secrets": "node scripts/scan-secrets.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
