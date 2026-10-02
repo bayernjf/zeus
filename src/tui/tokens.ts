@@ -76,6 +76,7 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'domain-grant-issued': 'info',
   'domain-grant-revoked': 'warning',
   'driver-grant-issued': 'info',
+  'execution-delegation-issued': 'info',
   'realm-write': 'info',
   'realm-disconnected': 'warning',
   'realm-tenant-retargeted': 'warning',

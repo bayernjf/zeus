@@ -1,6 +1,6 @@
 # 功能清单（Feature Inventory）
 
-状态：**现行 v0.7**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项；2026-10-02 **评审 v0.21 修正规模普查**：路由 75 → 76（3 公开 + 73 bearer，分组表之和 70 → 73）、库导出口径改为 **118 条 export 语句 / 运行时 213 个导出**，三段计数入库为断言；2026-10-02 再更新：**`dataPolicy` 收缩口径已定**（design-realm §3.1，实现待落），基线 1018 测试 / 94 文件；2026-10-03 再更新：**数据二极管按 `dataPolicy` 收缩已接线**（dispatcher 判档 + `realmHitsOrigin` 来源标记 + `refused-data-policy`/`content-injected` 两条审计值，「已实现但未接线」2 → 1 项，Active work 103），基线 1022 测试 / 94 文件）
+状态：**现行 v0.8**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项；2026-10-02 **评审 v0.21 修正规模普查**：路由 75 → 76（3 公开 + 73 bearer，分组表之和 70 → 73）、库导出口径改为 **118 条 export 语句 / 运行时 213 个导出**，三段计数入库为断言；2026-10-02 再更新：**`dataPolicy` 收缩口径已定**（design-realm §3.1，实现待落），基线 1018 测试 / 94 文件；2026-10-03 再更新：**数据二极管按 `dataPolicy` 收缩已接线**（dispatcher 判档 + `realmHitsOrigin` 来源标记 + `refused-data-policy`/`content-injected` 两条审计值，「已实现但未接线」2 → 1 项，Active work 103），基线 1022 测试 / 94 文件；2026-10-03 再更新（**Active work 104**）：路由 76 → 77（3 公开 + 74 bearer，分组表「数据域与跨域」7 → 8）、关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据签发端点/审计/nonce 持久化三项接线，「已实现但未接线」仍 1 项），基线 1048 测试 / 97 文件）
 
 > 本文件是 Zeus **全部功能点的资产台账**：有什么、在哪、什么状态。缺陷台账在 [audit-2026-09.md](audit-2026-09.md)。需求优先级与验收标准在 [prd.md](prd.md)；"做到哪了"在 [handoff.md](../handoff.md)。本文件只回答"有什么"，不记进度。
 
@@ -23,7 +23,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 
 | 入口 | 形态 | 规模 | 鉴权 |
 | --- | --- | --- | --- |
-| HTTP 门面 | Fastify 长驻进程，`npm start` | **76 条路由**（3 公开 + 73 bearer） | 公开 3 条无鉴权；其余同一 bearer |
+| HTTP 门面 | Fastify 长驻进程，`npm start` | **77 条路由**（3 公开 + 74 bearer） | 公开 3 条无鉴权；其余同一 bearer |
 | 终端面板 TUI | `npm run tui` | 11 类命令 | `--token` |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
 | 库公共面 | `import 'zeus'` | **118 条 export 语句**（构建产物运行时 213 个导出） | 不适用 |
@@ -55,7 +55,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 | 日记 | 3 | `GET /api/diary`、`GET /api/diary/export`、`POST /api/diary/generate` |
 | 技能与带教 | 14 | `/api/skills` 目录与版本、`install`/`uninstall`/`deprecate`/`harden`/`team`、`/api/mentorships` 全生命周期 |
 | 连接器 | 6 | `/api/connectors` 声明/连接/吊销、`POST /api/connectors/:id/tools/:name/call` |
-| 数据域与跨域 | 7 | `GET /api/domains`、`GET /api/domains/access`、`POST`/`DELETE /api/domains/grants`、`POST /api/realm/write-grants`、域断开与租户重定向 |
+| 数据域与跨域 | 8 | `GET /api/domains`、`GET /api/domains/access`、`POST`/`DELETE /api/domains/grants`、`POST /api/realm/write-grants`、`POST /api/execution-delegations`、域断开与租户重定向 |
 | 决策后端 | 1 | `GET /api/decision` |
 
 路由按内核组件可用性分批挂载：同一 token 下，未装配某组件时该组路由不存在。
@@ -128,7 +128,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 | 内核侧域检索（内核自己取数并核对声明域类型） | `realm/source.ts` | ✅ |
 | 只读 MCP 服务端（stdio）：资源映射、工具白名单、绝对路径不出进程 | `realm/mcp.ts` `mcp-stdio.ts` | 🚧（P0 已落地，正式 P1 待标准 client 复核） |
 | 备份清单与恢复协议：原地校验 + 加密备份包跨位恢复 | `vault/` | ✅ |
-| 执行授权票据（一次性短时授权，签名 + 单 nonce） | `delegation/execution-delegation.ts` | 🚧（原语已落，派发闸门未接线，deferred #33） |
+| 执行授权票据（一次性短时授权，签名 + 单 nonce） | `delegation/execution-delegation.ts`、`http` 签发端点 | 🚧（原语 + 签发/审计/nonce 持久化已接，派发闸门未接，deferred #33） |
 
 ### 3.4 执行 Agent 联邦（E4）
 
@@ -221,11 +221,11 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 
 ## 4. 已实现但未接线的功能
 
-这一类不在 PRD 的 ⬜ 里，因此最容易在盘点时被算成"已完成"。它们是**能力齐备但没接到主路径上**。2026-10-01 的 A 级修复批把原列 6 项中的 per-vassal 并发上限（A-01）、跨域授权 nonce 防重放（A-04）、连接器空权限 fail-closed（A-09）三项接上了主路径，2026-10-02 又把 `startServer()` 接线（见下表之后的说明），2026-10-03 又把**数据二极管按 `dataPolicy` 收缩**接线（Active work 103），下表为剩余 1 项：
+这一类不在 PRD 的 ⬜ 里，因此最容易在盘点时被算成"已完成"。它们是**能力齐备但没接到主路径上**。2026-10-01 的 A 级修复批把原列 6 项中的 per-vassal 并发上限（A-01）、跨域授权 nonce 防重放（A-04）、连接器空权限 fail-closed（A-09）三项接上了主路径，2026-10-02 又把 `startServer()` 接线（见下表之后的说明），2026-10-03 又把**数据二极管按 `dataPolicy` 收缩**接线（Active work 103），同日再把**执行授权票据的签发端点、审计、nonce 持久化**三项接线（Active work 104，派发闸门仍留对端），下表为剩余 1 项：
 
 | 功能 | 位置 | 缺的那一步 |
 | --- | --- | --- |
-| 执行授权票据派发闸门 | `delegation/` 原语已落 | 派发路径与 A2A 投递未接线（deferred #33） |
+| 执行授权票据派发闸门 | `delegation/` 原语 + 签发端点/审计/nonce 持久化已接 | 派发路径、execute/plan 模式与 A2A 投递字段未接（deferred #33，等对端凭据代理接口） |
 
 **已接线移出本表**：`startServer()`（2026-10-02）。接线前它是"同一句启动有两种答案"：这个导出的起步函数零调用方、默认 `port: 0`（随机端口），而进程入口 `serve.ts` 自带一份 `8787`，两处默认值可以各自漂移。现改为**单一起步原语**——进程入口调它，绑定默认值只有一份（`DEFAULT_HTTP_HOST` / `DEFAULT_HTTP_PORT`），`ZEUS_HOST` / `ZEUS_PORT` 仅作覆盖，进程日志打印 socket **实际绑定**的地址（`ZEUS_PORT=0` 时请求值与实际值不同，日志是操作者唯一能读到真实端口的地方）。`index.ts` 仍不导出任何 HTTP 符号——传输层不属于内核，`package.json` 的 `./http` 子路径是它的唯一入口。**数据二极管按 `dataPolicy` 收缩**（2026-10-03）：`dispatcher.ts` 的注入点从"`none` 之外一律放行"改为按 **policy×origin** 判档（design-realm §3.1）——命中非空且来源缺失即拒（fail-closed）、`none` 一律拒、`read-task-scope` 仅收内核解析、`read-realm`/`write` 允许操作者自报；HTTP 装配层补 `realmHitsOrigin` 标记（`caller-asserted` / `kernel-resolved`）并把内核解析的命中全字段透传（不再丢 `tags`/`modifiedAt`）；放行与拒绝都写审计（`refused-data-policy` / `content-injected`，detail 点名 policy、来源与条数），TUI 语义 token 同步。五条验收（含缺陷植入 4 红）见 [handoff](../handoff.md) Active work 103。
 

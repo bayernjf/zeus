@@ -61,6 +61,9 @@ export const AUDIT_DECISIONS = [
   // design-realm §3.1: realm content was injected, recording the policy, the
   // origin and the count so "what did this task give that agent" can be traced.
   'content-injected',
+  // deferred #33: an operator issued a one-time, bounded approval for an
+  // executing agent to perform an external write.
+  'execution-delegation-issued',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

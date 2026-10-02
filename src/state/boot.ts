@@ -15,6 +15,10 @@ import { DagRunner } from '../orchestrator/dag-runner.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
 import { DriverGrantLedger, type DriverGrantAuditEntry } from '../realm/grant.js';
+import {
+  ExecutionDelegationNonceLedger,
+  type ExecutionDelegationAuditEntry,
+} from '../delegation/execution-delegation.js';
 import type { Ed25519MemorySigner } from '../registry/signing.js';
 import { DomainGrantRegistry, type GrantAuditEntry } from '../realm/authorization.js';
 import { normalizeTenant } from '../realm/tenant.js';
@@ -74,6 +78,8 @@ export type KernelBoot = KernelComponents & {
   driverSigner: Ed25519MemorySigner | null;
   /** Feeds issued write grants into the audit spine. */
   driverGrantAudit: (entry: DriverGrantAuditEntry) => void;
+  /** Feeds issued execution delegations into the audit spine. */
+  executionDelegationAudit: (entry: ExecutionDelegationAuditEntry) => void;
   /** Effective audit rotation ceiling for the active file (Infinity = unbounded). */
   auditMaxBytes: number;
   /** Effective rotated audit generations kept beside the active file. */
@@ -333,6 +339,23 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       detail: `driver grant for ${entry.realmId} by ${entry.grantedBy} (key ${entry.keyId}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
     });
   };
+  // deferred #33: spent execution-delegation nonces. The ledger is wired to
+  // persistence now, so once the dispatch gate verifies a delegation a consumed
+  // nonce already survives a crash; wiring persistence does not depend on the
+  // peer credential-proxy interface.
+  const executionDelegationLedger = new ExecutionDelegationNonceLedger(10_000, () => {
+    void persistLiveState().catch(error => {
+      (options.onStateSaveError ?? noop)(error instanceof Error ? error.message : String(error));
+    });
+  });
+  const executionDelegationAudit = (entry: ExecutionDelegationAuditEntry): void => {
+    auditSink({
+      ts: entry.at,
+      vassal: entry.grantedBy,
+      decision: 'execution-delegation-issued',
+      detail: `execution delegation for ${entry.skill}${entry.vassal ? ` (${entry.vassal})` : ''} by ${entry.grantedBy}, capabilities ${entry.capabilities.join(',')} (key ${entry.keyId}, nonce ${entry.nonce}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
+    });
+  };
   const domainGrants = new DomainGrantRegistry(now, grantAudit);
   // E9.1/E9.2: the commission gate reads its evidence from the layers that own
   // it (org roster, live vassal directory, realm boundary decisions, mentorship
@@ -434,7 +457,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const dagRunner = new DagRunner(registry.asVassalLookup(), dispatcher, { now }, orchestrator);
 
   const components: KernelComponents = {
-    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger,
+    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger,
   };
 
   // deferred #27: a finished fan-out's verdicts are the kernel's only memory
@@ -584,6 +607,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     realmAudit,
     driverGrantAuthority,
     driverGrantAudit,
+    executionDelegationAudit,
     driverSigner: options.driverSigner ?? null,
     auditMaxBytes: options.auditMaxBytes ?? DEFAULT_AUDIT_MAX_BYTES,
     auditKeep: options.auditKeep ?? DEFAULT_AUDIT_KEEP,
