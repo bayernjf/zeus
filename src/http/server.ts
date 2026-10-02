@@ -1746,55 +1746,55 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     // deferred #33: issue a one-time, bounded execution delegation. The dispatch
     // gate that consumes it is wired when the peer credential-proxy interface is
     // ready; issuing, auditing and persisting spent nonces do not depend on it.
-    if (deps.signer) {
-      app.post('/api/execution-delegations', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
-        const body = (request.body ?? {}) as Record<string, unknown>;
-        if (!isNonEmptyString(body.grantedBy)) return error(reply, 400, 'invalid_request', 'body.grantedBy is required');
-        if (!isNonEmptyString(body.skill)) return error(reply, 400, 'invalid_request', 'body.skill is required');
-        if (!Array.isArray(body.capabilities) || body.capabilities.some(c => !isNonEmptyString(c))) {
-          return error(reply, 400, 'invalid_request', 'body.capabilities must be a non-empty array of strings');
-        }
-        if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
-          return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
-        }
-        if (body.reason !== undefined && !isNonEmptyString(body.reason)) {
-          return error(reply, 400, 'invalid_request', 'body.reason must be a string');
-        }
-        if (body.ttlSeconds !== undefined && (typeof body.ttlSeconds !== 'number' || !Number.isFinite(body.ttlSeconds) || body.ttlSeconds <= 0)) {
-          return error(reply, 400, 'invalid_request', 'body.ttlSeconds must be a positive number of seconds');
-        }
-        try {
-          const delegation = await issueExecutionDelegation(
-            {
-              grantedBy: body.grantedBy as string,
-              skill: body.skill as string,
-              capabilities: body.capabilities as string[],
-              ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
-              ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
-              ...(typeof body.ttlSeconds === 'number' ? { ttlMs: body.ttlSeconds * 1000 } : {}),
-            },
-            { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
-          );
-          deps.executionDelegationAudit?.({
-            at: delegation.issuedAt,
-            decision: 'execution-delegation-issued',
-            grantedBy: delegation.grantedBy,
-            skill: delegation.skill,
-            ...(delegation.vassal ? { vassal: delegation.vassal } : {}),
-            capabilities: delegation.capabilities,
-            keyId: delegation.keyId,
-            nonce: delegation.nonce,
-            expiresAt: delegation.expiresAt,
-            ...(delegation.reason ? { reason: delegation.reason } : {}),
-          });
-          reply.code(201);
-          return { delegation };
-        } catch (thrown) {
-          if (thrown instanceof ExecutionDelegationError) return error(reply, 400, 'invalid_request', thrown.message);
-          throw thrown;
-        }
-      });
-    }
+    // The signer is a required dependency of this face, so the route is always
+    // mounted once the internal token is; its mounting condition is the token.
+    app.post('/api/execution-delegations', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      if (!isNonEmptyString(body.grantedBy)) return error(reply, 400, 'invalid_request', 'body.grantedBy is required');
+      if (!isNonEmptyString(body.skill)) return error(reply, 400, 'invalid_request', 'body.skill is required');
+      if (!Array.isArray(body.capabilities) || body.capabilities.some(c => !isNonEmptyString(c))) {
+        return error(reply, 400, 'invalid_request', 'body.capabilities must be a non-empty array of strings');
+      }
+      if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
+        return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
+      }
+      if (body.reason !== undefined && !isNonEmptyString(body.reason)) {
+        return error(reply, 400, 'invalid_request', 'body.reason must be a string');
+      }
+      if (body.ttlSeconds !== undefined && (typeof body.ttlSeconds !== 'number' || !Number.isFinite(body.ttlSeconds) || body.ttlSeconds <= 0)) {
+        return error(reply, 400, 'invalid_request', 'body.ttlSeconds must be a positive number of seconds');
+      }
+      try {
+        const delegation = await issueExecutionDelegation(
+          {
+            grantedBy: body.grantedBy as string,
+            skill: body.skill as string,
+            capabilities: body.capabilities as string[],
+            ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
+            ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
+            ...(typeof body.ttlSeconds === 'number' ? { ttlMs: body.ttlSeconds * 1000 } : {}),
+          },
+          { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
+        );
+        deps.executionDelegationAudit?.({
+          at: delegation.issuedAt,
+          decision: 'execution-delegation-issued',
+          grantedBy: delegation.grantedBy,
+          skill: delegation.skill,
+          ...(delegation.vassal ? { vassal: delegation.vassal } : {}),
+          capabilities: delegation.capabilities,
+          keyId: delegation.keyId,
+          nonce: delegation.nonce,
+          expiresAt: delegation.expiresAt,
+          ...(delegation.reason ? { reason: delegation.reason } : {}),
+        });
+        reply.code(201);
+        return { delegation };
+      } catch (thrown) {
+        if (thrown instanceof ExecutionDelegationError) return error(reply, 400, 'invalid_request', thrown.message);
+        throw thrown;
+      }
+    });
   }
 
   return app;
