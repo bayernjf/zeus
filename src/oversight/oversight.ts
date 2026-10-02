@@ -202,7 +202,7 @@ export class OversightDesk {
       status: 'approved',
       decidedAt: this.now().toISOString(),
       decidedStance: stance,
-      decisionNote: note,
+      ...(note !== undefined ? { decisionNote: note } : {}),
     };
     this.escalations.set(id, decided);
     this.audit(decided, 'approved', note, undefined, stance);
@@ -236,7 +236,7 @@ export class OversightDesk {
       ...current,
       status: 'rejected',
       decidedAt: this.now().toISOString(),
-      decisionNote: note,
+      ...(note !== undefined ? { decisionNote: note } : {}),
     };
     this.escalations.set(id, decided);
     this.audit(decided, 'rejected', note);
@@ -250,7 +250,7 @@ export class OversightDesk {
       ...current,
       status,
       decidedAt: this.now().toISOString(),
-      decisionNote: note,
+      ...(note !== undefined ? { decisionNote: note } : {}),
     };
     this.escalations.set(id, decided);
     this.audit(decided, status, note);

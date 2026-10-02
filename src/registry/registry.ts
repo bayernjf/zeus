@@ -266,18 +266,25 @@ export class VassalRegistry {
   async healthCheck(name: string): Promise<boolean> {
     const entry = this.entries.get(name);
     if (!entry || entry.revoked) return false;
+    let ok: boolean;
     try {
       const response = await this.fetchImpl(entry.cardUrl);
-      entry.lastHealthCheck = { at: this.now().toISOString(), ok: response.ok, detail: response.ok ? undefined : `HTTP ${response.status}` };
+      ok = response.ok;
+      entry.lastHealthCheck = {
+        at: this.now().toISOString(),
+        ok,
+        ...(ok ? {} : { detail: `HTTP ${response.status}` }),
+      };
     } catch (error) {
       // C-audit: this text is written by the peer's transport (or the OS), and it
       // then lands in the state file and inside the signed roster snapshot. Bound
       // and flatten it first, so an unbounded, multi-line or control-character
       // reason cannot bloat or corrupt either artifact.
       const reason = error instanceof Error ? error.message : 'fetch failed';
+      ok = false;
       entry.lastHealthCheck = { at: this.now().toISOString(), ok: false, detail: sanitizeProbeDetail(reason) };
     }
-    return entry.lastHealthCheck.ok;
+    return ok;
   }
 
   /** E5.3: serializable snapshot (including revoked vassals, for audit). */
