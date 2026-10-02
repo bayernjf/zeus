@@ -246,6 +246,7 @@
 - **触发条件**：① 第一个需要 Zeus 发起不可逆外部写操作的真实场景（不是演练）；② pr-helper 侧凭据代理接口就绪，需要 Zeus 对接。
 - **建议做法（决定后）**：优先"操作者签发的一次性短时授权"而非常驻凭据托管——凭据不落内核状态文件，授权记录进审计；同时保留 plan 模式为默认（现状），execute 必须带显式授权且不可逆技能仍由执行 Agent 升级到操作者。验收：无授权 → execute 拒绝且不发起任何外部写；授权一次 → 仅一次外部写成功、审计含授权与写操作两条记录。
 - **进展（2026-09-30，**未销项**）**：采纳上述"一次性短时授权"路线，先落**与对端解耦的纯函数安全原语** `src/delegation/execution-delegation.ts`（设计见 [design-execution-delegation.md](design-execution-delegation.md) v0.1，8 项单测）：`issueExecutionDelegation`（Ed25519 签名、绑定 grantedBy/skill/可选 vassal/capabilities 白名单、默认 TTL 5 分钟硬上限 1 小时、随机/可注入 nonce）+ `verifyAndConsumeExecutionDelegation`（形状→vassal/skill/capability 绑定→签名/keyId/信任锚 fail-closed→过期→单次消费的固定顺序；**任何失败都在消费 nonce 前返回，不烧合法重试**）+ 有界可持久化的 `ExecutionDelegationNonceLedger`。明确**不托管长期外部凭据**。**仍挂触发条件②**（pr-helper 凭据代理接口就绪）的五项接线：execute/plan 模式、Dispatcher 出站前闸门、票据投递的 A2A `x-zeus-*` 字段、HTTP 签发端点 + 新增审计 decision、nonce 账本接入 bootKernel 持久化——这些都会撞对端未定义协议，故按设计文档 §5 不臆造、留待对接。
+- **进展（2026-10-03，**未销项**）**：上列五项接线中**与对端无关的两项已接**——④ `POST /api/execution-delegations` 签发端点（bearer，校验 + 驱动钥签发，无 signer 不挂载）+ 新增审计 decision `execution-delegation-issued`（AUDIT_DECISIONS、审计查询白名单、TUI token 跟随）；⑤ nonce 账本接入 `KernelSnapshot.executionDelegationNonces`（collect/apply，bootKernel 创建账本挂组件、onChange 落盘）。新增 11 项测试（HTTP 9 + 快照 2）。**仍挂触发条件②**的三项：execute/plan 模式、Dispatcher 出站前闸门、票据投递的 A2A `x-zeus-*` 字段——仍撞对端未定义协议，不臆造。
 
 ### #34 监督台 Web UI（内核 API 之上的只读监控 + 裁决薄层）
 - **缺口**：Zeus 当前无任何图形界面（零 HTML / 前端资产），使用者只能通过 HTTP JSON API（curl / 程序调用）、TypeScript 库或 CLI 操作，默认使用者是开发者 / 运维。产品定位中的两个承诺在真实负载下无法只靠 API 兑现：① "人保留决策权"——并行多 Agent 扇出时，在 JSON 里看分歧、处理 escalation、做 approve/reject 不具可操作性；② 信任与数据主权需要可见——审计时间线、名册/吊销状态、备份状态、跨域授权记录需要可视化才能提供"可验证的安全感"。无 UI 也使产品画像中的个人用户与企业采购方不可达。
@@ -256,11 +257,12 @@
 - **进展（2026-09-30 第三批，**未销项**）**：方案 D 把第三类页面的**写操作**补齐——跨域授权可在 TUI 直接签发与吊销，仍只调现有 `POST/DELETE /api/domains/grants`（无新内核端点）。命令：`g<企业域#> <subject> <r|w> [签发者]`（只能对企业域，个人域在客户端拒绝且不发请求）签发、`k<授权#>` 吊销，均 y/N 二次确认、写后重绘；数据域块给域与授权台账加 `#编号` 与命令提示。**标识符大小写保真**：解析器动词大小写折叠但 subject/grantedBy 原样透传（修掉初版整行 lowercase 会破坏机器名的问题）。端到端真机验证（真实 HTTP client + 队列 IO 驱动 createDeck 打 :6404）：`g2 loom r` → 台账 +1，`k1` → 归 0，审计留 `domain-grant-issued`/`-revoked` 两条（注：管道喂 stdin 会因 readline 时序丢行，故真机走控制器注入而非 cli 管道，写逻辑另有单测覆盖）。测试 +10：commands 3（解析/大小写/错误分支）、controller 5（签发确认门、个人域拒绝、拒签不写、吊销按台账号、标识符大小写）、client 2（POST 体/4xx、DELETE 编码），TUI 测试 38 → 48，活基线 840/90 → **850/90**。至此方案 D 第一版三类页面（只读监控/裁决/授权）在终端全部可操作。
 - **建议做法（决定后）**：第一版只做三类页面——扇出 / 决策时间线的只读监控、escalation 队列裁决（approve / reject / resolve / 补参）、授权签发与吊销操作；配置、备份、技能管理等继续走 CLI / API。UI 仅消费现有 HTTP API、内核零改动，不引入界面私有逻辑；定位是"监督台"（人是决策者），不是全能控制台。验收：UI 每个写操作都能在审计日志回读且与直接调 API 等价；无新增内核端点或私有通道。
 
-### #35 出站 URL 守卫未覆盖 DNS 重绑定
+### #35 出站 URL 守卫未覆盖 DNS 重绑定（已销项）
 - **缺口**：2026-10-01 修 A-12（注册与连接器接口的 SSRF 面）时，出站 URL 守卫（HTTP 面与 A2A 出站共用）对**非 IP 字面量主机名一律放行**——它只判字面 IP 是否落在非全球可达地址段。因此把主机名做成 A 记录指向私网（DNS 重绑定）仍可绕过守卫，指到 `169.254.169.254` 一类内网端点。守卫默认拒绝 RFC 6890 特殊用途段（RFC1918、`169.254/16`、CGNAT、多播/保留段、IPv6 ULA/link-local、IPv4 映射/兼容/NAT64 编码），环回 `127/8` 与 `::1` 按本地优先放行；逃生舱 `ZEUS_OUTBOUND_ALLOW_HOSTS`。
 - **为什么登记不做**：完整防护（连接前解析、校验解析结果、连接时再核对实际对端地址以防 TOCTOU）需要一个自持 resolver + socket 层钩子，成本与风险超出本次 A 级修复范围；且本地优先部署里出站目标多为可信内网与环回，威胁模型需先明确。
 - **触发条件**：① 部署形态出现"Zeus 与被注册/被连接的 Agent 不在同一信任域"；② 安全评审要求出站面达到"解析即校验"口径。
 - **建议做法（决定后）**：解析主机名 → 逐个结果地址过同一地址段守卫 → 连接后核对实际 peer 地址（防解析-连接间隙重绑）；逃生舱语义保持不变（`ZEUS_OUTBOUND_ALLOW_HOSTS` 命中即跳过检查，含解析结果）。
+- **销项（2026-10-03，已销项）**：按建议做法在 `src/util/outbound-dns.ts` 落地——受守卫的 connect lookup 解析主机名 → 逐地址过同一 RFC 6890 守卫 → 只回传通过地址，TCP 连接 pin 到该地址（连接器不再二次解析，闭合解析-连接间隙），含任一非公开地址即 fail-closed；三个出站面默认 fetch（`registry/registry.ts`、`dispatch/client.ts`、`mcp/client.ts`）统一走 `guardedFetch`（undici Agent），逃生舱语义不变。15 项测试（缺陷植入 4 红）。触发条件②（"解析即校验"口径）提前满足。
 
 ### #36 TypeScript 严格性还有一项未启用（`noUncheckedIndexedAccess`）
 - **缺口**：b46 修 §4.6「严格性有缺口」时只启用了 `noUnusedLocals`（暴露并清掉 18 处真死代码），其余三项仍在 `tsconfig.json` 之外。同仓实测规模：`noUncheckedIndexedAccess` **400** 处、`exactOptionalPropertyTypes` **40** 处、`noUnusedParameters` **7** 处（量法 `npx tsc --noEmit --<flag>`；**flag 必须带 `--` 前缀**，否则被当成文件参数，会报出假的"1 条错误"）。

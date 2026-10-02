@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.21，2026-10-02，评审对象 HEAD `0a867f8`：核心 MVP ✅ / 可上线 ❌ 维持。本轮不采信上轮记录，重新机械计数（54 行需求 / P0 26/26）、用出货 CLI 复跑签名链七条对照、起真进程做边界矩阵与装配核对（一次性探针 20/20），并抓到 feature-inventory 的规模普查三个数字互不一致（75 vs 76 路由、分组表只加到 70、"116 处导出"既非 118 条 export 语句也非运行时 213）——已修并入库为断言（doc-consistency 第 10 例，三段各自缺陷植入验证）；本批改了出货件故镜像层不该继承，但本机到 registry 的网络路径不通而未重拍（诊断与落点见 §F）。上一条 v0.20（2026-09-29，A1 销项更新，只记那一条；活基线 791 / 83、冒烟 36/36）。再上一条 v0.19（2026-09-27，对象 `25c601c`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
+> 状态：**现行（评审报告 v0.22，2026-10-03，评审对象：Active work 104 本批（基线 HEAD `7499dce`，本批 commit 见 handoff）：核心 MVP ✅ / 可上线 ❌ 维持。本轮在 macOS 本机重新取证：全量 1048 绿 / 97 文件（基线 1022 + 新增 26）、冒烟 37/37、doc-consistency 11/11、build/typecheck exit 0。本批关闭 deferred #35（出站 DNS 重绑定守卫：受守卫的 connect lookup 解析→逐地址过 RFC 6890 守卫→pin 连接，三个出站面默认 fetch 统一接线，缺陷植入 4 红）、推进 deferred #33（执行授权票据三项接线：HTTP 签发端点 + `execution-delegation-issued` 审计 + nonce 账本快照持久化；派发闸门与 A2A 字段仍留对端），并修掉一条让最近两次 CI 失败的 smoke 隐式 any（§E）。出货件已变，镜像容器级四项本轮无新证据（§F）。上一条 v0.21（2026-10-02，对象 `0a867f8`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机执行 Agent 部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -244,6 +244,61 @@
 - **未跑**：真实执行 Agent 真机扇出（需线上网络与授权；A1 结论沿用记录）、Docker 镜像实构实跑（§F）、Zeus↔loom 生产栈联调（外部条件）、本机 Linux 侧全量测试（由 CI 覆盖，非本机复现）。
 - **本机代理 7897 可达外网但没有用于线上验收**——那是需要显式授权的对外动作，不在本轮范围。
 - **本机写权限问题已排除**：进入本轮前 `pwsh` 完全不可用（沙箱在工作区根缺 `WRITE_OWNER`），用 `diagnose-windows-sandbox-acl` 的脚本修好并复验（改动仅一条：给当前用户补完全控制，文件内容与所有者未动；恢复命令已留存）。这一条与本项目代码无关，但**它决定了本轮能否取证**，故记账。
+
+## v0.22 复核（2026-10-03，评审对象：Active work 104 本批工作树（基线 HEAD `7499dce`，本批 commit 与新 HEAD 见 handoff）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据三项接线），并修掉一条让最近两次 CI 失败的 smoke 类型缺陷）
+
+> 本轮方法沿用 v0.17 之后的规矩：**上一轮记录不作依据**，凡判定里含动词的条目重新取证。本轮在 **macOS 本机**取证（非 Windows），故全量与冒烟无 Windows 环境性失败，读数即全绿，不做环境性分类。
+
+### A. 验证基线（本机实跑，非转述）
+
+| 项 | 读数 | 备注 |
+| --- | --- | --- |
+| 基线 HEAD / 工作树 | `7499dce` + 本批未提交改动 | 本批 commit 后 HEAD 与 commit 列表记 handoff |
+| `npm run build` / `npm run typecheck` | 各自 **exit 0** | 先 build 后测试（`tests/*` 与 `scripts/*` 引用 `dist/`） |
+| `npm test` | **1048 绿 / 0 失败 / 97 文件** | 基线 1022 + 本批新增 **26**（outbound-dns 15、http-execution-delegation 9、kernel-execution-delegation-state 2） |
+| `npm run smoke:core` | **37/37** | 含 SIGTERM 落盘、重启恢复、重启重连数据域等全部步骤 |
+| `tests/doc-consistency.test.ts` | **11/11** | 路由/导出普查断言随本批新端点同步 |
+
+### B. 需求覆盖：机械核对，不读叙述
+
+- `docs/prd.md` 需求行 **54 行**，机械分类：**P0 26/26 ✅**。
+- 非 P0 未闭合 **8 条**：`E3.4`、`E3.8`、`E4.9`、`E4.10`、`E5.4`、`E8.4`、`E9.4`、`E10.2`——**与 v0.17 至 v0.21 同集合**，既无新增也未回退。本批关闭/推进的 #35、#33 是 deferred 台账项，不在 PRD 需求行。
+- feature-inventory「已实现但未接线」：**仍 1 项**（执行授权票据派发闸门）。本批把与对端无关的三项接好，只剩与对端协议相关的部分，触发条件未变（deferred #33 条件②）。
+
+### C. 本批关闭：deferred #35 出站 DNS 重绑定守卫
+
+- **缺口**：A-12 的同步守卫只识别 IP 字面量，非 IP 主机名在 HTTP 客户端内部才解析，DNS A/AAAA 记录指向私网（或解析后、连接前重绑）即可绕过地址段守卫。
+- **实现**（`src/util/outbound-dns.ts`，复用 `outbound-url.ts` 同一 RFC 6890 判定）：一个受守卫的 connect lookup——解析主机名 → 每个结果地址过同一地址段守卫 → 只把**通过**的地址回传给连接器，TCP 连接 pin 到该地址，连接器不再二次解析。解析结果含任一非公开地址即 fail-closed；逃生舱 `ZEUS_OUTBOUND_ALLOW_HOSTS` 语义不变（命中即跳过，含其解析结果）。
+- **接线**：三个实际 HTTP 出站面的默认 fetch（`registry/registry.ts`、`dispatch/client.ts`、`mcp/client.ts`）统一改为 `guardedFetch`（经受守卫的 undici Agent）；注入的测试 fetch 不受影响。
+- **验证**：15 项测试（拒绝/pin/逃生舱/IPv4·IPv6/回环放行 + 真实回环服务集成）；**缺陷植入**短接守卫 → 私网、元数据地址、混合结果、ULA 四条拒绝用例如期变红，还原后全绿。
+
+### D. 本批推进：deferred #33 执行授权票据·与对端无关的三项接线
+
+- **HTTP 签发端点** `POST /api/execution-delegations`（bearer）：校验 `grantedBy/skill/capabilities`、可选 `vassal/reason/ttlSeconds`，用驱动钥签发，201 返回票据；无 signer 时不挂载。9 项 HTTP 测试（含正常签发、capabilities 去重排序、各类 400、401、无 signer 404）。
+- **审计 decision**：AUDIT_DECISIONS 增 `execution-delegation-issued`，`GET /api/audit?decision=` 白名单自动跟随，TUI token 同步（一一映射测试覆盖）。
+- **nonce 账本持久化**：`KernelSnapshot` 增 `executionDelegationNonces`（向后兼容可选），collect/apply 接入；`bootKernel` 创建账本挂入组件、onChange 触发状态落盘。2 项快照 round-trip 测试（消费→collect→恢复到新账本仍 isSpent；无账本时省略该字段）。
+- **仍留待触发条件②（pr-helper 凭据代理接口就绪）**：execute/plan 模式、Dispatcher 出站派发闸门、票据投递的 A2A 字段——均触及对端未定义协议，按设计不臆造。
+
+### E. 本批顺带修复：一条让最近两次 CI 失败的 smoke 类型缺陷
+
+- **现象**：`gh run list` 显示最近两次 CI（`642eaf8` 的 push 与 PR）均 **failure**，typecheck 30 秒内挂于 `scripts/smoke-core.mjs` 两处 TS7006（`refusedReasons` 链在无类型 `json` 上，`.every`/`.map` 回调参数隐式 any）。这是 Active work 103 引入、上一批未修干净的缺陷，也是此前「PR 有问题」的根因。
+- **修法**：给 `refusedReasons` 补 `/** @type {string[]} */`，回调参数即有类型；typecheck 转 exit 0。本批 commit/push 后 CI 应转绿。
+
+### F. 部署镜像：本轮未重拍（出货件已变）
+
+- 本批改了出站、delegation、http、state 的 src，出货件变动，按先例容器级结论不继承上一轮。
+- 容器级运行属性（healthy、`/data` 0600、SIGTERM 落盘、重启恢复）四项对本批**无新证据**；CI 的 `image-smoke`（构建 + 镜像内两项冒烟）在本批 push 后闭合，但其覆盖面不含上述四项。本机本轮未做 docker 实构实跑。
+
+### G. 功能性 / 完整度 / 可上线（三维判定）
+
+- **功能性**：P0 26/26 ✅、无已知 P0 未闭合；本批补齐出站解析这一安全面，并把执行授权票据从"仅原语"推进到"可签发、可审计、nonce 可持久化"。
+- **完整度**：出站三个面统一受守卫；接入三通道执行点、签名链、备份恢复、记忆/日记、编制/责任链、TUI 三类页面、CI 各闸门均在位。
+- **可上线**：**❌ 未达成**。剩余项仍是仓库外动作（真机部署、密钥托管与带外公告、生产栈联调、外部消费方接入）与需真实规模的阈值标定，同 v0.21 §H。
+
+### H. MVP 判定与本轮限制
+
+- **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为安全守卫与授权接线，不改变上线判定。
+- **未跑**：Docker 镜像实构实跑（§F）、真机扇出与生产栈联调（外部条件）、本批 push 后的 CI（由用户决定 push 时点）。
 
 ## v0.18 复核（2026-09-27，评审 deferred #7 那半边入库之后的仓库：**核心 MVP ✅ / 可上线 ❌ 维持**；抓到三条陈述层缺陷并同日修掉（其中一条藏在**已销项**条目里），另有一次配置失误撞出的生产守卫实测，加一条被闸门逮住的、我自己写坏的索引行）
 

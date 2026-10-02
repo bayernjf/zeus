@@ -7,7 +7,7 @@
 | 我想… | 看 |
 | --- | --- |
 | 知道 Zeus 是什么、愿景与设计哲学 | [product-portrait.md](product-portrait.md) ★ |
-| 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) v0.7 ★（11 个能力域 × 76 条 HTTP 路由 × 4 类 CLI × 118 条 export 语句（运行时 213 个导出）；含「已实现但未接线」专节，2026-10-02 起为 2 项，2026-10-03 数据二极管按 `dataPolicy` 收缩已接线后为 1 项） |
+| 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) v0.8 ★（11 个能力域 × 77 条 HTTP 路由 × 4 类 CLI × 118 条 export 语句（运行时 213 个导出）；含「已实现但未接线」专节，2026-10-03 数据二极管接线后为 1 项，同日执行授权票据三项接线后仍为 1 项派发闸门） |
 | 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.6（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）；§6「注释承诺了代码没做的事」中 `startServer()` 一行已于 2026-10-02 闭合；**§4.2 row3 的数据二极管收缩已于 2026-10-03 修复闭合**（Active work 103：policy×origin 判档、`realmHitsOrigin`、两条审计值）） |
 | 查看需求拆解、优先级与验收标准 | [prd.md](prd.md) ★ |
 | 梳理 Agent 技术议题与探索优先级 | [tech-exploration-map.md](tech-exploration-map.md) ★ |
@@ -23,7 +23,7 @@
 | 知道内核能扛多少并发、怎么复跑压测 | [capacity-baseline.md](capacity-baseline.md)（E10.4 本机 mock 回环基线 **v0.3**，五场景：A 扇出宽度 / B 并发意图 / C H2 门面全链路吞吐 / D 高并发取消传播 / **E 并发闸门代价（`--cap` 显式开启）**；容量初步回答、绝对值散布与不变量、`npm run bench:capacity` 复跑方法、真机重测条件） |
 | 回放一个历史决策（谁参与、什么输入、什么立场、怎么聚合的） | `src/orchestrator/replay.ts`（E1.6：replayDecision/replaySnapshot/renderReplay，从内核快照离线重建确定性时间线） |
 | 了解行业内决策层现状与分化趋势 | [research-decision-layer-industry.md](research-decision-layer-industry.md)（LLM-as-judge 主流 + 四条分化路线、对决策后端设计的印证、来源清单） |
-| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 **v0.21**：三维评审 + MVP 判定，**每轮重跑取证而不采信上一轮记录**。**当前判定：产品核心完全可用 MVP = ✅；可上线交付真实用户 = ❌**——A1 真机扇出已于 2026-09-29 销项，差的是 A2–A5 与 B 系列等真实环境执行动作；v0.21 抓并修掉功能清单的规模普查缺陷、把三段计数入库为断言，镜像层因本机网络受限未重拍（落点 = CI 的 `image-smoke`），逐条见下一行） |
+| 想知道项目离可上线还有多远 | [review-mvp-2026-09.md](review-mvp-2026-09.md)（现行 **v0.22**：三维评审 + MVP 判定，**每轮重跑取证而不采信上一轮记录**。**当前判定：产品核心完全可用 MVP = ✅；可上线交付真实用户 = ❌**——v0.22（2026-10-03，macOS 本机，1048/97）关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据签发/审计/nonce 持久化三项接线），并修掉一条让最近两次 CI 失败的 smoke 隐式 any；出货件已变、镜像容器级四项无新证据。上一轮 v0.21 抓并修掉功能清单规模普查缺陷、三段计数入库为断言，逐条见下一行） |
 | 上线前要跑哪些验收、哪几条是硬阻塞、每次必跑的回归门 | [pre-launch-checklist.md](pre-launch-checklist.md)（A 硬阻塞 / B 部署运营 / C 阈值标定 / D 待决定 / E 发布动作 / F 每次必跑的验证门；每条带证据分级：实测 / 记录 / 待做） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |
 | 理解个人版与企业版的差异 | [product-portrait.md](product-portrait.md) §4 用户画像 |
