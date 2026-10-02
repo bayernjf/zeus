@@ -146,28 +146,28 @@ async function main(): Promise<void> {
     // the fact the loader knows - whether this key survives a restart - is passed
     // down and reported by the two faces that answer "which key is this?".
     rosterKey: { keyId: signer.keyId, source: ephemeral ? 'ephemeral' : 'configured' },
-    internalToken: process.env.ZEUS_INTERNAL_TOKEN,
+    ...(process.env.ZEUS_INTERNAL_TOKEN !== undefined ? { internalToken: process.env.ZEUS_INTERNAL_TOKEN } : {}),
     version: pkg.version,
     orchestrator: kernel.orchestrator,
     dagRunner: kernel.dagRunner,
     oversight: kernel.oversight,
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,
-    skillRegistry: kernel.skillRegistry,
-    mentorshipLedger: kernel.mentorshipLedger,
-    orgRegistry: kernel.orgRegistry,
-    memoryStore: kernel.memoryStore,
-    realmStore: kernel.realmStore,
+    ...(kernel.skillRegistry ? { skillRegistry: kernel.skillRegistry } : {}),
+    ...(kernel.mentorshipLedger ? { mentorshipLedger: kernel.mentorshipLedger } : {}),
+    ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
+    ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
+    ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
     // E6.4: the two data domains, their tenant scopes and the grants between them.
-    domainGrants: kernel.domainGrants,
+    ...(kernel.domainGrants ? { domainGrants: kernel.domainGrants } : {}),
     realmAudit: kernel.realmAudit,
     // E3.5 / deferred #14: enterprise write credentials (issue + replay ledger).
-    driverGrantLedger: kernel.driverGrantLedger,
+    ...(kernel.driverGrantLedger ? { driverGrantLedger: kernel.driverGrantLedger } : {}),
     driverGrantAuthority: kernel.driverGrantAuthority,
     driverGrantAudit: kernel.driverGrantAudit,
     // E9.1/E9.2: the day-one briefing and the commission gate.
-    commissions: kernel.commissionLedger,
-    connectorRegistry: kernel.connectorRegistry,
+    ...(kernel.commissionLedger ? { commissions: kernel.commissionLedger } : {}),
+    ...(kernel.connectorRegistry ? { connectorRegistry: kernel.connectorRegistry } : {}),
     ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
     kernelStats: () => kernelStats(kernel),
     // Same facts the boot log line prints, now readable over the bearer face.
