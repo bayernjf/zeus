@@ -746,6 +746,11 @@ State of Zeus as of 2026-09-29.
    - [x] **门禁**：`npm test` **1015 / 94 / 0**（自 1012 +3）、`smoke:core` 36/36、typecheck/build exit 0、doc-consistency 9/9（活基线同步篇首/Current state/代码索引/README/checklist 至 1015）。
    - [x] **文档同步**：[docs/audit-2026-09.md](docs/audit-2026-09.md) §5 全 22 条标注关闭（1–17 补 commit 对照、12/19/20/22 记修复与植入证据、C 级执行结果表入 §8）、[docs/prd.md](docs/prd.md) 升 v0.70（演进行见该文档）、handoff 基线三处 + 本条 + 更改记录。**未 push（等用户授权）**
 
+94. **deferred #36 中档：`exactOptionalPropertyTypes` 迁移完成并启用（2026-10-02 ✅ 完成，全量 1015 绿 / 94 文件，`smoke:core` 36/36，typecheck/build exit 0）**：
+   - [x] **量错与修复**：`npx tsc --noEmit --exactOptionalPropertyTypes` 实测 **41 处**（登记 40 + scripts 纳入检查后 smoke-core 浮出 1）。逐文件按 exact 语义收口：可选字段不再显式传 `undefined`，一律改条件展开 `...(cond ? { key } : {})`（fan-out 原语、dispatch 出站凭证、MCP 连接器客户端、HTTP 装配、kernel 组件、vault 组装、测试夹具），或把"属性存在但值可为空"的字段改为显式 `T | undefined`（McpClient.token、McpStdioClient.child、DriverGrantLedger.onChange）；`removeMember` 用 `delete next.lead` 取代 `next.lead = undefined`；registry `healthCheck` 以局部变量收窄消除 `entry.lastHealthCheck` 的可能 undefined。
+   - [x] **启用**：`tsconfig.json` 正式开启 `exactOptionalPropertyTypes: true`，`npx tsc --noEmit` 0 错。
+   - [x] **验证**：全量 **1015/94 绿**、`smoke:core` 36/36、typecheck/build exit 0。7 个原子 commit（orchestrator / dispatch+smoke / mcp / http / kernel / tests / tsconfig）。**deferred #36 现剩唯一一档：`noUncheckedIndexedAccess`（400 处，仍待触发条件）。**
+
 93. **PR #63 CI 失败修复：typecheck 移到 build 之后（2026-10-02 ✅ 完成）**：
    - [x] **现象**：PR #63（pr-helper 开、dev→main）6 个 CI check 全 fail（Node 22.x/24.x 的 typecheck/build/test + wall-clock gate ×2），失败日志唯一错误 `scripts/gen-rsk-key.mjs(50,38): error TS2307: Cannot find module '../dist/registry/signing.js'`（runs 36907293234 / 36907286454）。
    - [x] **根因**：H1 把 scripts/*.mjs 纳入 typecheck 后，脚本 import 编译产物 `dist/*`（bench-capacity 6 处静态 import、gen-rsk-key/verify-roster 各 1 处 try/catch 动态 import）；CI 两个 job 都是 typecheck 先于 build，干净 checkout 无 dist → TS2307。本地绿是因为本地残留 dist——本机复现对照：`rm -rf dist` 后 typecheck 即挂，build 后即绿。
