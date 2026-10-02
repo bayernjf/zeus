@@ -67,7 +67,7 @@ export function topologicalOrder(nodes: DagNode[]): string[] {
     }
   }
   // Deterministic: process ids lexicographically within a wave.
-  let ready = [...indegree.entries()].filter(([, d]) => d === 0).map(([id]) => id).sort();
+  const ready = [...indegree.entries()].filter(([, d]) => d === 0).map(([id]) => id).sort();
   const order: string[] = [];
   while (ready.length > 0) {
     const id = ready.shift()!;
