@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import type { AddressInfo } from 'node:net';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner, verifySignedSnapshot } from '../src/registry/signing.js';
 import { timingSafeEqual } from 'node:crypto';
@@ -10,6 +11,9 @@ import {
   classifyOrgError,
   createHttpServer,
   constantTimeEqual,
+  DEFAULT_HTTP_HOST,
+  DEFAULT_HTTP_PORT,
+  startServer,
 } from '../src/http/server.js';
 import { DomainError } from '../src/util/domain-error.js';
 import { UnknownIntentError } from '../src/orchestrator/orchestrator.js';
@@ -221,6 +225,34 @@ describe('HTTP H1 server', () => {
     expect(envelope.snapshot.entries).toEqual([]);
     const verdict = await verifySignedSnapshot(envelope, signer.verifier(), new Date('2026-09-21T12:30:00.000Z'));
     expect(verdict.ok).toBe(true);
+  });
+});
+
+describe('startServer (the process-entry start primitive)', () => {
+  // `zeus/http` publishes this function and serve.ts calls it, so both its bind
+  // defaults and its willingness to actually listen are user-visible facts. It
+  // used to have no caller at all while defaulting to port 0 - an ephemeral port,
+  // against the 8787 that serve.ts, .env.example and deployment.md document.
+  it('shares the documented personal-edition bind defaults', () => {
+    expect(DEFAULT_HTTP_HOST).toBe('127.0.0.1');
+    expect(DEFAULT_HTTP_PORT).toBe(8787);
+  });
+
+  it('listens on a real socket and serves /healthz over TCP', async () => {
+    const app = await startServer({ registry: new VassalRegistry(), signer: new Ed25519MemorySigner(KEY_ID) }, { port: 0 });
+    try {
+      const address = app.server.address();
+      expect(typeof address).toBe('object');
+      const port = (address as AddressInfo).port;
+      // Port 0 means "any free port", so a positive port here is the proof that
+      // the caller can recover the bound one instead of having to guess it.
+      expect(port).toBeGreaterThan(0);
+      const res = await fetch(`http://127.0.0.1:${port}/healthz`);
+      expect(res.status).toBe(200);
+      await expect(res.json()).resolves.toMatchObject({ status: 'ok' });
+    } finally {
+      await app.close();
+    }
   });
 });
 

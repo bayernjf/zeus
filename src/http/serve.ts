@@ -34,7 +34,7 @@ import {
 import { kernelStats } from '../state/stats.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
-import { createHttpServer } from './server.js';
+import { startServer } from './server.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -139,7 +139,10 @@ async function main(): Promise<void> {
     }
   }
 
-  const app = await createHttpServer({
+  // The start primitive owns the bind defaults (loopback:8787, design-http-transport
+  // §2.1); ZEUS_HOST / ZEUS_PORT only override them, so the process entry and the
+  // published `zeus/http` API cannot drift into two different answers.
+  const app = await startServer({
     registry: kernel.registry,
     signer,
     // One line on stderr at boot is not a record an operator can consult later, so
@@ -184,12 +187,17 @@ async function main(): Promise<void> {
           : {}),
       },
     },
+  }, {
+    ...(process.env.ZEUS_HOST ? { host: process.env.ZEUS_HOST } : {}),
+    ...(process.env.ZEUS_PORT ? { port: Number(process.env.ZEUS_PORT) } : {}),
   });
-  const port = Number(process.env.ZEUS_PORT ?? 8787);
-  const host = process.env.ZEUS_HOST ?? '127.0.0.1';
-  await app.listen({ host, port });
+  // Report the address the socket actually bound rather than the one requested:
+  // with ZEUS_PORT=0 the two differ, and this line is where an operator learns
+  // which port to point a client at.
+  const bound = app.server.address();
+  const boundLabel = typeof bound === 'object' && bound !== null ? `${bound.address}:${bound.port}` : String(bound);
   process.stderr.write(
-    `[zeus-http] listening on http://${host}:${port} (healthz, roster public` +
+    `[zeus-http] listening on http://${boundLabel} (healthz, roster public` +
       `${process.env.ZEUS_INTERNAL_TOKEN ? ', roster internal + H2 driver API' : ''})\n`
   );
 
