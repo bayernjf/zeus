@@ -522,9 +522,9 @@ function snippetFor(content: string, terms: string[]): string {
   const lines = content.split(/\r?\n/);
   if (terms.length === 0) return (lines.find(line => line.trim().length > 0) ?? '').slice(0, 200);
   for (let i = 0; i < lines.length; i += 1) {
-    const lower = lines[i].toLowerCase();
+    const lower = lines[i]!.toLowerCase();
     if (terms.some(term => lower.includes(term))) {
-      const line = lines[i].trim();
+      const line = lines[i]!.trim();
       return line.length > 200 ? `${line.slice(0, 200)}…` : line;
     }
   }

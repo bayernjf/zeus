@@ -70,7 +70,10 @@ export function parseTenant(raw: string): TenantScope {
     }
     if (CONTROL_CHARS.test(part)) throw new TenantError(`tenant segment has control characters: ${raw}`);
   }
-  const [org, department, member] = parts;
+  // The per-segment loop above rejected empty segments, so parts[0] always exists.
+  const org = parts[0]!;
+  const department = parts[1];
+  const member = parts[2];
   return { org, ...(department ? { department } : {}), ...(member ? { member } : {}) };
 }
 

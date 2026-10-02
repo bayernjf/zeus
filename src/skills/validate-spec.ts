@@ -41,7 +41,7 @@ export function permissionClaimIssue(claim: unknown): string | null {
     return null;
   }
   if (!PERMISSION_RE.test(claim)) return `invalid permission claim: ${claim}`;
-  const scope = claim.split(':')[0];
+  const scope = claim.split(':')[0]!;
   if (!(PERMISSION_SCOPES as readonly string[]).includes(scope)) {
     return `unknown permission scope '${scope}'; allowed: ${PERMISSION_SCOPES.join(', ')}`;
   }

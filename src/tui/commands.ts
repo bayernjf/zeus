@@ -37,7 +37,8 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
     if (!Number.isInteger(realmIndex) || realmIndex < 1) return { error: 'bad-index' };
     const access = accessToken === 'r' || accessToken === 'read' ? 'read' : accessToken === 'w' || accessToken === 'write' ? 'write' : null;
     if (access === null) return { error: 'grant-bad-access' };
-    return { kind: 'grantIssue', realmIndex, subject, access, grantedBy: issuerRaw ?? 'operator' };
+    // Both \S+ groups are guaranteed by the regex; only the trailing issuer is optional.
+    return { kind: 'grantIssue', realmIndex, subject: subject!, access, grantedBy: issuerRaw ?? 'operator' };
   }
 
   // Cross-domain grant revocation: `k <grant#>` (distinct from `d`, roster revoke).
