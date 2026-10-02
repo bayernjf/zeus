@@ -301,6 +301,7 @@ export function conflictsToDesk(
 export function extractEscalation(events: A2AEvent[]): { reason: string; options: string[] } {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
+    if (!event) continue; // loop bound guarantees existence; defensive skip
     if (event.kind === 'status-update' && event.status.state === 'input-required') {
       const payload = event['x-zeus-escalation'];
       if (payload) {

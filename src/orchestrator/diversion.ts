@@ -138,7 +138,8 @@ export function selectTargets(input: DiversionInput): SelectTargetsResult {
     }
     const altIndex = available.findIndex(v => v !== name);
     if (altIndex >= 0) {
-      const alt = available.splice(altIndex, 1)[0];
+      const [alt] = available.splice(altIndex, 1);
+      if (alt === undefined) continue; // splice at a valid index always yields one
       plan.push({ target: alt, divertedFrom: name });
     } else {
       // No alternate: keep the original so it hits the global queue→reject gate.
