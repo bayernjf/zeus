@@ -145,11 +145,11 @@ export class DagRunner {
             const fanOut = await this.orchestrator.fanOut({
               intentId,
               skill: node.skill,
-              vassals: node.vassals,
+              ...(node.vassals ? { vassals: node.vassals } : {}),
               params,
               realm: spec.realm,
-              aggregation: node.aggregation,
-              branchTimeoutMs: spec.branchTimeoutMs,
+              ...(node.aggregation ? { aggregation: node.aggregation } : {}),
+              ...(spec.branchTimeoutMs !== undefined ? { branchTimeoutMs: spec.branchTimeoutMs } : {}),
             });
             upstream.set(id, fanOut);
             const state = mapFanOutState(fanOut.status);

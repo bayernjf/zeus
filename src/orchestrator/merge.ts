@@ -13,7 +13,7 @@ export function mergeBranches(branches: BranchOutcome[]): SourcedEvent[] {
   for (const branch of branches) {
     for (const event of branch.events) {
       merged.push({
-        source: { vassal: branch.vassal, taskId: branch.taskId, runId: branch.runId },
+        source: { vassal: branch.vassal, runId: branch.runId, ...(branch.taskId ? { taskId: branch.taskId } : {}) },
         event,
       });
     }
