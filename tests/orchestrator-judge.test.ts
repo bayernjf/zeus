@@ -27,7 +27,7 @@ type Route = DispatchResult | ((req: DispatchRequest) => Promise<DispatchResult>
 function makePort(routes: Record<string, Route>): DispatchPort {
   return {
     async dispatch(req) {
-      const route = routes[req.vassal!];
+      const route = routes[req.vassal!]!; // test routes cover every dispatched vassal
       return typeof route === 'function' ? route(req) : route;
     },
     async cancel() {},
@@ -123,8 +123,8 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     expect(result.status).toBe('needs-driver');
     expect(result.decision.conclusion).toBe('approve'); // rule conclusion preserved, not overwritten
     expect(result.conflicts).toHaveLength(1);
-    expect(result.conflicts[0].kind).toBe('judge-review');
-    expect(result.conflicts[0].stances.map(s => s.stance).sort()).toEqual(['approve', 'reject']);
+    expect(result.conflicts[0]!.kind).toBe('judge-review');
+    expect(result.conflicts[0]!.stances.map(s => s.stance).sort()).toEqual(['approve', 'reject']);
     expect(escalated).toHaveLength(1);
     expect(result.judgeReview).toMatchObject({
       judged: true,
@@ -316,6 +316,6 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     expect(kinds).toContain('judge-reviewed');
     expect(kinds.indexOf('judge-reviewed')).toBeGreaterThan(kinds.indexOf('aggregated'));
     expect(replay.judgeReview?.recommended).toBe('reject');
-    expect(replay.conflicts[0].kind).toBe('judge-review');
+    expect(replay.conflicts[0]!.kind).toBe('judge-review');
   });
 });

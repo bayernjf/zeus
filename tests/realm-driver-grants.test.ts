@@ -179,7 +179,7 @@ describe('E3.5 the booted kernel authorizes enterprise writes with signatures', 
     const kernel = await boot(join(sandbox, 'kernel.json'), root, signer);
     expect(kernel.driverGrantAuthority).toBe('signed');
     expect(kernelStats(kernel).driverGrants).toEqual({ authority: 'signed', keyId: 'zeus-rsk-test' });
-    const realmId = kernel.realmStore!.connections()[0].realmId;
+    const realmId = kernel.realmStore!.connections()[0]!.realmId;
 
     // This blob used to be an authorization. It is now a claim about one.
     await expect(
@@ -203,7 +203,7 @@ describe('E3.5 the booted kernel authorizes enterprise writes with signatures', 
     const root = await realmRoot('ent2');
     const stateFile = join(sandbox, 'kernel2.json');
     const kernel = await boot(stateFile, root, signer);
-    const realmId = kernel.realmStore!.connections()[0].realmId;
+    const realmId = kernel.realmStore!.connections()[0]!.realmId;
     const grant = await issueDriverWriteGrant({ realmId, grantedBy: 'driver@bayjf' }, { signer, now });
 
     await writerFor(kernel)(realmId, { itemId: 'notes/y.md', data: 'once\n' }, grant);
@@ -227,7 +227,7 @@ describe('E3.5 the booted kernel authorizes enterprise writes with signatures', 
     expect(kernel.driverGrantAuthority).toBe('shape-only');
     expect(kernelStats(kernel).driverGrants).toEqual({ authority: 'shape-only', keyId: null });
     // Single-use still applies: the ledger is not conditional on having a key.
-    const realmId = kernel.realmStore!.connections()[0].realmId;
+    const realmId = kernel.realmStore!.connections()[0]!.realmId;
     const grant = {
       kind: 'driver-write' as const,
       realmId,
@@ -343,7 +343,7 @@ describe('HTTP E3.5 — the write-grant face', () => {
       payload: { realmId: enterpriseRealmId, grant },
     });
     expect(generated.statusCode, generated.body).toBe(201);
-    const itemId = (generated.json() as { generated: Array<{ itemId: string }> }).generated[0].itemId;
+    const itemId = (generated.json() as { generated: Array<{ itemId: string }> }).generated[0]!.itemId;
     expect(await store.read(enterpriseRealmId, itemId)).toMatchObject({ content: expect.stringContaining('finding 1') });
 
     // The same credential cannot buy a second write.

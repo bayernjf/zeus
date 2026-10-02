@@ -60,7 +60,7 @@ describe('E2.5 Mentor skill transfer', () => {
     const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     const taught = ledger.teach(record.id, [{ topic: 'reading diffs', ref: 'res-1' }]);
     expect(taught.lessons).toHaveLength(1);
-    expect(taught.lessons[0].topic).toBe('reading diffs');
+    expect(taught.lessons[0]!.topic).toBe('reading diffs');
   });
 
   it('certifies and registers the learner as a new provider', () => {
@@ -76,7 +76,7 @@ describe('E2.5 Mentor skill transfer', () => {
 
     // The learner now appears in team composition for the skill.
     const team = registry.resolveTeam(['code-review']);
-    expect(team.slots[0].providers.sort()).toEqual(['mentor-1', 'newbie-1']);
+    expect(team.slots[0]!.providers.sort()).toEqual(['mentor-1', 'newbie-1']);
   });
 
   it('fails certification on a failed required check without adding a provider', () => {

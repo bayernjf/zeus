@@ -145,7 +145,7 @@ describe('memory HTTP right to be forgotten', () => {
 
   it('is idempotent: retracting an already-retracted fact records nothing new', async () => {
     const { app, facts } = await setup();
-    const target = facts[0];
+    const target = facts[0]!;
     const payload = {
       realmId: REALM, factIds: [target.factId], reason: 'once', requestedBy: 'driver',
     };

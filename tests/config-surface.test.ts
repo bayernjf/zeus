@@ -29,7 +29,7 @@ function readInCode(): Map<string, string> {
   for (const file of [...sourceFiles('src'), ...sourceFiles('scripts')]) {
     const text = readFileSync(file, 'utf8');
     for (const match of text.matchAll(/\b(?:process\.)?env\.(ZEUS_[A-Z0-9_]+)/g)) {
-      if (!found.has(match[1])) found.set(match[1], file);
+      if (!found.has(match[1]!)) found.set(match[1]!, file);
     }
   }
   return found;
@@ -62,7 +62,7 @@ function deploymentTableVars(): Set<string> {
   for (const row of rows) {
     if (!/^\|\s*`ZEUS_[A-Z0-9_]+`/.test(row)) continue;
     const firstCell = row.split(/(?<!\\)\|/)[1] ?? '';
-    for (const match of firstCell.matchAll(/`(ZEUS_[A-Z0-9_]+)`/g)) vars.add(match[1]);
+    for (const match of firstCell.matchAll(/`(ZEUS_[A-Z0-9_]+)`/g)) vars.add(match[1]!);
   }
   return vars;
 }

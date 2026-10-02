@@ -96,7 +96,7 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
 
   it('reads manifest with the absolute root stripped', async () => {
     const res = await handle(rpc(1, 'resources/read', { uri: `zeus-realm://${realmId}/manifest` }));
-    const text = (res!.result as { contents: Array<{ text: string }> }).contents[0].text;
+    const text = (res!.result as { contents: Array<{ text: string }> }).contents[0]!.text;
     const manifest = JSON.parse(text);
     expect(manifest.realmId).toBe(realmId);
     expect(manifest.root).toBeUndefined();
@@ -111,10 +111,10 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
     const res = await handle(
       rpc(1, 'resources/read', { uri: `zeus-realm://${realmId}/search?text=secret%20zeus&limit=5` })
     );
-    const text = (res!.result as { contents: Array<{ text: string }> }).contents[0].text;
+    const text = (res!.result as { contents: Array<{ text: string }> }).contents[0]!.text;
     const hits = JSON.parse(text) as Array<{ itemId: string; snippet: string }>;
     expect(hits).toHaveLength(1);
-    expect(hits[0].itemId).toBe('notes/diary.md');
+    expect(hits[0]!.itemId).toBe('notes/diary.md');
     expect(text).not.toContain(root);
     expect(text).not.toContain(realpathSync(root));
   });
@@ -123,7 +123,7 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
     const res = await handle(
       rpc(1, 'resources/read', { uri: `zeus-realm://${realmId}/item?path=notes%2Fdiary.md` })
     );
-    const text = (res!.result as { contents: Array<{ text: string }> }).contents[0].text;
+    const text = (res!.result as { contents: Array<{ text: string }> }).contents[0]!.text;
     expect(text).toContain('hello world');
     expect(text).not.toContain(root);
   });
@@ -204,14 +204,14 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
   it('tools/call searches and reads only whitelisted realms, never absolute paths', async () => {
     const search = await handle(rpc(1, 'tools/call', { name: 'realm.search', arguments: { realmId, text: 'hello' } }));
     expect(search?.error).toBeUndefined();
-    const text = (search!.result as { content: Array<{ type: string; text: string }> }).content[0].text;
+    const text = (search!.result as { content: Array<{ type: string; text: string }> }).content[0]!.text;
     expect(JSON.parse(text).length).toBeGreaterThan(0);
     expect(text).not.toContain(root);
     expect(text).not.toContain(realpathSync(root));
 
     const read = await handle(rpc(2, 'tools/call', { name: 'realm.read', arguments: { realmId, itemId: 'notes/diary.md' } }));
     expect(read?.error).toBeUndefined();
-    expect((read!.result as { content: Array<{ type: string; text: string }> }).content[0].text).toContain('secret zeus');
+    expect((read!.result as { content: Array<{ type: string; text: string }> }).content[0]!.text).toContain('secret zeus');
   });
 
   it('tools/call refuses unknown tools, non-whitelisted realms, and malformed arguments', async () => {

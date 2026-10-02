@@ -68,7 +68,7 @@ describe('E4.8 vassal token storage and non-echo', () => {
     const first = new VassalRegistry(fetchForCard());
     await first.register(CARD_URL, { token: SECRET });
     const exported = first.exportState();
-    expect(exported[0].token).toBe(SECRET);
+    expect(exported[0]!.token).toBe(SECRET);
 
     const second = new VassalRegistry(fetchForCard());
     second.importState(exported);

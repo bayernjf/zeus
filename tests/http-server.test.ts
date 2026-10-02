@@ -108,7 +108,7 @@ describe('HTTP H1 server', () => {
     expect(reply.body).not.toContain('healthDetail');
     expect(reply.body).not.toContain('loom');
     expect((envelope.snapshot.entries[0] as Record<string, unknown>).cardUrl).toBeUndefined();
-    expect(envelope.attestations['pr-helper'].vassal).toEqual({
+    expect(envelope.attestations['pr-helper']!.vassal).toEqual({
       name: 'pr-helper',
       cardUrl: 'http://pr-helper.internal/api/a2a/agent-card',
     });
@@ -116,9 +116,9 @@ describe('HTTP H1 server', () => {
     // offline verification with the Zeus root public key
     const verdict = await verifySignedSnapshot(envelope, signer.verifier(), new Date('2026-09-21T12:30:00.000Z'));
     expect(verdict.ok).toBe(true);
-    if (verdict.ok) expect(verdict.snapshot.entries[0].name).toBe('pr-helper');
+    if (verdict.ok) expect(verdict.snapshot.entries[0]!.name).toBe('pr-helper');
 
-    const attestation = envelope.attestations['pr-helper'];
+    const attestation = envelope.attestations['pr-helper']!;
     expect(attestation).toMatchObject({ status: 'active', keyId: KEY_ID, issuer: 'zeus' });
     expect(attestation.cardDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(attestation.fealtyDigest).toMatch(/^sha256:/);
@@ -133,14 +133,14 @@ describe('HTTP H1 server', () => {
     const withinWindow = new Date('2026-09-21T12:30:00.000Z');
 
     const tamperedEntry = structuredClone(envelope);
-    tamperedEntry.snapshot.entries[0].domain = 'hacked-domain';
+    tamperedEntry.snapshot.entries[0]!.domain = 'hacked-domain';
     const entryVerdict = await verifySignedSnapshot(tamperedEntry, signer.verifier(), withinWindow);
     expect(entryVerdict.ok).toBe(false);
     if (!entryVerdict.ok) expect(entryVerdict.reason).toMatch(/snapshotDigest/);
 
     // fealty-signing §8.1-6: tampering with the provenance cardUrl fails attestation
     const tamperedProvenance = structuredClone(envelope);
-    tamperedProvenance.attestations['pr-helper'].vassal.cardUrl = 'http://evil.internal/agent-card';
+    tamperedProvenance.attestations['pr-helper']!.vassal.cardUrl = 'http://evil.internal/agent-card';
     const provenanceVerdict = await verifySignedSnapshot(tamperedProvenance, signer.verifier(), withinWindow);
     expect(provenanceVerdict.ok).toBe(false);
     if (!provenanceVerdict.ok) expect(provenanceVerdict.reason).toMatch(/attestation signature/);
@@ -198,10 +198,10 @@ describe('HTTP H1 server', () => {
 
     // the revoked row carries a permanent revocation attestation (no hard expiry),
     // the active row carries an expiring active attestation
-    expect(envelope.attestations.loom.status).toBe('revoked');
-    expect(envelope.attestations.loom.expiresAt).toBeUndefined();
-    expect(envelope.attestations['pr-helper'].status).toBe('active');
-    expect(typeof envelope.attestations['pr-helper'].expiresAt).toBe('string');
+    expect(envelope.attestations.loom!.status).toBe('revoked');
+    expect(envelope.attestations.loom!.expiresAt).toBeUndefined();
+    expect(envelope.attestations['pr-helper']!.status).toBe('active');
+    expect(typeof envelope.attestations['pr-helper']!.expiresAt).toBe('string');
   });
 
   it('does not mount the internal route when no internal token is configured', async () => {
@@ -242,8 +242,8 @@ describe('bearer token comparison (length-safe)', () => {
     });
     expect(result).toBe(false);
     expect(widths).toHaveLength(1);
-    expect(widths[0][0]).toBe(32);
-    expect(widths[0][0]).toBe(widths[0][1]);
+    expect(widths[0]![0]).toBe(32);
+    expect(widths[0]![0]).toBe(widths[0]![1]);
   });
 });
 

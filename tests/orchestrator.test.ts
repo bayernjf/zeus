@@ -50,7 +50,7 @@ function makePort(routes: Record<string, Route>, cancelFor?: Record<string, () =
       inFlight += 1;
       port.maxInFlight = Math.max(port.maxInFlight, inFlight);
       try {
-        const route = routes[req.vassal!];
+        const route = routes[req.vassal!]!; // test routes cover every dispatched vassal
         return await (typeof route === 'function' ? route(req) : route);
       } finally {
         inFlight -= 1;
@@ -104,7 +104,7 @@ describe('Orchestrator.fanOut', () => {
     expect(serialPort.maxInFlight).toBe(1);
     expect(port.calls.map(c => c.runId)).toEqual(['run-1:loom', 'run-1:atlas']);
     expect(result.stream.map(e => e.source.vassal)).toEqual(['loom', 'atlas']);
-    expect(result.stream[0].source.taskId).toBe('loom-task');
+    expect(result.stream[0]!.source.taskId).toBe('loom-task');
   });
 
   it('returns an independent copy, so mutating the reply cannot corrupt the stored result (C-audit 12)', async () => {
@@ -177,7 +177,7 @@ describe('Orchestrator.fanOut', () => {
       const port = makePort({ loom: okResult('loom') });
       const orch = newOrchestrator(port, ['loom']);
       const result = await orch.fanOut({ intentId: 'T', skill: 'x', params: {}, realm: 'personal', branchTimeoutMs: 60_000 });
-      expect(result.branches[0].ok).toBe(true);
+      expect(result.branches[0]!.ok).toBe(true);
       // the deadline lost the race and must not stay armed for the next minute
       expect(vi.getTimerCount()).toBe(0);
     } finally {
@@ -189,7 +189,7 @@ describe('Orchestrator.fanOut', () => {
     const port = makePort({ atlas: async () => { await delay(25); return okResult('atlas'); } });
     const orch = newOrchestrator(port, ['atlas']);
     const result = await orch.fanOut({ intentId: 'T', skill: 'x', params: {}, realm: 'personal', branchTimeoutMs: 5 });
-    expect(result.branches[0].timedOut).toBe(true);
+    expect(result.branches[0]!.timedOut).toBe(true);
 
     await delay(50);
     expect(port.cancelCalls).toEqual([['atlas', 'atlas-task']]);
@@ -211,9 +211,9 @@ describe('Orchestrator.fanOut', () => {
     const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
     expect(result.status).toBe('needs-driver');
     expect(result.decision.conclusion).toBeNull();
-    expect(result.conflicts[0].stances.map(s => s.stance).sort()).toEqual(['approve', 'reject']);
+    expect(result.conflicts[0]!.stances.map(s => s.stance).sort()).toEqual(['approve', 'reject']);
     expect(escalated).toHaveLength(1);
-    expect(escalated[0].intentId).toBe('intent-1');
+    expect(escalated[0]!.intentId).toBe('intent-1');
   });
 });
 
@@ -273,7 +273,7 @@ describe('Orchestrator.resumeBranch', () => {
     const second = await orch.resumeBranch('X', 'loom', { note: 'two' });
 
     expect(port.calls.map(c => c.runId)).toEqual(['run-1:loom', 'run-1:loom:resume1', 'run-1:loom:resume2']);
-    expect(second.branches[0].runId).toBe('run-1:loom:resume2');
+    expect(second.branches[0]!.runId).toBe('run-1:loom:resume2');
   });
 
   it('collapses concurrent resumes of the same branch into one dispatch', async () => {
@@ -286,7 +286,7 @@ describe('Orchestrator.resumeBranch', () => {
       orch.resumeBranch('X', 'loom', { note: 'one' }),
     ]);
 
-    expect(first.branches[0].runId).toBe(second.branches[0].runId);
+    expect(first.branches[0]!.runId).toBe(second.branches[0]!.runId);
     expect(port.calls).toHaveLength(2);
   });
 });

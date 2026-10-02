@@ -152,7 +152,7 @@ describe('E1.6 decision replay HTTP', () => {
     await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
 
     const snapshot = orchestrator.exportState();
-    snapshot.intents[0].stream[0].source.runId = 'run-bogus';
+    snapshot.intents[0]!.stream[0]!.source.runId = 'run-bogus';
     orchestrator.importState(snapshot);
 
     const res = await app.inject({ method: 'GET', url: '/api/intents/intent-1/replay', headers: AUTH });

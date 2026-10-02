@@ -77,7 +77,7 @@ describe('A2A file/URI parts and task history', () => {
     expect(artifactFileUris(streamedArtifact)).toEqual(['file://reports/q3.pdf']);
 
     // file part and loose history survive the final task snapshot
-    expect(artifactFileUris(task.artifacts[0])).toEqual(['file://reports/q3.pdf']);
+    expect(artifactFileUris(task.artifacts[0]!)).toEqual(['file://reports/q3.pdf']);
     expect(task.history).toHaveLength(2);
     expect(task.history?.[0]).toMatchObject({ role: 'user' });
   });

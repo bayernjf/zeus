@@ -35,7 +35,7 @@ function makePort(routes: Record<string, Route>): DispatchPort {
   return {
     async dispatch(req) {
       const route = routes[req.vassal!];
-      return typeof route === 'function' ? route(req) : route;
+      return typeof route === 'function' ? route(req) : route!;
     },
     async cancel() {},
   };

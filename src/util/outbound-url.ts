@@ -49,7 +49,7 @@ function isAllowlisted(host: string, allowHosts: readonly string[]): boolean {
 /** Four dotted decimal octets, or undefined when the host is not a literal IPv4.
  *  WHATWG URL already canonicalises every accepted IPv4 spelling (hex, octal,
  *  short form), so reading `.hostname` is enough. */
-function parseIpv4(host: string): number[] | undefined {
+function parseIpv4(host: string): [number, number, number, number] | undefined {
   const parts = host.split('.');
   if (parts.length !== 4) return undefined;
   const octets: number[] = [];
@@ -59,7 +59,8 @@ function parseIpv4(host: string): number[] | undefined {
     if (value > 255) return undefined;
     octets.push(value);
   }
-  return octets;
+  // Four pushes for exactly four parts: the tuple shape is structural.
+  return octets as [number, number, number, number];
 }
 
 function wordsToBytes(words: number[]): number[] {
@@ -81,7 +82,9 @@ function parseIpv6(host: string): number[] | undefined {
   const wordsIn = (parts: string[]): number[] | undefined => {
     const words: number[] = [];
     for (let i = 0; i < parts.length; i += 1) {
-      const part = parts[i];
+      // The loop bound guarantees existence; `?? ''` keeps the empty-string
+      // rejection path identical whether the slot is absent or genuinely empty.
+      const part = parts[i] ?? '';
       if (part === '') return undefined;
       if (part.includes('.')) {
         if (i !== parts.length - 1) return undefined;
@@ -108,7 +111,7 @@ function parseIpv6(host: string): number[] | undefined {
   return wordsToBytes([...headWords, ...new Array(fill).fill(0), ...tailWords]);
 }
 
-function ipv4BlockedReason(octets: number[]): string | undefined {
+function ipv4BlockedReason(octets: [number, number, number, number]): string | undefined {
   const [a, b, c] = octets;
   // Deviation from RFC 6890: loopback stays reachable (local-first).
   if (a === 127) return undefined;
@@ -130,23 +133,23 @@ function ipv4BlockedReason(octets: number[]): string | undefined {
 
 function ipv6BlockedReason(bytes: number[]): string | undefined {
   const first15Zero = bytes.slice(0, 15).every(byte => byte === 0);
-  if (first15Zero && bytes[15] === 1) return undefined; // ::1 loopback
+  if (first15Zero && (bytes[15] ?? 0) === 1) return undefined; // ::1 loopback
   if (bytes.every(byte => byte === 0)) return 'unspecified ::';
   // ::ffff:a.b.c.d — the IPv4-mapped form carries a private v4 verbatim.
-  if (bytes.slice(0, 10).every(byte => byte === 0) && bytes[10] === 0xff && bytes[11] === 0xff) {
-    return ipv4BlockedReason([bytes[12], bytes[13], bytes[14], bytes[15]]);
+  if (bytes.slice(0, 10).every(byte => byte === 0) && (bytes[10] ?? 0) === 0xff && (bytes[11] ?? 0) === 0xff) {
+    return ipv4BlockedReason([bytes[12] ?? 0, bytes[13] ?? 0, bytes[14] ?? 0, bytes[15] ?? 0]);
   }
   // ::a.b.c.d — the deprecated IPv4-compatible form is a second such carrier.
   if (bytes.slice(0, 12).every(byte => byte === 0)) {
-    return ipv4BlockedReason([bytes[12], bytes[13], bytes[14], bytes[15]]);
+    return ipv4BlockedReason([bytes[12] ?? 0, bytes[13] ?? 0, bytes[14] ?? 0, bytes[15] ?? 0]);
   }
   // 64:ff9b::/96 — NAT64 synthesises the embedded v4 on egress.
-  if (bytes[0] === 0x00 && bytes[1] === 0x64 && bytes[2] === 0xff && bytes[3] === 0x9b) {
-    return ipv4BlockedReason([bytes[12], bytes[13], bytes[14], bytes[15]]);
+  if ((bytes[0] ?? 0) === 0x00 && (bytes[1] ?? 0) === 0x64 && (bytes[2] ?? 0) === 0xff && (bytes[3] ?? 0) === 0x9b) {
+    return ipv4BlockedReason([bytes[12] ?? 0, bytes[13] ?? 0, bytes[14] ?? 0, bytes[15] ?? 0]);
   }
-  if ((bytes[0] & 0xfe) === 0xfc) return 'unique-local fc00::/7';
-  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) return 'link-local fe80::/10';
-  if (bytes[0] === 0xff) return 'multicast ff00::/8';
+  if (((bytes[0] ?? 0) & 0xfe) === 0xfc) return 'unique-local fc00::/7';
+  if ((bytes[0] ?? 0) === 0xfe && ((bytes[1] ?? 0) & 0xc0) === 0x80) return 'link-local fe80::/10';
+  if ((bytes[0] ?? 0) === 0xff) return 'multicast ff00::/8';
   return undefined;
 }
 

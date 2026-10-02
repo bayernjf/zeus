@@ -74,7 +74,7 @@ function parseArgs(argv: string[]): ParsedArgs {
   if (!command) throw new CliUsageError('missing command (build | backup | check | restore)');
   const flags = new Map<string, string>();
   for (let i = 0; i < rest.length; i++) {
-    const token = rest[i];
+    const token = rest[i]!; // loop bound guarantees existence
     if (!token.startsWith('--')) throw new CliUsageError(`unexpected argument: ${token}`);
     const eq = token.indexOf('=');
     let name: string;

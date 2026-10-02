@@ -4,7 +4,7 @@ import { format, makeTranslator, resolveLocale, statusLabel } from '../src/tui/f
 
 /** Extract {placeholders} from an ICU-ish template (TUI subset). */
 function placeholders(template: string): string[] {
-  return [...template.matchAll(/\{(\w+)\}/g)].map(match => match[1]).sort();
+  return [...template.matchAll(/\{(\w+)\}/g)].map(match => match[1]!).sort();
 }
 
 describe('TUI i18n contract (design-ui-foundations §5)', () => {

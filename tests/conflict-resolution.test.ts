@@ -27,7 +27,7 @@ function makePort(routes: Record<string, Route>): DispatchPort & { dispatchCount
       const name = req.vassal!;
       const no = (dispatchCount[name] = (dispatchCount[name] ?? 0) + 1);
       const route = routes[name];
-      return typeof route === 'function' ? (route as (r: DispatchRequest, n: number) => DispatchResult)(req, no) : route;
+      return typeof route === 'function' ? (route as (r: DispatchRequest, n: number) => DispatchResult)(req, no) : route!;
     },
     async cancel() {},
   };
@@ -56,8 +56,8 @@ describe('E6.2 OversightDesk intent-conflict intake and decision', () => {
       status: 'needs-driver', createdAt: 't',
     };
 
-    const first = desk.ingestConflict({ intentId: 'intent-1', runId: 'run-1', skill: 'decide', realm: 'personal', conflict: result.conflicts[0] });
-    const second = desk.ingestConflict({ intentId: 'intent-1', runId: 'run-1', skill: 'decide', realm: 'personal', conflict: result.conflicts[0] });
+    const first = desk.ingestConflict({ intentId: 'intent-1', runId: 'run-1', skill: 'decide', realm: 'personal', conflict: result.conflicts[0]! });
+    const second = desk.ingestConflict({ intentId: 'intent-1', runId: 'run-1', skill: 'decide', realm: 'personal', conflict: result.conflicts[0]! });
     expect(second.id).toBe(first.id);
     expect(first).toMatchObject({ kind: 'intent-conflict', options: ['go', 'hold'], status: 'pending' });
     expect(desk.list('pending')).toHaveLength(1);
@@ -93,7 +93,7 @@ describe('E6.2 end-to-end: fan-out split -> desk -> write-back', () => {
     expect(split.status).toBe('needs-driver');
     expect(desk.list('pending')).toHaveLength(1);
 
-    const esc = desk.list('pending')[0];
+    const esc = desk.list('pending')[0]!;
     const decided = desk.decideConflict(esc.id, 'go');
     const resolved = orch.resolveIntent('intent-1', {
       escalationId: decided.id,

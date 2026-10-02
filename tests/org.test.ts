@@ -76,7 +76,7 @@ describe('assignMember', () => {
       skills: ['code-review'],
     });
     expect(d.members[0]).toMatchObject({ agentId: 'agent-a', role: 'member', title: 'Reviewer' });
-    expect(d.members[0].skills).toEqual(['code-review']);
+    expect(d.members[0]!.skills).toEqual(['code-review']);
     expect(d.lead).toBeUndefined();
   });
 
@@ -86,7 +86,7 @@ describe('assignMember', () => {
       role: 'lead',
     });
     expect(d.lead).toBe('agent-b');
-    expect(d.members[0].role).toBe('lead');
+    expect(d.members[0]!.role).toBe('lead');
   });
 
   it('rejects duplicate agents and a second lead', () => {
@@ -142,7 +142,7 @@ describe('org chart', () => {
       lead: 'agent-b',
       headcount: 2,
     });
-    expect(chart[0].members.map(m => m.agentId)).toEqual(['agent-a', 'agent-b']);
+    expect(chart[0]!.members.map(m => m.agentId)).toEqual(['agent-a', 'agent-b']);
   });
 
   it('renders a markdown establishment', () => {
@@ -180,7 +180,7 @@ describe('traceAccountability', () => {
 
   it('does not list a lead again when the lead is the executor', () => {
     const chain = traceAccountability([engineering()], fanOut({ branches: [branch('agent-b')] }));
-    expect(chain.executing[0].role).toBe('lead');
+    expect(chain.executing[0]!.role).toBe('lead');
     expect(chain.leads).toEqual([]);
   });
 

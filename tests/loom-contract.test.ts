@@ -143,7 +143,7 @@ function loomFetch(seen: SeenRequest[], options: { requireAuth?: boolean } = {})
         name: `${skill}-plan`,
         parts: [
           { kind: 'data', data: { mode: 'plan', skill, params } },
-          { kind: 'text', text: PLAN_STEPS[skill].map((step, i) => `${i + 1}. ${step}`).join('\n') },
+          { kind: 'text', text: PLAN_STEPS[skill]!.map((step, i) => `${i + 1}. ${step}`).join('\n') },
         ],
         'x-zeus-report': {
           summary: `${skill}: plan generated for tenant=${params.tenant_id}.`,
@@ -266,7 +266,7 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
     // the request loom's rpc.py expects: user message, data.skill + flat params, runId metadata
     const taskCalls = seen.filter(s => s.url === TASK_URL);
     expect(taskCalls).toHaveLength(1);
-    const call = taskCalls[0];
+    const call = taskCalls[0]!;
     expect(call.method).toBe('tasks/sendSubscribe');
     expect(call.auth).toBe(`Bearer ${TOKEN}`);
     expect(call.accept).toContain('text/event-stream');
@@ -280,7 +280,7 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
     expect(result.task.status.state).toBe('completed');
 
     // plan report with the four v1 contract fields, zero token spend (plan-only)
-    const report = result.task.artifacts[0]['x-zeus-report'];
+    const report = result.task.artifacts[0]!['x-zeus-report'];
     expect(report).toBeDefined();
     expect(report?.summary).toContain('generate-content');
     expect(report?.evidence).toHaveLength(2);
@@ -333,8 +333,8 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
     );
     expect(task.kind).toBe('task');
     expect(task.status.state).toBe('completed');
-    expect(seen[0].method).toBe('tasks/send');
-    expect(seen[0].accept).toBeNull(); // sync call does not negotiate SSE
+    expect(seen[0]!.method).toBe('tasks/send');
+    expect(seen[0]!.accept).toBeNull(); // sync call does not negotiate SSE
   });
 
   it('maps loom JSON-RPC error -32002 when canceling an already-terminal task', async () => {

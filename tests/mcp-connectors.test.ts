@@ -141,7 +141,7 @@ describe('E7 MCP connectors', () => {
     await registry.connect('knowledge', mcpFetch());
     const unmatched = audits.filter(a => a.action === 'boundary-unmatched');
     expect(unmatched).toHaveLength(1);
-    expect(unmatched[0].detail).toContain('fetch_html');
+    expect(unmatched[0]!.detail).toContain('fetch_html');
     // The one that did match stays usable.
     const connected = registry.get('knowledge')!;
     expect(connected.capabilities!.tools).toEqual(['search']);
@@ -289,8 +289,8 @@ describe('A-09 connector minimum privilege is fail-closed', () => {
     const registry = new ConnectorRegistry(now);
     registry.declare(declaration({ permissions: ['mcp:search'] }));
     const tampered = registry.exportState();
-    tampered[0].status = 'connected';
-    tampered[0].capabilities = {
+    tampered[0]!.status = 'connected';
+    tampered[0]!.capabilities = {
       tools: ['search', 'danger', 'exfiltrate'],
       resources: ['docs', 'payroll'],
       prompts: ['brief', 'exfiltrate'],

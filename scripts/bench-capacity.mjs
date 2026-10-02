@@ -93,7 +93,7 @@ function percentile(sorted, p) {
   if (sorted.length === 0) return 0;
   // nearest-rank
   const rank = Math.max(1, Math.ceil((p / 100) * sorted.length));
-  return sorted[rank - 1];
+  return sorted[rank - 1] ?? 0;
 }
 
 /**
@@ -104,10 +104,10 @@ function stats(samples) {
   const sorted = [...samples].sort((a, b) => a - b);
   const avg = sorted.reduce((sum, n) => sum + n, 0) / sorted.length;
   return {
-    min: round(sorted[0]),
+    min: round(sorted[0] ?? 0),
     p50: round(percentile(sorted, 50)),
     p95: round(percentile(sorted, 95)),
-    max: round(sorted[sorted.length - 1]),
+    max: round(sorted[sorted.length - 1] ?? 0),
     avg: round(avg),
   };
 }
@@ -441,7 +441,7 @@ async function benchConcurrentIntents(port) {
  * @param {number} port
  */
 async function benchConcurrencyCap(port) {
-  const intents = concurrencyLevels[concurrencyLevels.length - 1];
+  const intents = concurrencyLevels[concurrencyLevels.length - 1] ?? 1;
   const totalBranches = intents * PER_INTENT;
   /** @type {any[]} */
   const rows = [];

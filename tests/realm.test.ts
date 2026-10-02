@@ -145,8 +145,8 @@ describe('FsRealmStore P0', () => {
 
     const secret = await store.search(manifest.realmId, { text: 'SECRET' });
     expect(secret.map(h => h.itemId)).toEqual(['notes/diary.md']);
-    expect(secret[0].snippet).toContain('secret project zeus');
-    expect(secret[0].tags).toEqual([]);
+    expect(secret[0]!.snippet).toContain('secret project zeus');
+    expect(secret[0]!.tags).toEqual([]);
 
     const both = await store.search(manifest.realmId, { text: 'secret zeus' });
     expect(both).toHaveLength(1);

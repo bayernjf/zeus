@@ -81,7 +81,7 @@ describe('#13 a verification pass mounts the realm read-only', () => {
     expect(report.recoverable).toBe(true);
     // The map is a read-only view of the treasure: verifying it must not mount
     // the realm writable as a side effect.
-    expect(verifier.connections()[0].readOnly).toBe(true);
+    expect(verifier.connections()[0]!.readOnly).toBe(true);
   });
 });
 

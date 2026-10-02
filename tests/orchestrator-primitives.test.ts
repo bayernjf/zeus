@@ -36,8 +36,8 @@ describe('mergeBranches', () => {
     const merged = mergeBranches([branch('loom'), branch('atlas')]);
     expect(merged.map(e => e.source.vassal)).toEqual(['loom', 'loom', 'atlas', 'atlas']);
     expect(merged.map(e => e.event.kind)).toEqual(['status-update', 'status-update', 'status-update', 'status-update']);
-    expect(merged[0].source).toEqual({ vassal: 'loom', taskId: 'loom-task', runId: 'run:loom' });
-    expect(merged[2].source.taskId).toBe('atlas-task');
+    expect(merged[0]!.source).toEqual({ vassal: 'loom', taskId: 'loom-task', runId: 'run:loom' });
+    expect(merged[2]!.source.taskId).toBe('atlas-task');
   });
 
   it('returns an empty stream for no branches', () => {
@@ -49,7 +49,7 @@ describe('mergeBranches', () => {
       branch('loom', { ok: false, reason: 'boom', events: [statusEvent('loom', 'working')] }),
     ]);
     expect(merged).toHaveLength(1);
-    expect(merged[0].source.vassal).toBe('loom');
+    expect(merged[0]!.source.vassal).toBe('loom');
   });
 });
 
@@ -158,7 +158,7 @@ describe('detectConflicts', () => {
     const split = aggregate([pos('a', 'go'), pos('b', 'stop')]); // tie
     const conflicts = detectConflicts([pos('a', 'go'), pos('b', 'stop')], split);
     expect(conflicts).toHaveLength(1);
-    expect(conflicts[0].stances).toEqual([
+    expect(conflicts[0]!.stances).toEqual([
       { stance: 'go', vassals: ['a'] },
       { stance: 'stop', vassals: ['b'] },
     ]);

@@ -160,8 +160,8 @@ describe('E3.5 FsRealmStore.write (personal realm)', () => {
       store.write(manifest.realmId, { itemId: 'bin.dat', data: 'x' }),
     ).rejects.toBeInstanceOf(UnsupportedWriteError);
     expect(audit).toHaveLength(1);
-    expect(audit[0]).toMatchObject({ realmId: manifest.realmId, itemId: 'notes/a.md' });
-    expect(audit[0].bytes).toBeGreaterThan(0);
+    expect(audit[0]!).toMatchObject({ realmId: manifest.realmId, itemId: 'notes/a.md' });
+    expect(audit[0]!.bytes).toBeGreaterThan(0);
   });
 
   it('leaves no temp files behind after an atomic write', async () => {

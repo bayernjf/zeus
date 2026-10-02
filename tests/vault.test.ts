@@ -58,8 +58,8 @@ function flipBase64(value: string): string {
 describe('buildVault: map references, never content', () => {
   it('records one sorted mark per item with correct per-item digest', () => {
     expect(map.marks.map(m => m.itemId)).toEqual(['a.md', 'sub/b.txt']);
-    expect(map.marks[0].digest).toBe(sha256Hex(SECRET_A));
-    expect(map.marks[1].digest).toBe(sha256Hex(SECRET_B));
+    expect(map.marks[0]!.digest).toBe(sha256Hex(SECRET_A));
+    expect(map.marks[1]!.digest).toBe(sha256Hex(SECRET_B));
     expect(map.contentDigest).toBe(
       sha256Hex(
         ['a.md', 'sub/b.txt']
@@ -117,7 +117,7 @@ describe('L0 in-place restore and drift detection', () => {
     await writeFile(join(root, 'a.md'), '# Alpha CHANGED\n');
     const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
     expect(report.changed).toHaveLength(1);
-    expect(report.changed[0].itemId).toBe('a.md');
+    expect(report.changed[0]!.itemId).toBe('a.md');
     expect(report.recoverable).toBe(false);
     expect(report.contentDigestMatch).toBe(false);
   });

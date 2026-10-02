@@ -42,7 +42,7 @@ function makePort(routes: Record<string, Route>) {
     cancelCalls,
     async dispatch(req) {
       const route = routes[req.vassal!];
-      return typeof route === 'function' ? route(req) : route;
+      return typeof route === 'function' ? route(req) : route!;
     },
     async cancel(vassal, taskId) {
       cancelCalls.push([vassal, taskId]);

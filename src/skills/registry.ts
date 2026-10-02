@@ -233,7 +233,7 @@ export class SkillRegistry {
     const issues = validatePermissionClaims(narrowed);
     const current = target.hardening?.permissions ?? target.permissions ?? [];
     for (const claim of narrowed) {
-      const scope = claim.split(':')[0];
+      const scope = claim.split(':')[0]!;
       if (!current.includes(claim) && !current.includes(scope)) {
         issues.push(`hardening cannot grant ${claim}; current effective claims: ${current.join(', ')}`);
       }
@@ -257,7 +257,8 @@ export class SkillRegistry {
       if (!target) throw new SkillNotFoundError(`skill ${id}@${version} not found`);
       return target;
     }
-    return [...all].sort((a, b) => compareVersions(b.version, a.version))[0];
+    // `all` is non-empty (guard above), so the sorted head always exists.
+    return [...all].sort((a, b) => compareVersions(b.version, a.version))[0]!;
   }
 
   /**

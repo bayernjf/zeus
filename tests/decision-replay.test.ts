@@ -53,7 +53,7 @@ function makePort(routes: Record<string, DispatchResult | ((req: DispatchRequest
   return {
     async dispatch(req) {
       const route = routes[req.vassal!];
-      return typeof route === 'function' ? route(req) : route;
+      return typeof route === 'function' ? route(req) : route!;
     },
     async cancel() {},
   };
@@ -107,8 +107,8 @@ describe('E1.6 offline decision replay', () => {
       const events = replay.timeline.filter(s => s.kind === 'branch-event' && s.vassal === vassal);
       const finished = replay.timeline.find(s => s.kind === 'branch-finished' && s.vassal === vassal)!;
       expect(events.length).toBe(1);
-      expect(events[0].index).toBeGreaterThan(dispatched);
-      expect(finished.index).toBeGreaterThan(events[0].index);
+      expect(events[0]!.index).toBeGreaterThan(dispatched);
+      expect(finished.index).toBeGreaterThan(events[0]!.index);
     }
     // aggregation is presented after positions, before the terminal step
     const positionsIdx = kinds.indexOf('positions-extracted');
@@ -167,9 +167,9 @@ describe('E1.6 offline decision replay', () => {
     expect(backendIdx).toBeGreaterThan(conflictIdx);
     expect(driverIdx).toBeGreaterThan(backendIdx);
 
-    const backendStep = replay.timeline[backendIdx];
+    const backendStep = replay.timeline[backendIdx]!;
     expect(backendStep.detail).toMatchObject({ concluded: false, backend: 'decision-model', model: 'jev', confidence: 0.5 });
-    const driverStep = replay.timeline[driverIdx];
+    const driverStep = replay.timeline[driverIdx]!;
     expect(driverStep.detail).toMatchObject({ escalationId: 'esc-1', stance: 'go' });
     expect(replay.backendArbitration?.model).toBe('jev');
     expect(replay.driverResolution?.escalationId).toBe('esc-1');
@@ -252,9 +252,9 @@ describe('E1.6 offline decision replay', () => {
 
     const replays = replaySnapshot(snapshot);
     expect(replays.map(r => r.intentId)).toEqual(['i-1', 'i-2']);
-    expect(replays[0].input).toEqual({ n: 1 });
-    expect(replays[1].input).toEqual({ n: 2 });
-    expect(replays[1].status).toBe('needs-driver');
+    expect(replays[0]!.input).toEqual({ n: 1 });
+    expect(replays[1]!.input).toEqual({ n: 2 });
+    expect(replays[1]!.status).toBe('needs-driver');
 
     // replayDecisions without requests still works but carries no inputs
     const noInputs = replayDecisions(snapshot.intents);

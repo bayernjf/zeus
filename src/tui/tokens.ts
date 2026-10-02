@@ -87,7 +87,7 @@ export type StatusToken = { token: SemanticColor; known: boolean };
 /** Resolve a raw status enum to its semantic token. Unknown -> fallback + known:false. */
 export function statusToken(status: string): StatusToken {
   if (Object.prototype.hasOwnProperty.call(STATUS_TOKEN, status)) {
-    return { token: STATUS_TOKEN[status], known: true };
+    return { token: STATUS_TOKEN[status]!, known: true };
   }
   return { token: 'unknown', known: false };
 }
@@ -95,7 +95,7 @@ export function statusToken(status: string): StatusToken {
 /** Resolve a raw audit decision to its semantic token. Unknown -> fallback. */
 export function auditToken(decision: string): StatusToken {
   if (Object.prototype.hasOwnProperty.call(AUDIT_TOKEN, decision)) {
-    return { token: AUDIT_TOKEN[decision], known: true };
+    return { token: AUDIT_TOKEN[decision]!, known: true };
   }
   return { token: 'unknown', known: false };
 }

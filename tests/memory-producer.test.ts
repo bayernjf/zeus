@@ -74,7 +74,7 @@ describe('branchVerdictClaims (the claim contract)', () => {
     // A per-intent subject would never collide and would make the whole layer
     // write-once-read-never; assert the derived key does not contain the intent.
     const events = branchVerdictClaims(otherRun, request(), claimOptions);
-    expect((events[0].content as { subject: string }).subject).toBe(same);
+    expect((events[0]!.content as { subject: string }).subject).toBe(same);
   });
 
   it('honours an explicit subject and predicate from the request', () => {
@@ -108,10 +108,10 @@ describe('branchVerdictClaims (the claim contract)', () => {
       claimOptions,
     );
     expect(events).toHaveLength(2);
-    const truncated = (events[0].content as { object: string }).object;
+    const truncated = (events[0]!.content as { object: string }).object;
     expect(truncated.length).toBe(MAX_STANCE_CHARS);
     expect(truncated.endsWith('…')).toBe(true);
-    expect((events[1].content as { object: string }).object).toBe('typescript');
+    expect((events[1]!.content as { object: string }).object).toBe('typescript');
   });
 
   it('produces nothing for an intent with no stances, so an empty fan-out cannot fake a fact source', () => {
@@ -125,10 +125,10 @@ describe('branchVerdictClaims (the claim contract)', () => {
     const enterprise = branchVerdictClaims(result, req, { realmId: 'realm-b', occurredAt: '2026-09-27T00:00:00.000Z' });
     // Same run, same vassal, same stance - but a different realm is a different
     // claim, or the second realm's event would be dropped by dedupe.
-    expect(personal[0].eventId).not.toBe(enterprise[0].eventId);
+    expect(personal[0]!.eventId).not.toBe(enterprise[0]!.eventId);
     // Within one realm the id is still stable, so a replay stays idempotent.
     const replay = branchVerdictClaims(result, req, { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' });
-    expect(replay[0].eventId).toBe(personal[0].eventId);
+    expect(replay[0]!.eventId).toBe(personal[0]!.eventId);
   });
 });
 
@@ -154,7 +154,7 @@ describe('runtime producer (bootKernel, end to end)', () => {
   function fetchServing(stances: Record<string, string>): typeof fetch {
     return (async (input: RequestInfo | URL) => {
       const url = String(input);
-      const name = url.split('/')[3];
+      const name = url.split('/')[3]!; // the seeded URL shape fixes the segment index
       if (url.includes('/api/a2a/agent-card')) {
         return new Response(JSON.stringify(cardFor(name)), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
@@ -181,7 +181,7 @@ describe('runtime producer (bootKernel, end to end)', () => {
       realmRoots: [dir],
       dispatchAudit: entry => audit.push({ ...entry }),
     });
-    const realmId = kernel.realmStore!.connections()[0].realmId;
+    const realmId = kernel.realmStore!.connections()[0]!.realmId;
     return { kernel, realmId };
   }
 
@@ -200,8 +200,8 @@ describe('runtime producer (bootKernel, end to end)', () => {
     // two authors agreeing produce ONE fact carrying both provenances.
     const facts = kernel.memoryStore!.facts(realmId, realmId);
     expect(facts).toHaveLength(1);
-    expect(facts[0].provenance).toHaveLength(2);
-    expect(facts[0].subject).toBe('pr-helper');
+    expect(facts[0]!.provenance).toHaveLength(2);
+    expect(facts[0]!.subject).toBe('pr-helper');
   });
 
   it('disagreement between authors becomes a memory dispute on the desk', async () => {
@@ -213,7 +213,7 @@ describe('runtime producer (bootKernel, end to end)', () => {
     });
     const disputes = kernel.oversight.list('pending', 'memory-dispute');
     expect(disputes).toHaveLength(1);
-    expect(disputes[0].conflictingFacts?.length ?? 0).toBeGreaterThan(0);
+    expect(disputes[0]!.conflictingFacts?.length ?? 0).toBeGreaterThan(0);
   });
 
   it('drops claims for a realm that is no longer mounted, and says so on the audit spine', async () => {
@@ -227,7 +227,7 @@ describe('runtime producer (bootKernel, end to end)', () => {
     expect(kernel.memoryStore!.exportState().events).toHaveLength(0);
     const skipped = audit.filter(entry => entry.decision === 'memory-claim-skipped');
     expect(skipped).toHaveLength(1);
-    expect(String(skipped[0].detail)).toContain('realm-never-mounted');
+    expect(String(skipped[0]!.detail)).toContain('realm-never-mounted');
   });
 
   it('an intent that named no realm stays out of memory, so no claim lands without an owner', async () => {

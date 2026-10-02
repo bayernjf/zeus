@@ -94,7 +94,7 @@ describe('SkillRegistry.registerFromCard', () => {
     const registry = new SkillRegistry(fixedNow);
     registry.registerFromCard(card('pr-helper', [{ id: 's', name: 's', description: '', tags: [] }]));
     registry.register({ id: 's', name: 's', description: '', version: '1.0.0', providedBy: ['loom'], tags: [] });
-    expect(registry.resolveTeam(['s']).slots[0].providers).toEqual(['loom']);
+    expect(registry.resolveTeam(['s']).slots[0]!.providers).toEqual(['loom']);
   });
 });
 

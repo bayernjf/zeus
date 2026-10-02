@@ -26,7 +26,7 @@ type Route = DispatchResult | ((req: DispatchRequest) => Promise<DispatchResult>
 function makePort(routes: Record<string, Route>): DispatchPort {
   return {
     async dispatch(req) {
-      const route = routes[req.vassal!];
+      const route = routes[req.vassal!]!; // test routes cover every dispatched vassal
       return typeof route === 'function' ? route(req) : route;
     },
     async cancel() {},
@@ -203,7 +203,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
     const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
     expect(result.backendArbitration?.concluded).toBe(true);
     expect(orch.getIntent('X')?.backendArbitration?.concluded).toBe(true);
-    expect(orch.exportState().intents[0].backendArbitration?.model).toBe('mock-jev');
+    expect(orch.exportState().intents[0]!.backendArbitration?.model).toBe('mock-jev');
   });
 
   it('arbitrates again after resumeBranch recomputes a split', async () => {

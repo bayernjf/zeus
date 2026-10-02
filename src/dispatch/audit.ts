@@ -189,7 +189,8 @@ export function readAuditLog(
     for (let i = 0; i < lines.length; i += 1) {
       if (droppedFirst && i === 0) continue;
       const line = lines[i];
-      const at = offset + lineStarts[i];
+      if (line === undefined) continue; // loop bound guarantees existence; defensive skip
+      const at = offset + (lineStarts[i] ?? 0);
       const text = line.trim();
       if (text === '') continue;
       let parsed: unknown;

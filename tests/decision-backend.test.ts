@@ -20,14 +20,14 @@ describe('Jev decision-model adapter', () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       calls.push(init!);
       const body = JSON.parse(String(init?.body));
-      const name = Object.keys(body.questions)[0];
-      const type = body.questions[name].type;
+      const name = Object.keys(body.questions)[0]!;
+      const type = body.questions[name]!.type;
       const answers: Record<string, unknown> = {
         noul: { probability: 0.82, confidence: 0.91 },
         choice: { choice: 'go', probabilities: { go: 0.7, hold: 0.3 }, confidence: 0.88 },
         score: { score: 72, level: 'high', distribution: { low: 0.1, mid: 0.2, high: 0.7 }, confidence: 0.86 },
       };
-      return jsonResponse(200, { answers: { [name]: answers[type] } });
+      return jsonResponse(200, { answers: { [name]: answers[type!] } });
     });
     const backend = createJevBackend({
       baseUrl: 'https://jev.example/v1', apiKey: 'k', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow,
@@ -48,11 +48,11 @@ describe('Jev decision-model adapter', () => {
     expect(calls).toHaveLength(3);
     // output is free for Jev: cost carries input tokens and zero output tokens
     expect(traces).toHaveLength(3);
-    expect(traces[0].backend).toBe('decision-model');
-    expect(traces[0].model).toBe('jev-latest');
-    expect(traces[0].cost?.outputTokens).toBe(0);
-    expect(traces[0].cost?.inputTokens).toBeGreaterThan(0);
-    expect(traces[0].cost?.cents).toBeGreaterThan(0);
+    expect(traces[0]!.backend).toBe('decision-model');
+    expect(traces[0]!.model).toBe('jev-latest');
+    expect(traces[0]!.cost?.outputTokens).toBe(0);
+    expect(traces[0]!.cost?.inputTokens).toBeGreaterThan(0);
+    expect(traces[0]!.cost?.cents).toBeGreaterThan(0);
   });
 
   it('folds auth/unavailable/timeout status and out-of-band choices into DecisionBackendFailure', async () => {
@@ -102,10 +102,10 @@ describe('LLM adapter (slow layer)', () => {
     const result = await backend.choice({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', options: ['go', 'hold'] });
     expect(result.choice).toBe('go');
     expect(result.calibrated).toBe(false);
-    expect(traces[0].backend).toBe('llm');
-    expect(traces[0].cost).toMatchObject({ inputTokens: 100, outputTokens: 40 });
+    expect(traces[0]!.backend).toBe('llm');
+    expect(traces[0]!.cost).toMatchObject({ inputTokens: 100, outputTokens: 40 });
     // (100/1M*$2 + 40/1M*$8) * 100 cents
-    expect(traces[0].cost?.cents).toBeCloseTo(0.052, 5);
+    expect(traces[0]!.cost?.cents).toBeCloseTo(0.052, 5);
   });
 
   it('extracts JSON from code fences and folds unparseable output to invalid', async () => {

@@ -21,8 +21,8 @@ describe('audit sinks', () => {
 
       const lines = readFileSync(path, 'utf8').trim().split('\n');
       expect(lines).toHaveLength(2);
-      expect(JSON.parse(lines[0])).toMatchObject({ decision: 'dispatched', runId: 'run-1' });
-      expect(JSON.parse(lines[1])).toMatchObject({ decision: 'vassal-revoked', vassal: 'pr-helper', ts: '2026-09-21T11:00:00.000Z' });
+      expect(JSON.parse(lines[0]!)).toMatchObject({ decision: 'dispatched', runId: 'run-1' });
+      expect(JSON.parse(lines[1]!)).toMatchObject({ decision: 'vassal-revoked', vassal: 'pr-helper', ts: '2026-09-21T11:00:00.000Z' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -155,20 +155,20 @@ describe('jsonlAuditSink disk ceiling', () => {
 
     // the newest records survived in the active file...
     const tail = readAuditLog(path);
-    expect(tail[tail.length - 1].ts).toBe('t039');
+    expect(tail[tail.length - 1]!.ts).toBe('t039');
     // ...the earliest ones left the active file...
     expect(tail.some(e => e.ts === 't000')).toBe(false);
     // ...and with keep=2 the oldest generation is gone entirely: the ceiling is
     // a real bound on disk, not just a rollover that keeps everything forever.
     const gen1 = readAuditLog(`${path}.1`);
     const gen2 = readAuditLog(`${path}.2`);
-    expect(gen2[0].ts < gen1[0].ts).toBe(true);
-    expect(gen1[gen1.length - 1].ts < tail[0].ts).toBe(true);
+    expect(gen2[0]!.ts < gen1[0]!.ts).toBe(true);
+    expect(gen1[gen1.length - 1]!.ts < tail[0]!.ts).toBe(true);
     const everything = [...gen2, ...gen1, ...tail].map(e => e.ts);
     expect(everything).not.toContain('t000');
     expect(everything).toContain('t039');
     // the first retained record is later than the very first written one
-    expect(gen2[0].ts > 't000').toBe(true);
+    expect(gen2[0]!.ts > 't000').toBe(true);
   });
 
   it('does not rotate when the ceiling is lifted', () => {
@@ -247,7 +247,7 @@ describe('readAuditLog', () => {
 
       // Start the window 5 bytes into the second line: that line is truncated by
       // the read, so it is dropped rather than reported as corruption.
-      const offset = Buffer.byteLength(lines[0]) + 1 + 5;
+      const offset = Buffer.byteLength(lines[0]!) + 1 + 5;
       const tail = readAuditLog(path, {}, { readBytes: Buffer.byteLength(content) - offset });
       expect(tail.map(e => e.ts)).toEqual(['new']);
     } finally {

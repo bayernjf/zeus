@@ -143,7 +143,7 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
   it('rejects an edited payload with the digest reason, not a signature reason', async () => {
     const { envelope, envelopePath, keyPath } = await publish('tampered');
     const edited = structuredClone(envelope);
-    edited.snapshot.entries[0].name = 'someone-else';
+    edited.snapshot.entries[0]!.name = 'someone-else';
     // Recompute the digest so only the signature layer could notice, then drop the
     // digest edit too: this proves the binding check is the one that fires.
     writeFileSync(envelopePath, JSON.stringify(edited));
@@ -155,7 +155,7 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
   it('rejects when the signature does not match the re-serialised content', async () => {
     const { envelope, envelopePath, signer } = await publish('reSigned');
     const edited = structuredClone(envelope);
-    edited.snapshot.entries[0].description = 'rewritten';
+    edited.snapshot.entries[0]!.description = 'rewritten';
     edited.seal.snapshotDigest = canonicalDigest(edited.snapshot);
     // Re-signing with the same key still needs a valid signature over the new
     // bytes; drop the signature to stand in for an attacker who cannot forge it.

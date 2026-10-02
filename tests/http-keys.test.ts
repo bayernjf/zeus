@@ -77,7 +77,7 @@ describe('root public key publication (design-fealty-signing §5.1)', () => {
     // The claim under test is "what this endpoint publishes is the signing key",
     // so the check is the one a verifier performs: load the published PEM and
     // verify the published roster with it.
-    const verifier = new Ed25519Verifier([[body.keys[0].kid, createPublicKey(body.keys[0].spkiPem)]]);
+    const verifier = new Ed25519Verifier([[body.keys[0]!.kid, createPublicKey(body.keys[0]!.spkiPem)]]);
     const result = await verifySignedSnapshot(envelope.json(), verifier);
     expect(result.ok).toBe(true);
   });
@@ -90,7 +90,7 @@ describe('root public key publication (design-fealty-signing §5.1)', () => {
       seal: { sig: string };
     };
     const resealed = { ...envelope, seal: { ...envelope.seal, sig: await impostor.sign('{}') } };
-    const verifier = new Ed25519Verifier([[body.keys[0].kid, createPublicKey(body.keys[0].spkiPem)]]);
+    const verifier = new Ed25519Verifier([[body.keys[0]!.kid, createPublicKey(body.keys[0]!.spkiPem)]]);
     const result = await verifySignedSnapshot(resealed, verifier);
     expect(result.ok).toBe(false);
     // §8.1-6: the point is that a *foreign key* is caught, so the rejection must
@@ -102,7 +102,7 @@ describe('root public key publication (design-fealty-signing §5.1)', () => {
   it('reports the JWK coordinate and both fingerprints consistently across encodings', async () => {
     const signer = new Ed25519MemorySigner('zeus-rsk-encodings');
     const { body } = await keys(await mount(signer));
-    const key = body.keys[0];
+    const key = body.keys[0]!;
     const fromPem = createPublicKey(key.spkiPem);
 
     expect(fromPem.export({ format: 'jwk' }).x).toBe(key.x);

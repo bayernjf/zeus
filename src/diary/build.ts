@@ -46,7 +46,7 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
   const tz = options.timeZone ?? 'UTC';
   const maxJson = options.maxJsonLength ?? 500;
 
-  const realmId = events[0].realmId;
+  const realmId = events[0]!.realmId; // guarded by the empty-return above
   if (events.some(e => e.realmId !== realmId)) {
     throw new DiaryBoundaryError('Diary cannot mix events from multiple realms');
   }
@@ -89,8 +89,8 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
       a.factId.localeCompare(b.factId),
     );
 
-    const windowStart = sorted[0].occurredAt;
-    const windowEnd = sorted[sorted.length - 1].occurredAt;
+    const windowStart = sorted[0]!.occurredAt;
+    const windowEnd = sorted[sorted.length - 1]!.occurredAt;
     const id = `diary:${realmId}:${date}`;
     const provenance = uniqueSorted([
       ...sorted.map(e => e.eventId),
