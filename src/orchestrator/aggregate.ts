@@ -58,7 +58,7 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
 
   if (rule.kind === 'unanimous') {
     if (distinct.length === 1) {
-      return { ...base, conclusion: distinct[0], reason: `unanimous: all ${positions.length} vassal(s) hold "${distinct[0]}"` };
+      return { ...base, conclusion: distinct[0]!, reason: `unanimous: all ${positions.length} vassal(s) hold "${distinct[0]}"` };
     }
     return { ...base, reason: `not unanimous: ${distinct.length} distinct stances among ${positions.length} vassal(s)` };
   }
@@ -66,7 +66,8 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
   if (rule.kind === 'majority') {
     const tally = distinct.map(stance => ({ stance, count: groups.get(stance)!.length }));
     tally.sort((a, b) => b.count - a.count || a.stance.localeCompare(b.stance));
-    const top = tally[0];
+    // positions.length > 0 is already returned above, so the tally is never empty.
+    const top = tally[0]!;
     const tied = tally.filter(item => item.count === top.count);
     const total = positions.length;
     if (tied.length === 1 && top.count > total / 2) {
@@ -88,7 +89,7 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
     weight: groups.get(stance)!.reduce((sum, p) => sum + (p.weight ?? 1), 0),
   }));
   tally.sort((a, b) => b.weight - a.weight || a.stance.localeCompare(b.stance));
-  const top = tally[0];
+  const top = tally[0]!;
   const tied = tally.filter(item => item.weight === top.weight);
   if (tied.length === 1 && totalWeight > 0 && top.weight / totalWeight >= threshold) {
     return {

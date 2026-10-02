@@ -235,17 +235,18 @@ export class ConcurrencyMetrics {
 
 export function percentile(sortedAsc: number[], p: number): number {
   if (sortedAsc.length === 0) return 0;
-  if (sortedAsc.length === 1) return sortedAsc[0];
+  if (sortedAsc.length === 1) return sortedAsc[0]!;
   const index = Math.ceil((p / 100) * sortedAsc.length) - 1;
-  return sortedAsc[Math.max(0, Math.min(sortedAsc.length - 1, index))];
+  return sortedAsc[Math.max(0, Math.min(sortedAsc.length - 1, index))]!;
 }
 
 function latencyStats(sortedAsc: number[]): LatencyStats {
+  // Callers guard non-empty before invoking (latency: latencies.length ? ... : null).
   const sum = sortedAsc.reduce((a, b) => a + b, 0);
   return {
     count: sortedAsc.length,
-    minMs: sortedAsc[0],
-    maxMs: sortedAsc[sortedAsc.length - 1],
+    minMs: sortedAsc[0]!,
+    maxMs: sortedAsc[sortedAsc.length - 1]!,
     avgMs: sum / sortedAsc.length,
     p50Ms: percentile(sortedAsc, 50),
     p95Ms: percentile(sortedAsc, 95),

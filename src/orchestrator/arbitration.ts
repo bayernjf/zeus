@@ -27,7 +27,8 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
   const { result, backend, now } = input;
   if (result.status !== 'needs-driver' || result.conflicts.length === 0) return result;
 
-  const conflict = result.conflicts[0];
+  // Non-empty conflicts is guaranteed by the guard above.
+  const conflict = result.conflicts[0]!;
   const outcome = await arbitrateSplit({
     backend,
     stances: conflict.stances,
