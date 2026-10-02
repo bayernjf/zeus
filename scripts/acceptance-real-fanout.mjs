@@ -117,7 +117,7 @@ if (!INTERNAL_TOKEN) usageExit('ZEUS_INTERNAL_TOKEN is required: this acceptance
 if (!CARD_URL) usageExit('CARD_URL is required: the agent-card URL of the real execution agent');
 for (const [name, value] of [['KERNEL_URL', KERNEL_URL], ['CARD_URL', CARD_URL], ...(TASK_URL ? [['TASK_URL', TASK_URL]] : [])]) {
   try {
-    new URL(value);
+    new URL(value ?? '');
   } catch {
     usageExit(`${name} is not a valid URL: ${value}`);
   }
@@ -184,14 +184,14 @@ async function main() {
     return finish();
   }
   record('the target Zeus answers /healthz', health.status === 200 && health.json?.status === 'ok', `status=${health.status} ${clip(health.text)}`);
-  if (!steps[0].ok) return finish();
+  if (!steps[0]?.ok) return finish();
 
   // 2. The auth boundary is real: the driver face must refuse an anonymous call.
   const anonymous = await call('GET', '/api/roster');
   record('the internal roster refuses an unauthenticated call', anonymous.status === 401, `status=${anonymous.status}`);
   const authorized = await call('GET', '/api/roster', { auth: true });
   record('the internal roster answers with the bearer token', authorized.status === 200 && Array.isArray(authorized.json?.snapshot?.entries), `status=${authorized.status}`);
-  if (!steps[2].ok) return finish();
+  if (!steps[2]?.ok) return finish();
 
   // 3. Which root key seals this deployment, and its pinning value.
   const keys = await call('GET', '/api/roster/keys');

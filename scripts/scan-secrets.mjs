@@ -12,6 +12,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
+/** @type {Array<[RegExp, string]>} */
 const PATTERNS = [
   [/-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/, 'private key block'],
   [/ghp_[A-Za-z0-9]{36}/, 'GitHub personal access token'],

@@ -493,7 +493,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
     result.disputes.forEach((dispute, i) => {
       oversight.ingestMemoryDispute({
-        id: result.escalations[i],
+        id: result.escalations[i]!,
         runId: event.runId,
         realm,
         ...(event.realmId ? { realmId: event.realmId } : {}),

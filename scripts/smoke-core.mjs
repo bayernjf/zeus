@@ -126,14 +126,14 @@ const agentServer = createServer((req, res) => {
     res.writeHead(404).end('not found');
     return;
   }
-  const a = agent(match[1]);
+  const a = agent(match[1] ?? '');
   if (req.method === 'GET') {
     const servingPort = boundPort(agentServer);
     if (servingPort === undefined) {
       res.writeHead(500).end('agent server has no bound port');
       return;
     }
-    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(card(match[1], servingPort)));
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(card(match[1] ?? '', servingPort)));
     return;
   }
   let raw = '';

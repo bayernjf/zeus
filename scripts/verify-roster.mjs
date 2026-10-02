@@ -270,5 +270,5 @@ if (uncovered.length) {
   process.exit(1);
 }
 
-console.log(`VERIFIED  ${pairs.length === 1 ? `keyId=${pairs[0][0]}` : `${pairs.length} keys offered`}: signature, digest binding, freshness and per-entry attestations all check out`);
+console.log(`VERIFIED  ${pairs.length === 1 ? `keyId=${pairs[0]?.[0] ?? 'unknown'}` : `${pairs.length} keys offered`}: signature, digest binding, freshness and per-entry attestations all check out`);
 process.exit(0);
