@@ -377,6 +377,21 @@ try {
   const forwarded = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record('the kernel itself reads the realm and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
 
+  // design-realm §3.1 on a real process: the same read-task-scope vassal refuses
+  // self-asserted hits — the kernel can verify content it resolved itself and
+  // nothing the caller claims — and the refusal makes no outbound request.
+  const requestsBefore = ['a1', 'a2', 'a3'].map(name => agent(name).requests);
+  const selfAsserted = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, realmHits: [{ itemId: 'claim-1', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'claimed context' }], params: { subject: 'smoke-target', predicate: 'verdict' } });
+  const refusedReasons = (selfAsserted.json?.branches ?? []).map(/** @param {any} branch */ branch => String(branch.reason ?? ''));
+  record(
+    'self-asserted realm hits are refused for a read-task-scope vassal without an outbound request',
+    selfAsserted.json?.status === 'failed'
+      && (selfAsserted.json?.branches?.length ?? 0) === 3
+      && refusedReasons.every(reason => reason.includes('dataPolicy'))
+      && ['a1', 'a2', 'a3'].every((name, i) => agent(name).requests === requestsBefore[i]),
+    `status=${String(selfAsserted.json?.status)} reasons=${refusedReasons.map(r => r.split(' ').slice(0, 4).join(' ')).join(' | ') || '(none)'} requests=${['a1','a2','a3'].map(name => agent(name).requests).join(',')}`
+  );
+
   // The DAG driver face is reachable only if serve.ts actually injects dagRunner:
   // without it every call answers 503 "not assembled", and neither a route-presence
   // grep nor an inject-level test can tell those two apart (deferred #23 was called
