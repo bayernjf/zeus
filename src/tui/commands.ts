@@ -33,7 +33,7 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
     if (!grantMatch) return { error: 'grant-needs-args' };
     const [, indexStr, subject, accessTokenRaw, issuerRaw] = grantMatch;
     const realmIndex = Number(indexStr);
-    const accessToken = accessTokenRaw.toLowerCase();
+    const accessToken = accessTokenRaw!.toLowerCase(); // regex guarantees \S+
     if (!Number.isInteger(realmIndex) || realmIndex < 1) return { error: 'bad-index' };
     const access = accessToken === 'r' || accessToken === 'read' ? 'read' : accessToken === 'w' || accessToken === 'write' ? 'write' : null;
     if (access === null) return { error: 'grant-bad-access' };

@@ -29,7 +29,7 @@ type CliArgs = {
 export function parseArgs(argv: string[]): CliArgs {
   const flags = new Map<string, string>();
   for (let i = 0; i < argv.length; i += 1) {
-    const current = argv[i];
+    const current = argv[i]!; // loop bound guarantees existence
     if (current.startsWith('--')) {
       const key = current.slice(2);
       const next = argv[i + 1];

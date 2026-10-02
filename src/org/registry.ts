@@ -33,21 +33,21 @@ export class OrgRegistry {
 
   assignMember(departmentId: string, input: AssignMemberInput): Department {
     const idx = this.indexOf(departmentId);
-    const next = assignMember(this.departments[idx], input, this.now().toISOString());
+    const next = assignMember(this.departments[idx]!, input, this.now().toISOString());
     this.departments[idx] = next;
     return structuredClone(next);
   }
 
   removeMember(departmentId: string, agentId: string): Department {
     const idx = this.indexOf(departmentId);
-    const next = removeMember(this.departments[idx], agentId);
+    const next = removeMember(this.departments[idx]!, agentId);
     this.departments[idx] = next;
     return structuredClone(next);
   }
 
   setLead(departmentId: string, agentId: string): Department {
     const idx = this.indexOf(departmentId);
-    const next = setLead(this.departments[idx], agentId);
+    const next = setLead(this.departments[idx]!, agentId);
     this.departments[idx] = next;
     return structuredClone(next);
   }
@@ -57,7 +57,7 @@ export class OrgRegistry {
   // read and change later charts and accountability traces. Each returns an
   // independent copy; mutation is only possible through the write methods.
   getDepartment(departmentId: string): Department {
-    return structuredClone(this.departments[this.indexOf(departmentId)]);
+    return structuredClone(this.departments[this.indexOf(departmentId)]!);
   }
 
   listDepartments(): Department[] {
