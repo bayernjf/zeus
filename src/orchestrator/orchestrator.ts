@@ -617,6 +617,7 @@ export class Orchestrator {
         realm: request.realm,
         runId: branchRunId,
         ...(request.realmHits ? { realmHits: request.realmHits } : {}),
+        ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}),
       })
       .catch(error => ({
         ok: false as const,

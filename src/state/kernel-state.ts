@@ -23,6 +23,7 @@ import type { MentorshipRecord } from '../skills/mentor.js';
 import { MentorshipLedger } from '../skills/mentor.js';
 import type { Department } from '../org/types.js';
 import type { OrgRegistry } from '../org/registry.js';
+import type { ExecutionDelegationNonceLedger } from '../delegation/execution-delegation.js';
 
 /**
  * E5.3 minimal kernel persistence (design-http-transport §2.2/§2.3: the H2
@@ -66,6 +67,12 @@ export type KernelSnapshot = {
    * already spent - the replay window is exactly the gap in persistence.
    */
   writeGrantNonces?: string[];
+  /**
+   * deferred #33: consumed execution-delegation nonces. Optional for backward
+   * compat. Without this a restart would re-open the replay window this ledger
+   * exists to close.
+   */
+  executionDelegationNonces?: string[];
 };
 
 export type KernelComponents = {
@@ -92,6 +99,8 @@ export type KernelComponents = {
   commissionLedger?: CommissionLedger;
   /** E3.5 / deferred #14: consumed driver write-grant nonces survive a restart. */
   driverGrantLedger?: DriverGrantLedger;
+  /** deferred #33: consumed execution-delegation nonces survive a restart. */
+  executionDelegationLedger?: ExecutionDelegationNonceLedger;
 };
 
 export class KernelStateError extends Error {}
@@ -111,6 +120,9 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     ...(components.domainGrants ? { domainGrants: components.domainGrants.exportState() } : {}),
     ...(components.commissionLedger ? { commissions: components.commissionLedger.exportState() } : {}),
     ...(components.driverGrantLedger ? { writeGrantNonces: components.driverGrantLedger.exportState() } : {}),
+    ...(components.executionDelegationLedger
+      ? { executionDelegationNonces: components.executionDelegationLedger.exportState() }
+      : {}),
   };
 }
 
@@ -127,6 +139,9 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
   if (components.domainGrants && snapshot.domainGrants) components.domainGrants.importState(snapshot.domainGrants);
   if (components.commissionLedger && snapshot.commissions) components.commissionLedger.importState(snapshot.commissions);
   if (components.driverGrantLedger && snapshot.writeGrantNonces) components.driverGrantLedger.importState(snapshot.writeGrantNonces);
+  if (components.executionDelegationLedger && snapshot.executionDelegationNonces) {
+    components.executionDelegationLedger.importState(snapshot.executionDelegationNonces);
+  }
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -152,6 +167,7 @@ export class FileKernelStateStore {
       ...(state.domainGrants ? { domainGrants: state.domainGrants } : {}),
       ...(state.commissions ? { commissions: state.commissions } : {}),
       ...(state.writeGrantNonces ? { writeGrantNonces: state.writeGrantNonces } : {}),
+      ...(state.executionDelegationNonces ? { executionDelegationNonces: state.executionDelegationNonces } : {}),
     };
     const dir = dirname(this.filePath);
     // The snapshot holds connector bearer tokens and the user's memory facts in

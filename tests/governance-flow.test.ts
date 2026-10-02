@@ -92,12 +92,15 @@ describe('Acceptance #5 governance loop', () => {
     expect(seen).toHaveLength(1);
     expect(seen[0]!.auth).toBe(`Bearer ${TOKEN}`);
 
-    // 2) redaction: read-task-scope vassal receives only the task-scoped hits offered by the caller
-    const second = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-2', realmHits: [{ itemId: 'hit-9', snippet: 'pr context' }] });
-    expect(second.ok).toBe(true);
-    const secondBody = seen[1]!.body as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
-    expect(secondBody.params.message.parts[0]!.data.realmHits).toEqual([{ itemId: 'hit-9', snippet: 'pr context' }]);
-    expect(tokenRequests).toBe(2);
+    // 2) dataPolicy origin gate: a read-task-scope vassal refuses self-asserted
+    // realm hits outright — "belongs to this task" is only verifiable when the
+    // kernel itself resolved them (design-realm §3.1). No request, no token.
+    const second = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-2', realmHits: [{ itemId: 'hit-9', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'pr context' }], realmHitsOrigin: 'caller-asserted' });
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.audit.decision).toBe('refused-data-policy');
+    expect(seen).toHaveLength(1); // the refused dispatch never reached the network
+    expect(tokenRequests).toBe(1); // and never consulted the credential
 
     // 3) revocation: governance event lands on the audit trail
     expect(registry.revoke('pr-helper')).toBe(true);
@@ -109,20 +112,20 @@ describe('Acceptance #5 governance loop', () => {
     expect(blocked.ok).toBe(false);
     if (blocked.ok) return;
     expect(blocked.audit.decision).toBe('refused-revoked');
-    expect(seen).toHaveLength(2); // no new request reached the vassal
-    expect(tokenRequests).toBe(2); // tokenFor never consulted for a revoked vassal
+    expect(seen).toHaveLength(1); // no new request reached the vassal
+    expect(tokenRequests).toBe(1); // tokenFor never consulted for a revoked vassal
 
     // 5) skill-based auto-selection skips the revoked vassal as well
     const auto = await dispatcher.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-4' });
     expect(auto.ok).toBe(false);
     if (auto.ok) return;
     expect(auto.audit.decision).toBe('refused-unknown-vassal');
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(1);
 
     // complete audit trail, in order — one 'dispatched' per successful dispatch
     expect(log.map((entry: AuditEntry) => entry.decision)).toEqual([
       'dispatched', // run-1
-      'dispatched', // run-2
+      'refused-data-policy', // run-2 refused by the dataPolicy origin gate
       'vassal-revoked',
       'refused-revoked', // run-3 named
       'refused-unknown-vassal', // run-4 auto-selected

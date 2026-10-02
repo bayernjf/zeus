@@ -48,6 +48,20 @@ export type IssueExecutionDelegationInput = {
 
 export class ExecutionDelegationError extends Error {}
 
+/** Audit record emitted when an execution delegation is issued. */
+export type ExecutionDelegationAuditEntry = {
+  at: string;
+  decision: 'execution-delegation-issued';
+  grantedBy: string;
+  skill: string;
+  vassal?: string;
+  capabilities: string[];
+  keyId: string;
+  nonce: string;
+  expiresAt: string;
+  reason?: string;
+};
+
 export type ExecutionDelegationVerification =
   | { ok: true; nonce: string }
   | {

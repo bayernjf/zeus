@@ -1,4 +1,5 @@
 import type { ConnectorCapabilities, McpClientDeps } from './types.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 
 /**
  * Minimal MCP streamable-HTTP client (no SDK): JSON-RPC 2.0 over POST.
@@ -44,7 +45,7 @@ export class McpClient {
     private endpoint: string,
     deps: McpClientDeps = {},
   ) {
-    this.fetchImpl = deps.fetchImpl ?? fetch;
+    this.fetchImpl = deps.fetchImpl ?? guardedFetch;
     this.token = deps.token;
   }
 

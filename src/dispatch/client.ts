@@ -1,4 +1,5 @@
 import type { A2AEvent, Task } from '../a2a/types.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 
 export type SendTaskInput = {
   taskUrl: string;
@@ -59,7 +60,7 @@ function taskMessage(input: SendTaskInput) {
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
-const defaultFetch: FetchLike = (url, init) => fetch(url, init);
+const defaultFetch: FetchLike = guardedFetch;
 
 type Deadline = {
   /** Pass to `fetch` so a signal-honoring implementation aborts at the deadline. */

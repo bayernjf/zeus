@@ -1,6 +1,7 @@
 import type { AgentCard, Fealty } from '../a2a/types.js';
 import { SUPPORTED_FEALTY_VERSIONS } from '../a2a/types.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 
 /** Dispatcher-facing view of a registered vassal. */
 export type VassalLike = {
@@ -81,7 +82,7 @@ export class VassalRegistry {
   private entries = new Map<string, VassalEntry>();
 
   constructor(
-    private fetchImpl: FetchLike = (url, init) => fetch(url, init),
+    private fetchImpl: FetchLike = guardedFetch,
     private now: () => Date = () => new Date(),
     private hooks: RegistryHooks = {}
   ) {}

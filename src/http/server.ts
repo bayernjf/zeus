@@ -39,6 +39,11 @@ import {
   type DriverGrantAuditEntry,
   type DriverGrantLedger,
 } from '../realm/grant.js';
+import {
+  ExecutionDelegationError,
+  issueExecutionDelegation,
+  type ExecutionDelegationAuditEntry,
+} from '../delegation/execution-delegation.js';
 import { formatTenant, normalizeTenant } from '../realm/tenant.js';
 import { CommissionError, commissionId } from '../onboarding/types.js';
 import type { CommissionLedger } from '../onboarding/commission.js';
@@ -129,6 +134,8 @@ export type HttpDeps = {
   driverGrantAuthority?: 'signed' | 'shape-only';
   /** E3.5 / deferred #14: audit sink for issued write grants (spine-mapped by boot). */
   driverGrantAudit?: (entry: DriverGrantAuditEntry) => void;
+  /** deferred #33: audit sink for issued execution delegations (spine-mapped by boot). */
+  executionDelegationAudit?: (entry: ExecutionDelegationAuditEntry) => void;
   /** E6.4: audit sink for domain crossings, fed by the kernel's audit spine. */
   realmAudit?: (entry: RealmAuditEntry) => void;
   /** E9.1/E9.2: the commission gate and day-one briefing for department seats. */
@@ -380,6 +387,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (body.vassals !== undefined && !(Array.isArray(body.vassals) && body.vassals.every(v => typeof v === 'string'))) {
           return error(reply, 400, 'invalid_request', 'body.vassals must be an array of vassal names');
         }
+        // Caller-asserted realm content must at least be shaped like a list; the
+        // per-item fields are the operator's to assert (they are the data
+        // sovereign), and the dispatch gate decides by origin whether they may
+        // go out at all.
+        if (body.realmHits !== undefined && !Array.isArray(body.realmHits)) {
+          return error(reply, 400, 'invalid_request', 'body.realmHits must be an array of realm hits');
+        }
         if (body.aggregation !== undefined && !validAggregation(body.aggregation)) {
           return error(reply, 400, 'invalid_request', 'body.aggregation must be { kind: "unanimous" | "majority" | "weighted" }');
         }
@@ -425,13 +439,14 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(body.vassals ? { vassals: body.vassals } : {}),
           ...(body.aggregation ? { aggregation: body.aggregation } : {}),
           ...(typeof body.branchTimeoutMs === 'number' ? { branchTimeoutMs: body.branchTimeoutMs } : {}),
-          ...(body.realmHits ? { realmHits: body.realmHits } : {}),
+          ...(body.realmHits ? { realmHits: body.realmHits, realmHitsOrigin: 'caller-asserted' as const } : {}),
           ...(body.runId ? { runId: body.runId } : {}),
           ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
           ...(resolved
             ? {
                 realmId: resolved.realmId,
-                realmHits: resolved.hits.map(hit => ({ itemId: hit.itemId, snippet: hit.snippet })),
+                realmHits: resolved.hits,
+                realmHitsOrigin: 'kernel-resolved' as const,
               }
             : {}),
         };
@@ -1727,6 +1742,59 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
     }
+
+    // deferred #33: issue a one-time, bounded execution delegation. The dispatch
+    // gate that consumes it is wired when the peer credential-proxy interface is
+    // ready; issuing, auditing and persisting spent nonces do not depend on it.
+    // The signer is a required dependency of this face, so the route is always
+    // mounted once the internal token is; its mounting condition is the token.
+    app.post('/api/execution-delegations', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+      const body = (request.body ?? {}) as Record<string, unknown>;
+      if (!isNonEmptyString(body.grantedBy)) return error(reply, 400, 'invalid_request', 'body.grantedBy is required');
+      if (!isNonEmptyString(body.skill)) return error(reply, 400, 'invalid_request', 'body.skill is required');
+      if (!Array.isArray(body.capabilities) || body.capabilities.some(c => !isNonEmptyString(c))) {
+        return error(reply, 400, 'invalid_request', 'body.capabilities must be a non-empty array of strings');
+      }
+      if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
+        return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
+      }
+      if (body.reason !== undefined && !isNonEmptyString(body.reason)) {
+        return error(reply, 400, 'invalid_request', 'body.reason must be a string');
+      }
+      if (body.ttlSeconds !== undefined && (typeof body.ttlSeconds !== 'number' || !Number.isFinite(body.ttlSeconds) || body.ttlSeconds <= 0)) {
+        return error(reply, 400, 'invalid_request', 'body.ttlSeconds must be a positive number of seconds');
+      }
+      try {
+        const delegation = await issueExecutionDelegation(
+          {
+            grantedBy: body.grantedBy as string,
+            skill: body.skill as string,
+            capabilities: body.capabilities as string[],
+            ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
+            ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
+            ...(typeof body.ttlSeconds === 'number' ? { ttlMs: body.ttlSeconds * 1000 } : {}),
+          },
+          { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
+        );
+        deps.executionDelegationAudit?.({
+          at: delegation.issuedAt,
+          decision: 'execution-delegation-issued',
+          grantedBy: delegation.grantedBy,
+          skill: delegation.skill,
+          ...(delegation.vassal ? { vassal: delegation.vassal } : {}),
+          capabilities: delegation.capabilities,
+          keyId: delegation.keyId,
+          nonce: delegation.nonce,
+          expiresAt: delegation.expiresAt,
+          ...(delegation.reason ? { reason: delegation.reason } : {}),
+        });
+        reply.code(201);
+        return { delegation };
+      } catch (thrown) {
+        if (thrown instanceof ExecutionDelegationError) return error(reply, 400, 'invalid_request', thrown.message);
+        throw thrown;
+      }
+    });
   }
 
   return app;

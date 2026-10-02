@@ -69,9 +69,14 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'branch-diverted': 'info',
   'domain-read': 'info',
   'domain-refused': 'warning',
+  // design-realm §3.1: content admitted (info, like domain-read) and content
+  // refused by policy origin (warning, like the other policy-working refusals).
+  'content-injected': 'info',
+  'refused-data-policy': 'warning',
   'domain-grant-issued': 'info',
   'domain-grant-revoked': 'warning',
   'driver-grant-issued': 'info',
+  'execution-delegation-issued': 'info',
   'realm-write': 'info',
   'realm-disconnected': 'warning',
   'realm-tenant-retargeted': 'warning',
