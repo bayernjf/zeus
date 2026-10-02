@@ -751,6 +751,12 @@ State of Zeus as of 2026-09-29.
    - [x] **启用**：`tsconfig.json` 正式开启 `exactOptionalPropertyTypes: true`，`npx tsc --noEmit` 0 错。
    - [x] **验证**：全量 **1015/94 绿**、`smoke:core` 36/36、typecheck/build exit 0。7 个原子 commit（orchestrator / dispatch+smoke / mcp / http / kernel / tests / tsconfig）。**deferred #36 现剩唯一一档：`noUncheckedIndexedAccess`（400 处，仍待触发条件）。**
 
+97. **PR #64 CI 失败修复：secret 扫描需要全量 fetch（2026-10-02 ✅ 完成）**：
+   - [x] **现象**：PR #64（exactOptionalPropertyTypes + CI quality gates，dev→main）verify job 双矩阵全 fail，image-smoke / clock-skew 均 pass。
+   - [x] **根因**：新加的 Secret scan 步骤跑 `node scripts/scan-secrets.mjs --diff origin/main`，而 actions/checkout 默认 `fetch-depth: 1` 只拉单个 commit，工作树里根本没有 `origin/main` remote-tracking 引用 → `fatal: ambiguous argument 'origin/main...HEAD'`。
+   - [x] **修复**：verify job 的 checkout 加 `fetch-depth: 0`（全量历史，注释说明原因）。本地 `node scripts/scan-secrets.mjs --diff origin/main` 正常（36 文件 clean）。
+   - [x] **验证**：push 后两个 run（36988605445 / 36988609562）**8/8 check 全绿**（Node 22.x/24.x typecheck+build+test、image-smoke、clock-skew 各 2）。
+
 95. **deferred #39 销项：镜像构建冒烟进 CI（2026-10-02 ✅ 完成）**：
    - [x] CI 新增独立 `image-smoke` job（ubuntu-24.04）：`docker build`（不 push）+ 两条运行时冒烟——镜像内零依赖密钥脚本 `gen-rsk-key.mjs` 可生成密钥、编译产物 `require('./dist/index.js')` 可加载。Dockerfile 或产物变更从此在每次推送时验证，评审轮不再手工实构。
    - [x] 本地实构实跑两条冒烟命令通过后清理镜像。`acceptance:fanout` 线上验收按登记保持"评审轮手工跑 + 记录"，不入门禁。
