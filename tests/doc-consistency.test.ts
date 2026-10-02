@@ -364,4 +364,39 @@ describe('documentation consistency', () => {
 
     expect(findings, `current external-facing prose still uses narrative metaphors (deferred #32):\n${findings.join('\n')}`).toEqual([]);
   });
+
+  it('keeps the inventory route and export census equal to the code', () => {
+    // The inventory's headline sizes drifted with nothing to notice it: it said
+    // "75 routes (3 public + 72 bearer)" while 76 registrations existed (the
+    // revocation-stickiness fix added POST /api/vassals/:name/reinstate after the
+    // census was written), its own per-group table summed to 70, and "116 exports"
+    // matched neither the export statements in src/index.ts nor the runtime
+    // surface. Every review round re-counted this by hand; counting is mechanical,
+    // so it happens here instead.
+    const routes = [
+      ...readFileSync('src/http/server.ts', 'utf8').matchAll(/app\.(get|post|put|delete|patch)\(\s*'([^']+)'/g),
+    ].map(match => match[2] ?? '');
+    const publicPaths = new Set(['/healthz', '/api/roster/public', '/api/roster/keys']);
+    const publicCount = routes.filter(path => publicPaths.has(path)).length;
+    const bearerCount = routes.length - publicCount;
+
+    const inventory = readFileSync('docs/feature-inventory.md', 'utf8');
+    const headline = /HTTP 门面 \| Fastify 长驻进程，`npm start` \| \*\*(\d+) 条路由\*\*（(\d+) 公开 \+ (\d+) bearer）/.exec(inventory);
+    expect(headline, 'inventory headline route census anchor not found').not.toBeNull();
+    expect([headline?.[1], headline?.[2], headline?.[3]])
+      .toEqual([String(routes.length), String(publicCount), String(bearerCount)]);
+
+    // The group table describes the bearer face, so its cells must add up to it.
+    const groupRows = inventory
+      .split('\n')
+      .filter(line => /^\| (名册与执行 Agent|意图与编排|监督台|指标与状态|组织编制|记忆|日记|技能与带教|连接器|数据域与跨域|决策后端) \| \d+ \|/.test(line));
+    expect(groupRows.length, 'internal route group table anchor not found').toBeGreaterThan(9);
+    const groupSum = groupRows.reduce((sum, line) => sum + Number(line.split('|')[2]?.trim() ?? 'NaN'), 0);
+    expect(groupSum, `route groups sum to ${groupSum}, the bearer face has ${bearerCount}`).toBe(bearerCount);
+
+    const exportStatements = readFileSync('src/index.ts', 'utf8').split('\n').filter(line => /^export\b/.test(line)).length;
+    const exportClaim = /\*\*(\d+) 条 export 语句\*\*/.exec(inventory);
+    expect(exportClaim, 'inventory export census anchor not found').not.toBeNull();
+    expect(exportClaim?.[1]).toBe(String(exportStatements));
+  });
 });
