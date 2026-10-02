@@ -7,8 +7,8 @@
 | 我想… | 看 |
 | --- | --- |
 | 知道 Zeus 是什么、愿景与设计哲学 | [product-portrait.md](product-portrait.md) ★ |
-| 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) v0.5 ★（11 个能力域 × 76 条 HTTP 路由 × 4 类 CLI × 118 条 export 语句（运行时 213 个导出）；含「已实现但未接线」专节，2026-10-02 起为 2 项） |
-| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.4（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）；§6「注释承诺了代码没做的事」中 `startServer()` 一行已于 2026-10-02 闭合） |
+| 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) v0.6 ★（11 个能力域 × 76 条 HTTP 路由 × 4 类 CLI × 118 条 export 语句（运行时 213 个导出）；含「已实现但未接线」专节，2026-10-02 起为 2 项，其中数据二极管一项口径已定、实现待落） |
+| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.5（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）；§6「注释承诺了代码没做的事」中 `startServer()` 一行已于 2026-10-02 闭合；§4.2 row3 的数据二极管收缩**口径已定、实现待落**） |
 | 查看需求拆解、优先级与验收标准 | [prd.md](prd.md) ★ |
 | 梳理 Agent 技术议题与探索优先级 | [tech-exploration-map.md](tech-exploration-map.md) ★ |
 | 理解多 Agent 记忆如何沉淀与整理 | [design-memory-consolidation.md](design-memory-consolidation.md) |
@@ -33,7 +33,7 @@
 | 看 UI 候选方案 | [design-ui.md](design-ui.md)（草案：A 实时监督台 / B 多视图工作台 / C 双门户 / D 终端 TUI；立项条件见 deferred #34） |
 | 统一 UI 的颜色/间距/字号与多语言，避免各页样式对不齐 | [design-ui-foundations.md](design-ui-foundations.md)（现行：design token 三层模型、light/dark + TUI 子集、i18n key/ICU、无裸值与审计等价校验闸门） |
 | 理解执行型 Agent 的不可逆写操作怎么获得一次性授权 | [design-execution-delegation.md](design-execution-delegation.md)（v0.1 现行：操作者一次性短时授权票据，Ed25519 签名/能力白名单/单 nonce 防重放/fail-closed；纯原语已落，派发与 A2A 投递待 pr-helper 凭据接口，deferred #33） |
-| 理解 Realm 数据域（目录即数据库）的接口契约 | [design-realm.md](design-realm.md) v0.5（connect/search/read/write、数据二极管、企业域三级租户与双域授权 §7、**签名且一次性的企业写凭证 §7.7**、备份清单依赖） |
+| 理解 Realm 数据域（目录即数据库）的接口契约 | [design-realm.md](design-realm.md) v0.6（connect/search/read/write、数据二极管执行点与 **§3.1 `dataPolicy` 收缩契约（口径已定、实现待落）**、企业域三级租户与双域授权 §7、**签名且一次性的企业写凭证 §7.7**、备份清单依赖） |
 | 决定要不要把历史标识符（`vassal`/`vault`/`ZEUS_*`/`x-zeus-fealty`）改成工程术语 | [design-naming-migration.md](design-naming-migration.md)（四档代价 + 逐档迁移机制 + 本轮结论 T2/T3/T4 不做）|
 | 看懂一个 Agent 怎么"上岗即用"：四道门与首日简报 | [design-onboarding.md](design-onboarding.md)（seat/account/authorization/mentorship 现算不缓存、显式豁免、first-task 真派发） |
 | 理解 bayjf 如何从陈列馆升级为公开签名目录名册 | [design-bayjf-roster.md](design-bayjf-roster.md)（名册字段映射、内外双视图、签名链闸门、R0–R2） |
