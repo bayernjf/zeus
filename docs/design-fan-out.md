@@ -1,6 +1,6 @@
 # 并发决策内核设计（Fan-out / Aggregation / Conflict）
 
-> 状态：**现行（设计稿 v0.1，2026-09-22，M2 第一批）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
+> 状态：**现行（设计稿 v0.2，2026-09-22，M2 第一批；2026-10-02 按 [design-realm](design-realm.md) §3.1 的 `dataPolicy` 收缩契约对齐 §2 的 `realmHits` 类型与来源标记）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
 > 上游需求：[prd.md](prd.md) E1（并发协同与决策内核）、E2.4（按技能组队）；技术议题 S3/S4/S5 见 [tech-exploration-map.md](tech-exploration-map.md)；控制关系见 [design-supervision.md](design-supervision.md)。
 > 边界：v0.1 只做**库内、确定性、不调 LLM** 的最小闭环；持久化、服务端 SSE、完整 DAG 当时不在内（见 §7）。**LLM-as-judge 对抗复核已于 v0.18 落地（见 §5.1，`src/orchestrator/judge.ts`），与 S2 决策后端端口对接见 [design-decision-backend.md](design-decision-backend.md)。**
 
@@ -37,7 +37,9 @@ type FanOutRequest = {
   params: Record<string, unknown>;
   realm: RealmType;
   runId?: string;               // 父 runId；缺省生成
-  realmHits?: Array<{ itemId: string; snippet: string }>;
+  realmHits?: Array<{ itemId: string; tags: string[]; modifiedAt: string; snippet: string }>;
+  /** 内容来源：数据二极管按档位判定的输入，缺省即判不出来，见 design-realm §3.1 */
+  realmHitsOrigin?: 'kernel-resolved' | 'caller-asserted';
   aggregation?: AggregationRule; // 见 §5，默认 majority
   branchTimeoutMs?: number;      // 单路超时；缺省不超时
 };
@@ -86,7 +88,7 @@ type DispatchPort = {
 
 **选目标**：显式 `vassals` 优先；否则 `lookup.findBySkill(skill)` 全选（fan-out 语义本就是多投，**不触发**单派发器的"多执行 Agent 歧义"错误）。目标为空 → `failed`。
 
-**并行**：`Promise.allSettled` 并发逐路 `Dispatcher.dispatch`，每路传分支 runId 与同一份 params/realmHits（脱敏仍由 Dispatcher 按各执行 Agent fealty 处理）。单路异常/拒绝/超时不拖垮其它路。
+**并行**：`Promise.allSettled` 并发逐路 `Dispatcher.dispatch`，每路传分支 runId 与同一份 params/realmHits（**同一条内容要按每个执行 Agent 各自的 `fealty.dataPolicy` 分别判档**，判定规则与"来源标记"见 [design-realm](design-realm.md) §3.1）。单路异常/拒绝/超时不拖垮其它路。
 
 **单路超时（S4 最小步）**：`branchTimeoutMs` 到时未决，该路记 `timedOut:true`、`ok:false`，其余继续。v0.1 不 abort 在途请求（Dispatcher 尚未透传 AbortSignal），只不再等待——进行中硬取消列入 §7。
 

@@ -1,6 +1,6 @@
 # Realm 数据域设计（D1 契约先行）
 
-> 状态：**现行（契约 v0.5，2026-09-25：write、企业域 connect、企业域租户分级与双域授权（§7）、签名且一次性的企业写凭证（§7.7）已落库内；MCP 暴露仍 P1）**。P0 实现直接落 `src/realm/`（库内 RealmStore），不另起实现文档；MCP 暴露在 P1。产品哲学依据见 [product-portrait.md](product-portrait.md) §2.1/§2.2。
+> 状态：**现行（契约 v0.6，2026-10-02：write、企业域 connect、企业域租户分级与双域授权（§7）、签名且一次性的企业写凭证（§7.7）已落库内；新增 §3.1 `dataPolicy` 收缩契约（口径已定、实现待落）；MCP 暴露仍 P1）**。P0 实现直接落 `src/realm/`（库内 RealmStore），不另起实现文档；MCP 暴露在 P1。产品哲学依据见 [product-portrait.md](product-portrait.md) §2.1/§2.2。
 
 ## 0. 一句话
 
@@ -57,9 +57,46 @@ interface RealmHit { itemId: string; tags: string[]; snippet: string; modifiedAt
 | 场景 | 规则 |
 | --- | --- |
 | Zeus 派发任务给执行 Agent | Dispatcher 对照 `fealty.dataRealms` 与任务 Realm 类型，不符即拒绝并记审计 |
-| Realm 内容注入任务参数 | 检索结果按执行 Agent `dataPolicy` 裁剪：`none` 不注入；`read-task-scope` 只注入任务命中的条目；`read-realm` 放行 |
+| Realm 内容注入任务参数 | 检索结果按执行 Agent `dataPolicy` 裁剪——**允许的来源与越界行为见 §3.1**（`none` 不注入、不可核对的请求拒派发；`read-task-scope` 仅接受内核解析的来源；`read-realm` / `write` 亦允许操作者自报） |
 | 个人域 → 企业域 | 未经操作者显式授权，禁止（企业合规） |
 | 企业域 → 个人域 | 禁止，无例外 |
+
+### 3.1 `dataPolicy` 收缩契约（2026-10-02 定案；实现待落，登记在 [feature-inventory](feature-inventory.md) §4）
+
+**为什么单列**：上面那张表只写了各档的**意图**，没写**哪几个字段、哪种来源**可以出去，于是实现只做到"`none` 不注入、其余原样注入"——`read-task-scope` 与 `read-realm` 的产物逐字节相同（审计 §4.2 row3 与 feature-inventory「已实现但未接线」登记的是同一件事）。字段集与来源一旦对外，就是执行 Agent 依赖的行为契约，所以先在这里定案，再动代码。
+
+**先立判据**：
+
+1. 二极管的作业面是**内容面**：问"这个域的内容能出去多少、由谁决定"。**写授权面**（能不能改企业域）由 §7.7 的 `DriverWriteGrant` 单独把关，两者不合并——`dataPolicy: write` 不是第三种内容裁剪档。
+2. 执行 Agent 拿到正文的**正当路径目前只有"随任务注入"**：MCP 面正式暴露给执行 Agent 属 P1（E3.4），其主体判定仍登记在 deferred #18。因此把 `read-task-scope` 定义成"一律剥掉正文"会让它变成"给了指针却取不到内容"——**那是功能回退，不是边界**，本条不这么做。
+3. 那么两者真正可核对的差别在**来源**：`read-task-scope` 承诺的是"只按**本次任务**的范围取数"，而"本次任务的范围"只有内核自己解析得出来；调用方自报的命中（§7.4 的 `realmHits`）**没有任何东西能核对**它是否属于本任务。于是档位管的是**允许的来源**与**能否被调用方加宽**，字段集不因档位而异。
+
+**契约（唯一执行点 = `Dispatcher.dispatch` 的注入点；Orchestrator 与 HTTP 层不各判一次）**：
+
+| `fealty.dataPolicy` | 允许的内容来源 | 外送字段 | 越界时 |
+| --- | --- | --- | --- |
+| `none` | 无 | 不注入 `realmHits` | 请求带非空命中 → **拒绝派发**并审计 `refused-data-policy`（现状是静默丢弃；本契约按 §3 第一行"越域即拒"同构收紧，与 #20/#31 的"静默降级是失效形状"同源） |
+| `read-task-scope` | **仅内核按本任务解析的命中**（`resolveRealmSource`，`onBehalfOf` = 该执行 Agent；见 §7.4） | `{ itemId, tags, modifiedAt, snippet }` | 调用方自报命中 → **拒绝派发**并审计 `refused-data-policy`，detail 点名 policy 与 `self-asserted`（"属于本任务"无法核对，所以不给"少给一点"的余地） |
+| `read-realm` | 内核解析 **或** 操作者自报（操作者是数据主权者，§7.4） | 同上 | — |
+| `write` | 同 `read-realm` | 同上 | 写权限由 §7.7 的凭证授予，与本档无关 |
+
+**实现必须补的一处装配（否则契约无法判定）**：`DispatchRequest.realmHits` 现在不带来源，内核解析路径（`src/http/server.ts` 的 `realmSource` 分支）与调用方自报路径在进入 Dispatcher 前都汇成同一个数组，**来源信息已丢失**。契约要求新增来源标记（`realmHitsOrigin: 'kernel-resolved' | 'caller-asserted'`），由装配层在两条路径上分别设置；HTTP 层两条路径本就互斥（`send either realmSource or realmHits, not both`），所以来源是确定的。**命中非空而来源缺失时按拒绝处理**——判不出来就不猜。
+
+**审计**：新增两个决策值 `refused-data-policy`（矛盾请求被拒）与 `content-injected`（放行时记 policy 与来源，供"这次任务到底给了谁多少内容"回查）。`AuditDecision` 由 `AUDIT_DECISIONS` 单一来源派生，加值时 `/api/audit?decision=` 的查询白名单自动跟上（deferred #27 已把那条漂移修掉，不得再手工维护第二份）。
+
+**对外兼容后果（落地前必须告知对端，且不是实现细节）**：① `read-realm` / `write` / 内核解析路径的 `read-task-scope` 行为不变，故 pr-helper、loom 这类"内核解析 + read-task-scope"的存量执行 Agent **不受影响**；② 真正变化的是**调用方自报路径**：对声明 `read-task-scope` 的执行 Agent，操作者不能再直接把抓来的命中塞进意图——要么改用 `read-realm` 的 Agent，要么改走 `realmSource` 让内核自己取（后者顺带把 `domain-read` 审计写全）。
+
+**留给实现批次的唯一参数化决定**：`read-task-scope` 是否再对 `snippet` 设单条长度上限。若定则数值按 §6.2 检索口径与真实语料定，**不在这里凭空拍数**（与 deferred #9 的阈值同一条纪律）。
+
+**验收（实现批次按此收口）**：
+
+1. 三态单测：`none` + 命中 → 拒绝且审计 `refused-data-policy`；`read-task-scope` + **自报**命中 → 拒绝；`read-task-scope` + **内核解析**命中 → 注入 `{itemId, tags, modifiedAt, snippet}`；`read-realm` + 自报命中 → 注入。
+2. 来源缺失：命中非空但 `realmHitsOrigin` 未设 → 拒绝（fail-closed 的正向对照，防"新路径忘了标来源"退化成放行）。
+3. 审计两条：拒绝写 `refused-data-policy`（含 policy、vassal、来源）；放行写 `content-injected`（含 policy、来源、条数）。
+4. 真进程一条：起 serve 注册一张 `read-task-scope` 卡，走 `realmSource` 派发一次并断言对端实收体带 `snippet`；再自报一次并断言**拒绝且没有出网请求**（`inject` 测试看不见"是否真的发了请求"，本仓库已有先例）。
+5. 缺陷植入：把注入点改回"`none` 之外一律放行"，第 1、4 条必须变红。
+
+**不在本条内**：`snippet` 的正则打码（打码不是边界，掩不住的内容仍在外送）；条目级字段白名单；请求预算内的体积裁剪（属 §6.2 检索口径与 E1.5 请求预算，不是边界契约）；MCP 面对执行 Agent 的暴露（E3.4 / deferred #18，它才是"正文不随任务外送"这条路的前提）。
 
 ## 4. 与备份清单（Map）的关系
 
@@ -210,3 +247,4 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 | v0.3 | 2026-09-25 | §5 交付节奏补写实现进展：write + 凭证门（v0.19）；**enterprise connect 放开且存储类型如实记录**（修掉 `realms.set` 硬编码 personal 导致 E3.5 写闸门成死代码的问题），E3.5 收口、MCP write 暴露与签发凭证仍待 E3.4 触发；明确 §3 "企业域→个人域禁止" 在 RealmStore 层无执行点（本层无跨 realm 写路径），约束落在 Dispatcher / decision / MemoryStore；E3.6 多租户分级显式区别于"企业域可挂载"，仍未立项 |
 | v0.4 | 2026-09-25 | **E3.6 + E6.4 落地**：新增 §7（企业域三级 `TenantScope`、"层级是结构边界 / 域边界才是授权对象"的分工、`decideRealmAccess` 单一判定与精确 reason、nonce 一次性 + 快照持久化、`resolveRealmSource` 让内核自己进 Realm 从而能核对"声明的域 vs 内容真实的域"、操作者面与 `ZEUS_REALM_ENTERPRISE`）；§6.4 把 §6.1 的"Realm 对外只有 MCP"精确化为**内容 vs 治理元数据**；§1 不变量 4 补租户一层；§2 契约加 `tenant` 与新原语的位置说明。仍未做（§7.6，登记 deferred #17/#18）：MCP 侧 actor 判定、显式改边界（disconnect）。 |
 | v0.5 | 2026-09-25 | **deferred #14 销项（新增 §7.7）**：`DriverWriteGrant` 从"形状校验"升级为**签名且一次性的凭证**——`issueDriverWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `registry/signing.ts` 的 `RosterSigner`）、`verifyDriverWriteGrant` 改 async 且按 形状→realm 绑定→**验签**→有效期 判定（`unsigned` / `unknown-key` / `bad-signature` / `no-expiry`）、`DriverGrantLedger` 在落盘前消费 nonce 且**随内核快照持久化**（`writeGrantNonces`，否则重启即重放）、`FsRealmStoreOptions.now` 注入时钟（此前"仍然有效"的测试凭证只能写成 `expiresAt: 2099-…`）。运维面：`POST /api/realm/write-grants`、日记写凭证透传（缺授权 → **403**，不是 400/500）、审计事件流 `driver-grant-issued` + `realm-write`、`GET /api/state` 报 `driverGrants.authority`（`signed` / `shape-only` 不靠猜）。§5 两处"签发仍未做"与 §2 契约注释同步收口。三个守卫各做过缺陷植入验证（见 handoff Active work 45）。 |
+| v0.6 | 2026-10-02 | **新增 §3.1 `dataPolicy` 收缩契约（审计 §4.2 row3 的口径定案）**：四个取值的语义此前只有一句意图描述，实现只判 `none`，`read-task-scope` 与 `read-realm` 产物逐字节相同。本节先立三条判据（内容面 ≠ 写授权面；执行 Agent 取正文的正当路径目前只有随任务注入，故不做"一律剥正文"的伪收紧；可核对的差别在**来源**），再给四档的**允许来源 / 外送字段 / 越界行为**表：`none` 与 `read-task-scope` 收到不可核对的请求一律**拒绝派发**（不再是静默丢弃），`read-realm` / `write` 允许操作者自报。要求实现补 **`realmHitsOrigin`**（内核解析 vs 调用方自报——现在两条路径在进入 Dispatcher 前已汇成一个数组，来源丢失，契约无法判定）、新增审计值 `refused-data-policy` / `content-injected`、并列五条验收（含"命中非空而来源缺失即拒"的正向对照与真进程实收体断言）。**兼容后果如实写明**：内核解析 + `read-task-scope` 的存量 Agent（pr-helper、loom）不受影响，变化的是调用方自报路径。**仍在实现前**：条目长度上限是否设（数值不凭空拍），实现落在 feature-inventory §4 那一行。 |

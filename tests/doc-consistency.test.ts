@@ -399,4 +399,25 @@ describe('documentation consistency', () => {
     expect(exportClaim, 'inventory export census anchor not found').not.toBeNull();
     expect(exportClaim?.[1]).toBe(String(exportStatements));
   });
+
+  it('indexes every document in the handoff project-documents section', () => {
+    // AGENTS.md requires a handoff index line for every new document, and that
+    // section calls itself the complete single source for the document inventory.
+    // The rule was enforced by memory alone: a document nobody indexes is a
+    // document nobody reads, and the inventory stops being complete the moment
+    // one is added without a line.
+    const lines = readFileSync('handoff.md', 'utf8').split('\n');
+    const start = lines.findIndex(line => line.startsWith('## Project documents'));
+    const end = lines.findIndex(line => line.startsWith('## Recent changes'));
+    // Positive control: a rewrite that renames either heading must fail loudly
+    // rather than leave the scan looking at an empty slice.
+    expect(start, 'handoff no longer carries its Project documents heading').toBeGreaterThan(0);
+    expect(end, 'handoff no longer carries its Recent changes heading').toBeGreaterThan(start);
+    const section = lines.slice(start, end).join('\n');
+
+    const documents = readdirSync('docs').filter(name => name.endsWith('.md'));
+    expect(documents.length, 'the docs/ population collapsed, so this check would pass by finding nothing').toBeGreaterThan(15);
+    const missing = documents.filter(name => !section.includes(`docs/${name}`));
+    expect(missing, `documents with no index line in handoff's Project documents:\n${missing.join('\n')}`).toEqual([]);
+  });
 });
