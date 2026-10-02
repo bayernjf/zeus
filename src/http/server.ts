@@ -380,6 +380,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (body.vassals !== undefined && !(Array.isArray(body.vassals) && body.vassals.every(v => typeof v === 'string'))) {
           return error(reply, 400, 'invalid_request', 'body.vassals must be an array of vassal names');
         }
+        // Caller-asserted realm content must at least be shaped like a list; the
+        // per-item fields are the operator's to assert (they are the data
+        // sovereign), and the dispatch gate decides by origin whether they may
+        // go out at all.
+        if (body.realmHits !== undefined && !Array.isArray(body.realmHits)) {
+          return error(reply, 400, 'invalid_request', 'body.realmHits must be an array of realm hits');
+        }
         if (body.aggregation !== undefined && !validAggregation(body.aggregation)) {
           return error(reply, 400, 'invalid_request', 'body.aggregation must be { kind: "unanimous" | "majority" | "weighted" }');
         }
@@ -425,13 +432,14 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(body.vassals ? { vassals: body.vassals } : {}),
           ...(body.aggregation ? { aggregation: body.aggregation } : {}),
           ...(typeof body.branchTimeoutMs === 'number' ? { branchTimeoutMs: body.branchTimeoutMs } : {}),
-          ...(body.realmHits ? { realmHits: body.realmHits } : {}),
+          ...(body.realmHits ? { realmHits: body.realmHits, realmHitsOrigin: 'caller-asserted' as const } : {}),
           ...(body.runId ? { runId: body.runId } : {}),
           ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
           ...(resolved
             ? {
                 realmId: resolved.realmId,
-                realmHits: resolved.hits.map(hit => ({ itemId: hit.itemId, snippet: hit.snippet })),
+                realmHits: resolved.hits,
+                realmHitsOrigin: 'kernel-resolved' as const,
               }
             : {}),
         };

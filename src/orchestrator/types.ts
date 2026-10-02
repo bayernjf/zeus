@@ -69,6 +69,8 @@ export type FanOutRequest = {
   realmId?: string;
   runId?: string;
   realmHits?: DispatchRequest['realmHits'];
+  /** Provenance of realmHits; required when they are non-empty (design-realm §3.1). */
+  realmHitsOrigin?: DispatchRequest['realmHitsOrigin'];
   aggregation?: AggregationRule;
   /** Per-branch timeout; a branch still pending at the limit is recorded as timed out. */
   branchTimeoutMs?: number;
