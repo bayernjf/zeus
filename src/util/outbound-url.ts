@@ -13,15 +13,18 @@
  * request to a third party. An operator who runs peers on a private network
  * re-opens those hosts explicitly through ZEUS_OUTBOUND_ALLOW_HOSTS.
  *
- * Hostnames that are not IP literals are allowed: resolving and pinning them is
- * a separate concern (DNS rebinding, deferred), and refusing every name would
- * break ordinary vassals.
+ * A hostname that is not an IP literal passes this synchronous check, but it is
+ * not trusted on the wire: outbound-dns.ts resolves it through a guarded
+ * connect lookup that runs every resolved address through the same registry and
+ * pins the connection to an address that passed, so a DNS record pointing at a
+ * private address — or changing between resolve and connect — cannot bypass
+ * this guard.
  */
 
 export class OutboundUrlError extends Error {}
 
 /** Comma-separated hostnames; `.suffix` entries match a whole suffix. */
-function parseAllowHosts(raw: string | undefined): string[] {
+export function parseAllowHosts(raw: string | undefined): string[] {
   return raw
     ? raw
         .split(',')
@@ -30,14 +33,14 @@ function parseAllowHosts(raw: string | undefined): string[] {
     : [];
 }
 
-function normaliseHost(hostname: string): string {
+export function normaliseHost(hostname: string): string {
   let host = hostname.trim().toLowerCase();
   if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
   if (host.endsWith('.')) host = host.slice(0, -1);
   return host;
 }
 
-function isAllowlisted(host: string, allowHosts: readonly string[]): boolean {
+export function isAllowlisted(host: string, allowHosts: readonly string[]): boolean {
   return allowHosts.some(raw => {
     const entry = normaliseHost(raw);
     if (entry.length === 0) return false;
@@ -153,7 +156,7 @@ function ipv6BlockedReason(bytes: number[]): string | undefined {
   return undefined;
 }
 
-function blockedReason(host: string): string | undefined {
+export function blockedReason(host: string): string | undefined {
   const v4 = parseIpv4(host);
   if (v4) return ipv4BlockedReason(v4);
   if (host.includes(':')) {
