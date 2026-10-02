@@ -91,9 +91,9 @@ describe('TUI HTTP client', () => {
     const client = createDeckClient('http://kernel', 'tok', fetchImpl);
     const grant = await client.issueGrant({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
     expect(grant.grantId).toBe('g-9');
-    expect(calls[0].url).toBe('http://kernel/api/domains/grants');
-    expect(calls[0].init?.method).toBe('POST');
-    expect(JSON.parse(calls[0].init?.body ?? '{}')).toEqual({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
+    expect(calls[0]!.url).toBe('http://kernel/api/domains/grants');
+    expect(calls[0]!.init?.method).toBe('POST');
+    expect(JSON.parse(calls[0]!.init?.body ?? '{}')).toEqual({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
 
     const bad = createDeckClient('http://kernel', 'tok', vi.fn(async () => ({
       ok: false, status: 400, json: async () => ({ error: { message: 'grants authorize enterprise realms' } }),
@@ -109,7 +109,7 @@ describe('TUI HTTP client', () => {
     });
     const client = createDeckClient('http://kernel', 'tok', fetchImpl);
     await client.revokeGrant('grant x/1');
-    expect(calls[0].url).toBe('http://kernel/api/domains/grants/grant%20x%2F1');
-    expect(calls[0].init?.method).toBe('DELETE');
+    expect(calls[0]!.url).toBe('http://kernel/api/domains/grants/grant%20x%2F1');
+    expect(calls[0]!.init?.method).toBe('DELETE');
   });
 });

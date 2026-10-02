@@ -63,7 +63,7 @@ describe('buildDiary', () => {
       event({ eventId: 'evt-a', occurredAt: '2026-09-23T09:00:00.000Z', content: 'A' }),
       event({ eventId: 'evt-c', occurredAt: '2026-09-23T08:00:00.000Z', content: 'C' }),
     ]);
-    expect(entries[0].lines.map(l => l.eventId)).toEqual(['evt-c', 'evt-a', 'evt-b']);
+    expect(entries[0]!.lines.map(l => l.eventId)).toEqual(['evt-c', 'evt-a', 'evt-b']);
   });
 
   it('keeps every line traceable and provenance covering all sources', () => {
@@ -71,8 +71,8 @@ describe('buildDiary', () => {
       event({ eventId: 'evt-1', occurredAt: '2026-09-23T09:00:00.000Z' }),
       event({ eventId: 'evt-2', occurredAt: '2026-09-23T10:00:00.000Z' }),
     ]);
-    for (const line of entries[0].lines) expect(line.eventId).toMatch(/^evt-/);
-    expect(entries[0].provenance).toEqual(['evt-1', 'evt-2']);
+    for (const line of entries[0]!.lines) expect(line.eventId).toMatch(/^evt-/);
+    expect(entries[0]!.provenance).toEqual(['evt-1', 'evt-2']);
   });
 
   it('rejects mixed-realm input', () => {
@@ -104,13 +104,13 @@ describe('buildDiary', () => {
     };
     const a = buildDiary([{ ...base, content: 'A', occurredAt: '2026-09-23T09:00:00.000Z' }]);
     const b = buildDiary([{ ...base, content: 'B', occurredAt: '2026-09-23T09:00:00.000Z' }]);
-    expect(a[0].digest).not.toBe(b[0].digest);
+    expect(a[0]!.digest).not.toBe(b[0]!.digest);
   });
 
   it('honors a time zone for day buckets', () => {
     const instant = '2026-09-23T17:30:00.000Z'; // 09-24 01:30 in Shanghai
-    expect(buildDiary([event({ occurredAt: instant })])[0].date).toBe('2026-09-23');
-    expect(buildDiary([event({ occurredAt: instant })], { timeZone: 'Asia/Shanghai' })[0].date).toBe(
+    expect(buildDiary([event({ occurredAt: instant })])[0]!.date).toBe('2026-09-23');
+    expect(buildDiary([event({ occurredAt: instant })], { timeZone: 'Asia/Shanghai' })[0]!.date).toBe(
       '2026-09-24',
     );
   });
@@ -119,9 +119,9 @@ describe('buildDiary', () => {
     const events = [event({ eventId: 'evt-1', occurredAt: '2026-09-23T09:00:00.000Z' })];
     const facts = [fact({ factId: 'fct-1', provenance: ['evt-1'], updatedAt: '2026-09-23T10:00:00.000Z' })];
     const entries = buildDiary(events, { facts });
-    expect(entries[0].facts.map(f => f.factId)).toEqual(['fct-1']);
-    expect(entries[0].provenance).toContain('fct-1');
-    expect(entries[0].markdown).toContain('## Facts');
+    expect(entries[0]!.facts.map(f => f.factId)).toEqual(['fct-1']);
+    expect(entries[0]!.provenance).toContain('fct-1');
+    expect(entries[0]!.markdown).toContain('## Facts');
   });
 
   // A-07: the diary is written back into the realm directory, so a retracted
@@ -139,22 +139,22 @@ describe('buildDiary', () => {
       }),
     ];
     const entries = buildDiary(events, { facts });
-    expect(entries[0].facts.map(f => f.factId)).toEqual(['fct-live']);
-    expect(entries[0].provenance).not.toContain('fct-gone');
-    expect(entries[0].markdown).not.toContain('fct-gone');
+    expect(entries[0]!.facts.map(f => f.factId)).toEqual(['fct-live']);
+    expect(entries[0]!.provenance).not.toContain('fct-gone');
+    expect(entries[0]!.markdown).not.toContain('fct-gone');
   });
 
   it('omits the Facts section when there are no facts', () => {
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z' })]);
-    expect(entries[0].facts).toEqual([]);
-    expect(entries[0].markdown).not.toContain('## Facts');
+    expect(entries[0]!.facts).toEqual([]);
+    expect(entries[0]!.markdown).not.toContain('## Facts');
   });
 
   it('uses an injected content renderer', () => {
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z', content: { x: 1 } })], {
       renderContent: () => 'CUSTOM',
     });
-    expect(entries[0].lines[0].text).toBe('CUSTOM');
+    expect(entries[0]!.lines[0]!.text).toBe('CUSTOM');
   });
 });
 
@@ -186,7 +186,7 @@ describe('markdown', () => {
         confidence: 0.95,
       }),
     ]);
-    const md = entries[0].markdown;
+    const md = entries[0]!.markdown;
     expect(md).toContain('# Diary · 2026-09-23');
     expect(md).toContain('realm: realm-test · 1 event');
     expect(md).toContain('**decision**');
@@ -201,7 +201,7 @@ describe('persistDiary', () => {
     const write = vi.fn(async () => ({ itemId: 'diary/2026-09-23.md' }));
     const store = { write } as unknown as RealmStore;
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z', content: 'A' })]);
-    const result = await persistDiary(store, entries[0]);
+    const result = await persistDiary(store, entries[0]!);
     expect(result.itemId).toBe('diary/2026-09-23.md');
     expect(write).toHaveBeenCalledWith(
       'realm-test',
@@ -221,7 +221,7 @@ describe('persistDiary', () => {
       nonce: 'n1',
     };
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z' })]);
-    await persistDiary(store, entries[0], { dir: 'journal', grant });
+    await persistDiary(store, entries[0]!, { dir: 'journal', grant });
     expect(write).toHaveBeenCalledWith(
       'realm-test',
       { itemId: 'journal/2026-09-23.md', data: expect.any(String) },
@@ -231,7 +231,7 @@ describe('persistDiary', () => {
 
   it('throws when the store has no write capability', async () => {
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z' })]);
-    await expect(persistDiary({} as RealmStore, entries[0])).rejects.toBeInstanceOf(
+    await expect(persistDiary({} as RealmStore, entries[0]!)).rejects.toBeInstanceOf(
       DiaryUnsupportedError,
     );
   });
@@ -249,7 +249,7 @@ describe('persistDiary', () => {
           content: 'found 3 docs',
         }),
       ]);
-      const result = await persistDiary(store, entries[0]);
+      const result = await persistDiary(store, entries[0]!);
       expect(result.itemId).toBe('diary/2026-09-23.md');
       const back = await store.read(manifest.realmId, result.itemId);
       expect(back.content).toContain('# Diary · 2026-09-23');

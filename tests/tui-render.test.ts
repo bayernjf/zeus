@@ -115,8 +115,8 @@ describe('TUI pure render', () => {
   });
 
   it('derives intent-conflict choices from stances, otherwise from options', () => {
-    expect(escalationOptions(snapshot.escalations[1])).toEqual(['postgres', 'sqlite']);
-    expect(escalationOptions(snapshot.escalations[0])).toEqual(['provide params', 'skip']);
+    expect(escalationOptions(snapshot.escalations[1]!)).toEqual(['postgres', 'sqlite']);
+    expect(escalationOptions(snapshot.escalations[0]!)).toEqual(['provide params', 'skip']);
     expect(skillList({ skills: [{ id: 'a' }, { name: 'b' }] })).toBe('a,b');
   });
 

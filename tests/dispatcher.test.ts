@@ -87,7 +87,7 @@ describe('Dispatcher', () => {
     // written before the request left, so every governance view that counts by
     // decision read double.
     expect(decisions).toEqual(['dispatched']);
-    expect(audit[0]).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1', state: 'completed' });
+    expect(audit[0]!).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1', state: 'completed' });
   });
 
   it('refuses personal-realm tasks for an enterprise-only vassal (data diode)', async () => {
@@ -99,7 +99,7 @@ describe('Dispatcher', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reason).toContain('excludes personal');
-    expect(audit[0].decision).toBe('refused-realm-policy');
+    expect(audit[0]!.decision).toBe('refused-realm-policy');
     expect(seenBodies).toHaveLength(0);
   });
 
@@ -139,7 +139,7 @@ describe('Dispatcher', () => {
     if (!result.ok) return;
     expect(result.injectedHits).toEqual([]);
     const body = seenBodies[0] as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
-    expect(body.params.message.parts[0].data.realmHits).toBeUndefined();
+    expect(body.params.message.parts[0]!.data.realmHits).toBeUndefined();
   });
 
   it('injects task-scoped realm hits for read-task-scope vassals', async () => {
@@ -150,7 +150,7 @@ describe('Dispatcher', () => {
 
     expect(result.ok).toBe(true);
     const body = seenBodies[0] as { params: { message: { parts: Array<{ data: Record<string, unknown> }> } } };
-    expect(body.params.message.parts[0].data.realmHits).toEqual([{ itemId: 'hit-1', snippet: 'pr context' }]);
+    expect(body.params.message.parts[0]!.data.realmHits).toEqual([{ itemId: 'hit-1', snippet: 'pr context' }]);
   });
 
   it('honors a revoked entry in a Map-wired lookup', async () => {
@@ -183,7 +183,7 @@ describe('Dispatcher', () => {
     const result = await d.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise' });
 
     expect(result.ok).toBe(false);
-    expect(log[0].decision).toBe('refused-revoked');
+    expect(log[0]!.decision).toBe('refused-revoked');
     expect(seenBodies).toHaveLength(0);
   });
 
@@ -193,7 +193,7 @@ describe('Dispatcher', () => {
     const result = await dispatcherInstance.dispatch({ vassal: 'pr-helper', skill: 'merge-pr', params: {}, realm: 'enterprise' });
 
     expect(result.ok).toBe(false);
-    expect(audit[0].decision).toBe('refused-skill-uninstalled');
+    expect(audit[0]!.decision).toBe('refused-skill-uninstalled');
     expect(seenBodies).toHaveLength(0);
   });
 
@@ -207,7 +207,7 @@ describe('Dispatcher', () => {
     expect(result.task.status.state).toBe('input-required');
     const escalation = result.events[0] as Record<string, unknown>;
     expect(escalation['x-zeus-escalation']).toMatchObject({ level: 'driver' });
-    expect(audit[0].state).toBe('input-required');
+    expect(audit[0]!.state).toBe('input-required');
   });
 
   it('sends the bearer token when configured', async () => {

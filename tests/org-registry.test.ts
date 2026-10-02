@@ -103,10 +103,10 @@ describe('OrgRegistry export/import', () => {
     const exported = org.exportState();
     const restored = new OrgRegistry();
     restored.importState(exported);
-    expect(restored.listDepartments()[0].departmentId).toBe('dept:eng');
+    expect(restored.listDepartments()[0]!.departmentId).toBe('dept:eng');
 
-    exported[0].name = 'HACKED';
-    expect(org.listDepartments()[0].name).toBe('Eng');
+    exported[0]!.name = 'HACKED';
+    expect(org.listDepartments()[0]!.name).toBe('Eng');
   });
 
   it('rejects malformed state', () => {

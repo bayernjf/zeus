@@ -64,7 +64,7 @@ describe('E8.3 diary HTTP read', () => {
     expect(res.statusCode).toBe(200);
     const { entries } = await res.json();
     expect(entries).toHaveLength(1);
-    expect(entries[0].date).toBe('2026-09-23');
+    expect(entries[0]!.date).toBe('2026-09-23');
     expect(entries[0].markdown).toContain('found 3 docs');
     expect(entries[0].markdown).toContain('approve the report');
   });
@@ -153,7 +153,7 @@ describe('E8.3 diary export HTTP', () => {
     expect(scoped.statusCode).toBe(200);
     const entries = JSON.parse(scoped.body) as Array<{ realmId: string; date: string }>;
     expect(entries).toHaveLength(1);
-    expect(entries[0].date).toBe('2026-09-23');
+    expect(entries[0]!.date).toBe('2026-09-23');
   });
 
   it('rejects a malformed date and 404s a day with no diary', async () => {
