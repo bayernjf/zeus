@@ -62,6 +62,20 @@ jobs:
       - name: Core-chain smoke on the compiled artifact
         run: npm run smoke:core
 
+      # deferred #38: three static quality gates — ESLint (error-level baseline,
+      # rules TypeScript already owns are off, see eslint.config.js), npm audit on
+      # production dependencies (GitHub runners resolve the official registry, so
+      # the audit endpoint is available here even when a mirror is not), and a
+      # zero-dependency secret scan over the changeset since origin/main.
+      - name: Lint
+        run: npm run lint
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+
+      - name: Secret scan (changeset)
+        run: node scripts/scan-secrets.mjs --diff origin/main
+
   # deferred #24: wall-clock dependency gate. Runs the full suite under a
   # simulated future clock (scripts/clock-skew-setup.mjs shifts the JS clock +2y
   # via a vitest setup file, not `sudo date -s` — runners deny CAP_SYS_TIME and an
