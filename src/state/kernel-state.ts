@@ -167,6 +167,7 @@ export class FileKernelStateStore {
       ...(state.domainGrants ? { domainGrants: state.domainGrants } : {}),
       ...(state.commissions ? { commissions: state.commissions } : {}),
       ...(state.writeGrantNonces ? { writeGrantNonces: state.writeGrantNonces } : {}),
+      ...(state.executionDelegationNonces ? { executionDelegationNonces: state.executionDelegationNonces } : {}),
     };
     const dir = dirname(this.filePath);
     // The snapshot holds connector bearer tokens and the user's memory facts in
