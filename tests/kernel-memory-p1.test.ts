@@ -84,7 +84,7 @@ describe('memory P1 auto-consolidation on intent completion', () => {
 
     const facts = kernel.memoryStore!.facts(MEM_REALM, MEM_REALM);
     expect(facts).toHaveLength(1);
-    expect(facts[0].status).toBe('active');
+    expect(facts[0]!.status).toBe('active');
   });
 
   it('escalates disputes to the oversight desk and stays idempotent on re-consolidation', async () => {
@@ -98,8 +98,8 @@ describe('memory P1 auto-consolidation on intent completion', () => {
 
     const disputes = kernel.oversight.list().filter(e => e.kind === 'memory-dispute');
     expect(disputes).toHaveLength(1);
-    expect(disputes[0].status).toBe('pending');
-    expect(disputes[0].factId).toBeDefined();
+    expect(disputes[0]!.status).toBe('pending');
+    expect(disputes[0]!.factId).toBeDefined();
 
     // A later intent consolidates the same disputed facts; the deterministic
     // escalation id means no duplicate row is ingested.

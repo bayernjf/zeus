@@ -36,9 +36,9 @@ describe('Memory P2 hybrid recall', () => {
       claim('e2', 'user', 'language', 'rust'),
     ]);
     const hits = store.searchRecall('personal', 'personal', 'typescript');
-    expect(hits[0].fact.object).toBe('typescript');
-    expect(hits[0].lexical).toBeGreaterThan(0);
-    expect(hits[0].semantic).toBeGreaterThan(0);
+    expect(hits[0]!.fact.object).toBe('typescript');
+    expect(hits[0]!.lexical).toBeGreaterThan(0);
+    expect(hits[0]!.semantic).toBeGreaterThan(0);
   });
 
   it('tokenises and recalls Chinese text', () => {
@@ -47,7 +47,7 @@ describe('Memory P2 hybrid recall', () => {
       claim('e2', 'user', 'prefers', '大麦茶'),
     ]);
     const hits = store.searchRecall('personal', 'personal', '咖啡');
-    expect(hits[0].fact.object).toBe('手冲咖啡');
+    expect(hits[0]!.fact.object).toBe('手冲咖啡');
   });
 
   it('disputed facts stay recallable and are flagged', () => {
@@ -67,8 +67,8 @@ describe('Memory P2 hybrid recall', () => {
     ]);
     const lexical = store.searchRecall('personal', 'personal', 'xylophone', { alpha: 0 });
     // The shorter document gets the higher BM25 term-frequency saturation.
-    expect(lexical[0].fact.object).toBe('common xylophone');
-    expect(lexical[0].semantic).toBe(0);
+    expect(lexical[0]!.fact.object).toBe('common xylophone');
+    expect(lexical[0]!.semantic).toBe(0);
   });
 
   it('consolidation refreshes a materialised index automatically', () => {
@@ -83,7 +83,7 @@ describe('Memory P2 hybrid recall', () => {
     const audits: MemoryAuditEntry[] = [];
     const store = new MemoryStore(entry => audits.push(entry));
     expect(() => store.searchRecall('work', 'personal', 'rust')).toThrowError();
-    expect(audits[0].reason).toBe('cross-realm-read');
+    expect(audits[0]!.reason).toBe('cross-realm-read');
   });
 
   it('accepts an injected embedder through the port', () => {
@@ -96,8 +96,8 @@ describe('Memory P2 hybrid recall', () => {
     store.append(claim('e2', 'a', 'tag', 'qqq'));
     store.consolidateRealm('personal');
     const hits = store.searchRecall('personal', 'personal', 'zzz', { alpha: 1 });
-    expect(hits[0].fact.object).toBe('zzz');
-    expect(hits[0].semantic).toBe(1);
+    expect(hits[0]!.fact.object).toBe('zzz');
+    expect(hits[0]!.semantic).toBe(1);
   });
 });
 
@@ -111,12 +111,12 @@ describe('Memory P2 right to be forgotten', () => {
       .filter(f => f.object === 'typescript')
       .map(f => f.factId);
 
-    const records = store.retractFacts('personal', [factId], {
+    const records = store.retractFacts('personal', [factId!], {
       reason: 'user request',
       requestedBy: 'driver',
     });
     expect(records).toHaveLength(1);
-    expect(records[0].subject).toBe('user');
+    expect(records[0]!.subject).toBe('user');
     expect(store.searchRecall('personal', 'personal', 'typescript')).toEqual([]);
     expect(store.searchRecall('personal', 'personal', 'zed')).toHaveLength(1);
     expect(
@@ -148,8 +148,8 @@ describe('Memory P2 right to be forgotten', () => {
     const store = settledStore([claim('e1', 'user', 'language', 'rust')]);
     expect(store.retractFacts('personal', ['nope'], { reason: 'x', requestedBy: 'd' })).toEqual([]);
     const [factId] = store.facts('personal', 'personal').map(f => f.factId);
-    store.retractFacts('personal', [factId], { reason: 'x', requestedBy: 'd' });
-    store.retractFacts('personal', [factId], { reason: 'x', requestedBy: 'd' });
+    store.retractFacts('personal', [factId!], { reason: 'x', requestedBy: 'd' });
+    store.retractFacts('personal', [factId!], { reason: 'x', requestedBy: 'd' });
     expect(store.listRetractions()).toHaveLength(1);
   });
 
@@ -159,13 +159,13 @@ describe('Memory P2 right to be forgotten', () => {
   it('keeps a retracted fact retracted across a later consolidation (A-06)', () => {
     const store = settledStore([claim('e1', 'user', 'language', 'typescript')]);
     const [factId] = store.facts('personal', 'personal').map(f => f.factId);
-    store.retractFacts('personal', [factId], { reason: 'gdpr', requestedBy: 'driver' });
+    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'driver' });
 
     store.consolidateRealm('personal');
 
     const facts = store.facts('personal', 'personal').filter(f => f.factId === factId);
     expect(facts).toHaveLength(1);
-    expect(facts[0].status).toBe('retracted');
+    expect(facts[0]!.status).toBe('retracted');
     expect(store.searchRecall('personal', 'personal', 'typescript')).toEqual([]);
   });
 
@@ -177,7 +177,7 @@ describe('Memory P2 right to be forgotten', () => {
     const [factId] = store.facts('personal', 'personal')
       .filter(f => f.subject === 'alice')
       .map(f => f.factId);
-    store.retractFacts('personal', [factId], { reason: 'gdpr', requestedBy: 'driver' });
+    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'driver' });
 
     const restored = MemoryStore.fromState(store.exportState());
     expect(restored.listRetractions()[0]).toMatchObject({ factId, reason: 'gdpr' });

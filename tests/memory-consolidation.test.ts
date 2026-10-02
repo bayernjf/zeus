@@ -40,8 +40,8 @@ describe('memory consolidation P0', () => {
     const result = store.consolidateRealm(REALM, { now: () => new Date('2026-09-22T10:05:00Z') });
     const facts = store.facts(REALM, REALM);
     expect(facts).toHaveLength(1);
-    expect(facts[0].provenance).toEqual(['evt-1']);
-    expect(facts[0].status).toBe('active');
+    expect(facts[0]!.provenance).toEqual(['evt-1']);
+    expect(facts[0]!.status).toBe('active');
     expect(result.added).toHaveLength(1);
   });
 
@@ -67,9 +67,9 @@ describe('memory consolidation P0', () => {
 
     const facts = store.facts(REALM, REALM);
     expect(facts).toHaveLength(1);
-    expect(facts[0].provenance).toEqual(['evt-1', 'evt-x']);
-    expect(facts[0].version).toBe(2);
-    expect(result.merged).toEqual([{ factId: facts[0].factId, with: ['evt-x'] }]);
+    expect(facts[0]!.provenance).toEqual(['evt-1', 'evt-x']);
+    expect(facts[0]!.version).toBe(2);
+    expect(result.merged).toEqual([{ factId: facts[0]!.factId, with: ['evt-x'] }]);
   });
 
   it('acceptance 4: conflicting claims default to disputed + escalation, never overwrite', () => {
@@ -105,7 +105,7 @@ describe('memory consolidation P0', () => {
     const active = store.facts(REALM, REALM).filter(f => f.status === 'active');
     const superseded = store.facts(REALM, REALM).filter(f => f.status === 'superseded');
     expect(active).toHaveLength(1);
-    expect(active[0].object).toBe('bun');
+    expect(active[0]!.object).toBe('bun');
     expect(superseded).toHaveLength(1);
     expect(result.disputes).toEqual([]);
   });
@@ -170,7 +170,7 @@ describe('memory consolidation P0', () => {
     const replay = store.replay(REALM, 'run-A');
     expect(replay.events.map(e => e.runId)).toEqual(['run-A']);
     expect(replay.facts).toHaveLength(1);
-    expect(replay.facts[0].provenance).toEqual(['evt-1']);
+    expect(replay.facts[0]!.provenance).toEqual(['evt-1']);
   });
 
   it('refuses consolidation mixing multiple realms', () => {
@@ -209,7 +209,7 @@ describe('memory consolidation P0', () => {
 
     expect(() => store.read(OTHER, REALM)).toThrowError(MemoryBoundaryMessage(OTHER, REALM));
     expect(audits).toHaveLength(1);
-    expect(audits[0].at).toBe(frozen.toISOString());
+    expect(audits[0]!.at).toBe(frozen.toISOString());
   });
 
   it('#14 resolves fact authors only within the named realm, never by scanning every domain', () => {
@@ -223,10 +223,10 @@ describe('memory consolidation P0', () => {
 
     const [inRealm] = store.facts(REALM, REALM);
     const [elsewhere] = store.facts(OTHER, OTHER);
-    expect(store.authorsOfFacts(REALM, [inRealm.factId])).toEqual(['author-a']);
+    expect(store.authorsOfFacts(REALM, [inRealm!.factId])).toEqual(['author-a']);
     // A fact that lives only in the other realm is invisible here: no cross-domain
     // scan to attribute it (the old realm-optional form searched every realm).
-    expect(store.authorsOfFacts(REALM, [elsewhere.factId])).toEqual([]);
+    expect(store.authorsOfFacts(REALM, [elsewhere!.factId])).toEqual([]);
   });
 
   it('#15 refuses a self-reported confidence outside 0..1 instead of letting it skew the mean', () => {

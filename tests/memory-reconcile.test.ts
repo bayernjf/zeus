@@ -75,7 +75,7 @@ describe('Memory drift reconciliation', () => {
     store.consolidateRealm('personal');
     const before = store.exportState();
 
-    const factId = before.facts[0][1][0].factId;
+    const factId = before.facts[0]![1]![0]!.factId;
     store.retractFacts('personal', [factId], { reason: 'gdpr', requestedBy: 'driver' });
     const after = store.exportState();
     const report = reconcileMemoryStates(before, after);
@@ -100,7 +100,7 @@ describe('Memory invariant verification', () => {
 
   it('flags a fact whose id does not rebuild (tampered content)', () => {
     const state = settledState([claim('e1', 'user', 'language', 'rust')]);
-    const fact = state.facts[0][1][0];
+    const fact = state.facts[0]![1]![0]!;
     fact.object = 'python'; // id no longer matches
     const violations = verifyMemoryState(state);
     expect(violations.some(v => v.code === 'bad-fact-id')).toBe(true);
@@ -110,13 +110,13 @@ describe('Memory invariant verification', () => {
     const state = settledState([claim('e1', 'user', 'language', 'rust')]);
 
     const missing = structuredClone(state);
-    missing.facts[0][1][0].provenance = ['ghost'];
+    missing.facts[0]![1]![0]!.provenance = ['ghost'];
     expect(verifyMemoryState(missing).some(v => v.code === 'unresolved-provenance')).toBe(true);
 
     const crossRealm = structuredClone(state);
     crossRealm.events.push({ ...claim('e2', 'x', 'y', 'z') });
-    crossRealm.events[1].realmId = 'work';
-    crossRealm.facts[0][1][0].provenance.push('e2');
+    crossRealm.events[1]!.realmId = 'work';
+    crossRealm.facts[0]![1]![0]!.provenance.push('e2');
     expect(verifyMemoryState(crossRealm).some(v => v.code === 'provenance-realm-mismatch')).toBe(true);
   });
 
@@ -125,7 +125,7 @@ describe('Memory invariant verification', () => {
       claim('e1', 'alice', 'phone', 'secret'),
       claim('e2', 'bob', 'city', 'Munich'),
     ]);
-    const facts = state.facts[0][1];
+    const facts = state.facts[0]![1]!;
     const alice: FactRecord = facts.find(f => f.subject === 'alice')!;
     const bob: FactRecord = facts.find(f => f.subject === 'bob')!;
 
