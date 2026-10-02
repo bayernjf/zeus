@@ -382,6 +382,7 @@ try {
   // nothing the caller claims — and the refusal makes no outbound request.
   const requestsBefore = ['a1', 'a2', 'a3'].map(name => agent(name).requests);
   const selfAsserted = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, realmHits: [{ itemId: 'claim-1', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'claimed context' }], params: { subject: 'smoke-target', predicate: 'verdict' } });
+  /** @type {string[]} */
   const refusedReasons = (selfAsserted.json?.branches ?? []).map(/** @param {any} branch */ branch => String(branch.reason ?? ''));
   record(
     'self-asserted realm hits are refused for a read-task-scope vassal without an outbound request',
