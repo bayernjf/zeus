@@ -212,18 +212,19 @@
 - **三段各自缺陷植入（不是只测坏输入）**：把表头改回 75/72 → `expected [ '75','3','72' ] to deeply equal [ '76','3','73' ]`；把记忆行改回 12 → `route groups sum to 75, the bearer face has 73`；把导出改回 116 → `expected '116' to be '118'`。三次都只红该例、还原后 10/10 绿。
 - 一处顺带修正：同一文件的 PRD 🚧 两条之一写作「E4.9 凭据委派」，而 PRD 的 E4.9 是签名链（凭据代理归 deferred #33）。
 
-### F. 部署镜像：本轮**未**重拍（本机网络受限，如实记，不冒充"已跑"）
+### F. 部署镜像：本机**未**重拍（出货件已变、网络受限），CI 的构建冒烟在推送后闭合并写明覆盖面
 
 - **为什么不继承**：本批改了出货件 `src/http/serve.ts`。按 v0.19 的先例（"出货件动过则镜像层不继承"），这一格必须重拍才谈得上覆盖。
 - **实测失败点**：`docker build` 在 `#2 [internal] load metadata for docker.io/library/node:22-slim` 处失败——`failed to fetch oauth token: Post "https://auth.docker.io/token": dial tcp 31.13.96.208:443: connectex: … timed out`；`docker images` **本地零缓存**，没有可离线复用的基础镜像。
 - **诊断出的是环境事实、不是代码问题**：本机 `127.0.0.1:7897` 代理**可达 Docker Hub**（`registry-1.docker.io/v2/` → HTTP 401，`auth.docker.io/token` → HTTP 200），而 Docker Desktop 的 `settings-store.json` **没有任何代理配置**。修法是给 Docker Desktop 配代理（用户侧环境动作）；**我未擅自改用户的 Docker 配置**。
-- **该项的设计落点是 CI**：`.github/workflows/ci.yml` 有独立 `image build + smoke` job，且对已推送 HEAD 是绿的（§G）。本批的镜像证据随下次推送由 CI 给出。
-- **本机能给的替代证据已跑**（不夸大其覆盖面）：`npm run build` exit 0；`dist/http/serve.js` 真进程 + 真 socket 走通核心链路（smoke 31/36，失败项全为 Windows 语义不可表达者，且与改动前逐条相同）；独立探针 20/20（§C/§D）。**容器级属性（非 root、卷权限、SIGTERM 落盘、healthcheck）本轮没有本地证据**。
+- **该项的设计落点是 CI，且推送后已闭合到"构建 + 镜像内两项冒烟"**：`.github/workflows/ci.yml` 的 `image-smoke` job 做三件事——`docker build -t zeus:ci .`、镜像内 `node scripts/gen-rsk-key.mjs /tmp/rsk.key && test -s /tmp/rsk.key`、`docker run --entrypoint node zeus:ci -e "require('./dist/index.js')"`。**本批推送后该 job 绿**（run **37048803811**，HEAD `22de402`，20s）。**它不覆盖容器级运行属性**（healthy 健康检查、`/data` 0600、SIGTERM 落盘、重启 `restored …`），那四项对 `22de402` 仍无证据，最后一次实跑停留在 `6179688`——这句话是本节的边界，别把它读成"镜像层已全量覆盖"。
+- **本机能给的替代证据已跑**（不夸大其覆盖面）：`npm run build` exit 0；`dist/http/serve.js` 真进程 + 真 socket 走通核心链路（smoke 31/36，失败项全为 Windows 语义不可表达者，且与改动前逐条相同）；独立探针 20/20（§C/§D）。**容器级属性本轮没有本地证据**。
 
 ### G. CI 现测（本轮 `gh` 可用）
 
-- `gh run list --branch dev`：run **37027110404**（push，HEAD `b61043d`）**4/4 job 成功**——`wall-clock dependency gate (+2y)` 51s、**`image build + smoke` 41s**、`typecheck / build / test (Node 24.x)` 48s、`typecheck / build / test (Node 22.x)` 56s；同 HEAD 的 PR 流水线 37027148185 同绿。
-- 三条意义：① 本机那 25 例"环境性失败"在 **Linux 侧全绿**得到独立确认；② 镜像冒烟在 CI 有落点且当前是绿的；③ E1 的现行读数是"**已推送的 HEAD 绿**，本批 3 个 commit 未推（等授权）"。
+- **本批推送后（2026-10-02）**：run **37048803811**（push，HEAD `22de402`）**4/4 job 成功**——`image build + smoke` 20s、`typecheck / build / test (Node 24.x)` 48s、`typecheck / build / test (Node 22.x)` 55s、`wall-clock dependency gate (+2y)` 49s；`git ls-remote origin refs/heads/dev` = `22de4023…`（与本地一致）。
+- **本批之前**：run **37027110404**（push，HEAD `b61043d`）同样 4/4 绿；同 HEAD 的 PR 流水线 37027148185 亦绿。
+- 三条意义：① 本机那 25 例"环境性失败"在 **Linux 侧全绿**得到独立确认（连续两次推送）；② 镜像构建冒烟在 CI 有落点且本批已绿（覆盖面见 §F）；③ E1 的现行读数是"**`origin/dev..HEAD` = 0，本批 CI 4/4 绿**"。
 - **口径不变**：状态只能现测（`gh run list` / `git rev-list --count origin/dev..HEAD`），任何写死的同步状态几分钟后就会过期。
 
 ### H. 功能性 / 完整度 / 可上线（三维判定）
