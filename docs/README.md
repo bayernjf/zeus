@@ -38,6 +38,8 @@
 | 看懂一个 Agent 怎么"上岗即用"：四道门与首日简报 | [design-onboarding.md](design-onboarding.md)（seat/account/authorization/mentorship 现算不缓存、显式豁免、first-task 真派发） |
 | 理解 bayjf 如何从陈列馆升级为公开签名目录名册 | [design-bayjf-roster.md](design-bayjf-roster.md)（名册字段映射、内外双视图、签名链闸门、R0–R2） |
 | 设计/实现名册公开前的签名验签链 | [design-fealty-signing.md](design-fealty-signing.md)（威胁模型、Zeus 单签 v1、Ed25519+JCS、两层信封、吊销失效语义、验收用例） |
+| 设计/裁定 Zeus 的入站 A2A 面（别的 Agent 派任务给 Zeus） | [design-inbound-a2a.md](design-inbound-a2a.md)（deferred #19，v0.1 方向固化：Zeus 自己的 agent card、`tasks/send` 落 H2 意图面、三问暂定答案；实现待真实上游触发） |
+| 真实核对 Jev 决策后端（等 key，规程已备） | [verify-jev-backend.md](verify-jev-backend.md)（v0.1：四个未证实假设逐项核对步骤 + 判定矩阵与不符处置；复用 `npm run verify:decision-backend`，无新代码） |
 | 了解 Zeus 服务端 HTTP 栈怎么选、端点怎么长 | [design-http-transport.md](design-http-transport.md)（网络面划分、Fastify+长驻裁决、薄传输层、H1–H3 端点） |
 | 把 Zeus 进程真正跑起来 / 上线（Docker、密钥、状态卷、备份调度） | [deployment.md](deployment.md)（部署手册：Dockerfile 与 compose、RSK 密钥生成与生产守卫、systemd 备选、§7 Vault 备份恢复 CLI 与 cron、上线检查清单） |
 | 让外部系统经 MCP 接进 Zeus，或把 Zeus 的数据域接进别人的宿主 | [mcp-integration.md](mcp-integration.md) **v0.1**（对接方视角的契约与用法：stdio 服务端的根授权两条入口 / 资源与工具参考 / 快照 vs 实时读取 / 7 个错误码 / 四条"这里没有"的边界；客户端连接器的封闭权限词汇与能力裁剪层次；请求-响应原文与复跑命令） |
