@@ -186,7 +186,7 @@ describe('VassalRegistry', () => {
     expect(seen[0]).not.toHaveProperty('token');
     // The dispatcher and the on-disk snapshot stay the only readers.
     expect(registry.tokenFor('pr-helper')).toBe('outbound-credential');
-    expect(registry.exportState()[0].token).toBe('outbound-credential');
+    expect(registry.exportState()[0]!.token).toBe('outbound-credential');
   });
 
   // Every other failure stub in this file returns a bad Response. None of them
@@ -250,7 +250,7 @@ describe('VassalRegistry', () => {
     // same declared card URL, same stored credential, still revoked.
     const [entry] = registry.listAll();
     expect(entry).toMatchObject({ status: 'revoked' });
-    expect(entry.cardUrl).toBe('http://vassal.internal/api/a2a/agent-card');
+    expect(entry!.cardUrl).toBe('http://vassal.internal/api/a2a/agent-card');
     expect(registry.tokenFor('pr-helper')).toBeUndefined();
   });
 
@@ -277,12 +277,12 @@ describe('VassalRegistry', () => {
     const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
     await registry.register('http://vassal.internal/api/a2a/agent-card');
     expect(registry.listAll()).toHaveLength(1);
-    expect(registry.listAll()[0].status).toBe('active');
+    expect(registry.listAll()[0]!.status).toBe('active');
     registry.revoke('pr-helper');
     const all = registry.listAll();
     expect(all).toHaveLength(1);
-    expect(all[0].status).toBe('revoked');
-    expect(all[0].card.name).toBe('pr-helper');
+    expect(all[0]!.status).toBe('revoked');
+    expect(all[0]!.card.name).toBe('pr-helper');
     // routing-facing list still hides it
     expect(registry.list()).toHaveLength(0);
   });

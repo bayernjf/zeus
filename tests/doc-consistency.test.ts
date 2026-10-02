@@ -30,9 +30,9 @@ const DOC_FILES = [
 function declaredVersion(file: string): string | null {
   const head = readFileSync(file, 'utf8').split('\n').slice(0, 16).join('\n');
   const status = head.match(/状态：\*\*[^v]*(v\d+\.\d+)/);
-  if (status) return status[1];
+  if (status) return status[1]!;
   const anyVersion = head.match(/(v\d+\.\d+)/);
-  return anyVersion ? anyVersion[1] : null;
+  return anyVersion ? anyVersion[1]! : null;
 }
 
 type IndexRow = { file: string; line: number; target: string; claimed: string };
@@ -51,13 +51,13 @@ function indexRows(): IndexRow[] {
         if (!isIndexBullet && !isMapRow) return;
         const link = text.match(/\((?:docs\/)?([a-z0-9\-\.]+\.md)\)/);
         if (!link) return;
-        const target = link[1];
+        const target = link[1]!;
         const path = existsSync(`docs/${target}`) ? `docs/${target}` : target;
         if (!existsSync(path)) return;
         const after = text.slice(link.index ?? 0);
         const claim = after.match(/(?<![\w.])v(\d+)\.(\d+)/);
         if (!claim) return;
-        rows.push({ file, line: index + 1, target: path, claimed: `v${claim[1]}.${claim[2]}` });
+        rows.push({ file, line: index + 1, target: path, claimed: `v${claim[1]!}.${claim[2]!}` });
       });
   }
   return rows;
@@ -102,7 +102,7 @@ describe('documentation consistency', () => {
         }
         // The modal column count is the table's shape: a pasted-together row or a
         // stray unescaped pipe always shows up as the minority.
-        const [modal, modalLines] = [...tally.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+        const [modal, modalLines] = [...tally.entries()].sort((a, b) => b[1].length - a[1].length)[0]!;
         for (const [count, at] of tally.entries()) {
           if (count !== modal) {
             offenders.push(`${file}:${at.join(',')}  pipes=${count} 其余行是 ${modal}（${modalLines.length} 行）`);
@@ -161,7 +161,7 @@ describe('documentation consistency', () => {
         const cells = line.split('\\|').join('').split('|').map(cell => cell.trim());
         const [, id, , priority, status] = cells;
         // Only requirement rows: a row whose third cell is not a priority is prose.
-        if (!id || !/^E[\d.]+$/.test(id) || !/^P\d$/.test(priority) || !status) return;
+        if (!id || !/^E[\d.]+$/.test(id) || !/^P\d$/.test(priority ?? '') || !status) return;
         if (!markers.has(status)) bad.push(`line ${index + 1}  ${id}  status="${status}"`);
       });
       return bad;
@@ -226,10 +226,10 @@ describe('documentation consistency', () => {
     );
 
     const pairs: [string, string, string][] = [
-      ['tests', header[1], baseline[1]],
-      ['files', header[2], baseline[2]],
-      ['smoke passed', header[3], smoke[1]],
-      ['smoke total', header[4], smoke[2]],
+      ['tests', header[1]!, baseline[1]!],
+      ['files', header[2]!, baseline[2]!],
+      ['smoke passed', header[3]!, smoke[1]!],
+      ['smoke total', header[4]!, smoke[2]!],
     ];
     const drift = pairs
       .filter(([, quoted, current]) => quoted !== current)
@@ -266,12 +266,12 @@ describe('documentation consistency', () => {
     const evidenceSmoke = grab(readme, /重启恢复，(\d+) 步）/, 'README evidence sentence smoke steps');
 
     const pairs: [string, string, string][] = [
-      ['gate tests', gateTests[1], baseline[1]],
-      ['gate files', gateTests[2], baseline[2]],
-      ['gate smoke steps', gateSmoke[1], smoke[2]],
-      ['evidence tests', evidence[1], baseline[1]],
-      ['evidence files', evidence[2], baseline[2]],
-      ['evidence smoke steps', evidenceSmoke[1], smoke[2]],
+      ['gate tests', gateTests[1]!, baseline[1]!],
+      ['gate files', gateTests[2]!, baseline[2]!],
+      ['gate smoke steps', gateSmoke[1]!, smoke[2]!],
+      ['evidence tests', evidence[1]!, baseline[1]!],
+      ['evidence files', evidence[2]!, baseline[2]!],
+      ['evidence smoke steps', evidenceSmoke[1]!, smoke[2]!],
     ];
     const drift = pairs
       .filter(([, quoted, current]) => quoted !== current)
@@ -310,8 +310,8 @@ describe('documentation consistency', () => {
     );
 
     const pairs: [string, string, string][] = [
-      ['tests', index[1], baseline[1]],
-      ['files', index[2], baseline[2]],
+      ['tests', index[1]!, baseline[1]!],
+      ['files', index[2]!, baseline[2]!],
     ];
     const drift = pairs
       .filter(([, quoted, current]) => quoted !== current)
