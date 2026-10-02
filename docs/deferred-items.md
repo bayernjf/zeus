@@ -262,12 +262,13 @@
 - **触发条件**：① 部署形态出现"Zeus 与被注册/被连接的 Agent 不在同一信任域"；② 安全评审要求出站面达到"解析即校验"口径。
 - **建议做法（决定后）**：解析主机名 → 逐个结果地址过同一地址段守卫 → 连接后核对实际 peer 地址（防解析-连接间隙重绑）；逃生舱语义保持不变（`ZEUS_OUTBOUND_ALLOW_HOSTS` 命中即跳过检查，含解析结果）。
 
-### #36 TypeScript 严格性还有三项未启用（`noUncheckedIndexedAccess` / `exactOptionalPropertyTypes` / `noUnusedParameters`）
+### #36 TypeScript 严格性还有一项未启用（`noUncheckedIndexedAccess`）
 - **缺口**：b46 修 §4.6「严格性有缺口」时只启用了 `noUnusedLocals`（暴露并清掉 18 处真死代码），其余三项仍在 `tsconfig.json` 之外。同仓实测规模：`noUncheckedIndexedAccess` **400** 处、`exactOptionalPropertyTypes` **40** 处、`noUnusedParameters` **7** 处（量法 `npx tsc --noEmit --<flag>`；**flag 必须带 `--` 前缀**，否则被当成文件参数，会报出假的"1 条错误"）。
 - **为什么登记不做**：三项都是**语义变更**型迁移——数组下标由 `T` 变 `T | undefined`、可选属性由"可缺省"变为"不可显式传 `undefined`"、未用参数需改名为 `_x` 或删除。一处 flag 改动牵动大量调用面，与 A/B 级"行为缺陷"不是同一类工作；塞进某一个原子修复会让 diff 不可审。
 - **触发条件**：① 下一次大范围重构（集中改 `listAll`/遍历路径）时顺手迁移；② 出现一次由"下标越界返回 `undefined` 未被处理"或"可选属性被显式传 `undefined`"造成的真实缺陷。
 - **建议做法（决定后）**：按 flag 逐个原子迁移（`noUnusedParameters` 7 处最小 → `exactOptionalPropertyTypes` 40 处 → `noUncheckedIndexedAccess` 400 处），每步单独提交并跑全量门禁；迁移前先确认 `tsconfig.build.json` 的 `include: ["src"]` 面受不受影响，或一并收口。
-- **进展（2026-10-02，最小档已迁移，本条仍未销项）**：`noUnusedParameters` 已启用并清零——实测 8 处（登记 7 处 + `bench-capacity.mjs` 的 `startMockFarm(count,…)` 参数，后者是 deferred #37 后半段把 scripts 纳入检查后新暴露的），全部按 `_` 前缀改名收口（公共导出 `createTraceSink` 的 `backend`/`model`、`recomputeResult` 的 `now` 保留签名只改名，测试 mock 回调同法）。启用后 `npm run typecheck` 与 `npm run build` exit 0、`npm test` 1012 / 94 全绿、`smoke:core` 36/36。**中档量法刷新**：`exactOptionalPropertyTypes` 现量 **45 处**（登记 40 + 新纳入脚本/近期新增面 5），`noUncheckedIndexedAccess` 仍为 400 档；两档待触发条件。
+- **进展（2026-10-02，最小档已迁移，本条仍未销项）**：`noUnusedParameters` 已启用并清零——实测 8 处（登记 7 处 + `bench-capacity.mjs` 的 `startMockFarm(count,…)` 参数，后者是 deferred #37 后半段把 scripts 纳入检查后新暴露的），全部按 `_` 前缀改名收口（公共导出 `createTraceSink` 的 `backend`/`model`、`recomputeResult` 的 `now` 保留签名只改名，测试 mock 回调同法）。启用后 `npm run typecheck` 与 `npm run build` exit 0、`npm test` 1012 / 94 全绿、`smoke:core` 36/36。**中档量法刷新**：`exactOptionalPropertyTypes` 现量 **41 处**（登记 40 + scripts 纳入检查后新浮出 1），`noUncheckedIndexedAccess` 仍为 400 档；两档待触发条件。
+- **销项（2026-10-02，中档迁移完成，本条已销项）**：`exactOptionalPropertyTypes` 实测 **41 处**全部按 exact 语义清零并正式启用（`tsconfig.json` 开启 `exactOptionalPropertyTypes: true`，`npx tsc --noEmit` 0 错）。收口两类手法：可选字段不再显式传 `undefined`，一律条件展开 `...(cond ? { key } : {})`（fan-out 原语 / 派发出站凭证 / MCP 连接器与客户端 / HTTP 装配 / kernel 组件与 boot / vault / 测试夹具）；"属性存在但值可为空"的字段改显式 `T | undefined`（`McpClient.token`、`McpStdioClient.child`、`DriverGrantLedger.onChange`）。两处行为修正是附带收益：`registry.healthCheck` 以局部变量收窄消除 `lastHealthCheck` 可能 undefined（顺带修掉 `return entry.lastHealthCheck.ok` 的潜在 TypeError 面）、`removeMember` 用 `delete next.lead` 保持"移除 lead 后无 lead"语义。验证：全量 **1015 / 94 绿**、`smoke:core` 36/36、typecheck/build exit 0，7 个原子 commit。**本条剩唯一一档：`noUncheckedIndexedAccess`（400 处，仍待触发条件）。**
 
 ### #37 `scripts/*.mjs` 未纳入类型检查
 - **缺口**：`tsconfig.json` 的 `include` 覆盖 `src`、`tests` 与两个 vitest 配置；7 个 `scripts/*.mjs`（验收 / 压测 / 冒烟 / 密钥生成 / 时钟偏移 / 代理设置等）不受任何静态检查。实测开启 `allowJs + checkJs` 后 scripts 报 **216** 条诊断（量法：仓库根临时建 standalone probe tsconfig，`allowJs:true, checkJs:true`，`include` 加 `scripts`，`tsc -p` 跑完即删；两个 vitest 配置的对应诊断数为 0，已并入 b46 的 `include`）。
@@ -282,9 +283,11 @@
 - **为什么登记不做**：三道都**要先选型并新增依赖**（ESLint 配置面、`npm audit`/OSV 策略、gitleaks 之类），属工具决定；在一个没有 lint 基线的仓库里一次性接入，会把全部历史风格问题倒进 CI。
 - **触发条件**：① 首次外部贡献者提交（需要客观风格底线）；② 出现一次依赖链漏洞或误提交密钥的真实事件。
 - **建议做法（决定后）**：三道各自独立提交；lint 先"只报 error 级、不阻断 warning"，漏洞扫描先只对生产依赖，secret 扫描先只扫变更集。
+- **销项（2026-10-02，三道全部落地，本条已销项）**：① **ESLint 基线**（eslint@10 flat config + typescript-eslint@8 recommended，devDeps 新增）——只留 error 级：recommended 中与 tsconfig 重复的 `no-unused-vars` 关掉，`no-explicit-any` 基线关掉（24 处既有协议载荷 `any` 是 deferred #37 已登记的诚实口径，待专项迁移再开）；跑通后仅两类违规（24 any + 1 prefer-const + 1 @ts-ignore 改 @ts-expect-error），全部按此策略收口，`npm run lint` exit 0。② **生产依赖漏洞扫描**：`lint:audit` = `npm audit --omit=dev`，官方 registry 实测 0 漏洞（本机 npmmirror 镜像不支持 audit 端点，CI 用官方 registry 不受影响）。③ **secret 扫描**：零依赖 `scripts/scan-secrets.mjs`（10 组保守模式：私钥头/GitHub PAT/gho/npm/Slack/AWS/Anthropic/Google/OpenAI），默认扫全部 tracked、`--diff <base>` 只扫变更集，命中 exit 1 带 file:line；全量 247 文件 clean，负向植入（tracked 文件加假 `ghp_` token）命中且 exit 1；脚本按 #37 口径纳入 `@ts-check` + tsconfig include。CI 三步已接入 verify job（Lint / Production dependency audit / Secret scan），三个原子 commit（ESLint 基线 / audit+secrets / CI 集成）。
 
 ### #39 CI 未覆盖的构建与线上验收闸门（部署镜像构建冒烟、`acceptance:fanout`）
 - **缺口**：`npm run smoke:core` 已在 CI 覆盖"编译产物真进程 + 真 socket 核心链"，但 **Docker 镜像构建**只在评审轮手工实构实跑（Dockerfile 改动无 CI 验证），**`acceptance:fanout`** 需线上真实外部执行 Agent（`CARD_URL=https://pr-helper-ten.vercel.app/...`）与出网许可，不适合当每次推送的 pass/fail 门。
 - **为什么登记不做**：镜像构建冒烟要在 CI 里跑 `docker build`（runner 能力与成本）；线上验收依赖外部服务可用性与代理，属**外部条件**而非库内缺口。
 - **触发条件**：① Dockerfile 改动引入一次镜像构建失败、到上线才发现；② CI 环境提供可用的外部 Agent 或带 Docker 的 runner。
 - **建议做法（决定后）**：镜像冒烟先行（CI 加一步 `docker build`，不 push 镜像）；线上验收保持"评审轮手工跑 + 记录"，不入门禁。
+- **销项（2026-10-02，镜像冒烟落地，本条已销项）**：CI 新增独立 `image-smoke` job（ubuntu-24.04，docker build 不 push + 两条运行时冒烟：镜像内零依赖密钥脚本 `gen-rsk-key.mjs` 可生成密钥、编译产物 `require('./dist/index.js')` 可加载）——Dockerfile 或产物变更从此在每次推送时验证。本地实构实跑两条冒烟命令通过后清理镜像。`acceptance:fanout` 线上验收按建议保持"评审轮手工跑 + 记录"，不入门禁。

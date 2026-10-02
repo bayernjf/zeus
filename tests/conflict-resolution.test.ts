@@ -95,7 +95,11 @@ describe('E6.2 end-to-end: fan-out split -> desk -> write-back', () => {
 
     const esc = desk.list('pending')[0];
     const decided = desk.decideConflict(esc.id, 'go');
-    const resolved = orch.resolveIntent('intent-1', { escalationId: decided.id, stance: decided.decidedStance!, note: decided.decisionNote });
+    const resolved = orch.resolveIntent('intent-1', {
+      escalationId: decided.id,
+      stance: decided.decidedStance!,
+      ...(decided.decisionNote !== undefined ? { note: decided.decisionNote } : {}),
+    });
 
     expect(resolved.status).toBe('completed');
     expect(resolved.decision.conclusion).toBe('go');

@@ -496,7 +496,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         id: result.escalations[i],
         runId: event.runId,
         realm,
-        realmId: event.realmId,
+        ...(event.realmId ? { realmId: event.realmId } : {}),
         factId: dispute.factId,
         conflictingFacts: dispute.conflicting,
         reason: dispute.reason,
@@ -732,7 +732,12 @@ export function resolveAuditConfig(env: NodeJS.ProcessEnv = process.env): Proces
   const config: ProcessAuditConfig = {};
   const rawMax = env.ZEUS_AUDIT_MAX_BYTES?.trim().toLowerCase();
   if (rawMax !== undefined && rawMax !== '') {
-    config.auditMaxBytes = UNLIMITED.has(rawMax) ? Number.POSITIVE_INFINITY : envInteger(rawMax, 'ZEUS_AUDIT_MAX_BYTES', 1);
+    if (UNLIMITED.has(rawMax)) {
+      config.auditMaxBytes = Number.POSITIVE_INFINITY;
+    } else {
+      const parsed = envInteger(rawMax, 'ZEUS_AUDIT_MAX_BYTES', 1);
+      if (parsed !== undefined) config.auditMaxBytes = parsed;
+    }
   }
   const keep = envInteger(env.ZEUS_AUDIT_KEEP, 'ZEUS_AUDIT_KEEP', 1);
   if (keep !== undefined) config.auditKeep = keep;

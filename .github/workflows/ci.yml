@@ -31,6 +31,12 @@ jobs:
         node-version: [22.x, 24.x]
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history: the secret-scan step diffs the changeset against
+          # origin/main, which a shallow clone (fetch-depth: 1) never fetches —
+          # it is exactly what failed PR 64's verify job with "ambiguous
+          # argument 'origin/main...HEAD'".
+          fetch-depth: 0
 
       - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v7
@@ -61,6 +67,20 @@ jobs:
       # session's throwaway script. Loopback only, own key and own tokens.
       - name: Core-chain smoke on the compiled artifact
         run: npm run smoke:core
+
+      # deferred #38: three static quality gates — ESLint (error-level baseline,
+      # rules TypeScript already owns are off, see eslint.config.js), npm audit on
+      # production dependencies (GitHub runners resolve the official registry, so
+      # the audit endpoint is available here even when a mirror is not), and a
+      # zero-dependency secret scan over the changeset since origin/main.
+      - name: Lint
+        run: npm run lint
+
+      - name: Production dependency audit
+        run: npm audit --omit=dev
+
+      - name: Secret scan (changeset)
+        run: node scripts/scan-secrets.mjs --diff origin/main
 
   # deferred #24: wall-clock dependency gate. Runs the full suite under a
   # simulated future clock (scripts/clock-skew-setup.mjs shifts the JS clock +2y
@@ -95,4 +115,25 @@ jobs:
 
       - name: Unit tests under a simulated future clock
         run: npx vitest run --config vitest.clock-skew.config.ts
+
+  # deferred #39: the shipping image only got built by hand in review rounds, so
+  # a Dockerfile change could break the build without CI noticing. Smoke it on
+  # every push: build (no push), then verify the runner stage can actually run —
+  # the zero-dependency keygen script bakes into the image, and the compiled
+  # artifact loads. Ubuntu runners ship Docker with buildx default; nothing here
+  # needs the extra binfmt/emulation or a registry login.
+  image-smoke:
+    name: image build + smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t zeus:ci .
+
+      - name: Smoke the image
+        run: |
+          docker run --rm --entrypoint sh zeus:ci -c 'node scripts/gen-rsk-key.mjs /tmp/rsk.key && test -s /tmp/rsk.key'
+          docker run --rm --entrypoint node zeus:ci -e "require('./dist/index.js')"
 

@@ -57,7 +57,7 @@ export async function packFull(inventory: VaultInventory, key: VaultKey, opts: {
   const bundleDigest = digestManifest(entries.map(entry => ({ itemId: entry.itemId, content: entry.content })));
   const bundleRef: BundleRef = { strategy: 'full', bundleId: bundleDigest.slice(0, 16), digest: bundleDigest, createdAt: now };
 
-  const map = await buildVault(inventory, { now: opts.now, bundle: bundleRef });
+  const map = await buildVault(inventory, { ...(opts.now !== undefined ? { now: opts.now } : {}), bundle: bundleRef });
   const sealedMap = sealMap(map, key);
   return { map, sealedMap, sealedBundle };
 }

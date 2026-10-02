@@ -16,7 +16,7 @@ import type { TenantScope } from './types.js';
 import { RealmError } from './types.js';
 
 const MAX_SEGMENT_CHARS = 120;
-// eslint-disable-next-line no-control-regex
+
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 export class TenantError extends RealmError {

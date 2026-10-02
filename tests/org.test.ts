@@ -90,7 +90,7 @@ describe('assignMember', () => {
   });
 
   it('rejects duplicate agents and a second lead', () => {
-    let d = assignMember(createDepartment({ name: 'Eng', mission: 'm' }), {
+    const d = assignMember(createDepartment({ name: 'Eng', mission: 'm' }), {
       agentId: 'agent-b',
       role: 'lead',
     });

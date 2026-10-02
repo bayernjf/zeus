@@ -4,6 +4,7 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
+    "exactOptionalPropertyTypes": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "skipLibCheck": true,
@@ -25,6 +26,7 @@
     "scripts/acceptance-real-fanout.mjs",
     "scripts/acceptance-standard-a2a.mjs",
     "scripts/bench-capacity.mjs",
-    "scripts/clock-skew-setup.mjs"
+    "scripts/clock-skew-setup.mjs",
+    "scripts/scan-secrets.mjs"
   ]
 }

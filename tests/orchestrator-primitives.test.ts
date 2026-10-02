@@ -69,7 +69,7 @@ describe('extractStance / extractPositions', () => {
   it('collects positions only from successful branches with a stance', () => {
     const positions = extractPositions([
       branch('loom', { task: taskWithStance('loom-task', 'approve') }),
-      branch('atlas', { ok: false, reason: 'down', task: undefined }),
+      branch('atlas', { ok: false, reason: 'down' }),
       branch('job-agent', { task: { kind: 'task', id: 'j', contextId: 'ctx', status: { state: 'completed' }, artifacts: [] } }),
     ]);
     expect(positions.map(p => p.vassal)).toEqual(['loom']);

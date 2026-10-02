@@ -53,18 +53,16 @@ export class ConnectorRegistry {
       throw new ConnectorError('http connector requires a non-empty endpoint');
     }
 
+    const stdioArgs = input.transport?.type === 'stdio' ? input.transport.args : input.args;
+    const stdioEnv = input.transport?.type === 'stdio' ? input.transport.env : input.env;
     const normalised: ConnectorDeclaration = isStdio
       ? {
           id: input.id,
           name: input.name,
           command:
             input.transport?.type === 'stdio' ? input.transport.command : input.command!,
-          args:
-            input.transport?.type === 'stdio'
-              ? input.transport.args
-              : input.args,
-          env:
-            input.transport?.type === 'stdio' ? input.transport.env : input.env,
+          ...(stdioArgs !== undefined ? { args: stdioArgs } : {}),
+          ...(stdioEnv !== undefined ? { env: stdioEnv } : {}),
           permissions: input.permissions,
         }
       : {
@@ -114,8 +112,8 @@ export class ConnectorRegistry {
       if (this.isStdio(record)) {
         const stdio = new McpStdioClient({
           command: record.command!,
-          args: record.args,
-          env: record.env,
+          ...(record.args !== undefined ? { args: record.args } : {}),
+          ...(record.env !== undefined ? { env: record.env } : {}),
         });
         try {
           capabilities = await stdio.initialize();
@@ -123,7 +121,10 @@ export class ConnectorRegistry {
           stdio.close();
         }
       } else {
-        capabilities = await new McpClient(record.endpoint!, { fetchImpl, token: record.token }).initialize();
+        capabilities = await new McpClient(record.endpoint!, {
+          ...(fetchImpl !== undefined ? { fetchImpl } : {}),
+          ...(record.token !== undefined ? { token: record.token } : {}),
+        }).initialize();
       }
     } catch (error) {
       this.log('refused', id, error instanceof Error ? error.message : 'handshake failed');
@@ -200,7 +201,11 @@ export class ConnectorRegistry {
       throw new ConnectorError(`connector ${id} does not expose tool '${name}' (discovered: ${record.capabilities.tools.join(', ') || 'none'})`);
     }
     if (this.isStdio(record)) {
-      const client = new McpStdioClient({ command: record.command!, args: record.args, env: record.env });
+      const client = new McpStdioClient({
+        command: record.command!,
+        ...(record.args !== undefined ? { args: record.args } : {}),
+        ...(record.env !== undefined ? { env: record.env } : {}),
+      });
       try {
         return await client.callTool(name, args);
       } finally {
@@ -209,7 +214,10 @@ export class ConnectorRegistry {
     }
     // A-12: the tool call is another outbound POST to the same endpoint.
     assertOutboundUrlAllowed(record.endpoint!);
-    const client = new McpClient(record.endpoint!, { fetchImpl, token: record.token });
+    const client = new McpClient(record.endpoint!, {
+      ...(fetchImpl !== undefined ? { fetchImpl } : {}),
+      ...(record.token !== undefined ? { token: record.token } : {}),
+    });
     return client.callTool(name, args);
   }
 

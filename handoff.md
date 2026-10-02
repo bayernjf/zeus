@@ -737,7 +737,7 @@ State of Zeus as of 2026-09-29.
 91. **deferred #36 最小档：`noUnusedParameters` 启用并清零（2026-10-02 ✅ 完成，全量 1012 绿 / 94 文件，`smoke:core` 36/36，typecheck/build exit 0）**：
    - [x] **实测 8 处**（登记 7 处 + `bench-capacity.mjs` 的 `startMockFarm(count,…)`——后者是 Active work 90 把 scripts 纳入检查后新暴露的），全部按 `_` 前缀改名收口：公共导出 `createTraceSink` 的 `backend`/`model` 与 `recomputeResult` 的 `now` 保留签名只改名（位置参数调用方不受影响）；测试 mock 回调 `_url`/`_input` 同法；`fetchFor(names, calls)` 的 `names` 改名 `_names`（其回调 `input` 实际在用，还原了我初轮的一处误改）。
    - [x] **门禁**：`noUnusedParameters: true` 写入 `tsconfig.json` 后 `npm run typecheck` / `npm run build` exit 0、`npm test` **1012 / 94 / 0**、`npm run smoke:core` **36/36**（本批只改参数名，行为不变）。
-   - [x] **中档量法刷新**：`exactOptionalPropertyTypes` 现量 **45 处**（登记 40 + 新纳入脚本/近期新增面 5）、`noUncheckedIndexedAccess` 仍 400 档——deferred #36 剩两档待触发条件，不销项。
+   - [x] **中档量法刷新**：`exactOptionalPropertyTypes` 现量 **41 处**（登记 40 + 新纳入脚本面 1）、`noUncheckedIndexedAccess` 仍 400 档——deferred #36 剩两档待触发条件，不销项。
    - [x] **文档同步**：[docs/deferred-items.md](docs/deferred-items.md) #36 记进展与量法刷新；本文件本条 + 更改记录。**未 push（等用户授权）**
 92. **审计 C 级 21 条缺陷修复（2026-10-02 ✅ 完成，全量 1015 绿 / 94 文件，`smoke:core` 36/36，typecheck/build exit 0）**：
    - [x] **先核对台账**：读 `docs/audit-2026-09.md` §5（22 条登记、18 已修、21 未修）后发现 **1–17 条早在 2026-10-01 晚间已随 A/B 修复批次落地、台账未同步**（C1–C4=`ce98a94`、C5–C6=`efe9566`、C7=`e2bbd57`、C8–C9=`c7798de`、C10–C11=`e17f449`、C13–C14=`3119d1b`、C15=`67e0463`、C16=`d096bca`、C17=`ca7e060`，C18=`f9d9958` 台账已标）；C21 经复读确认代码已有守卫（企业域无 tenant 拒绝、请求未给 tenant 落回域自身 tenant），无需改动。**实际需要动手的只有 4 条**：C12 残余（fan-out 主返回路径仍返回存储引用）、C19（带教 id 纯函数使 dismissed 同组合永久冲突）、C20（Org 读取返回内部对象引用）、C22（监督台审计 `detail` 形参无调用点）。
@@ -745,6 +745,21 @@ State of Zeus as of 2026-09-29.
    - [x] **缺陷植入验证**：独立 `git worktree` 挂修复前 HEAD（`faf8058`）跑 4 条新增用例——**4 条全红、46 条既有用例全绿**；恢复后 4 个测试文件 50/50 全绿。
    - [x] **门禁**：`npm test` **1015 / 94 / 0**（自 1012 +3）、`smoke:core` 36/36、typecheck/build exit 0、doc-consistency 9/9（活基线同步篇首/Current state/代码索引/README/checklist 至 1015）。
    - [x] **文档同步**：[docs/audit-2026-09.md](docs/audit-2026-09.md) §5 全 22 条标注关闭（1–17 补 commit 对照、12/19/20/22 记修复与植入证据、C 级执行结果表入 §8）、[docs/prd.md](docs/prd.md) 升 v0.70（演进行见该文档）、handoff 基线三处 + 本条 + 更改记录。**未 push（等用户授权）**
+
+94. **deferred #36 中档：`exactOptionalPropertyTypes` 迁移完成并启用（2026-10-02 ✅ 完成，全量 1015 绿 / 94 文件，`smoke:core` 36/36，typecheck/build exit 0）**：
+   - [x] **量错与修复**：`npx tsc --noEmit --exactOptionalPropertyTypes` 实测 **41 处**（登记 40 + scripts 纳入检查后 smoke-core 浮出 1）。逐文件按 exact 语义收口：可选字段不再显式传 `undefined`，一律改条件展开 `...(cond ? { key } : {})`（fan-out 原语、dispatch 出站凭证、MCP 连接器客户端、HTTP 装配、kernel 组件、vault 组装、测试夹具），或把"属性存在但值可为空"的字段改为显式 `T | undefined`（McpClient.token、McpStdioClient.child、DriverGrantLedger.onChange）；`removeMember` 用 `delete next.lead` 取代 `next.lead = undefined`；registry `healthCheck` 以局部变量收窄消除 `entry.lastHealthCheck` 的可能 undefined。
+   - [x] **启用**：`tsconfig.json` 正式开启 `exactOptionalPropertyTypes: true`，`npx tsc --noEmit` 0 错。
+   - [x] **验证**：全量 **1015/94 绿**、`smoke:core` 36/36、typecheck/build exit 0。7 个原子 commit（orchestrator / dispatch+smoke / mcp / http / kernel / tests / tsconfig）。**deferred #36 现剩唯一一档：`noUncheckedIndexedAccess`（400 处，仍待触发条件）。**
+
+95. **deferred #39 销项：镜像构建冒烟进 CI（2026-10-02 ✅ 完成）**：
+   - [x] CI 新增独立 `image-smoke` job（ubuntu-24.04）：`docker build`（不 push）+ 两条运行时冒烟——镜像内零依赖密钥脚本 `gen-rsk-key.mjs` 可生成密钥、编译产物 `require('./dist/index.js')` 可加载。Dockerfile 或产物变更从此在每次推送时验证，评审轮不再手工实构。
+   - [x] 本地实构实跑两条冒烟命令通过后清理镜像。`acceptance:fanout` 线上验收按登记保持"评审轮手工跑 + 记录"，不入门禁。
+
+96. **deferred #38 销项：lint / audit / secret 扫描三道静态质量闸门（2026-10-02 ✅ 完成）**：
+   - [x] **ESLint 基线**（eslint@10 flat config + typescript-eslint@8 recommended，新增 devDeps）：只留 error 级，`no-unused-vars`（tsc 已拥有）与 `no-explicit-any`（24 处既有协议载荷诚实口径，deferred #37 同款策略）关闭；跑通后违规仅 24 any + 1 prefer-const + 1 @ts-ignore（改 @ts-expect-error，typecheck 确认下行确实报错），`npm run lint` exit 0。
+   - [x] **依赖漏洞扫描**：`lint:audit` = `npm audit --omit=dev`，官方 registry 实测 **0 漏洞**（本机 npmmirror 不支持 audit 端点，CI 用官方 registry 不受影响）。
+   - [x] **secret 扫描**：零依赖 `scripts/scan-secrets.mjs`（10 组保守模式），默认扫全部 tracked、`--diff <base>` 扫变更集；全量 247 文件 clean，负向植入（tracked 文件加假 `ghp_` token）命中且 exit 1；脚本按 #37 口径纳入 `@ts-check` + tsconfig include。
+   - [x] CI verify job 接入三步（Lint / Production dependency audit / Secret scan），三个原子 commit。**全量 1015 / 94 绿**、typecheck/build exit 0。
 
 93. **PR #63 CI 失败修复：typecheck 移到 build 之后（2026-10-02 ✅ 完成）**：
    - [x] **现象**：PR #63（pr-helper 开、dev→main）6 个 CI check 全 fail（Node 22.x/24.x 的 typecheck/build/test + wall-clock gate ×2），失败日志唯一错误 `scripts/gen-rsk-key.mjs(50,38): error TS2307: Cannot find module '../dist/registry/signing.js'`（runs 36907293234 / 36907286454）。
@@ -756,7 +771,7 @@ State of Zeus as of 2026-09-29.
 
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
 
-* [docs/feature-inventory.md](docs/feature-inventory.md) — 功能清单 **v0.2**（2026-10-01）：全量功能点资产台账——11 个能力域、75 条 HTTP 路由、4 类 CLI、7 个脚本、116 处库导出、配置面；含「**已实现但未接线**」专节（执行授权票据派发闸门、数据二极管按 dataPolicy 收缩、`startServer()` 共 3 项；A-01/A-04/A-09 三项已接线移出）★
+* [docs/feature-inventory.md](docs/feature-inventory.md) — 功能清单 **v0.3**（2026-10-02）：全量功能点资产台账——11 个能力域、75 条 HTTP 路由、4 类 CLI、8 个脚本、116 处库导出、配置面；含「**已实现但未接线**」专节（执行授权票据派发闸门、数据二极管按 dataPolicy 收缩、`startServer()` 共 3 项；A-01/A-04/A-09 三项已接线移出）★
 * [docs/audit-2026-09.md](docs/audit-2026-09.md) — 项目级代码审计 **v0.3**（2026-09-30 首轮全量静态审计、2026-10-01 两批复检）：**A 12 / B 34 / C 22** 条缺陷，逐条 `file:line` 定位；**A 级 12 条与 B 级 34 条已全部修复**（每条修复前做缺陷植入验证，§3/§8 附证据与 commit），**C 级 22 条全部修复（2026-10-02）**——1–17 条于 2026-10-01 晚间已随 A/B 批次落地（§5 附 commit 对照，台账当时未同步）、12 残余/19/20/22 于 2026-10-02 修复（§8 附缺陷植入证据）、21 条经复读确认已有守卫；三条共性成因（重入路径无守卫 / 配置装配少透传 / 异步时序）、12 条"已核验成立的高风险面"、文档与实现矛盾清单、修复优先级与复检命令 ★
 * [docs/tech-exploration-map.md](docs/tech-exploration-map.md) — Agent 技术探索地图 v0.3：A 组五条优先（已裁决）、B/C 议题登记、S14 Jev 已落设计、决策后端抽象层改为模型无关 ★
 * [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 **v0.5**（§8 生产者契约已采纳落地，deferred #27 销项）：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、混合检索（§6.1）、漂移对账（§6.3）、八条验收 ★

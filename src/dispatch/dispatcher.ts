@@ -201,7 +201,7 @@ export class Dispatcher {
           skill: request.skill,
           params: { ...request.params, ...(injectedHits.length ? { realmHits: injectedHits } : {}) },
           runId,
-          token,
+          ...(token !== undefined ? { token } : {}),
         },
         {
           onEvent: event => {

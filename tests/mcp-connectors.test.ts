@@ -6,13 +6,17 @@ import type { ConnectorDeclaration } from '../src/mcp/types.js';
 const ENDPOINT = 'https://mcp.example/mcp';
 const now = () => new Date('2026-09-22T00:00:00.000Z');
 
-function declaration(overrides: Partial<ConnectorDeclaration> = {}): ConnectorDeclaration {
+function declaration(
+  overrides: Omit<Partial<ConnectorDeclaration>, 'endpoint'> & { endpoint?: string | undefined } = {},
+): ConnectorDeclaration {
+  const { endpoint, ...rest } = overrides;
+  const hasEndpoint = Object.prototype.hasOwnProperty.call(overrides, 'endpoint');
   return {
     id: 'knowledge',
     name: 'Knowledge Base',
-    endpoint: ENDPOINT,
+    ...(hasEndpoint ? (endpoint !== undefined ? { endpoint } : {}) : { endpoint: ENDPOINT }),
     permissions: ['mcp'],
-    ...overrides,
+    ...rest,
   };
 }
 

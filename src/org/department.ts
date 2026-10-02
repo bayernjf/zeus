@@ -86,7 +86,7 @@ export function removeMember(dept: Department, agentId: string): Department {
     throw new OrgError(`Agent ${agentId} is not in the department`, 'not-found');
   }
   const next: Department = { ...dept, members: dept.members.filter(m => m.agentId !== agentId) };
-  if (dept.lead === agentId) next.lead = undefined;
+  if (dept.lead === agentId) delete next.lead;
   return next;
 }
 

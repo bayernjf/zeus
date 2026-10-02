@@ -122,7 +122,7 @@ export class DriverGrantLedger {
   private spent = new Set<string>();
   private order: string[] = [];
   private readonly limit: number;
-  private readonly onChange?: () => void;
+  private readonly onChange: (() => void) | undefined;
   private readonly onEvict: (nonce: string) => void;
 
   constructor(options: DriverGrantLedgerOptions = {}) {

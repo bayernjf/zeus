@@ -33,7 +33,7 @@ interface Pending {
 let requestCounter = 0;
 
 export class McpStdioClient {
-  private child?: ChildProcessWithoutNullStreams;
+  private child: ChildProcessWithoutNullStreams | undefined;
   private readonly pending = new Map<number, Pending>();
   private startError: Error | null = null;
 

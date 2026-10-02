@@ -161,33 +161,34 @@ function buildBranchSteps(
     const own = eventTimestamp(sourced);
     if (own !== undefined) lastAt.set(runId, own);
     const at = own ?? lastAt.get(runId);
+    const taskId = sourced.source.taskId ?? branch.taskId;
     if (!dispatched.has(runId)) {
       dispatched.add(runId);
       push({
         kind: 'branch-dispatched',
-        at,
+        ...(at ? { at } : {}),
         vassal: branch.vassal,
         runId,
-        taskId: sourced.source.taskId ?? branch.taskId,
+        ...(taskId ? { taskId } : {}),
         detail: { skill: result.skill },
       });
     }
     push({
       kind: 'branch-event',
-      at,
+      ...(at ? { at } : {}),
       vassal: branch.vassal,
       runId,
-      taskId: sourced.source.taskId ?? branch.taskId,
+      ...(taskId ? { taskId } : {}),
       detail: eventDetail(sourced),
     });
     if (isTerminalEvent(sourced) && !finished.has(runId)) {
       finished.add(runId);
       push({
         kind: 'branch-finished',
-        at,
+        ...(at ? { at } : {}),
         vassal: branch.vassal,
         runId,
-        taskId: sourced.source.taskId ?? branch.taskId,
+        ...(taskId ? { taskId } : {}),
         detail: branchFinishDetail(branch),
       });
     }
@@ -200,7 +201,7 @@ function buildBranchSteps(
         kind: 'branch-dispatched',
         vassal: branch.vassal,
         runId: branch.runId,
-        taskId: branch.taskId,
+        ...(branch.taskId ? { taskId: branch.taskId } : {}),
         detail: { skill: result.skill },
       });
     }
@@ -209,7 +210,7 @@ function buildBranchSteps(
         kind: 'branch-finished',
         vassal: branch.vassal,
         runId: branch.runId,
-        taskId: branch.taskId,
+        ...(branch.taskId ? { taskId: branch.taskId } : {}),
         detail: branchFinishDetail(branch),
       });
     }

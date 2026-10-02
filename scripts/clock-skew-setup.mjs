@@ -28,7 +28,7 @@ class SkewedDate extends RealDate {
     if (args.length === 0) {
       super(RealDate.now() + OFFSET_MS);
     } else {
-      // @ts-ignore - spread a constructor argument list
+      // @ts-expect-error - spread a constructor argument list
       super(...args);
     }
   }

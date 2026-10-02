@@ -222,9 +222,9 @@ export class Orchestrator {
       const providers = this.options.skillGovernor?.activeProviders(request.skill);
       diversion = selectTargets({
         skill: request.skill,
-        explicitVassals: explicit ? request.vassals : undefined,
+        ...(explicit ? { explicitVassals: request.vassals } : {}),
         initialNames: names,
-        candidatePool: providers,
+        ...(providers ? { candidatePool: providers } : {}),
         load: {
           inFlightByVassal: v => this.options.metrics?.inFlightByVassalNow(v) ?? 0,
           capOf: () => this.options.maxConcurrentPerVassal!,

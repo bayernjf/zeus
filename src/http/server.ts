@@ -1419,15 +1419,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'body.env must be an object of string values');
         }
         try {
-          const endpoint = hasEndpoint ? (body.endpoint as string) : undefined;
-          const command = hasCommand ? (body.command as string) : undefined;
           const record = deps.connectorRegistry!.declare({
             id: body.id,
             name: body.name,
-            ...(endpoint ? { endpoint } : {}),
+            ...(hasEndpoint ? { endpoint: body.endpoint as string } : {}),
             ...(hasCommand
               ? {
-                  command,
+                  command: body.command as string,
                   ...(Array.isArray(body.args) ? { args: body.args as string[] } : {}),
                   ...(body.env ? { env: body.env as Record<string, string> } : {}),
                 }
@@ -1993,7 +1991,8 @@ function buildActor(kind: string, id: string, tenant: unknown): RealmActor {
   }
   if (tenant === undefined) return { kind, id };
   if (typeof tenant !== 'string') throw new RealmError('actor tenant must be "org[/department[/member]]"');
-  return { kind, id, tenant: normalizeTenant(tenant) };
+  const normalized = normalizeTenant(tenant);
+  return normalized === undefined ? { kind, id } : { kind, id, tenant: normalized };
 }
 
 function mapGrantError(reply: FastifyReply, thrown: unknown): FastifyReply {
