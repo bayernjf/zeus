@@ -1,4 +1,5 @@
 import type { A2AEvent, RealmType, Task, TaskState } from '../a2a/types.js';
+import type { ExecutionDelegation } from '../delegation/execution-delegation.js';
 import type { VassalStatus } from '../registry/registry.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import type { DecisionBackendError, DecisionBackendKind } from '../decision/types.js';
@@ -60,6 +61,17 @@ export type FanOutRequest = {
   /** Idempotency key; same key replays the stored result without re-dispatching. */
   intentId?: string;
   skill: string;
+  /**
+   * deferred #33: explicit dispatch mode. Default 'plan' (read-only analysis);
+   * 'execute' requires a verified, unconsumed execution delegation before any
+   * outbound dispatch — missing/invalid credentials fail closed inside the
+   * kernel and no outbound request is made. The credential is consumed here;
+   * how a peer learns the mode is the peer-facing protocol (not yet defined).
+   */
+  mode?: 'plan' | 'execute';
+  /** deferred #33: the one-time execution delegation backing an execute-mode
+   *  intent. Verified and consumed by the orchestrator gate before dispatch. */
+  executionDelegation?: ExecutionDelegation;
   /** Explicit targets; defaults to every active vassal providing the skill. */
   vassals?: string[];
   params: Record<string, unknown>;
