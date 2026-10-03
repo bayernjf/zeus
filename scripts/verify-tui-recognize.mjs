@@ -34,7 +34,7 @@ import { mkdirSync, mkdtempSync, existsSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const KEEP = process.argv.includes('--keep');
@@ -198,12 +198,14 @@ try {
   record('skill catalogue registered over the real socket', registered);
 
   // Load the shipped TUI modules exactly as `npm run tui` would consume them.
-  ({ createDeckClient: client } = await import(join(REPO, 'dist/tui/client.js')));
-  ({ renderRecognize } = await import(join(REPO, 'dist/tui/render.js')));
-  ({ parseCommand } = await import(join(REPO, 'dist/tui/commands.js')));
+  // Note: dynamic import() on Windows rejects bare `C:\…` paths (ESM loader sees
+  // the `c:` scheme), so every absolute path must be a file:// URL.
+  ({ createDeckClient: client } = await import(pathToFileURL(join(REPO, 'dist/tui/client.js')).href));
+  ({ renderRecognize } = await import(pathToFileURL(join(REPO, 'dist/tui/render.js')).href));
+  ({ parseCommand } = await import(pathToFileURL(join(REPO, 'dist/tui/commands.js')).href));
   const deckClient = client(`http://127.0.0.1:${port}`, DRIVER_TOKEN);
-  const translator = (await import(join(REPO, 'dist/tui/format.js'))).makeTranslator('zh-CN');
-  const palette = (await import(join(REPO, 'dist/tui/tokens.js'))).makePalette(false);
+  const translator = (await import(pathToFileURL(join(REPO, 'dist/tui/format.js')).href)).makeTranslator('zh-CN');
+  const palette = (await import(pathToFileURL(join(REPO, 'dist/tui/tokens.js')).href)).makePalette(false);
 
   // 1. Local rule hit through the deck client.
   const hit = await deckClient.recognize('review the pull request');
