@@ -86,6 +86,13 @@ export type HttpDeps = {
   registry: VassalRegistry;
   signer: RosterSigner;
   /**
+   * Optional browser-origin allow-list for CORS headers. Off by default so the
+   * API surface is unchanged for CLI/curl/TUI consumers; the Web supervisor
+   * (deferred #34, 方案 A) opts in with ZEUS_CORS_ORIGINS. Headers are emitted
+   * only for an exact Origin match — no wildcard reflection, no credentials.
+   */
+  corsOrigins?: string[];
+  /**
    * Whether the sealing key survives a restart, as decided by the loader that
    * produced it (`loadRskSigner`). Reported on the public key document and in
    * /api/state; omitted when the embedding process assembled the signer itself,
@@ -166,6 +173,21 @@ export type DecisionStatus = {
 
 export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+  if (deps.corsOrigins && deps.corsOrigins.length > 0) {
+    app.addHook('onRequest', async (req, reply) => {
+      const origin = req.headers.origin;
+      if (typeof origin !== 'string' || !deps.corsOrigins!.includes(origin)) return;
+      reply.header('Access-Control-Allow-Origin', origin);
+      reply.header('Vary', 'Origin');
+      if (req.method === 'OPTIONS') {
+        reply
+          .header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
+          .header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+          .code(204)
+          .send();
+      }
+    });
+  }
   const now = deps.now ?? (() => new Date());
   const maxAge = deps.sealMaxAgeSeconds ?? DEFAULT_SEAL_MAX_AGE_SECONDS;
   const attestationTtl = deps.attestationTtlSeconds ?? DEFAULT_ATTESTATION_TTL_SECONDS;

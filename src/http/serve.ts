@@ -150,6 +150,9 @@ async function main(): Promise<void> {
     // down and reported by the two faces that answer "which key is this?".
     rosterKey: { keyId: signer.keyId, source: ephemeral ? 'ephemeral' : 'configured' },
     ...(process.env.ZEUS_INTERNAL_TOKEN !== undefined ? { internalToken: process.env.ZEUS_INTERNAL_TOKEN } : {}),
+    ...(process.env.ZEUS_CORS_ORIGINS
+      ? { corsOrigins: process.env.ZEUS_CORS_ORIGINS.split(',').map(s => s.trim()).filter(s => s.length > 0) }
+      : {}),
     version: pkg.version,
     orchestrator: kernel.orchestrator,
     dagRunner: kernel.dagRunner,
