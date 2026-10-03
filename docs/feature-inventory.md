@@ -17,7 +17,7 @@ Zeus 是**AI 原生的多 Agent 团队运行时**：给一个本地目录即可�
 | 组织协作 | 编制与责任链、上岗门与首日简报、叙事化日记 | `org` `onboarding` `diary` |
 | 接入面 | HTTP 门面、终端面板、启动装配与持久化 | `http` `tui` `state` |
 
-PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链 R2 与托管落地）/ ⬜ 6（E3.8、E4.10、E5.4、E8.4、E9.4、E10.2）。
+PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3.4 MCP 传输、E3.8、E4.9、E4.10、E5.4、E8.4、E9.4、E10.2——全部挂仓库外动作或真实规模触发条件）。
 
 ## 2. 运行时入口总览
 
@@ -25,6 +25,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 | --- | --- | --- | --- |
 | HTTP 门面 | Fastify 长驻进程，`npm start` | **78 条路由**（3 公开 + 75 bearer） | 公开 3 条无鉴权；其余同一 bearer |
 | 终端面板 TUI | `npm run tui` | 13 类命令 | `--token` |
+| Web 监督台（方案 A v1） | `web/supervisor/index.html` + 静态托管 | 三视图：只读监控 / escalation 裁决 / 跨域授权 | 浏览器侧 localStorage 存 bearer；服务侧 `ZEUS_CORS_ORIGINS` 白名单 |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
 | 库公共面 | `import 'zeus'` | **120 条 export 语句**（构建产物运行时 215 个导出） | 不适用 |
 | MCP 服务端 | `src/realm/mcp-stdio.ts` | 3 资源模板 + 2 工具 | 宿主预授权目录 |
