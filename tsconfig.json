@@ -30,6 +30,7 @@
     "scripts/clock-skew-setup.mjs",
     "scripts/scan-secrets.mjs",
     "scripts/verify-decision-backend.mjs",
-    "scripts/verify-execute-delegation.mjs"
+    "scripts/verify-execute-delegation.mjs",
+    "scripts/verify-intent-recognize.mjs"
   ]
 }

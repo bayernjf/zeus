@@ -192,6 +192,10 @@ async function main(): Promise<void> {
           : {}),
       },
     },
+    // E2.6: the same pluggable backend that drives arbitration also powers
+    // operator intent recognition. Recognition is plan-only and the model is
+    // only consulted when the caller explicitly opts in (useModel: true).
+    ...(decision.backend ? { decisionBackend: decision.backend } : {}),
   }, {
     ...(process.env.ZEUS_HOST ? { host: process.env.ZEUS_HOST } : {}),
     ...(process.env.ZEUS_PORT ? { port: Number(process.env.ZEUS_PORT) } : {}),

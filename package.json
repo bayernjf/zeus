@@ -29,6 +29,7 @@
     "verify:roster": "node scripts/verify-roster.mjs",
     "verify:decision-backend": "node scripts/verify-decision-backend.mjs",
     "verify:execute-delegation": "node scripts/verify-execute-delegation.mjs",
+    "verify:intent-recognize": "node scripts/verify-intent-recognize.mjs",
     "acceptance:fanout": "node scripts/acceptance-real-fanout.mjs",
     "smoke:core": "node scripts/smoke-core.mjs",
     "bench:capacity": "node scripts/bench-capacity.mjs",

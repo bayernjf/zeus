@@ -214,6 +214,16 @@ export type { JevConfig } from './decision/decision-model.js';
 export type { LlmConfig } from './decision/llm.js';
 export type { ArbitrateInput, ArbitrateOutcome, SplitStance } from './decision/arbitrate.js';
 
+// --- E2.6 Operator intent recognition (plan-only; pluggable backend) ---
+export { recognizeIntent, rankCandidates } from './intent/recognize.js';
+export type {
+  SkillCatalogEntry,
+  IntentCandidate,
+  IntentRecognitionOptions,
+  IntentRecognitionResult,
+  RecognizedIntent,
+} from './intent/recognize.js';
+
 // --- E2 Skill registry (skills as first-class modules, independent of cards) ---
 export { SkillRegistry, compareVersions, CARD_CATALOGUE_VERSION, DuplicateSkillError, SkillNotFoundError } from './skills/registry.js';
 export { validateSkillSpecShape, validatePermissionClaims, permissionClaimIssue, SkillValidationError } from './skills/validate-spec.js';

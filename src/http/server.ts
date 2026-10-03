@@ -20,7 +20,8 @@ import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
 import { SkillValidationError } from '../skills/validate-spec.js';
 import { ConnectorError, type ConnectorRegistry } from '../mcp/connectors.js';
 import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
-import type { DecisionBackendKind } from '../decision/types.js';
+import type { DecisionBackend, DecisionBackendKind } from '../decision/types.js';
+import { recognizeIntent } from '../intent/recognize.js';
 import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
 import { AUDIT_DECISIONS, type AuditDecision } from '../dispatch/dispatcher.js';
 import type { KernelStats } from '../state/stats.js';
@@ -115,6 +116,8 @@ export type HttpDeps = {
   connectorRegistry?: ConnectorRegistry;
   /** H2: the decision layer this process resolved at boot. */
   decisionStatus?: DecisionStatus;
+  /** H2 (E2.6): pluggable backend for operator intent recognition (opt-in). */
+  decisionBackend?: DecisionBackend;
   /** H2 (E4.7): JSONL dispatch + governance audit log to expose read-only. */
   auditFile?: string;
   /** H2: live inventory of what the kernel holds and whether it persists. */
@@ -1157,6 +1160,39 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     }
 
     if (deps.skillRegistry) {
+      // E2.6: recognize an operator instruction as a plan-only intent.
+      // Recognition never authorizes execution; the execution-delegation gate
+      // is the only path to execute. The instruction stays on the machine
+      // unless the caller explicitly opts into the external backend
+      // (useModel: true); the backend is the same pluggable DecisionBackend
+      // that powers arbitration (design-decision-backend).
+      app.post('/api/intents/recognize', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as { text?: unknown; realm?: unknown; useModel?: unknown };
+        if (typeof body.text !== 'string' || body.text.trim() === '') {
+          return error(reply, 400, 'invalid_request', 'body.text must be a non-empty string');
+        }
+        if (body.realm !== undefined && body.realm !== 'personal' && body.realm !== 'enterprise') {
+          return error(reply, 400, 'invalid_request', 'body.realm must be "personal" or "enterprise"');
+        }
+        if (body.useModel !== undefined && typeof body.useModel !== 'boolean') {
+          return error(reply, 400, 'invalid_request', 'body.useModel must be a boolean');
+        }
+        const catalog = deps.skillRegistry!.list().map(spec => ({
+          id: spec.id,
+          name: spec.name,
+          description: spec.description ?? '',
+        }));
+        const result = await recognizeIntent({
+          text: body.text,
+          ...(deps.decisionBackend ? { backend: deps.decisionBackend } : {}),
+          catalog,
+          realm: body.realm === undefined ? 'personal' : body.realm,
+          useModel: body.useModel === true,
+        });
+        reply.code(result.ok ? 200 : 422);
+        return result;
+      });
+
       // E2.2: the skill catalogue. Active versions by default, filterable by
       // domain / tag / status (an explicit status reaches deprecated and
       // uninstalled specs, which stay auditable).
