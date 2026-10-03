@@ -14,6 +14,7 @@ export type DeckCommand =
   | { kind: 'revoke'; index: number }
   | { kind: 'grantIssue'; realmIndex: number; subject: string; access: 'read' | 'write'; grantedBy: string }
   | { kind: 'grantRevoke'; grantIndex: number }
+  | { kind: 'recognize'; text: string; useModel: boolean }
   | { kind: 'help' };
 
 export type CommandError = { error: string };
@@ -50,6 +51,25 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
     return { kind: 'grantRevoke', grantIndex };
   }
 
+  // Operator intent recognition (E2.6): `i <instruction>` resolves locally
+  // (zero bytes leave the machine), `im <instruction>` explicitly consults
+  // the configured decision backend. Recognition is plan-only - the result
+  // is a suggestion, never an execution. The command word must be exactly
+  // `i`/`im` (optionally followed by whitespace) so longer words like `info`
+  // never collide.
+  const imMatch = /^im(?:\s+(.+))?$/i.exec(line);
+  if (imMatch) {
+    const text = (imMatch[1] ?? '').trim();
+    if (text === '') return { error: 'recognize-needs-text' };
+    return { kind: 'recognize', text, useModel: true };
+  }
+  const iMatch = /^i(?:\s+(.+))?$/i.exec(line);
+  if (iMatch) {
+    const text = (iMatch[1] ?? '').trim();
+    if (text === '') return { error: 'recognize-needs-text' };
+    return { kind: 'recognize', text, useModel: false };
+  }
+
   const match = /^([axsd])\s*(\d+)(?:[\s.:-]+(\d+))?$/.exec(line.toLowerCase());
   if (!match) return { error: 'unknown' };
   const [, letter, indexStr, stanceStr] = match;
@@ -82,5 +102,7 @@ export const COMMAND_HELP = [
   '  d<n>       revoke roster vassal #n (asks y/N)',
   '  g<n> <subject> <r|w> [by]  issue a personal->enterprise grant on realm #n',
   '  k<n>       revoke cross-domain grant #n (asks y/N)',
+  '  i <text>   recognize an operator instruction locally (plan-only)',
+  '  im <text>  recognize using the configured decision backend (opt-in)',
   '  q          quit',
 ].join('\n');

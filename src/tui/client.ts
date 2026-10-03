@@ -121,7 +121,25 @@ export type DeckClient = {
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
   resolve(id: string, stance: string, note?: string): Promise<void>;
+  /** E2.6: recognize an operator instruction as a plan-only intent. */
+  recognize(text: string, opts?: { realm?: 'personal' | 'enterprise'; useModel?: boolean }): Promise<RecognizeView>;
 };
+
+/** E2.6 recognition result normalized for the deck (no protocol details). */
+export type RecognizeView =
+  | {
+      ok: true;
+      skill: string;
+      confidence: number;
+      /** null when the local rule path resolved it (zero model involvement). */
+      backend: { kind: string; model: string } | null;
+      decisionAt: string;
+    }
+  | {
+      ok: false;
+      reason: string;
+      detail?: string;
+    };
 
 export type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{
   ok: boolean;
@@ -200,5 +218,37 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
     reject: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/reject`, note !== undefined ? { note } : undefined),
     resolve: (id, stance, note) =>
       post(`/api/escalations/${encodeURIComponent(id)}/resolve`, { stance, ...(note !== undefined ? { note } : {}) }),
+    recognize: async (text, opts) => {
+      const res = await fetchImpl(`${baseUrl}/api/intents/recognize`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          ...(opts?.realm !== undefined ? { realm: opts.realm } : {}),
+          ...(opts?.useModel === true ? { useModel: true } : {}),
+        }),
+      });
+      const raw = (await res.json().catch(() => null)) as
+        | { ok: true; intent: { skill: string }; confidence: number; backend: { kind: string; model: string } | null; decisionAt: string }
+        | { ok: false; reason: string; detail?: string }
+        | null;
+      // A structured fail-closed response is a product outcome, not a
+      // transport error: the kernel answers 422 with {ok:false, reason} and
+      // the deck surfaces that reason verbatim instead of throwing.
+      if (raw !== null && typeof raw === 'object' && typeof raw.ok === 'boolean') {
+        if (raw.ok) {
+          if (!res.ok) throw new ApiError(res.status, raw);
+          return {
+            ok: true,
+            skill: raw.intent.skill,
+            confidence: raw.confidence,
+            backend: raw.backend,
+            decisionAt: raw.decisionAt,
+          };
+        }
+        return { ok: false, reason: raw.reason, ...(raw.detail !== undefined ? { detail: raw.detail } : {}) };
+      }
+      throw new ApiError(res.status, raw);
+    },
   };
 }

@@ -31,6 +31,7 @@
     "scripts/scan-secrets.mjs",
     "scripts/verify-decision-backend.mjs",
     "scripts/verify-execute-delegation.mjs",
-    "scripts/verify-intent-recognize.mjs"
+    "scripts/verify-intent-recognize.mjs",
+    "scripts/verify-tui-recognize.mjs"
   ]
 }

@@ -6,7 +6,7 @@
 import type { Translator } from './format.js';
 import { auditDecisionLabel, statusLabel } from './format.js';
 import { auditToken, paintStatus, type Palette } from './tokens.js';
-import type { DeckSnapshot, DomainsView, EscalationView } from './client.js';
+import type { DeckSnapshot, DomainsView, EscalationView, RecognizeView } from './client.js';
 
 export type RenderInput = {
   snapshot: DeckSnapshot;
@@ -203,4 +203,26 @@ export function renderDeck(input: RenderInput): string {
     [rule, palette.paint('muted', t('app.quit'))],
   ];
   return blocks.map(block => block.join('\n')).join('\n\n') + '\n';
+}
+
+/**
+ * Render one E2.6 recognition result. The deck never guesses: a hit shows the
+ * suggested skill (plan-only), a miss shows the fail-closed reason verbatim.
+ */
+export function renderRecognize(input: { result: RecognizeView; t: Translator; palette: Palette }): string {
+  const { result, t, palette } = input;
+  if (result.ok) {
+    const backend =
+      result.backend === null ? t('recognize.backend.local') : t('recognize.backend.model', result.backend);
+    return [
+      rule,
+      heading(palette, t('recognize.title')),
+      t('recognize.ok', { skill: result.skill, confidence: String(result.confidence) }),
+      backend,
+      palette.paint('muted', t('recognize.planOnly')),
+      rule,
+    ].join('\n');
+  }
+  const detail = result.detail !== undefined ? ` · ${result.detail}` : '';
+  return [rule, heading(palette, t('recognize.title')), t('recognize.fail', { reason: result.reason, detail }), rule].join('\n');
 }
