@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.23，2026-10-03，评审对象：Active work 105–110（HEAD `66911d7`，与 origin/dev 同步）：核心 MVP ✅ / 可上线 ❌ 维持。本轮在 Windows 本机重新取证（pull 后工作树 = origin/dev）：全量 1099 总量 / 1073 绿 / 26 失败 / 101 文件（26 失败逐文件核对为既有三族，无逻辑失败；基线 1048 → 1099）、冒烟 31/36（5 步失败 = 0600 chmod ×2 + SIGTERM 连锁 ×3，Windows 家族）、doc-consistency 11/11、build/typecheck exit 0。本批实现 **E2.6 意图识别**（操作者 HTTP 面 + TUI `i`/`im` 命令，PRD 需求行 54 → 55）、收口 deferred #33 执行授权票据（execute/plan 模式 + 派发闸门 fail-closed + 真进程验收资产，剩 A2A `x-zeus-*` 投递字段挂对端）、裁定 #18/#19/#21 方向固化、登记 #40 反思闭环（不独立立项）；「已实现但未接线」**0 项**。出货件已大动，镜像容器级四项本轮无新证据（§F）。上一条 v0.22（2026-10-03，对象 Active work 104 / `7499dce`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
+> 状态：**现行（评审报告 v0.24，2026-10-04，评审对象：Active work 111–115（HEAD `c7b5778`，与 origin/dev 同步）：核心 MVP ✅ / 可上线 ❌ 维持。本轮在 macOS 本机重新取证（工作树 = origin/dev）：全量 1104 总量 / 1104 绿 / 0 失败 / 102 文件、冒烟 37/37、doc-consistency 11/11、typecheck/build exit 0，三条验收脚本（execute-delegation 9/9、intent-recognize 7/7、tui-recognize 7/7）与 113–115 批关键面定向 58/58 均本机实测。本批实现 **Web 监督台 v1/v1.1/v1.2**（CORS 传输层 + 四视图 + 派发作战室 + SSE 实时 + DAG + 意图识别入口）与 **fan-out §7 运行中分支中断原语**（AbortSignal 真取消 + branch-aborted 审计）；评审抓到 1 处文档滞后（feature-inventory 状态行停在 v0.9 未记 113–115 批）当日修掉（升 v0.10、基线 1099/101 → 1104/102）。「已实现但未接线」**0 项**。出货件再动，镜像容器级四项本轮无新证据（§F）。上一条 v0.23（2026-10-03，对象 Active work 105–110 / `66911d7`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机执行 Agent 部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -304,6 +304,63 @@
 - **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为意图识别面与授权收口，不改变上线判定。
 - **未跑（如实记）**：Docker 镜像实构实跑（§F）、真机扇出与生产栈联调（外部条件）、本批 push 后的 CI（由用户决定 push 时点）。
 - **补跑（2026-10-03 收尾）**：三个验收脚本已在本机（Windows）复跑——`verify:execute-delegation` **9/9**、`verify:intent-recognize` **7/7**；`verify:tui-recognize` 复跑**当场抓出一条可移植性缺陷**：脚本用 `join(REPO, 'dist/tui/…')` 的裸盘符路径喂给动态 `import()`，Node ESM loader 在 Windows 上拒绝 `c:` scheme（macOS/Linux 的 POSIX 路径恰好被容错），已修为 `pathToFileURL(...).href`（连同注释说明），修后 **7/7**。typecheck/build 复跑 exit 0。**结论升级：v0.23 的判定不再依赖"另一会话记录"，三个验收面均本机实测。**
+
+## v0.24 复核（2026-10-04，评审对象：Active work 111–115（HEAD `c7b5778`，与 origin/dev 同步）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批实现 **Web 监督台 v1/v1.1/v1.2**（CORS 传输层 + 四视图 + 派发作战室 + SSE 实时 + DAG 视图 + 意图识别入口，浏览器真机 E2E 全链路）与 **fan-out §7 运行中分支中断原语**（`AbortSignal` 真取消 + `branch-aborted` 审计 + `canceled by the driver` 结算，tui-tokens 补语义 token）；**抓到 1 处文档滞后当日修掉**（feature-inventory 状态行停在 v0.9 未记 113–115 批，升 v0.10，基线 1099/101 → 1104/102））
+
+> 本轮方法沿用 v0.17 之后的规矩：**上一轮记录不作依据**，判定里含动词的条目重新取证。本轮在 **macOS 本机**取证（工作树 = origin/dev = `c7b5778`），全量/冒烟/验收脚本全部本机实跑；Windows 口径引用 handoff 记录（1078 绿 / 26 环境性失败三族）并标注**未在本轮重跑**。
+
+### A. 验证基线（本机实跑，非转述）
+
+| 项 | 读数 | 备注 |
+| --- | --- | --- |
+| 基线 HEAD / 工作树 | `c7b5778`，工作树干净 | `origin/dev..HEAD` = `0 0`（先核再评） |
+| `npm run typecheck` / `npm run build` | 各自 **exit 0** | 先 build 后测试（`tests/*` 与 `scripts/*` 引用 `dist/`） |
+| `npm test` | **1104 总量 / 1104 绿 / 0 失败 / 102 文件** | macOS 本机全量实跑；1104/102 与 handoff 活基线一致 |
+| `npm run smoke:core` | **37/37 steps passed** | macOS 本机实跑 |
+| `tests/doc-consistency.test.ts` | **11/11** | 实跑 |
+| `node --check`（web JS） | 通过 | HTML 内联 script 提取后逐段 `node --check`（直接对 HTML 文件会报语法错误，须按 Active work 114 的做法下沉提取） |
+| 定向复跑（113–115 批关键面） | **58/58** | `http-cors` + `tui-tokens` + `orchestrator` + `dispatcher` 四文件定向全绿 |
+
+### B. 需求覆盖：机械核对，不读叙述
+
+- `docs/prd.md` 需求行 **55 行**（`^\| E[\d.]+ \|` 计数），机械分类：**P0 26/26 ✅**（feature-inventory §1 断言 + 抽查）。
+- 非 P0 未闭合 **8 条**：`E3.4`、`E3.8`、`E4.9`、`E4.10`、`E5.4`、`E8.4`、`E9.4`、`E10.2`——**与 v0.23 同集合**，既无新增也未回退；本批（113–115）未翻任何需求行状态（Web 监督台与 §7 均为既有能力接线/补强，不新增 PRD 行）。
+- feature-inventory「已实现但未接线」：**0 项**（维持）；路由 **78** / export 语句 **120** / TUI 命令 **13** 类——三段断言读数未因本批变化（Web 面走 HTTP 端点，不加路由；§7 走既有 `POST cancel`）。
+
+### C. 本批实现（一）：Web 监督台 v1/v1.1/v1.2（Active work 113/114/115 之 Web 侧）
+
+- **CORS 传输层**（`src/http/server.ts` + `serve.ts`）：`corsOrigins?: string[]` 精确 Origin 白名单回显 + `Vary: Origin` + OPTIONS 预检 204（默认关闭，`ZEUS_CORS_ORIGINS` 逗号分隔 trim 装配）。`tests/http-cors.test.ts` 4 例实跑 4/4。
+- **单文件 Web 监督台**（`web/supervisor/index.html`）：hash 路由四视图（监控 / 裁决 / 授权 / 连接）；写操作全部二次确认；轮询 10s 开关；内联 SVG favicon；≤760px 响应式。v1.1 加派发表单 → 作战室详情 → SSE 实时增量 → 取消；v1.2 加 DAG 分层视图 + 关键路径徽标 + 意图识别入口（命中预填派发表单）+ SSE 指数退避重连（2s×2^n 上限 30s）。
+- **代码级核对（关键主张）**：分支状态渲染修复 `b.state || (b.ok ? 'completed' : 'failed')` 在位；`loadDag` 在 404 分支也触发（非 DAG 意图静默隐藏）；SSE 重连退避与重置逻辑在位。**浏览器真机 E2E 是本批主要证据源，但属于另一会话/本会话外的 GUI 实测——本轮如实标注：未在本轮重跑浏览器 E2E（依赖浏览器自动化环境），以代码级核对 + 测试 + 真进程冒烟覆盖。**
+
+### D. 本批实现（二）：fan-out §7 运行中分支中断原语（Active work 115 内核侧）
+
+- `DispatchRequest.signal?: AbortSignal`（dispatcher.ts 条件透传，exactOptionalPropertyTypes 兼容）；catch 按 `request.signal?.aborted` 区分审计决策 `'branch-aborted'` vs `'dispatch-failed'`，`AUDIT_DECISIONS` 增 `'branch-aborted'`（dispatcher.ts L58 在位）。
+- orchestrator `branchSignals = Map<intentId, Map<vassal, AbortController>>` 与 inFlight 分存；`cancelIntent` cancellable 过滤改 `!isTerminalState && ((branch.ok && branch.taskId) || liveSignals?.has(vassal))`；abort 后分支结算 `state:'canceled'` + `reason:'canceled by the driver'`（L518 在位）。
+- **验证**：定向 orchestrator + dispatcher 测试 52/52（本轮实跑）；tui-tokens 补 `branch-aborted: 'warning'` 后定向 6/6；全量无回归（1104/102）。
+
+### E. 本批抓到并修复的缺陷（评审范围内核对）
+
+- **SSE hijack 丢 CORS 头（Active work 114 当日修复，代码在位）**：`reply.hijack()` 后 `raw.writeHead` 覆盖全局 onRequest hook 的 CORS 头，`GET /api/intents/:id/events` 被浏览器 CORS 拦。修复：writeHead 前按白名单重查 Origin 补 `Access-Control-Allow-Origin` + `Vary`（server.ts L550–551）。`http-cors.test.ts` 4/4 仍绿。
+- **tui-tokens 缺 `branch-aborted` 映射（Active work 115 当日修复）**：`AUDIT_DECISIONS` 新增但 token 未映射，`tests/tui-tokens.test.ts :: maps every audit decision` 红；补映射后定向 6/6（本轮实跑）。
+- **本评审（v0.24）抓到 1 处文档滞后并当日修复**：feature-inventory 状态行停在 v0.9（2026-10-03，Active work 110 之后），**未记录 Active work 113–115 任何更新段**，状态行结尾基线 1099/101 落后活基线 1104/102；§2 入口表 Web 监督台行与 §1 计数（55 行 / P0 26/26 / 非 P0 8 条）已由 113 批同步、未被波及。修复：状态行升 **v0.10**，补 113–115 更新段（CORS + 四视图 + §7 + token），基线改 1104/102。doc-consistency 11/11 复跑仍绿。
+
+### F. 部署镜像：本轮未重拍（出货件又动）
+
+- 113–115 批改了 `src/http/server.ts` / `src/dispatch/dispatcher.ts` / `src/orchestrator/orchestrator.ts` / `src/tui/tokens.ts` / `web/supervisor/index.html`，出货件再动，按先例容器级结论不继承上一轮。
+- 容器级运行属性（healthy、`/data` 0600、SIGTERM 落盘、重启恢复）四项对本批**无新证据**；CI `image-smoke`（构建 + 镜像内两项冒烟）覆盖面不含上述四项；本机本轮未做 docker 实构实跑（同 v0.23 口径）。
+
+### G. 功能性 / 完整度 / 可上线（三维判定）
+
+- **功能性**：P0 26/26 ✅、无已知 P0 未闭合；操作者从"API 端点 + TUI 命令"扩展出**浏览器 Web 监督台**这一真实操作入口，派发 → 观察（SSE 实时 / DAG）→ 中断（§7 真取消）闭环成型。
+- **完整度**：§7 补上运行中分支中断这一最后的能力空白（v1.1 曾如实呈现"取消空操作"边界，v1.2 以 AbortSignal 收口）；「已实现但未接线」维持 **0 项**。
+- **可上线**：**❌ 未达成**。剩余项仍是仓库外动作（真机部署、密钥托管与带外公告、生产栈联调、外部消费方接入）与需真实规模的阈值标定，同 v0.23 §G。
+
+### H. MVP 判定与本轮限制
+
+- **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为操作者面与运行中中断收口，不改变上线判定。
+- **未跑（如实记）**：Docker 镜像实构实跑（§F）、浏览器真机 E2E（依赖 GUI 自动化环境，本机未重跑，以代码级核对 + 测试 + 冒烟覆盖）、Windows 本机全量（本机为 macOS，Windows 数引用 handoff 并标注）、push 后云端 CI（由用户决定 push 时点；最近一次 CI run 37145831862 四 job 全绿为另一会话推送记录）。
+- **已跑（本轮实测）**：全量 1104/102 绿、冒烟 37/37、doc-consistency 11/11、typecheck/build exit 0、三条验收脚本（`verify:execute-delegation` **9/9**、`verify:intent-recognize` **7/7**、`verify:tui-recognize` **7/7**）、113–115 批关键面定向 58/58。
 
 ## v0.22 复核（2026-10-03，评审对象：Active work 104 本批工作树（基线 HEAD `7499dce`，本批 commit 与新 HEAD 见 handoff）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据三项接线），并修掉一条让最近两次 CI 失败的 smoke 类型缺陷）
 
