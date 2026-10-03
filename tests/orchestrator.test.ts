@@ -51,7 +51,14 @@ function makePort(routes: Record<string, Route>, cancelFor?: Record<string, () =
       port.maxInFlight = Math.max(port.maxInFlight, inFlight);
       try {
         const route = routes[req.vassal!]!; // test routes cover every dispatched vassal
-        return await (typeof route === 'function' ? route(req) : route);
+        const result = await (typeof route === 'function' ? route(req) : route);
+        // §7: a real fetch body reader rejects when its signal fires; the stub
+        // mirrors that so an aborted stream settles as a rejected dispatch.
+        if (req.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+        return result;
+      } catch (error) {
+        if (req.signal?.aborted) throw new DOMException('aborted', 'AbortError');
+        throw error;
       } finally {
         inFlight -= 1;
       }
@@ -334,17 +341,21 @@ describe('Orchestrator.cancelIntent', () => {
     const orch = newOrchestrator(port, ['loom']);
 
     const running = orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'personal' });
-    // The branch is still streaming: it has no task id yet, so there is nothing
-    // to cancel — but the intent must be reachable (it was not before A-11).
+    // The branch is still streaming. Before §7 there was nothing to cancel and
+    // the cancel returned an empty result; now the live stream is aborted.
     const cancellation = await orch.cancelIntent('X');
-    expect(cancellation).toEqual({ intentId: 'X', results: [] });
-    expect(port.cancelCalls).toHaveLength(0);
+    expect(cancellation.results).toEqual([{ vassal: 'loom', canceled: true }]);
+    expect(port.cancelCalls).toHaveLength(0); // no task id yet: transport-level abort only
 
     release!();
-    await running;
+    const result = await running;
+    const branch = result.branches.find(b => b.vassal === 'loom')!;
+    expect(branch.state).toBe('canceled');
+    expect(branch.reason).toBe('canceled by the driver');
+    expect(result.status).toBe('failed');
   });
 
-  it('cancels a branch that settled while its siblings were still running, and drops its stance', async () => {
+  it('cancels a branch that settled while its siblings were still running, and aborts the running sibling (§7)', async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>(resolve => { release = resolve; });
     const port = makePort({
@@ -356,16 +367,21 @@ describe('Orchestrator.cancelIntent', () => {
     const running = orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
     await delay(5); // loom settles; atlas is still streaming
     const cancellation = await orch.cancelIntent('X');
-    expect(cancellation.results).toEqual([{ vassal: 'loom', taskId: 'loom-task', canceled: true }]);
+    // loom is cancelled through tasks/cancel (it has a task id); atlas has none
+    // yet, so it is aborted at the transport edge (§7) — both report cancelled.
+    expect(cancellation.results).toEqual([
+      { vassal: 'loom', taskId: 'loom-task', canceled: true },
+      { vassal: 'atlas', canceled: true },
+    ]);
+    expect(port.cancelCalls).toEqual([['loom', 'loom-task']]);
 
     release!();
     const result = await running;
-    // The cancel survives the fan-out finalising: the cancelled branch no longer
-    // votes and the aggregate is derived without its stance.
+    // Both branches are cancelled and neither stance survives into the aggregate.
     expect(result.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
-    expect(result.positions.map(position => position.vassal)).toEqual(['atlas']);
-    expect(result.decision.conclusion).toBe('ship');
-    expect(result.status).toBe('partial');
+    expect(result.branches.find(branch => branch.vassal === 'atlas')?.state).toBe('canceled');
+    expect(result.positions).toEqual([]);
+    expect(result.status).toBe('failed');
   });
 
   it('writes a cancellation back into a settled intent so the cancelled stance is recomputed away', async () => {

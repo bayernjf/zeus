@@ -53,6 +53,9 @@ export const AUDIT_DECISIONS = [
   // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
   // leave no trace at all, so the governance surface could not see a branch ended.
   'cancel-requested',
+  // design-fan-out §7: the driver aborted a live outbound A2A stream through the
+  // dispatcher port (no tasks/cancel was sent — there was no task id to name).
+  'branch-aborted',
   // design-realm §3.1: realm content was refused because fealty.dataPolicy does
   // not admit its origin (none accepts none; read-task-scope only kernel-resolved;
   // hits without a declared origin fail closed). The refusal is the policy
@@ -99,6 +102,14 @@ export type DispatchRequest = {
    *  kernel-resolved hits as task-scoped, and can verify nothing about
    *  caller-asserted ones). */
   realmHitsOrigin?: 'kernel-resolved' | 'caller-asserted';
+  /**
+   * design-fan-out §7: hard-abort a live outbound A2A stream. Forwarded into
+   * `sendTaskSubscribe`'s signal, so an abort while the peer is still streaming
+   * closes the socket instead of waiting for the stream to end. The abort is
+   * best-effort at the transport edge: once the peer's final task snapshot has
+   * arrived and the stream ended, the signal has nothing left to cancel.
+   */
+  signal?: AbortSignal;
 };
 
 export type DispatchResult =
@@ -267,13 +278,19 @@ export class Dispatcher {
             events.push(event);
             if (!ack) ack = { elapsedMs: clock() - startedAt, taskId: event.taskId };
           },
+          ...(request.signal !== undefined ? { signal: request.signal } : {}),
         },
         this.options.fetchImpl
       );
     } catch (error) {
-      const detail = error instanceof Error ? error.message : 'dispatch failed';
-      this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatch-failed', detail });
-      return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatch-failed', detail } };
+      // design-fan-out §7: an abort is a governance act (the driver cancelled the
+      // intent), not the vassal failing to serve the task — audit it distinctly
+      // so the trail does not read the operator's own cancel as a peer failure.
+      const aborted = request.signal?.aborted ?? false;
+      const decision = aborted ? 'branch-aborted' : 'dispatch-failed';
+      const detail = aborted ? 'aborted by the driver' : error instanceof Error ? error.message : 'dispatch failed';
+      this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision, detail });
+      return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision, detail } };
     }
 
     // A peer that streamed no intermediate event still accepted the task by
