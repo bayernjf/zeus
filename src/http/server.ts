@@ -400,6 +400,15 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (body.branchTimeoutMs !== undefined && (typeof body.branchTimeoutMs !== 'number' || body.branchTimeoutMs <= 0)) {
           return error(reply, 400, 'invalid_request', 'body.branchTimeoutMs must be a positive number');
         }
+        // deferred #33: execute mode needs a mode value we understand; the
+        // delegation itself is shape-checked inside the kernel gate (fail-closed,
+        // consumed once) rather than re-implemented here.
+        if (body.mode !== undefined && body.mode !== 'plan' && body.mode !== 'execute') {
+          return error(reply, 400, 'invalid_request', 'body.mode must be "plan" or "execute"');
+        }
+        if (body.executionDelegation !== undefined && (typeof body.executionDelegation !== 'object' || body.executionDelegation === null || Array.isArray(body.executionDelegation))) {
+          return error(reply, 400, 'invalid_request', 'body.executionDelegation must be an execution delegation object');
+        }
         const params = body.params && typeof body.params === 'object' && !Array.isArray(body.params) ? body.params : {};
         // E6.4: kernel-resolved realm content. Preferred over pasted realmHits,
         // because then the kernel knows which realm the content came from and can
@@ -442,6 +451,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(body.realmHits ? { realmHits: body.realmHits, realmHitsOrigin: 'caller-asserted' as const } : {}),
           ...(body.runId ? { runId: body.runId } : {}),
           ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
+          ...(body.mode === 'execute' ? { mode: 'execute' as const } : {}),
+          ...(body.executionDelegation ? { executionDelegation: body.executionDelegation } : {}),
           ...(resolved
             ? {
                 realmId: resolved.realmId,

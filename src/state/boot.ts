@@ -428,6 +428,32 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         detail: `target '${entry.from}' saturated/unavailable; diverted to '${entry.to}' for skill '${entry.skill}'`,
       });
     },
+    // deferred #33: the execute gate refused a branch. An execute without a
+    // verified, unconsumed delegation is a governance fact — refused before any
+    // outbound request exists, so this audit line is the refusal itself.
+    onExecutionDelegationRefused: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: entry.vassal,
+        skill: entry.skill,
+        realm: entry.realm,
+        decision: 'execution-delegation-denied',
+        detail: `execute refused for skill '${entry.skill}' vassal '${entry.vassal}': ${entry.reason}`,
+      });
+    },
+    // deferred #33: execute-mode gate. Signed, single-use approval for
+    // irreversible external writes; with no driver signer there is no trust
+    // anchor and execute fails closed.
+    ...(options.driverSigner
+      ? {
+          executionDelegation: {
+            verifier: options.driverSigner.verifier(),
+            ledger: executionDelegationLedger,
+            acceptedKeyIds: [options.driverSigner.keyId],
+            now,
+          },
+        }
+      : {}),
     onProgress: event => {
       progressHub.publish(event);
       if (event.type === 'intent-finished' && event.realmId) {

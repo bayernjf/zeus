@@ -64,6 +64,10 @@ export const AUDIT_DECISIONS = [
   // deferred #33: an operator issued a one-time, bounded approval for an
   // executing agent to perform an external write.
   'execution-delegation-issued',
+  // deferred #33: the execute gate refused a branch — missing delegation,
+  // expired/replayed/mismatched, or no trust anchor assembled. The refusal is
+  // the gate working, so it is visible rather than a silent drop.
+  'execution-delegation-denied',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

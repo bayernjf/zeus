@@ -77,6 +77,9 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'domain-grant-revoked': 'warning',
   'driver-grant-issued': 'info',
   'execution-delegation-issued': 'info',
+  // deferred #33: the execute gate refused a branch — warning, like the other
+  // policy-working refusals (the refusal is the gate doing its job).
+  'execution-delegation-denied': 'warning',
   'realm-write': 'info',
   'realm-disconnected': 'warning',
   'realm-tenant-retargeted': 'warning',

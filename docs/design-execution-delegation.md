@@ -57,15 +57,15 @@
 
 两者复用同一签名/规范化/nonce 原语，但是两张语义不同的票据，不互相替代。
 
-## 5. 未接线部分（触发条件满足后做，不在本版）
+## 5. 接线状态（Zeus 侧四项已接；对端协议项留待）
 
-以下任一改动都会触及对端尚未定义的协议，现在做会返工，明确留待 deferred #33 触发条件②（pr-helper 凭据代理接口就绪）：
+deferred #33 的六项接线中五项已在 Zeus 侧完成，唯一剩余项撞对端未定义协议：
 
-1. **execute/plan 模式**：在 `FanOutRequest`/派发参数显式区分，plan 为默认；execute 无票据即不发起外部写。
-2. **派发闸门**：`Dispatcher`/`Orchestrator.runBranch` 在 execute 前调用 `verifyAndConsumeExecutionDelegation`，无授权 fail-closed 且不发出站请求。
-3. **票据投递的 A2A 字段**：经哪个 `x-zeus-*` 字段或消息头把票据交给执行 Agent——必须与 pr-helper 实际读取的字段对齐，**不臆造**。
-4. **HTTP 签发端点 + 审计**：操作者面新增"签发执行授权"动作，新增审计 decision（如 `execution-delegation-issued` / `execution-write-authorized`），纳入 `AUDIT_DECISIONS` 与 `GET /api/audit` 过滤白名单。
-5. **nonce 账本接入 bootKernel 持久化**（当前原语自带 export/import，但未挂状态文件）。
+1. **execute/plan 模式** ✅ 已接（2026-10-03，Active work 107）：`FanOutRequest` 新增 `mode?: 'plan' | 'execute'`，缺省 'plan'，向后兼容；execute 无票据即不发起外部写。
+2. **派发闸门** ✅ 已接（2026-10-03，Active work 107）：`Orchestrator.runBranch` 出站前调用 `verifyAndConsumeExecutionDelegation`，capability 固定 `'execute'`（票据 capabilities 须覆盖该能力）；无授权/验签失败/过期/重放一律 fail-closed **不发出站请求**，拒绝写审计 decision `execution-delegation-denied`（入 `AUDIT_DECISIONS` 与 TUI 语义 token）。
+3. **票据投递的 A2A 字段** ⬜ 未接：经哪个 `x-zeus-*` 字段或消息头把票据交给执行 Agent——必须与 pr-helper 实际读取的字段对齐，**不臆造**；仍挂 deferred #33 触发条件②（pr-helper 凭据代理接口就绪）。
+4. **HTTP 签发端点 + 审计** ✅ 已接（2026-10-03 早批，Active work 104）：`POST /api/execution-delegations`（bearer，无 signer 不挂载）+ 审计 decision `execution-delegation-issued`（`AUDIT_DECISIONS`、审计查询白名单、TUI token 跟随）。
+5. **nonce 账本接入 bootKernel 持久化** ✅ 已接（2026-10-03 早批，Active work 104/105 落盘修复）：`KernelSnapshot.executionDelegationNonces` collect/apply + `FileKernelStateStore.save()` 补写（否则 spent nonce 从未落盘、重启即重放窗口）。
 
 ## 6. 验收
 

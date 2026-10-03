@@ -1,4 +1,6 @@
 import type { TaskState } from '../a2a/types.js';
+import type { RosterVerifier } from '../registry/signing.js';
+import { verifyAndConsumeExecutionDelegation, type ExecutionDelegationNonceLedger } from '../delegation/execution-delegation.js';
 import { arbitrateConflict } from './arbitration.js';
 import { aggregate, extractPositions } from './aggregate.js';
 import { detectConflicts } from './conflict.js';
@@ -86,6 +88,22 @@ export type OrchestratorOptions = {
   /** #9: fired when a saturated/eligible-lacking target is re-pointed to an
    *  alternate same-skill provider before dispatch; bridge into the audit spine. */
   onDiverted?: (entry: { skill: string; realm: FanOutRequest['realm']; from: string; to: string; at: string }) => void;
+  /**
+   * deferred #33: the execute-mode gate. When set, an execute-mode branch is
+   * refused (no outbound dispatch) unless the supplied execution delegation
+   * verifies, matches this branch's skill/vassal, and is consumed exactly once.
+   * When unset, execute mode fails closed with a 'no-trust-anchor' refusal — an
+   * execute that cannot be authorized is not an execute.
+   */
+  executionDelegation?: {
+    verifier: RosterVerifier;
+    ledger: ExecutionDelegationNonceLedger;
+    acceptedKeyIds?: string[];
+    now?: () => Date;
+  };
+  /** deferred #33: fired when the execute gate refuses a branch; bridge into
+   *  the audit spine at assembly time (decision `execution-delegation-denied`). */
+  onExecutionDelegationRefused?: (entry: { skill: string; realm: FanOutRequest['realm']; vassal: string; reason: string; at: string }) => void;
 };
 
 export class UnknownIntentError extends DomainError {
@@ -609,6 +627,34 @@ export class Orchestrator {
 
   private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
+    // deferred #33: execute-mode gate. An execute is an irreversible external
+    // write, so it must carry a verified, unconsumed execution delegation; the
+    // check happens before dispatch and any failure here is a refusal that
+    // never leaves the kernel. Plan (the default) is unchanged.
+    if (request.mode === 'execute') {
+      const anchor = this.options.executionDelegation;
+      const verdict = anchor
+        ? await verifyAndConsumeExecutionDelegation(request.executionDelegation, {
+            verifier: anchor.verifier,
+            ledger: anchor.ledger,
+            vassal,
+            skill: request.skill,
+            capability: 'execute',
+            ...(anchor.acceptedKeyIds ? { acceptedKeyIds: anchor.acceptedKeyIds } : {}),
+            ...(anchor.now ? { now: anchor.now } : {}),
+          })
+        : { ok: false as const, reason: 'no-trust-anchor' };
+      if (!verdict.ok) {
+        this.options.onExecutionDelegationRefused?.({
+          skill: request.skill,
+          realm: request.realm,
+          vassal,
+          reason: verdict.reason,
+          at: this.now().toISOString(),
+        });
+        return { vassal, runId: branchRunId, ok: false, events: [], reason: `execute refused: ${verdict.reason}` };
+      }
+    }
     const pending = this.dispatcher
       .dispatch({
         vassal,
