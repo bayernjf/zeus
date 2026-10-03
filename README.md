@@ -72,11 +72,11 @@
 ```bash
 npm install
 npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest：1084 项 / 101 个测试文件（以此命令的输出为准）
+npm test           # vitest：1099 项 / 101 个测试文件（以此命令的输出为准）
 npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 37 步（需先 build；只用回环与自造密钥）
 npm run typecheck  # tsc --noEmit
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
-npm run tui        # 终端监督台（UI 方案 D：只读监视 + 升级裁决 + 名册吊销；需先 build）
+npm run tui        # 终端监督台（UI 方案 D：只读监视 + 升级裁决 + 名册吊销 + 意图识别；需先 build）
 ```
 
 终端监督台复用既有 bearer HTTP 面，不新增内核路由、不把令牌落盘：
@@ -85,7 +85,8 @@ npm run tui        # 终端监督台（UI 方案 D：只读监视 + 升级裁决
 ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" npm run tui
 # 可选：--base-url http://127.0.0.1:8787（或 ZEUS_BASE_URL）、--token、--locale en、
 #       --interval 0（单次刷新后不轮询）、--no-color（或 NO_COLOR）
-```
+
+监督台命令（进入后）：`<enter>/r` 刷新 · `a<n>`/`x<n>` 批准/拒绝升级 · `s<n>.<m>` 裁决 · `d<n>` 吊销 · `g<n> <subject> <r|w>` 跨域授权 · `k<n>` 吊销授权 · `i <文本>` **意图识别（本地规则，零出域，plan-only）** · `im <文本>` 意图识别（显式咨询决策后端，opt-in）· `q` 退出。识别结果恒 plan-only，execute 只能走执行授权票据。
 
 环境变量见 `.env.example`；部署（Docker 多阶段非 root 镜像、签名密钥、状态卷、优雅退出、备份调度示例）见 **[docs/deployment.md](docs/deployment.md)**。签名密钥生成：
 
@@ -292,7 +293,8 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 > 状态以 [handoff.md](handoff.md) 为准；MVP 判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)。
 
 - **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
-- **已验证到什么程度**：1084 项测试 / 101 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，37 步），- **execute 授权链另有一条真进程验收**（`npm run verify:execute-delegation`，9 步：真 HTTP 进程 + 真 socket 执行 Agent——execute 无票据拒发零出站 / 签发端点 201 拿票 / 带票 execute 单次派发 / 同票重放拒发 / 两次拒绝与签发进审计链；dist 出货实现受检），- **E2.6 操作者意图识别另有一条真进程验收**（`npm run verify:intent-recognize`，7 步：本地规则命中零模型出域（backend:null）/ 未命中 422 fail-closed / realm 校验 400 / useModel 无后端 422 / 识别出的技能 id 回灌 `POST /api/intents` 真派发 completed）
+- **已验证到什么程度**：1099 项测试 / 101 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复，37 步），- **execute 授权链另有一条真进程验收**（`npm run verify:execute-delegation`，9 步：真 HTTP 进程 + 真 socket 执行 Agent——execute 无票据拒发零出站 / 签发端点 201 拿票 / 带票 execute 单次派发 / 同票重放拒发 / 两次拒绝与签发进审计链；dist 出货实现受检），- **E2.6 操作者意图识别另有一条真进程验收**（`npm run verify:intent-recognize`，7 步：本地规则命中零模型出域（backend:null）/ 未命中 422 fail-closed / realm 校验 400 / useModel 无后端 422 / 识别出的技能 id 回灌 `POST /api/intents` 真派发 completed）
+- **TUI 意图识别面另有一条真进程验收**（`npm run verify:tui-recognize`，7 步：走 dist 出货的监督台 client/render/commands——真 socket 技能目录注册 / 本地命中（backend:null）/ 渲染含零出域+plan-only / 未命中 fail-closed / useModel 无后端 fail-closed / `i`/`im` 命令解析 / `info` 不误判）
 `tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
 - **协议验收**：对生产环境的执行 Agent 跑通过一次纯标准 A2A 客户端验收（卡片发现 + 任务受理）。
 - **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）、MCP 暴露侧的主体身份判定（deferred #18，等真实读取方出现）；另两条由本轮真进程取证抓出并已登记：**连接器权限词法绑不住带下划线/点/大写的工具名**（只能退裸 `mcp`＝放行全部，deferred #30）与 **MCP 面把未声明的查询参数静默丢掉**（`?tags=` 返回未过滤结果且不报错，deferred #31）——两者的修法都是对外契约决定，且都要等真实外部 MCP 服务出现才有实测对象；对接方视角的契约与避坑见 [docs/mcp-integration.md](docs/mcp-integration.md)。
