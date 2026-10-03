@@ -72,6 +72,31 @@ function dispatcher(vassalMap: Map<string, VassalLike>, fetchImpl: (url: string,
 }
 
 describe('Dispatcher', () => {
+  it('§7: aborts a live stream when the caller signal fires and audits branch-aborted', async () => {
+    const map = new Map([['pr-helper', vassal()]]);
+    const controller = new AbortController();
+    const { dispatcherInstance, audit } = dispatcher(map, async (_url, init) => {
+      // A stream that never ends unless the caller aborts it, like a healthy
+      // long-lived A2A subscription a driver cancels mid-flight.
+      const body = new ReadableStream<Uint8Array>({
+        start(stream) {
+          const encoder = new TextEncoder();
+          stream.enqueue(encoder.encode(`data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: { kind: 'status-update', taskId: 'task-1', contextId: 'ctx', status: { state: 'working' }, final: false } })}\n\n`));
+          init?.signal?.addEventListener('abort', () => stream.error(new DOMException('aborted', 'AbortError')), { once: true });
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    });
+
+    const resultPromise = dispatcherInstance.dispatch({
+      vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', signal: controller.signal,
+    });
+    controller.abort();
+    const result = await resultPromise;
+    expect(result).toMatchObject({ ok: false, reason: 'aborted by the driver' });
+    expect(audit.some(entry => entry.decision === 'branch-aborted')).toBe(true);
+  });
+
   it('dispatches a task, streams events, and audits dispatched + final state', async () => {
     const seenBodies: unknown[] = [];
     const map = new Map([['pr-helper', vassal()]]);

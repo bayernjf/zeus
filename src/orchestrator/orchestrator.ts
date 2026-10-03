@@ -143,6 +143,14 @@ export class Orchestrator {
    */
   private inFlight = new Map<string, FanOutResult>();
   /**
+   * design-fan-out §7: per-intent AbortControllers for branches whose outbound
+   * A2A stream is still live. `cancelIntent` aborts these to hard-stop a running
+   * branch that has no task id yet; the controller is dropped once the fan-out
+   * settles. Held apart from `inFlight` (whose branches are the serializable
+   * FanOutResult shape) so a controller never leaks into a result/replay.
+   */
+  private branchSignals = new Map<string, Map<string, AbortController>>();
+  /**
    * F2 single-flight: fan-outs in flight keyed by their client-supplied intentId.
    * Without this, two concurrent calls carrying the same key both miss the result
    * cache (it is written only when the fan-out settles) and dispatch every branch
@@ -288,6 +296,10 @@ export class Orchestrator {
         stream: [], positions: [], decision: aggregate([], request.aggregation),
         conflicts: [], status: 'failed', createdAt: this.now().toISOString(),
       });
+      // design-fan-out §7: one controller per branch, so an in-flight cancel can
+      // abort a live stream (no task id yet) instead of waiting for it to end.
+      const signals = new Map(names.map(name => [name, new AbortController()]));
+      this.branchSignals.set(intentId, signals);
 
       let branches: BranchOutcome[];
       try {
@@ -300,11 +312,13 @@ export class Orchestrator {
               name, request, runId, intentId, 0,
               entry?.divertedFrom ?? null,
               exhaustedNote,
+              signals.get(name)?.signal,
             );
           })
         );
       } finally {
         this.inFlight.delete(intentId);
+        this.branchSignals.delete(intentId);
       }
       const positions = extractPositions(branches);
       const decision = aggregate(positions, request.aggregation);
@@ -452,41 +466,57 @@ export class Orchestrator {
    * (see `inFlight`), not only once the whole fan-out settles. Settled branches
    * are cancelled through the dispatcher and the outcome is written back into the
    * branch state and the recomputed aggregate, so a cancelled stance stops
-   * counting instead of surviving into the next `resumeBranch` recompute. A
-   * branch whose stream has not ended yet exposes no task id and is not
-   * cancellable here: aborting a live outbound request needs an AbortSignal
-   * through the dispatcher port (design-fan-out §7, still deferred).
+   * counting instead of surviving into the next `resumeBranch` recompute.
+   *
+   * design-fan-out §7: a branch whose A2A stream is still live exposes no task id,
+   * but its AbortController (kept in `branchSignals`) aborts the outbound request
+   * at the transport edge — the stream is closed instead of waiting for it to
+   * end, and the branch settles as `canceled` the moment the abort lands.
    */
   async cancelIntent(intentId: string): Promise<{ intentId: string; results: CancelBranchResult[] }> {
     const settled = this.intents.get(intentId);
     const source = settled ?? this.inFlight.get(intentId);
     if (!source) throw new UnknownIntentError(`unknown intent: ${intentId}`);
 
+    const liveSignals = this.branchSignals.get(intentId);
     const cancellable = source.branches.filter(
-      branch => branch.ok && branch.taskId && !isTerminalState(branch.state)
+      branch =>
+        !isTerminalState(branch.state) &&
+        ((branch.ok && branch.taskId) || (liveSignals?.has(branch.vassal) ?? false))
     );
-    const results = await Promise.all(cancellable.map(branch => this.cancelBranch(branch)));
+    const results = await Promise.all(cancellable.map(branch => this.cancelBranch(intentId, branch)));
     if (settled) this.writeBackCancellations(intentId, settled, results);
     return { intentId, results };
   }
 
-  /** Cancel one branch's task; a successful cancel marks the branch cancelled. */
-  private async cancelBranch(branch: BranchOutcome): Promise<CancelBranchResult> {
+  /**
+   * Cancel one branch: abort its live stream first (§7, no task id needed), then
+   * forward tasks/cancel when the branch already carries a task id. A successful
+   * cancel (either path) marks the branch cancelled.
+   */
+  private async cancelBranch(intentId: string, branch: BranchOutcome): Promise<CancelBranchResult> {
+    const controller = this.branchSignals.get(intentId)?.get(branch.vassal);
+    if (controller) controller.abort();
+    // design-fan-out §7: a branch aborted mid-stream has no task id to name; the
+    // result records it as cancelled with no task reference, which is the truth
+    // for a transport-level abort.
     const taskId = branch.taskId!;
-    try {
-      await this.dispatcher.cancel(branch.vassal, taskId);
-      branch.ok = false;
-      branch.state = 'canceled';
-      branch.reason = 'canceled by the driver';
-      return { vassal: branch.vassal, taskId, canceled: true };
-    } catch (error) {
-      return {
-        vassal: branch.vassal,
-        taskId,
-        canceled: false,
-        reason: error instanceof Error ? error.message : 'cancel failed',
-      };
+    if (taskId) {
+      try {
+        await this.dispatcher.cancel(branch.vassal, taskId);
+      } catch (error) {
+        return {
+          vassal: branch.vassal,
+          taskId,
+          canceled: false,
+          reason: error instanceof Error ? error.message : 'cancel failed',
+        };
+      }
     }
+    branch.ok = false;
+    branch.state = 'canceled';
+    branch.reason = 'canceled by the driver';
+    return { vassal: branch.vassal, taskId, canceled: true };
   }
 
   /**
@@ -564,7 +594,8 @@ export class Orchestrator {
     intentId: string,
     resumeNo = 0,
     divertedFrom: string | null = null,
-    exhaustedNote: string | null = null
+    exhaustedNote: string | null = null,
+    signal?: AbortSignal
   ): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const metrics = this.options.metrics;
@@ -604,7 +635,7 @@ export class Orchestrator {
         this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
         this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
       }
-      branch = await this.runBranch(vassal, request, parentRunId, resumeNo);
+      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal);
     } finally {
       release();
     }
@@ -625,7 +656,7 @@ export class Orchestrator {
     return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0): Promise<BranchOutcome> {
+  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     // deferred #33: execute-mode gate. An execute is an irreversible external
     // write, so it must carry a verified, unconsumed execution delegation; the
@@ -664,6 +695,7 @@ export class Orchestrator {
         runId: branchRunId,
         ...(request.realmHits ? { realmHits: request.realmHits } : {}),
         ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}),
+        ...(signal !== undefined ? { signal } : {}),
       })
       .catch(error => ({
         ok: false as const,
@@ -701,7 +733,15 @@ export class Orchestrator {
           state: outcome.task.status.state, task: outcome.task, events: outcome.events,
         };
       }
-      return { vassal, runId: branchRunId, ok: false, events: [], reason: outcome.reason };
+      // design-fan-out §7: an aborted stream is the driver cancelling, not the
+      // vassal failing — settle the branch as `canceled` so the aggregate and the
+      // Web war-room show the truth instead of a generic dispatch failure.
+      const aborted = signal?.aborted ?? false;
+      return {
+        vassal, runId: branchRunId, ok: false, events: [],
+        ...(aborted ? { state: 'canceled' as const } : {}),
+        reason: aborted ? 'canceled by the driver' : outcome.reason,
+      };
     } catch (error) {
       return { vassal, runId: branchRunId, ok: false, events: [], reason: error instanceof Error ? error.message : 'branch failed' };
     } finally {

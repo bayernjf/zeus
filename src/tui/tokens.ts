@@ -58,6 +58,9 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // The lifecycle counterpart of `dispatched`: a branch ending on purpose.
   'cancel-requested': 'accent',
   'dispatch-failed': 'danger',
+  // design-fan-out §7: the driver aborted a live branch via AbortSignal before
+  // its A2A stream ended — a deliberate transport-level interrupt, like cancel.
+  'branch-aborted': 'warning',
   'sla-ack-breached': 'warning',
   'vassal-revoked': 'danger',
   'vassal-reinstated': 'accent',
