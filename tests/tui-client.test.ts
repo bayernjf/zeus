@@ -112,4 +112,40 @@ describe('TUI HTTP client', () => {
     expect(calls[0]!.url).toBe('http://kernel/api/domains/grants/grant%20x%2F1');
     expect(calls[0]!.init?.method).toBe('DELETE');
   });
+
+  it('recognizes an instruction via POST /api/intents/recognize (local path omits useModel)', async () => {
+    const { calls, client } = mockClient(url => {
+      expect(url).toBe('http://kernel/api/intents/recognize');
+      return okJson({ ok: true, intent: { skill: 'deployment-health' }, confidence: 0.5, backend: null, decisionAt: 'd' });
+    });
+    const result = await client.recognize('review the pr');
+    expect(result).toEqual({ ok: true, skill: 'deployment-health', confidence: 0.5, backend: null, decisionAt: 'd' });
+    const body = JSON.parse(calls[0]!.init!.body!);
+    expect(body).toEqual({ text: 'review the pr' });
+    expect(calls[0]!.init!.method).toBe('POST');
+    expect(calls[0]!.init!.headers!.authorization).toBe('Bearer tok');
+    expect(calls[0]!.init!.headers!['content-type']).toBe('application/json');
+  });
+
+  it('sends realm + useModel only when opted in', async () => {
+    const { calls, client } = mockClient(() => okJson({ ok: true, intent: { skill: 'research' }, confidence: 0.8, backend: { kind: 'llm', model: 'm' }, decisionAt: 'd' }));
+    await client.recognize('research postgres vs sqlite', { realm: 'enterprise', useModel: true });
+    const body = JSON.parse(calls[0]!.init!.body!);
+    expect(body).toEqual({ text: 'research postgres vs sqlite', realm: 'enterprise', useModel: true });
+  });
+
+  it('surfaces a fail-closed response as-is (never turns it into a guessed intent)', async () => {
+    const { client } = mockClient(() => okJson({ ok: false, reason: 'no-candidates' }));
+    await expect(client.recognize('zzz')).resolves.toEqual({ ok: false, reason: 'no-candidates' });
+  });
+
+  it('surfaces a structured fail-closed 422 as a view, not an error', async () => {
+    const { client } = mockClient(() => ({ ok: false, status: 422, json: async () => ({ ok: false, reason: 'no-backend' }) }));
+    await expect(client.recognize('review', { useModel: true })).resolves.toEqual({ ok: false, reason: 'no-backend' });
+  });
+
+  it('throws ApiError on non-2xx recognize responses', async () => {
+    const { client } = mockClient(() => fail503);
+    await expect(client.recognize('review')).rejects.toBeInstanceOf(ApiError);
+  });
 });

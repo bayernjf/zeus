@@ -8,7 +8,7 @@
 import type { DeckClient, DeckSnapshot, EscalationView } from './client.js';
 import { makeTranslator, resolveLocale, type Translator } from './format.js';
 import { makePalette, type Palette } from './tokens.js';
-import { renderDeck, escalationOptions } from './render.js';
+import { renderDeck, renderRecognize, escalationOptions } from './render.js';
 import { COMMAND_HELP, parseCommand, type DeckCommand } from './commands.js';
 import type { Locale } from './messages.js';
 
@@ -92,6 +92,15 @@ export function createDeck(options: RunnerOptions): DeckController {
       await draw().catch(error =>
         io.print(`${t('common.error.network', { baseUrl: '', message: error instanceof Error ? error.message : String(error) })}\n`),
       );
+      return true;
+    }
+    if (parsed.kind === 'recognize') {
+      try {
+        const result = await client.recognize(parsed.text, { useModel: parsed.useModel });
+        io.print(`${renderRecognize({ result, t, palette })}\n`);
+      } catch (error) {
+        io.print(`${t('common.error.http', { status: '', message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
       return true;
     }
     if (!snapshot) return true;

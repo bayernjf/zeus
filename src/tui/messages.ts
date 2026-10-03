@@ -111,6 +111,12 @@ export const zhCN = {
   'audit.decision.commission-refused': '上岗拒绝',
   'audit.decision.memory-claim-skipped': '记忆 claim 跳过',
   'audit.decision.unknown': '未知审计类型 {decision}',
+  'recognize.title': '意图识别',
+  'recognize.ok': '→ 技能 {skill} · 置信 {confidence}',
+  'recognize.backend.local': '（本地规则，零出域）',
+  'recognize.backend.model': '（{kind} {model}）',
+  'recognize.fail': '未识别：{reason}{detail}',
+  'recognize.planOnly': 'plan-only：识别不授权执行，execute 需执行授权票据',
 } as const;
 
 export type MessageKey = keyof typeof zhCN;
@@ -218,6 +224,12 @@ export const en: Record<MessageKey, string> = {
   'audit.decision.commission-refused': 'commission refused',
   'audit.decision.memory-claim-skipped': 'memory claim skipped',
   'audit.decision.unknown': 'unknown audit decision {decision}',
+  'recognize.title': 'Intent recognition',
+  'recognize.ok': '→ skill {skill} · confidence {confidence}',
+  'recognize.backend.local': '(local rules, zero egress)',
+  'recognize.backend.model': '({kind} {model})',
+  'recognize.fail': 'not recognized: {reason}{detail}',
+  'recognize.planOnly': 'plan-only: recognition never authorizes execution (execute requires an execution delegation)',
 };
 
 export const messages = { 'zh-CN': zhCN, en } as const;

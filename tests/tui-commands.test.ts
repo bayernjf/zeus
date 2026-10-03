@@ -49,4 +49,23 @@ describe('TUI command parser', () => {
     expect(parseCommand('g1 loom x')).toEqual({ error: 'grant-bad-access' });
     expect(parseCommand('k0')).toEqual({ error: 'bad-index' });
   });
+
+  it('parses operator intent recognition: i = local rules, im = model opt-in', () => {
+    expect(parseCommand('i review the pr')).toEqual({ kind: 'recognize', text: 'review the pr', useModel: false });
+    expect(parseCommand('  i  复盘双十一活动 ')).toEqual({ kind: 'recognize', text: '复盘双十一活动', useModel: false });
+    expect(parseCommand('im research postgres vs sqlite')).toEqual({
+      kind: 'recognize',
+      text: 'research postgres vs sqlite',
+      useModel: true,
+    });
+    expect(parseCommand('IM replay')).toEqual({ kind: 'recognize', text: 'replay', useModel: true });
+    expect(parseCommand('i')).toEqual({ error: 'recognize-needs-text' });
+    expect(parseCommand('im   ')).toEqual({ error: 'recognize-needs-text' });
+  });
+
+  it('keeps existing single-letter actions unambiguous against i/im', () => {
+    expect(parseCommand('d1')).toEqual({ kind: 'revoke', index: 1 });
+    expect(parseCommand('a3')).toEqual({ kind: 'approve', index: 3 });
+    expect(parseCommand('info')).toEqual({ error: 'unknown' });
+  });
 });

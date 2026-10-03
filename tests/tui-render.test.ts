@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTranslator } from '../src/tui/format.js';
 import { makePalette } from '../src/tui/tokens.js';
-import { escalationOptions, renderDeck, skillList } from '../src/tui/render.js';
+import { escalationOptions, renderDeck, renderRecognize, skillList } from '../src/tui/render.js';
 import type { DeckSnapshot } from '../src/tui/client.js';
 
 const t = makeTranslator('zh-CN');
@@ -167,5 +167,46 @@ describe('TUI pure render', () => {
     const empty: DeckSnapshot = { ...snapshot, domains: { realms: [], grants: [] } };
     const out = renderDeck({ snapshot: empty, t, palette, updatedAt: '' });
     expect(out).toContain('未挂载数据域');
+  });
+});
+
+describe('renderRecognize (E2.6 operator intent)', () => {
+  it('renders a local-rule hit with plan-only notice and zero-egress backend', () => {
+    const out = renderRecognize({
+      result: { ok: true, skill: 'deployment-health', confidence: 0.5, backend: null, decisionAt: '' },
+      t,
+      palette,
+    });
+    expect(out).toContain('意图识别');
+    expect(out).toContain('技能 deployment-health');
+    expect(out).toContain('0.5');
+    expect(out).toContain('本地规则，零出域');
+    expect(out).toContain('plan-only');
+  });
+
+  it('renders a model-backed hit with the backend label', () => {
+    const out = renderRecognize({
+      result: { ok: true, skill: 'research', confidence: 0.82, backend: { kind: 'llm', model: 'agnes-2.5-flash' }, decisionAt: '' },
+      t,
+      palette,
+    });
+    expect(out).toContain('llm agnes-2.5-flash');
+  });
+
+  it('renders a fail-closed miss with the named reason, never a guess', () => {
+    const out = renderRecognize({
+      result: { ok: false, reason: 'ambiguous', detail: '规则并列：deployment-health / research' },
+      t,
+      palette,
+    });
+    expect(out).toContain('未识别：ambiguous');
+    expect(out).toContain('规则并列');
+    expect(out).not.toContain('→ 技能');
+  });
+
+  it('omits detail when the miss carries none', () => {
+    const out = renderRecognize({ result: { ok: false, reason: 'no-candidates' }, t, palette });
+    expect(out).toContain('未识别：no-candidates');
+    expect(out).not.toContain('undefined');
   });
 });
