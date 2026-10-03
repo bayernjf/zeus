@@ -130,6 +130,12 @@
 
   /* 连接提示 */
   .cors-note { font-size: 12px; color: var(--text-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 10px; }
+  .dag-node { display: inline-flex; flex-direction: column; gap: 2px; font-size: 12px; font-family: var(--mono); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; background: var(--panel-2); }
+  .dag-node i { font-style: normal; font-size: 10.5px; color: var(--text-3); }
+  .dag-node.node-ok { border-color: #2e7d32; }
+  .dag-node.node-bad { border-color: #c62828; }
+  .dag-node.node-pending { border-color: #b26a00; }
+  .dag-node.node-idle { border-color: var(--line); }
   .cors-note code { font-family: var(--mono); background: #0d1218; padding: 1px 5px; border-radius: 4px; }
 
   @media (max-width: 760px) {
@@ -168,6 +174,28 @@
 
     <!-- ===== 视图：监控 ===== -->
     <section id="view-monitor">
+      <div class="panel" style="margin-bottom:14px">
+        <h2>意图识别 <span class="hint">POST /api/intents/recognize · E2.6 仅识别不派发</span></h2>
+        <div class="body">
+          <div class="form">
+            <div class="row inline">
+              <div class="row" style="flex:1">
+                <label for="rText">操作者指令（自然语言）</label>
+                <input id="rText" autocomplete="off" placeholder="如：帮我审一下 zeus 的 PR 并给合并建议">
+              </div>
+              <div class="row">
+                <label for="rRealm">数据域</label>
+                <select id="rRealm"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
+              </div>
+              <div class="row">
+                <label>&nbsp;</label>
+                <button class="btn primary" id="btnRecognize">识别</button>
+              </div>
+            </div>
+            <div id="recognizeResult"></div>
+          </div>
+        </div>
+      </div>
       <div class="panel" style="margin-bottom:14px">
         <h2>派发意图 <span class="hint">POST /api/intents</span></h2>
         <div class="body">
@@ -311,6 +339,10 @@
           <div class="body" id="intentEvents"></div>
         </div>
       </div>
+      <div class="panel" style="margin-top:14px" id="dagPanel" hidden>
+        <h2>DAG 编排 <span class="hint">GET /api/intents/:id/dag · S3 分层 / 关键路径</span></h2>
+        <div class="body" id="dagBody"></div>
+      </div>
     </section>
 
     <!-- ===== 视图：连接 ===== -->
@@ -360,6 +392,7 @@
     lastRefresh: null,
     recent: loadRecent(),
     sseAbort: null,
+    sseRetries: 0,
   };
 
   function loadConn() {
@@ -477,6 +510,8 @@
     if (!window.confirm('派发意图：' + skill + ' @ ' + realm + (vassals.length ? ' → ' + vassals.join(', ') : '') + ' ？')) return;
     const btn = $('btnDispatch');
     btn.disabled = true;
+    const prevLabel = btn.textContent;
+    btn.textContent = '派发中（同步等结算）…';
     try {
       const body = { skill, realm, params, ...(vassals.length ? { vassals } : {}), ...(mode === 'execute' ? { mode } : {}) };
       const r = await api('POST', '/api/intents', body);
@@ -489,7 +524,92 @@
       toast('派发失败：' + e.message, 'bad');
     } finally {
       btn.disabled = false;
+      btn.textContent = prevLabel;
     }
+  }
+
+  // ===== 意图识别（E2.6，仅识别不派发） =====
+  async function recognizeIntent() {
+    const text = $('rText').value.trim();
+    if (!text) { toast('请输入操作者指令', 'bad'); return; }
+    const realm = $('rRealm').value;
+    const btn = $('btnRecognize');
+    const out = $('recognizeResult');
+    btn.disabled = true;
+    btn.textContent = '识别中…';
+    try {
+      const r = await api('POST', '/api/intents/recognize', { text, realm });
+      if (r && r.ok && r.intent) {
+        const it = r.intent;
+        out.innerHTML = `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${badge('识别命中', 'ok')}<span style="font-size:13px">技能 <strong class="mono">${esc(it.skill)}</strong> · 模式 ${esc(it.mode)} · 置信 ${Math.round((r.confidence || 0) * 100)}%${r.backend && r.backend.model ? ' · ' + esc(r.backend.model) : ''}</span>
+          <button class="btn" id="btnUseRecognized">以此派发</button>
+          <span class="hint">识别仅建议形状，参数需人工确认</span>
+        </div>`;
+        const use = $('btnUseRecognized');
+        use.addEventListener('click', () => {
+          // 预填派发表单并聚焦，由操作者确认后派发
+          $('dSkill').value = it.skill;
+          $('dRealm').value = realm;
+          $('dParams').value = JSON.stringify(it.params || {}, null, 2);
+          $('dParams').focus();
+          $('dParams').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          toast('已预填派发表单（技能 ' + it.skill + '），确认参数后派发', 'ok');
+        });
+      } else {
+        const reason = r && r.reason ? r.reason : '未知';
+        const detail = r && r.detail ? '：' + r.detail : '';
+        out.innerHTML = `<div style="margin-top:8px">${badge('识别未命中', 'bad')} <span style="font-size:12px;color:var(--text-2)">${esc(reason)}${esc(detail)}</span></div>`;
+      }
+    } catch (e) {
+      toast('识别失败：' + e.message, 'bad');
+      out.innerHTML = '';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '识别';
+    }
+  }
+
+  // ===== DAG 编排视图（S3，非阻塞加载） =====
+  async function loadDag(id) {
+    const panel = $('dagPanel');
+    const body = $('dagBody');
+    if (!panel || !body) return;
+    let dag;
+    try {
+      dag = await api('GET', '/api/intents/' + encodeURIComponent(id) + '/dag');
+    } catch (e) {
+      // 404（无 DAG）/ 503（未装配 dagRunner）/ 网络失败：该意图不是 DAG 运行，隐藏面板。
+      panel.hidden = true;
+      return;
+    }
+    if (!dag || !dag.layers || !dag.layers.length) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const nodeClass = st => {
+      if (st === 'completed' || st === 'succeeded') return 'node-ok';
+      if (st === 'failed' || st === 'skipped') return 'node-bad';
+      if (st === 'running' || st === 'queued' || st === 'pending') return 'node-pending';
+      return 'node-idle';
+    };
+    const nodeLabel = (nodeId, state) =>
+      `<span class="dag-node ${nodeClass(state)}" title="${esc(nodeId)}">${esc(nodeId)}<i>${esc(state || '—')}</i></span>`;
+    let html = '';
+    if (dag.criticalPath && dag.criticalPath.length) {
+      html += `<div style="margin-bottom:8px;font-size:12px">${badge('关键路径', 'warn')} <span class="mono" style="font-size:11.5px">${dag.criticalPath.map(esc).join(' → ')}</span></div>`;
+    }
+    html += '<div style="display:flex;flex-direction:column;gap:8px">';
+    dag.layers.forEach((layer, i) => {
+      html += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="hint" style="flex:none">层 ${i + 1}</span>
+        ${layer.map(nid => {
+          const node = (dag.nodes || []).find(n => n.nodeId === nid);
+          return nodeLabel(nid, node ? node.state : undefined);
+        }).join('')}
+      </div>`;
+    });
+    html += '</div>';
+    if (dag.state) html += `<div style="margin-top:8px;font-size:12px;color:var(--text-2)">整体状态：${badge(esc(dag.state), statusClass(dag.state))}</div>`;
+    body.innerHTML = html;
   }
 
   // ===== 最近意图 =====
@@ -611,7 +731,9 @@
     } else {
       let rows = '<table><colgroup><col style="width:16%"><col style="width:12%"><col style="width:10%"><col style="width:14%"><col style="width:16%"><col style="width:32%"></colgroup><tr><th>主体</th><th>状态</th><th>结果</th><th>taskId</th><th>超时</th><th>原因</th></tr>';
       for (const b of bs) {
-        const stateName = b.state && b.state.status ? b.state.status : (b.ok ? 'completed' : 'failed');
+        // state is a TaskState string, not an object ({ state: ... }); normalize
+        // so a §7-cancelled branch renders as 已取消 instead of 失败.
+        const stateName = b.state || (b.ok ? 'completed' : 'failed');
         const rowCls = b.ok ? 'branch-ok' : (stateName === 'running' || stateName === 'queued' || stateName === 'dispatched') ? 'branch-pending' : 'branch-bad';
         rows += `<tr class="${rowCls}">
           <td class="mono">${esc(b.vassal)}</td>
@@ -633,6 +755,7 @@
       renderIntent(r);
       if (r) rememberIntent(r.intentId || id, r.skill, r.status);
       setConn(true);
+      loadDag(id); // S3 DAG 视图（非阻塞；非 DAG 意图静默隐藏）
       if (r && r.status !== 'completed' && r.status !== 'failed' && r.status !== 'canceled') {
         startSse(id);
       } else {
@@ -656,8 +779,10 @@
       if (e.status === 404) {
         // Not settled yet (settled results only): follow it live over SSE; the
         // stream ends with intent-finished, at which point we re-fetch the full
-        // snapshot and render the settled intent.
+        // snapshot and render the settled intent. A DAG root intent is not a
+        // fan-out record either — GET /api/intents/:id/dag resolves it (S3).
         setConn(true);
+        loadDag(id); // S3 DAG 视图（非阻塞；非 DAG 意图静默隐藏）
         $('intentStatusBadge').textContent = '进行中';
         $('intentStatusBadge').className = 'st warn';
         $('intentIdLabel').textContent = id;
@@ -686,7 +811,7 @@
     const now = fmtTime(new Date().toISOString());
     let mark = 'finished', head = esc(evt), detail = '';
     if (evt === 'branch-started') { mark = 'started'; head = '分支开始 · ' + esc(payload.vassal || '?') + ' · ' + esc(payload.skill || ''); detail = 'runId ' + esc(payload.runId || '—'); }
-    else if (evt === 'branch-ended') { mark = 'ended'; head = '分支结束 · ' + esc(payload.vassal || '?') + ' · ' + esc(payload.outcome || ''); detail = payload.state ? 'state ' + esc(payload.state.status) : ''; }
+    else if (evt === 'branch-ended') { mark = 'ended'; head = '分支结束 · ' + esc(payload.vassal || '?') + ' · ' + esc(payload.outcome || ''); detail = payload.state ? 'state ' + esc(payload.state) : ''; }
     else if (evt === 'branch-diverted') { mark = 'diverted'; head = '分支改道 · ' + esc(payload.from || '?') + ' → ' + esc(payload.to || '?') + ' · ' + esc(payload.skill || ''); }
     else if (evt === 'intent-finished') { mark = 'finished'; head = '意图结束 · ' + esc(payload.status || ''); }
     const li = document.createElement('li');
@@ -748,13 +873,22 @@
       }
     } catch (e) {
       if (e && e.name === 'AbortError') return;
-      if (evtEl) evtEl.innerHTML = evtEl.innerHTML || emptyRow('事件流中断：' + esc(e.message));
+      // 断线自动重连：仅当页面仍停留在该意图且尚未终态时；指数退避，上限 30s。
+      const reconnect = () => {
+        if (state.view !== 'intent' || state.intentId !== id) return;
+        const backoff = Math.min(30000, 2000 * Math.pow(2, (state.sseRetries || 0)));
+        state.sseRetries = (state.sseRetries || 0) + 1;
+        setTimeout(() => { state.sseRetries = 0; startSse(id); }, backoff);
+      };
+      if (evtEl && !evtEl.querySelector('li')) evtEl.innerHTML = evtEl.innerHTML || emptyRow('事件流中断：' + esc(e.message) + '，自动重连中…');
       if (state.view === 'intent' && state.intentId === id) {
         try {
           const r = await api('GET', '/api/intents/' + encodeURIComponent(id));
           renderIntent(r);
-          if (r && (r.status === 'completed' || r.status === 'failed' || r.status === 'canceled')) rememberIntent(r.intentId || id, r.skill, r.status);
-        } catch { /* noop */ }
+          if (r) rememberIntent(r.intentId || id, r.skill, r.status);
+          if (r && r.status !== 'completed' && r.status !== 'failed' && r.status !== 'canceled') reconnect();
+          else stopSse();
+        } catch { reconnect(); }
       }
     }
   }
@@ -770,9 +904,8 @@
       if (canceled > 0) {
         toast('已取消 ' + canceled + ' 个分支（' + id + '）', 'ok');
       } else {
-        // Kernel boundary (design-fan-out §7, deferred): a branch whose A2A
-        // stream has not ended exposes no task id and cannot be aborted yet.
-        toast('取消请求已提交，但无已派发分支被中断——运行中分支暂不支持中断（design-fan-out §7 未落地）', 'warn');
+        // All branches were already terminal when the cancel arrived.
+        toast('无活动分支可取消（意图已结算）', 'warn');
       }
       stopSse();
       await loadIntent(id);
@@ -1073,6 +1206,7 @@
 
   // ===== 派发与意图详情操作 =====
   $('btnDispatch').addEventListener('click', dispatchIntent);
+  $('btnRecognize').addEventListener('click', recognizeIntent);
   $('btnCancelIntent').addEventListener('click', cancelIntent);
   $('btnBackIntent').addEventListener('click', function () { location.hash = '#/monitor'; });
 
