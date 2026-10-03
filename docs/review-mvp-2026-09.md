@@ -272,13 +272,13 @@
 - **内核**（`src/intent/recognize.ts`，200 行）：本地规则零出域为默认、决策后端（Jev/LLM，模型无关）显式 opt-in；识别结果**恒 plan-only**（fail-closed 422 `{ok:false, reason}` 以视图返回，不抛错——fail-closed 是产品行为不是传输错误）。
 - **操作者 HTTP 面**：`POST /api/intents/recognize`（路由 78 即本批新增），`index.ts` 公共导出 +2。
 - **TUI 面**：监督台 `i <文本>`（本地规则零出域）/ `im <文本>`（显式咨询决策后端 opt-in）；命令词须为 `i`/`im` 后跟空格（`info` 等长词不误判）；`render.ts` 渲染 skill/置信/后端标签与 miss 的 reason；zh/en 各 +5 键。
-- **验证**：15 项新测试（commands 2 / render 4 / client 5 含 422 视图 / controller 4）；真进程验收 `verify:intent-recognize` 7/7 与 `verify:tui-recognize` 7/7 为另一会话实跑记录（本轮未复跑，注明：记录 + 代码级支撑）。
+- **验证**：15 项新测试（commands 2 / render 4 / client 5 含 422 视图 / controller 4）；真进程验收 `verify:intent-recognize` **7/7** 与 `verify:tui-recognize` **7/7**（本轮 2026-10-03 已在 Windows 本机复跑；tui-recognize 复跑抓出并修掉一条脚本可移植性缺陷，见 §H）。
 
 ### D. 本批收口：deferred #33 执行授权票据（剩 ③ 项投递字段）
 
 - **execute/plan 模式**：`FanOutRequest.mode?: 'plan' | 'execute'`（缺省 'plan'）；HTTP 意图面透传 `mode`/`executionDelegation`，未知 mode 400。
 - **派发闸门**：`Orchestrator.runBranch` 出站前 `verifyAndConsumeExecutionDelegation`（capability 固定 `'execute'`），无授权/验签失败/过期/重放一律 fail-closed **不发出站请求**，拒绝写审计 `execution-delegation-denied`（入 AUDIT_DECISIONS + TUI token）。
-- **真进程验收资产**：`verify:execute-delegation` 9 步（另一会话实跑记录），并当场修掉 inject 看不见的缺陷——`serve.ts` 从未装配 `executionDelegationAudit` 桥，真进程签发 201 但审计静默缺 `execution-delegation-issued`；补传后转绿。
+- **真进程验收资产**：`verify:execute-delegation` 9 步（本轮 2026-10-03 已在 Windows 本机复跑 9/9，见 §H），并当场修掉 inject 看不见的缺陷——`serve.ts` 从未装配 `executionDelegationAudit` 桥，真进程签发 201 但审计静默缺 `execution-delegation-issued`；补传后转绿。
 - **仍挂触发条件②（pr-helper 凭据代理接口就绪）**：③ 票据投递的 A2A `x-zeus-*` 字段——对端协议未定义，按设计不臆造。
 
 ### E. 本批裁定与登记（方向固化，未销项）
@@ -302,7 +302,8 @@
 ### H. MVP 判定与本轮限制
 
 - **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为意图识别面与授权收口，不改变上线判定。
-- **未跑（如实记）**：Docker 镜像实构实跑（§F）、真机扇出与生产栈联调（外部条件）、`verify:execute-delegation` / `verify:intent-recognize` / `verify:tui-recognize` 三个验收脚本本轮复跑（均为另一会话实跑记录 + 代码级支撑）、本批 push 后的 CI（由用户决定 push 时点）。
+- **未跑（如实记）**：Docker 镜像实构实跑（§F）、真机扇出与生产栈联调（外部条件）、本批 push 后的 CI（由用户决定 push 时点）。
+- **补跑（2026-10-03 收尾）**：三个验收脚本已在本机（Windows）复跑——`verify:execute-delegation` **9/9**、`verify:intent-recognize` **7/7**；`verify:tui-recognize` 复跑**当场抓出一条可移植性缺陷**：脚本用 `join(REPO, 'dist/tui/…')` 的裸盘符路径喂给动态 `import()`，Node ESM loader 在 Windows 上拒绝 `c:` scheme（macOS/Linux 的 POSIX 路径恰好被容错），已修为 `pathToFileURL(...).href`（连同注释说明），修后 **7/7**。typecheck/build 复跑 exit 0。**结论升级：v0.23 的判定不再依赖"另一会话记录"，三个验收面均本机实测。**
 
 ## v0.22 复核（2026-10-03，评审对象：Active work 104 本批工作树（基线 HEAD `7499dce`，本批 commit 与新 HEAD 见 handoff）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据三项接线），并修掉一条让最近两次 CI 失败的 smoke 类型缺陷）
 
