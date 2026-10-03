@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeus 监督台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230f1419'/%3E%3Cpath d='M12 4l5 3.5v5c0 3.6-2.2 6.3-5 7.5-2.8-1.2-5-3.9-5-7.5v-5L12 4z' fill='none' stroke='%23e2a336' stroke-width='1.6'/%3E%3Ccircle cx='12' cy='11.5' r='2' fill='%23e2a336'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #151c24;
+    --panel-2: #1a222c;
+    --line: #232d3a;
+    --line-soft: #1d2630;
+    --text: #d8dee6;
+    --text-2: #8b96a3;
+    --text-3: #5d6a78;
+    --accent: #4d9de0;
+    --ok: #3fb68b;
+    --warn: #e2a336;
+    --bad: #e05b4d;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+  a { color: var(--accent); }
+
+  /* ===== 布局 ===== */
+  .app { display: grid; grid-template-columns: 176px 1fr; min-height: 100vh; }
+  .side { border-right: 1px solid var(--line); background: var(--panel); padding: 18px 10px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; }
+  .brand { font-weight: 700; letter-spacing: .02em; padding: 4px 12px 14px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .brand svg { width: 20px; height: 20px; flex: none; }
+  .nav-item { display: flex; align-items: center; gap: 9px; padding: 7px 12px; border-radius: 6px; color: var(--text-2); text-decoration: none; border: 1px solid transparent; cursor: pointer; }
+  .nav-item:hover { color: var(--text); background: var(--panel-2); }
+  .nav-item.active { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+  .nav-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .nav-item .badge { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--warn); }
+  .side-foot { margin-top: auto; padding: 10px 12px 2px; font-size: 11px; color: var(--text-3); }
+
+  .main { padding: 18px 22px 40px; max-width: 1280px; width: 100%; }
+  .topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; color: var(--text-2); padding: 3px 10px; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); }
+  .conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+  .conn.ok .dot { background: var(--ok); }
+  .conn.bad .dot { background: var(--bad); }
+  .topbar .spacer { flex: 1; }
+  .btn { font: inherit; font-size: 13px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  .btn:hover { border-color: var(--text-3); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary { background: #20334a; border-color: #2c4a6b; }
+  .btn.danger { border-color: #5c2b27; color: #f0a59b; }
+  .btn.small { padding: 2px 9px; font-size: 12px; }
+
+  /* ===== 面板 ===== */
+  .grid { display: grid; gap: 14px; }
+  .grid.metrics { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .panel h2 { margin: 0; padding: 10px 14px; font-size: 12px; font-weight: 650; color: var(--text-2); border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 8px; letter-spacing: .05em; }
+  .panel h2 .hint { margin-left: auto; font-weight: 400; color: var(--text-3); font-family: var(--mono); font-size: 11px; }
+  .panel .body { padding: 12px 14px; }
+
+  /* 指标卡 */
+  .metric { padding: 10px 12px; }
+  .metric .label { font-size: 11px; color: var(--text-3); letter-spacing: .04em; }
+  .metric .value { font-family: var(--mono); font-size: 22px; font-weight: 600; margin-top: 2px; }
+  .metric .value.ok { color: var(--ok); } .metric .value.warn { color: var(--warn); } .metric .value.bad { color: var(--bad); }
+  .metric .sub { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+
+  /* 状态徽标 */
+  .st { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--text-2); background: var(--panel-2); }
+  .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .st.ok { color: var(--ok); border-color: #24483a; }
+  .st.warn { color: var(--warn); border-color: #4a3a1f; }
+  .st.bad { color: var(--bad); border-color: #552a26; }
+  .st.info { color: var(--accent); border-color: #22415e; }
+
+  /* 表格 */
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th { font-size: 11px; color: var(--text-3); text-align: left; font-weight: 500; letter-spacing: .04em; padding: 6px 10px; border-bottom: 1px solid var(--line-soft); }
+  td { font-size: 13px; padding: 7px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; word-break: break-all; }
+  tr:last-child td { border-bottom: none; }
+  td.mono, .mono { font-family: var(--mono); }
+  td.num { font-family: var(--mono); text-align: right; }
+
+  /* 时间线 */
+  .timeline { list-style: none; margin: 0; padding: 2px 0; }
+  .timeline li { display: grid; grid-template-columns: 150px 22px 1fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); align-items: start; }
+  .timeline li:last-child { border-bottom: none; }
+  .tl-time { font-family: var(--mono); font-size: 12px; color: var(--text-3); padding-top: 1px; }
+  .tl-mark { width: 10px; height: 10px; border-radius: 50%; margin: 4px auto 0; background: var(--text-3); }
+  .tl-mark.ok { background: var(--ok); } .tl-mark.warn { background: var(--warn); } .tl-mark.bad { background: var(--bad); }
+  .tl-body .tl-head { font-family: var(--mono); font-size: 12.5px; }
+  .tl-body .tl-detail { font-size: 12px; color: var(--text-2); }
+
+  /* 表单 */
+  .form { display: grid; gap: 10px; }
+  .form .row { display: grid; gap: 4px; }
+  .form .row.inline { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form label { font-size: 12px; color: var(--text-2); }
+  .form input, .form select, .form textarea { font: inherit; font-size: 13px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+  .form input:focus, .form select:focus, .form textarea:focus { outline: none; border-color: var(--accent); }
+  .form .actions { display: flex; gap: 8px; margin-top: 2px; }
+
+  /* toast */
+  .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+  .toast { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 9px 14px; font-size: 13px; max-width: 420px; box-shadow: 0 4px 18px rgba(0,0,0,.4); }
+  .toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
+  .toast .t { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-bottom: 2px; }
+
+  /* 空态 */
+  .empty { padding: 18px 14px; color: var(--text-3); font-size: 13px; text-align: center; }
+
+  /* 连接提示 */
+  .cors-note { font-size: 12px; color: var(--text-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 10px; }
+  .cors-note code { font-family: var(--mono); background: #0d1218; padding: 1px 5px; border-radius: 4px; }
+
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr; }
+    .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; border-right: none; border-bottom: 1px solid var(--line); padding: 8px 10px; }
+    .brand { padding: 2px 12px 4px; }
+    .side-foot { display: none; }
+    .main { padding: 12px 12px 40px; }
+    .timeline li { grid-template-columns: 118px 18px 1fr; }
+    .form .row.inline { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="side">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="5" fill="none" stroke="#232d3a"/><path d="M12 4l5 3.5v5c0 3.6-2.2 6.3-5 7.5-2.8-1.2-5-3.9-5-7.5v-5L12 4z" fill="none" stroke="#e2a336" stroke-width="1.6"/><circle cx="12" cy="11.5" r="2" fill="#e2a336"/></svg>
+      Zeus 监督台
+    </div>
+    <a class="nav-item" data-view="monitor" href="#/monitor"><span class="dot"></span>监控</a>
+    <a class="nav-item" data-view="oversight" href="#/oversight"><span class="dot" style="background:var(--warn)"></span>裁决<span class="badge" id="escBadge"></span></a>
+    <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span>授权</a>
+    <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span>连接</a>
+    <div class="side-foot">v1 · 只读监控 · 裁决 · 授权<br>UI 仅消费现有 HTTP API</div>
+  </nav>
+
+  <main class="main">
+    <div class="topbar">
+      <h1 id="viewTitle">监控</h1>
+      <span class="conn" id="connBadge"><span class="dot"></span><span id="connText">未连接</span></span>
+      <span class="spacer"></span>
+      <button class="btn" id="btnRefresh">刷新</button>
+      <button class="btn" id="btnPoll">轮询：开</button>
+    </div>
+
+    <!-- ===== 视图：监控 ===== -->
+    <section id="view-monitor">
+      <div class="grid">
+        <div class="panel">
+          <h2>内核状态 <span class="hint">/api/state</span></h2>
+          <div class="body" id="stateBody"></div>
+        </div>
+        <div class="panel">
+          <h2>并发指标 <span class="hint">/api/metrics</span></h2>
+          <div class="body" id="metricsBody"></div>
+        </div>
+      </div>
+      <div class="grid" style="margin-top:14px">
+        <div class="panel">
+          <h2>名册 <span class="hint">/api/roster</span></h2>
+          <div class="body" id="rosterBody"></div>
+        </div>
+        <div class="panel">
+          <h2>扇出 / 决策时间线 <span class="hint">/api/audit</span></h2>
+          <div class="body" id="auditBody"></div>
+        </div>
+        <div class="panel">
+          <h2>数据域与跨域授权 <span class="hint">/api/domains</span></h2>
+          <div class="body" id="domainsBody"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：裁决 ===== -->
+    <section id="view-oversight" hidden>
+      <div class="panel">
+        <h2>待裁决队列 <span class="hint" id="escCount"></span></h2>
+        <div class="body" id="escBody"></div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：授权 ===== -->
+    <section id="view-grants" hidden>
+      <div class="grid" style="grid-template-columns: 340px 1fr">
+        <div class="panel">
+          <h2>签发跨域授权 <span class="hint">POST /api/domains/grants</span></h2>
+          <div class="body">
+            <div class="form" id="grantForm">
+              <div class="row">
+                <label for="gSubject">主体（vassal 名 / 身份）</label>
+                <input id="gSubject" autocomplete="off" placeholder="如 jev">
+              </div>
+              <div class="row">
+                <label for="gRealm">企业数据域</label>
+                <select id="gRealm"></select>
+              </div>
+              <div class="row inline">
+                <div class="row">
+                  <label for="gAccess">访问级别</label>
+                  <select id="gAccess"><option value="read">read（读）</option><option value="write">write（写）</option></select>
+                </div>
+                <div class="row">
+                  <label for="gGrantedBy">签发者</label>
+                  <input id="gGrantedBy" autocomplete="off" placeholder="driver">
+                </div>
+              </div>
+              <div class="row">
+                <label for="gReason">理由（进审计）</label>
+                <input id="gReason" autocomplete="off" placeholder="如 review">
+              </div>
+              <div class="actions">
+                <button class="btn primary" id="btnGrant">签发授权</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>生效授权 <span class="hint" id="grantCount"></span></h2>
+          <div class="body" id="grantListBody"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：连接 ===== -->
+    <section id="view-connect" hidden>
+      <div class="panel" style="max-width:560px">
+        <h2>连接配置 <span class="hint">localStorage</span></h2>
+        <div class="body">
+          <div class="form">
+            <div class="row">
+              <label for="cBase">API 地址</label>
+              <input id="cBase" autocomplete="off" placeholder="http://127.0.0.1:8787">
+            </div>
+            <div class="row">
+              <label for="cToken">内部令牌（ZEUS_INTERNAL_TOKEN）</label>
+              <input id="cToken" type="password" autocomplete="off" placeholder="Bearer token">
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="btnSaveConn">保存并测试</button>
+              <button class="btn" id="btnClearConn">清除</button>
+            </div>
+          </div>
+          <div class="cors-note" id="corsNote" hidden>
+            若页面提示连接失败：请以 <code>ZEUS_CORS_ORIGINS=http://localhost:5173</code>（你的页面地址）启动
+            <code>node dist/http/serve.js</code>，或使用 <code>--cors</code> 等价环境变量。
+            详情见 <code>docs/deferred-items.md</code> #34 方案 A。
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="toasts" id="toasts"></div>
+<script>
+(function () {
+  'use strict';
+  // ===== 状态与配置 =====
+  const LS_KEY = 'zeus-supervisor-conn';
+  const state = {
+    conn: loadConn(),
+    view: 'monitor',
+    poll: true,
+    timer: null,
+    escPending: 0,
+    lastRefresh: null,
+  };
+
+  function loadConn() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return { base: 'http://127.0.0.1:8787', token: '' };
+      const c = JSON.parse(raw);
+      return { base: typeof c.base === 'string' ? c.base : 'http://127.0.0.1:8787', token: typeof c.token === 'string' ? c.token : '' };
+    } catch { return { base: 'http://127.0.0.1:8787', token: '' }; }
+  }
+  function saveConn() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(state.conn)); } catch { /* noop */ }
+  }
+
+  // ===== 基础工具 =====
+  const $ = id => document.getElementById(id);
+  function esc(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function fmtTime(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return esc(iso);
+    const p = n => String(n).padStart(2, '0');
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  }
+  function toast(msg, kind) {
+    const box = $('toasts');
+    const el = document.createElement('div');
+    el.className = 'toast' + (kind ? ' ' + kind : '');
+    el.innerHTML = `<span class="t">${fmtTime(new Date().toISOString())}</span>${esc(msg)}`;
+    box.appendChild(el);
+    setTimeout(() => el.remove(), kind === 'bad' ? 7000 : 4000);
+  }
+  const badge = (text, cls) => `<span class="st ${cls || ''}">${esc(text)}</span>`;
+  const emptyRow = msg => `<div class="empty">${esc(msg || '暂无数据')}</div>`;
+
+  // ===== API =====
+  async function api(method, path, body) {
+    const { base, token } = state.conn;
+    const url = base.replace(/\/+$/, '') + path;
+    const headers = {};
+    if (token) headers['authorization'] = 'Bearer ' + token;
+    let opts = { method, headers };
+    if (body !== undefined) { headers['content-type'] = 'application/json'; opts.body = JSON.stringify(body); }
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (e) {
+      const err = new Error('网络/跨域失败：' + (e && e.message ? e.message : e));
+      err.cors = true;
+      throw err;
+    }
+    let json = null;
+    const text = await res.text();
+    try { json = text ? JSON.parse(text) : null; } catch { /* non-json */ }
+    if (!res.ok) {
+      const detail = json && typeof json === 'object' && json.detail ? json.detail : (text || res.status);
+      const err = new Error(`${res.status} ${detail}`);
+      err.status = res.status;
+      throw err;
+    }
+    return json;
+  }
+
+  // ===== 路由 =====
+  const VIEWS = { monitor: '监控', oversight: '裁决', grants: '授权', connect: '连接' };
+  function route() {
+    const h = location.hash.replace(/^#\//, '');
+    let target = VIEWS[h] ? h : 'monitor';
+    if (!state.conn.token && !h) target = 'connect';
+    state.view = target;
+    for (const v of Object.keys(VIEWS)) {
+      $('view-' + v).hidden = v !== state.view;
+      document.querySelector(`.nav-item[data-view="${v}"]`)?.classList.toggle('active', v === state.view);
+    }
+    $('viewTitle').textContent = VIEWS[state.view];
+    if (state.view !== 'connect' && state.conn.base) refreshView();
+  }
+  window.addEventListener('hashchange', route);
+
+  // ===== 监控渲染 =====
+  function renderState(s) {
+    const el = $('stateBody');
+    if (!s) { el.innerHTML = emptyRow(); return; }
+    const c = s.counts || {};
+    const bits = [];
+    bits.push(badge(s.persistence && s.persistence.enabled ? '持久化开' : '持久化关', s.persistence && s.persistence.enabled ? 'ok' : 'warn'));
+    bits.push(badge(s.audit && s.audit.degraded ? '审计降级' : '审计正常', s.audit && s.audit.degraded ? 'bad' : 'ok'));
+    bits.push(badge('签名 ' + (s.driverGrants ? s.driverGrants.authority : '?'), 'info'));
+    bits.push(badge('Agent ' + (c.vassals || 0), c.vassals ? 'ok' : ''));
+    bits.push(badge('意图 ' + (c.intents || 0)));
+    bits.push(badge('裁决 ' + (c.escalations || 0), c.escalations ? 'warn' : ''));
+    bits.push(badge('技能 ' + (c.skills || 0)));
+    bits.push(badge('域 ' + (c.realms || 0)));
+    el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px">${bits.join('')}</div>
+      <div style="margin-top:10px;font-size:12px;color:var(--text-2);font-family:var(--mono)">
+        keyId=${esc(s.rosterKey ? s.rosterKey.keyId : '—')} · source=${esc(s.rosterKey ? s.rosterKey.source : '—')}
+      </div>`;
+  }
+
+  function renderMetrics(m) {
+    const el = $('metricsBody');
+    if (!m) { el.innerHTML = emptyRow(); return; }
+    const cell = (label, value, cls, sub) => `<div class="metric"><div class="label">${label}</div><div class="value ${cls || ''}">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+    el.innerHTML = `<div class="grid metrics">
+      ${cell('在途', m.inFlight, m.inFlight ? 'warn' : 'ok')}
+      ${cell('峰值', m.maxInFlight)}
+      ${cell('队列', m.queueDepth, m.queueDepth ? 'warn' : '')}
+      ${cell('完成', m.completed, 'ok')}
+      ${cell('失败', m.failed, m.failed ? 'bad' : '')}
+      ${cell('超时', m.timedOut, m.timedOut ? 'warn' : '')}
+      ${cell('取消', m.canceled)}
+    </div>`;
+    const pv = m.perVassal || {};
+    const names = Object.keys(pv);
+    if (names.length) {
+      let rows = '<table><colgroup><col style="width:18%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:26%"></colgroup><tr><th>主体</th><th>调用</th><th>完成</th><th>失败</th><th>失败率</th><th>延迟 p50/p95</th></tr>';
+      for (const n of names) {
+        const p = pv[n] || {};
+        rows += `<tr><td class="mono">${esc(n)}</td><td class="num">${p.calls ?? 0}</td><td class="num">${p.completed ?? 0}</td><td class="num">${p.failed ?? 0}</td><td class="num">${p.failureRate != null ? Math.round(p.failureRate * 100) + '%' : '—'}</td><td class="mono">${p.latency ? p.latency.p50Ms + ' / ' + p.latency.p95Ms + 'ms' : '—'}</td></tr>`;
+      }
+      el.innerHTML += rows + '</table>';
+    }
+  }
+
+  function renderRoster(r) {
+    const el = $('rosterBody');
+    if (!r) { el.innerHTML = emptyRow(); return; }
+    const entries = (r.snapshot && r.snapshot.entries) || [];
+    if (!entries.length) { el.innerHTML = emptyRow('名册为空（尚未注册任何执行 Agent）'); return; }
+    let rows = '<table><colgroup><col style="width:16%"><col style="width:14%"><col style="width:20%"><col style="width:12%"><col style="width:16%"><col style="width:22%"></colgroup><tr><th>主体</th><th>域</th><th>技能</th><th>状态</th><th>健康</th><th>注册时间</th></tr>';
+    for (const e of entries) {
+      const status = e.status === 'revoked' ? badge('已吊销', 'bad') : badge('active', 'ok');
+      const health = (e.health && e.health.status) || 'unknown';
+      const hb = health === 'healthy' ? badge('healthy', 'ok') : health === 'sick' ? badge('sick', 'bad') : badge(health, 'warn');
+      rows += `<tr><td class="mono">${esc(e.name)}</td><td>${esc(e.domain)}</td><td>${esc((e.skills || []).map(s => s.id).join(', ') || '—')}</td><td>${status}</td><td>${hb}</td><td class="mono">${fmtTime(e.registeredAt)}</td></tr>`;
+    }
+    el.innerHTML = rows + '</table>';
+  }
+
+  function auditClass(decision) {
+    const d = String(decision || '');
+    if (/refused|fail|error|reject|revok/i.test(d)) return 'bad';
+    if (/complet|settl|approv|grant|accepted/i.test(d)) return 'ok';
+    if (/escalat|pending|defer/i.test(d)) return 'warn';
+    return '';
+  }
+
+  function renderAudit(a) {
+    const el = $('auditBody');
+    if (!a) { el.innerHTML = emptyRow(); return; }
+    const entries = a.entries || [];
+    if (!entries.length) { el.innerHTML = emptyRow('审计为空（尚无扇出 / 决策事件）'); return; }
+    let html = '<ul class="timeline">';
+    for (const e of entries) {
+      const cls = auditClass(e.decision);
+      html += `<li>
+        <span class="tl-time">${fmtTime(e.ts)}</span>
+        <span class="tl-mark ${cls}"></span>
+        <span class="tl-body">
+          <div class="tl-head">${esc(e.decision || 'event')} · ${esc(e.vassal || '?')} · ${esc(e.skill || '')}</div>
+          ${e.detail ? `<div class="tl-detail">${esc(e.detail)}</div>` : ''}
+          <div class="tl-detail">runId=${esc(e.runId || '—')} · realm=${esc(e.realm || '—')}</div>
+        </span>
+      </li>`;
+    }
+    el.innerHTML = html + '</ul>';
+  }
+
+  function renderDomains(d) {
+    const el = $('domainsBody');
+    if (!d) { el.innerHTML = emptyRow(); return; }
+    const realms = d.realms || [];
+    const grants = d.grants || [];
+    let html = '';
+    if (realms.length) {
+      html += '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:46%"></colgroup><tr><th>域 ID</th><th>类型</th><th>只读</th><th>条目</th><th>内容摘要</th></tr>';
+      for (const r of realms) {
+        html += `<tr><td class="mono">${esc(r.realmId)}</td><td>${esc(r.type)}</td><td>${r.readOnly ? '是' : '否'}</td><td class="num">${r.itemCount ?? 0}</td><td class="mono" style="font-size:11px">${esc(r.contentDigest || '—')}</td></tr>`;
+      }
+      html += '</table>';
+    } else {
+      html += emptyRow('尚未连接任何数据域');
+    }
+    if (grants.length) {
+      html += '<div style="margin-top:10px;font-size:12px;color:var(--text-2)">跨域授权（' + grants.length + '）</div>';
+      html += '<table style="margin-top:4px"><colgroup><col style="width:18%"><col style="width:24%"><col style="width:10%"><col style="width:14%"><col style="width:34%"></colgroup><tr><th>主体</th><th>域</th><th>级别</th><th>签发者</th><th>理由</th></tr>';
+      for (const g of grants) {
+        html += `<tr><td class="mono">${esc(g.subject)}</td><td class="mono" style="font-size:12px">${esc(g.realmId)}</td><td>${esc(g.access)}</td><td class="mono">${esc(g.grantedBy)}</td><td>${esc(g.reason || '—')}</td></tr>`;
+      }
+      html += '</table>';
+    }
+    el.innerHTML = html;
+  }
+
+  // ===== 裁决 =====
+  const KIND_LABEL = { 'task-input': '任务输入', 'intent-conflict': '意图冲突', 'memory-dispute': '记忆争议' };
+  const ST_LABEL = { pending: '待决', approved: '已批准', rejected: '已拒绝' };
+
+  function renderEscalations(list) {
+    const el = $('escBody');
+    const pending = (list || []).filter(e => e.status === 'pending');
+    state.escPending = pending.length;
+    $('escBadge').textContent = pending.length ? String(pending.length) : '';
+    $('escCount').textContent = (list || []).length ? (list || []).length + ' 条（待决 ' + pending.length + '）' : '';
+    if (!list || !list.length) { el.innerHTML = emptyRow('没有待处理的裁决'); return; }
+    let html = '<table><colgroup><col style="width:15%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:26%"><col style="width:10%"><col style="width:15%"></colgroup><tr><th>裁决 ID</th><th>类型</th><th>主体</th><th>技能</th><th>原因 / 选项</th><th>状态</th><th>操作</th></tr>';
+    for (const e of list) {
+      const st = e.status === 'pending' ? badge('待决', 'warn') : e.status === 'approved' ? badge('已批准', 'ok') : badge('已拒绝', 'bad');
+      html += `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(e.id)}</td>
+        <td>${esc(KIND_LABEL[e.kind] || e.kind)}</td>
+        <td class="mono">${esc(e.vassal)}</td>
+        <td>${esc(e.skill)}</td>
+        <td>
+          <div style="font-size:12px">${esc(e.reason || '—')}</div>
+          ${(e.options && e.options.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">选项：${esc(e.options.join(' / '))}</div>` : ''}
+          ${(e.stances && e.stances.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">立场：${esc(e.stances.map(s => s.vassal + ':' + s.stance).join(' / '))}</div>` : ''}
+        </td>
+        <td>${st}</td>
+        <td>${escActionButtons(e)}</td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  function escActionButtons(e) {
+    if (e.status !== 'pending') return '<span style="color:var(--text-3);font-size:12px">—</span>';
+    const noteInput = `<input id="note-${esc(e.id)}" placeholder="备注（可选，进审计）" style="width:100%;margin-bottom:4px">`;
+    if (e.kind === 'intent-conflict') {
+      const opts = (e.stances && e.stances.map(s => s.stance)) || (e.options || []);
+      const sel = opts.length
+        ? `<select id="stance-${esc(e.id)}" style="width:100%;margin-bottom:4px">${opts.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`
+        : '<span style="color:var(--text-3);font-size:11px">无可选立场</span>';
+      return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}${sel}
+        <button class="btn small" data-act="resolve" data-id="${esc(e.id)}">裁决立场</button></div>`;
+    }
+    return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}
+      <div style="display:flex;gap:4px">
+        <button class="btn small primary" data-act="approve" data-id="${esc(e.id)}">批准</button>
+        <button class="btn small danger" data-act="reject" data-id="${esc(e.id)}">拒绝</button>
+      </div></div>`;
+  }
+
+  // ===== 授权 =====
+  function renderGrantList(d) {
+    const el = $('grantListBody');
+    const grants = (d && d.grants) || [];
+    $('grantCount').textContent = grants.length ? grants.length + ' 条' : '';
+    if (!grants.length) { el.innerHTML = emptyRow('没有生效中的跨域授权'); return; }
+    let html = '<table><colgroup><col style="width:20%"><col style="width:8%"><col style="width:26%"><col style="width:12%"><col style="width:18%"><col style="width:16%"></colgroup><tr><th>授权 ID</th><th>级别</th><th>域</th><th>主体</th><th>签发者 / 时间</th><th>操作</th></tr>';
+    for (const g of grants) {
+      html += `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(g.grantId)}</td>
+        <td>${esc(g.access)}</td>
+        <td class="mono" style="font-size:11.5px">${esc(g.realmId)}</td>
+        <td class="mono">${esc(g.subject)}</td>
+        <td class="mono" style="font-size:11.5px">${esc(g.grantedBy)} · ${fmtTime(g.grantedAt)}</td>
+        <td><button class="btn small danger" data-act="revoke" data-id="${esc(g.grantId)}" data-subject="${esc(g.subject)}">吊销</button></td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  function renderRealmSelect(d) {
+    const sel = $('gRealm');
+    const enterprises = ((d && d.realms) || []).filter(r => r.type === 'enterprise');
+    if (!enterprises.length) {
+      sel.innerHTML = '<option value="">（无企业数据域，先连接域）</option>';
+      return;
+    }
+    sel.innerHTML = enterprises.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} · ${r.itemCount ?? 0} 项</option>`).join('');
+  }
+
+  // ===== 数据加载 =====
+  async function refreshView() {
+    const view = state.view;
+    try {
+      if (view === 'monitor') await loadMonitor();
+      else if (view === 'oversight') await loadEscalations();
+      else if (view === 'grants') await loadDomains();
+      setConn(true);
+    } catch (e) {
+      setConn(false);
+      if (view === 'monitor') {
+        $('stateBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('metricsBody').innerHTML = '';
+        $('rosterBody').innerHTML = '';
+        $('auditBody').innerHTML = '';
+        $('domainsBody').innerHTML = '';
+      } else if (view === 'oversight') {
+        $('escBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+      } else if (view === 'grants') {
+        $('grantListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+      }
+      if (e.cors) $('corsNote').hidden = false;
+      if (view !== 'connect') toast('加载失败：' + e.message, 'bad');
+    } finally {
+      state.lastRefresh = Date.now();
+    }
+  }
+
+  async function loadMonitor() {
+    const [s, m, r, a, d] = await Promise.all([
+      api('GET', '/api/state'), api('GET', '/api/metrics'), api('GET', '/api/roster'),
+      api('GET', '/api/audit?limit=20'), api('GET', '/api/domains'),
+    ]);
+    renderState(s); renderMetrics(m); renderRoster(r); renderAudit(a); renderDomains(d);
+  }
+  async function loadEscalations() {
+    const data = await api('GET', '/api/escalations');
+    renderEscalations(data && data.escalations);
+  }
+  async function loadDomains() {
+    const d = await api('GET', '/api/domains');
+    renderGrantList(d); renderRealmSelect(d);
+  }
+
+  function setConn(ok) {
+    const badgeEl = $('connBadge');
+    badgeEl.classList.toggle('ok', ok);
+    badgeEl.classList.toggle('bad', !ok);
+    $('connText').textContent = ok ? '已连接' : '连接失败';
+  }
+
+  // ===== 写操作 =====
+  async function doAction(act, id, extra) {
+    const path = { approve: '/api/escalations/' + id + '/approve', reject: '/api/escalations/' + id + '/reject', resolve: '/api/escalations/' + id + '/resolve' }[act];
+    try {
+      const body = extra || {};
+      await api('POST', path, body);
+      toast('已执行：' + act + ' ' + id, 'ok');
+      await loadEscalations();
+    } catch (e) {
+      toast('操作失败：' + e.message, 'bad');
+    }
+  }
+
+  document.addEventListener('click', function (ev) {
+    const btn = ev.target.closest('[data-act]');
+    if (!btn) return;
+    const act = btn.getAttribute('data-act');
+    const id = btn.getAttribute('data-id');
+    if (act === 'approve' || act === 'reject') {
+      const note = $('note-' + id) ? $('note-' + id).value.trim() : '';
+      if (!window.confirm('确定要' + (act === 'approve' ? '批准' : '拒绝') + '裁决 ' + id + ' 吗？')) return;
+      doAction(act, id, note ? { note } : {});
+    } else if (act === 'resolve') {
+      const stanceEl = $('stance-' + id);
+      const note = $('note-' + id) ? $('note-' + id).value.trim() : '';
+      if (!stanceEl || !stanceEl.value) { toast('请先选择立场', 'bad'); return; }
+      if (!window.confirm('确定按立场「' + stanceEl.value + '」裁决 ' + id + ' 吗？')) return;
+      doAction('resolve', id, { stance: stanceEl.value, ...(note ? { note } : {}) });
+    } else if (act === 'revoke') {
+      const subject = btn.getAttribute('data-subject') || '';
+      if (!window.confirm('确定吊销对 ' + subject + ' 的授权 ' + id + ' 吗？')) return;
+      (async () => {
+        try {
+          await api('DELETE', '/api/domains/grants/' + id);
+          toast('已吊销授权 ' + id, 'ok');
+          await loadDomains();
+        } catch (e) { toast('吊销失败：' + e.message, 'bad'); }
+      })();
+    }
+  });
+
+  // ===== 连接配置 =====
+  $('btnSaveConn').addEventListener('click', async function () {
+    state.conn.base = $('cBase').value.trim() || 'http://127.0.0.1:8787';
+    state.conn.token = $('cToken').value.trim();
+    saveConn();
+    $('corsNote').hidden = true;
+    toast('已保存，正在测试连接…');
+    try {
+      await api('GET', '/api/state');
+      setConn(true);
+      toast('连接成功：' + state.conn.base, 'ok');
+      location.hash = '#/monitor';
+    } catch (e) {
+      setConn(false);
+      toast('连接失败：' + e.message, 'bad');
+      if (e.cors) $('corsNote').hidden = false;
+    }
+  });
+  $('btnClearConn').addEventListener('click', function () {
+    try { localStorage.removeItem(LS_KEY); } catch { /* noop */ }
+    state.conn = { base: 'http://127.0.0.1:8787', token: '' };
+    $('cBase').value = state.conn.base;
+    $('cToken').value = '';
+    setConn(false);
+    toast('已清除连接配置');
+  });
+
+  // ===== 刷新与轮询 =====
+  $('btnRefresh').addEventListener('click', function () {
+    if (state.view === 'connect') return;
+    refreshView();
+  });
+  $('btnPoll').addEventListener('click', function () {
+    state.poll = !state.poll;
+    $('btnPoll').textContent = '轮询：' + (state.poll ? '开' : '关');
+    if (state.poll) startPoll(); else stopPoll();
+  });
+
+  function startPoll() {
+    if (state.timer) return;
+    state.timer = setInterval(function () {
+      if (state.poll && state.view !== 'connect' && state.conn.base) refreshView();
+    }, 10000);
+  }
+  function stopPoll() { if (state.timer) { clearInterval(state.timer); state.timer = null; } }
+
+  // ===== 初始化 =====
+  $('cBase').value = state.conn.base;
+  $('cToken').value = state.conn.token;
+  startPoll();
+  route();
+})();
+</script>
+</body>
+</html>
+
