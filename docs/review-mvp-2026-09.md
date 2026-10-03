@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.22，2026-10-03，评审对象：Active work 104 本批（基线 HEAD `7499dce`，本批 commit 见 handoff）：核心 MVP ✅ / 可上线 ❌ 维持。本轮在 macOS 本机重新取证：全量 1048 绿 / 97 文件（基线 1022 + 新增 26）、冒烟 37/37、doc-consistency 11/11、build/typecheck exit 0。本批关闭 deferred #35（出站 DNS 重绑定守卫：受守卫的 connect lookup 解析→逐地址过 RFC 6890 守卫→pin 连接，三个出站面默认 fetch 统一接线，缺陷植入 4 红）、推进 deferred #33（执行授权票据三项接线：HTTP 签发端点 + `execution-delegation-issued` 审计 + nonce 账本快照持久化；派发闸门与 A2A 字段仍留对端），并修掉一条让最近两次 CI 失败的 smoke 隐式 any（§E）。出货件已变，镜像容器级四项本轮无新证据（§F）。上一条 v0.21（2026-10-02，对象 `0a867f8`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
+> 状态：**现行（评审报告 v0.23，2026-10-03，评审对象：Active work 105–110（HEAD `66911d7`，与 origin/dev 同步）：核心 MVP ✅ / 可上线 ❌ 维持。本轮在 Windows 本机重新取证（pull 后工作树 = origin/dev）：全量 1099 总量 / 1073 绿 / 26 失败 / 101 文件（26 失败逐文件核对为既有三族，无逻辑失败；基线 1048 → 1099）、冒烟 31/36（5 步失败 = 0600 chmod ×2 + SIGTERM 连锁 ×3，Windows 家族）、doc-consistency 11/11、build/typecheck exit 0。本批实现 **E2.6 意图识别**（操作者 HTTP 面 + TUI `i`/`im` 命令，PRD 需求行 54 → 55）、收口 deferred #33 执行授权票据（execute/plan 模式 + 派发闸门 fail-closed + 真进程验收资产，剩 A2A `x-zeus-*` 投递字段挂对端）、裁定 #18/#19/#21 方向固化、登记 #40 反思闭环（不独立立项）；「已实现但未接线」**0 项**。出货件已大动，镜像容器级四项本轮无新证据（§F）。上一条 v0.22（2026-10-03，对象 Active work 104 / `7499dce`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机执行 Agent 部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -244,6 +244,65 @@
 - **未跑**：真实执行 Agent 真机扇出（需线上网络与授权；A1 结论沿用记录）、Docker 镜像实构实跑（§F）、Zeus↔loom 生产栈联调（外部条件）、本机 Linux 侧全量测试（由 CI 覆盖，非本机复现）。
 - **本机代理 7897 可达外网但没有用于线上验收**——那是需要显式授权的对外动作，不在本轮范围。
 - **本机写权限问题已排除**：进入本轮前 `pwsh` 完全不可用（沙箱在工作区根缺 `WRITE_OWNER`），用 `diagnose-windows-sandbox-acl` 的脚本修好并复验（改动仅一条：给当前用户补完全控制，文件内容与所有者未动；恢复命令已留存）。这一条与本项目代码无关，但**它决定了本轮能否取证**，故记账。
+
+## v0.23 复核（2026-10-03，评审对象：Active work 105–110（HEAD `66911d7`，与 origin/dev 同步）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批实现 **E2.6 意图识别**（操作者 HTTP 面 + TUI 命令面）、收口 **deferred #33 执行授权票据**（execute/plan 模式 + 派发闸门 + 真进程验收资产）、裁定 **#18/#19/#21** 三项方向固化、新增 **#40 反思闭环**登记，并补 PRD 需求行 E2.6）
+
+> 本轮方法沿用 v0.17 之后的规矩：**上一轮记录不作依据**，判定里含动词的条目重新取证。本轮在 **Windows 本机**取证（pull 后工作树 = origin/dev = `66911d7`），故全量与冒烟有 Windows 环境性失败，按 Active work 98 起的既定家族分类；Linux/macOS 口径以 CI 与另一会话记录为准。
+
+### A. 验证基线（本机实跑，非转述）
+
+| 项 | 读数 | 备注 |
+| --- | --- | --- |
+| 基线 HEAD / 工作树 | `66911d7`，工作树干净 | pull 快进 `7bf8569..66911d7`（37 commit，Active work 103–110） |
+| `npm install` | 新增 1 依赖 | pull 引入 `undici ^6.29.0`（出站 DNS 守卫的 guardedFetch 用），不装 build 即挂 TS2307 |
+| `npm run build` / `npm run typecheck` | 各自 **exit 0** | 先 build 后测试（`tests/*` 与 `scripts/*` 引用 `dist/`） |
+| `npm test` | **1099 总量 / 1073 绿 / 26 失败 / 101 文件** | Windows 本机；26 失败逐文件核对仍为既有三族（目录 fsync EPERM 17 + 新文件 1 / chmod 0600 断言 4 / symlink EPERM 4），**无逻辑失败**；基线 1048 → **1099**（105–110 批 +51 测试） |
+| `npm run smoke:core` | **31/36**（Windows 本机） | 5 步失败 = 0600 chmod ×2 + SIGTERM 持久化连锁 ×3，与 Active work 98–100 逐条相同家族；macOS 口径 37/37（另一会话记录） |
+| `tests/doc-consistency.test.ts` | **11/11** | pull 后新增文档 `design-inbound-a2a.md` / `verify-jev-backend.md` 均已进 handoff「Project documents」索引（第 11 例闸门） |
+
+### B. 需求覆盖：机械核对，不读叙述
+
+- `docs/prd.md` 需求行 **55 行**（`^\| E[\d.]+ \|` 计数），机械分类：**P0 26/26 ✅**。
+- **需求行 54 → 55 的增量就是 E2.6 意图识别**（本批 Active work 109/110 实现时 PRD 补的行；v0.22 时代无此行）。
+- 非 P0 未闭合 **8 条**：`E3.4`、`E3.8`、`E4.9`、`E4.10`、`E5.4`、`E8.4`、`E9.4`、`E10.2`——**与 v0.17 至 v0.22 同集合**，既无新增也未回退。
+- feature-inventory「已实现但未接线」：**0 项**（Active work 107 收口）；路由 **78**（3 公开 + 75 bearer）、export 语句 **120**、TUI 命令 **13** 类——三段计数均为 Active work 109/110 批入库断言的现测值。
+
+### C. 本批实现：E2.6 意图识别（操作者面 + TUI 面）
+
+- **内核**（`src/intent/recognize.ts`，200 行）：本地规则零出域为默认、决策后端（Jev/LLM，模型无关）显式 opt-in；识别结果**恒 plan-only**（fail-closed 422 `{ok:false, reason}` 以视图返回，不抛错——fail-closed 是产品行为不是传输错误）。
+- **操作者 HTTP 面**：`POST /api/intents/recognize`（路由 78 即本批新增），`index.ts` 公共导出 +2。
+- **TUI 面**：监督台 `i <文本>`（本地规则零出域）/ `im <文本>`（显式咨询决策后端 opt-in）；命令词须为 `i`/`im` 后跟空格（`info` 等长词不误判）；`render.ts` 渲染 skill/置信/后端标签与 miss 的 reason；zh/en 各 +5 键。
+- **验证**：15 项新测试（commands 2 / render 4 / client 5 含 422 视图 / controller 4）；真进程验收 `verify:intent-recognize` 7/7 与 `verify:tui-recognize` 7/7 为另一会话实跑记录（本轮未复跑，注明：记录 + 代码级支撑）。
+
+### D. 本批收口：deferred #33 执行授权票据（剩 ③ 项投递字段）
+
+- **execute/plan 模式**：`FanOutRequest.mode?: 'plan' | 'execute'`（缺省 'plan'）；HTTP 意图面透传 `mode`/`executionDelegation`，未知 mode 400。
+- **派发闸门**：`Orchestrator.runBranch` 出站前 `verifyAndConsumeExecutionDelegation`（capability 固定 `'execute'`），无授权/验签失败/过期/重放一律 fail-closed **不发出站请求**，拒绝写审计 `execution-delegation-denied`（入 AUDIT_DECISIONS + TUI token）。
+- **真进程验收资产**：`verify:execute-delegation` 9 步（另一会话实跑记录），并当场修掉 inject 看不见的缺陷——`serve.ts` 从未装配 `executionDelegationAudit` 桥，真进程签发 201 但审计静默缺 `execution-delegation-issued`；补传后转绿。
+- **仍挂触发条件②（pr-helper 凭据代理接口就绪）**：③ 票据投递的 A2A `x-zeus-*` 字段——对端协议未定义，按设计不臆造。
+
+### E. 本批裁定与登记（方向固化，未销项）
+
+- **deferred #18 MCP actor 判定**（design-realm §6.5）：主体 = 会话级 actor（宿主显式声明，缺省 anonymous）；`zeus-realm:` URI 不编码租户；不与签发凭证合并；`tools/call` 与 `resources/read` 共用同一份 realmId 白名单。实现随 E3.4 正式暴露立项。
+- **deferred #19 入站 A2A**（design-inbound-a2a v0.1）：Zeus 自发布 agent card（`/.well-known/agent-card.json`，形状与要求执行 Agent 一致）、入站 `tasks/send` 落 H2 意图面、三问暂定答案（上游 fealty 验签 / `realmSource` 显式声明缺省个人域 / 审计责任链延伸）、不做入站 SSE。实现仍挂触发条件（loom 反向派任务等）。
+- **deferred #21 历史标识符改名**：维持 **T2/T3/T4 不做、T1 暂不推进**（无"历史名字实际挡住功能"的新证据）。
+- **deferred #40 新登记**（执行后反思闭环 / Agent 自我改进）：结论=**不独立立项**——决策级反思已有 E1.3 对抗复核；缺的是"执行后失败归因 → 教训写回"的闭环，触发条件为首个真实执行 Agent 长期运行积累可统计失败样本。建议做法（决定后）：先做只读失败归因摘要纯函数（审计 reason 聚合 + E1.6 回放重建），看有无稳定规律再谈写回。
+
+### F. 部署镜像：本轮未重拍（出货件已大动）
+
+- 本批改了 intent / tui / delegation / outbound-dns / http / state 的 src，出货件变动，按先例容器级结论不继承上一轮。
+- 容器级运行属性（healthy、`/data` 0600、SIGTERM 落盘、重启恢复）四项对本批**无新证据**；CI 的 `image-smoke`（构建 + 镜像内两项冒烟）覆盖面不含上述四项。本机本轮未做 docker 实构实跑。
+
+### G. 功能性 / 完整度 / 可上线（三维判定）
+
+- **功能性**：P0 26/26 ✅、无已知 P0 未闭合；本批把 PRD 空白面 E2.6 意图识别从"无行"做到"操作者 + TUI 双面可操作"，执行授权票据收口到只剩对端协议项。
+- **完整度**：意图识别、执行委派（execute/plan + 闸门）、出站 DNS 守卫、TUI 三类页面、接入三通道执行点、签名链、备份恢复、审计链均在位；「已实现但未接线」**0 项**。
+- **可上线**：**❌ 未达成**。剩余项仍是仓库外动作（真机部署、密钥托管与带外公告、生产栈联调、外部消费方接入）与需真实规模的阈值标定，同 v0.22 §H。
+
+### H. MVP 判定与本轮限制
+
+- **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为意图识别面与授权收口，不改变上线判定。
+- **未跑（如实记）**：Docker 镜像实构实跑（§F）、真机扇出与生产栈联调（外部条件）、`verify:execute-delegation` / `verify:intent-recognize` / `verify:tui-recognize` 三个验收脚本本轮复跑（均为另一会话实跑记录 + 代码级支撑）、本批 push 后的 CI（由用户决定 push 时点）。
 
 ## v0.22 复核（2026-10-03，评审对象：Active work 104 本批工作树（基线 HEAD `7499dce`，本批 commit 与新 HEAD 见 handoff）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据三项接线），并修掉一条让最近两次 CI 失败的 smoke 类型缺陷）
 
