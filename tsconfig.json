@@ -15,7 +15,7 @@
   },
   // All shipped scripts opt themselves in with `// @ts-check` (deferred #37 closed:
   // verify-roster, acceptance-real-fanout, acceptance-standard-a2a, bench-capacity,
-  // clock-skew-setup joined gen-rsk-key and smoke-core in 2026-10).
+  // clock-skew-setup, verify-execute-delegation joined gen-rsk-key and smoke-core in 2026-10).
   "include": [
     "src",
     "tests",
@@ -29,6 +29,7 @@
     "scripts/bench-capacity.mjs",
     "scripts/clock-skew-setup.mjs",
     "scripts/scan-secrets.mjs",
-    "scripts/verify-decision-backend.mjs"
+    "scripts/verify-decision-backend.mjs",
+    "scripts/verify-execute-delegation.mjs"
   ]
 }

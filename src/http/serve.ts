@@ -168,6 +168,11 @@ async function main(): Promise<void> {
     ...(kernel.driverGrantLedger ? { driverGrantLedger: kernel.driverGrantLedger } : {}),
     driverGrantAuthority: kernel.driverGrantAuthority,
     driverGrantAudit: kernel.driverGrantAudit,
+    // deferred #33: issuing an execution delegation is audited separately from
+    // the dispatch it authorizes - without this bridge the issuance endpoint
+    // hands out tickets while the trail stays silent (inject tests cannot see
+    // the process entry, deferred #25 discipline).
+    executionDelegationAudit: kernel.executionDelegationAudit,
     // E9.1/E9.2: the day-one briefing and the commission gate.
     ...(kernel.commissionLedger ? { commissions: kernel.commissionLedger } : {}),
     ...(kernel.connectorRegistry ? { connectorRegistry: kernel.connectorRegistry } : {}),
