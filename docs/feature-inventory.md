@@ -1,6 +1,6 @@
 # 功能清单（Feature Inventory）
 
-状态：**现行 v0.8**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项；2026-10-02 **评审 v0.21 修正规模普查**：路由 75 → 76（3 公开 + 73 bearer，分组表之和 70 → 73）、库导出口径改为 **118 条 export 语句 / 运行时 213 个导出**，三段计数入库为断言；2026-10-02 再更新：**`dataPolicy` 收缩口径已定**（design-realm §3.1，实现待落），基线 1018 测试 / 94 文件；2026-10-03 再更新：**数据二极管按 `dataPolicy` 收缩已接线**（dispatcher 判档 + `realmHitsOrigin` 来源标记 + `refused-data-policy`/`content-injected` 两条审计值，「已实现但未接线」2 → 1 项，Active work 103），基线 1022 测试 / 94 文件；2026-10-03 再更新（**Active work 104**）：路由 76 → 77（3 公开 + 74 bearer，分组表「数据域与跨域」7 → 8）、关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据签发端点/审计/nonce 持久化三项接线，「已实现但未接线」仍 1 项），基线 1048 测试 / 97 文件；2026-10-03 再更新（**Active work 107**）：执行授权票据**派发闸门 + execute/plan 模式**接线（`FanOutRequest.mode`、`Orchestrator.runBranch` 前置验签消费、审计 `execution-delegation-denied` 入 AUDIT_DECISIONS 与 TUI token、H2 意图面透传；「已实现但未接线」1 → **0 项**；修正一处标注错误：凭据委派原标 ⬜（E4.10），PRD E4.10 实为背压降级顺序，凭据委派对应 deferred #33 投递字段），基线 1048/97 → **1060/99**；2026-10-03 再更新（**Active work 109**）：E2.6 操作者意图识别接线（`POST /api/intents/recognize`，本地规则零出域默认 + 可插拔决策后端 opt-in，plan-only fail-closed；真进程验收 7 步入 `verify:intent-recognize`；index 公共导出 +2），路由 77 → **78**（3 公开 + 75 bearer，分组表「意图与编排」6 → 7），导出语句 118 → **120**，测试 1060/99 → **1084/101**）
+状态：**现行 v0.9**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项；2026-10-02 **评审 v0.21 修正规模普查**：路由 75 → 76（3 公开 + 73 bearer，分组表之和 70 → 73）、库导出口径改为 **118 条 export 语句 / 运行时 213 个导出**，三段计数入库为断言；2026-10-02 再更新：**`dataPolicy` 收缩口径已定**（design-realm §3.1，实现待落），基线 1018 测试 / 94 文件；2026-10-03 再更新：**数据二极管按 `dataPolicy` 收缩已接线**（dispatcher 判档 + `realmHitsOrigin` 来源标记 + `refused-data-policy`/`content-injected` 两条审计值，「已实现但未接线」2 → 1 项，Active work 103），基线 1022 测试 / 94 文件；2026-10-03 再更新（**Active work 104**）：路由 76 → 77（3 公开 + 74 bearer，分组表「数据域与跨域」7 → 8）、关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据签发端点/审计/nonce 持久化三项接线，「已实现但未接线」仍 1 项），基线 1048 测试 / 97 文件；2026-10-03 再更新（**Active work 107**）：执行授权票据**派发闸门 + execute/plan 模式**接线（`FanOutRequest.mode`、`Orchestrator.runBranch` 前置验签消费、审计 `execution-delegation-denied` 入 AUDIT_DECISIONS 与 TUI token、H2 意图面透传；「已实现但未接线」1 → **0 项**；修正一处标注错误：凭据委派原标 ⬜（E4.10），PRD E4.10 实为背压降级顺序，凭据委派对应 deferred #33 投递字段），基线 1048/97 → **1060/99**；2026-10-03 再更新（**Active work 109**）：E2.6 操作者意图识别接线（`POST /api/intents/recognize`，本地规则零出域默认 + 可插拔决策后端 opt-in，plan-only fail-closed；真进程验收 7 步入 `verify:intent-recognize`；index 公共导出 +2），路由 77 → **78**（3 公开 + 75 bearer，分组表「意图与编排」6 → 7），导出语句 118 → **120**，测试 1060/99 → **1084/101**；2026-10-03 再更新（**Active work 110**）：E2.6 意图识别接 **TUI 命令面**（`i <文本>` 本地规则零出域 / `im <文本>` 显式咨询决策后端 opt-in，结构化 fail-closed 422 以视图返回，命令词须为 `i`/`im` 后跟空格防 `info` 误判；真进程验收 `verify:tui-recognize` 7 步入册），TUI 命令 11 → **13** 类，路由 78 / 导出 120 不变，测试 1084/101 → **1099/101**）
 
 > 本文件是 Zeus **全部功能点的资产台账**：有什么、在哪、什么状态。缺陷台账在 [audit-2026-09.md](audit-2026-09.md)。需求优先级与验收标准在 [prd.md](prd.md)；"做到哪了"在 [handoff.md](../handoff.md)。本文件只回答"有什么"，不记进度。
 
@@ -24,7 +24,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 | 入口 | 形态 | 规模 | 鉴权 |
 | --- | --- | --- | --- |
 | HTTP 门面 | Fastify 长驻进程，`npm start` | **78 条路由**（3 公开 + 75 bearer） | 公开 3 条无鉴权；其余同一 bearer |
-| 终端面板 TUI | `npm run tui` | 11 类命令 | `--token` |
+| 终端面板 TUI | `npm run tui` | 13 类命令 | `--token` |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
 | 库公共面 | `import 'zeus'` | **120 条 export 语句**（构建产物运行时 215 个导出） | 不适用 |
 | MCP 服务端 | `src/realm/mcp-stdio.ts` | 3 资源模板 + 2 工具 | 宿主预授权目录 |
@@ -68,7 +68,7 @@ PRD 共 **54 条需求行**：✅ 46 / 🚧 2（E3.4 MCP 传输、E4.9 签名链
 | `npm run vault backup` | 子命令 | 打包清单 + 全量备份包（AES-256-GCM） |
 | `npm run vault check` | 子命令 | L0 就地校验，按清单指纹查漂移；退出码 0/1/2/3 |
 | `npm run vault restore` | 子命令 | 按清单 + 备份包跨位恢复（含 dry-run 与 plan） |
-| `npm run tui` | 交互面板 | 刷新、批准/拒绝升级、按立场裁决、吊销 Agent、签发/撤销跨域授权、退出；写操作需 `y/N` 确认；zh-CN/en 双语言 |
+| `npm run tui` | 交互面板 | 刷新、批准/拒绝升级、按立场裁决、吊销 Agent、签发/撤销跨域授权、**意图识别（`i <文本>` 本地零出域 / `im <文本>` 模型 opt-in，plan-only）**、退出；写操作需 `y/N` 确认；zh-CN/en 双语言 |
 | `npm run smoke:core` | 脚本 | 真进程 + 真 socket 核心链路冒烟（36 步） |
 | `npm run acceptance:fanout` | 脚本 | 对真实执行 Agent 的扇出验收 |
 | `npm run bench:capacity` | 脚本 | 五场景容量压测（扇出宽度 / 并发意图 / HTTP 门面吞吐 / 取消传播 / 并发闸门代价） |

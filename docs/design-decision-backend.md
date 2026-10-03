@@ -80,6 +80,10 @@ Zeus 的决策内核新增一个**与具体模型解耦的"决策后端"抽象�
 
 执行 Agent/模型选择、分支优先级排序等场景，可用 `score` 做轻量路由打分。本设计只定义端口与语义，**不预设路由策略**（策略随 S14 工程切片定；届时可同时比较决策模型与 LLM 的评分质量/成本）。
 
+### 3.5 操作者意图识别（E2.6，2026-10-03 已落地）——识别位
+
+操作者一句自然语言指令 → 结构化 plan-only 意图：复用 `choice` 原语（候选技能 id 为 options、指令放 state 并声明 `stateKeys: ['instruction', 'realm']`），本地规则路径是确定性默认（零出域），`useModel: true` 才显式咨询后端。这是「三个融合点皆模型无关」的第四个应用点：Jev / OpenAI 兼容 LLM / rules-only 在识别位上完全互换，与 §0 的解耦承诺一致。fail-closed 语义（命名 reason 不臆断）与实现指针见 [prd.md](prd.md) E2.6 行。
+
 ## 4. 端口设计（`src/decision/types.ts`，模型无关）
 
 ```ts
