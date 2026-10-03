@@ -30,7 +30,7 @@
 | 理解产品矩阵如何并入 Zeus | [product-portrait.md](product-portrait.md) §7 执行 Agent 式联邦 |
 | 查看开放问题 / 缓做项 | [deferred-items.md](deferred-items.md) |
 | 接手某个模块的设计决策 | 对应 [design-\*.md](design-vassal-protocol.md)（执行 Agent 协议：A2A 超集，fealty/结果回传/升级/治理） |
-| 看 UI 候选方案 | [design-ui.md](design-ui.md)（草案：A 实时监督台 / B 多视图工作台 / C 双门户 / D 终端 TUI；立项条件见 deferred #34） |
+| 看 UI 候选方案 | [design-ui.md](design-ui.md)（草案：A 实时监督台 **已落地** / B 多视图工作台 / C 双门户 / D 终端 TUI **已落地**；立项条件见 deferred #34） |
 | 统一 UI 的颜色/间距/字号与多语言，避免各页样式对不齐 | [design-ui-foundations.md](design-ui-foundations.md)（现行：design token 三层模型、light/dark + TUI 子集、i18n key/ICU、无裸值与审计等价校验闸门） |
 | 理解执行型 Agent 的不可逆写操作怎么获得一次性授权 | [design-execution-delegation.md](design-execution-delegation.md)（v0.1 现行：操作者一次性短时授权票据，Ed25519 签名/能力白名单/单 nonce 防重放/fail-closed；纯原语已落，派发与 A2A 投递待 pr-helper 凭据接口，deferred #33） |
 | 理解 Realm 数据域（目录即数据库）的接口契约 | [design-realm.md](design-realm.md) v0.8（connect/search/read/write、数据二极管执行点与 **§3.1 `dataPolicy` 收缩契约（2026-10-03 已落地）**、企业域三级租户与双域授权 §7、**签名且一次性的企业写凭证 §7.7**、**§6.5 MCP 暴露侧主体判定裁定（deferred #18）**、备份清单依赖） |
