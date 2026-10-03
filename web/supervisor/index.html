@@ -112,6 +112,22 @@
   /* 空态 */
   .empty { padding: 18px 14px; color: var(--text-3); font-size: 13px; text-align: center; }
 
+  /* 意图详情 */
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 3px 10px; font-size: 13px; }
+  .kv .k { color: var(--text-3); font-family: var(--mono); font-size: 12px; padding-top: 1px; }
+  .kv .v { word-break: break-all; }
+  .branch-ok td { color: var(--text); }
+  .branch-bad td { color: #d39a92; }
+  .branch-pending td { color: var(--text-2); }
+  .evt-list { list-style: none; margin: 0; padding: 2px 0; }
+  .evt-list li { display: grid; grid-template-columns: 118px 22px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); align-items: start; }
+  .evt-list li:last-child { border-bottom: none; }
+  .evt-time { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); padding-top: 2px; }
+  .evt-mark { width: 9px; height: 9px; border-radius: 50%; margin: 5px auto 0; background: var(--text-3); }
+  .evt-mark.started { background: var(--accent); } .evt-mark.ended { background: var(--ok); } .evt-mark.diverted { background: var(--warn); } .evt-mark.finished { background: var(--text-3); }
+  .evt-body { font-family: var(--mono); font-size: 12.5px; }
+  .evt-body .evt-detail { font-size: 11.5px; color: var(--text-3); font-family: var(--sans); }
+
   /* 连接提示 */
   .cors-note { font-size: 12px; color: var(--text-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 10px; }
   .cors-note code { font-family: var(--mono); background: #0d1218; padding: 1px 5px; border-radius: 4px; }
@@ -152,6 +168,40 @@
 
     <!-- ===== 视图：监控 ===== -->
     <section id="view-monitor">
+      <div class="panel" style="margin-bottom:14px">
+        <h2>派发意图 <span class="hint">POST /api/intents</span></h2>
+        <div class="body">
+          <div class="form">
+            <div class="row inline">
+              <div class="row">
+                <label for="dSkill">技能</label>
+                <select id="dSkill"></select>
+              </div>
+              <div class="row">
+                <label for="dRealm">数据域</label>
+                <select id="dRealm"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
+              </div>
+            </div>
+            <div class="row inline">
+              <div class="row">
+                <label for="dVassals">主体（逗号分隔，可选，缺省自动选靶）</label>
+                <input id="dVassals" autocomplete="off" placeholder="如 a1, a2">
+              </div>
+              <div class="row">
+                <label for="dMode">模式</label>
+                <select id="dMode"><option value="plan">plan（默认）</option><option value="execute">execute（需执行授权票据）</option></select>
+              </div>
+            </div>
+            <div class="row">
+              <label for="dParams">参数（JSON，可选）</label>
+              <textarea id="dParams" rows="3" autocomplete="off" placeholder='{"query": "…"}'></textarea>
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="btnDispatch">派发</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="grid">
         <div class="panel">
           <h2>内核状态 <span class="hint">/api/state</span></h2>
@@ -175,6 +225,10 @@
           <h2>数据域与跨域授权 <span class="hint">/api/domains</span></h2>
           <div class="body" id="domainsBody"></div>
         </div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h2>最近意图 <span class="hint">本浏览器记录</span></h2>
+        <div class="body" id="recentBody"></div>
       </div>
     </section>
 
@@ -228,6 +282,37 @@
       </div>
     </section>
 
+    <!-- ===== 视图：意图详情（作战室） ===== -->
+    <section id="view-intent" hidden>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn" id="btnBackIntent">← 返回监控</button>
+        <span class="st info" id="intentStatusBadge">—</span>
+        <span class="mono" style="color:var(--text-2);font-size:12px" id="intentIdLabel"></span>
+        <span class="spacer"></span>
+        <button class="btn danger" id="btnCancelIntent">取消派发</button>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <h2>意图 <span class="hint">GET /api/intents/:id</span></h2>
+          <div class="body"><div class="kv" id="intentMeta"></div></div>
+        </div>
+        <div class="panel">
+          <h2>决策 <span class="hint">聚合 / 冲突 / 仲裁</span></h2>
+          <div class="body" id="intentDecision"></div>
+        </div>
+      </div>
+      <div class="grid" style="margin-top:14px">
+        <div class="panel">
+          <h2>分支 <span class="hint">fan-out</span></h2>
+          <div class="body" id="intentBranches"></div>
+        </div>
+        <div class="panel">
+          <h2>实时事件 <span class="hint">SSE /api/intents/:id/events</span></h2>
+          <div class="body" id="intentEvents"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== 视图：连接 ===== -->
     <section id="view-connect" hidden>
       <div class="panel" style="max-width:560px">
@@ -264,13 +349,17 @@
   'use strict';
   // ===== 状态与配置 =====
   const LS_KEY = 'zeus-supervisor-conn';
+  const LS_RECENT = 'zeus-supervisor-recent';
   const state = {
     conn: loadConn(),
     view: 'monitor',
+    intentId: null,
     poll: true,
     timer: null,
     escPending: 0,
     lastRefresh: null,
+    recent: loadRecent(),
+    sseAbort: null,
   };
 
   function loadConn() {
@@ -341,16 +430,356 @@
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
+    let intentId = null;
+    const m = h.match(/^intent\/(.+)$/);
+    if (m) { target = 'intent'; intentId = decodeURIComponent(m[1]); }
     if (!state.conn.token && !h) target = 'connect';
     state.view = target;
+    state.intentId = intentId;
     for (const v of Object.keys(VIEWS)) {
       $('view-' + v).hidden = v !== state.view;
       document.querySelector(`.nav-item[data-view="${v}"]`)?.classList.toggle('active', v === state.view);
     }
-    $('viewTitle').textContent = VIEWS[state.view];
+    $('view-intent').hidden = state.view !== 'intent';
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    $('viewTitle').textContent = state.view === 'intent' ? '意图详情' : VIEWS[state.view];
+    stopSse();
     if (state.view !== 'connect' && state.conn.base) refreshView();
   }
   window.addEventListener('hashchange', route);
+
+  // ===== 派发意图 =====
+  async function loadSkills() {
+    const sel = $('dSkill');
+    sel.innerHTML = '<option value="">（加载中…）</option>';
+    try {
+      const data = await api('GET', '/api/skills');
+      const skills = (data && data.skills) || [];
+      if (!skills.length) { sel.innerHTML = '<option value="">（技能注册中心为空）</option>'; return; }
+      sel.innerHTML = skills.map(s => `<option value="${esc(s.id)}">${esc(s.id)}${s.name && s.name !== s.id ? ' · ' + esc(s.name) : ''}${s.status === 'deprecated' ? '（弃用）' : ''}</option>`).join('');
+    } catch (e) {
+      sel.innerHTML = '<option value="">（技能加载失败）</option>';
+      toast('技能列表加载失败：' + e.message, 'bad');
+    }
+  }
+
+  async function dispatchIntent() {
+    const skill = $('dSkill').value;
+    if (!skill) { toast('请先选择技能', 'bad'); return; }
+    const realm = $('dRealm').value;
+    const vassals = $('dVassals').value.split(',').map(v => v.trim()).filter(Boolean);
+    const mode = $('dMode').value;
+    let params = {};
+    const raw = $('dParams').value.trim();
+    if (raw) {
+      try { params = JSON.parse(raw); } catch { toast('参数不是合法 JSON', 'bad'); return; }
+    }
+    if (!window.confirm('派发意图：' + skill + ' @ ' + realm + (vassals.length ? ' → ' + vassals.join(', ') : '') + ' ？')) return;
+    const btn = $('btnDispatch');
+    btn.disabled = true;
+    try {
+      const body = { skill, realm, params, ...(vassals.length ? { vassals } : {}), ...(mode === 'execute' ? { mode } : {}) };
+      const r = await api('POST', '/api/intents', body);
+      const intentId = r && r.intentId;
+      if (!intentId) { toast('派发未返回 intentId', 'bad'); return; }
+      rememberIntent(intentId, r.skill || skill, r.status || 'dispatched');
+      toast('已派发：' + intentId, 'ok');
+      location.hash = '#/intent/' + encodeURIComponent(intentId);
+    } catch (e) {
+      toast('派发失败：' + e.message, 'bad');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // ===== 最近意图 =====
+  function loadRecent() {
+    try {
+      const raw = localStorage.getItem(LS_RECENT);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.slice(0, 12) : [];
+    } catch { return []; }
+  }
+  function saveRecent() {
+    try { localStorage.setItem(LS_RECENT, JSON.stringify(state.recent.slice(0, 12))); } catch { /* noop */ }
+  }
+  function rememberIntent(id, skill, status) {
+    state.recent = [{ id, skill: skill || '?', status: status || 'dispatched', at: new Date().toISOString() }, ...state.recent.filter(r => r.id !== id)].slice(0, 12);
+    saveRecent();
+  }
+
+  function renderRecent() {
+    const el = $('recentBody');
+    if (!state.recent.length) { el.innerHTML = emptyRow('本浏览器尚无派发记录（派发后自动记录）'); return; }
+    let rows = '<table><colgroup><col style="width:26%"><col style="width:20%"><col style="width:16%"><col style="width:22%"><col style="width:16%"></colgroup><tr><th>意图 ID</th><th>技能</th><th>状态</th><th>时间</th><th>操作</th></tr>';
+    for (const r of state.recent) {
+      const cls = /fail/.test(r.status) ? 'bad' : /complet/.test(r.status) ? 'ok' : /needs-driver/.test(r.status) ? 'warn' : '';
+      rows += `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(r.id)}</td>
+        <td>${esc(r.skill)}</td>
+        <td>${badge(r.status, cls)}</td>
+        <td class="mono" style="font-size:11.5px">${fmtTime(r.at)}</td>
+        <td><a href="#/intent/${encodeURIComponent(r.id)}">打开</a></td>
+      </tr>`;
+    }
+    el.innerHTML = rows + '</table>';
+  }
+
+  // ===== 意图详情（作战室） =====
+  function statusClass(st) {
+    if (/failed/.test(st)) return 'bad';
+    if (/completed|approved/.test(st)) return 'ok';
+    if (/needs-driver|partial|pending/.test(st)) return 'warn';
+    return 'info';
+  }
+  const TASK_STATE_LABEL = { completed: '完成', failed: '失败', canceled: '已取消', running: '进行中', queued: '排队中', dispatched: '已派发', acknowledged: '已确认', timed_out: '超时', refused: '拒绝' };
+
+  function renderIntent(r) {
+    if (!r) {
+      $('intentStatusBadge').textContent = '未找到';
+      $('intentStatusBadge').className = 'st bad';
+      $('intentMeta').innerHTML = emptyRow('意图不存在或已过期');
+      $('intentDecision').innerHTML = '';
+      $('intentBranches').innerHTML = '';
+      return;
+    }
+    $('intentIdLabel').textContent = r.intentId + ' · runId ' + (r.runId || '—');
+    const st = r.status || 'unknown';
+    $('intentStatusBadge').textContent = st;
+    $('intentStatusBadge').className = 'st ' + statusClass(st);
+    const terminal = st === 'completed' || st === 'failed' || st === 'canceled';
+    $('btnCancelIntent').disabled = terminal;
+    $('btnCancelIntent').textContent = terminal ? '已结算' : '取消派发';
+
+    const kv = (k, v) => `<div class="k">${esc(k)}</div><div class="v">${v}</div>`;
+    $('intentMeta').innerHTML = `<div class="kv">
+      ${kv('intentId', esc(r.intentId))}
+      ${kv('runId', esc(r.runId || '—'))}
+      ${kv('skill', esc(r.skill || '—'))}
+      ${kv('realm', esc(r.realm + (r.realmId ? ' · ' + r.realmId : '')))}
+      ${kv('createdAt', fmtTime(r.createdAt))}
+      ${kv('status', badge(st, statusClass(st)))}
+      ${r.replayed ? kv('replayed', 'true（回放）') : ''}
+    </div>`;
+
+    // 决策块
+    let dec = '';
+    const d = r.decision;
+    if (d) {
+      dec += `<div style="margin-bottom:8px">${badge('规则 ' + (d.rule || '—'), 'info')} ${d.conclusion ? badge('结论', 'ok') : badge('无结论', 'warn')}</div>`;
+      if (d.conclusion) dec += `<div style="font-size:13px;margin-bottom:6px">结论：<strong>${esc(d.conclusion)}</strong></div>`;
+      dec += `<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">理由：${esc(d.reason || '—')}</div>`;
+      if (d.margin) dec += `<div style="font-size:12px;color:var(--text-2)">票差：${esc(d.margin.winner)} ${d.margin.winnerCount}/${d.margin.total}</div>`;
+      const ps = d.positions || [];
+      if (ps.length) {
+        dec += '<table style="margin-top:8px"><colgroup><col style="width:22%"><col style="width:20%"><col style="width:16%"><col style="width:42%"></colgroup><tr><th>主体</th><th>立场</th><th>权重</th><th>理由</th></tr>';
+        for (const p of ps) {
+          dec += `<tr><td class="mono">${esc(p.vassal)}</td><td>${esc(p.stance)}</td><td class="num">${p.weight != null ? p.weight : '—'}</td><td style="font-size:12px">${esc(p.rationale || '—')}</td></tr>`;
+        }
+        dec += '</table>';
+      }
+    } else {
+      dec = emptyRow('尚无决策');
+    }
+    // 冲突与仲裁
+    const cs = r.conflicts || [];
+    if (cs.length) {
+      dec += '<div style="margin-top:10px;font-size:12px;color:var(--warn)">冲突 ' + cs.length + ' 项</div>';
+      for (const c of cs) {
+        const parties = (c.stances || []).map(s => `${esc(s.stance)}(${esc((s.vassals || []).join('+') || '?')})`).join(' vs ');
+        dec += `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${esc(c.kind || 'split')} · ${parties || '—'}${c.summary ? ' · ' + esc(c.summary) : ''}<div style="font-size:11.5px;color:var(--text-3)">${esc(c.reason || '')}</div></div>`;
+      }
+    }
+    if (r.driverResolution) {
+      const dr = r.driverResolution;
+      dec += `<div style="margin-top:10px;font-size:12px">${badge('司机已裁决', 'ok')} 立场「${esc(dr.stance)}」${dr.note ? ' · ' + esc(dr.note) : ''} · ${fmtTime(dr.decidedAt)}${dr.escalationId ? ' · ' + esc(dr.escalationId) : ''}</div>`;
+    }
+    if (r.backendArbitration) {
+      const ba = r.backendArbitration;
+      dec += `<div style="margin-top:10px;font-size:12px">${badge('决策后端', ba.concluded ? 'ok' : 'warn')} ${esc(ba.conclusion || '')}${ba.confidence != null ? ' · 置信 ' + Math.round(ba.confidence * 100) + '%' : ''}${ba.model ? ' · ' + esc(ba.model) : ''}</div>`;
+    }
+    if (r.judgeReview) {
+      const jr = r.judgeReview;
+      dec += `<div style="margin-top:10px;font-size:12px">${badge('LLM 法官复核', jr.escalated ? 'warn' : (jr.agreesWithRule ? 'ok' : 'info'))} ${jr.recommended ? '推荐「' + esc(jr.recommended) + '」' : (jr.judged ? '已复核' : '未达门限')}${jr.agreesWithRule ? ' · 同意规则结论' : ''}${jr.confidence != null ? ' · 置信 ' + Math.round(jr.confidence * 100) + '%' : ''}${jr.model ? ' · ' + esc(jr.model) : ''}${jr.error ? ' · ' + esc(jr.error.code || jr.error.message || '后端错误') : ''}</div>`;
+    }
+    $('intentDecision').innerHTML = dec;
+
+    // 分支块
+    const bs = r.branches || [];
+    if (!bs.length) {
+      $('intentBranches').innerHTML = emptyRow('尚无分支');
+    } else {
+      let rows = '<table><colgroup><col style="width:16%"><col style="width:12%"><col style="width:10%"><col style="width:14%"><col style="width:16%"><col style="width:32%"></colgroup><tr><th>主体</th><th>状态</th><th>结果</th><th>taskId</th><th>超时</th><th>原因</th></tr>';
+      for (const b of bs) {
+        const stateName = b.state && b.state.status ? b.state.status : (b.ok ? 'completed' : 'failed');
+        const rowCls = b.ok ? 'branch-ok' : (stateName === 'running' || stateName === 'queued' || stateName === 'dispatched') ? 'branch-pending' : 'branch-bad';
+        rows += `<tr class="${rowCls}">
+          <td class="mono">${esc(b.vassal)}</td>
+          <td>${esc(TASK_STATE_LABEL[stateName] || stateName)}</td>
+          <td>${b.ok ? badge('ok', 'ok') : badge('✗', 'bad')}</td>
+          <td class="mono" style="font-size:11px">${esc(b.taskId || '—')}</td>
+          <td>${b.timedOut ? badge('超时', 'warn') : '—'}</td>
+          <td style="font-size:12px">${esc(b.reason || '—')}</td>
+        </tr>`;
+      }
+      $('intentBranches').innerHTML = rows + '</table>';
+    }
+  }
+
+  async function loadIntent(id) {
+    if (!id) return;
+    try {
+      const r = await api('GET', '/api/intents/' + encodeURIComponent(id));
+      renderIntent(r);
+      if (r) rememberIntent(r.intentId || id, r.skill, r.status);
+      setConn(true);
+      if (r && r.status !== 'completed' && r.status !== 'failed' && r.status !== 'canceled') {
+        startSse(id);
+      } else {
+        stopSse();
+        // Terminal intent: render one settled note, idempotently (the 10s poll
+        // re-runs loadIntent and must not stack duplicates).
+        const evtEl = $('intentEvents');
+        if (evtEl) {
+          // Only render the settled note when the SSE stream never did (e.g. the
+          // intent settled before this page opened); a live stream already shows
+          // branch-ended / intent-finished rows.
+          if (!evtEl.dataset.settledNote && !evtEl.querySelector('li')) {
+            evtEl.dataset.settledNote = '1';
+            const li = document.createElement('li');
+            li.innerHTML = `<span class="evt-time">${fmtTime(new Date().toISOString())}</span><span class="evt-mark finished"></span><span class="evt-body">意图已结算 · ${esc(r.status)}</span>`;
+            evtEl.appendChild(li);
+          }
+        }
+      }
+    } catch (e) {
+      if (e.status === 404) {
+        // Not settled yet (settled results only): follow it live over SSE; the
+        // stream ends with intent-finished, at which point we re-fetch the full
+        // snapshot and render the settled intent.
+        setConn(true);
+        $('intentStatusBadge').textContent = '进行中';
+        $('intentStatusBadge').className = 'st warn';
+        $('intentIdLabel').textContent = id;
+        $('intentMeta').innerHTML = '<div class="empty">意图尚未结算，连接实时事件流…</div>';
+        $('intentDecision').innerHTML = '';
+        $('intentBranches').innerHTML = '';
+        $('btnCancelIntent').disabled = false;
+        $('btnCancelIntent').textContent = '取消派发';
+        startSse(id);
+        return;
+      }
+      setConn(false);
+      renderIntent(null);
+      toast('意图加载失败：' + e.message, 'bad');
+    }
+  }
+
+  // ===== SSE 实时事件（fetch + ReadableStream，携带 Bearer） =====
+  function stopSse() {
+    if (state.sseAbort) { state.sseAbort.abort(); state.sseAbort = null; }
+  }
+
+  function appendSseEvent(evt, payload) {
+    const el = $('intentEvents');
+    if (!el) return;
+    const now = fmtTime(new Date().toISOString());
+    let mark = 'finished', head = esc(evt), detail = '';
+    if (evt === 'branch-started') { mark = 'started'; head = '分支开始 · ' + esc(payload.vassal || '?') + ' · ' + esc(payload.skill || ''); detail = 'runId ' + esc(payload.runId || '—'); }
+    else if (evt === 'branch-ended') { mark = 'ended'; head = '分支结束 · ' + esc(payload.vassal || '?') + ' · ' + esc(payload.outcome || ''); detail = payload.state ? 'state ' + esc(payload.state.status) : ''; }
+    else if (evt === 'branch-diverted') { mark = 'diverted'; head = '分支改道 · ' + esc(payload.from || '?') + ' → ' + esc(payload.to || '?') + ' · ' + esc(payload.skill || ''); }
+    else if (evt === 'intent-finished') { mark = 'finished'; head = '意图结束 · ' + esc(payload.status || ''); }
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="evt-time">${now}</span><span class="evt-mark ${mark}"></span><span class="evt-body">${head}${detail ? `<div class="evt-detail">${detail}</div>` : ''}</span>`;
+    el.appendChild(li);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function startSse(id) {
+    stopSse();
+    const ac = new AbortController();
+    state.sseAbort = ac;
+    const { base, token } = state.conn;
+    const url = base.replace(/\/+$/, '') + '/api/intents/' + encodeURIComponent(id) + '/events';
+    const evtEl = $('intentEvents');
+    if (evtEl) { delete evtEl.dataset.settledNote; evtEl.innerHTML = '<div class="empty">连接实时事件流…</div>'; }
+    try {
+      const res = await fetch(url, { headers: { authorization: 'Bearer ' + token, accept: 'text/event-stream' }, signal: ac.signal });
+      if (!res.ok || !res.body) throw new Error('SSE ' + res.status);
+      if (evtEl) evtEl.innerHTML = '<ul class="evt-list" style="max-height:360px;overflow:auto"></ul>';
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n\n')) >= 0) {
+          const block = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          if (block.startsWith(':')) continue;
+          let evt = 'message', data = '';
+          for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) evt = line.slice(6).trim();
+            else if (line.startsWith('data:')) data += line.slice(5).trim();
+          }
+          if (!data) continue;
+          let payload = {};
+          try { payload = JSON.parse(data); } catch { continue; }
+          appendSseEvent(evt, payload);
+          if (evt === 'intent-finished') {
+            try {
+              const r = await api('GET', '/api/intents/' + encodeURIComponent(id));
+              renderIntent(r);
+              if (r) rememberIntent(r.intentId || id, r.skill, r.status);
+            } catch { /* 快照刷新失败不阻塞 */ }
+            stopSse();
+            return;
+          }
+          if (evt === 'branch-ended' || evt === 'branch-diverted') {
+            try {
+              const r = await api('GET', '/api/intents/' + encodeURIComponent(id));
+              renderIntent(r);
+              if (r) rememberIntent(r.intentId || id, r.skill, r.status);
+            } catch { /* 增量刷新失败不阻塞 */ }
+          }
+        }
+      }
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      if (evtEl) evtEl.innerHTML = evtEl.innerHTML || emptyRow('事件流中断：' + esc(e.message));
+      if (state.view === 'intent' && state.intentId === id) {
+        try {
+          const r = await api('GET', '/api/intents/' + encodeURIComponent(id));
+          renderIntent(r);
+          if (r && (r.status === 'completed' || r.status === 'failed' || r.status === 'canceled')) rememberIntent(r.intentId || id, r.skill, r.status);
+        } catch { /* noop */ }
+      }
+    }
+  }
+
+  async function cancelIntent() {
+    const id = state.intentId;
+    if (!id) return;
+    if (!window.confirm('确定取消意图 ' + id + ' 的派发吗？（分支取消会写入审计）')) return;
+    try {
+      const r = await api('POST', '/api/intents/' + encodeURIComponent(id) + '/cancel');
+      const results = (r && r.results) || [];
+      const canceled = results.filter(x => x && x.canceled).length;
+      if (canceled > 0) {
+        toast('已取消 ' + canceled + ' 个分支（' + id + '）', 'ok');
+      } else {
+        // Kernel boundary (design-fan-out §7, deferred): a branch whose A2A
+        // stream has not ended exposes no task id and cannot be aborted yet.
+        toast('取消请求已提交，但无已派发分支被中断——运行中分支暂不支持中断（design-fan-out §7 未落地）', 'warn');
+      }
+      stopSse();
+      await loadIntent(id);
+    } catch (e) {
+      toast('取消失败：' + e.message, 'bad');
+    }
+  }
 
   // ===== 监控渲染 =====
   function renderState(s) {
@@ -553,6 +982,7 @@
       if (view === 'monitor') await loadMonitor();
       else if (view === 'oversight') await loadEscalations();
       else if (view === 'grants') await loadDomains();
+      else if (view === 'intent') await loadIntent(state.intentId);
       setConn(true);
     } catch (e) {
       setConn(false);
@@ -566,6 +996,8 @@
         $('escBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'grants') {
         $('grantListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+      } else if (view === 'intent') {
+        $('intentMeta').innerHTML = emptyRow('连接失败：' + esc(e.message));
       }
       if (e.cors) $('corsNote').hidden = false;
       if (view !== 'connect') toast('加载失败：' + e.message, 'bad');
@@ -580,6 +1012,7 @@
       api('GET', '/api/audit?limit=20'), api('GET', '/api/domains'),
     ]);
     renderState(s); renderMetrics(m); renderRoster(r); renderAudit(a); renderDomains(d);
+    renderRecent();
   }
   async function loadEscalations() {
     const data = await api('GET', '/api/escalations');
@@ -638,6 +1071,11 @@
     }
   });
 
+  // ===== 派发与意图详情操作 =====
+  $('btnDispatch').addEventListener('click', dispatchIntent);
+  $('btnCancelIntent').addEventListener('click', cancelIntent);
+  $('btnBackIntent').addEventListener('click', function () { location.hash = '#/monitor'; });
+
   // ===== 连接配置 =====
   $('btnSaveConn').addEventListener('click', async function () {
     state.conn.base = $('cBase').value.trim() || 'http://127.0.0.1:8787';
@@ -687,6 +1125,7 @@
   // ===== 初始化 =====
   $('cBase').value = state.conn.base;
   $('cToken').value = state.conn.token;
+  loadSkills();
   startPoll();
   route();
 })();

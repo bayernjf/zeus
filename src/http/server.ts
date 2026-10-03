@@ -541,11 +541,22 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
         const raw = reply.raw;
         reply.hijack();
+        // The socket is taken over from Fastify here, so the global onRequest
+        // CORS hook can no longer attach its headers to this reply: re-apply the
+        // whitelist check against the raw response. Without this, a browser-held
+        // EventSource/fetch stream is blocked by the CORS policy (no ACAO).
+        const origin = request.headers.origin;
+        const corsHeaders: Record<string, string> = {};
+        if (typeof origin === 'string' && deps.corsOrigins && deps.corsOrigins.includes(origin)) {
+          corsHeaders['Access-Control-Allow-Origin'] = origin;
+          corsHeaders['Vary'] = 'Origin';
+        }
         raw.writeHead(200, {
           'Content-Type': 'text/event-stream; charset=utf-8',
           'Cache-Control': 'no-cache, no-transform',
           Connection: 'keep-alive',
           'X-Accel-Buffering': 'no',
+          ...corsHeaders,
         });
         raw.flushHeaders();
 
