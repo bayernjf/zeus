@@ -174,8 +174,10 @@
     <a class="nav-item" data-view="monitor" href="#/monitor"><span class="dot"></span>监控</a>
     <a class="nav-item" data-view="oversight" href="#/oversight"><span class="dot" style="background:var(--warn)"></span>裁决<span class="badge" id="escBadge"></span></a>
     <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span>授权</a>
+    <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span>组织</a>
+    <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span>目录</a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span>连接</a>
-    <div class="side-foot">v1 · 只读监控 · 裁决 · 授权<br>UI 仅消费现有 HTTP API</div>
+    <div class="side-foot">v1.4 · 只读监控 · 裁决 · 授权 · 组织<br>UI 仅消费现有 HTTP API</div>
   </nav>
 
   <main class="main">
@@ -338,6 +340,37 @@
       </div>
     </section>
 
+    <!-- ===== 视图：组织编制（E9.3，只读） ===== -->
+    <section id="view-org" hidden>
+      <div class="panel">
+        <h2>组织编制 <span class="hint">GET /api/org/chart · 部门 / lead / 成员 / 岗位技能</span></h2>
+        <div class="body" id="orgBody"><div class="empty">加载中…</div></div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：目录（技能 + 连接器，只读可见性） ===== -->
+    <section id="view-catalog" hidden>
+      <div class="panel" style="margin-bottom:14px">
+        <h2>技能目录 <span class="hint">GET /api/skills · 注册/生命周期管理走 CLI/API，监督台只读</span></h2>
+        <div class="body">
+          <div class="audit-filter">
+            <select id="catSkillStatus">
+              <option value="">全部状态</option>
+              <option value="active">active</option>
+              <option value="deprecated">deprecated</option>
+              <option value="uninstalled">uninstalled</option>
+            </select>
+            <span class="af-count" id="catSkillCount"></span>
+          </div>
+          <div id="catalogSkillsBody"><div class="empty">加载中…</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>连接器（MCP） <span class="hint">GET /api/connectors · 令牌只回显有无，不回显值</span></h2>
+        <div class="body" id="catalogConnectorsBody"><div class="empty">加载中…</div></div>
+      </div>
+    </section>
+
     <!-- ===== 视图：意图详情（作战室） ===== -->
     <section id="view-intent" hidden>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
@@ -370,6 +403,14 @@
       <div class="panel" style="margin-top:14px" id="dagPanel" hidden>
         <h2>DAG 编排 <span class="hint">GET /api/intents/:id/dag · S3 分层 / 关键路径</span></h2>
         <div class="body" id="dagBody"></div>
+      </div>
+      <div class="panel" style="margin-top:14px" id="accountabilityPanel" hidden>
+        <h2>责任链 <span class="hint">GET /api/org/accountability/:id · 执行 Agent → 部门 lead → 裁决者</span></h2>
+        <div class="body" id="accountabilityBody"></div>
+      </div>
+      <div class="panel" style="margin-top:14px" id="replayPanel" hidden>
+        <h2>决策回放 <span class="hint">GET /api/intents/:id/replay?format=text · E1.6 离线重建</span></h2>
+        <div class="body" id="replayBody"></div>
       </div>
     </section>
 
@@ -424,6 +465,7 @@
     auditFilter: { decision: '', vassal: '', keyword: '' },
     auditLast: null,
     trend: [],
+    skillsCache: [],
   };
 
   function loadConn() {
@@ -489,8 +531,31 @@
     return json;
   }
 
-  // ===== 路由 =====
-  const VIEWS = { monitor: '监控', oversight: '裁决', grants: '授权', connect: '连接' };
+  // 文本面（如决策回放 format=text 返回 text/plain）：同样鉴权，404/500 带 status 抛出。
+  async function apiText(method, path) {
+    const { base, token } = state.conn;
+    const url = base.replace(/\/+$/, '') + path;
+    const headers = {};
+    if (token) headers['authorization'] = 'Bearer ' + token;
+    let res;
+    try {
+      res = await fetch(url, { method, headers });
+    } catch (e) {
+      const err = new Error('网络/跨域失败：' + (e && e.message ? e.message : e));
+      err.cors = true;
+      throw err;
+    }
+    const text = await res.text();
+    if (!res.ok) {
+      let detail = text || res.status;
+      try { const j = JSON.parse(text); if (j && j.detail) detail = j.detail; } catch { /* 非 JSON */ }
+      const err = new Error(`${res.status} ${detail}`);
+      err.status = res.status;
+      throw err;
+    }
+    return text;
+  }
+  const VIEWS = { monitor: '监控', oversight: '裁决', grants: '授权', org: '组织', catalog: '目录', connect: '连接' };
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
@@ -643,6 +708,170 @@
     body.innerHTML = html;
   }
 
+  // ===== 组织编制（E9.3，只读） =====
+  function renderOrg(data) {
+    const el = $('orgBody');
+    const depts = (data && data.departments) || [];
+    if (!depts.length) { el.innerHTML = emptyRow('尚未建立任何部门（POST /api/org/departments 由 CLI/API 管理，监督台只读）'); return; }
+    let html = '';
+    for (const d of depts) {
+      const members = d.members || [];
+      let rows = '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:20%"><col style="width:46%"></colgroup><tr><th>Agent</th><th>角色</th><th>岗位</th><th>技能</th></tr>';
+      if (!members.length) {
+        rows += `<tr><td colspan="4" style="color:var(--text-3)">（空编）</td></tr>`;
+      } else {
+        for (const m of members) {
+          const isLead = m.role === 'lead';
+          rows += `<tr${isLead ? ' class="branch-ok"' : ''}><td class="mono">${esc(m.agentId)}${isLead ? ' ' + badge('lead', 'ok') : ''}</td><td>${esc(m.role)}</td><td>${esc(m.title || '—')}</td><td style="font-size:12px">${esc((m.skills || []).join(', ') || '—')}</td></tr>`;
+        }
+      }
+      rows += '</table>';
+      html += `<div class="panel" style="margin-bottom:14px;box-shadow:none;border:1px solid var(--line)">
+        <h2 style="border:none;padding:0">${esc(d.name)} <span class="hint mono">${esc(d.departmentId)}</span></h2>
+        <div class="body">
+          <div style="font-size:12.5px;color:var(--text-2);margin-bottom:6px">使命：${esc(d.mission || '—')}</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">编制 ${d.headcount} 人 · lead：${d.lead ? esc(d.lead) : '（未指定）'}</div>
+          ${rows}
+        </div>
+      </div>`;
+    }
+    el.innerHTML = html;
+  }
+
+  async function loadOrg() {
+    const el = $('orgBody');
+    try {
+      const data = await api('GET', '/api/org/chart');
+      renderOrg(data);
+    } catch (e) {
+      if (e.status === 404) { el.innerHTML = emptyRow('本进程未装配组织注册中心（orgRegistry），无组织面'); return; }
+      throw e;
+    }
+  }
+
+  // ===== 目录：技能 + 连接器（只读可见性，管理走 CLI/API） =====
+  function renderSkills(skills) {
+    const el = $('catalogSkillsBody');
+    const filter = ($('catSkillStatus') && $('catSkillStatus').value) || '';
+    const all = skills || [];
+    const list = filter ? all.filter(s => s.status === filter) : all;
+    const countEl = $('catSkillCount');
+    if (countEl) countEl.textContent = all.length + ' 个' + (filter ? ' · 显示 ' + list.length : '');
+    if (!list.length) { el.innerHTML = emptyRow(filter ? '无 ' + filter + ' 状态的技能' : '技能注册中心为空'); return; }
+    let rows = '<table><colgroup><col style="width:26%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:22%"><col style="width:18%"></colgroup><tr><th>技能</th><th>版本</th><th>域</th><th>状态</th><th>提供者</th><th>权限</th></tr>';
+    for (const s of list) {
+      const stCls = s.status === 'active' ? 'ok' : s.status === 'deprecated' ? 'warn' : '';
+      rows += `<tr>
+        <td class="mono">${esc(s.id)}<div class="hint" style="font-family:inherit">${esc(s.name || '')}</div></td>
+        <td class="mono">${esc(s.version)}</td>
+        <td>${esc(s.domain || '—')}</td>
+        <td>${badge(s.status, stCls)}</td>
+        <td class="mono" style="font-size:11px">${esc((s.providedBy || []).join(', ') || '—')}</td>
+        <td style="font-size:11px">${esc((s.permissions || []).join(', ') || '—')}</td>
+      </tr>`;
+    }
+    el.innerHTML = rows + '</table>';
+  }
+
+  function renderConnectors(list) {
+    const el = $('catalogConnectorsBody');
+    if (!list.length) { el.innerHTML = emptyRow('尚未声明任何连接器（POST /api/connectors 由 CLI/API 管理，监督台只读）'); return; }
+    let rows = '<table><colgroup><col style="width:24%"><col style="width:12%"><col style="width:36%"><col style="width:18%"><col style="width:10%"></colgroup><tr><th>连接器</th><th>状态</th><th>传输</th><th>能力</th><th>令牌</th></tr>';
+    for (const c of list) {
+      const stCls = c.status === 'connected' ? 'ok' : c.status === 'revoked' ? 'bad' : 'warn';
+      const endpoint = c.endpoint || (c.transport && c.transport.endpoint) || '';
+      const transport = c.command
+        ? 'stdio: ' + c.command + ((c.args && c.args.length) ? ' ' + c.args.join(' ') : '')
+        : (endpoint ? 'http: ' + endpoint : '—');
+      const caps = c.capabilities
+        ? (c.capabilities.tools || []).length + ' 工具 / ' + (c.capabilities.resources || []).length + ' 资源 / ' + (c.capabilities.prompts || []).length + ' 提示'
+        : '—';
+      rows += `<tr>
+        <td class="mono">${esc(c.name)}<div class="hint" style="font-family:inherit">${esc(c.id)}</div></td>
+        <td>${badge(c.status, stCls)}</td>
+        <td class="mono" style="font-size:11px;word-break:break-all">${esc(transport)}</td>
+        <td style="font-size:11px">${esc(caps)}</td>
+        <td>${c.hasToken ? badge('已配', 'ok') : badge('无', 'warn')}</td>
+      </tr>`;
+    }
+    el.innerHTML = rows + '</table>';
+  }
+
+  async function loadCatalog() {
+    const [skillsRes, connRes] = await Promise.allSettled([
+      api('GET', '/api/skills'),
+      api('GET', '/api/connectors'),
+    ]);
+    if (skillsRes.status === 'fulfilled') {
+      state.skillsCache = (skillsRes.value && skillsRes.value.skills) || [];
+      renderSkills(state.skillsCache);
+    } else {
+      const e = skillsRes.reason || {};
+      $('catalogSkillsBody').innerHTML = emptyRow(e.status === 404 ? '本进程未装配技能注册中心' : '技能目录加载失败：' + (e.message || e));
+    }
+    if (connRes.status === 'fulfilled') {
+      renderConnectors((connRes.value && connRes.value.connectors) || []);
+    } else {
+      const e = connRes.reason || {};
+      $('catalogConnectorsBody').innerHTML = emptyRow(e.status === 404 ? '本进程未装配连接器注册中心' : '连接器加载失败：' + (e.message || e));
+    }
+  }
+
+  // ===== 责任链（作战室，E9.3 只读；未装配/无编制时静默隐藏） =====
+  async function loadAccountability(id) {
+    const panel = $('accountabilityPanel');
+    const body = $('accountabilityBody');
+    if (!panel || !body) return;
+    let chain;
+    try {
+      chain = await api('GET', '/api/org/accountability/' + encodeURIComponent(id));
+    } catch (e) {
+      panel.hidden = true; // 404（未装配 orgRegistry / 未知意图）：该面不适用，隐藏。
+      return;
+    }
+    if (!chain) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const nodeRow = n => `<tr><td class="mono">${esc(n.agentId)}</td><td>${esc(n.role)}</td><td>${esc(n.title || '—')}</td><td>${esc(n.departmentName || n.departmentId || '—')}</td></tr>`;
+    let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">技能 <strong class="mono">' + esc(chain.skill || '—') + '</strong> · 结果状态 ' + badge(esc(chain.status || '—'), statusClass(chain.status || '')) + '</div>';
+    const exec = chain.executing || [];
+    if (exec.length) {
+      html += '<div style="font-size:12px;margin:6px 0 2px">执行 Agent（' + exec.length + '）</div>';
+      html += '<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:24%"><col style="width:36%"></colgroup><tr><th>Agent</th><th>角色</th><th>岗位</th><th>部门</th></tr>' + exec.map(nodeRow).join('') + '</table>';
+    }
+    const leads = chain.leads || [];
+    if (leads.length) {
+      html += '<div style="font-size:12px;margin:8px 0 2px">部门 lead（去重）</div>';
+      html += '<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:24%"><col style="width:36%"></colgroup><tr><th>Agent</th><th>角色</th><th>岗位</th><th>部门</th></tr>' + leads.map(nodeRow).join('') + '</table>';
+    }
+    const unassigned = chain.unassigned || [];
+    if (unassigned.length) {
+      html += '<div style="font-size:12px;margin:8px 0 2px;color:var(--warn)">无编制（不丢弃，单列）</div>';
+      html += '<div class="mono" style="font-size:12px">' + unassigned.map(esc).join('、') + '</div>';
+    }
+    if (chain.driver) {
+      const dr = chain.driver;
+      html += '<div style="font-size:12px;margin-top:8px">' + badge('裁决者', 'ok') + ' <span class="mono">' + esc(dr.escalationId || '—') + '</span> · 立场「' + esc(dr.stance || '—') + '」 · ' + fmtTime(dr.decidedAt) + '</div>';
+    }
+    body.innerHTML = html;
+  }
+
+  // ===== 决策回放（作战室，E1.6 只读 text；损坏记录/未装配时静默隐藏） =====
+  async function loadReplay(id) {
+    const panel = $('replayPanel');
+    const body = $('replayBody');
+    if (!panel || !body) return;
+    let text;
+    try {
+      text = await apiText('GET', '/api/intents/' + encodeURIComponent(id) + '/replay?format=text');
+    } catch (e) {
+      panel.hidden = true; // 404（未装配 orchestrator / 未知意图）/ 500（损坏记录 fail-loud）：不展示半截。
+      return;
+    }
+    if (!text || !text.trim()) { panel.hidden = true; return; }
+    panel.hidden = false;
+    body.innerHTML = '<pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--text-1)">' + esc(text) + '</pre>';
+  }
+
   // ===== 最近意图 =====
   function loadRecent() {
     try {
@@ -788,6 +1017,8 @@
       if (r) rememberIntent(r.intentId || id, r.skill, r.status);
       setConn(true);
       loadDag(id); // S3 DAG 视图（非阻塞；非 DAG 意图静默隐藏）
+      loadAccountability(id); // E9.3 责任链（未装配/无编制静默隐藏）
+      loadReplay(id); // E1.6 决策回放（未装配/损坏记录静默隐藏）
       if (r && r.status !== 'completed' && r.status !== 'failed' && r.status !== 'canceled') {
         startSse(id);
       } else {
@@ -815,6 +1046,8 @@
         // fan-out record either — GET /api/intents/:id/dag resolves it (S3).
         setConn(true);
         loadDag(id); // S3 DAG 视图（非阻塞；非 DAG 意图静默隐藏）
+        $('accountabilityPanel').hidden = true; // 未结算：无 FanOutResult 可投影
+        $('replayPanel').hidden = true;
         $('intentStatusBadge').textContent = '进行中';
         $('intentStatusBadge').className = 'st warn';
         $('intentIdLabel').textContent = id;
@@ -966,6 +1199,24 @@
       </div>`;
   }
 
+  // 决策后端状态徽章（GET /api/decision；未装配则不渲染）。追加在内核状态之后，
+  // renderState 每次轮询会先重置 stateBody，故此处 append 不会累积。
+  function renderDecision(d) {
+    const el = $('stateBody');
+    if (!el || !d) return;
+    const head = d.configured
+      ? badge('决策后端：' + (d.kind || '?') + (d.model ? ' · ' + d.model : ''), 'ok')
+      : badge('决策后端：rules-only（本地规则聚合，无外部模型）', 'warn');
+    const arb = d.arbitration || {};
+    const judge = d.judge || {};
+    const bits = ['仲裁 ' + (arb.enabled ? '开' : '关'),
+      'LLM-judge ' + (judge.enabled ? '开' + (judge.threshold != null ? '（门限 ' + judge.threshold + '）' : '') : '关')];
+    const div = document.createElement('div');
+    div.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
+    div.innerHTML = head + '<span class="hint" style="font-family:var(--mono)">' + esc(bits.join(' · ')) + '</span>';
+    el.appendChild(div);
+  }
+
   function renderMetrics(m) {
     const el = $('metricsBody');
     if (!m) { el.innerHTML = emptyRow(); return; }
@@ -996,12 +1247,16 @@
     if (!r) { el.innerHTML = emptyRow(); return; }
     const entries = (r.snapshot && r.snapshot.entries) || [];
     if (!entries.length) { el.innerHTML = emptyRow('名册为空（尚未注册任何执行 Agent）'); return; }
-    let rows = '<table><colgroup><col style="width:16%"><col style="width:14%"><col style="width:20%"><col style="width:12%"><col style="width:16%"><col style="width:22%"></colgroup><tr><th>主体</th><th>域</th><th>技能</th><th>状态</th><th>健康</th><th>注册时间</th></tr>';
+    let rows = '<table><colgroup><col style="width:14%"><col style="width:10%"><col style="width:17%"><col style="width:10%"><col style="width:12%"><col style="width:17%"><col style="width:20%"></colgroup><tr><th>主体</th><th>域</th><th>技能</th><th>状态</th><th>健康</th><th>注册时间</th><th>治理</th></tr>';
     for (const e of entries) {
-      const status = e.status === 'revoked' ? badge('已吊销', 'bad') : badge('active', 'ok');
+      const revoked = e.status === 'revoked';
+      const status = revoked ? badge('已吊销', 'bad') : badge('active', 'ok');
       const health = (e.health && e.health.status) || 'unknown';
       const hb = health === 'healthy' ? badge('healthy', 'ok') : health === 'sick' ? badge('sick', 'bad') : badge(health, 'warn');
-      rows += `<tr><td class="mono">${esc(e.name)}</td><td>${esc(e.domain)}</td><td>${esc((e.skills || []).map(s => s.id).join(', ') || '—')}</td><td>${status}</td><td>${hb}</td><td class="mono">${fmtTime(e.registeredAt)}</td></tr>`;
+      const gov = revoked
+        ? `<button class="btn small" data-act="reinstate-vassal" data-name="${esc(e.name)}">恢复</button>`
+        : `<button class="btn small danger" data-act="revoke-vassal" data-name="${esc(e.name)}">吊销</button>`;
+      rows += `<tr><td class="mono">${esc(e.name)}</td><td>${esc(e.domain)}</td><td>${esc((e.skills || []).map(s => s.id).join(', ') || '—')}</td><td>${status}</td><td>${hb}</td><td class="mono">${fmtTime(e.registeredAt)}</td><td>${gov}</td></tr>`;
     }
     el.innerHTML = rows + '</table>';
   }
@@ -1232,6 +1487,8 @@
       if (view === 'monitor') await loadMonitor();
       else if (view === 'oversight') await loadEscalations();
       else if (view === 'grants') await loadDomains();
+      else if (view === 'org') await loadOrg();
+      else if (view === 'catalog') await loadCatalog();
       else if (view === 'intent') await loadIntent(state.intentId);
       setConn(true);
     } catch (e) {
@@ -1246,6 +1503,11 @@
         $('escBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'grants') {
         $('grantListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+      } else if (view === 'org') {
+        $('orgBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+      } else if (view === 'catalog') {
+        $('catalogSkillsBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('catalogConnectorsBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'intent') {
         $('intentMeta').innerHTML = emptyRow('连接失败：' + esc(e.message));
       }
@@ -1261,7 +1523,9 @@
       api('GET', '/api/state'), api('GET', '/api/metrics'), api('GET', '/api/roster'),
       api('GET', '/api/domains'),
     ]);
-    renderState(s); renderMetrics(m); renderRoster(r); renderDomains(d);
+    let decision = null;
+    try { decision = await api('GET', '/api/decision'); } catch { decision = null; } // 未装配决策状态面时静默
+    renderState(s); renderDecision(decision); renderMetrics(m); renderRoster(r); renderDomains(d);
     renderRecent();
     try {
       await loadAudit();
@@ -1323,6 +1587,21 @@
           await loadDomains();
         } catch (e) { toast('吊销失败：' + e.message, 'bad'); }
       })();
+    } else if (act === 'revoke-vassal' || act === 'reinstate-vassal') {
+      const name = btn.getAttribute('data-name') || '';
+      const revoking = act === 'revoke-vassal';
+      const verb = revoking ? '吊销' : '恢复';
+      const warn = revoking ? '\n吊销对重新注册保持粘性；恢复是独立审计动作。' : '';
+      if (!window.confirm('确定' + verb + '执行 Agent「' + name + '」吗？' + warn)) return;
+      (async () => {
+        try {
+          if (revoking) await api('DELETE', '/api/vassals/' + encodeURIComponent(name));
+          else await api('POST', '/api/vassals/' + encodeURIComponent(name) + '/reinstate');
+          toast('已' + verb + ' ' + name, 'ok');
+          const r = await api('GET', '/api/roster');
+          renderRoster(r);
+        } catch (e) { toast(verb + '失败：' + e.message, 'bad'); }
+      })();
     }
   });
 
@@ -1377,6 +1656,11 @@
   $('afKeyword').addEventListener('input', function () {
     state.auditFilter.keyword = this.value.trim();
     if (state.auditLast) renderAudit(state.auditLast);
+  });
+
+  // ===== 目录：技能状态前端过滤 =====
+  $('catSkillStatus').addEventListener('change', function () {
+    if (state.skillsCache) renderSkills(state.skillsCache);
   });
 
   function startPoll() {
