@@ -400,6 +400,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             return { ...result, layers: topologicalLayers(spec.nodes) };
           } catch (thrown) {
             if (thrown instanceof DagValidationError) return error(reply, 400, 'invalid_dag', thrown.message);
+            if (thrown instanceof DomainError) return mapKernelError(reply, thrown);
             throw thrown;
           }
         }
@@ -486,7 +487,16 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
               }
             : {}),
         };
-        const result = await deps.orchestrator!.fanOut(fanOutRequest);
+        let result;
+        try {
+          result = await deps.orchestrator!.fanOut(fanOutRequest);
+        } catch (thrown) {
+          // A domain error is the caller's problem, not ours: an idempotency key
+          // reused with different fields is a conflict (409), never a 500.
+          // Anything else keeps propagating so a real bug still surfaces as one.
+          if (thrown instanceof DomainError) return mapKernelError(reply, thrown);
+          throw thrown;
+        }
         reply.code(200);
         return result;
       });

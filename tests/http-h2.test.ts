@@ -401,3 +401,53 @@ describe('HTTP H2 driver API — metrics', () => {
     expect(snap.perVassal.atlas.failureRate).toBe(1);
   });
 });
+
+describe('HTTP H2 POST /api/intents — idempotency error classification (audit B-38)', () => {
+  let app: FastifyInstance | undefined;
+  afterEach(async () => {
+    await app?.close();
+    app = undefined;
+  });
+
+  it('reports a reused idempotency key with different fields as 409 conflict, not 500', async () => {
+    const harness = await driverServer({ loom: okResult('loom') }, ['loom']);
+    app = harness.app;
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/intents',
+      headers: AUTH,
+      payload: { intentId: 'dup-key-1', skill: 'research', realm: 'personal', params: { q: 'A' }, vassals: ['loom'] },
+    });
+    expect(first.statusCode).toBe(200);
+    const again = await app.inject({
+      method: 'POST',
+      url: '/api/intents',
+      headers: AUTH,
+      payload: { intentId: 'dup-key-1', skill: 'research', realm: 'personal', params: { q: 'B' }, vassals: ['loom'] },
+    });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toMatchObject({ error: 'conflict' });
+    expect(String(again.json().detail)).toContain('already registered');
+  });
+
+  it('replays the stored result for the same key and payload without dispatching again', async () => {
+    let calls = 0;
+    const harness = await driverServer(
+      {
+        loom: async () => {
+          calls += 1;
+          return okResult('loom');
+        },
+      },
+      ['loom'],
+    );
+    app = harness.app;
+    const payload = { intentId: 'replay-1', skill: 'research', realm: 'personal', params: { q: 'A' }, vassals: ['loom'] };
+    const first = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
+    const again = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
+    expect(first.statusCode).toBe(200);
+    expect(again.statusCode).toBe(200);
+    expect(again.json().runId).toBe(first.json().runId);
+    expect(calls).toBe(1);
+  });
+});
