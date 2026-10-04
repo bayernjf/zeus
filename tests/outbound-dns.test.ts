@@ -30,6 +30,19 @@ function runLookup(
   });
 }
 
+/** Invoke the lookup the way net.connect does under autoSelectFamily (all:true). */
+function runLookupAll(lookup: LookupFunction, host: string): Promise<LookupAddress[]> {
+  return new Promise((resolve, reject) => {
+    lookup(host, { all: true }, (err, address) => {
+      if (err) return reject(err);
+      if (typeof address === 'string') {
+        return reject(new Error('expected LookupAddress[] but got a scalar address'));
+      }
+      resolve(address);
+    });
+  });
+}
+
 describe('refusedReasonForResolved', () => {
   it('reports no reason when every address is public', () => {
     expect(
@@ -144,6 +157,34 @@ describe('createGuardedLookup', () => {
     });
     await expect(runLookup(lookup, 'example.com')).rejects.toThrow('dns unavailable');
   });
+
+  it('returns the full address array when called with all:true', async () => {
+    const lookup = createGuardedLookup({
+      resolveAll: resolverFor([addr('93.184.216.34'), addr('2606:2800::1')]),
+    });
+    await expect(runLookupAll(lookup, 'example.com')).resolves.toEqual([
+      { address: '93.184.216.34', family: 4 },
+      { address: '2606:2800::1', family: 6 },
+    ]);
+  });
+
+  it('returns the full array for an allowlisted host under all:true', async () => {
+    const lookup = createGuardedLookup({
+      resolveAll: resolverFor([addr('10.5.6.7'), addr('10.5.6.8')]),
+      allowHosts: ['internal.example'],
+    });
+    await expect(runLookupAll(lookup, 'internal.example')).resolves.toEqual([
+      { address: '10.5.6.7', family: 4 },
+      { address: '10.5.6.8', family: 4 },
+    ]);
+  });
+
+  it('fails closed under all:true when any resolved address is private', async () => {
+    const lookup = createGuardedLookup({
+      resolveAll: resolverFor([addr('93.184.216.34'), addr('10.0.0.1')]),
+    });
+    await expect(runLookupAll(lookup, 'evil.example')).rejects.toThrow(/RFC1918/);
+  });
 });
 
 describe('guarded dispatcher (loopback integration)', () => {
@@ -157,6 +198,33 @@ describe('guarded dispatcher (loopback integration)', () => {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/healthz`, {
         dispatcher: createOutboundDispatcher(),
+      } as RequestInit);
+      expect(res.status).toBe(200);
+      expect(await res.text()).toBe('ok');
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  // Regression: Node 22 enables autoSelectFamily, so net.connect calls a custom
+  // lookup with options.all=true and expects a LookupAddress[] back. A hostname
+  // (unlike an IP literal, which skips lookup entirely) must therefore resolve
+  // through the array contract — returning the scalar form makes undici read
+  // address=undefined and fail with ERR_INVALID_IP_ADDRESS. Caught by the Docker
+  // acceptance run against a host.docker.internal mock agent (2026-10-04).
+  it('connects to a hostname under the all:true lookup contract', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('ok');
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const dispatcher = createOutboundDispatcher({
+        resolveAll: resolverFor([addr('127.0.0.1')]),
+      });
+      const res = await fetch(`http://guarded-host.test:${port}/healthz`, {
+        dispatcher,
       } as RequestInit);
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('ok');
