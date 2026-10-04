@@ -8,7 +8,7 @@
 | --- | --- |
 | 知道 Zeus 是什么、愿景与设计哲学 | [product-portrait.md](product-portrait.md) ★ |
 | 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) v0.14 ★（11 个能力域 × 78 条 HTTP 路由 × 4 类 CLI（终端面板 13 类命令）× 120 条 export 语句（运行时 213 个导出）；含「已实现但未接线」专节，2026-10-03 Active work 107 后为 **0 项**；2026-10-03 随 Active work 110 更新 TUI 意图识别命令面；2026-10-04 随 Active work 113–115 更新 CORS / Web 监督台 / fan-out §7；同日随 Active work 117 记容器四项验收与出站 lookup `all:true` 修复，基线 1109/102；同日随 Active work 118 记 Web 监督台 v1.3（审计过滤/趋势/徽标/回写），基线 1109/102 不变；同日随 Active work 119 记 Web 监督台 v1.4（决策回放/责任链/组织/目录/名册治理/决策徽章，零新路由），基线 1109/102 不变） |
-| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.7（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）；§6「注释承诺了代码没做的事」中 `startServer()` 一行已于 2026-10-02 闭合；**§4.2 row3 的数据二极管收缩已于 2026-10-03 修复闭合**（Active work 103：policy×origin 判档、`realmHitsOrigin`、两条审计值）） |
+| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.8（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）；§6「注释承诺了代码没做的事」中 `startServer()` 一行已于 2026-10-02 闭合；**§4.2 row3 的数据二极管收缩已于 2026-10-03 修复闭合**（Active work 103：policy×origin 判档、`realmHitsOrigin`、两条审计值）） |
 | 查看需求拆解、优先级与验收标准 | [prd.md](prd.md) ★ |
 | 梳理 Agent 技术议题与探索优先级 | [tech-exploration-map.md](tech-exploration-map.md) ★ |
 | 理解多 Agent 记忆如何沉淀与整理 | [design-memory-consolidation.md](design-memory-consolidation.md) |
