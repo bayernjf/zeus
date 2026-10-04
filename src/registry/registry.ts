@@ -32,6 +32,25 @@ export type VassalStatus = 'unknown' | 'active' | 'revoked';
  *  them to different codes. */
 export class CardFetchError extends Error {}
 
+/**
+ * Unwrap a transport failure to its actionable cause. undici wraps every
+ * connection-level error in a bare `TypeError: fetch failed` whose real reason
+ * (ECONNREFUSED, the outbound guard's EZEUSOUTBOUND, ERR_INVALID_IP_ADDRESS …)
+ * sits on `.cause`; reporting only the wrapper leaves the operator unable to
+ * tell "host refused by the SSRF guard" from "nothing listening there". Walk a
+ * short chain and prefer the first member carrying an error code; fall back to
+ * the top-level message when none does.
+ */
+export function describeTransportError(e: unknown): string {
+  let cur: unknown = e;
+  for (let depth = 0; depth < 4 && cur instanceof Error; depth += 1) {
+    const code = (cur as { code?: string }).code;
+    if (code) return `${code} ${cur.message}`.trim();
+    cur = (cur as { cause?: unknown }).cause;
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
 /** A-02: a revocation is sticky, so re-registering a revoked name is refused
  *  rather than silently clearing the revocation and swapping the outbound URL
  *  and credential. Restoring a vassal is a separate, explicit act (reinstate). */
@@ -102,8 +121,10 @@ export class VassalRegistry {
     } catch (e) {
       // A connection-level failure never reaches the status check below, and the
       // underlying message (undici says just "fetch failed") names no URL — the
-      // operator has to be told which host we could not reach.
-      const reason = e instanceof Error ? e.message : String(e);
+      // operator has to be told which host we could not reach and why (the real
+      // reason is on the cause chain: refused by the outbound guard, connection
+      // refused, bad address, …).
+      const reason = describeTransportError(e);
       throw new CardFetchError(`card fetch failed: ${reason} (${cardUrl})`);
     }
     if (!response.ok) throw new CardFetchError(`card fetch failed: ${response.status} ${cardUrl}`);
@@ -281,7 +302,7 @@ export class VassalRegistry {
       // then lands in the state file and inside the signed roster snapshot. Bound
       // and flatten it first, so an unbounded, multi-line or control-character
       // reason cannot bloat or corrupt either artifact.
-      const reason = error instanceof Error ? error.message : 'fetch failed';
+      const reason = describeTransportError(error);
       ok = false;
       entry.lastHealthCheck = { at: this.now().toISOString(), ok: false, detail: sanitizeProbeDetail(reason) };
     }

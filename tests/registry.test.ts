@@ -200,6 +200,22 @@ describe('VassalRegistry', () => {
     expect(err.message).toContain('http://gone.internal/api/a2a/agent-card');
   });
 
+  it('surfaces the undici cause code so the transport reason is diagnosable', async () => {
+    // undici wraps connection errors as TypeError("fetch failed") with the real
+    // reason (outbound guard, ECONNREFUSED, …) on `.cause`. The operator-facing
+    // message must carry that code rather than only the opaque wrapper.
+    const cause = Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8899'), {
+      code: 'ECONNREFUSED',
+    });
+    const registry = new VassalRegistry(async () => {
+      throw Object.assign(new TypeError('fetch failed'), { cause });
+    });
+    const err = await registry.register('http://gone.internal/api/a2a/agent-card').catch(e => e);
+    expect(err).toBeInstanceOf(CardFetchError);
+    expect(err.message).toContain('ECONNREFUSED');
+    expect(err.message).toContain('http://gone.internal/api/a2a/agent-card');
+  });
+
   it('revokes a vassal so lookups and skill routing stop matching', async () => {
     const registry = new VassalRegistry(async () => cardResponse(prHelperCard()));
     await registry.register('http://vassal.internal/api/a2a/agent-card');

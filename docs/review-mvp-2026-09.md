@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.23，2026-10-03，评审对象：Active work 105–110（HEAD `66911d7`，与 origin/dev 同步）：核心 MVP ✅ / 可上线 ❌ 维持。本轮在 Windows 本机重新取证（pull 后工作树 = origin/dev）：全量 1099 总量 / 1073 绿 / 26 失败 / 101 文件（26 失败逐文件核对为既有三族，无逻辑失败；基线 1048 → 1099）、冒烟 31/36（5 步失败 = 0600 chmod ×2 + SIGTERM 连锁 ×3，Windows 家族）、doc-consistency 11/11、build/typecheck exit 0。本批实现 **E2.6 意图识别**（操作者 HTTP 面 + TUI `i`/`im` 命令，PRD 需求行 54 → 55）、收口 deferred #33 执行授权票据（execute/plan 模式 + 派发闸门 fail-closed + 真进程验收资产，剩 A2A `x-zeus-*` 投递字段挂对端）、裁定 #18/#19/#21 方向固化、登记 #40 反思闭环（不独立立项）；「已实现但未接线」**0 项**。出货件已大动，镜像容器级四项本轮无新证据（§F）。上一条 v0.22（2026-10-03，对象 Active work 104 / `7499dce`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
+> 状态：**现行（评审报告 v0.25，2026-10-04，评审对象：Active work 117（v0.24 之后的工作树，含出站 lookup 修复）：核心 MVP ✅ / 可上线 ❌ 维持，但可上线证据首次实质增强。本轮不是全量重评，而是补齐 v0.24 §F 挂着的容器级/复跑证据：全量 1109 总量 / 1109 绿 / 0 失败 / 102 文件（较 v0.24 +5）、冒烟 37/37、doc-consistency 11/11、typecheck/build exit 0；签名链 `verify:roster --card` 卡片深比对真机正/反例补证双 PASS；容量基线用 git worktree 同机对照证 fan-out §7 无回归（capacity-baseline 升 v0.4）；**Docker 容器级四项（healthy / `/data` 0600 / SIGTERM 落盘 / 重启恢复并端到端派发 completed）首次在当前出货件上全证据 PASS**。容器验收抓到并修复一个生产关键路径缺陷——出站 guarded lookup 未遵守 Node 22 autoSelectFamily 的 `options.all=true` 数组回调契约，导致所有按主机名（域名，非裸 IP）连接执行 Agent/seed 的出站请求失败（IP 字面量不触发自定义 lookup，故冒烟/单测/集测全漏）；修复后 +5 测试（含主机名真实建连回归），并补 `describeTransportError()` 透出 undici cause 错误码。「已实现但未接线」**0 项**，PRD 需求行状态无翻转（55 行 / P0 26/26 / 非 P0 未闭合 8 条同集合）。可上线仍 ❌，剩余为仓库外动作（真实公网部署、RSK 私钥托管与公钥带外公告 deferred #7、Zeus↔loom 联调、≥3 真实 Agent 的背压阈值、真实规模取证）。上一条 v0.24（Active work 111–115，HEAD `c7b5778`，与 origin/dev 同步）在 macOS 本机重新取证（工作树 = origin/dev）：全量 1104 总量 / 1104 绿 / 0 失败 / 102 文件、冒烟 37/37、doc-consistency 11/11、typecheck/build exit 0，三条验收脚本（execute-delegation 9/9、intent-recognize 7/7、tui-recognize 7/7）与 113–115 批关键面定向 58/58 均本机实测。本批实现 **Web 监督台 v1/v1.1/v1.2**（CORS 传输层 + 四视图 + 派发作战室 + SSE 实时 + DAG + 意图识别入口）与 **fan-out §7 运行中分支中断原语**（AbortSignal 真取消 + branch-aborted 审计）；评审抓到 1 处文档滞后（feature-inventory 状态行停在 v0.9 未记 113–115 批）当日修掉（升 v0.10、基线 1099/101 → 1104/102）。「已实现但未接线」**0 项**。出货件再动，镜像容器级四项本轮无新证据（§F）。上一条 v0.23（2026-10-03，对象 Active work 105–110 / `66911d7`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机执行 Agent 部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -304,6 +304,120 @@
 - **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为意图识别面与授权收口，不改变上线判定。
 - **未跑（如实记）**：Docker 镜像实构实跑（§F）、真机扇出与生产栈联调（外部条件）、本批 push 后的 CI（由用户决定 push 时点）。
 - **补跑（2026-10-03 收尾）**：三个验收脚本已在本机（Windows）复跑——`verify:execute-delegation` **9/9**、`verify:intent-recognize` **7/7**；`verify:tui-recognize` 复跑**当场抓出一条可移植性缺陷**：脚本用 `join(REPO, 'dist/tui/…')` 的裸盘符路径喂给动态 `import()`，Node ESM loader 在 Windows 上拒绝 `c:` scheme（macOS/Linux 的 POSIX 路径恰好被容错），已修为 `pathToFileURL(...).href`（连同注释说明），修后 **7/7**。typecheck/build 复跑 exit 0。**结论升级：v0.23 的判定不再依赖"另一会话记录"，三个验收面均本机实测。**
+
+## v0.25 补证（2026-10-04，评审对象：Active work 117（HEAD 为 v0.24 之后的工作树，含出站 lookup 修复）：**核心 MVP ✅ / 可上线 ❌ 维持，但可上线证据首次实质增强**；本轮不是新一轮全量重评，而是补齐 v0.24 §F 挂着的容器级/复跑证据，取证过程中抓到并修复一个影响真实域名部署的生产关键路径缺陷）
+
+> 本轮定位：v0.24 §H 明确标注"未跑 Docker 镜像实构实跑（§F）"，§F 挂着容器级四项"无新证据"。本轮把评审 §F 三项纯库内/本机取证一次做完（签名链验链复跑、容量基线 §7 后同机对照、Docker 容器级四项），其中容器实构实跑抓到一个单测/冒烟/既有集成测试都看不见的真实缺陷并修复。方法仍是本机亲手取证、不采信转述。
+
+### A. 验证基线（本机实跑）
+
+| 项 | 读数 | 备注 |
+| --- | --- | --- |
+| `npm test` | **1109 总量 / 1109 绿 / 0 失败 / 102 文件** | 较 v0.24 的 1104/102 **+5**（outbound-dns +4、registry +1），文件数不变 |
+| `npm run typecheck` / `npm run build` | 各自 **exit 0** | 修复后重编译 |
+| `npm run smoke:core` | **37/37** | 未受影响（smoke 连 127.0.0.1，见 §C 为何漏掉本 bug） |
+| `tests/doc-consistency.test.ts` | **11/11** | 基线同步篇首/Current state/代码索引/README 两处/checklist 至 1109/102 |
+| Docker | `zeus:0.1.0` 多阶段构建 exit 0，容器实跑见 §D | 最终镜像已用含全部修复的代码重建 |
+
+### B. 三项补证（v0.24 §F / 取证缺口）
+
+1. **签名链验链复跑（`verify:roster`）**：冒烟 37 步已覆盖 public 封签信封（VERIFIED + 过期 maxAge 拒绝）、internal roster（含 revoked 行）离线验签、重启后可验、公钥字节与 JWK 指纹三处一致；唯一未覆盖的 **`--card name=PATH` 卡片深比对**（R2 客户端验签工具重算卡片摘要、不匹配即 REJECTED）用一次性真服务脚本（gen-rsk-key → dist 真进程 + 真 socket mock agent → 注册 → bearer 拉 internal roster 存盘 → 拉原始 card → `verify-roster --card`）补跑：**正例 card digests match / VERIFIED；篡改 `x-zeus-fealty.swornTo` 反例 exit 1 MISMATCH REJECTED，双 PASS**。
+2. **容量基线 §7 后同机对照（capacity-baseline 升 v0.4）**：§7 内核改动在 `496d16b`。用 `git worktree` 在 §7 前 `1b6582a` 与 HEAD 上**同机相邻交替各跑两次**（直接 `node scripts/bench-capacity.mjs --json`）。结论 **§7 无可测量容量回归**：B 场景吞吐（intents/秒）@8 pre=129/130 vs HEAD=127、@16 pre=214/217 vs HEAD=225、@32 pre=283/332 vs HEAD=263（差异全在 bench ±15% 方差内，pre 两次自身抖 17%）；D 取消吞吐 HEAD 干净值不低于 pre；正确性不变量全部保持（`finishedBranches===total`、mock farm 实收 240 个 tasks/cancel 零丢失零重复）。一次与 docker build 并发的污染跑显著偏低，作废重跑。文档新增跨版本对照方法论（墙钟绝对值跨机不可比、worktree 同机空闲各 ≥2 次、只取比值 + 不变量、污染跑作废）。
+3. **Docker 容器级四项（首次全证据，见 §D）**。
+
+### C. 本轮抓到并修复的生产关键路径缺陷：出站 guarded lookup 的 `all:true` 契约缺失
+
+- **现象**：容器首次起 seed 连 `host.docker.internal` 拒启，错误仅为无信息的 `card fetch failed: fetch failed`。容器内用 dist 的 `guardedFetch` 打完整 cause 链定位到 `ERR_INVALID_IP_ADDRESS: Invalid IP address: undefined`。
+- **根因**：Node 22 默认启用 autoSelectFamily，undici/net 以 **`options.all=true` 调自定义 connect lookup 并期望回调 `LookupAddress[]` 数组**；`createGuardedLookup`（`src/util/outbound-dns.ts`）无视 options 始终回标量 `(err, address, family)`，net 把标量当数组读 → address=undefined。
+- **影响面判定（与上线相关，重点）**：**所有按主机名（域名，而非裸 IP 字面量）连接执行 Agent / seed / MCP 的出站请求，在 Node 22 下全部失败**。真实部署几乎必然用域名，故这是真实部署关键路径缺陷，而非边角。修复前若直接上线，内核将无法注册任何以域名声明的外部执行 Agent。
+- **为何三道防线都漏掉**：`smoke:core` 全连 `127.0.0.1`（IP 字面量，net 直接连接、不触发自定义 lookup）；既有集成测试也只连 127.0.0.1；lookup 单测只断言标量回调、从不经过真实 net.connect 的 all:true 路径。**只有容器经主机名连宿主才暴露**——这正是 v0.24 §F"容器级四项无新证据"所代表的覆盖盲区的具体代价。
+- **修复**：lookup 遵守 `options.all`（all:true 回全部通过守卫的地址数组、all:false 回首个标量；保持"任一解析地址落私有/保留段即整主机拒绝"的 fail-closed 语义，不挑好地址）。TDD：先写主机名经 mock resolver 解析到 127.0.0.1 的真实 undici 建连回归，确认**变红**（`Invalid IP address: undefined`）再修绿。顺带补可观测性：新增 `describeTransportError()` 走 undici `.cause` 链取首个带 code 的错误（EZEUSOUTBOUND/ECONNREFUSED/ERR_INVALID_IP_ADDRESS），接入 `register()` 与 `healthCheck()` 的 transport catch——此前拒启只显示 "fetch failed"，运维无法区分守卫拦截/无监听/地址错误。新增 5 测试（outbound-dns +4 含主机名真实建连与 all:true 三态、registry +1 cause code 透传）。
+- **连带文档修正**：`docs/deployment.md` §2 env 表原"非 IP 字面量主机名一律放行（DNS 重绑定见 deferred）"为过期表述（deferred #35 已在 Active work 104 销项，DNS 解析层守卫已默认装配），改为准确的两层守卫说明；§4.3 新增"容器内连宿主/私网对端必须配 `ZEUS_OUTBOUND_ALLOW_HOSTS`"。
+
+### D. Docker 容器级四项：首次全证据（修复后全 PASS）
+
+多阶段 `zeus:0.1.0`（node:22-slim，runner uid 1000、VOLUME /data、HEALTHCHECK 打 /healthz）。密钥容器内经挂载卷生成（私钥 0600），宿主 mock agent 经 `host.docker.internal` + `ZEUS_VASSAL_SEEDS` 接入，`ZEUS_OUTBOUND_ALLOW_HOSTS=host.docker.internal` 放行。
+
+| 项 | 结果 |
+| --- | --- |
+| (a) healthy | `Up (healthy)`；seed 注册 a1:active、realm/审计/生产密钥正常、listening；healthz 200；internal roster 无 token 401、带 token 200、seal keyId=docker-accept |
+| (b) `/data` 0600 | kernel-state.json / audit.jsonl / rsk.key 均 `-rw-------` |
+| (c) SIGTERM 落盘 | `docker stop` 0.179s，日志 `SIGTERM received, draining…` → `kernel state saved`，无 10s 强杀 |
+| (d) 重启恢复 | `docker start` 日志 `restored kernel state … (vassals=1…)`、roster 仍 a1:active；**重启后 POST /api/intents 派发 → a1:completed 端到端走通**（直接证明 all:true 修复在容器 + 主机名场景生效）；dispatch 审计落盘 1 条 |
+| 生产守卫（附加） | NODE_ENV=production 无 RSK 钥 → exit 1 拒启 |
+
+boot seed/realm 连接不产生审计事件、运行时 dispatch 才审计——设计如此，非缺陷。
+
+### E. MVP 判定（本轮）
+
+- **产品核心「完全可用」MVP：✅ 维持**。P0 26/26 不回退；本批为取证 + 缺陷修复，不翻任何 PRD 需求行状态（仍 55 行 / 非 P0 未闭合 8 条同集合）。
+- **可上线交付真实用户：❌ 维持，但证据结构改善**。改善：容器级四项自 v0.19 以来首次在当前出货件上全证据 PASS，且端到端覆盖了"容器经主机名注册外部执行 Agent → 重启恢复 → 派发 completed"这条最接近真实部署的链路；§C 缺陷修复后，域名出站这一真实部署关键路径由"实际会坏且无证据"变为"已修复 + 有主机名真实建连回归锁死 + 容器端到端验证"。仍未达成的仓库外项不变：真实域名/公网部署、RSK 私钥托管与公钥指纹带外公告（deferred #7）、Zeus↔loom 生产栈联调、需 ≥3 真实 Agent 的背压阈值标定（deferred #9）、真实规模（单 Realm >2 万文件 / P50>500ms）取证。
+- **方法论结论**：本轮再次验证 v0.4 原判被反复证伪的教训——"库内测试全绿"不覆盖"按产品自己的部署文档跑起来"。容器经主机名连外部对端是 IP 字面量测试的结构性盲区，现已用容器四项 + 主机名建连回归补上；建议把"容器经主机名 seed 注册并端到端派发"纳入 CI image-smoke 的候选（当前 image-smoke 只含构建 + 镜像内两项冒烟，不含跨容器主机名出站）。
+
+### F. 本轮限制（如实记）
+
+- 容器四项在 macOS + Docker Desktop（host.docker.internal → 192.168.65.254）取证；Linux 生产容器编排（compose/k8s、真实域名 + 公网 DNS、TLS）未验。
+- mock agent 为本机自造一次性脚本（在 /tmp，未入库），非真实 pr-helper/loom；真实外部执行 Agent 的容器内联调属仓库外项。
+- 容量对照为同机 mock 回环，墙钟绝对值机器相关，结论只取"§7 无回归"的比值与不变量；真机并发阈值仍待 deferred #9。
+- 本批 +5 测试未在 Windows 复跑（Windows 环境性三族口径沿用 handoff，CI Linux 为准）。
+- 未跑：push 后云端 CI（由用户决定 push 时点）、浏览器真机 E2E、真实域名公网部署。
+
+## v0.24 复核（2026-10-04，评审对象：Active work 111–115（HEAD `c7b5778`，与 origin/dev 同步）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批实现 **Web 监督台 v1/v1.1/v1.2**（CORS 传输层 + 四视图 + 派发作战室 + SSE 实时 + DAG 视图 + 意图识别入口，浏览器真机 E2E 全链路）与 **fan-out §7 运行中分支中断原语**（`AbortSignal` 真取消 + `branch-aborted` 审计 + `canceled by the driver` 结算，tui-tokens 补语义 token）；**抓到 1 处文档滞后当日修掉**（feature-inventory 状态行停在 v0.9 未记 113–115 批，升 v0.10，基线 1099/101 → 1104/102））
+
+> 本轮方法沿用 v0.17 之后的规矩：**上一轮记录不作依据**，判定里含动词的条目重新取证。本轮在 **macOS 本机**取证（工作树 = origin/dev = `c7b5778`），全量/冒烟/验收脚本全部本机实跑；Windows 口径引用 handoff 记录（1078 绿 / 26 环境性失败三族）并标注**未在本轮重跑**。
+
+### A. 验证基线（本机实跑，非转述）
+
+| 项 | 读数 | 备注 |
+| --- | --- | --- |
+| 基线 HEAD / 工作树 | `c7b5778`，工作树干净 | `origin/dev..HEAD` = `0 0`（先核再评） |
+| `npm run typecheck` / `npm run build` | 各自 **exit 0** | 先 build 后测试（`tests/*` 与 `scripts/*` 引用 `dist/`） |
+| `npm test` | **1104 总量 / 1104 绿 / 0 失败 / 102 文件** | macOS 本机全量实跑；1104/102 与 handoff 活基线一致 |
+| `npm run smoke:core` | **37/37 steps passed** | macOS 本机实跑 |
+| `tests/doc-consistency.test.ts` | **11/11** | 实跑 |
+| `node --check`（web JS） | 通过 | HTML 内联 script 提取后逐段 `node --check`（直接对 HTML 文件会报语法错误，须按 Active work 114 的做法下沉提取） |
+| 定向复跑（113–115 批关键面） | **58/58** | `http-cors` + `tui-tokens` + `orchestrator` + `dispatcher` 四文件定向全绿 |
+
+### B. 需求覆盖：机械核对，不读叙述
+
+- `docs/prd.md` 需求行 **55 行**（`^\| E[\d.]+ \|` 计数），机械分类：**P0 26/26 ✅**（feature-inventory §1 断言 + 抽查）。
+- 非 P0 未闭合 **8 条**：`E3.4`、`E3.8`、`E4.9`、`E4.10`、`E5.4`、`E8.4`、`E9.4`、`E10.2`——**与 v0.23 同集合**，既无新增也未回退；本批（113–115）未翻任何需求行状态（Web 监督台与 §7 均为既有能力接线/补强，不新增 PRD 行）。
+- feature-inventory「已实现但未接线」：**0 项**（维持）；路由 **78** / export 语句 **120** / TUI 命令 **13** 类——三段断言读数未因本批变化（Web 面走 HTTP 端点，不加路由；§7 走既有 `POST cancel`）。
+
+### C. 本批实现（一）：Web 监督台 v1/v1.1/v1.2（Active work 113/114/115 之 Web 侧）
+
+- **CORS 传输层**（`src/http/server.ts` + `serve.ts`）：`corsOrigins?: string[]` 精确 Origin 白名单回显 + `Vary: Origin` + OPTIONS 预检 204（默认关闭，`ZEUS_CORS_ORIGINS` 逗号分隔 trim 装配）。`tests/http-cors.test.ts` 4 例实跑 4/4。
+- **单文件 Web 监督台**（`web/supervisor/index.html`）：hash 路由四视图（监控 / 裁决 / 授权 / 连接）；写操作全部二次确认；轮询 10s 开关；内联 SVG favicon；≤760px 响应式。v1.1 加派发表单 → 作战室详情 → SSE 实时增量 → 取消；v1.2 加 DAG 分层视图 + 关键路径徽标 + 意图识别入口（命中预填派发表单）+ SSE 指数退避重连（2s×2^n 上限 30s）。
+- **代码级核对（关键主张）**：分支状态渲染修复 `b.state || (b.ok ? 'completed' : 'failed')` 在位；`loadDag` 在 404 分支也触发（非 DAG 意图静默隐藏）；SSE 重连退避与重置逻辑在位。**浏览器真机 E2E 是本批主要证据源，但属于另一会话/本会话外的 GUI 实测——本轮如实标注：未在本轮重跑浏览器 E2E（依赖浏览器自动化环境），以代码级核对 + 测试 + 真进程冒烟覆盖。**
+
+### D. 本批实现（二）：fan-out §7 运行中分支中断原语（Active work 115 内核侧）
+
+- `DispatchRequest.signal?: AbortSignal`（dispatcher.ts 条件透传，exactOptionalPropertyTypes 兼容）；catch 按 `request.signal?.aborted` 区分审计决策 `'branch-aborted'` vs `'dispatch-failed'`，`AUDIT_DECISIONS` 增 `'branch-aborted'`（dispatcher.ts L58 在位）。
+- orchestrator `branchSignals = Map<intentId, Map<vassal, AbortController>>` 与 inFlight 分存；`cancelIntent` cancellable 过滤改 `!isTerminalState && ((branch.ok && branch.taskId) || liveSignals?.has(vassal))`；abort 后分支结算 `state:'canceled'` + `reason:'canceled by the driver'`（L518 在位）。
+- **验证**：定向 orchestrator + dispatcher 测试 52/52（本轮实跑）；tui-tokens 补 `branch-aborted: 'warning'` 后定向 6/6；全量无回归（1104/102）。
+
+### E. 本批抓到并修复的缺陷（评审范围内核对）
+
+- **SSE hijack 丢 CORS 头（Active work 114 当日修复，代码在位）**：`reply.hijack()` 后 `raw.writeHead` 覆盖全局 onRequest hook 的 CORS 头，`GET /api/intents/:id/events` 被浏览器 CORS 拦。修复：writeHead 前按白名单重查 Origin 补 `Access-Control-Allow-Origin` + `Vary`（server.ts L550–551）。`http-cors.test.ts` 4/4 仍绿。
+- **tui-tokens 缺 `branch-aborted` 映射（Active work 115 当日修复）**：`AUDIT_DECISIONS` 新增但 token 未映射，`tests/tui-tokens.test.ts :: maps every audit decision` 红；补映射后定向 6/6（本轮实跑）。
+- **本评审（v0.24）抓到 1 处文档滞后并当日修复**：feature-inventory 状态行停在 v0.9（2026-10-03，Active work 110 之后），**未记录 Active work 113–115 任何更新段**，状态行结尾基线 1099/101 落后活基线 1104/102；§2 入口表 Web 监督台行与 §1 计数（55 行 / P0 26/26 / 非 P0 8 条）已由 113 批同步、未被波及。修复：状态行升 **v0.10**，补 113–115 更新段（CORS + 四视图 + §7 + token），基线改 1104/102。doc-consistency 11/11 复跑仍绿。
+
+### F. 部署镜像：本轮未重拍（出货件又动）
+
+- 113–115 批改了 `src/http/server.ts` / `src/dispatch/dispatcher.ts` / `src/orchestrator/orchestrator.ts` / `src/tui/tokens.ts` / `web/supervisor/index.html`，出货件再动，按先例容器级结论不继承上一轮。
+- 容器级运行属性（healthy、`/data` 0600、SIGTERM 落盘、重启恢复）四项对本批**无新证据**；CI `image-smoke`（构建 + 镜像内两项冒烟）覆盖面不含上述四项；本机本轮未做 docker 实构实跑（同 v0.23 口径）。
+
+### G. 功能性 / 完整度 / 可上线（三维判定）
+
+- **功能性**：P0 26/26 ✅、无已知 P0 未闭合；操作者从"API 端点 + TUI 命令"扩展出**浏览器 Web 监督台**这一真实操作入口，派发 → 观察（SSE 实时 / DAG）→ 中断（§7 真取消）闭环成型。
+- **完整度**：§7 补上运行中分支中断这一最后的能力空白（v1.1 曾如实呈现"取消空操作"边界，v1.2 以 AbortSignal 收口）；「已实现但未接线」维持 **0 项**。
+- **可上线**：**❌ 未达成**。剩余项仍是仓库外动作（真机部署、密钥托管与带外公告、生产栈联调、外部消费方接入）与需真实规模的阈值标定，同 v0.23 §G。
+
+### H. MVP 判定与本轮限制
+
+- **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为操作者面与运行中中断收口，不改变上线判定。
+- **未跑（如实记）**：Docker 镜像实构实跑（§F）、浏览器真机 E2E（依赖 GUI 自动化环境，本机未重跑，以代码级核对 + 测试 + 冒烟覆盖）、Windows 本机全量（本机为 macOS，Windows 数引用 handoff 并标注）、push 后云端 CI（由用户决定 push 时点；最近一次 CI run 37145831862 四 job 全绿为另一会话推送记录）。
+- **已跑（本轮实测）**：全量 1104/102 绿、冒烟 37/37、doc-consistency 11/11、typecheck/build exit 0、三条验收脚本（`verify:execute-delegation` **9/9**、`verify:intent-recognize` **7/7**、`verify:tui-recognize` **7/7**）、113–115 批关键面定向 58/58。
 
 ## v0.22 复核（2026-10-03，评审对象：Active work 104 本批工作树（基线 HEAD `7499dce`，本批 commit 与新 HEAD 见 handoff）：**核心 MVP ✅ / 可上线 ❌ 维持**；本批关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据三项接线），并修掉一条让最近两次 CI 失败的 smoke 类型缺陷）
 

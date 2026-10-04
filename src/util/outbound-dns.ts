@@ -52,9 +52,17 @@ export interface GuardedLookupOptions {
 
 /**
  * Build the connect lookup used by an undici Agent. It resolves the host and —
- * unless the host is allowlisted — returns only the first address that passed
- * the registry, pinning the connection to it. When no address passes (or
+ * unless the host is allowlisted — returns only addresses that passed the
+ * registry, pinning the connection to them. When no address passes (or
  * resolution fails) the connector receives an error and no connection opens.
+ *
+ * The callback shape must follow net.connect's lookup contract, which varies
+ * with `options.all`: when `all: true` (Node 22's autoSelectFamily asks for
+ * this), the callback receives the full LookupAddress[]; otherwise it receives
+ * a scalar `(address, family)`. Returning the scalar form when the caller asked
+ * for `all` makes the connector read `address` as undefined and fail with
+ * ERR_INVALID_IP_ADDRESS. IP-literal targets never reach a custom lookup (the
+ * connector uses them directly), so only hostname connections exercise this.
  */
 export function createGuardedLookup(options: GuardedLookupOptions = {}): LookupFunction {
   const resolveAll = options.resolveAll ?? defaultResolveAll;
@@ -62,10 +70,18 @@ export function createGuardedLookup(options: GuardedLookupOptions = {}): LookupF
 
   const lookup = (
     hostname: string,
-    _lookupOptions: unknown,
-    callback: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
+    lookupOptions: unknown,
+    callback: (
+      err: NodeJS.ErrnoException | null,
+      address: string | LookupAddress[],
+      family?: number,
+    ) => void,
   ): void => {
     const host = normaliseHost(hostname);
+    const wantsAll =
+      typeof lookupOptions === 'object' &&
+      lookupOptions !== null &&
+      (lookupOptions as { all?: boolean }).all === true;
     resolveAll(host)
       .then(addresses => {
         const first = addresses[0];
@@ -76,22 +92,26 @@ export function createGuardedLookup(options: GuardedLookupOptions = {}): LookupF
             0,
           );
         }
-        if (isAllowlisted(host, allowHosts)) {
-          // Escape hatch: return the resolved result unchanged, no guard.
-          return callback(null, first.address, first.family);
+        if (!isAllowlisted(host, allowHosts)) {
+          const reason = refusedReasonForResolved(host, addresses, allowHosts);
+          if (reason) {
+            // Fail closed on the whole hostname: picking the "good" address of
+            // a mixed answer would let a public+private record set bypass the
+            // guard whenever the connector happened to prefer the public one.
+            return callback(
+              Object.assign(new Error(`outbound host refused: ${reason}`), {
+                code: 'EZEUSOUTBOUND',
+              }),
+              '',
+              0,
+            );
+          }
         }
-        const reason = refusedReasonForResolved(host, addresses, allowHosts);
-        if (reason) {
-          return callback(
-            Object.assign(new Error(`outbound host refused: ${reason}`), {
-              code: 'EZEUSOUTBOUND',
-            }),
-            '',
-            0,
-          );
-        }
-        // Every address passed; pin the connection to the first.
-        callback(null, first.address, first.family);
+        // Every address passed (or the host is allowlisted). Honour the
+        // contract the connector asked for: the full array for autoSelectFamily,
+        // the first pinned scalar otherwise.
+        if (wantsAll) return callback(null, addresses, 0);
+        return callback(null, first.address, first.family);
       })
       .catch((error: unknown) => {
         callback(error as NodeJS.ErrnoException, '', 0);
