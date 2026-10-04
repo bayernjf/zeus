@@ -112,6 +112,21 @@
   /* 空态 */
   .empty { padding: 18px 14px; color: var(--text-3); font-size: 13px; text-align: center; }
 
+  /* 审计过滤条 */
+  .audit-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .audit-filter select, .audit-filter input { font: inherit; font-size: 12.5px; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  .audit-filter select:focus, .audit-filter input:focus { outline: none; border-color: var(--accent); }
+  .audit-filter .af-count { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-3); }
+
+  /* 并发趋势图 */
+  .trend-wrap { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: stretch; }
+  .trend-svg { width: 100%; min-height: 96px; display: block; }
+  .trend-legend { display: grid; gap: 6px; align-content: start; min-width: 118px; }
+  .trend-legend .lg { font-family: var(--mono); font-size: 12px; color: var(--text-2); display: flex; align-items: center; gap: 7px; }
+  .trend-legend .lg i { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+  .trend-legend .lg b { margin-left: auto; color: var(--text); font-weight: 600; }
+  .trend-legend .lg.peak { color: var(--text-3); }
+
   /* 意图详情 */
   .kv { display: grid; grid-template-columns: 130px 1fr; gap: 3px 10px; font-size: 13px; }
   .kv .k { color: var(--text-3); font-family: var(--mono); font-size: 12px; padding-top: 1px; }
@@ -240,14 +255,27 @@
           <div class="body" id="metricsBody"></div>
         </div>
       </div>
+      <div class="panel" style="margin-top:14px">
+        <h2>并发趋势 <span class="hint">前端 3s 采样 · 最近 40 个采样点</span></h2>
+        <div class="body" id="trendBody"><div class="empty">等待采样…</div></div>
+      </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
           <h2>名册 <span class="hint">/api/roster</span></h2>
           <div class="body" id="rosterBody"></div>
         </div>
         <div class="panel">
-          <h2>扇出 / 决策时间线 <span class="hint">/api/audit</span></h2>
-          <div class="body" id="auditBody"></div>
+          <h2>扇出 / 决策时间线 <span class="hint">/api/audit · 服务端过滤 decision/vassal · 关键字前端过滤</span></h2>
+          <div class="body">
+            <div class="audit-filter">
+              <select id="afDecision"><option value="">全部决策</option></select>
+              <input id="afVassal" autocomplete="off" placeholder="主体过滤（服务端）" style="width:150px">
+              <input id="afKeyword" autocomplete="off" placeholder="关键字过滤（前端）" style="width:150px">
+              <button class="btn small" id="afApply">应用</button>
+              <span class="af-count" id="afCount"></span>
+            </div>
+            <div id="auditBody"></div>
+          </div>
         </div>
         <div class="panel">
           <h2>数据域与跨域授权 <span class="hint">/api/domains</span></h2>
@@ -393,6 +421,9 @@
     recent: loadRecent(),
     sseAbort: null,
     sseRetries: 0,
+    auditFilter: { decision: '', vassal: '', keyword: '' },
+    auditLast: null,
+    trend: [],
   };
 
   function loadConn() {
@@ -685,6 +716,7 @@
     // 决策块
     let dec = '';
     const d = r.decision;
+    if (r.intentId) rememberIntent(r.intentId, r.skill || '?', r.status || 'dispatched');
     if (d) {
       dec += `<div style="margin-bottom:8px">${badge('规则 ' + (d.rule || '—'), 'info')} ${d.conclusion ? badge('结论', 'ok') : badge('无结论', 'warn')}</div>`;
       if (d.conclusion) dec += `<div style="font-size:13px;margin-bottom:6px">结论：<strong>${esc(d.conclusion)}</strong></div>`;
@@ -986,9 +1018,13 @@
     const el = $('auditBody');
     if (!a) { el.innerHTML = emptyRow(); return; }
     const entries = a.entries || [];
-    if (!entries.length) { el.innerHTML = emptyRow('审计为空（尚无扇出 / 决策事件）'); return; }
+    const kw = (state.auditFilter.keyword || '').trim().toLowerCase();
+    const shown = kw ? entries.filter(e => [e.decision, e.vassal, e.skill, e.detail, e.runId, e.realm].some(v => String(v || '').toLowerCase().includes(kw))) : entries;
+    const countEl = $('afCount');
+    if (countEl) countEl.textContent = kw ? `${shown.length} / ${entries.length} 条` : `${entries.length} 条`;
+    if (!shown.length) { el.innerHTML = emptyRow(kw ? '无匹配当前关键字的审计条目' : '审计为空（尚无扇出 / 决策事件）'); return; }
     let html = '<ul class="timeline">';
-    for (const e of entries) {
+    for (const e of shown) {
       const cls = auditClass(e.decision);
       html += `<li>
         <span class="tl-time">${fmtTime(e.ts)}</span>
@@ -1001,6 +1037,86 @@
       </li>`;
     }
     el.innerHTML = html + '</ul>';
+  }
+
+  // ===== 审计过滤（服务端 decision/vassal + 前端关键字） =====
+  function fillDecisionOptions(entries) {
+    const sel = $('afDecision');
+    if (!sel) return;
+    const cur = state.auditFilter.decision;
+    const seen = new Set();
+    for (const e of entries) if (e.decision) seen.add(e.decision);
+    const vals = Array.from(seen).sort();
+    sel.innerHTML = '<option value="">全部决策</option>' + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    if (vals.includes(cur)) sel.value = cur;
+  }
+
+  async function loadAudit() {
+    const f = state.auditFilter;
+    const q = new URLSearchParams();
+    q.set('limit', '50');
+    if (f.decision) q.set('decision', f.decision);
+    if (f.vassal) q.set('vassal', f.vassal);
+    const a = await api('GET', '/api/audit?' + q.toString());
+    state.auditLast = a;
+    fillDecisionOptions(a && a.entries || []);
+    renderAudit(a);
+  }
+
+  function applyAuditFilter() {
+    state.auditFilter.decision = $('afDecision') ? $('afDecision').value : '';
+    state.auditFilter.vassal = ($('afVassal') ? $('afVassal').value : '').trim();
+    const kw = ($('afKeyword') ? $('afKeyword').value : '').trim();
+    state.auditFilter.keyword = kw;
+    loadAudit().catch(e => { $('auditBody').innerHTML = emptyRow('审计加载失败：' + esc(e.message)); });
+  }
+
+  // ===== 并发趋势采样（前端 3s 环形缓冲，零内核改动） =====
+  function sampleMetrics() {
+    if (!state.conn.base || state.view !== 'monitor' || document.hidden) return;
+    api('GET', '/api/metrics').then(m => {
+      if (!m) return;
+      state.trend.push({ t: m.capturedAt || new Date().toISOString(), inFlight: m.inFlight ?? 0, queueDepth: m.queueDepth ?? 0, maxInFlight: m.maxInFlight ?? 0 });
+      if (state.trend.length > 40) state.trend.shift();
+      renderTrend();
+    }).catch(() => { /* 采样失败静默：主面板已有连接提示 */ });
+  }
+
+  function renderTrend() {
+    const el = $('trendBody');
+    if (!el) return;
+    const pts = state.trend;
+    if (!pts.length) { el.innerHTML = '<div class="empty">等待采样…</div>'; return; }
+    const maxV = Math.max(1, ...pts.map(p => Math.max(p.inFlight, p.queueDepth)));
+    const W = 300, H = 84, PAD = 4;
+    const x = i => PAD + (W - PAD * 2) * (pts.length === 1 ? 0.5 : i / (pts.length - 1));
+    const y = v => H - PAD - (H - PAD * 2) * (v / maxV);
+    const line = key => pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join('');
+    const last = pts[pts.length - 1];
+    const svg = `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="并发趋势">
+      <line x1="${PAD}" y1="${y(maxV)}" x2="${W - PAD}" y2="${y(maxV)}" stroke="var(--line)" stroke-dasharray="3 3"/>
+      <path d="${line('inFlight')}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
+      <path d="${line('queueDepth')}" fill="none" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="4 3"/>
+    </svg>`;
+    const leg = `<div class="trend-legend">
+      <span class="lg"><i style="background:var(--accent)"></i>在途<b>${last.inFlight}</b></span>
+      <span class="lg"><i style="background:var(--warn)"></i>排队<b>${last.queueDepth}</b></span>
+      <span class="lg peak">峰值在途<b>${last.maxInFlight}</b></span>
+      <span class="lg peak">采样<b>${pts.length}</b></span>
+    </div>`;
+    el.innerHTML = `<div class="trend-wrap">${svg}${leg}</div>`;
+  }
+
+  // ===== 裁决徽标全局刷新（不渲染列表，任何视图可见待决数） =====
+  function refreshEscBadge() {
+    if (!state.conn.base || state.view === 'oversight') return;
+    api('GET', '/api/escalations').then(d => {
+      const list = d && d.escalations || [];
+      const pending = list.filter(e => e.status === 'pending').length;
+      state.escPending = pending;
+      const b = $('escBadge');
+      if (b) b.textContent = pending ? String(pending) : '';
+    }).catch(() => { /* 徽标失败静默 */ });
   }
 
   function renderDomains(d) {
@@ -1111,6 +1227,7 @@
   // ===== 数据加载 =====
   async function refreshView() {
     const view = state.view;
+    if (view !== 'oversight') refreshEscBadge();
     try {
       if (view === 'monitor') await loadMonitor();
       else if (view === 'oversight') await loadEscalations();
@@ -1140,12 +1257,17 @@
   }
 
   async function loadMonitor() {
-    const [s, m, r, a, d] = await Promise.all([
+    const [s, m, r, d] = await Promise.all([
       api('GET', '/api/state'), api('GET', '/api/metrics'), api('GET', '/api/roster'),
-      api('GET', '/api/audit?limit=20'), api('GET', '/api/domains'),
+      api('GET', '/api/domains'),
     ]);
-    renderState(s); renderMetrics(m); renderRoster(r); renderAudit(a); renderDomains(d);
+    renderState(s); renderMetrics(m); renderRoster(r); renderDomains(d);
     renderRecent();
+    try {
+      await loadAudit();
+    } catch (e) {
+      $('auditBody').innerHTML = emptyRow('审计加载失败：' + esc(e.message));
+    }
   }
   async function loadEscalations() {
     const data = await api('GET', '/api/escalations');
@@ -1248,6 +1370,15 @@
     if (state.poll) startPoll(); else stopPoll();
   });
 
+  // ===== 审计过滤控件 =====
+  $('afApply').addEventListener('click', applyAuditFilter);
+  $('afDecision').addEventListener('change', applyAuditFilter);
+  $('afVassal').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') applyAuditFilter(); });
+  $('afKeyword').addEventListener('input', function () {
+    state.auditFilter.keyword = this.value.trim();
+    if (state.auditLast) renderAudit(state.auditLast);
+  });
+
   function startPoll() {
     if (state.timer) return;
     state.timer = setInterval(function () {
@@ -1255,6 +1386,9 @@
     }, 10000);
   }
   function stopPoll() { if (state.timer) { clearInterval(state.timer); state.timer = null; } }
+
+  // 并发趋势采样器：3s 常驻，仅在监控视图且页面可见时取数
+  setInterval(sampleMetrics, 3000);
 
   // ===== 初始化 =====
   $('cBase').value = state.conn.base;
