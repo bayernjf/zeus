@@ -75,6 +75,10 @@ describe('deferred #33 execute-mode dispatch gate', () => {
     expect(refused[0]?.reason).toBe('missing');
     expect(result.branches[0]?.ok).toBe(false);
     expect(result.branches[0]?.reason).toBe('execute refused: missing');
+    // C-27: a refused branch never reached the network, so it has no `state` to
+    // read through - the settled classification must still be on the record.
+    expect(result.branches[0]?.outcome).toBe('failed');
+    expect(result.branches[0]?.state).toBeUndefined();
   });
 
   it('admits an execute backed by a verified, unconsumed delegation (one dispatch, nonce consumed)', async () => {
@@ -88,6 +92,8 @@ describe('deferred #33 execute-mode dispatch gate', () => {
     expect(dispatchCalls).toHaveLength(1);
     expect(dispatchCalls[0]).toEqual({ vassal: expect.any(String), skill: 'deployment-health' });
     expect(result.branches[0]?.ok).toBe(true);
+    // Same field on the healthy path: one name for readers instead of state-or-reason.
+    expect(result.branches[0]?.outcome).toBe('completed');
     // The delegation is single-use: the same credential cannot authorize again.
     expect(ledger.consume(d.nonce)).toBe(false);
   });

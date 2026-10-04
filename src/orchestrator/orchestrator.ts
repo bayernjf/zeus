@@ -323,10 +323,14 @@ export class Orchestrator {
       const positions = extractPositions(branches);
       const decision = aggregate(positions, request.aggregation);
       const conflicts = detectConflicts(positions, decision);
+      // C-27: settle the classification into the stored record. Every branch gets
+      // `outcome`, including the ones that never reached the network and so have
+      // no `state` to be read through.
+      const settled = branches.map(branch => ({ ...branch, outcome: outcomeOf(branch) }));
       result = {
         intentId, runId, skill: request.skill, realm: request.realm,
         ...(request.realmId ? { realmId: request.realmId } : {}),
-        branches,
+        branches: settled,
         stream: mergeBranches(branches), positions, decision, conflicts,
         status: statusFromBranches(branches, conflicts.length > 0),
         createdAt: this.now().toISOString(),
