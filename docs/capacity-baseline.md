@@ -1,7 +1,9 @@
 # Zeus 容量基线（E10.4，本机 mock 回环）
 
-> 状态：**现行 v0.3（2026-09-25）**。对应 PRD E10.4「并发压测与容量基线」与 §6 成功指标。v0.3 新增场景 E：E1.5 并发闸门的代价与不变量。
+> 状态：**现行 v0.4（2026-10-04）**。对应 PRD E10.4「并发压测与容量基线」与 §6 成功指标。v0.3 新增场景 E：E1.5 并发闸门的代价与不变量。**v0.4 在 fan-out §7 运行中分支中断原语（Active work 115，commit `496d16b`）落地后做同机对照复跑**：结论 = §7 **无可测量容量回归**、正确性不变量保持（详见 §6 v0.4 对照段与 §9 方法论）。
 > 复跑：`npm run build && npm run bench:capacity`（脚本 `scripts/bench-capacity.mjs`，零依赖；`--json` 出机器可读结果，`--delay-ms` / `--reps` / `--farm` 可调）。
+>
+> **v0.4 变更（2026-10-04，Apple M4 / 10 核 / Node v22.23.2 / darwin arm64）**：§7 给 dispatcher/orchestrator 加了 `AbortSignal` 透传与 `branchSignals`（每分支一个 `AbortController`）。为区分"§7 回归"与"跨机器差异"，用 `git worktree` 在 §7 前 commit（`1b6582a` = `496d16b^`）与当前 HEAD 上**同机相邻交替各跑两次**。B 场景吞吐（intents/秒）干净对照：@8 并发 pre-§7 = 129/130、HEAD = 127；@16 pre-§7 = 214/217、HEAD = 225；@32 pre-§7 = 283/332、HEAD = 263（pre-§7 两次自身抖 17%）——差异在 bench 自身方差（±15%）内，**无系统性回归**。D 场景取消吞吐两边方差都很大（同机 2,000→5,100 cancels/秒，2.5 倍，对瞬时事件循环状态高度敏感），HEAD 干净值不低于 pre-§7；正确性不变量（`finishedBranches === total`、mock farm 实收 **240** 个 `tasks/cancel` 零丢失零重复）在全部运行保持。**一次与 `docker build` 并发的污染跑显著偏低（B@16 102→144/s 抖动），作废重跑**——bench 必须在空闲机单独跑。
 >
 > **v0.2 变更**：新增**场景 C（H2 门面全链路吞吐，真实回环 TCP + bearer + JSON）**与**场景 D（高并发取消传播，input-required 挂起态 → tasks/cancel）**；mock farm 同端点支持 JSON-RPC `tasks/cancel` 与可配终态。场景 A/B 测量逻辑未变，区间沿用 v0.1（v0.2 复跑因机器更空闲略好，未下调保守区间）。
 
@@ -91,7 +93,7 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
 - **128 个挂起分支的取消信号在 ~14–18ms 内全部传播完成**，取消是即时的——不等待执行 Agent「思考」，墙钟随取消分支数近似线性、亚毫秒/分支级。
 - 脚本断言每档每个非终态分支**恰好取消一次**（`canceled: true`），且 mock farm 跨四档**实收 240 个 `tasks/cancel`（=16+32+64+128），零丢失、零重复**；终态分支（completed/failed/canceled）按 F3 语义跳过。
 - 取消吞吐在最高并发点略降（连接复用/事件循环竞争），但无超时、无失败；真实执行 Agent 的 cancel 处理速度与网络决定真机绝对值。
-- 口径说明：此处取消的是**已 settle 的挂起（input-required）分支**，即 F3 `cancelIntent` 的设计场景；对仍在 `working`、fanOut 尚未返回的分支，编排层当前不提供按 intentId 的一等取消（intent 结果在 fanOut 完成后才登记），该能力属后续演进项，不在本基线范围。
+- 口径说明：此处取消的是**已 settle 的挂起（input-required）分支**，即 F3 `cancelIntent` 的设计场景。**对仍在 `working`、fanOut 尚未返回的运行中分支，v0.4 起已由 fan-out §7（Active work 115，commit `496d16b`）补上一等中断原语**：`DispatchRequest.signal?: AbortSignal` 透传到出站 A2A 流、orchestrator 以 `branchSignals` 持有每分支 `AbortController`、运行中分支 abort 后结算 `state:'canceled'` + `reason:'canceled by the driver'`、审计记 `branch-aborted`（不再误标 dispatch-failed）。场景 D 的取消吞吐在 §7 后同机对照无系统性变化（见状态行 v0.4 对照）。
 
 ## 7. 场景 E：并发闸门的代价（v0.3 新增）
 
@@ -136,7 +138,8 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
 ## 9. 限制与后续
 
 - mock 执行 Agent 不代表 LLM/网络；本文是**内核/门面/取消的开销下界 + 并发正确性证据**，不是容量承诺。
-- 已测：扇出宽度（A）、并发意图（B）、H2 门面全链路吞吐（C）、高并发取消传播（D）、**并发闸门代价与不变量（E，v0.3）**。**仍未测**：SSE 长连接占用与连接数上限、内存占用随分支数曲线、对仍在 working 的进行中意图的取消、`branchQueueLimit` 有限值下的拒绝率与恢复（E 只测了等待线无限的情形）。
+- 已测：扇出宽度（A）、并发意图（B）、H2 门面全链路吞吐（C）、高并发取消传播（D）、**并发闸门代价与不变量（E，v0.3）**。**仍未测**：SSE 长连接占用与连接数上限、内存占用随分支数曲线、**运行中（working）分支 AbortSignal 中断的专项容量场景**（§7 已落地该能力，但场景 D 压的是 input-required 挂起态的 `tasks/cancel`，尚未为"fanOut 未返回即 abort"单开一档）、`branchQueueLimit` 有限值下的拒绝率与恢复（E 只测了等待线无限的情形）。
 - **v0.3 复跑发现的散布要如实算作限制**：无限制档墙钟在 86–198ms 之间摆（±2×），cap=8 档 857–1380ms。同进程 farm 与本机背景负载所致。因此 v0.3 只用**比值 + 不变量**下结论，绝对吞吐/延迟一律标注为散布区间而非单点。
+- **v0.4 补一条跨版本对照方法论**：墙钟绝对值**跨机器不可直接比较**（v0.3 与 v0.4 不同机，B@32 从 351–404 到 263–332 intents/秒的差异主要来自机器/负载，不是回归）。判断某次内核改动是否引入容量回归，必须用 `git worktree` 在**同一台机器、相邻时间窗、空闲状态**下对改动前后 commit 各跑 ≥2 次交替对照；与 `docker build` 等 CPU/IO 重活并发的跑次作废（v0.4 实测污染跑 B@16 掉到干净值的 ~64%）。结论只取**比值趋势 + 正确性不变量（零分支丢失、240 取消零丢失零重复）**，不根据单次绝对数下判断。
 - 场景 D 的取消吞吐以 mock farm「立即 ack cancel」为前提；真实执行 Agent 可能异步取消，需在真机测量 cancel ack 延迟与最终一致性。
 - 触发 deferred #9（≥3 真实执行 Agent 在线）后，应在真机用本脚本同款方法（替换为真实 taskUrl）重测，并把有界队列阈值、背压降级顺序写入本文下一版。

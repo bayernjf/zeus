@@ -21,7 +21,7 @@
 | `ZEUS_HOST` | `127.0.0.1` | 监听地址；**容器内必须 `0.0.0.0`** |
 | `ZEUS_PORT` | `8787` | 监听端口 |
 | `ZEUS_VASSAL_SEEDS` | 未设置 | G1：启动时自动注册的执行 Agent Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。运行时上线走 `POST /api/vassals`，body 同样可带 `token`（存下后任何读视图都不回显，只有派发路径读取），因此**需要凭证的执行 Agent 不必为了上线而重启进程**。**某个 seed 拉不到或卡片没发誓 fealty → 整个进程拒启**（一行 `[zeus-http] refused to start: vassal seed failed for <url>: …`），不会静默少一个执行 Agent |
-| `ZEUS_OUTBOUND_ALLOW_HOSTS` | 未设置 | A-12：出站 URL 守卫的显式放行名单，逗号分隔（命中即跳过非公网地址检查）。守卫默认拒绝所有非全球可达地址（RFC 6890 专用地址段：RFC1918、`169.254/16`、CGNAT、多播/保留段，含 IPv6 ULA、link-local 与 IPv4 映射/兼容/NAT64 编码），**唯一例外是环回 `127.0.0.0/8` 与 `::1`**——本地优先，环回上的 vassal/MCP 服务是常态。要在私网里接入对端（如 `10.0.0.5`）就把它写进这里；`.suffix` 前缀匹配整段后缀。非 IP 字面量的主机名一律放行（DNS 重绑定见 deferred） |
+| `ZEUS_OUTBOUND_ALLOW_HOSTS` | 未设置 | A-12：出站 URL 守卫的显式放行名单，逗号分隔（命中即跳过非公网地址检查）。守卫默认拒绝所有非全球可达地址（RFC 6890 专用地址段：RFC1918、`169.254/16`、CGNAT、多播/保留段，含 IPv6 ULA、link-local 与 IPv4 映射/兼容/NAT64 编码），**唯一例外是环回 `127.0.0.0/8` 与 `::1`**——本地优先，环回上的 vassal/MCP 服务是常态。要在私网里接入对端（如 `10.0.0.5`、容器里的 `host.docker.internal`）就把它写进这里；`.suffix` 前缀匹配整段后缀。**两层守卫**：同步 URL 检查只看得到 IP 字面量（主机名在该层放行），出站 fetch 还会经 DNS-rebinding 守卫（`src/util/outbound-dns.ts`，已实现并默认装配）解析主机名并校验全部结果地址，解析到私有/保留段仍拒绝；本名单对两层同时生效 |
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含连接器 bearer token 与记忆事实，且以 uid 1000 落卷） |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
@@ -132,6 +132,15 @@ ZEUS_INTERNAL_TOKEN=<长随机串>
 ```
 
 只对本机暴露时端口绑 `127.0.0.1`；前置反向代理（TLS 终止）再对外。
+
+**容器内连接宿主或私网对端必须配出站放行名单**：出站 DNS-rebinding 守卫默认拒绝解析到 RFC1918/保留段的主机名。容器里经 `host.docker.internal` 连宿主上的执行 Agent/MCP 服务时，该名解析到 Docker 网关（如 `192.168.65.254`，私有段），不配名单会在启动 seed 阶段直接拒启（`vassal seed failed ... card fetch failed`）；连接任何内网 IP/主机名同理。按需显式放行：
+
+```dotenv
+# 放行宿主网关名，或具体内网主机/后缀（逗号分隔，.suffix 匹配整段后缀）
+ZEUS_OUTBOUND_ALLOW_HOSTS=host.docker.internal
+```
+
+> 该守卫在 DNS 解析层（非仅 URL 字面量层）生效：同步 URL 检查放行主机名，但出站 fetch 解析出私有/保留地址仍会拒绝。放行即表示你明确信任该对端，勿用通配过度放宽。2026-10-04 容器实构实跑中据此验证（含一次真实拒启→加名单后 seed/派发恢复）。
 
 **卷与密钥文件权限**：容器内进程以非 root 用户 `node`（uid/gid 1000）运行。Linux 宿主机上需让挂载内容对 1000 可读写：
 
