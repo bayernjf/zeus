@@ -237,7 +237,7 @@ export class WatchRegistry {
   private watches = new Map<string, Watch>();
 
   constructor(
-    private options: { newId?: () => string } = {}
+    private options: { newId?: () => string; audit?: (entry: WatchAuditEntry) => void; now?: () => Date } = {}
   ) {}
 
   private newId(): string {
@@ -291,6 +291,13 @@ export class WatchRegistry {
       enabled: true,
     };
     this.watches.set(watch.id, watch);
+    this.options.audit?.({
+      decision: 'watch-registered',
+      watchId: watch.id,
+      owner: watch.owner,
+      detail: `predicate ${watch.predicate.source}.${watch.predicate.field} ${watch.predicate.op} -> intent ${watch.intent.skill} (${watch.intent.mode})`,
+      at: (this.options.now ?? (() => new Date()))().toISOString(),
+    });
     return structuredClone(watch);
   }
 
@@ -323,6 +330,13 @@ export class WatchRegistry {
     const watch = this.watches.get(id);
     if (!watch) return undefined;
     watch.enabled = false;
+    this.options.audit?.({
+      decision: 'watch-disabled',
+      watchId: watch.id,
+      owner: watch.owner,
+      detail: 'disabled by the operator; history kept, never re-enabled',
+      at: (this.options.now ?? (() => new Date()))().toISOString(),
+    });
     return structuredClone(watch);
   }
 
@@ -332,6 +346,13 @@ export class WatchRegistry {
     if (!watch) return undefined;
     watch.enabled = false;
     watch.expiresAt = watch.startsAt;
+    this.options.audit?.({
+      decision: 'watch-revoked',
+      watchId: watch.id,
+      owner: watch.owner,
+      detail: 'revoked by the operator; terminal, never evaluates again',
+      at: (this.options.now ?? (() => new Date()))().toISOString(),
+    });
     return structuredClone(watch);
   }
 
