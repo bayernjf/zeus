@@ -23,7 +23,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 
 | 入口 | 形态 | 规模 | 鉴权 |
 | --- | --- | --- | --- |
-| HTTP 门面 | Fastify 长驻进程，`npm start` | **83 条路由**（3 公开 + 80 bearer） | 公开 3 条无鉴权；其余同一 bearer |
+| HTTP 门面 | Fastify 长驻进程，`npm start` | **88 条路由**（3 公开 + 85 bearer） | 公开 3 条无鉴权；其余同一 bearer |
 | 终端面板 TUI | `npm run tui` | 15 类命令 | `ZEUS_INTERNAL_TOKEN`（env）——**`--token` 被显式拒绝**：命令行秘密在 `ps` 与 shell 历史里可见（`src/tui/cli.ts:44-48 #token`；原台账此格误写为 `--token`，见审计报告 §10 B-37） |
 | Web 监督台（方案 A v1.4） | `web/supervisor/index.html` + 静态托管 | 监控（内核状态/指标+决策后端徽章/名册含吊销·恢复治理/审计时间线+过滤/并发趋势）/ 意图派发+作战室（详情/SSE 实时/DAG/取消/决策回放/结果责任链）/ 裁决 / 授权 / 组织（编制树）/ 目录（技能+连接器只读）/ 连接；v1.1 派发作战室+SSE、v1.2 DAG+识别+loading+SSE 重连、v1.3 审计过滤+趋势+徽标全局刷新+历史回写、v1.4 回放+责任链+组织+目录+名册治理+决策徽章 | 浏览器侧 localStorage 存 bearer；服务侧 `ZEUS_CORS_ORIGINS` 白名单 |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
@@ -48,7 +48,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 组 | 条数 | 代表路由 |
 | --- | --- | --- |
 | 名册与执行 Agent | 4 | `GET /api/roster`、`POST /api/vassals`、`DELETE /api/vassals/:name`、`POST /api/vassals/:name/reinstate` |
-| 意图与编排 | 7 | `POST /api/intents`、`POST /api/intents/recognize`（E2.6）、`GET /api/intents/:id`、`POST /:id/cancel`、`GET /:id/dag`、`GET /:id/events`（SSE）、`GET /:id/replay` |
+| 意图与编排 | 12 | `POST /api/intents`、`POST /api/intents/recognize`（E2.6）、`GET /api/intents/:id`、`POST /:id/cancel`、`GET /:id/dag`、`GET /:id/events`（SSE）、`GET /:id/replay`、`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`（自托管 P1：watch 登记/读/撤销 + 调用方驱动 tick） |
 | 监督台 | 7 | `GET /api/escalations`、`GET /:id`、`POST /:id/approve`、`/reject`、`/approve-resume`、`/resolve`、`/approve-contract`（自托管第 5 步：批准委托越限项 = 签新契约并换绑 watch） |
 | 指标与状态 | 3 | `GET /api/metrics`、`GET /api/state`、`GET /api/audit` |
 | 组织编制 | 13 | `GET /api/org/chart`、`GET /api/org/accountability/:intentId`、部门建编/安置/设 lead/移除成员、带教立项/授课/豁免/撤回/台账、`GET /:id/briefing/:agentId`、`POST /:id/first-task` |
@@ -114,7 +114,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 多技能组队，歧义不静默选边 | `resolveTeam` | ✅ |
 | 派发前技能闸门（三态：未注册放行 / 注册无 active 拒绝） | `activeProviders` + dispatcher | ✅ |
 | 带教台账：立项/授课/胜任力评估/作废 | `skills/mentor.ts` | ✅ |
-| 操作者自然语言意图识别（E2.6：plan-only、默认本地规则零出域、外部模型仅显式 `useModel: true` 经窄端口） | `src/intent/recognize.ts`；HTTP `POST /api/intents/recognize`（`src/http/server.ts:1314 #recognize`）；TUI `i` / `im`；库导出 `src/index.ts:218 #recognizeIntent` | ✅（本轮补登：此前只出现在 §2 路由表与 TUI 表，Epic 维表缺行，见审计报告 §10 C-25） |
+| 操作者自然语言意图识别（E2.6：plan-only、默认本地规则零出域、外部模型仅显式 `useModel: true` 经窄端口） | `src/intent/recognize.ts`；HTTP `POST /api/intents/recognize`（`src/http/server.ts:1318 #recognize`）；TUI `i` / `im`；库导出 `src/index.ts:218 #recognizeIntent` | ✅（本轮补登：此前只出现在 §2 路由表与 TUI 表，Epic 维表缺行，见审计报告 §10 C-25） |
 
 ### 3.3 数据域与数据主权（E3）
 
@@ -153,7 +153,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 薄传输层：全库仅 `http/` 引 fastify，内核零传输依赖 | `http/server.ts` | ✅ |
-| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:281-282 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2490 #timingSafeEqual` | ✅ |
+| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:285-286 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2617 #timingSafeEqual` | ✅ |
 | 根公钥发布端点 | `GET /api/roster/keys` | ✅ |
 | 生产密钥硬化：内联 PEM / 文件挂载 / production 无钥拒启 | `http/rsk.ts` | ✅ |
 | 启动装配：四组件一次装配、快照恢复、信号优雅落盘 | `state/boot.ts` | ✅ |
