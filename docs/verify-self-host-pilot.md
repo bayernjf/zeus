@@ -1,6 +1,6 @@
-# 自托管试点验收规程（v0.6，2026-10-06）
+# 自托管试点验收规程（v0.7，2026-10-06）
 
-- 状态：**验收规程 v0.6（2026-10-06）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的内核链与 HTTP 操作者面已落地（设计稿 §7 第 4+5 步 HTTP 半）**——契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`，越限升级项可用 `POST /api/escalations/:id/approve-contract` 一键签新契约并换绑 watch；TUI/Web 专属控件未做（仍只经通用 HTTP 面操作）。故 P1/P2 作为**用户可用的能力**：P2 的 API 验收与 TUI/Web 操作者面全部就位（设计稿 §7 六步全部完成，TUI 契约命令 + Web 契约面板已落），P0 全段与 P1/P2 的 API 级判据今天可跑；判据是预先写好的——每条都附"现在就能跑的证伪探针"。
+- 状态：**验收规程 v0.7（2026-10-06）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的内核链与 HTTP 操作者面已落地（设计稿 §7 第 4+5 步 HTTP 半）**——契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`，越限升级项可用 `POST /api/escalations/:id/approve-contract` 一键签新契约并换绑 watch；TUI/Web 专属控件未做（仍只经通用 HTTP 面操作）。故 P1/P2 作为**用户可用的能力**：P2 的 API 验收与 TUI/Web 操作者面全部就位（设计稿 §7 六步全部完成，TUI 契约命令 + Web 契约面板已落）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138；两条口径：执行 Agent 为真 socket 本地 mock、TUI 以带节拍管道 stdin 驱动；跑中抓到的两条装配缺陷——desk 审计桥未接、TUI 空 body POST——已当日修掉并入库为断言）；判据是预先写好的——每条都附"现在就能跑的证伪探针"。
 - 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
@@ -208,7 +208,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | 1 | 第 `maxChildTickets+1` 张子票据被拒，并审计 `delegation-limit-exceeded` | 上限设 2，发 3 次 → 第三次必须红 |
 | 2 | `windowEndsAt` 之后新子票据一律被拒 | 窗口设 1 秒，等到点再发 → 必须红 |
 | 3 | 撤销一份契约后，其下所有未消费票据立即不可用 | 撤销前后各发一次同一票据 → 后者必须红 |
-| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:150 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:752 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
+| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:150 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:776 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
 | 5 | 子票据的 `used` 计数持久化，重启不重置 | 重启后打到上限 → 必须仍然拒 |
 
 ## 6. 现在明确不要做的事（写下来防止顺手做掉）
@@ -224,6 +224,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 演进日志
 
+- **v0.7（2026-10-06）**：P0 八步实跑全过并记录（Active work 138）；跑中修掉两条装配缺陷（serve 未传 oversightAudit → desk 审计默认进脊，三个新决策名入枚举；TUI client 空 body POST 被真 Fastify 400 → 恒发 JSON body）。判据与探针零改动。
 - **v0.6（2026-10-06）**：设计稿 §7 第 5 步 TUI/Web 控件收尾（TUI 契约命令 + Web 契约面板），六步全部完成；本规程判据与探针零改动。
 - **v0.5（2026-10-06）**：设计稿 §7 第 6 步落地，`npm run smoke:core` 37 → 40 步（serve 真进程契约操作面装配探针、watch 命中恰一次真派发、execute watch 契约派生与撤销断流；watch 由导入 dist 的 runner 子进程驱动）。本规程的判据与探针无一改动——P2 的开工闸门探针（空体 400 / 合法体 201）维持现状。
 - **v0.4（2026-10-05）**：设计稿 §7 第 5 步 HTTP 半落地，P2 从“内核侧已通、操作者签发面未做”改为“内核侧 + HTTP 操作者面已通”：契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`（签发与撤销进审计脊，撤销即刻阻断派生），越限升级项可经 `POST /api/escalations/:id/approve-contract` 一键签一份仅 `execute` 的新契约并换绑 watch，不重放被拒 fire。开工闸门探针由 404 翻转为：空体 400、合法体 201；代码级同证改为 `src/http/` 下命中 5 条路由注册。真进程 HTTP 证据 9 例在 `tests/http-delegation-contracts.test.ts`。TUI/Web 专属控件与第 6 步 smoke 增步仍未做，端到端试点尚不能跑。
