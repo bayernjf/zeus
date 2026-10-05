@@ -1,12 +1,12 @@
-# 自托管试点验收规程（v0.7，2026-10-06）
+# 自托管试点验收规程（v0.8，2026-10-06）
 
-- 状态：**验收规程 v0.7（2026-10-06）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的内核链与 HTTP 操作者面已落地（设计稿 §7 第 4+5 步 HTTP 半）**——契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`，越限升级项可用 `POST /api/escalations/:id/approve-contract` 一键签新契约并换绑 watch；TUI/Web 专属控件未做（仍只经通用 HTTP 面操作）。故 P1/P2 作为**用户可用的能力**：P2 的 API 验收与 TUI/Web 操作者面全部就位（设计稿 §7 六步全部完成，TUI 契约命令 + Web 契约面板已落）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138；两条口径：执行 Agent 为真 socket 本地 mock、TUI 以带节拍管道 stdin 驱动；跑中抓到的两条装配缺陷——desk 审计桥未接、TUI 空 body POST——已当日修掉并入库为断言）；判据是预先写好的——每条都附"现在就能跑的证伪探针"。
+- 状态：**验收规程 v0.8（2026-10-06）**。P0 段今天可跑；**P1 的 `watch` 已落码、接进 boot，且操作者 HTTP 面已通（Active work 139）**——`POST/GET /api/watches`、`GET/DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器）；watch 生命周期动作（登记/停用/撤销）进审计脊。P1 仅剩 **TUI/Web 专属控件**未做。P2 的内核链、HTTP 操作者面与 TUI/Web 控件全部就位（设计稿 §7 六步全部完成）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138）；P1 的 tick 时六条判据均有对应测试（step 2/3 批次），本文件保留判据作为回归口径。
 - 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
 ## 0. 一句话
 
-P0 = **一个人、一个目录、一条日常技能、意图由人发起、execute 走一次性票据**——这一段的所有能力都已落地，可以立刻开跑。P1 加"无人在场时的合法意图来源"（`watch`），P2 加"有界的自主授权"（委托契约）。**P1/P2 的判据先写出来，是为了让它们可验收，不是为了现在通过。**
+P0 = **一个人、一个目录、一条日常技能、意图由人发起、execute 走一次性票据**——这一段的所有能力都已落地，可以立刻开跑。P1 加"无人在场时的合法意图来源"（`watch`），P2 加"有界的自主授权"（委托契约）。**P1 的原语与 HTTP 操作者面已通（TUI/Web 控件未做），P2 全部就位**；判据保留在此，是为了让后续实跑有可核口径。
 
 ## 1. 为什么只有 P0 能跑（出处）
 
@@ -20,9 +20,9 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 
 | 阶段 | 需要什么 | 落地状态 | 本文件段落 |
 | --- | --- | --- | --- |
-| P0 人在环自托管 | 已落地的内核 + HTTP 面 + 执行票据 | ✅ 可跑 | §3 |
-| P1 无人到点 | `watch`（设计稿 §3，未实现） | ❌ 未实现 | §4 |
-| P2 有界自主 | `DelegationContract`（设计稿 §4；原语 + boot 派生 + 越限升级已实现，HTTP 签发面未做） | 🟡 内核侧已实现，用户面未实现 | §5 |
+| P0 人在环自托管 | 已落地的内核 + HTTP 面 + 执行票据 | ✅ 可跑（已实跑全过，Active work 138） | §3 |
+| P1 无人到点 | `watch`（设计稿 §3） | 🟡 原语 + boot + HTTP 操作者面已实现（Active work 139），TUI/Web 专属控件未做 | §4 |
+| P2 有界自主 | `DelegationContract`（设计稿 §4） | ✅ 全部就位（内核链 + HTTP 面 + TUI/Web 控件，设计稿六步全完成） | §5 |
 
 企业形态（隔离实例 vs 同实例多租户）是本清单之外的**待决项**，登记在 [deferred-items.md](deferred-items.md) **#41**。本清单三段在两种形态下形状相同，所以不必先决定才能开跑 P0。
 
@@ -170,11 +170,11 @@ ZEUS_INTERNAL_TOKEN="$ZEUS_INTERNAL_TOKEN" npm run tui -- --interval 3000
 
 **任何一条不成立 → 不升级 P1**，先修 P0 的那一条。理由：P1 引入"无人在场的意图来源"，会把 P0 的每个薄弱点从"偶尔发生"变成"每天自动发生"。
 
-## 4. P1：无人到点（`watch`，未实现——判据先立）
+## 4. P1：无人到点（`watch`——原语 + boot + HTTP 操作者面已通，TUI/Web 控件未做）
 
-前置能力：`watch` 原语（设计 [design-self-host-loop.md](design-self-host-loop.md) §3）。**现在跑不了。**
+前置能力：`watch` 原语（设计 [design-self-host-loop.md](design-self-host-loop.md) §3）。原语已落码、接进 boot（step 2/3 批次），操作者 HTTP 面于 Active work 139 落地。
 
-**现在就能跑的证伪探针（预期失败，且必须失败）**：
+**开工闸门探针（已翻转）**：
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
@@ -182,9 +182,9 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -d '{}' http://127.0.0.1:8787/api/watches
 ```
 
-- **退出判据**：返回 **404**。代码级同证：全仓 `grep -rn "'/api/watch" src/` 命中 **0**（2026-10-05 测得）。这条探针的价值是"当它不再返回 404 时，P1 才算开工"，也是 P1 的落地闸门——先让它变红（404→201），再谈下面的验收。
+- **现状**：空体返回 **400**（路由已挂载、校验入参），合法体返回 **201**。代码级同证：`src/http/` 下命中 5 条 watch 路由注册（2026-10-06 测得）。探针的原始形态（预期 404）随 Active work 139 关闭；保留命令作为回归口径——若端点退回 404，说明面被整体拆掉。
 
-`watch` 落地后的判据（逐条要有对应测试，不接受"看起来对"）：
+tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 step 2/3 批次落地）：
 
 | # | 判据 | 反证（必须能把它做红） |
 | --- | --- | --- |
@@ -224,6 +224,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 演进日志
 
+- **v0.8（2026-10-06）**：P1 的操作者 HTTP 面落地（Active work 139）——五条 watch 路由（`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`），watch 生命周期动作进审计脊（三个新决策名），开工探针由 404 翻转为空体 400 / 合法体 201；P1 仅剩 TUI/Web 专属控件。
 - **v0.7（2026-10-06）**：P0 八步实跑全过并记录（Active work 138）；跑中修掉两条装配缺陷（serve 未传 oversightAudit → desk 审计默认进脊，三个新决策名入枚举；TUI client 空 body POST 被真 Fastify 400 → 恒发 JSON body）。判据与探针零改动。
 - **v0.6（2026-10-06）**：设计稿 §7 第 5 步 TUI/Web 控件收尾（TUI 契约命令 + Web 契约面板），六步全部完成；本规程判据与探针零改动。
 - **v0.5（2026-10-06）**：设计稿 §7 第 6 步落地，`npm run smoke:core` 37 → 40 步（serve 真进程契约操作面装配探针、watch 命中恰一次真派发、execute watch 契约派生与撤销断流；watch 由导入 dist 的 runner 子进程驱动）。本规程的判据与探针无一改动——P2 的开工闸门探针（空体 400 / 合法体 201）维持现状。
