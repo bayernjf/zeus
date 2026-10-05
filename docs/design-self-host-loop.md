@@ -1,6 +1,6 @@
 # 设计稿：自托管常驻循环（`watch` 触发器 + 有界委托契约）
 
-- 状态：**设计稿 v0.2（2026-10-05）**，`DelegationContract` 的库内原语已实现（见 handoff Active work 128），`watch` 与 HTTP 面未实现。本文是这两个原语的单一事实源；handoff 与 PRD 只索引，不复制全文。
+- 状态：**设计稿 v0.4（2026-10-05）**，`DelegationContract` 的库内原语已实现（见 handoff Active work 128），`watch` 的 `metrics` / `realm` / `connector` 三个源已接线（见 handoff Active work 132/133），HTTP/H2 面与监督台未实现。本文是这两个原语的单一事实源；handoff 与 PRD 只索引，不复制全文。
 - 关联：deferred **#41**（企业形态：隔离实例 vs 同实例多租户——本文的两个原语在两种形态下形状相同，故先于该决定设计）、deferred **#19**（入站 A2A 面）、deferred **#33**（执行 Agent 凭据代理，见 [design-execution-delegation.md](design-execution-delegation.md)）、deferred **#40**（执行后反思闭环，复用本文的升级通道）；验收清单见 [verify-self-host-pilot.md](verify-self-host-pilot.md)。
 - 立项理由（诚实版）：目前 zeus 的**每一条意图都由人发起**。"替我看着这件事"这类需求现在无法表达——这是自托管个人助理与企业自动化两条线**共同**缺的那一层，所以它属于内核而不是任何一侧的外壳。
 
@@ -166,8 +166,8 @@ export type DelegationContract = {
 | 步 | 范围 | 可验证退出条件（顺序不能颠倒） |
 | --- | --- | --- |
 | 1 | `DelegationContract`：签发 / 验签 / 派生子票据 / 计数与持久化 / 撤销 | 单测覆盖四条不变式各一条正例 + 一条反例；缺陷注入：把"派生不放大"检查摘掉 → 用能力超集的契约仍能派生 → 用例必须红；重启恢复用例断言 `used` 不回退 |
-| 2 | `watch` 的 `metrics` 与 `realm` 两个源（无出站） | ✅ **2026-10-05 完成**。真进程用例：条件满足 → 恰好一次 `plan` 意图（`src/watch/watch.ts:256 #runTick`，确定性 `intentId = watch:<id>:<seq>`）+ 一条 `watch-fired`；未落地的触发复用同一 intentId 回放而不二次派发；重启后 `used` 与 `lastFiredAt` 一致（真 `FileKernelStateStore` 落盘 + `bootKernel` 重启两条）。缺陷植入：摘掉 save 白名单里 `watches` → **2 例红**；摘掉预算闸 → **2 例红** |
-| 3 | `watch` 的 `connector` 源 | 出站只走既有白名单与声明边界；未声明工具不可读；连接器抖动 → 只记 `watch-eval-unavailable` 不触发（正控：健康上游必须真的触发一次，否则这条断言证明不了任何事） |
+| 2 | `watch` 的 `metrics` 与 `realm` 两个源（无出站） | ✅ **2026-10-05 完成**。真进程用例：条件满足 → 恰好一次 `plan` 意图（`src/watch/watch.ts:306 #runTick`，确定性 `intentId = watch:<id>:<seq>`）+ 一条 `watch-fired`；未落地的触发复用同一 intentId 回放而不二次派发；重启后 `used` 与 `lastFiredAt` 一致（真 `FileKernelStateStore` 落盘 + `bootKernel` 重启两条）。缺陷植入：摘掉 save 白名单里 `watches` → **2 例红**；摘掉预算闸 → **2 例红** |
+| 3 | `watch` 的 `connector` 源 | ✅ **2026-10-05 完成**。出站只走既有白名单与声明边界（`connectorReading` 经 `ConnectorRegistry.callTool` 同一注入传输，未声明工具不可读）；`predicate.field` 限 `WATCH_PATH_GRAMMAR`（纯标识符点路径、至多 4 段、无下标/通配/表达式），`readPath` 只回 string｜number、非标量或缺失路径判为不可读；连接器抖动 → 只记 `watch-eval-unavailable` 不触发（**正控**：健康上游必须真的触发一次，否则这条断言证明不了任何事）。缺陷植入四处，各 1 例红：路径文法改恒真 / 摘掉 `connector.id`·`tool` 必填 / 摘掉 `readPath` 标量判定 / boot 接线换回空对象 |
 | 4 | `execute` 触发 + 越限回落升级 | 无契约 → 零出站；额度耗尽 → 零出站 + desk 有一条能读懂"撞了哪条上限"的升级项；批准（签新契约）→ 下一 tick 真跑通 |
 | 5 | HTTP/H2 面与监督台、TUI 视图 | 每条新端点一次真进程冒烟；操作者能在两处读到同一份证据（审计与台账读数字段一致） |
 | 6 | `npm run smoke:core` 增加 watch + 契约两步 | 冒烟步数从 37 起增，活基线六处站点随之现测同步 |
@@ -179,5 +179,6 @@ export type DelegationContract = {
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v0.1 | 2026-10-05 | 初稿。立项动因来自对市场的核对：常驻、独立执行环境、"关掉窗口仍在干活"已是该品类 2026 年的默认形态（OpenAI Dots 2026-09-29、Meta Muse 2026-09-09），而 zeus 缺的恰好是"合法地无人生成一次意图"这一层，且它必须与"有界授权"同批设计，否则等于给内核装上自主发起不可逆动作的能力。两个原语在 #41 的两种形态下形状相同，故先于该决定成文。 |
+| v0.4 | 2026-10-05 | 第 3 步实现 `connector` 源时补了一处形状：`Watch` 增加 `connector?: { id, tool, args? }`——§3.1 的谓词源表把 `connector` 列为合法源，而类型里没有"读哪个连接器的哪个工具"这个字段，那句约束当时无法执行。另新增 `WATCH_PATH_GRAMMAR` 与 `readPath`：前者把 `predicate.field` 限成纯标识符点路径（至多 4 段，无下标/通配/表达式），后者只回 string｜number、非标量或缺失路径判为不可读——与 §3.1"字段名是白名单、不引入表达式语言"同源；连接器载荷在编译期不可知，边界只能落在连接器自己的声明加这两条运行时约束上。 |
 | v0.3 | 2026-10-05 | 第 2 步实现时改了四处形状，仍是设计稿的错而不是实现的偏离：① 补 `realm`（及可选 `realmId`）——§5 要求 watch 归属单一域，而 §3.1 的类型里没有这个字段，那句约束当时无法执行；② 把"预算"拆成 `budget`（上限，人写定）与 `used`（内核账，持久化）——原文只写"budget 剩余...被消费计数持久化"，一个字段既当上限又当计数则重启无法判读；③ `register()` 不接受 `enabled`——启用是登记的必然结果，停用与撤销是两次被记录的独立动作，把 `enabled` 做成入参等于允许登记一条天生不工作的 watch；④ 求值器需要 `lastValue` 才能让 `changed` 有意义，否则第一个 tick 对任何值都算"变化"。**两处实现刻意收窄**：`connector` 源未接时按"读数不可得"处理（不触发、计数、超限自动停用），绝不退化成"条件不成立"——否则一条配错的 watch 会永远安静；`execute` 在第 4 步之前**一律 fail-closed**（拿不到子票据即零出站），不因"反正还没接线"而先跑起来。另：`runTick` 由调用方驱动，内核不持定时器（与 `src/vault/cli.ts:6-8 #scheduler` 同一口径），故 §3.2 的"节律"由 `intervalSeconds` 与调用方共同决定。 |
 | v0.2 | 2026-10-05 | 写实现时改了三处形状，都是设计稿的错而不是实现的偏离：① `used` 与 `revokedAt` **移出签名 claim**——原结构把它们和静态授权一起签，则第一次派生就让签名失效；现规定 claim 只覆盖操作者批准后不再变的那组字段，"派生不放大"改由断言守（并有专门用例钉住"改了 `used` 仍验签通过"是有意的）。② 补 `vassal?: string`——不变式 1 点名 vassal 必须被契约覆盖，而 v0.1 的类型里没有这个字段，那句不变式当时无法执行。③ 删掉 `perFireBudget` 与 `used.spent`——金额口径要 deferred **#8** 的成本台账才有意义，没有生产者的计数字段是装饰；次数与并发两条上限已足以卡住自主发起的总量。另把子票据 TTL 写成 `min(请求 TTL, 窗口剩余)` 再交子票据自身上限，使"不晚于窗口"成为结构而不是约定。 |
