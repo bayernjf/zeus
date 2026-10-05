@@ -28,6 +28,67 @@ function snapshotRoute(overrides: { audit?: ResponseLike } = {}) {
   };
 }
 
+describe('TUI contract face (self-host step 5)', () => {
+  it('includes the contract ledger in the snapshot and degrades to null when unmounted', async () => {
+    const withContracts = mockClient(url => {
+      if (url === 'http://kernel/api/delegation-contracts') {
+        return okJson({ contracts: [{ id: 'dc-1', grantedBy: 'op', skill: 'research', capabilities: ['execute'], limits: { maxChildTickets: 1, maxConcurrent: 1, windowEndsAt: 'w' }, used: { childTickets: 0, inFlight: 0 }, issuedAt: 't' }] });
+      }
+      return snapshotRoute()(url);
+    });
+    const snap = await withContracts.client.snapshot();
+    expect(snap.contracts?.contracts).toHaveLength(1);
+
+    const without = mockClient(url => (url === 'http://kernel/api/delegation-contracts' ? fail503 : snapshotRoute()(url)));
+    const degraded = await without.client.snapshot();
+    expect(degraded.contracts).toBeNull();
+  });
+
+  it('issues a contract via POST and unwraps the envelope', async () => {
+    const { calls, client } = mockClient(url => {
+      if (url === 'http://kernel/api/delegation-contracts') {
+        return okJson({ contract: { id: 'dc-9', grantedBy: 'op', skill: 'research', capabilities: ['execute'], limits: {}, used: { childTickets: 0, inFlight: 0 }, issuedAt: 't' } });
+      }
+      return fail503;
+    });
+    const contract = await client.issueContract({
+      grantedBy: 'op',
+      skill: 'research',
+      capabilities: ['execute'],
+      limits: { maxChildTickets: 4, maxConcurrent: 2, windowEndsAt: '2026-10-02T00:00:00.000Z' },
+    });
+    expect(contract.id).toBe('dc-9');
+    const call = calls.find(c => c.url.endsWith('/api/delegation-contracts'));
+    expect(call?.init?.method).toBe('POST');
+    expect(JSON.parse(call?.init?.body ?? '{}').capabilities).toEqual(['execute']);
+  });
+
+  it('revokes via DELETE and surfaces a refusal as ApiError', async () => {
+    const { calls, client } = mockClient(url => (url.endsWith('/api/delegation-contracts/dc-1') ? okJson({}) : fail503));
+    await client.revokeContract('dc-1');
+    const call = calls.find(c => c.url.endsWith('/api/delegation-contracts/dc-1'));
+    expect(call?.init?.method).toBe('DELETE');
+
+    const refusing = mockClient(url => (url.endsWith('/api/delegation-contracts/dc-1') ? { ok: false, status: 409, json: async () => ({ message: 'already revoked' }) } : fail503));
+    await expect(refusing.client.revokeContract('dc-1')).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('approve-contract returns the new contract and rebound watch ids', async () => {
+    const { calls, client } = mockClient(url =>
+      url.endsWith('/api/escalations/esc-1/approve-contract')
+        ? okJson({ escalation: { id: 'esc-1' }, contract: { id: 'dc-2' }, watch: { id: 'w-1' } })
+        : fail503,
+    );
+    const bound = await client.approveContract('esc-1', { grantedBy: 'operator', maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: '2026-10-02T00:00:00.000Z' });
+    expect(bound).toEqual({ contractId: 'dc-2', watchId: 'w-1' });
+    const call = calls.find(c => c.url.includes('/approve-contract'));
+    expect(call?.init?.method).toBe('POST');
+    const sent = JSON.parse(call?.init?.body ?? '{}');
+    expect(sent.grantedBy).toBe('operator');
+    expect(sent.limits).toEqual({ maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: '2026-10-02T00:00:00.000Z' });
+  });
+});
+
 describe('TUI HTTP client', () => {
   it('includes the latest audit entries in the snapshot', async () => {
     const { client } = mockClient(snapshotRoute());

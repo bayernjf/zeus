@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { COMMAND_HELP, parseCommand } from '../src/tui/commands.js';
 
+describe('TUI contract commands (self-host step 5 face)', () => {
+  it('parses contract revoke as a bare index and issue with ceilings', () => {
+    expect(parseCommand('c3')).toEqual({ kind: 'contractRevoke', index: 3 });
+    expect(parseCommand('c 3')).toEqual({ kind: 'contractRevoke', index: 3 });
+    expect(parseCommand('c research 4 2 driver')).toEqual({
+      kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'driver',
+    });
+    expect(parseCommand('c research 4 2')).toEqual({
+      kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'operator',
+    });
+  });
+
+  it('rejects contract forms that would issue a malformed contract', () => {
+    expect(parseCommand('c research 0 2')).toEqual({ error: 'contract-bad-limit' });
+    expect(parseCommand('c research 2 4')).toEqual({ error: 'contract-bad-limit' });
+    expect(parseCommand('c research x 2')).toEqual({ error: 'contract-bad-limit' });
+    expect(parseCommand('c')).toEqual({ error: 'contract-needs-args' });
+    expect(parseCommand('c research')).toEqual({ error: 'contract-needs-args' });
+    expect(COMMAND_HELP).toContain('delegation contract');
+  });
+});
+
 describe('TUI command parser', () => {
   it('parses refresh and quit (case/space tolerant)', () => {
     expect(parseCommand('')).toEqual({ kind: 'refresh' });

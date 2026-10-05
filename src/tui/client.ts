@@ -21,6 +21,7 @@ export type DeckSnapshot = {
   state: StateView | null;
   audit: AuditView[] | null;
   domains: DomainsView | null;
+  contracts: ContractsView | null;
 };
 
 export type RosterView = {
@@ -100,6 +101,21 @@ export type DomainsView = {
   }>;
 };
 
+/** GET /api/delegation-contracts: the bounded execute-authority ledger. */
+export type ContractView = {
+  id: string;
+  grantedBy: string;
+  skill: string;
+  vassal?: string;
+  capabilities: string[];
+  limits: { maxChildTickets: number; maxConcurrent: number; windowEndsAt: string };
+  used: { childTickets: number; inFlight: number };
+  issuedAt: string;
+  revokedAt?: string;
+};
+
+export type ContractsView = { contracts: ContractView[] };
+
 export type DeckClient = {
   snapshot(): Promise<DeckSnapshot>;
   /** Read-only fan-out/decision timeline. */
@@ -117,6 +133,24 @@ export type DeckClient = {
   }): Promise<DomainsView['grants'][number]>;
   /** Revoke a cross-domain grant by its grantId. */
   revokeGrant(grantId: string): Promise<void>;
+  /** Read-only delegation contract ledger (step 5 operator face). */
+  contracts(): Promise<ContractsView>;
+  /** Issue a delegation contract; capabilities are the deck's fixed narrow set. */
+  issueContract(input: {
+    grantedBy: string;
+    skill: string;
+    capabilities: string[];
+    limits: { maxChildTickets: number; maxConcurrent: number; windowEndsAt: string };
+  }): Promise<ContractView>;
+  /** Revoke a delegation contract; derivations block immediately. */
+  revokeContract(id: string): Promise<void>;
+  /** One-click answer to a delegation-limit escalation: issue an execute-only
+   *  contract, rebind the watch, approve the row - all kernel-side. The endpoint
+   *  requires grantedBy and limits, so the deck states the shape it approves. */
+  approveContract(
+    id: string,
+    input: { grantedBy: string; maxChildTickets: number; maxConcurrent: number; windowEndsAt: string },
+  ): Promise<{ contractId: string; watchId: string }>;
   revoke(name: string): Promise<void>;
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
@@ -157,27 +191,31 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
     return body as T;
   }
 
-  async function post(path: string, payload?: unknown): Promise<void> {
+  async function postFor<T>(path: string, payload?: unknown): Promise<T> {
     const res = await fetchImpl(`${baseUrl}${path}`, {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
       ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}),
     });
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      throw new ApiError(res.status, body);
-    }
+    const body = (await res.json().catch(() => null)) as T;
+    if (!res.ok) throw new ApiError(res.status, body);
+    return body as T;
+  }
+
+  async function post(path: string, payload?: unknown): Promise<void> {
+    await postFor<unknown>(path, payload);
   }
 
   return {
     async snapshot(): Promise<DeckSnapshot> {
-      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv] = await Promise.allSettled([
+      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv] = await Promise.allSettled([
         getJson<{ snapshot: RosterView }>('/api/roster'),
         getJson<{ escalations: EscalationView[] }>('/api/escalations?status=pending'),
         getJson<MetricsView>('/api/metrics'),
         getJson<StateView>('/api/state'),
         getJson<{ entries: AuditView[] }>('/api/audit?limit=12'),
         getJson<DomainsView>('/api/domains'),
+        getJson<ContractsView>('/api/delegation-contracts'),
       ]);
       // Roster + escalations are core; their failure aborts the render. Metrics/
       // state are additive and degrade to null if that face is not mounted.
@@ -190,6 +228,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         state: stateEnv.status === 'fulfilled' ? stateEnv.value : null,
         audit: auditEnv.status === 'fulfilled' ? auditEnv.value.entries : null,
         domains: domainsEnv.status === 'fulfilled' ? domainsEnv.value : null,
+        contracts: contractsEnv.status === 'fulfilled' ? contractsEnv.value : null,
       };
     },
     timeline: async (limit = 12) => {
@@ -209,6 +248,28 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
     revokeGrant: async grantId => {
       const res = await fetchImpl(`${baseUrl}/api/domains/grants/${encodeURIComponent(grantId)}`, { method: 'DELETE', headers });
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+    },
+    contracts: async () => getJson<ContractsView>('/api/delegation-contracts'),
+    issueContract: async input => {
+      const res = await fetchImpl(`${baseUrl}/api/delegation-contracts`, {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      const body = (await res.json().catch(() => null)) as { contract?: ContractView } | null;
+      if (!res.ok || !body?.contract) throw new ApiError(res.status, body);
+      return body.contract;
+    },
+    revokeContract: async id => {
+      const res = await fetchImpl(`${baseUrl}/api/delegation-contracts/${encodeURIComponent(id)}`, { method: 'DELETE', headers });
+      if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+    },
+    approveContract: async (id, input) => {
+      const body = await postFor(`/api/escalations/${encodeURIComponent(id)}/approve-contract`, {
+        grantedBy: input.grantedBy,
+        limits: { maxChildTickets: input.maxChildTickets, maxConcurrent: input.maxConcurrent, windowEndsAt: input.windowEndsAt },
+      }) as { contract?: { id?: string }; watch?: { id?: string } } | null;
+      return { contractId: body?.contract?.id ?? '', watchId: body?.watch?.id ?? '' };
     },
     revoke: async name => {
       const res = await fetchImpl(`${baseUrl}/api/vassals/${encodeURIComponent(name)}`, { method: 'DELETE', headers });

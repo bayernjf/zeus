@@ -15,6 +15,8 @@ export type DeckCommand =
   | { kind: 'grantIssue'; realmIndex: number; subject: string; access: 'read' | 'write'; grantedBy: string }
   | { kind: 'grantRevoke'; grantIndex: number }
   | { kind: 'recognize'; text: string; useModel: boolean }
+  | { kind: 'contractIssue'; skill: string; maxChildTickets: number; maxConcurrent: number; grantedBy: string }
+  | { kind: 'contractRevoke'; index: number }
   | { kind: 'help' };
 
 export type CommandError = { error: string };
@@ -70,6 +72,28 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
     return { kind: 'recognize', text, useModel: false };
   }
 
+  // Delegation contracts (self-host step 5 operator face). Revoke is a bare
+  // index - `c3` or `c 3`; issue carries the skill and ceilings - `c <skill>
+  // <tickets> <concurrent> [by]`. Capabilities stay fixed to `execute` and the
+  // window to 24h here: the deck issues the narrowest contract, and an operator
+  // who wants a different shape uses the HTTP face where that is a real choice.
+  const contractRevokeMatch = /^c\s*(\d+)\s*$/i.exec(line);
+  if (contractRevokeMatch) {
+    const index = Number(contractRevokeMatch[1]);
+    if (!Number.isInteger(index) || index < 1) return { error: 'bad-index' };
+    return { kind: 'contractRevoke', index };
+  }
+  const contractIssueMatch = /^c\s+(\S+)\s+(\S+)\s+(\S+)(?:\s+(.+))?$/i.exec(line);
+  if (contractIssueMatch) {
+    const [, skill, ticketsStr, concurrentStr, issuerRaw] = contractIssueMatch;
+    const maxChildTickets = Number(ticketsStr);
+    const maxConcurrent = Number(concurrentStr);
+    if (!Number.isInteger(maxChildTickets) || maxChildTickets < 1) return { error: 'contract-bad-limit' };
+    if (!Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > maxChildTickets) return { error: 'contract-bad-limit' };
+    return { kind: 'contractIssue', skill: skill!, maxChildTickets, maxConcurrent, grantedBy: issuerRaw?.trim() || 'operator' };
+  }
+  if (lower === 'c' || /^c\s+\S+$/i.test(line)) return { error: 'contract-needs-args' };
+
   const match = /^([axsd])\s*(\d+)(?:[\s.:-]+(\d+))?$/.exec(line.toLowerCase());
   if (!match) return { error: 'unknown' };
   const [, letter, indexStr, stanceStr] = match;
@@ -102,6 +126,8 @@ export const COMMAND_HELP = [
   '  d<n>       revoke roster vassal #n (asks y/N)',
   '  g<n> <subject> <r|w> [by]  issue a personal->enterprise grant on realm #n',
   '  k<n>       revoke cross-domain grant #n (asks y/N)',
+  '  c <skill> <tickets> <concurrent> [by]  issue a delegation contract (execute, 24h)',
+  '  c<n>       revoke delegation contract #n (asks y/N)',
   '  i <text>   recognize an operator instruction locally (plan-only)',
   '  im <text>  recognize using the configured decision backend (opt-in)',
   '  q          quit',
