@@ -338,6 +338,41 @@
           <div class="body" id="grantListBody"></div>
         </div>
       </div>
+      <div class="grid" style="grid-template-columns: 340px 1fr; margin-top: 16px">
+        <div class="panel">
+          <h2>签发委托契约 <span class="hint">POST /api/delegation-contracts</span></h2>
+          <div class="body">
+            <div class="form" id="contractForm">
+              <div class="row">
+                <label for="cSkill">技能</label>
+                <input id="cSkill" autocomplete="off" placeholder="如 research">
+              </div>
+              <div class="row inline">
+                <div class="row">
+                  <label for="cTickets">子票据上限</label>
+                  <input id="cTickets" type="number" min="1" value="4">
+                </div>
+                <div class="row">
+                  <label for="cConcurrent">并发上限</label>
+                  <input id="cConcurrent" type="number" min="1" value="1">
+                </div>
+              </div>
+              <div class="row">
+                <label for="cBy">签发者</label>
+                <input id="cBy" autocomplete="off" placeholder="driver">
+              </div>
+              <div class="hint" style="margin-top:6px">能力固定 execute，窗口 24 小时；越界自动停用并升级人工。撤销即刻阻断派生。</div>
+              <div class="actions">
+                <button class="btn primary" id="btnContract">签发契约</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>委托契约 <span class="hint" id="contractCount"></span></h2>
+          <div class="body" id="contractListBody"></div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== 视图：组织编制（E9.3，只读） ===== -->
@@ -1442,6 +1477,14 @@
       return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}${sel}
         <button class="btn small" data-act="resolve" data-id="${esc(e.id)}">裁决立场</button></div>`;
     }
+    if (e.kind === 'delegation-limit') {
+      return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}
+        <div style="display:flex;gap:4px">
+          <button class="btn small primary" data-act="approve-contract" data-id="${esc(e.id)}">签新契约并批准</button>
+          <button class="btn small danger" data-act="reject" data-id="${esc(e.id)}">拒绝</button>
+        </div>
+        <div style="font-size:11px;color:var(--text-3)">签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch；拒绝则放弃本次越界。</div></div>`;
+    }
     return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}
       <div style="display:flex;gap:4px">
         <button class="btn small primary" data-act="approve" data-id="${esc(e.id)}">批准</button>
@@ -1469,6 +1512,64 @@
     el.innerHTML = html + '</table>';
   }
 
+  // ===== 委托契约（自托管第 5 步操作者面） =====
+  async function loadContracts() {
+    try {
+      const d = await api('GET', '/api/delegation-contracts');
+      renderContractList(d);
+    } catch (e) {
+      $('contractListBody').innerHTML = emptyRow('契约面不可用：' + esc(e.message));
+    }
+  }
+
+  function renderContractList(d) {
+    const el = $('contractListBody');
+    const list = (d && d.contracts) || [];
+    $('contractCount').textContent = list.length ? list.length + ' 份' : '';
+    if (!list.length) { el.innerHTML = emptyRow('无契约——无人被授权自主执行'); return; }
+    let html = '<table><colgroup><col style="width:15%"><col style="width:11%"><col style="width:22%"><col style="width:20%"><col style="width:12%"><col style="width:20%"></colgroup><tr><th>契约 ID</th><th>技能</th><th>额度（已用/上限 · 在途/并发）</th><th>窗口至 / 状态</th><th>能力</th><th>操作</th></tr>';
+    for (const c of list) {
+      const revoked = !!c.revokedAt;
+      const status = revoked
+        ? '<span style="color:var(--text-3)">已撤销</span>'
+        : '<span style="color:var(--ok)">生效</span>';
+      const action = revoked
+        ? '<span style="color:var(--text-3);font-size:12px">—</span>'
+        : '<button class="btn small danger" data-act="revoke-contract" data-id="' + esc(c.id) + '">撤销</button>';
+      html += '<tr>' +
+        '<td class="mono" style="font-size:11.5px" title="' + esc(c.id) + '">' + esc((c.id || '').slice(0, 13)) + '…</td>' +
+        '<td class="mono">' + esc(c.skill) + '</td>' +
+        '<td class="mono">' + ((c.used && c.used.childTickets) || 0) + '/' + esc(c.limits && c.limits.maxChildTickets) + ' · ' + ((c.used && c.used.inFlight) || 0) + '/' + esc(c.limits && c.limits.maxConcurrent) + '</td>' +
+        '<td class="mono" style="font-size:11.5px">' + esc((c.limits && c.limits.windowEndsAt || '').replace('T', ' ').slice(0, 16)) + ' · ' + status + '</td>' +
+        '<td class="mono">' + esc((c.capabilities || []).join(',')) + '</td>' +
+        '<td>' + action + '</td>' +
+        '</tr>';
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  async function issueContract() {
+    const skill = $('cSkill').value.trim();
+    const tickets = parseInt($('cTickets').value, 10);
+    const concurrent = parseInt($('cConcurrent').value, 10);
+    const by = $('cBy').value.trim() || 'driver';
+    if (!skill) { toast('请填写技能', 'bad'); return; }
+    if (!(tickets > 0) || !(concurrent > 0) || concurrent > tickets) { toast('票据上限与并发上限都要 ≥1，且并发 ≤ 票据', 'bad'); return; }
+    if (!window.confirm('签发委托契约：' + skill + '（' + tickets + ' 张 / 并发 ' + concurrent + '，窗口 24h，能力 execute）？')) return;
+    try {
+      await api('POST', '/api/delegation-contracts', {
+        grantedBy: by,
+        skill: skill,
+        capabilities: ['execute'],
+        limits: { maxChildTickets: tickets, maxConcurrent: concurrent, windowEndsAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString() },
+      });
+      toast('已签发契约', 'ok');
+      await loadContracts();
+    } catch (e) { toast('签发失败：' + e.message, 'bad'); }
+  }
+
+  $('btnContract').addEventListener('click', issueContract);
+
   function renderRealmSelect(d) {
     const sel = $('gRealm');
     const enterprises = ((d && d.realms) || []).filter(r => r.type === 'enterprise');
@@ -1486,7 +1587,11 @@
     try {
       if (view === 'monitor') await loadMonitor();
       else if (view === 'oversight') await loadEscalations();
-      else if (view === 'grants') await loadDomains();
+      else if (view === 'grants') {
+        // The two authorization faces degrade independently: a missing domains
+        // face must not blank the contract panel (and vice versa).
+        await Promise.allSettled([loadDomains(), loadContracts()]);
+      }
       else if (view === 'org') await loadOrg();
       else if (view === 'catalog') await loadCatalog();
       else if (view === 'intent') await loadIntent(state.intentId);
@@ -1503,6 +1608,7 @@
         $('escBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'grants') {
         $('grantListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('contractListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'org') {
         $('orgBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'catalog') {
@@ -1586,6 +1692,31 @@
           toast('已吊销授权 ' + id, 'ok');
           await loadDomains();
         } catch (e) { toast('吊销失败：' + e.message, 'bad'); }
+      })();
+    } else if (act === 'revoke-contract') {
+      if (!window.confirm('撤销契约 ' + id + ' 吗？撤销即刻阻断后续派生。')) return;
+      (async () => {
+        try {
+          await api('DELETE', '/api/delegation-contracts/' + id);
+          toast('已撤销契约 ' + id, 'ok');
+          await loadContracts();
+        } catch (e) { toast('撤销失败：' + e.message, 'bad'); }
+      })();
+    } else if (act === 'approve-contract') {
+      const note = $('note-' + id) ? $('note-' + id).value.trim() : '';
+      if (!window.confirm('为 ' + id + ' 签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch 吗？')) return;
+      (async () => {
+        try {
+          // The endpoint requires grantedBy + limits; the deck states the narrow
+          // shape it approves (execute-only is pinned server-side).
+          const r = await api('POST', '/api/escalations/' + id + '/approve-contract', {
+            grantedBy: 'operator',
+            limits: { maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString() },
+            ...(note ? { reason: note } : {}),
+          });
+          toast('已签新契约 ' + ((r && r.contract && r.contract.id) || '') + ' 并换绑 watch', 'ok');
+          await loadEscalations();
+        } catch (e) { toast('approve-contract 失败：' + e.message, 'bad'); }
       })();
     } else if (act === 'revoke-vassal' || act === 'reinstate-vassal') {
       const name = btn.getAttribute('data-name') || '';
