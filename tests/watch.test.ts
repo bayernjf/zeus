@@ -246,6 +246,92 @@ describe('a tick over the metrics source', () => {
   });
 });
 
+describe('connector source (step 3)', () => {
+  const connectorInput = (overrides: Partial<Parameters<WatchRegistry['register']>[0]> = {}) =>
+    baseInput({
+      predicate: { source: 'connector', op: 'above', field: 'queue.depth', value: 2 },
+      connector: { id: 'conn-1', tool: 'realm.search', args: { query: 'x' } },
+      ...overrides,
+    });
+
+  it('refuses a field that is not a bounded path', () => {
+    const registry = new WatchRegistry({ newId: () => 'wc' });
+    for (const field of ['queue[0]', 'queue.*', 'a.b.c.d.e', 'queue .depth', '']) {
+      expect(() => registry.register(connectorInput({ predicate: { source: 'connector', op: 'present', field } }))).toThrow(
+        /bounded dot-path/
+      );
+    }
+  });
+
+  it('refuses a connector watch that does not name the tool it reads', () => {
+    const registry = new WatchRegistry({ newId: () => 'wc' });
+    expect(() => registry.register(connectorInput({ connector: { id: 'conn-1', tool: '' } }))).toThrow(/tool it reads/);
+  });
+
+  it('fires when a healthy upstream really returns a matching value', async () => {
+    // Positive control: without a firing healthy case, "jitter does not fire"
+    // proves nothing — every implementation passes it by never firing at all.
+    const registry = new WatchRegistry({ newId: () => 'wc' });
+    registry.register(connectorInput());
+    const calls: Array<{ id: string; tool: string }> = [];
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: {
+        connector: async ref => {
+          calls.push({ id: ref.id, tool: ref.tool });
+          return { queue: { depth: 7 } };
+        },
+      },
+      submit: async (): Promise<WatchSubmitResult> => ({ ok: true }),
+    });
+    expect(report.fired).toEqual(['wc']);
+    expect(calls).toEqual([{ id: 'conn-1', tool: 'realm.search' }]);
+  });
+
+  it('reports a jittering connector as unavailable and does not fire', async () => {
+    const registry = new WatchRegistry({ newId: () => 'wc' });
+    registry.register(connectorInput());
+    const audits: string[] = [];
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: {
+        connector: async () => {
+          throw new Error('connector unreachable');
+        },
+      },
+      submit: async (): Promise<WatchSubmitResult> => ({ ok: true }),
+      audit: (entry: WatchAuditEntry) => audits.push(entry.decision),
+    });
+    expect(report.unavailable).toEqual(['wc']);
+    expect(report.fired).toEqual([]);
+    expect(audits).toContain('watch-eval-unavailable');
+  });
+
+  it('treats a non-scalar or missing path as unreadable', async () => {
+    const registry = new WatchRegistry({ newId: () => 'wc' });
+    registry.register(connectorInput({ predicate: { source: 'connector', op: 'present', field: 'queue' } }));
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: { connector: async () => ({ queue: { depth: 1 } }) },
+      submit: async (): Promise<WatchSubmitResult> => ({ ok: true }),
+    });
+    // An object is not a reading, and an empty object is not "absent".
+    expect(report.unavailable).toEqual(['wc']);
+    expect(report.fired).toEqual([]);
+  });
+
+  it('is unreadable when no connector registry is assembled', async () => {
+    const registry = new WatchRegistry({ newId: () => 'wc' });
+    registry.register(connectorInput());
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: {},
+      submit: async (): Promise<WatchSubmitResult> => ({ ok: true }),
+    });
+    expect(report.unavailable).toEqual(['wc']);
+  });
+});
+
 describe('watches survive a restart', () => {
   it('restores the spent budget and lastFiredAt from the snapshot file', async () => {
     const sandbox = await mkdtemp(join(tmpdir(), 'zeus-watch-'));

@@ -19,7 +19,7 @@ import {
   ExecutionDelegationNonceLedger,
   type ExecutionDelegationAuditEntry,
 } from '../delegation/execution-delegation.js';
-import { WatchRegistry, realmReading, type WatchTickReport } from '../watch/watch.js';
+import { WatchRegistry, realmReading, connectorReading, type WatchTickReport } from '../watch/watch.js';
 import type { Ed25519MemorySigner } from '../registry/signing.js';
 import { DomainGrantRegistry, type GrantAuditEntry } from '../realm/authorization.js';
 import { normalizeTenant } from '../realm/tenant.js';
@@ -656,6 +656,16 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         metrics: () => metrics.snapshot(),
         ...(realmStore
           ? { realm: async (realmId: string) => realmReading(realmStore, realmId) }
+          : {}),
+        // Step 3: the connector source reads through the declaration's own
+        // boundary, so an undeclared tool is unreadable rather than empty.
+        ...(connectorRegistry
+          ? {
+              connector: async (ref: { id: string; tool: string; args?: Record<string, unknown> }) =>
+                // FetchLike accepts a narrower input union than the DOM fetch
+                // signature the connector port declares; the value is the same.
+                connectorReading(connectorRegistry, ref, fetchImpl as typeof fetch | undefined),
+            }
           : {}),
       },
       submit: async request => {

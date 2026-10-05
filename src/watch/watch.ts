@@ -31,10 +31,19 @@ export type WatchOp = (typeof WATCH_OPS)[number];
 export const WATCH_FIELDS: Record<WatchSource, readonly string[]> = {
   metrics: ['inFlight', 'queueDepth', 'failureRate', 'finished'],
   realm: ['entryCount', 'lastItemModifiedAt'],
-  // Step 3. Declared now so the registry can refuse it loudly (unreadable
-  // source) instead of treating an unwired source as "condition not met".
+  // A connector's payload is not knowable at compile time, so there is no field
+  // list to close over; the boundary is the connector's own declaration plus the
+  // outbound guards, and the path is checked against `WATCH_PATH_GRAMMAR`.
   connector: [],
 };
+
+/**
+ * The only shape a connector field may take: a bounded dot-path of plain
+ * identifiers. No brackets, no indices, no wildcards, no quoting — this is not
+ * an expression language and must never grow into one. An unbounded path would
+ * move the boundary into the walker, which has no gate of its own.
+ */
+export const WATCH_PATH_GRAMMAR = /^[A-Za-z0-9_-]{1,40}(?:\.[A-Za-z0-9_-]{1,40}){0,3}$/;
 
 export type WatchPredicate = {
   source: WatchSource;
@@ -50,6 +59,9 @@ export type Watch = {
   /** §5: a watch belongs to a single domain, fixed at registration. */
   realm: RealmType;
   realmId?: string;
+  /** Which declared connector tool to read. Args are fixed at registration:
+   *  nothing here is computed per tick. */
+  connector?: { id: string; tool: string; args?: Record<string, unknown> };
   predicate: WatchPredicate;
   intent: { skill: string; subject: string; mode: 'plan' | 'execute'; maxFanOut: number };
   intervalSeconds: number;
@@ -85,6 +97,7 @@ export type WatchReading = { kind: 'value'; value: string | number } | { kind: '
 export type WatchSources = {
   metrics?: () => MetricsSnapshot | undefined;
   realm?: (realmId: string) => Promise<{ entryCount: number; lastItemModifiedAt?: string }>;
+  connector?: (ref: { id: string; tool: string; args?: Record<string, unknown> }) => Promise<unknown>;
 };
 
 /** Read a mounted realm through its existing read-only enumeration (no new surface). */
@@ -97,6 +110,34 @@ export async function realmReading(store: RealmStore, realmId: string): Promise<
     }
   }
   return { entryCount: entries.length, ...(lastItemModifiedAt ? { lastItemModifiedAt } : {}) };
+}
+
+/**
+ * Read a declared connector tool. The boundary is the connector's own: the tool
+ * must have been granted by the declaration and advertised at handshake, and the
+ * call goes out through the existing outbound guards. Nothing here widens that.
+ */
+export async function connectorReading(
+  registry: {
+    callTool: (id: string, name: string, args?: Record<string, unknown>, fetchImpl?: typeof fetch) => Promise<unknown>;
+  },
+  ref: { id: string; tool: string; args?: Record<string, unknown> },
+  fetchImpl?: typeof fetch,
+): Promise<unknown> {
+  // The same injected transport the rest of the kernel was assembled with, so a
+  // watch never opens a second, differently-guarded outbound path.
+  return registry.callTool(ref.id, ref.tool, ref.args ?? {}, fetchImpl);
+}
+
+/** Walk a bounded dot-path to a scalar. Anything else is "not readable". */
+export function readPath(payload: unknown, path: string): string | number | undefined {
+  let current: unknown = payload;
+  for (const segment of path.split('.')) {
+    if (current === null || typeof current !== 'object') return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  if (typeof current === 'number' || typeof current === 'string') return current;
+  return undefined;
 }
 
 /** Pure predicate evaluation. Returns null when the reading is unavailable. */
@@ -186,7 +227,16 @@ export class WatchRegistry {
     if (!WATCH_OPS.includes(input.predicate.op)) {
       throw new WatchError(`predicate.op must be one of ${WATCH_OPS.join(', ')}`);
     }
-    if (!WATCH_FIELDS[source].includes(input.predicate.field)) {
+    if (source === 'connector') {
+      if (!WATCH_PATH_GRAMMAR.test(input.predicate.field)) {
+        throw new WatchError(
+          `predicate.field '${input.predicate.field}' is not a bounded dot-path (plain identifiers, at most 4 segments; no indices, wildcards or expressions)`
+        );
+      }
+      if (!input.connector?.id || !input.connector?.tool) {
+        throw new WatchError("a connector watch must name the connector id and the tool it reads");
+      }
+    } else if (!WATCH_FIELDS[source].includes(input.predicate.field)) {
       throw new WatchError(`predicate.field '${input.predicate.field}' is not readable from source '${source}' (allowed: ${WATCH_FIELDS[source].join(', ') || 'none'})`);
     }
     if ((input.predicate.op === 'above' || input.predicate.op === 'below') && typeof input.predicate.value !== 'number') {
@@ -373,8 +423,15 @@ export class WatchRegistry {
       if (typeof value !== 'number' && typeof value !== 'string') return { kind: 'unavailable' };
       return { kind: 'value', value };
     }
-    // connector: step 3. Unwired means unreadable, and unreadable must never be
-    // mistaken for "the condition does not hold".
+    if (watch.predicate.source === 'connector') {
+      // Unwired, unmounted or throwing all read the same way: unavailable. A
+      // connector that jitters must not look like a satisfied condition.
+      if (!sources.connector || !watch.connector) return { kind: 'unavailable' };
+      const payload = await sources.connector(watch.connector);
+      const value = readPath(payload, watch.predicate.field);
+      if (value === undefined) return { kind: 'unavailable' };
+      return { kind: 'value', value };
+    }
     return { kind: 'unavailable' };
   }
 }

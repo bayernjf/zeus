@@ -516,9 +516,12 @@ export {
   WatchError,
   evaluatePredicate,
   realmReading,
+  connectorReading,
+  readPath,
   WATCH_SOURCES,
   WATCH_OPS,
   WATCH_FIELDS,
+  WATCH_PATH_GRAMMAR,
 } from './watch/watch.js';
 export type {
   Watch,
