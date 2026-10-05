@@ -192,10 +192,14 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
   }
 
   async function postFor<T>(path: string, payload?: unknown): Promise<T> {
+    // Always send a body: the header says JSON, and a JSON-labelled empty body
+    // is a transport-level 400 on a real Fastify before any route runs. The
+    // deck's plain approve/reject carries no payload, and mocked-fetch tests
+    // cannot see this - only a real process can (P0-8 pilot finding).
     const res = await fetchImpl(`${baseUrl}${path}`, {
       method: 'POST',
       headers: { ...headers, 'content-type': 'application/json' },
-      ...(payload !== undefined ? { body: JSON.stringify(payload) } : {}),
+      body: JSON.stringify(payload ?? {}),
     });
     const body = (await res.json().catch(() => null)) as T;
     if (!res.ok) throw new ApiError(res.status, body);
