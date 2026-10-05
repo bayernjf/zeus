@@ -1,6 +1,6 @@
-# 自托管试点验收规程（v0.2，2026-10-05）
+# 自托管试点验收规程（v0.4，2026-10-05）
 
-- 状态：**验收规程 v0.3（2026-10-05）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的原语、execute 触发派生与越限升级已全部接进 boot（设计稿 §7 第 4 步完成），但无 HTTP 签发面**——契约只能由进程内装配，操作者还不能自己签发。故 P1/P2 作为**用户可用的能力**仍未开工，判据是预先写好的——每条都附"现在就能跑的证伪探针"。
+- 状态：**验收规程 v0.4（2026-10-05）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的内核链与 HTTP 操作者面已落地（设计稿 §7 第 4+5 步 HTTP 半）**——契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`，越限升级项可用 `POST /api/escalations/:id/approve-contract` 一键签新契约并换绑 watch；TUI/Web 专属控件未做（仍只经通用 HTTP 面操作）。故 P1/P2 作为**用户可用的能力**：P2 的 API 验收已可跑、端到端试点待 TUI/Web 面与 smoke 第 6 步；判据是预先写好的——每条都附"现在就能跑的证伪探针"。
 - 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
@@ -10,7 +10,7 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 
 ## 1. 为什么只有 P0 能跑（出处）
 
-内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:6-8 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2329 #keepalive`、编排分支超时 `src/orchestrator/orchestrator.ts:721-727 #setTimeout`、派发受理超时 `src/dispatch/client.ts:93 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
+内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:6-8 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2539 #keepalive`、编排分支超时 `src/orchestrator/orchestrator.ts:721-727 #setTimeout`、派发受理超时 `src/dispatch/client.ts:93 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
 
 同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:148 #executionDelegationNonces`）。
 
@@ -54,7 +54,7 @@ node dist/http/serve.js
 curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/domains | jq
 ```
 
-- **退出判据**：`realms[]` 至少一条，字段只有 `realmId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:1645-1660 #contentDigest`——这个视图**不返回根目录字符串**）。
+- **退出判据**：`realms[]` 至少一条，字段只有 `realmId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:1750-1758 #contentDigest`——这个视图**不返回根目录字符串**）。
 - **可执行断言**：把上面 JSON 存盘，`grep -c "$HOME/Documents" <file>` 必须为 **0**。这是"边界是目录，定位符只有 realmId + 根相对 itemId"的操作者侧核对（MCP 侧的实测口径见 [mcp-integration.md](mcp-integration.md) §1.4）。
 - **现在跑不了的部分**：无。
 
@@ -89,7 +89,7 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
   CARD_URL=https://<你的 Agent>/api/a2a/agent-card [AGENT_TOKEN=…] SKILL=<技能 id> \
   npm run acceptance:fanout
   ```
-  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataRealms` 与 `REALM` 不匹配会被拒（这是 fealty 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:368 #reinstate`）。共用部署上不要带它。
+  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataRealms` 与 `REALM` 不匹配会被拒（这是 fealty 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:383 #reinstate`）。共用部署上不要带它。
 
 ### P0-5 让一次冲突真的走人工裁决
 
@@ -100,8 +100,8 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
 curl -fsS -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/escalations/<id>/approve | jq
 ```
 
-- **退出判据**：approve 后 `GET /api/intents/<id>/replay` 里出现人工裁决行（`src/http/server.ts:641-647 #approve` 把裁决回交编排器）。
-- **证据位置**：`GET /api/audit?decision=<裁决类决策名>`（`decision` 只接受登记过的枚举，传别的会 400 并列出全集 `src/http/server.ts:1605-1611 #AUDIT_DECISIONS`）。
+- **退出判据**：approve 后 `GET /api/intents/<id>/replay` 里出现人工裁决行（`src/http/server.ts:656-663 #approve` 把裁决回交编排器）。
+- **证据位置**：`GET /api/audit?decision=<裁决类决策名>`（`decision` 只接受登记过的枚举，传别的会 400 并列出全集 `src/http/server.ts:1711-1712 #AUDIT_DECISIONS`）。
 
 ### P0-6 execute 一次，用真票据
 
@@ -195,11 +195,11 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | 5 | watch 进内核快照，重启后 `lastFiredAt`/`budget.used` 不重置 | 重启后 `GET` 回来的计数必须等于重启前 |
 | 6 | `mode:'execute'` 的 watch 无票据时**到点即失败并升级**，不是静默跳过 | 建一条 execute 型 watch 且不给 `delegationId` → 必须落到升级台 |
 
-## 5. P2：有界自主（`DelegationContract`——内核侧已通，操作者签发面未做，验收判据先立）
+## 5. P2：有界自主（`DelegationContract`——内核侧 + HTTP 操作者面已通，TUI/Web 专属控件与 smoke 未做）
 
-前置能力：委托契约（设计稿 §4）。内核链已在真进程打通：execute 型 watch 在条件成立时从命名契约派生一次性子票据，票据过既有 execute gate 后真派发；无契约 / 无签名者 / 撞任一上限 → 零出站 + desk 一条 `delegation-limit`（证据：`tests/boot-watch-execution.test.ts` 三条真进程用例，设计稿 §7 第 4 步）。**但操作者仍无法自助签发契约**——没有 HTTP 端点，契约只能在进程启动时由装配代码注入，所以"真实用户跑试点"这一格仍未开。
+前置能力：委托契约（设计稿 §4）。内核链已在真进程打通：execute 型 watch 在条件成立时从命名契约派生一次性子票据，票据过既有 execute gate 后真派发；无契约 / 无签名者 / 撞任一上限 → 零出站 + desk 一条 `delegation-limit`（证据：`tests/boot-watch-execution.test.ts` 三条真进程用例，设计稿 §7 第 4 步）。第 5 步 HTTP 半已落地（设计稿 §7 第 5 步）：操作者可经 bearer 面自助签发 / 列表 / 读 / 撤销契约（`POST/GET/DELETE /api/delegation-contracts`），desk 上一条 delegation-limit 可用 `POST /api/escalations/:id/approve-contract` 一键签一份**仅覆盖 `execute`** 的新契约并换绑命名 watch（不重放被拒 fire，下一 tick 重新判条件）。证据：`tests/http-delegation-contracts.test.ts` 9 例。**TUI/Web 专属控件与 `smoke:core` 增步仍未做**——当前只能经通用 HTTP 面操作，故端到端试点仍待第 5 步剩余与第 6 步。
 
-**开工闸门探针（第 5 步未做，仍应失败）**：`curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -d '{}' http://127.0.0.1:8787/api/delegation-contracts` → 预期 **404**（2026-10-05 测得；代码级同证已从"grep 命中 0"改为"`grep -rn "api/delegation-contracts" src/` 命中 0"，因为原语本身已在 `src/delegation/` 与 `src/state/boot.ts` 中）。
+**开工闸门探针（已翻转）**：`curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -H "Content-Type: application/json" -d '{}' http://127.0.0.1:8787/api/delegation-contracts` → 现预期 **400**（路由已挂载，空体被拒；2026-10-05 测得）。带合法体（`grantedBy` / `skill` / `capabilities:["execute"]` / 正整数 `limits` / 未来的 `windowEndsAt`）同端点返回 **201**——该端点由“未实现 404”翻转为“已挂载、校验入参 400”，即第 5 步 HTTP 半开工闸门已过；代码级同证 `grep -rn "api/delegation-contracts" src/http/` 现命中 5 条路由注册。
 
 落地后的判据：
 
@@ -208,7 +208,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | 1 | 第 `maxChildTickets+1` 张子票据被拒，并审计 `delegation-limit-exceeded` | 上限设 2，发 3 次 → 第三次必须红 |
 | 2 | `windowEndsAt` 之后新子票据一律被拒 | 窗口设 1 秒，等到点再发 → 必须红 |
 | 3 | 撤销一份契约后，其下所有未消费票据立即不可用 | 撤销前后各发一次同一票据 → 后者必须红 |
-| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:150 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:732 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
+| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:150 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:752 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
 | 5 | 子票据的 `used` 计数持久化，重启不重置 | 重启后打到上限 → 必须仍然拒 |
 
 ## 6. 现在明确不要做的事（写下来防止顺手做掉）
@@ -224,5 +224,6 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 演进日志
 
+- **v0.4（2026-10-05）**：设计稿 §7 第 5 步 HTTP 半落地，P2 从“内核侧已通、操作者签发面未做”改为“内核侧 + HTTP 操作者面已通”：契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`（签发与撤销进审计脊，撤销即刻阻断派生），越限升级项可经 `POST /api/escalations/:id/approve-contract` 一键签一份仅 `execute` 的新契约并换绑 watch，不重放被拒 fire。开工闸门探针由 404 翻转为：空体 400、合法体 201；代码级同证改为 `src/http/` 下命中 5 条路由注册。真进程 HTTP 证据 9 例在 `tests/http-delegation-contracts.test.ts`。TUI/Web 专属控件与第 6 步 smoke 增步仍未做，端到端试点尚不能跑。
 - **v0.3（2026-10-05）**：设计稿 §7 第 4 步落地，P2 从"未实现"改为"内核侧已实现、用户面未实现"：execute 型 watch 的契约派生、execute gate、越限零出站 + `delegation-limit` 升级、升级幂等与重启重放均在真进程用例中证明；但契约签发 HTTP/TUI 面（第 5 步）未做，§5 的操作者级验收仍跑不了，开工闸门探针由 404 与路由 grep 双重守住。第 4 条判据的代码同证从冲突升级接线改为委托越限接线。
 - **v0.1（2026-10-05）**：首版。P0 八步全部锚到已落地命令/端点（含每步的反向对照）；P1/P2 只立判据并各附一条现在就应失败的探针，作为能力开工闸门；§1 用 `src/vault/cli.ts:6-8 #scheduler` 的原文把"没有调度器"从推测改成明文设计。
