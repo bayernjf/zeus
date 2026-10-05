@@ -82,6 +82,11 @@ export const AUDIT_DECISIONS = [
   // never look healthy while silently never firing.
   'watch-eval-unavailable',
   'watch-auto-disabled',
+  // self-host loop step 4: an unattended execute fire either received a
+  // one-time child ticket, or was refused at a delegation ceiling (zero
+  // outbound); both are governance facts about the contract.
+  'delegation-child-issued',
+  'delegation-limit-exceeded',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

@@ -6,8 +6,11 @@ export type EscalationStatus = 'pending' | 'approved' | 'rejected';
 
 /** task-input: one vassal task paused at input-required (E6.1).
  *  intent-conflict: the fan-out split across stances and the rule could not conclude (E6.2).
- *  memory-dispute: consolidation found contradictory facts it could not rule on. */
-export type EscalationKind = 'task-input' | 'intent-conflict' | 'memory-dispute';
+ *  memory-dispute: consolidation found contradictory facts it could not rule on.
+ *  delegation-limit: an unattended watch fire hit a delegation-contract ceiling
+ *  (self-host loop §4.2): no outbound dispatch happened; the operator answers by
+ *  issuing a new contract or switching the watch intent to plan. */
+export type EscalationKind = 'task-input' | 'intent-conflict' | 'memory-dispute' | 'delegation-limit';
 
 export type Escalation = {
   id: string;
@@ -39,6 +42,12 @@ export type Escalation = {
   /** memory-dispute only: the connected realm the disputed facts belong to, so
    *  the reliability write-back can resolve authors without a cross-domain scan. */
   realmId?: string;
+  /** delegation-limit only: the watch whose fire was refused. */
+  watchId?: string;
+  /** delegation-limit only: the delegation contract the fire derived from. */
+  delegationId?: string;
+  /** delegation-limit only: which ceiling/guard refused the child ticket. */
+  limitReason?: string;
 };
 
 export type OversightAuditEntry = {

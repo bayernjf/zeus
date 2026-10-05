@@ -95,9 +95,28 @@ describe('watch registration (closed predicate surface)', () => {
 
   it('refuses an execute watch that does not name a contract (invariant 4)', () => {
     const registry = new WatchRegistry({ newId: () => 'w1' });
-    expect(() => registry.register(baseInput({ intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 } }))).toThrow(
+    expect(() =>
+      registry.register(
+        baseInput({
+          intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
+          budget: { fires: 2, executes: 1 },
+        }),
+      )
+    ).toThrow(
       /delegationId/
     );
+  });
+
+  it('refuses an execute watch whose execute budget is not positive', () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    expect(() =>
+      registry.register(
+        baseInput({
+          intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
+          delegationId: 'contract-1',
+        }),
+      ),
+    ).toThrow(/budget\.executes/);
   });
 
   it('refuses an inverted window', () => {
@@ -222,27 +241,34 @@ describe('a tick over the metrics source', () => {
     expect(audits).toContain('watch-auto-disabled');
   });
 
-  it('fails closed on an execute fire instead of dispatching unattended', async () => {
+  it('fails closed on an execute fire with no trust anchor and escalates instead of dispatching', async () => {
     const registry = new WatchRegistry({ newId: () => 'we' });
     registry.register(
       baseInput({
         intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
         delegationId: 'contract-1',
+        budget: { fires: 2, executes: 1 },
       })
     );
     let submissions = 0;
+    const escalations: Array<{ reason: string; tickSeq: number }> = [];
+    const audits: string[] = [];
     const report = await registry.runTick({
       now: () => NOW,
       sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      escalateLimit: input => escalations.push({ reason: input.reason, tickSeq: input.tickSeq }),
+      audit: entry => audits.push(entry.decision),
       submit: async () => {
         submissions += 1;
         return { ok: true };
       },
     });
-    // Step 4 wires ticket derivation; until then the only safe answer is none.
+    // No derive hook assembled = no trust anchor: zero outbound, desk escalation.
     expect(report.fired).toEqual([]);
     expect(submissions).toBe(0);
     expect(registry.get('we')!.used.fires).toBe(0);
+    expect(escalations).toEqual([{ reason: 'no-trust-anchor', tickSeq: 1 }]);
+    expect(audits).toContain('delegation-limit-exceeded');
   });
 });
 
@@ -396,5 +422,136 @@ describe('realm source', () => {
     // must not look like a satisfied condition.
     expect(report.unavailable).toEqual(['wr']);
     expect(report.fired).toEqual([]);
+  });
+});
+
+/**
+ * design-self-host-loop §7 step 4: an unattended execute fire derives a
+ * one-time child ticket from its named contract. The derive hook is the
+ * kernel's job; here it is injected so the watch's own guarantees are tested
+ * directly: ticket handed to submit, ceilings escalate with zero outbound,
+ * and the watch-local execute budget refuses before a contract slot is spent.
+ */
+describe('execute fires derive a child ticket (step 4)', () => {
+  const executeInput = (overrides: Partial<Parameters<WatchRegistry['register']>[0]> = {}) =>
+    baseInput({
+      intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
+      delegationId: 'contract-1',
+      budget: { fires: 3, executes: 2 },
+      ...overrides,
+    });
+
+  it('hands a derived ticket to submit and spends the execute budget once', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(executeInput());
+    const submitted: Array<{ mode: string; executionDelegation?: unknown }> = [];
+    let deriveCalls = 0;
+    const ticket = { nonce: 'ticket-1' };
+    await registry.runTick({
+      now: () => NOW,
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      deriveExecution: async () => {
+        deriveCalls += 1;
+        return { ok: true, delegation: ticket };
+      },
+      submit: async request => {
+        submitted.push({ mode: request.mode, executionDelegation: request.executionDelegation });
+        return { ok: true };
+      },
+    });
+    expect(deriveCalls).toBe(1);
+    expect(submitted).toEqual([{ mode: 'execute', executionDelegation: ticket }]);
+    expect(registry.get('w1')!.used).toEqual({ fires: 1, executes: 1 });
+  });
+
+  it('escalates with zero outbound when derivation is refused by a ceiling', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(executeInput());
+    let submissions = 0;
+    const escalations: string[] = [];
+    const audits: string[] = [];
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      deriveExecution: async () => ({ ok: false, reason: 'child-ticket-limit-reached' }),
+      escalateLimit: input => escalations.push(input.reason),
+      audit: entry => audits.push(entry.decision),
+      submit: async () => {
+        submissions += 1;
+        return { ok: true };
+      },
+    });
+    expect(report.fired).toEqual([]);
+    expect(submissions).toBe(0);
+    expect(escalations).toEqual(['child-ticket-limit-reached']);
+    expect(audits).toContain('delegation-limit-exceeded');
+    expect(registry.get('w1')!.used.executes).toBe(0);
+  });
+
+  it('refuses an execute-budget-exhausted fire without asking for a ticket', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(executeInput({ budget: { fires: 3, executes: 1 } }));
+    let deriveCalls = 0;
+    let submissions = 0;
+    const escalations: string[] = [];
+    let tickOffsetMs = 0;
+    const tick = (): Promise<unknown> =>
+      registry.runTick({
+        // Each pass advances past intervalSeconds so the watch is re-evaluated;
+        // the same wall time would be throttled regardless of budget.
+        now: () => new Date(NOW.getTime() + (tickOffsetMs += 60_000)),
+        sources: { metrics: () => metrics({ queueDepth: 5 }) },
+        deriveExecution: async () => {
+          deriveCalls += 1;
+          return { ok: true, delegation: { nonce: `ticket-${deriveCalls}` } };
+        },
+        escalateLimit: input => escalations.push(input.reason),
+        submit: async () => {
+          submissions += 1;
+          return { ok: true };
+        },
+      });
+    await tick();
+    expect(deriveCalls).toBe(1);
+    // A second interval with the condition still held: the watch fire budget
+    // allows it, but the execute ceiling refuses before any contract slot is
+    // spent, so the contract's own limits are never touched.
+    await tick();
+    expect(deriveCalls).toBe(1);
+    expect(submissions).toBe(1);
+    expect(escalations).toEqual(['execute-budget-exhausted']);
+  });
+
+  it('dedupes the same refused tick at the desk across replays', async () => {
+    const desk = new OversightDesk();
+    const first = desk.ingestDelegationLimit({
+      watchId: 'w1',
+      delegationId: 'contract-1',
+      skill: 'merge',
+      realm: 'personal',
+      limitReason: 'revoked',
+      tickSeq: 1,
+    });
+    const replay = desk.ingestDelegationLimit({
+      watchId: 'w1',
+      delegationId: 'contract-1',
+      skill: 'merge',
+      realm: 'personal',
+      limitReason: 'revoked',
+      tickSeq: 1,
+    });
+    expect(replay.id).toBe(first.id);
+    expect(desk.list(undefined, 'delegation-limit')).toHaveLength(1);
+    // A different tick sequence is a new refusal, not a replay.
+    const next = desk.ingestDelegationLimit({
+      watchId: 'w1',
+      delegationId: 'contract-1',
+      skill: 'merge',
+      realm: 'personal',
+      limitReason: 'revoked',
+      tickSeq: 2,
+    });
+    expect(next.id).not.toBe(first.id);
+    expect(desk.list(undefined, 'delegation-limit')).toHaveLength(2);
   });
 });

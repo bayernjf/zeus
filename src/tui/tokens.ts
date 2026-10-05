@@ -102,6 +102,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'watch-revoked': 'warning',
   'watch-eval-unavailable': 'warning',
   'watch-auto-disabled': 'danger',
+  // self-host loop step 4: a child ticket minted for an unattended execute is
+  // the governance fact that must stay visible (attention, like watch-fired);
+  // a refused fire is the contract ceiling holding, which is danger.
+  'delegation-child-issued': 'attention',
+  'delegation-limit-exceeded': 'danger',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };

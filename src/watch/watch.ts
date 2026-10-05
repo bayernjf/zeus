@@ -168,7 +168,9 @@ export type WatchAuditEntry = {
     | 'watch-disabled'
     | 'watch-revoked'
     | 'watch-eval-unavailable'
-    | 'watch-auto-disabled';
+    | 'watch-auto-disabled'
+    | 'delegation-child-issued'
+    | 'delegation-limit-exceeded';
   watchId: string;
   owner: string;
   detail: string;
@@ -182,6 +184,9 @@ export type WatchSubmitRequest = {
   mode: 'plan' | 'execute';
   realm: RealmType;
   maxFanOut: number;
+  /** Execute fires only: the one-time child ticket derived from the watch's
+   *  delegation contract. The orchestrator gate verifies and consumes it. */
+  executionDelegation?: unknown;
 };
 
 export type WatchSubmitResult = { ok: boolean; replayed?: boolean; reason?: string };
@@ -195,6 +200,28 @@ export type WatchTickOptions = {
   audit?: (entry: WatchAuditEntry) => void;
   /** Consecutive unreadable evaluations before the watch is disabled (§3.3). */
   maxEvalFailures?: number;
+  /**
+   * Self-host loop step 4: mint the one-time child ticket an execute fire
+   * presents to the orchestrator gate. Absent = no trust anchor, so execute
+   * fires fail closed. A refusal (no contract / revoked / a ceiling hit) is a
+   * structured reason, never an exception the tick would swallow silently.
+   */
+  deriveExecution?: (input: {
+    watchId: string;
+    delegationId: string;
+    skill: string;
+  }) => Promise<{ ok: true; delegation: unknown } | { ok: false; reason: string }>;
+  /** Step 4 §4.2: a refused execute fire becomes a desk escalation instead of
+   *  a silent miss, so the operator can issue a new contract or drop to plan. */
+  escalateLimit?: (input: {
+    watchId: string;
+    delegationId?: string;
+    skill: string;
+    realm: RealmType;
+    realmId?: string;
+    reason: string;
+    tickSeq: number;
+  }) => void;
 };
 
 export type WatchTickReport = {
@@ -253,6 +280,9 @@ export class WatchRegistry {
       throw new WatchError('expiresAt must be after startsAt');
     }
     if (!(input.budget.fires > 0)) throw new WatchError('budget.fires must be positive');
+    if (input.intent.mode === 'execute' && !(input.budget.executes > 0)) {
+      throw new WatchError('budget.executes must be positive for an execute watch');
+    }
 
     const watch: Watch = {
       ...input,
@@ -356,19 +386,6 @@ export class WatchRegistry {
       watch.lastValue = reading.value;
       if (matched !== true) continue;
 
-      // execute needs a ticket derived from the contract; until step 4 wires
-      // the derivation there is nothing to hand over, so it fails closed
-      // rather than dispatching an unattended irreversible action.
-      if (watch.intent.mode === 'execute') {
-        options.audit?.({
-          decision: 'watch-fired',
-          watchId: watch.id,
-          owner: watch.owner,
-          detail: `execute fire refused: no child ticket available for contract ${watch.delegationId ?? '(none)'}`,
-          at: nowIso,
-        });
-        continue;
-      }
       if (!options.submit) continue;
 
       const seq = watch.used.fires + 1;
@@ -376,6 +393,79 @@ export class WatchRegistry {
       // instead of a second dispatch: it hits the orchestrator's idempotency
       // table rather than relying on the tick not to run twice.
       const intentId = `watch:${watch.id}:${seq}`;
+
+      // Step 4: an unattended execute fire may only run inside a pre-signed,
+      // bounded contract. The watch never carries its own ticket (invariant 4);
+      // it asks the kernel to derive one for this fire. No derive hook, no
+      // contract, revoked/window-ended, or a spent ceiling all read the same
+      // way: zero outbound and a desk escalation naming the exact limit hit.
+      let childTicket: unknown;
+      if (watch.intent.mode === 'execute') {
+        const delegationId = watch.delegationId;
+        // The execute budget is the watch-local ceiling; the contract adds its
+        // own maxChildTickets/maxConcurrent. A spent watch budget refuses
+        // before asking for a ticket, so it never spends a contract slot.
+        let reason: string | null = null;
+        if (watch.used.executes >= watch.budget.executes) reason = 'execute-budget-exhausted';
+        else if (!delegationId) reason = 'no-contract';
+        else if (!options.deriveExecution) reason = 'no-trust-anchor';
+        if (reason) {
+          options.audit?.({
+            decision: 'delegation-limit-exceeded',
+            watchId: watch.id,
+            owner: watch.owner,
+            detail: `execute fire refused (${reason}); no outbound dispatch`,
+            at: nowIso,
+          });
+          if (options.escalateLimit) {
+            options.escalateLimit({
+              watchId: watch.id,
+              ...(delegationId ? { delegationId } : {}),
+              skill: watch.intent.skill,
+              realm: watch.realm,
+              ...(watch.realmId ? { realmId: watch.realmId } : {}),
+              reason,
+              tickSeq: seq,
+            });
+          }
+          continue;
+        }
+        const derive = options.deriveExecution;
+        if (!derive) continue;
+        const derived = await derive({
+          watchId: watch.id,
+          delegationId: delegationId as string,
+          skill: watch.intent.skill,
+        });
+        if (!derived.ok) {
+          options.audit?.({
+            decision: 'delegation-limit-exceeded',
+            watchId: watch.id,
+            owner: watch.owner,
+            detail: `execute fire refused (${derived.reason}); no outbound dispatch`,
+            at: nowIso,
+          });
+          options.escalateLimit?.({
+            watchId: watch.id,
+            ...(delegationId ? { delegationId: delegationId as string } : {}),
+            skill: watch.intent.skill,
+            realm: watch.realm,
+            ...(watch.realmId ? { realmId: watch.realmId } : {}),
+            reason: derived.reason,
+            tickSeq: seq,
+          });
+          continue;
+        }
+        childTicket = derived.delegation;
+        options.audit?.({
+          decision: 'delegation-child-issued',
+          watchId: watch.id,
+          owner: watch.owner,
+          detail: `derived one-time child ticket from contract ${delegationId} for fire ${intentId}`,
+          at: nowIso,
+        });
+      }
+
       let outcome: WatchSubmitResult;
       try {
         outcome = await options.submit({
@@ -385,6 +475,7 @@ export class WatchRegistry {
           mode: watch.intent.mode,
           realm: watch.realm,
           maxFanOut: watch.intent.maxFanOut,
+          ...(childTicket !== undefined ? { executionDelegation: childTicket } : {}),
         });
       } catch (error) {
         outcome = { ok: false, reason: error instanceof Error ? error.message : 'submit failed' };
@@ -392,6 +483,7 @@ export class WatchRegistry {
       if (!outcome.ok) continue;
 
       watch.used.fires += 1;
+      if (watch.intent.mode === 'execute') watch.used.executes += 1;
       watch.lastFiredAt = nowIso;
       report.fired.push(watch.id);
       options.audit?.({

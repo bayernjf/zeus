@@ -77,7 +77,7 @@ export const DEFAULT_SEAL_MAX_AGE_SECONDS = 3600;
 export const DEFAULT_ATTESTATION_TTL_SECONDS = 24 * 3600;
 
 const ESCALATION_STATUSES: EscalationStatus[] = ['pending', 'approved', 'rejected'];
-const ESCALATION_KINDS: EscalationKind[] = ['task-input', 'intent-conflict', 'memory-dispute'];
+const ESCALATION_KINDS: EscalationKind[] = ['task-input', 'intent-conflict', 'memory-dispute', 'delegation-limit'];
 const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
 const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
 const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
