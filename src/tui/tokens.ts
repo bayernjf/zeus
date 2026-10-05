@@ -107,6 +107,8 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // a refused fire is the contract ceiling holding, which is danger.
   'delegation-child-issued': 'attention',
   'delegation-limit-exceeded': 'danger',
+  'delegation-contract-issued': 'attention',
+  'delegation-contract-revoked': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };

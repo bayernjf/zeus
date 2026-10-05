@@ -555,3 +555,32 @@ describe('execute fires derive a child ticket (step 4)', () => {
     expect(desk.list(undefined, 'delegation-limit')).toHaveLength(2);
   });
 });
+
+describe('watch contract rebinding (step 5)', () => {
+  const executeInput = (overrides: Partial<Parameters<WatchRegistry['register']>[0]> = {}) =>
+    baseInput({
+      intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
+      delegationId: 'contract-1',
+      budget: { fires: 3, executes: 2 },
+      ...overrides,
+    });
+
+  it('rebinds an existing watch to a freshly issued contract without touching the budget', () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(executeInput());
+    const rebound = registry.bindDelegation('w1', 'contract-2');
+    expect(rebound?.delegationId).toBe('contract-2');
+    expect(registry.get('w1')!.delegationId).toBe('contract-2');
+    // Only the delegation reference moves; approval must not reset spent budgets.
+    expect(registry.get('w1')!.used).toEqual({ fires: 0, executes: 0 });
+    expect(registry.get('w1')!.budget).toEqual({ fires: 3, executes: 2 });
+    expect(registry.get('w1')!.enabled).toBe(true);
+  });
+
+  it('returns undefined for an unknown watch and rejects a blank contract id', () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(executeInput());
+    expect(registry.bindDelegation('missing', 'contract-2')).toBeUndefined();
+    expect(() => registry.bindDelegation('w1', '   ')).toThrow(/non-empty/);
+  });
+});

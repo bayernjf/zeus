@@ -87,6 +87,11 @@ export const AUDIT_DECISIONS = [
   // outbound); both are governance facts about the contract.
   'delegation-child-issued',
   'delegation-limit-exceeded',
+  // self-host loop step 5: the operator-facing contract face. Issuing a
+  // bounded contract is the human answer to a delegation-limit escalation;
+  // revocation cuts every future derivation from that contract.
+  'delegation-contract-issued',
+  'delegation-contract-revoked',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

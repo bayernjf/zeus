@@ -23,6 +23,7 @@ import {
 import {
   DelegationContractRegistry,
   deriveExecutionDelegation,
+  type DelegationContractAuditEntry,
 } from '../delegation/delegation-contract.js';
 import { WatchRegistry, realmReading, connectorReading, type WatchTickReport } from '../watch/watch.js';
 import type { Ed25519MemorySigner } from '../registry/signing.js';
@@ -92,6 +93,8 @@ export type KernelBoot = KernelComponents & {
   driverGrantAudit: (entry: DriverGrantAuditEntry) => void;
   /** Feeds issued execution delegations into the audit spine. */
   executionDelegationAudit: (entry: ExecutionDelegationAuditEntry) => void;
+  /** Feeds delegation-contract issuance/revocation into the audit spine. */
+  delegationContractAudit: (entry: DelegationContractAuditEntry) => void;
   /** Effective audit rotation ceiling for the active file (Infinity = unbounded). */
   auditMaxBytes: number;
   /** Effective rotated audit generations kept beside the active file. */
@@ -513,6 +516,23 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       (options.onStateSaveError ?? noop)(error instanceof Error ? error.message : String(error));
     });
   });
+  // Step 5: contract issuance/revocation are governance facts on the same
+  // spine as ticket issuance — the moment a human widened unattended authority
+  // matters even when no fire ever spends it.
+  const delegationContractAudit = (entry: DelegationContractAuditEntry): void => {
+    auditSink({
+      ts: entry.at,
+      vassal: entry.grantedBy,
+      skill: entry.skill,
+      decision: entry.decision,
+      detail:
+        `delegation contract ${entry.contractId} ${entry.decision === 'delegation-contract-issued' ? 'issued' : 'revoked'}` +
+        ` by ${entry.grantedBy} for ${entry.skill}${entry.vassal ? ` (${entry.vassal})` : ''}` +
+        `, capabilities ${entry.capabilities.join(',')}, tickets ${entry.maxChildTickets}` +
+        ` / concurrent ${entry.maxConcurrent}, window ends ${entry.windowEndsAt} (key ${entry.keyId})` +
+        `${entry.reason ? `: ${entry.reason}` : ''}`,
+    });
+  };
 
   const components: KernelComponents = {
     registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
@@ -762,6 +782,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     driverGrantAuthority,
     driverGrantAudit,
     executionDelegationAudit,
+    delegationContractAudit,
     driverSigner: options.driverSigner ?? null,
     auditMaxBytes: options.auditMaxBytes ?? DEFAULT_AUDIT_MAX_BYTES,
     auditKeep: options.auditKeep ?? DEFAULT_AUDIT_KEEP,
