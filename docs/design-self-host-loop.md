@@ -8,7 +8,7 @@
 
 | 事实 | 证据 |
 | --- | --- |
-| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42 #setTimeout`、`src/http/server.ts:2329 #keepalive`、`src/orchestrator/orchestrator.ts:710-716 #setTimeout`、`src/dispatch/client.ts:93 #setTimeout`、`src/tui/cli.ts:95 #setInterval` |
+| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42 #setTimeout`、`src/http/server.ts:2329 #keepalive`、`src/orchestrator/orchestrator.ts:721-727 #setTimeout`、`src/dispatch/client.ts:93 #setTimeout`、`src/tui/cli.ts:95 #setInterval` |
 | 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:378 #intents` |
 | execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation` |
 | 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation` |

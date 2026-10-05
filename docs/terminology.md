@@ -34,8 +34,8 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 藏宝图（vault） | 备份与恢复协议（引用 + 指纹 + 加密备份包） | `src/vault/`（E8.1/E8.2/E3.7） |
 | 立国三纲 | 能力接入三原语：MCP / Skill / A2A | docs/design-agentic-integration.md §2A |
 | 决策后端（decision backend） | 模型无关决策端口 | `DecisionBackend`（noul/choice/score，`src/decision/types.ts`） |
-| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/orchestrator/types.ts:67-69 #intentId`） |
-| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:28 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27 #applyConflictResolution`）、bearer 保护的 H2 面 |
+| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/orchestrator/types.ts:72-74 #intentId`） |
+| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:33 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27 #applyConflictResolution`）、bearer 保护的 H2 面 |
 | 拍板 | 人工裁决回写 | `applyConflictResolution` + `POST /api/escalations/:id/resolve`（E6.2） |
 | 监督台 | 升级队列 / HITL 控制台 | `OversightDesk`（`src/oversight/oversight.ts`） |
 | 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8 #diode`、`src/dispatch/dispatcher.ts:182 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
