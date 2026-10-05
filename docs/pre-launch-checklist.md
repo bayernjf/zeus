@@ -63,6 +63,7 @@
 6. `docker` 真机构冒烟（B1）。**v0.21 记账**：本机直连 Docker Hub 超时（`load metadata for node:22-slim` 失败）且本地零镜像缓存，故本机跑不了这一步；诊断出的是环境配置问题（本机 `127.0.0.1:7897` 代理可达 Docker Hub，而 Docker Desktop 未配代理），修法是给 Docker Desktop 配代理。**CI 的 `image build + smoke` job 覆盖到"构建 + 镜像内两项冒烟"**（`docker build`、镜像内 `gen-rsk-key.mjs`、`require('./dist/index.js')`），对本批 HEAD `22de402` 绿；**容器级四项（healthy / `/data` 0600 / SIGTERM 落盘 / 重启恢复）不在该 job 覆盖内**
 7. 时钟偏置回归：`vitest` clock-skew 作业绿（deferred #24 闸门）
 8. **核心链路真进程冒烟**：`npm run smoke:core`（`scripts/smoke-core.mjs`，deferred **#25** 已销项）。它起真进程 + 真 socket 走完「挂目录 → 带凭证注册 → 扇出 → 内核自己读域 → 审计落盘 → 名册离线可验（含一条 maxAge 反证）→ 发布的根公钥就是那个签名钥，且**只拿端点返回的字节就能出货验签器验过**（把 PEM 换成 JWK 串须退 2），**且同一串指纹在出钥、发布、验签三处一致**（keygen 打印 → 端点 `jwkThumbprint` → 验签报告 `seal fingerprint` 行）→ **DAG 操作者入口已装配**（未知意图须回 runner 自己的 404 `unknown dag`；只有 `dagRunner` 未注入时才会 503，故这一步分辨的是"装配"不是"路由在位"）→ 吊销断流 → SIGTERM 落盘 → 重启恢复」，36 步全绿才退 0；只用回环、自造密钥与令牌、不读任何真实部署的 secret，并已接进 CI（build/test 之后一步）。它第一次跑就把派发打到了没有凭证的对端——正是这条链路上"库内测试看不见、真进程才看得见"的那类缺口
+9. **运行时可靠性实测**：`npm run verify:reliability`（`scripts/verify-runtime-reliability.mjs`，审计 §13）。它起出货件跑四格——有界并发闸的真配置行为、`escalations` 跨 SIGTERM 重启、SSE 断流重连与取消时序、台账与 RSS 增长斜率，每格自带正控（无上限的对照必须 0 拒绝、不配状态文件的对照必须丢项），所以它报"过"而不是报"没坏"。**当前为按需跑，未进 CI**：接线前先在 CI 负载下量墙钟，别照本机数决定。
 
 ## G. 上线冲刺（需你提供什么 / 我做什么）
 
