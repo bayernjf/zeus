@@ -15,13 +15,13 @@
 
 ## 2. 现状事实（本轮逐个 grep/读码核实，非转述）
 
-- **状态文件有版本闸门，且是硬拒**：`src/state/kernel-state.ts:38` `KERNEL_STATE_VERSION = 1`；`:178-179` 对 `version !== 1` 直接 `throw KernelStateError('unsupported kernel state version')`。**没有 v0→v1 的迁移分支可参照**，因为还没需要过。
-- **备份格式已经做过一次同类迁移，可当模板**：`src/vault/types.ts:9` `VAULT_VERSION = 2`，v1 的图**读入时归一化、写出不兼容**。这条先例证明"双读单写"在本仓库是可实现的，但也说明它的成本是一整轮的兼容代码 + 专门测试。
-- **协议版本协商的容器已存在**：`src/a2a/types.ts:5` `SUPPORTED_FEALTY_VERSIONS = ['1']` 是**数组**，注册时对不在数组内的版本 fail-loud。也就是说"同时接受两代声明形态"在架构上是现成的，不需要新发明。
-- **签名信封有版本字段，但验签路径从不读它**（本条已修，见下）：`Seal.v = 1` 与 `Attestation.v = 1` 由 `ENVELOPE_VERSION`（`src/registry/signing.ts:125`，写入点 `:192`/`:250`）产出，但 `verifySignedSnapshot` 没有任何一处检查它。**我在 v0.1 里把这条写成"签名快照没有任何版本字段"，那是不准确的**：字段在，只是装饰性的——与"只写不读的权限清单"是同一种失效。真正缺形状标记的是**载荷**：`RosterSnapshot = { generatedAt, scope, entries }`（`src/registry/roster.ts:40-44`），而改名要动的恰好是载荷。
+- **状态文件有版本闸门，且是硬拒**：`src/state/kernel-state.ts:40 #KERNEL_STATE_VERSION`；拒绝点 `src/state/kernel-state.ts:217-218 #KERNEL_STATE_VERSION` 对 `version !== 1` 直接 `throw KernelStateError('unsupported kernel state version')`。**没有 v0→v1 的迁移分支可参照**，因为还没需要过。
+- **备份格式已经做过一次同类迁移，可当模板**：`src/vault/types.ts:9 #VAULT_VERSION` `VAULT_VERSION = 2`，v1 的图**读入时归一化、写出不兼容**。这条先例证明"双读单写"在本仓库是可实现的，但也说明它的成本是一整轮的兼容代码 + 专门测试。
+- **协议版本协商的容器已存在**：`src/a2a/types.ts:5 #SUPPORTED_FEALTY_VERSIONS` `SUPPORTED_FEALTY_VERSIONS = ['1']` 是**数组**，注册时对不在数组内的版本 fail-loud。也就是说"同时接受两代声明形态"在架构上是现成的，不需要新发明。
+- **签名信封有版本字段，但验签路径从不读它**（本条已修，见下）：`Seal.v = 1` 与 `Attestation.v = 1` 由 `ENVELOPE_VERSION`（`src/registry/signing.ts:188 #ENVELOPE_VERSION`，写入点 `src/registry/signing.ts:265 #ENVELOPE_VERSION` 与 `src/registry/signing.ts:338 #ENVELOPE_VERSION`，验签侧闸门 `src/registry/signing.ts:395 #ENVELOPE_VERSION`）产出，但 `verifySignedSnapshot` 没有任何一处检查它。**我在 v0.1 里把这条写成"签名快照没有任何版本字段"，那是不准确的**：字段在，只是装饰性的——与"只写不读的权限清单"是同一种失效。真正缺形状标记的是**载荷**：`RosterSnapshot = { generatedAt, scope, entries }`（`src/registry/roster.ts:40-44 #envelope`），而改名要动的恰好是载荷。
   - **✅ 同日已修（deferred #22 销项）**：载荷加 `schemaVersion`（落在 `seal.snapshotDigest` 覆盖的对象内，因此不必改签名输入就被签名保护），并把 `schemaVersion` / `seal.v` / `attestation.v` 三道版本闸提到验签最前面（在任何密码学之前，拒绝原因点名是哪道闸）；缺 `schemaVersion` 的旧件读作 1，仍可验签。**本文件 §3–§5 的 T2 论述以修复后的状态为前提**：将来真要改载荷，才有按 `schemaVersion` 双读的安全灰度可能。
 - **审计取值里带历史名的**：`vassal-revoked`、`driver-grant-issued`、`driver-resolved`、`driver-write`、`realm-write`、`realm-type-mismatch`、`commission-granted|waived|withdrawn|refused`、`commissioned`。这些是**已经写进用户磁盘 JSONL 的历史记录**，改词汇等于让历史与现在说两种话；`GET /api/audit?decision=...` 的过滤器也会跟着分叉。
-- **`Position.vassal` 出现在 HTTP 响应里**（`src/orchestrator/types.ts:28-33`），改名即改响应结构，属于 T4。（注意：名册投影 `RosterEntry` 用的是 `name`，**没有** `vassal` 字段，所以名册响应不在此列。）
+- **`Position.vassal` 出现在 HTTP 响应里**（`src/orchestrator/types.ts:37-38 #vassal`），改名即改响应结构，属于 T4。（注意：名册投影 `RosterEntry` 用的是 `name`，**没有** `vassal` 字段，所以名册响应不在此列。）
 
 ## 3. 每档的迁移机制（若决定做，就按这个做）
 

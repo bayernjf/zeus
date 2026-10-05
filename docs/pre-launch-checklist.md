@@ -1,8 +1,8 @@
 # 上线前 Checklist（Pre-launch Checklist）
 
 - 关联：项目级评审单一事实源 [review-mvp-2026-09.md](review-mvp-2026-09.md)；deferred 项清单 [deferred-items.md](deferred-items.md)；部署面 [deployment.md](deployment.md)；容量基线 [capacity-baseline.md](capacity-baseline.md)。
-- **判定（评审 v0.23 下的判；下面两行的计数是活基线，每批现测更新，量法见 §F-3）**：
-  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且装配到真进程路径，全量 1099 总量 / 101 文件（Windows 本机 1073 绿 / 26 环境性失败三族，CI Linux/macOS 口径全绿）且 `npm test` 退出码 0、typecheck/build 过、核心链路冒烟 37 步（Windows 本机 31/36，5 步为 0600 chmod ×2 + SIGTERM 连锁 ×3 环境家族）；P0 26/26 为逐行机械计数（PRD 需求行 55，增量即 E2.6 意图识别），签名链**七条**对照与边界矩阵均用出货件亲手复跑；三个真进程验收脚本（execute-delegation 9/9、intent-recognize 7/7、tui-recognize 7/7）于 2026-10-03 Windows 本机复跑全绿（tui-recognize 抓出并修掉一条脚本可移植性缺陷，见 review v0.23 §H）。**镜像层标注**：最后一次实构实跑是 HEAD `6179688`（`zeus:review-6179688`）；评审 v0.21 与 v0.23 时出货件又动过（`src/http/serve.ts` 及意图/委派/TUI 面），**本机重拍因到 registry 的网络路径不通而未完成**（`load metadata for node:22-slim` 超时、本地零镜像缓存；本机代理 7897 可达 Docker Hub 而 Docker Desktop 未配代理），该项的落点是 CI 的 `image build + smoke` job（对已推送 HEAD 为绿）。
+- **判定（评审 v0.25 下的判；下面两行的计数是活基线，每批现测更新，量法见 §F-3）**：
+  - **产品核心「完全可用」MVP：✅ 达成**（库内核 + 制品就绪，三条接入通道执行点在位且装配到真进程路径，全量 1117 总量 / 102 文件（macOS 本机现测全绿；Windows 本机上一口径 1078 绿 / 26 环境性失败，那次读数对应总量 1104，Active work 118 之后的批次未在 Windows 复跑；CI Linux/macOS 口径全绿）且 `npm test` 退出码 0、typecheck/build 过、核心链路冒烟 37 步（Windows 本机 31/36，5 步为 0600 chmod ×2 + SIGTERM 连锁 ×3 环境家族）；P0 26/26 为逐行机械计数（PRD 需求行 55，增量即 E2.6 意图识别），签名链**七条**对照与边界矩阵均用出货件亲手复跑；三个真进程验收脚本（execute-delegation 9/9、intent-recognize 7/7、tui-recognize 7/7）于 2026-10-03 Windows 本机复跑全绿（tui-recognize 抓出并修掉一条脚本可移植性缺陷，见 review v0.23 §H）。**镜像层标注**：最后一次实构实跑是 HEAD `6179688`（`zeus:review-6179688`）；评审 v0.21 与 v0.23 时出货件又动过（`src/http/serve.ts` 及意图/委派/TUI 面），**本机重拍因到 registry 的网络路径不通而未完成**（`load metadata for node:22-slim` 超时、本地零镜像缓存；本机代理 7897 可达 Docker Hub 而 Docker Desktop 未配代理），该项的落点是 CI 的 `image build + smoke` job（对已推送 HEAD 为绿）。
   - **可交付真实用户 MVP：❌ 未达成**。差的是**真实环境里的执行动作**：密钥托管落地与公钥公告（A2）、跨实例联调（A3）、模型裁决 key 核对（A4）、bayjf 侧验签展示（A5），以及真实生产环境（B 系列），均无法在仓库内闭环。**A1「真实执行 Agent 注册 + 真机扇出」已于 2026-09-29 对线上 pr-helper 实跑通过并销项，不再计入**（15/15，exit 0，见 A1 行）。此前唯一的**库内可做**前置项（§F-8 核心链路真进程冒烟固化为资产，deferred #25）已于 2026-09-27 销项。
 - 本文按"是否阻塞上线"分层。每条尽量给命令 / 出口标准 / 当前证据分级（实测 / 记录 / 待做）。
 - 设计约束红线（来自 product-portrait，任何上线动作不得违反）：数据主权在用户（给目录即用、正文不出域、备份恢复一等能力）；每个概念必须可执行；能力接入只有 MCP / Skill / A2A 三条通道，无私有旁路；个人域与企业域单向隔离、跨域读写需显式签名一次性授权。
@@ -42,8 +42,9 @@
 | D2 | #19 入站 A2A 面 | 外部 Agent 调不进 Zeus（无 `/.well-known/agent-card.json`、`tasks/*` 路由）；核心 MVP 是出站协作，此项不阻塞核心 | 登记待做；影响"Zeus 被他人网格调用" |
 | D3 | #5 外部 Agent 信任分级与沙箱 | 增强，可后置 | deferred |
 | D4 | #3 传承 / #4 计费 / #21 标识符改名 | 产品演进，非上线阻塞 | deferred / 待决定 |
-| D5 | #30 连接器权限词法绑不住工具名 | 声明串要先过 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$`，实测 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` 四条全判 invalid——这类工具只能退裸 `mcp`＝放行握手发现到的全部工具 | 登记待做；等第一个真实外部 MCP 服务撞上（本库尚未对真实上游跑过一次 `connect`） |
-| D6 | #31 MCP 面静默丢掉未声明的查询参数 | 实测 `search?tags=important` 返回**未过滤**结果且不报错，存储层"不支持标签检索"的拒绝路径在这条通道上永远走不到——静默降级，与已销项的 #20（env 写错静默退默认）同形 | 登记待做；不阻塞，行为已明文写进 docs/mcp-integration.md §1.4 供集成方避坑 |
+| D5 | #30 连接器权限词法绑不住工具名 | 声明串要先过 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$`，实测 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` 四条全判 invalid——这类工具只能退裸 `mcp`＝放行握手发现到的全部工具 | **已修复（2026-09-30，deferred #30 销项）**：`mcp:<工具名>` 按上游握手清单的原样字符串匹配（下划线/点/大写合法、精确大小写），声明了而上游没有的名字在连接时产生 `boundary-unmatched` 审计。**剩下的都是实对面**：2026-10-01 已对真实 stdio 上游跑过 `connect`（Zeus 自有 `dist/realm/mcp-stdio.js` 与第三方 work-learn server 各一次，见 mcp-integration §2），**远程 HTTP MCP（需凭证）还没连过** |
+| D6 | #31 MCP 面静默丢掉未声明的查询参数 | 实测 `search?tags=important` 返回**未过滤**结果且不报错，存储层"不支持标签检索"的拒绝路径在这条通道上永远走不到——静默降级，与已销项的 #20（env 写错静默退默认）同形 | **已修复（2026-09-30，deferred #31 销项）**：未声明的查询参数按名拒绝为 `-32602`，`tags` 下传到存储层显式抛 `UnsupportedQueryError`（"tag search is not supported in P0"）——集成方看到的是一条拒绝，不是未过滤的全量命中。**剩下的不是本项待办**：标签检索真正立项（倒排/向量后端）走 design-realm §6.2 的阈值条件 |
+| D7 | #41 企业形态：隔离实例 vs 同实例多租户 | 决定认证面、状态文件粒度与运维模型。现状实测（2026-10-05）：该 H2 面 **78 条路由里 75 条共用同一个 bearer**，即今天的实际隔离档位就是"一实例一租户"——选隔离实例不改代码，选同实例多租户要先重做鉴权并把状态/审计/备份清单按租户分片 | 待决定（两条路的代价与翻转条件记在 deferred #41；自托管试点 P0 不等它，见 verify-self-host-pilot §2） |
 
 ## E. 发布动作（需授权）
 
@@ -56,7 +57,7 @@
 
 1. `npm run typecheck` exit 0
 2. `npm run build` exit 0，`dist/` 完整（**必须在测试之前**：`tests/verify-roster.test.ts` 与 §F-5 的离线验签都跑编译产物）
-3. `npm test` exit 0（当前 **1109 总量 / 102 文件**（macOS 全绿，Active work 117）；Windows 本机上一口径 1078 绿 / 26 环境性失败（总量 1104 时，本批 +5 出站 lookup/registry 测试未在 Windows 复跑）——目录 fsync EPERM、chmod 0600 断言、symlink EPERM 三族，CI Linux/macOS 口径全绿；核心链路冒烟 37 步，Windows 本机 31/36（5 步为 0600 chmod ×2 + SIGTERM 连锁 ×3 环境家族）；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–452s 并可能报超时红——带负载口径重跑一次再判红）
+3. `npm test` exit 0（当前 **1117 总量 / 102 文件**（macOS 全绿，Active work 126 之后）；Windows 本机上一口径 1078 绿 / 26 环境性失败（总量 1104 时，其后各批未在 Windows 复跑）——目录 fsync EPERM、chmod 0600 断言、symlink EPERM 三族，CI Linux/macOS 口径全绿；核心链路冒烟 37 步，Windows 本机 31/36（5 步为 0600 chmod ×2 + SIGTERM 连锁 ×3 环境家族）；量法就是这条命令的最后一行，别从文档抄数。**退出码要直取**：`npm test; echo $?`，管道之后的 `$?` 属于 `tail` 而不是 vitest。本机 load 数百时它会涨到 75–452s 并可能报超时红——带负载口径重跑一次再判红）
 4. 三条接入通道执行点 grep 复核（见 review-mvp §B）：`boot.ts` tokenFor 接线、`orchestrator.ts` activeProviders 三态闸门、`mcp.ts` REALM_NOT_CONNECTED 白名单、onConflict→监督台闭环、持久化/签名链执行点均在位。**v0.17 追加两条"核对装配而不是核对注册"**：`serve.ts` 把 `dagRunner` 注入 HTTP 依赖（否则 DAG 路由在真进程里恒 503）、`ZEUS_MAX_CONCURRENT_PER_VASSAL` 真的到达 `selectTargets`。**行号每轮都会漂，引用前先定位**（v0.21 现测：`serve.ts:155`、`boot.ts:687` 的 `concurrencyBootOptions` → `boot.ts:673` → `orchestrator.ts:230`）
 5. 离线验签往返：`npm run verify:roster` 对一份真封出来的名册须 **exit 0**，且同一份字节在 `--now` 越过 `maxAgeSeconds` 后须 **exit 1**（这一对是"校验器既不是恒真也不是恒假"的判别，缺一不跑）。报告另有 `seal fingerprint` 两行（`jwk=` / `spki=`）——**带外固定要比的就是这一行与公告值是否逐字符相同**，不必另算哈希）
 6. `docker` 真机构冒烟（B1）。**v0.21 记账**：本机直连 Docker Hub 超时（`load metadata for node:22-slim` 失败）且本地零镜像缓存，故本机跑不了这一步；诊断出的是环境配置问题（本机 `127.0.0.1:7897` 代理可达 Docker Hub，而 Docker Desktop 未配代理），修法是给 Docker Desktop 配代理。**CI 的 `image build + smoke` job 覆盖到"构建 + 镜像内两项冒烟"**（`docker build`、镜像内 `gen-rsk-key.mjs`、`require('./dist/index.js')`），对本批 HEAD `22de402` 绿；**容器级四项（healthy / `/data` 0600 / SIGTERM 落盘 / 重启恢复）不在该 job 覆盖内**

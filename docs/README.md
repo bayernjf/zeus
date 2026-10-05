@@ -7,8 +7,8 @@
 | 我想… | 看 |
 | --- | --- |
 | 知道 Zeus 是什么、愿景与设计哲学 | [product-portrait.md](product-portrait.md) ★ |
-| 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) v0.14 ★（11 个能力域 × 78 条 HTTP 路由 × 4 类 CLI（终端面板 13 类命令）× 120 条 export 语句（运行时 213 个导出）；含「已实现但未接线」专节，2026-10-03 Active work 107 后为 **0 项**；2026-10-03 随 Active work 110 更新 TUI 意图识别命令面；2026-10-04 随 Active work 113–115 更新 CORS / Web 监督台 / fan-out §7；同日随 Active work 117 记容器四项验收与出站 lookup `all:true` 修复，基线 1109/102；同日随 Active work 118 记 Web 监督台 v1.3（审计过滤/趋势/徽标/回写），基线 1109/102 不变；同日随 Active work 119 记 Web 监督台 v1.4（决策回放/责任链/组织/目录/名册治理/决策徽章，零新路由），基线 1109/102 不变） |
-| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.8（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）；§6「注释承诺了代码没做的事」中 `startServer()` 一行已于 2026-10-02 闭合；**§4.2 row3 的数据二极管收缩已于 2026-10-03 修复闭合**（Active work 103：policy×origin 判档、`realmHitsOrigin`、两条审计值）） |
+| 盘点全部功能点：有什么、在哪、什么状态 | [feature-inventory.md](feature-inventory.md) v0.18 ★（11 个能力域 × 78 条 HTTP 路由 × 4 类 CLI（终端面板 13 类命令）× 120 条 export 语句（运行时 213 个导出）；含「已实现但未接线」专节，2026-10-03 Active work 107 后为 **0 项**；2026-10-03 随 Active work 110 更新 TUI 意图识别命令面；2026-10-04 随 Active work 113–115 更新 CORS / Web 监督台 / fan-out §7；同日随 Active work 117 记容器四项验收与出站 lookup `all:true` 修复，基线 1109/102；同日随 Active work 118 记 Web 监督台 v1.3（审计过滤/趋势/徽标/回写），基线 1109/102 不变；同日随 Active work 119 记 Web 监督台 v1.4（决策回放/责任链/组织/目录/名册治理/决策徽章，零新路由），基线 1109/102 不变；同日随审计 v0.9 修复轮把 §6 的文档一致性断言项数按现测改成 14，基线 1114/102；2026-10-05 随 B-41/B-42 两批收口改成 16 项（锚点校验词断言 + 全库引用解析断言），随 B-43 改成 17 项（清单时效断言），基线 1117/102；同批把本台账「在哪」列的 11 处引用复钉成带校验词全路径，抽查 10 条里 7 条原本指向无关实现） |
+| 看代码审出了哪些缺陷、哪几条要先修 | [audit-2026-09.md](audit-2026-09.md) v0.10（首轮全量静态审计：A 12 / B 34 / C 22 条，逐条带 `file:line` 与复检命令；**A 级 12 条、B 级 34 条已于 2026-10-01 全部修复，C 级 22 条已于 2026-10-02 全部修复**（1–17 条于 2026-10-01 晚间随 A/B 批次落地、12/19/20/22 于 2026-10-02 修复，commit 对照与植入证据见 audit §5/§8）；§6「注释承诺了代码没做的事」中 `startServer()` 一行已于 2026-10-02 闭合；**§4.2 row3 的数据二极管收缩已于 2026-10-03 修复闭合**（Active work 103：policy×origin 判档、`realmHitsOrigin`、两条审计值）；§10–§12 为 2026-10-04 三轮复审：三个新出货面（B-35–B-37、C-23–C-26）、执行授权闸与重启在途可靠性的真进程实测（B-38、C-27 已修，B-39 当轮登记）、B-39 合并落地，新发现 B-40（README 缺闭合围栏，已当场修）与 B-41（正文 `file:line` 锚点漂移：37 处里 19 处指向无关实现，六份现行事实源文档共 90 条已转成带校验词的可机检形状，解析断言覆盖全库 303 条可解析引用；144 条只写文件名的引用只计数不判定），B-43（上线清单的活基线与 deferred 销项状态两处过期）、六条文档完整性闸门入库（`doc-consistency` 11 → 17 例），§11.3/§12.4 明写仍未覆盖项） |
 | 查看需求拆解、优先级与验收标准 | [prd.md](prd.md) ★ |
 | 梳理 Agent 技术议题与探索优先级 | [tech-exploration-map.md](tech-exploration-map.md) ★ |
 | 理解多 Agent 记忆如何沉淀与整理 | [design-memory-consolidation.md](design-memory-consolidation.md) |
@@ -40,9 +40,11 @@
 | 设计/实现名册公开前的签名验签链 | [design-fealty-signing.md](design-fealty-signing.md)（威胁模型、Zeus 单签 v1、Ed25519+JCS、两层信封、吊销失效语义、验收用例） |
 | 设计/裁定 Zeus 的入站 A2A 面（别的 Agent 派任务给 Zeus） | [design-inbound-a2a.md](design-inbound-a2a.md)（deferred #19，v0.1 方向固化：Zeus 自己的 agent card、`tasks/send` 落 H2 意图面、三问暂定答案；实现待真实上游触发） |
 | 真实核对 Jev 决策后端（等 key，规程已备） | [verify-jev-backend.md](verify-jev-backend.md)（v0.1：四个未证实假设逐项核对步骤 + 判定矩阵与不符处置；复用 `npm run verify:decision-backend`，无新代码） |
+| 让一个真实用户把 Zeus 当自己的 Agent 底座跑起来，并验收它 | [verify-self-host-pilot.md](verify-self-host-pilot.md) **v0.1**（P0 八步 = 今天可跑的命令 + 退出判据 + 证据位置，每步带"必须能失败"的反向对照；P1/P2 只立判据并各附一条现在就应返回 404 的证伪探针；§1 把"内核无调度器"锚到 `src/vault/cli.ts:6-8 #scheduler` 的明文设计） |
+| 设计"无人在场时的合法意图来源"与"有界的自主授权" | [design-self-host-loop.md](design-self-host-loop.md) **v0.1（未实现）**（`watch` 触发器：谓词源限 metrics/realm/connector、预算与到期进结构；`DelegationContract`：子票据上限/窗口/撤销三闸，超限落回升级台；四条不变量各挂断言 + 六步实施切分；与 deferred **#41** 企业形态无关） |
 | 了解 Zeus 服务端 HTTP 栈怎么选、端点怎么长 | [design-http-transport.md](design-http-transport.md)（网络面划分、Fastify+长驻裁决、薄传输层、H1–H3 端点） |
 | 把 Zeus 进程真正跑起来 / 上线（Docker、密钥、状态卷、备份调度） | [deployment.md](deployment.md)（部署手册：Dockerfile 与 compose、RSK 密钥生成与生产守卫、systemd 备选、§7 Vault 备份恢复 CLI 与 cron、上线检查清单） |
-| 让外部系统经 MCP 接进 Zeus，或把 Zeus 的数据域接进别人的宿主 | [mcp-integration.md](mcp-integration.md) **v0.1**（对接方视角的契约与用法：stdio 服务端的根授权两条入口 / 资源与工具参考 / 快照 vs 实时读取 / 7 个错误码 / 四条"这里没有"的边界；客户端连接器的封闭权限词汇与能力裁剪层次；请求-响应原文与复跑命令） |
+| 让外部系统经 MCP 接进 Zeus，或把 Zeus 的数据域接进别人的宿主 | [mcp-integration.md](mcp-integration.md) **v0.2**（对接方视角的契约与用法：stdio 服务端的根授权两条入口 / 资源与工具参考 / 快照 vs 实时读取 / 7 个错误码 / 四条"这里没有"的边界；客户端连接器的 HTTP 与 stdio 两种 transport、封闭权限词汇与能力裁剪层次、第三方上游的最小权限分组样板；请求-响应原文与复跑命令） |
 | 翻译项目术语（执行 Agent/结果回传/备份清单 → 行业用语） | [terminology.md](terminology.md)（31 行映射表：叙事隐喻 ↔ 工程原语 ↔ 行业标准用语 + **冲突风险分级 A/B/C**（哪些可直说、哪些要加注、哪些与既有术语同名异义必须改写）+ 使用约定：内部保留隐喻、对外用专业词） |
 | 了解 AI 协作 / commit 约定 | [AGENTS.md](../AGENTS.md) + [git-commit-message.md](../git-commit-message.md) |
 
