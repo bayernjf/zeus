@@ -40,6 +40,7 @@ const STATUS_TOKEN: Record<string, SemanticColor> = {
   completed: 'success',
   partial: 'warning',
   failed: 'danger',
+  canceled: 'muted', // asked for by the driver, not a fault
   'needs-driver': 'attention',
   'input-required': 'info',
   working: 'accent',

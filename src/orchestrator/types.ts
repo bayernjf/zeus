@@ -25,7 +25,12 @@ export type BranchOutcome = {
   outcome?: BranchOutcomeKind;
 };
 
-export type FanOutStatus = 'completed' | 'partial' | 'failed' | 'needs-driver';
+/**
+ * `canceled` is distinct from `failed` on purpose: the driver asked for it, so
+ * reading it as a failure made the two indistinguishable and sent the operator
+ * looking for a vassal fault that never happened (audit C-28).
+ */
+export type FanOutStatus = 'completed' | 'partial' | 'failed' | 'canceled' | 'needs-driver';
 
 /** An event tagged with the branch it came from, so a merged view stays traceable. */
 export type SourcedEvent = {
