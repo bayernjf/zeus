@@ -400,6 +400,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     metrics,
     onConflict: conflictsToDesk(oversight),
+    // E6.1 (C-28): a branch that stops at input-required is a vassal asking the
+    // driver for parameters. The desk's `ingest` had no caller anywhere in src,
+    // so in a booted process this question was never raised — only intent
+    // conflicts and memory disputes reached the desk.
+    onTaskInput: (result, request) => {
+      oversight.ingest(result, request);
+    },
     // E2.2/E2.3/E2.4 (Active work 47 §E-3): auto-selected fan-out targets are
     // filtered through the skill catalogue, so uninstall/deprecate/harden take
     // effect on dispatch. Refusals land on the same audit spine as dispatches.
