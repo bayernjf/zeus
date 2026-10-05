@@ -226,11 +226,13 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
-| 有界委托契约：签发 / 验签 / 派生子票据 / 计数与持久化 / 撤销 | `src/delegation/delegation-contract.ts` + `boot.ts` 装配 + HTTP 面 | ✅ 原语 + 已接线 + **HTTP 操作者面**（第 1+4+5 步）：boot 装配 registry（随快照持久化），execute fire 派生子票据过 gate，派发落定归还并发槽；`POST/GET/DELETE /api/delegation-contracts` 签发/读/撤销，签发与撤销走审计脊；TUI 专属签发视图仍未做 |
+| 有界委托契约：签发 / 验签 / 派生子票据 / 计数与持久化 / 撤销 | `src/delegation/delegation-contract.ts` + `boot.ts` 装配 + HTTP 面 + TUI/Web 控件 | ✅ 全链路（第 1+4+5 步）：boot 装配 registry（随快照持久化），execute fire 派生子票据过 gate，派发落定归还并发槽；`POST/GET/DELETE /api/delegation-contracts` 签发/读/撤销并走审计脊；TUI `c` 签发/撤销命令与 Web 契约面板已落（Active work 137） |
 | `watch` 触发器：`metrics` 与 `realm` 两个源（无出站） | `src/watch/watch.ts` + `boot.ts` 的 `runWatchTick` | ✅ 已接线（第 2 步） |
 | `watch` 的 `connector` 源 | `src/watch/watch.ts`（`WATCH_PATH_GRAMMAR` / `readPath` / `connectorReading`）+ `boot.ts` 的 connector 端口 | ✅ 已接线（第 3 步）：走连接器声明的工具边界，未声明工具不可读、非标量按读数不可得 |
 | HTTP 契约签发面 + 越限批准换绑 | `src/http/server.ts` | ✅（第 5 步 HTTP 半）：`POST /api/delegation-contracts`（含上限/窗口/能力校验）、`GET` 列表与单个、`DELETE` 撤销即刻阻断派生；`POST /api/escalations/:id/approve-contract` 对 delegation-limit 项签一份仅覆盖 `execute` 的新契约、换绑命名 watch、标 approved，**不重放被拒 fire**（下一 tick 重新判条件） |
-| 监督台/TUI 的契约专属视图 | 未实现 | ⬜（第 5 步剩余：Web 监督台与 TUI 暂只以通用升级队列展示 delegation-limit 行，没有签发/换绑的专属控件） |
+| 监督台/TUI 的契约专属视图 | `src/tui/` + `web/supervisor/index.html` | ✅（第 5 步剩余，Active work 137）：TUI 契约 section + `c` 签发/撤销命令、delegation-limit 行 `a<n>` 走 approve-contract；Web 契约块（签发表单 + 台账 + 撤销）与「签新契约并批准」按钮 |
+| `watch` HTTP 操作者面 | `src/http/server.ts` + `serve.ts` | ✅（P1，Active work 139）：`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器），生命周期动作进审计脊 |
+| TUI/Web 的 watch 专属控件 | 未实现 | ⬜（P1 剩余：watch 登记/换绑在 TUI 与 Web 上暂无专属控件，仍只经 HTTP 面操作） |
 
 ## 4. 已实现但未接线的功能
 

@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.26，2026-10-05，证据补强轮（评审对象：Active work 128–129，基线现测 1144 总量 / 1144 绿 / 0 失败 / 104 文件、冒烟 37/37 复跑、doc-consistency 17/17、typecheck / lint / lint:secrets 各自 exit 0）：两个判定维持——核心 MVP ✅ / 可上线 ❌。本轮零运行时改动、零需求翻转（PRD 55 行 / P0 26/26 同集合），两组新事实进账：① 运行时可靠性四格实测闭合（audit §13，`npm run verify:reliability` 17/17，每格自带正控）：有界并发闸在真配置下 10/16 分支被拒且原因点名两个上限、`maxInFlight=4` 不越界、终态 `partial`；`escalations` 跨 SIGTERM 重启同 id 仍 pending 且可批，不配状态文件的对照重启后归零；SSE 断流重连**不补历史**（lost=1/1 实测）；台账增长斜率 ≈60KiB RSS + 2,074B 状态文件每条意图。② 新登记 **B-44（未修）** 内核台账只增不减且无削减入口——**可上线 ❌ 的理由清单从此多了一条库内可做的项**，v0.25 那句"剩余关口全部在仓库外、库内已无法继续闭环"据此修正为：仓库外动作不变，另加库内 B-44 保留策略批；**C-28** 取消终态与真失败不可区分；**task-input 升级项在 booted 进程里零生产者**（E6.1 到不了 desk，与入站 A2A #19 同格）。③ 有界委托契约原语落地但未接线，「已实现但未接线」**0 → 1 项**（feature-inventory v0.20）。上一条 v0.25（2026-10-04，评审对象：Active work 117（v0.24 之后的工作树，含出站 lookup 修复）：核心 MVP ✅ / 可上线 ❌ 维持，但可上线证据首次实质增强。本轮不是全量重评，而是补齐 v0.24 §F 挂着的容器级/复跑证据：全量 1109 总量 / 1109 绿 / 0 失败 / 102 文件（较 v0.24 +5）、冒烟 37/37、doc-consistency 11/11、typecheck/build exit 0；签名链 `verify:roster --card` 卡片深比对真机正/反例补证双 PASS；容量基线用 git worktree 同机对照证 fan-out §7 无回归（capacity-baseline 升 v0.4）；**Docker 容器级四项（healthy / `/data` 0600 / SIGTERM 落盘 / 重启恢复并端到端派发 completed）首次在当前出货件上全证据 PASS**。容器验收抓到并修复一个生产关键路径缺陷——出站 guarded lookup 未遵守 Node 22 autoSelectFamily 的 `options.all=true` 数组回调契约，导致所有按主机名（域名，非裸 IP）连接执行 Agent/seed 的出站请求失败（IP 字面量不触发自定义 lookup，故冒烟/单测/集测全漏）；修复后 +5 测试（含主机名真实建连回归），并补 `describeTransportError()` 透出 undici cause 错误码。「已实现但未接线」**0 项**，PRD 需求行状态无翻转（55 行 / P0 26/26 / 非 P0 未闭合 8 条同集合）。可上线仍 ❌，剩余为仓库外动作（真实公网部署、RSK 私钥托管与公钥带外公告 deferred #7、Zeus↔loom 联调、≥3 真实 Agent 的背压阈值、真实规模取证）。上一条 v0.24（Active work 111–115，HEAD `c7b5778`，与 origin/dev 同步）在 macOS 本机重新取证（工作树 = origin/dev）：全量 1104 总量 / 1104 绿 / 0 失败 / 102 文件、冒烟 37/37、doc-consistency 11/11、typecheck/build exit 0，三条验收脚本（execute-delegation 9/9、intent-recognize 7/7、tui-recognize 7/7）与 113–115 批关键面定向 58/58 均本机实测。本批实现 **Web 监督台 v1/v1.1/v1.2**（CORS 传输层 + 四视图 + 派发作战室 + SSE 实时 + DAG + 意图识别入口）与 **fan-out §7 运行中分支中断原语**（AbortSignal 真取消 + branch-aborted 审计）；评审抓到 1 处文档滞后（feature-inventory 状态行停在 v0.9 未记 113–115 批）当日修掉（升 v0.10、基线 1099/101 → 1104/102）。「已实现但未接线」**0 项**。出货件再动，镜像容器级四项本轮无新证据（§F）。上一条 v0.23（2026-10-03，对象 Active work 105–110 / `66911d7`）。历轮全文与取证细节在本文件各版本节内，本行不复制。）**
+> 状态：**现行（评审报告 v0.27，2026-10-06，证据补强轮（评审对象：Active work 131–139，基线现测 1218 总量 / 1218 绿 / 0 失败 / 112 文件、冒烟 42/42 复跑、doc-consistency 17/17、typecheck / lint / lint:secrets 各自 exit 0）：两个判定维持——核心 MVP ✅ / 可上线 ❌。自托管设计稿 §7 六步全部完成、P0 八步试点实跑全过（Active work 138，含两条装配缺陷的现场修复）、P1 `watch` HTTP 操作者面落地（Active work 139），P1 仅剩 TUI/Web watch 专属控件；仓库外关口集合不变，库内 B-44 保留策略批仍开放）**
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机执行 Agent 部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -304,6 +304,32 @@
 - **产品核心「完全可用」MVP：✅ 维持**；**可交付真实用户 MVP：❌ 维持**。本批为意图识别面与授权收口，不改变上线判定。
 - **未跑（如实记）**：Docker 镜像实构实跑（§F）、真机扇出与生产栈联调（外部条件）、本批 push 后的 CI（由用户决定 push 时点）。
 - **补跑（2026-10-03 收尾）**：三个验收脚本已在本机（Windows）复跑——`verify:execute-delegation` **9/9**、`verify:intent-recognize` **7/7**；`verify:tui-recognize` 复跑**当场抓出一条可移植性缺陷**：脚本用 `join(REPO, 'dist/tui/…')` 的裸盘符路径喂给动态 `import()`，Node ESM loader 在 Windows 上拒绝 `c:` scheme（macOS/Linux 的 POSIX 路径恰好被容错），已修为 `pathToFileURL(...).href`（连同注释说明），修后 **7/7**。typecheck/build 复跑 exit 0。**结论升级：v0.23 的判定不再依赖"另一会话记录"，三个验收面均本机实测。**
+
+## v0.27 补证（2026-10-06，评审对象：Active work 131–139：**核心 MVP ✅ / 可上线 ❌ 维持**；自托管六步全部完成、P0 八步试点实跑全过；本轮零需求翻转，产出是真进程取证与 P1 操作者面）
+
+> 本轮定位：v0.26 把可上线剩余项收为"仓库外动作 + 库内 B-44"。Active work 132–139 把自托管设计稿 §7 的六步全部落码，并首次对 P0 八步做真实实跑；这些是**证据增强与操作者可达面**，不翻转任何需求行。方法沿用 v0.9 两问法：查"运行中的进程能不能走到它"，门禁用当前出货件复跑而非转述。
+
+### A. 验证基线（本机实跑）
+
+| 项 | 读数 | 备注 |
+| --- | --- | --- |
+| `npm test` | **1218 总量 / 1218 绿 / 0 失败 / 112 文件** | 较 v0.26 的 1144/104 +74（watch 三批 + 契约控件批 + P0/P1 面） |
+| `npm run smoke:core` | **42/42** | Active work 136 增三步、139 复跑（动了 boot/watch 装配） |
+| `tests/doc-consistency.test.ts` | **17/17** | 项数不变；本轮 22 条锚点随行位移复钉 |
+| `npm run typecheck` / `lint` / `lint:secrets` | 各自 **exit 0** | watch 路由与审计桥过严格 tsconfig、eslint |
+
+### B. 本批事实（判定相关）
+
+1. **自托管设计稿 §7 六步全部完成**（Active work 132–137）：watch 三源（metrics/realm/connector）接线、execute 型契约派生与越限回落、契约 HTTP 签发面、TUI/Web 契约控件；tick 全程由调用方驱动，内核不持定时器（与 vault CLI 同口径）。
+2. **P0 八步试点实跑全过**（Active work 138）：含 production 无钥拒启反证、挂载视图零绝对路径、名册离线验签指纹逐字符同、同 intentId 重放零新派发、execute 票据 9/9、vault 四档 + nonce 跨重启 + 跨位置恢复。跑中现场抓到并修掉两条 inject 测试看不见的装配缺陷：① serve 从未传 oversightAudit——真进程里操作者批准/拒绝/入队零审计痕，boot 现默认桥进审计脊（三个新决策名）；② TUI client 空 body POST 被真 Fastify 400，恒发 JSON body。
+3. **P1 `watch` HTTP 操作者面落地**（Active work 139）：五条 bearer 路由（`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`），watch 生命周期动作（`watch-registered`/`watch-disabled`/`watch-revoked`）进审计脊，TUI token/文案三处同步；serve 补传 `runWatchTick`。
+4. **「已实现但未接线」保持 0 项**（feature-inventory §4）：契约已在第 4+5 步接进真进程与 HTTP 面。P1 唯一剩余是 TUI/Web 的 **watch 专属控件**——与契约那批同形状，HTTP 面先行、界面后补，属增强不属接线缺口。
+
+### C. 对判定的影响（说清楚，不夸大）
+
+- **两个判定都不变**：核心 MVP ✅（六步是 P1/P2 能力增强与操作者面，不是核心缺口）；可上线 ❌（证据增强但仓库外关口集合不变）。
+- **可上线剩余 = 仓库外动作**（真实部署与 RSK 带外公告 / loom 联调 / ≥3 真实 Agent 阈值 / 真实生产卷，A2–A5 + B 系列，均不变）**+ 库内 B-44 保留策略批**（v0.26 登记，未闭合）；另加 P1 的小尾巴 TUI/Web watch 控件（不阻塞）。
+- **不声称 P1 试点已完成**：P0 的「成功定义」表（连续 14 天真实使用等）仍属使用期事项；本轮证明的是能力可跑 + 面可达，不是长期可靠性。
 
 ## v0.26 补证（2026-10-05，评审对象：Active work 128–129：**核心 MVP ✅ / 可上线 ❌ 维持；本轮修正 v0.25 的一句结论——"剩余关口全部在仓库外"不再成立**；零运行时改动，产出是四格实测与三条新登记）
 
