@@ -1,6 +1,6 @@
-# 自托管试点验收规程（v0.4，2026-10-05）
+# 自托管试点验收规程（v0.5，2026-10-06）
 
-- 状态：**验收规程 v0.4（2026-10-05）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的内核链与 HTTP 操作者面已落地（设计稿 §7 第 4+5 步 HTTP 半）**——契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`，越限升级项可用 `POST /api/escalations/:id/approve-contract` 一键签新契约并换绑 watch；TUI/Web 专属控件未做（仍只经通用 HTTP 面操作）。故 P1/P2 作为**用户可用的能力**：P2 的 API 验收已可跑、端到端试点待 TUI/Web 面与 smoke 第 6 步；判据是预先写好的——每条都附"现在就能跑的证伪探针"。
+- 状态：**验收规程 v0.5（2026-10-06）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的内核链与 HTTP 操作者面已落地（设计稿 §7 第 4+5 步 HTTP 半）**——契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`，越限升级项可用 `POST /api/escalations/:id/approve-contract` 一键签新契约并换绑 watch；TUI/Web 专属控件未做（仍只经通用 HTTP 面操作）。故 P1/P2 作为**用户可用的能力**：P2 的 API 验收已可跑、设计稿 §7 第 6 步已落（`npm run smoke:core` 40 步含 watch 与契约）、端到端试点仅剩 TUI/Web 专属控件未做；判据是预先写好的——每条都附"现在就能跑的证伪探针"。
 - 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
@@ -224,6 +224,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 演进日志
 
+- **v0.5（2026-10-06）**：设计稿 §7 第 6 步落地，`npm run smoke:core` 37 → 40 步（serve 真进程契约操作面装配探针、watch 命中恰一次真派发、execute watch 契约派生与撤销断流；watch 由导入 dist 的 runner 子进程驱动）。本规程的判据与探针无一改动——P2 的开工闸门探针（空体 400 / 合法体 201）维持现状。
 - **v0.4（2026-10-05）**：设计稿 §7 第 5 步 HTTP 半落地，P2 从“内核侧已通、操作者签发面未做”改为“内核侧 + HTTP 操作者面已通”：契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`（签发与撤销进审计脊，撤销即刻阻断派生），越限升级项可经 `POST /api/escalations/:id/approve-contract` 一键签一份仅 `execute` 的新契约并换绑 watch，不重放被拒 fire。开工闸门探针由 404 翻转为：空体 400、合法体 201；代码级同证改为 `src/http/` 下命中 5 条路由注册。真进程 HTTP 证据 9 例在 `tests/http-delegation-contracts.test.ts`。TUI/Web 专属控件与第 6 步 smoke 增步仍未做，端到端试点尚不能跑。
 - **v0.3（2026-10-05）**：设计稿 §7 第 4 步落地，P2 从"未实现"改为"内核侧已实现、用户面未实现"：execute 型 watch 的契约派生、execute gate、越限零出站 + `delegation-limit` 升级、升级幂等与重启重放均在真进程用例中证明；但契约签发 HTTP/TUI 面（第 5 步）未做，§5 的操作者级验收仍跑不了，开工闸门探针由 404 与路由 grep 双重守住。第 4 条判据的代码同证从冲突升级接线改为委托越限接线。
 - **v0.1（2026-10-05）**：首版。P0 八步全部锚到已落地命令/端点（含每步的反向对照）；P1/P2 只立判据并各附一条现在就应失败的探针，作为能力开工闸门；§1 用 `src/vault/cli.ts:6-8 #scheduler` 的原文把"没有调度器"从推测改成明文设计。
