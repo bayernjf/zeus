@@ -1,6 +1,6 @@
 # 功能清单（Feature Inventory）
 
-状态：**现行 v0.13**（2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项；2026-10-02 **评审 v0.21 修正规模普查**：路由 75 → 76（3 公开 + 73 bearer，分组表之和 70 → 73）、库导出口径改为 **118 条 export 语句 / 运行时 213 个导出**，三段计数入库为断言；2026-10-02 再更新：**`dataPolicy` 收缩口径已定**（design-realm §3.1，实现待落），基线 1018 测试 / 94 文件；2026-10-03 再更新：**数据二极管按 `dataPolicy` 收缩已接线**（dispatcher 判档 + `realmHitsOrigin` 来源标记 + `refused-data-policy`/`content-injected` 两条审计值，「已实现但未接线」2 → 1 项，Active work 103），基线 1022 测试 / 94 文件；2026-10-03 再更新（**Active work 104**）：路由 76 → 77（3 公开 + 74 bearer，分组表「数据域与跨域」7 → 8）、关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据签发端点/审计/nonce 持久化三项接线，「已实现但未接线」仍 1 项），基线 1048 测试 / 97 文件；2026-10-03 再更新（**Active work 107**）：执行授权票据**派发闸门 + execute/plan 模式**接线（`FanOutRequest.mode`、`Orchestrator.runBranch` 前置验签消费、审计 `execution-delegation-denied` 入 AUDIT_DECISIONS 与 TUI token、H2 意图面透传；「已实现但未接线」1 → **0 项**；修正一处标注错误：凭据委派原标 ⬜（E4.10），PRD E4.10 实为背压降级顺序，凭据委派对应 deferred #33 投递字段），基线 1048/97 → **1060/99**；2026-10-03 再更新（**Active work 109**）：E2.6 操作者意图识别接线（`POST /api/intents/recognize`，本地规则零出域默认 + 可插拔决策后端 opt-in，plan-only fail-closed；真进程验收 7 步入 `verify:intent-recognize`；index 公共导出 +2），路由 77 → **78**（3 公开 + 75 bearer，分组表「意图与编排」6 → 7），导出语句 118 → **120**，测试 1060/99 → **1084/101**；2026-10-03 再更新（**Active work 110**）：E2.6 意图识别接 **TUI 命令面**（`i <文本>` 本地规则零出域 / `im <文本>` 显式咨询决策后端 opt-in，结构化 fail-closed 422 以视图返回，命令词须为 `i`/`im` 后跟空格防 `info` 误判；真进程验收 `verify:tui-recognize` 7 步入册），TUI 命令 11 → **13** 类，路由 78 / 导出 120 不变，测试 1084/101 → **1099/101**；2026-10-04 再更新（**Active work 113–115**）：CORS 传输层（`ZEUS_CORS_ORIGINS` 白名单 + OPTIONS 预检 + hijack SSE 端点补 CORS 头）、Web 监督台 v1（`web/supervisor/index.html`，监控/裁决/授权/连接四视图 + 派发作战室 SSE 实时 + DAG 视图 + 意图识别入口）、fan-out **§7 运行中分支中断原语**（`DispatchRequest.signal` + `branchSignals` + `branch-aborted` 审计 + `canceled by the driver` 结算）、tui-tokens 补 `branch-aborted` 语义 token，测试 1099/101 → **1104/102**，冒烟 37/37；2026-10-04 再更新（**Active work 117**）：评审 §F 三项取证——签名链 `verify:roster --card` 卡片深比对真机正/反例补证（正例 VERIFIED、篡改 swornTo 反例 REJECTED）、容量基线 worktree 同机对照证 §7 无回归（capacity-baseline 升 **v0.4**，新增跨版本对照方法论）、Docker 容器级四项首次全证据（healthy / `/data` 0600 / SIGTERM 落盘 / 重启恢复并端到端派发 completed，另验生产无钥拒启）；容器验收抓到并修复**生产关键路径缺陷**——出站 guarded lookup 未遵守 Node 22 autoSelectFamily 的 `options.all=true` 数组回调契约，导致所有按主机名（域名，非裸 IP）连接执行 Agent/seed 的出站请求失败（IP 字面量不触发自定义 lookup，故冒烟/单测全漏），修复为 all:true 回地址数组、all:false 回标量、混合公私网答案仍整主机 fail-closed，并新增 `describeTransportError()` 走 undici cause 链透出真实错误码（EZEUSOUTBOUND/ECONNREFUSED）接入注册与健康检查 catch；测试 1104/102 → **1109/102**（outbound-dns +4 含主机名真实建连回归、registry +1），路由/导出/冒烟均不变；2026-10-04 再更新（**Active work 118**）：**Web 监督台 v1.3**（`web/supervisor/index.html`，纯前端零内核改动）——审计时间线过滤条（afDecision 动态下拉 / afVassal 服务端 / afKeyword 前端即时 / afCount 计数+空态）、并发趋势面板（SVG 双线 40 点环形 3s 采样、峰值/采样计数）、侧栏待决徽标全局刷新（非裁决视图 10s 轮询）、意图历史回写（renderIntent rememberIntent completed/failed，localStorage 持久化）；基线 1109/102 不变（Windows 本机 1083 绿 / 26 环境性失败），路由/导出/冒烟均不变；2026-10-04 再更新（**Active work 119**）：**Web 监督台 v1.4**（`web/supervisor/index.html`，纯前端、零内核改动、零新路由，全部消费已挂载 HTTP API）——作战室新增决策回放面板（`GET /api/intents/:id/replay?format=text` 人读时间线）与结果责任链面板（`GET /api/org/accountability/:id`，执行 Agent→部门 lead→裁决 driver，未安置单列）；新增组织视图（`GET /api/org/chart` 编制树）与目录视图（`GET /api/skills` 技能目录含状态前端过滤 + `GET /api/connectors` 连接器只读台账，令牌只显 hasToken 不回显）；监控名册每行加吊销/恢复治理按钮（`DELETE /api/vassals/:name`、`POST /api/vassals/:name/reinstate`，confirm 二次确认）；内核状态面板加决策后端徽章（`GET /api/decision`，rules-only 或 kind/model + 仲裁/judge 门限）；浏览器真机 E2E 六子项全过（含吊销→恢复闭环 UI+API 双断言、连接器令牌不回显）；基线 1109/102 不变，路由 78 / 导出 120 / 冒烟均不变）
+状态：**现行 v0.19**（2026-10-05 自托管实施第 1 步：库公共面按现测改为 **122 条 export 语句 / 运行时 221 个导出**（+2 条语句、+6 个运行时符号，全部来自 `delegation-contract`），并把**有界委托契约**登记进 §4「已实现但未接线」——本节 0 → **1 项**，理由是没有生产调用方：`bootKernel` 不装配它、没有 HTTP 面、派发热路径不消费它下面的票据；上一条 v0.18：2026-10-05 审计 B-43 收口轮：§6 的文档一致性断言 16 → 17 项（新增"上线清单的活基线与 deferred 销项状态必须和台账一致"），并修掉清单三处过期（判定行与闸门行的活基线停在 1099/1109、两条已销项仍写"登记待做"）；上一条 v0.17：2026-10-05 审计 B-42 收口轮：§6 的文档一致性断言 15 → 16 项（新增"全库每一条可解析的代码引用都要落到真实文件的真实行区间"），本台账"在哪"列 11 处引用全部复钉成带校验词的全路径——抽查的 10 条里 7 条原本指向无关实现；上一条 v0.16：2026-10-05 审计 B-41 收口轮：§6 的文档一致性断言 14 → 15 项（新增"每条代码锚点必须带校验词并命中被引区间"）；上一条 v0.15：2026-10-04 审计 v0.9 修复轮：§6 的文档一致性断言项数从 9 改成现测 14（本行停在 9 是 v0.11 之后的漂移，闸门只比路由与 export 普查、不比这一格）；上一条 v0.14：2026-10-04 审计 v0.7 复审轮：台账自身四处修正 + E2.6 补入功能明细；2026-09-30 随首轮代码审计建立、2026-10-01 随 A 级 12 条缺陷修复更新，基线 909 测试 / 92 文件；2026-10-01 再随 E2.3 `harden` 语义修正更新，基线 1012 测试 / 94 文件；2026-10-02 随审计 C 级收口更新，基线 1015 测试 / 94 文件；2026-10-02 再随 lint 基线接入更新：脚本 7 → 8，补 `scan-secrets`；2026-10-02 再随 `startServer()` 接线更新：「已实现但未接线」3 → 2 项；2026-10-02 **评审 v0.21 修正规模普查**：路由 75 → 76（3 公开 + 73 bearer，分组表之和 70 → 73）、库导出口径改为 **118 条 export 语句 / 运行时 213 个导出**，三段计数入库为断言；2026-10-02 再更新：**`dataPolicy` 收缩口径已定**（design-realm §3.1，实现待落），基线 1018 测试 / 94 文件；2026-10-03 再更新：**数据二极管按 `dataPolicy` 收缩已接线**（dispatcher 判档 + `realmHitsOrigin` 来源标记 + `refused-data-policy`/`content-injected` 两条审计值，「已实现但未接线」2 → 1 项，Active work 103），基线 1022 测试 / 94 文件；2026-10-03 再更新（**Active work 104**）：路由 76 → 77（3 公开 + 74 bearer，分组表「数据域与跨域」7 → 8）、关闭 deferred #35（出站 DNS 重绑定守卫）、推进 deferred #33（执行授权票据签发端点/审计/nonce 持久化三项接线，「已实现但未接线」仍 1 项），基线 1048 测试 / 97 文件；2026-10-03 再更新（**Active work 107**）：执行授权票据**派发闸门 + execute/plan 模式**接线（`FanOutRequest.mode`、`Orchestrator.runBranch` 前置验签消费、审计 `execution-delegation-denied` 入 AUDIT_DECISIONS 与 TUI token、H2 意图面透传；「已实现但未接线」1 → **0 项**；修正一处标注错误：凭据委派原标 ⬜（E4.10），PRD E4.10 实为背压降级顺序，凭据委派对应 deferred #33 投递字段），基线 1048/97 → **1060/99**；2026-10-03 再更新（**Active work 109**）：E2.6 操作者意图识别接线（`POST /api/intents/recognize`，本地规则零出域默认 + 可插拔决策后端 opt-in，plan-only fail-closed；真进程验收 7 步入 `verify:intent-recognize`；index 公共导出 +2），路由 77 → **78**（3 公开 + 75 bearer，分组表「意图与编排」6 → 7），导出语句 118 → **120**，测试 1060/99 → **1084/101**；2026-10-03 再更新（**Active work 110**）：E2.6 意图识别接 **TUI 命令面**（`i <文本>` 本地规则零出域 / `im <文本>` 显式咨询决策后端 opt-in，结构化 fail-closed 422 以视图返回，命令词须为 `i`/`im` 后跟空格防 `info` 误判；真进程验收 `verify:tui-recognize` 7 步入册），TUI 命令 11 → **13** 类，路由 78 / 导出 120 不变，测试 1084/101 → **1099/101**；2026-10-04 再更新（**Active work 113–115**）：CORS 传输层（`ZEUS_CORS_ORIGINS` 白名单 + OPTIONS 预检 + hijack SSE 端点补 CORS 头）、Web 监督台 v1（`web/supervisor/index.html`，监控/裁决/授权/连接四视图 + 派发作战室 SSE 实时 + DAG 视图 + 意图识别入口）、fan-out **§7 运行中分支中断原语**（`DispatchRequest.signal` + `branchSignals` + `branch-aborted` 审计 + `canceled by the driver` 结算）、tui-tokens 补 `branch-aborted` 语义 token，测试 1099/101 → **1104/102**，冒烟 37/37；2026-10-04 再更新（**Active work 117**）：评审 §F 三项取证——签名链 `verify:roster --card` 卡片深比对真机正/反例补证（正例 VERIFIED、篡改 swornTo 反例 REJECTED）、容量基线 worktree 同机对照证 §7 无回归（capacity-baseline 升 **v0.4**，新增跨版本对照方法论）、Docker 容器级四项首次全证据（healthy / `/data` 0600 / SIGTERM 落盘 / 重启恢复并端到端派发 completed，另验生产无钥拒启）；容器验收抓到并修复**生产关键路径缺陷**——出站 guarded lookup 未遵守 Node 22 autoSelectFamily 的 `options.all=true` 数组回调契约，导致所有按主机名（域名，非裸 IP）连接执行 Agent/seed 的出站请求失败（IP 字面量不触发自定义 lookup，故冒烟/单测全漏），修复为 all:true 回地址数组、all:false 回标量、混合公私网答案仍整主机 fail-closed，并新增 `describeTransportError()` 走 undici cause 链透出真实错误码（EZEUSOUTBOUND/ECONNREFUSED）接入注册与健康检查 catch；测试 1104/102 → **1109/102**（outbound-dns +4 含主机名真实建连回归、registry +1），路由/导出/冒烟均不变；2026-10-04 再更新（**Active work 118**）：**Web 监督台 v1.3**（`web/supervisor/index.html`，纯前端零内核改动）——审计时间线过滤条（afDecision 动态下拉 / afVassal 服务端 / afKeyword 前端即时 / afCount 计数+空态）、并发趋势面板（SVG 双线 40 点环形 3s 采样、峰值/采样计数）、侧栏待决徽标全局刷新（非裁决视图 10s 轮询）、意图历史回写（renderIntent rememberIntent completed/failed，localStorage 持久化）；基线 1109/102 不变（Windows 本机 1083 绿 / 26 环境性失败），路由/导出/冒烟均不变；2026-10-04 再更新（**Active work 119**）：**Web 监督台 v1.4**（`web/supervisor/index.html`，纯前端、零内核改动、零新路由，全部消费已挂载 HTTP API）——作战室新增决策回放面板（`GET /api/intents/:id/replay?format=text` 人读时间线）与结果责任链面板（`GET /api/org/accountability/:id`，执行 Agent→部门 lead→裁决 driver，未安置单列）；新增组织视图（`GET /api/org/chart` 编制树）与目录视图（`GET /api/skills` 技能目录含状态前端过滤 + `GET /api/connectors` 连接器只读台账，令牌只显 hasToken 不回显）；监控名册每行加吊销/恢复治理按钮（`DELETE /api/vassals/:name`、`POST /api/vassals/:name/reinstate`，confirm 二次确认）；内核状态面板加决策后端徽章（`GET /api/decision`，rules-only 或 kind/model + 仲裁/judge 门限）；浏览器真机 E2E 六子项全过（含吊销→恢复闭环 UI+API 双断言、连接器令牌不回显）；基线 1109/102 不变，路由 78 / 导出 120 / 冒烟均不变；2026-10-04 再更新（**审计 v0.7 复审轮 / Active work 120**，纯台账修正、零代码零测试改动，基线 1109/102 不变）：修掉台账自身的三处错——① TUI 行「鉴权」格原写 `--token`，而代码**显式拒绝**该旗标（`src/tui/cli.ts:44-48 #token`：命令行秘密进 `ps` 与 shell 历史），改为 `ZEUS_INTERNAL_TOKEN` 并注明旗标被拒；② 「脚本 8 个」→ **12 个**（`ls scripts/*.mjs` 现测；漂移的 4 个是 `verify-decision-backend` / `verify-execute-delegation` / `verify-intent-recognize` / `verify-tui-recognize`，全是后续批次加的真机验收入口）；③ §2.1 标题「76 条」→「**78 条：3 公开 + 75 bearer**」——同一份文档 §2 表第 26 行本就写 78，标题与表自相矛盾已统一；另在 §3.2 技能体系补 **E2.6 操作者自然语言意图识别**一行（此前该能力只在 §2 路由表与 TUI 命令表登记，按 Epic 读的功能明细缺行）；`--token` 之外未改任何运行时行为，四处修正的复现命令见 [audit-2026-09.md](audit-2026-09.md) §10.5）
 
 > 本文件是 Zeus **全部功能点的资产台账**：有什么、在哪、什么状态。缺陷台账在 [audit-2026-09.md](audit-2026-09.md)。需求优先级与验收标准在 [prd.md](prd.md)；"做到哪了"在 [handoff.md](../handoff.md)。本文件只回答"有什么"，不记进度。
 
@@ -24,14 +24,14 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 入口 | 形态 | 规模 | 鉴权 |
 | --- | --- | --- | --- |
 | HTTP 门面 | Fastify 长驻进程，`npm start` | **78 条路由**（3 公开 + 75 bearer） | 公开 3 条无鉴权；其余同一 bearer |
-| 终端面板 TUI | `npm run tui` | 13 类命令 | `--token` |
+| 终端面板 TUI | `npm run tui` | 13 类命令 | `ZEUS_INTERNAL_TOKEN`（env）——**`--token` 被显式拒绝**：命令行秘密在 `ps` 与 shell 历史里可见（`src/tui/cli.ts:44-48 #token`；原台账此格误写为 `--token`，见审计报告 §10 B-37） |
 | Web 监督台（方案 A v1.4） | `web/supervisor/index.html` + 静态托管 | 监控（内核状态/指标+决策后端徽章/名册含吊销·恢复治理/审计时间线+过滤/并发趋势）/ 意图派发+作战室（详情/SSE 实时/DAG/取消/决策回放/结果责任链）/ 裁决 / 授权 / 组织（编制树）/ 目录（技能+连接器只读）/ 连接；v1.1 派发作战室+SSE、v1.2 DAG+识别+loading+SSE 重连、v1.3 审计过滤+趋势+徽标全局刷新+历史回写、v1.4 回放+责任链+组织+目录+名册治理+决策徽章 | 浏览器侧 localStorage 存 bearer；服务侧 `ZEUS_CORS_ORIGINS` 白名单 |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
-| 库公共面 | `import 'zeus'` | **120 条 export 语句**（构建产物运行时 215 个导出） | 不适用 |
+| 库公共面 | `import 'zeus'` | **122 条 export 语句**（构建产物运行时 221 个导出） | 不适用 |
 | MCP 服务端 | `src/realm/mcp-stdio.ts` | 3 资源模板 + 2 工具 | 宿主预授权目录 |
-| 脚本 | `scripts/` | 8 个 | 不适用 |
+| 脚本 | `scripts/` | **12 个**（`ls scripts/*.mjs` 现测；原记 8 个，漂移的 4 个是 `verify-decision-backend` / `verify-execute-delegation` / `verify-intent-recognize` / `verify-tui-recognize`，见 §10 C-26） | 不适用 |
 
-### 2.1 HTTP 路由（76 条）
+### 2.1 HTTP 路由（78 条：3 公开 + 75 bearer）
 
 量法：`src/http/server.ts` 里 `app.<verb>('<path>'` 的注册数（每条注册一路由，无重复注册；`tests/doc-consistency.test.ts` 已把本行与下表之和钉成断言，故三个数字不会再各自漂移）。
 
@@ -87,8 +87,8 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 一层扇出/汇聚：按技能或显式名单并行派发 N 个执行 Agent | `orchestrator/orchestrator.ts` | ✅ |
-| 意图幂等：同 intentId 重放零出站 | `orchestrator.ts:121-126` | ✅ |
-| 取消传播到全部非终态分支 | `orchestrator.ts:337-359` | ✅（A-11 已修：意图在首个分支派发前落最小可取消态，取消结果回写分支与聚合） |
+| 意图幂等：同 intentId 重放零出站 | `src/orchestrator/orchestrator.ts:183-185 #intentId` | ✅ |
+| 取消传播到全部非终态分支 | `src/orchestrator/orchestrator.ts:480-510 #cancelIntent` | ✅（A-11 已修：意图在首个分支派发前落最小可取消态，取消结果回写分支与聚合） |
 | 多流合并（带来源 vassal/taskId/runId） | `orchestrator/merge.ts` | ✅ |
 | 规则聚合：unanimous / majority / weighted，分裂不臆断 | `orchestrator/aggregate.ts` | ✅ |
 | 冲突检测与升级进监督台 | `orchestrator/conflict.ts` + `oversight` | ✅ |
@@ -113,6 +113,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 多技能组队，歧义不静默选边 | `resolveTeam` | ✅ |
 | 派发前技能闸门（三态：未注册放行 / 注册无 active 拒绝） | `activeProviders` + dispatcher | ✅ |
 | 带教台账：立项/授课/胜任力评估/作废 | `skills/mentor.ts` | ✅ |
+| 操作者自然语言意图识别（E2.6：plan-only、默认本地规则零出域、外部模型仅显式 `useModel: true` 经窄端口） | `src/intent/recognize.ts`；HTTP `POST /api/intents/recognize`（`src/http/server.ts:1212 #recognize`）；TUI `i` / `im`；库导出 `src/index.ts:218 #recognizeIntent` | ✅（本轮补登：此前只出现在 §2 路由表与 TUI 表，Epic 维表缺行，见审计报告 §10 C-25） |
 
 ### 3.3 数据域与数据主权（E3）
 
@@ -120,9 +121,9 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | --- | --- | --- |
 | 目录即数据库：connect / manifest / search / read | `realm/store.ts` | ✅ |
 | 确定性 realmId（realpath 派生）与内容指纹 | `realm/store.ts` `realm/digest.ts` | ✅ |
-| 路径逃逸防护（路径段 + realpath 双检，拒符号链接） | `realm/store.ts:178-199` | ✅ |
+| 路径逃逸防护（路径段 + realpath 双检，拒符号链接） | `src/realm/store.ts:199-224 #isInsideRoot` | ✅ |
 | 文本白名单、隐藏与依赖目录剪枝、1MiB 上限 | `realm/store.ts` scan | ✅ |
-| 数据二极管：域须在 fealty 声明内才注入 | `dispatch/dispatcher.ts:132` | ✅ |
+| 数据二极管：域须在 fealty 声明内才注入 | `src/dispatch/dispatcher.ts:182-196 #diode` | ✅ |
 | 企业域三级租户（org/department/member） | `realm/tenant.ts` | ✅ |
 | 双域授权：个人↔企业单向隔离，显式签名一次性授权 | `realm/authorization.ts` | ✅ |
 | 企业域写凭证：签名且一次性，nonce 账本 | `realm/grant.ts` | ✅ |
@@ -140,7 +141,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | Ed25519 + JCS 两层信封（条目 attestation + 快照 seal），离线可验 | `registry/signing.ts` | ✅ |
 | 吊销强制力：派发前阻断、凭据即刻断流、四视图不回显 | `registry/registry.ts` `dispatch/dispatcher.ts` | ✅ |
 | 出站凭据注入（`url｜token` seed、快照持久化、0600） | `registry/registry.ts` `tokenFor` | ✅ |
-| SLA 受理计时审计 | `dispatch/dispatcher.ts:147-176` | ✅ |
+| SLA 受理计时审计 | `src/dispatch/dispatcher.ts:248-255 #ackSeconds` | ✅ |
 | 文件/URI 产物部件（只呈现不自动拉取） | `a2a/parts.ts` | ✅ |
 | 对线上真实执行 Agent 的协议验收 | `scripts/acceptance-standard-a2a.mjs` | ✅（E4.8 已实跑 PASS） |
 | 凭据委派（execute 模式） | 未实现 | ⬜（deferred #33 投递字段：对端凭据代理接口未定义；PRD E4.10 是背压降级顺序，与凭据委派无关） |
@@ -151,7 +152,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 薄传输层：全库仅 `http/` 引 fastify，内核零传输依赖 | `http/server.ts` | ✅ |
-| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `http/server.ts:229` `:2040` | ✅ |
+| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:265-266 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2280 #timingSafeEqual` | ✅ |
 | 根公钥发布端点 | `GET /api/roster/keys` | ✅ |
 | 生产密钥硬化：内联 PEM / 文件挂载 / production 无钥拒启 | `http/rsk.ts` | ✅ |
 | 启动装配：四组件一次装配、快照恢复、信号优雅落盘 | `state/boot.ts` | ✅ |
@@ -218,11 +219,11 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 容量基线 harness 与五场景数据 | `scripts/bench-capacity.mjs` + `docs/capacity-baseline.md` | ✅ |
 | 容器部署形态（多阶段、非 root、健康检查、状态卷） | `Dockerfile` + `docs/deployment.md` | ✅ |
 | CI：Node 双矩阵 typecheck → test → build + 独立时钟偏移 job | `.github/workflows/ci.yml` | ✅ |
-| 文档一致性断言（9 项机械校验） | `tests/doc-consistency.test.ts` | ✅ |
+| 文档一致性断言（17 项机械校验） | `tests/doc-consistency.test.ts` | ✅ |
 
 ## 4. 已实现但未接线的功能
 
-这一类不在 PRD 的 ⬜ 里，因此最容易在盘点时被算成"已完成"。它们是**能力齐备但没接到主路径上**。2026-10-01 的 A 级修复批把原列 6 项中的 per-vassal 并发上限（A-01）、跨域授权 nonce 防重放（A-04）、连接器空权限 fail-closed（A-09）三项接上了主路径，2026-10-02 又把 `startServer()` 接线（见下表之后的说明），2026-10-03 又把**数据二极管按 `dataPolicy` 收缩**接线（Active work 103），同日再把**执行授权票据的签发端点、审计、nonce 持久化**三项接线（Active work 104，派发闸门仍留对端），**已接线移出本表（2026-10-03，Active work 107）**：执行授权票据派发闸门——`Orchestrator.runBranch` 出站前验签消费一次性票据（capability 固定 `'execute'`），无授权 fail-closed 零出站，审计 `execution-delegation-denied`；`FanOutRequest.mode` 区分 plan/execute。**本节现为 0 项**。
+这一类不在 PRD 的 ⬜ 里，因此最容易在盘点时被算成"已完成"。它们是**能力齐备但没接到主路径上**。2026-10-01 的 A 级修复批把原列 6 项中的 per-vassal 并发上限（A-01）、跨域授权 nonce 防重放（A-04）、连接器空权限 fail-closed（A-09）三项接上了主路径，2026-10-02 又把 `startServer()` 接线（见下表之后的说明），2026-10-03 又把**数据二极管按 `dataPolicy` 收缩**接线（Active work 103），同日再把**执行授权票据的签发端点、审计、nonce 持久化**三项接线（Active work 104，派发闸门仍留对端），**已接线移出本表（2026-10-03，Active work 107）**：执行授权票据派发闸门——`Orchestrator.runBranch` 出站前验签消费一次性票据（capability 固定 `'execute'`），无授权 fail-closed 零出站，审计 `execution-delegation-denied`；`FanOutRequest.mode` 区分 plan/execute。**本节现为 1 项**：有界委托契约 `src/delegation/delegation-contract.ts`（设计稿 [design-self-host-loop.md](design-self-host-loop.md) 的实施第 1 步，2026-10-05 落地）——签发、离线验签、派生子票据、两条上限与撤销、快照持久化都可执行且有 27 项单测（含三组缺陷植入验证），但**没有生产调用方**：`bootKernel` 不装配 `DelegationContractRegistry`，没有 HTTP 面，派发热路径也不会消费契约下发出的票据。接线它的是第 2 步（`watch` 触发）与第 4 步（execute 越限回落升级台）。在那之前，"自主发起能不能被有界授权"在真进程里仍是**没有问题**，不是有否定答案。
 
 **已接线移出本表**：`startServer()`（2026-10-02）。接线前它是"同一句启动有两种答案"：这个导出的起步函数零调用方、默认 `port: 0`（随机端口），而进程入口 `serve.ts` 自带一份 `8787`，两处默认值可以各自漂移。现改为**单一起步原语**——进程入口调它，绑定默认值只有一份（`DEFAULT_HTTP_HOST` / `DEFAULT_HTTP_PORT`），`ZEUS_HOST` / `ZEUS_PORT` 仅作覆盖，进程日志打印 socket **实际绑定**的地址（`ZEUS_PORT=0` 时请求值与实际值不同，日志是操作者唯一能读到真实端口的地方）。`index.ts` 仍不导出任何 HTTP 符号——传输层不属于内核，`package.json` 的 `./http` 子路径是它的唯一入口。**数据二极管按 `dataPolicy` 收缩**（2026-10-03）：`dispatcher.ts` 的注入点从"`none` 之外一律放行"改为按 **policy×origin** 判档（design-realm §3.1）——命中非空且来源缺失即拒（fail-closed）、`none` 一律拒、`read-task-scope` 仅收内核解析、`read-realm`/`write` 允许操作者自报；HTTP 装配层补 `realmHitsOrigin` 标记（`caller-asserted` / `kernel-resolved`）并把内核解析的命中全字段透传（不再丢 `tags`/`modifiedAt`）；放行与拒绝都写审计（`refused-data-policy` / `content-injected`，detail 点名 policy、来源与条数），TUI 语义 token 同步。五条验收（含缺陷植入 4 红）见 [handoff](../handoff.md) Active work 103。
 

@@ -3,6 +3,7 @@ import type { ExecutionDelegation } from '../delegation/execution-delegation.js'
 import type { VassalStatus } from '../registry/registry.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import type { DecisionBackendError, DecisionBackendKind } from '../decision/types.js';
+import type { BranchOutcomeKind } from './metrics.js';
 
 /** One vassal's participation in a fan-out intent. */
 export type BranchOutcome = {
@@ -16,6 +17,12 @@ export type BranchOutcome = {
   /** Refusal / failure / timeout reason. */
   reason?: string;
   timedOut?: boolean;
+  /**
+   * The settled classification, written once at assembly so a reader never has
+   * to re-derive it: a refused execute has no `state` (nothing was dispatched),
+   * so keying on `state` alone silently renders it as "no status".
+   */
+  outcome?: BranchOutcomeKind;
 };
 
 export type FanOutStatus = 'completed' | 'partial' | 'failed' | 'needs-driver';

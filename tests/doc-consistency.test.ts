@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
@@ -66,6 +67,221 @@ function indexRows(): IndexRow[] {
 /** Column count of a table row: unescaped pipes in the line. */
 function rowCount(line: string): number {
   return (line.replace(/\\\|/g, '').match(/\|/g) ?? []).length;
+}
+
+type DocLine = { at: number; text: string };
+
+const FENCE = /^(\s*)(`{3,})(.*)$/;
+
+/** Lines a reader actually sees: block content is dropped, fence markers kept.
+ *  CommonMark rule applied - a closing fence cannot carry an info string, so a
+ *  ```bash line inside an open block is content, not a new block. */
+function visibleLines(file: string): DocLine[] {
+  const out: DocLine[] = [];
+  let open: number | null = null;
+  readFileSync(file, 'utf8')
+    .split('\n')
+    .forEach((text, index) => {
+      const fence = text.match(FENCE);
+      if (fence) {
+        out.push({ at: index + 1, text });
+        const len = fence[2]!.length;
+        if (open === null) open = len;
+        else if (fence[3]!.trim() === '' && len >= open) open = null;
+        return;
+      }
+      if (open === null) out.push({ at: index + 1, text });
+    });
+  return out;
+}
+
+/** The paste defect: one document carrying two copies of itself. Both signals are
+ *  mechanical - the file's own title reappearing later, and duplicated long lines.
+ *  Threshold 3 rather than 1 because a repeated table row is legitimate prose:
+ *  the current maximum elsewhere in the repo is 2 (review-mvp's verification
+ *  matrix row appears in two round tables), while the copy this guard exists for
+ *  (audit B-39, docs/mcp-integration.md at 532 lines) measured 30. */
+function duplicateBodyFindings(title: string, fullText: string, lines: DocLine[]): string[] {
+  const findings: string[] = [];
+  if (/^# \S/.test(title)) {
+    const rest = fullText.slice(fullText.indexOf('\n') + 1);
+    const again = rest.split(title).length - 1;
+    if (again > 0) findings.push(`标题「${title}」在正文中又出现 ${again} 次`);
+  }
+  const first = new Map<string, number>();
+  const repeats: string[] = [];
+  for (const { at, text } of lines) {
+    if (text.length < 120) continue;
+    const key = text.slice(0, 400);
+    const seen = first.get(key);
+    if (seen === undefined) first.set(key, at);
+    else repeats.push(`line ${at}（与 line ${seen} 相同）`);
+  }
+  if (repeats.length >= 3) findings.push(`重复长行 ${repeats.length} 处：${repeats.slice(0, 3).join('、')}`);
+  return findings;
+}
+
+/** An info-string fence that lands inside an open block can only mean the open
+ *  block lost its closer - and everything between then renders as code. */
+function fenceFindings(lines: string[]): string[] {
+  const findings: string[] = [];
+  let open: { len: number; at: number } | null = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const fence = lines[index]!.match(FENCE);
+    if (!fence) continue;
+    const len = fence[2]!.length;
+    if (open === null) {
+      open = { len, at: index + 1 };
+      continue;
+    }
+    if (fence[3]!.trim() === '' && len >= open.len) {
+      open = null;
+      continue;
+    }
+    findings.push(`line ${index + 1} 是一块新开的围栏，但它落在 line ${open.at} 打开的代码块里（那块缺闭合）`);
+  }
+  if (open) findings.push(`line ${open.at} 打开的围栏到文件结尾都没闭合`);
+  return findings;
+}
+
+/** An anchor citation carries a verification word: `src/path.ts:12-20 #symbol`.
+ *  The word must appear inside the cited range, which is what makes a drifted
+ *  line number fail loudly instead of reading as unrelated source. */
+const ANCHOR = /`((?:src|tests)\/[\w\-/.]+\.(?:ts|js)):(\d+)(?:-(\d+))? #([\w.]+)`/g;
+
+function anchorFindings(text: string, read: (file: string) => string[]): string[] {
+  const findings: string[] = [];
+  for (const match of text.matchAll(ANCHOR)) {
+    const [, file, fromRaw, toRaw, token] = match;
+    const from = Number(fromRaw);
+    const to = Number(toRaw ?? fromRaw);
+    let lines: string[];
+    try {
+      lines = read(file!);
+    } catch {
+      findings.push(`${file}:${from}-${to} 的锚点文件不存在`);
+      continue;
+    }
+    if (to > lines.length) {
+      findings.push(`${file}:${from}-${to} 超出文件长度 ${lines.length}`);
+      continue;
+    }
+    if (!lines.slice(from - 1, to).join('\n').includes(token!)) {
+      findings.push(`${file}:${from}-${to} 的区间里没有校验词 #${token}`);
+    }
+  }
+  // The two shapes that would let the check pass by covering nothing: an anchor
+  // with no verification word, and a `:NN` continuation whose path lives in an
+  // earlier citation, so the regex above never sees it.
+  for (const bare of text.matchAll(/`(?:src|tests)\/[\w\-/.]+\.(?:ts|js):\d+(?:-\d+)?`/g)) {
+    findings.push(`锚点缺校验词：${bare[0]}`);
+  }
+  if (/[、，]`:\d|`:\d[\d-]*`/.test(text)) findings.push('有锚点写成 `:NN` 续写形式（路径在上一条里），断言接不到它');
+  return findings;
+}
+
+/** Code citations across the whole document set: a source file (full path, or the
+ *  `realm/store.ts:178-199` short form the ledgers favour), a line or range, and
+ *  optionally the verification word that must appear inside that range. Documents
+ *  listed in ANCHOR_CONTRACT_DOCS opted into the word for every citation they carry.
+ *  Bare basenames (`registry.ts:210`) are out of scope on purpose: three files share
+ *  that name, so resolving one means guessing - and guessing is what this gate exists
+ *  to stop. They come back as a count so the exclusion cannot quietly become coverage. */
+const CODE_CITATION =
+  /`((?:[\w\-/.]+\/)?[\w\-/.]+\.(?:ts|tsx|js|mjs|cjs|json|html)):(\d+)(?:-(\d+))?(?: #([\w.]+))?`/g;
+
+const SOURCE_ROOTS = ['src', 'tests', 'scripts', 'web'];
+
+const ANCHOR_CONTRACT_DOCS = [
+  'docs/mcp-integration.md',
+  'docs/terminology.md',
+  'docs/design-naming-migration.md',
+  'docs/design-backpressure.md',
+  'docs/feature-inventory.md',
+  'docs/verify-jev-backend.md',
+  // 2026-10-05: the two self-host documents were written under the contract from
+  // their first draft, so opting them in costs nothing and stops the next edit
+  // from quietly citing an anchor that resolves to nothing.
+  'docs/design-self-host-loop.md',
+  'docs/verify-self-host-pilot.md',
+];
+
+function sourcePaths(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap(entry => {
+    const full = `${dir}/${entry.name}`;
+    return entry.isDirectory() ? sourcePaths(full) : /\.[mc]?[jt]sx?$|\.json$|\.html$/.test(entry.name) ? [full] : [];
+  });
+}
+
+const ALL_SOURCES = SOURCE_ROOTS.flatMap(sourcePaths);
+
+type CitationScan = { findings: string[]; resolved: number; tokened: number; bareName: number };
+
+function citationFindings(file: string, text: string, read: (path: string) => string[]): CitationScan {
+  const findings: string[] = [];
+  const lineCount = new Map<string, number>();
+  let resolved = 0;
+  let tokened = 0;
+  let bare = 0;
+  let bareName = 0;
+  const lengthOf = (target: string): number => {
+    if (!lineCount.has(target)) lineCount.set(target, read(target).length);
+    return lineCount.get(target)!;
+  };
+  for (const match of text.matchAll(CODE_CITATION)) {
+    const [, written, fromRaw, toRaw, token] = match;
+    const from = Number(fromRaw);
+    const to = Number(toRaw ?? fromRaw);
+    if (!written!.includes('/') && !existsSync(written!)) {
+      bareName += 1;
+      continue;
+    }
+    const targets = existsSync(written!) ? [written!] : ALL_SOURCES.filter(source => source.endsWith(`/${written}`));
+    if (targets.length === 0) {
+      findings.push(`${written}:${from}-${to} 解析不到文件`);
+      continue;
+    }
+    if (targets.length > 1) {
+      findings.push(`${written}:${from}-${to} 有 ${targets.length} 个候选文件，短写无法确定是哪一个`);
+      continue;
+    }
+    const target = targets[0]!;
+    resolved += 1;
+    if (to > lengthOf(target)) {
+      findings.push(`${target}:${from}-${to} 越界（文里写成 ${written}），文件只有 ${lengthOf(target)} 行`);
+      continue;
+    }
+    if (token === undefined) {
+      bare += 1;
+      continue;
+    }
+    tokened += 1;
+    if (!read(target).slice(from - 1, to).join('\n').includes(token)) {
+      findings.push(`${target}:${from}-${to} 的区间里没有校验词 #${token}`);
+    }
+  }
+  // An opted-in document that half-converts is worse than one that never started:
+  // the covered citations look like the whole set.
+  if (ANCHOR_CONTRACT_DOCS.includes(file)) {
+    if (tokened > 0 && bare > 0) findings.push(`本文有 ${tokened} 条带校验词、${bare} 条没带——契约只守了一半`);
+    if (/[、，]`:\d|`:\d[\d-]*`/.test(text)) findings.push('仍有 `:NN` 续写形式（路径在上一条里），断言接不到它');
+    if (bareName > 0) findings.push(`有 ${bareName} 条只写了文件名（如 registry.ts:210），同名文件不止一个，短写无法确定是哪一个`);
+  }
+  return { findings, resolved, tokened, bareName };
+}
+
+/** Relative `.md` links, resolved against the linking file's own directory. */
+function relativeMdLinks(lines: DocLine[]): { at: number; target: string }[] {
+  const out: { at: number; target: string }[] = [];
+  for (const { at, text } of lines) {
+    for (const match of text.matchAll(/\]\(([^)\s]+)\)/g)) {
+      const target = match[1]!;
+      if (/^(https?:|mailto:|#)/.test(target)) continue;
+      if (!target.split('#')[0]!.endsWith('.md')) continue;
+      out.push({ at, target });
+    }
+  }
+  return out;
 }
 
 describe('documentation consistency', () => {
@@ -398,6 +614,223 @@ describe('documentation consistency', () => {
     const exportClaim = /\*\*(\d+) 条 export 语句\*\*/.exec(inventory);
     expect(exportClaim, 'inventory export census anchor not found').not.toBeNull();
     expect(exportClaim?.[1]).toBe(String(exportStatements));
+  });
+
+  it('never lets one document carry a second copy of its own body', () => {
+    // B-39: docs/mcp-integration.md sat in HEAD across four commits as two partial
+    // copies of one document - 532 lines, 30 duplicated long lines, and one bullet
+    // cut in half exactly at the paste point, its second half living only in the
+    // other copy. None of the checks above could see it: each anchors on a shape a
+    // duplicate preserves (a version claim, a column count, a bold marker). Both
+    // signals here are the mechanical readouts of a paste - the file's own title
+    // reappearing below line 1, and long lines repeating.
+    const body = ['a'.repeat(130), 'b'.repeat(130), 'c'.repeat(130), 'd'.repeat(130)];
+    const doubled = ['# Doc', ...body, '# Doc', ...body].join('\n');
+    const doubledLines = doubled.split('\n').map((text, index) => ({ at: index + 1, text }));
+    const caught = duplicateBodyFindings('# Doc', doubled, doubledLines);
+    expect(caught, 'a doubled document body must report both signals').toEqual([
+      '标题「# Doc」在正文中又出现 1 次',
+      expect.stringContaining('重复长行 4 处'),
+    ]);
+    const halfCut = ['# Doc', '正文', `- 一个句子写到一半 # Doc`, ...body, ...body].join('\n');
+    expect(duplicateBodyFindings('# Doc', halfCut, halfCut.split('\n').map((text, index) => ({ at: index + 1, text }))).length, 'a title glued mid-line still counts').toBeGreaterThan(0);
+    expect(duplicateBodyFindings('# Doc', '# Doc\n正文', [{ at: 1, text: '# Doc' }, { at: 2, text: '正文' }])).toEqual([]);
+
+    const offenders = DOC_FILES.flatMap(file => {
+      const raw = readFileSync(file, 'utf8');
+      return duplicateBodyFindings(raw.split('\n')[0] ?? '', raw, visibleLines(file)).map(finding => `${file}: ${finding}`);
+    });
+    expect(offenders, `a document body appears twice in these files:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('pairs every code fence, so no prose is silently rendered as code', () => {
+    // Found while wiring the guard above: README's tui block (opened at line 84)
+    // had no closer, so the next ```bash line could not open a block - it became
+    // content, and the two prose paragraphs after it stayed inside the code block
+    // to the end of the file. A fence-aware scan cannot tell this apart from a
+    // balanced file unless the closer rule is CommonMark's, so it is written here
+    // and asserted on both shapes.
+    const broken = ['```bash', 'npm run tui', '# 可选：--token', '', '监督台命令（进入后）：见下', '```bash', 'npm start', '```'].join('\n').split('\n');
+    const found = fenceFindings(broken);
+    expect(found.length, 'a fence opened inside an unclosed block must be reported').toBe(1);
+    expect(found[0]).toContain('缺闭合');
+    expect(fenceFindings(['```bash', 'npm start', '```'].join('\n').split('\n'))).toEqual([]);
+    expect(fenceFindings(['```bash', 'npm start'].join('\n').split('\n'))).toEqual([expect.stringContaining('到文件结尾都没闭合')]);
+
+    const offenders = DOC_FILES.flatMap(file =>
+      fenceFindings(readFileSync(file, 'utf8').split('\n')).map(finding => `${file}: ${finding}`)
+    );
+    expect(offenders, `code fences out of balance:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('resolves every relative markdown link to a file that exists', () => {
+    // 356 relative .md links across the document set, and a link is the only
+    // navigation a reader has in these files. The dead one this sweep found (and
+    // fixed in Active work 121) was handoff.md pointing at (design-realm.md) from
+    // the repository root while the file lives in docs/ - no other check reads
+    // link targets, so the next one of these lands silently.
+    const links = DOC_FILES.flatMap(file => relativeMdLinks(visibleLines(file)).map(link => ({ ...link, file })));
+    expect(links.length, 'the link population collapsed, so this check would pass by finding nothing').toBeGreaterThan(250);
+    // Positive control: the dead shape must fail resolution while its fixed form
+    // passes, so an empty `dead` below cannot come from a resolver that always hits.
+    expect(existsSync(resolve(dirname('handoff.md'), 'design-realm.md'))).toBe(false);
+    expect(existsSync(resolve(dirname('handoff.md'), 'docs/design-realm.md'))).toBe(true);
+    expect(existsSync(resolve(dirname('docs/design-realm.md'), 'mcp-integration.md'))).toBe(true);
+
+    const dead = links.filter(({ file, target }) => !existsSync(resolve(dirname(file), target.split('#')[0]!)));
+    expect(
+      dead,
+      `relative links that resolve to no file:\n${dead.map(link => `${link.file}:${link.at} -> ${link.target}`).join('\n')}`
+    ).toEqual([]);
+  });
+
+  it('pins every code anchor to the lines it actually cites', () => {
+    // B-41: 19 of docs/mcp-integration.md's 37 anchors pointed at unrelated
+    // implementations (a sentence about the permission vocabulary landing on a
+    // duplicate-id check, an HTTP error mapping landing on DAG assembly), and no
+    // check could see it because nothing was comparing an anchor to its target.
+    // Line numbers will still drift, so the contract is `path:lines #word` with
+    // the word required inside the cited range: drift then fails loudly here
+    // rather than in front of a reader who trusted the anchor.
+    const read = (file: string) => readFileSync(file, 'utf8').split('\n');
+    const cite = (body: string) => '`' + body + '`';
+
+    // Controls first: each failure shape is reported, the clean one is not.
+    expect(anchorFindings(cite('src/realm/mcp.ts:29-30 #SUPPORTED_PROTOCOL_VERSIONS'), read), 'a clean anchor must pass').toEqual([]);
+    expect(anchorFindings(cite('src/realm/mcp.ts:29-30 #NOT_IN_RANGE'), read)).toEqual([expect.stringContaining('没有校验词')]);
+    expect(anchorFindings(cite('src/realm/mcp.ts:29-99999 #SUPPORTED_PROTOCOL_VERSIONS'), read)).toEqual([expect.stringContaining('超出文件长度')]);
+    expect(anchorFindings(cite('src/realm/nope.ts:1-2 #anything'), read)).toEqual([expect.stringContaining('锚点文件不存在')]);
+    expect(anchorFindings(cite('src/realm/mcp.ts:33-40'), read)).toEqual([expect.stringContaining('锚点缺校验词')]);
+    expect(anchorFindings('、' + cite(':149'), read)).toEqual([expect.stringContaining('续写形式')]);
+
+    const doc = readFileSync('docs/mcp-integration.md', 'utf8');
+    const anchored = (doc.match(new RegExp(ANCHOR.source, 'g')) ?? []).length;
+    expect(anchored, 'the anchored-citation population collapsed, so this check would pass by finding nothing').toBeGreaterThan(30);
+    const findings = anchorFindings(doc, read).map(finding => `docs/mcp-integration.md: ${finding}`);
+    expect(findings, `anchors whose cited lines do not contain their verification word:\n${findings.join('\n')}`).toEqual([]);
+  });
+
+  it('resolves every code citation in the whole document set', () => {
+    // B-42: the anchor case above only sees `path:lines #word`. The rest of the repo cites
+    // code as plain `path:lines`, and the ledgers favour a short form (`realm/store.ts:178`);
+    // a renamed or shortened file therefore keeps every earlier gate green while the reader
+    // lands on nothing. This case resolves what it can across the whole document set, and
+    // holds a document that adopted the verification-word contract to it throughout.
+    const read = (file: string) => readFileSync(file, 'utf8').split('\n');
+    const cite = (body: string) => '`' + body + '`';
+    const scan = (file: string, text: string) => citationFindings(file, text, read);
+
+    // Controls first, on the same code path the real run uses: each failure shape is
+    // reported, and the clean ones - including the short form, which has to resolve for
+    // real rather than merely look like a path - are not.
+    expect(scan('docs/terminology.md', cite('src/realm/store.ts:199-224 #isInsideRoot')).findings, 'a clean citation must pass').toEqual([]);
+    expect(scan('docs/terminology.md', cite('realm/store.ts:199-224')).findings, 'a resolvable short form must pass').toEqual([]);
+    expect(scan('docs/terminology.md', cite('src/realm/gone.ts:12 #anything')).findings).toEqual([expect.stringContaining('解析不到文件')]);
+    expect(scan('docs/terminology.md', cite('realm/storre.ts:199-224')).findings).toEqual([expect.stringContaining('解析不到文件')]);
+    expect(scan('docs/terminology.md', cite('src/realm/store.ts:1-99999 #x')).findings).toEqual([expect.stringContaining('越界')]);
+    expect(scan('docs/terminology.md', cite('src/realm/store.ts:199-224 #NoSuchWord')).findings).toEqual([expect.stringContaining('没有校验词')]);
+    expect(scan('docs/terminology.md', [cite('src/realm/store.ts:199-224 #isInsideRoot'), cite('src/realm/store.ts:199-224')].join(' 与 ')).findings).toEqual([
+      expect.stringContaining('契约只守了一半'),
+    ]);
+    expect(scan('docs/terminology.md', cite('src/realm/store.ts:199-224 #isInsideRoot') + '、' + cite(':91')).findings).toEqual([expect.stringContaining('续写形式')]);
+    expect(scan('docs/terminology.md', cite('registry.ts:210')).findings).toEqual([expect.stringContaining('只写了文件名')]);
+    // A ledger is held to resolving only, not to the all-or-nothing rules.
+    expect(scan('handoff.md', cite('src/realm/store.ts:199-224')).findings).toEqual([]);
+    expect(scan('handoff.md', cite('registry.ts:210')).findings, 'bare basenames stay out of scope in ledgers').toEqual([]);
+    // Multi-dot basenames are the shape this case's first regex silently dropped: with
+    // `[\w\-]+\.ts` a citation to `tests/x.test.ts:N` matched nothing, so five anchors
+    // went unseen until the two patterns were diffed against each other. Pinned here so
+    // the same class of miss cannot be reintroduced by editing the pattern again.
+    expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:261 #bounds')).findings, 'a dotted basename must be seen').toEqual([]);
+    expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:261 #NoSuchWord')).findings).toEqual([expect.stringContaining('没有校验词')]);
+    expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:99999')).findings).toEqual([expect.stringContaining('越界')]);
+
+    let resolved = 0;
+    let tokened = 0;
+    let unscoped = 0;
+    const findings: string[] = [];
+    for (const doc of DOC_FILES) {
+      const once = citationFindings(doc, readFileSync(doc, 'utf8'), read);
+      resolved += once.resolved;
+      tokened += once.tokened;
+      unscoped += once.bareName;
+      findings.push(...once.findings.map(finding => `${doc}: ${finding}`));
+    }
+    expect(resolved, 'the citation population collapsed, so this check would pass by finding nothing').toBeGreaterThan(250);
+    expect(tokened, 'the verification-word population collapsed').toBeGreaterThan(70);
+    // Ledgers still cite by bare basename (three files are named registry.ts). They are
+    // counted, never guessed at, so that "0 findings" cannot be read as "all covered".
+    expect(unscoped, 'bare-basename citations: excluded by design, counted so it stays visible').toBeGreaterThan(100);
+    expect(findings, `code citations that do not resolve, or a half-adopted contract:\n${findings.join('\n')}`).toEqual([]);
+  });
+
+  it('keeps the checklist quoting the same baseline and the same deferred status as the ledgers', () => {
+    // Two currency claims the version and README gates cannot see. (1) The checklist
+    // says its own counts "是活基线，每批现测更新" - it had fallen to 1099/101 and
+    // 1109/102 while Current state moved on, and a go/no-go decision reads that file.
+    // (2) Rows D5/D6 still carried deferred #30 and #31 as 登记待做 two weeks after
+    // deferred-items.md recorded both as 已销项: the only surface that says "before
+    // launch, do this" was telling the operator to do work that is already done.
+    const lines = readFileSync('handoff.md', 'utf8').split('\n');
+    const stateStart = lines.findIndex(line => line.startsWith('## Current state'));
+    const stateEnd = lines.findIndex(line => line.startsWith('## New inputs'));
+    const currentState = lines.slice(stateStart, stateEnd).join('\n');
+    const grab = (text: string, re: RegExp, what: string): RegExpMatchArray => {
+      const found = text.match(re);
+      expect(found, `${what} - anchor not found, so this check would pass by finding nothing`).not.toBeNull();
+      if (!found) throw new Error(what);
+      return found;
+    };
+    const baseline = grab(currentState, /全量 \*\*(\d+) 测试 \/ (\d+) 文件 \/ \d+ 失败\*\*/, 'Current state baseline counts');
+
+    const checklistText = readFileSync('docs/pre-launch-checklist.md', 'utf8');
+    const judgement = grab(checklistText, /全量 (\d+) 总量 \/ (\d+) 文件/, 'the checklist judgement line no longer carries its baseline counts');
+    const gateList = grab(checklistText, /当前 \*\*(\d+) 总量 \/ (\d+) 文件\*\*/, 'the checklist gate list no longer carries its baseline counts');
+    const pairs: [string, string, string][] = [
+      ['judgement tests', judgement[1]!, baseline[1]!],
+      ['judgement files', judgement[2]!, baseline[2]!],
+      ['gate-list tests', gateList[1]!, baseline[1]!],
+      ['gate-list files', gateList[2]!, baseline[2]!],
+    ];
+    const drift = pairs
+      .filter(([, quoted, current]) => quoted !== current)
+      .map(([label, quoted, current]) => `${label}: checklist says ${quoted}, Current state says ${current}`);
+
+    // Deferred items recorded as closed must not read as outstanding here. Only the
+    // item column is consulted, because that is where the row names its deferred id;
+    // ids mentioned mid-sentence are cross-references to other items' status.
+    const closed = new Set(
+      readFileSync('docs/deferred-items.md', 'utf8')
+        .split('\n')
+        .filter(line => /^### #\d+/.test(line) && /已销项/.test(line))
+        .map(line => /#(\d+)/.exec(line)![1]!)
+    );
+    expect(closed.size, 'the deferred ledger no longer marks any item 已销项, so this check would pass by finding nothing').toBeGreaterThan(20);
+    const staleRows = checklistText
+      .split('\n')
+      .filter(line => /^\| [A-Z]-?\d+ \|/.test(line))
+      .flatMap(line => {
+        const cells = line.split('|').map(cell => cell.trim());
+        const [id, item, status] = [cells[1]!, cells[2]!, cells[cells.length - 2] ?? ''];
+        const refs = [...item.matchAll(/#(\d+)/g)].map(match => match[1]!);
+        if (!refs.some(ref => closed.has(ref))) return [];
+        if (!/待做|未修|未做|待验|尚未/.test(status)) return [];
+        return [`${id} 引用已销项的 ${refs.filter(ref => closed.has(ref)).join('/')}，状态列仍写「${status.slice(0, 40)}」`];
+      });
+
+    // Positive control: the shape this guard exists for must be caught by the same
+    // code, not assumed away by a row that no longer parses.
+    const dirty = '| D9 | #30 某项已关闭的缺陷 | 出口标准 | 命令 | 登记待做；不阻塞 |';
+    const dirtyCells = dirty.split('|').map(cell => cell.trim());
+    const dirtyRefs = [...dirtyCells[2]!.matchAll(/#(\d+)/g)].map(m => m[1]!);
+    expect(dirtyRefs).toEqual(['30']);
+    expect(closed.has('30'), 'the control needs #30 to be a closed item').toBe(true);
+    expect(/待做/.test(dirtyCells[dirtyCells.length - 2]!)).toBe(true);
+    // and a closed item reported as fixed must not be flagged
+    expect(/待做|未修|未做|待验|尚未/.test('| D8 | #30 已修复 | x | y | 已修复（2026-09-30） |'.split('|')[5]!.trim())).toBe(false);
+
+    expect(drift, `the checklist's live baseline disagrees with Current state:\n${drift.join('\n')}`).toEqual([]);
+    expect(staleRows, `checklist rows still asking for work the deferred ledger records as closed:\n${staleRows.join('\n')}`).toEqual([]);
   });
 
   it('indexes every document in the handoff project-documents section', () => {
