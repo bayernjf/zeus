@@ -18,7 +18,12 @@ import { DriverGrantLedger, type DriverGrantAuditEntry } from '../realm/grant.js
 import {
   ExecutionDelegationNonceLedger,
   type ExecutionDelegationAuditEntry,
+  type ExecutionDelegation,
 } from '../delegation/execution-delegation.js';
+import {
+  DelegationContractRegistry,
+  deriveExecutionDelegation,
+} from '../delegation/delegation-contract.js';
 import { WatchRegistry, realmReading, connectorReading, type WatchTickReport } from '../watch/watch.js';
 import type { Ed25519MemorySigner } from '../registry/signing.js';
 import { DomainGrantRegistry, type GrantAuditEntry } from '../realm/authorization.js';
@@ -500,9 +505,17 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // than left as a library type so "an intent can be raised with nobody present"
   // is a fact about the running kernel, not about a design document.
   const watches = new WatchRegistry();
+  // Self-host loop step 4: bounded, signed contracts let the watch derive a
+  // one-time execute ticket per fire with nobody present. Persisted like the
+  // other ledgers, so a spent ceiling survives a restart.
+  const delegationContracts = new DelegationContractRegistry(() => {
+    void persistLiveState().catch(error => {
+      (options.onStateSaveError ?? noop)(error instanceof Error ? error.message : String(error));
+    });
+  });
 
   const components: KernelComponents = {
-    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, watches,
+    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
   };
 
   // deferred #27: a finished fan-out's verdicts are the kernel's only memory
@@ -669,16 +682,63 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
           : {}),
       },
       submit: async request => {
-        const result = await orchestrator.fanOut({
-          intentId: request.intentId,
-          skill: request.skill,
-          params: { subject: request.subject },
-          realm: request.realm,
+        const childTicket = request.executionDelegation as ExecutionDelegation | undefined;
+        try {
+          const result = await orchestrator.fanOut({
+            intentId: request.intentId,
+            skill: request.skill,
+            params: { subject: request.subject },
+            realm: request.realm,
+            mode: request.mode,
+            ...(request.executionDelegation !== undefined
+              ? { executionDelegation: request.executionDelegation as ExecutionDelegation }
+              : {}),
+          });
+          // A refusal is not a fire: the tick reports it so the operator can see
+          // that the condition held and nothing was dispatched.
+          if (result.refused) return { ok: false, reason: result.refused.reason };
+          return { ok: true, ...(result.replayed ? { replayed: true } : {}) };
+        } finally {
+          // The child ticket's one dispatch has settled (fired, refused, or
+          // replayed), so its contract concurrency slot is free regardless of
+          // the outcome - a refusal must not permanently spend maxConcurrent.
+          if (childTicket) delegationContracts.release(childTicket.nonce);
+        }
+      },
+      // Step 4: derive the one-time child ticket from the watch's named
+      // contract. With no driver signer there is no trust anchor, so the hook
+      // is absent and execute fires fail closed into a desk escalation.
+      ...(options.driverSigner
+        ? {
+            deriveExecution: async (input: { watchId: string; delegationId: string; skill: string }) => {
+              const derived = await deriveExecutionDelegation(
+                input.delegationId,
+                {
+                  capabilities: ['execute'],
+                  reason: `watch ${input.watchId} fire`,
+                },
+                {
+                  registry: delegationContracts,
+                  signer: options.driverSigner!,
+                  verifier: options.driverSigner!.verifier(),
+                  now,
+                },
+              );
+              if (!derived.ok) return { ok: false as const, reason: derived.reason };
+              return { ok: true as const, delegation: derived.delegation };
+            },
+          }
+        : {}),
+      escalateLimit: input => {
+        oversight.ingestDelegationLimit({
+          watchId: input.watchId,
+          ...(input.delegationId ? { delegationId: input.delegationId } : {}),
+          skill: input.skill,
+          realm: input.realm,
+          ...(input.realmId ? { realmId: input.realmId } : {}),
+          limitReason: input.reason,
+          tickSeq: input.tickSeq,
         });
-        // A refusal is not a fire: the tick reports it so the operator can see
-        // that the condition held and nothing was dispatched.
-        if (result.refused) return { ok: false, reason: result.refused.reason };
-        return { ok: true, ...(result.replayed ? { replayed: true } : {}) };
       },
       audit: entry => {
         auditSink({

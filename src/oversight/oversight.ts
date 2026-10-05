@@ -141,6 +141,52 @@ export class OversightDesk {
   }
 
   /**
+   * Self-host loop §4.2: a watch's execute fire hit a delegation-contract
+   * ceiling (no contract, revoked/window-ended, or a ticket/concurrency limit).
+   * Nothing was dispatched. Idempotent per (watchId, delegationId, limitReason,
+   * tickSeq): the same refused tick, replayed after a restart, must not flood
+   * the desk with a new row every time.
+   */
+  ingestDelegationLimit(input: {
+    watchId: string;
+    delegationId?: string;
+    skill: string;
+    realm: Escalation['realm'];
+    realmId?: string;
+    limitReason: string;
+    tickSeq: number;
+  }): Escalation {
+    const key = `${input.watchId}::${input.delegationId ?? '(none)'}::${input.limitReason}::${input.tickSeq}`;
+    const existingId = this.conflictIndex.get(key);
+    if (existingId) return this.get(existingId)!;
+
+    const escalation: Escalation = {
+      id: this.newId(),
+      kind: 'delegation-limit',
+      runId: `watch:${input.watchId}:${input.tickSeq}`,
+      vassal: '(watch)',
+      skill: input.skill,
+      realm: input.realm,
+      reason:
+        `watch ${input.watchId} execute fire refused by delegation ` +
+        `${input.delegationId ?? '(none)'}: ${input.limitReason}. ` +
+        `Issue a new contract or switch the watch intent to plan.`,
+      options: [],
+      status: 'pending',
+      createdAt: this.now().toISOString(),
+      intentId: `watch:${input.watchId}:${input.tickSeq}`,
+      watchId: input.watchId,
+      ...(input.delegationId ? { delegationId: input.delegationId } : {}),
+      limitReason: input.limitReason,
+      ...(input.realmId ? { realmId: input.realmId } : {}),
+    };
+    this.escalations.set(escalation.id, escalation);
+    this.conflictIndex.set(key, escalation.id);
+    this.audit(escalation, 'escalated');
+    return structuredClone(escalation);
+  }
+
+  /**
    * Queue view, optionally narrowed by status and/or kind. The kind filter
    * matters to the driver because a missing-parameter request and a memory
    * dispute arrive in one queue but demand completely different answers.
@@ -172,6 +218,12 @@ export class OversightDesk {
         this.conflictIndex.set(key, entry.id);
       }
       // memory-dispute rows are keyed directly by their deterministic id.
+      // delegation-limit rows rebuild their (watch, contract, reason, seq) key.
+      if (entry.kind === 'delegation-limit' && entry.watchId) {
+        const seqPart = entry.runId.split(':').pop() ?? '0';
+        const key = `${entry.watchId}::${entry.delegationId ?? '(none)'}::${entry.limitReason ?? 'unknown'}::${seqPart}`;
+        this.conflictIndex.set(key, entry.id);
+      }
     }
   }
 

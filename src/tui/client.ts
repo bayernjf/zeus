@@ -30,7 +30,7 @@ export type RosterView = {
 
 export type EscalationView = {
   id: string;
-  kind: 'task-input' | 'intent-conflict' | 'memory-dispute';
+  kind: 'task-input' | 'intent-conflict' | 'memory-dispute' | 'delegation-limit';
   vassal: string;
   skill: string;
   realm: string;

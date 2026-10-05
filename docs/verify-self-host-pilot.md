@@ -1,7 +1,7 @@
-# 自托管试点验收规程（v0.1，2026-10-05）
+# 自托管试点验收规程（v0.2，2026-10-05）
 
-- 状态：**验收规程 v0.1（2026-10-05）**。P0 段今天可跑；P1/P2 段是**预先写好的判据**，能力未落地，跑不了——每条都附"现在就能跑的证伪探针"。
-- 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)；本文件只有**命令、退出判据、证据位置**三样。
+- 状态：**验收规程 v0.3（2026-10-05）**。P0 段今天可跑；**P1 的原语已落码并接进 boot（`watch`，三源 metrics/realm/connector），但操作者可达面（HTTP/TUI）未做**；**P2 的原语、execute 触发派生与越限升级已全部接进 boot（设计稿 §7 第 4 步完成），但无 HTTP 签发面**——契约只能由进程内装配，操作者还不能自己签发。故 P1/P2 作为**用户可用的能力**仍未开工，判据是预先写好的——每条都附"现在就能跑的证伪探针"。
+- 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
 ## 0. 一句话
@@ -22,7 +22,7 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 | --- | --- | --- | --- |
 | P0 人在环自托管 | 已落地的内核 + HTTP 面 + 执行票据 | ✅ 可跑 | §3 |
 | P1 无人到点 | `watch`（设计稿 §3，未实现） | ❌ 未实现 | §4 |
-| P2 有界自主 | `DelegationContract`（设计稿 §4，未实现） | ❌ 未实现 | §5 |
+| P2 有界自主 | `DelegationContract`（设计稿 §4；原语 + boot 派生 + 越限升级已实现，HTTP 签发面未做） | 🟡 内核侧已实现，用户面未实现 | §5 |
 
 企业形态（隔离实例 vs 同实例多租户）是本清单之外的**待决项**，登记在 [deferred-items.md](deferred-items.md) **#41**。本清单三段在两种形态下形状相同，所以不必先决定才能开跑 P0。
 
@@ -195,11 +195,11 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | 5 | watch 进内核快照，重启后 `lastFiredAt`/`budget.used` 不重置 | 重启后 `GET` 回来的计数必须等于重启前 |
 | 6 | `mode:'execute'` 的 watch 无票据时**到点即失败并升级**，不是静默跳过 | 建一条 execute 型 watch 且不给 `delegationId` → 必须落到升级台 |
 
-## 5. P2：有界自主（`DelegationContract`，未实现——判据先立）
+## 5. P2：有界自主（`DelegationContract`——内核侧已通，操作者签发面未做，验收判据先立）
 
-前置能力：委托契约（设计稿 §4）。**现在跑不了。**
+前置能力：委托契约（设计稿 §4）。内核链已在真进程打通：execute 型 watch 在条件成立时从命名契约派生一次性子票据，票据过既有 execute gate 后真派发；无契约 / 无签名者 / 撞任一上限 → 零出站 + desk 一条 `delegation-limit`（证据：`tests/boot-watch-execution.test.ts` 三条真进程用例，设计稿 §7 第 4 步）。**但操作者仍无法自助签发契约**——没有 HTTP 端点，契约只能在进程启动时由装配代码注入，所以"真实用户跑试点"这一格仍未开。
 
-**证伪探针**：`curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -d '{}' http://127.0.0.1:8787/api/delegation-contracts` → 预期 **404**；代码级同证：全仓 `grep -rn "DelegationContract" src/` 命中 **0**（2026-10-05 测得）。
+**开工闸门探针（第 5 步未做，仍应失败）**：`curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -d '{}' http://127.0.0.1:8787/api/delegation-contracts` → 预期 **404**（2026-10-05 测得；代码级同证已从"grep 命中 0"改为"`grep -rn "api/delegation-contracts" src/` 命中 0"，因为原语本身已在 `src/delegation/` 与 `src/state/boot.ts` 中）。
 
 落地后的判据：
 
@@ -208,7 +208,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 | 1 | 第 `maxChildTickets+1` 张子票据被拒，并审计 `delegation-limit-exceeded` | 上限设 2，发 3 次 → 第三次必须红 |
 | 2 | `windowEndsAt` 之后新子票据一律被拒 | 窗口设 1 秒，等到点再发 → 必须红 |
 | 3 | 撤销一份契约后，其下所有未消费票据立即不可用 | 撤销前后各发一次同一票据 → 后者必须红 |
-| 4 | 超限不静默：走既有升级台等待人工放行（`src/state/boot.ts:46-51 #conflictsToDesk`、`src/http/server.ts:641-647 #approve`） | 制造超限 → `GET /api/escalations` 必须能看到那条 |
+| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:150 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:732 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
 | 5 | 子票据的 `used` 计数持久化，重启不重置 | 重启后打到上限 → 必须仍然拒 |
 
 ## 6. 现在明确不要做的事（写下来防止顺手做掉）
@@ -224,4 +224,5 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 演进日志
 
+- **v0.3（2026-10-05）**：设计稿 §7 第 4 步落地，P2 从"未实现"改为"内核侧已实现、用户面未实现"：execute 型 watch 的契约派生、execute gate、越限零出站 + `delegation-limit` 升级、升级幂等与重启重放均在真进程用例中证明；但契约签发 HTTP/TUI 面（第 5 步）未做，§5 的操作者级验收仍跑不了，开工闸门探针由 404 与路由 grep 双重守住。第 4 条判据的代码同证从冲突升级接线改为委托越限接线。
 - **v0.1（2026-10-05）**：首版。P0 八步全部锚到已落地命令/端点（含每步的反向对照）；P1/P2 只立判据并各附一条现在就应失败的探针，作为能力开工闸门；§1 用 `src/vault/cli.ts:6-8 #scheduler` 的原文把"没有调度器"从推测改成明文设计。
