@@ -14,7 +14,11 @@
  *   intent -> kernel-resolved realm content reaches the agent -> the published
  *   roster verifies offline with only the public key -> the published root key
  *   is that same key -> revoke cuts the wire ->
- *   SIGTERM persists -> a restart restores.
+ *   SIGTERM persists -> a restart restores ->
+ *   the contract operator face issues/reads/revokes on that process ->
+ *   a watch raises exactly one real intent, an execute watch derives a one-time
+ *   ticket from a contract, and revoking the contract cuts the wire (a separate
+ *   real kernel process, because a tick is caller-driven by design).
  *
  * Rules it obeys so it can run unattended: loopback only, no external network,
  * temporary directory for everything it creates, its own key and its own tokens
@@ -535,6 +539,156 @@ try {
       && restartedState.json?.rosterKey?.source === 'configured'
       && restartedState.json?.rosterKey?.keyId === restartedKeys.json?.keys?.[0]?.kid,
     `keys=${restartedKeys.json?.keySource ?? '(absent)'} state=${restartedState.json?.rosterKey?.source ?? '(absent)'} kid=${restartedKeys.json?.keys?.[0]?.kid}`
+  );
+
+  // --- self-host loop step 6: watch + delegation contract on the shipped artifact ---
+  // (a) The four contract routes are mounted only when serve.ts actually injected
+  // the registry, so a 201 here proves the assembly, not just the route table -
+  // the same gap the DAG probe guards (an inject-level harness builds HttpDeps by
+  // hand and can never catch a missing serve.ts wiring, deferred #25).
+  const contractWindow = new Date(Date.now() + 3_600_000).toISOString();
+  const issued = await api('POST', '/api/delegation-contracts', {
+    grantedBy: 'smoke-operator',
+    skill: 'research',
+    capabilities: ['execute'],
+    limits: { maxChildTickets: 2, maxConcurrent: 1, windowEndsAt: contractWindow },
+  });
+  const contractId = issued.json?.contract?.id ?? '';
+  const contractRead = await api('GET', `/api/delegation-contracts/${contractId}`);
+  const contractList = await api('GET', '/api/delegation-contracts');
+  // No content-type on the DELETEs: an empty body labelled JSON is a 400 before
+  // the route even runs (the vassal DELETE above learned the same lesson).
+  const deleteHeaders = { authorization: `Bearer ${DRIVER_TOKEN}` };
+  const contractGone = await api('DELETE', `/api/delegation-contracts/${contractId}`, undefined, deleteHeaders);
+  const contractGoneAgain = await api('DELETE', `/api/delegation-contracts/${contractId}`, undefined, deleteHeaders);
+  const contractAudit = await api('GET', '/api/audit?limit=100');
+  record(
+    'the contract operator face issues, reads, lists and revokes on the real process',
+    issued.status === 201 && !!contractId
+      && contractRead.json?.contract?.id === contractId
+      && (contractList.json?.contracts ?? []).some(/** @param {{ id?: string }} c */ c => c.id === contractId)
+      && contractGone.status === 200 && contractGoneAgain.status === 409
+      && contractAudit.text.includes('delegation-contract-issued') && contractAudit.text.includes('delegation-contract-revoked'),
+    `issue=${issued.status} read=${contractRead.status} revoke=${contractGone.status}/${contractGoneAgain.status}`
+  );
+
+  // (b) A tick is caller-driven by design (no timers in the kernel), so the watch
+  // leg runs in its own real kernel process: this runner boots the same dist
+  // assembly with a trust anchor and prints what it saw. Two phases run in two
+  // boots so each record's outbound evidence is its own: phase `plan` proves a
+  // satisfied watch raises exactly one real intent; phase `contract` proves an
+  // execute watch derives a one-time ticket from a real contract and that
+  // revoking the contract cuts the wire. The smoke observes the outbound side
+  // (the mock agent's request count) and the runner observes the kernel side;
+  // neither can fake the other.
+  const runnerPath = join(work, 'watch-runner.mjs');
+  writeFileSync(runnerPath, `import { pathToFileURL } from 'node:url';
+const mod = spec => import(pathToFileURL(spec).href);
+const { bootKernel } = await mod(${JSON.stringify(join(REPO, 'dist/state/boot.js'))});
+const { issueDelegationContract } = await mod(${JSON.stringify(join(REPO, 'dist/delegation/delegation-contract.js'))});
+const { Ed25519MemorySigner } = await mod(${JSON.stringify(join(REPO, 'dist/registry/signing.js'))});
+const agentPort = ${JSON.stringify(agentPort)};
+const realmRoot = ${JSON.stringify(realmRoot)};
+const phase = process.argv[2];
+const decisions = [];
+const signer = new Ed25519MemorySigner('smoke-driver');
+const kernel = await bootKernel({
+  vassalSeeds: ['http://127.0.0.1:' + agentPort + '/a2/api/a2a/agent-card'],
+  realmRoots: [realmRoot],
+  driverSigner: signer,
+  dispatchAudit: entry => decisions.push(entry.decision),
+});
+const realmId = kernel.realmStore.connections()[0]?.realmId ?? '';
+const iso = offset => new Date(Date.now() + offset).toISOString();
+let out = {};
+if (phase === 'plan') {
+  kernel.watches.register({
+    id: 'smoke-watch-plan', owner: 'smoke-operator', realm: 'personal', realmId,
+    predicate: { source: 'realm', op: 'above', field: 'entryCount', value: 0 },
+    intent: { skill: 'research', subject: 'smoke-watch-plan', mode: 'plan', maxFanOut: 1 },
+    intervalSeconds: 1, startsAt: iso(-60000), expiresAt: iso(3600000),
+    budget: { fires: 1, executes: 0 },
+  });
+  out = { tick1: await kernel.runWatchTick() };
+} else {
+  const contract = await issueDelegationContract({
+    grantedBy: 'smoke-operator', skill: 'research', capabilities: ['execute'],
+    limits: { maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: iso(3600000) },
+  }, { signer });
+  kernel.delegationContracts.add(contract);
+  kernel.watches.register({
+    id: 'smoke-watch-exec', owner: 'smoke-operator', realm: 'personal', realmId,
+    predicate: { source: 'realm', op: 'above', field: 'entryCount', value: 0 },
+    intent: { skill: 'research', subject: 'smoke-watch-exec', mode: 'execute', maxFanOut: 1 },
+    intervalSeconds: 1, startsAt: iso(-60000), expiresAt: iso(3600000),
+    budget: { fires: 2, executes: 2 },
+    delegationId: contract.id,
+  });
+  const tick2 = await kernel.runWatchTick(new Date(Date.now() + 60000));
+  const revoked = kernel.delegationContracts.revoke(contract.id);
+  const tick3 = await kernel.runWatchTick(new Date(Date.now() + 120000));
+  const escalation = kernel.oversight.list('pending', 'delegation-limit')[0] ?? null;
+  out = {
+    tick2, tick3, revoked, contractId: contract.id,
+    escalation: escalation ? { kind: escalation.kind, limitReason: escalation.limitReason, watchId: escalation.watchId, status: escalation.status } : null,
+  };
+}
+process.stdout.write('===RUNNER-JSON===' + JSON.stringify({ phase, decisions, ...out }));
+process.exit(0);
+`);
+  /** @type {Record<string, string | undefined>} */
+  const runnerEnv = { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' };
+  for (const key of ['ZEUS_STATE_FILE', 'ZEUS_AUDIT_FILE', 'ZEUS_VASSAL_SEEDS', 'ZEUS_REALM_ROOTS', 'ZEUS_RSK_KEY_FILE', 'ZEUS_INTERNAL_TOKEN']) {
+    delete runnerEnv[key];
+  }
+  /** @param {string} phase */
+  async function runRunner(phase) {
+    const runner = spawn(process.execPath, [runnerPath, phase], { env: runnerEnv, cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
+    children.push(runner);
+    let out = '';
+    let err = '';
+    runner.stdout.on('data', chunk => (out += chunk));
+    runner.stderr.on('data', chunk => (err += chunk));
+    const code = await new Promise(resolve => {
+      const guard = setTimeout(() => runner.kill('SIGKILL'), 45_000);
+      runner.on('exit', value => { clearTimeout(guard); resolve(value); });
+    });
+    /** @type {any} */
+    let parsed = {};
+    try {
+      parsed = JSON.parse(out.split('===RUNNER-JSON===')[1] ?? '{}');
+    } catch { /* a crashed runner leaves the report empty and the record fails */ }
+    return { code, report: parsed, err };
+  }
+
+  const planBefore = agent('a2').requests;
+  const plan = await runRunner('plan');
+  record(
+    'a satisfied watch raises exactly one real intent over a real socket',
+    plan.code === 0
+      && plan.report?.tick1?.fired?.[0] === 'smoke-watch-plan'
+      && plan.report?.tick1?.evaluated === 1
+      && plan.report?.tick1?.unavailable?.length === 0
+      && agent('a2').requests === planBefore + 1
+      && (plan.report?.decisions ?? []).includes('watch-fired'),
+    `exit=${plan.code} tick1=${JSON.stringify(plan.report?.tick1)} requests=${planBefore}->${agent('a2').requests} ${plan.err.trim().split('\n').at(-1) ?? ''}`
+  );
+
+  const contractBefore = agent('a2').requests;
+  const contractRun = await runRunner('contract');
+  record(
+    'an execute watch derives a one-time ticket from its contract, and revoking it cuts the wire',
+    contractRun.code === 0
+      && contractRun.report?.tick2?.fired?.[0] === 'smoke-watch-exec'
+      && agent('a2').requests === contractBefore + 1
+      && (contractRun.report?.decisions ?? []).includes('delegation-child-issued')
+      && contractRun.report?.revoked === true
+      && contractRun.report?.tick3?.fired?.length === 0
+      && agent('a2').requests === contractBefore + 1
+      && (contractRun.report?.decisions ?? []).includes('delegation-limit-exceeded')
+      && contractRun.report?.escalation?.limitReason === 'revoked'
+      && contractRun.report?.escalation?.status === 'pending',
+    `exit=${contractRun.code} tick2=${JSON.stringify(contractRun.report?.tick2)} tick3=${JSON.stringify(contractRun.report?.tick3)} escalation=${JSON.stringify(contractRun.report?.escalation)} requests=${contractBefore}->${agent('a2').requests}`
   );
 
   await stopProcess(proc.child);
