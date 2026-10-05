@@ -254,7 +254,31 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   });
   const oversight = new OversightDesk({
     now,
-    ...(options.oversightAudit ? { audit: options.oversightAudit } : {}),
+    // E6.1 / P0-5 pilot gap: the desk's audit hook was optional and serve.ts
+    // never passed it, so approvals and rejections - the operator's own
+    // decisions - left no trace on the spine in a real process. The bridge is
+    // now the default; an injected oversightAudit replaces it (tests only).
+    audit: options.oversightAudit
+      ? options.oversightAudit
+      : entry => {
+          auditSink({
+            ts: entry.ts,
+            vassal: entry.vassal,
+            runId: entry.runId,
+            decision:
+              entry.action === 'approved'
+                ? 'escalation-approved'
+                : entry.action === 'rejected'
+                  ? 'escalation-rejected'
+                  : 'escalation-escalated',
+            detail: [
+              entry.escalationId,
+              ...(entry.decidedStance ? [`stance: ${entry.decidedStance}`] : []),
+              ...(entry.note ? [`note: ${entry.note}`] : []),
+              ...(entry.detail ? [entry.detail] : []),
+            ].join(' · '),
+          });
+        },
     onDecided: decided => {
       if (decided.kind !== 'memory-dispute' || !decided.factId) return;
       // A dispute recorded before realmId was carried cannot resolve authors

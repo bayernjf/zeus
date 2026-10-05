@@ -108,6 +108,10 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'delegation-child-issued': 'attention',
   'delegation-limit-exceeded': 'danger',
   'delegation-contract-issued': 'attention',
+  // E6.1 / P0-5: the desk raising a question and the driver answering it.
+  'escalation-escalated': 'attention',
+  'escalation-approved': 'success',
+  'escalation-rejected': 'muted',
   'delegation-contract-revoked': 'warning',
 };
 
