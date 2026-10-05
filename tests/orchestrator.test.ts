@@ -352,7 +352,8 @@ describe('Orchestrator.cancelIntent', () => {
     const branch = result.branches.find(b => b.vassal === 'loom')!;
     expect(branch.state).toBe('canceled');
     expect(branch.reason).toBe('canceled by the driver');
-    expect(result.status).toBe('failed');
+    // C-28: the driver asked for this, so it must not read as a vassal failure.
+    expect(result.status).toBe('canceled');
   });
 
   it('cancels a branch that settled while its siblings were still running, and aborts the running sibling (§7)', async () => {
@@ -381,7 +382,23 @@ describe('Orchestrator.cancelIntent', () => {
     expect(result.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
     expect(result.branches.find(branch => branch.vassal === 'atlas')?.state).toBe('canceled');
     expect(result.positions).toEqual([]);
-    expect(result.status).toBe('failed');
+    expect(result.status).toBe('canceled');
+  });
+
+  it('keeps failed when a cancellation is mixed with a genuine branch failure', async () => {
+    // C-28, the boundary of the new status: one branch the driver cancelled and
+    // one that actually failed is a failure - 'canceled' would hide the fault.
+    const port = makePort({
+      loom: okResult('loom', 'input-required', 'approve'),
+      atlas: failResult('vassal unreachable'),
+    });
+    const orch = newOrchestrator(port, ['loom', 'atlas']);
+    await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
+    await orch.cancelIntent('X');
+
+    const after = orch.getIntent('X')!;
+    expect(after.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
+    expect(after.status).toBe('failed');
   });
 
   it('writes a cancellation back into a settled intent so the cancelled stance is recomputed away', async () => {

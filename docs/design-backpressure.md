@@ -9,7 +9,7 @@
 E1.5 已落地**闸门**（`Orchestrator` 的 `maxConcurrentBranches` + `branchQueueLimit`，`src/orchestrator/orchestrator.ts:171-174 #Semaphore`）：在途分支超 `cap` 时进入 FIFO 等待，等待线超 `queueLimit` 即拒绝该分支并记录原因 `concurrency limit N reached`，分支不 dispatch（`tests/orchestrator-backpressure.test.ts`）。`ConcurrencyMetrics` 已报告全局 `inFlight` / `maxInFlight` / `queueDepth`（`src/orchestrator/metrics.ts:52-58 #queueDepth`）。
 
 闸门解决了"内核不被压垮"，但**没解决"溢出分流给谁"**：
-- 选靶只有一次——`lookup.findBySkill(skill)` 给出名单，经 `SkillGovernor.activeProviders` 三态闸门过滤（`src/orchestrator/orchestrator.ts:213-221 #activeProviders`）。
+- 选靶只有一次——`lookup.findBySkill(skill)` 给出名单，经 `SkillGovernor.activeProviders` 三态闸门过滤（`src/orchestrator/orchestrator.ts:229-237 #activeProviders`）。
 - 当某执行 Agent 饱和时，没有机制把它**改投**到同技能的其他可用提供方；超全局 `cap` 直接排队→拒绝，与"具体哪个 Agent 忙"无关。
 - 候选也无**可靠度 / 延迟排序**——排在前面的是注册表顺序，不是数据驱动的最优解。
 

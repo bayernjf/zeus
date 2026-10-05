@@ -13,6 +13,7 @@ import { selectTargets, formatExhausted, type SelectTargetsResult } from './dive
 import type { DecisionBackend } from '../decision/types.js';
 import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
+import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import type {
   BranchOutcome,
   CancelBranchResult,
@@ -34,6 +35,13 @@ export type OrchestratorOptions = {
   newRunId?: () => string;
   /** Called when a fan-out ends in needs-driver; wire it to OversightDesk at assembly time. */
   onConflict?: (conflicts: Conflict[], result: FanOutResult) => void;
+  /**
+   * E6.1: called when a branch settles at input-required, i.e. a vassal stopped
+   * and is asking the driver for the parameters it lacks. Wire it to
+   * `OversightDesk.ingest` at assembly time — without this the desk only ever
+   * sees intent conflicts and memory disputes in a booted process (C-28).
+   */
+  onTaskInput?: (result: DispatchResult, request: DispatchRequest) => void;
   /** E1.7: collect in-flight / latency / failure metrics when provided. */
   metrics?: ConcurrencyMetrics;
   /** S2: when set, unresolved splits get one backend arbitration before escalating. */
@@ -690,17 +698,20 @@ export class Orchestrator {
         return { vassal, runId: branchRunId, ok: false, events: [], reason: `execute refused: ${verdict.reason}` };
       }
     }
+    // Named once so the E6.1 hook below hands the desk exactly the request the
+    // branch was dispatched with (runId/vassal/skill/realm), not a reconstruction.
+    const dispatchRequest: DispatchRequest = {
+      vassal,
+      skill: request.skill,
+      params: request.params,
+      realm: request.realm,
+      runId: branchRunId,
+      ...(request.realmHits ? { realmHits: request.realmHits } : {}),
+      ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}),
+      ...(signal !== undefined ? { signal } : {}),
+    };
     const pending = this.dispatcher
-      .dispatch({
-        vassal,
-        skill: request.skill,
-        params: request.params,
-        realm: request.realm,
-        runId: branchRunId,
-        ...(request.realmHits ? { realmHits: request.realmHits } : {}),
-        ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}),
-        ...(signal !== undefined ? { signal } : {}),
-      })
+      .dispatch(dispatchRequest)
       .catch(error => ({
         ok: false as const,
         reason: error instanceof Error ? error.message : 'dispatch rejected',
@@ -732,6 +743,12 @@ export class Orchestrator {
       }
       const outcome = settled.outcome;
       if (outcome.ok) {
+        // E6.1: the vassal stopped because it lacks input, which is a question
+        // for the driver. Hand the settled dispatch to the oversight desk before
+        // the branch is recorded, so the escalation carries the real task id.
+        if (outcome.task.status.state === 'input-required') {
+          this.options.onTaskInput?.(outcome, dispatchRequest);
+        }
         return {
           vassal, runId: branchRunId, ok: true, taskId: outcome.task.id,
           state: outcome.task.status.state, task: outcome.task, events: outcome.events,

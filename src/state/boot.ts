@@ -19,6 +19,7 @@ import {
   ExecutionDelegationNonceLedger,
   type ExecutionDelegationAuditEntry,
 } from '../delegation/execution-delegation.js';
+import { WatchRegistry, realmReading, connectorReading, type WatchTickReport } from '../watch/watch.js';
 import type { Ed25519MemorySigner } from '../registry/signing.js';
 import { DomainGrantRegistry, type GrantAuditEntry } from '../realm/authorization.js';
 import { normalizeTenant } from '../realm/tenant.js';
@@ -61,6 +62,12 @@ export type KernelBoot = KernelComponents & {
   metrics: ConcurrencyMetrics;
   /** H3: progress event hub feeding the SSE endpoint. */
   progressHub: ProgressHub;
+  /**
+   * Self-host loop §3.2: one evaluation pass over the watches. No timer lives in
+   * the kernel, so the caller owns the cadence; each watch still honours its own
+   * `intervalSeconds`.
+   */
+  runWatchTick: (at?: Date) => Promise<WatchTickReport>;
   /** Absolute or relative path of the state JSON, or null when in-memory only. */
   stateFile: string | null;
   /** E4.7: JSONL dispatch audit log path, or null when the process writes none. */
@@ -400,6 +407,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     metrics,
     onConflict: conflictsToDesk(oversight),
+    // E6.1 (C-28): a branch that stops at input-required is a vassal asking the
+    // driver for parameters. The desk's `ingest` had no caller anywhere in src,
+    // so in a booted process this question was never raised — only intent
+    // conflicts and memory disputes reached the desk.
+    onTaskInput: (result, request) => {
+      oversight.ingest(result, request);
+    },
     // E2.2/E2.3/E2.4 (Active work 47 §E-3): auto-selected fan-out targets are
     // filtered through the skill catalogue, so uninstall/deprecate/harden take
     // effect on dispatch. Refusals land on the same audit spine as dispatches.
@@ -482,8 +496,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // persist with it. The runner only adds wave scheduling + spec/result recall.
   const dagRunner = new DagRunner(registry.asVassalLookup(), dispatcher, { now }, orchestrator);
 
+  // Self-host loop step 2: the trigger primitive. It is assembled here rather
+  // than left as a library type so "an intent can be raised with nobody present"
+  // is a fact about the running kernel, not about a design document.
+  const watches = new WatchRegistry();
+
   const components: KernelComponents = {
-    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger,
+    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, watches,
   };
 
   // deferred #27: a finished fan-out's verdicts are the kernel's only memory
@@ -624,10 +643,59 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     }
   }
 
+  /**
+   * Self-host loop §3.2: one evaluation pass over the enabled watches. The
+   * kernel holds no timer on purpose (the vault scheduler is external for the
+   * same reason), so whatever drives this - cron, or the operator - decides the
+   * cadence, and `intervalSeconds` still gates each individual watch.
+   */
+  async function runWatchTick(at?: Date): Promise<WatchTickReport> {
+    return watches.runTick({
+      now: () => at ?? now(),
+      sources: {
+        metrics: () => metrics.snapshot(),
+        ...(realmStore
+          ? { realm: async (realmId: string) => realmReading(realmStore, realmId) }
+          : {}),
+        // Step 3: the connector source reads through the declaration's own
+        // boundary, so an undeclared tool is unreadable rather than empty.
+        ...(connectorRegistry
+          ? {
+              connector: async (ref: { id: string; tool: string; args?: Record<string, unknown> }) =>
+                // FetchLike accepts a narrower input union than the DOM fetch
+                // signature the connector port declares; the value is the same.
+                connectorReading(connectorRegistry, ref, fetchImpl as typeof fetch | undefined),
+            }
+          : {}),
+      },
+      submit: async request => {
+        const result = await orchestrator.fanOut({
+          intentId: request.intentId,
+          skill: request.skill,
+          params: { subject: request.subject },
+          realm: request.realm,
+        });
+        // A refusal is not a fire: the tick reports it so the operator can see
+        // that the condition held and nothing was dispatched.
+        if (result.refused) return { ok: false, reason: result.refused.reason };
+        return { ok: true, ...(result.replayed ? { replayed: true } : {}) };
+      },
+      audit: entry => {
+        auditSink({
+          ts: entry.at,
+          vassal: '(kernel)',
+          decision: entry.decision,
+          detail: `${entry.watchId} (owner ${entry.owner}): ${entry.detail}`,
+        });
+      },
+    });
+  }
+
   return {
     ...components,
     metrics,
     progressHub,
+    runWatchTick,
     stateFile: options.stateFile ?? null,
     auditFile: options.auditFile ?? null,
     realmAudit,

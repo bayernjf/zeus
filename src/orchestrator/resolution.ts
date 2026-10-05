@@ -86,7 +86,15 @@ export function recomputeResult(
 
 export function statusFromBranches(branches: BranchOutcome[], hasUnresolvedConflict: boolean): FanOutStatus {
   const succeeded = branches.filter(branch => branch.ok);
-  if (succeeded.length === 0) return 'failed';
+  if (succeeded.length === 0) {
+    // C-28: an intent whose every branch the driver cancelled is not a failure.
+    // Collapsing it into 'failed' left cancellation indistinguishable from a real
+    // fault (only recoverable by reading branch.state), so the operator was sent
+    // to debug a vassal that never ran. A cancellation mixed with a genuine
+    // failure is still 'failed' - something did go wrong.
+    if (branches.length > 0 && branches.every(branch => branch.state === 'canceled')) return 'canceled';
+    return 'failed';
+  }
   if (hasUnresolvedConflict) return 'needs-driver';
   if (succeeded.length < branches.length) return 'partial';
   return 'completed';

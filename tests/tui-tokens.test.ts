@@ -10,6 +10,7 @@ describe('TUI semantic tokens (design-ui-foundations §3.2)', () => {
       'completed',
       'partial',
       'failed',
+      'canceled',
       'needs-driver',
       'input-required',
       'active',
