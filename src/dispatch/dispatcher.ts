@@ -71,6 +71,17 @@ export const AUDIT_DECISIONS = [
   // expired/replayed/mismatched, or no trust anchor assembled. The refusal is
   // the gate working, so it is visible rather than a silent drop.
   'execution-delegation-denied',
+  // design-self-host-loop §4.3: the trigger primitive. Registration, firing and
+  // the two ways a watch stops are all governance facts, because they decide
+  // when an intent exists without anyone present at that moment.
+  'watch-registered',
+  'watch-fired',
+  'watch-disabled',
+  'watch-revoked',
+  // An unreadable source is not a false condition; it is reported so a watch can
+  // never look healthy while silently never firing.
+  'watch-eval-unavailable',
+  'watch-auto-disabled',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

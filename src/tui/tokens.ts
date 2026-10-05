@@ -92,6 +92,16 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'commission-withdrawn': 'warning',
   'commission-refused': 'warning',
   'memory-claim-skipped': 'warning',
+  // design-self-host-loop §4.3: an intent raised with nobody present is the one
+  // governance fact that must never be muted, so firing is attention; a watch
+  // that stops evaluating is a warning, because "silently never fires" is the
+  // failure mode this whole surface exists to prevent.
+  'watch-registered': 'info',
+  'watch-fired': 'attention',
+  'watch-disabled': 'warning',
+  'watch-revoked': 'warning',
+  'watch-eval-unavailable': 'warning',
+  'watch-auto-disabled': 'danger',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };

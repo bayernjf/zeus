@@ -25,6 +25,7 @@ import type { Department } from '../org/types.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { ExecutionDelegationNonceLedger } from '../delegation/execution-delegation.js';
 import type { DelegationContract, DelegationContractRegistry } from '../delegation/delegation-contract.js';
+import type { Watch, WatchRegistry } from '../watch/watch.js';
 
 /**
  * E5.3 minimal kernel persistence (design-http-transport §2.2/§2.3: the H2
@@ -86,6 +87,12 @@ export type KernelSnapshot = {
    * hand back tickets the operator already paid for.
    */
   delegationContracts?: KernelDelegationContractState;
+  /**
+   * Self-host loop step 2: registered triggers with their spent budgets.
+   * Optional for backward compat. Without this a restart hands every watch a
+   * fresh budget, which makes one reboot an unbounded trigger.
+   */
+  watches?: Watch[];
 };
 
 export type KernelComponents = {
@@ -116,6 +123,8 @@ export type KernelComponents = {
   executionDelegationLedger?: ExecutionDelegationNonceLedger;
   /** Self-host loop step 1: when assembled, contracts and their spent counts survive a restart. */
   delegationContracts?: DelegationContractRegistry;
+  /** Self-host loop step 2: when assembled, watches and their spent budgets survive a restart. */
+  watches?: WatchRegistry;
 };
 
 export class KernelStateError extends Error {}
@@ -139,6 +148,7 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
       ? { executionDelegationNonces: components.executionDelegationLedger.exportState() }
       : {}),
     ...(components.delegationContracts ? { delegationContracts: components.delegationContracts.exportState() } : {}),
+    ...(components.watches ? { watches: components.watches.exportState() } : {}),
   };
 }
 
@@ -159,6 +169,7 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
     components.executionDelegationLedger.importState(snapshot.executionDelegationNonces);
   }
   if (components.delegationContracts) components.delegationContracts.importState(snapshot.delegationContracts);
+  if (components.watches && snapshot.watches) components.watches.importState(snapshot.watches);
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -186,6 +197,7 @@ export class FileKernelStateStore {
       ...(state.writeGrantNonces ? { writeGrantNonces: state.writeGrantNonces } : {}),
       ...(state.executionDelegationNonces ? { executionDelegationNonces: state.executionDelegationNonces } : {}),
       ...(state.delegationContracts ? { delegationContracts: state.delegationContracts } : {}),
+      ...(state.watches ? { watches: state.watches } : {}),
     };
     const dir = dirname(this.filePath);
     // The snapshot holds connector bearer tokens and the user's memory facts in

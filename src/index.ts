@@ -509,3 +509,27 @@ export type {
   DeriveExecutionDelegationInput,
   DeriveResult,
 } from './delegation/delegation-contract.js';
+
+// --- Watch (design-self-host-loop §3): the trigger primitive, metrics + realm sources ---
+export {
+  WatchRegistry,
+  WatchError,
+  evaluatePredicate,
+  realmReading,
+  WATCH_SOURCES,
+  WATCH_OPS,
+  WATCH_FIELDS,
+} from './watch/watch.js';
+export type {
+  Watch,
+  WatchSource,
+  WatchOp,
+  WatchPredicate,
+  WatchReading,
+  WatchSources,
+  WatchAuditEntry,
+  WatchSubmitRequest,
+  WatchSubmitResult,
+  WatchTickOptions,
+  WatchTickReport,
+} from './watch/watch.js';
