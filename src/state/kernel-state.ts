@@ -24,6 +24,7 @@ import { MentorshipLedger } from '../skills/mentor.js';
 import type { Department } from '../org/types.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { ExecutionDelegationNonceLedger } from '../delegation/execution-delegation.js';
+import type { DelegationContract, DelegationContractRegistry } from '../delegation/delegation-contract.js';
 
 /**
  * E5.3 minimal kernel persistence (design-http-transport §2.2/§2.3: the H2
@@ -38,6 +39,12 @@ import type { ExecutionDelegationNonceLedger } from '../delegation/execution-del
  */
 
 export const KERNEL_STATE_VERSION = 1 as const;
+
+/** Persisted shape of the delegation-contract registry. */
+export type KernelDelegationContractState = {
+  contracts: DelegationContract[];
+  outstanding: { nonce: string; contractId: string }[];
+};
 
 export type KernelSnapshot = {
   version: typeof KERNEL_STATE_VERSION;
@@ -73,6 +80,12 @@ export type KernelSnapshot = {
    * exists to close.
    */
   executionDelegationNonces?: string[];
+  /**
+   * Self-host loop step 1: delegation contracts with their spent counters.
+   * Optional for backward compat. A contract whose `used` reset on restart would
+   * hand back tickets the operator already paid for.
+   */
+  delegationContracts?: KernelDelegationContractState;
 };
 
 export type KernelComponents = {
@@ -101,6 +114,8 @@ export type KernelComponents = {
   driverGrantLedger?: DriverGrantLedger;
   /** deferred #33: consumed execution-delegation nonces survive a restart. */
   executionDelegationLedger?: ExecutionDelegationNonceLedger;
+  /** Self-host loop step 1: when assembled, contracts and their spent counts survive a restart. */
+  delegationContracts?: DelegationContractRegistry;
 };
 
 export class KernelStateError extends Error {}
@@ -123,6 +138,7 @@ export function collectKernelState(components: KernelComponents): Omit<KernelSna
     ...(components.executionDelegationLedger
       ? { executionDelegationNonces: components.executionDelegationLedger.exportState() }
       : {}),
+    ...(components.delegationContracts ? { delegationContracts: components.delegationContracts.exportState() } : {}),
   };
 }
 
@@ -142,6 +158,7 @@ export function applyKernelState(components: KernelComponents, snapshot: Omit<Ke
   if (components.executionDelegationLedger && snapshot.executionDelegationNonces) {
     components.executionDelegationLedger.importState(snapshot.executionDelegationNonces);
   }
+  if (components.delegationContracts) components.delegationContracts.importState(snapshot.delegationContracts);
 }
 
 /** JSON-file persistence with atomic replace. One file per Zeus data directory. */
@@ -168,6 +185,7 @@ export class FileKernelStateStore {
       ...(state.commissions ? { commissions: state.commissions } : {}),
       ...(state.writeGrantNonces ? { writeGrantNonces: state.writeGrantNonces } : {}),
       ...(state.executionDelegationNonces ? { executionDelegationNonces: state.executionDelegationNonces } : {}),
+      ...(state.delegationContracts ? { delegationContracts: state.delegationContracts } : {}),
     };
     const dir = dirname(this.filePath);
     // The snapshot holds connector bearer tokens and the user's memory facts in

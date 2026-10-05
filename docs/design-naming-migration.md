@@ -15,7 +15,7 @@
 
 ## 2. 现状事实（本轮逐个 grep/读码核实，非转述）
 
-- **状态文件有版本闸门，且是硬拒**：`src/state/kernel-state.ts:40 #KERNEL_STATE_VERSION`；拒绝点 `src/state/kernel-state.ts:217-218 #KERNEL_STATE_VERSION` 对 `version !== 1` 直接 `throw KernelStateError('unsupported kernel state version')`。**没有 v0→v1 的迁移分支可参照**，因为还没需要过。
+- **状态文件有版本闸门，且是硬拒**：`src/state/kernel-state.ts:41 #KERNEL_STATE_VERSION`；拒绝点 `src/state/kernel-state.ts:235-236 #KERNEL_STATE_VERSION` 对 `version !== 1` 直接 `throw KernelStateError('unsupported kernel state version')`。**没有 v0→v1 的迁移分支可参照**，因为还没需要过。
 - **备份格式已经做过一次同类迁移，可当模板**：`src/vault/types.ts:9 #VAULT_VERSION` `VAULT_VERSION = 2`，v1 的图**读入时归一化、写出不兼容**。这条先例证明"双读单写"在本仓库是可实现的，但也说明它的成本是一整轮的兼容代码 + 专门测试。
 - **协议版本协商的容器已存在**：`src/a2a/types.ts:5 #SUPPORTED_FEALTY_VERSIONS` `SUPPORTED_FEALTY_VERSIONS = ['1']` 是**数组**，注册时对不在数组内的版本 fail-loud。也就是说"同时接受两代声明形态"在架构上是现成的，不需要新发明。
 - **签名信封有版本字段，但验签路径从不读它**（本条已修，见下）：`Seal.v = 1` 与 `Attestation.v = 1` 由 `ENVELOPE_VERSION`（`src/registry/signing.ts:188 #ENVELOPE_VERSION`，写入点 `src/registry/signing.ts:265 #ENVELOPE_VERSION` 与 `src/registry/signing.ts:338 #ENVELOPE_VERSION`，验签侧闸门 `src/registry/signing.ts:395 #ENVELOPE_VERSION`）产出，但 `verifySignedSnapshot` 没有任何一处检查它。**我在 v0.1 里把这条写成"签名快照没有任何版本字段"，那是不准确的**：字段在，只是装饰性的——与"只写不读的权限清单"是同一种失效。真正缺形状标记的是**载荷**：`RosterSnapshot = { generatedAt, scope, entries }`（`src/registry/roster.ts:40-44 #envelope`），而改名要动的恰好是载荷。

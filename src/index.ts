@@ -491,3 +491,21 @@ export type {
   ExecutionDelegationVerification,
   VerifyExecutionDelegationContext,
 } from './delegation/execution-delegation.js';
+
+// --- Delegation contract (design-self-host-loop §4): bounded authority to mint tickets unattended ---
+export {
+  issueDelegationContract,
+  verifyDelegationContract,
+  deriveExecutionDelegation,
+  DelegationContractRegistry,
+  DelegationContractError,
+  DELEGATION_CONTRACT_REQUIRED_CAPABILITY,
+} from './delegation/delegation-contract.js';
+export type {
+  DelegationContract,
+  IssueDelegationContractInput,
+  DelegationContractCheck,
+  DelegationContractRefusal,
+  DeriveExecutionDelegationInput,
+  DeriveResult,
+} from './delegation/delegation-contract.js';

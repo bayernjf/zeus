@@ -12,7 +12,7 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 
 内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:6-8 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2329 #keepalive`、编排分支超时 `src/orchestrator/orchestrator.ts:710-716 #setTimeout`、派发受理超时 `src/dispatch/client.ts:93 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
 
-同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:124 #executionDelegationNonces`）。
+同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:139 #executionDelegationNonces`）。
 
 **所以试点当前的正确形态就是"人发起 + 一次性票据"**——这不是缩水版，这恰好是能诚实交付的版本。
 
@@ -21,8 +21,8 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 | 阶段 | 需要什么 | 落地状态 | 本文件段落 |
 | --- | --- | --- | --- |
 | P0 人在环自托管 | 已落地的内核 + HTTP 面 + 执行票据 | ✅ 可跑 | §3 |
-| P1 无人到点 | `watch`（设计稿 §2.1，未实现） | ❌ 未实现 | §4 |
-| P2 有界自主 | `DelegationContract`（设计稿 §2.2，未实现） | ❌ 未实现 | §5 |
+| P1 无人到点 | `watch`（设计稿 §3，未实现） | ❌ 未实现 | §4 |
+| P2 有界自主 | `DelegationContract`（设计稿 §4，未实现） | ❌ 未实现 | §5 |
 
 企业形态（隔离实例 vs 同实例多租户）是本清单之外的**待决项**，登记在 [deferred-items.md](deferred-items.md) **#41**。本清单三段在两种形态下形状相同，所以不必先决定才能开跑 P0。
 
@@ -143,7 +143,7 @@ npm run vault -- restore --map data/bundles/<stem>.map.json \
 - **退出判据（四条）**：
   1. 重启后 `GET /api/roster` 里 P0-3 那个 Agent 仍在册（注册表进快照）；
   2. 重启后 P0-2 那个 realm 自动重连（连接关系写进状态文件，`ZEUS_REALM_ROOTS` 只在首次需要）；
-  3. **P0-6 已花掉的票据重放仍被拒**——已花 nonce 跨重启有效（导出 `src/state/kernel-state.ts:124 #executionDelegationNonces`、回灌 `src/state/kernel-state.ts:142-144 #executionDelegationNonces`）；
+  3. **P0-6 已花掉的票据重放仍被拒**——已花 nonce 跨重启有效（导出 `src/state/kernel-state.ts:139 #executionDelegationNonces`、回灌 `src/state/kernel-state.ts:158-159 #executionDelegationNonces`）；
   4. `vault check` 退出码 **0**（无漂移）；把目录里任一被收录文件改一个字节再跑，退出码必须是 **2**（漂移档位 `src/vault/cli.ts:206-210 #drift`，四档定义 `src/vault/cli.ts:44 #VAULT_EXIT`），根目录整个不可达则是 **3**。这一步的正向对照就是"改一个字节"——不红就说明 check 是空转。四个子命令的标志形状以 `src/vault/cli.ts:10-23 #restore` 的用法块为准。
 - **备份调度在内核外**：cron/systemd 调 `npm run vault -- ...` 即可（`src/vault/cli.ts:6-8 #scheduler`）。试点期至少要跑一次**异地恢复**：`vault restore` 到另一个位置，然后 `vault check` 指过去。
 
@@ -172,7 +172,7 @@ ZEUS_INTERNAL_TOKEN="$ZEUS_INTERNAL_TOKEN" npm run tui -- --interval 3000
 
 ## 4. P1：无人到点（`watch`，未实现——判据先立）
 
-前置能力：`watch` 原语（设计 [design-self-host-loop.md](design-self-host-loop.md) §2.1）。**现在跑不了。**
+前置能力：`watch` 原语（设计 [design-self-host-loop.md](design-self-host-loop.md) §3）。**现在跑不了。**
 
 **现在就能跑的证伪探针（预期失败，且必须失败）**：
 
@@ -197,7 +197,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
 
 ## 5. P2：有界自主（`DelegationContract`，未实现——判据先立）
 
-前置能力：委托契约（设计稿 §2.2）。**现在跑不了。**
+前置能力：委托契约（设计稿 §4）。**现在跑不了。**
 
 **证伪探针**：`curl -s -o /dev/null -w '%{http_code}\n' -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -d '{}' http://127.0.0.1:8787/api/delegation-contracts` → 预期 **404**；代码级同证：全仓 `grep -rn "DelegationContract" src/` 命中 **0**（2026-10-05 测得）。
 

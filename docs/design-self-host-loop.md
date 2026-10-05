@@ -1,6 +1,6 @@
 # 设计稿：自托管常驻循环（`watch` 触发器 + 有界委托契约）
 
-- 状态：**设计稿 v0.1（2026-10-05）**，**未实现**。本文是这两个原语的单一事实源；handoff 与 PRD 只索引，不复制全文。
+- 状态：**设计稿 v0.2（2026-10-05）**，`DelegationContract` 的库内原语已实现（见 handoff Active work 128），`watch` 与 HTTP 面未实现。本文是这两个原语的单一事实源；handoff 与 PRD 只索引，不复制全文。
 - 关联：deferred **#41**（企业形态：隔离实例 vs 同实例多租户——本文的两个原语在两种形态下形状相同，故先于该决定设计）、deferred **#19**（入站 A2A 面）、deferred **#33**（执行 Agent 凭据代理，见 [design-execution-delegation.md](design-execution-delegation.md)）、deferred **#40**（执行后反思闭环，复用本文的升级通道）；验收清单见 [verify-self-host-pilot.md](verify-self-host-pilot.md)。
 - 立项理由（诚实版）：目前 zeus 的**每一条意图都由人发起**。"替我看着这件事"这类需求现在无法表达——这是自托管个人助理与企业自动化两条线**共同**缺的那一层，所以它属于内核而不是任何一侧的外壳。
 
@@ -13,7 +13,7 @@
 | execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation` |
 | 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation` |
 | 票据默认 TTL 5 分钟、上限 60 分钟——即"签发一次、派发一次"，不是"一段时间内自动放行" | `src/delegation/execution-delegation.ts:35-37 #EXECUTION_DELEGATION_DEFAULT_TTL_MS` |
-| 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:124 #executionDelegationNonces`、`src/state/kernel-state.ts:142-143 #executionDelegationLedger` |
+| 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:139 #executionDelegationNonces`、`src/state/kernel-state.ts:158-159 #executionDelegationLedger` |
 | 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:46-51 #conflictsToDesk`、`src/http/server.ts:641 #approve` |
 
 结论：**缺的不是安全边界，是"在没有人的时候合法地产生一次意图"的那个入口**，以及"边界内自动、越限回到人"的那层授权。这两件必须一起做——只做前者会得到一个能自主发起不可逆动作的内核，那正是现在的闸门在防的东西。
@@ -77,7 +77,7 @@ export type Watch = {
 3. 触发：满足 → 以 `owner` 为 actor 提交一次意图（`intent` 模板 + 自动 `intentId = watch:<id>:<seq>` 保幂等，命中既有幂等判定，重复触发不会重复派发）。
 4. `mode: 'execute'` 的触发**必须**带一个从 `delegationId` 派生的子票据，走 `src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation` 那条完全相同的闸门；拿不到子票据（预算耗尽/契约撤销/能力不覆盖）= **零出站拒绝**，并写一条升级项回给人。
 5. 撤销：`enabled: false` 或到期即不再求值；撤销是写状态 + 审计，不删历史。
-6. 持久化：watch 集合、`budget` 剩余、`lastFiredAt` 全部进内核快照，与既有 `executionDelegationNonces` 同一套写法（`src/state/kernel-state.ts:124 #executionDelegationNonces`）——**重启后不重置计数**，否则一次重启就是无限次触发。
+6. 持久化：watch 集合、`budget` 剩余、`lastFiredAt` 全部进内核快照，与既有 `executionDelegationNonces` 同一套写法（`src/state/kernel-state.ts:139 #executionDelegationNonces`）——**重启后不重置计数**，否则一次重启就是无限次触发。
 
 ### 3.3 失败语义（必须写清楚，否则实现会自己发明）
 
@@ -102,24 +102,28 @@ export type DelegationContract = {
   version: 1;
   grantedBy: string;          // 与子票据同一身份语义
   skill: string;              // 绑技能，与子票据同规则
+  vassal?: string;            // 绑定时子票据只能用同一个执行 Agent；不变式 1 点了 vassal，结构里就得有它
   capabilities: string[];     // 允许派生子票据的能力全集；子票据必须是其子集
   limits: {
     maxChildTickets: number;      // 总次数上限
     maxConcurrent: number;        // 同时在途上限
     windowEndsAt: string;         // 有效期末（可长于子票据 TTL）
-    perFireBudget?: { amount?: number; currency?: string }; // 额度型（可选，缺省=不启用）
   };
-  used: { childTickets: number; inFlight: number; spent: number };
-  revokedAt?: string;
+  used: { childTickets: number; inFlight: number };   // 内核记账，不进签名
+  revokedAt?: string;                                  // 同上：撤销是一次写
   issuedAt: string;
   keyId: string;
-  sig: string;                // Ed25519，规范同子票据：签名覆盖除去 sig 的规范化 claim
+  sig: string;                // Ed25519，规范同子票据：签名覆盖除去 sig/used/revokedAt 的规范化 claim
 };
 ```
 
+**签名的边界就是授权的边界**：claim 里只放操作者一次批准、之后不再变的东西（技能、能力全集、两条上限、有效期、发起人、执行 Agent），`used` 与 `revokedAt` 是内核在花费这份批准时写的账。把它们签进去的后果是**第一次派生就让自己的签名失效**，所以它们必须留在 claim 之外；"派生不放大"因此不是靠签名，而是靠下面那条不变式的断言守着（有一条专门用例：改了 `used` 之后契约仍然验签通过，正是为了钉住这个切分是有意的）。
+
+`limits.perFireBudget` / `used.spent` 本版**不做**：金额口径要接企业侧成本台账（deferred **#8**）才有意义，而一个没有生产者的计数字段就是装饰。次数与并发两条上限先把自主发起卡住，额度等 #8 立项时再加结构。
+
 四条不变式，每条都对应一条断言（没有断言的不变式等于没有）：
 
-1. **派生只缩短不放大**：子票据的 `skill`、`vassal`、`capabilities` 必须被契约覆盖，`expiresAt` 必须不晚于 `limits.windowEndsAt`。
+1. **派生只缩短不放大**：子票据的 `skill`、`vassal`、`capabilities` 必须被契约覆盖，`expiresAt` 必须不晚于 `limits.windowEndsAt`（实现里取 `min(请求的 TTL, 窗口剩余)`，再交给子票据自己的 TTL 上限）。
 2. **消费即计数、计数即持久**：一次派生同时 `used.childTickets += 1` 并写入内核快照；越限派生返回拒绝，不产生票据。
 3. **撤销即刻生效且可证**：`revokedAt` 置位后派生一律拒绝；已发出的子票据仍受自己的 TTL 与单次 nonce 约束，**不需**额外的"吊销传播"（这保留了现有"重启后 nonce 不复活"的性质）。
 4. **自动发起永远拿不到契约之外的能力**：`watch` 只能引用 `delegationId`，不能自带票据，也不能提高上限。提高上限的唯一动作是**再签一份新契约**，而签名者是人。
@@ -175,3 +179,4 @@ export type DelegationContract = {
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
 | v0.1 | 2026-10-05 | 初稿。立项动因来自对市场的核对：常驻、独立执行环境、"关掉窗口仍在干活"已是该品类 2026 年的默认形态（OpenAI Dots 2026-09-29、Meta Muse 2026-09-09），而 zeus 缺的恰好是"合法地无人生成一次意图"这一层，且它必须与"有界授权"同批设计，否则等于给内核装上自主发起不可逆动作的能力。两个原语在 #41 的两种形态下形状相同，故先于该决定成文。 |
+| v0.2 | 2026-10-05 | 写实现时改了三处形状，都是设计稿的错而不是实现的偏离：① `used` 与 `revokedAt` **移出签名 claim**——原结构把它们和静态授权一起签，则第一次派生就让签名失效；现规定 claim 只覆盖操作者批准后不再变的那组字段，"派生不放大"改由断言守（并有专门用例钉住"改了 `used` 仍验签通过"是有意的）。② 补 `vassal?: string`——不变式 1 点名 vassal 必须被契约覆盖，而 v0.1 的类型里没有这个字段，那句不变式当时无法执行。③ 删掉 `perFireBudget` 与 `used.spent`——金额口径要 deferred **#8** 的成本台账才有意义，没有生产者的计数字段是装饰；次数与并发两条上限已足以卡住自主发起的总量。另把子票据 TTL 写成 `min(请求 TTL, 窗口剩余)` 再交子票据自身上限，使"不晚于窗口"成为结构而不是约定。 |
