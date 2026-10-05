@@ -21,6 +21,29 @@ const snapshot: DeckSnapshot = {
       { grantId: 'g-1', subject: 'loom', realmId: 'acme-eng', access: 'read', grantedBy: 'operator', grantedAt: '2026-09-30T00:00:00.000Z', nonce: 'n1' },
     ],
   },
+  contracts: {
+    contracts: [
+      {
+        id: 'dc-aaaaaaaa-1111-2222-3333-444444444444',
+        grantedBy: 'operator',
+        skill: 'research',
+        capabilities: ['execute'],
+        limits: { maxChildTickets: 10, maxConcurrent: 2, windowEndsAt: '2026-10-01T00:00:00.000Z' },
+        used: { childTickets: 3, inFlight: 1 },
+        issuedAt: '2026-09-30T00:00:00.000Z',
+      },
+      {
+        id: 'dc-bbbbbbbb-1111-2222-3333-444444444444',
+        grantedBy: 'operator',
+        skill: 'review',
+        capabilities: ['execute'],
+        limits: { maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: '2026-10-01T00:00:00.000Z' },
+        used: { childTickets: 4, inFlight: 0 },
+        issuedAt: '2026-09-30T00:00:00.000Z',
+        revokedAt: '2026-09-30T01:00:00.000Z',
+      },
+    ],
+  },
   roster: {
     generatedAt: '2026-09-30T00:00:00.000Z',
     entries: [
@@ -103,6 +126,7 @@ describe('TUI pure render', () => {
     const empty: DeckSnapshot = {
       audit: [],
       domains: null,
+      contracts: null,
       roster: { generatedAt: '', entries: [] },
       escalations: [],
       metrics: null,
@@ -111,6 +135,7 @@ describe('TUI pure render', () => {
     const out = renderDeck({ snapshot: empty, t, palette, updatedAt: '00:00:00' });
     expect(out).toContain('在册执行 Agent 为空');
     expect(out).toContain('没有待处理的裁决');
+    expect(out).toContain('契约面不可用（该进程未挂载签发注册表）');
     expect(out).not.toContain('并发指标');
   });
 
@@ -167,6 +192,49 @@ describe('TUI pure render', () => {
     const empty: DeckSnapshot = { ...snapshot, domains: { realms: [], grants: [] } };
     const out = renderDeck({ snapshot: empty, t, palette, updatedAt: '' });
     expect(out).toContain('未挂载数据域');
+  });
+});
+
+describe('contracts section (self-host step 5 face)', () => {
+  it('renders active and revoked contracts with spend, ceilings and window', () => {
+    const out = renderDeck({ snapshot, t, palette, updatedAt: '00:00:00' });
+    expect(out).toContain('委托契约（自主执行授权，2）');
+    expect(out).toContain('dc-aaaaa');
+    expect(out).toContain('research');
+    expect(out).toContain('已用 3/10');
+    expect(out).toContain('并发 1/2');
+    expect(out).toContain('窗口至 2026-10-01 00:00');
+    expect(out).toContain('[execute]');
+    expect(out).toContain('已撤销');
+    expect(out).toContain('生效');
+  });
+
+  it('renders empty vs unavailable distinctly, and never invents contracts', () => {
+    const empty = renderDeck({ snapshot: { ...snapshot, contracts: { contracts: [] } }, t, palette, updatedAt: 'x' });
+    expect(empty).toContain('无委托契约——无人被授权自主执行');
+    const unavailable = renderDeck({ snapshot: { ...snapshot, contracts: null }, t, palette, updatedAt: 'x' });
+    expect(unavailable).toContain('契约面不可用（该进程未挂载签发注册表）');
+  });
+
+  it('flags a delegation-limit escalation with the approve-contract action hint', () => {
+    const withLimit: DeckSnapshot = {
+      ...snapshot,
+      escalations: [
+        {
+          id: 'esc-dl-1',
+          kind: 'delegation-limit',
+          vassal: '(watch)',
+          skill: 'research',
+          realm: 'personal',
+          reason: 'execute fire refused (revoked); no outbound dispatch',
+          status: 'pending',
+          options: [],
+          createdAt: '',
+        },
+      ],
+    };
+    const out = renderDeck({ snapshot: withLimit, t, palette, updatedAt: 'x' });
+    expect(out).toContain('签一份仅 execute 的新契约并换绑本 watch');
   });
 });
 

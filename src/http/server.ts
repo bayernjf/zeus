@@ -45,6 +45,13 @@ import {
   issueExecutionDelegation,
   type ExecutionDelegationAuditEntry,
 } from '../delegation/execution-delegation.js';
+import {
+  DelegationContractError,
+  issueDelegationContract,
+  type DelegationContractAuditEntry,
+  type DelegationContractRegistry,
+} from '../delegation/delegation-contract.js';
+import type { WatchRegistry } from '../watch/watch.js';
 import { formatTenant, normalizeTenant } from '../realm/tenant.js';
 import { CommissionError, commissionId } from '../onboarding/types.js';
 import type { CommissionLedger } from '../onboarding/commission.js';
@@ -146,6 +153,14 @@ export type HttpDeps = {
   driverGrantAudit?: (entry: DriverGrantAuditEntry) => void;
   /** deferred #33: audit sink for issued execution delegations (spine-mapped by boot). */
   executionDelegationAudit?: (entry: ExecutionDelegationAuditEntry) => void;
+  /** Self-host loop step 5: bounded delegation contracts an unattended watch
+   *  derives one-time execute tickets from. */
+  delegationContracts?: DelegationContractRegistry;
+  /** Step 5: watch registry, so approving a delegation-limit row can rebind the
+   *  watch to a freshly issued contract. */
+  watches?: WatchRegistry;
+  /** Step 5: audit sink for contract issuance/revocation (spine-mapped by boot). */
+  delegationContractAudit?: (entry: DelegationContractAuditEntry) => void;
   /** E6.4: audit sink for domain crossings, fed by the kernel's audit spine. */
   realmAudit?: (entry: RealmAuditEntry) => void;
   /** E9.1/E9.2: the commission gate and day-one briefing for department seats. */
@@ -684,6 +699,93 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return mapKernelError(reply, e);
         }
       });
+
+      // Self-host loop step 5: approving a delegation-limit row means issuing a
+      // fresh bounded contract (the human widening authority), then rebinding
+      // the named watch so its next tick derives from it. This never re-dispatches
+      // the refused fire — the next evaluation decides whether the condition still
+      // holds, which is the trigger contract from §3.2.
+      if (deps.delegationContracts && deps.watches) {
+        app.post('/api/escalations/:id/approve-contract', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const { id } = request.params as { id: string };
+          const body = (request.body ?? {}) as { grantedBy?: unknown; limits?: unknown; reason?: unknown; vassal?: unknown };
+          const escalation = deps.oversight!.get(id);
+          if (!escalation) return error(reply, 404, 'not_found', `unknown escalation: ${id}`);
+          if (escalation.kind !== 'delegation-limit') {
+            return error(reply, 400, 'invalid_request', `escalation ${id} is ${escalation.kind}; only delegation-limit can approve a contract`);
+          }
+          if (!escalation.watchId) {
+            return error(reply, 409, 'conflict', `escalation ${id} names no watch to rebind`);
+          }
+          const watch = deps.watches!.get(escalation.watchId);
+          if (!watch) return error(reply, 409, 'conflict', `watch no longer registered: ${escalation.watchId}`);
+          if (!isNonEmptyString(body.grantedBy)) return error(reply, 400, 'invalid_request', 'body.grantedBy is required');
+          const limits = body.limits as Record<string, unknown> | undefined;
+          if (!limits || typeof limits !== 'object') {
+            return error(reply, 400, 'invalid_request', 'body.limits { maxChildTickets, maxConcurrent, windowEndsAt } is required');
+          }
+          if (!Number.isInteger(limits.maxChildTickets) || (limits.maxChildTickets as number) <= 0) {
+            return error(reply, 400, 'invalid_request', 'body.limits.maxChildTickets must be a positive integer');
+          }
+          if (!Number.isInteger(limits.maxConcurrent) || (limits.maxConcurrent as number) <= 0) {
+            return error(reply, 400, 'invalid_request', 'body.limits.maxConcurrent must be a positive integer');
+          }
+          if ((limits.maxConcurrent as number) > (limits.maxChildTickets as number)) {
+            return error(reply, 400, 'invalid_request', 'body.limits.maxConcurrent cannot exceed maxChildTickets');
+          }
+          if (!isNonEmptyString(limits.windowEndsAt) || Number.isNaN(Date.parse(limits.windowEndsAt as string))) {
+            return error(reply, 400, 'invalid_request', 'body.limits.windowEndsAt must be a parseable future date');
+          }
+          if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
+            return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
+          }
+          try {
+            const contract = await issueDelegationContract(
+              {
+                grantedBy: body.grantedBy as string,
+                skill: escalation.skill,
+                // An execute contract must cover the execute gate's capability;
+                // the caller cannot widen past what this escalation needs.
+                capabilities: ['execute'],
+                ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
+                limits: {
+                  maxChildTickets: limits.maxChildTickets as number,
+                  maxConcurrent: limits.maxConcurrent as number,
+                  windowEndsAt: limits.windowEndsAt as string,
+                },
+              },
+              { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
+            );
+            deps.delegationContracts!.add(contract);
+            deps.watches!.bindDelegation(watch.id, contract.id);
+            deps.delegationContractAudit?.({
+              at: contract.issuedAt,
+              decision: 'delegation-contract-issued',
+              contractId: contract.id,
+              grantedBy: contract.grantedBy,
+              skill: contract.skill,
+              ...(contract.vassal ? { vassal: contract.vassal } : {}),
+              capabilities: contract.capabilities,
+              keyId: contract.keyId,
+              windowEndsAt: contract.limits.windowEndsAt,
+              maxChildTickets: contract.limits.maxChildTickets,
+              maxConcurrent: contract.limits.maxConcurrent,
+              reason: `approved from escalation ${id} (watch ${watch.id}${escalation.limitReason ? `, was ${escalation.limitReason}` : ''})`,
+            });
+            const approved = deps.oversight!.approve(
+              id,
+              isNonEmptyString(body.reason)
+                ? (body.reason as string)
+                : `new contract ${contract.id} bound to watch ${watch.id}`,
+            );
+            reply.code(201);
+            return { escalation: approved, contract, watch: deps.watches!.get(watch.id) };
+          } catch (thrown) {
+            if (thrown instanceof DelegationContractError) return error(reply, 400, 'invalid_request', thrown.message);
+            return mapKernelError(reply, thrown);
+          }
+        });
+      }
 
       // H2 (E6.2): settle an intent-conflict by accepting a stance; writes the
       // driver's decision back into the aggregated result.
@@ -1885,6 +1987,114 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         throw thrown;
       }
     });
+
+    // Self-host loop step 5: issue a bounded, signed delegation contract that a
+    // watch derives one-time execute tickets from later, with nobody present.
+    // The signer is a required dependency of this face and the route is bearer
+    // protected, so only the operator can widen unattended authority.
+    if (deps.delegationContracts) {
+      app.post('/api/delegation-contracts', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        if (!isNonEmptyString(body.grantedBy)) return error(reply, 400, 'invalid_request', 'body.grantedBy is required');
+        if (!isNonEmptyString(body.skill)) return error(reply, 400, 'invalid_request', 'body.skill is required');
+        if (!Array.isArray(body.capabilities) || body.capabilities.length === 0 || body.capabilities.some(c => !isNonEmptyString(c))) {
+          return error(reply, 400, 'invalid_request', 'body.capabilities must be a non-empty array of strings');
+        }
+        if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
+          return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
+        }
+        if (body.reason !== undefined && !isNonEmptyString(body.reason)) {
+          return error(reply, 400, 'invalid_request', 'body.reason must be a string');
+        }
+        const limits = body.limits as Record<string, unknown> | undefined;
+        if (!limits || typeof limits !== 'object') {
+          return error(reply, 400, 'invalid_request', 'body.limits { maxChildTickets, maxConcurrent, windowEndsAt } is required');
+        }
+        if (!Number.isInteger(limits.maxChildTickets) || (limits.maxChildTickets as number) <= 0) {
+          return error(reply, 400, 'invalid_request', 'body.limits.maxChildTickets must be a positive integer');
+        }
+        if (!Number.isInteger(limits.maxConcurrent) || (limits.maxConcurrent as number) <= 0) {
+          return error(reply, 400, 'invalid_request', 'body.limits.maxConcurrent must be a positive integer');
+        }
+        if ((limits.maxConcurrent as number) > (limits.maxChildTickets as number)) {
+          return error(reply, 400, 'invalid_request', 'body.limits.maxConcurrent cannot exceed maxChildTickets');
+        }
+        if (!isNonEmptyString(limits.windowEndsAt) || Number.isNaN(Date.parse(limits.windowEndsAt as string))) {
+          return error(reply, 400, 'invalid_request', 'body.limits.windowEndsAt must be a parseable future date');
+        }
+        try {
+          const contract = await issueDelegationContract(
+            {
+              grantedBy: body.grantedBy as string,
+              skill: body.skill as string,
+              capabilities: body.capabilities as string[],
+              ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
+              limits: {
+                maxChildTickets: limits.maxChildTickets as number,
+                maxConcurrent: limits.maxConcurrent as number,
+                windowEndsAt: limits.windowEndsAt as string,
+              },
+            },
+            { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
+          );
+          deps.delegationContracts!.add(contract);
+          deps.delegationContractAudit?.({
+            at: contract.issuedAt,
+            decision: 'delegation-contract-issued',
+            contractId: contract.id,
+            grantedBy: contract.grantedBy,
+            skill: contract.skill,
+            ...(contract.vassal ? { vassal: contract.vassal } : {}),
+            capabilities: contract.capabilities,
+            keyId: contract.keyId,
+            windowEndsAt: contract.limits.windowEndsAt,
+            maxChildTickets: contract.limits.maxChildTickets,
+            maxConcurrent: contract.limits.maxConcurrent,
+            ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
+          });
+          reply.code(201);
+          return { contract };
+        } catch (thrown) {
+          if (thrown instanceof DelegationContractError) return error(reply, 400, 'invalid_request', thrown.message);
+          throw thrown;
+        }
+      });
+
+      app.get('/api/delegation-contracts', { preHandler: requireBearer }, async () => {
+        return { contracts: deps.delegationContracts!.list() };
+      });
+
+      app.get('/api/delegation-contracts/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const contract = deps.delegationContracts!.get(id);
+        if (!contract) return error(reply, 404, 'not_found', `unknown delegation contract: ${id}`);
+        return { contract };
+      });
+
+      app.delete('/api/delegation-contracts/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const existing = deps.delegationContracts!.get(id);
+        if (!existing) return error(reply, 404, 'not_found', `unknown delegation contract: ${id}`);
+        const at = (deps.now ?? (() => new Date()))();
+        if (!deps.delegationContracts!.revoke(id, at)) {
+          return error(reply, 409, 'conflict', `delegation contract already revoked: ${id}`);
+        }
+        deps.delegationContractAudit?.({
+          at: at.toISOString(),
+          decision: 'delegation-contract-revoked',
+          contractId: existing.id,
+          grantedBy: existing.grantedBy,
+          skill: existing.skill,
+          ...(existing.vassal ? { vassal: existing.vassal } : {}),
+          capabilities: existing.capabilities,
+          keyId: existing.keyId,
+          windowEndsAt: existing.limits.windowEndsAt,
+          maxChildTickets: existing.limits.maxChildTickets,
+          maxConcurrent: existing.limits.maxConcurrent,
+        });
+        return { contract: deps.delegationContracts!.get(id) };
+      });
+    }
   }
 
   return app;

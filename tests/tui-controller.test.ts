@@ -50,6 +50,36 @@ const baseSnapshot: DeckSnapshot = {
   ],
   metrics: null,
   state: null,
+  contracts: {
+    contracts: [
+      {
+        id: 'dc-1',
+        grantedBy: 'operator',
+        skill: 'research',
+        capabilities: ['execute'],
+        limits: { maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: '2026-10-01T00:00:00.000Z' },
+        used: { childTickets: 0, inFlight: 0 },
+        issuedAt: '',
+      },
+    ],
+  },
+};
+
+const delegationLimitSnapshot: DeckSnapshot = {
+  ...baseSnapshot,
+  escalations: [
+    {
+      id: 'esc-dl',
+      kind: 'delegation-limit',
+      vassal: '(watch)',
+      skill: 'research',
+      realm: 'personal',
+      reason: 'execute fire refused (revoked); no outbound dispatch',
+      status: 'pending',
+      options: [],
+      createdAt: '',
+    },
+  ],
 };
 
 function makeHarness(answers: string[]) {
@@ -72,10 +102,79 @@ function makeHarness(answers: string[]) {
     issueGrant: vi.fn(async () => ({ grantId: 'grant-new' })),
     revokeGrant: vi.fn(async () => undefined),
     recognize: vi.fn(async () => ({ ok: true, skill: 'deployment-health', confidence: 0.5, backend: null, decisionAt: '' })),
+    contracts: vi.fn(async () => ({ contracts: [] })),
+    issueContract: vi.fn(async () => ({ id: 'dc-new', grantedBy: 'operator', skill: 'research', capabilities: ['execute'], limits: { maxChildTickets: 4, maxConcurrent: 2, windowEndsAt: '' }, used: { childTickets: 0, inFlight: 0 }, issuedAt: '' })),
+    revokeContract: vi.fn(async () => undefined),
+    approveContract: vi.fn(async (_id: string, _input: unknown) => ({ contractId: 'dc-2', watchId: 'w-1' })),
   } as unknown as DeckClient;
   const deck = createDeck({ client, io, locale: 'en', color: false });
-  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; recognize: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn> }, deck, printed };
+  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; recognize: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn>; issueContract: ReturnType<typeof vi.fn>; revokeContract: ReturnType<typeof vi.fn>; approveContract: ReturnType<typeof vi.fn>; contracts: ReturnType<typeof vi.fn> }, deck, printed };
 }
+
+describe('TUI contract writes go through the API with a confirm gate', () => {
+  it('issues a contract with capabilities pinned to execute and a 24h window', async () => {
+    const { client, deck } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('c research 4 2 driver');
+    expect(client.issueContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        grantedBy: 'driver',
+        skill: 'research',
+        capabilities: ['execute'],
+        limits: expect.objectContaining({ maxChildTickets: 4, maxConcurrent: 2 }),
+      }),
+    );
+  });
+
+  it('does not issue when the confirm is declined', async () => {
+    const { client, deck } = makeHarness(['n']);
+    await deck.refresh();
+    await deck.handle('c research 4 2');
+    expect(client.issueContract).not.toHaveBeenCalled();
+  });
+
+  it('revokes a contract by deck index and re-renders', async () => {
+    const { client, deck } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('c1');
+    expect(client.revokeContract).toHaveBeenCalledWith('dc-1');
+  });
+
+  it('declining the revoke leaves the contract in force', async () => {
+    const { client, deck } = makeHarness(['n']);
+    await deck.refresh();
+    await deck.handle('c1');
+    expect(client.revokeContract).not.toHaveBeenCalled();
+  });
+
+  it('approving a delegation-limit row goes through approve-contract, not plain approve', async () => {
+    const client = { approve: vi.fn(async () => undefined), approveContract: vi.fn(async () => ({ contractId: 'dc-2', watchId: 'w-1' })) };
+    const io: RunnerIo = {
+      print: () => undefined,
+      question: vi.fn(async () => 'y'),
+      now: () => new Date('2026-09-30T00:00:00.000Z'),
+    };
+    const deck = createDeck({
+      client: {
+        ...client,
+        snapshot: vi.fn(async () => delegationLimitSnapshot),
+        reject: vi.fn(async () => undefined),
+        resolve: vi.fn(async () => undefined),
+        revoke: vi.fn(async () => undefined),
+      } as unknown as DeckClient,
+      io,
+      locale: 'en',
+      color: false,
+    });
+    await deck.refresh();
+    await deck.handle('a1');
+    expect(client.approveContract).toHaveBeenCalledWith(
+      'esc-dl',
+      expect.objectContaining({ grantedBy: 'operator', maxChildTickets: 4, maxConcurrent: 1 }),
+    );
+    expect(client.approve).not.toHaveBeenCalled();
+  });
+});
 
 describe('TUI controller writes go through the API with a confirm gate', () => {
   it('renders on refresh without prompting', async () => {

@@ -6,7 +6,7 @@
 import type { Translator } from './format.js';
 import { auditDecisionLabel, statusLabel } from './format.js';
 import { auditToken, paintStatus, type Palette } from './tokens.js';
-import type { DeckSnapshot, DomainsView, EscalationView, RecognizeView } from './client.js';
+import type { ContractView, ContractsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView } from './client.js';
 
 export type RenderInput = {
   snapshot: DeckSnapshot;
@@ -129,6 +129,9 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
       const labelKey = esc.kind === 'intent-conflict' ? 'escalation.stances' : 'escalation.options';
       lines.push(`      ${t(labelKey as Parameters<Translator>[0])}: ${options.map((option, i) => `${i + 1}.${option}`).join('  ')}`);
     }
+    if (esc.kind === 'delegation-limit') {
+      lines.push(`      ${palette.paint('attention', t('escalation.approveContractHint'))}`);
+    }
   });
   lines.push(`  ${t('escalation.prompt')}`);
   return lines;
@@ -189,6 +192,38 @@ function renderDomains(palette: Palette, t: Translator, domains: DomainsView | n
   return lines;
 }
 
+function renderContract(palette: Palette, t: Translator, contract: ContractView): string {
+  const revoked = contract.revokedAt !== undefined;
+  const badge = palette.paint(revoked ? 'muted' : 'success', t(revoked ? 'contracts.status.revoked' : 'contracts.status.active'));
+  const window = contract.limits.windowEndsAt.slice(0, 16).replace('T', ' ');
+  const body = t('contracts.line', {
+    id: contract.id.slice(0, 8),
+    skill: contract.skill,
+    used: contract.used.childTickets,
+    tickets: contract.limits.maxChildTickets,
+    inFlight: contract.used.inFlight,
+    concurrent: contract.limits.maxConcurrent,
+    window,
+  });
+  const scope = contract.vassal ? ` · ${contract.vassal}` : '';
+  return `  ${badge}  ${palette.bold(body)}${scope}  [${t('contracts.caps', { caps: contract.capabilities.join(',') })}]`;
+}
+
+function renderContracts(palette: Palette, t: Translator, contracts: ContractsView | null): string[] {
+  if (contracts === null) {
+    return [heading(palette, t('contracts.title', { total: 0 })), `  ${t('contracts.unavailable')}`];
+  }
+  const items = contracts.contracts;
+  const lines: string[] = [heading(palette, t('contracts.title', { total: items.length }))];
+  if (items.length === 0) {
+    lines.push(`  ${t('contracts.empty')}`);
+    return lines;
+  }
+  for (const contract of items) lines.push(renderContract(palette, t, contract));
+  lines.push(`  ${palette.paint('muted', t('contracts.issuePrompt'))}`);
+  return lines;
+}
+
 /** Render the full deck to a string ready to print. */
 export function renderDeck(input: RenderInput): string {
   const { snapshot, t, palette, updatedAt } = input;
@@ -199,6 +234,7 @@ export function renderDeck(input: RenderInput): string {
     renderRoster(palette, t, snapshot),
     renderTimeline(palette, t, snapshot),
     renderDomains(palette, t, snapshot.domains),
+    renderContracts(palette, t, snapshot.contracts),
     renderEscalations(palette, t, snapshot),
     [rule, palette.paint('muted', t('app.quit'))],
   ];

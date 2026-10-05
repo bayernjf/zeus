@@ -98,6 +98,22 @@ export type DeriveResult =
   | { ok: true; contractId: string; delegation: ExecutionDelegation }
   | { ok: false; reason: DeriveRefusal };
 
+/** Governance record for the operator-facing contract face (design §4.3). */
+export type DelegationContractAuditEntry = {
+  at: string;
+  decision: 'delegation-contract-issued' | 'delegation-contract-revoked';
+  contractId: string;
+  grantedBy: string;
+  skill: string;
+  vassal?: string;
+  capabilities: string[];
+  keyId: string;
+  windowEndsAt: string;
+  maxChildTickets: number;
+  maxConcurrent: number;
+  reason?: string;
+};
+
 function normalizeCapabilities(capabilities: readonly string[]): string[] {
   return [...new Set(capabilities.map(capability => capability.trim()).filter(Boolean))].sort();
 }

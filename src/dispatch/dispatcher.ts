@@ -87,6 +87,19 @@ export const AUDIT_DECISIONS = [
   // outbound); both are governance facts about the contract.
   'delegation-child-issued',
   'delegation-limit-exceeded',
+  // E6.1 / P0-5 pilot gap: the desk's answers (a question raised, an
+  // approval, a rejection) are operator decisions and belong on the same
+  // spine as every other governance fact. The boot assembly maps the desk's
+  // audit hook onto these names; serve.ts never passed the hook, so in real
+  // processes the operator's decisions left no trace at all.
+  'escalation-escalated',
+  'escalation-approved',
+  'escalation-rejected',
+  // self-host loop step 5: the operator-facing contract face. Issuing a
+  // bounded contract is the human answer to a delegation-limit escalation;
+  // revocation cuts every future derivation from that contract.
+  'delegation-contract-issued',
+  'delegation-contract-revoked',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

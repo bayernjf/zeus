@@ -70,6 +70,17 @@ export function createDeck(options: RunnerOptions): DeckController {
       io.print(`${t('escalation.done', { action, id: esc.id })}\n`);
       return;
     }
+    if (cmd.kind === 'approve' && esc.kind === 'delegation-limit') {
+      // The endpoint requires grantedBy and limits; the deck states the narrow
+      // shape it approves (execute-only is pinned server-side).
+      const shape = { grantedBy: 'operator', maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: new Date(io.now().getTime() + 24 * 3600_000).toISOString() };
+      if (!(await confirm(t('escalation.approveContractConfirm', { id: esc.id, tickets: shape.maxChildTickets, concurrent: shape.maxConcurrent })))) return;
+      const bound = await client.approveContract(esc.id, shape);
+      io.print(
+        `${t('escalation.approveContractDone', { contractId: bound.contractId, watchId: bound.watchId, id: esc.id })}\n`,
+      );
+      return;
+    }
     const action = t(cmd.kind === 'approve' ? 'escalation.approve' : 'escalation.reject');
     if (!(await confirm(t('escalation.confirm', { action, id: esc.id })))) return;
     if (cmd.kind === 'approve') await client.approve(esc.id);
@@ -163,6 +174,46 @@ export function createDeck(options: RunnerOptions): DeckController {
         io.print(`${t('domains.grantRevoked', { grantId: grant.grantId })}\n`);
       } catch (error) {
         io.print(`${t('domains.grantFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
+    if (parsed.kind === 'contractIssue') {
+      const windowEndsAt = new Date(io.now().getTime() + 24 * 3600_000).toISOString();
+      const confirmLine = t('contracts.confirmIssue', {
+        skill: parsed.skill,
+        tickets: parsed.maxChildTickets,
+        concurrent: parsed.maxConcurrent,
+      });
+      if (!(await confirm(confirmLine))) return true;
+      try {
+        const contract = await client.issueContract({
+          grantedBy: parsed.grantedBy,
+          skill: parsed.skill,
+          capabilities: ['execute'],
+          limits: { maxChildTickets: parsed.maxChildTickets, maxConcurrent: parsed.maxConcurrent, windowEndsAt },
+        });
+        io.print(`${t('contracts.issued', { id: contract.id })}\n`);
+      } catch (error) {
+        io.print(`${t('contracts.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
+    if (parsed.kind === 'contractRevoke') {
+      const contract = snapshot.contracts?.contracts[parsed.index - 1];
+      if (!contract) {
+        io.print(`${t('contracts.failed', { message: `#${parsed.index}` })}\n`);
+        return true;
+      }
+      if (!(await confirm(t('contracts.confirmRevoke', { id: contract.id })))) return true;
+      try {
+        await client.revokeContract(contract.id);
+        io.print(`${t('contracts.revoked', { id: contract.id })}\n`);
+      } catch (error) {
+        io.print(`${t('contracts.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
       }
       await draw();
       return true;

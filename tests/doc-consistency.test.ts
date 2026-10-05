@@ -479,7 +479,7 @@ describe('documentation consistency', () => {
     const gateTests = grab(readme, /vitest：(\d+) 项 \/ (\d+) 个测试文件/, 'README gate block test counts');
     const gateSmoke = grab(readme, /真 socket 跑完 (\d+) 步/, 'README gate block smoke steps');
     const evidence = grab(readme, /已验证到什么程度\*\*：(\d+) 项测试 \/ (\d+) 个测试文件/, 'README evidence sentence test counts');
-    const evidenceSmoke = grab(readme, /重启恢复，(\d+) 步）/, 'README evidence sentence smoke steps');
+    const evidenceSmoke = grab(readme, /撤销契约断流，(\d+) 步）/, 'README evidence sentence smoke steps');
 
     const pairs: [string, string, string][] = [
       ['gate tests', gateTests[1]!, baseline[1]!],

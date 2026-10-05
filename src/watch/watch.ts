@@ -303,6 +303,21 @@ export class WatchRegistry {
     return [...this.watches.values()].map(watch => structuredClone(watch));
   }
 
+  /**
+   * Self-host loop step 5: point an enabled execute watch at a freshly issued
+   * contract, which is the operator's answer to a delegation-limit escalation.
+   * Only the delegation id moves — budgets, predicate and ownership stay as
+   * registered, so approving cannot silently widen anything else the operator
+   * approved when the watch was created.
+   */
+  bindDelegation(id: string, delegationId: string): Watch | undefined {
+    const watch = this.watches.get(id);
+    if (!watch) return undefined;
+    if (!delegationId.trim()) throw new WatchError('delegationId must be a non-empty string');
+    watch.delegationId = delegationId;
+    return structuredClone(watch);
+  }
+
   /** Reversible: stops evaluating but keeps the record and its history. */
   disable(id: string): Watch | undefined {
     const watch = this.watches.get(id);
