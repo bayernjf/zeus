@@ -272,3 +272,52 @@ node dist/vault/cli.js restore --map backups/state.map.json \
 白名单**逐个点名**、绝不目录遍历：指向整个数据目录会把无界增长的 `audit.jsonl` 与 `.tmp` 一起卷进备份。点名的文件缺失/是软链/是二进制 → 出图即拒（静默漏掉你要的那个文件比没有备份更坏）。**所以别把文件名写死在脚本里猜**——照上面用 `basename "$ZEUS_STATE_FILE"`，它由 `ZEUS_STATE_FILE` 决定，`.env.example` 与镜像里默认都是 `kernel-state.json`。
 
 注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 数据永久丢失，无托管后门**（见 design-vault.md §9 非目标）。
+
+## 8. watch 评估调度（调用方驱动，E3.11）
+
+watch 按自己的 `intervalSeconds` 判断是否到期，但**内核进程刻意不持定时器**——与 Vault 备份同一道边界（见 §7 与 design-self-host-loop §3.2）：到点"评估一次"必须由进程外的调度器调用 `POST /api/watch-tick`。仓库自带这个调度器 `scripts/run-watch-tick.mjs`（`npm run watch:tick`），它是 HTTP 面的薄客户端，不是第二条触发路径（Web 监督台的"立即评估一次"与 TUI `wt` 调的是同一个端点）。
+
+两种形态，都适合无人值守：
+
+| 形态 | 命令 | 适用 |
+|---|---|---|
+| 单次（默认） | `npm run watch:tick` | cron 每 N 分钟打一次，打完即退 |
+| 常驻 | `npm run watch:tick -- --watch --interval 60` | systemd 长驻服务，按秒级节奏循环 |
+
+环境变量：`KERNEL_URL`（必填，**只接受 loopback**：`127.0.0.1` / `localhost` / `[::1]`，指向非环回地址直接退出 2——内部 token 不许离开本机）、`ZEUS_INTERNAL_TOKEN`（必填，bearer；缺失即退出 2）、`WATCH_INTERVAL_SECONDS`（默认 60，也可 `--interval` 覆盖）、`WATCH_HTTP_TIMEOUT_MS`（默认 10000，或 `--timeout`）、`WATCH_MAX_BACKOFF_MS`（默认 30000，常驻模式内核不可达时的退避上限）。
+
+退出码（供调度器判健康）：`0` 本次评估跑完（一个 watch 都没触发仍是成功）；`1` 内核拒绝（非 2xx，如 token 错 401）或报告里存在读数不可得 / 自动停用的 watch；`2` 起不来（配置缺失、参数非法、URL 非 loopback）或单次模式下内核不可达。常驻模式收到 SIGTERM/SIGINT 在当前一轮后干净退出（退出 0），内核重启窗口内按有界指数退避重试，不打死调度器。
+
+cron 形态（每分钟一次，token 经受限权限的 env 文件注入；退出 1 会把"读数不可得/自动停用"送进 cron 邮件或 journal）：
+
+```cron
+# /etc/cron.d/zeus-watch：每分钟驱动一次评估
+* * * * * zeus set -a; . /opt/zeus/.env; set +a; cd /opt/zeus && node scripts/run-watch-tick.mjs
+```
+
+systemd 常驻形态（与 §5 的内核服务分开，便于独立重启节奏）：
+
+```ini
+# /etc/systemd/system/zeus-watch.service
+[Unit]
+Description=Zeus watch evaluation scheduler
+After=zeus.service
+Wants=zeus.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/zeus
+EnvironmentFile=/opt/zeus/.env
+Environment=KERNEL_URL=http://127.0.0.1:8787
+Environment=WATCH_INTERVAL_SECONDS=60
+ExecStart=/usr/bin/node scripts/run-watch-tick.mjs --watch
+Restart=on-failure
+User=zeus
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
+```
+
+注意：watch 注册/撤销仍由操作者经 Web 监督台或 HTTP 面完成，调度器只负责周期性评估，不持有任何注册能力。

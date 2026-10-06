@@ -33,6 +33,7 @@
     "verify:reliability": "node scripts/verify-runtime-reliability.mjs",
     "acceptance:fanout": "node scripts/acceptance-real-fanout.mjs",
     "smoke:core": "node scripts/smoke-core.mjs",
+    "watch:tick": "node scripts/run-watch-tick.mjs",
     "bench:capacity": "node scripts/bench-capacity.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
