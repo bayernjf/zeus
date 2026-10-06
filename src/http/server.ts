@@ -51,7 +51,7 @@ import {
   type DelegationContractAuditEntry,
   type DelegationContractRegistry,
 } from '../delegation/delegation-contract.js';
-import type { WatchRegistry } from '../watch/watch.js';
+import { WatchError, type WatchRegistry, type WatchTickReport } from '../watch/watch.js';
 import { formatTenant, normalizeTenant } from '../realm/tenant.js';
 import { CommissionError, commissionId } from '../onboarding/types.js';
 import type { CommissionLedger } from '../onboarding/commission.js';
@@ -159,6 +159,10 @@ export type HttpDeps = {
   /** Step 5: watch registry, so approving a delegation-limit row can rebind the
    *  watch to a freshly issued contract. */
   watches?: WatchRegistry;
+  /** Operator face for the trigger primitive: one caller-driven evaluation pass
+   *  over every registered watch. The kernel holds no timers - the rhythm stays
+   *  with whoever calls this (cron / systemd / an operator's curl). */
+  runWatchTick?: () => Promise<WatchTickReport>;
   /** Step 5: audit sink for contract issuance/revocation (spine-mapped by boot). */
   delegationContractAudit?: (entry: DelegationContractAuditEntry) => void;
   /** E6.4: audit sink for domain crossings, fed by the kernel's audit spine. */
@@ -2093,6 +2097,129 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           maxConcurrent: existing.limits.maxConcurrent,
         });
         return { contract: deps.delegationContracts!.get(id) };
+      });
+    }
+
+    // Self-host loop, operator face for the trigger primitive: watches are
+    // registered, listed and revoked over the bearer face, and the tick is a
+    // caller-driven POST - the kernel holds no timers, so the cadence stays
+    // with the operator's scheduler (design-self-host-loop §3.2).
+    if (deps.watches) {
+      app.post('/api/watches', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        const predicate = body.predicate as Record<string, unknown> | undefined;
+        const intent = body.intent as Record<string, unknown> | undefined;
+        const budget = body.budget as Record<string, unknown> | undefined;
+        if (!predicate || typeof predicate !== 'object') {
+          return error(reply, 400, 'invalid_request', 'body.predicate { source, op, field, value? } is required');
+        }
+        if (!intent || typeof intent !== 'object') {
+          return error(reply, 400, 'invalid_request', 'body.intent { skill, subject, mode, maxFanOut } is required');
+        }
+        if (!budget || typeof budget !== 'object') {
+          return error(reply, 400, 'invalid_request', 'body.budget { fires, executes } is required');
+        }
+        const realm = body.realm as unknown;
+        if (realm !== 'personal' && realm !== 'enterprise') {
+          return error(reply, 400, 'invalid_request', "body.realm must be 'personal' or 'enterprise'");
+        }
+        const mode = (intent as Record<string, unknown>).mode as unknown;
+        if (mode !== 'plan' && mode !== 'execute') {
+          return error(reply, 400, 'invalid_request', "body.intent.mode must be 'plan' or 'execute'");
+        }
+        if (!isNonEmptyString((intent as Record<string, unknown>).skill)) {
+          return error(reply, 400, 'invalid_request', 'body.intent.skill is required');
+        }
+        if (!isNonEmptyString((intent as Record<string, unknown>).subject)) {
+          return error(reply, 400, 'invalid_request', 'body.intent.subject is required');
+        }
+        const maxFanOut = (intent as Record<string, unknown>).maxFanOut as unknown;
+        if (!Number.isInteger(maxFanOut) || (maxFanOut as number) < 1) {
+          return error(reply, 400, 'invalid_request', 'body.intent.maxFanOut must be a positive integer');
+        }
+        if (!Number.isInteger(body.intervalSeconds) || (body.intervalSeconds as number) <= 0) {
+          return error(reply, 400, 'invalid_request', 'body.intervalSeconds must be a positive integer');
+        }
+        if (!Number.isInteger(budget.fires) || (budget.fires as number) <= 0) {
+          return error(reply, 400, 'invalid_request', 'body.budget.fires must be a positive integer');
+        }
+        if (!Number.isInteger(budget.executes) || (budget.executes as number) < 0) {
+          return error(reply, 400, 'invalid_request', 'body.budget.executes must be a non-negative integer');
+        }
+        const p = predicate as Record<string, unknown>;
+        const i = intent as Record<string, unknown>;
+        try {
+          const watch = deps.watches!.register({
+            owner: isNonEmptyString(body.owner) ? (body.owner as string) : 'operator',
+            realm,
+            ...(isNonEmptyString(body.realmId) ? { realmId: body.realmId as string } : {}),
+            ...(body.connector !== undefined ? { connector: body.connector as { id: string; tool: string; args?: Record<string, unknown> } } : {}),
+            predicate: {
+              source: p.source as never,
+              op: p.op as never,
+              field: String(p.field ?? ''),
+              ...(p.value !== undefined ? { value: p.value as string | number } : {}),
+            },
+            intent: {
+              skill: i.skill as string,
+              subject: i.subject as string,
+              mode,
+              maxFanOut: maxFanOut as number,
+            },
+            intervalSeconds: body.intervalSeconds as number,
+            startsAt: isNonEmptyString(body.startsAt) ? (body.startsAt as string) : (deps.now ?? (() => new Date()))().toISOString(),
+            expiresAt: isNonEmptyString(body.expiresAt)
+              ? (body.expiresAt as string)
+              : new Date((deps.now ?? (() => new Date()))().getTime() + 7 * 24 * 3600_000).toISOString(),
+            budget: {
+              fires: budget.fires as number,
+              executes: budget.executes as number,
+            },
+            ...(isNonEmptyString(body.delegationId) ? { delegationId: body.delegationId as string } : {}),
+          });
+          reply.code(201);
+          return { watch };
+        } catch (thrown) {
+          if (thrown instanceof WatchError) return error(reply, 400, 'invalid_request', thrown.message);
+          throw thrown;
+        }
+      });
+
+      app.get('/api/watches', { preHandler: requireBearer }, async () => {
+        return { watches: deps.watches!.list() };
+      });
+
+      app.get('/api/watches/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const watch = deps.watches!.get(id);
+        if (!watch) return error(reply, 404, 'not_found', `unknown watch: ${id}`);
+        return { watch };
+      });
+
+      app.delete('/api/watches/:id', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const existing = deps.watches!.get(id);
+        if (!existing) return error(reply, 404, 'not_found', `unknown watch: ${id}`);
+        // disable() and revoke() both settle enabled=false; a second revoke on a
+        // settled row is a conflict, not a fresh lifecycle act.
+        if (!existing.enabled) {
+          return error(reply, 409, 'conflict', `watch already settled: ${id}`);
+        }
+        return { watch: deps.watches!.revoke(id) };
+      });
+    }
+
+    // The operator's scheduler calls this - cron curling it every interval is
+    // the intended production rhythm, exactly like vault's external scheduler.
+    // The route stays mounted whenever the registry exists and answers 503 when
+    // the trigger was not assembled, so "routed" and "assembled" are
+    // distinguishable from outside (the same probe the DAG face uses).
+    if (deps.watches) {
+      app.post('/api/watch-tick', { preHandler: requireBearer }, async (_request: FastifyRequest, reply: FastifyReply) => {
+        if (!deps.runWatchTick) {
+          return error(reply, 503, 'not_assembled', 'watch tick is not assembled in this process');
+        }
+        return { report: await deps.runWatchTick() };
       });
     }
   }

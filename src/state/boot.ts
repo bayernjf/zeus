@@ -531,7 +531,19 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // Self-host loop step 2: the trigger primitive. It is assembled here rather
   // than left as a library type so "an intent can be raised with nobody present"
   // is a fact about the running kernel, not about a design document.
-  const watches = new WatchRegistry();
+  // The operator's own watch lifecycle acts (register/disable/revoke) are
+  // governance facts and ride the same spine as the tick-time decisions.
+  const watches = new WatchRegistry({
+    now,
+    audit: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: entry.owner,
+        decision: entry.decision,
+        detail: `${entry.watchId}: ${entry.detail}`,
+      });
+    },
+  });
   // Self-host loop step 4: bounded, signed contracts let the watch derive a
   // one-time execute ticket per fire with nobody present. Persisted like the
   // other ledgers, so a spent ceiling survives a restart.

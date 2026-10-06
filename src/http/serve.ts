@@ -179,6 +179,7 @@ async function main(): Promise<void> {
     // Self-host loop step 5: the operator-facing delegation-contract face.
     ...(kernel.delegationContracts ? { delegationContracts: kernel.delegationContracts } : {}),
     ...(kernel.watches ? { watches: kernel.watches } : {}),
+    runWatchTick: kernel.runWatchTick,
     delegationContractAudit: kernel.delegationContractAudit,
     // E9.1/E9.2: the day-one briefing and the commission gate.
     ...(kernel.commissionLedger ? { commissions: kernel.commissionLedger } : {}),

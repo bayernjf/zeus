@@ -75,6 +75,32 @@ function kernelComponents(watches: WatchRegistry): Parameters<typeof collectKern
   };
 }
 
+describe('watch lifecycle acts ride the audit spine (operator face)', () => {
+  it('emits registered / disabled / revoked in order with the owner named', () => {
+    const audit: WatchAuditEntry[] = [];
+    const registry = new WatchRegistry({
+      newId: () => 'w-op',
+      now: () => new Date('2026-10-06T00:00:00.000Z'),
+      audit: entry => void audit.push(entry),
+    });
+    registry.register(baseInput());
+    registry.disable('w-op');
+    registry.revoke('w-op');
+    expect(audit.map(entry => entry.decision)).toEqual([
+      'watch-registered',
+      'watch-disabled',
+      'watch-revoked',
+    ]);
+    expect(audit.every(entry => entry.owner === 'operator@bayjf')).toBe(true);
+    expect(audit[0]!.detail).toContain('metrics.queueDepth above');
+  });
+
+  it('stays silent on the spine only when the hook is not wired (boot wires it)', () => {
+    const registry = new WatchRegistry({ newId: () => 'w2' });
+    expect(() => registry.register(baseInput())).not.toThrow();
+  });
+});
+
 describe('watch registration (closed predicate surface)', () => {
   it('refuses a field the source cannot read', () => {
     const registry = new WatchRegistry({ newId: () => 'w1' });

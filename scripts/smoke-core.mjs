@@ -691,6 +691,41 @@ process.exit(0);
     `exit=${contractRun.code} tick2=${JSON.stringify(contractRun.report?.tick2)} tick3=${JSON.stringify(contractRun.report?.tick3)} escalation=${JSON.stringify(contractRun.report?.escalation)} requests=${contractBefore}->${agent('a2').requests}`
   );
 
+  // (c) the watch operator face must be assembled on this process: register over
+  // the bearer face, fire one caller-driven tick, revoke terminally. A serve.ts
+  // that forgot runWatchTick answers 503 on the tick and only there.
+  const watchRes = await api('POST', '/api/watches', {
+    owner: 'smoke-operator',
+    realm: 'personal',
+    predicate: { source: 'metrics', op: 'below', field: 'inFlight', value: 1 },
+    intent: { skill: 'research', subject: 'smoke-watch-op', mode: 'plan', maxFanOut: 2 },
+    intervalSeconds: 60,
+    budget: { fires: 2, executes: 0 },
+  });
+  const watchId = watchRes.json?.watch?.id ?? '';
+  const watchBefore = agent('a2').requests + agent('a3').requests;
+  const tick1 = await api('POST', '/api/watch-tick', {});
+  const watchAfter = agent('a2').requests + agent('a3').requests;
+  record(
+    'the watch operator face registers a watch and a caller-driven tick fires a real intent',
+    watchRes.status === 201 && !!watchId
+      && tick1.status === 200 && (tick1.json?.report?.fired ?? []).includes(watchId)
+      && watchAfter === watchBefore + 2,
+    `register=${watchRes.status} tick=${tick1.status} fired=${JSON.stringify(tick1.json?.report?.fired)} requests=${watchBefore}->${watchAfter}`
+  );
+  const watchDel = await api('DELETE', `/api/watches/${watchId}`, undefined, deleteHeaders);
+  const watchDelAgain = await api('DELETE', `/api/watches/${watchId}`, undefined, deleteHeaders);
+  const tick2 = await api('POST', '/api/watch-tick', {});
+  const watchAudit = await api('GET', '/api/audit?limit=100');
+  record(
+    'a revoked watch never fires again and its lifecycle is on the audit spine',
+    watchDel.status === 200 && watchDelAgain.status === 409
+      && tick2.status === 200 && (tick2.json?.report?.fired ?? []).length === 0
+      && agent('a2').requests + agent('a3').requests === watchAfter
+      && watchAudit.text.includes('watch-registered') && watchAudit.text.includes('watch-revoked'),
+    `delete=${watchDel.status}/${watchDelAgain.status} tick2=${JSON.stringify(tick2.json?.report?.fired)} audit=${watchAudit.text.includes('watch-registered')}/${watchAudit.text.includes('watch-revoked')}`
+  );
+
   await stopProcess(proc.child);
 
   // The two booleans above say the process *believes* its key is ephemeral; they
