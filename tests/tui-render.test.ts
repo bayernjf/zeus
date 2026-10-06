@@ -44,6 +44,7 @@ const snapshot: DeckSnapshot = {
       },
     ],
   },
+  watches: { watches: [] },
   roster: {
     generatedAt: '2026-09-30T00:00:00.000Z',
     entries: [
@@ -127,6 +128,7 @@ describe('TUI pure render', () => {
       audit: [],
       domains: null,
       contracts: null,
+      watches: null,
       roster: { generatedAt: '', entries: [] },
       escalations: [],
       metrics: null,

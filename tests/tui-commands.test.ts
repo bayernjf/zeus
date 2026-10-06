@@ -23,6 +23,22 @@ describe('TUI contract commands (self-host step 5 face)', () => {
   });
 });
 
+describe('TUI watch commands (self-host P1 face)', () => {
+  it('parses a bare tick and a bare-index revoke', () => {
+    expect(parseCommand('wt')).toEqual({ kind: 'watchTick' });
+    expect(parseCommand('WT')).toEqual({ kind: 'watchTick' });
+    expect(parseCommand('watch-tick')).toEqual({ kind: 'watchTick' });
+    expect(parseCommand('w3')).toEqual({ kind: 'watchRevoke', index: 3 });
+    expect(parseCommand('w 3')).toEqual({ kind: 'watchRevoke', index: 3 });
+  });
+
+  it('rejects watch forms that carry an inline predicate (registration stays on HTTP)', () => {
+    expect(parseCommand('w')).toEqual({ error: 'watch-needs-args' });
+    expect(parseCommand('w research')).toEqual({ error: 'watch-needs-args' });
+    expect(COMMAND_HELP).toContain('watch evaluation tick');
+  });
+});
+
 describe('TUI command parser', () => {
   it('parses refresh and quit (case/space tolerant)', () => {
     expect(parseCommand('')).toEqual({ kind: 'refresh' });

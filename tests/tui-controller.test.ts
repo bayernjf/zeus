@@ -63,6 +63,24 @@ const baseSnapshot: DeckSnapshot = {
       },
     ],
   },
+  watches: {
+    watches: [
+      {
+        id: 'watch-aaaaaaaa-1111-2222-3333-444444444444',
+        owner: 'operator',
+        realm: 'personal',
+        predicate: { source: 'metrics', op: 'above', field: 'finished', value: 0 },
+        intent: { skill: 'research', subject: 'queue is deep', mode: 'plan', maxFanOut: 1 },
+        intervalSeconds: 60,
+        startsAt: '2026-10-06T00:00:00.000Z',
+        expiresAt: '2026-10-13T00:00:00.000Z',
+        budget: { fires: 5, executes: 0 },
+        used: { fires: 2, executes: 0 },
+        enabled: true,
+        lastFiredAt: '2026-10-06T01:00:00.000Z',
+      },
+    ],
+  },
 };
 
 const delegationLimitSnapshot: DeckSnapshot = {
@@ -106,9 +124,12 @@ function makeHarness(answers: string[]) {
     issueContract: vi.fn(async () => ({ id: 'dc-new', grantedBy: 'operator', skill: 'research', capabilities: ['execute'], limits: { maxChildTickets: 4, maxConcurrent: 2, windowEndsAt: '' }, used: { childTickets: 0, inFlight: 0 }, issuedAt: '' })),
     revokeContract: vi.fn(async () => undefined),
     approveContract: vi.fn(async (_id: string, _input: unknown) => ({ contractId: 'dc-2', watchId: 'w-1' })),
+    watches: vi.fn(async () => ({ watches: [] })),
+    watchTick: vi.fn(async () => ({ evaluated: 1, fired: ['w1'], unavailable: [], autoDisabled: [] })),
+    revokeWatch: vi.fn(async () => undefined),
   } as unknown as DeckClient;
   const deck = createDeck({ client, io, locale: 'en', color: false });
-  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; recognize: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn>; issueContract: ReturnType<typeof vi.fn>; revokeContract: ReturnType<typeof vi.fn>; approveContract: ReturnType<typeof vi.fn>; contracts: ReturnType<typeof vi.fn> }, deck, printed };
+  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; recognize: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn>; issueContract: ReturnType<typeof vi.fn>; revokeContract: ReturnType<typeof vi.fn>; approveContract: ReturnType<typeof vi.fn>; contracts: ReturnType<typeof vi.fn>; watches: ReturnType<typeof vi.fn>; watchTick: ReturnType<typeof vi.fn>; revokeWatch: ReturnType<typeof vi.fn> }, deck, printed };
 }
 
 describe('TUI contract writes go through the API with a confirm gate', () => {
@@ -266,6 +287,28 @@ describe('TUI controller writes go through the API with a confirm gate', () => {
       access: 'read',
       grantedBy: 'Operator-X',
     });
+  });
+
+  it('drives a watch tick through the API without a confirm gate and prints the report', async () => {
+    const { client, deck, printed } = makeHarness([]);
+    await deck.refresh();
+    await deck.handle('wt');
+    expect(client.watchTick).toHaveBeenCalledOnce();
+    expect(printed.join('\n')).toContain('fired 1');
+  });
+
+  it('revokes watch #1 by ledger index only after y', async () => {
+    const { client, deck } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('w1');
+    expect(client.revokeWatch).toHaveBeenCalledWith('watch-aaaaaaaa-1111-2222-3333-444444444444');
+  });
+
+  it('does not revoke the watch when the confirm is declined', async () => {
+    const { client, deck } = makeHarness(['n']);
+    await deck.refresh();
+    await deck.handle('w1');
+    expect(client.revokeWatch).not.toHaveBeenCalled();
   });
 describe('TUI controller intent recognition (E2.6)', () => {
   it('recognizes locally without a confirm gate and prints the plan-only view', async () => {

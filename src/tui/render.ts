@@ -6,7 +6,7 @@
 import type { Translator } from './format.js';
 import { auditDecisionLabel, statusLabel } from './format.js';
 import { auditToken, paintStatus, type Palette } from './tokens.js';
-import type { ContractView, ContractsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView } from './client.js';
+import type { ContractView, ContractsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView, WatchesView, WatchView } from './client.js';
 
 export type RenderInput = {
   snapshot: DeckSnapshot;
@@ -224,6 +224,37 @@ function renderContracts(palette: Palette, t: Translator, contracts: ContractsVi
   return lines;
 }
 
+function renderWatch(palette: Palette, t: Translator, watch: WatchView): string {
+  const badge = palette.paint(watch.enabled ? 'success' : 'muted', t(watch.enabled ? 'watches.status.enabled' : 'watches.status.settled'));
+  const last = watch.lastFiredAt ? watch.lastFiredAt.slice(0, 16).replace('T', ' ') : '—';
+  const body = t('watches.line', {
+    id: watch.id.slice(0, 8),
+    skill: watch.intent.skill,
+    mode: watch.intent.mode,
+    source: watch.predicate.source,
+    field: watch.predicate.field,
+    fires: watch.used.fires,
+    fireBudget: watch.budget.fires,
+    last,
+  });
+  return `  ${badge}  ${palette.bold(body)}`;
+}
+
+function renderWatches(palette: Palette, t: Translator, watches: WatchesView | null): string[] {
+  if (watches === null) {
+    return [heading(palette, t('watches.title', { total: 0 })), `  ${t('watches.unavailable')}`];
+  }
+  const items = watches.watches;
+  const lines: string[] = [heading(palette, t('watches.title', { total: items.length }))];
+  if (items.length === 0) {
+    lines.push(`  ${t('watches.empty')}`);
+    return lines;
+  }
+  for (const watch of items) lines.push(renderWatch(palette, t, watch));
+  lines.push(`  ${palette.paint('muted', t('watches.prompt'))}`);
+  return lines;
+}
+
 /** Render the full deck to a string ready to print. */
 export function renderDeck(input: RenderInput): string {
   const { snapshot, t, palette, updatedAt } = input;
@@ -235,6 +266,7 @@ export function renderDeck(input: RenderInput): string {
     renderTimeline(palette, t, snapshot),
     renderDomains(palette, t, snapshot.domains),
     renderContracts(palette, t, snapshot.contracts),
+    renderWatches(palette, t, snapshot.watches),
     renderEscalations(palette, t, snapshot),
     [rule, palette.paint('muted', t('app.quit'))],
   ];

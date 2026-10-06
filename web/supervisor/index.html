@@ -373,6 +373,68 @@
           <div class="body" id="contractListBody"></div>
         </div>
       </div>
+      <div class="grid" style="grid-template-columns: 340px 1fr; margin-top: 16px">
+        <div class="panel">
+          <h2>登记无人值守触发器 <span class="hint">POST /api/watches</span></h2>
+          <div class="body">
+            <div class="form" id="watchForm">
+              <div class="row">
+                <label for="wSkill">技能</label>
+                <input id="wSkill" autocomplete="off" placeholder="如 research">
+              </div>
+              <div class="row">
+                <label for="wSubject">意图主题</label>
+                <input id="wSubject" autocomplete="off" placeholder="如 queue is deep">
+              </div>
+              <div class="row inline">
+                <div class="row">
+                  <label for="wMode">模式</label>
+                  <select id="wMode"><option value="plan">plan</option><option value="execute">execute</option></select>
+                </div>
+                <div class="row">
+                  <label for="wSource">谓词源</label>
+                  <select id="wSource"><option value="metrics">metrics</option><option value="realm">realm</option><option value="connector">connector</option></select>
+                </div>
+              </div>
+              <div class="row inline">
+                <div class="row">
+                  <label for="wField">字段</label>
+                  <input id="wField" autocomplete="off" placeholder="finished">
+                </div>
+                <div class="row">
+                  <label for="wValue">阈值</label>
+                  <input id="wValue" type="number" value="0">
+                </div>
+              </div>
+              <div class="row inline">
+                <div class="row">
+                  <label for="wInterval">间隔（秒）</label>
+                  <input id="wInterval" type="number" min="1" value="60">
+                </div>
+                <div class="row">
+                  <label for="wFires">触发预算</label>
+                  <input id="wFires" type="number" min="1" value="5">
+                </div>
+              </div>
+              <div class="row">
+                <label for="wDelegation">execute 委托契约 ID（execute 模式必填）</label>
+                <input id="wDelegation" autocomplete="off" placeholder="delegation contract id">
+              </div>
+              <div class="hint" style="margin-top:6px">内核不持定时器：登记后由外部调度器周期 POST /api/watch-tick 驱动。</div>
+              <div class="actions">
+                <button class="btn primary" id="btnWatch">登记触发器</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>无人值守触发器 <span class="hint" id="watchCount"></span></h2>
+          <div class="body" id="watchListBody"></div>
+          <div class="actions" style="margin-top:10px">
+            <button class="btn" id="btnWatchTick">立即评估一次（POST /api/watch-tick）</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== 视图：组织编制（E9.3，只读） ===== -->
@@ -1570,6 +1632,87 @@
 
   $('btnContract').addEventListener('click', issueContract);
 
+  async function loadWatches() {
+    try {
+      const d = await api('GET', '/api/watches');
+      renderWatchList(d);
+    } catch (e) {
+      $('watchListBody').innerHTML = emptyRow('watch 面不可用：' + esc(e.message));
+    }
+  }
+
+  function renderWatchList(d) {
+    const el = $('watchListBody');
+    const list = (d && d.watches) || [];
+    $('watchCount').textContent = list.length ? list.length + ' 条' : '';
+    if (!list.length) { el.innerHTML = emptyRow('无 watch——没有无人在场的意图来源'); return; }
+    let html = '<table><colgroup><col style="width:14%"><col style="width:9%"><col style="width:8%"><col style="width:18%"><col style="width:13%"><col style="width:18%"><col style="width:20%"></colgroup><tr><th>watch ID</th><th>技能</th><th>模式</th><th>谓词</th><th>已触发/预算</th><th>上次触发 / 状态</th><th>操作</th></tr>';
+    for (const w of list) {
+      const on = w.enabled !== false;
+      const status = on
+        ? '<span style="color:var(--ok)">生效</span>'
+        : '<span style="color:var(--text-3)">已停用</span>';
+      const last = w.lastFiredAt ? String(w.lastFiredAt).replace('T', ' ').slice(0, 16) : '—';
+      const pred = esc((w.predicate && w.predicate.source || '') + '.' + (w.predicate && w.predicate.field || '')) +
+        ' ' + esc(w.predicate && w.predicate.op || '') + ' ' + esc(w.predicate && w.predicate.value !== undefined ? String(w.predicate.value) : '');
+      const action = on
+        ? '<button class="btn small danger" data-act="revoke-watch" data-id="' + esc(w.id) + '">撤销</button>'
+        : '<span style="color:var(--text-3);font-size:12px">—</span>';
+      html += '<tr>' +
+        '<td class="mono" style="font-size:11.5px" title="' + esc(w.id) + '">' + esc((w.id || '').slice(0, 13)) + '…</td>' +
+        '<td class="mono">' + esc(w.intent && w.intent.skill || '') + '</td>' +
+        '<td class="mono">' + esc(w.intent && w.intent.mode || '') + '</td>' +
+        '<td class="mono" style="font-size:11.5px">' + pred + '</td>' +
+        '<td class="mono">' + ((w.used && w.used.fires) || 0) + '/' + esc(w.budget && w.budget.fires) + '</td>' +
+        '<td class="mono" style="font-size:11.5px">' + esc(last) + ' · ' + status + '</td>' +
+        '<td>' + action + '</td>' +
+        '</tr>';
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  async function registerWatch() {
+    const skill = $('wSkill').value.trim();
+    const subject = $('wSubject').value.trim();
+    const mode = $('wMode').value;
+    const source = $('wSource').value;
+    const field = $('wField').value.trim();
+    const valueRaw = $('wValue').value.trim();
+    const interval = parseInt($('wInterval').value, 10);
+    const fires = parseInt($('wFires').value, 10);
+    const delegation = $('wDelegation').value.trim();
+    if (!skill || !subject || !field) { toast('请填写技能、主题与谓词字段', 'bad'); return; }
+    if (!(interval > 0) || !(fires > 0)) { toast('间隔与触发预算都要 ≥1', 'bad'); return; }
+    if (mode === 'execute' && !delegation) { toast('execute 模式必须填委托契约 ID', 'bad'); return; }
+    const body = {
+      realm: 'personal',
+      predicate: { source, op: 'above', field, ...(valueRaw !== '' ? { value: Number(valueRaw) } : {}) },
+      intent: { skill, subject, mode, maxFanOut: 1 },
+      intervalSeconds: interval,
+      budget: { fires, executes: mode === 'execute' ? fires : 0 },
+      ...(delegation ? { delegationId: delegation } : {}),
+    };
+    if (!window.confirm('登记无人值守触发器：' + skill + '（' + mode + '，' + source + '.' + field + '）？')) return;
+    try {
+      await api('POST', '/api/watches', body);
+      toast('已登记 watch', 'ok');
+      await loadWatches();
+    } catch (e) { toast('登记失败：' + e.message, 'bad'); }
+  }
+
+  async function runWatchTick() {
+    try {
+      const r = await api('POST', '/api/watch-tick', {});
+      const rep = (r && r.report) || {};
+      toast('已评估 ' + (rep.evaluated || 0) + '：触发 ' + ((rep.fired || []).length) +
+        ' · 不可读 ' + ((rep.unavailable || []).length) + ' · 自动停用 ' + ((rep.autoDisabled || []).length), 'ok');
+      await loadWatches();
+    } catch (e) { toast('tick 失败：' + e.message, 'bad'); }
+  }
+
+  $('btnWatch').addEventListener('click', registerWatch);
+  $('btnWatchTick').addEventListener('click', runWatchTick);
+
   function renderRealmSelect(d) {
     const sel = $('gRealm');
     const enterprises = ((d && d.realms) || []).filter(r => r.type === 'enterprise');
@@ -1588,9 +1731,9 @@
       if (view === 'monitor') await loadMonitor();
       else if (view === 'oversight') await loadEscalations();
       else if (view === 'grants') {
-        // The two authorization faces degrade independently: a missing domains
-        // face must not blank the contract panel (and vice versa).
-        await Promise.allSettled([loadDomains(), loadContracts()]);
+        // The authorization faces degrade independently: a missing domains
+        // face must not blank the contract/watch panel (and vice versa).
+        await Promise.allSettled([loadDomains(), loadContracts(), loadWatches()]);
       }
       else if (view === 'org') await loadOrg();
       else if (view === 'catalog') await loadCatalog();
@@ -1609,6 +1752,7 @@
       } else if (view === 'grants') {
         $('grantListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
         $('contractListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('watchListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'org') {
         $('orgBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
       } else if (view === 'catalog') {
@@ -1700,6 +1844,15 @@
           await api('DELETE', '/api/delegation-contracts/' + id);
           toast('已撤销契约 ' + id, 'ok');
           await loadContracts();
+        } catch (e) { toast('撤销失败：' + e.message, 'bad'); }
+      })();
+    } else if (act === 'revoke-watch') {
+      if (!window.confirm('撤销 watch ' + id + ' 吗？撤销后不再触发。')) return;
+      (async () => {
+        try {
+          await api('DELETE', '/api/watches/' + id);
+          toast('已撤销 watch ' + id, 'ok');
+          await loadWatches();
         } catch (e) { toast('撤销失败：' + e.message, 'bad'); }
       })();
     } else if (act === 'approve-contract') {

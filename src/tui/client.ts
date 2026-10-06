@@ -22,6 +22,7 @@ export type DeckSnapshot = {
   audit: AuditView[] | null;
   domains: DomainsView | null;
   contracts: ContractsView | null;
+  watches: WatchesView | null;
 };
 
 export type RosterView = {
@@ -116,6 +117,31 @@ export type ContractView = {
 
 export type ContractsView = { contracts: ContractView[] };
 
+/** GET /api/watches: the unattended-trigger ledger. */
+export type WatchView = {
+  id: string;
+  owner: string;
+  realm: 'personal' | 'enterprise';
+  realmId?: string;
+  predicate: { source: string; op: string; field: string; value?: string | number };
+  intent: { skill: string; subject: string; mode: 'plan' | 'execute'; maxFanOut: number };
+  intervalSeconds: number;
+  startsAt: string;
+  expiresAt: string;
+  budget: { fires: number; executes: number };
+  used: { fires: number; executes: number };
+  enabled: boolean;
+  lastFiredAt?: string;
+  delegationId?: string;
+};
+
+export type WatchesView = { watches: WatchView[] };
+
+/** POST /api/watch-tick: the caller-driven evaluation report. */
+export type WatchTickView = {
+  report: { evaluated: number; fired: string[]; unavailable: string[]; autoDisabled: string[] };
+};
+
 export type DeckClient = {
   snapshot(): Promise<DeckSnapshot>;
   /** Read-only fan-out/decision timeline. */
@@ -151,6 +177,12 @@ export type DeckClient = {
     id: string,
     input: { grantedBy: string; maxChildTickets: number; maxConcurrent: number; windowEndsAt: string },
   ): Promise<{ contractId: string; watchId: string }>;
+  /** Read-only watch ledger (P1 self-host trigger face). */
+  watches(): Promise<WatchesView>;
+  /** Drive one caller-owned evaluation tick; the kernel holds no timer. */
+  watchTick(): Promise<WatchTickView['report']>;
+  /** Revoke (settle) a watch; it fires no more. */
+  revokeWatch(id: string): Promise<void>;
   revoke(name: string): Promise<void>;
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
@@ -212,7 +244,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
 
   return {
     async snapshot(): Promise<DeckSnapshot> {
-      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv] = await Promise.allSettled([
+      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv, watchesEnv] = await Promise.allSettled([
         getJson<{ snapshot: RosterView }>('/api/roster'),
         getJson<{ escalations: EscalationView[] }>('/api/escalations?status=pending'),
         getJson<MetricsView>('/api/metrics'),
@@ -220,6 +252,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         getJson<{ entries: AuditView[] }>('/api/audit?limit=12'),
         getJson<DomainsView>('/api/domains'),
         getJson<ContractsView>('/api/delegation-contracts'),
+        getJson<WatchesView>('/api/watches'),
       ]);
       // Roster + escalations are core; their failure aborts the render. Metrics/
       // state are additive and degrade to null if that face is not mounted.
@@ -233,6 +266,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         audit: auditEnv.status === 'fulfilled' ? auditEnv.value.entries : null,
         domains: domainsEnv.status === 'fulfilled' ? domainsEnv.value : null,
         contracts: contractsEnv.status === 'fulfilled' ? contractsEnv.value : null,
+        watches: watchesEnv.status === 'fulfilled' ? watchesEnv.value : null,
       };
     },
     timeline: async (limit = 12) => {
@@ -274,6 +308,15 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         limits: { maxChildTickets: input.maxChildTickets, maxConcurrent: input.maxConcurrent, windowEndsAt: input.windowEndsAt },
       }) as { contract?: { id?: string }; watch?: { id?: string } } | null;
       return { contractId: body?.contract?.id ?? '', watchId: body?.watch?.id ?? '' };
+    },
+    watches: async () => getJson<WatchesView>('/api/watches'),
+    watchTick: async () => {
+      const body = await postFor<WatchTickView>('/api/watch-tick', {});
+      return body.report;
+    },
+    revokeWatch: async id => {
+      const res = await fetchImpl(`${baseUrl}/api/watches/${encodeURIComponent(id)}`, { method: 'DELETE', headers });
+      if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
     },
     revoke: async name => {
       const res = await fetchImpl(`${baseUrl}/api/vassals/${encodeURIComponent(name)}`, { method: 'DELETE', headers });

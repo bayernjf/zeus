@@ -202,7 +202,7 @@ export function createDeck(options: RunnerOptions): DeckController {
       return true;
     }
 
-    if (parsed.kind === 'contractRevoke') {
+   if (parsed.kind === 'contractRevoke') {
       const contract = snapshot.contracts?.contracts[parsed.index - 1];
       if (!contract) {
         io.print(`${t('contracts.failed', { message: `#${parsed.index}` })}\n`);
@@ -214,6 +214,34 @@ export function createDeck(options: RunnerOptions): DeckController {
         io.print(`${t('contracts.revoked', { id: contract.id })}\n`);
       } catch (error) {
         io.print(`${t('contracts.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+     await draw();
+     return true;
+   }
+
+    if (parsed.kind === 'watchTick') {
+      try {
+        const report = await client.watchTick();
+        io.print(`${t('watches.ticked', { evaluated: report.evaluated, fired: report.fired.length, unavailable: report.unavailable.length, autoDisabled: report.autoDisabled.length })}\n`);
+      } catch (error) {
+        io.print(`${t('watches.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
+    if (parsed.kind === 'watchRevoke') {
+      const watch = snapshot.watches?.watches[parsed.index - 1];
+      if (!watch) {
+        io.print(`${t('watches.failed', { message: `#${parsed.index}` })}\n`);
+        return true;
+      }
+      if (!(await confirm(t('watches.confirmRevoke', { id: watch.id })))) return true;
+      try {
+        await client.revokeWatch(watch.id);
+        io.print(`${t('watches.revoked', { id: watch.id })}\n`);
+      } catch (error) {
+        io.print(`${t('watches.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
       }
       await draw();
       return true;
