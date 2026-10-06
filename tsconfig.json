@@ -33,5 +33,6 @@
     "scripts/verify-execute-delegation.mjs",
     "scripts/verify-intent-recognize.mjs",
     "scripts/verify-tui-recognize.mjs"
+    ,"scripts/run-watch-tick.mjs"
   ]
 }
