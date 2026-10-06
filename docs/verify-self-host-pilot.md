@@ -1,6 +1,6 @@
-# 自托管试点验收规程（v0.8，2026-10-06）
+# 自托管试点验收规程（v0.9，2026-10-06）
 
-- 状态：**验收规程 v0.8（2026-10-06）**。P0 段今天可跑；**P1 的 `watch` 已落码、接进 boot，且操作者 HTTP 面已通（Active work 139）**——`POST/GET /api/watches`、`GET/DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器）；watch 生命周期动作（登记/停用/撤销）进审计脊。P1 仅剩 **TUI/Web 专属控件**未做。P2 的内核链、HTTP 操作者面与 TUI/Web 控件全部就位（设计稿 §7 六步全部完成）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138）；P1 的 tick 时六条判据均有对应测试（step 2/3 批次），本文件保留判据作为回归口径。
+- 状态：**验收规程 v0.9（2026-10-06）**。P0 段今天可跑；**P1 的 `watch` 已落码、接进 boot，操作者 HTTP 面（Active work 139）与 TUI/Web 专属控件（Active work 140）全部就位**——HTTP：`POST/GET /api/watches`、`GET/DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器），生命周期动作（登记/停用/撤销）进审计脊；TUI：`wt` 手动驱动一次 tick、`w<n>` 撤销、deck 新增 watch 台账 section（登记因谓词/意图形状过宽仍走 HTTP 面）；Web：授权视图新增 watch 登记表单 + 台账表格 + 立即评估 + 撤销。P2 的内核链、HTTP 操作者面与 TUI/Web 控件也全部就位（设计稿 §7 六步全部完成）。P1/P2 作为操作者能力三通道（HTTP/TUI/Web）齐整，端到端长期试点待真实使用（§3 成功定义属使用期事项）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138）；P1 的 tick 时六条判据均有对应测试（step 2/3 批次），本文件保留判据作为回归口径。
 - 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
@@ -223,6 +223,9 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 跑完后在本文件追加一节「实测记录」，至少写清：实际跑天数、意图条数（`GET /api/audit` 回读口径）、execute 次数与票据是否一一对应、重启与恢复各跑过几次、哪几条判据当时不成立、用户原话描述的"能/不能"。然后 handoff 记销项日期。
 
 ## 演进日志
+
+- **v0.9（2026-10-06）**：P1 的 TUI/Web watch 专属控件落地（Active work 140），P1 从“操作者 HTTP 面已通、专属控件未做”改为三通道齐整：TUI 加 `wt`（调用方驱动一次评估 tick）/`w<n>`（撤销）与 watch 台账 section，Web 授权视图加 watch 登记表单/台账/立即评估/撤销；零新内核路由、零私有逻辑，全部消费 Active work 139 的 HTTP 面。判据与探针零改动（tick 六判据仍由 step 2/3 用例与 smoke 42 步守护）。
+
 
 - **v0.8（2026-10-06）**：P1 的操作者 HTTP 面落地（Active work 139）——五条 watch 路由（`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`），watch 生命周期动作进审计脊（三个新决策名），开工探针由 404 翻转为空体 400 / 合法体 201；P1 仅剩 TUI/Web 专属控件。
 - **v0.7（2026-10-06）**：P0 八步实跑全过并记录（Active work 138）；跑中修掉两条装配缺陷（serve 未传 oversightAudit → desk 审计默认进脊，三个新决策名入枚举；TUI client 空 body POST 被真 Fastify 400 → 恒发 JSON body）。判据与探针零改动。

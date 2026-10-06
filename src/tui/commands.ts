@@ -17,6 +17,8 @@ export type DeckCommand =
   | { kind: 'recognize'; text: string; useModel: boolean }
   | { kind: 'contractIssue'; skill: string; maxChildTickets: number; maxConcurrent: number; grantedBy: string }
   | { kind: 'contractRevoke'; index: number }
+  | { kind: 'watchTick' }
+  | { kind: 'watchRevoke'; index: number }
   | { kind: 'help' };
 
 export type CommandError = { error: string };
@@ -94,6 +96,19 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
   }
   if (lower === 'c' || /^c\s+\S+$/i.test(line)) return { error: 'contract-needs-args' };
 
+  // Self-host watches (P1 operator face). `wt` drives one caller-owned tick
+  // (the kernel holds no timer); `w3` / `w 3` revokes (settles) watch #n.
+  // Watch registration stays on the HTTP/Web face: its predicate/intent shape
+  // is too wide for a one-line command, the same split contracts already use.
+  if (lower === 'wt' || lower === 'watch-tick') return { kind: 'watchTick' };
+  const watchRevokeMatch = /^w\s*(\d+)\s*$/i.exec(line);
+  if (watchRevokeMatch) {
+    const index = Number(watchRevokeMatch[1]);
+    if (!Number.isInteger(index) || index < 1) return { error: 'bad-index' };
+    return { kind: 'watchRevoke', index };
+  }
+  if (lower === 'w' || /^w\s+\D/i.test(line)) return { error: 'watch-needs-args' };
+
   const match = /^([axsd])\s*(\d+)(?:[\s.:-]+(\d+))?$/.exec(line.toLowerCase());
   if (!match) return { error: 'unknown' };
   const [, letter, indexStr, stanceStr] = match;
@@ -128,6 +143,8 @@ export const COMMAND_HELP = [
   '  k<n>       revoke cross-domain grant #n (asks y/N)',
   '  c <skill> <tickets> <concurrent> [by]  issue a delegation contract (execute, 24h)',
   '  c<n>       revoke delegation contract #n (asks y/N)',
+  '  wt         drive one watch evaluation tick (caller-owned cadence)',
+  '  w<n>       revoke (settle) watch #n (asks y/N)',
   '  i <text>   recognize an operator instruction locally (plan-only)',
   '  im <text>  recognize using the configured decision backend (opt-in)',
   '  q          quit',
