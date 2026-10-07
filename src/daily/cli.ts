@@ -41,7 +41,7 @@ import {
   type KernelBootOptions,
 } from '../state/boot.js';
 import { parseRetentionMode } from '../state/archive.js';
-import { recognizeIntent, rankCandidates, type SkillCatalogEntry } from '../intent/recognize.js';
+import { recognizeIntent, rankCandidates, MODEL_OPTION_LIMIT, type SkillCatalogEntry } from '../intent/recognize.js';
 import { loadRskSigner } from '../http/rsk.js';
 import { issueDriverWriteGrant } from '../realm/grant.js';
 import type { BranchOutcome, FanOutResult } from '../orchestrator/types.js';
@@ -454,6 +454,11 @@ async function runOnce(ctx: RunContext): Promise<number> {
     if (recognition.backend) {
       model.chosenBy = 'model';
       model.backend = { kind: recognition.backend.kind, model: recognition.backend.model };
+      if (model.candidates.length === 0) {
+        model.note =
+          `the local ranker found no lexical match for this wording, so the model chose among ` +
+          `${Math.min(MODEL_OPTION_LIMIT, catalog.length)} of ${catalog.length} catalogue ids`;
+      }
     }
   }
 
