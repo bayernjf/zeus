@@ -166,16 +166,25 @@ describe('Orchestrator.fanOut', () => {
   });
 
   it('records a timed-out branch as failed without losing the others', async () => {
-    const port = makePort({
-      loom: okResult('loom'),
-      atlas: async () => { await delay(40); return okResult('atlas'); },
-    });
-    const orch = newOrchestrator(port, ['loom', 'atlas']);
-    const result = await orch.fanOut({ skill: 'x', params: {}, realm: 'personal', branchTimeoutMs: 8 });
-    const atlas = result.branches.find(b => b.vassal === 'atlas')!;
-    expect(atlas.timedOut).toBe(true);
-    expect(atlas.ok).toBe(false);
-    expect(result.status).toBe('partial');
+    vi.useFakeTimers();
+    try {
+      const port = makePort({
+        loom: okResult('loom'),
+        atlas: async () => { await delay(40); return okResult('atlas'); },
+      });
+      const orch = newOrchestrator(port, ['loom', 'atlas']);
+      // Deterministic clock: fire the 8ms deadline without relying on the event
+      // loop keeping 32ms of headroom under load (deferred #43).
+      const pending = orch.fanOut({ skill: 'x', params: {}, realm: 'personal', branchTimeoutMs: 8 });
+      await vi.advanceTimersByTimeAsync(8);
+      const result = await pending;
+      const atlas = result.branches.find(b => b.vassal === 'atlas')!;
+      expect(atlas.timedOut).toBe(true);
+      expect(atlas.ok).toBe(false);
+      expect(result.status).toBe('partial');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('disarms the branch deadline once the branch settles', async () => {
