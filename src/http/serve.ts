@@ -177,6 +177,39 @@ async function main(): Promise<void> {
     ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
     ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
     ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
+    ...(kernel.realmStore
+      ? {
+          realmMcp: {
+            realmIds: (kernel.realmStore.connections() ?? []).map(connection => connection.realmId),
+          },
+        }
+      : {}),
+    // Inbound A2A (design-inbound-a2a, deferred #19): publish Zeus' own agent
+    // card when the kernel has a skill catalogue to advertise. The card URL is
+    // the public-facing base (ZEUS_PUBLIC_URL when a reverse proxy fronts the
+    // process, otherwise the bind defaults the start primitive owns).
+    ...(kernel.skillRegistry
+      ? {
+          agentCard: {
+            name: 'zeus',
+            description: 'Zeus multi-agent runtime: aggregate intent fan-out and decision surface over pre-connected vassals.',
+            url: process.env.ZEUS_PUBLIC_URL ?? `http://${process.env.ZEUS_HOST ?? '127.0.0.1'}:${process.env.ZEUS_PORT ?? '8787'}`,
+            version: pkg.version,
+            capabilities: { streaming: false, pushNotifications: false, stateTransitionHistory: false },
+            defaultInputModes: ['application/json'],
+            defaultOutputModes: ['application/json'],
+            skills: kernel.skillRegistry.list().map(spec => ({
+              id: spec.id,
+              name: spec.name,
+              description: spec.description ?? '',
+              tags: spec.tags ?? [],
+            })),
+          },
+          inboundAudit: entry => {
+            process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
+          },
+        }
+      : {}),
     // E6.4: the two data domains, their tenant scopes and the grants between them.
     ...(kernel.domainGrants ? { domainGrants: kernel.domainGrants } : {}),
     realmAudit: kernel.realmAudit,

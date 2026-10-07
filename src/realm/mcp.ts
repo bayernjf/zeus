@@ -63,11 +63,32 @@ export type McpHandlerDeps = {
   realmIds: string[];
   serverName?: string;
   serverVersion?: string;
+  /**
+   * Session-scoped actor (design-realm §6.5, deferred #18 ruling #1): the host
+   * explicitly declares who is calling. When the actor also declares realmIds,
+   * the effective whitelist is the intersection with deps.realmIds — the actor
+   * can only ever narrow, never widen, the host's pre-connected boundary.
+   * Absent an actor, the call stays anonymous with the full host whitelist.
+   */
+  actor?: RealmMcpActor;
+};
+
+/** Session-scoped caller identity (design-realm §6.5). */
+export type RealmMcpActor = {
+  name: string;
+  /** Optional narrowing of the host whitelist for this session. */
+  realmIds?: string[];
 };
 
 export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) => Promise<JsonRpcResponse | null> {
   const serverName = deps.serverName ?? 'zeus-realm';
   const serverVersion = deps.serverVersion ?? '0.1.0';
+  // §6.5: the actor can only narrow. The effective boundary is the host
+  // whitelist intersected with the actor's declared realms (if any).
+  const effectiveRealmIds =
+    deps.actor?.realmIds && deps.actor.realmIds.length > 0
+      ? deps.realmIds.filter(realmId => deps.actor!.realmIds!.includes(realmId))
+      : deps.realmIds;
 
   function ok(id: JsonRpcId, result: unknown): JsonRpcResponse {
     return { jsonrpc: JSONRPC_VERSION, id, result };
@@ -91,19 +112,19 @@ export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) 
     try {
       switch (req.method) {
         case 'initialize':
-          return ok(id, initializeResult(req.params, serverName, serverVersion));
+          return ok(id, initializeResult(req.params, serverName, serverVersion, deps.actor?.name));
         case 'ping':
           return ok(id, {});
         case 'resources/list':
-          return ok(id, { resources: listResources(deps.realmIds) });
+          return ok(id, { resources: listResources(effectiveRealmIds) });
         case 'resources/templates/list':
           return ok(id, { resourceTemplates: RESOURCE_TEMPLATES });
         case 'resources/read':
-          return ok(id, { contents: await readResource(deps.store, deps.realmIds, req.params) });
+          return ok(id, { contents: await readResource(deps.store, effectiveRealmIds, req.params) });
         case 'tools/list':
           return ok(id, { tools: REALM_TOOLS });
         case 'tools/call':
-          return ok(id, { content: await callTool(deps.store, deps.realmIds, req.params) });
+          return ok(id, { content: await callTool(deps.store, effectiveRealmIds, req.params) });
         default:
           return fail(id, METHOD_NOT_FOUND, `method not found: ${req.method}`);
       }
@@ -118,7 +139,7 @@ function coerceId(value: unknown): JsonRpcId | undefined {
   return undefined;
 }
 
-function initializeResult(params: unknown, serverName: string, serverVersion: string) {
+function initializeResult(params: unknown, serverName: string, serverVersion: string, actorName?: string) {
   const requested = (params as { protocolVersion?: string } | undefined)?.protocolVersion;
   const negotiated =
     requested && (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
@@ -132,7 +153,7 @@ function initializeResult(params: unknown, serverName: string, serverVersion: st
       resources: { listChanged: false, subscribe: false },
       tools: { listChanged: false },
     },
-    serverInfo: { name: serverName, version: serverVersion },
+    serverInfo: { name: serverName, version: serverVersion, ...(actorName ? { actor: actorName } : {}) },
   };
 }
 

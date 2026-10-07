@@ -100,6 +100,11 @@ export const AUDIT_DECISIONS = [
   // revocation cuts every future derivation from that contract.
   'delegation-contract-issued',
   'delegation-contract-revoked',
+  // design-inbound-a2a §3 (deferred #19): an inbound A2A tasks/send either
+  // reached the H2 intent surface or was refused at the gate. The caller and
+  // the task id are the audit trail of "who asked Zeus to do what".
+  'inbound-task-accepted',
+  'inbound-task-refused',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

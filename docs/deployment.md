@@ -20,6 +20,7 @@
 |---|---|---|
 | `ZEUS_HOST` | `127.0.0.1` | 监听地址；**容器内必须 `0.0.0.0`** |
 | `ZEUS_PORT` | `8787` | 监听端口 |
+| `ZEUS_PUBLIC_URL` | 由 `ZEUS_HOST`/`ZEUS_PORT` 推导 | 入站 A2A agent card（`GET /.well-known/agent-card.json`）广告的公网基址；进程被反向代理时须显式设置 |
 | `ZEUS_VASSAL_SEEDS` | 未设置 | G1：启动时自动注册的执行 Agent Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。运行时上线走 `POST /api/vassals`，body 同样可带 `token`（存下后任何读视图都不回显，只有派发路径读取），因此**需要凭证的执行 Agent 不必为了上线而重启进程**。**某个 seed 拉不到或卡片没发誓 fealty → 整个进程拒启**（一行 `[zeus-http] refused to start: vassal seed failed for <url>: …`），不会静默少一个执行 Agent |
 | `ZEUS_OUTBOUND_ALLOW_HOSTS` | 未设置 | A-12：出站 URL 守卫的显式放行名单，逗号分隔（命中即跳过非公网地址检查）。守卫默认拒绝所有非全球可达地址（RFC 6890 专用地址段：RFC1918、`169.254/16`、CGNAT、多播/保留段，含 IPv6 ULA、link-local 与 IPv4 映射/兼容/NAT64 编码），**唯一例外是环回 `127.0.0.0/8` 与 `::1`**——本地优先，环回上的 vassal/MCP 服务是常态。要在私网里接入对端（如 `10.0.0.5`、容器里的 `host.docker.internal`）就把它写进这里；`.suffix` 前缀匹配整段后缀。**两层守卫**：同步 URL 检查只看得到 IP 字面量（主机名在该层放行），出站 fetch 还会经 DNS-rebinding 守卫（`src/util/outbound-dns.ts`，已实现并默认装配）解析主机名并校验全部结果地址，解析到私有/保留段仍拒绝；本名单对两层同时生效 |
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
