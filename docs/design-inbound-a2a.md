@@ -1,8 +1,8 @@
-# 入站 A2A 面设计裁定（deferred #19，v0.1，2026-10-03）
+# 入站 A2A 面设计裁定（deferred #19，v0.2，2026-10-07）
 
 ## 0. 一句话
 
-Zeus 发布自己的 agent card 并接收入站 `tasks/send`，落到 H2 意图面（同一内核 fanOut 路径与审计事件流）；本设计裁定固化方向，**实现不启动**（触发条件见 §5）。
+Zeus 发布自己的 agent card 并接收入站 `tasks/send`，落到 H2 意图面（同一内核 fanOut 路径与审计事件流）；本设计裁定固化方向，**机制已于 2026-10-07 落地（Active work 144），真实信任锚（在册名册验签）仍待真实上游调用者出现**（原触发条件见 §5）。
 
 ## 1. 缺口与现状
 
@@ -34,6 +34,9 @@ Zeus 发布自己的 agent card 并接收入站 `tasks/send`，落到 H2 意图�
 
 ① Zeus↔loom 真机联调时 loom 需要反向派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent 调用 Zeus 的聚合能力；③ 出现多 Zeus 实例协作的需求。
 
+**触发条件语义不变，机制已先行落地**（2026-10-07，Active work 144，按 #6 先例）：`GET /.well-known/agent-card.json`（公开卡片）+ 同路径 `POST`（bearer 保护 JSON-RPC `tasks/send` 落 H2 意图面）；调用方 `x-zeus-caller-card` 过与注册同源的 fealty 形状闸（`fealtyOathProblem` 由 registry 导出复用；无卡则 bearer 即驾驶员本人，fail-closed 403+审计）；`realm` 缺省 personal；调用方 taskId 兼作幂等键；审计 `inbound-task-accepted`/`inbound-task-refused` 入 AUDIT_DECISIONS 单一来源；回标准 A2A 收据 `{kind: "task", id, contextId, status}`；不做入站 SSE。`tests/http-inbound-a2a.test.ts` 10 例全绿。**剩余缺口 = 真实上游调用者 + 在册名册验签信任锚**——触发条件①/②/③ 里任一条满足时闭合。
+
 ## 6. 演进日志
 
+- v0.2（2026-10-07）：机制实现落地（Active work 144）；真实信任锚仍待对端出现。
 - v0.1（2026-10-03）：裁定入库，方向固化；实现待触发条件。

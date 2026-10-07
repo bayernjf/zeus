@@ -350,8 +350,11 @@ const ESCALATION_POLICIES = ['none', 'on-failure', 'auto'] as const;
  * The first defect in the part of the oath that dispatch reads on every request.
  * An empty dataRealms array is not a defect: it means "no data at all", and the
  * diode then refuses each task with an explicit audit reason.
+ *
+ * Exported so the inbound A2A face (design-inbound-a2a §2) runs the same shape
+ * gate on a caller's card instead of duplicating the checks.
  */
-function fealtyOathProblem(fealty: Fealty): string | null {
+export function fealtyOathProblem(fealty: Fealty): string | null {
   const oath = fealty as unknown as Record<string, unknown>;
   // domain is the grouping key routing and the roster project on, so an empty or
   // missing one silently puts every such vassal in the same nameless bucket.

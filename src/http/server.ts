@@ -4,7 +4,7 @@ import { CardFetchError, VassalRegistry, VassalRevokedError } from '../registry/
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
-import type { AggregationRule, FanOutRequest } from '../orchestrator/types.js';
+import type { AggregationRule, FanOutRequest, FanOutResult } from '../orchestrator/types.js';
 import { DagValidationError, topologicalLayers, type DagSpec, type DagNode } from '../orchestrator/dag.js';
 import type { DagRunner } from '../orchestrator/dag-runner.js';
 import type { OversightDesk } from '../oversight/oversight.js';
@@ -23,11 +23,14 @@ import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
 import type { DecisionBackend, DecisionBackendKind } from '../decision/types.js';
 import { recognizeIntent } from '../intent/recognize.js';
 import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
-import { AUDIT_DECISIONS, type AuditDecision } from '../dispatch/dispatcher.js';
+import { AUDIT_DECISIONS, type AuditDecision, type AuditEntry } from '../dispatch/dispatcher.js';
 import type { KernelStats } from '../state/stats.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { DriverWriteGrant, RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
 import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../realm/types.js';
+import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../realm/mcp.js';
+import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type TaskState } from '../a2a/types.js';
+import { fealtyOathProblem } from '../registry/registry.js';
 import {
   decideRealmAccess,
   DomainGrantError,
@@ -142,6 +145,23 @@ export type HttpDeps = {
   memoryStore?: MemoryStore;
   /** H2 (E8.3): realm target for diary persistence. */
   realmStore?: RealmStore;
+  /**
+   * E3.4: MCP streamable HTTP exposure (design-realm §6.5). When set, mounts
+   * GET /mcp (public server metadata, no realm data) and POST /mcp (bearer
+   * protected JSON-RPC fed into the same transport-agnostic realm handler).
+   * realmIds = the host pre-connected whitelist; actorHeader = optional header
+   * name carrying the session-scoped actor (default `x-zeus-realm-actor`).
+   */
+  realmMcp?: { realmIds: string[]; actorHeader?: string };
+  /**
+   * Inbound A2A face (design-inbound-a2a, deferred #19): when set, mounts
+   * GET /.well-known/agent-card.json (public Zeus agent card, no secrets) and
+   * POST on the same path (bearer protected JSON-RPC tasks/send that lands on
+   * the H2 intent surface). Absent, the inbound face is not mounted at all.
+   */
+  agentCard?: AgentCard;
+  /** Audit sink for inbound A2A accept/refuse decisions (inbound-task-*). */
+  inboundAudit?: (entry: AuditEntry) => void;
   /** E6.4: cross-domain grant registry (the /api/domains face and realmSource). */
   domainGrants?: DomainGrantRegistry;
   /** E3.5 / deferred #14: consumed driver-write grant nonces (the replay ledger). */
@@ -303,6 +323,154 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           .send({ error: 'unauthorized' });
       }
     };
+
+    // E3.4: MCP streamable HTTP exposure (design-realm §6.5, deferred #18 ruling).
+    // One JSON-RPC endpoint fed into the same transport-agnostic handler as the
+    // stdio scaffold; the host pre-connected realmIds are the whitelist, and the
+    // optional actor header (default x-zeus-realm-actor) narrows it per session.
+    if (deps.realmMcp && deps.realmStore) {
+      const mcp = deps.realmMcp;
+      const realmStore = deps.realmStore;
+      const actorHeader = (mcp.actorHeader ?? 'x-zeus-realm-actor').toLowerCase();
+      // Public server metadata for client discovery; deliberately carries no
+      // realm data (realmIds would leak mount state to unauthenticated callers).
+      app.get('/mcp', async () => ({
+        jsonrpc: JSONRPC_VERSION,
+        protocolVersion: '2025-06-18',
+        capabilities: { resources: {}, tools: {} },
+        serverInfo: { name: 'zeus-realm', version: deps.version ?? '0.1.0' },
+      }));
+      app.post('/mcp', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const raw = request.body as unknown;
+        let message: unknown;
+        if (typeof raw === 'string') {
+          try {
+            message = JSON.parse(raw);
+          } catch {
+            return error(reply, 400, 'invalid_json', 'request body must be a JSON-RPC object');
+          }
+        } else {
+          message = raw;
+        }
+        // Session-scoped actor: the host names the caller via a header; a client
+        // can only narrow the host whitelist, never widen it.
+        const actorHeaderValue = request.headers[actorHeader];
+        const actor: RealmMcpActor | undefined =
+          typeof actorHeaderValue === 'string' && actorHeaderValue.trim() !== ''
+            ? { name: actorHeaderValue.trim() }
+            : undefined;
+        const handle = createRealmMcpHandler({ store: realmStore, realmIds: mcp.realmIds, ...(actor ? { actor } : {}) });
+        const response = await handle(message);
+        reply.type('application/json; charset=utf-8');
+        return response ?? {};
+      });
+    }
+
+    // Inbound A2A face (design-inbound-a2a v0.1, deferred #19): Zeus publishes
+    // its own agent card and accepts tasks/send from upstream agents. GET is the
+    // card (public, same shape the outbound client fetches from a vassal); POST
+    // on the same path is JSON-RPC landing on the H2 intent surface. Caller
+    // identity: an optional x-zeus-caller-card header is shape-checked against
+    // the same fealty oath gate the registry runs at registration; absent a
+    // card, the bearer token alone stands as the driver's own call.
+    if (deps.agentCard) {
+      app.get('/.well-known/agent-card.json', async (_request, reply) => {
+        reply.header('Cache-Control', 'public, max-age=300');
+        reply.type('application/json; charset=utf-8');
+        return deps.agentCard;
+      });
+      app.post('/.well-known/agent-card.json', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const body = (request.body ?? {}) as Record<string, unknown>;
+        const audit = deps.inboundAudit;
+        const at = now().toISOString();
+        if (body.jsonrpc !== '2.0' || body.method !== 'tasks/send') {
+          return error(reply, 400, 'invalid_request', 'expected JSON-RPC 2.0 method tasks/send');
+        }
+        const params = (body.params ?? {}) as Record<string, unknown>;
+
+        // Caller identity gate: a declared caller card must carry a fealty oath
+        // that would survive the registration gate; anything else is refused
+        // (fail-closed) and audited. No card header = bearer-authenticated
+        // driver calling itself, which the token already stands for.
+        let callerName = 'driver';
+        const callerCard = request.headers['x-zeus-caller-card'];
+        if (typeof callerCard === 'string' && callerCard.trim() !== '') {
+          let card: AgentCard;
+          try {
+            card = JSON.parse(callerCard) as AgentCard;
+          } catch {
+            return error(reply, 400, 'invalid_request', 'x-zeus-caller-card must be valid JSON');
+          }
+          const fealty = card['x-zeus-fealty'];
+          if (!fealty || fealty.swornTo !== 'zeus' || !(SUPPORTED_FEALTY_VERSIONS as readonly string[]).includes(fealty.version)) {
+            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: 'caller card carries no valid zeus fealty' });
+            return error(reply, 403, 'caller_refused', 'caller card has no valid zeus fealty');
+          }
+          const oathProblem = fealtyOathProblem(fealty);
+          if (oathProblem) {
+            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: `caller fealty shape: ${oathProblem}` });
+            return error(reply, 403, 'caller_refused', `invalid caller fealty: ${oathProblem}`);
+          }
+          callerName = card.name;
+        }
+
+        // Task mapping: skills[0] selects the kernel skill; message and the
+        // caller's taskId ride along in params so the H2 intent carries the
+        // caller's own correlation id; realm defaults to personal (§2.3).
+        const skills = params.skills;
+        if (!Array.isArray(skills) || skills.length === 0 || typeof skills[0] !== 'string') {
+          audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', detail: 'params.skills must be a non-empty array of skill ids' });
+          return error(reply, 400, 'invalid_request', 'params.skills must be a non-empty array of skill ids');
+        }
+        const skill = skills[0];
+        const realm: 'personal' | 'enterprise' = params.realm === 'enterprise' ? 'enterprise' : 'personal';
+        const taskId = typeof params.taskId === 'string' ? params.taskId : undefined;
+        const message = typeof params.message === 'string' ? params.message : '';
+        const metadata =
+          params.metadata && typeof params.metadata === 'object' && !Array.isArray(params.metadata)
+            ? (params.metadata as Record<string, unknown>)
+            : undefined;
+        const fanOutRequest: FanOutRequest = {
+          // The caller's taskId doubles as the idempotency key: re-sending the
+          // same task replays the stored result instead of re-dispatching.
+          ...(taskId ? { intentId: taskId } : {}),
+          skill,
+          realm,
+          params: {
+            ...(message ? { message } : {}),
+            ...(taskId ? { a2aTaskId: taskId } : {}),
+            ...(metadata ? { a2aMetadata: metadata } : {}),
+            a2aCaller: callerName,
+          },
+        };
+        let result;
+        try {
+          result = await deps.orchestrator!.fanOut(fanOutRequest);
+        } catch (thrown) {
+          if (thrown instanceof DomainError) return mapKernelError(reply, thrown);
+          throw thrown;
+        }
+        audit?.({
+          ts: at,
+          vassal: callerName,
+          decision: 'inbound-task-accepted',
+          runId: result.runId,
+          skill,
+          realm,
+          ...(taskId ? { taskId } : {}),
+          state: mapInboundFanOutState(result.status),
+          detail: `inbound A2A tasks/send accepted`,
+        });
+        reply.code(200);
+        return {
+          kind: 'task',
+          id: result.intentId,
+          contextId: result.runId,
+          status: { state: mapInboundFanOutState(result.status), timestamp: result.createdAt },
+          artifacts: [],
+        };
+      });
+    }
 
     // Internal governance roster: sealed like the public view (design-fealty-signing
     // §4 "internal/public each sealed"), but it keeps revoked rows — those carry
@@ -2366,6 +2534,23 @@ function messageOf(thrown: unknown): string {
 /** Classify an orchestrator / oversight failure. Read from the error type,
  *  never from its message: rewriting "unknown intent" as "no such intent" must
  *  not silently turn a 404 into a 400. */
+/** Inbound A2A (design-inbound-a2a §2.3): FanOutStatus → standard A2A TaskState.
+ *  'partial' completes from the caller's perspective (some vassals answered);
+ *  'needs-driver' becomes input-required (a human must settle the conflict). */
+export function mapInboundFanOutState(status: FanOutResult['status']): TaskState {
+  switch (status) {
+    case 'completed':
+    case 'partial':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'canceled':
+      return 'canceled';
+    case 'needs-driver':
+      return 'input-required';
+  }
+}
+
 export function classifyKernelError(thrown: unknown): { status: number; code: string } {
   return thrown instanceof DomainError ? statusForKind(thrown.kind) : { status: 400, code: 'invalid_request' };
 }

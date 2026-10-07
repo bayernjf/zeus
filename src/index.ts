@@ -141,6 +141,18 @@ export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
 export { judgeDecision } from './orchestrator/judge.js';
 export type { JudgeDecisionInput } from './orchestrator/judge.js';
 export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
+// --- deferred #40 read-only half: execution-after failure attribution ---
+export { attributeFailures, participantsToEntries } from './reflection/failure-attribution.js';
+export type {
+  FailureAttribution,
+  FailureCategory,
+  FailurePattern,
+  VassalAttribution,
+  CategoryCounts,
+} from './reflection/failure-attribution.js';
+// --- Structured operator log (feature-inventory 结构化日志) ---
+export { createLogger, redact } from './util/logger.js';
+export type { Logger, LogLevel, LogFields, LogSink, LoggerOptions } from './util/logger.js';
 export type {
   MetricsSnapshot,
   VassalMetric,

@@ -113,6 +113,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'escalation-approved': 'success',
   'escalation-rejected': 'muted',
   'delegation-contract-revoked': 'warning',
+  // design-inbound-a2a (deferred #19): an inbound task landing on the intent
+  // surface is a new intent arriving from outside - visible like any dispatch;
+  // a refused inbound task is the gate holding, which is a warning.
+  'inbound-task-accepted': 'attention',
+  'inbound-task-refused': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };
