@@ -108,6 +108,52 @@ describe('recognizeIntent (model path, explicit opt-in)', () => {
     }
   });
 
+  it('asks over the whole catalogue when the ranker finds no lexical match', async () => {
+    // A CJK instruction against an English catalogue has zero literal overlap, so
+    // the ranker offers nothing. That used to end the call before the model was
+    // ever asked - the one case where an explicitly consulted model was the only
+    // thing that could answer.
+    const backend = mockBackend();
+    const result = await recognizeIntent({ text: '整理今天的部署状态', catalog: CATALOG, backend, useModel: true });
+    expect(backend.choice).toHaveBeenCalledTimes(1);
+    const request = backend.choice.mock.calls[0]![0];
+    expect(request.options).toEqual(['code-review', 'release', 'research']);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.intent.skill).toBe('research');
+  });
+
+  it('caps the fallback options deterministically', async () => {
+    const wide = Array.from({ length: 35 }, (_, i) => ({
+      id: `skill-${String(i).padStart(2, '0')}`,
+      name: `Skill ${i}`,
+      description: 'nothing lexically shared with the instruction',
+    }));
+    const backend = mockBackend({
+      choice: vi.fn(async () => ({ choice: 'skill-05', probabilities: {}, confidence: 0.9, calibrated: false, decisionAt: 'x' })),
+    });
+    const result = await recognizeIntent({ text: '部署状态', catalog: wide, backend, useModel: true });
+    const request = backend.choice.mock.calls[0]![0];
+    expect(request.options).toHaveLength(30);
+    expect(request.options[0]).toBe('skill-00');
+    expect(request.options).toContain('skill-05');
+    expect(request.options).not.toContain('skill-34');
+    expect(result.ok).toBe(true);
+  });
+
+  it('still refuses when there is no catalogue to offer the model', async () => {
+    const result = await recognizeIntent({ text: '部署状态', catalog: [], backend: mockBackend(), useModel: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('no-candidates');
+  });
+
+  it('reports no-candidates (not no-backend) when neither a match nor a backend exists', async () => {
+    // Which of the two fail-closed reasons wins is a contract: the ranker had
+    // nothing to say, and that is what the operator needs to hear first.
+    const result = await recognizeIntent({ text: '部署状态', catalog: CATALOG, useModel: true });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('no-candidates');
+  });
+
   it('sends the instruction as declared state keys only', async () => {
     const backend = mockBackend();
     await recognizeIntent({ text: 'review the pr', catalog: CATALOG, backend, useModel: true, realm: 'enterprise' });

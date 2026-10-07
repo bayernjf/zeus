@@ -92,6 +92,13 @@ export type IntentRecognitionResult =
 
 const LOCAL_CONFIDENCE = 0.5;
 
+/**
+ * How many catalogue ids the model may be asked to choose among when the local
+ * ranker found no lexical match. Deterministic (sorted by id) so the same
+ * instruction and catalogue always present the same question.
+ */
+export const MODEL_OPTION_LIMIT = 30;
+
 /** Split an instruction into tokens; keeps ASCII words and CJK runs intact. */
 export function tokenize(text: string): string[] {
   const matches = text.match(/[a-zA-Z0-9_-]+|[\u4e00-\u9fa5]+/g);
@@ -137,13 +144,19 @@ export async function recognizeIntent(options: IntentRecognitionOptions): Promis
   const threshold = options.confidenceThreshold ?? 0.6;
   const candidates = rankCandidates(options.catalog, options.text);
 
-  if (candidates.length === 0) {
-    return { ok: false, reason: 'no-candidates', detail: `no catalogue skill matched "${options.text.slice(0, 80)}"` };
-  }
-
   // Model path only when the caller explicitly opted in and a backend exists.
   if (options.useModel === true && options.backend) {
-    const ids = candidates.map(c => c.skill);
+    // The ranker compares words literally, so a synonym the operator did not type -
+    // or a CJK instruction against an English-language catalogue - leaves it with no
+    // candidates at all. Being consulted explicitly is not a reason to refuse before
+    // asking, so the model gets the catalogue itself, deterministically capped.
+    const ids =
+      candidates.length > 0
+        ? candidates.map(c => c.skill)
+        : options.catalog.map(entry => entry.id).sort().slice(0, MODEL_OPTION_LIMIT);
+    if (ids.length === 0) {
+      return { ok: false, reason: 'no-candidates', detail: 'the capability catalogue is empty; there is nothing to choose among' };
+    }
     const request: ChoiceRequest = {
       state: { instruction: options.text, realm },
       stateKeys: ['instruction', 'realm'],
@@ -180,6 +193,9 @@ export async function recognizeIntent(options: IntentRecognitionOptions): Promis
   }
 
   // Local rule path: only a clear, unique best match may yield an intent.
+  if (candidates.length === 0) {
+    return { ok: false, reason: 'no-candidates', detail: `no catalogue skill matched "${options.text.slice(0, 80)}"` };
+  }
   if (options.useModel === true && !options.backend) {
     return { ok: false, reason: 'no-backend', detail: 'useModel was requested but no decision backend is configured' };
   }

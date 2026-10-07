@@ -1,6 +1,6 @@
-# 自托管试点验收规程（v0.9，2026-10-06）
+# 自托管试点验收规程（v0.11，2026-10-08）
 
-- 状态：**验收规程 v0.9（2026-10-06）**。P0 段今天可跑；**P1 的 `watch` 已落码、接进 boot，操作者 HTTP 面（Active work 139）与 TUI/Web 专属控件（Active work 140）全部就位**——HTTP：`POST/GET /api/watches`、`GET/DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器），生命周期动作（登记/停用/撤销）进审计脊；TUI：`wt` 手动驱动一次 tick、`w<n>` 撤销、deck 新增 watch 台账 section（登记因谓词/意图形状过宽仍走 HTTP 面）；Web：授权视图新增 watch 登记表单 + 台账表格 + 立即评估 + 撤销。P2 的内核链、HTTP 操作者面与 TUI/Web 控件也全部就位（设计稿 §7 六步全部完成）。P1/P2 作为操作者能力三通道（HTTP/TUI/Web）齐整，端到端长期试点待真实使用（§3 成功定义属使用期事项）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138）；P1 的 tick 时六条判据均有对应测试（step 2/3 批次），本文件保留判据作为回归口径。
+- 状态：**验收规程 v0.11（2026-10-08）**。P0-4 另有一条**不起服务进程的等价入口** `npm run daily`（Active work 147：一句话 → 意图 → 扇出 → 决策页写回目录，含四档反向对照与一条分裂正控）；同批 P0-4 的中文指令边界随 Active work 148 收窄——显式 `--model` 时词法零命中不再直接拒，整目录交给模型。P0 段今天可跑；**P1 的 `watch` 已落码、接进 boot，操作者 HTTP 面（Active work 139）与 TUI/Web 专属控件（Active work 140）全部就位**——HTTP：`POST/GET /api/watches`、`GET/DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器），生命周期动作（登记/停用/撤销）进审计脊；TUI：`wt` 手动驱动一次 tick、`w<n>` 撤销、deck 新增 watch 台账 section（登记因谓词/意图形状过宽仍走 HTTP 面）；Web：授权视图新增 watch 登记表单 + 台账表格 + 立即评估 + 撤销。P2 的内核链、HTTP 操作者面与 TUI/Web 控件也全部就位（设计稿 §7 六步全部完成）。P1/P2 作为操作者能力三通道（HTTP/TUI/Web）齐整，端到端长期试点待真实使用（§3 成功定义属使用期事项）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138）；P1 的 tick 时六条判据均有对应测试（step 2/3 批次），本文件保留判据作为回归口径。
 - 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
@@ -10,9 +10,9 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 
 ## 1. 为什么只有 P0 能跑（出处）
 
-内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:6-8 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2851 #keepalive`、编排分支超时 `src/orchestrator/orchestrator.ts:721-727 #setTimeout`、派发受理超时 `src/dispatch/client.ts:93 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
+内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:7-7 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2869-2869 #keepalive`、编排分支超时 `src/orchestrator/orchestrator.ts:752-752 #setTimeout`、派发受理超时 `src/dispatch/client.ts:93-93 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42-42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95-95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
 
-同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:148 #executionDelegationNonces`）。
+同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:711-711 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:148-148 #executionDelegationNonces`）。
 
 **所以试点当前的正确形态就是"人发起 + 一次性票据"**——这不是缩水版，这恰好是能诚实交付的版本。
 
@@ -54,7 +54,7 @@ node dist/http/serve.js
 curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/domains | jq
 ```
 
-- **退出判据**：`realms[]` 至少一条，字段只有 `realmId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:1929 #contentDigest`——这个视图**不返回根目录字符串**）。
+- **退出判据**：`realms[]` 至少一条，字段只有 `realmId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:1956-1956 #contentDigest`——这个视图**不返回根目录字符串**）。
 - **可执行断言**：把上面 JSON 存盘，`grep -c "$HOME/Documents" <file>` 必须为 **0**。这是"边界是目录，定位符只有 realmId + 根相对 itemId"的操作者侧核对（MCP 侧的实测口径见 [mcp-integration.md](mcp-integration.md) §1.4）。
 - **现在跑不了的部分**：无。
 
@@ -89,7 +89,18 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
   CARD_URL=https://<你的 Agent>/api/a2a/agent-card [AGENT_TOKEN=…] SKILL=<技能 id> \
   npm run acceptance:fanout
   ```
-  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataRealms` 与 `REALM` 不匹配会被拒（这是 fealty 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:555 #reinstate`）。共用部署上不要带它。
+  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataRealms` 与 `REALM` 不匹配会被拒（这是 fealty 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:563-563 #reinstate`）。共用部署上不要带它。
+- **不起服务进程的等价物**（同一条链路的入口形态，2026-10-08 Active work 147 新增）：不常驻、不占端口、不用 bearer，一句话直接走完「意图 → 扇出 → 决策与依据 → 写回目录」。
+
+  ```sh
+  npm run build && npm run daily -- --root <你的目录> \
+    --agent https://<你的 Agent>/api/a2a/agent-card "check the deployment health"
+  ```
+
+  进程内 `bootKernel` 装配（`src/daily/cli.ts` + 纯渲染 `src/daily/report.ts`）：终端打出的那一页 markdown 与 `Realm.write` 落进 `--root` 的那一页**逐字节相同**（`--record` 定路径，默认 `zeus-daily/<时间戳>-<技能>.md`），结束时 `saveState()` 把这次的意图与升级项落进状态文件。退出码 0/1/2：0 = 页面已产出并落盘（含"分裂等人裁决"这种没结论的结局）；1 = 无可派发内容、无 Agent 送达、或写回失败；2 = 配置/用法错误（什么都没派发）。
+  - **一条必须能失败的对照**（2026-10-08 本机真进程实测）：`--skill <没人广告的技能>` → 退出 1、stderr 说明"没有注册 Agent 提供该技能"，而页面仍然落盘（失败证据也是证据）；`--agent http://127.0.0.1:1/…` → 退出 2 并给 `vassal seed failed for <url>`；`--root <不存在的目录>` → 退出 2（`realm root not accessible`）；不带 `--root` 且 env 无挂载 → 退出 2 并给补目录的下一步。**这四档任一被静默吞掉，入口就是在骗人**。
+  - **正控**：两个 Agent 立场分裂时，该命令必须给出 `needs-driver` 与一条 `intent-conflict` 升级项，并且那个 escalation id 与 intentId 在状态文件里查得到——否则「等待人工裁决」这一整段就从没被这条命令执行过。
+  - **当前的真实边界（不掩饰）**：本地规则那条路仍按字面重合评分（ASCII 词与 CJK 连续段），**中文指令对英文技能目录给不出候选**，入口按 `no-candidates` 退出 1 且不写文件。自 2026-10-08 起，显式 `--model` 且配了决策后端时这条路不再死在这里：词法零命中就把整个目录（按 id 定序、上限 30 条）交给模型选，页面同时写明"排序器没有字面命中、由模型在整目录中选"。**没配后端就仍然零出域**——这条边界一次都没被越过。
 
 ### P0-5 让一次冲突真的走人工裁决
 
@@ -100,8 +111,8 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
 curl -fsS -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/escalations/<id>/approve | jq
 ```
 
-- **退出判据**：approve 后 `GET /api/intents/<id>/replay` 里出现人工裁决行（`src/http/server.ts:827-835 #approve` 把裁决回交编排器）。
-- **证据位置**：`GET /api/audit?decision=<裁决类决策名>`（`decision` 只接受登记过的枚举，传别的会 400 并列出全集 `src/http/server.ts:1883-1884 #AUDIT_DECISIONS`）。
+- **退出判据**：approve 后 `GET /api/intents/<id>/replay` 里出现人工裁决行（`src/http/server.ts:854-854 #approve` 把裁决回交编排器）。
+- **证据位置**：`GET /api/audit?decision=<裁决类决策名>`（`decision` 只接受登记过的枚举，传别的会 400 并列出全集 `src/http/server.ts:1910-1910 #AUDIT_DECISIONS`）。
 
 ### P0-6 execute 一次，用真票据
 
@@ -119,7 +130,7 @@ curl -fsS -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -H 'content-ty
 - **退出判据（四条，缺一不算过）**：
   1. 不带票据的 `mode:"execute"` 被拒，且**出站请求数为 0**；
   2. 带票据派发到一次，对端 Agent 真收到请求；
-  3. **同一票据重放第二次被拒**（nonce 一次性，核销点 `src/delegation/execution-delegation.ts:269 #replayed`）；
+  3. **同一票据重放第二次被拒**（nonce 一次性，核销点 `src/delegation/execution-delegation.ts:269-269 #replayed`）；
   4. 两次拒绝都有审计记录（`decision=execution-delegation-*`）。
 - **证据位置**：`npm run verify:execute-delegation` 把这六段（起进程 → 真 socket 注册 → 无票据被拒且零出站 → 真签发 → 带票据派发一次 → 重放被拒 → 拒单入审计）钉成了 PASS/FAIL 步骤，跑它等于把上面四条一次过完；退出码 0 才是过。
 - **口径提醒**：票据是**执行准入**，不是凭据代理。执行 Agent 拿用户身份做不可逆操作仍受 deferred **#33** 限制（见 [design-execution-delegation.md](design-execution-delegation.md)）；试点期请把 execute 限制在"可逆动作"内，并把这条写进使用者的预期。
@@ -143,9 +154,9 @@ npm run vault -- restore --map data/bundles/<stem>.map.json \
 - **退出判据（四条）**：
   1. 重启后 `GET /api/roster` 里 P0-3 那个 Agent 仍在册（注册表进快照）；
   2. 重启后 P0-2 那个 realm 自动重连（连接关系写进状态文件，`ZEUS_REALM_ROOTS` 只在首次需要）；
-  3. **P0-6 已花掉的票据重放仍被拒**——已花 nonce 跨重启有效（导出 `src/state/kernel-state.ts:148 #executionDelegationNonces`、回灌 `src/state/kernel-state.ts:169 #executionDelegationNonces`）；
-  4. `vault check` 退出码 **0**（无漂移）；把目录里任一被收录文件改一个字节再跑，退出码必须是 **2**（漂移档位 `src/vault/cli.ts:206-210 #drift`，四档定义 `src/vault/cli.ts:44 #VAULT_EXIT`），根目录整个不可达则是 **3**。这一步的正向对照就是"改一个字节"——不红就说明 check 是空转。四个子命令的标志形状以 `src/vault/cli.ts:10-23 #restore` 的用法块为准。
-- **备份调度在内核外**：cron/systemd 调 `npm run vault -- ...` 即可（`src/vault/cli.ts:6-8 #scheduler`）。试点期至少要跑一次**异地恢复**：`vault restore` 到另一个位置，然后 `vault check` 指过去。
+  3. **P0-6 已花掉的票据重放仍被拒**——已花 nonce 跨重启有效（导出 `src/state/kernel-state.ts:148-148 #executionDelegationNonces`、回灌 `src/state/kernel-state.ts:169-169 #executionDelegationNonces`）；
+  4. `vault check` 退出码 **0**（无漂移）；把目录里任一被收录文件改一个字节再跑，退出码必须是 **2**（漂移档位 `src/vault/cli.ts:208-208 #drift`，四档定义 `src/vault/cli.ts:44-44 #VAULT_EXIT`），根目录整个不可达则是 **3**。这一步的正向对照就是"改一个字节"——不红就说明 check 是空转。四个子命令的标志形状以 `src/vault/cli.ts:16-16 #restore` 的用法块为准。
+- **备份调度在内核外**：cron/systemd 调 `npm run vault -- ...` 即可（`src/vault/cli.ts:7-7 #scheduler`）。试点期至少要跑一次**异地恢复**：`vault restore` 到另一个位置，然后 `vault check` 指过去。
 
 ### P0-8 人怎么看：两个操作面都开过
 
@@ -208,7 +219,7 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 | 1 | 第 `maxChildTickets+1` 张子票据被拒，并审计 `delegation-limit-exceeded` | 上限设 2，发 3 次 → 第三次必须红 |
 | 2 | `windowEndsAt` 之后新子票据一律被拒 | 窗口设 1 秒，等到点再发 → 必须红 |
 | 3 | 撤销一份契约后，其下所有未消费票据立即不可用 | 撤销前后各发一次同一票据 → 后者必须红 |
-| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:150 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:788 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
+| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:150-150 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:863-863 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
 | 5 | 子票据的 `used` 计数持久化，重启不重置 | 重启后打到上限 → 必须仍然拒 |
 
 ## 6. 现在明确不要做的事（写下来防止顺手做掉）
@@ -224,6 +235,10 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 
 ## 演进日志
 
+- **v0.11（2026-10-08）**：P0-4 的中文指令边界收窄（Active work 148）。`recognizeIntent` 原先在排序器零词法命中时就返回 `no-candidates`，**咨询请求还没发出去**——显式 `--model` 也一样，于是中文用户配了后端仍然用不上。现在后端在场且被显式要求时，零命中改为把整个技能目录（按 id 定序、上限 30）作为 options 交给模型；本地规则那条路一字未改，没配后端仍然零出域。规程里那条"真实边界"随之改写。实测：同一条中文指令不带 `--model` 仍 exit 1 / `no-candidates`，带 `--model` 走回环 OpenAI 兼容端点 exit 0 且页面写明"由模型在整目录中选"（`Options: deployment-health | research` 为对端实收）。
+
+- **v0.10（2026-10-08）**：P0-4 增加**不起服务进程的等价物**一条命令（Active work 147，`npm run daily`）：进程内 `bootKernel` 装配，把「一句话 → 意图 → 扇出 → 决策与依据 → 写回用户目录 → 落台账」合成单个入口，判据不变、原 `acceptance:fanout` 一段不动。新增该命令自己的四档反向对照（无人广告的技能 / 卡片不可达 / 目录不存在 / 无挂载）与一条正控（两 Agent 立场分裂必须产出 `needs-driver` 与可在状态文件检出的升级项），并把一条真实边界写进规程而不是留在测试里：`rankCandidates` 的字面重合使**中文指令匹配不到英文技能目录**，入口只让这种失败可读、可自救（打印目录 + `--skill` 出口），未改排序器。
+
 - **v0.9（2026-10-06）**：P1 的 TUI/Web watch 专属控件落地（Active work 140），P1 从“操作者 HTTP 面已通、专属控件未做”改为三通道齐整：TUI 加 `wt`（调用方驱动一次评估 tick）/`w<n>`（撤销）与 watch 台账 section，Web 授权视图加 watch 登记表单/台账/立即评估/撤销；零新内核路由、零私有逻辑，全部消费 Active work 139 的 HTTP 面。判据与探针零改动（tick 六判据仍由 step 2/3 用例与 smoke 42 步守护）。
 
 
@@ -233,4 +248,4 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 - **v0.5（2026-10-06）**：设计稿 §7 第 6 步落地，`npm run smoke:core` 37 → 40 步（serve 真进程契约操作面装配探针、watch 命中恰一次真派发、execute watch 契约派生与撤销断流；watch 由导入 dist 的 runner 子进程驱动）。本规程的判据与探针无一改动——P2 的开工闸门探针（空体 400 / 合法体 201）维持现状。
 - **v0.4（2026-10-05）**：设计稿 §7 第 5 步 HTTP 半落地，P2 从“内核侧已通、操作者签发面未做”改为“内核侧 + HTTP 操作者面已通”：契约签发/列表/读/撤销在 `POST/GET/DELETE /api/delegation-contracts`（签发与撤销进审计脊，撤销即刻阻断派生），越限升级项可经 `POST /api/escalations/:id/approve-contract` 一键签一份仅 `execute` 的新契约并换绑 watch，不重放被拒 fire。开工闸门探针由 404 翻转为：空体 400、合法体 201；代码级同证改为 `src/http/` 下命中 5 条路由注册。真进程 HTTP 证据 9 例在 `tests/http-delegation-contracts.test.ts`。TUI/Web 专属控件与第 6 步 smoke 增步仍未做，端到端试点尚不能跑。
 - **v0.3（2026-10-05）**：设计稿 §7 第 4 步落地，P2 从"未实现"改为"内核侧已实现、用户面未实现"：execute 型 watch 的契约派生、execute gate、越限零出站 + `delegation-limit` 升级、升级幂等与重启重放均在真进程用例中证明；但契约签发 HTTP/TUI 面（第 5 步）未做，§5 的操作者级验收仍跑不了，开工闸门探针由 404 与路由 grep 双重守住。第 4 条判据的代码同证从冲突升级接线改为委托越限接线。
-- **v0.1（2026-10-05）**：首版。P0 八步全部锚到已落地命令/端点（含每步的反向对照）；P1/P2 只立判据并各附一条现在就应失败的探针，作为能力开工闸门；§1 用 `src/vault/cli.ts:6-8 #scheduler` 的原文把"没有调度器"从推测改成明文设计。
+- **v0.1（2026-10-05）**：首版。P0 八步全部锚到已落地命令/端点（含每步的反向对照）；P1/P2 只立判据并各附一条现在就应失败的探针，作为能力开工闸门；§1 用 `src/vault/cli.ts:7-7 #scheduler` 的原文把"没有调度器"从推测改成明文设计。

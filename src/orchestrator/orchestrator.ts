@@ -26,6 +26,7 @@ import type {
   SkillGovernor,
   TargetLookup,
 } from './types.js';
+import type { IntentArchiveLookup } from '../state/archive.js';
 
 const TERMINAL_STATES = new Set<TaskState>(['completed', 'failed', 'canceled']);
 
@@ -33,6 +34,10 @@ export type OrchestratorOptions = {
   now?: () => Date;
   newIntentId?: () => string;
   newRunId?: () => string;
+  /** deferred #42: out-window intents read from the archive when the state
+   *  table misses (idempotent replay / findIntentForBranchRun). Optional; the
+   *  kernel itself performs no file I/O. */
+  archive?: IntentArchiveLookup;
   /** Called when a fan-out ends in needs-driver; wire it to OversightDesk at assembly time. */
   onConflict?: (conflicts: Conflict[], result: FanOutResult) => void;
   /**
@@ -198,6 +203,16 @@ export class Orchestrator {
       if (inFlight) {
         this.assertSameRequest(request, inFlight.request);
         return inFlight.work.then(result => ({ ...structuredClone(result), replayed: true }));
+      }
+      // deferred #42: a settled intent may have left the state table for the
+      // archive. Replaying the archived record keeps the F2 promise — an
+      // execute intent's external write still happens exactly once.
+      if (this.options.archive) {
+        const archived = await this.options.archive.find(request.intentId);
+        if (archived) {
+          this.assertSameRequest(request, archived.request);
+          return { ...structuredClone(archived.result), replayed: true };
+        }
       }
     }
 
@@ -394,14 +409,30 @@ export class Orchestrator {
 
   /** E6.3: find the intent whose branch run matches a task-input escalation.
    *  Branch runIds are `${parentRunId}:${vassal}`, so the escalation's runId
-   *  alone is enough to locate the stored intent. */
-  findIntentForBranchRun(branchRunId: string, vassal: string): string | undefined {
+   *  alone is enough to locate the stored intent. deferred #42: when the state
+   *  table misses, the archive is searched too, so approve-resume keeps working
+   *  after a settled intent left the window. */
+  async findIntentForBranchRun(branchRunId: string, vassal: string): Promise<string | undefined> {
     for (const [intentId, result] of this.intents) {
       if (result.branches.some(branch => branch.runId === branchRunId && branch.vassal === vassal)) {
         return intentId;
       }
     }
+    if (this.options.archive) {
+      return this.options.archive.findByBranch(branchRunId, vassal);
+    }
     return undefined;
+  }
+
+  /** deferred #42: drop settled intents (and their requests) that moved to the
+   *  archive. In-flight keys are untouched — they live in `pending`, not here. */
+  removeIntents(intentIds: readonly string[]): number {
+    let removed = 0;
+    for (const intentId of intentIds) {
+      if (this.intents.delete(intentId)) removed += 1;
+      this.requests.delete(intentId);
+    }
+    return removed;
   }
 
   /** E5.3: serializable snapshot of idempotent intent results plus the original

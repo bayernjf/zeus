@@ -34,16 +34,16 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 藏宝图（vault） | 备份与恢复协议（引用 + 指纹 + 加密备份包） | `src/vault/`（E8.1/E8.2/E3.7） |
 | 立国三纲 | 能力接入三原语：MCP / Skill / A2A | docs/design-agentic-integration.md §2A |
 | 决策后端（decision backend） | 模型无关决策端口 | `DecisionBackend`（noul/choice/score，`src/decision/types.ts`） |
-| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/orchestrator/types.ts:72-74 #intentId`） |
-| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:33 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27 #applyConflictResolution`）、bearer 保护的 H2 面 |
+| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/orchestrator/types.ts:74-74 #intentId`） |
+| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:33-33 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27-27 #applyConflictResolution`）、bearer 保护的 H2 面 |
 | 拍板 | 人工裁决回写 | `applyConflictResolution` + `POST /api/escalations/:id/resolve`（E6.2） |
 | 监督台 | 升级队列 / HITL 控制台 | `OversightDesk`（`src/oversight/oversight.ts`） |
-| 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8 #diode`、`src/dispatch/dispatcher.ts:216 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
+| 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8-8 #diode`、`src/dispatch/dispatcher.ts:216-216 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
 | 记忆（事件 / 事实） | 带 provenance 的事件存储 + 断言事实 | `src/memory/`（`retraction` / `retractFacts` / `forgetSubject`） |
 | 遗忘权 | 数据主体删除权（erasure） | `MemoryStore.forgetSubject` + `POST /api/memory/forget-subject` |
 | 日记 | 把事件流写成可读叙事的日志 | `src/diary/`（`build` / `from-memory` / `markdown` / `persist`） |
 | 编制 / 岗位 / 单一负责人 | 组织结构与问责映射（accountability） | `src/org/`（`OrgRole`、`lead` / `leadId` / `leadMember`） |
-| 上岗签字（commission） | 上岗授权的签署 / 豁免 / 撤回 | 审计枚举 `commission-granted\|waived\|withdrawn\|refused`（`src/dispatch/dispatcher.ts:40-43 #commission`）+ `src/onboarding/` |
+| 上岗签字（commission） | 上岗授权的签署 / 豁免 / 撤回 | 审计枚举 `commission-granted\|waived\|withdrawn\|refused`（`src/dispatch/dispatcher.ts:41-41 #commission`）+ `src/onboarding/` |
 | 封神榜 | 对外发布的**已签名**公开名册 | `projectPublicRoster` + `sealSnapshot`（`src/registry/roster.ts`） |
 | 内核（kernel） | **运行时 / 编排引擎**，勿直译成 OS kernel | `bootKernel`（`src/state/boot.ts`） |
 | 决策回放 | 确定性重放（deterministic replay） | `src/orchestrator/replay.ts` + `GET /api/intents/:id/replay` |
@@ -92,7 +92,7 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | `commission` | 上岗授权档案：开档、签字、豁免、撤回及其台账 | 代码、状态文件键 `commissions`、审计事件 `commission-granted\|waived\|withdrawn\|refused`、HTTP `/api/org/departments/:id/commissions*` |
 | `mentorship` / `MentorshipLedger` | 能力认证流程：逐项评估通过后，一个 Agent 才被登记为某技能的提供者 | 代码、状态文件键 `mentorships`、HTTP `/api/mentorships*` |
 | `diary` | 把记忆事件按天组织成可读记录（只呈现不臆造，每行锚定事件 ID） | 代码目录 `src/diary/`、HTTP `/api/diary*`、落盘文件 `diary/YYYY-MM-DD.md` |
-| `noul` | 决策后端端口的**是非判断**方法：返回概率 + 置信度 + 是否模型标定，与 `choice`（多选一）/ `score`（分档评分）并列 | `DecisionBackend.noul`（`src/decision/types.ts:12 #noul`，`NoulResult`）。**不是本项目造的比喻**——沿用所对接决策模型（Jev）的请求字段名 |
+| `noul` | 决策后端端口的**是非判断**方法：返回概率 + 置信度 + 是否模型标定，与 `choice`（多选一）/ `score`（分档评分）并列 | `DecisionBackend.noul`（`src/decision/types.ts:12-12 #noul`，`NoulResult`）。**不是本项目造的比喻**——沿用所对接决策模型（Jev）的请求字段名 |
 
 ## 破坏性面（改这些名字要付的代价）
 

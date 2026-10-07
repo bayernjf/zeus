@@ -32,6 +32,7 @@ import {
   resolveVassalSeedsConfig,
 } from '../state/boot.js';
 import { kernelStats } from '../state/stats.js';
+import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
@@ -45,6 +46,17 @@ const pkg = require('../../package.json') as { version: string };
 // refusal and transport failures. Level defaults to info until a level env is
 // decided (deferred candidate, not in scope here).
 const log = createLogger();
+
+/** deferred #42: retention bounds are positive integers. A silent coercion to
+ *  0 or NaN would disable the out-window condition entirely; abort boot like
+ *  the concurrency caps do. */
+function parseIntPositive(name: string, raw: string): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new KernelBootError(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  return value;
+}
 
 async function main(): Promise<void> {
   // T-C: build the decision backend (Jev preferred, LLM fallback) and the
@@ -75,6 +87,20 @@ async function main(): Promise<void> {
       log.error('state-save-failed', message);
     },
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
+    // deferred #42: decision-record retention. Defaults to retain (today's
+    // behaviour); archive|evict move out-window intents out of the state file
+    // (design-intent-retention §4/§5). The two bounds are positive integers;
+    // a silently coerced 0 or NaN would read as protection that is not there,
+    // so they abort boot exactly like the concurrency caps.
+    ...(process.env.ZEUS_INTENT_RETENTION
+      ? { intentRetention: parseRetentionMode(process.env.ZEUS_INTENT_RETENTION) }
+      : {}),
+    ...(process.env.ZEUS_INTENT_RETENTION_MAX_ENTRIES
+      ? { intentRetentionMaxEntries: parseIntPositive('ZEUS_INTENT_RETENTION_MAX_ENTRIES', process.env.ZEUS_INTENT_RETENTION_MAX_ENTRIES) }
+      : {}),
+    ...(process.env.ZEUS_INTENT_RETENTION_WINDOW_MS
+      ? { intentRetentionWindowMs: parseIntPositive('ZEUS_INTENT_RETENTION_WINDOW_MS', process.env.ZEUS_INTENT_RETENTION_WINDOW_MS) }
+      : {}),
     // A-01: the resolved config goes across whole; copying it by hand is how the
     // per-vassal cap was validated at boot and then never reached the kernel.
     ...concurrencyBootOptions(concurrency),
@@ -172,6 +198,11 @@ async function main(): Promise<void> {
     oversight: kernel.oversight,
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,
+    // deferred #42: replay/approve-resume read the out-window archive when the
+    // state table misses; the retention mode is surfaced on replay misses so an
+    // eviction-mode 404 is not mistaken for "never existed".
+    ...(kernel.intentArchive ? { intentArchive: kernel.intentArchive } : {}),
+    retention: kernel.retention,
     ...(kernel.skillRegistry ? { skillRegistry: kernel.skillRegistry } : {}),
     ...(kernel.mentorshipLedger ? { mentorshipLedger: kernel.mentorshipLedger } : {}),
     ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
