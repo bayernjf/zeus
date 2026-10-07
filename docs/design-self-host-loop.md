@@ -8,13 +8,13 @@
 
 | 事实 | 证据 |
 | --- | --- |
-| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42 #setTimeout`、`src/http/server.ts:2851 #keepalive`、`src/orchestrator/orchestrator.ts:721-727 #setTimeout`、`src/dispatch/client.ts:93 #setTimeout`、`src/tui/cli.ts:95 #setInterval` |
-| 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:565 #intents` |
-| execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation` |
-| 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation` |
-| 票据默认 TTL 5 分钟、上限 60 分钟——即"签发一次、派发一次"，不是"一段时间内自动放行" | `src/delegation/execution-delegation.ts:35-37 #EXECUTION_DELEGATION_DEFAULT_TTL_MS` |
-| 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:148 #executionDelegationNonces`、`src/state/kernel-state.ts:168-169 #executionDelegationLedger` |
-| 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:52-57 #conflictsToDesk`、`src/http/server.ts:827 #approve` |
+| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2869-2869 #keepalive`、`src/orchestrator/orchestrator.ts:752-752 #setTimeout`、`src/dispatch/client.ts:93-93 #setTimeout`、`src/tui/cli.ts:95-95 #setInterval` |
+| 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:573-573 #intents` |
+| execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/orchestrator/orchestrator.ts:711-711 #verifyAndConsumeExecutionDelegation` |
+| 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation` |
+| 票据默认 TTL 5 分钟、上限 60 分钟——即"签发一次、派发一次"，不是"一段时间内自动放行" | `src/delegation/execution-delegation.ts:35-35 #EXECUTION_DELEGATION_DEFAULT_TTL_MS` |
+| 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156-156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:148-148 #executionDelegationNonces`、`src/state/kernel-state.ts:168-168 #executionDelegationLedger` |
+| 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:67-67 #conflictsToDesk`、`src/http/server.ts:854-854 #approve` |
 
 结论：**缺的不是安全边界，是"在没有人的时候合法地产生一次意图"的那个入口**，以及"边界内自动、越限回到人"的那层授权。这两件必须一起做——只做前者会得到一个能自主发起不可逆动作的内核，那正是现在的闸门在防的东西。
 
@@ -64,9 +64,9 @@ export type Watch = {
 
 | 源 | 允许读什么 | 复用哪条既有路径 |
 | --- | --- | --- |
-| `metrics` | 本机内核读数（在途、队列深度、失败率） | `src/orchestrator/metrics.ts:52-58 #queueDepth`，纯内存只读 |
+| `metrics` | 本机内核读数（在途、队列深度、失败率） | `src/orchestrator/metrics.ts:58-58 #queueDepth`，纯内存只读 |
 | `realm` | 用户自己授权过的数据域里的条目元数据 | 只读面同一套扫描与边界，实时读取语义见 [mcp-integration.md](mcp-integration.md) §1.6 |
-| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:286-288 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:211-225 #diode`） |
+| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:286-286 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:216-216 #diode`） |
 
 求值器**不做**的事：不执行任意 JS、不 eval 用户字符串、不引入表达式语言。比较符是封闭枚举，字段名是白名单——理由和权限词汇封闭同源：一旦能写表达式，边界就转移到求值器里，而那里没有闸门。
 
@@ -75,9 +75,9 @@ export type Watch = {
 1. 登记：`POST /api/watches`（bearer，H2 面），落内核状态。
 2. 求值：单个 tick 顺序遍历启用的 watch；**每个 tick 的求值本身不发外部请求**，读数来自上一轮缓存或本 tick 内的只读调用，失败即视为"条件未知"并计数，**不触发**。
 3. 触发：满足 → 以 `owner` 为 actor 提交一次意图（`intent` 模板 + 自动 `intentId = watch:<id>:<seq>` 保幂等，命中既有幂等判定，重复触发不会重复派发）。
-4. `mode: 'execute'` 的触发**必须**带一个从 `delegationId` 派生的子票据，走 `src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation` 那条完全相同的闸门；拿不到子票据（预算耗尽/契约撤销/能力不覆盖）= **零出站拒绝**，并写一条升级项回给人。
+4. `mode: 'execute'` 的触发**必须**带一个从 `delegationId` 派生的子票据，走 `src/orchestrator/orchestrator.ts:711-711 #verifyAndConsumeExecutionDelegation` 那条完全相同的闸门；拿不到子票据（预算耗尽/契约撤销/能力不覆盖）= **零出站拒绝**，并写一条升级项回给人。
 5. 撤销：`enabled: false` 或到期即不再求值；撤销是写状态 + 审计，不删历史。
-6. 持久化：watch 集合、`budget` 剩余、`lastFiredAt` 全部进内核快照，与既有 `executionDelegationNonces` 同一套写法（`src/state/kernel-state.ts:148 #executionDelegationNonces`）——**重启后不重置计数**，否则一次重启就是无限次触发。
+6. 持久化：watch 集合、`budget` 剩余、`lastFiredAt` 全部进内核快照，与既有 `executionDelegationNonces` 同一套写法（`src/state/kernel-state.ts:148-148 #executionDelegationNonces`）——**重启后不重置计数**，否则一次重启就是无限次触发。
 
 ### 3.3 失败语义（必须写清楚，否则实现会自己发明）
 
@@ -166,9 +166,9 @@ export type DelegationContract = {
 | 步 | 范围 | 可验证退出条件（顺序不能颠倒） |
 | --- | --- | --- |
 | 1 | `DelegationContract`：签发 / 验签 / 派生子票据 / 计数与持久化 / 撤销 | 单测覆盖四条不变式各一条正例 + 一条反例；缺陷注入：把"派生不放大"检查摘掉 → 用能力超集的契约仍能派生 → 用例必须红；重启恢复用例断言 `used` 不回退 |
-| 2 | `watch` 的 `metrics` 与 `realm` 两个源（无出站） | ✅ **2026-10-05 完成**。真进程用例：条件满足 → 恰好一次 `plan` 意图（`src/watch/watch.ts:372 #runTick`，确定性 `intentId = watch:<id>:<seq>`）+ 一条 `watch-fired`；未落地的触发复用同一 intentId 回放而不二次派发；重启后 `used` 与 `lastFiredAt` 一致（真 `FileKernelStateStore` 落盘 + `bootKernel` 重启两条）。缺陷植入：摘掉 save 白名单里 `watches` → **2 例红**；摘掉预算闸 → **2 例红** |
+| 2 | `watch` 的 `metrics` 与 `realm` 两个源（无出站） | ✅ **2026-10-05 完成**。真进程用例：条件满足 → 恰好一次 `plan` 意图（`src/watch/watch.ts:372-372 #runTick`，确定性 `intentId = watch:<id>:<seq>`）+ 一条 `watch-fired`；未落地的触发复用同一 intentId 回放而不二次派发；重启后 `used` 与 `lastFiredAt` 一致（真 `FileKernelStateStore` 落盘 + `bootKernel` 重启两条）。缺陷植入：摘掉 save 白名单里 `watches` → **2 例红**；摘掉预算闸 → **2 例红** |
 | 3 | `watch` 的 `connector` 源 | ✅ **2026-10-05 完成**。出站只走既有白名单与声明边界（`connectorReading` 经 `ConnectorRegistry.callTool` 同一注入传输，未声明工具不可读）；`predicate.field` 限 `WATCH_PATH_GRAMMAR`（纯标识符点路径、至多 4 段、无下标/通配/表达式），`readPath` 只回 string｜number、非标量或缺失路径判为不可读；连接器抖动 → 只记 `watch-eval-unavailable` 不触发（**正控**：健康上游必须真的触发一次，否则这条断言证明不了任何事）。缺陷植入四处，各 1 例红：路径文法改恒真 / 摘掉 `connector.id`·`tool` 必填 / 摘掉 `readPath` 标量判定 / boot 接线换回空对象 |
-| 4 | `execute` 触发 + 越限回落升级 | ✅ **2026-10-05 完成**。无契约 / 无信任锚 → 零出站 + desk 一条 `delegation-limit`（`limitReason` 写明撞的是 `no-contract` / `no-trust-anchor` / `unknown-contract` / `revoked` / `child-ticket-limit-reached` / `concurrent-limit-reached` 中哪条）；watch 自身 `budget.executes` 耗尽在派生**之前**拒绝（`src/watch/watch.ts:424 #execute-budget-exhausted`），不消耗契约槽；有签名契约时 boot 用驱动签名者派生一次性子票据（`src/state/boot.ts:756-771 #deriveExecutionDelegation`），票据过既有 execute gate（`src/orchestrator/orchestrator.ts:680 #verifyAndConsumeExecutionDelegation`）真跑通，派发落定后归还契约并发槽（`DelegationContractRegistry.release`）；升级按 `(watchId, delegationId, limitReason, tickSeq)` 幂等，重启重放同 tick 不重复（`src/oversight/oversight.ts:150 #ingestDelegationLimit`）。真进程三用例在 `tests/boot-watch-execution.test.ts`（派生真执行 / 契约不存在零出站升级 / 无签名者 fail-closed），watch 层四用例在 `tests/watch.test.ts`。缺陷植入：摘掉 boot 的 `escalateLimit` 接线 → 零出站升级用例红；摘掉提交前的 `execute-budget-exhausted` 闸 → 预算用例红（会多派生一张票） |
+| 4 | `execute` 触发 + 越限回落升级 | ✅ **2026-10-05 完成**。无契约 / 无信任锚 → 零出站 + desk 一条 `delegation-limit`（`limitReason` 写明撞的是 `no-contract` / `no-trust-anchor` / `unknown-contract` / `revoked` / `child-ticket-limit-reached` / `concurrent-limit-reached` 中哪条）；watch 自身 `budget.executes` 耗尽在派生**之前**拒绝（`src/watch/watch.ts:424 #execute-budget-exhausted`），不消耗契约槽；有签名契约时 boot 用驱动签名者派生一次性子票据（`src/state/boot.ts:845-845 #deriveExecutionDelegation`），票据过既有 execute gate（`src/orchestrator/orchestrator.ts:711-711 #verifyAndConsumeExecutionDelegation`）真跑通，派发落定后归还契约并发槽（`DelegationContractRegistry.release`）；升级按 `(watchId, delegationId, limitReason, tickSeq)` 幂等，重启重放同 tick 不重复（`src/oversight/oversight.ts:150-150 #ingestDelegationLimit`）。真进程三用例在 `tests/boot-watch-execution.test.ts`（派生真执行 / 契约不存在零出站升级 / 无签名者 fail-closed），watch 层四用例在 `tests/watch.test.ts`。缺陷植入：摘掉 boot 的 `escalateLimit` 接线 → 零出站升级用例红；摘掉提交前的 `execute-budget-exhausted` 闸 → 预算用例红（会多派生一张票） |
 | 5 | HTTP/H2 面与监督台、TUI 视图 | ✅ **2026-10-06 完成（HTTP 半 2026-10-05，TUI/Web 控件 2026-10-06，Active work 137）**。bearer 面新增 5 条路由：`POST/GET /api/delegation-contracts`、`GET/DELETE /api/delegation-contracts/:id`（签发校验 grantedBy/skill/capabilities 非空、limits 正整数、`maxConcurrent≤maxChildTickets`、windowEndsAt 未来；签发与撤销进审计脊，撤销即刻阻断派生，重复撤销 409）与 `POST /api/escalations/:id/approve-contract`（仅 delegation-limit，否则 400；签一份仅 `['execute']` 的新契约 → `watches.bindDelegation` 换绑 → 标 approved，不重放被拒 fire）。真进程 HTTP 证据 `tests/http-delegation-contracts.test.ts` 9 例 + `tests/watch.test.ts` bindDelegation 2 例。**TUI/Web 控件已补**：TUI 契约 section + `c` 签发/撤销命令 + `delegation-limit` 行 `a<n>` 走 approve-contract（deck 亮明 4 张/并发 1/24h 形状）；Web 授权视图契约块（签发表单 + 台账 + 撤销）与裁决视图「签新契约并批准」按钮；浏览器真机 E2E 五子项全过，“操作者能在两处读到同一份证据”两处齐备 |
 | 6 | `npm run smoke:core` 增加 watch + 契约两步 | ✅ **2026-10-06 完成，冒烟 37 → 40 步**（scripts/smoke-core.mjs，零运行时改动）。① 契约操作面在 serve 真进程上签发 201 / 读 200 / 列表含新约 / 撤销 200 且重复撤销 409，`delegation-contract-issued`/`-revoked` 经 bearer 审计面可读回——钉的是 serve.ts 装配而非仅路由存在（deferred #25 同类缺口）；② `plan` 型 watch 命中恰好一次真派发（realm 源 `entryCount` above 0，独立真内核子进程，`watch-fired` 进审计脊，mock agent 侧请求数 +1 归因于该 tick）；③ `execute` 型 watch 从真契约派生一次性子票据真出站（`delegation-child-issued`），撤销契约后同一满足条件零出站并升级 `delegation-limit`（limitReason=revoked，desk pending）。watch 由导入 dist 的 runner 子进程驱动（tick 是调用方驱动的原语，内核不持定时器，冒烟自带 runner 不引入调度器）；实现勘误两处：同 tick 内先派发的 watch 会移动后评估 watch 的读数（plan 派发抬高 `metrics.finished`），故契约阶段独立起进程且谓词走 realm 源；DELETE 带 `content-type: application/json` 空体被 Fastify 在路由前 400（与 vassal DELETE 同课）。活基线站点（handoff 篇首/Current state、README、上线清单两处、feature-inventory §4）随之现测同步 |
 
@@ -184,5 +184,5 @@ export type DelegationContract = {
 | v0.6 | 2026-10-05 | 第 5 步 HTTP 半落地：契约签发/列表/读/撤销四端点 + 监督台 approve-contract 一键签新契约换绑 watch（仅 delegation-limit，capabilities 钉死 `['execute']`，不重放被拒 fire）。补一处实现收窄记在这里：approve-contract 不允许操作者借升级放宽能力——新契约 capabilities 写死 execute，直接 POST 端点虽接受任意 capabilities 但原语层强制必须含 execute。第 5 步退出条件只满足一半：HTTP 真进程证据齐（9 测试），TUI/Web 专属控件与“两处读同一份证据”的第二处未做，第 6 步 smoke 增步未做，故该步标 🟡 而非 ✅。 |
 | v0.5 | 2026-10-05 | 第 4 步落地时补两处形状，仍是设计稿的错：① `budget` 增加独立的 `executes` 上限且 execute 型 watch 登记时必须为正——execute 与 plan 共用 `fires` 无法区分"自动派发次数"与"自动执行不可逆动作次数"，后者必须有自己那道更紧的闸；② desk 升级项新增 `delegation-limit` 类与 `watchId` / `delegationId` / `limitReason` 字段，并按 `(watchId, delegationId, limitReason, tickSeq)` 幂等——§4.2 只说"越限变成升级项回给人"，没规定同一次被拒 tick 在重启重放后不得在 desk 堆出第二条，而无人循环最容易重复的恰恰是重放。契约的 `maxConcurrent` 槽在子票据那一次派发落定（成功、被 gate 拒绝或回放）后归还，`maxChildTickets` 只增不减：前者约束在途量，后者是操作者批准的总量，两者语义不同。第 5 步的"批准 = 签新契约"专属面仍未做，现在 desk 上一条 `delegation-limit` 只能读、能用通用 approve/reject 改状态，还不能一键签发新契约。 |
 | v0.4 | 2026-10-05 | 第 3 步实现 `connector` 源时补了一处形状：`Watch` 增加 `connector?: { id, tool, args? }`——§3.1 的谓词源表把 `connector` 列为合法源，而类型里没有"读哪个连接器的哪个工具"这个字段，那句约束当时无法执行。另新增 `WATCH_PATH_GRAMMAR` 与 `readPath`：前者把 `predicate.field` 限成纯标识符点路径（至多 4 段，无下标/通配/表达式），后者只回 string｜number、非标量或缺失路径判为不可读——与 §3.1"字段名是白名单、不引入表达式语言"同源；连接器载荷在编译期不可知，边界只能落在连接器自己的声明加这两条运行时约束上。 |
-| v0.3 | 2026-10-05 | 第 2 步实现时改了四处形状，仍是设计稿的错而不是实现的偏离：① 补 `realm`（及可选 `realmId`）——§5 要求 watch 归属单一域，而 §3.1 的类型里没有这个字段，那句约束当时无法执行；② 把"预算"拆成 `budget`（上限，人写定）与 `used`（内核账，持久化）——原文只写"budget 剩余...被消费计数持久化"，一个字段既当上限又当计数则重启无法判读；③ `register()` 不接受 `enabled`——启用是登记的必然结果，停用与撤销是两次被记录的独立动作，把 `enabled` 做成入参等于允许登记一条天生不工作的 watch；④ 求值器需要 `lastValue` 才能让 `changed` 有意义，否则第一个 tick 对任何值都算"变化"。**两处实现刻意收窄**：`connector` 源未接时按"读数不可得"处理（不触发、计数、超限自动停用），绝不退化成"条件不成立"——否则一条配错的 watch 会永远安静；`execute` 在第 4 步之前**一律 fail-closed**（拿不到子票据即零出站），不因"反正还没接线"而先跑起来。另：`runTick` 由调用方驱动，内核不持定时器（与 `src/vault/cli.ts:6-8 #scheduler` 同一口径），故 §3.2 的"节律"由 `intervalSeconds` 与调用方共同决定。 |
+| v0.3 | 2026-10-05 | 第 2 步实现时改了四处形状，仍是设计稿的错而不是实现的偏离：① 补 `realm`（及可选 `realmId`）——§5 要求 watch 归属单一域，而 §3.1 的类型里没有这个字段，那句约束当时无法执行；② 把"预算"拆成 `budget`（上限，人写定）与 `used`（内核账，持久化）——原文只写"budget 剩余...被消费计数持久化"，一个字段既当上限又当计数则重启无法判读；③ `register()` 不接受 `enabled`——启用是登记的必然结果，停用与撤销是两次被记录的独立动作，把 `enabled` 做成入参等于允许登记一条天生不工作的 watch；④ 求值器需要 `lastValue` 才能让 `changed` 有意义，否则第一个 tick 对任何值都算"变化"。**两处实现刻意收窄**：`connector` 源未接时按"读数不可得"处理（不触发、计数、超限自动停用），绝不退化成"条件不成立"——否则一条配错的 watch 会永远安静；`execute` 在第 4 步之前**一律 fail-closed**（拿不到子票据即零出站），不因"反正还没接线"而先跑起来。另：`runTick` 由调用方驱动，内核不持定时器（与 `src/vault/cli.ts:7-7 #scheduler` 同一口径），故 §3.2 的"节律"由 `intervalSeconds` 与调用方共同决定。 |
 | v0.2 | 2026-10-05 | 写实现时改了三处形状，都是设计稿的错而不是实现的偏离：① `used` 与 `revokedAt` **移出签名 claim**——原结构把它们和静态授权一起签，则第一次派生就让签名失效；现规定 claim 只覆盖操作者批准后不再变的那组字段，"派生不放大"改由断言守（并有专门用例钉住"改了 `used` 仍验签通过"是有意的）。② 补 `vassal?: string`——不变式 1 点名 vassal 必须被契约覆盖，而 v0.1 的类型里没有这个字段，那句不变式当时无法执行。③ 删掉 `perFireBudget` 与 `used.spent`——金额口径要 deferred **#8** 的成本台账才有意义，没有生产者的计数字段是装饰；次数与并发两条上限已足以卡住自主发起的总量。另把子票据 TTL 写成 `min(请求 TTL, 窗口剩余)` 再交子票据自身上限，使"不晚于窗口"成为结构而不是约定。 |

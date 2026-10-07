@@ -42,7 +42,7 @@
 | 设计/实现名册公开前的签名验签链 | [design-fealty-signing.md](design-fealty-signing.md)（威胁模型、Zeus 单签 v1、Ed25519+JCS、两层信封、吊销失效语义、验收用例） |
 | 设计/裁定 Zeus 的入站 A2A 面（别的 Agent 派任务给 Zeus） | [design-inbound-a2a.md](design-inbound-a2a.md)（deferred #19，v0.2：机制已于 2026-10-07 落地——Zeus 自己的 agent card、`tasks/send` 落 H2 意图面、fealty 形状闸 fail-closed；剩真实上游调用者 + 在册名册验签信任锚） |
 | 真实核对 Jev 决策后端（等 key，规程已备） | [verify-jev-backend.md](verify-jev-backend.md)（v0.1：四个未证实假设逐项核对步骤 + 判定矩阵与不符处置；复用 `npm run verify:decision-backend`，无新代码） |
-| 让一个真实用户把 Zeus 当自己的 Agent 底座跑起来，并验收它 | [verify-self-host-pilot.md](verify-self-host-pilot.md) **v0.9**（P0 八步已实跑全过（Active work 138）；P1 `watch` HTTP 面（139）与 TUI/Web 控件（140）全部就位；P2 全部就位；每步带"必须能失败"的反向对照并各附一条现在就应返回 404 的证伪探针；§1 把"内核无调度器"锚到 `src/vault/cli.ts:6-8 #scheduler` 的明文设计） |
+| 让一个真实用户把 Zeus 当自己的 Agent 底座跑起来，并验收它 | [verify-self-host-pilot.md](verify-self-host-pilot.md) **v0.9**（P0 八步已实跑全过（Active work 138）；P1 `watch` HTTP 面（139）与 TUI/Web 控件（140）全部就位；P2 全部就位；每步带"必须能失败"的反向对照并各附一条现在就应返回 404 的证伪探针；§1 把"内核无调度器"锚到 `src/vault/cli.ts:7-7 #scheduler` 的明文设计） |
 | 设计"无人在场时的合法意图来源"与"有界的自主授权" | [design-self-host-loop.md](design-self-host-loop.md) **v0.8（契约原语 + watch 三源 + step 4 execute 派生 + step 5 HTTP 签发/撤销面 + TUI/Web 契约控件 + step 6 smoke 增步已落（冒烟 37→40）——六步全部完成）**（`watch` 触发器：谓词源限 metrics/realm/connector、预算与到期进结构；`DelegationContract`：子票据上限/窗口/撤销三闸，超限落回升级台；四条不变量各挂断言 + 六步实施切分；与 deferred **#41** 企业形态无关） |
 | 了解 Zeus 服务端 HTTP 栈怎么选、端点怎么长 | [design-http-transport.md](design-http-transport.md)（网络面划分、Fastify+长驻裁决、薄传输层、H1–H3 端点） |
 | 把 Zeus 进程真正跑起来 / 上线（Docker、密钥、状态卷、备份调度） | [deployment.md](deployment.md)（部署手册：Dockerfile 与 compose、RSK 密钥生成与生产守卫、systemd 备选、§7 Vault 备份恢复 CLI 与 cron、上线检查清单） |

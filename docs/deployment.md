@@ -28,6 +28,9 @@
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
 | `ZEUS_AUDIT_MAX_BYTES` | `67108864`（64MiB） | 活动审计文件的轮转阈值；`0`/`off`/`unlimited` = 不轮转（**需自行接 logrotate，否则迟早写满盘**） |
 | `ZEUS_AUDIT_KEEP` | `5` | 轮转后保留的旧代数（`<file>.1` … `<file>.<keep>`）；磁盘总上界 = `maxBytes × (keep+1)` |
+| `ZEUS_INTENT_RETENTION` | `retain` | deferred #42：决策记录出窗策略。`retain`（默认）= 已了结意图全部留在状态文件（历史行为）；`archive` = 出窗记录移到状态文件旁的 `intent-archive.jsonl`（追加式、按 intentId 去重、重启重建索引，replay/approve-resume 经归档继续可用）；`evict` = 直接删除（幂等性变成窗口内语义，replay 404 会带 `evicted: true` 标记）。非法值直接拒启。只对 `ZEUS_STATE_FILE` 生效 |
+| `ZEUS_INTENT_RETENTION_MAX_ENTRIES` | `10000` | 出窗数量条件：状态表里已了结意图超过该值时，最老的出窗（优先级低于时间窗条件与活跃引用保护） |
+| `ZEUS_INTENT_RETENTION_WINDOW_MS` | `2592000000`（30 天） | 出窗时间条件：创建早于该窗口的已了结意图出窗 |
 | `ZEUS_MAX_CONCURRENT_BRANCHES` | 未设置（=无界） | E1.5 进程内在途分支上界（跨意图；一个进程一个 orchestrator）。设了就限流，溢出分支按 `branchQueueLimit` 排队或被拒；**值非法直接拒启**（被悄悄忽略的上限看起来像保护存在） |
 | `ZEUS_BRANCH_QUEUE_LIMIT` | 未设置（=等待无限） | 允许排队等槽的分支数；`0` = 不排队，槽满即拒（泄压优先于排队） |
 | `ZEUS_MAX_CONCURRENT_PER_VASSAL` | 未设置（=不分流） | #9 背压分流的**每 Agent 饱和线**（≥1）。设了才启用分流：自动选路时把已在途数达到该线的执行 Agent **改派给同技能的其他提供者**；它**不是**每 Agent 并发硬上限（限流是 `ZEUS_MAX_CONCURRENT_BRANCHES` 的职责），且必须低于全局上界才有空闲可派，否则分流永不触发。显式点名的 `vassals` 是硬绑定，永不被改派。非数字或 `<1` 拒启 |
@@ -271,6 +274,14 @@ node dist/vault/cli.js restore --map backups/state.map.json \
 容器内同理，只是路径换成 `/data/kernel-state.json`（`docker exec` 进去跑，或把 `/data` 卷挂出来再跑）。
 
 白名单**逐个点名**、绝不目录遍历：指向整个数据目录会把无界增长的 `audit.jsonl` 与 `.tmp` 一起卷进备份。点名的文件缺失/是软链/是二进制 → 出图即拒（静默漏掉你要的那个文件比没有备份更坏）。**所以别把文件名写死在脚本里猜**——照上面用 `basename "$ZEUS_STATE_FILE"`，它由 `ZEUS_STATE_FILE` 决定，`.env.example` 与镜像里默认都是 `kernel-state.json`。
+
+`ZEUS_INTENT_RETENTION=archive` 时，出窗记录落在状态文件旁的 `intent-archive.jsonl`（追加式、可恢复、**无界增长**）：把它也加进白名单，与状态文件同目录同卷：
+
+```bash
+node dist/vault/cli.js backup \
+  --files-root "$STATE_DIR" --files "$STATE_NAME,intent-archive.jsonl" \
+  --out-dir backups --name state
+```
 
 注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 数据永久丢失，无托管后门**（见 design-vault.md §9 非目标）。
 
