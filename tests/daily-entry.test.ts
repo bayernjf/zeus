@@ -180,6 +180,18 @@ beforeAll(async () => {
     req.on('data', chunk => (raw += chunk));
     req.on('end', () => {
       const rpc = JSON.parse(raw || '{}') as { id?: unknown; method?: string };
+      if (req.url === '/v1/chat/completions') {
+        // A loopback OpenAI-compatible endpoint, so the --model path is exercised
+        // through the real backend (fetch, JSON parsing, choice extraction) without
+        // anything leaving this machine.
+        res.writeHead(200, { 'content-type': 'application/json' }).end(
+          JSON.stringify({
+            choices: [{ message: { content: '{"choice":"deployment-health","confidence":0.9}' } }],
+            usage: { prompt_tokens: 40, completion_tokens: 12 },
+          }),
+        );
+        return;
+      }
       const failing = req.url?.startsWith('/failing-agent/');
       const task = {
         kind: 'task',
@@ -368,5 +380,21 @@ describe('npm run daily', () => {
     expect(result.code, result.stderr).toBe(0);
     expect(result.stdout).toContain('chosen by local rules');
     expect(result.stdout).toContain('**Note** `--model` was passed but no decision backend is configured');
+  });
+
+  it('resolves a CJK instruction once a backend is reachable, and says the model chose it', async () => {
+    const root = tempRoot('model-cjk');
+    const result = await runDailyCli(
+      ['--root', root, '--agent', agentUrl('demo-agent'), '--state', join(root, 'state.json'), '--model', '--record', 'cjk.md', '整理今天的部署状态'],
+      cleanEnv({
+        ZEUS_LLM_BASE_URL: `http://127.0.0.1:${agentPort}/v1`,
+        ZEUS_LLM_API_KEY: 'loopback-key',
+        ZEUS_LLM_MODEL: 'fake-chat',
+      }),
+    );
+    expect(result.code, result.stderr).toBe(0);
+    expect(result.stdout).toContain('**Intent** `deployment-health` — chosen by llm / fake-chat, confidence 0.900');
+    expect(result.stdout).toContain('the local ranker found no lexical match');
+    expect(readFileSync(join(root, 'cjk.md'), 'utf8')).toContain('**Intent** `deployment-health`');
   });
 });
