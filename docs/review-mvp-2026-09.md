@@ -1,6 +1,6 @@
 # Zeus 项目级评审：功能性 / 完整度 / 可上线（MVP 判定）
 
-> 状态：**现行（评审报告 v0.28，2026-10-06，证据补强轮（评审对象：Active work 140–141，基线现测 1223 总量 / 1223 绿 / 0 失败 / 112 文件、冒烟 42/42 复跑、doc-consistency 17/17、typecheck / lint / lint:secrets 各自 exit 0）：两个判定维持——核心 MVP ✅ / 可上线 ❌。自托管设计稿 §7 六步全部完成、P0 八步试点实跑全过（Active work 138，含两条装配缺陷的现场修复）、P1 `watch` HTTP 操作者面落地（Active work 139），P1 仅剩 TUI/Web watch 专属控件；仓库外关口集合不变，库内 B-44 保留策略批仍开放）**
+> 状态：**现行（评审报告 v0.29，2026-10-07，库内能力完备度推进轮（评审对象：Active work 142–144，基线现测 1270 总量 / 1270 绿 / 0 失败 / 117 文件、冒烟 42/42 复跑、doc-consistency 17/17、typecheck / build / lint / lint:secrets 各自 exit 0、三条验收脚本 9/9·7/7·7/7）：两个判定维持——核心 MVP ✅ / 可上线 ❌。deferred #19 入站 A2A 面与 deferred #18 MCP streamable HTTP 传输层提前实现（方向已固化项按 #6 先例落地），feature-inventory §4「已实现但未接线」0 项维持；库内可一口气推进项收窄为 #36 迁移与评审刷新本身，其余全挂仓库外动作或外部触发。上一条 v0.28（2026-10-06，证据补强轮（评审对象：Active work 140–141，基线现测 1223 总量 / 1223 绿 / 0 失败 / 112 文件、冒烟 42/42 复跑、doc-consistency 17/17、typecheck / lint / lint:secrets 各自 exit 0）：两个判定维持——核心 MVP ✅ / 可上线 ❌。自托管设计稿 §7 六步全部完成、P0 八步试点实跑全过（Active work 138，含两条装配缺陷的现场修复）、P1 `watch` HTTP 操作者面落地（Active work 139），P1 仅剩 TUI/Web watch 专属控件；仓库外关口集合不变，库内 B-44 保留策略批仍开放）**
 > 评审方法：PRD 逐条核对（代码 + 测试证据）、全量验证实跑（vitest / tsc / build）、容量压测实跑（四场景）、部署/运行入口与制品面检查（Dockerfile / serve.ts / RSK 工具）。**v0.9 追加两问法**：① 每条支柱不查"有没有实现"，查"操作者从文档出发能不能走到它"（grep 到动词的**读取方**才算执行点）；② 首跑路径在**编译产物真进程**上按 `.env.example` 原样跑，并做 A/B 对照定位因果。
 > **⚠️ 下面这句 v0.4 结论已被 v0.9 改判，保留只为追溯"一句过期陈述如何被逐份继承"**：**库内"内核 + 可部署制品"级 MVP 已达成——v0.1 所列 5 个硬阻塞在代码/制品侧均已有对应实现；产品级"可上线 MVP"仍未达成，但剩余关口已全部是仓库外验收动作（真机 docker build/run、真机执行 Agent 部署与 loom 联调、RSK 实际托管/公钥发布、Jev key。**push 后云端 CI 这条已于 2026-09-25 销项，见下方 v0.6**），库内已无 P0 功能缺口。**
 
@@ -330,6 +330,35 @@
 - **两个判定都不变**：核心 MVP ✅（六步是 P1/P2 能力增强与操作者面，不是核心缺口）；可上线 ❌（证据增强但仓库外关口集合不变）。
 - **可上线剩余 = 仓库外动作**（真实部署与 RSK 带外公告 / loom 联调 / ≥3 真实 Agent 阈值 / 真实生产卷，A2–A5 + B 系列，均不变）**+ 库内 B-44 保留策略批**（v0.26 登记，未闭合）；另加 P1 的小尾巴 TUI/Web watch 控件（不阻塞）。
 - **不声称 P1 试点已完成**：P0 的「成功定义」表（连续 14 天真实使用等）仍属使用期事项；本轮证明的是能力可跑 + 面可达，不是长期可靠性。
+
+## v0.29 补证（2026-10-07，评审对象：Active work 142–144（B-44 保留策略半修 + 反思与观测批 + 入站 A2A 面 & MCP streamable HTTP 批）：**核心 MVP ✅ / 可上线 ❌ 维持**；库内功能面连续三轮零缺口——PRD 55 行 / P0 26/26、feature-inventory §4「已实现但未接线」0 项；本轮实现 deferred #19 入站 A2A 面与 deferred #18 MCP streamable HTTP 传输层（两处"方向已固化、实现待触发"项按 #6 先例提前落地），库内能一口气推的清单进一步收窄为纯文档/纯本机取证与仓库外动作）
+
+> 本轮定位：v0.28 之后是三批库内推进——Active work 142（B-44 半修：E1.7 并发指标改为有界分支历史，派发边际成本 12.07× → 0.38×）、143（反思与观测批：结构化日志 JSON lines 契约 + deferred #40 只读失败归因 + deferred #28 状态列冲突检测器入库 + deferred #42 出窗归档设计稿）、144（本评审直接取证的对象：deferred #19 入站 A2A 面 + deferred #18 E3.4 MCP streamable HTTP 传输层，两件都是"裁定已固化、实现待触发"项，按 #6 先例（不等触发先做出防护机制）提前落地）。这仍是**能力完备度推进与取证**，不翻转任何需求行（PRD 55 行 / P0 26/26 维持）。方法沿用 v0.9 问法：库内能力逐一核对接线位，新增面用独立测试文件与真进程冒烟背书。
+
+### A. 验证基线（本机实跑，2026-10-07）
+
+| 项 | 读数 | 备注 |
+|---|---|---|
+| 全量测试 | **1270 总量 / 1270 绿 / 0 失败 / 117 文件** | `npx vitest run`；较 v0.28 的 1223/112 净增 +47/+5（本批 +21：http-realm-mcp 11 + http-inbound-a2a 10；余为 142/143 批累计） |
+| 冒烟 | **42/42 复跑** | `npm run smoke:core`，覆盖 serve 启动/拒启日志改动 |
+| doc-consistency | **17/17** | 本批全库 20+ 处锚点随行号位移复钉（/mcp、入站 A2A、audit 枚举、tui tokens） |
+| typecheck / build / lint / lint:secrets | 各自 exit 0 | lint:secrets 289 文件 clean |
+| 三条验收脚本 | **execute-delegation 9/9、intent-recognize 7/7、tui-recognize 7/7** | 本批补跑，确认本批路由/装配改动未破坏既有真进程面 |
+| PRD 逐行计数 | **55 行 / P0 26/26** | 与 v0.28 同集合 |
+| feature-inventory §4 | 「已实现但未接线」**0 项** | 维持 |
+
+### B. 本批新增能力的功能性核对
+
+1. **入站 A2A 面（deferred #19，提前实现）**：`GET /.well-known/agent-card.json` 公开 Zeus agent card（形状与出站要求执行 Agent 的一致，A2A 超集契约，无自家 fealty）；同路径 `POST` bearer 保护 JSON-RPC `tasks/send` 落 H2 意图面（复用 `POST /api/intents` 的 fanOut 内核路径与同一根审计流）。三问落点：谁能派给我 = 调用方 `x-zeus-caller-card` header 过与注册同源的 fealty 形状闸（`fealtyOathProblem` 由 registry 导出复用，缺卡则 bearer 即驾驶员本人，fail-closed）；落在哪个域 = `realm` 缺省 personal，enterprise 走 DomainGrant 现行规则；谁为结果负责 = 审计责任链延伸（`inbound-task-accepted`/`inbound-task-refused` 入 AUDIT_DECISIONS 单一来源 + TUI 语义 token + 审计查询白名单自动跟随），调用方 taskId 兼作幂等键。**不做**入站 SSE（与出站对称：回执 = tasks/send 响应 + GET /api/intents/:id 结果查询）。测试 10 例覆盖卡片公开、鉴权矩阵、fealty 拒门、skills 校验、realm 缺省、needs-driver → input-required 映射。
+2. **MCP streamable HTTP 传输层（deferred #18 裁定落地）**：`GET /mcp` 公开元信息（protocolVersion/capabilities/serverInfo，**零 realm 数据**——不泄挂载状态）+ `POST /mcp` bearer 保护 JSON-RPC 喂同一传输无关 handler（stdio 与 HTTP 共用 `createRealmMcpHandler`，无 SDK 依赖设计约定保持）；会话级 actor 经 `x-zeus-realm-actor` header（§6.5 裁定 1：宿主声明调用方身份，**仅可收窄**宿主预连接白名单，缺省 anonymous）；realmIds 从 boot 连接列表装配（与 stdio 宿主同一来源）。测试 11 例覆盖未装配不挂载、公开元信息无泄漏、401、握手协商、actor 透传、白名单越界 -32002、路径不外泄、工具成功读、method-not-found、坏 JSON 400。
+3. **审计与登记纪律**：两条入站 decision 走 AUDIT_DECISIONS 单一来源（`dispatcher.ts` 末尾追加，查询白名单与 TUI token 表同步跟随）；新增环境变量 `ZEUS_PUBLIC_URL`（卡片广告基址）已登记 .env.example / deployment.md / config-surface 闸门。
+
+### C. 对判定的影响（说清楚，不夸大）
+
+- **两个判定都不变**：核心 MVP ✅（新增面是能力完备度与接口可达，不是核心缺口）；可上线 ❌（仓库外关口集合不变）。
+- **可上线剩余 = 仓库外动作**：① 真机部署 pr-helper 后跑验收 #6 标准 A2A 客户端（不带 x-zeus-*）真机打入站面——**本批后已有可打的入站端点**，这是第一个能在真机闭合的仓库外动作；② RSK 托管与公钥带外公告（deferred #7 闸门，R1/R2 前置）；③ Zeus↔loom 真机联调（注册卡片 → 派发 plan → 收 SSE 战报；loom 反向派任务给 Zeus 现在有入站面可落）；④ ≥3 真实 Agent 的背压阈值调参（#9 触发条件）；⑤ bayjf R2 公开（签名链闸门）。
+- **库内可一口气推进项已近枯竭**：剩余纯库内项仅 #36 `noUncheckedIndexedAccess` 迁移（400 处，语义变更型、价值/风险比一般）与评审刷新本身；deferred 未销项全部挂外部触发或仓库外。
+- **不声称入站 A2A 已对接真实上游**：身份闸当前为形状校验 + bearer，真实信任锚（在册名册验签）留待 loom/公开执行 Agent 作为真实调用方出现（deferred #19 触发条件语义不变，本批只是把机制先做出来）。
 
 ## v0.28 补证（2026-10-06，评审对象：Active work 140–141：**核心 MVP ✅ / 可上线 ❌ 维持**；P1 三条操作者通道与调用方调度器全部就位，"无人值守"闭环首次在进程外可驱动；本轮零需求翻转、零运行时缺陷，产出是 P1 收尾与真进程取证）
 
@@ -1156,6 +1185,7 @@ boot seed/realm 连接不产生审计事件、运行时 dispatch 才审计——
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| v0.29 | 2026-10-07 | **库内能力完备度推进轮，判定维持**（对象 Active work 142–144）：deferred #19 入站 A2A 面（`/.well-known/agent-card.json` 公开卡片 + bearer 保护 JSON-RPC tasks/send 落 H2 意图面、x-zeus-caller-card fealty 形状闸 fail-closed、inbound-task-* 入审计单一来源）与 deferred #18 MCP streamable HTTP 传输层（GET /mcp 公开元信息零泄漏 + POST /mcp bearer 保护喂同一传输无关 handler、x-zeus-realm-actor 会话级 actor 仅可收窄）按 #6 先例提前实现；基线 **1270/117**、冒烟 42/42、doc-consistency 17/17、三条验收脚本 9/9·7/7·7/7；核心 MVP ✅ / 可上线 ❌ 维持；库内可一口气推进项收窄为 #36 迁移与评审本身 |
 | v0.20 | 2026-09-29 | **仅销项 A1，判定不变**：对线上 pr-helper 实跑真实执行 Agent 注册 + 真机扇出 **15/15 exit 0**。先前"A1 真机扇出（凭证与出网许可）"归因**被证伪**——原判据 `positions≥1` 是给投票型 Agent 的，pr-helper 是执行型（回报内容、不投票），`positions=0` 是正确结果，本轮**全程未用到任何凭据**。修法：判据可选化（`EXPECT_STANCE=0/1`，执行型断言"带回内容"、立场与 claim 显式 SKIP）+ `PARAMS` 透传技能参数（顺带修掉 runner 发错 owner/repo 的缺陷）。M3 的"真实外部执行 Agent 受调度 ❌"翻转为 ✅（M3 现只剩 Zeus↔loom 联调）。范围界定：pr-helper 在 plan 模式作答，证明的是真机扇出闭环与内容回传，不含对 GitHub 的不可逆写。活基线 791/83、冒烟 36/36 未变 |
 | v0.1 | 2026-09-22 | 首次项目级评审：功能性/完整度/可上线三维度 + MVP 判定（内核级达成、产品级未达成）+ 阻塞项与最小路径 |
 | v0.2 | 2026-09-22 | 六切片批次后销项批注：E2.2/E6.2 硬阻塞销项、E5.3/E1.7 大幅缓解（库内落地、装配/HTTP 待接线）、S3 DAG 与决策后端落地；产品级 MVP 判定不变（部署形态/生产密钥/真机/push 仍阻塞）；基线升至 166 测试 / 22 文件 |

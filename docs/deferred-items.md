@@ -10,7 +10,7 @@
 
 ### #41 企业形态：隔离实例 vs 同实例多租户
 - 议题：一家公司用 zeus 时，是**每个客户（或每个团队）一套进程**（隔离实例），还是**一套进程内跑多个租户**（同实例多租户）。这条决定会决定认证面、状态文件形状、备份清单粒度和运维模型，所以必须显式记，不能靠"以后再说"默认成某一边。
-- **现状（代码级，2026-10-05 测）**：租户**模型**已在库内——三级范围（org/部门/成员）与跨域一次性授权判定见 `src/realm/authorization.ts:74 #decideRealmAccess`（#6 销项时落地）。但进程**只有一套身份**：H2 全操作面的挂载条件是单个 `ZEUS_INTERNAL_TOKEN`（注入 `src/http/serve.ts:165 #internalToken`，比较 `src/http/server.ts:285-287 #internalToken`），一份状态文件、一份审计文件。实测该面共 **78 条路由**，其中 3 条公开、**75 条共用同一个 bearer**。也就是：今天的实际隔离档位就是"一实例一租户"，租户范围只在**数据域内**收窄可见性，不区分"哪个客户在调这个进程"。
+- **现状（代码级，2026-10-05 测）**：租户**模型**已在库内——三级范围（org/部门/成员）与跨域一次性授权判定见 `src/realm/authorization.ts:74 #decideRealmAccess`（#6 销项时落地）。但进程**只有一套身份**：H2 全操作面的挂载条件是单个 `ZEUS_INTERNAL_TOKEN`（注入 `src/http/serve.ts:165 #internalToken`，比较 `src/http/server.ts:305-306 #internalToken`），一份状态文件、一份审计文件。实测该面共 **78 条路由**，其中 3 条公开、**75 条共用同一个 bearer**。也就是：今天的实际隔离档位就是"一实例一租户"，租户范围只在**数据域内**收窄可见性，不区分"哪个客户在调这个进程"。
 - **A 隔离实例（当前倾向）**：
   - 代价：部署数量随客户数线性增长（每客户一套密钥、状态卷、备份计划、`ZEUS_*` 配置）；没有跨客户统一盘点/升级看板；版本要滚动 N 次；客户数上去之后运维是主要成本。
   - 收益：设计约束 4（个人域与企业域不互通）由**进程边界**保证，而不是由一段判定代码保证——判定代码出 bug 也越不过去；跨租户串数据这类事故的最坏情况被限制在单个进程内；一个客户的正文、名册、审计不会落在另一个客户的卷上；现有配置面**零改动**。
@@ -152,6 +152,7 @@
 - **为什么不在本批一起做**：接一个假 actor 进去只能证明"这段代码能被调用"，证不了真实执行 Agent 会带什么身份形态（会话级？条目级？），那是猜。
 - **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-realm 执行 Agent 出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-realm:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑；同时定 `tools/call` 是否与 `resources/read` 共用同一份 realmId 白名单。
 - **裁定（2026-10-03，方向固化，未销项）**：四问定案写入 [design-realm.md](design-realm.md) §6.5——① 主体 = 会话级 actor（宿主显式声明，缺省 anonymous）；② `zeus-realm:` URI 不编码租户；③ 不与签发凭证合并（读取路径边界 = 宿主白名单，写路径已有签名且一次性的 DriverWriteGrant）；④ `tools/call` 与 `resources/read` 共用同一份 realmId 白名单（现状固化）。实现仍随 E3.4 正式暴露立项。
+- **2026-10-07 传输层先落地（Active work 144，按 #6 先例"方向已固化、不等触发先做"）**：E3.4 MCP streamable HTTP 传输层已实现——`GET /mcp` 公开元信息（protocolVersion/capabilities/serverInfo，**零 realm 数据**）+ `POST /mcp` bearer 保护 JSON-RPC 喂同一传输无关 `createRealmMcpHandler`（stdio 与 HTTP 共用，零 SDK 依赖约定保持）；`x-zeus-realm-actor` header 实现 §6.5 裁定 ①（会话级 actor，effectiveRealmIds = 宿主白名单 ∩ actor.realmIds，**仅可收窄**，缺省 anonymous）；realmIds 从 boot 连接列表装配（与 stdio 宿主同一来源）。`tests/http-realm-mcp.test.ts` 11 例全绿。**正式立项触发（首个 read-realm 执行 Agent 出现）不变**，本批只做机制、不做对端。
 
 ### #19 入站 A2A 面（外部 Agent 调不进 Zeus）
 - **缺口**：Zeus 只有**出站** A2A（拉卡片、`tasks/send`、SSE 回读、`tasks/cancel`）。`src/http` 里既没有 `/.well-known/agent-card.json`，也没有任何 `tasks/*` 路由——即**别的 Agent 无法把任务派给 Zeus**，也不存在一张可供别人校验的 Zeus 卡片。v0.9 §A 判过这条（"没有入站面"），但**当时没进本清单**，于是 2026-09-25 复核才发现它是"评审说过、没人接"的失物。
@@ -159,6 +160,7 @@
 - **触发条件**：① Zeus↔loom 真机联调时 loom 需要**反向**派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent 调用 Zeus 的聚合能力；③ 出现"多 Zeus 实例协作"的需求。
 - **建议做法（决定后）**：发一张 Zeus 自己的 agent card（形状与 fealty 与我们要求执行 Agent 的一致，吃自己的狗粮），入站 `tasks/send` 落到 H2 的意图面并复用同一根审计事件流。
 - **裁定（2026-10-03，方向固化，未销项）**：入站 A2A 面设计裁定见 [design-inbound-a2a.md](design-inbound-a2a.md) v0.1——Zeus 发布自己的 agent card（`/.well-known/agent-card.json`，形状与要求执行 Agent 一致）、入站 `tasks/send` 落 H2 意图面、三问暂定答案（上游 fealty 验签 / `realmSource` 显式声明缺省个人域 / 审计责任链延伸）、不做入站 SSE。实现仍挂触发条件①②③。
+- **2026-10-07 机制先落地（Active work 144，按 #6 先例）**：入站面已实现——`GET /.well-known/agent-card.json`（公开 Zeus 卡片，形状与出站一致、无自家 fealty）+ 同路径 `POST`（requireBearer，JSON-RPC `tasks/send` 落 H2 意图面，复用 fanOut 内核路径与审计流）；`x-zeus-caller-card` 过与注册同源的 fealty 形状闸（`fealtyOathProblem` 由 registry 导出复用；无卡则 bearer 即驾驶员本人，fail-closed 403+审计）；`realm` 缺省 personal；调用方 taskId 兼作幂等键；审计 `inbound-task-accepted`/`inbound-task-refused` 入 AUDIT_DECISIONS 单一来源；回标准 A2A 收据 `{kind: "task", id, contextId, status}`；不做入站 SSE（与出站对称）。`tests/http-inbound-a2a.test.ts` 10 例全绿。**真实信任锚（在册名册验签）仍留待 loom/公开执行 Agent 作为真实上游出现**——触发条件①②③语义不变。
 
 ### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致 ✅ 已销项（2026-09-26）
 - **原缺口**：`src/state/boot.ts` 对非数字阈值走 `Number.isFinite` 判断，不通过就**静默不写 config**、退回内置默认；而 E1.5 的并发/队列参数（`ZEUS_MAX_CONCURRENT_BRANCHES` 等）是**非法值直接拒启**。同一类"操作员把 env 写错"的失效，进程给两种答案。

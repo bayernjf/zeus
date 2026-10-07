@@ -10,7 +10,7 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 
 ## 1. 为什么只有 P0 能跑（出处）
 
-内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:6-8 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2666 #keepalive`、编排分支超时 `src/orchestrator/orchestrator.ts:721-727 #setTimeout`、派发受理超时 `src/dispatch/client.ts:93 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
+内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:6-8 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2851 #keepalive`、编排分支超时 `src/orchestrator/orchestrator.ts:721-727 #setTimeout`、派发受理超时 `src/dispatch/client.ts:93 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
 
 同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:665-682 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-32 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:148 #executionDelegationNonces`）。
 
@@ -54,7 +54,7 @@ node dist/http/serve.js
 curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/domains | jq
 ```
 
-- **退出判据**：`realms[]` 至少一条，字段只有 `realmId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:1754-1762 #contentDigest`——这个视图**不返回根目录字符串**）。
+- **退出判据**：`realms[]` 至少一条，字段只有 `realmId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:1929 #contentDigest`——这个视图**不返回根目录字符串**）。
 - **可执行断言**：把上面 JSON 存盘，`grep -c "$HOME/Documents" <file>` 必须为 **0**。这是"边界是目录，定位符只有 realmId + 根相对 itemId"的操作者侧核对（MCP 侧的实测口径见 [mcp-integration.md](mcp-integration.md) §1.4）。
 - **现在跑不了的部分**：无。
 
@@ -89,7 +89,7 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
   CARD_URL=https://<你的 Agent>/api/a2a/agent-card [AGENT_TOKEN=…] SKILL=<技能 id> \
   npm run acceptance:fanout
   ```
-  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataRealms` 与 `REALM` 不匹配会被拒（这是 fealty 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:387 #reinstate`）。共用部署上不要带它。
+  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataRealms` 与 `REALM` 不匹配会被拒（这是 fealty 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:555 #reinstate`）。共用部署上不要带它。
 
 ### P0-5 让一次冲突真的走人工裁决
 
@@ -100,8 +100,8 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
 curl -fsS -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/escalations/<id>/approve | jq
 ```
 
-- **退出判据**：approve 后 `GET /api/intents/<id>/replay` 里出现人工裁决行（`src/http/server.ts:656-663 #approve` 把裁决回交编排器）。
-- **证据位置**：`GET /api/audit?decision=<裁决类决策名>`（`decision` 只接受登记过的枚举，传别的会 400 并列出全集 `src/http/server.ts:1715-1716 #AUDIT_DECISIONS`）。
+- **退出判据**：approve 后 `GET /api/intents/<id>/replay` 里出现人工裁决行（`src/http/server.ts:827-835 #approve` 把裁决回交编排器）。
+- **证据位置**：`GET /api/audit?decision=<裁决类决策名>`（`decision` 只接受登记过的枚举，传别的会 400 并列出全集 `src/http/server.ts:1883-1884 #AUDIT_DECISIONS`）。
 
 ### P0-6 execute 一次，用真票据
 
