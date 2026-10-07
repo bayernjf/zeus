@@ -33,7 +33,8 @@
 - **触发条件**：出现第一个连续运行 ≥2 周且有真实使用的实例（自托管试点 P0 之后即满足），或实测到状态文件 > 50MB / 重启恢复 > 2s / `GET /api/intents/:id` 因集合膨胀而变慢。
 - **翻转条件**：若试点用户明确表示"旧决策不需要留、机器空间优先"，则 B 升为默认，并按 B 的代价条目同步改口三处文档。
 - **联动**：#13（内核状态已在备份清单覆盖内，删记录等于缩小可恢复面）、**#40**（执行后反思闭环要读历史决策，删掉就没有训练数据）、#41（隔离实例形态下每个实例的历史独立，封顶策略可按实例不同；同实例多租户下"谁的历史留多久"会变成租户属性）。
-- **2026-10-07 设计稿已出（Active work 143），实现仍待触发条件**：[design-intent-retention.md](design-intent-retention.md) 落定方案 C 全文——append-only JSONL 至 `<stateDir>/intent-archive.jsonl`，出窗窗口=条数 1,000 与 30 天双条件先到先出，**被 open 升级项引用或曾被裁决的条目不出窗**；读取面=决策回放 / 幂等重放 / `findIntentForBranchRun` 查状态文件未中查归档；归档纳入备份清单与 #13 原子保存批次；B 开关仅用户显式省空间时启用且 PRD/README/审计三处文档同步改口幂等承诺；§6 给验收口径（含缺陷植入对照）。触发条件未到（连续运行 ≥2 周真实实例或状态文件 >50MB / 恢复 >2s / 读变慢），本批只落稿不落码。
+- **2026-10-07 设计稿已出（Active work 143）**：[design-intent-retention.md](design-intent-retention.md) 落定方案 C 全文——append-only JSONL 至 `<stateDir>/intent-archive.jsonl`，出窗窗口=条数 1,000 与 30 天双条件先到先出，**被 open 升级项引用或曾被裁决的条目不出窗**；读取面=决策回放 / 幂等重放 / `findIntentForBranchRun` 查状态文件未中查归档；归档纳入备份清单与 #13 原子保存批次；B 开关仅用户显式省空间时启用且 PRD/README/审计三处文档同步改口幂等承诺；§6 给验收口径（含缺陷植入对照）。
+- **2026-10-08 已实现（Active work 145，按 #6"方向已固化、不等触发先做"先例提前落地）**：`src/state/archive.ts`（`selectArchivable` 双条件出窗 + 活跃引用/已裁决保护 + `IntentArchive` 追加式 JSONL 去重重建索引 + `parseRetentionMode`）+ Orchestrator 幂等回放三级查找（内存→在途→归档，归档命中零派发）与 `findIntentForBranchRun` 归档回退 + `GET /api/intents/:id/replay` 归档读取面（501/evict 404 降级）+ boot 装配与 `ZEUS_INTENT_RETENTION[_MAX_ENTRIES|_WINDOW_MS]` 接线；22 例测试全绿含缺陷植入对照；B 开关（evict）三处文档改口已于 2026-10-08 随本批完成（PRD E1.5 / README 编排引擎行 / audit B-44 措辞，与实现行为一致）。**本条销项**（默认 A 的无限增长与 B 的省空间开关都有了明确工程答案；残留的"翻转条件"即原条文的翻转条件，无需再登记）。
 
 ## 缓做项
 

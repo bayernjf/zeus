@@ -51,7 +51,7 @@
 | 目录快照投影 | `src/registry/roster.ts` | 注册表 → 不可变 internal / public 双投影，只重塑与裁剪不造字段；`active` / `revoked` 两态 attestation |
 | 派发器 | `src/dispatch/` | JSON-RPC + SSE 客户端（`send` / `sendSubscribe` / `cancel`）、按数据策略脱敏、派发前吊销阻断（不发请求也不发凭证）、审计 sink 与吊销审计桥 |
 | 人工处理队列 | `src/oversight/` | 收集缺参升级与冲突升级，支持 approve / reject / resolve；reject 联动取消对端任务；裁决立场回交编排器；可持久化 |
-| 编排引擎 | `src/orchestrator/` | 并行派发与汇聚、多流合并、确定性规则聚合、冲突检测与升级、对抗复核、按任务 ID 幂等重放、取消传播、并发上限与有界队列、决议回写、补参重派、离线决策回放、完整 DAG、并发指标 |
+| 编排引擎 | `src/orchestrator/` | 并行派发与汇聚、多流合并、确定性规则聚合、冲突检测与升级、对抗复核、按任务 ID 幂等重放（默认永久，`evict` 省空间模式下为窗口内）、取消传播、并发上限与有界队列、决议回写、补参重派、离线决策回放、完整 DAG、并发指标 |
 | 能力目录 | `src/skills/` | 显式规格校验（版本 / 封闭权限词汇 / 依赖须已注册且无环）、多版本共存与弃用标记、检索与组队解析（歧义不静默选边）、安装/卸载/权限收窄、能力认证台账；派发路径读取目录裁决可用提供者 |
 | 决策后端 | `src/decision/` | 模型无关端口 + 适配器 + 降级；规则不收敛时的置信闸门仲裁 |
 | 数据域 | `src/realm/` | `FsRealmStore` 的 connect / manifest / search / read / write、确定性 realmId、内容摘要基线、路径穿越与符号链接双检、原子写；两型均可连接且类型如实存储；企业域写需签名且一次性的授权凭证，只读连接即使持凭证仍拒写；三级租户范围与跨域授权判定；只读 MCP 服务端（resources + tools）与 stdio 宿主 |
