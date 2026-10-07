@@ -35,9 +35,16 @@ import { kernelStats } from '../state/stats.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
+import { createLogger } from '../util/logger.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
+
+// Structured operator log (feature-inventory 结构化日志). The audit trail keeps
+// its own JSONL spine (dispatchAudit below); this logger is for boot lifecycle,
+// refusal and transport failures. Level defaults to info until a level env is
+// decided (deferred candidate, not in scope here).
+const log = createLogger();
 
 async function main(): Promise<void> {
   // T-C: build the decision backend (Jev preferred, LLM fallback) and the
@@ -52,9 +59,7 @@ async function main(): Promise<void> {
   // boot here rather than mounting an org-visible realm.
   const realm = resolveRealmConfig(process.env);
   if (process.env.ZEUS_JUDGE_ENABLED && !decision.backend) {
-    process.stderr.write(
-      '[zeus-http] ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off\n'
-    );
+    log.warn('judge-disabled', 'ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off');
   }
   // E3.5 / deferred #14: the same Ed25519 key that seals the roster is this
   // process's driver key, so a write grant the kernel did not sign (or one a
@@ -64,10 +69,10 @@ async function main(): Promise<void> {
   const kernel = await bootKernel({
     driverSigner: signer,
     onAuditError: message => {
-      process.stderr.write(`[zeus-http] FAILED to persist an audit entry: ${message}\n`);
+      log.error('audit-persist-failed', message);
     },
     onStateSaveError: message => {
-      process.stderr.write(`[zeus-http] FAILED to persist kernel state after a consumed driver grant: ${message}\n`);
+      log.error('state-save-failed', message);
     },
     ...(process.env.ZEUS_STATE_FILE ? { stateFile: process.env.ZEUS_STATE_FILE } : {}),
     // A-01: the resolved config goes across whole; copying it by hand is how the
@@ -91,23 +96,25 @@ async function main(): Promise<void> {
       : {}),
   });
   if (decision.backend) {
-    process.stderr.write(
-      `[zeus-http] decision backend: ${decision.backendKind}/${decision.backend.model} ` +
-        `(arbitration=on, judge=${decision.judgeEnabled ? 'on' : 'off'})\n`
-    );
+    log.info('decision-backend', 'configured', {
+      kind: decision.backendKind,
+      model: decision.backend.model,
+      arbitration: true,
+      judge: decision.judgeEnabled,
+    });
   } else {
-    process.stderr.write('[zeus-http] decision backend: not configured (arbitration/judge off, rules-only)\n');
+    log.info('decision-backend', 'not configured (arbitration/judge off, rules-only)');
   }
-  process.stderr.write(
-    `[zeus-http] branch concurrency: ${concurrency.maxConcurrentBranches ?? 'unbounded'}` +
-      `${concurrency.branchQueueLimit !== undefined ? `, queue ${concurrency.branchQueueLimit}` : ', queue unbounded'}` +
-      `${concurrency.maxConcurrentPerVassal !== undefined ? `, per-vassal ${concurrency.maxConcurrentPerVassal}` : ', per-vassal unbounded'}\n`
-  );
+  log.info('branch-concurrency', undefined, {
+    maxConcurrentBranches: concurrency.maxConcurrentBranches ?? 'unbounded',
+    branchQueueLimit: concurrency.branchQueueLimit ?? 'unbounded',
+    maxConcurrentPerVassal: concurrency.maxConcurrentPerVassal ?? 'unbounded',
+  });
   if (kernel.auditFile) {
     const ceiling = kernel.auditMaxBytes === Number.POSITIVE_INFINITY
       ? 'no ceiling'
       : `${Math.round((kernel.auditMaxBytes ?? 0) / 1048576)}MiB x ${kernel.auditKeep ?? 0} kept`;
-    process.stderr.write(`[zeus-http] audit log: ${kernel.auditFile} (${ceiling})\n`);
+    log.info('audit-log', undefined, { file: kernel.auditFile, ceiling });
   }
 
   // The operator's first question after "is it up" is "which realms did it
@@ -115,27 +122,33 @@ async function main(): Promise<void> {
   // bearer face, which presupposes knowing the bearer face exists.
   for (const connection of kernel.realmStore?.connections() ?? []) {
     const scope = connection.tenant
-      ? ` tenant=${[connection.tenant.org, connection.tenant.department, connection.tenant.member].filter(Boolean).join('/')}`
-      : '';
-    process.stderr.write(
-      `[zeus-http] realm ${connection.realmId} type=${connection.type}${scope}` +
-        `${connection.readOnly ? ' read-only' : ' writable'} at ${connection.root}\n`
-    );
+      ? [connection.tenant.org, connection.tenant.department, connection.tenant.member].filter(Boolean).join('/')
+      : undefined;
+    log.info('realm-mounted', undefined, {
+      realmId: connection.realmId,
+      type: connection.type,
+      ...(scope !== undefined ? { tenant: scope } : {}),
+      writable: !connection.readOnly,
+      root: connection.root,
+    });
   }
-  process.stderr.write(
+  log.info(
+    'enterprise-writes',
     kernel.driverGrantAuthority === 'signed'
-      ? `[zeus-http] enterprise writes: accepting only driver grants signed by "${kernel.driverSigner?.keyId}"\n`
-      : '[zeus-http] enterprise writes: NO driver key configured - grants are checked for shape/realm/expiry only, so anything that can call write() can author its own authorization\n'
+      ? `accepting only driver grants signed by "${kernel.driverSigner?.keyId}"`
+      : 'NO driver key configured - grants are checked for shape/realm/expiry only, so anything that can call write() can author its own authorization'
   );
   if (kernel.stateFile) {
     if (kernel.restoredFromSnapshot) {
       const intents = kernel.snapshot?.orchestrator.intents.length ?? 0;
-      process.stderr.write(
-        `[zeus-http] restored kernel state from ${kernel.stateFile} ` +
-          `(vassals=${kernel.registry.listAll().length}, escalations=${kernel.oversight.list().length}, intents=${intents})\n`
-      );
+      log.info('kernel-state-restored', undefined, {
+        file: kernel.stateFile,
+        vassals: kernel.registry.listAll().length,
+        escalations: kernel.oversight.list().length,
+        intents,
+      });
     } else {
-      process.stderr.write(`[zeus-http] kernel state file ${kernel.stateFile} not found yet; will persist on shutdown\n`);
+      log.info('kernel-state-file-missing', undefined, { file: kernel.stateFile });
     }
   }
 
@@ -213,21 +226,21 @@ async function main(): Promise<void> {
   // which port to point a client at.
   const bound = app.server.address();
   const boundLabel = typeof bound === 'object' && bound !== null ? `${bound.address}:${bound.port}` : String(bound);
-  process.stderr.write(
-    `[zeus-http] listening on http://${boundLabel} (healthz, roster public` +
-      `${process.env.ZEUS_INTERNAL_TOKEN ? ', roster internal + H2 driver API' : ''})\n`
-  );
+  log.info('listening', undefined, {
+    address: `http://${boundLabel}`,
+    faces: `healthz, roster public${process.env.ZEUS_INTERNAL_TOKEN ? ', roster internal + H2 driver API' : ''}`,
+  });
 
   let shuttingDown = false;
   const shutdown = async (signal: string, exitCode = 0): Promise<void> => {
     if (shuttingDown) return;
     shuttingDown = true;
-    process.stderr.write(`[zeus-http] ${signal} received, draining...\n`);
+    log.info('shutdown-signal', undefined, { signal });
     try {
       await kernel.saveState();
-      if (kernel.stateFile) process.stderr.write(`[zeus-http] kernel state saved to ${kernel.stateFile}\n`);
+      if (kernel.stateFile) log.info('kernel-state-saved', undefined, { file: kernel.stateFile });
     } catch (error) {
-      process.stderr.write(`[zeus-http] failed to save kernel state: ${error instanceof Error ? error.message : String(error)}\n`);
+      log.error('kernel-state-save-failed', error instanceof Error ? error.message : String(error));
     }
     await app.close();
     process.exit(exitCode);
@@ -239,19 +252,22 @@ async function main(): Promise<void> {
   // once, losing everything since the last save. Route it through the same
   // drain-and-save path, and keep the non-zero exit so the failure is visible.
   process.on('uncaughtException', error => {
-    process.stderr.write(`[zeus-http] uncaught exception: ${error.stack ?? String(error)}\n`);
+    log.error('uncaught-exception', undefined, { stack: error.stack ?? String(error) });
     void shutdown('uncaughtException', 1);
   });
 }
 
 main().catch(error => {
   // A mistyped ZEUS_REALM_ROOTS, an unusable tenant string or an unwritable
-  // audit path are configuration facts, not bugs: print the one line that names
-  // what to change and leave the stack to everything else.
+  // audit path are configuration facts, not bugs: emit the one line that names
+  // what to change and leave the stack to everything else. The structured log
+  // keeps the same semantics: named event, error class, message, exit 1.
   if (error instanceof KernelBootError || error instanceof RealmError || error instanceof RskConfigError) {
-    process.stderr.write(`[zeus-http] refused to start: ${(error as Error).message}\n`);
+    log.error('boot-refused', (error as Error).message, { errorClass: error.constructor.name });
     process.exit(1);
   }
-  console.error(error);
+  log.error('boot-failed', error instanceof Error ? error.message : String(error), {
+    stack: error instanceof Error ? error.stack : undefined,
+  });
   process.exit(1);
 });
