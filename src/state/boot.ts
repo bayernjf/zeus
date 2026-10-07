@@ -32,6 +32,16 @@ import { normalizeTenant } from '../realm/tenant.js';
 import type { RealmAuditEntry } from '../realm/source.js';
 import type { RealmType, TenantScope } from '../realm/types.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
+import {
+  IntentArchive,
+  archiveFilePath,
+  selectArchivable,
+  DEFAULT_MAX_ENTRIES,
+  DEFAULT_WINDOW_MS,
+  type ArchivedIntentRecord,
+  type IntentArchiveLookup,
+  type RetentionMode,
+} from './archive.js';
 import { SkillRegistry } from '../skills/registry.js';
 import { MentorshipLedger } from '../skills/mentor.js';
 import { OrgRegistry } from '../org/registry.js';
@@ -109,6 +119,10 @@ export type KernelBoot = KernelComponents & {
   restoredFromSnapshot: boolean;
   /** The applied snapshot, or null on first boot / in-memory mode. */
   snapshot: KernelSnapshot | null;
+  /** deferred #42: out-window intent archive when retention is archive|evict. */
+  intentArchive?: IntentArchiveLookup;
+  /** deferred #42: effective retention mode (retain | archive | evict). */
+  retention: RetentionMode;
   /** Atomically persist live kernel state; a no-op without stateFile. */
   saveState(): Promise<void>;
 };
@@ -146,6 +160,19 @@ export type KernelBootOptions = {
   memoryAudit?: (entry: MemoryAuditEntry) => void;
   /** Audit sink for MCP connector lifecycle events. */
   connectorAudit?: (entry: ConnectorAuditEntry) => void;
+  /**
+   * deferred #42: decision-record retention. 'retain' (default) keeps every
+   * settled intent in the state file; 'archive' moves out-window records to
+   * `<stateDir>/intent-archive.jsonl` (append-only, idempotent reads keep
+   * working); 'evict' deletes them outright and documents idempotency as
+   * window-scoped. The mechanism lands in the kernel regardless; the default
+   * keeps today's behaviour until a real instance meets the design §5 trigger.
+   */
+  intentRetention?: RetentionMode;
+  /** deferred #42: settled-intent cap for the out-window condition. */
+  intentRetentionMaxEntries?: number;
+  /** deferred #42: time window for the out-window condition (ms). */
+  intentRetentionWindowMs?: number;
   /**
    * E1.2/E1.3 decision backend wired into the orchestrator. When present the S2
    * critic arbitration path is live (rule-inconclusive fan-outs consult it);
@@ -193,6 +220,16 @@ const noop = (): void => {};
 export async function bootKernel(options: KernelBootOptions = {}): Promise<KernelBoot> {
   const now = options.now ?? (() => new Date());
   const fetchImpl = options.fetchImpl;
+
+  const retention: RetentionMode = options.intentRetention ?? 'retain';
+  // deferred #42: the archive lives beside the state file. Constructed before
+  // the orchestrator so its read port can be injected; absent a state file or
+  // in retain mode there is nothing to archive.
+  let intentArchive: IntentArchive | null = null;
+  if (options.stateFile && retention !== 'retain') {
+    intentArchive = new IntentArchive(archiveFilePath(options.stateFile));
+    await intentArchive.loadIndex();
+  }
 
   const skillRegistry = new SkillRegistry(now);
   const mentorshipLedger = new MentorshipLedger(skillRegistry, now);
@@ -438,6 +475,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const orchestrator = new Orchestrator(registry.asVassalLookup(), dispatcher, {
     now,
     metrics,
+    ...(intentArchive ? { archive: intentArchive } : {}),
     onConflict: conflictsToDesk(oversight),
     // E6.1 (C-28): a branch that stops at input-required is a vassal asking the
     // driver for parameters. The desk's `ingest` had no caller anywhere in src,
@@ -659,12 +697,49 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     if (snapshot) applyKernelState(components, snapshot);
   }
   // Now that the state file exists, a freshly consumed nonce can reach disk.
+  // deferred #42: before each save, out-window settled intents leave the state
+  // table — appended to the archive in 'archive' mode, dropped outright in
+  // 'evict'. The archive append lands before the state snapshot, so a crash
+  // between the two cannot orphan a record (the next flush re-appends, and
+  // appends are idempotent by intentId).
+  const runRetention = async (): Promise<void> => {
+    if (!intentArchive || retention === 'retain') return;
+    const settled = orchestrator.exportState().intents;
+    if (settled.length === 0) return;
+    const toArchive = selectArchivable(settled, oversight.list(), {
+      maxEntries: options.intentRetentionMaxEntries ?? DEFAULT_MAX_ENTRIES,
+      windowMs: options.intentRetentionWindowMs ?? DEFAULT_WINDOW_MS,
+      now,
+    });
+    if (toArchive.length === 0) return;
+    if (retention === 'archive') {
+      const records: ArchivedIntentRecord[] = toArchive.map(intentId => {
+        const result = orchestrator.getIntent(intentId);
+        // selectArchivable only ever names settled intents still in the table.
+        if (!result) throw new Error(`retention selected unknown intent ${intentId}`);
+        const request = orchestrator.getRequest(intentId);
+        return {
+          intentId,
+          ts: now().toISOString(),
+          createdAt: result.createdAt,
+          status: result.status,
+          ...(request ? { request } : {}),
+          result,
+        };
+      });
+      await intentArchive.append(records);
+    }
+    orchestrator.removeIntents(toArchive);
+  };
   persistLiveState = async (): Promise<void> => {
     const target = store;
     if (!target) return;
     // Serialize: the next snapshot is collected only after the previous save has
     // landed, so a burst of governance changes cannot race on one `.tmp` file.
-    const run = persistTail.then(() => target.save(collectKernelState(components)));
+    const run = persistTail.then(async () => {
+      await runRetention();
+      await target.save(collectKernelState(components));
+    });
     persistTail = run.catch(() => {});
     await run;
   };
@@ -827,6 +902,8 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     },
     restoredFromSnapshot: snapshot !== null,
     snapshot,
+    ...(intentArchive ? { intentArchive } : {}),
+    retention,
     saveState: persistLiveState,
   };
 }

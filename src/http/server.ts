@@ -25,6 +25,7 @@ import { recognizeIntent } from '../intent/recognize.js';
 import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
 import { AUDIT_DECISIONS, type AuditDecision, type AuditEntry } from '../dispatch/dispatcher.js';
 import type { KernelStats } from '../state/stats.js';
+import type { IntentArchiveLookup, RetentionMode } from '../state/archive.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { DriverWriteGrant, RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
 import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../realm/types.js';
@@ -189,6 +190,13 @@ export type HttpDeps = {
   realmAudit?: (entry: RealmAuditEntry) => void;
   /** E9.1/E9.2: the commission gate and day-one briefing for department seats. */
   commissions?: CommissionLedger;
+  /** deferred #42: out-window intents readable through the archive, so replay
+   *  and approve-resume keep working after a settled intent left the state
+   *  file. Optional; absent, replay 404s as before. */
+  intentArchive?: IntentArchiveLookup;
+  /** deferred #42: retention mode, surfaced on replay misses when 'evict'
+   *  (a miss cannot distinguish "never existed" from "evicted"). */
+  retention?: RetentionMode;
 };
 
 export type StartOptions = {
@@ -779,15 +787,34 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'query.format must be json | text');
         }
         const stored = deps.orchestrator!.getIntent(id);
-        if (!stored) return error(reply, 404, 'not_found', `unknown intent: ${id}`);
         let replay: DecisionReplay;
-        try {
-          replay = replayDecision(stored, deps.orchestrator!.getRequest(id));
-        } catch (e) {
-          // An unreplayable record is a corrupt stored decision, not a bad
-          // request: fail loud instead of serving a partial timeline.
-          if (e instanceof ReplayError) return error(reply, 500, 'replay_failed', e.message);
-          throw e;
+        if (stored) {
+          try {
+            replay = replayDecision(stored, deps.orchestrator!.getRequest(id));
+          } catch (e) {
+            // An unreplayable record is a corrupt stored decision, not a bad
+            // request: fail loud instead of serving a partial timeline.
+            if (e instanceof ReplayError) return error(reply, 500, 'replay_failed', e.message);
+            throw e;
+          }
+        } else {
+          // deferred #42: a settled intent may live in the out-window archive.
+          const archived = await deps.intentArchive?.find(id);
+          if (archived) {
+            try {
+              replay = replayDecision(archived.result, archived.request);
+            } catch (e) {
+              // An archived record that cannot rebuild a timeline is an honest
+              // 501, not a half timeline (design §4.3).
+              if (e instanceof ReplayError) return error(reply, 501, 'replay_failed', e.message);
+              throw e;
+            }
+          } else {
+            // Eviction mode deletes out-window records instead of archiving
+            // them; a miss then cannot tell "never existed" from "evicted", so
+            // the mode is surfaced rather than silently guessed (design §4.5).
+            return error(reply, 404, 'not_found', `unknown intent: ${id}`, deps.retention === 'evict' ? { archived: false, evicted: true } : undefined);
+          }
         }
         if (format === 'text') {
           reply.type('text/plain; charset=utf-8');
@@ -860,7 +887,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (escalation.kind !== 'task-input') {
           return error(reply, 400, 'invalid_request', `escalation ${id} is ${escalation.kind}; only task-input can resume`);
         }
-        const intentId = deps.orchestrator!.findIntentForBranchRun(escalation.runId, escalation.vassal);
+        const intentId = await deps.orchestrator!.findIntentForBranchRun(escalation.runId, escalation.vassal);
         if (!intentId) return error(reply, 409, 'conflict', `no stored intent branch matches escalation ${id}`);
         const note = typeof body.note === 'string' ? body.note : undefined;
         try {
@@ -2513,8 +2540,8 @@ function optionalNote(body: unknown): string | undefined {
   return typeof note === 'string' ? note : undefined;
 }
 
-function error(reply: FastifyReply, status: number, code: string, detail: string): FastifyReply {
-  return reply.code(status).send({ error: code, detail });
+function error(reply: FastifyReply, status: number, code: string, detail: string, extra?: Record<string, unknown>): FastifyReply {
+  return reply.code(status).send({ error: code, detail, ...extra });
 }
 
 /** A domain failure names what went wrong; the transport decides what that is
