@@ -1,6 +1,6 @@
-# 自托管试点验收规程（v0.9，2026-10-06）
+# 自托管试点验收规程（v0.10，2026-10-08）
 
-- 状态：**验收规程 v0.9（2026-10-06）**。P0 段今天可跑；**P1 的 `watch` 已落码、接进 boot，操作者 HTTP 面（Active work 139）与 TUI/Web 专属控件（Active work 140）全部就位**——HTTP：`POST/GET /api/watches`、`GET/DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器），生命周期动作（登记/停用/撤销）进审计脊；TUI：`wt` 手动驱动一次 tick、`w<n>` 撤销、deck 新增 watch 台账 section（登记因谓词/意图形状过宽仍走 HTTP 面）；Web：授权视图新增 watch 登记表单 + 台账表格 + 立即评估 + 撤销。P2 的内核链、HTTP 操作者面与 TUI/Web 控件也全部就位（设计稿 §7 六步全部完成）。P1/P2 作为操作者能力三通道（HTTP/TUI/Web）齐整，端到端长期试点待真实使用（§3 成功定义属使用期事项）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138）；P1 的 tick 时六条判据均有对应测试（step 2/3 批次），本文件保留判据作为回归口径。
+- 状态：**验收规程 v0.10（2026-10-08）**。P0-4 另有一条**不起服务进程的等价入口** `npm run daily`（Active work 147：一句话 → 意图 → 扇出 → 决策页写回目录，含四档反向对照与一条分裂正控）。P0 段今天可跑；**P1 的 `watch` 已落码、接进 boot，操作者 HTTP 面（Active work 139）与 TUI/Web 专属控件（Active work 140）全部就位**——HTTP：`POST/GET /api/watches`、`GET/DELETE /api/watches/:id`、`POST /api/watch-tick`（调用方驱动，内核不持定时器），生命周期动作（登记/停用/撤销）进审计脊；TUI：`wt` 手动驱动一次 tick、`w<n>` 撤销、deck 新增 watch 台账 section（登记因谓词/意图形状过宽仍走 HTTP 面）；Web：授权视图新增 watch 登记表单 + 台账表格 + 立即评估 + 撤销。P2 的内核链、HTTP 操作者面与 TUI/Web 控件也全部就位（设计稿 §7 六步全部完成）。P1/P2 作为操作者能力三通道（HTTP/TUI/Web）齐整，端到端长期试点待真实使用（§3 成功定义属使用期事项）。**P0 八步已于 2026-10-06 实跑全过**（证据：handoff Active work 138）；P1 的 tick 时六条判据均有对应测试（step 2/3 批次），本文件保留判据作为回归口径。
 - 定位：回答"zeus 能不能被一个真实用户当作自己的 Agent 底座长期跑起来"。这不是设计稿，设计在 [design-self-host-loop.md](design-self-host-loop.md)（其 §7 六步实施表逐格记录各原语的真实落地进度）；本文件只有**命令、退出判据、证据位置**三样。
 - 单一事实源：试点结论记在这里并同步 handoff 销项；PRD 与设计稿只索引本文件。
 
@@ -90,6 +90,17 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
   npm run acceptance:fanout
   ```
   它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataRealms` 与 `REALM` 不匹配会被拒（这是 fealty 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:563-563 #reinstate`）。共用部署上不要带它。
+- **不起服务进程的等价物**（同一条链路的入口形态，2026-10-08 Active work 147 新增）：不常驻、不占端口、不用 bearer，一句话直接走完「意图 → 扇出 → 决策与依据 → 写回目录」。
+
+  ```sh
+  npm run build && npm run daily -- --root <你的目录> \
+    --agent https://<你的 Agent>/api/a2a/agent-card "check the deployment health"
+  ```
+
+  进程内 `bootKernel` 装配（`src/daily/cli.ts` + 纯渲染 `src/daily/report.ts`）：终端打出的那一页 markdown 与 `Realm.write` 落进 `--root` 的那一页**逐字节相同**（`--record` 定路径，默认 `zeus-daily/<时间戳>-<技能>.md`），结束时 `saveState()` 把这次的意图与升级项落进状态文件。退出码 0/1/2：0 = 页面已产出并落盘（含"分裂等人裁决"这种没结论的结局）；1 = 无可派发内容、无 Agent 送达、或写回失败；2 = 配置/用法错误（什么都没派发）。
+  - **一条必须能失败的对照**（2026-10-08 本机真进程实测）：`--skill <没人广告的技能>` → 退出 1、stderr 说明"没有注册 Agent 提供该技能"，而页面仍然落盘（失败证据也是证据）；`--agent http://127.0.0.1:1/…` → 退出 2 并给 `vassal seed failed for <url>`；`--root <不存在的目录>` → 退出 2（`realm root not accessible`）；不带 `--root` 且 env 无挂载 → 退出 2 并给补目录的下一步。**这四档任一被静默吞掉，入口就是在骗人**。
+  - **正控**：两个 Agent 立场分裂时，该命令必须给出 `needs-driver` 与一条 `intent-conflict` 升级项，并且那个 escalation id 与 intentId 在状态文件里查得到——否则「等待人工裁决」这一整段就从没被这条命令执行过。
+  - **当前的真实边界（不掩饰）**：技能排序器 `rankCandidates` 只做 ASCII 词与 CJK 连续段的字面重合，**中文指令匹配不到英文技能目录**（返回 `no-candidates`、退出 1、不写文件）。入口对此只做了"让失败可读并可自救"（打印目录、给出 `--skill` 出口），没有改排序器本身。
 
 ### P0-5 让一次冲突真的走人工裁决
 
@@ -223,6 +234,8 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 跑完后在本文件追加一节「实测记录」，至少写清：实际跑天数、意图条数（`GET /api/audit` 回读口径）、execute 次数与票据是否一一对应、重启与恢复各跑过几次、哪几条判据当时不成立、用户原话描述的"能/不能"。然后 handoff 记销项日期。
 
 ## 演进日志
+
+- **v0.10（2026-10-08）**：P0-4 增加**不起服务进程的等价物**一条命令（Active work 147，`npm run daily`）：进程内 `bootKernel` 装配，把「一句话 → 意图 → 扇出 → 决策与依据 → 写回用户目录 → 落台账」合成单个入口，判据不变、原 `acceptance:fanout` 一段不动。新增该命令自己的四档反向对照（无人广告的技能 / 卡片不可达 / 目录不存在 / 无挂载）与一条正控（两 Agent 立场分裂必须产出 `needs-driver` 与可在状态文件检出的升级项），并把一条真实边界写进规程而不是留在测试里：`rankCandidates` 的字面重合使**中文指令匹配不到英文技能目录**，入口只让这种失败可读、可自救（打印目录 + `--skill` 出口），未改排序器。
 
 - **v0.9（2026-10-06）**：P1 的 TUI/Web watch 专属控件落地（Active work 140），P1 从“操作者 HTTP 面已通、专属控件未做”改为三通道齐整：TUI 加 `wt`（调用方驱动一次评估 tick）/`w<n>`（撤销）与 watch 台账 section，Web 授权视图加 watch 登记表单/台账/立即评估/撤销；零新内核路由、零私有逻辑，全部消费 Active work 139 的 HTTP 面。判据与探针零改动（tick 六判据仍由 step 2/3 用例与 smoke 42 步守护）。
 
