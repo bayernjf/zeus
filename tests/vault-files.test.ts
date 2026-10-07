@@ -19,6 +19,17 @@ const KEY = 'correct horse';
 const NOW = new Date('2026-09-25T12:00:00.000Z');
 const now = () => NOW;
 
+/**
+ * Full-bundle cases derive a scrypt key and then open it again. Measured
+ * 2026-10-08 on this machine: 10-19s in an idle full run, 21-27s once the parallel
+ * runner is loaded, while these files together take 17s when nothing else runs.
+ * The 20s global floor (vitest.config.ts) is what fired: the red moved between
+ * cases across runs and never reproduced in isolation, and an aborted case left
+ * ENOTEMPTY behind in its own cleanup. The suites below declare the headroom the
+ * measurement says they need; a genuine hang still fails, just later.
+ */
+const SCRYPT_SUITE_TIMEOUT = 60_000;
+
 let sandbox: string;
 
 beforeEach(async () => {
@@ -85,7 +96,7 @@ describe('#13 a verification pass mounts the realm read-only', () => {
   });
 });
 
-describe('#13 files source: backing up what no Realm covers', () => {
+describe('#13 files source: backing up what no Realm covers', { timeout: SCRYPT_SUITE_TIMEOUT }, () => {
   async function corpus() {
     const root = join(sandbox, 'data');
     await mkdir(root, { recursive: true });
@@ -182,7 +193,7 @@ describe('#13 files source: backing up what no Realm covers', () => {
   });
 });
 
-describe('#13 the kernel state file survives a destroy-and-restore drill', () => {
+describe('#13 the kernel state file survives a destroy-and-restore drill', { timeout: SCRYPT_SUITE_TIMEOUT }, () => {
   it('restores a state file the map says is there, and the kernel boots from it', async () => {
     const data = join(sandbox, 'data');
     await mkdir(data, { recursive: true });
@@ -235,7 +246,7 @@ describe('#13 the kernel state file survives a destroy-and-restore drill', () =>
   });
 });
 
-describe('#13 v1 maps still open', () => {
+describe('#13 v1 maps still open', { timeout: SCRYPT_SUITE_TIMEOUT }, () => {
   const v1 = (root: string) => ({
     format: MAP_FORMAT,
     version: 1,

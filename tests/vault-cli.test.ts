@@ -87,8 +87,12 @@ describe('vault CLI: build + check (manifest-only, L0)', () => {
 });
 
 // Each case seals and opens one or two full AES-GCM bundles (scrypt key
-// derivation included); the global floor in vitest.config.ts covers them.
-describe('vault CLI: backup + restore (full bundle, L1)', () => {
+// derivation included). Measured 2026-10-08 on this machine: 10-19s in an idle
+// full run, 21-27s once the parallel runner is loaded - the same case passes in
+// 17s when these two files run alone. The 20s floor (vitest.config.ts) is what
+// fired, and the reds moved between cases, so this suite declares its own
+// headroom rather than leaving a load-dependent false red.
+describe('vault CLI: backup + restore (full bundle, L1)', { timeout: 60_000 }, () => {
   it('packs map+bundle and restores a destroyed realm into a new target (exit 0)', async () => {
     const backup = await run(['backup', '--root', root, '--out-dir', outDir]);
     expect(backup.code).toBe(VAULT_EXIT.ok);
