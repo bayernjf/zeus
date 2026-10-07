@@ -10,6 +10,7 @@
 - **唯一生产依赖是 Fastify，且被限制在 `src/http/`**：H1 只读端点（健康检查、签名目录快照）+ H2 操作面（发起任务、回查决策、人工裁决、指标、盘点）+ H3 服务端 SSE。核心代码里 grep 不到 fastify。
 - **数据接入**：数据域（本地目录）通过 MCP 对外暴露，只读工具 `search` / `read` + resources，宿主预连接的白名单即边界；另有零 SDK 的 MCP 客户端做外部系统连接器。
 - **可恢复性**：备份清单（只存引用与逐条指纹）+ AES-256-GCM 加密内容包，可原地校验漂移、可跨位置恢复；运行时状态文件（含注册表、升级队列、意图结果、组织编制、授权台账）也在覆盖范围内。零依赖 CLI（`build` / `check` / `backup` / `restore`），调度交给外部 cron/systemd，核心不内置定时器。
+- **产品入口**：`npm run daily "<一句话>"`（`src/daily/`，无常驻进程、零新内核机制）一条命令走完「指令 → 意图 → 扇出到已注册执行 Agent → 决策与依据 → 待人工裁决项」，并把这一页 markdown 写回你挂的那个目录。默认零出域：只有显式 `--model` 才咨询配置里的决策后端，`--realm enterprise` 的记录只写企业域、不落个人目录。
 
 ## 术语
 
@@ -310,6 +311,7 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 - **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
 - **已验证到什么程度**：1316 项测试 / 119 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复 → 契约操作面签发/读/撤销 → watch 触发恰一次真派发 → execute watch 派生一次性票据、撤销契约断流，42 步），- **execute 授权链另有一条真进程验收**（`npm run verify:execute-delegation`，9 步：真 HTTP 进程 + 真 socket 执行 Agent——execute 无票据拒发零出站 / 签发端点 201 拿票 / 带票 execute 单次派发 / 同票重放拒发 / 两次拒绝与签发进审计链；dist 出货实现受检），- **E2.6 操作者意图识别另有一条真进程验收**（`npm run verify:intent-recognize`，7 步：本地规则命中零模型出域（backend:null）/ 未命中 422 fail-closed / realm 校验 400 / useModel 无后端 422 / 识别出的技能 id 回灌 `POST /api/intents` 真派发 completed）
 - **TUI 意图识别面另有一条真进程验收**（`npm run verify:tui-recognize`，7 步：走 dist 出货的监督台 client/render/commands——真 socket 技能目录注册 / 本地命中（backend:null）/ 渲染含零出域+plan-only / 未命中 fail-closed / useModel 无后端 fail-closed / `i`/`im` 命令解析 / `info` 不误判）
+- **产品入口另有真进程验收**（`tests/daily-entry.test.ts` 20 例：真 socket 执行 Agent + 真目录 + 真状态文件；本机手工五档 2026-10-08 读数——成功档 exit 0 且**落盘页与打印页 sha256 同串**、Agent 报 `state=failed` 档 exit 1 而证据仍入库、两 Agent 立场分裂档进台账且跨重启可检、中文指令对英文目录 `no-candidates` 且**不写任何文件**、四类配置错误各 exit 2）。中文指令要选中英文技能目录需要显式 `--model` 且配了决策后端（Active work 148）。
 `tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
 - **协议验收**：对生产环境的执行 Agent 跑通过一次纯标准 A2A 客户端验收（卡片发现 + 任务受理）。
 - **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）；MCP 暴露侧的主体身份判定（deferred #18）已于 2026-10-07 落地 streamable HTTP 传输层 + `x-zeus-realm-actor` 会话级 actor 收窄（Active work 144），剩真实读取方出现；另两条由本轮真进程取证抓出并已登记：**连接器权限词法绑不住带下划线/点/大写的工具名**（只能退裸 `mcp`＝放行全部，deferred #30）与 **MCP 面把未声明的查询参数静默丢掉**（`?tags=` 返回未过滤结果且不报错，deferred #31）——两者的修法都是对外契约决定，且都要等真实外部 MCP 服务出现才有实测对象；对接方视角的契约与避坑见 [docs/mcp-integration.md](docs/mcp-integration.md)。
