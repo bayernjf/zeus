@@ -24,6 +24,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/http/serve.js",
+    "daily": "node dist/daily/cli.js",
     "vault": "node dist/vault/cli.js",
     "tui": "node dist/tui/cli.js",
     "verify:roster": "node scripts/verify-roster.mjs",
