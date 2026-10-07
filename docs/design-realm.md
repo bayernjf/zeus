@@ -123,7 +123,7 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
   4. P0 的风险在五条不变量与检索/备份语义，不在传输；库内接口先行不阻塞验证，且按 MCP 资源语义设计，未来包壳不改契约。
 - **Zeus 内部组件**（监督台、名册、未来 UI）：同进程调用库接口，不经网络。
 - **遗留**：MCP transport 选型（stdio vs streamable HTTP）、跨机执行 Agent 的 OAuth/mTLS 形态在 P1 暴露立项时定；契约保持传输无关。
-- **遗留的现状（2026-09-28 真进程取证，不改判决；2026-10-01 补客户端现状）**：服务端**只有 stdio** 一条形态——HTTP 面上没有任何 Realm 正文路由（带 `realm` 字样的四条路由都是治理动作与挂载视图，见 `docs/mcp-integration.md` §0）。客户端侧（连接器 E7）原只支持 streamable HTTP，**2026-10-01 起同时支持 stdio transport**（`command`/`args`/`env` 拉起本地子进程），并已对真实 `dist/realm/mcp-stdio.js` 完成握手/裁剪/调用真机取证；这是 work-learn 等本地优先 MCP server 接入的工程前提。**"服务端要不要 HTTP 化"仍是本条待决**，不要把它读成已定。
+- **遗留的现状（2026-09-28 真进程取证，不改判决；2026-10-01 补客户端现状）**：服务端**只有 stdio** 一条形态——HTTP 面上没有任何 Realm 正文路由（带 `realm` 字样的四条路由都是治理动作与挂载视图，见 `docs/mcp-integration.md` §0）。客户端侧（连接器 E7）原只支持 streamable HTTP，**2026-10-01 起同时支持 stdio transport**（`command`/`args`/`env` 拉起本地子进程），并已对真实 `dist/realm/mcp-stdio.js` 完成握手/裁剪/调用真机取证；这是 work-learn 等本地优先 MCP server 接入的工程前提。**2026-10-07 服务端 HTTP 化已落地（Active work 144）**：`GET /mcp`（公开元信息，零 realm 数据）+ `POST /mcp`（Bearer 鉴权，JSON-RPC 喂同一 `createRealmMcpHandler`，stdio 与 HTTP 共用 handler、零 SDK 依赖约定保持）；realmIds 由内核启动连接列表装配；`x-zeus-realm-actor` header 实现 §6.5 裁定 ①（会话级 actor 仅可收窄白名单，缺省 anonymous）。**真实读取方仍未出现**（P1 正式启动触发不变）。
 - **对接方视角不在本文**：方法清单、资源 URI 与工具入参、扫描与快照语义、错误码、以及"这条通道不提供的东西"，全部记 [mcp-integration.md](mcp-integration.md)（本文只写设计与不变量，不重复记契约细节）。本轮取证另外抓出两条对外契约缺口，登记为 deferred **#30**（权限词法绑不住带下划线/点/大写的工具名，只能退裸 `mcp`）与 **#31**（未声明的查询参数被静默丢掉，`?tags=` 为实例）。
 
 ### 6.2 检索实现：P0 纯文件系统扫描，后端可替换，按阈值升级
@@ -154,7 +154,7 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 
 deferred #18 的四个待定问题裁定如下（方向固化；实现随 E3.4 正式暴露立项，本轮不写代码）：
 
-1. **主体身份形态 = 会话级 actor**：`createRealmMcpHandler` 在既有 `realmIds` 白名单之上增加可选 `actor`（宿主显式声明的调用方身份：`{ name, realmIds? }`）。stdio 环境无 OAuth subject；HTTP header 与 OAuth subject 形态留给 E3.4 streamable HTTP 化时按实际传输层定。未声明 actor 的调用保持现状：anonymous，只能访问宿主预连接白名单内的 realm。
+1. **主体身份形态 = 会话级 actor**：`createRealmMcpHandler` 在既有 `realmIds` 白名单之上增加可选 `actor`（宿主显式声明的调用方身份：`{ name, realmIds? }`）。stdio 环境无 OAuth subject；**HTTP header 形态已按 E3.4 streamable HTTP 落地（2026-10-07）＝ `x-zeus-realm-actor`**，OAuth subject 形态仍留待跨机真实执行 Agent 出现时定。未声明 actor 的调用保持现状：anonymous，只能访问宿主预连接白名单内的 realm。
 2. **`zeus-realm:` URI 不编码租户**：资源寻址面只承载 realmId；租户（TenantScope，§7.1）由宿主连接时声明。理由：租户进 URI 会把企业分级信息暴露进寻址面，并使 URI 与挂载状态耦合（同一 realm 改租户后 URI 语义漂移）。
 3. **不与签发凭证合并**：读取路径的边界 = 宿主白名单（进程内信任）；写路径已有签名且一次性的 DriverWriteGrant（§7.7）。MCP 读取面不引入验签——那需要把公钥/信任锚搬进 MCP 会话，扩大暴露面；当前无真实读取方，若 E3.4 立项出现跨宿主身份需求再复议。
 4. **`tools/call` 与 `resources/read` 共用同一份 realmId 白名单**：现状已如此（同一 handler 实例只有一个隔离单位，`src/realm/mcp.ts` 的 `callTool`/`readResource`/`parseRealmUri` 均消费同一 `realmIds`），本裁定固化——避免两套边界各自漂移。

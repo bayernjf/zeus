@@ -24,16 +24,20 @@ MCP 在 Zeus 里同时出现在两个方向，且**不是**第三个（跨 Agent
 
 ## 1. Zeus 作为 MCP 服务端：数据域只读面
 
-### 1.1 启动与授权：两条入口，一条规则
+### 1.1 启动与授权：三条入口，一条规则
 
 ```bash
 npm run build                                                   # 先产出 dist/
 node dist/realm/mcp-stdio.js /path/to/notes                     # 入口 A：argv，可给多个
 ZEUS_REALM_ROOTS=/path/to/notes,/path/to/code \
   node dist/realm/mcp-stdio.js                                  # 入口 B：环境变量，argv 留空
+# 入口 C：streamable HTTP（2026-10-07 落地，Active work 144）——服务端装配后自动挂载：
+#   GET  /mcp   公开元信息（protocolVersion/capabilities/serverInfo，零 realm 数据）
+#   POST /mcp  需 Bearer（未配 ZEUS_INTERNAL_TOKEN 则整组不挂载），JSON-RPC 喂同一个 createRealmMcpHandler
+#   header x-zeus-realm-actor：宿主声明的调用方身份，仅可收窄到宿主白名单子集，缺省 anonymous
 ```
 
-规则只有一条：**根目录（root）只能在启动时授权，协议本身没有 connect。** 宿主启动进程时给什么，客户端就能看到什么，运行时无法增删（`src/realm/mcp-stdio.ts:10-14 #connect`、`src/realm/mcp-stdio.ts:92-103 #collectRoots`）。
+规则只有一条：**授权集合只能在启动时定死，协议本身没有 connect。** stdio 入口 = 宿主启动进程时给的根目录，运行时无法增删（`src/realm/mcp-stdio.ts:10-14 #connect`、`src/realm/mcp-stdio.ts:92-103 #collectRoots`）；HTTP 入口 = 内核启动时的 Realm 连接列表（`src/http/serve.ts` 从 `kernel.realmStore.connections()` 装配），同样运行时不可增删。
 
 两条入口的关系（实测）：
 
@@ -192,9 +196,9 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 | 没有什么 | 后果与替代 |
 |---|---|
 | 没有 `connect` / `disconnect` / `reindex` | 授权集合与检索快照都在启动时定死；要改就重启宿主进程 |
-| 没有鉴权 | **能写这条管道 = 拥有宿主授权的全部读取权**。stdio 的对端就是你启动它的那个宿主；不要把它接进任何多租户进程。主体（actor）判定登记为 [deferred-items.md](deferred-items.md) **#18** |
+| 鉴权取决于传输形态 | **stdio：没有鉴权**——对端就是你启动它的那个宿主，能写这条管道 = 拥有宿主授权的全部读取权，不要把它接进多租户进程。**HTTP：Bearer 鉴权**——`POST /mcp` 过 `requireBearer`，未配 token 整组不挂载。主体（actor）判定已落地（deferred #18，2026-10-07）：`x-zeus-realm-actor` header 声明的会话级 actor **仅可收窄**宿主白名单，缺省 anonymous |
 | 没有写工具 | 想改用户目录请走库内 `Realm.write`（含企业域签名凭证），不是这条通道 |
-| 只有 personal 域 | stdio 宿主把类型写死为 `personal` 且 `readOnly:true`（`src/realm/mcp-stdio.ts:35 #personal`，实测 manifest 里 `"type":"personal"`）。企业域的租户隔离规则**在这条读取路径上没有执行点**（同 #18） |
+| 只有 personal 域（stdio） | stdio 宿主把类型写死为 `personal` 且 `readOnly:true`（`src/realm/mcp-stdio.ts:35 #personal`）。**HTTP 面例外**：realmIds 来自内核启动连接列表（可含 enterprise），企业域读取路径的隔离执行点 = 同一份 realmId 白名单（§6.5 裁定 ④）∩ actor 收窄 |
 | 没有服务端→客户端推送 | `subscribe:false` / `listChanged:false`，改了不通知（§1.2） |
 
 ---
@@ -284,10 +288,10 @@ Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/clie
 
 | 事项 | 现状 | 什么条件下补 |
 |---|---|---|
-| **官方 MCP SDK 客户端实连** | **未验证**。本文全部证据来自手工 JSON-RPC 逐条发送（评审 v0.9 起就记着这条限制）。协议版本协商、三类资源读取、两个工具、六个错误码（`-32700/-32600/-32601/-32602/-32002/-32003`）都实测出现过原文，第七个 `-32000` 是存储层兜底、本轮无路径触发；但没有用 `@modelcontextprotocol/sdk` 的客户端连过一次 | 出现真实读取方（P1 正式启动）或任何一次"某家宿主连不上"的报告；届时按 §4 复跑并逐家记配置形状 |
+| **官方 MCP SDK 客户端实连（stdio 与 HTTP 面）** | **未验证**。本文证据 = 手工 JSON-RPC 逐条发送（stdio 实测原文见 §1；HTTP 面 2026-10-07 新增，`tests/http-realm-mcp.test.ts` 11 例覆盖协商/鉴权/actor 收窄/白名单越界/坏 JSON，但未用 `@modelcontextprotocol/sdk` 客户端连过任一形态） | 出现真实读取方（P1 正式启动）或任何一次"某家宿主连不上"的报告；届时按 §4 复跑并逐家记配置形状 |
 | 具体宿主的配置样例 | 只给了语义中立的 `command` + `args` 形状，**没有**针对任何一家宿主的实测配置 | 同上一条 |
 | `limit` 截断到 200、`text` 切词 AND 语义 | 代码级（`src/realm/store.ts:182-196 #MAX_LIMIT`）；实测只覆盖了"超限不报错"和单/双关键词命中 | 需要给外部读者保证分页行为时补一次 201 文件的实测 |
-| 企业域 Realm 经 MCP 暴露 | 不存在该路径（stdio 写死 personal + readOnly） | deferred **#18** 决定 actor 判定时一并处理 |
+| 企业域 Realm 经 MCP 暴露 | **HTTP 面已暴露**（2026-10-07，Active work 144）：realmIds 来自内核启动连接列表，actor 收窄 + 共用白名单即隔离执行点；stdio 面仍写死 personal + readOnly。**真实读取方仍未出现** | P1 正式启动 / 首个 read-realm 执行 Agent（deferred #18 触发条件语义不变） |
 | 连接器权限词法绑不住"名字不合词法"的工具 | **已修复（2026-09-30，deferred #30）**：`mcp:<工具名>` 改为引用上游握手清单的原样字符串（下划线/点/大写均合法、精确大小写匹配），非 mcp 作用域保持封闭词法；声明了但上游清单没有的工具在连接时产生 `boundary-unmatched` 审计事件，防上游改名静默失权。**真实上游 connect（2026-10-01）**：先对**真实** `dist/realm/mcp-stdio.js`（非自造夹具）完成握手/裁剪/调用/边界拒绝实测；同日对**第三方** work-learn stdio server 完成实连——21 工具全发现、最小权限精确裁剪、跨子进程写后读命中（见 §2）。仍未做：work-learn 的**远程 HTTP MCP**（`POST /api/mcp`，需 Supabase/JWT/PAT 凭证）实连；对非 Zeus 自有的其他 HTTP MCP 服务也尚未实连 | 远程 MCP 有可用凭证时复跑，记录 Bearer 认证与无状态 streamable-HTTP 形状 |
 | 未声明的查询参数被静默丢掉（`?tags=`） | **已修复（2026-09-30，deferred #31 销项）**：`tags` 下传到存储层显式 `-32602`（P0 不支持标签检索），任何未声明参数名按名拒绝；resource URI 与 `tools/call` 两通道同口径，17 例 MCP 测试覆盖 | 标签检索真正立项的阈值仍在 design-realm §6.2（单 Realm >2 万文件或 P50>500ms） |
 
