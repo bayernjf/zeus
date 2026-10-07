@@ -66,6 +66,10 @@ export type MetricsSnapshot = {
   /** Real-time in-flight count per vassal (defensive copy). Enables per-vassal
    *  saturation checks (#9 backpressure diversion) without a full snapshot. */
   inFlightByVassal: Record<string, number>;
+  /** Percentile basis and bound. Counts and failure rates are all-time; only
+   *  latency percentiles read the window, and `trimmedBranches` reports what the
+   *  window has dropped rather than hiding it. */
+  historyWindow: { branchesPerVassal: number; trimmedBranches: number };
   capturedAt: string;
 };
 
@@ -73,22 +77,46 @@ export type MetricsOptions = {
   now?: () => Date;
   /** Monotonic millisecond clock for latency; defaults to Date.now. */
   elapsed?: () => number;
+  /** How many finished branches per vassal feed the latency percentiles. Counts
+   *  and failure rate stay all-time; only percentiles read the window. */
+  historyWindowBranches?: number;
+};
+
+/** Default percentile window per vassal. Bounded by design: percentiles over the
+ *  whole history both report on behaviour from the distant past and were the
+ *  reason branch accounting cost more with every finished branch (audit B-44). */
+export const DEFAULT_METRICS_HISTORY_WINDOW = 1_000;
+
+/** Per-vassal accounting. Counts are all-time running totals updated in O(1);
+ *  latencies are kept only for the percentile window, and the computed stats are
+ *  cached and rebuilt on read - never on the write path. */
+type VassalTally = {
+  calls: number;
+  completed: number;
+  failed: number;
+  timedOut: number;
+  canceled: number;
+  latencies: number[];
+  cached: LatencyStats | null;
+  stale: boolean;
 };
 
 export class ConcurrencyMetrics {
   private active = new Map<string, { event: BranchMetricEvent; startedMs: number }>();
-  private records: BranchRecord[] = [];
+  private tallies = new Map<string, VassalTally>();
+  /** All-time outcome totals, so snapshot() never scans history. */
+  private totals = { finished: 0, completed: 0, failed: 0, timedOut: 0, canceled: 0 };
+  /** Records dropped from a percentile window - a bound that reports itself. */
+  private trimmedBranches = 0;
   private maxInFlight = 0;
   private queueDepth = 0;
   /** Real-time in-flight count per vassal (#9 per-vassal saturation primitive). */
   private inFlightByVassal = new Map<string, number>();
-  /** Finished records grouped by vassal, maintained incrementally so per-vassal
-   *  history accessors do not rebuild from the flat `records` list on every call. */
-  private byVassal = new Map<string, BranchRecord[]>();
-  /** Latest VassalMetric per vassal, refreshed on branchEnded. */
-  private perVassalCache = new Map<string, VassalMetric>();
+  private readonly historyWindow: number;
 
-  constructor(private options: MetricsOptions = {}) {}
+  constructor(private options: MetricsOptions = {}) {
+    this.historyWindow = options.historyWindowBranches ?? DEFAULT_METRICS_HISTORY_WINDOW;
+  }
 
   private clock(): () => number {
     return this.options.elapsed ?? (() => Date.now());
@@ -147,8 +175,7 @@ export class ConcurrencyMetrics {
       latencyMs: this.clock()() - active.startedMs,
       outcome,
     };
-    this.records.push(record);
-    this.pushByVassal(record);
+    this.tallyBranch(record);
     this.bumpInFlight(vassal, -1);
   }
 
@@ -159,12 +186,12 @@ export class ConcurrencyMetrics {
 
   /** Historical failure rate for a vassal; 0 when no finished call is recorded. */
   failureRateOf(vassal: string): number {
-    return this.perVassalCache.get(vassal)?.failureRate ?? 0;
+    return this.vassalMetric(vassal)?.failureRate ?? 0;
   }
 
   /** Historical p50 latency (ms) for a vassal; null when no finished call is recorded. */
   p50MsOf(vassal: string): number | null {
-    return this.perVassalCache.get(vassal)?.latency?.p50Ms ?? null;
+    return this.vassalMetric(vassal)?.latency?.p50Ms ?? null;
   }
 
   private bumpInFlight(vassal: string, delta: number): void {
@@ -173,11 +200,35 @@ export class ConcurrencyMetrics {
     else this.inFlightByVassal.set(vassal, next);
   }
 
-  private pushByVassal(record: BranchRecord): void {
-    const list = this.byVassal.get(record.vassal) ?? [];
-    list.push(record);
-    this.byVassal.set(record.vassal, list);
-    this.perVassalCache.set(record.vassal, this.vassalStats(list));
+  /**
+   * O(1) per finished branch: counters move, the new latency enters the
+   * percentile window, and cached stats are only marked stale. Recomputing
+   * percentiles here is what used to make dispatch cost grow with history.
+   */
+  private tallyBranch(record: BranchRecord): void {
+    let tally = this.tallies.get(record.vassal);
+    if (!tally) {
+      tally = { calls: 0, completed: 0, failed: 0, timedOut: 0, canceled: 0, latencies: [], cached: null, stale: true };
+      this.tallies.set(record.vassal, tally);
+    }
+    tally.calls += 1;
+    this.totals.finished += 1;
+    if (record.outcome === 'completed') { tally.completed += 1; this.totals.completed += 1; }
+    else if (record.outcome === 'failed') { tally.failed += 1; this.totals.failed += 1; }
+    else if (record.outcome === 'timeout') { tally.timedOut += 1; this.totals.timedOut += 1; }
+    else if (record.outcome === 'canceled') { tally.canceled += 1; this.totals.canceled += 1; }
+    if (typeof record.latencyMs === 'number') {
+      tally.latencies.push(record.latencyMs);
+      tally.cached = null;
+      tally.stale = true;
+      // Trim in one slice once the window has doubled: the bound then costs
+      // amortised O(1) per record instead of a shift() on every one.
+      if (tally.latencies.length > this.historyWindow * 2) {
+        const dropped = tally.latencies.length - this.historyWindow;
+        tally.latencies.splice(0, dropped);
+        this.trimmedBranches += dropped;
+      }
+    }
   }
 
   /** Current in-flight branches (defensive copy). */
@@ -186,49 +237,48 @@ export class ConcurrencyMetrics {
   }
 
   snapshot(): MetricsSnapshot {
-    const finished = this.records.filter(record => record.outcome !== undefined);
     const perVassal: Record<string, VassalMetric> = {};
-    for (const [vassal, list] of this.byVassal) {
-      perVassal[vassal] = this.vassalStats(list);
-    }
-    const completed = finished.filter(r => r.outcome === 'completed').length;
-    const failed = finished.filter(r => r.outcome === 'failed').length;
-    const timedOut = finished.filter(r => r.outcome === 'timeout').length;
-    const canceled = finished.filter(r => r.outcome === 'canceled').length;
+    for (const [vassal, tally] of this.tallies) perVassal[vassal] = this.toMetric(tally);
     const inFlightByVassal: Record<string, number> = {};
     for (const [vassal, count] of this.inFlightByVassal) inFlightByVassal[vassal] = count;
     return {
       inFlight: this.active.size,
       maxInFlight: this.maxInFlight,
       queueDepth: this.queueDepth,
-      finished: finished.length,
-      completed,
-      failed,
-      timedOut,
-      canceled,
+      finished: this.totals.finished,
+      completed: this.totals.completed,
+      failed: this.totals.failed,
+      timedOut: this.totals.timedOut,
+      canceled: this.totals.canceled,
       perVassal,
       inFlightByVassal,
+      historyWindow: { branchesPerVassal: this.historyWindow, trimmedBranches: this.trimmedBranches },
       capturedAt: this.now().toISOString(),
     };
   }
 
-  private vassalStats(list: BranchRecord[]): VassalMetric {
-    const failures = list.filter(r => r.outcome === 'failed').length;
-    const timeouts = list.filter(r => r.outcome === 'timeout').length;
-    const completed = list.filter(r => r.outcome === 'completed').length;
-    const canceled = list.filter(r => r.outcome === 'canceled').length;
+  private vassalMetric(vassal: string): VassalMetric | undefined {
+    const tally = this.tallies.get(vassal);
+    return tally ? this.toMetric(tally) : undefined;
+  }
+
+  private toMetric(tally: VassalTally): VassalMetric {
+    if (tally.stale || tally.cached === null) {
+      const sorted = [...tally.latencies].sort((a, b) => a - b);
+      tally.cached = sorted.length ? latencyStats(sorted) : null;
+      tally.stale = false;
+    }
     // Canceled calls are excluded from the rate: the driver's decision to cancel
     // is not evidence about the vassal, and #9 diversion scores on this value.
-    const verdicts = failures + timeouts + completed;
-    const latencies = list.map(r => r.latencyMs).filter((n): n is number => typeof n === 'number').sort((a, b) => a - b);
+    const verdicts = tally.failed + tally.timedOut + tally.completed;
     return {
-      calls: list.length,
-      completed,
-      failed: failures,
-      timedOut: timeouts,
-      canceled,
-      failureRate: verdicts ? (failures + timeouts) / verdicts : 0,
-      latency: latencies.length ? latencyStats(latencies) : null,
+      calls: tally.calls,
+      completed: tally.completed,
+      failed: tally.failed,
+      timedOut: tally.timedOut,
+      canceled: tally.canceled,
+      failureRate: verdicts ? (tally.failed + tally.timedOut) / verdicts : 0,
+      latency: tally.cached,
     };
   }
 }
