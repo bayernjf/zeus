@@ -4,3 +4,5 @@ data/
 *.log
 .env
 _e2e/
+# generated key material (scripts/gen-rsk-key.mjs writes rsk-private.pem into cwd by default)
+*.pem
