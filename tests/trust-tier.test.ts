@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { tierConstraints, trustTierOf } from '../src/trust/tier.js';
+import { isReadOnlyTagged, tierConstraints, trustTierOf } from '../src/trust/tier.js';
 
 describe('trustTierOf (design-external-trust, PRD E9.4)', () => {
   it('admits a card naming a registered, active agent on tier-2', () => {
@@ -45,5 +45,24 @@ describe('tierConstraints (design-external-trust §3)', () => {
 
   it('refuses a constraint set for tier-0 (a refusal has no limits to apply)', () => {
     expect(() => tierConstraints('tier-0')).toThrow('tier-0 is a refusal');
+  });
+});
+
+describe('isReadOnlyTagged (design-external-trust §3, V2 capability face)', () => {
+  it('recognizes the read-only tag on a skill spec', () => {
+    expect(isReadOnlyTagged({ tags: ['read-only'] })).toBe(true);
+    expect(isReadOnlyTagged({ tags: ['analysis', 'read-only'] })).toBe(true);
+  });
+
+  it('treats a skill without tags as not read-only', () => {
+    expect(isReadOnlyTagged({ tags: [] })).toBe(false);
+  });
+
+  it('treats an undeclared tags field as not read-only', () => {
+    expect(isReadOnlyTagged({})).toBe(false);
+  });
+
+  it('does not confuse unrelated tags with the read-only marker', () => {
+    expect(isReadOnlyTagged({ tags: ['execute', 'release'] })).toBe(false);
   });
 });

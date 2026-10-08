@@ -32,7 +32,7 @@ import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, Unsupp
 import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../realm/mcp.js';
 import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type TaskState } from '../a2a/types.js';
 import { fealtyOathProblem } from '../registry/registry.js';
-import { trustTierOf } from '../trust/tier.js';
+import { isReadOnlyTagged, trustTierOf } from '../trust/tier.js';
 import {
   decideRealmAccess,
   DomainGrantError,
@@ -451,6 +451,27 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'params.skills must be a non-empty array of skill ids');
         }
         const skill = skills[0];
+        // design-external-trust V2 (PRD E9.4, capability face): tier-1
+        // (shape-trust) callers may only dispatch skills tagged read-only —
+        // the whitelist in its formal form (V1 fell back to plan-mode-only
+        // because the tag semantics did not exist). A missing registry,
+        // an unregistered skill or a non-read-only skill fails closed with
+        // no outbound dispatch; tier-2/3 keep the current rules.
+        if (callerTier === 'tier-1') {
+          if (!deps.skillRegistry) {
+            audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: 'skill registry unavailable; tier-1 dispatch fails closed' });
+            return error(reply, 403, 'skill_unavailable', 'tier-1 dispatch requires a skill registry');
+          }
+          const spec = deps.skillRegistry.get(skill);
+          if (!spec) {
+            audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: `skill ${skill} not registered; tier-1 may only dispatch read-only skills` });
+            return error(reply, 403, 'skill_unavailable', `tier-1 may only dispatch read-only skills (${skill} not registered)`);
+          }
+          if (!isReadOnlyTagged(spec)) {
+            audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: `skill ${skill} is not read-only; tier-1 capability face narrowed` });
+            return error(reply, 403, 'skill_unavailable', `tier-1 may only dispatch read-only skills (${skill} is not tagged read-only)`);
+          }
+        }
         const realm: 'personal' | 'enterprise' = params.realm === 'enterprise' ? 'enterprise' : 'personal';
         const taskId = typeof params.taskId === 'string' ? params.taskId : undefined;
         const message = typeof params.message === 'string' ? params.message : '';
