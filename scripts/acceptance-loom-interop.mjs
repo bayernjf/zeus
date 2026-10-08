@@ -30,7 +30,8 @@
  *                         card default and the SSE probe target.
  *   AGENT_TOKEN         — loom Agent Key (Q88); required for registration and
  *                         for the optional SSE probe.
- *   SKILL               — loom skill name; default "Plan content generation".
+ *   SKILL               — loom skill id; default "generate-content" (the card's
+ *                         display name is not what tasks/send executes).
  *   REALM               — intent realm, default "personal".
  *   PARAMS              — optional JSON skill params for the intent.
  *
@@ -62,9 +63,14 @@ const INTERNAL_TOKEN = env.ZEUS_INTERNAL_TOKEN ?? '';
 const LOOM_URL = (env.LOOM_URL ?? '').replace(/\/+$/, '');
 const CARD_URL = (env.CARD_URL ?? (LOOM_URL ? `${LOOM_URL}/.well-known/agent-card.json` : '')).replace(/\/+$/, '');
 const AGENT_TOKEN = env.AGENT_TOKEN ?? '';
-const SKILL = env.SKILL ?? 'Plan content generation';
+const SKILL = env.SKILL ?? 'generate-content';
 const REALM = env.REALM ?? 'personal';
 const PARAMS = env.PARAMS ? JSON.parse(env.PARAMS) : undefined;
+
+// loom executes plan skills by their **id** (generate-content / compliance-check /
+// effect-backfill), not by the card's display name ("Plan content generation");
+// the display name is the card's public label, the id is what tasks/send runs.
+// Default params match generate-content's required fields (tenant_id/product_id).
 
 if (!KERNEL_URL) { console.error('KERNEL_URL is required'); process.exit(2); }
 if (!INTERNAL_TOKEN) { console.error('ZEUS_INTERNAL_TOKEN is required'); process.exit(2); }
@@ -126,7 +132,7 @@ async function main() {
       jsonrpc: '2.0',
       id: `sse-probe-${marker}`,
       method: 'tasks/sendSubscribe',
-      params: { skill: SKILL, params: PARAMS ?? { subject: marker, predicate: 'plan', prompt: 'Zeus↔loom interop: produce a one-line plan.' } },
+      params: { skill: SKILL, params: PARAMS ?? { tenant_id: marker, product_id: marker } },
     };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -193,7 +199,7 @@ async function main() {
       realm: REALM,
       ...(target?.realmId ? { realmId: target.realmId } : {}),
       vassals: ['loom'],
-      params: PARAMS ?? { subject: marker, predicate: 'plan', prompt: 'Zeus↔loom interop: produce a one-line advisory plan.' },
+      params: PARAMS ?? { tenant_id: marker, product_id: marker },
     },
   });
   const intentId = fanOut.json?.intentId;
@@ -218,15 +224,20 @@ async function main() {
   const withContent = succeeded.filter((/** @type {any} */ branch) => contentOf(branch).length >= 1);
   const report = withContent.flatMap(contentOf).map((/** @type {any} */ artifact) => artifact['x-zeus-report']).find(Boolean);
   record('a branch succeeded and returned an artifact with content', withContent.length >= 1, `ok=${succeeded.length}/${branches.length} withContent=${withContent.length}`);
-  record('the report is loom\'s plan text (executor mode, no stance expected)', report !== undefined, `report=${clip(report)}`);
+  record('the report is loom\'s plan text (executor mode, no stance expected)', report !== undefined, `report=${clip(typeof report === 'string' ? report : JSON.stringify(report))}`);
 
-  // 7. Audit carries the fan-out (dispatched/completed) for loom.
+  // 7. Governance facts written by that same run. Audit entries are filtered
+  //    client-side (a deployment may hold a long file); the claim is "an entry
+  //    for *this* run exists", matching the acceptance-real-fanout precedent.
+  const branchRuns = new Set(branches.map((/** @type {any} */ branch) => branch.runId).filter(Boolean));
   const audit = await call('GET', `/api/audit?limit=50`, { auth: true });
-  const events = Array.isArray(audit.json?.events) ? audit.json.events : [];
-  const loomEvents = events.filter((/** @type {any} */ event) => (event.vassal ?? event.name ?? '').includes('loom') || String(event.taskId ?? '').includes(intentId) || (event.intentId ?? '').includes(intentId));
-  const dispatched = loomEvents.filter((/** @type {any} */ event) => String(event.decision ?? event.type ?? '').includes('dispatched')).length;
-  const completed = loomEvents.filter((/** @type {any} */ event) => String(event.decision ?? event.type ?? '').includes('completed') || String(event.decision ?? event.type ?? '').includes('branch-ended')).length;
-  record('audit records the loom fan-out (dispatched + terminal)', dispatched >= 1 && completed >= 1, `dispatched=${dispatched} terminal=${completed} matched=${loomEvents.length}`);
+  const entries = Array.isArray(audit.json?.entries) ? audit.json.entries : [];
+  const mine = entries.filter((/** @type {any} */ entry) => entry.decision === 'dispatched' && (branchRuns.has(entry.runId) || entry.vassal === 'loom'));
+  // Zeus models the terminal state inside the dispatch entry (entry.state), not
+  // as a separate decision row; a completed/failed state on the matching entry
+  // is the terminal signal.
+  const terminal = mine.filter((/** @type {any} */ entry) => String(entry.state ?? '').includes('completed') || String(entry.state ?? '').includes('failed'));
+  record('audit records the loom fan-out (dispatch + terminal bound to this run)', audit.status === 200 && mine.length >= 1 && terminal.length >= 1, `status=${audit.status} entries=${entries.length} dispatched=${mine.length} terminal=${terminal.length}`);
 
   // 8. Optional teardown: revoke loom again (--revoke-test).
   if (revokeTest) {
