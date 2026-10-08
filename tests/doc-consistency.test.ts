@@ -873,7 +873,7 @@ describe('documentation consistency', () => {
     // fixtures such as scripts/clock-skew-setup.mjs's ZEUS_CLOCK_SKEW_DAYS are
     // never part of a deployment.
     const srcFiles = readdirSync('src', { recursive: true })
-      .filter(name => typeof name === 'string' && name.endsWith('.ts') && !name.endsWith('.d.ts'));
+      .filter((name): name is string => typeof name === 'string' && name.endsWith('.ts') && !name.endsWith('.d.ts'));
     expect(srcFiles.length, 'the src/ population collapsed, so this check would pass by finding nothing').toBeGreaterThan(50);
     const readByCode = new Set<string>();
     for (const file of srcFiles) {
