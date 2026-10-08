@@ -310,7 +310,9 @@ async function measureGate() {
   const bounded = await run({ cap: 4, queue: 2, label: 'gate-bounded' });
   const unbounded = await run({ label: 'gate-unbounded' });
 
-  const startupSaysBounded = /branch concurrency: 4, queue 2/.test(bounded.log);
+  // JSON-lines startup log (logger.ts contract since 2026-10-07): the
+  // branch-concurrency event carries maxConcurrentBranches / branchQueueLimit.
+  const startupSaysBounded = /"event":"branch-concurrency".*"maxConcurrentBranches":4,.*"branchQueueLimit":2/.test(bounded.log);
   measured('bounded submission', `http=${bounded.submitStatus} intent=${bounded.intentId ?? '(none)'} branches=${bounded.settled} body=${bounded.submitBody}`);
   measured('bounded readback', bounded.readbackBody);
   record(

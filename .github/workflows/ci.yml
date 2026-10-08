@@ -137,3 +137,43 @@ jobs:
           docker run --rm --entrypoint sh zeus:ci -c 'node scripts/gen-rsk-key.mjs /tmp/rsk.key && test -s /tmp/rsk.key'
           docker run --rm --entrypoint node zeus:ci -e "require('./dist/index.js')"
 
+  # Acceptance assets as a standing regression line. The verify-*.mjs scripts
+  # (delegation chain, intent recognition, TUI surface, runtime reliability)
+  # were previously only re-run by hand in review rounds, so a shipped-artifact
+  # change could silently break the acceptance criteria until the next review.
+  # All four are self-contained (they spawn the compiled artifact and mock their
+  # own peers over loopback), so they can gate every push. Not included:
+  # verify-roster (needs a key + roster source to be wired up deliberately) and
+  # verify-decision-backend (fail-closed without ZEUS_DECISION_*/ZEUS_LLM_*
+  # config, which CI does not carry).
+  acceptance-assets:
+    name: acceptance assets (delegation / intent / TUI / reliability)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Execute-delegation acceptance
+        run: node scripts/verify-execute-delegation.mjs
+
+      - name: Intent-recognition acceptance
+        run: node scripts/verify-intent-recognize.mjs
+
+      - name: TUI acceptance
+        run: node scripts/verify-tui-recognize.mjs
+
+      - name: Runtime-reliability acceptance
+        run: node scripts/verify-runtime-reliability.mjs
+
