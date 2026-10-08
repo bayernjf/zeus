@@ -30,7 +30,7 @@
 
 | 面 | 维度 | tier-1（形状信任） | tier-2（注册执行者） | tier-3（签名在册） |
 | --- | --- | --- | --- | --- |
-| 能力面 | 可派发技能域 | **只读类技能白名单**（skill tags 含 `read-only`；当前无该 tag 体系时 = 仅 `plan` 模式技能） | 注册声明的技能域 | 同 tier-2 |
+| 能力面 | 可派发技能域 | **只读类技能白名单**（skill tags 含 `read-only` = `READ_ONLY_TAG`；tier-1 只放行只读 tag 技能，缺 registry / 未注册 / 非只读均拒绝） | 注册声明的技能域 | 同 tier-2 |
 | 数据面 | 出站内容边界 | `dataPolicy` 强制最严档（`none`：realmHits 不入出站载荷） | 现行 dataPolicy 声明档 | 现行 dataPolicy 声明档 |
 | 数据面 | realm 可见性 | 仅个人域、且无出站凭证注入 | 注册声明 + DomainGrant 现行规则 | 同 tier-2 |
 | 资源面 | 并发分支上限 / 超时 / 回传字节 | 全局默认的 1/3（数值在启用时按实测定，不凭空拍） | 现行全局上限 | 现行全局上限 |
@@ -56,12 +56,13 @@
 
 ## 6. 触发条件与分期
 
-- **触发条件（原）**：首个矩阵外 Agent 接入时。**本设计按 #6 先例提前实施**——判档 + 审计 + 资源上限是守卫性质，库内可闭环；tier-1 的"只读白名单"依赖技能 tag 体系（当前无），故 V1 以「plan 模式 + 最严 dataPolicy + 1/3 资源 + execute 不可达」为最小闭环。
+- **触发条件（原）**：首个矩阵外 Agent 接入时。**本设计按 #6 先例提前实施**——判档 + 审计 + 资源上限是守卫性质，库内可闭环；tier-1 的"只读白名单"依赖技能 tag 体系（V1 时无），故 V1 以「plan 模式 + 最严 dataPolicy + 1/3 资源 + execute 不可达」为最小闭环。
 - **分期**：
-  - **V1（本设计随批）**：`trustTierOf` / `tierConstraints` 纯函数 + 入站面装配 + 审计值 + 测试。tier-2/3 档位**先存在**（判定函数完整），但 tier-1 是唯一立即生效的收窄。
-  - **V2**：技能只读 tag 体系（能力面白名单的正式形态）。
+  - **V1（已实施）**：`trustTierOf` / `tierConstraints` 纯函数 + 入站面装配 + 审计值 + 测试。tier-2/3 档位**先存在**（判定函数完整），但 tier-1 是唯一立即生效的收窄。
+  - **V2（已实施，2026-10-08）**：技能只读 tag 体系（能力面白名单的正式形态）——`READ_ONLY_TAG` + `isReadOnlyTagged` 纯函数（src/trust/tier.ts）+ 入站 A2A 面 tier-1 能力面闸：缺 registry / 技能未注册 / 技能非只读 → `inbound-task-refused` 审计（带 tier-1）fail-closed 403，零出站；tier-2/3 保持现行规则。
   - **V3**：bayjf R2 公开后接 `rosterPubKey` 升 tier-3（仓库外，随 E5.4）。
 
 ## 7. 演进日志
 
+- v0.2（2026-10-08）：V2 落地——tag 体系正式化（`read-only` = `READ_ONLY_TAG`），tier-1 能力面收窄为只读技能白名单（缺 registry/未注册/非只读 fail-closed），§3 能力面行与 §6 分期同步。
 - v0.1（2026-10-08）：设计稿入库（deferred #5 前置守卫裁定，V1 实施范围 = 判档 + 审计 + 资源上限）。
