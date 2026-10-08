@@ -21,7 +21,7 @@
 | 把记忆按天写成可回溯的日记，落盘 / 导出 / 经 HTTP 读取生成 | [design-diary.md](design-diary.md)（事件按天分桶/排序、内容不臆造、锚 eventId、经 Realm.write 落 `diary/YYYY-MM-DD.md`；H2 `GET /api/diary`、`POST /api/diary/generate`，E8.3） |
 | 建立虚拟部门编制、持久化、经 HTTP 建编安置、把任务结果追到责任人和操作者 | [design-org.md](design-org.md)（部门单 lead/成员唯一、org chart 编制可视、OrgRegistry 持久化重启不丢、H2 chart/建编/安置、traceAccountability 责任链，E9.3） |
 | 决策记录留多久：出窗归档设计（方案 C，append-only JSONL、双条件出窗、被引用/被裁决不出窗、触发条件与 B 开关口径） | [design-intent-retention.md](design-intent-retention.md)（deferred #42，2026-10-07 落稿，实现待触发条件；§6 验收口径） |
-| 企业用 Zeus 是每客户一套进程还是同实例多租户：决策矩阵与开工面 | [design-enterprise-shape.md](design-enterprise-shape.md)（deferred #41，2026-10-08 拍板 **v0.2 方向已固化：A 隔离实例**，已销项；B=per-tenant principal 重构降级为触发候选路径，升 B 地基=MCP 面 actor 原语） |
+| 企业用 Zeus 是每客户一套进程还是同实例多租户：决策矩阵与开工面 | [design-enterprise-shape.md](design-enterprise-shape.md)（deferred #41，2026-10-08 裁定 **v0.2 方向已固化：A 隔离实例**，已销项；B=per-tenant principal 重构降级为触发候选路径，升 B 地基=MCP 面 actor 原语） |
 | 复跑运行时可靠性实测，或看"并发闸真配置 / 升级队列跨重启 / SSE 断流与取消 / 增长斜率"四格读数 | [audit-2026-09.md](audit-2026-09.md) **v0.12** §13 + `npm run verify:reliability`（按需跑、未进 CI；每格自带正控，"过"= 工装看得见它声称能看见的差别） |
 | 知道内核能扛多少并发、怎么复跑压测 | [capacity-baseline.md](capacity-baseline.md)（E10.4 本机 mock 回环基线 **v0.4**，五场景：A 扇出宽度 / B 并发意图 / C H2 门面全链路吞吐 / D 高并发取消传播 / **E 并发闸门代价（`--cap` 显式开启）**；v0.4 worktree 同机对照确认 §7 无回归、容量跨机对照方法论、绝对值散布与不变量、`npm run bench:capacity` 复跑方法、真机重测条件） |
 | 回放一个历史决策（谁参与、什么输入、什么立场、怎么聚合的） | `src/orchestrator/replay.ts`（E1.6：replayDecision/replaySnapshot/renderReplay，从内核快照离线重建确定性时间线） |
