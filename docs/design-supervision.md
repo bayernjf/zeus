@@ -101,13 +101,32 @@ subagent 失败时按固定次序判定：**重试（幂等前提下）→ 换�
 5. 重试仅在幂等任务上发生，非幂等失败不重试而升级；
 6. 任一最终决策沿 runId 可区分执行错与监督失察。
 
+### 7.1 终止与收敛（S4，2026-10-08 补，意图级）
+
+技术探索地图 A 组 S4 的最小闭环，落在决策内核（PRD E1.5 并发治理之上的一层**意图级守卫**——并发治理管"同时在途多少"，本节管"一个意图累计派生多少、连续失败多久还继续"）。
+
+**两重守卫**
+
+1. **步数预算**：`maxBranchesPerIntent`（默认 256）——同一意图**累计**分支数上限（首次 fan-out 的 N 个分支 + 每次 resume 派生 1 个都计入）。超限拒绝派生：新 fan-out 结算为 failed（reason `budget-exceeded`），resume 抛 `IntentBudgetExceededError`（HTTP 409）。预算覆盖一切派生（含操作者显式点名与人工 approve 驱动的 resume）——它防的是意图分支总量失控，与治理面无关。
+2. **连续失败熔断**：`maxConsecutiveBranchFailures`（默认 8）——同一意图**连续**失败分支数（`branch.ok === false`）达到阈值后，**自动选靶**路径拒绝新派生（reason `circuit-open`）；显式点名的执行 Agent 不受熔断（与 skillGovernor/背压的 explicit override 先例一致——操作者显式点名是人的意图，不是自动循环）；resume 是操作者驱动的明确重派，同样不受熔断、受预算约束。
+
+**语义要点**
+
+- **守卫默认开启**（fail-closed）：与 #35 DNS 重绑定先例同族——安全守卫不等触发条件先做。默认值（256/8）是**结构守卫默认**不是性能标定，真实负载下的校准挂 #9 同一触发条件（≥3 真实执行 Agent 压测），不凭空拍数。
+- **状态随快照恢复**：预算/熔断计数纳入 `OrchestratorSnapshot`（可选字段，向后兼容），重启不因计数清零而绕过守卫。
+- **审计**：拒绝各记一条 `intent-branch-budget-exceeded` / `intent-circuit-opened`（含 intentId/used/limit 与 detail），经 onRefusal 桥进审计脊。
+- **边界**：意图级、进程内守卫；跨实例协调不做（同 #9 口径）。E1.5 的 `maxConcurrentBranches`/`branchQueueLimit` 不变。
+
+**纯函数**：`src/orchestrator/termination.ts`（`budgetExceeded` / `circuitOpen` / `advanceBudget`（spawn 时预记在途分支）/ `settleBranch`（分支结算折叠连续失败计数）/ `mayDispatch`（判别联合 `DispatchGate`，fan-out 派发边界的预算与熔断闸））。
+
 ## 8. 开放问题
 
 - Critic/Judge 是独立 Agent 还是 supervisor 内置（见技术探索地图 S2）。
-- 多层编排下 SLA/预算如何逐层分配与汇总。
+- 多层编排下 SLA/预算如何逐层分配与汇总——**意图级已由 §7.1 落地**，跨层（子意图/多层 supervisor）的逐层预算分配仍开放。
 
 ## 9. 演进日志
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| v0.2 | 2026-10-08 | 新增 §7.1 终止与收敛（S4）：意图级步数预算 + 连续失败熔断，默认开启、随快照恢复、审计进脊 |
 | v0.1 | 2026-09-22 | 首版：控制关系定义、契约结构、编排形态、跨度粒度、信任校准与失败语义、责任归属、六条验收 |

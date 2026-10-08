@@ -500,6 +500,19 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         detail: entry.detail,
       });
     },
+    // S4 (design-supervision §7.1): the intent-level termination guard refused a
+    // spawn — budget exhausted or circuit open. A guard holding is a governance
+    // fact the operator must see, same spine as refusals.
+    onTerminationRefused: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: '(intent)',
+        skill: entry.skill,
+        realm: entry.realm,
+        decision: entry.reason === 'budget-exceeded' ? 'intent-branch-budget-exceeded' : 'intent-circuit-opened',
+        detail: entry.detail,
+      });
+    },
     // #9: a saturated target re-pointed to an alternate same-skill provider lands
     // on the same audit spine as refusals (design §4.5).
     onDiverted: entry => {

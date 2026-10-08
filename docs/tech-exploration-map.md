@@ -13,10 +13,10 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | 编号 | 议题 | 状态 | 关联设计 |
 |---|---|---|---|
 | S1 | **上下文工程 Context Engineering**：每 Agent 带哪些上下文、共享上下文裁剪、上下文预算分配、长任务压缩换入换出（与记忆一体两面） | 🔜 | design-memory-consolidation.md |
-| S2 | **裁决/Critic 机制**：聚合权重来源、独立 Judge、陪审团/对抗辩论、LLM-as-judge 校准 | 🔜 | prd E1.3；design-supervision §8 |
-| S3 | **DAG 依赖编排**：超越 fan-out 的有向无环调度、关键路径、部分失败 | 🔜 | design-supervision §4 |
-| S4 | **终止与收敛**：防互相调用/辩论不收敛，步数/预算上限、熔断、确定性终止 | 🔜 | prd E1.5 |
-| S5 | **幂等与 exactly-once**：幂等键、重试副作用安全、去重 | 🔜 | prd E1.5；design-supervision §5.2 |
+| S2 | **裁决/Critic 机制**：聚合权重来源、独立 Judge、陪审团/对抗辩论、LLM-as-judge 校准 | ✅（`src/orchestrator/arbitration.ts` 后端仲裁 + `src/orchestrator/judge.ts` 对抗式复核 + `src/decision/` 模型无关决策后端；Active work 15/43，基线） | prd E1.3；design-supervision §8 |
+| S3 | **DAG 依赖编排**：超越 fan-out 的有向无环调度、关键路径、部分失败 | ✅（`src/orchestrator/dag.ts` `dag-runner.ts`：拓扑分层/关键路径/上游失败跳过下游/产物下传；Active work 13 六切片） | design-supervision §4 |
+| S4 | **终止与收敛**：防互相调用/辩论不收敛，步数/预算上限、熔断、确定性终止 | ✅（2026-10-08，design-supervision §7.1：意图级步数预算 + 连续失败熔断，默认开启、随快照恢复、审计两值，Active work 162） | prd E1.5 |
+| S5 | **幂等与 exactly-once**：幂等键、重试副作用安全、去重 | ✅（intentId 幂等零出站重放 + cancel 回写；E1.5/F2，`src/orchestrator/orchestrator.ts` #intentId） | prd E1.5；design-supervision §5.2 |
 
 ## B 组：可靠性与安全（企业版硬门槛，随真机阶段触发）
 

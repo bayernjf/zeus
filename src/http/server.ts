@@ -32,6 +32,7 @@ import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, Unsupp
 import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../realm/mcp.js';
 import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type TaskState } from '../a2a/types.js';
 import { fealtyOathProblem } from '../registry/registry.js';
+import { trustTierOf } from '../trust/tier.js';
 import {
   decideRealmAccess,
   DomainGrantError,
@@ -398,9 +399,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
         // Caller identity gate: a declared caller card must carry a fealty oath
         // that would survive the registration gate; anything else is refused
-        // (fail-closed) and audited. No card header = bearer-authenticated
-        // driver calling itself, which the token already stands for.
+        // (fail-closed) and audited on both faces — the task face (inbound-task-*)
+        // and the trust face (external-agent-*, PRD E9.4). No card header =
+        // bearer-authenticated driver calling itself, which the token already
+        // stands for.
         let callerName = 'driver';
+        let callerTier: 'tier-1' | 'tier-2' | 'tier-3' | undefined;
         const callerCard = request.headers['x-zeus-caller-card'];
         if (typeof callerCard === 'string' && callerCard.trim() !== '') {
           let card: AgentCard;
@@ -411,15 +415,31 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           }
           const fealty = card['x-zeus-fealty'];
           if (!fealty || fealty.swornTo !== 'zeus' || !(SUPPORTED_FEALTY_VERSIONS as readonly string[]).includes(fealty.version)) {
+            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'external-agent-refused', tier: 'tier-0', detail: 'caller card carries no valid zeus fealty' });
             audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: 'caller card carries no valid zeus fealty' });
             return error(reply, 403, 'caller_refused', 'caller card has no valid zeus fealty');
           }
           const oathProblem = fealtyOathProblem(fealty);
           if (oathProblem) {
+            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'external-agent-refused', tier: 'tier-0', detail: `caller fealty shape: ${oathProblem}` });
             audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: `caller fealty shape: ${oathProblem}` });
             return error(reply, 403, 'caller_refused', `invalid caller fealty: ${oathProblem}`);
           }
+          // design-external-trust (PRD E9.4): the shape survived, so the caller
+          // is admitted on a tier — tier-2 when the card names a registered
+          // active agent, tier-1 (shape-trust) otherwise. tier-3 stays
+          // unreachable until the signed roster is public (E5.4).
           callerName = card.name;
+          callerTier = trustTierOf(card, name =>
+            deps.registry?.listAll().some(entry => entry.card.name === name && entry.status === 'active') ?? false,
+          ).tier;
+          audit?.({
+            ts: at,
+            vassal: callerName,
+            decision: 'external-agent-admitted',
+            tier: callerTier,
+            detail: 'caller card admitted on trust tier',
+          });
         }
 
         // Task mapping: skills[0] selects the kernel skill; message and the
@@ -442,6 +462,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           // The caller's taskId doubles as the idempotency key: re-sending the
           // same task replays the stored result instead of re-dispatching.
           ...(taskId ? { intentId: taskId } : {}),
+          // design-external-trust (PRD E9.4): tier-1 (shape-trust) callers are
+          // pinned to plan mode — read-only analysis, execute unreachable. The
+          // tier's data face (dataPolicy 'none') and credential face (no
+          // injection) hold by construction on this face: the inbound route has
+          // no realmHits channel and no credential passthrough, so a tier-1
+          // task can never carry realm content or an outbound bearer.
+          ...(callerTier === 'tier-1' ? { mode: 'plan' as const } : {}),
           skill,
           realm,
           params: {
