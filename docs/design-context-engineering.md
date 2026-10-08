@@ -94,3 +94,76 @@
 ## 9. 演进日志
 
 - v0.1（2026-10-08）：设计稿入库（tech map S1 登记为"设计稿已出"，实现待分期触发）。
+- v0.2（2026-10-09）：补 V1 实现规格（§10）——记忆装配进分支上下文的可执行工程契约（装配器纯函数签名、装配点与数据流、预算默认值、审计事件表、幂等注记、不变量、测试与验收清单）；deferred #4/#8 触发条件按 #41 隔离实例裁定同步重审（见 deferred-items.md）。
+
+## 10. V1 实现规格：记忆装配进分支上下文（2026-10-09）
+
+### 10.1 目标与范围
+
+- V1 只做**源 4（记忆检索）装配**：每个分支拿到按技能/意图相关性检索的既往 claim/事实，作为只读附录进入出站载荷，并全程审计。记忆从"只沉淀"到"被消费"。
+- 范围外（留 V2/V3，§7）：技能 `inputs` 声明参与装配与校验（源 2）、共享裁剪完整规则（§4 去重/相关度闸/敏感面的完整形态）、上下文预算分配面（§5）、长任务换入换出（§6）。
+- 不改变 `dataPolicy` 语义、不新增数据面旁路、不做执行 Agent 侧缓存——与 §2 全程约束一致。
+
+### 10.2 装配契约（新模块 `src/context/`，纯函数）
+
+```ts
+// src/context/assemble.ts —— 零内核状态依赖，全部入参注入
+export type ContextAppendixEntry = {
+  claimId: string;   // 记忆 claim 锚，去重键
+  text: string;      // 呈现文本（factText 输出）
+  source: 'memory-recall';
+  realmId: string;   // 来源域，装配时已核
+  score: number;     // 检索相关度（searchRecall 原值）
+};
+
+export type ContextAssemblyEvent =
+  | { kind: 'context-assembled'; appendixEntries: number; realmId?: string }
+  | { kind: 'context-trimmed'; trimmed: number; reason: 'duplicate' | 'sensitive' }
+  | { kind: 'context-budget-exceeded'; kept: number; limit: number };
+
+export function assembleBranchContext(args: {
+  memoryHits: RecallHit[];      // 调用方已按目标域检索（域隔离由 searchRecall 签名强制）
+  maxEntries: number;           // 附录条目上限（结构守卫；默认 20，校准挂 #9 口径）
+}): { appendix: ContextAppendixEntry[]; events: ContextAssemblyEvent[] };
+```
+
+装配规则（V1 范围）：
+
+- **按相关度降序截断**：`searchRecall` 已按相关度排序，装配器再验降序并取前 `maxEntries`。
+- **去重**：同 `claimId` 只保留一条（score 高者胜出），去重事件记 `context-trimmed (duplicate)`。
+- **敏感面**：凭证/令牌/密钥形态文本剔除（复用 dispatch 侧脱敏的形状判据），记 `context-trimmed (sensitive)`。
+- **调用方显式载荷不在此函数内**：V1 只装附录；显式载荷原样透传是不变量，在 fan-out 既有测试钉住。
+
+### 10.3 装配点与数据流
+
+- **装配点**：`orchestrator.fanOutNew` 分支构造处（与 S4 预算闸同层，设计稿 §3）。
+- **OrchestratorOptions 增可选字段**：
+  - `memoryStore?: MemoryStore`（窄端口：只依赖 `searchRecall(readerRealmId, targetRealmId, query, options)` 签名）；
+  - `contextOptions?: { maxEntries?: number }`（默认 20，结构守卫非性能标定）。
+- **数据流**：fanOutNew 每分支装配前先 `memoryStore.searchRecall(request.realmId, request.realmId, query, { limit: maxEntries })`——query 用技能名 + `params.message` 拼接词法检索；域隔离由 `searchRecall` 的 `readerRealmId !== targetRealmId` 拒绝强制（设计稿 §3 数据二极管，装配器不重复实现，只消费传入 hits）。
+- **载荷落点**：装配结果作为只读字段 `contextAppendix` 并入分支 `DispatchRequest`（与 `realmHits`/`realmHitsOrigin` 同层）；`FanOutRequest` 不加该字段（调用方不提供，由内核装配）。出站序列化随现有通道，不需要新传输。
+- **boot 接线**：boot 已装配 memoryStore 时透传给 Orchestrator；未装配 → `contextOptions` 视为关闭，**零装配、零审计、派发照常**（与 skillGovernor 可选依赖同款优雅降级）。
+
+### 10.4 幂等与重放
+
+- 装配是**派发时瞬时行为**；幂等命中/重放返回已存结果，不重装配（与 `realmHits` 同款注记："replay may omit them"）。
+- 审计事件写入 `AUDIT_DECISIONS` 单一来源（新 decision 值 `context-assembled` / `context-trimmed` / `context-budget-exceeded`）+ TUI 语义 token，"分支拿到了什么"可回放。
+
+### 10.5 不变量（测试钉死）
+
+1. 调用方显式载荷永不被裁剪（fan-out 既有测试回归）。
+2. 附录只读：装配器不写回记忆；分支立场回写仍走 memory producer（intent-finished → claim）。
+3. 域隔离：`searchRecall` reader≠target 拒绝（既有断言）+ 装配器不二次越域。
+4. 预算截断记审计不静默（`context-budget-exceeded` 必现）。
+5. 缺 memoryStore 优雅降级：零装配、零审计事件、派发照常。
+
+### 10.6 测试与验收
+
+- **单元**：`tests/context-assemble.test.ts`（纯函数，约 8–10 例：降序截断 / 去重取高分 / 敏感过滤 / 预算事件 / 空 hits / 超限边界）。
+- **装配**：`tests/boot-context-assembly.test.ts`（真内核：boot 装配 memoryStore → fanOutNew 真派发 → 出站载荷带 `contextAppendix` 且 claimId 落请求域；缺 memoryStore → 无附录照常派发；多分支各装配）。
+- **门禁**：全量 + 真进程冒烟 +1 步（一条意图带附录出站）。
+- **文档同步**：PRD E 行状态、feature-inventory、tech map S1 行升"V1 规格已出"。
+
+### 10.7 分期边界重申
+
+V1 不做：技能 `inputs` 装配与校验（V2）、共享裁剪完整规则（V2）、预算分配面与换入换出（V3，阈值校准挂 #9 同口径）。V1 是**装配的最小闭环**：记忆可进分支、可审计、可回放，不引入任何新的数据面旁路。
