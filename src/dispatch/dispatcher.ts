@@ -111,6 +111,12 @@ export const AUDIT_DECISIONS = [
   // may reach, the task record says which task was or was not accepted.
   'external-agent-admitted',
   'external-agent-refused',
+  // design-supervision §7.1 (S4): the intent-level termination guard refused a
+  // new spawn — branch budget exhausted, or auto-selected dispatch circuit-open
+  // after too many consecutive failures. The refusal is fail-closed: nothing is
+  // dispatched, the intent settles failed with the reason attached.
+  'intent-branch-budget-exceeded',
+  'intent-circuit-opened',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

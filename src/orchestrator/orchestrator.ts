@@ -10,6 +10,16 @@ import { applyConflictResolution, recomputeResult, statusFromBranches } from './
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import { Semaphore, type SlotRelease } from './semaphore.js';
 import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
+import {
+  advanceBudget,
+  budgetExceeded,
+  DEFAULT_MAX_BRANCHES_PER_INTENT,
+  DEFAULT_MAX_CONSECUTIVE_FAILURES,
+  emptyBudget,
+  mayDispatch,
+  settleBranch,
+  type IntentBudget,
+} from './termination.js';
 import type { DecisionBackend } from '../decision/types.js';
 import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
@@ -98,6 +108,21 @@ export type OrchestratorOptions = {
   /** Called when the skill governor refuses an auto-selected fan-out; bridge it
    *  into the audit spine at assembly time. */
   onRefusal?: (entry: { skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
+  /**
+   * S4 (design-supervision §7.1): intent-level termination guard defaults. The
+   * budget caps cumulative branches per intent (first fan-out N + each resume);
+   * the breaker refuses auto-selected dispatch after N consecutive branch
+   * failures (explicit driver-named targets stay ungoverned by the breaker).
+   * Both default ON (fail-closed safety guard); unset here means the default
+   * constants in termination.ts apply. Values are structural defaults, not
+   * calibrated limits — real-load calibration rides the #9 trigger.
+   */
+  maxBranchesPerIntent?: number;
+  maxConsecutiveBranchFailures?: number;
+  /** S4: fired when the termination guard refuses a fan-out / resume; bridge it
+   *  into the audit spine (decisions `intent-branch-budget-exceeded` /
+   *  `intent-circuit-opened`). */
+  onTerminationRefused?: (entry: { intentId: string; skill: string; realm: FanOutRequest['realm']; reason: 'budget-exceeded' | 'circuit-open'; detail: string; at: string }) => void;
   /** #9: fired when a saturated/eligible-lacking target is re-pointed to an
    *  alternate same-skill provider before dispatch; bridge into the audit spine. */
   onDiverted?: (entry: { skill: string; realm: FanOutRequest['realm']; from: string; to: string; at: string }) => void;
@@ -136,7 +161,16 @@ export class IntentRequestConflictError extends DomainError {
 export type OrchestratorSnapshot = {
   intents: FanOutResult[];
   requests: Array<{ intentId: string; request: FanOutRequest }>;
+  /** S4: per-intent termination guard state (optional; absent = fresh counters). */
+  budgets?: Record<string, IntentBudget>;
 };
+
+/** S4: a resume was refused because the intent exhausted its branch budget. */
+export class IntentBudgetExceededError extends DomainError {
+  constructor(message: string) {
+    super(message, 'conflict');
+  }
+}
 
 /**
  * Fan-out decision kernel (PRD E1): one intent fans out to N vassals in
@@ -147,6 +181,16 @@ export type OrchestratorSnapshot = {
 export class Orchestrator {
   private intents = new Map<string, FanOutResult>();
   private requests = new Map<string, FanOutRequest>();
+  /**
+   * S4 (design-supervision §7.1): per-intent termination guards. `used` counts
+   * cumulative spawned branches (fan-out N + each resume), `failureStreak`
+   * counts consecutive failed branches. Held separately from intents so the
+   * guard state travels with exportState/importState but never leaks into the
+   * fan-out result shape.
+   */
+  private budgets = new Map<string, IntentBudget>();
+  /** S4: resolved guard limits (options ?? structural defaults). */
+  private budgetLimits: { maxBranchesPerIntent: number; maxConsecutiveBranchFailures: number };
   /**
    * A-11: intents whose fan-out is still running, registered before the first
    * branch is dispatched so a cancel arriving mid-flight resolves instead of
@@ -185,9 +229,13 @@ export class Orchestrator {
     this.slots = cap === undefined || !Number.isFinite(cap)
       ? null
       : new Semaphore(cap, options.branchQueueLimit ?? Number.POSITIVE_INFINITY);
-  }
-
-  async fanOut(request: FanOutRequest): Promise<FanOutResult> {
+    // S4: fail-closed defaults — the guards are on unless the assembly opts out
+    // by passing explicit limits. Structural defaults, not calibrated values.
+    this.budgetLimits = {
+      maxBranchesPerIntent: options.maxBranchesPerIntent ?? DEFAULT_MAX_BRANCHES_PER_INTENT,
+      maxConsecutiveBranchFailures: options.maxConsecutiveBranchFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES,
+    };
+  }  async fanOut(request: FanOutRequest): Promise<FanOutResult> {
     // F2 idempotency: a known intent replays its stored result with zero dispatch.
     // A key already in flight joins that fan-out instead of starting a second one,
     // and either way the incoming request must agree with the one already on
@@ -287,6 +335,20 @@ export class Orchestrator {
       names = diversion.plan.map(p => p.target);
     }
 
+    // S4 termination guard (design-supervision §7.1): budget + breaker checked
+    // at the dispatch boundary, independent of the skill-governor refusal path.
+    // A refused intent settles as failed with the refusal attached; the audit
+    // bridge reports via onTerminationRefused.
+    const budget = this.budgetOf(intentId);
+    const gate = mayDispatch(
+      budget,
+      {
+        maxBranchesPerIntent: this.budgetLimits.maxBranchesPerIntent,
+        maxConsecutiveBranchFailures: this.budgetLimits.maxConsecutiveBranchFailures,
+      },
+      explicit ?? false,
+    );
+
     let result: FanOutResult;
     if (names.length === 0) {
       result = {
@@ -300,7 +362,28 @@ export class Orchestrator {
       if (refused) {
         this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
       }
+    } else if (!gate.allowed) {
+      // S4: the intent exhausted its branch budget, or its auto-selected path
+      // is circuit-open after too many consecutive failures.
+      const detail =
+        gate.reason === 'budget-exceeded'
+          ? `intent ${intentId} branch budget exhausted (used ${budget.used} / limit ${this.budgetLimits.maxBranchesPerIntent})`
+          : `intent ${intentId} circuit open (${budget.failureStreak} consecutive failures / threshold ${this.budgetLimits.maxConsecutiveBranchFailures})`;
+      this.options.onTerminationRefused?.({
+        intentId, skill: request.skill, realm: request.realm,
+        reason: gate.reason, detail, at: this.now().toISOString(),
+      });
+      result = {
+        intentId, runId, skill: request.skill, realm: request.realm,
+        ...(request.realmId ? { realmId: request.realmId } : {}),
+        branches: [], stream: [], positions: [],
+        decision: aggregate([], request.aggregation), conflicts: [],
+        status: 'failed', createdAt: this.now().toISOString(),
+        refused: { reason: gate.reason, detail },
+      };
     } else {
+      // S4: charge the budget at spawn time (in-flight branches count too).
+      this.budgets.set(intentId, advanceBudget(this.budgetOf(intentId), names.length));
       // A-11: publish the intent before the first branch is dispatched so a
       // cancel arriving during the fan-out finds it. Previously the intent was
       // only stored once every branch had settled, so an in-flight cancel always
@@ -350,6 +433,11 @@ export class Orchestrator {
       // `outcome`, including the ones that never reached the network and so have
       // no `state` to be read through.
       const settled = branches.map(branch => ({ ...branch, outcome: outcomeOf(branch) }));
+      // S4: fold settled outcomes into the failure streak (used was charged at
+      // dispatch time, so only the streak moves here).
+      for (const branch of branches) {
+        this.budgets.set(intentId, settleBranch(this.budgetOf(intentId), branch.ok));
+      }
       result = {
         intentId, runId, skill: request.skill, realm: request.realm,
         ...(request.realmId ? { realmId: request.realmId } : {}),
@@ -441,6 +529,7 @@ export class Orchestrator {
     return {
       intents: [...this.intents.values()].map(intent => structuredClone(intent)),
       requests: [...this.requests.entries()].map(([intentId, request]) => ({ intentId, request: structuredClone(request) })),
+      budgets: Object.fromEntries(this.budgets),
     };
   }
 
@@ -448,6 +537,8 @@ export class Orchestrator {
   importState(snapshot: OrchestratorSnapshot): void {
     this.intents = new Map(snapshot.intents.map(intent => [intent.intentId, structuredClone(intent)]));
     this.requests = new Map(snapshot.requests.map(({ intentId, request }) => [intentId, structuredClone(request)]));
+    // S4: absent in snapshots written by older versions — fresh counters then.
+    this.budgets = snapshot.budgets ? new Map(Object.entries(snapshot.budgets)) : new Map();
   }
 
   /** E6.2: write the driver's conflict settlement back into the stored intent. */
@@ -484,9 +575,23 @@ export class Orchestrator {
     if (!previous.branches.some(branch => branch.vassal === vassal)) {
       throw new Error(`intent ${intentId} has no branch for vassal ${vassal}`);
     }
+    // S4: a resume spawns one more branch — check and charge the budget first.
+    // The breaker does not govern resumes (an operator-driven explicit re-dispatch,
+    // design-supervision §7.1); the budget applies to every spawn.
+    const budget = this.budgetOf(intentId);
+    if (budgetExceeded(budget, this.budgetLimits.maxBranchesPerIntent)) {
+      const detail = `intent ${intentId} branch budget exhausted (used ${budget.used} / limit ${this.budgetLimits.maxBranchesPerIntent})`;
+      this.options.onTerminationRefused?.({
+        intentId, skill: original.skill, realm: original.realm,
+        reason: 'budget-exceeded', detail, at: this.now().toISOString(),
+      });
+      throw new IntentBudgetExceededError(detail);
+    }
+    this.budgets.set(intentId, advanceBudget(budget, 1));
     const resumeNo = this.nextResumeNo(previous, vassal);
     const resumeRequest: FanOutRequest = { ...original, params: { ...original.params, ...params } };
     const branch = await this.runTrackedBranch(vassal, resumeRequest, previous.runId, intentId, resumeNo);
+    this.budgets.set(intentId, settleBranch(this.budgetOf(intentId), branch.ok));
     const others = previous.branches.filter(existing => existing.vassal !== vassal);
     const branches = [...others, branch];
     const recomputed = recomputeResult(previous, branches, original.aggregation, this.now);
@@ -630,6 +735,11 @@ export class Orchestrator {
   }
 
   /** runBranch plus E1.7 metric lifecycle bookkeeping. */
+  /** S4: read the per-intent termination state, defaulting to a fresh counter. */
+  private budgetOf(intentId: string): IntentBudget {
+    return this.budgets.get(intentId) ?? emptyBudget();
+  }
+
   private async runTrackedBranch(
     vassal: string,
     request: FanOutRequest,

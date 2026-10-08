@@ -192,7 +192,7 @@ export type SkillGovernor = {
 
 /** Why the skill governor refused an auto-selected fan-out before dispatch. */
 export type GovernanceRefusal = {
-  reason: 'skill-uninstalled' | 'no-active-provider';
+  reason: 'skill-uninstalled' | 'no-active-provider' | 'budget-exceeded' | 'circuit-open';
   detail: string;
 };
 

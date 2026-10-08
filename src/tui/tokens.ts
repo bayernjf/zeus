@@ -123,6 +123,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // gate holding, a warning.
   'external-agent-admitted': 'attention',
   'external-agent-refused': 'warning',
+  // design-supervision §7.1 (S4): a termination guard holding is a governance
+  // fact an operator should see — budget exhaustion and a circuit break are
+  // warnings, not silent drops.
+  'intent-branch-budget-exceeded': 'warning',
+  'intent-circuit-opened': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };
