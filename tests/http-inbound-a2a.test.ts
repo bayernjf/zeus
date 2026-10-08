@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { VassalRegistry, type FetchLike } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import type { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { FanOutRequest, FanOutResult } from '../src/orchestrator/types.js';
@@ -10,11 +10,15 @@ import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
 let app: FastifyInstance | undefined;
 let auditEntries: AuditEntry[] = [];
+/** The last FanOutRequest the stub orchestrator received; lets tests assert the
+ *  trust-tier narrowing on the outbound shape. */
+let lastFanOutRequest: FanOutRequest | undefined;
 
 afterEach(async () => {
   await app?.close();
   app = undefined;
   auditEntries = [];
+  lastFanOutRequest = undefined;
 });
 
 const TOKEN = { authorization: 'Bearer driver-secret' };
@@ -41,26 +45,29 @@ const VALID_FEALTY: Fealty = {
 /** Minimal in-process orchestrator stub: answers with a deterministic result. */
 function makeOrchestrator(status: FanOutResult['status']): Orchestrator {
   return {
-    fanOut: async (request: FanOutRequest): Promise<FanOutResult> => ({
-      intentId: request.intentId ?? 'intent-1',
-      runId: 'run-1',
-      skill: request.skill,
-      realm: request.realm,
-      branches: [],
-      stream: [],
-      positions: [],
-      decision: { rule: 'unanimous', conclusion: 'ok', positions: [], reason: 'stub' },
-      conflicts: [],
-      status,
-      createdAt: '2026-10-07T00:00:00.000Z',
-    }),
+    fanOut: async (request: FanOutRequest): Promise<FanOutResult> => {
+      lastFanOutRequest = request;
+      return {
+        intentId: request.intentId ?? 'intent-1',
+        runId: 'run-1',
+        skill: request.skill,
+        realm: request.realm,
+        branches: [],
+        stream: [],
+        positions: [],
+        decision: { rule: 'unanimous', conclusion: 'ok', positions: [], reason: 'stub' },
+        conflicts: [],
+        status,
+        createdAt: '2026-10-07T00:00:00.000Z',
+      };
+    },
     getIntent: async () => undefined,
   } as unknown as Orchestrator;
 }
 
-async function mount(status: FanOutResult['status'] = 'completed'): Promise<FastifyInstance> {
+async function mount(status: FanOutResult['status'] = 'completed', registry?: VassalRegistry): Promise<FastifyInstance> {
   app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: registry ?? new VassalRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
     internalToken: 'driver-secret',
     orchestrator: makeOrchestrator(status),
@@ -130,6 +137,8 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('caller_refused');
     expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'rogue')).toBe(true);
+    // The trust face records the same refusal at tier-0.
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-refused' && entry.vassal === 'rogue' && entry.tier === 'tier-0')).toBe(true);
   });
 
   it('refuses a caller card whose fealty fails the oath shape gate', async () => {
@@ -142,6 +151,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('caller_refused');
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-refused' && entry.vassal === 'sloppy')).toBe(true);
   });
 
   it('rejects an unparsable caller card header as malformed input', async () => {
@@ -198,5 +208,39 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(task.status.state).toBe('input-required');
     const accepted = auditEntries.find(entry => entry.decision === 'inbound-task-accepted');
     expect(accepted?.realm).toBe('personal');
+  });
+
+  it('admits an unregistered caller card on tier-1 and pins its dispatch to plan (PRD E9.4)', async () => {
+    const server = await mount();
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-11', message: 'summarize the diary', skills: ['summarize'] }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    // The shape-trust narrowing is visible on the outbound shape: plan only.
+    expect(lastFanOutRequest?.mode).toBe('plan');
+  });
+
+  it('admits a registered caller card on tier-2 and leaves its request untouched (PRD E9.4)', async () => {
+    const registry = new VassalRegistry(
+      (async () => ({
+        ok: true,
+        json: async () => makeCard('helper', VALID_FEALTY),
+      })) as unknown as FetchLike,
+    );
+    await registry.register('http://127.0.0.1:9/agent-card');
+    const server = await mount('completed', registry);
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-12', message: 'summarize the diary', skills: ['summarize'] }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-2')).toBe(true);
+    expect(lastFanOutRequest?.mode).toBeUndefined();
   });
 });
