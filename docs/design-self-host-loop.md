@@ -8,13 +8,13 @@
 
 | 事实 | 证据 |
 | --- | --- |
-| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2869-2869 #keepalive`、`src/orchestrator/orchestrator.ts:752-752 #setTimeout`、`src/dispatch/client.ts:93-93 #setTimeout`、`src/tui/cli.ts:95-95 #setInterval` |
-| 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:573-573 #intents` |
+| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2896-2896 #keepalive`、`src/orchestrator/orchestrator.ts:752-752 #setTimeout`、`src/dispatch/client.ts:93-93 #setTimeout`、`src/tui/cli.ts:95-95 #setInterval` |
+| 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:600-600 #intents` |
 | execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/orchestrator/orchestrator.ts:711-711 #verifyAndConsumeExecutionDelegation` |
 | 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation` |
 | 票据默认 TTL 5 分钟、上限 60 分钟——即"签发一次、派发一次"，不是"一段时间内自动放行" | `src/delegation/execution-delegation.ts:35-35 #EXECUTION_DELEGATION_DEFAULT_TTL_MS` |
 | 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156-156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:148-148 #executionDelegationNonces`、`src/state/kernel-state.ts:168-168 #executionDelegationLedger` |
-| 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:67-67 #conflictsToDesk`、`src/http/server.ts:854-854 #approve` |
+| 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:67-67 #conflictsToDesk`、`src/http/server.ts:881-881 #approve` |
 
 结论：**缺的不是安全边界，是"在没有人的时候合法地产生一次意图"的那个入口**，以及"边界内自动、越限回到人"的那层授权。这两件必须一起做——只做前者会得到一个能自主发起不可逆动作的内核，那正是现在的闸门在防的东西。
 
@@ -66,7 +66,7 @@ export type Watch = {
 | --- | --- | --- |
 | `metrics` | 本机内核读数（在途、队列深度、失败率） | `src/orchestrator/metrics.ts:58-58 #queueDepth`，纯内存只读 |
 | `realm` | 用户自己授权过的数据域里的条目元数据 | 只读面同一套扫描与边界，实时读取语义见 [mcp-integration.md](mcp-integration.md) §1.6 |
-| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:286-286 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:216-216 #diode`） |
+| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:286-286 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:224-224 #diode`） |
 
 求值器**不做**的事：不执行任意 JS、不 eval 用户字符串、不引入表达式语言。比较符是封闭枚举，字段名是白名单——理由和权限词汇封闭同源：一旦能写表达式，边界就转移到求值器里，而那里没有闸门。
 
