@@ -1118,6 +1118,11 @@ State of Zeus as of 2026-10-06.
    - [x] **联动修正**：checklist D1/D2 同步销项标注；**修正 v0.30 与索引行里的 #36 过期说法**（#36 `noUncheckedIndexedAccess` 迁移已于 2026-10-02 销项，strict 系四 flag 全开——v0.30 草稿沿用 v0.29 过时措辞，已改口"库内可一口气推进项已枯竭"）；review 状态行与 handoff/docs-README 两处索引行升 v0.30（闸门当场抓到两处版本索引过期，已修）。
    - **刻意不做**：deferred #9/#40/#41 仍挂触发条件或等决策；#3/#4/#5/#7/#8/#10/#21 未到触发点；不 push（用户未授权）。
 
+151. **账本缺口修复 + 设计稿对应审计（2026-10-08 ✅ 完成，纯文档轮，基线 **1316 / 119 不变**，`doc-consistency` 17/17 复跑全绿）**：把上一批的遗留缺口与"设计稿↔实现"全量审计一次收掉——
+   - [x] **deferred #42/#43 标题行补 ✅ 已销项（2026-10-08）**：上一批（149）销项时只写了正文销项段、标题行未标，闸门"已销项集合"按标题行判定，两条目漏出集合；本批补齐与 #18/#19/#28/#33/#34 同格式。
+   - [x] **22 份 design-*.md 全量对应审计**：逐份核对 src 引用 + 状态词 + PRD 状态列 → **无"有设计无实现"的真悬空**（agentic-integration=定位文、bayjf-roster=外部向、fealty-signing v2=触发未到、backpressure/execution-delegation/intent-retention=设计先行待触发，均正常）；**抓到 2 份实现状态过时**——design-diary（E8.3 已落地 `src/diary/` 六模块，稿子停在 v0.1 无实现引用）、design-supervision（监督台 E6.1–E6.3 ✅ + web/TUI 已落地，稿子停在 v0.1），各补"实现已落地（2026-10-08 核对）"状态行。
+   - **刻意不做**：设计稿版本号不动（设计内容未变，只补状态声明）；feature-inventory/PRD 无改动需求（E8.3/E6.x 状态列本就 ✅）；不 push（用户未授权）。
+
 ## Project documents
 📚 **文档地图（按场景怎么读）**：[docs/README.md](docs/README.md)。以下为完整清单的单一事实源：
 
@@ -1166,6 +1171,7 @@ State of Zeus as of 2026-10-06.
 
 | 日期 | 变更 |
 |---|---|
+| 2026-10-08 | **账本缺口修复 + 设计稿对应审计（Active work 151；纯文档轮，基线 1316/119 不变，`doc-consistency` 17/17 复跑全绿）**：① deferred #42/#43 标题行补 ✅ 已销项（上一批只写正文段、标题漏标，闸门 closed set 按标题判定漏出）；② 22 份 design-*.md 全量对应审计——无"有设计无实现"真悬空，2 份实现状态过时（design-diary E8.3 已落地 src/diary、design-supervision E6.1–E6.3 ✅ + web/TUI），各补"实现已落地"状态行。未 push |
 | 2026-10-08 | **台账销项批（Active work 150；纯文档轮，基线 1316/119 不变，`doc-consistency` 17/17 复跑全绿）**：五条"已实现但未销项"一次性销项——deferred **#18**（MCP actor 判定机制落地，144）、**#19**（入站 A2A 面机制落地，144）、**#28**（检测器入库为可复跑脚本、结论不入 CI，143）、**#33**（Zeus 侧凭据代理机制闭环，104/107，对端投递字段归触发②）、**#34**（Web 监督台 v1–v1.4 + TUI 三面落地，113–119/138–140）；每条补销项段 + 标题标 ✅，checklist D1/D2 同步；顺手修正 v0.30/索引行的 #36 过期说法（#36 已于 2026-10-02 销项），review 状态行与两处索引行升 v0.30。未 push |
 | 2026-10-08 | **台账过期批 + 评审 v0.30（Active work 149；test+docs 批，基线 1316/119 不变，`doc-consistency` 17/17 复跑、orchestrator 24 例 + intent-archive 22 例定向复跑全绿）**：一口气收掉四个小项——① deferred **#43** 销项：分支超时用例换 `vi.useFakeTimers()` + `advanceTimersByTimeAsync(8)` 确定性时钟（触发条件在 148 批同一次负载读数里满足）；② **#42 B 开关三处文档改口**：PRD E1.5 幂等承诺条件化（默认 retain/archive 永久、evict 窗口内）+ README 编排引擎行 + audit B-44 措辞对齐；③ deferred **#42 销项**（实现进展段补记）；④ Current state B-44 声明更新（库内欠项清零）+ **评审 v0.30**（判定维持 ✅/❌，但"可上线 ❌"库内唯一理由 B-44 已销，剩余全在仓库外）。两个原子 commit `4fcc2c7` / `c00dc87`，未 push |
 | 2026-10-08 | **意图识别的「空候选」不再等于失败（Active work 148；src+tests 批，基线 1311/119 → 1316/119，全量 1316 绿 / 0 失败，typecheck / lint exit 0，`doc-consistency` 17/17）**：入口验收撞出的第一条产品缺口——`recognizeIntent` 在排序器零词法命中时先返回 `no-candidates`，`useModel: true` 排在它后面，于是配了决策后端的人用中文说话仍然什么都问不出去，"排序器不认识这个词"被当成"这个问题无法回答"。改为后端在场且被显式要求时把整个技能目录（按 id 定序、上限 `MODEL_OPTION_LIMIT` = 30）交给模型；本地规则那条路与未配后端时的零出域边界一字未动，三条可达面（HTTP `useModel` / TUI `im` / `npm run daily -- --model`）同批继承。实测带对照：同一条中文指令不带 `--model` 仍 exit 1，带 `--model` 走回环 OpenAI 兼容端点 exit 0 且从对端日志回读实收 `Options: deployment-health \| research`。+5 例（含 35→30 截断与定序、空目录仍拒、`no-candidates` 与 `no-backend` 的先后次序）。顺带按 `vitest.config.ts` 既定口径在文件内为 scrypt 整包套件声明 60s（本机空闲 10-19s、负载 21-27s 撞 20s 地板，红在 case 间移动且单跑全绿，属负载假红，不是逻辑缺陷），并把另一条真计时器的分支超时用例登记为 deferred **#43** |
