@@ -105,6 +105,12 @@ export const AUDIT_DECISIONS = [
   // the task id are the audit trail of "who asked Zeus to do what".
   'inbound-task-accepted',
   'inbound-task-refused',
+  // design-external-trust (PRD E9.4): the trust face of the same call. A caller
+  // card was admitted on a trust tier (1/2/3) or refused at the tier gate
+  // (tier-0). Distinct from inbound-task-* — the tier says how much a caller
+  // may reach, the task record says which task was or was not accepted.
+  'external-agent-admitted',
+  'external-agent-refused',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
@@ -119,6 +125,8 @@ export type AuditEntry = {
   realm?: RealmType;
   taskId?: string;
   state?: Task['status']['state'];
+  /** Trust tier of a caller card on the external-agent-* face (PRD E9.4). */
+  tier?: 'tier-0' | 'tier-1' | 'tier-2' | 'tier-3';
   detail?: string;
 };
 

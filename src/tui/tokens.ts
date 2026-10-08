@@ -118,6 +118,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // a refused inbound task is the gate holding, which is a warning.
   'inbound-task-accepted': 'attention',
   'inbound-task-refused': 'warning',
+  // design-external-trust (PRD E9.4): admitting a caller on a trust tier is
+  // visible like any governance fact; refusing one at the tier gate is the
+  // gate holding, a warning.
+  'external-agent-admitted': 'attention',
+  'external-agent-refused': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };
