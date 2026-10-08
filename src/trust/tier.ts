@@ -42,6 +42,17 @@ export function tierConstraints(tier: TrustTier): TierConstraints {
 
 export type TrustDecision = { tier: 'tier-1' | 'tier-2' | 'tier-3'; name: string };
 
+/** V2 (design-external-trust §3, capability face): a skill tagged with this
+ *  value is a read-only skill — the formal whitelist tier-1 callers may
+ *  dispatch. The tag rides the existing skill `tags` field; no new field. */
+export const READ_ONLY_TAG = 'read-only';
+
+/** Capability-face whitelist predicate for tier-1 (design-external-trust §3):
+ *  only skills tagged read-only are dispatchable by shape-trust callers. */
+export function isReadOnlyTagged(spec: { tags?: string[] }): boolean {
+  return (spec.tags ?? []).includes(READ_ONLY_TAG);
+}
+
 /** Decides the trust tier of a caller card whose fealty shape already passed
  *  the registration gate (version gate + fealtyOathProblem). Survivors map to
  *  tiers by verification strength:
