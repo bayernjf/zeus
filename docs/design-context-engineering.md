@@ -95,8 +95,9 @@
 
 - v0.1（2026-10-08）：设计稿入库（tech map S1 登记为"设计稿已出"，实现待分期触发）。
 - v0.2（2026-10-09）：补 V1 实现规格（§10）——记忆装配进分支上下文的可执行工程契约（装配器纯函数签名、装配点与数据流、预算默认值、审计事件表、幂等注记、不变量、测试与验收清单）；deferred #4/#8 触发条件按 #41 隔离实例裁定同步重审（见 deferred-items.md）。
+- v0.3（2026-10-09）：**§10 已落码（Active work 165）**——`src/context/assemble.ts` 实现（factId 去重取高分 / 凭证形态敏感面剔除 / 降序截断，事件三值 `context-assembled|context-trimmed|context-budget-exceeded`）+ `DispatchRequest.contextAppendix` 出站并入 + `AUDIT_DECISIONS` +3 + TUI token + boot 接线（memoryStore/contextOptions/onContextAssembled 审计桥）；基线 1352/122 → 1368/124（新测试 16 例、文件 +2）、冒烟 42 → 43；tech map S1 升"V1 已落地"。
 
-## 10. V1 实现规格：记忆装配进分支上下文（2026-10-09）
+## 10. V1 实现规格：记忆装配进分支上下文（2026-10-09，**V1 已落地，Active work 165，2026-10-09**）
 
 ### 10.1 目标与范围
 
@@ -162,7 +163,7 @@ export function assembleBranchContext(args: {
 - **单元**：`tests/context-assemble.test.ts`（纯函数，约 8–10 例：降序截断 / 去重取高分 / 敏感过滤 / 预算事件 / 空 hits / 超限边界）。
 - **装配**：`tests/boot-context-assembly.test.ts`（真内核：boot 装配 memoryStore → fanOutNew 真派发 → 出站载荷带 `contextAppendix` 且 claimId 落请求域；缺 memoryStore → 无附录照常派发；多分支各装配）。
 - **门禁**：全量 + 真进程冒烟 +1 步（一条意图带附录出站）。
-- **文档同步**：PRD E 行状态、feature-inventory、tech map S1 行升"V1 规格已出"。
+- **文档同步**：PRD E 行状态、feature-inventory v0.43、tech map S1 行升"V1 已落地"（实现后本条改为验收记录：全量 1368 绿 / 124 文件、冒烟 43/43、doc-consistency 18/18）。
 
 ### 10.7 分期边界重申
 
