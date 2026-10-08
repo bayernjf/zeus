@@ -38,8 +38,8 @@
 
 | # | 项 | 说明 | 当前状态 |
 |---|---|---|---|
-| D1 | #18 MCP 暴露侧 actor 判定 | 影响"Zeus 作为执行 Agent 入他人网格"的对外可信度；与 `tools` 白名单同落点 | **机制已落地（2026-10-07，Active work 144）**：streamable HTTP（GET/POST /mcp）+ `x-zeus-realm-actor` 会话级 actor 仅可收窄宿主白名单（§6.5 裁定 ①）；真实读取方（E3.4 首个 read-realm 执行 Agent）仍未出现，OAuth subject 形态待其到来时定 |
-| D2 | #19 入站 A2A 面 | 外部 Agent 调不进 Zeus；核心 MVP 是出站协作，此项不阻塞核心 | **机制已落地（2026-10-07，Active work 144）**：`/.well-known/agent-card.json` 公开卡片 + `tasks/send` 落 H2 意图面（fealty 形状闸 fail-closed、realm 缺省 personal、AUDIT_DECISIONS 延伸）；剩真实上游调用者 + 在册名册验签信任锚（loom 反向派任务 / 公开执行 Agent 调用 / 多 Zeus 协作任一出现即闭合） |
+| D1 | #18 MCP 暴露侧 actor 判定 | 影响"Zeus 作为执行 Agent 入他人网格"的对外可信度；与 `tools` 白名单同落点 | **机制已落地（2026-10-07，Active work 144），deferred #18 已销项（2026-10-08）**：streamable HTTP（GET/POST /mcp）+ `x-zeus-realm-actor` 会话级 actor 仅可收窄宿主白名单（§6.5 裁定 ①）；真实读取方（E3.4 首个 read-realm 执行 Agent）仍未出现，OAuth subject 形态降级为真实读取方出现时的复核项 |
+| D2 | #19 入站 A2A 面 | 外部 Agent 调不进 Zeus；核心 MVP 是出站协作，此项不阻塞核心 | **机制已落地（2026-10-07，Active work 144），deferred #19 已销项（2026-10-08）**：`/.well-known/agent-card.json` 公开卡片 + `tasks/send` 落 H2 意图面（fealty 形状闸 fail-closed、realm 缺省 personal、AUDIT_DECISIONS 延伸）；剩真实上游调用者 + 在册名册验签信任锚（loom 反向派任务 / 公开执行 Agent 调用 / 多 Zeus 协作任一出现即闭合，降级为最终验证语义） |
 | D3 | #5 外部 Agent 信任分级与沙箱 | 增强，可后置 | deferred |
 | D4 | #3 传承 / #4 计费 / #21 标识符改名 | 产品演进，非上线阻塞 | deferred / 待决定 |
 | D5 | #30 连接器权限词法绑不住工具名 | 声明串要先过 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$`，实测 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` 四条全判 invalid——这类工具只能退裸 `mcp`＝放行握手发现到的全部工具 | **已修复（2026-09-30，deferred #30 销项）**：`mcp:<工具名>` 按上游握手清单的原样字符串匹配（下划线/点/大写合法、精确大小写），声明了而上游没有的名字在连接时产生 `boundary-unmatched` 审计。**剩下的都是实对面**：2026-10-01 已对真实 stdio 上游跑过 `connect`（Zeus 自有 `dist/realm/mcp-stdio.js` 与第三方 work-learn server 各一次，见 mcp-integration §2），**远程 HTTP MCP（需凭证）还没连过** |

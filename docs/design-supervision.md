@@ -1,6 +1,6 @@
 # Supervisor 与 Subagent 控制关系设计（Supervision Model）
 
-> 状态：**现行（设计稿 v0.1，2026-09-22）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
+> 状态：**现行（设计稿 v0.1，2026-09-22）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。**实现已落地（2026-10-08 核对）**：监督台控制关系（升级队列/裁决/补参重派）对应 PRD E6.1–E6.3 ✅ 与 `web/supervisor/index.html` + TUI 命令面（17 类）；本稿为控制关系模型设计，实现明细见 feature-inventory §3.6 与 handoff。
 > 上游：[prd.md](prd.md) E1（并发决策内核）、E4（执行 Agent 联邦）；与 [design-memory-consolidation.md](design-memory-consolidation.md) 配套（信任校准依赖记忆）。
 
 ## 0. 一句话

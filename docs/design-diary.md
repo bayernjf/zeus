@@ -1,6 +1,6 @@
 # 设计：Diary 日记（记忆叙事化）
 
-- 状态：**现行 v0.1**（2026-09-24）
+- 状态：**现行 v0.1**（2026-09-24）；**实现已落地（2026-10-08 核对）**——`src/diary/`（types/markdown/from-memory/persist/render/build 六模块 + `src/memory/` 事件源），PRD E8.3 状态列 ✅「已落地」；本篇为设计主文，实施进度记 [handoff.md](../handoff.md)
 - 对应 PRD：**E8.3 Diary 日记：记忆叙事化备份（P2）**
 - 关联：[design-memory-consolidation.md](design-memory-consolidation.md)（事件/事实）、[design-realm.md](design-realm.md)（Realm 数据域与 write）、[design-vault.md](design-vault.md)（备份清单/备份）、[product-portrait.md](product-portrait.md) §2.2 备份清单与记忆
 - 一句话：**把已经记录下来的事件，按天叙事成一篇人能读、句句能回溯到源事件、并能经 Realm 写回用户目录的日记；不编造、不跨域、不另建存储。**
