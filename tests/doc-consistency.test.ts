@@ -853,4 +853,61 @@ describe('documentation consistency', () => {
     const missing = documents.filter(name => !section.includes(`docs/${name}`));
     expect(missing, `documents with no index line in handoff's Project documents:\n${missing.join('\n')}`).toEqual([]);
   });
+
+  it('keeps .env.example in sync with the ZEUS_* variables the serve-side code reads', () => {
+    // Pre-launch checklist B4 asks for a line-by-line review of every ZEUS_*
+    // variable ("readable, never silently ignored") before going live. That
+    // review was manual, so it could only be correct on the day it was run:
+    // add a serve-side env read and the template silently falls behind; list a
+    // variable nobody reads and operators wire a dead knob. Both directions are
+    // mechanical, so they are asserted here instead.
+    //
+    // Direct reads only: `env.ZEUS_X`, `process.env.ZEUS_X` and the bracket
+    // forms `env['ZEUS_X']` / `process.env['ZEUS_X']`. A variable reached
+    // through a *dynamic* name (env[someFlag]) is invisible to the scan and must
+    // be claimed in DYNAMIC_NAME_VARS below, each entry pointing at the file
+    // that proves the indirect read; evidence that disappears fails too.
+    //
+    // scripts/ is deliberately out of scope: .env.example is the deployment
+    // template for the serve process and its client CLIs, while developer/CI
+    // fixtures such as scripts/clock-skew-setup.mjs's ZEUS_CLOCK_SKEW_DAYS are
+    // never part of a deployment.
+    const srcFiles = readdirSync('src', { recursive: true })
+      .filter(name => typeof name === 'string' && name.endsWith('.ts') && !name.endsWith('.d.ts'));
+    expect(srcFiles.length, 'the src/ population collapsed, so this check would pass by finding nothing').toBeGreaterThan(50);
+    const readByCode = new Set<string>();
+    for (const file of srcFiles) {
+      const text = readFileSync(resolve('src', file), 'utf8');
+      for (const match of text.matchAll(/(?:process\.)?env\.ZEUS_([A-Z0-9_]+)/g)) readByCode.add(`ZEUS_${match[1]}`);
+      for (const match of text.matchAll(/(?:process\.)?env\[['"]ZEUS_([A-Z0-9_]+)['"]\]/g)) readByCode.add(`ZEUS_${match[1]}`);
+    }
+    expect(readByCode.size, 'expected dozens of serve-side env reads; the regex stopped matching').toBeGreaterThan(30);
+
+    const example = readFileSync('.env.example', 'utf8');
+    const listedInTemplate = new Set([...example.matchAll(/ZEUS_[A-Z0-9_]+/g)].map(match => match[0]));
+    expect(listedInTemplate.size, 'the env template collapsed, so this check would pass by finding nothing').toBeGreaterThan(20);
+
+    // Code reads it -> the template must document it (commented-out entries count).
+    const undocumented = [...readByCode].filter(name => !listedInTemplate.has(name));
+    expect(undocumented, `serve-side env reads missing from .env.example:\n${undocumented.join('\n')}`).toEqual([]);
+
+    // Template lists it -> code must read it, unless it is a claimed dynamic-name read.
+    const DYNAMIC_NAME_VARS: Array<{ name: string; file: string; evidence: RegExp }> = [
+      {
+        // src/vault/cli.ts resolves the key via env[envName]; envName comes from
+        // --passphrase-env and defaults to the constant the evidence pins.
+        name: 'ZEUS_VAULT_PASSPHRASE',
+        file: 'src/vault/cli.ts',
+        evidence: /DEFAULT_PASSPHRASE_ENV = 'ZEUS_VAULT_PASSPHRASE'[\s\S]*env\[envName\]/,
+      },
+    ];
+    const dynamicNames = new Set<string>();
+    for (const claim of DYNAMIC_NAME_VARS) {
+      const source = readFileSync(claim.file, 'utf8');
+      expect(claim.evidence.test(source), `${claim.name} is whitelisted as a dynamic-name read, but ${claim.file} no longer carries the claimed indirection`).toBe(true);
+      dynamicNames.add(claim.name);
+    }
+    const dead = [...listedInTemplate].filter(name => !readByCode.has(name) && !dynamicNames.has(name));
+    expect(dead, `.env.example entries with no ZEUS_* read in code (claim an indirect read in DYNAMIC_NAME_VARS, or remove the dead knob):\n${dead.join('\n')}`).toEqual([]);
+  });
 });
