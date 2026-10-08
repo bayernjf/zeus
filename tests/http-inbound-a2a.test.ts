@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
 import { VassalRegistry, type FetchLike } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
+import { SkillRegistry } from '../src/skills/registry.js';
 import type { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { FanOutRequest, FanOutResult } from '../src/orchestrator/types.js';
 import type { AgentCard, Fealty } from '../src/a2a/types.js';
@@ -65,7 +66,16 @@ function makeOrchestrator(status: FanOutResult['status']): Orchestrator {
   } as unknown as Orchestrator;
 }
 
-async function mount(status: FanOutResult['status'] = 'completed', registry?: VassalRegistry): Promise<FastifyInstance> {
+/** Skill catalogue for V2 capability-face tests: summarize is tagged
+ *  read-only (tier-1 whitelist), arbitrate is not. */
+function makeSkillRegistry(): SkillRegistry {
+  const skills = new SkillRegistry();
+  skills.register({ id: 'summarize', name: 'summarize', description: 'read-only summarization', version: '1.0.0', tags: ['read-only'] });
+  skills.register({ id: 'arbitrate', name: 'arbitrate', description: 'analysis skill', version: '1.0.0', tags: ['analysis'] });
+  return skills;
+}
+
+async function mount(status: FanOutResult['status'] = 'completed', registry?: VassalRegistry, skillRegistry?: SkillRegistry): Promise<FastifyInstance> {
   app = await createHttpServer({
     registry: registry ?? new VassalRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
@@ -73,6 +83,7 @@ async function mount(status: FanOutResult['status'] = 'completed', registry?: Va
     orchestrator: makeOrchestrator(status),
     agentCard: makeCard('zeus', undefined),
     inboundAudit: entry => auditEntries.push(entry),
+    ...(skillRegistry ? { skillRegistry } : {}),
   });
   return app;
 }
@@ -179,7 +190,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
   });
 
   it('lands a valid tasks/send on the intent surface and returns a task receipt', async () => {
-    const server = await mount();
+    const server = await mount('completed', undefined, makeSkillRegistry());
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
@@ -210,8 +221,8 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(accepted?.realm).toBe('personal');
   });
 
-  it('admits an unregistered caller card on tier-1 and pins its dispatch to plan (PRD E9.4)', async () => {
-    const server = await mount();
+  it('admits an unregistered caller card on tier-1 and pins its dispatch to plan and read-only skills (PRD E9.4 V2)', async () => {
+    const server = await mount('completed', undefined, makeSkillRegistry());
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
@@ -220,8 +231,78 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
-    // The shape-trust narrowing is visible on the outbound shape: plan only.
+    // The shape-trust narrowing is visible on the outbound shape: plan only,
+    // and the skill survived the read-only capability whitelist.
     expect(lastFanOutRequest?.mode).toBe('plan');
+    expect(lastFanOutRequest?.skill).toBe('summarize');
+  });
+
+  it('refuses a tier-1 caller dispatching a non-read-only skill (capability face, V2)', async () => {
+    const server = await mount('completed', undefined, makeSkillRegistry());
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-13', message: 'run analysis', skills: ['arbitrate'] }),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('skill_unavailable');
+    expect(res.json().detail).toContain('read-only');
+    // Refused on the task face at tier-1; the trust admission still happened.
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    // Capability-face refusal means zero outbound dispatch.
+    expect(lastFanOutRequest).toBeUndefined();
+  });
+
+  it('refuses a tier-1 caller naming an unregistered skill (fails closed, V2)', async () => {
+    const server = await mount('completed', undefined, makeSkillRegistry());
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-14', message: 'do it', skills: ['mystery-skill'] }),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('skill_unavailable');
+    expect(res.json().detail).toContain('not registered');
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(lastFanOutRequest).toBeUndefined();
+  });
+
+  it('refuses a tier-1 caller when the skill registry is unavailable (fails closed, V2)', async () => {
+    const server = await mount();
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-15', message: 'summarize', skills: ['summarize'] }),
+    });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('skill_unavailable');
+    expect(res.json().detail).toContain('requires a skill registry');
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(lastFanOutRequest).toBeUndefined();
+  });
+
+  it('lets a tier-2 caller dispatch a non-read-only skill (capability face applies to tier-1 only)', async () => {
+    const registry = new VassalRegistry(
+      (async () => ({
+        ok: true,
+        json: async () => makeCard('helper', VALID_FEALTY),
+      })) as unknown as FetchLike,
+    );
+    await registry.register('http://127.0.0.1:9/agent-card');
+    const server = await mount('completed', registry, makeSkillRegistry());
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-16', message: 'run analysis', skills: ['arbitrate'] }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-2')).toBe(true);
+    expect(lastFanOutRequest?.mode).toBeUndefined();
+    expect(lastFanOutRequest?.skill).toBe('arbitrate');
   });
 
   it('admits a registered caller card on tier-2 and leaves its request untouched (PRD E9.4)', async () => {
