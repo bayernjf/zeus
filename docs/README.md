@@ -36,6 +36,7 @@
 | 看 UI 候选方案 | [design-ui.md](design-ui.md)（草案：A 实时监督台 **已落地** / B 多视图工作台 / C 双门户 / D 终端 TUI **已落地**；立项条件见 deferred #34） |
 | 统一 UI 的颜色/间距/字号与多语言，避免各页样式对不齐 | [design-ui-foundations.md](design-ui-foundations.md)（现行：design token 三层模型、light/dark + TUI 子集、i18n key/ICU、无裸值与审计等价校验闸门） |
 | 理解执行型 Agent 的不可逆写操作怎么获得一次性授权 | [design-execution-delegation.md](design-execution-delegation.md)（v0.1 现行：操作者一次性短时授权票据，Ed25519 签名/能力白名单/单 nonce 防重放/fail-closed；纯原语已落，派发与 A2A 投递待 pr-helper 凭据接口，deferred #33） |
+| 外部 Agent 接入时怎么定信任档位与沙箱边界（PRD E9.4） | [design-external-trust.md](design-external-trust.md)（v0.1 现行，2026-10-08，deferred #5 前置守卫裁定：四档判型 拒绝/形状信任/注册执行者/签名在册，每档绑定能力/数据/资源/操作四面上限；纯函数 trustTierOf/tierConstraints + 入站面装配 + 审计为 V1） |
 | 理解 Realm 数据域（目录即数据库）的接口契约 | [design-realm.md](design-realm.md) v0.8（connect/search/read/write、数据二极管执行点与 **§3.1 `dataPolicy` 收缩契约（2026-10-03 已落地）**、企业域三级租户与双域授权 §7、**签名且一次性的企业写凭证 §7.7**、**§6.5 MCP 暴露侧主体判定（deferred #18，2026-10-07 落地 streamable HTTP + `x-zeus-realm-actor`）**、备份清单依赖） |
 | 决定要不要把历史标识符（`vassal`/`vault`/`ZEUS_*`/`x-zeus-fealty`）改成工程术语 | [design-naming-migration.md](design-naming-migration.md)（四档代价 + 逐档迁移机制 + 本轮结论 T2/T3/T4 不做）|
 | 看懂一个 Agent 怎么"上岗即用"：四道门与首日简报 | [design-onboarding.md](design-onboarding.md)（seat/account/authorization/mentorship 现算不缓存、显式豁免、first-task 真派发） |
