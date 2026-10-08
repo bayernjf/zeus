@@ -46,7 +46,7 @@ import { loadRskSigner } from '../http/rsk.js';
 import { issueDriverWriteGrant } from '../realm/grant.js';
 import type { BranchOutcome, FanOutResult } from '../orchestrator/types.js';
 import { RealmError, type RealmConnection } from '../realm/types.js';
-import { renderDailyReport, type DailyBranchView, type DailyReportModel } from './report.js';
+import { renderDailyReport, parsePreviousRecord, type DailyBranchView, type DailyReportModel } from './report.js';
 
 const DEFAULT_STATE_FILE = './data/daily-state.json';
 const DEFAULT_BRANCH_TIMEOUT_MS = 60_000;
@@ -296,6 +296,35 @@ function recordItemId(at: string, skill: string): string {
   return `zeus-daily/${stamp}-${skill.replace(/[^A-Za-z0-9._-]/g, '-')}.md`;
 }
 
+/**
+ * Reads the most recent stored daily page for the same skill in the mounted
+ * realm, so this run's page can carry a "previous" line. The query is anchored
+ * on the two facts every daily page contains — the `zeus-daily/` prefix (Record
+ * path line) and the skill id (Intent line) — so the connect-time search
+ * snapshot finds them without a full listing. This is a read-only look back:
+ * the result never enters the dispatch load, the params, or the protocol, and
+ * a realm whose store cannot answer the query simply has no previous line.
+ */
+async function findPreviousRecord(
+  ctx: RunContext,
+  skill: string,
+): Promise<DailyReportModel['previous'] | undefined> {
+  const store = ctx.kernel?.realmStore;
+  const realm = ctx.realm;
+  if (!store || !realm) return undefined;
+  try {
+    const hits = await store.search(realm.realmId, { text: `zeus-daily ${skill}`, limit: 20 });
+    const hit = hits.find(candidate => candidate.itemId.startsWith('zeus-daily/'));
+    if (!hit) return undefined;
+    const item = await store.read(realm.realmId, hit.itemId);
+    return parsePreviousRecord(item.content, hit.itemId);
+  } catch {
+    // Reading history is an enhancement, not a guarantee: a store that cannot
+    // answer (no search support, an unreadable item) must not fail the run.
+    return undefined;
+  }
+}
+
 /** Returns true when the record did not reach the realm. */
 async function writeRecord(ctx: RunContext): Promise<boolean> {
   const model = ctx.report!;
@@ -463,6 +492,13 @@ async function runOnce(ctx: RunContext): Promise<number> {
   }
 
   model.params = { prompt: args.instruction, ...args.params };
+  // Look back before dispatch: the previous page for this skill is context for
+  // the operator reading this one, and it must be collected while the run is
+  // still read-only (it is never part of the outbound load).
+  if (model.skill !== null) {
+    const previous = await findPreviousRecord(ctx, model.skill);
+    if (previous) model.previous = previous;
+  }
   const result = await ctx.kernel.orchestrator.fanOut({
     skill: model.skill,
     params: model.params,

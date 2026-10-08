@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runDailyCli } from '../src/daily/cli.js';
-import { renderDailyReport, type DailyReportModel } from '../src/daily/report.js';
+import { renderDailyReport, parsePreviousRecord, type DailyReportModel } from '../src/daily/report.js';
 
 /**
  * The product entry (`npm run daily`) is assembly: recognize → fan out → write
@@ -125,6 +125,67 @@ describe('daily report rendering', () => {
     expect(text).toContain('`no-active-provider` — the skill is uninstalled');
     expect(text).toContain('`esc-1` (intent-conflict): tie at 1/2 — options: healthy · degraded');
     expect(text).toContain('npm run tui');
+  });
+
+  it('shows the previous record for the same skill when one exists', () => {
+    const text = renderDailyReport(
+      baseModel({
+        previous: {
+          itemId: 'zeus-daily/2026-10-07T09-00-00Z-deployment-health.md',
+          at: '2026-10-07T09:00:00.000Z',
+          intentId: 'intent-prev-1',
+          conclusion: 'healthy',
+        },
+      }),
+    );
+    expect(text).toContain(
+      '- **Previous** `zeus-daily/2026-10-07T09-00-00Z-deployment-health.md` · 2026-10-07T09:00:00.000Z · intent `intent-prev-1` · concluded **healthy**',
+    );
+    expect(text.indexOf('- **Previous**')).toBeLessThan(text.indexOf('- **Params**'));
+  });
+
+  it('omits the previous line when there is no stored page to cite', () => {
+    const text = renderDailyReport(baseModel());
+    expect(text).not.toContain('Previous');
+  });
+});
+
+describe('daily previous-record parsing', () => {
+  it('reads back a page the module itself rendered', () => {
+    const stored = renderDailyReport(
+      baseModel({
+        status: 'completed',
+        decision: { rule: 'majority', conclusion: 'healthy', reason: 'majority: "healthy" 1/1' },
+        intentId: 'intent-abc',
+        runId: 'run-1',
+      }),
+    );
+    const parsed = parsePreviousRecord(stored, 'zeus-daily/2026-10-08T09-00-00Z-deployment-health.md');
+    expect(parsed).toEqual({
+      itemId: 'zeus-daily/2026-10-08T09-00-00Z-deployment-health.md',
+      at: '2026-10-08T09:00:00.000Z',
+      intentId: 'intent-abc',
+      conclusion: 'healthy',
+    });
+  });
+
+  it('is tolerant of pages without an intent id or an aggregated conclusion', () => {
+    const stored = renderDailyReport(
+      baseModel({
+        status: 'completed',
+        decision: { rule: 'majority', conclusion: null, reason: 'no vassal returned a stance' },
+      }),
+    );
+    const parsed = parsePreviousRecord(stored, 'zeus-daily/2026-10-08T09-00-00Z-deployment-health.md');
+    expect(parsed).toEqual({
+      itemId: 'zeus-daily/2026-10-08T09-00-00Z-deployment-health.md',
+      at: '2026-10-08T09:00:00.000Z',
+    });
+  });
+
+  it('rejects text that is not a daily page', () => {
+    expect(parsePreviousRecord('just some notes\nnot a zeus page', 'notes.md')).toBeUndefined();
+    expect(parsePreviousRecord('', 'zeus-daily/x.md')).toBeUndefined();
   });
 });
 
@@ -289,6 +350,34 @@ describe('npm run daily', () => {
     expect(intentId).toBeTruthy();
     const state = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as { orchestrator: { intents: Array<{ intentId: string }> } };
     expect(state.orchestrator.intents.map(intent => intent.intentId)).toContain(intentId);
+  });
+
+  it('closes the read loop: a second run cites the first run\'s page for the same skill', async () => {
+    const root = tempRoot('loop');
+    const first = await runDailyCli(
+      ['--root', root, '--agent', agentUrl('demo-agent'), '--state', join(root, 'state.json'), '--record', 'zeus-daily/first.md', 'check the deployment health'],
+      cleanEnv(),
+    );
+    expect(first.code, first.stderr).toBe(0);
+    const intentId = first.stdout.match(/`intent-[0-9a-f-]+`/)?.[0].replace(/`/g, '');
+    expect(intentId).toBeTruthy();
+    // The first run has no stored page to cite yet, so its report carries no line.
+    expect(first.stdout).not.toContain('**Previous**');
+
+    const second = await runDailyCli(
+      ['--root', root, '--agent', agentUrl('demo-agent'), '--state', join(root, 'state.json'), '--record', 'zeus-daily/second.md', 'check the deployment health'],
+      cleanEnv(),
+    );
+    expect(second.code, second.stderr).toBe(0);
+    // The look-back is a read-only fact: it reaches the page and the stored file,
+    // and nowhere else. The dispatch load is untouched, so the intent id the page
+    // cites is the previous run's, never this one's.
+    expect(second.stdout).toContain('- **Previous** `zeus-daily/first.md`');
+    expect(second.stdout).toContain(`intent \`${intentId}\``);
+    expect(second.stdout).toContain('concluded **healthy**');
+    expect(readFileSync(join(root, 'zeus-daily', 'second.md'), 'utf8')).toContain(
+      `intent \`${intentId}\` · concluded **healthy**`,
+    );
   });
 
   it('exits 1 when the agent reports a failed task, and still keeps the evidence', async () => {

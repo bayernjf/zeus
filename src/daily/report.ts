@@ -60,6 +60,19 @@ export type DailyReportModel = {
   /** The record written back into the mounted directory. */
   record?: { itemId: string; bytes: number };
   writeError?: string;
+  /** The most recent stored page for the same skill in the same realm, so a run
+   *  can show what the previous one concluded. Read before dispatch, never part
+   *  of the outbound load (see DailyPreviousRecord). */
+  previous?: DailyPreviousRecord;
+};
+
+/** The facts a stored daily page carries that a later run reuses: its own path,
+ *  its timestamp, the intent id the run owned, and the aggregated conclusion. */
+export type DailyPreviousRecord = {
+  itemId: string;
+  at: string;
+  intentId?: string;
+  conclusion?: string;
 };
 
 const clip = (value: string, max = 300): string => {
@@ -69,6 +82,30 @@ const clip = (value: string, max = 300): string => {
 
 function quote(value: string): string {
   return value.includes('\n') || value === '' ? JSON.stringify(value) : value;
+}
+
+/**
+ * Reverse of renderDailyReport, for one stored page: pulls the facts a later run
+ * reuses (timestamp, intent id, aggregated conclusion) out of the markdown this
+ * module itself produced. Tolerant on purpose — a page that predates a field, or
+ * a decision that settled to "no conclusion", yields a shorter result rather than
+ * a failure. Returns undefined for anything that is not one of our pages.
+ */
+export function parsePreviousRecord(markdown: string, itemId: string): DailyPreviousRecord | undefined {
+  const at = markdown.match(/^# Zeus · (.+)$/m)?.[1]?.trim();
+  if (!at) return undefined;
+  const intentId = markdown.match(/^\- \*\*Intent id\*\* `([0-9a-zA-Z-]+)`/m)?.[1];
+  const decisionSection = markdown.split('## Decision')[1] ?? '';
+  const conclusion = decisionSection
+    .match(/^\- rule `[^`]*` → (.+)$/m)?.[1]
+    ?.trim()
+    .replace(/^\*\*|\*\*$/g, '');
+  return {
+    itemId,
+    at,
+    ...(intentId ? { intentId } : {}),
+    ...(conclusion && conclusion !== 'no conclusion' ? { conclusion } : {}),
+  };
 }
 
 /**
@@ -99,6 +136,14 @@ export function renderDailyReport(model: DailyReportModel): string {
     if (model.candidates.length > 0) {
       lines.push(`  - ranked candidates: ${model.candidates.map(c => `\`${c.skill}\` (${c.score})`).join(', ')}`);
     }
+  }
+
+  if (model.previous) {
+    const parts = [`\`${model.previous.itemId}\``];
+    if (model.previous.at) parts.push(model.previous.at);
+    if (model.previous.intentId) parts.push(`intent \`${model.previous.intentId}\``);
+    if (model.previous.conclusion) parts.push(`concluded **${quote(clip(model.previous.conclusion, 200))}**`);
+    lines.push(`- **Previous** ${parts.join(' · ')}`);
   }
 
   if (model.note) lines.push(`- **Note** ${model.note}`);
