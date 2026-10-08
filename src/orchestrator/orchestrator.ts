@@ -24,6 +24,9 @@ import type { DecisionBackend } from '../decision/types.js';
 import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
+import { assembleBranchContext, type ContextAssemblyEvent } from '../context/assemble.js';
+import type { MemoryStore } from '../memory/memory-store.js';
+import type { RecallHit } from '../memory/types.js';
 import type {
   BranchOutcome,
   CancelBranchResult,
@@ -39,6 +42,26 @@ import type {
 import type { IntentArchiveLookup } from '../state/archive.js';
 
 const TERMINAL_STATES = new Set<TaskState>(['completed', 'failed', 'canceled']);
+
+/**
+ * S1 context engineering V1: appendix entry cap per intent. Structural guard,
+ * not a calibrated performance budget — numeric calibration is deferred to
+ * deferred #9 (≥3 real agents under load).
+ */
+const CONTEXT_APPENDIX_DEFAULT_MAX = 20;
+
+/**
+ * Lexical recall query for the memory appendix: the skill name plus the
+ * textual message parameter when present (design §10.3). `params.message`
+ * mirrors the intent face's message field; other parameter shapes fall back
+ * to the skill name alone.
+ */
+function buildRecallQuery(skill: string, params: Record<string, unknown>): string {
+  const message = params.message;
+  return typeof message === 'string' && message.trim().length > 0
+    ? `${skill} ${message.trim()}`
+    : skill;
+}
 
 export type OrchestratorOptions = {
   now?: () => Date;
@@ -142,6 +165,20 @@ export type OrchestratorOptions = {
   /** deferred #33: fired when the execute gate refuses a branch; bridge into
    *  the audit spine at assembly time (decision `execution-delegation-denied`). */
   onExecutionDelegationRefused?: (entry: { skill: string; realm: FanOutRequest['realm']; vassal: string; reason: string; at: string }) => void;
+  /**
+   * S1 context engineering V1 (design-context-engineering §10): the memory
+   * store whose recall feeds the branch dispatch context. Narrow port — only
+   * `searchRecall(reader, target, query, options)` is relied on; domain
+   * isolation is enforced by that signature (reader !== target rejects), this
+   * assembler never re-implements it. Optional: when absent, context assembly
+   * is off — zero appendix, zero audit events, dispatch proceeds unchanged.
+   */
+  memoryStore?: MemoryStore;
+  /** V1 tuning: appendix entry cap per intent (structural guard, default 20;
+   *  numeric calibration deferred to #9 real-agent load). */
+  contextOptions?: { maxEntries?: number };
+  /** Receives the assembly audit events (intent-level, no single vassal). */
+  onContextAssembled?: (events: ContextAssemblyEvent[], entry: { intentId: string; runId: string; skill: string; realm: FanOutRequest['realm']; realmId?: string; at: string }) => void;
 };
 
 export class UnknownIntentError extends DomainError {
@@ -384,6 +421,42 @@ export class Orchestrator {
     } else {
       // S4: charge the budget at spawn time (in-flight branches count too).
       this.budgets.set(intentId, advanceBudget(this.budgetOf(intentId), names.length));
+      // S1 context engineering V1 (design-context-engineering §10): assemble the
+      // memory appendix once per intent at the dispatch boundary, shared
+      // read-only across every branch. Query is the skill name plus the textual
+      // message parameter (lexical retrieval), scoped to the dispatch realm —
+      // `searchRecall(reader, reader, ...)` makes cross-realm reads impossible
+      // at the signature level. A store-level failure or a missing realmId
+      // degrades exactly like an unconfigured store: zero appendix, zero audit.
+      let contextAppendix: DispatchRequest['contextAppendix'] = [];
+      let contextEvents: ContextAssemblyEvent[] = [];
+      if (this.options.memoryStore && request.realmId !== undefined) {
+        const maxEntries = this.options.contextOptions?.maxEntries ?? CONTEXT_APPENDIX_DEFAULT_MAX;
+        let hits: RecallHit[] = [];
+        try {
+          hits = this.options.memoryStore.searchRecall(
+            request.realmId,
+            request.realmId,
+            buildRecallQuery(request.skill, request.params),
+            { limit: maxEntries },
+          );
+        } catch {
+          hits = [];
+        }
+        const assembled = assembleBranchContext({ memoryHits: hits, maxEntries });
+        contextAppendix = assembled.appendix;
+        contextEvents = assembled.events;
+        if (contextEvents.length > 0) {
+          this.options.onContextAssembled?.(contextEvents, {
+            intentId,
+            runId,
+            skill: request.skill,
+            realm: request.realm,
+            ...(request.realmId ? { realmId: request.realmId } : {}),
+            at: this.now().toISOString(),
+          });
+        }
+      }
       // A-11: publish the intent before the first branch is dispatched so a
       // cancel arriving during the fan-out finds it. Previously the intent was
       // only stored once every branch had settled, so an in-flight cancel always
@@ -419,6 +492,7 @@ export class Orchestrator {
               entry?.divertedFrom ?? null,
               exhaustedNote,
               signals.get(name)?.signal,
+              contextAppendix,
             );
           })
         );
@@ -748,7 +822,8 @@ export class Orchestrator {
     resumeNo = 0,
     divertedFrom: string | null = null,
     exhaustedNote: string | null = null,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    contextAppendix?: DispatchRequest['contextAppendix'],
   ): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const metrics = this.options.metrics;
@@ -788,7 +863,7 @@ export class Orchestrator {
         this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
         this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
       }
-      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal);
+      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix);
     } finally {
       release();
     }
@@ -809,7 +884,7 @@ export class Orchestrator {
     return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal): Promise<BranchOutcome> {
+  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix']): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     // deferred #33: execute-mode gate. An execute is an irreversible external
     // write, so it must carry a verified, unconsumed execution delegation; the
@@ -849,6 +924,10 @@ export class Orchestrator {
       runId: branchRunId,
       ...(request.realmHits ? { realmHits: request.realmHits } : {}),
       ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}),
+      // S1 (design-context-engineering §10): the memory appendix assembled at
+      // the dispatch boundary rides the same layer as realmHits — read-only,
+      // assembled once per intent, shared by every branch of this fan-out.
+      ...(contextAppendix !== undefined && contextAppendix.length > 0 ? { contextAppendix } : {}),
       ...(signal !== undefined ? { signal } : {}),
     };
     const pending = this.dispatcher

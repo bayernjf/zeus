@@ -77,6 +77,12 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // refused by policy origin (warning, like the other policy-working refusals).
   'content-injected': 'info',
   'refused-data-policy': 'warning',
+  // S1 context engineering V1 (design-context-engineering §10): appendix
+  // assembled is information (like content-injected); a trimmed entry and an
+  // over-budget cap are shape-changes worth noticing, so both warn.
+  'context-assembled': 'info',
+  'context-trimmed': 'warning',
+  'context-budget-exceeded': 'warning',
   'domain-grant-issued': 'info',
   'domain-grant-revoked': 'warning',
   'driver-grant-issued': 'info',

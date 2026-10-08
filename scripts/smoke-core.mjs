@@ -482,6 +482,19 @@ try {
     `entries=${(diaryRead.json?.entries ?? []).length}, badDate=${diaryBadDate.status}`,
   );
 
+  // S1 (design-context-engineering §10): with facts now consolidated, a fresh
+  // intent's branches carry the kernel-assembled memory appendix on the wire —
+  // recall stops being "only persisted" and reaches the executing agent. The
+  // query mirrors the earlier fan-out's terms so the recall has a match.
+  const appendixProbe = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, vassals: ['a1'], params: { subject: 'appendix', predicate: 'probe', message: 'smoke-target verdict' } });
+  const appendixPayload = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
+  record(
+    'memory recall is assembled into the outbound branch context',
+    appendixProbe.json?.status === 'completed'
+      && appendixPayload.includes('"contextAppendix"')
+      && appendixPayload.includes('"memory-recall"'),
+    `agent saw the appendix: ${appendixPayload.includes('"contextAppendix"') ? 'yes' : 'no'} status=${String(appendixProbe.json?.status)}`
+  );
   const revokedAt = agent('a1').requests;
   const revoked = await api('DELETE', '/api/vassals/a1', undefined, { authorization: `Bearer ${DRIVER_TOKEN}` });
   const afterRevoke = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a1'] });

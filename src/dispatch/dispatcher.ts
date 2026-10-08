@@ -1,6 +1,7 @@
 import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
 import type { RealmHit } from '../realm/types.js';
+import type { ContextAppendixEntry } from '../context/assemble.js';
 import { sendTaskSubscribe, cancelTask } from './client.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
@@ -64,6 +65,13 @@ export const AUDIT_DECISIONS = [
   // design-realm §3.1: realm content was injected, recording the policy, the
   // origin and the count so "what did this task give that agent" can be traced.
   'content-injected',
+  // S1 context engineering V1 (design-context-engineering §10): the memory
+  // appendix assembled into the branch dispatch context, and the two ways its
+  // assembly shape-changed (a trimmed entry, an over-budget cap) — "what did
+  // this branch get" must be replayable, never silent.
+  'context-assembled',
+  'context-trimmed',
+  'context-budget-exceeded',
   // deferred #33: an operator issued a one-time, bounded approval for an
   // executing agent to perform an external write.
   'execution-delegation-issued',
@@ -150,6 +158,13 @@ export type DispatchRequest = {
    *  kernel-resolved hits as task-scoped, and can verify nothing about
    *  caller-asserted ones). */
   realmHitsOrigin?: 'kernel-resolved' | 'caller-asserted';
+  /**
+   * S1 context engineering V1: the read-only memory appendix assembled by the
+   * kernel at dispatch time (design-context-engineering §10). Never supplied
+   * by a caller — `FanOutRequest` has no such field — and never written back.
+   * Like `realmHits`, it is instantaneous at dispatch and a replay may omit it.
+   */
+  contextAppendix?: ContextAppendixEntry[];
   /**
    * design-fan-out §7: hard-abort a live outbound A2A stream. Forwarded into
    * `sendTaskSubscribe`'s signal, so an abort while the peer is still streaming
@@ -317,7 +332,16 @@ export class Dispatcher {
         {
           taskUrl: vassal.taskUrl,
           skill: request.skill,
-          params: { ...request.params, ...(injectedHits.length ? { realmHits: injectedHits } : {}) },
+          params: {
+            ...request.params,
+            ...(injectedHits.length ? { realmHits: injectedHits } : {}),
+            // S1 (design-context-engineering §10): the kernel-assembled memory
+            // appendix travels the existing outbound channel — the vassal sees
+            // what context the kernel gave this branch.
+            ...(request.contextAppendix !== undefined && request.contextAppendix.length > 0
+              ? { contextAppendix: request.contextAppendix }
+              : {}),
+          },
           runId,
           ...(token !== undefined ? { token } : {}),
         },

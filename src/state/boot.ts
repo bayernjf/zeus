@@ -476,6 +476,30 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     now,
     metrics,
     ...(intentArchive ? { archive: intentArchive } : {}),
+    // S1 context engineering V1 (design-context-engineering §10): memory recall
+    // feeds the branch dispatch context. Assembled once per intent at the
+    // dispatch boundary, audited on the same spine as dispatches. boot always
+    // has a memory store; an unconfigured kernel degrades to zero assembly.
+    memoryStore,
+    contextOptions: { maxEntries: 20 },
+    onContextAssembled: (events, entry) => {
+      for (const event of events) {
+        auditSink({
+          ts: entry.at,
+          vassal: '(intent)',
+          runId: entry.runId,
+          skill: entry.skill,
+          realm: entry.realm,
+          decision: event.kind,
+          detail:
+            event.kind === 'context-assembled'
+              ? `intent ${entry.intentId}: ${event.appendixEntries} memory entries assembled${entry.realmId ? ` (realm ${entry.realmId})` : ''}`
+              : event.kind === 'context-trimmed'
+                ? `intent ${entry.intentId}: ${event.trimmed} memory entry trimmed (${event.reason})`
+                : `intent ${entry.intentId}: memory appendix capped at ${event.limit} (${event.kept} kept)`,
+        });
+      }
+    },
     onConflict: conflictsToDesk(oversight),
     // E6.1 (C-28): a branch that stops at input-required is a vassal asking the
     // driver for parameters. The desk's `ingest` had no caller anywhere in src,
