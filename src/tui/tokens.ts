@@ -165,6 +165,13 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'recovery-awaiting-operator': 'attention',
   'recovery-settled-failed': 'warning',
   'checkpoint-written': 'info',
+  // design-planning (S12): plan lifecycle — selected is progress, conflict and
+  // unplannable need the operator, malformed/replanned are warnings.
+  'plan-selected': 'accent',
+  'plan-conflict': 'attention',
+  'plan-rejected-unplannable': 'attention',
+  'plan-malformed': 'warning',
+  'plan-replanned': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };
