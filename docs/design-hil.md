@@ -1,6 +1,7 @@
 # 设计稿：Human-in-the-loop 介入时机（tech map S10）
 
-- 状态：**设计稿 v0.1（2026-10-09）**，纯设计未落码；实施待分期触发。
+- 状态：**现行 v0.2（2026-10-09）**：设计稿 v0.1 + **V1 已落码**（Active work 167）——`src/oversight/interrupt.ts` 纯函数 `classifyInterruption`/`interruptionReason`（六信号→L0/L1/L2 固定判定链，零 IO 零接线）+ 审计 3 值 `interrupt-level-0/1/2` 入 AUDIT_DECISIONS + TUI token；V2（接升级队列/挂起判定）与 V3（可选）待分期。
+- 演进：v0.1（2026-10-09）设计探索先行（分级判定链 + `classifyInterruption` 接口草案）；v0.2（2026-10-09，Active work 167）V1 落码（`src/oversight/interrupt.ts` + `tests/interrupt-classify.test.ts` 15 例 + 审计/TUI 接线，基线 1379/125 → 1410/126、冒烟 45/45、doc-consistency 18/18）。
 - 关联：tech map S10（何时打断人、何时异步介入，不打断心流）；design-supervision.md（§6 裁决/升级、§7.1 终止与收敛 S4）；design-backpressure.md（分流候选集 selectTargets）；design-external-trust.md（E9.4 信任分级）；`src/oversight/oversight.ts`（升级队列）；`src/delegation/delegation-contract.ts`（父授权契约）。
 - 本文是介入时机策略的单一事实源；handoff 与 PRD 只索引，不复制全文。
 
