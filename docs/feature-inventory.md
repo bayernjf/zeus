@@ -24,7 +24,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 入口 | 形态 | 规模 | 鉴权 |
 | --- | --- | --- | --- |
 | 产品入口 `npm run daily` | 一次性进程内装配（无常驻服务、不占端口），`src/daily/cli.ts` 装配 + `src/daily/report.ts` 纯渲染 | 9 个旋钮（`--root` `--agent` `--skill` `--params` `--record` `--realm` `--timeout` `--model` `--state`）；一句话 → 意图 → 扇出 → 决策页写回目录；**读回环（v0.38）：派发前查同一 realm 同类技能最近 daily 页，把上次结论与 intentId 打进新页「上一次」行（只读，不进进出站载荷）**；退出码 0/1/2 | 无 bearer：本地目录与本地状态文件就是边界；不带 `--model` 时指令正文不出本机；`--realm enterprise` 的写回用本地驱动钥签发的 grant（`ZEUS_RSK_KEY`） |
-| HTTP 门面 | Fastify 长驻进程，`npm start` | **92 条路由**（3 公开 + 89 bearer） | 公开 3 条无鉴权；其余同一 bearer |
+| HTTP 门面 | Fastify 长驻进程，`npm start` | **93 条路由**（3 公开 + 90 bearer） | 公开 3 条无鉴权；其余同一 bearer |
 | 终端面板 TUI | `npm run tui` | 17 类命令 | `ZEUS_INTERNAL_TOKEN`（env）——**`--token` 被显式拒绝**：命令行秘密在 `ps` 与 shell 历史里可见（`src/tui/cli.ts:47-47 #token`；原台账此格误写为 `--token`，见审计报告 §10 B-37） |
 | Web 监督台（方案 A v1.4） | `web/supervisor/index.html` + 静态托管 | 监控（内核状态/指标+决策后端徽章/名册含吊销·恢复治理/审计时间线+过滤/并发趋势）/ 意图派发+作战室（详情/SSE 实时/DAG/取消/决策回放/结果责任链）/ 裁决 / 授权 / 组织（编制树）/ 目录（技能+连接器只读）/ 连接；v1.1 派发作战室+SSE、v1.2 DAG+识别+loading+SSE 重连、v1.3 审计过滤+趋势+徽标全局刷新+历史回写、v1.4 回放+责任链+组织+目录+名册治理+决策徽章 | 浏览器侧 localStorage 存 bearer；服务侧 `ZEUS_CORS_ORIGINS` 白名单 |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
@@ -32,7 +32,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | MCP 服务端 | `src/realm/mcp-stdio.ts` | 3 资源模板 + 2 工具 | 宿主预授权目录 |
 | 脚本 | `scripts/` | **15 个**（`ls scripts/*.mjs` 现测；本批新增 `check-prd-status-body.mjs`（deferred #28 状态列 vs 正文冲突候选检测器，不入 CI、评审每轮带校准样例跑，2026-10-07 Active work 143）；上一记为 14 个，本批前新增 `run-watch-tick.mjs`（调用方 watch 评估调度器，见 §3.11 与 deployment §8）；更早原记 8 个，漂移的 5 个是 `verify-runtime-reliability` / `verify-decision-backend` / `verify-execute-delegation` / `verify-intent-recognize` / `verify-tui-recognize`，见 §10 C-26） | 不适用 |
 
-### 2.1 HTTP 路由（92 条：3 公开 + 89 bearer）
+### 2.1 HTTP 路由（93 条：3 公开 + 90 bearer）
 
 量法：`src/http/server.ts` 里 `app.<verb>('<path>'` 的注册数（每条注册一路由，无重复注册；`tests/doc-consistency.test.ts` 已把本行与下表之和钉成断言，故三个数字不会再各自漂移）。
 
@@ -49,7 +49,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 组 | 条数 | 代表路由 |
 | --- | --- | --- |
 | 名册与执行 Agent | 4 | `GET /api/roster`、`POST /api/vassals`、`DELETE /api/vassals/:name`、`POST /api/vassals/:name/reinstate` |
-| 意图与编排 | 14 | `POST /api/intents`、`POST /api/intents/recognize`（E2.6）、`GET /api/intents/:id`、`POST /:id/cancel`、`GET /:id/dag`、`GET /:id/events`（SSE）、`GET /:id/replay`、`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`（自托管 P1：watch 登记/读/撤销 + 调用方驱动 tick）、`GET`/`POST /.well-known/agent-card.json`（deferred #19 入站 A2A：公开卡片 + bearer 保护 JSON-RPC tasks/send 落意图面） |
+| 意图与编排 | 15 | `POST /api/intents`、`POST /api/intents/recognize`（E2.6）、`GET /api/intents/:id`、`POST /:id/cancel`、`GET /:id/dag`、`GET /:id/events`（SSE）、`GET /:id/replay`、`GET /:id/trace`（S6 V2 只读 trace 树）、`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`（自托管 P1：watch 登记/读/撤销 + 调用方驱动 tick）、`GET`/`POST /.well-known/agent-card.json`（deferred #19 入站 A2A：公开卡片 + bearer 保护 JSON-RPC tasks/send 落意图面） |
 | 监督台 | 7 | `GET /api/escalations`、`GET /:id`、`POST /:id/approve`、`/reject`、`/approve-resume`、`/resolve`、`/approve-contract`（自托管第 5 步：批准委托越限项 = 签新契约并换绑 watch） |
 | 指标与状态 | 3 | `GET /api/metrics`、`GET /api/state`、`GET /api/audit` |
 | 组织编制 | 13 | `GET /api/org/chart`、`GET /api/org/accountability/:intentId`、部门建编/安置/设 lead/移除成员、带教立项/授课/豁免/撤回/台账、`GET /:id/briefing/:agentId`、`POST /:id/first-task` |
@@ -129,7 +129,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 确定性 realmId（realpath 派生）与内容指纹 | `realm/store.ts` `realm/digest.ts` | ✅ |
 | 路径逃逸防护（路径段 + realpath 双检，拒符号链接） | `src/realm/store.ts:203-203 #isInsideRoot` | ✅ |
 | 文本白名单、隐藏与依赖目录剪枝、1MiB 上限 | `realm/store.ts` scan | ✅ |
-| 数据二极管：域须在 fealty 声明内才注入 | `src/dispatch/dispatcher.ts:310-310 #diode` | ✅ |
+| 数据二极管：域须在 fealty 声明内才注入 | `src/dispatch/dispatcher.ts:317-317 #diode` | ✅ |
 | 企业域三级租户（org/department/member） | `realm/tenant.ts` | ✅ |
 | 双域授权：个人↔企业单向隔离，显式签名一次性授权 | `realm/authorization.ts` | ✅ |
 | 企业域写凭证：签名且一次性，nonce 账本 | `realm/grant.ts` | ✅ |
@@ -147,7 +147,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | Ed25519 + JCS 两层信封（条目 attestation + 快照 seal），离线可验 | `registry/signing.ts` | ✅ |
 | 吊销强制力：派发前阻断、凭据即刻断流、四视图不回显 | `registry/registry.ts` `dispatch/dispatcher.ts` | ✅ |
 | 出站凭据注入（`url｜token` seed、快照持久化、0600） | `registry/registry.ts` `tokenFor` | ✅ |
-| SLA 受理计时审计 | `src/dispatch/dispatcher.ts:376-376 #ackSeconds` | ✅ |
+| SLA 受理计时审计 | `src/dispatch/dispatcher.ts:383-383 #ackSeconds` | ✅ |
 | 文件/URI 产物部件（只呈现不自动拉取） | `a2a/parts.ts` | ✅ |
 | 对线上真实执行 Agent 的协议验收 | `scripts/acceptance-standard-a2a.mjs` | ✅（E4.8 已实跑 PASS） |
 | 凭据委派（execute 模式） | 未实现 | ⬜（deferred #33 投递字段：对端凭据代理接口未定义；PRD E4.10 是背压降级顺序，与凭据委派无关） |
@@ -159,7 +159,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 薄传输层：全库仅 `http/` 引 fastify，内核零传输依赖 | `http/server.ts` | ✅ |
-| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:314-314 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
+| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:315-315 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
 | 根公钥发布端点 | `GET /api/roster/keys` | ✅ |
 | 生产密钥硬化：内联 PEM / 文件挂载 / production 无钥拒启 | `http/rsk.ts` | ✅ |
 | 启动装配：四组件一次装配、快照恢复、信号优雅落盘 | `state/boot.ts` | ✅ |
