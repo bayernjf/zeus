@@ -422,7 +422,7 @@ try {
   const auditMode = mode(auditFile);
   const auditText = existsSync(auditFile) ? readFileSync(auditFile, 'utf8') : '';
   record('governance decisions are persisted 0600', auditMode === '600' && /"decision":"dispatched"/.test(auditText), `mode=${auditMode} lines=${auditText.trim().split('\n').length}`);
-  const auditRead = await api('GET', '/api/audit?limit=5');
+  const auditRead = await api('GET', '/api/audit?limit=50');
   record('the audit trail reads back over the bearer API', auditRead.status === 200 && auditRead.text.includes('dispatched'), `status=${auditRead.status}`);
 
   // The two drift/export faces, checked on the compiled process rather than only

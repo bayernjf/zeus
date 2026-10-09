@@ -567,6 +567,21 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         detail: `target '${entry.from}' saturated/unavailable; diverted to '${entry.to}' for skill '${entry.skill}'`,
       });
     },
+    // S11 V2: one line per fan-out describing the candidate face the live
+    // saturation data produced, so "why this provider set" is on the audit
+    // spine alongside the branches it dispatched.
+    onCandidatesSelected: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: '(kernel)',
+        skill: entry.skill,
+        realm: entry.realm,
+        decision: 'tool-selected',
+        detail: entry.pinned
+          ? `candidate face for skill '${entry.skill}': ${entry.namedCount} driver-pinned name(s); pool not consulted`
+          : `candidate face for skill '${entry.skill}': pool ${entry.poolSize}, live-saturated dropped ${entry.saturatedDropped}, diverted ${entry.diverted}`,
+      });
+    },
     // deferred #33: the execute gate refused a branch. An execute without a
     // verified, unconsumed delegation is a governance fact — refused before any
     // outbound request exists, so this audit line is the refusal itself.

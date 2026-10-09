@@ -10,6 +10,7 @@ import { applyConflictResolution, recomputeResult, statusFromBranches } from './
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import { Semaphore, type SlotRelease } from './semaphore.js';
 import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
+import { selectCandidates } from './discovery.js';
 import {
   advanceBudget,
   budgetExceeded,
@@ -151,6 +152,25 @@ export type OrchestratorOptions = {
   /** #9: fired when a saturated/eligible-lacking target is re-pointed to an
    *  alternate same-skill provider before dispatch; bridge into the audit spine. */
   onDiverted?: (entry: { skill: string; realm: FanOutRequest['realm']; from: string; to: string; at: string }) => void;
+  /**
+   * S11 V2 (design-tool-discovery §5): fired once per fan-out after the unified
+   * candidate face is assembled from live per-vassal saturation, before the
+   * scored switch layer. Bridge into the audit spine as `tool-selected` so
+   * "why this provider" is replayable: how many names were pinned, how large
+   * the governed pool was, how many live-saturated providers the face dropped,
+   * and how many targets the switch layer re-pointed.
+   */
+  onCandidatesSelected?: (entry: {
+    intentId: string;
+    skill: string;
+    realm: FanOutRequest['realm'];
+    pinned: boolean;
+    namedCount: number;
+    poolSize: number;
+    saturatedDropped: number;
+    diverted: number;
+    at: string;
+  }) => void;
   /**
    * deferred #33: the execute-mode gate. When set, an execute-mode branch is
    * refused (no outbound dispatch) unless the supplied execution delegation
@@ -358,23 +378,51 @@ export class Orchestrator {
       }
     }
 
+    // S11 V2 (design-tool-discovery §5): the unified candidate face.
+    // selectCandidates consumes the *live* per-vassal in-flight counters from
+    // ConcurrencyMetrics (the same source as the switch layer below), so the
+    // saturation face is runtime data rather than a V1 caller-supplied fixture.
+    // The trust face (tier-1 read-only narrowing, E9.4) and the capability face
+    // (execute gate) are already enforced at the inbound dispatcher/delegation
+    // boundary before fanOutNew, so the internal fan-out path carries the
+    // tier-0/granted defaults and contributes only live saturation; re-checking
+    // them here would duplicate gates with no new boundary.
+    const governedPool = explicit ? undefined : this.options.skillGovernor?.activeProviders(request.skill);
+    const perVassalCap = this.options.maxConcurrentPerVassal;
+    const face =
+      names.length > 0
+        ? selectCandidates(request.skill, {
+            ...(explicit ? { named: [...new Set(request.vassals!)] } : {}),
+            ...(explicit ? {} : { candidatePool: governedPool ?? names }),
+            load: {
+              inFlightOf: v => this.options.metrics?.inFlightByVassalNow(v) ?? 0,
+              capOf: () => perVassalCap ?? Number.POSITIVE_INFINITY,
+            },
+            tier: 'tier-0',
+            readOnlyTagged: true,
+            capabilityGranted: true,
+          })
+        : [];
+    const pinnedNames = new Set(explicit ? request.vassals ?? [] : []);
+    const faceAuto = face.filter(c => !pinnedNames.has(c.provider)).map(c => c.provider);
+    const autoPoolBefore = governedPool ?? (explicit ? [] : names);
+
     // #9 backpressure diversion (design-backpressure.md): with a per-vassal
     // saturation cap configured, re-point saturated auto-selected targets to the
     // best available same-skill provider before dispatch. Explicit driver-named
-    // vassals stay hard-pinned (a deliberate override, §4.4). The live per-vassal
-    // load is read from ConcurrencyMetrics; the score uses historical reliability
-    // and latency from the same collector.
+    // vassals stay hard-pinned (a deliberate override, §4.4). The candidate
+    // pool is the S11 face (live-saturated providers already dropped); the
+    // score uses historical reliability and latency from the same collector.
     let diversion: SelectTargetsResult | null = null;
-    if (names.length > 0 && this.options.maxConcurrentPerVassal !== undefined) {
-      const providers = this.options.skillGovernor?.activeProviders(request.skill);
+    if (names.length > 0 && perVassalCap !== undefined) {
       diversion = selectTargets({
         skill: request.skill,
         ...(explicit ? { explicitVassals: request.vassals } : {}),
         initialNames: names,
-        ...(providers ? { candidatePool: providers } : {}),
+        ...(explicit ? {} : { candidatePool: faceAuto }),
         load: {
           inFlightByVassal: v => this.options.metrics?.inFlightByVassalNow(v) ?? 0,
-          capOf: () => this.options.maxConcurrentPerVassal!,
+          capOf: () => perVassalCap,
         },
         metrics: {
           failureRate: v => this.options.metrics?.failureRateOf(v) ?? 0,
@@ -383,6 +431,20 @@ export class Orchestrator {
         health: { statusOf: v => this.lookup.statusOf?.(v) ?? 'unknown' },
       });
       names = diversion.plan.map(p => p.target);
+    }
+
+    if (names.length > 0) {
+      this.options.onCandidatesSelected?.({
+        intentId,
+        skill: request.skill,
+        realm: request.realm,
+        pinned: explicit ?? false,
+        namedCount: explicit ? names.length : 0,
+        poolSize: autoPoolBefore.length,
+        saturatedDropped: Math.max(0, autoPoolBefore.length - faceAuto.length),
+        diverted: diversion ? diversion.plan.filter(p => p.divertedFrom !== null).length : 0,
+        at: this.now().toISOString(),
+      });
     }
 
     // S4 termination guard (design-supervision §7.1): budget + breaker checked
