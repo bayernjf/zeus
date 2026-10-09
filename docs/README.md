@@ -16,6 +16,15 @@
 | 何时打断人、何时异步介入（tech map S10，现行 v0.2：设计稿 + V1 落码 `src/oversight/interrupt.ts`） | [design-hil.md](design-hil.md) |
 | 工具/Skill 发现与组合（tech map S11，现行 v0.2：设计稿 + V1 落码 `src/orchestrator/discovery.ts`） | [design-tool-discovery.md](design-tool-discovery.md) |
 | 每执行 Agent 装配什么上下文：四源装配 / 共享裁剪 / 预算分配 / 长任务换入换出（tech map S1，**V1+V2 已落地 v0.4 §10/§11**——V1 记忆装配进分支上下文；V2 技能声明输入装配（显式补全 / unavailable 不臆造）+ 共享裁剪完整规则（去重取最新 / 相关度闸 / 敏感面），V3 预算分配与换入换出待分期） | [design-context-engineering.md](design-context-engineering.md) |
+| 内容侧护栏：注入跨 Agent 传播 / 越权工具调用 / PII（tech map S8，现行 v0.1 设计稿：内容来源分级 + `classifyContentRisk` 判定链 + 传播三不变量，V1 纯函数待落码） | [design-guardrails.md](design-guardrails.md) |
+| 分布式 trace 与调用链（tech map S6，现行 v0.1 设计稿：从既有审计/progress/runId 谱系装配 span 树的 `buildTraceTree`，V2 出站透传 traceparent） | [design-observability.md](design-observability.md) |
+| token 预算 / 执行中闸门 / 异常熔断（tech map S9，现行 v0.1 设计稿：可信与自报双层口径 + 与 S4 同构的 CostLedger，阈值标定挂 #9） | [design-cost-governance.md](design-cost-governance.md) |
+| 长流程 checkpoint / 崩溃恢复 / 断点续跑（tech map S13，现行 v0.1 设计稿：崩溃恢复四分类 `classifyRecoverable`，execute 默认等人、零僵尸） | [design-long-running.md](design-long-running.md) |
+| 离线 eval 集与质量回归（tech map S7，现行 v0.1 设计稿：EvalCase 固定世界 + 双侧错误率指标族 + `scoreEvalRun`，runner 复用 smoke 夹具） | [design-evals.md](design-evals.md) |
+| 规划：计划生成 / 多计划竞争 / replan（tech map S12，现行 v0.1 设计稿：规划即扇出 + `validatePlan`/`scorePlans`/`replanDelta`，冻结已完成节点） | [design-planning.md](design-planning.md) |
+| 流式体验：部分结果 / 流式合并 / 思考态（tech map S15，现行 v0.1 设计稿：增量帧归并不变量 + `streamWindow`，全落定与 mergeBranches 等价） | [design-streaming.md](design-streaming.md) |
+| 沙箱与代码执行隔离（tech map S16，现行 v0.1 设计稿：执行体四级隔离 + IsolationManifest 启动前 fail-closed 校验，stdio 子进程为首要缺口） | [design-sandbox.md](design-sandbox.md) |
+| Agent 测试：契约 / 录制重放 / mock / 混沌（tech map S17，现行 v0.1 设计稿：Recording 格式 + `withChaos` 七类故障注入器 + 兼容矩阵） | [design-agent-testing.md](design-agent-testing.md) |
 | 理解一个意图如何扇出多 Agent 并行并聚合成决策 | [design-fan-out.md](design-fan-out.md)（扇出/幂等/取消传播/合并流/规则聚合/冲突升级，PRD E1） |
 | 理解执行 Agent 饱和时如何把溢出意图分流给同技能最优提供方 | [design-backpressure.md](design-backpressure.md)（deferred #9：饱和信号、候选集过滤、可靠度×延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计） |
 | 理解决策后端抽象层（模型无关）怎么接入决策能力 | [design-decision-backend.md](design-decision-backend.md)（DecisionBackend 端口：noul/choice/score、两类实现家族——专用决策模型 Jev（快层）/ 传统 LLM 适配（慢层）、四接线位、数据主权硬线） |

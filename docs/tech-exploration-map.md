@@ -1,8 +1,8 @@
 # Agent 技术探索地图（Tech Exploration Map）
 
-> 状态：**现行（活文档 v0.3，2026-09-22）**。这是 Agent 方向技术议题的登记处与优先级视图。（版本行自 v0.2 起漏更，2026-09-26 按文末演进日志对齐到 v0.3。）
+> 状态：**现行（活文档 v0.4，2026-10-09）**。这是 Agent 方向技术议题的登记处与优先级视图。
 > 用法：议题先在本文登记（含触发条件/状态）；成熟且相关者升级为 `docs/design-*.md` 或转入 [deferred-items.md](deferred-items.md)；实施进度只记 [handoff.md](../handoff.md)。
-> 状态：🔜 A 组优先（已裁决）｜📝 待触发 / 登记中｜✅ 已有设计。
+> 状态：🔜 A 组优先（已裁决）｜📝 待触发 / 登记中｜✅ 已有设计/已落地。
 
 ## 0. 核心定位
 
@@ -65,3 +65,4 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | v0.1 | 2026-09-22 | 首版：A 组五条优先（已裁决）、B/C 组 12 条登记、Jev 模型待确认（S14 候选）、已覆盖清单 |
 | v0.2 | 2026-09-22 | Jev 已核实并落设计（design-decision-backend.md v0.1，快决策层）；S14 状态 ✅ |
 | v0.3 | 2026-09-22 | 决策后端抽象层升级为**模型无关**（design-decision-backend.md v0.2）：DecisionBackendKind=decision-model/llm，Jev 为专用决策模型家族首个实现，传统 LLM 经适配器同端口接入（慢层） |
+| v0.4 | 2026-10-09 | B/C 组九篇设计稿一次出齐（均 v0.1，V1 纯函数切法，未落码）：S8 护栏 design-guardrails、S6 可观测性 design-observability、S9 成本治理 design-cost-governance、S13 长流程恢复 design-long-running、S7 evals design-evals、S12 规划 design-planning、S15 流式 design-streaming、S16 沙箱 design-sandbox、S17 Agent 测试 design-agent-testing；tech map 九行 📝→✅ 设计稿已出 |
