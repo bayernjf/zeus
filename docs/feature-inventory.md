@@ -129,7 +129,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 确定性 realmId（realpath 派生）与内容指纹 | `realm/store.ts` `realm/digest.ts` | ✅ |
 | 路径逃逸防护（路径段 + realpath 双检，拒符号链接） | `src/realm/store.ts:203-203 #isInsideRoot` | ✅ |
 | 文本白名单、隐藏与依赖目录剪枝、1MiB 上限 | `realm/store.ts` scan | ✅ |
-| 数据二极管：域须在 fealty 声明内才注入 | `src/dispatch/dispatcher.ts:292-292 #diode` | ✅ |
+| 数据二极管：域须在 fealty 声明内才注入 | `src/dispatch/dispatcher.ts:302-302 #diode` | ✅ |
 | 企业域三级租户（org/department/member） | `realm/tenant.ts` | ✅ |
 | 双域授权：个人↔企业单向隔离，显式签名一次性授权 | `realm/authorization.ts` | ✅ |
 | 企业域写凭证：签名且一次性，nonce 账本 | `realm/grant.ts` | ✅ |
@@ -147,7 +147,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | Ed25519 + JCS 两层信封（条目 attestation + 快照 seal），离线可验 | `registry/signing.ts` | ✅ |
 | 吊销强制力：派发前阻断、凭据即刻断流、四视图不回显 | `registry/registry.ts` `dispatch/dispatcher.ts` | ✅ |
 | 出站凭据注入（`url｜token` seed、快照持久化、0600） | `registry/registry.ts` `tokenFor` | ✅ |
-| SLA 受理计时审计 | `src/dispatch/dispatcher.ts:358-358 #ackSeconds` | ✅ |
+| SLA 受理计时审计 | `src/dispatch/dispatcher.ts:368-368 #ackSeconds` | ✅ |
 | 文件/URI 产物部件（只呈现不自动拉取） | `a2a/parts.ts` | ✅ |
 | 对线上真实执行 Agent 的协议验收 | `scripts/acceptance-standard-a2a.mjs` | ✅（E4.8 已实跑 PASS） |
 | 凭据委派（execute 模式） | 未实现 | ⬜（deferred #33 投递字段：对端凭据代理接口未定义；PRD E4.10 是背压降级顺序，与凭据委派无关） |
