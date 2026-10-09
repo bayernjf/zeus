@@ -15,6 +15,7 @@
 //     four verdict classes.
 
 import type { OrchestratorSnapshot } from './orchestrator.js';
+import type { AuditSink } from '../dispatch/dispatcher.js';
 import type { FanOutStatus } from './types.js';
 import { DEFAULT_MAX_CONSECUTIVE_FAILURES } from './termination.js';
 
@@ -147,4 +148,87 @@ export function computeCheckpoint(snapshot: OrchestratorSnapshot): RecoveryCheck
       };
     }),
   };
+}
+
+/**
+ * S13 V2 (design-long-running §5): execute one recovery checkpoint after a
+ * restart. Pure orchestration — every side effect rides an injected executor,
+ * so the four verdict classes are unit-testable without a process. The audit
+ * decisions are the registered recovery-* values; a canceled settlement is
+ * reported under recovery-settled-failed with an explicit detail so the value
+ * set stays closed.
+ */
+export type RecoveryExec = {
+  intentId: string;
+  verdict: RecoveryVerdict;
+  decision: 'recovery-auto-resumed' | 'recovery-awaiting-operator' | 'recovery-settled-failed';
+  detail: string;
+  at: string;
+};
+
+export type RecoveryExecutors = {
+  /** Settle a restored intent as failed or canceled (writes the stored state). */
+  settleIntent: (intentId: string, status: 'failed' | 'canceled', detail: string) => void;
+  /** Keep an intent awaiting the operator; the escalation desk was restored
+   *  with the snapshot, so this is the audit + state-unchanged path. */
+  awaitOperator: (intentId: string, detail: string) => void;
+  /** Re-dispatch an auto-resumed branch. The executor must go through the
+   *  fan-out idempotency gate (same intentId) so a re-crash before completion
+   *  cannot double-dispatch — the F2 single-flight and cache do this. */
+  autoResume: (intentId: string, resumeNo: number, detail: string) => Promise<void>;
+};
+
+export async function executeRecovery(
+  checkpoint: RecoveryCheckpoint,
+  executors: RecoveryExecutors,
+  options: {
+    now?: () => Date;
+    maxAutoResumeMs?: number;
+    audit: AuditSink;
+  },
+): Promise<RecoveryExec[]> {
+  const now = options.now ?? (() => new Date());
+  const records: RecoveryExec[] = [];
+  for (const row of checkpoint.intents) {
+    const verdict = classifyRecoverable(row.branch, options.maxAutoResumeMs);
+    const at = now().toISOString();
+    const auditBase = {
+      ts: at,
+      runId: row.intentId,
+      vassal: '(recovery)',
+      skill: '(restored)',
+      realm: 'personal' as const,
+    };
+    switch (verdict.kind) {
+      case 'auto-resume': {
+        const detail = `auto-resumed ${row.intentId} (resume ${verdict.resumeNo})`;
+        await executors.autoResume(row.intentId, verdict.resumeNo, detail);
+        options.audit({ ...auditBase, decision: 'recovery-auto-resumed', detail });
+        records.push({ intentId: row.intentId, verdict, decision: 'recovery-auto-resumed', detail, at });
+        break;
+      }
+      case 'await-operator': {
+        const detail = `awaiting operator: ${verdict.reason} (${row.intentId})`;
+        executors.awaitOperator(row.intentId, detail);
+        options.audit({ ...auditBase, decision: 'recovery-awaiting-operator', detail });
+        records.push({ intentId: row.intentId, verdict, decision: 'recovery-awaiting-operator', detail, at });
+        break;
+      }
+      case 'settle-failed': {
+        const detail = `settled failed: ${verdict.reason} (${row.intentId})`;
+        executors.settleIntent(row.intentId, 'failed', detail);
+        options.audit({ ...auditBase, decision: 'recovery-settled-failed', detail });
+        records.push({ intentId: row.intentId, verdict, decision: 'recovery-settled-failed', detail, at });
+        break;
+      }
+      case 'settle-canceled': {
+        const detail = `settled canceled (${row.intentId})`;
+        executors.settleIntent(row.intentId, 'canceled', detail);
+        options.audit({ ...auditBase, decision: 'recovery-settled-failed', detail });
+        records.push({ intentId: row.intentId, verdict, decision: 'recovery-settled-failed', detail, at });
+        break;
+      }
+    }
+  }
+  return records;
 }

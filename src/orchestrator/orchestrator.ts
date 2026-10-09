@@ -833,6 +833,20 @@ export class Orchestrator {
   }
 
   /**
+   * S13 V2 (design-long-running §5): a crash-recovery verdict settles a
+   * restored intent as failed or canceled. The stored result's status is
+   * overwritten in place (the branch rows keep their historical outcome);
+   * late readers see the settled status instead of the pre-crash one.
+   */
+  settleRecovered(intentId: string, status: 'failed' | 'canceled'): FanOutResult {
+    const current = this.intents.get(intentId);
+    if (!current) throw new UnknownIntentError(`unknown intent: ${intentId}`);
+    const settled: FanOutResult = { ...current, status };
+    this.intents.set(intentId, settled);
+    return structuredClone(settled);
+  }
+
+  /**
    * E6.3 minimal re-dispatch: after a vassal task is approved with human-supplied
    * parameters, re-run that single branch and recompute the whole intent. The
    * other branches are untouched; the new branch replaces the old one.

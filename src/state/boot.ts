@@ -56,6 +56,7 @@ import {
   type KernelComponents,
   type KernelSnapshot,
 } from './kernel-state.js';
+import { computeCheckpoint, executeRecovery } from '../orchestrator/recovery.js';
 import type { DecisionBackend } from '../decision/types.js';
 import { createJevBackendFromEnv } from '../decision/decision-model.js';
 import { createLlmBackendFromEnv } from '../decision/llm.js';
@@ -130,6 +131,11 @@ export type KernelBoot = KernelComponents & {
 export type KernelBootOptions = {
   /** When set, state is restored from this file on boot and saved on shutdown. */
   stateFile?: string;
+  /**
+   * S13 V2 (design-long-running §5): an auto-resume whose crash window exceeds
+   * this is reclassified to awaiting the operator. Unset = no time bound.
+   */
+  recoveryMaxAutoResumeMs?: number;
   now?: () => Date;
   /** Injected fetch for card registration / outbound A2A calls (tests / proxies). */
   fetchImpl?: FetchLike;
@@ -806,7 +812,41 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         `kernel state file is unusable: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-    if (snapshot) applyKernelState(components, snapshot);
+    if (snapshot) {
+      applyKernelState(components, snapshot);
+      // S13 V2 (design-long-running §5): crash recovery runs between state
+      // restoration and the first new intent — every unsettled intent in the
+      // snapshot is classified (auto-resume / await-operator / settle-failed /
+      // settle-canceled) and executed, each on the audit spine. auto-resume
+      // re-enters the fan-out gate: the same intentId key means the F2 cache
+      // and single-flight prevent a double dispatch.
+      const checkpoint = computeCheckpoint(snapshot.orchestrator);
+      const requestsByIntent = new Map(snapshot.orchestrator.requests.map(({ intentId, request }) => [intentId, request]));
+      await executeRecovery(
+        checkpoint,
+        {
+          settleIntent: (intentId, status) => {
+            orchestrator.settleRecovered(intentId, status);
+          },
+          awaitOperator: () => {
+            // A restored needs-driver intent already has its escalation row:
+            // the desk is snapshotted with the kernel, so the audit is the
+            // recovery marker and the operator picks it up from the existing
+            // queue face.
+          },
+          autoResume: async intentId => {
+            const request = requestsByIntent.get(intentId);
+            if (!request) throw new Error(`cannot auto-resume ${intentId}: no original request in the snapshot`);
+            await orchestrator.fanOut(request);
+          },
+        },
+        {
+          now,
+          ...(options.recoveryMaxAutoResumeMs === undefined ? {} : { maxAutoResumeMs: options.recoveryMaxAutoResumeMs }),
+          audit: auditSink,
+        },
+      );
+    }
   }
   // Now that the state file exists, a freshly consumed nonce can reach disk.
   // deferred #42: before each save, out-window settled intents leave the state
