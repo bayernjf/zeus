@@ -149,6 +149,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'chain-retried': 'warning',
   'chain-switched': 'warning',
   'chain-degraded': 'warning',
+  // design-guardrails (S8): a boundary annotation is information; a redaction
+  // or refusal is the guardrail working, so it warns.
+  'guardrail-annotated': 'info',
+  'guardrail-redacted': 'warning',
+  'guardrail-refused': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };

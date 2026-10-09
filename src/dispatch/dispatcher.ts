@@ -142,6 +142,13 @@ export const AUDIT_DECISIONS = [
   'chain-retried',
   'chain-switched',
   'chain-degraded',
+  // design-guardrails (tech map S8): the content-side chain annotated,
+  // redacted or refused a content crossing. V1 registers the decision names;
+  // provenance attachment at assembly is V2, so these are reserved names until
+  // the assembly wiring actually emits them.
+  'guardrail-annotated',
+  'guardrail-redacted',
+  'guardrail-refused',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

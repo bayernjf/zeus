@@ -8,7 +8,7 @@
 
 | 事实 | 证据 |
 | --- | --- |
-| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/orchestrator/orchestrator.ts:1083-1083 #setTimeout`、`src/dispatch/client.ts:93-93 #setTimeout`、`src/tui/cli.ts:95-95 #setInterval` |
+| 内核里没有任何调度器。全仓计时器调用共 **5 处**（2026-10-05 现测），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、分支超时、派发受理超时、TUI 轮询 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/orchestrator/orchestrator.ts:1140-1140 #setTimeout`、`src/dispatch/client.ts:93-93 #setTimeout`、`src/tui/cli.ts:95-95 #setInterval` |
 | 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:621-600 #` |
 | execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/orchestrator/orchestrator.ts:3-3 #verifyAndConsumeExecutionDelegation` |
 | 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation` |
@@ -66,7 +66,7 @@ export type Watch = {
 | --- | --- | --- |
 | `metrics` | 本机内核读数（在途、队列深度、失败率） | `src/orchestrator/metrics.ts:58-58 #queueDepth`，纯内存只读 |
 | `realm` | 用户自己授权过的数据域里的条目元数据 | 只读面同一套扫描与边界，实时读取语义见 [mcp-integration.md](mcp-integration.md) §1.6 |
-| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:286-286 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:270-270 #diode`） |
+| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:286-286 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:277-277 #diode`） |
 
 求值器**不做**的事：不执行任意 JS、不 eval 用户字符串、不引入表达式语言。比较符是封闭枚举，字段名是白名单——理由和权限词汇封闭同源：一旦能写表达式，边界就转移到求值器里，而那里没有闸门。
 
