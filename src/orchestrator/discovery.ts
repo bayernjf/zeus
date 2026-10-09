@@ -132,3 +132,84 @@ export function recoverChain(failure: ChainFailure): RecoveryAction {
   if (!failure.requiredStep) return 'degrade';
   return 'escalate';
 }
+
+/**
+ * V3 slice 2 (design-tool-discovery §4): one step of a chain plan — a skill,
+ * its full candidate face (all providers/tools the step may use) and whether
+ * the step's result is required for the intent to converge.
+ */
+export type ChainStep = {
+  skillId: string;
+  candidates: DispatchCandidate[];
+  required: boolean;
+};
+
+/** V3 slice 2: an ordered recovery plan over steps. `dag` steps run under the
+ *  S3 DAG driver (topological layers); `sequential` steps run one after the
+ *  other. Recovery decisions are per-step and never cross step boundaries. */
+export type ChainPlan = {
+  steps: ChainStep[];
+  policy: 'sequential' | 'dag';
+};
+
+/** The executable recovery instruction for one failed step (V3 slice 2).
+ *  Unlike the slice-1 verdict (`RecoveryAction`), an instruction carries the
+ *  concrete candidate to re-run or switch to, so the runtime can act on it
+ *  instead of only recording the chain step it took. */
+export type RecoveryInstruction =
+  | { action: 'retry'; stepIndex: number; candidate: DispatchCandidate }
+  | { action: 'switch'; stepIndex: number; candidate: DispatchCandidate; from: string }
+  | { action: 'degrade'; stepIndex: number }
+  | { action: 'escalate'; stepIndex: number; reason: string };
+
+/**
+ * V3 slice 2 (design-tool-discovery §4 / §5): resolve one failed step of a
+ * chain plan into an executable instruction, applying the same fixed order as
+ * `recoverChain` but against the step's own candidate face:
+ *
+ *   1. high-stakes skips retry -> escalate;
+ *   2. idempotent with retries left and the circuit closed -> retry the
+ *      step's candidate for the failed provider (when it is still in the face);
+ *   3. an alternate candidate (any provider other than the failed one) with
+ *      the circuit closed -> switch to the first such candidate, in face order;
+ *   4. a non-required step -> degrade (skip it, keep converging);
+ *   5. otherwise -> escalate, with a concrete reason.
+ *
+ * The chain plan carries the step's full candidate face explicitly — the
+ * difference from slice 1, where the intent-level fan-out candidate face and
+ * the dispatch list were constructed from the same source so
+ * `hasAlternateProvider` was always false at runtime. Here alternates are
+ * decidable per step.
+ *
+ * A `stepIndex` outside the plan is a caller bug, so it fails loudly
+ * (RangeError) rather than guessing a verdict.
+ */
+export function planRecovery(
+  plan: ChainPlan,
+  stepIndex: number,
+  failedProvider: string,
+  failure: ChainFailure,
+): RecoveryInstruction {
+  const step = plan.steps[stepIndex];
+  if (step === undefined) throw new RangeError(`chain step ${stepIndex} is out of range (plan has ${plan.steps.length} steps)`);
+
+  if (failure.highStakes) {
+    return { action: 'escalate', stepIndex, reason: 'high-stakes-step' };
+  }
+
+  const sameProvider = step.candidates.find((c) => c.provider === failedProvider);
+  if (failure.idempotent && failure.retriesLeft > 0 && !failure.circuitOpen && sameProvider !== undefined) {
+    return { action: 'retry', stepIndex, candidate: sameProvider };
+  }
+
+  const alternate = step.candidates.find((c) => c.provider !== failedProvider);
+  if (alternate !== undefined && !failure.circuitOpen) {
+    return { action: 'switch', stepIndex, candidate: alternate, from: failedProvider };
+  }
+
+  if (!step.required) {
+    return { action: 'degrade', stepIndex };
+  }
+
+  return { action: 'escalate', stepIndex, reason: 'required-step-without-alternate' };
+}
