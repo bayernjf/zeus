@@ -174,6 +174,14 @@ export const AUDIT_DECISIONS = [
   'plan-conflict',
   'plan-rejected-unplannable',
   'plan-replanned',
+  // design-cost-governance (tech map S9): the cost ledger refused admission
+  // (soft cap or rate circuit), a self-reported cost disagreed with the
+  // ledger, or the cost backend degraded. V1 registers the names; the ledger
+  // wiring is V2, so these are reserved until the wiring actually emits them.
+  'cost-budget-exceeded',
+  'cost-rate-circuit-open',
+  'cost-self-report-mismatch',
+  'cost-backend-degraded',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
