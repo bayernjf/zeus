@@ -1,6 +1,6 @@
 # Agent 技术探索地图（Tech Exploration Map）
 
-> 状态：**现行（活文档 v0.4，2026-10-09）**。这是 Agent 方向技术议题的登记处与优先级视图。
+> 状态：**现行（活文档 v0.5，2026-10-10）**。这是 Agent 方向技术议题的登记处与优先级视图。
 > 用法：议题先在本文登记（含触发条件/状态）；成熟且相关者升级为 `docs/design-*.md` 或转入 [deferred-items.md](deferred-items.md)；实施进度只记 [handoff.md](../handoff.md)。
 > 状态：🔜 A 组优先（已裁决）｜📝 待触发 / 登记中｜✅ 已有设计/已落地。
 
@@ -22,7 +22,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 
 | 编号 | 议题 | 要点 | 状态 |
 |---|---|---|---|
-| S6 | 可观测性：trace/metrics/log + LLM replay | 跨 Agent 调用链调试；审计已有，补分布式 trace | 📝→✅ 设计稿已出（2026-10-09，[design-observability.md](design-observability.md) v0.1——从既有审计/progress/runId 谱系装配 span 树的纯函数 `buildTraceTree`，trace 不出进程先落库内；V2 出站透传 traceparent + 只读端点；V1 纯函数待落码） |
+| S6 | 可观测性：trace/metrics/log + LLM replay | 跨 Agent 调用链调试；审计已有，补分布式 trace | 📝→✅ 设计稿已出（2026-10-09，[design-observability.md](design-observability.md) v0.1——从既有审计/progress/runId 谱系装配 span 树的纯函数 `buildTraceTree`，trace 不出进程先落库内；V2 出站透传 traceparent + 只读端点；**V1 已落码（2026-10-10，Active work 180：`src/observability/trace.ts`，`tests/trace.test.ts` 12 例，零新增审计值）**） |
 | S7 | Evals 与质量回归 | 离线 eval 集、改 prompt 防漂移、线上 A/B（呼应 verify before asserting） | 📝→✅ 设计稿已出（2026-10-09，[design-evals.md](design-evals.md) v0.1——EvalCase 固定世界 + 双侧错误率指标族（误/漏升级、漏/误报、无证据断言恒 block）+ 纯函数评分器 scoreEvalRun，runner 复用 smoke 夹具；**V1 已落码（2026-10-10，Active work 181：`src/evals/types.ts` + `src/evals/score.ts`，`tests/evals-score.test.ts` 19 例，maxCostTokens 标记 not-assessable-in-v1 不猜数）**） |
 | S8 | Guardrails：注入/越权/PII | prompt injection 经数据跨 Agent 传播，多 Agent 放大攻击；越权工具调用 | ✅ **V1 已落地**（2026-10-09，Active work 174：[design-guardrails.md](design-guardrails.md) v0.2——`src/guardrails/content-risk.ts` `classifyContentRisk` 判定表（refuse > escalate > redact > annotate > pass：audit 凭据打码 / cross-domain PII 按 grant 脱敏或拒绝 / execute 外联凭据升级 L1 / 其余 annotate 带 provenance 边界）+ `scanContentSignals` 确定性扫描器（内置最小指令短语清单 + URL/凭据/PII 正则）+ 审计 3 值登记 + TUI token；23 例测试；V2 接装配与记忆待分期） |
 | S9 | 成本治理 | 任务/租户 token 预算、执行中预算闸门、异常熔断；cost 字段已有 | 📝→✅ 设计稿已出（2026-10-09，[design-cost-governance.md](design-cost-governance.md) v0.1——可信/自报双层口径 + 与 S4 同构的 CostLedger 纯函数（admit/软阈值/速率熔断）+ 超限复用 cancel/降级/L1 升级；阈值标定挂 #9；**V1 已落码（2026-10-10，Active work 183：`src/orchestrator/cost-ledger.ts`，admit 闸门/软阈值/速率熔断/窗口 roll，`tests/cost-ledger.test.ts` 11 例，自报成本永不进闸门）+ 审计 4 值 cost-* 登记）** |
@@ -32,7 +32,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 
 | 编号 | 议题 | 要点 | 状态 |
 |---|---|---|---|
-| S11 | 工具/Skill 发现与组合 | 自动选工具、工具链拼装、工具失败恢复 | ✅ **V1+V2+V3 slice 1 已落地**（2026-10-09，Active work 168 + A3 批 + 173：[design-tool-discovery.md](design-tool-discovery.md) v0.4——`src/orchestrator/discovery.ts` 纯函数 `selectCandidates`（点名钉选 > 自动选靶饱和过滤 > tier-1 只读收窄 fail-closed > 能力面 execute/plan）+ `recoverChain`（重试→换将→降级→升级，高利害跳过重试、熔断跳过自动路径）+ 审计 5 值 tool-selected/tool-failed/chain-retried/chain-switched/chain-degraded + TUI token；**V2 已落地（2026-10-09，design-tool-discovery v0.3）**：fanOutNew 无条件构造统一候选面喂实时饱和数据 + onCandidatesSelected hook + tool-selected 审计首次实发（selectTargets 本体 2026-09-27 已接线）；**V3 slice 1 已落地（2026-10-09，design-tool-discovery v0.4）**：recoverChain 接失败分支运行时（onChainRecovered hook + fanOutNew 恢复循环 + boot `tool-failed` 实发 / `chain-*` 按裁决分流）；V3 slice 2 ChainPlan/DAG 步面拼接（retry/switch/degrade 可执行动作）待分期） |
+| S11 | 工具/Skill 发现与组合 | 自动选工具、工具链拼装、工具失败恢复 | ✅ **V1+V2+V3 slice 1 已落地**（2026-10-09，Active work 168 + A3 批 + 173：[design-tool-discovery.md](design-tool-discovery.md) v0.4——`src/orchestrator/discovery.ts` 纯函数 `selectCandidates`（点名钉选 > 自动选靶饱和过滤 > tier-1 只读收窄 fail-closed > 能力面 execute/plan）+ `recoverChain`（重试→换将→降级→升级，高利害跳过重试、熔断跳过自动路径）+ 审计 5 值 tool-selected/tool-failed/chain-retried/chain-switched/chain-degraded + TUI token；**V2 已落地（2026-10-09，design-tool-discovery v0.3）**：fanOutNew 无条件构造统一候选面喂实时饱和数据 + onCandidatesSelected hook + tool-selected 审计首次实发（selectTargets 本体 2026-09-27 已接线）；**V3 slice 1 已落地（2026-10-09，design-tool-discovery v0.4）**：recoverChain 接失败分支运行时（onChainRecovered hook + fanOutNew 恢复循环 + boot `tool-failed` 实发 / `chain-*` 按裁决分流）；**V3 slice 2 已落地（2026-10-10，Active work 175）**：`planRecovery`（ChainPlan/DAG 步面可执行检索指令——retry 同面候选 / switch 首个异构候选 / degrade / escalate+reason，越界 stepIndex 抛 RangeError 不猜裁决），`tests/plan-recovery.test.ts` 新建 11 例） |
 | S12 | 规划：单/多 planner、重规划 | 计划竞争、计划与执行交错、replan | 📝→✅ 设计稿已出（2026-10-09，[design-planning.md](design-planning.md) v0.1——规划即扇出（planner 是规划技能 Agent，计划是待校验数据）+ validatePlan/scorePlans/selectPlan/replanDelta 纯函数（冻结已完成节点、replan 计入步数预算防不收敛）；**V1 已落码（2026-10-10，Active work 176：`src/orchestrator/planning.ts` validatePlan/scorePlans/selectPlan/replanDelta，`tests/planning.test.ts` 15 例）+ 审计 5 值 plan-* 登记）** |
 | S13 | 长流程持久化执行 | checkpoint、崩溃恢复、断点续跑（随 H2） | 📝→✅ 设计稿已出（2026-10-09，[design-long-running.md](design-long-running.md) v0.1——崩溃恢复四分类纯函数 `classifyRecoverable`（自动续跑/等人/判失败/判取消，execute 默认等人、零僵尸）+ 最小 checkpoint 集；**V1 已落码（2026-10-10，Active work 178：`src/orchestrator/recovery.ts` classifyRecoverable/computeCheckpoint，`tests/recovery.test.ts` 18 例全布尔面穷举）+ 审计 4 值 recovery-* 登记**；V2 启动恢复接线，V3 周期 checkpoint 触发条件同 retention） |
 | S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**决策后端抽象层落此层（DecisionBackend：专用决策模型 Jev 与 LLM 均可接入，见 design-decision-backend.md）** | ✅ |
