@@ -80,7 +80,7 @@
 | 期 | 内容 | 触发 |
 | --- | --- | --- |
 | **V1** | 记忆检索装配进分支上下文（源 4）+ 审计（装配清单、裁剪事件）——记忆从"只沉淀"到"被消费" | 纯库内，可立即实施；优先级高于 V2（记忆是当前最缺的输入面） |
-| **V2** | 技能 `inputs` 声明参与装配与校验（源 2）+ 共享裁剪规则（§4）落地 | V1 后，纯库内 |
+| **V2** | 技能 `inputs` 声明参与装配与校验（源 2）+ 共享裁剪规则（§4）落地 | ✅ **已落地**（2026-10-09，Active work 166，见 §11） |
 | **V3** | 上下文预算分配（§5）+ 长任务换入换出接口（§6） | 预算阈值校准依赖真实负载（#9 同口径）；换出依赖持久化基准先跑一遍 |
 | **边界** | 不改变 `dataPolicy`、不新增数据面旁路、不做执行 Agent 侧缓存 | 全程约束 |
 
@@ -96,6 +96,7 @@
 - v0.1（2026-10-08）：设计稿入库（tech map S1 登记为"设计稿已出"，实现待分期触发）。
 - v0.2（2026-10-09）：补 V1 实现规格（§10）——记忆装配进分支上下文的可执行工程契约（装配器纯函数签名、装配点与数据流、预算默认值、审计事件表、幂等注记、不变量、测试与验收清单）；deferred #4/#8 触发条件按 #41 隔离实例裁定同步重审（见 deferred-items.md）。
 - v0.3（2026-10-09）：**§10 已落码（Active work 165）**——`src/context/assemble.ts` 实现（factId 去重取高分 / 凭证形态敏感面剔除 / 降序截断，事件三值 `context-assembled|context-trimmed|context-budget-exceeded`）+ `DispatchRequest.contextAppendix` 出站并入 + `AUDIT_DECISIONS` +3 + TUI token + boot 接线（memoryStore/contextOptions/onContextAssembled 审计桥）；基线 1352/122 → 1368/124（新测试 16 例、文件 +2）、冒烟 42 → 43；tech map S1 升"V1 已落地"。
+- v0.4（2026-10-09）：**§11 V2 已落码（Active work 166）**——`src/context/skill-inputs.ts` 装配器（技能 `inputs` 从死声明变装配约束：显式载荷补全 / 缺失标 `unavailable` 不臆造）+ 共享裁剪完整规则（去重改取最新 updatedAt、新增相关度闸 `minScore` 默认关闭、敏感面保留）+ `DispatchRequest.skillInputs` 出站并入 + boot `skillInputsProvider` 窄端口接线 + 审计 reason 扩 `unavailable|relevance`、`source` 分流措辞；基线 1368/124 → 1379/125（新测试 11 例、文件 +1）、冒烟 43 → 45；tech map S1 行更新、feature-inventory v0.44、review v0.36。
 
 ## 10. V1 实现规格：记忆装配进分支上下文（2026-10-09，**V1 已落地，Active work 165，2026-10-09**）
 
@@ -168,3 +169,70 @@ export function assembleBranchContext(args: {
 ### 10.7 分期边界重申
 
 V1 不做：技能 `inputs` 装配与校验（V2）、共享裁剪完整规则（V2）、预算分配面与换入换出（V3，阈值校准挂 #9 同口径）。V1 是**装配的最小闭环**：记忆可进分支、可审计、可回放，不引入任何新的数据面旁路。
+
+## 11. V2 实现规格：技能 inputs 装配与共享裁剪完整规则（2026-10-09，**V2 已落地，Active work 166**）
+
+### 11.1 目标与范围
+
+- V2 做**源 2（技能声明输入补全）**装配 + **共享裁剪完整规则（§4）**落地：
+  - 技能 `SkillSpec.inputs` 从"死声明"变为装配约束——声明的输入字段要么由调用方显式载荷补全（最高优先级源，永不被裁剪），要么显式标 `unavailable`（不臆造值）。
+  - 裁剪规则升级为 §4 完整形态：去重按 **updatedAt 取最新**（多源重复取最新，替代 V1 的取高分）、新增**相关度闸**（低于阈值不入上下文）、保留敏感面。
+- 范围外（留 V3，§7）：上下文预算分配面（§5，per-branch `maxContextEntriesPerBranch` 数值挂 #9）、长任务换入换出（§6）。
+- 不改变 `dataPolicy` 语义、不新增数据面旁路、不做执行 Agent 侧缓存——与 §2 全程约束一致。
+
+### 11.2 装配契约（新模块 `src/context/skill-inputs.ts`，纯函数）
+
+```ts
+// src/context/skill-inputs.ts —— 零内核状态依赖，全部入参注入
+export type SkillInputEntry =
+  | { name: string; source: 'explicit'; value: unknown }   // 显式载荷补全
+  | { name: string; source: 'unavailable' };               // 无源可补，显式缺席
+
+export function assembleSkillInputs(args: {
+  declared: Record<string, unknown>;   // SkillSpec.inputs（键即字段名）
+  params: Record<string, unknown>;     // 调用方显式载荷
+}): { inputs: SkillInputEntry[]; unavailable: number; events: ContextAssemblyEvent[] };
+```
+
+装配规则：
+
+- **存在性判定**：字段在 `params` 中且值非 `undefined` → `explicit`（原样保留，含 `null`——显式交付的内容不重判）；缺失或 `undefined` → `unavailable`（不臆造值）。
+- **类型校验不在 V2 范围**：`inputs` 是自由形态 schema 描述符（v0.1 无字段级类型语法），造一个类型系统等于发明机制；存在性是目前唯一的契约。
+- **未声明键不动**：装配器只约束技能声明的字段，未声明的显式载荷原样透传（fan-out 既有不变量）。
+- **审计**：每个 unavailable 字段记 `context-trimmed (unavailable, source:'skill-inputs')`；explicit 字段零事件（补全即装配成功）。
+
+### 11.3 共享裁剪升级（`assembleBranchContext`）
+
+- **去重取最新**：同 `claimId` 多份命中时保留 **updatedAt 最新**的副本（设计稿 §4"多源重复取最新"；V1 的取高分语义是过渡口径，V2 修正），事件仍记 `context-trimmed (duplicate)`。
+- **相关度闸**：新增可选 `minScore`（hybrid score 0..1）——低于阈值的条目不入上下文，记 `context-trimmed (relevance)`。默认 `undefined` = 闸关闭（无真实负载分布，不凭空拍数），阈值校准挂 #9。
+- **敏感面**：凭证形态剔除不变（SENSITIVE_TEXT 复用 dispatch 侧脱敏形状）。
+
+### 11.4 装配点与数据流
+
+- **装配点**：`orchestrator.fanOutNew` 分支构造处，与 V1 记忆装配同层——先装记忆附录，再装技能 inputs，事件并入同一次 `onContextAssembled` 审计桥。
+- **OrchestratorOptions 增可选字段**：`skillInputsProvider?: (skillId) => Record<string, unknown> | undefined`（窄端口）；`contextOptions` 增 `minScore?: number`。
+- **规格来源**：boot 接线 `skillRegistry.get(skillId)?.inputs`。**A2A Agent Card 的技能形状（id/name/description/tags）是协议限制，不携带 inputs**——`registerFromCard` 不透传，技能输入声明只能来自显式 `POST /api/skills`（`register()`）的规格；卡广告技能无规格声明时装配零（与"目录无记录"同款降级）。
+- **载荷落点**：装配结果作为只读字段 `skillInputs` 并入分支 `DispatchRequest`（与 `contextAppendix` 同层）；`FanOutRequest` 不加该字段。出站序列化随现有通道。
+- **boot 接线**：`skillInputsProvider` 未设 / 提供者抛错 / 目录无 spec → 零装配、零事件、派发照常（与 memoryStore 同款优雅降级）。
+
+### 11.5 审计口径
+
+- `ContextAssemblyEvent['context-trimmed']` 的 reason 联合扩 `unavailable | relevance`，事件增可选 `source?: 'memory' | 'skill-inputs'`（skill-inputs 标记输入缺席；缺省即记忆）。
+- `AUDIT_DECISIONS` **不加新值**（decision 仍 `context-trimmed`，reason 在 detail 里），TUI token 不变。
+- boot 审计桥 detail 按 source 分流措辞：`skill-inputs` → `N skill input field unavailable`；记忆 → 原 `memory entry trimmed (reason)`。
+
+### 11.6 不变量（测试钉死）
+
+1. 显式载荷原样透传、永不被裁剪（fan-out 既有测试回归 + `assembleSkillInputs` 未声明键不动）。
+2. `unavailable` 是显式缺席而非臆造值：出站载荷里字段带 `source:'unavailable'`，绝不带假值。
+3. 去重取最新：同 factId 多份命中，updatedAt 新者胜出（不按分数）。
+4. 相关度闸默认关闭（`minScore` 缺省零裁剪）；开启后边界值（score === minScore）保留。
+5. 缺 provider / 无 spec / 提供者抛错 → 零装配零审计，派发照常。
+6. 审计可回放：unavailable 逐字段一条 `context-trimmed`，detail 可区分源。
+
+### 11.7 测试与验收
+
+- **单元**：`tests/context-skill-inputs.test.ts`（5 例：全 explicit / 部分 unavailable / undefined 缺 null 显式 / 空声明 / 未声明键不动）。
+- **裁剪升级**：`tests/context-assemble.test.ts` 去重用例改取最新 + 新增相关度闸 3 例（过滤+审计 / 边界值保留 / 默认关闭）。
+- **装配**：`tests/boot-context-assembly.test.ts` +3 例（显式注册 spec 带 inputs → 出站带 `skillInputs` explicit / 未供给字段 unavailable + 审计 detail / 卡广告无规格技能 → 零装配）。
+- **门禁**：全量 **1379 绿 / 125 文件**、冒烟 **45/45**、doc-consistency **18/18**、typecheck/build/lint 0。

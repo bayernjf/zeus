@@ -38,12 +38,12 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:33-33 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27-27 #applyConflictResolution`）、bearer 保护的 H2 面 |
 | 拍板 | 人工裁决回写 | `applyConflictResolution` + `POST /api/escalations/:id/resolve`（E6.2） |
 | 监督台 | 升级队列 / HITL 控制台 | `OversightDesk`（`src/oversight/oversight.ts`） |
-| 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8-8 #diode`、`src/dispatch/dispatcher.ts:245-245 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
+| 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8-8 #diode`、`src/dispatch/dispatcher.ts:254-254 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
 | 记忆（事件 / 事实） | 带 provenance 的事件存储 + 断言事实 | `src/memory/`（`retraction` / `retractFacts` / `forgetSubject`） |
 | 遗忘权 | 数据主体删除权（erasure） | `MemoryStore.forgetSubject` + `POST /api/memory/forget-subject` |
 | 日记 | 把事件流写成可读叙事的日志 | `src/diary/`（`build` / `from-memory` / `markdown` / `persist`） |
 | 编制 / 岗位 / 单一负责人 | 组织结构与问责映射（accountability） | `src/org/`（`OrgRole`、`lead` / `leadId` / `leadMember`） |
-| 上岗签字（commission） | 上岗授权的签署 / 豁免 / 撤回 | 审计枚举 `commission-granted\|waived\|withdrawn\|refused`（`src/dispatch/dispatcher.ts:41-41 #commission`）+ `src/onboarding/` |
+| 上岗签字（commission） | 上岗授权的签署 / 豁免 / 撤回 | 审计枚举 `commission-granted\|waived\|withdrawn\|refused`（`src/dispatch/dispatcher.ts:42-42 #commission`）+ `src/onboarding/` |
 | 封神榜 | 对外发布的**已签名**公开名册 | `projectPublicRoster` + `sealSnapshot`（`src/registry/roster.ts`） |
 | 内核（kernel） | **运行时 / 编排引擎**，勿直译成 OS kernel | `bootKernel`（`src/state/boot.ts`） |
 | 决策回放 | 确定性重放（deterministic replay） | `src/orchestrator/replay.ts` + `GET /api/intents/:id/replay` |

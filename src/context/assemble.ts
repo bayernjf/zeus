@@ -1,8 +1,8 @@
 import type { FactRecord, RecallHit } from '../memory/types.js';
 
 /**
- * S1 context engineering V1 (design-context-engineering §10): memory assembly
- * into the branch dispatch context.
+ * S1 context engineering V1+V2 (design-context-engineering §10): memory assembly
+ * and shared-context trimming for the branch dispatch context.
  *
  * This module is a pure function over injected inputs — it holds no kernel
  * state, performs no retrieval, and never writes back. The caller has already
@@ -26,7 +26,17 @@ export type ContextAppendixEntry = {
 
 export type ContextAssemblyEvent =
   | { kind: 'context-assembled'; appendixEntries: number; realmId?: string }
-  | { kind: 'context-trimmed'; trimmed: number; reason: 'duplicate' | 'sensitive' }
+  | {
+      kind: 'context-trimmed';
+      trimmed: number;
+      reason: 'duplicate' | 'sensitive' | 'unavailable' | 'relevance';
+      /**
+       * Which assembler trimmed it. `skill-inputs` marks a skill-declared
+       * input left unavailable (design-context-engineering §10.3); absent
+       * (i.e. memory) keeps the V1 audit wording.
+       */
+      source?: 'memory' | 'skill-inputs';
+    }
   | { kind: 'context-budget-exceeded'; kept: number; limit: number };
 
 /**
@@ -51,9 +61,14 @@ export function renderFactText(fact: FactRecord): string {
 /**
  * Assemble the memory appendix for one intent's branches.
  *
- * Rules (V1 scope, design §10.2):
- * - deduplicate by factId, keeping the highest score — every dropped duplicate
- *   is audited as `context-trimmed (duplicate)`;
+ * Rules (V2 scope, design §10.2/§10.4):
+ * - deduplicate by factId, keeping the **newest** copy (updatedAt wins; the
+ *   recall set may carry the same fact from multiple memory stages) — every
+ *   dropped duplicate is audited as `context-trimmed (duplicate)`;
+ * - apply the relevance gate: entries scoring below `minScore` never reach a
+ *   branch — audited as `context-trimmed (relevance)`. `minScore` is
+ *   `undefined` by default (gate off; score is hybrid 0..1, calibration is
+ *   deferred to #9 once real-load distributions exist);
  * - drop entries whose presented text is credential-shaped — audited as
  *   `context-trimmed (sensitive)`;
  * - sort by relevance descending and cap at `maxEntries` — an over-limit cap
@@ -67,8 +82,9 @@ export function renderFactText(fact: FactRecord): string {
 export function assembleBranchContext(args: {
   memoryHits: RecallHit[];
   maxEntries: number;
+  minScore?: number;
 }): { appendix: ContextAppendixEntry[]; events: ContextAssemblyEvent[] } {
-  const { memoryHits, maxEntries } = args;
+  const { memoryHits, maxEntries, minScore } = args;
   const events: ContextAssemblyEvent[] = [];
   const byFact = new Map<string, RecallHit>();
 
@@ -78,10 +94,9 @@ export function assembleBranchContext(args: {
     if (prev === undefined) {
       byFact.set(factId, hit);
     } else {
-      // A duplicate is dropped either way — the losing copy never reaches a
-      // branch. Which copy loses is irrelevant to the contract; the drop is
-      // what gets audited.
-      if (hit.score > prev.score) byFact.set(factId, hit);
+      // design §4: same claim assembles once, the newest copy wins. The losing
+      // copy never reaches a branch; the drop is what gets audited.
+      if (hit.fact.updatedAt > prev.fact.updatedAt) byFact.set(factId, hit);
       events.push({ kind: 'context-trimmed', trimmed: 1, reason: 'duplicate' });
     }
   }
@@ -89,6 +104,10 @@ export function assembleBranchContext(args: {
   const sorted = [...byFact.values()].sort((a, b) => b.score - a.score);
   const kept: ContextAppendixEntry[] = [];
   for (const hit of sorted) {
+    if (minScore !== undefined && hit.score < minScore) {
+      events.push({ kind: 'context-trimmed', trimmed: 1, reason: 'relevance' });
+      continue;
+    }
     const text = renderFactText(hit.fact);
     if (SENSITIVE_TEXT.test(text)) {
       events.push({ kind: 'context-trimmed', trimmed: 1, reason: 'sensitive' });

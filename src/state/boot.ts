@@ -482,6 +482,11 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     // has a memory store; an unconfigured kernel degrades to zero assembly.
     memoryStore,
     contextOptions: { maxEntries: 20 },
+    // S1 V2 (design-context-engineering §10.3): the skill catalogue resolves
+    // the declared input shape; a registered skill with no inputs yields {} and
+    // assembles nothing, an unregistered skill yields undefined and degrades to
+    // zero skill-input assembly.
+    skillInputsProvider: skillId => skillRegistry.get(skillId)?.inputs,
     onContextAssembled: (events, entry) => {
       for (const event of events) {
         auditSink({
@@ -495,7 +500,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
             event.kind === 'context-assembled'
               ? `intent ${entry.intentId}: ${event.appendixEntries} memory entries assembled${entry.realmId ? ` (realm ${entry.realmId})` : ''}`
               : event.kind === 'context-trimmed'
-                ? `intent ${entry.intentId}: ${event.trimmed} memory entry trimmed (${event.reason})`
+                ? event.source === 'skill-inputs'
+                  ? `intent ${entry.intentId}: ${event.trimmed} skill input field unavailable (${event.reason})`
+                  : `intent ${entry.intentId}: ${event.trimmed} memory entry trimmed (${event.reason})`
                 : `intent ${entry.intentId}: memory appendix capped at ${event.limit} (${event.kept} kept)`,
         });
       }

@@ -495,6 +495,37 @@ try {
       && appendixPayload.includes('"memory-recall"'),
     `agent saw the appendix: ${appendixPayload.includes('"contextAppendix"') ? 'yes' : 'no'} status=${String(appendixProbe.json?.status)}`
   );
+
+  // S1 V2 (design-context-engineering §10.3): a registered skill carrying an
+  // input declaration has its declared fields assembled against the explicit
+  // payload on the wire; a field no source supplies is marked `unavailable`,
+  // never fabricated. Explicit specs override the card's 0.0.0 catalogue
+  // entry, so `research` gains an input shape from here on.
+  // An explicit spec replaces the card's provider advertisement (providersFor
+  // takes explicit versions over the 0.0.0 catalogue entry), so the registered
+  // version must re-declare the providers or auto-selection loses them.
+  const registerInputs = await api('POST', '/api/skills', { id: 'research', name: 'Research', description: 'smoke spec', version: '9.9.9', tags: [], providedBy: ['a1', 'a2', 'a3'], inputs: { subject: {}, predicate: {} } }, { authorization: `Bearer ${DRIVER_TOKEN}`, 'content-type': 'application/json' });
+  const suppliedProbe = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, vassals: ['a1'], params: { subject: 'smoke-supplied', predicate: 'verdict', message: 'smoke-target verdict' } });
+  const suppliedPayload = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
+  record(
+    'skill-declared inputs are assembled from the explicit payload',
+    registerInputs.status === 201
+      && suppliedProbe.json?.status === 'completed'
+      && suppliedPayload.includes('"skillInputs"')
+      && suppliedPayload.includes('"explicit"')
+      && suppliedPayload.includes('"subject"'),
+    `register=${registerInputs.status} ${registerInputs.text.slice(0,160)} | agent saw skillInputs: ${suppliedPayload.includes('"skillInputs"') ? 'yes' : 'no'} status=${String(suppliedProbe.json?.status)}`
+  );
+  const unsuppliedProbe = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, vassals: ['a1'], params: { message: 'smoke-target verdict' } });
+  const unsuppliedPayload = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
+  record(
+    'an unsupplied declared input is marked unavailable, never fabricated',
+    unsuppliedProbe.json?.status === 'completed'
+      && unsuppliedPayload.includes('"unavailable"')
+      && unsuppliedPayload.includes('"skillInputs"'),
+    `agent saw unavailable: ${unsuppliedPayload.includes('"unavailable"') ? 'yes' : 'no'} status=${String(unsuppliedProbe.json?.status)}`
+  );
+
   const revokedAt = agent('a1').requests;
   const revoked = await api('DELETE', '/api/vassals/a1', undefined, { authorization: `Bearer ${DRIVER_TOKEN}` });
   const afterRevoke = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a1'] });
