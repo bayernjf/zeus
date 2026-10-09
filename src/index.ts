@@ -118,6 +118,8 @@ export type {
 // --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
 export { Orchestrator, UnknownIntentError, IntentRequestConflictError } from './orchestrator/orchestrator.js';
 export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
+export { PlanFlow, PLANNER_TAG, extractPlanDraft } from './orchestrator/plan-flow.js';
+export type { PlanFlowOptions, PlanFlowRequest, PlanFlowResult } from './orchestrator/plan-flow.js';
 export { Semaphore, QueueFullError, type SlotRelease } from './orchestrator/semaphore.js';
 export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';

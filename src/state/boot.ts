@@ -12,6 +12,7 @@ import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { DagRunner } from '../orchestrator/dag-runner.js';
+import { PlanFlow } from '../orchestrator/plan-flow.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
 import { DriverGrantLedger, type DriverGrantAuditEntry } from '../realm/grant.js';
@@ -709,6 +710,19 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // persist with it. The runner only adds wave scheduling + spec/result recall.
   const dagRunner = new DagRunner(registry.asVassalLookup(), dispatcher, { now }, orchestrator);
 
+  // S12 V2 (design-planning §5): planning wired as a fan-out. Planner skills
+  // are found by their `planning` tag, drafts are validated/scored/selected by
+  // the V1 pure functions, and the selected plan runs through the same DAG
+  // runner. plan-conflict / unplannable goals land on the oversight desk.
+  const planFlow = new PlanFlow({
+    orchestrator,
+    skillRegistry,
+    dagRunner,
+    oversight,
+    audit: entry => auditSink(entry),
+    now,
+  });
+
   // Self-host loop step 2: the trigger primitive. It is assembled here rather
   // than left as a library type so "an intent can be raised with nobody present"
   // is a fact about the running kernel, not about a design document.
@@ -752,7 +766,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   };
 
   const components: KernelComponents = {
-    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
+    registry, oversight, orchestrator, dagRunner, planFlow, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
   };
 
   // deferred #27: a finished fan-out's verdicts are the kernel's only memory
