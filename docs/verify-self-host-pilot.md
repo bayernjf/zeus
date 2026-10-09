@@ -10,7 +10,7 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 
 ## 1. 为什么只有 P0 能跑（出处）
 
-内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:7-7 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2926-2896 #`、编排分支超时 `src/orchestrator/orchestrator.ts:1147-1147 #setTimeout`、派发受理超时 `src/dispatch/client.ts:103-103 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42-42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95-95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
+内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:7-7 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2926-2896 #`、编排分支超时 `src/orchestrator/orchestrator.ts:1223-1223 #setTimeout`、派发受理超时 `src/dispatch/client.ts:112-112 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42-42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95-95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
 
 同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:3-3 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:148-148 #executionDelegationNonces`）。
 
