@@ -107,3 +107,37 @@ export function validateIsolation(input: {
 function isResourcesEmpty(r: IsolationManifest['resources']): boolean {
   return r.cpuShares === undefined && r.memoryMb === undefined && r.maxWallSeconds === undefined && r.maxProcesses === undefined;
 }
+
+/**
+ * S16 V2 (design-sandbox §5): the spawn narrowing a stdio body must run
+ * under. The manifest pins command + fixed args + an env allow-list, so the
+ * subprocess never inherits the caller's full environment — only the listed
+ * variables that actually exist are copied through, and everything else is
+ * dropped. `maxWallSeconds` (when declared) becomes the process-level wall
+ * clock bound the caller enforces.
+ */
+export function narrowSpawn(input: {
+  manifest: IsolationManifest;
+  env: NodeJS.ProcessEnv;
+}): {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  envAllowList: string[];
+  maxWallSeconds?: number;
+} {
+  const env: Record<string, string> = {};
+  for (const key of input.manifest.exec.envAllowList) {
+    const value = input.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return {
+    command: input.manifest.exec.command,
+    args: input.manifest.exec.args,
+    env,
+    envAllowList: input.manifest.exec.envAllowList,
+    ...(input.manifest.resources.maxWallSeconds !== undefined
+      ? { maxWallSeconds: input.manifest.resources.maxWallSeconds }
+      : {}),
+  };
+}
