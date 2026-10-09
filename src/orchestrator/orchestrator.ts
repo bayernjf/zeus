@@ -24,6 +24,7 @@ import {
 import type { DecisionBackend } from '../decision/types.js';
 import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
+import { appendStreamFrame, emptyStreamView, type StreamView } from './stream-merge.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../context/assemble.js';
 import { assembleSkillInputs } from '../context/skill-inputs.js';
@@ -309,6 +310,16 @@ export class Orchestrator {
   /** E6.3 single-flight: resumes in flight keyed by `intentId::vassal`, so two
    *  approvals of the same escalation cannot re-dispatch the branch twice. */
   private resuming = new Map<string, Promise<FanOutResult>>();
+  /**
+   * S15 V2 (design-streaming §5): the per-intent incremental stream view,
+   * maintained in memory for the lifetime of the fan-out and dropped when the
+   * intent settles. Previews are replaceable projections, never conclusions —
+   * aggregation, memory and any decision path consume only the final task.
+   */
+  private streamViews = new Map<string, StreamView>();
+  /** S15 V2: the number of branches each live fan-out dispatches, so the
+   *  partially-ready count (N of M settled) is exact rather than inferred. */
+  private intentBranchTotals = new Map<string, number>();
   private readonly slots: Semaphore | null;
 
   constructor(
@@ -517,6 +528,11 @@ export class Orchestrator {
     } else {
       // S4: charge the budget at spawn time (in-flight branches count too).
       this.budgets.set(intentId, advanceBudget(this.budgetOf(intentId), names.length));
+      // S15 V2 (design-streaming §5): open the incremental stream view for this
+      // fan-out before the first branch dispatches, so a working-frame delta can
+      // land as soon as a peer streams one.
+      this.streamViews.set(intentId, emptyStreamView());
+      this.intentBranchTotals.set(intentId, names.length);
       // S1 context engineering V1 (design-context-engineering §10): assemble the
       // memory appendix once per intent at the dispatch boundary, shared
       // read-only across every branch. Query is the skill name plus the textual
@@ -728,6 +744,11 @@ export class Orchestrator {
       ...(result.realmId ? { realmId: result.realmId } : {}),
       at: this.now().toISOString(),
     });
+    // S15 V2: the intent settled — the in-memory stream view (previews only)
+    // is dropped with the fan-out; live SSE subscribers already saw the final
+    // marker and the retained hub buffer stays bounded via release.
+    this.streamViews.delete(intentId);
+    this.intentBranchTotals.delete(intentId);
     // C-audit 12: the stored result is also served by getIntent()/snapshot().
     // Returning the stored reference would let the caller mutate shared nested
     // arrays (branches, positions, conflicts) through the fan-out reply and
@@ -865,6 +886,9 @@ export class Orchestrator {
       ...(judged.realmId ? { realmId: judged.realmId } : {}),
       at: this.now().toISOString(),
     });
+    // S15 V2: drop the stream view with the settled resume result.
+    this.streamViews.delete(intentId);
+    this.intentBranchTotals.delete(intentId);
     return structuredClone(judged);
   }
 
@@ -1052,7 +1076,7 @@ export class Orchestrator {
         this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
         this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
       }
-      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs, budgetedRealmHits);
+      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs, budgetedRealmHits, intentId);
     } finally {
       release();
     }
@@ -1060,11 +1084,34 @@ export class Orchestrator {
     // cancel that arrives before the sibling branches finish.
     this.publishBranch(intentId, branch);
     metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
+    const settledAt = this.now().toISOString();
     this.emit({
       type: 'branch-ended', intentId, runId: branchRunId, vassal,
       outcome: outcomeOf(branch), ...(branch.ok ? { state: branch.state } : {}),
-      at: this.now().toISOString(),
+      at: settledAt,
     });
+    // S15 V2 (design-streaming §5): settle the branch in the stream view and
+    // report the partially-ready count (N of M formal outcomes) as a count
+    // fact on the event spine — never content.
+    const liveView = this.streamViews.get(intentId);
+    if (liveView !== undefined) {
+      const settled = appendStreamFrame(liveView, {
+        type: 'branch-settled',
+        runId: branchRunId,
+        outcome: streamOutcomeOf(outcomeOf(branch)),
+        at: settledAt,
+      });
+      this.streamViews.set(intentId, settled);
+      const settledCount = Object.values(settled.branches).filter(b => b.settled).length;
+      this.emit({
+        type: 'intent-partial',
+        intentId,
+        runId: branchRunId,
+        settledCount,
+        totalCount: this.intentBranchTotals.get(intentId) ?? settled.order.length,
+        at: settledAt,
+      });
+    }
     return branch;
   }
 
@@ -1073,7 +1120,30 @@ export class Orchestrator {
     return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs'], budgetedRealmHits?: DispatchRequest['realmHits']): Promise<BranchOutcome> {
+  /**
+   * S15 V2 (design-streaming §5): a working-frame increment arrived from a
+   * branch dispatch. Appended to the intent's stream view and surfaced on the
+   * progress spine as preview-only content; a fan-out with no live view (e.g.
+   * a resume continuation after the original settled) drops the increment —
+   * previews are replaceable and never persisted, so losing one is harmless.
+   */
+  private handleBranchDelta(intentId: string, delta: { vassal: string; runId: string; seq: number; preview: string; at: string }): void {
+    const view = this.streamViews.get(intentId);
+    if (view === undefined) return;
+    this.streamViews.set(
+      intentId,
+      appendStreamFrame(view, {
+        type: 'branch-delta',
+        runId: delta.runId,
+        seq: delta.seq,
+        preview: delta.preview,
+        at: delta.at,
+      }),
+    );
+    this.emit({ type: 'branch-delta', intentId, ...delta });
+  }
+
+  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs'], budgetedRealmHits?: DispatchRequest['realmHits'], intentId?: string): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     // deferred #33: execute-mode gate. An execute is an irreversible external
     // write, so it must carry a verified, unconsumed execution delegation; the
@@ -1135,6 +1205,12 @@ export class Orchestrator {
         ? { traceparent: `00-${parentRunId}-${branchRunId}-01` }
         : {}),
       ...(signal !== undefined ? { signal } : {}),
+      // S15 V2 (design-streaming §5): surface working-frame increments on the
+      // request's narrow callback; the dispatcher adds vassal/runId lineage,
+      // this layer adds the intent that owns the stream view.
+      ...(intentId === undefined
+        ? {}
+        : { onBranchDelta: delta => this.handleBranchDelta(intentId, delta) }),
     };
     const pending = this.dispatcher
       .dispatch(dispatchRequest)
@@ -1286,4 +1362,10 @@ function outcomeOf(branch: BranchOutcome): BranchOutcomeKind {
   if (branch.state === 'canceled') return 'canceled';
   if (!branch.ok) return 'failed';
   return 'completed';
+}
+
+/** S15 V2: the stream view's settlement vocabulary uses `ok` for a completed
+ *  branch; the metrics kind maps onto it (completed -> ok). */
+function streamOutcomeOf(outcome: BranchOutcomeKind): 'ok' | 'failed' | 'canceled' | 'timeout' {
+  return outcome === 'completed' ? 'ok' : outcome;
 }

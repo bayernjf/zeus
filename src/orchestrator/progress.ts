@@ -43,6 +43,34 @@ export type ProgressEvent =
       to: string;
       skill: string;
       at: string;
+    }
+  | {
+      /**
+       * S15 V2 (design-streaming §5): one incremental working-frame payload
+       * from an execution agent. Preview content is replaceable and never a
+       * conclusion — aggregation, memory and any decision path consume only
+       * the final task; the trace projection ignores this event type.
+       */
+      type: 'branch-delta';
+      intentId: string;
+      runId: string;
+      vassal: string;
+      seq: number;
+      preview: string;
+      at: string;
+    }
+  | {
+      /**
+       * S15 V2 (design-streaming §5): the intent is still partially ready —
+       * N of M branches have settled formal outcomes. A count fact, not a
+       * content carrier; emitted when a branch settles.
+       */
+      type: 'intent-partial';
+      intentId: string;
+      runId: string;
+      settledCount: number;
+      totalCount: number;
+      at: string;
     };
 
 /** Per-intent pub/sub for the H3 SSE endpoint. One hub per kernel; subscribe

@@ -19,6 +19,15 @@ export type SendTaskInput = {
 export type SubscribeHandlers = {
   onEvent?: (event: A2AEvent) => void;
   signal?: AbortSignal;
+  /**
+   * S15 V2 (design-streaming §5): a working frame carrying an incremental
+   * payload is surfaced through this narrow callback instead of being dropped
+   * at the transport edge. `runId` is supplied by the caller (the dispatcher
+   * owns the branch lineage); the client maintains the per-stream sequence.
+   * Preview content stays preview: it never enters a settled outcome, memory
+   * or any decision path (design-streaming §2).
+   */
+  onBranchDelta?: (delta: { runId: string; seq: number; preview: string; at: string }) => void;
 };
 
 /** Transport knobs shared by every outbound A2A call. */
@@ -189,7 +198,15 @@ export async function sendTaskSubscribe(
     // Headers are in: the peer answered. Drop the deadline so a long-lived stream
     // is not cut off mid-flight; the caller's signal still cancels it.
     deadline.disarm();
-    return await consumeSseStream(response.body, handlers.onEvent, maxEventBytes, label);
+    return await consumeSseStream(
+      response.body,
+      handlers.onEvent,
+      maxEventBytes,
+      label,
+      handlers.onBranchDelta === undefined
+        ? undefined
+        : delta => handlers.onBranchDelta!({ runId: input.runId ?? '', ...delta }),
+    );
   } finally {
     deadline.dispose();
   }
@@ -272,11 +289,13 @@ async function consumeSseStream(
   onEvent: ((event: A2AEvent) => void) | undefined,
   maxEventBytes: number,
   label: string,
+  onBranchDelta?: (delta: { seq: number; preview: string; at: string }) => void,
 ): Promise<Task> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let finalTask: Task | undefined;
+  let deltaSeq = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -286,8 +305,23 @@ async function consumeSseStream(
         const rawEvent = buffer.slice(0, boundary.index);
         buffer = buffer.slice(boundary.index + boundary.length);
         emitSseEvent(rawEvent, result => {
-          if ((result as Task).kind === 'task') finalTask = result as Task;
-          else onEvent?.(result as A2AEvent);
+          if ((result as Task).kind === 'task') {
+            finalTask = result as Task;
+            return;
+          }
+          const event = result as A2AEvent;
+          onEvent?.(event);
+          // S15 V2: a working frame with an incremental payload surfaces
+          // through the narrow delta callback; frames without one (agents that
+          // do not stream increments) keep the branch-one-shot-at-settlement
+          // behavior untouched. The caller supplies runId (branch lineage).
+          if (onBranchDelta !== undefined && event.kind === 'status-update' && event.status.state === 'working') {
+            const preview = previewOf(event.status.data);
+            if (preview !== undefined) {
+              deltaSeq += 1;
+              onBranchDelta({ seq: deltaSeq, preview, at: event.status.timestamp ?? new Date().toISOString() });
+            }
+          }
         });
       }
       if (buffer.length > maxEventBytes) {
@@ -306,6 +340,20 @@ async function consumeSseStream(
   }
   if (!finalTask) throw new A2AClientError('stream ended without a final task snapshot', -32000);
   return finalTask;
+}
+
+/** Extract a preview string from a working frame's optional payload: a plain
+ *  string is used as-is; an object's `preview` string is preferred; anything
+ *  else is serialized. Capped so a talkative peer cannot grow the buffer. */
+function previewOf(data: unknown): string | undefined {
+  if (data === undefined || data === null) return undefined;
+  if (typeof data === 'string') return data.slice(0, 4000);
+  if (typeof data === 'object') {
+    const maybe = (data as { preview?: unknown }).preview;
+    if (typeof maybe === 'string') return maybe.slice(0, 4000);
+  }
+  const serialized = JSON.stringify(data);
+  return serialized === undefined ? undefined : serialized.slice(0, 4000);
 }
 
 function emitSseEvent(rawEvent: string, emit: (result: A2AEvent | Task) => void): void {
