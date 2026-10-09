@@ -924,6 +924,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
           ...(input.realmId ? { realmId: input.realmId } : {}),
           limitReason: input.reason,
           tickSeq: input.tickSeq,
+          // S10 V2: the watch tick already ran the classifier; the desk stores
+          // that verdict instead of re-deriving it.
+          interruptLevel: input.interruptLevel,
         });
       },
       audit: entry => {

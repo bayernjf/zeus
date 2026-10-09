@@ -114,6 +114,13 @@ export function escalationOptions(escalation: EscalationView): string[] {
   return escalation.options;
 }
 
+function interruptionBadge(palette: Palette, t: Translator, level: 0 | 1 | 2 | undefined): string {
+  if (level === undefined) return '';
+  if (level === 2) return palette.paint('attention', t('escalation.level.2' as Parameters<Translator>[0]));
+  if (level === 1) return palette.paint('info', t('escalation.level.1' as Parameters<Translator>[0]));
+  return '';
+}
+
 function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapshot): string[] {
   const items = snapshot.escalations;
   const lines: string[] = [heading(palette, t('escalation.title', { total: items.length }))];
@@ -122,7 +129,8 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
     return lines;
   }
   items.forEach((esc, index) => {
-    lines.push(`  ${palette.paint('attention', `#${index + 1}`)} ${palette.bold(esc.id)} ${palette.paint('info', escalationKindLabel(t, esc.kind))} · ${esc.skill} · ${esc.vassal}`);
+    const badge = interruptionBadge(palette, t, esc.interruptLevel);
+    lines.push(`  ${palette.paint('attention', `#${index + 1}`)} ${palette.bold(esc.id)} ${palette.paint('info', escalationKindLabel(t, esc.kind))}${badge ? ` ${badge}` : ''} · ${esc.skill} · ${esc.vassal}`);
     lines.push(`      ${esc.reason}`);
     const options = escalationOptions(esc);
     if (options.length > 0) {
