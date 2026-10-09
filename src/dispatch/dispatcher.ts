@@ -156,6 +156,14 @@ export const AUDIT_DECISIONS = [
   'connector-isolation-denied',
   'connector-spawned-isolated',
   'connector-quota-killed',
+  // design-long-running (tech map S13): a restart classified an unsettled
+  // branch — auto-resumed, awaiting the operator, or settled failed — and a
+  // checkpoint was written. V1 registers the names; the boot wiring is V2, so
+  // these are reserved until the wiring actually emits them.
+  'recovery-auto-resumed',
+  'recovery-awaiting-operator',
+  'recovery-settled-failed',
+  'checkpoint-written',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

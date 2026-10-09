@@ -159,6 +159,12 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'connector-isolation-denied': 'warning',
   'connector-spawned-isolated': 'info',
   'connector-quota-killed': 'warning',
+  // design-long-running (S13): an auto-resumed branch is normal; awaiting the
+  // operator and a failed settle are recovery events the operator must see.
+  'recovery-auto-resumed': 'info',
+  'recovery-awaiting-operator': 'attention',
+  'recovery-settled-failed': 'warning',
+  'checkpoint-written': 'info',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };
