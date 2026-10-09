@@ -1,7 +1,7 @@
 # 设计稿：Evals 与质量回归（tech map S7）
 
-- 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文定义离线 eval 用例形状与纯函数评分器，runner 复用既有 smoke/acceptance 夹具，不新造第二套测试基建。
-- 演进：v0.1（2026-10-09）首版——现状盘点（单元/契约/冒烟/验收已密，缺"决策质量"维度的回归集）+ 质量指标族 + EvalCase/`scoreEvalRun` 草案 + 分期。
+- 状态：**现行 v0.2（2026-10-10）**：V1 评分器与 V2 runner + 首批 eval 集已落码；V3 CI 门禁 / V4 真机录制待后续分期。
+- 演进：v0.2（2026-10-10）V2 落地——`scripts/eval-run.mjs`（复用 bootKernel + 脚本化执行 Agent，不新造第二套 harness）+ `evals/cases/` 首批 14 条六族 eval 集 + JSON 报告 + 基线钉 `evals/baseline.json`（--write-baseline / --baseline），退出码 0/1/2，`npm run evals`；v0.1（2026-10-09）首版——现状盘点（单元/契约/冒烟/验收已密，缺"决策质量"维度的回归集）+ 质量指标族 + EvalCase/`scoreEvalRun` 草案 + 分期。
 - 关联：tech map S7（离线 eval 集、改 prompt 防漂移、线上 A/B；呼应 verify before asserting）；design-supervision.md §8（裁决/Critic）；design-hil.md（介入分级，误升级/漏升级是核心 eval 指标）；design-tool-discovery.md（选靶/恢复链正确性）；design-guardrails.md（S8 护栏命中率）；design-cost-governance.md（S9 成本上限）；design-agent-testing.md（S17，录制重放/混沌为 eval 供给夹具）；`scripts/smoke-core.mjs`、`scripts/acceptance-*.mjs`、`scripts/verify-*.mjs`（既有 harness）；`src/orchestrator/judge.ts`（对抗式复核，"无证据不断言"的执行点）。
 - 本文是质量回归体系的单一事实源；handoff 与 PRD 只索引。
 
@@ -99,8 +99,8 @@ export function diffAgainstBaseline(current: EvalMetricsReport, baseline: EvalMe
 
 ## 5. 分期
 
-- **V1（纯函数评分器）**：types + scoreEvalRun/summarize/diff + 测试（每指标族正反例、severity 权重、基线退化判定、无证据断言必 block）；不跑世界、不接 CI。
-- **V2（runner + 首批 eval 集）**：eval-run.mjs 复用 smoke 夹具；从现有 harness 提炼 10–20 条高价值 case；本地一键跑 + JSON 报告；钉第一版基线。
+- **V1（纯函数评分器）**：types + scoreEvalRun/summarize/diff + 测试（每指标族正反例、severity 权重、基线退化判定、无证据断言必 block）；不跑世界、不接 CI。✅ 已落地（2026-10-10，Active work 181）。
+- **V2（runner + 首批 eval 集）**：eval-run.mjs 复用 smoke 夹具；从现有 harness 提炼 10–20 条高价值 case；本地一键跑 + JSON 报告；钉第一版基线。✅ 已落地（2026-10-10，Active work 189）：`scripts/eval-run.mjs` + `evals/cases/index.mjs` 首批 14 条（decision 4 / escalation 2 / selection 3 / data-policy 2 / evidence 2 / budget 1，六族 28 checks 全绿）+ `evals/baseline.json` 基线 + `evals/reports/` JSON 报告；oversight 升级经桥转 `interrupt-level-N` 审计行喂评分器（S10 介入级别是治理事实）；退出码 0 全过 / 1 有失败 / 2 缺构建。
 - **V3（CI 门禁 + 漂移报告）**：block 指标退化卡 CI；PR 评论产出指标 diff；eval 集随新设计稿（S8/S9/S10/S11）补对抗样本。
 - **V4（真机录制供给 / 线上 A/B）**：S17 录制重放成熟后，真机流量脱敏（S8 PII）进 eval 集；线上 A/B 随真机部署阶段另立。
 

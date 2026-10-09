@@ -76,6 +76,7 @@ npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
 npm test           # vitest：1625 项 / 147 个测试文件（以此命令的输出为准）
 npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 45 步（含契约操作面、watch 触发/操作面、契约派生与撤销断流、记忆召回装配进分支上下文出站载荷、技能声明输入装配（explicit/unavailable）；需先 build；只用回环与自造密钥）
 npm run typecheck  # tsc --noEmit
+npm run evals      # S7 evals V2 离线质量回归：逐 case boot 内核 + 脚本化执行 Agent，首批 14 条六族 eval 集喂 V1 评分器；--write-baseline 钉基线、--baseline 出退化 diff；退出码 0/1/2（需先 build）
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
 npm run daily -- "check the deployment health"   # 产品入口：一句话 → 意图 → 扇出到已注册的执行 Agent → 决策与依据，并把同一页 markdown 写回你挂的目录（需先 build；--root 挂目录、--agent 注册，旋钮见 --help）
 npm run tui        # 终端监督台（UI 方案 D：只读监视 + 升级裁决 + 名册吊销 + 意图识别；需先 build）
