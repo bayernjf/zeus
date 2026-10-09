@@ -1,4 +1,10 @@
 import type { FactRecord, RecallHit } from '../memory/types.js';
+import {
+  classifyContentRisk,
+  scanContentSignals,
+  type ContentProvenance,
+  type ContentSignal,
+} from '../guardrails/content-risk.js';
 
 /**
  * S1 context engineering V1+V2 (design-context-engineering §10): memory assembly
@@ -22,6 +28,12 @@ export type ContextAppendixEntry = {
   realmId: string;
   /** Retrieval relevance score (searchRecall's original value). */
   score: number;
+  /**
+   * S8 V2 (design-guardrails §4/§5): content origin attached at assembly.
+   * Memory recall is kernel-resolved Realm text — data, never an operator
+   * instruction. The branch consumer reads the boundary, not the prose.
+   */
+  provenance: ContentProvenance;
 };
 
 export type ContextAssemblyEvent =
@@ -48,6 +60,19 @@ export type ContextAssemblyEvent =
        * where the value names the truncated source.
        */
       source?: 'memory' | 'realm' | 'skill-inputs';
+    }
+  | {
+      /**
+       * S8 V2 (design-guardrails §4/§5): a kept appendix entry ran through the
+       * content-risk decision chain and was annotated with its data boundary.
+       * Outbound plan-mode assembly annotates (the classifier never refuses a
+       * kernel-resolved-realm memory entry); `pass` entries emit nothing. The
+       * event kind is the audit decision (`guardrail-annotated`).
+       */
+      kind: 'guardrail-annotated';
+      entry: string;
+      boundary: string;
+      signals: readonly ContentSignal[];
     };
 
 /**
@@ -124,12 +149,34 @@ export function assembleBranchContext(args: {
       events.push({ kind: 'context-trimmed', trimmed: 1, reason: 'sensitive' });
       continue;
     }
+    // S8 V2 (design-guardrails §4): every forwarded entry carries its
+    // provenance and has run through the content-risk decision chain. Memory
+    // recall is kernel-resolved Realm text, so plan-mode assembly annotates
+    // rather than refusing; an escalate verdict (external-url / credential
+    // hit) also degrades to annotation here — this assembly point never
+    // executes, so the L1 escalation belongs to the execute-destination
+    // wiring (V3). A `pass` verdict emits nothing.
+    const signals = scanContentSignals(text);
+    const handling = classifyContentRisk({
+      provenance: 'kernel-resolved-realm',
+      destination: { kind: 'outbound', mode: 'plan' },
+      signals,
+    });
+    if (handling.action === 'annotate' || handling.action === 'escalate') {
+      events.push({
+        kind: 'guardrail-annotated',
+        entry: hit.fact.factId,
+        boundary: 'data-boundary:kernel-resolved-realm',
+        signals,
+      });
+    }
     kept.push({
       claimId: hit.fact.factId,
       text,
       source: 'memory-recall',
       realmId: hit.fact.realmId,
       score: hit.score,
+      provenance: 'kernel-resolved-realm',
     });
   }
 

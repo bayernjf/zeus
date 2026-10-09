@@ -514,7 +514,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
           detail:
             event.kind === 'context-assembled'
               ? `intent ${entry.intentId}: ${event.appendixEntries} memory entries assembled${entry.realmId ? ` (realm ${entry.realmId})` : ''}`
-              : event.kind === 'context-trimmed'
+              : event.kind === 'guardrail-annotated'
+                ? `intent ${entry.intentId}: appendix entry ${event.entry} annotated (${event.boundary}${event.signals.length > 0 ? `, signals ${event.signals.join(',')}` : ''})`
+                : event.kind === 'context-trimmed'
                 ? event.source === 'skill-inputs'
                   ? `intent ${entry.intentId}: ${event.trimmed} skill input field unavailable (${event.reason})`
                   : `intent ${entry.intentId}: ${event.trimmed} memory entry trimmed (${event.reason})`
