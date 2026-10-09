@@ -3,11 +3,12 @@ import { assembleBranchContext, renderFactText } from '../src/context/assemble.j
 import type { RecallHit } from '../src/memory/types.js';
 
 /**
- * S1 context engineering V1 (design-context-engineering §10.2): the pure
- * assembler's contract — deduplicate by fact, drop credential-shaped text,
- * cap by relevance score, and never trim silently. The kernel's retrieval and
- * domain isolation are exercised in boot-context-assembly.test.ts; here the
- * assembler is tested over hand-built hits.
+ * S1 context engineering V1+V2 (design-context-engineering §10.2/§10.4): the
+ * pure assembler's contract — deduplicate by fact (newest copy wins), drop
+ * credential-shaped text, gate by relevance, cap by score, and never trim
+ * silently. The kernel's retrieval and domain isolation are exercised in
+ * boot-context-assembly.test.ts; here the assembler is tested over hand-built
+ * hits.
  */
 
 function hit(
@@ -17,6 +18,7 @@ function hit(
   predicate: string,
   object: unknown,
   realmId = 'personal',
+  updatedAt = '2026-10-09T00:00:00.000Z',
 ): RecallHit {
   return {
     fact: {
@@ -29,7 +31,7 @@ function hit(
       provenance: [],
       confidence: 0.9,
       version: 1,
-      updatedAt: '2026-10-09T00:00:00.000Z',
+      updatedAt,
     },
     score,
     lexical: score,
@@ -59,20 +61,62 @@ describe('assembleBranchContext', () => {
     expect(events.at(-1)).toEqual({ kind: 'context-assembled', appendixEntries: 3 });
   });
 
-  it('deduplicates by factId keeping the highest score, and audits each drop', () => {
+  it('deduplicates by factId keeping the newest copy, and audits each drop', () => {
+    // design §4: the same claim assembles once; when several recall hits carry
+    // the same fact, the newest update wins (a later memory stage supersedes an
+    // earlier rendering), not the highest score. Ordering after deduplication
+    // is still relevance-descending.
     const { appendix, events } = assembleBranchContext({
       memoryHits: [
-        hit('f1', 0.4, 'user', 'prefers', 'rust'),
-        hit('f1', 0.9, 'user', 'prefers', 'typescript'),
+        hit('f1', 0.9, 'user', 'prefers', 'rust', 'personal', '2026-10-01T00:00:00.000Z'),
+        hit('f1', 0.4, 'user', 'prefers', 'typescript', 'personal', '2026-10-08T00:00:00.000Z'),
         hit('f2', 0.6, 'user', 'uses', 'node'),
       ],
       maxEntries: 20,
     });
-    expect(appendix.map(entry => entry.claimId)).toEqual(['f1', 'f2']);
-    expect(appendix[0]!.text).toContain('typescript');
+    expect(appendix.map(entry => entry.claimId)).toEqual(['f2', 'f1']);
+    const newest = appendix.find(entry => entry.claimId === 'f1')!;
+    expect(newest.text).toContain('typescript');
     expect(events.filter(event => event.kind === 'context-trimmed')).toEqual([
       { kind: 'context-trimmed', trimmed: 1, reason: 'duplicate' },
     ]);
+  });
+
+  it('gates by relevance: drops entries below minScore and audits each drop', () => {
+    const { appendix, events } = assembleBranchContext({
+      memoryHits: [
+        hit('f1', 0.9, 'user', 'prefers', 'typescript'),
+        hit('f2', 0.6, 'user', 'uses', 'node'),
+        hit('f3', 0.2, 'user', 'likes', 'tea'),
+        hit('f4', 0.1, 'user', 'owns', 'a cat'),
+      ],
+      maxEntries: 20,
+      minScore: 0.3,
+    });
+    expect(appendix.map(entry => entry.claimId)).toEqual(['f1', 'f2']);
+    expect(events.filter(event => event.kind === 'context-trimmed')).toEqual([
+      { kind: 'context-trimmed', trimmed: 1, reason: 'relevance' },
+      { kind: 'context-trimmed', trimmed: 1, reason: 'relevance' },
+    ]);
+  });
+
+  it('keeps an entry scoring exactly at the gate threshold', () => {
+    const { appendix, events } = assembleBranchContext({
+      memoryHits: [hit('f1', 0.3, 'user', 'prefers', 'typescript')],
+      maxEntries: 20,
+      minScore: 0.3,
+    });
+    expect(appendix).toHaveLength(1);
+    expect(events.filter(event => event.kind === 'context-trimmed')).toEqual([]);
+  });
+
+  it('leaves the gate off when minScore is absent — no relevance trimming', () => {
+    const { appendix, events } = assembleBranchContext({
+      memoryHits: [hit('f1', 0.01, 'user', 'likes', 'tea')],
+      maxEntries: 20,
+    });
+    expect(appendix).toHaveLength(1);
+    expect(events.filter(event => event.kind === 'context-trimmed')).toEqual([]);
   });
 
   it('drops credential-shaped text as sensitive, keeping the rest', () => {

@@ -21,7 +21,16 @@ function cardFor(name: string) {
     capabilities: { streaming: true, pushNotifications: false, stateTransitionHistory: true },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
-    skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
+    skills: [
+      // A2A card skills are protocol-shaped (id/name/description/tags only) —
+      // input declarations live on the registered catalogue spec, which the
+      // V2 cases inject explicitly via `kernel.skillRegistry.register`.
+      { id: 'review', name: 'Review', description: '', tags: [] },
+      // Advertised without any catalogue-level input declaration — the
+      // degradation case for V2 assembly (a spec with no inputs assembles
+      // nothing, like a spec that does not exist).
+      { id: 'editor', name: 'Editor', description: '', tags: [] },
+    ],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
     'x-zeus-fealty': {
@@ -102,6 +111,23 @@ async function bootedWithMemory() {
   return { kernel, sent, audits };
 }
 
+/** bootedWithMemory, plus a registered catalogue spec carrying an input shape. */
+async function bootedWithInputs() {
+  const booted = await bootedWithMemory();
+  // Explicit catalogue spec: card advertising is protocol-shaped (no input
+  // declarations); V2 input assembly reads the registered skill spec.
+  booted.kernel.skillRegistry!.register({
+    id: 'review',
+    name: 'Review',
+    description: '',
+    version: '1.0.0',
+    tags: [],
+    inputs: { code: {}, language: {} },
+    providedBy: ['loom'],
+  });
+  return booted;
+}
+
 describe('S1 memory appendix in a booted kernel', () => {
   it('assembles recall into the outbound payload for every branch', async () => {
     const { kernel, sent } = await bootedWithMemory();
@@ -177,5 +203,55 @@ describe('S1 memory appendix in a booted kernel', () => {
     });
     expect(result.branches[0]?.ok).toBe(true);
     expect(sent[0]!.params.contextAppendix).toBeUndefined();
+  });
+});
+
+describe('S1 V2 skill-input assembly in a booted kernel', () => {
+  it('assembles declared inputs from the explicit payload into the outbound payload', async () => {
+    const { kernel, sent } = await bootedWithInputs();
+    await kernel.orchestrator.fanOut({
+      skill: 'review',
+      params: { message: 'review src/orchestrator.ts', code: 'src/orchestrator.ts', language: 'typescript' },
+      realm: 'personal',
+      realmId: 'personal',
+      vassals: ['loom'],
+    });
+    const skillInputs = sent[0]!.params.skillInputs as Array<{ name: string; source: string }> | undefined;
+    expect(skillInputs).toBeDefined();
+    expect(skillInputs).toEqual([
+      { name: 'code', source: 'explicit', value: 'src/orchestrator.ts' },
+      { name: 'language', source: 'explicit', value: 'typescript' },
+    ]);
+  });
+
+  it('marks a declared-but-unsupplied field unavailable in the payload and audits it', async () => {
+    const { kernel, sent, audits } = await bootedWithInputs();
+    await kernel.orchestrator.fanOut({
+      skill: 'review',
+      params: { message: 'review this' },
+      realm: 'personal',
+      realmId: 'personal',
+      vassals: ['loom'],
+    });
+    const skillInputs = sent[0]!.params.skillInputs as Array<{ name: string; source: string }> | undefined;
+    expect(skillInputs).toEqual([
+      { name: 'code', source: 'unavailable' },
+      { name: 'language', source: 'unavailable' },
+    ]);
+    const trimmed = audits.filter(entry => entry.decision === 'context-trimmed' && (entry.detail ?? '').includes('skill input field unavailable'));
+    expect(trimmed).toHaveLength(2);
+    expect(trimmed[0]!.detail).toContain('unavailable');
+  });
+
+  it('assembles nothing for a skill whose catalogue spec declares no inputs', async () => {
+    const { kernel, sent } = await bootedWithInputs();
+    await kernel.orchestrator.fanOut({
+      skill: 'editor',
+      params: { message: 'edit this' },
+      realm: 'personal',
+      realmId: 'personal',
+      vassals: ['loom'],
+    });
+    expect(sent[0]!.params.skillInputs).toBeUndefined();
   });
 });
