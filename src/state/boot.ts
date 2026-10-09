@@ -582,6 +582,48 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
           : `candidate face for skill '${entry.skill}': pool ${entry.poolSize}, live-saturated dropped ${entry.saturatedDropped}, diverted ${entry.diverted}`,
       });
     },
+    // S11 V3 (design-tool-discovery §5): a failed branch and the recovery
+    // chain's verdict for it. tool-failed is the failure itself (really emitted
+    // on the runtime now); the chain-* line follows the fixed-order verdict.
+    // Escalate keeps the existing needs-driver semantics and adds no chain line.
+    onChainRecovered: entry => {
+      auditSink({
+        ts: entry.at,
+        vassal: entry.vassal,
+        skill: entry.skill,
+        realm: entry.realm,
+        decision: 'tool-failed',
+        detail: `branch for skill '${entry.skill}' on vassal '${entry.vassal}' failed: ${entry.reason}`,
+      });
+      if (entry.action === 'retry') {
+        auditSink({
+          ts: entry.at,
+          vassal: entry.vassal,
+          skill: entry.skill,
+          realm: entry.realm,
+          decision: 'chain-retried',
+          detail: `recovery chain decided retry for skill '${entry.skill}' on vassal '${entry.vassal}'`,
+        });
+      } else if (entry.action === 'switch') {
+        auditSink({
+          ts: entry.at,
+          vassal: entry.alternateProvider ?? entry.vassal,
+          skill: entry.skill,
+          realm: entry.realm,
+          decision: 'chain-switched',
+          detail: `recovery chain decided switch from '${entry.vassal}' to '${entry.alternateProvider}' for skill '${entry.skill}'`,
+        });
+      } else if (entry.action === 'degrade') {
+        auditSink({
+          ts: entry.at,
+          vassal: entry.vassal,
+          skill: entry.skill,
+          realm: entry.realm,
+          decision: 'chain-degraded',
+          detail: `recovery chain decided degrade (skip step) for skill '${entry.skill}' on vassal '${entry.vassal}'`,
+        });
+      }
+    },
     // deferred #33: the execute gate refused a branch. An execute without a
     // verified, unconsumed delegation is a governance fact — refused before any
     // outbound request exists, so this audit line is the refusal itself.

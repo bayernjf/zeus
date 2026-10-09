@@ -10,7 +10,7 @@ import { applyConflictResolution, recomputeResult, statusFromBranches } from './
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
 import { Semaphore, type SlotRelease } from './semaphore.js';
 import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
-import { selectCandidates } from './discovery.js';
+import { recoverChain, selectCandidates, type RecoveryAction } from './discovery.js';
 import {
   advanceBudget,
   budgetExceeded,
@@ -169,6 +169,27 @@ export type OrchestratorOptions = {
     poolSize: number;
     saturatedDropped: number;
     diverted: number;
+    at: string;
+  }) => void;
+  /**
+   * S11 V3 (design-tool-discovery §5): fired once per failed branch after the
+   * recovery chain has produced its fixed-order verdict (retry -> switch ->
+   * degrade -> escalate). The failure itself is audited as `tool-failed`; the
+   * verdict decides the `chain-*` line. In intent-level fan-out the kernel
+   * holds no idempotency fact, no retry budget and no optional-step
+   * declaration, and the whole candidate face is already dispatched, so the
+   * verdict is escalate (the existing needs-driver semantics) — the
+   * retry/switch/degrade executable actions belong to the ChainPlan/DAG step
+   * face (V3 slice 2) where an un-dispatched alternate exists.
+   */
+  onChainRecovered?: (entry: {
+    intentId: string;
+    skill: string;
+    realm: FanOutRequest['realm'];
+    vassal: string;
+    reason: string;
+    action: RecoveryAction;
+    alternateProvider?: string;
     at: string;
   }) => void;
   /**
@@ -623,6 +644,48 @@ export class Orchestrator {
       } finally {
         this.inFlight.delete(intentId);
         this.branchSignals.delete(intentId);
+      }
+      // S11 V3 (design-tool-discovery §5): the recovery chain is wired onto the
+      // failed-branch runtime. Every failed branch gets a fixed-order verdict
+      // (retry -> switch -> degrade -> escalate) and the verdict is audited on
+      // the spine. In intent-level fan-out the kernel holds no idempotency
+      // fact, no retry budget and no optional-step declaration, and the whole
+      // candidate face is already dispatched — so the verdict is escalate (the
+      // existing needs-driver semantics; the failed branch settles failed
+      // exactly as before). What changes here is the audit: `tool-failed` (the
+      // failure) is now really emitted, and the chain verdict decides the
+      // `chain-*` line. The retry/switch/degrade *actions* belong to the
+      // ChainPlan/DAG step face (V3 slice 2), where a step has an
+      // un-dispatched alternate, an idempotency fact and an optional-step
+      // declaration.
+      const tried = new Set(names);
+      for (const branch of branches) {
+        if (branch.ok) continue;
+        const budget = this.budgetOf(intentId);
+        const circuitOpen =
+          this.budgetLimits.maxConsecutiveBranchFailures !== undefined &&
+          budget.failureStreak >= this.budgetLimits.maxConsecutiveBranchFailures;
+        const alternate = face.find(c => !tried.has(c.provider));
+        const action = recoverChain({
+          step: request.skill,
+          idempotent: false,
+          retriesLeft: 0,
+          highStakes: request.mode === 'execute',
+          circuitOpen,
+          hasAlternateProvider: alternate !== undefined,
+          requiredStep: true,
+        });
+        tried.add(branch.vassal);
+        this.options.onChainRecovered?.({
+          intentId,
+          skill: request.skill,
+          realm: request.realm,
+          vassal: branch.vassal,
+          reason: branch.reason ?? 'branch failed',
+          action,
+          ...(alternate ? { alternateProvider: alternate.provider } : {}),
+          at: this.now().toISOString(),
+        });
       }
       const positions = extractPositions(branches);
       const decision = aggregate(positions, request.aggregation);
