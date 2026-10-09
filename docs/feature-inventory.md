@@ -92,8 +92,8 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 一层扇出/汇聚：按技能或显式名单并行派发 N 个执行 Agent | `orchestrator/orchestrator.ts` | ✅ |
-| 意图幂等：同 intentId 重放零出站 | `src/orchestrator/orchestrator.ts:150-150 #intentId` | ✅ |
-| 取消传播到全部非终态分支 | `src/orchestrator/orchestrator.ts:254-254 #cancelIntent` | ✅（A-11 已修：意图在首个分支派发前落最小可取消态，取消结果回写分支与聚合） |
+| 意图幂等：同 intentId 重放零出站 | `src/orchestrator/orchestrator.ts:151-151 #intentId` | ✅ |
+| 取消传播到全部非终态分支 | `src/orchestrator/orchestrator.ts:274-274 #cancelIntent` | ✅（A-11 已修：意图在首个分支派发前落最小可取消态，取消结果回写分支与聚合） |
 | 多流合并（带来源 vassal/taskId/runId） | `orchestrator/merge.ts` | ✅ |
 | 规则聚合：unanimous / majority / weighted，分裂不臆断 | `orchestrator/aggregate.ts` | ✅ |
 | 冲突检测与升级进监督台 | `orchestrator/conflict.ts` + `oversight` | ✅ |
