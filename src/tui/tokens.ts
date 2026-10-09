@@ -172,6 +172,12 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'plan-rejected-unplannable': 'attention',
   'plan-malformed': 'warning',
   'plan-replanned': 'warning',
+  // design-cost-governance (S9): budget and rate refusals are warnings; a
+  // self-report mismatch or backend degradation is danger.
+  'cost-budget-exceeded': 'warning',
+  'cost-rate-circuit-open': 'warning',
+  'cost-self-report-mismatch': 'danger',
+  'cost-backend-degraded': 'danger',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };
