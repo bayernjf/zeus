@@ -79,9 +79,9 @@
 
 | 期 | 内容 | 触发 |
 | --- | --- | --- |
-| **V1** | 记忆检索装配进分支上下文（源 4）+ 审计（装配清单、裁剪事件）——记忆从"只沉淀"到"被消费" | 纯库内，可立即实施；优先级高于 V2（记忆是当前最缺的输入面） |
+| **V1** | 记忆检索装配进分支上下文（源 4）+ 审计（装配清单、裁剪事件）——记忆从"只沉淀"到"被消费" | ✅ **已落地**（2026-10-09，Active work 165，见 §10） |
 | **V2** | 技能 `inputs` 声明参与装配与校验（源 2）+ 共享裁剪规则（§4）落地 | ✅ **已落地**（2026-10-09，Active work 166，见 §11） |
-| **V3** | 上下文预算分配（§5）+ 长任务换入换出接口（§6） | 预算阈值校准依赖真实负载（#9 同口径）；换出依赖持久化基准先跑一遍 |
+| **V3** | 上下文预算分配（§5）+ 长任务换入换出接口（§6） | **§5 已落地（2026-10-09 A1 批，见演进日志 v0.5）**；§6 换入换出仍挂 #9 真实长任务负载基准，不凭空拍阈值 |
 | **边界** | 不改变 `dataPolicy`、不新增数据面旁路、不做执行 Agent 侧缓存 | 全程约束 |
 
 ## 8. 关联
@@ -97,6 +97,7 @@
 - v0.2（2026-10-09）：补 V1 实现规格（§10）——记忆装配进分支上下文的可执行工程契约（装配器纯函数签名、装配点与数据流、预算默认值、审计事件表、幂等注记、不变量、测试与验收清单）；deferred #4/#8 触发条件按 #41 隔离实例裁定同步重审（见 deferred-items.md）。
 - v0.3（2026-10-09）：**§10 已落码（Active work 165）**——`src/context/assemble.ts` 实现（factId 去重取高分 / 凭证形态敏感面剔除 / 降序截断，事件三值 `context-assembled|context-trimmed|context-budget-exceeded`）+ `DispatchRequest.contextAppendix` 出站并入 + `AUDIT_DECISIONS` +3 + TUI token + boot 接线（memoryStore/contextOptions/onContextAssembled 审计桥）；基线 1352/122 → 1368/124（新测试 16 例、文件 +2）、冒烟 42 → 43；tech map S1 升"V1 已落地"。
 - v0.4（2026-10-09）：**§11 V2 已落码（Active work 166）**——`src/context/skill-inputs.ts` 装配器（技能 `inputs` 从死声明变装配约束：显式载荷补全 / 缺失标 `unavailable` 不臆造）+ 共享裁剪完整规则（去重改取最新 updatedAt、新增相关度闸 `minScore` 默认关闭、敏感面保留）+ `DispatchRequest.skillInputs` 出站并入 + boot `skillInputsProvider` 窄端口接线 + 审计 reason 扩 `unavailable|relevance`、`source` 分流措辞；基线 1368/124 → 1379/125（新测试 11 例、文件 +1）、冒烟 43 → 45；tech map S1 行更新、feature-inventory v0.44、review v0.36。
+- v0.5（2026-10-09）：**§5 V3 per-branch 预算分配已落码（A1 批）**——新建 `src/context/budget.ts` 纯函数 `allocateContextBudget`（`DEFAULT_BRANCH_CONTEXT_LIMIT=64`；四源优先级：显式载荷永不计数 > skillInputs > realmHits > contextAppendix；预算耗尽从最低优先级源截前缀，每源截断发带 `source` 的 `context-budget-exceeded` 事件）；orchestrator `fanOutNew` 四源装配后统一过预算、**只截出站副本**（内核内记忆/Realm 全量保留），`runTrackedBranch`/`runBranch` 加 `budgetedRealmHits?` 尾参，boot 加 `KernelBootOptions.contextOptions?`；新测试 `tests/context-budget.test.ts` 7 例 + `tests/boot-context-assembly.test.ts` 3 例（文件 +1、测试 +10）。**§6 长任务换入换出明示不落码**——换入换出阈值依赖真实长任务负载，挂 deferred #9 压测基准，不凭空拍数。A 档三批（A1/A2/A3）合批收尾基线 1410/126 → **1430/128**、冒烟 45/45、doc-consistency 18/18。
 
 ## 10. V1 实现规格：记忆装配进分支上下文（2026-10-09，**V1 已落地，Active work 165，2026-10-09**）
 
