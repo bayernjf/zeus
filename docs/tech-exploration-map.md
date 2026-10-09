@@ -25,7 +25,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | S6 | 可观测性：trace/metrics/log + LLM replay | 跨 Agent 调用链调试；审计已有，补分布式 trace | 📝→✅ 设计稿已出（2026-10-09，[design-observability.md](design-observability.md) v0.1——从既有审计/progress/runId 谱系装配 span 树的纯函数 `buildTraceTree`，trace 不出进程先落库内；V2 出站透传 traceparent + 只读端点；V1 纯函数待落码） |
 | S7 | Evals 与质量回归 | 离线 eval 集、改 prompt 防漂移、线上 A/B（呼应 verify before asserting） | 📝 |
 | S8 | Guardrails：注入/越权/PII | prompt injection 经数据跨 Agent 传播，多 Agent 放大攻击；越权工具调用 | 📝→✅ 设计稿已出（2026-10-09，[design-guardrails.md](design-guardrails.md) v0.1——内容来源分级 + `classifyContentRisk` 判定链（放行/标注/脱敏/拒绝/升级）+ 跨 Agent 传播三不变量；V1 纯函数待落码。高优，建议紧随 A 组） |
-| S9 | 成本治理 | 任务/租户 token 预算、执行中预算闸门、异常熔断；cost 字段已有 | 📝 |
+| S9 | 成本治理 | 任务/租户 token 预算、执行中预算闸门、异常熔断；cost 字段已有 | 📝→✅ 设计稿已出（2026-10-09，[design-cost-governance.md](design-cost-governance.md) v0.1——可信/自报双层口径 + 与 S4 同构的 CostLedger 纯函数（admit/软阈值/速率熔断）+ 超限复用 cancel/降级/L1 升级；阈值标定挂 #9，V1 纯函数待落码） |
 | S10 | Human-in-the-loop 时机 | 何时打断人、何时异步介入，不打断心流 | ✅ **V1 已落地**（2026-10-09，Active work 167：[design-hil.md](design-hil.md) v0.2——`src/oversight/interrupt.ts` 纯函数 `classifyInterruption`：六信号（branch-failed/circuit-open/intent-conflict/task-input-missing/delegation-limit-hit/explicit-branch-failed）→ L0 不介入 / L1 异步介入 / L2 同步打断（仅「无替代 + 下游依赖」双条件）固定判定链 + `interruptionReason` 措辞 + 审计 3 值 interrupt-level-* + TUI token；零 IO 零接线，V2 接升级队列） |
 
 ## C 组：能力与运行时（中期）
