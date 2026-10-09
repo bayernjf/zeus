@@ -38,7 +38,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**决策后端抽象层落此层（DecisionBackend：专用决策模型 Jev 与 LLM 均可接入，见 design-decision-backend.md）** | ✅ |
 | S15 | 流式体验工程 | 部分结果先呈现、流式合并、思考态 UX | 📝→✅ 设计稿已出（2026-10-09，[design-streaming.md](design-streaming.md) v0.1——增量帧五级分类 + 归并不变量（来源标签/选择序/预览不进决策/全落定与 mergeBranches 等价）+ streamWindow 纯函数；V1 纯函数待落码） |
 | S16 | 沙箱与代码执行 | 容器/microVM 隔离、资源配额 | 📝→✅ 设计稿已出（2026-10-09，[design-sandbox.md](design-sandbox.md) v0.1——执行体四级隔离（内置/本地 stdio 子进程/容器/远程）+ IsolationManifest 启动前 fail-closed 校验纯函数，stdio 子进程最小权限面为首要缺口；V2 收窄 spawn，容器挂 V3 真机阶段） |
-| S17 | Agent 测试策略 | 契约测试、录制重放、mock LLM、混沌测试 | 📝（契约测试已有实践） |
+| S17 | Agent 测试策略 | 契约测试、录制重放、mock LLM、混沌测试 | 📝→✅ 设计稿已出（2026-10-09，[design-agent-testing.md](design-agent-testing.md) v0.1——Recording 录制格式（脱敏后做夹具）+ 七类故障确定性混沌注入器 `withChaos` + 协议兼容矩阵，供单测/冒烟/S7 eval 共用；V1 纯函数待落码） |
 
 ## D. 待确认外部输入
 
