@@ -154,6 +154,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'guardrail-annotated': 'info',
   'guardrail-redacted': 'warning',
   'guardrail-refused': 'warning',
+  // design-sandbox (S16): an isolation refusal is the gate working, so it
+  // warns; a spawned-isolated connector is normal operation.
+  'connector-isolation-denied': 'warning',
+  'connector-spawned-isolated': 'info',
+  'connector-quota-killed': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };

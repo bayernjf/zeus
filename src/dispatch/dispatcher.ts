@@ -149,6 +149,13 @@ export const AUDIT_DECISIONS = [
   'guardrail-annotated',
   'guardrail-redacted',
   'guardrail-refused',
+  // design-sandbox (tech map S16): the isolation gate refused a connector
+  // registration, or spawned one under a declared isolation level, or a quota
+  // enforcement killed it. V1 registers the names; the spawn-side wiring is V2,
+  // so these are reserved until the wiring actually emits them.
+  'connector-isolation-denied',
+  'connector-spawned-isolated',
+  'connector-quota-killed',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
