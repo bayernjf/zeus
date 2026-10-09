@@ -1,6 +1,6 @@
 # Agent 技术探索地图（Tech Exploration Map）
 
-> 状态：**现行（活文档 v0.6，2026-10-10）**。这是 Agent 方向技术议题的登记处与优先级视图。
+> 状态：**现行（活文档 v0.7，2026-10-10）**。这是 Agent 方向技术议题的登记处与优先级视图。
 > 用法：议题先在本文登记（含触发条件/状态）；成熟且相关者升级为 `docs/design-*.md` 或转入 [deferred-items.md](deferred-items.md)；实施进度只记 [handoff.md](../handoff.md)。
 > 状态：🔜 A 组优先（已裁决）｜📝 待触发 / 登记中｜✅ 已有设计/已落地。
 
@@ -33,7 +33,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | 编号 | 议题 | 要点 | 状态 |
 |---|---|---|---|
 | S11 | 工具/Skill 发现与组合 | 自动选工具、工具链拼装、工具失败恢复 | ✅ **V1+V2+V3 slice 1 已落地**（2026-10-09，Active work 168 + A3 批 + 173：[design-tool-discovery.md](design-tool-discovery.md) v0.4——`src/orchestrator/discovery.ts` 纯函数 `selectCandidates`（点名钉选 > 自动选靶饱和过滤 > tier-1 只读收窄 fail-closed > 能力面 execute/plan）+ `recoverChain`（重试→换将→降级→升级，高利害跳过重试、熔断跳过自动路径）+ 审计 5 值 tool-selected/tool-failed/chain-retried/chain-switched/chain-degraded + TUI token；**V2 已落地（2026-10-09，design-tool-discovery v0.3）**：fanOutNew 无条件构造统一候选面喂实时饱和数据 + onCandidatesSelected hook + tool-selected 审计首次实发（selectTargets 本体 2026-09-27 已接线）；**V3 slice 1 已落地（2026-10-09，design-tool-discovery v0.4）**：recoverChain 接失败分支运行时（onChainRecovered hook + fanOutNew 恢复循环 + boot `tool-failed` 实发 / `chain-*` 按裁决分流）；**V3 slice 2 已落地（2026-10-10，Active work 175）**：`planRecovery`（ChainPlan/DAG 步面可执行检索指令——retry 同面候选 / switch 首个异构候选 / degrade / escalate+reason，越界 stepIndex 抛 RangeError 不猜裁决），`tests/plan-recovery.test.ts` 新建 11 例） |
-| S12 | 规划：单/多 planner、重规划 | 计划竞争、计划与执行交错、replan | 📝→✅ 设计稿已出（2026-10-09，[design-planning.md](design-planning.md) v0.1——规划即扇出（planner 是规划技能 Agent，计划是待校验数据）+ validatePlan/scorePlans/selectPlan/replanDelta 纯函数（冻结已完成节点、replan 计入步数预算防不收敛）；**V1 已落码（2026-10-10，Active work 176：`src/orchestrator/planning.ts` validatePlan/scorePlans/selectPlan/replanDelta，`tests/planning.test.ts` 15 例）+ 审计 5 值 plan-* 登记）** |
+| S12 | 规划：单/多 planner、重规划 | 计划竞争、计划与执行交错、replan | 📝→✅ 设计稿已出（2026-10-09，[design-planning.md](design-planning.md) v0.1——规划即扇出（planner 是规划技能 Agent，计划是待校验数据）+ validatePlan/scorePlans/selectPlan/replanDelta 纯函数（冻结已完成节点、replan 计入步数预算防不收敛）；**V1 已落码（2026-10-10，Active work 176：`src/orchestrator/planning.ts` validatePlan/scorePlans/selectPlan/replanDelta，`tests/planning.test.ts` 15 例）+ 审计 5 值 plan-* 登记）**；**V2 已落地（2026-10-10，Active work 188：`src/orchestrator/plan-flow.ts` PlanFlow 规划即扇出编排器——planner 技能按 `planning` tag 发现、goal + 目录快照扇出、计划草稿从任务 data part 的 `plan` 键读取、冲突与不可规划走既有 intent-conflict 升级、选定计划交 DAG runner，`tests/plan-flow.test.ts` 6 例）** |
 | S13 | 长流程持久化执行 | checkpoint、崩溃恢复、断点续跑（随 H2） | 📝→✅ 设计稿已出（2026-10-09，[design-long-running.md](design-long-running.md) v0.1——崩溃恢复四分类纯函数 `classifyRecoverable`（自动续跑/等人/判失败/判取消，execute 默认等人、零僵尸）+ 最小 checkpoint 集；**V1 已落码（2026-10-10，Active work 178：`src/orchestrator/recovery.ts` classifyRecoverable/computeCheckpoint，`tests/recovery.test.ts` 18 例全布尔面穷举）+ 审计 4 值 recovery-* 登记**；V2 启动恢复接线，V3 周期 checkpoint 触发条件同 retention） |
 | S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**决策后端抽象层落此层（DecisionBackend：专用决策模型 Jev 与 LLM 均可接入，见 design-decision-backend.md）** | ✅ |
 | S15 | 流式体验工程 | 部分结果先呈现、流式合并、思考态 UX | 📝→✅ 设计稿已出（2026-10-09，[design-streaming.md](design-streaming.md) v0.1——增量帧五级分类 + 归并不变量（来源标签/选择序/预览不进决策/全落定与 mergeBranches 等价）+ streamWindow 纯函数；**V1 已落码（2026-10-10，Active work 177：`src/orchestrator/stream-merge.ts` 不可变视图 + settledViewMatchesMerge，`tests/stream-merge.test.ts` 12 例，零新增审计值）**） |
@@ -66,5 +66,6 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | v0.2 | 2026-09-22 | Jev 已核实并落设计（design-decision-backend.md v0.1，快决策层）；S14 状态 ✅ |
 | v0.3 | 2026-09-22 | 决策后端抽象层升级为**模型无关**（design-decision-backend.md v0.2）：DecisionBackendKind=decision-model/llm，Jev 为专用决策模型家族首个实现，传统 LLM 经适配器同端口接入（慢层） |
 | v0.4 | 2026-10-09 | B/C 组九篇设计稿一次出齐（均 v0.1，V1 纯函数切法，未落码）：S8 护栏 design-guardrails、S6 可观测性 design-observability、S9 成本治理 design-cost-governance、S13 长流程恢复 design-long-running、S7 evals design-evals、S12 规划 design-planning、S15 流式 design-streaming、S16 沙箱 design-sandbox、S17 Agent 测试 design-agent-testing；tech map 九行 📝→✅ 设计稿已出 |
+| v0.7 | 2026-10-10 | S12 V2 规划即扇出接线（Active work 188）：`src/orchestrator/plan-flow.ts` PlanFlow 编排器落码（planning tag 发现 + 扇出 + data part `plan` 草稿 + intent-conflict 升级复用 + DAG runner 执行），S12 行 ✅ V1 已落码 → ✅ V1+V2 已落地；基线 1619/146 → 1625/147 |
 | v0.6 | 2026-10-10 | V2 接线批（Active work 184–187）：S9 成本闸门接线（意图级准入 + 审计 + env）、S16 stdio 最小隔离（narrowSpawn + envAllowList）、S17 协议兼容矩阵首版；S9/S16/S17 三行 ✅ V1 已落码 → ✅ V1+V2 已落地；基线 1581/139 → 1619/146 |
 | v0.5 | 2026-10-10 | 九项 V1 纯函数一次落码（Active work 175–183）：S11 V3 slice 2 planRecovery、S12 规划 planning、S15 流式 stream-merge、S16 沙箱 isolation、S13 恢复 recovery、S6 trace、S7 evals、S17 混沌+录制、S9 成本账本；S11 行补 slice2，S6/S7/S9/S12/S13/S15/S16/S17 八行 📝→✅ 设计稿已出 → ✅ V1 已落码；审计 +16 值（plan-*5 / connector-*3 / recovery-*4 / cost-*4）；基线 1458/130 → 1581/139 |
