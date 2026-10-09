@@ -153,3 +153,57 @@ describe('OversightDesk decisions', () => {
     expect(() => deskInstance.approve('esc-1')).toThrow(/already approved/);
   });
 });
+
+describe('S10 V2 interruption levels on the escalation queue', () => {
+  it('levels a task-input escalation L1 via the classifier chain', () => {
+    const esc = desk().ingest(taskResult('input-required', [escalationEvent()]), request);
+    expect(esc!.interruptLevel).toBe(1);
+  });
+
+  it('levels an unresolvable intent-conflict L1 (auto-resolvable splits never reach the desk)', () => {
+    const esc = desk().ingestConflict({
+      intentId: 'intent-1',
+      runId: 'run-1',
+      skill: 'decide',
+      realm: 'personal',
+      conflict: { reason: 'split', stances: [{ stance: 'approve', vassals: ['a'] }, { stance: 'reject', vassals: ['b'] }] },
+    });
+    expect(esc.interruptLevel).toBe(1);
+  });
+
+  it('levels a memory dispute L1 (async ruling, never blocks other intents)', () => {
+    const esc = desk().ingestMemoryDispute({
+      id: 'disp-1',
+      runId: 'run-1',
+      realm: 'personal',
+      realmId: 'personal',
+      factId: 'f1',
+      conflictingFacts: ['f1', 'f2'],
+      reason: 'contradictory reliability',
+    });
+    expect(esc.interruptLevel).toBe(1);
+  });
+
+  it('levels a delegation-limit escalation L1 by default and accepts the tick classifier verdict', () => {
+    const defaulted = desk().ingestDelegationLimit({
+      watchId: 'w1', delegationId: 'c1', skill: 'merge', realm: 'personal',
+      limitReason: 'revoked', tickSeq: 1,
+    });
+    expect(defaulted.interruptLevel).toBe(1);
+    const blocking = desk().ingestDelegationLimit({
+      watchId: 'w2', delegationId: 'c2', skill: 'merge', realm: 'personal',
+      limitReason: 'no-contract', tickSeq: 1, interruptLevel: 2,
+    });
+    expect(blocking.interruptLevel).toBe(2);
+  });
+
+  it('carries the level on the escalated audit action and through snapshots', () => {
+    const audits: OversightAuditEntry[] = [];
+    const instance = desk({ audit: entry => audits.push(entry) });
+    const esc = instance.ingest(taskResult('input-required', [escalationEvent()]), request)!;
+    expect(audits.find(entry => entry.action === 'escalated')?.interruptLevel).toBe(1);
+    const restored = new OversightDesk({ newId: () => 'esc-x' });
+    restored.importState(instance.exportState());
+    expect(restored.get(esc.id)?.interruptLevel).toBe(1);
+  });
+});
