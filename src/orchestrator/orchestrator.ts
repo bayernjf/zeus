@@ -25,6 +25,7 @@ import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../context/assemble.js';
+import { assembleSkillInputs } from '../context/skill-inputs.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { RecallHit } from '../memory/types.js';
 import type {
@@ -175,8 +176,17 @@ export type OrchestratorOptions = {
    */
   memoryStore?: MemoryStore;
   /** V1 tuning: appendix entry cap per intent (structural guard, default 20;
-   *  numeric calibration deferred to #9 real-agent load). */
-  contextOptions?: { maxEntries?: number };
+   *  numeric calibration deferred to #9 real-agent load). V2 tuning: optional
+   *  relevance gate threshold (hybrid score 0..1; unset = gate off). */
+  contextOptions?: { maxEntries?: number; minScore?: number };
+  /**
+   * S1 context engineering V2 (design-context-engineering §10.3): resolves the
+   * skill-declared input shape for a skill id, so the dispatch boundary can
+   * assemble declared inputs against the caller's explicit payload. Boot wires
+   * this to `SkillRegistry.get(id)?.inputs`. An unset provider degrades to zero
+   * skill-input assembly — exactly like an unconfigured memory store.
+   */
+  skillInputsProvider?: (skillId: string) => Record<string, unknown> | undefined;
   /** Receives the assembly audit events (intent-level, no single vassal). */
   onContextAssembled?: (events: ContextAssemblyEvent[], entry: { intentId: string; runId: string; skill: string; realm: FanOutRequest['realm']; realmId?: string; at: string }) => void;
 };
@@ -429,9 +439,11 @@ export class Orchestrator {
       // at the signature level. A store-level failure or a missing realmId
       // degrades exactly like an unconfigured store: zero appendix, zero audit.
       let contextAppendix: DispatchRequest['contextAppendix'] = [];
+      let skillInputs: DispatchRequest['skillInputs'] = [];
       let contextEvents: ContextAssemblyEvent[] = [];
       if (this.options.memoryStore && request.realmId !== undefined) {
         const maxEntries = this.options.contextOptions?.maxEntries ?? CONTEXT_APPENDIX_DEFAULT_MAX;
+        const minScore = this.options.contextOptions?.minScore;
         let hits: RecallHit[] = [];
         try {
           hits = this.options.memoryStore.searchRecall(
@@ -443,19 +455,43 @@ export class Orchestrator {
         } catch {
           hits = [];
         }
-        const assembled = assembleBranchContext({ memoryHits: hits, maxEntries });
+        const assembled = assembleBranchContext({
+          memoryHits: hits,
+          maxEntries,
+          ...(minScore !== undefined ? { minScore } : {}),
+        });
         contextAppendix = assembled.appendix;
         contextEvents = assembled.events;
-        if (contextEvents.length > 0) {
-          this.options.onContextAssembled?.(contextEvents, {
-            intentId,
-            runId,
-            skill: request.skill,
-            realm: request.realm,
-            ...(request.realmId ? { realmId: request.realmId } : {}),
-            at: this.now().toISOString(),
-          });
+      }
+      // S1 context engineering V2 (design-context-engineering §10.3): the
+      // skill-declared input shape (source 2 of the assembly model) is resolved
+      // through the narrow provider port and assembled against the caller's
+      // explicit payload. A missing provider, a missing spec or a provider
+      // failure degrades to zero skill-input assembly; only fields the skill
+      // declared are judged, and a field no source can supply is marked
+      // `unavailable` — never fabricated.
+      if (this.options.skillInputsProvider) {
+        let declared: Record<string, unknown> | undefined;
+        try {
+          declared = this.options.skillInputsProvider(request.skill);
+        } catch {
+          declared = undefined;
         }
+        if (declared !== undefined) {
+          const assembled = assembleSkillInputs({ declared, params: request.params });
+          skillInputs = assembled.inputs;
+          contextEvents = contextEvents.concat(assembled.events);
+        }
+      }
+      if (contextEvents.length > 0) {
+        this.options.onContextAssembled?.(contextEvents, {
+          intentId,
+          runId,
+          skill: request.skill,
+          realm: request.realm,
+          ...(request.realmId ? { realmId: request.realmId } : {}),
+          at: this.now().toISOString(),
+        });
       }
       // A-11: publish the intent before the first branch is dispatched so a
       // cancel arriving during the fan-out finds it. Previously the intent was
@@ -493,6 +529,7 @@ export class Orchestrator {
               exhaustedNote,
               signals.get(name)?.signal,
               contextAppendix,
+              skillInputs,
             );
           })
         );
@@ -824,6 +861,7 @@ export class Orchestrator {
     exhaustedNote: string | null = null,
     signal?: AbortSignal,
     contextAppendix?: DispatchRequest['contextAppendix'],
+    skillInputs?: DispatchRequest['skillInputs'],
   ): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const metrics = this.options.metrics;
@@ -863,7 +901,7 @@ export class Orchestrator {
         this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
         this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
       }
-      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix);
+      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs);
     } finally {
       release();
     }
@@ -884,7 +922,7 @@ export class Orchestrator {
     return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix']): Promise<BranchOutcome> {
+  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs']): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     // deferred #33: execute-mode gate. An execute is an irreversible external
     // write, so it must carry a verified, unconsumed execution delegation; the
@@ -928,6 +966,10 @@ export class Orchestrator {
       // the dispatch boundary rides the same layer as realmHits — read-only,
       // assembled once per intent, shared by every branch of this fan-out.
       ...(contextAppendix !== undefined && contextAppendix.length > 0 ? { contextAppendix } : {}),
+      // S1 V2 (design-context-engineering §10.3): skill-declared input
+      // assembly rides the same layer — the branch sees which declared fields
+      // were supplied and which were left unavailable.
+      ...(skillInputs !== undefined && skillInputs.length > 0 ? { skillInputs } : {}),
       ...(signal !== undefined ? { signal } : {}),
     };
     const pending = this.dispatcher

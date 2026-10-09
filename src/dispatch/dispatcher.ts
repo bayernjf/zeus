@@ -2,6 +2,7 @@ import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
 import type { RealmHit } from '../realm/types.js';
 import type { ContextAppendixEntry } from '../context/assemble.js';
+import type { SkillInputEntry } from '../context/skill-inputs.js';
 import { sendTaskSubscribe, cancelTask } from './client.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
@@ -165,6 +166,14 @@ export type DispatchRequest = {
    * Like `realmHits`, it is instantaneous at dispatch and a replay may omit it.
    */
   contextAppendix?: ContextAppendixEntry[];
+  /**
+   * S1 context engineering V2: skill-declared input assembly (source 2 of the
+   * assembly model, design-context-engineering §10.3). Read-only, assembled by
+   * the kernel at dispatch time — a caller cannot supply it, a replay may omit
+   * it, and an unavailable field is an explicit absence, never a fabricated
+   * value. Travels the same outbound layer as `contextAppendix`.
+   */
+  skillInputs?: SkillInputEntry[];
   /**
    * design-fan-out §7: hard-abort a live outbound A2A stream. Forwarded into
    * `sendTaskSubscribe`'s signal, so an abort while the peer is still streaming
@@ -340,6 +349,12 @@ export class Dispatcher {
             // what context the kernel gave this branch.
             ...(request.contextAppendix !== undefined && request.contextAppendix.length > 0
               ? { contextAppendix: request.contextAppendix }
+              : {}),
+            // S1 V2 (design-context-engineering §10.3): skill-declared inputs
+            // assembled by the kernel ride the same outbound channel — the
+            // vassal sees which declared fields were supplied and which absent.
+            ...(request.skillInputs !== undefined && request.skillInputs.length > 0
+              ? { skillInputs: request.skillInputs }
               : {}),
           },
           runId,
