@@ -37,7 +37,18 @@ export type ContextAssemblyEvent =
        */
       source?: 'memory' | 'skill-inputs';
     }
-  | { kind: 'context-budget-exceeded'; kept: number; limit: number };
+  | {
+      kind: 'context-budget-exceeded';
+      kept: number;
+      limit: number;
+      /**
+       * Which budget fired and which source was truncated. Absent for the V1
+       * memory-appendix cap (assembleBranchContext's own maxEntries); present
+       * for the V3 per-branch total-budget allocation (budget.ts, design §5),
+       * where the value names the truncated source.
+       */
+      source?: 'memory' | 'realm' | 'skill-inputs';
+    };
 
 /**
  * Credential-shaped text predicate. Same shape judgement as the operator log's

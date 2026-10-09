@@ -30,7 +30,6 @@ export type DispatchCandidate = {
 
 /** Caller-supplied snapshot for selection (design-tool-discovery §3.2). */
 export type SelectionContext = {
-  skillId: string;
   /** Explicitly named targets. Presence = hard pin; saturation never re-points
    *  them (same rule as `selectTargets` on `request.vassals`). */
   named?: string[];

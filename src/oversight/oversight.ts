@@ -3,8 +3,18 @@ import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js'
 import type { Conflict } from '../orchestrator/types.js';
 import { DomainError } from '../util/domain-error.js';
 import type { CancelTaskFn, Escalation, EscalationKind, EscalationStatus, OversightAuditEntry } from './types.js';
+import { classifyInterruption, type InterruptLevel } from './interrupt.js';
 
 const FALLBACK_REASON = 'vassal requests human input';
+
+/**
+ * S10 V2 default level for queue rows. Every escalation reaching the desk is by
+ * construction an async entry (L1): it pends without occupying a concurrency
+ * slot or blocking other intents. L2 rows are created only when a caller
+ * supplies the classifier's stall verdict (no automatic path, downstream
+ * depends on the result); L0 never reaches the queue.
+ */
+const QUEUE_DEFAULT_LEVEL: InterruptLevel = 1;
 
 export class OversightError extends DomainError {}
 
@@ -60,6 +70,9 @@ export class OversightDesk {
       options,
       status: 'pending',
       createdAt: this.now().toISOString(),
+      // S10 V2: a missing task input the skill declaration cannot complete is
+      // an async queue entry by the fixed classification chain (design-hil §4).
+      interruptLevel: classifyInterruption({ kind: 'task-input-missing' }),
     };
     this.escalations.set(escalation.id, escalation);
     this.taskIndex.set(escalation.taskId!, escalation.id);
@@ -94,6 +107,9 @@ export class OversightDesk {
       options: input.conflict.stances.map(stance => stance.stance),
       status: 'pending',
       createdAt: this.now().toISOString(),
+      // S10 V2: only conflicts the arbitration rules cannot resolve reach this
+      // desk (auto-resolvable splits are L0 and never ingested).
+      interruptLevel: classifyInterruption({ kind: 'intent-conflict', autoResolvable: false }),
       ...(input.intentId ? { intentId: input.intentId } : {}),
       stances: structuredClone(input.conflict.stances),
     };
@@ -131,6 +147,10 @@ export class OversightDesk {
       options: input.conflictingFacts,
       status: 'pending',
       createdAt: this.now().toISOString(),
+      // S10 V2: a reliability dispute waits for an async ruling and never
+      // blocks other intents; the classifier's signal set has no memory-dispute
+      // variant (design-hil §5), so the queue default L1 applies by semantics.
+      interruptLevel: QUEUE_DEFAULT_LEVEL,
       factId: input.factId,
       conflictingFacts: [...input.conflictingFacts],
       ...(input.realmId ? { realmId: input.realmId } : {}),
@@ -155,6 +175,9 @@ export class OversightDesk {
     realmId?: string;
     limitReason: string;
     tickSeq: number;
+    /** S10 V2: level from the watch tick's classifier run; defaults to the
+     *  no-covering-contract verdict (L1, design-hil §4). */
+    interruptLevel?: InterruptLevel;
   }): Escalation {
     const key = `${input.watchId}::${input.delegationId ?? '(none)'}::${input.limitReason}::${input.tickSeq}`;
     const existingId = this.conflictIndex.get(key);
@@ -174,6 +197,8 @@ export class OversightDesk {
       options: [],
       status: 'pending',
       createdAt: this.now().toISOString(),
+      interruptLevel: input.interruptLevel
+        ?? classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
       intentId: `watch:${input.watchId}:${input.tickSeq}`,
       watchId: input.watchId,
       ...(input.delegationId ? { delegationId: input.delegationId } : {}),
@@ -329,6 +354,11 @@ export class OversightDesk {
       ...(note ? { note } : {}),
       ...(detail ? { detail } : {}),
       ...(decidedStance ? { decidedStance } : {}),
+      // S10 V2: the level rides the escalated action so the audit trail shows
+      // whether a row pended asynchronously (L1) or blocked on the operator (L2).
+      ...(action === 'escalated' && escalation.interruptLevel !== undefined
+        ? { interruptLevel: escalation.interruptLevel }
+        : {}),
     });
   }
 }

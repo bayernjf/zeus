@@ -238,6 +238,37 @@ describe('contracts section (self-host step 5 face)', () => {
     const out = renderDeck({ snapshot: withLimit, t, palette, updatedAt: 'x' });
     expect(out).toContain('签一份仅 execute 的新契约并换绑本 watch');
   });
+
+  it('S10 V2: shows the interruption level badge and omits it on pre-V2 rows', () => {
+    const leveled: DeckSnapshot = {
+      ...snapshot,
+      escalations: [
+        {
+          id: 'esc-l1', kind: 'memory-dispute', vassal: '(memory)', skill: '(memory)',
+          realm: 'personal', reason: 'dispute', status: 'pending', options: [],
+          createdAt: '', interruptLevel: 1,
+        },
+        {
+          id: 'esc-l2', kind: 'task-input', vassal: 'loom', skill: 'deploy',
+          realm: 'enterprise', reason: 'blocked', status: 'pending', options: [],
+          createdAt: '', interruptLevel: 2,
+        },
+      ],
+    };
+    const out = renderDeck({ snapshot: leveled, t, palette, updatedAt: 'x' });
+    expect(out).toContain('L1 异步介入');
+    expect(out).toContain('L2 同步等待');
+    const legacy: DeckSnapshot = {
+      ...snapshot,
+      escalations: [
+        {
+          id: 'esc-old', kind: 'memory-dispute', vassal: '(memory)', skill: '(memory)',
+          realm: 'personal', reason: 'dispute', status: 'pending', options: [], createdAt: '',
+        },
+      ],
+    };
+    expect(renderDeck({ snapshot: legacy, t, palette, updatedAt: 'x' })).not.toContain('L1 异步介入');
+  });
 });
 
 describe('renderRecognize (E2.6 operator intent)', () => {

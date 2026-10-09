@@ -1,5 +1,6 @@
 import type { RealmType } from '../a2a/types.js';
 import type { Conflict } from '../orchestrator/types.js';
+import type { InterruptLevel } from './interrupt.js';
 
 /** A vassal task stopped at input-required and is asking the human driver to decide. */
 export type EscalationStatus = 'pending' | 'approved' | 'rejected';
@@ -31,6 +32,14 @@ export type Escalation = {
   createdAt: string;
   decidedAt?: string;
   decisionNote?: string;
+  /**
+   * S10 V2 (design-hil §6): the interruption level assigned by the fixed
+   * classification chain. Queue rows are L1 by construction (async entry,
+   * never blocks other intents); L2 marks a stall that synchronously blocks on
+   * the operator (no automatic path and downstream work depends on it). L0
+   * never reaches the queue. Absent on rows recorded before V2.
+   */
+  interruptLevel?: InterruptLevel;
   /** intent-conflict only. */
   intentId?: string;
   stances?: Conflict['stances'];
@@ -61,6 +70,8 @@ export type OversightAuditEntry = {
   detail?: string;
   /** Set when an intent-conflict is decided. */
   decidedStance?: string;
+  /** S10 V2: interruption level carried on the `escalated` action. */
+  interruptLevel?: InterruptLevel;
 };
 
 /** Rejection cancels the vassal-side task; wired to Dispatcher.cancel in production. */

@@ -91,4 +91,20 @@ describe('the desk decisions land on the audit spine in a booted kernel', () => 
 
     expect(audits.some(entry => entry.decision === 'escalation-rejected')).toBe(true);
   });
+
+  it('S11 V2: records tool-selected with the candidate face the live saturation data produced', async () => {
+    const audits: AuditEntry[] = [];
+    const kernel = await bootKernel({
+      fetchImpl: vassalFetch(),
+      vassalSeeds: seeds,
+      dispatchAudit: entry => audits.push(entry),
+    });
+
+    await kernel.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+
+    const row = audits.find(entry => entry.decision === 'tool-selected');
+    expect(row).toBeDefined();
+    expect(row?.detail).toContain("skill 'review'");
+    expect(row?.detail).toContain('live-saturated dropped 0');
+  });
 });

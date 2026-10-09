@@ -609,4 +609,20 @@ describe('watch contract rebinding (step 5)', () => {
     expect(registry.bindDelegation('missing', 'contract-2')).toBeUndefined();
     expect(() => registry.bindDelegation('w1', '   ')).toThrow(/non-empty/);
   });
+
+  it('S10 V2: classifies a refused execute fire and carries the interruption level to the desk hook', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(executeInput());
+    const escalated: Array<{ reason: string; interruptLevel: number }> = [];
+    await registry.runTick({
+      now: () => new Date(NOW.getTime() + 60_000),
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      // A revoked contract has no covering contract: the fixed chain rules this
+      // an L1 async entry (design-hil §4), and the tick must not hard-code it.
+      deriveExecution: async () => ({ ok: false, reason: 'revoked' }),
+      escalateLimit: input => escalated.push({ reason: input.reason, interruptLevel: input.interruptLevel }),
+      submit: async () => ({ ok: true }),
+    });
+    expect(escalated).toEqual([{ reason: 'revoked', interruptLevel: 1 }]);
+  });
 });

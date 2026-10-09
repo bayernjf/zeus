@@ -1,6 +1,7 @@
 import type { RealmType } from '../a2a/types.js';
 import type { MetricsSnapshot } from '../orchestrator/metrics.js';
 import type { RealmStore } from '../realm/types.js';
+import { classifyInterruption, type InterruptLevel } from '../oversight/interrupt.js';
 
 /**
  * design-self-host-loop §3: the trigger primitive that lets an intent exist
@@ -212,7 +213,10 @@ export type WatchTickOptions = {
     skill: string;
   }) => Promise<{ ok: true; delegation: unknown } | { ok: false; reason: string }>;
   /** Step 4 §4.2: a refused execute fire becomes a desk escalation instead of
-   *  a silent miss, so the operator can issue a new contract or drop to plan. */
+   *  a silent miss, so the operator can issue a new contract or drop to plan.
+   *  S10 V2 (design-hil §6): the tick runs the fixed classifier and carries the
+   *  resulting interruption level, so the desk records the row with its level
+   *  instead of assuming one. */
   escalateLimit?: (input: {
     watchId: string;
     delegationId?: string;
@@ -221,6 +225,7 @@ export type WatchTickOptions = {
     realmId?: string;
     reason: string;
     tickSeq: number;
+    interruptLevel: InterruptLevel;
   }) => void;
 };
 
@@ -462,6 +467,7 @@ export class WatchRegistry {
               ...(watch.realmId ? { realmId: watch.realmId } : {}),
               reason,
               tickSeq: seq,
+              interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
             });
           }
           continue;
@@ -489,6 +495,7 @@ export class WatchRegistry {
             ...(watch.realmId ? { realmId: watch.realmId } : {}),
             reason: derived.reason,
             tickSeq: seq,
+            interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
           });
           continue;
         }

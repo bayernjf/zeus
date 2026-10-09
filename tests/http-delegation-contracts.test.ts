@@ -223,6 +223,9 @@ describe('HTTP self-host step 5 — approving a delegation-limit escalation', ()
       limitReason: 'child-ticket-limit-reached',
       tickSeq: 1,
     });
+    // S10 V2: the desk assigns the L1 verdict by default and the HTTP list
+    // serializes it straight through (no field allowlist).
+    expect(escalation.interruptLevel).toBe(1);
 
     const app = await createHttpServer({
       registry: new VassalRegistry(),

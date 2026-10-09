@@ -12,7 +12,6 @@ import {
 } from '../src/orchestrator/discovery.js';
 
 const ctx = (over: Partial<SelectionContext>): SelectionContext => ({
-  skillId: 'research',
   tier: 'tier-3',
   readOnlyTagged: true,
   capabilityGranted: true,

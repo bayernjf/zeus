@@ -40,6 +40,9 @@ export type EscalationView = {
   status: 'pending' | 'approved' | 'rejected';
   options: string[];
   createdAt: string;
+  /** S10 V2: interruption level from the classification chain (1 = async
+   *  entry, 2 = blocking stall); absent on pre-V2 rows. */
+  interruptLevel?: 0 | 1 | 2;
   intentId?: string;
   stances?: Array<{ stance: string; vassals: string[]; summary?: string }>;
   factId?: string;

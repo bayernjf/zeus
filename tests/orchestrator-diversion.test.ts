@@ -180,6 +180,73 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
     releaseA();
     await first;
   });
+
+  it('S11 V2: reports the live-saturation candidate face per fan-out (pool, dropped, diverted)', async () => {
+    const { port, releaseA } = makeDispatcher();
+    const metrics = new ConcurrencyMetrics();
+    const faces: Array<{ pinned: boolean; namedCount: number; poolSize: number; saturatedDropped: number; diverted: number }> = [];
+    const orchestrator = new Orchestrator(
+      { findBySkill: () => [{ name: 'A' }, { name: 'B' }], statusOf: () => 'active' },
+      port,
+      {
+        now: () => new Date('2026-09-27T00:00:00Z'),
+        newIntentId: () => `intent-${Math.random()}`,
+        newRunId: () => `run-${Math.random()}`,
+        metrics,
+        maxConcurrentBranches: 4,
+        maxConcurrentPerVassal: 1,
+        skillGovernor: { activeProviders: () => ['A', 'B'] },
+        onCandidatesSelected: e =>
+          faces.push({
+            pinned: e.pinned,
+            namedCount: e.namedCount,
+            poolSize: e.poolSize,
+            saturatedDropped: e.saturatedDropped,
+            diverted: e.diverted,
+          }),
+      }
+    );
+
+    const req = (id: string) => ({ intentId: id, skill: 'code', params: {}, realm: REALM });
+
+    const first = orchestrator.fanOut(req('i1'));
+    await new Promise(r => setTimeout(r, 0));
+    await orchestrator.fanOut(req('i2'));
+
+    // First face: nothing saturated yet. Second face: A is live-saturated, the
+    // face drops it and the switch layer re-points the target to B.
+    expect(faces[0]).toMatchObject({ pinned: false, namedCount: 0, poolSize: 2, saturatedDropped: 0, diverted: 0 });
+    expect(faces[1]).toMatchObject({ pinned: false, namedCount: 0, poolSize: 2, saturatedDropped: 1, diverted: 1 });
+
+    releaseA();
+    await first;
+  });
+
+  it('S11 V2: a driver-pinned fan-out reports the pin and never consults the pool', async () => {
+    const { port, releaseA } = makeDispatcher();
+    const faces: Array<{ pinned: boolean; namedCount: number; poolSize: number; saturatedDropped: number }> = [];
+    const orchestrator = new Orchestrator(
+      { findBySkill: () => [{ name: 'A' }, { name: 'B' }], statusOf: () => 'active' },
+      port,
+      {
+        now: () => new Date('2026-09-27T00:00:00Z'),
+        newIntentId: () => 'intent-pin',
+        newRunId: () => 'run-pin',
+        metrics: new ConcurrencyMetrics(),
+        maxConcurrentBranches: 4,
+        maxConcurrentPerVassal: 1,
+        skillGovernor: { activeProviders: () => ['A', 'B'] },
+        onCandidatesSelected: e =>
+          faces.push({ pinned: e.pinned, namedCount: e.namedCount, poolSize: e.poolSize, saturatedDropped: e.saturatedDropped }),
+      }
+    );
+
+    const pending = orchestrator.fanOut({ intentId: 'i-pin', skill: 'code', params: {}, realm: REALM, vassals: ['A'] });
+    await new Promise(r => setTimeout(r, 0));
+    expect(faces[0]).toMatchObject({ pinned: true, namedCount: 1, poolSize: 0, saturatedDropped: 0 });
+    releaseA();
+    await pending;
+  });
 });
 
 function okTask(id: string) {

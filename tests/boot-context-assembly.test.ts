@@ -255,3 +255,83 @@ describe('S1 V2 skill-input assembly in a booted kernel', () => {
     expect(sent[0]!.params.skillInputs).toBeUndefined();
   });
 });
+
+function realmHit(itemId: string) {
+  return { itemId, tags: [], snippet: `snippet ${itemId}`, modifiedAt: '2026-10-09T00:00:00.000Z' };
+}
+
+describe('S1 V3 per-branch context budget in a booted kernel', () => {
+  it('fills the budget with realm hits first and drops the memory appendix, auditing the source', async () => {
+    const cap = capturingFetch();
+    const audits: AuditEntry[] = [];
+    const kernel = await bootKernel({
+      fetchImpl: cap.fetchImpl,
+      vassalSeeds: [SEED],
+      dispatchAudit: entry => audits.push(entry),
+      contextOptions: { maxContextEntriesPerBranch: 3 },
+    });
+    kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
+    kernel.memoryStore!.consolidateRealm('personal');
+    await kernel.orchestrator.fanOut({
+      skill: 'review',
+      params: { message: 'please review my typescript setup' },
+      realm: 'personal',
+      realmId: 'personal',
+      vassals: ['loom'],
+      realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3')],
+      realmHitsOrigin: 'kernel-resolved',
+    });
+    const outbound = cap.sent[0]!.params;
+    expect((outbound.realmHits as unknown[])).toHaveLength(3);
+    // Memory recall ranks below realm hits; the budget left no slot for it.
+    expect(outbound.contextAppendix).toBeUndefined();
+    const exceeded = audits.filter(
+      entry => entry.decision === 'context-budget-exceeded' && (entry.detail ?? '').includes('branch context budget'),
+    );
+    expect(exceeded.some(entry => (entry.detail ?? '').includes('memory'))).toBe(true);
+  });
+
+  it('truncates realm hits to the remaining slots and drops memory under a tighter budget', async () => {
+    const cap = capturingFetch();
+    const audits: AuditEntry[] = [];
+    const kernel = await bootKernel({
+      fetchImpl: cap.fetchImpl,
+      vassalSeeds: [SEED],
+      dispatchAudit: entry => audits.push(entry),
+      contextOptions: { maxContextEntriesPerBranch: 2 },
+    });
+    kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
+    kernel.memoryStore!.consolidateRealm('personal');
+    await kernel.orchestrator.fanOut({
+      skill: 'review',
+      params: { message: 'please review my typescript setup' },
+      realm: 'personal',
+      realmId: 'personal',
+      vassals: ['loom'],
+      realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3'), realmHit('r4'), realmHit('r5')],
+      realmHitsOrigin: 'kernel-resolved',
+    });
+    const outbound = cap.sent[0]!.params;
+    expect((outbound.realmHits as Array<{ itemId: string }>).map(h => h.itemId)).toEqual(['r1', 'r2']);
+    expect(outbound.contextAppendix).toBeUndefined();
+    const detail = audits.map(entry => entry.detail ?? '').join('\n');
+    expect(detail).toContain('realm truncated');
+    expect(detail).toContain('memory truncated');
+  });
+
+  it('keeps realm hits and the appendix untouched under the default structural-guard budget', async () => {
+    const { kernel, sent } = await bootedWithMemory();
+    await kernel.orchestrator.fanOut({
+      skill: 'review',
+      params: { message: 'please review my typescript setup' },
+      realm: 'personal',
+      realmId: 'personal',
+      vassals: ['loom'],
+      realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3')],
+      realmHitsOrigin: 'kernel-resolved',
+    });
+    const outbound = sent[0]!.params;
+    expect((outbound.realmHits as unknown[])).toHaveLength(3);
+    expect(outbound.contextAppendix).toBeDefined();
+  });
+});

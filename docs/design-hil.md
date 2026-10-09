@@ -1,7 +1,7 @@
 # 设计稿：Human-in-the-loop 介入时机（tech map S10）
 
-- 状态：**现行 v0.2（2026-10-09）**：设计稿 v0.1 + **V1 已落码**（Active work 167）——`src/oversight/interrupt.ts` 纯函数 `classifyInterruption`/`interruptionReason`（六信号→L0/L1/L2 固定判定链，零 IO 零接线）+ 审计 3 值 `interrupt-level-0/1/2` 入 AUDIT_DECISIONS + TUI token；V2（接升级队列/挂起判定）与 V3（可选）待分期。
-- 演进：v0.1（2026-10-09）设计探索先行（分级判定链 + `classifyInterruption` 接口草案）；v0.2（2026-10-09，Active work 167）V1 落码（`src/oversight/interrupt.ts` + `tests/interrupt-classify.test.ts` 15 例 + 审计/TUI 接线，基线 1379/125 → 1410/126、冒烟 45/45、doc-consistency 18/18）。
+- 状态：**现行 v0.3（2026-10-09）**：设计稿 + **V1/V2 已落码**——V1（Active work 167）`src/oversight/interrupt.ts` 纯函数 `classifyInterruption`/`interruptionReason`（六信号→L0/L1/L2 固定判定链，零 IO 零接线）+ 审计 3 值 `interrupt-level-0/1/2` + TUI token；**V2（2026-10-09）已落码**：升级队列登记 `interruptLevel`（0 自动消解 / 1 异步挂起 / 2 同步阻塞），四类 ingest 默认级别、watch 两处 execute 拒绝路径传级、escalateLimit 回调透传、TUI 级别徽标与中英文案；V3（可选）待分期。
+- 演进：v0.1（2026-10-09）设计探索先行（分级判定链 + `classifyInterruption` 接口草案）；v0.2（2026-10-09，Active work 167）V1 落码（`src/oversight/interrupt.ts` + `tests/interrupt-classify.test.ts` 15 例 + 审计/TUI 接线，基线 1379/125 → 1410/126、冒烟 45/45、doc-consistency 18/18）；v0.3（2026-10-09）V2 落码（升级队列/审计/watch/TUI 全链接 interruptLevel，新增 oversight/watch/tui-render 测试 7 例，A 档三批合批收尾基线 1410/126 → 1430/128、冒烟 45/45、doc-consistency 18/18）。
 - 关联：tech map S10（何时打断人、何时异步介入，不打断心流）；design-supervision.md（§6 裁决/升级、§7.1 终止与收敛 S4）；design-backpressure.md（分流候选集 selectTargets）；design-external-trust.md（E9.4 信任分级）；`src/oversight/oversight.ts`（升级队列）；`src/delegation/delegation-contract.ts`（父授权契约）。
 - 本文是介入时机策略的单一事实源；handoff 与 PRD 只索引，不复制全文。
 
@@ -79,8 +79,8 @@ function classifyInterruption(sig: InterruptSignal): InterruptLevel { /* 判定�
 
 ## 6. 分期
 
-- **V1（纯函数判定链）**：`classifyInterruption` + 判定表测试（正/反例各信号） + 审计标注；不接任何既有原语。
-- **V2（接升级队列）**：oversight 升级队列登记 `interrupt-level` 字段，L1/L2 的记录带级别可见；watch 评估 tick 输出级别。
+- **V1（纯函数判定链）**：`classifyInterruption` + 判定表测试（正/反例各信号） + 审计标注；不接任何既有原语。**✅ 已落地（2026-10-09，Active work 167）**。
+- **V2（接升级队列）**：oversight 升级队列登记 `interrupt-level` 字段，L1/L2 的记录带级别可见；watch 评估 tick 输出级别。**✅ 已落地（2026-10-09）**——升级队列四类 ingest 默认级别（task-input/intent-conflict=1、memory-dispute 经常量缺省 1、ingestDelegationLimit 入参可选）、audit() 仅 escalated 写级别、watch 两处 execute 拒绝路径传级、escalateLimit 回调与 boot 透传、TUI 徽标/文案。
 - **V3（可选）**：L2 等待的操作者裁决动作标准化（resume 带级别提示）。
 
 **验收（V1 实施时）**：每条信号至少一正一反例；L2 仅"卡死"双条件同时成立时产生；全量与冒烟不回归（本设计不新增运行时行为，V1 只是纯函数 + 测试）。

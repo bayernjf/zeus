@@ -353,6 +353,8 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
 
     const all = await app.inject({ method: 'GET', url: '/api/escalations', headers: AUTH });
     expect((await all.json()).escalations).toHaveLength(2);
+    // S10 V2: the level rides the serialized queue rows for the operator UI.
+    for (const row of (await all.json()).escalations) expect(row.interruptLevel).toBe(1);
 
     for (const [kind, size] of [['task-input', 1], ['memory-dispute', 1]] as const) {
       const filtered = await app.inject({ method: 'GET', url: `/api/escalations?kind=${kind}`, headers: AUTH });
