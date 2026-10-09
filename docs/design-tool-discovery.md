@@ -1,6 +1,7 @@
 # 设计稿：工具/Skill 发现与组合（tech map S11）
 
-- 状态：**设计稿 v0.1（2026-10-09）**，纯设计未落码；实施待分期触发。
+- 状态：**现行 v0.2（2026-10-09）**：设计稿 v0.1 + **V1 已落码**（Active work 168）——`src/orchestrator/discovery.ts` 纯函数 `selectCandidates`/`recoverChain`（选择次序：点名钉选 > 自动选靶饱和过滤 > tier-1 只读收窄 fail-closed > 能力面 execute/plan；恢复四步序：重试→换将→降级→升级，高利害跳过重试、熔断跳过自动路径）+ 审计 5 值 `tool-selected`/`tool-failed`/`chain-retried`/`chain-switched`/`chain-degraded` 入 AUDIT_DECISIONS + TUI token；V2（接 `selectTargets`/`activeProviders` 实况）与 V3（接工具链）待分期。
+- 演进：v0.1（2026-10-09）设计探索先行（技能族/工具族合一候选面 + 选择次序 + 恢复四步序 + 接口草案）；v0.2（2026-10-09，Active work 168）V1 落码（`src/orchestrator/discovery.ts` + `tests/orchestrator-discovery.test.ts` 16 例 + 审计/TUI 接线，基线 1379/125 → 1410/126、冒烟 45/45、doc-consistency 18/18）。
 - 关联：tech map S11（自动选工具、工具链拼装、工具失败恢复）；S3 DAG 编排（design-supervision §4）；S4 终止与收敛（design-supervision §7.1）；design-backpressure.md（分流候选集 selectTargets，未落码）；design-external-trust.md（E9.4 V2 只读 tag）；design-context-engineering.md（S1 V2 技能声明输入装配）；`src/skills/registry.ts`（SkillRegistry / resolveTeam / activeProviders）；`src/realm/mcp.ts` 与 `src/http/server.ts`（MCP 工具白名单）。
 - 本文是发现与组合策略的单一事实源；handoff 与 PRD 只索引，不复制全文。
 

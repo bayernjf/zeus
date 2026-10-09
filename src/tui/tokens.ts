@@ -134,6 +134,21 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // warnings, not silent drops.
   'intent-branch-budget-exceeded': 'warning',
   'intent-circuit-opened': 'warning',
+  // design-hil (S10): level-0 is normal automatic flow (quiet, like dispatched
+  // is quiet), level-1 waits asynchronously for the operator (info), level-2
+  // blocks on an operator decision (attention — the one that must never be
+  // muted).
+  'interrupt-level-0': 'muted',
+  'interrupt-level-1': 'info',
+  'interrupt-level-2': 'attention',
+  // design-tool-discovery (S11): a candidate selection is information (like
+  // branch-diverted); a tool failure and each recovery action are worth
+  // noticing, so they warn.
+  'tool-selected': 'info',
+  'tool-failed': 'warning',
+  'chain-retried': 'warning',
+  'chain-switched': 'warning',
+  'chain-degraded': 'warning',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };

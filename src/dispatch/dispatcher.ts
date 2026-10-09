@@ -126,6 +126,22 @@ export const AUDIT_DECISIONS = [
   // dispatched, the intent settles failed with the reason attached.
   'intent-branch-budget-exceeded',
   'intent-circuit-opened',
+  // design-hil (tech map S10): the interruption-level classification of an
+  // intent signal. The three levels are governance facts about when a human is
+  // (or is not) required: level-0 auto-resolves, level-1 waits asynchronously,
+  // level-2 blocks on an operator decision.
+  'interrupt-level-0',
+  'interrupt-level-1',
+  'interrupt-level-2',
+  // design-tool-discovery (tech map S11): the selection/recovery chain —
+  // which candidate was chosen, which tool failed, and the recovery action
+  // taken (retry/switch/degrade). The chain is auditable so "why this agent
+  // and this tool" can be replayed instead of guessed.
+  'tool-selected',
+  'tool-failed',
+  'chain-retried',
+  'chain-switched',
+  'chain-degraded',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
