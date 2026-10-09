@@ -213,6 +213,15 @@ export type KernelBootOptions = {
   /** Called when a persisted audit line cannot be written. Defaults to silence; a
    *  deployment should log it, because a missing trail is a governance fact. */
   onAuditError?: (message: string) => void;
+  /**
+   * S1 context engineering tuning (design-context-engineering §4/§5/§10):
+   * overrides for the per-branch context assembler — memory appendix cap
+   * (`maxEntries`, default 20), relevance gate (`minScore`, default off), and
+   * the V3 per-branch total entry budget (`maxContextEntriesPerBranch`,
+   * default 64). Every value is a structural guard, not a performance
+   * calibration; tuning is deferred to #9 once real-load distributions exist.
+   */
+  contextOptions?: { maxEntries?: number; minScore?: number; maxContextEntriesPerBranch?: number };
 }
 
 const noop = (): void => {};
@@ -481,7 +490,7 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     // dispatch boundary, audited on the same spine as dispatches. boot always
     // has a memory store; an unconfigured kernel degrades to zero assembly.
     memoryStore,
-    contextOptions: { maxEntries: 20 },
+    contextOptions: { maxEntries: 20, ...options.contextOptions },
     // S1 V2 (design-context-engineering §10.3): the skill catalogue resolves
     // the declared input shape; a registered skill with no inputs yields {} and
     // assembles nothing, an unregistered skill yields undefined and degrades to
@@ -503,7 +512,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
                 ? event.source === 'skill-inputs'
                   ? `intent ${entry.intentId}: ${event.trimmed} skill input field unavailable (${event.reason})`
                   : `intent ${entry.intentId}: ${event.trimmed} memory entry trimmed (${event.reason})`
-                : `intent ${entry.intentId}: memory appendix capped at ${event.limit} (${event.kept} kept)`,
+                : event.source
+                  ? `intent ${entry.intentId}: branch context budget ${event.limit} exhausted, ${event.source} truncated (${event.kept} kept)`
+                  : `intent ${entry.intentId}: memory appendix capped at ${event.limit} (${event.kept} kept)`,
         });
       }
     },

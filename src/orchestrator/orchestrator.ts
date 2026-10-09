@@ -26,6 +26,7 @@ import type { ProgressEvent } from './progress.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../context/assemble.js';
 import { assembleSkillInputs } from '../context/skill-inputs.js';
+import { allocateContextBudget, DEFAULT_BRANCH_CONTEXT_LIMIT } from '../context/budget.js';
 import type { MemoryStore } from '../memory/memory-store.js';
 import type { RecallHit } from '../memory/types.js';
 import type {
@@ -177,8 +178,10 @@ export type OrchestratorOptions = {
   memoryStore?: MemoryStore;
   /** V1 tuning: appendix entry cap per intent (structural guard, default 20;
    *  numeric calibration deferred to #9 real-agent load). V2 tuning: optional
-   *  relevance gate threshold (hybrid score 0..1; unset = gate off). */
-  contextOptions?: { maxEntries?: number; minScore?: number };
+   *  relevance gate threshold (hybrid score 0..1; unset = gate off). V3
+   *  tuning: per-branch total context entry budget across skill inputs, realm
+   *  hits and the memory appendix (structural guard, default 64, design §5). */
+  contextOptions?: { maxEntries?: number; minScore?: number; maxContextEntriesPerBranch?: number };
   /**
    * S1 context engineering V2 (design-context-engineering §10.3): resolves the
    * skill-declared input shape for a skill id, so the dispatch boundary can
@@ -483,6 +486,27 @@ export class Orchestrator {
           contextEvents = contextEvents.concat(assembled.events);
         }
       }
+      // S1 context engineering V3 (design-context-engineering §5): allocate the
+      // per-branch total context budget across the assembled sources — skill
+      // inputs > realm read-only hits > memory appendix; the caller's explicit
+      // payload is never counted or trimmed. The lowest-priority source is
+      // truncated first and every truncation is audited. The truncation acts on
+      // the outbound copy: the inbound FanOutRequest (and its realmHits) is
+      // never mutated.
+      const branchLimit = this.options.contextOptions?.maxContextEntriesPerBranch
+        ?? DEFAULT_BRANCH_CONTEXT_LIMIT;
+      const budgeted = allocateContextBudget({
+        skillInputs,
+        realmHits: request.realmHits ?? [],
+        contextAppendix,
+        limit: branchLimit,
+      });
+      skillInputs = budgeted.skillInputs;
+      contextAppendix = budgeted.contextAppendix;
+      const budgetedRealmHits = request.realmHits && budgeted.realmHits.length > 0
+        ? budgeted.realmHits
+        : undefined;
+      contextEvents = contextEvents.concat(budgeted.events);
       if (contextEvents.length > 0) {
         this.options.onContextAssembled?.(contextEvents, {
           intentId,
@@ -530,6 +554,7 @@ export class Orchestrator {
               signals.get(name)?.signal,
               contextAppendix,
               skillInputs,
+              budgetedRealmHits,
             );
           })
         );
@@ -862,6 +887,7 @@ export class Orchestrator {
     signal?: AbortSignal,
     contextAppendix?: DispatchRequest['contextAppendix'],
     skillInputs?: DispatchRequest['skillInputs'],
+    budgetedRealmHits?: DispatchRequest['realmHits'],
   ): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const metrics = this.options.metrics;
@@ -901,7 +927,7 @@ export class Orchestrator {
         this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
         this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
       }
-      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs);
+      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs, budgetedRealmHits);
     } finally {
       release();
     }
@@ -922,7 +948,7 @@ export class Orchestrator {
     return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs']): Promise<BranchOutcome> {
+  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs'], budgetedRealmHits?: DispatchRequest['realmHits']): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     // deferred #33: execute-mode gate. An execute is an irreversible external
     // write, so it must carry a verified, unconsumed execution delegation; the
@@ -960,8 +986,14 @@ export class Orchestrator {
       params: request.params,
       realm: request.realm,
       runId: branchRunId,
-      ...(request.realmHits ? { realmHits: request.realmHits } : {}),
-      ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}),
+      // S1 V3 (design-context-engineering §5): the budget allocation may have
+      // truncated realm hits for the outbound copy; on resume no budget ran and
+      // the original request hits are re-dispatched unchanged.
+      ...(budgetedRealmHits
+        ? { realmHits: budgetedRealmHits, ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}) }
+        : request.realmHits
+          ? { realmHits: request.realmHits, ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}) }
+          : {}),
       // S1 (design-context-engineering §10): the memory appendix assembled at
       // the dispatch boundary rides the same layer as realmHits — read-only,
       // assembled once per intent, shared by every branch of this fan-out.
