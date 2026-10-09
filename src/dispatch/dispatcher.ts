@@ -164,6 +164,16 @@ export const AUDIT_DECISIONS = [
   'recovery-awaiting-operator',
   'recovery-settled-failed',
   'checkpoint-written',
+  // design-planning (tech map S12): a plan draft failed validation, a plan was
+  // selected, two feasible plans were close enough to need operator input, all
+  // candidates were infeasible, or a re-plan delta was produced. V1 registers
+  // the names; the planner wiring is V2, so these are reserved until the
+  // wiring actually emits them.
+  'plan-malformed',
+  'plan-selected',
+  'plan-conflict',
+  'plan-rejected-unplannable',
+  'plan-replanned',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
