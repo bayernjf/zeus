@@ -36,7 +36,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | S12 | 规划：单/多 planner、重规划 | 计划竞争、计划与执行交错、replan | 📝→✅ 设计稿已出（2026-10-09，[design-planning.md](design-planning.md) v0.1——规划即扇出（planner 是规划技能 Agent，计划是待校验数据）+ validatePlan/scorePlans/selectPlan/replanDelta 纯函数（冻结已完成节点、replan 计入步数预算防不收敛）；V1 纯函数待落码） |
 | S13 | 长流程持久化执行 | checkpoint、崩溃恢复、断点续跑（随 H2） | 📝→✅ 设计稿已出（2026-10-09，[design-long-running.md](design-long-running.md) v0.1——崩溃恢复四分类纯函数 `classifyRecoverable`（自动续跑/等人/判失败/判取消，execute 默认等人、零僵尸）+ 最小 checkpoint 集；V2 启动恢复接线，V3 周期 checkpoint 触发条件同 retention） |
 | S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**决策后端抽象层落此层（DecisionBackend：专用决策模型 Jev 与 LLM 均可接入，见 design-decision-backend.md）** | ✅ |
-| S15 | 流式体验工程 | 部分结果先呈现、流式合并、思考态 UX | 📝 |
+| S15 | 流式体验工程 | 部分结果先呈现、流式合并、思考态 UX | 📝→✅ 设计稿已出（2026-10-09，[design-streaming.md](design-streaming.md) v0.1——增量帧五级分类 + 归并不变量（来源标签/选择序/预览不进决策/全落定与 mergeBranches 等价）+ streamWindow 纯函数；V1 纯函数待落码） |
 | S16 | 沙箱与代码执行 | 容器/microVM 隔离、资源配额 | 📝 |
 | S17 | Agent 测试策略 | 契约测试、录制重放、mock LLM、混沌测试 | 📝（契约测试已有实践） |
 
