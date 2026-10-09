@@ -1127,6 +1127,13 @@ export class Orchestrator {
       // assembly rides the same layer — the branch sees which declared fields
       // were supplied and which were left unavailable.
       ...(skillInputs !== undefined && skillInputs.length > 0 ? { skillInputs } : {}),
+      // S6 V2 (design-observability §5): propagate the kernel's own trace
+      // lineage. traceId is the intent-level runId (the fan-out root), spanId
+      // the branch runId — both from runId naming, so the trace tree and the
+      // outbound header stay the same namespace.
+      ...(parentRunId !== undefined
+        ? { traceparent: `00-${parentRunId}-${branchRunId}-01` }
+        : {}),
       ...(signal !== undefined ? { signal } : {}),
     };
     const pending = this.dispatcher

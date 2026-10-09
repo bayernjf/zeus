@@ -7,6 +7,13 @@ export type SendTaskInput = {
   params: Record<string, unknown>;
   runId: string;
   token?: string;
+  /**
+   * S6 V2 (design-observability §5): W3C-shaped trace context propagated to
+   * the execution agent as optional protocol metadata. The kernel derives it
+   * from its own runId lineage; a peer that ignores it stays interoperable
+   * (observation field, never an authorization field).
+   */
+  traceparent?: string;
 };
 
 export type SubscribeHandlers = {
@@ -53,7 +60,10 @@ export class A2AClientError extends Error {
 function taskMessage(input: SendTaskInput) {
   return {
     role: 'user',
-    metadata: { 'x-zeus-runId': input.runId },
+    metadata: {
+      'x-zeus-runId': input.runId,
+      ...(input.traceparent === undefined ? {} : { traceparent: input.traceparent }),
+    },
     parts: [{ kind: 'data', data: { skill: input.skill, ...input.params } }],
   };
 }

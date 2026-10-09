@@ -12,6 +12,7 @@ import type { EscalationKind, EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub } from '../orchestrator/progress.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
+import { buildTraceTree } from '../observability/trace.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
@@ -506,6 +507,17 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           if (thrown instanceof DomainError) return mapKernelError(reply, thrown);
           throw thrown;
         }
+        // S6 V2: an inbound caller may carry its own trace context (W3C
+        // header, or the A2A task metadata field). It is recorded verbatim on
+        // the acceptance audit row and surfaces as an external-link in the
+        // intent trace tree — observation metadata, never validated, never an
+        // authorization input (design-observability §3).
+        const inboundTraceparent =
+          typeof request.headers['traceparent'] === 'string' && request.headers['traceparent'].trim() !== ''
+            ? request.headers['traceparent']
+            : typeof metadata?.traceparent === 'string'
+              ? metadata.traceparent
+              : undefined;
         audit?.({
           ts: at,
           vassal: callerName,
@@ -515,7 +527,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           realm,
           ...(taskId ? { taskId } : {}),
           state: mapInboundFanOutState(result.status),
-          detail: `inbound A2A tasks/send accepted`,
+          detail: inboundTraceparent === undefined ? 'inbound A2A tasks/send accepted' : `traceparent=${inboundTraceparent}`,
         });
         reply.code(200);
         return {
@@ -869,6 +881,34 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return renderReplay(replay);
         }
         return replay;
+      });
+
+      // S6 V2 (design-observability §5): one intent's machine-readable span
+      // tree, rebuilt read-only from the audit spine + retained progress
+      // events. Same bearer gate as replay; nothing is re-dispatched and no
+      // conclusion is re-derived (trace is a projection, design §2). A
+      // retention-evicted intent returns 404 — the tree facts are gone with
+      // the buffer, and guessing an empty tree would mislead.
+      app.get('/api/intents/:id/trace', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const { id } = request.params as { id: string };
+        const progress = deps.progressHub ? deps.progressHub.eventsOf(id) : [];
+        if (progress.length === 0 || !deps.auditFile) {
+          return error(reply, 404, 'not_found', `unknown intent or retention-evicted: ${id}`);
+        }
+        const runIds = new Set<string>();
+        for (const e of progress) {
+          if ('runId' in e && e.runId !== undefined) runIds.add(e.runId);
+        }
+        let audit: AuditEntry[];
+        try {
+          audit = readAuditLog(deps.auditFile);
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === 'ENOENT') audit = [];
+          else if (e instanceof AuditLogError) return error(reply, 500, 'audit_unreadable', e.message);
+          else throw e;
+        }
+        const scoped = audit.filter(a => a.runId !== undefined && runIds.has(a.runId));
+        return buildTraceTree({ audit: scoped, progress });
       });
     }
 

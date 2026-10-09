@@ -238,6 +238,13 @@ export type DispatchRequest = {
    * arrived and the stream ended, the signal has nothing left to cancel.
    */
   signal?: AbortSignal;
+  /**
+   * S6 V2 (design-observability §5): W3C-shaped trace context for the outbound
+   * A2A request, supplied by the orchestrator from its own runId lineage
+   * (`00-<traceId>-<spanId>-01`). Optional protocol metadata: a peer that does
+   * not propagate traces stays fully interoperable.
+   */
+  traceparent?: string;
 };
 
 export type DispatchResult =
@@ -415,6 +422,9 @@ export class Dispatcher {
           },
           runId,
           ...(token !== undefined ? { token } : {}),
+          // S6 V2 (design-observability §5): the kernel-derived trace context
+          // rides the outbound request as optional metadata.
+          ...(request.traceparent === undefined ? {} : { traceparent: request.traceparent }),
         },
         {
           onEvent: event => {

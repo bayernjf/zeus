@@ -46,15 +46,41 @@ export type ProgressEvent =
     };
 
 /** Per-intent pub/sub for the H3 SSE endpoint. One hub per kernel; subscribe
- *  returns an unsubscribe function. Events are not retained — a client that
- *  connects after completion reads the stored intent snapshot instead. */
+ *  returns an unsubscribe function. Published events are additionally retained
+ *  in a bounded per-intent buffer (S6 V2: the trace endpoint rebuilds the span
+ *  tree from audit + progress without re-dispatched state; S15 V2: the stream
+ *  view reads the same buffer). Retention is FIFO and capped so a long-lived
+ *  kernel cannot grow the buffer without bound; a client that connects after
+ *  completion reads the stored intent snapshot instead. */
 export class ProgressHub {
   private listeners = new Map<string, Set<(event: ProgressEvent) => void>>();
+  private retained = new Map<string, ProgressEvent[]>();
+
+  /** Upper bound on retained events per intent (a DAG intent can emit many
+   *  branch lifecycle events; beyond this the oldest are dropped, matching the
+   *  metrics rolling-window philosophy). */
+  static readonly MAX_EVENTS_PER_INTENT = 1000;
+  /** Upper bound on distinct intents retained; the oldest intent is evicted
+   *  first so the buffer stays O(active + recent window). */
+  static readonly MAX_RETAINED_INTENTS = 500;
 
   publish(event: ProgressEvent): void {
     const set = this.listeners.get(event.intentId);
-    if (!set) return;
-    for (const listener of set) listener(event);
+    if (set) for (const listener of set) listener(event);
+
+    let events = this.retained.get(event.intentId);
+    if (events === undefined) {
+      if (this.retained.size >= ProgressHub.MAX_RETAINED_INTENTS) {
+        const oldest = this.retained.keys().next().value;
+        if (oldest !== undefined) this.retained.delete(oldest);
+      }
+      events = [];
+      this.retained.set(event.intentId, events);
+    }
+    events.push(event);
+    if (events.length > ProgressHub.MAX_EVENTS_PER_INTENT) {
+      events.splice(0, events.length - ProgressHub.MAX_EVENTS_PER_INTENT);
+    }
   }
 
   subscribe(intentId: string, listener: (event: ProgressEvent) => void): () => void {
@@ -68,5 +94,17 @@ export class ProgressHub {
       set!.delete(listener);
       if (set!.size === 0) this.listeners.delete(intentId);
     };
+  }
+
+  /** Retained events for one intent, in publish order. Absent intents (never
+   *  published, or evicted past the retention window) return an empty array. */
+  eventsOf(intentId: string): ProgressEvent[] {
+    return this.retained.get(intentId) ?? [];
+  }
+
+  /** Drop the retained buffer for one intent (S15 V2: the in-memory stream
+   *  view is cleaned up when the intent settles). Live listeners are kept. */
+  release(intentId: string): void {
+    this.retained.delete(intentId);
   }
 }
