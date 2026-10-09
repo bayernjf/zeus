@@ -63,7 +63,7 @@ describe('S6 V2 trace propagation (design-observability §5)', () => {
       newRunId: () => 'run-1',
       onProgress: e => hub.publish(e),
     });
-    await orchestrator.fanOut({ skill: 'summarize', realm: 'personal' });
+    await orchestrator.fanOut({ skill: 'summarize', realm: 'personal', params: {} });
 
     expect(captured.length).toBe(1);
     const req = captured[0]!;
@@ -216,20 +216,6 @@ describe('S6 V2 external-link recording', () => {
       now: () => new Date('2026-10-10T00:00:00.000Z'),
     });
 
-    const card = {
-      name: 'caller-a',
-      url: 'https://caller-a.example/',
-      skills: [],
-      'x-zeus-fealty': {
-        version: '1',
-        swornTo: 'zeus',
-        domain: 'test-domain',
-        dataRealms: ['personal'],
-        dataPolicy: 'read-task-scope',
-        reportBack: true,
-        escalationPolicy: 'on-failure',
-      },
-    };
     const res = await app.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
