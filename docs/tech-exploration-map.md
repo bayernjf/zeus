@@ -12,7 +12,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 
 | 编号 | 议题 | 状态 | 关联设计 |
 |---|---|---|---|
-| S1 | **上下文工程 Context Engineering**：每 Agent 带哪些上下文、共享上下文裁剪、上下文预算分配、长任务压缩换入换出（与记忆一体两面） | ✅ **V1 已落地**（2026-10-09，Active work 165：[design-context-engineering.md](design-context-engineering.md) v0.3 §10——`src/context/assemble.ts` 纯函数装配器 + `fanOutNew` 装配点 + 出站载荷 `contextAppendix` + 审计三值 + boot 接线；V2 技能 inputs 补全、V3 预算分配与换入换出待分期） | design-context-engineering.md |
+| S1 | **上下文工程 Context Engineering**：每 Agent 带哪些上下文、共享上下文裁剪、上下文预算分配、长任务压缩换入换出（与记忆一体两面） | ✅ **V1+V2 已落地**（2026-10-09，Active work 165/166：[design-context-engineering.md](design-context-engineering.md) v0.4——V1 §10：`src/context/assemble.ts` 记忆装配器 + `fanOutNew` 装配点 + 出站载荷 `contextAppendix` + 审计三值 + boot 接线；V2 §11：`assembleSkillInputs` 技能声明输入装配（显式补全 / unavailable 不臆造）+ 共享裁剪完整规则（去重取 updatedAt 最新 / 相关度闸 minScore / 敏感面）+ 出站 `skillInputs` + 审计 reason 扩 unavailable/relevance；V3 预算分配与换入换出待分期） | design-context-engineering.md |
 | S2 | **裁决/Critic 机制**：聚合权重来源、独立 Judge、陪审团/对抗辩论、LLM-as-judge 校准 | ✅（`src/orchestrator/arbitration.ts` 后端仲裁 + `src/orchestrator/judge.ts` 对抗式复核 + `src/decision/` 模型无关决策后端；Active work 15/43，基线） | prd E1.3；design-supervision §8 |
 | S3 | **DAG 依赖编排**：超越 fan-out 的有向无环调度、关键路径、部分失败 | ✅（`src/orchestrator/dag.ts` `dag-runner.ts`：拓扑分层/关键路径/上游失败跳过下游/产物下传；Active work 13 六切片） | design-supervision §4 |
 | S4 | **终止与收敛**：防互相调用/辩论不收敛，步数/预算上限、熔断、确定性终止 | ✅（2026-10-08，design-supervision §7.1：意图级步数预算 + 连续失败熔断，默认开启、随快照恢复、审计两值，Active work 162） | prd E1.5 |
