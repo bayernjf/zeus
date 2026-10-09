@@ -32,7 +32,9 @@
     "scripts/verify-decision-backend.mjs",
     "scripts/verify-execute-delegation.mjs",
     "scripts/verify-intent-recognize.mjs",
-    "scripts/verify-tui-recognize.mjs"
+    "scripts/verify-tui-recognize.mjs",
+    "scripts/eval-run.mjs",
+    "evals/cases/index.mjs"
     ,"scripts/run-watch-tick.mjs"
   ]
 }

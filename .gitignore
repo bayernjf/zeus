@@ -6,3 +6,6 @@ data/
 _e2e/
 # generated key material (scripts/gen-rsk-key.mjs writes rsk-private.pem into cwd by default)
 *.pem
+
+# eval run reports (machine-readable artifacts, regenerated on every run)
+evals/reports/
