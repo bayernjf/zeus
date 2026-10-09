@@ -6,10 +6,10 @@
 
 ## 1. 背景与现状
 
-E1.5 已落地**闸门**（`Orchestrator` 的 `maxConcurrentBranches` + `branchQueueLimit`，`src/orchestrator/orchestrator.ts:268-268 #Semaphore`）：在途分支超 `cap` 时进入 FIFO 等待，等待线超 `queueLimit` 即拒绝该分支并记录原因 `concurrency limit N reached`，分支不 dispatch（`tests/orchestrator-backpressure.test.ts`）。`ConcurrencyMetrics` 已报告全局 `inFlight` / `maxInFlight` / `queueDepth`（`src/orchestrator/metrics.ts:58-58 #queueDepth`）。
+E1.5 已落地**闸门**（`Orchestrator` 的 `maxConcurrentBranches` + `branchQueueLimit`，`src/orchestrator/orchestrator.ts:271-271 #Semaphore`）：在途分支超 `cap` 时进入 FIFO 等待，等待线超 `queueLimit` 即拒绝该分支并记录原因 `concurrency limit N reached`，分支不 dispatch（`tests/orchestrator-backpressure.test.ts`）。`ConcurrencyMetrics` 已报告全局 `inFlight` / `maxInFlight` / `queueDepth`（`src/orchestrator/metrics.ts:58-58 #queueDepth`）。
 
 闸门解决了"内核不被压垮"，但**没解决"溢出分流给谁"**：
-- 选靶只有一次——`lookup.findBySkill(skill)` 给出名单，经 `SkillGovernor.activeProviders` 三态闸门过滤（`src/orchestrator/orchestrator.ts:339-339 #activeProviders`）。
+- 选靶只有一次——`lookup.findBySkill(skill)` 给出名单，经 `SkillGovernor.activeProviders` 三态闸门过滤（`src/orchestrator/orchestrator.ts:342-342 #activeProviders`）。
 - 当某执行 Agent 饱和时，没有机制把它**改投**到同技能的其他可用提供方；超全局 `cap` 直接排队→拒绝，与"具体哪个 Agent 忙"无关。
 - 候选也无**可靠度 / 延迟排序**——排在前面的是注册表顺序，不是数据驱动的最优解。
 
@@ -105,7 +105,7 @@ score(v) = w_r * (1 - failureRate(v))  -  w_l * (p50Ms(v) / LATENCY_NORMALIZER)
 |---|---|---|
 | `PerVassalLoad` 计数 | 扩 `ConcurrencyMetrics` 或新增 | `branchStarted`+1 / `branchEnded`−1；`saturated(v)` 判定 |
 | 分流纯函数 `selectTargets` | 新增 `src/orchestrator/diversion.ts` | 输入 `skill / explicitVassals / activeProviders / load / metrics / health`，输出最终靶列表 + 改投/拒绝审计；纯函数、可单测 |
-| 选靶处接线 | `src/orchestrator/orchestrator.ts:331-331 #findBySkill` 附近 | 自动选靶分支改调 `selectTargets`；显式靶短路 |
+| 选靶处接线 | `src/orchestrator/orchestrator.ts:334-334 #findBySkill` 附近 | 自动选靶分支改调 `selectTargets`；显式靶短路 |
 | 拒绝原因升级 | `orchestrator.ts` 拒绝分支 | 带 tried 候选状态 |
 
 `selectTargets` 必须纯函数（不调 LLM、不碰时钟副作用），与 `aggregate` 同级，便于单测与可恢复。
@@ -116,7 +116,7 @@ score(v) = w_r * (1 - failureRate(v))  -  w_l * (p50Ms(v) / LATENCY_NORMALIZER)
 |---|---|---|
 | `PerVassalLoad` 计数 | `ConcurrencyMetrics`（`src/orchestrator/metrics.ts`） | ✅ `inFlightByVassal` + 访问器 + `MetricsSnapshot.inFlightByVassal`；`branchStarted`+1 / `branchEnded`−1 |
 | 分流纯函数 `selectTargets` | `src/orchestrator/diversion.ts` | ✅ 输入 `skill / explicitVassals / initialNames / candidatePool / load / metrics / health`，输出 `plan`（含 `divertedFrom`）+ `exhausted` 审计；`DEFAULT_DIVERSION_WEIGHTS` 与 `formatExhausted` 同文件 |
-| 选靶处接线 | `src/orchestrator/orchestrator.ts:331-331 #findBySkill` 之后 | ✅ `maxConcurrentPerVassal` 配置下调用 `selectTargets`；显式靶短路（硬钉）；`candidatePool` 取 `activeProviders(skill)`（undefined = pass-through 不分流） |
+| 选靶处接线 | `src/orchestrator/orchestrator.ts:334-334 #findBySkill` 之后 | ✅ `maxConcurrentPerVassal` 配置下调用 `selectTargets`；显式靶短路（硬钉）；`candidatePool` 取 `activeProviders(skill)`（undefined = pass-through 不分流） |
 | `branch-diverted` 事件 | `src/orchestrator/progress.ts` 联合体 + `onDiverted` 选项 | ✅ 改投时发进度事件并桥审计链（`AuditDecision` 扩 `branch-diverted`） |
 | 拒绝原因升级 | `orchestrator.ts` 全局 `Semaphore` 拒绝分支 | ✅ 饱和靶无备选被拒时，拒绝原因附 `formatExhausted`（tried 候选状态） |
 | 配置面 | `OrchestratorOptions.maxConcurrentPerVassal` + boot `ProcessConcurrencyConfig` + env `ZEUS_MAX_CONCURRENT_PER_VASSAL` | ✅ 透传；`onDiverted` 接 `auditSink`（decision `branch-diverted`） |
