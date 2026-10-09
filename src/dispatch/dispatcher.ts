@@ -149,6 +149,39 @@ export const AUDIT_DECISIONS = [
   'guardrail-annotated',
   'guardrail-redacted',
   'guardrail-refused',
+  // design-sandbox (tech map S16): the isolation gate refused a connector
+  // registration, or spawned one under a declared isolation level, or a quota
+  // enforcement killed it. V1 registers the names; the spawn-side wiring is V2,
+  // so these are reserved until the wiring actually emits them.
+  'connector-isolation-denied',
+  'connector-spawned-isolated',
+  'connector-quota-killed',
+  // design-long-running (tech map S13): a restart classified an unsettled
+  // branch — auto-resumed, awaiting the operator, or settled failed — and a
+  // checkpoint was written. V1 registers the names; the boot wiring is V2, so
+  // these are reserved until the wiring actually emits them.
+  'recovery-auto-resumed',
+  'recovery-awaiting-operator',
+  'recovery-settled-failed',
+  'checkpoint-written',
+  // design-planning (tech map S12): a plan draft failed validation, a plan was
+  // selected, two feasible plans were close enough to need operator input, all
+  // candidates were infeasible, or a re-plan delta was produced. V1 registers
+  // the names; the planner wiring is V2, so these are reserved until the
+  // wiring actually emits them.
+  'plan-malformed',
+  'plan-selected',
+  'plan-conflict',
+  'plan-rejected-unplannable',
+  'plan-replanned',
+  // design-cost-governance (tech map S9): the cost ledger refused admission
+  // (soft cap or rate circuit), a self-reported cost disagreed with the
+  // ledger, or the cost backend degraded. V1 registers the names; the ledger
+  // wiring is V2, so these are reserved until the wiring actually emits them.
+  'cost-budget-exceeded',
+  'cost-rate-circuit-open',
+  'cost-self-report-mismatch',
+  'cost-backend-degraded',
 ] as const;
 
 export type AuditDecision = (typeof AUDIT_DECISIONS)[number];

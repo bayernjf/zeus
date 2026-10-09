@@ -154,6 +154,30 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'guardrail-annotated': 'info',
   'guardrail-redacted': 'warning',
   'guardrail-refused': 'warning',
+  // design-sandbox (S16): an isolation refusal is the gate working, so it
+  // warns; a spawned-isolated connector is normal operation.
+  'connector-isolation-denied': 'warning',
+  'connector-spawned-isolated': 'info',
+  'connector-quota-killed': 'warning',
+  // design-long-running (S13): an auto-resumed branch is normal; awaiting the
+  // operator and a failed settle are recovery events the operator must see.
+  'recovery-auto-resumed': 'info',
+  'recovery-awaiting-operator': 'attention',
+  'recovery-settled-failed': 'warning',
+  'checkpoint-written': 'info',
+  // design-planning (S12): plan lifecycle — selected is progress, conflict and
+  // unplannable need the operator, malformed/replanned are warnings.
+  'plan-selected': 'accent',
+  'plan-conflict': 'attention',
+  'plan-rejected-unplannable': 'attention',
+  'plan-malformed': 'warning',
+  'plan-replanned': 'warning',
+  // design-cost-governance (S9): budget and rate refusals are warnings; a
+  // self-report mismatch or backend degradation is danger.
+  'cost-budget-exceeded': 'warning',
+  'cost-rate-circuit-open': 'warning',
+  'cost-self-report-mismatch': 'danger',
+  'cost-backend-degraded': 'danger',
 };
 
 export type StatusToken = { token: SemanticColor; known: boolean };
