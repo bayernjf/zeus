@@ -1,7 +1,7 @@
 # 设计稿：护栏 Guardrails——注入传播、越权调用与敏感内容（tech map S8）
 
-- 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文定义内容侧护栏的判定链与 V1 纯函数切法。
-- 演进：v0.1（2026-10-09）首版——现状盘点（身份/授权/网络侧护栏已齐、内容侧为空）+ 内容来源分级 + `classifyContentRisk` 判定链草案 + 分期。
+- 状态：**现行 v0.2（2026-10-09）**：V1 纯函数判定链已落码（Active work 174，`src/guardrails/content-risk.ts`）；V2（接装配与记忆）待分期。本文定义内容侧护栏的判定链与 V1 纯函数切法。
+- 演进：v0.2（2026-10-09）V1 落码——`content-risk.ts` 两函数（`classifyContentRisk` 判定表：audit 凭据打码 / cross-domain PII 按 grant 脱敏或拒绝 / execute 外联凭据升级 L1 / 其余 annotate 带 provenance 边界；`scanContentSignals` 确定性扫描器，内置最小指令短语清单 + URL/凭据/PII 正则）+ AUDIT_DECISIONS 登记 `guardrail-annotated/redacted/refused` 三值 + TUI token 映射；23 例测试（判定表正反例 + 传播三不变量 + 扫描器 + 审计登记），基线 1435/129 → 1458/130。v0.1（2026-10-09）首版——现状盘点（身份/授权/网络侧护栏已齐、内容侧为空）+ 内容来源分级 + `classifyContentRisk` 判定链草案 + 分期。
 - 关联：tech map S8（prompt injection 经数据跨 Agent 传播、多 Agent 放大攻击、越权工具调用；高优，紧随 A 组）；design-external-trust.md（E9.4 信任分级 tier、只读 tag）；design-execution-delegation.md（execute 授权票据）；design-realm.md §3.1（dataPolicy 收缩、`realmHitsOrigin` fail-closed）；design-context-engineering.md（S1 出站上下文装配，内容注入点）；design-backpressure.md；`src/trust/tier.ts`、`src/dispatch/dispatcher.ts`、`src/util/outbound-dns.ts`（DNS 重绑定守卫）、`src/realm/mcp.ts`（MCP 工具白名单）。
 - 本文是内容侧护栏的单一事实源；handoff 与 PRD 只索引，不复制全文。
 
@@ -116,7 +116,7 @@ export function scanContentSignals(text: string, phrases: readonly string[]): Co
 
 ## 5. 分期
 
-- **V1（纯函数判定链）**：`content-risk.ts` 两函数 + 判定表测试（provenance × destination × signals 正反例、传播规则三不变量各一例）+ 审计 3 值登记；不接装配、不写扫描清单文件。
+- **V1（纯函数判定链）**：`content-risk.ts` 两函数 + 判定表测试（provenance × destination × signals 正反例、传播规则三不变量各一例）+ 审计 3 值登记；不接装配、不写扫描清单文件。**✅ 已落地（2026-10-09，Active work 174）**。
 - **V2（接装配与记忆）**：S1 装配器对出站内容附 provenance、过判定链；记忆 producer/recall 携带标记；审计真正 emit；最小内置信号清单。
 - **V3（跨域与 execute 收紧）**：cross-domain 脱敏/拒绝接 DomainGrant；execute 分支命中信号接 design-hil L1 升级；执行 Agent 协议侧的不可信内容契约（design-vassal-protocol）。
 - **V4（可选）**：本机可选的语义级二次判定（经 DecisionBackend 同端口，模型无关），只在确定性信号提级后触发，默认关闭。
