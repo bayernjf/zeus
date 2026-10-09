@@ -21,7 +21,7 @@ function realmHit(itemId: string): RealmHit {
 }
 
 function memoryEntry(claimId: string): ContextAppendixEntry {
-  return { claimId, text: `fact ${claimId}`, source: 'memory-recall', realmId: 'personal', score: 0.5 };
+  return { claimId, text: `fact ${claimId}`, source: 'memory-recall', realmId: 'personal', score: 0.5, provenance: 'kernel-resolved-realm' };
 }
 
 describe('allocateContextBudget', () => {

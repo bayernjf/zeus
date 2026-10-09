@@ -34,11 +34,11 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 藏宝图（vault） | 备份与恢复协议（引用 + 指纹 + 加密备份包） | `src/vault/`（E8.1/E8.2/E3.7） |
 | 立国三纲 | 能力接入三原语：MCP / Skill / A2A | docs/design-agentic-integration.md §2A |
 | 决策后端（decision backend） | 模型无关决策端口 | `DecisionBackend`（noul/choice/score，`src/decision/types.ts`） |
-| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/orchestrator/types.ts:74-74 #intentId`） |
-| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:33-33 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27-27 #applyConflictResolution`）、bearer 保护的 H2 面 |
+| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/orchestrator/types.ts:75-75 #intentId`） |
+| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:34-34 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27-27 #applyConflictResolution`）、bearer 保护的 H2 面 |
 | 拍板 | 人工裁决回写 | `applyConflictResolution` + `POST /api/escalations/:id/resolve`（E6.2） |
 | 监督台 | 升级队列 / HITL 控制台 | `OversightDesk`（`src/oversight/oversight.ts`） |
-| 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8-8 #diode`、`src/dispatch/dispatcher.ts:310-310 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
+| 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8-8 #diode`、`src/dispatch/dispatcher.ts:324-324 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
 | 记忆（事件 / 事实） | 带 provenance 的事件存储 + 断言事实 | `src/memory/`（`retraction` / `retractFacts` / `forgetSubject`） |
 | 遗忘权 | 数据主体删除权（erasure） | `MemoryStore.forgetSubject` + `POST /api/memory/forget-subject` |
 | 日记 | 把事件流写成可读叙事的日志 | `src/diary/`（`build` / `from-memory` / `markdown` / `persist`） |

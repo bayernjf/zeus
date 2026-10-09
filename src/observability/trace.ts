@@ -177,6 +177,17 @@ export function buildTraceTree(input: {
         });
         break;
       }
+      case 'inbound-task-accepted': {
+        // S6 V2: an inbound A2A call that carried trace context is the parent
+        // linkage of this intent to a caller-side trace. The server records it
+        // in the audit detail (`traceparent=...`); the tree surfaces it as an
+        // external-link event on the root span. Recorded, never validated:
+        // it is observation metadata, not an authorization input.
+        if (a.detail !== undefined && a.detail.startsWith('traceparent=')) {
+          root.events.push({ kind: 'external-link', at: a.ts, detail: a.detail });
+        }
+        break;
+      }
       default:
         break;
     }

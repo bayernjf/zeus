@@ -194,7 +194,7 @@ describe('assembleBranchContext', () => {
       maxEntries: 20,
     });
     for (const entry of appendix) {
-      expect(Object.keys(entry).sort()).toEqual(['claimId', 'realmId', 'score', 'source', 'text']);
+      expect(Object.keys(entry).sort()).toEqual(['claimId', 'provenance', 'realmId', 'score', 'source', 'text']);
     }
     expect(events.at(-1)).toEqual({ kind: 'context-assembled', appendixEntries: 1 });
   });

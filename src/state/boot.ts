@@ -56,6 +56,8 @@ import {
   type KernelComponents,
   type KernelSnapshot,
 } from './kernel-state.js';
+import { computeCheckpoint, executeRecovery } from '../orchestrator/recovery.js';
+import type { CostLimit } from '../orchestrator/cost-ledger.js';
 import type { DecisionBackend } from '../decision/types.js';
 import { createJevBackendFromEnv } from '../decision/decision-model.js';
 import { createLlmBackendFromEnv } from '../decision/llm.js';
@@ -130,6 +132,17 @@ export type KernelBoot = KernelComponents & {
 export type KernelBootOptions = {
   /** When set, state is restored from this file on boot and saved on shutdown. */
   stateFile?: string;
+  /**
+   * S13 V2 (design-long-running §5): an auto-resume whose crash window exceeds
+   * this is reclassified to awaiting the operator. Unset = no time bound.
+   */
+  recoveryMaxAutoResumeMs?: number;
+  /**
+   * S9 V2 (design-cost-governance §5): when set, every fan-out is admitted
+   * against this intent-level cost limit before dispatch; refusals land on
+   * the audit spine (cost-budget-exceeded / cost-rate-circuit-open).
+   */
+  costLimit?: CostLimit;
   now?: () => Date;
   /** Injected fetch for card registration / outbound A2A calls (tests / proxies). */
   fetchImpl?: FetchLike;
@@ -508,7 +521,9 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
           detail:
             event.kind === 'context-assembled'
               ? `intent ${entry.intentId}: ${event.appendixEntries} memory entries assembled${entry.realmId ? ` (realm ${entry.realmId})` : ''}`
-              : event.kind === 'context-trimmed'
+              : event.kind === 'guardrail-annotated'
+                ? `intent ${entry.intentId}: appendix entry ${event.entry} annotated (${event.boundary}${event.signals.length > 0 ? `, signals ${event.signals.join(',')}` : ''})`
+                : event.kind === 'context-trimmed'
                 ? event.source === 'skill-inputs'
                   ? `intent ${entry.intentId}: ${event.trimmed} skill input field unavailable (${event.reason})`
                   : `intent ${entry.intentId}: ${event.trimmed} memory entry trimmed (${event.reason})`
@@ -555,6 +570,22 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         detail: entry.detail,
       });
     },
+    // S9 V2 (design-cost-governance §5): the cost gate refused an admission —
+    // a window-cap crossing or an open rate circuit lands on the same spine as
+    // the other governance refusals. The limit itself is handed through only
+    // when configured (an unset kernel keeps its historical uncharged path).
+    ...(options.costLimit !== undefined ? { costLimit: options.costLimit, onCostRefused: entry => {
+      if (entry.reason === 'cost-budget-exceeded' || entry.reason === 'cost-rate-circuit-open') {
+        auditSink({
+          ts: entry.at,
+          vassal: '(intent)',
+          skill: entry.skill,
+          realm: entry.realm,
+          decision: entry.reason,
+          detail: entry.detail,
+        });
+      }
+    } } : {}),
     // #9: a saturated target re-pointed to an alternate same-skill provider lands
     // on the same audit spine as refusals (design §4.5).
     onDiverted: entry => {
@@ -806,7 +837,41 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         `kernel state file is unusable: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-    if (snapshot) applyKernelState(components, snapshot);
+    if (snapshot) {
+      applyKernelState(components, snapshot);
+      // S13 V2 (design-long-running §5): crash recovery runs between state
+      // restoration and the first new intent — every unsettled intent in the
+      // snapshot is classified (auto-resume / await-operator / settle-failed /
+      // settle-canceled) and executed, each on the audit spine. auto-resume
+      // re-enters the fan-out gate: the same intentId key means the F2 cache
+      // and single-flight prevent a double dispatch.
+      const checkpoint = computeCheckpoint(snapshot.orchestrator);
+      const requestsByIntent = new Map(snapshot.orchestrator.requests.map(({ intentId, request }) => [intentId, request]));
+      await executeRecovery(
+        checkpoint,
+        {
+          settleIntent: (intentId, status) => {
+            orchestrator.settleRecovered(intentId, status);
+          },
+          awaitOperator: () => {
+            // A restored needs-driver intent already has its escalation row:
+            // the desk is snapshotted with the kernel, so the audit is the
+            // recovery marker and the operator picks it up from the existing
+            // queue face.
+          },
+          autoResume: async intentId => {
+            const request = requestsByIntent.get(intentId);
+            if (!request) throw new Error(`cannot auto-resume ${intentId}: no original request in the snapshot`);
+            await orchestrator.fanOut(request);
+          },
+        },
+        {
+          now,
+          ...(options.recoveryMaxAutoResumeMs === undefined ? {} : { maxAutoResumeMs: options.recoveryMaxAutoResumeMs }),
+          audit: auditSink,
+        },
+      );
+    }
   }
   // Now that the state file exists, a freshly consumed nonce can reach disk.
   // deferred #42: before each save, out-window settled intents leave the state
@@ -1115,6 +1180,29 @@ export function concurrencyBootOptions(
   concurrency: ProcessConcurrencyConfig,
 ): Pick<KernelBootOptions, 'maxConcurrentBranches' | 'branchQueueLimit' | 'maxConcurrentPerVassal'> {
   return { ...concurrency };
+}
+
+/**
+ * S9 V2 (design-cost-governance §5): resolve the intent-level cost gate from
+ * process env. Same discipline as resolveConcurrencyConfig — a malformed value
+ * fails boot loudly (an ignored cap would read as protection that is not
+ * there), and an unset variable leaves the corresponding dimension unlimited.
+ */
+export function resolveCostConfig(env: NodeJS.ProcessEnv = process.env): CostLimit {
+  const config: CostLimit = {};
+  const windowMs = envInteger(env.ZEUS_COST_WINDOW_MS, 'ZEUS_COST_WINDOW_MS', 1);
+  if (windowMs !== undefined) config.circuitWindowMs = windowMs;
+  const cap = envInteger(env.ZEUS_COST_MAX_WINDOW_COST, 'ZEUS_COST_MAX_WINDOW_COST', 1);
+  if (cap !== undefined) config.maxWindowCost = cap;
+  const rate = envInteger(env.ZEUS_COST_MAX_RATE_PER_WINDOW, 'ZEUS_COST_MAX_RATE_PER_WINDOW', 1);
+  if (rate !== undefined) config.maxRatePerWindow = rate;
+  return config;
+}
+
+export function costBootOptions(
+  cost: CostLimit,
+): Pick<KernelBootOptions, 'costLimit'> {
+  return { costLimit: cost };
 }
 
 function envInteger(

@@ -137,4 +137,4 @@ function toUnits(cost: CostAmount): number {
   return cost.tokens ?? cost.credits ?? 0;
 }
 
-const DEFAULT_COST_WINDOW_MS = 60_000;
+export const DEFAULT_COST_WINDOW_MS = 60_000;

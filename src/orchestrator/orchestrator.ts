@@ -24,6 +24,7 @@ import {
 import type { DecisionBackend } from '../decision/types.js';
 import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
+import { appendStreamFrame, emptyStreamView, type StreamView } from './stream-merge.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../context/assemble.js';
 import { assembleSkillInputs } from '../context/skill-inputs.js';
@@ -43,8 +44,24 @@ import type {
   TargetLookup,
 } from './types.js';
 import type { IntentArchiveLookup } from '../state/archive.js';
+import {
+  costAdmit,
+  DEFAULT_COST_WINDOW_MS,
+  emptyCostBudget,
+  recordSettled,
+  type CostAmount,
+  type CostBudget,
+  type CostLimit,
+} from './cost-ledger.js';
 
 const TERMINAL_STATES = new Set<TaskState>(['completed', 'failed', 'canceled']);
+
+/**
+ * S9 V2 (design-cost-governance §5): the per-intent cost gate charges a
+ * default single-unit estimate when the caller supplies none. Real token
+ * pricing is deferred to deferred #9; the gate is a structural bound.
+ */
+const DEFAULT_COST_ESTIMATE: CostAmount = { tokens: 1 };
 
 /**
  * S1 context engineering V1: appendix entry cap per intent. Structural guard,
@@ -134,6 +151,16 @@ export type OrchestratorOptions = {
   /** Called when the skill governor refuses an auto-selected fan-out; bridge it
    *  into the audit spine at assembly time. */
   onRefusal?: (entry: { skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
+  /**
+   * S9 V2 (design-cost-governance §5): when set, the intent-level cost gate
+   * admits every fan-out before dispatch — an admission that would cross the
+   * window cap or an open rate circuit is refused and lands on `onCostRefused`.
+   * Self-reported cost never enters the gate.
+   */
+  costLimit?: CostLimit;
+  /** Called when the cost gate refuses an admission; bridge it into the audit
+   *  spine at assembly time (decisions cost-budget-exceeded / cost-rate-circuit-open). */
+  onCostRefused?: (entry: { intentId: string; skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
   /**
    * S4 (design-supervision §7.1): intent-level termination guard defaults. The
    * budget caps cumulative branches per intent (first fan-out N + each resume);
@@ -280,6 +307,12 @@ export class Orchestrator {
    * fan-out result shape.
    */
   private budgets = new Map<string, IntentBudget>();
+  /**
+   * S9 V2 (design-cost-governance §5): per-intent cost ledgers, admitted at
+   * the dispatch boundary and settled when the intent lands. Intent-scoped by
+   * design (the realm-period ledger is V3).
+   */
+  private costLedgers = new Map<string, CostBudget>();
   /** S4: resolved guard limits (options ?? structural defaults). */
   private budgetLimits: { maxBranchesPerIntent: number; maxConsecutiveBranchFailures: number };
   /**
@@ -309,6 +342,16 @@ export class Orchestrator {
   /** E6.3 single-flight: resumes in flight keyed by `intentId::vassal`, so two
    *  approvals of the same escalation cannot re-dispatch the branch twice. */
   private resuming = new Map<string, Promise<FanOutResult>>();
+  /**
+   * S15 V2 (design-streaming §5): the per-intent incremental stream view,
+   * maintained in memory for the lifetime of the fan-out and dropped when the
+   * intent settles. Previews are replaceable projections, never conclusions —
+   * aggregation, memory and any decision path consume only the final task.
+   */
+  private streamViews = new Map<string, StreamView>();
+  /** S15 V2: the number of branches each live fan-out dispatches, so the
+   *  partially-ready count (N of M settled) is exact rather than inferred. */
+  private intentBranchTotals = new Map<string, number>();
   private readonly slots: Semaphore | null;
 
   constructor(
@@ -483,6 +526,26 @@ export class Orchestrator {
     );
 
     let result: FanOutResult;
+    // S9 V2 (design-cost-governance §5): the cost gate sits between the
+    // termination guard and dispatch. An admission that would cross the window
+    // cap or an open rate circuit empties `names`, so the refusal settles
+    // through the same failed-result path below; the audit goes to
+    // onCostRefused (not onRefusal, which carries skill-governance semantics).
+    let costRefusal: GovernanceRefusal | undefined;
+    if (names.length > 0 && this.options.costLimit !== undefined) {
+      const now = this.now().getTime();
+      const estimate = request.costEstimate ?? DEFAULT_COST_ESTIMATE;
+      const current = this.costLedgers.get(intentId) ?? emptyCostBudget(now, this.options.costLimit.circuitWindowMs ?? DEFAULT_COST_WINDOW_MS);
+      const admitted = costAdmit(current, this.options.costLimit, estimate, now);
+      this.costLedgers.set(intentId, admitted.budget);
+      if (!admitted.ok) {
+        costRefusal = {
+          reason: admitted.reason === 'budget-exceeded' ? 'cost-budget-exceeded' : 'cost-rate-circuit-open',
+          detail: `intent ${intentId} cost ${admitted.reason === 'budget-exceeded' ? 'window cap crossed' : 'rate circuit open'} (spent ${admitted.budget.spent})`,
+        };
+        names = [];
+      }
+    }
     if (names.length === 0) {
       result = {
         intentId, runId, skill: request.skill, realm: request.realm,
@@ -490,10 +553,15 @@ export class Orchestrator {
         branches: [], stream: [],
         positions: [], decision: aggregate([], request.aggregation), conflicts: [],
         status: 'failed', createdAt: this.now().toISOString(),
-        ...(refused ? { refused } : {}),
+        ...(refused ? { refused } : costRefusal ? { refused: costRefusal } : {}),
       };
       if (refused) {
         this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
+      } else if (costRefusal) {
+        this.options.onCostRefused?.({
+          intentId, skill: request.skill, realm: request.realm,
+          reason: costRefusal.reason, detail: costRefusal.detail, at: this.now().toISOString(),
+        });
       }
     } else if (!gate.allowed) {
       // S4: the intent exhausted its branch budget, or its auto-selected path
@@ -517,6 +585,11 @@ export class Orchestrator {
     } else {
       // S4: charge the budget at spawn time (in-flight branches count too).
       this.budgets.set(intentId, advanceBudget(this.budgetOf(intentId), names.length));
+      // S15 V2 (design-streaming §5): open the incremental stream view for this
+      // fan-out before the first branch dispatches, so a working-frame delta can
+      // land as soon as a peer streams one.
+      this.streamViews.set(intentId, emptyStreamView());
+      this.intentBranchTotals.set(intentId, names.length);
       // S1 context engineering V1 (design-context-engineering §10): assemble the
       // memory appendix once per intent at the dispatch boundary, shared
       // read-only across every branch. Query is the skill name plus the textual
@@ -722,12 +795,29 @@ export class Orchestrator {
     // intentId on the way in (the cache lookup above is gated on request.intentId).
     this.intents.set(intentId, result);
     this.requests.set(intentId, request);
+    // S9 V2: settle the admitted cost when the intent lands — the in-flight
+    // estimate is released, spent stays. Refused intents never reach here
+    // (they settle through the failed-result path above without a ledger
+    // charge beyond the admission that was already recorded).
+    if (this.options.costLimit !== undefined) {
+      const now = this.now().getTime();
+      const current = this.costLedgers.get(intentId);
+      if (current) {
+        const estimate = request.costEstimate ?? DEFAULT_COST_ESTIMATE;
+        this.costLedgers.set(intentId, recordSettled(current, this.options.costLimit, estimate, now));
+      }
+    }
     if (result.status === 'needs-driver') this.options.onConflict?.(result.conflicts, result);
     this.emit({
       type: 'intent-finished', intentId, runId: result.runId, status: result.status,
       ...(result.realmId ? { realmId: result.realmId } : {}),
       at: this.now().toISOString(),
     });
+    // S15 V2: the intent settled — the in-memory stream view (previews only)
+    // is dropped with the fan-out; live SSE subscribers already saw the final
+    // marker and the retained hub buffer stays bounded via release.
+    this.streamViews.delete(intentId);
+    this.intentBranchTotals.delete(intentId);
     // C-audit 12: the stored result is also served by getIntent()/snapshot().
     // Returning the stored reference would let the caller mutate shared nested
     // arrays (branches, positions, conflicts) through the fan-out reply and
@@ -812,6 +902,20 @@ export class Orchestrator {
   }
 
   /**
+   * S13 V2 (design-long-running §5): a crash-recovery verdict settles a
+   * restored intent as failed or canceled. The stored result's status is
+   * overwritten in place (the branch rows keep their historical outcome);
+   * late readers see the settled status instead of the pre-crash one.
+   */
+  settleRecovered(intentId: string, status: 'failed' | 'canceled'): FanOutResult {
+    const current = this.intents.get(intentId);
+    if (!current) throw new UnknownIntentError(`unknown intent: ${intentId}`);
+    const settled: FanOutResult = { ...current, status };
+    this.intents.set(intentId, settled);
+    return structuredClone(settled);
+  }
+
+  /**
    * E6.3 minimal re-dispatch: after a vassal task is approved with human-supplied
    * parameters, re-run that single branch and recompute the whole intent. The
    * other branches are untouched; the new branch replaces the old one.
@@ -865,6 +969,9 @@ export class Orchestrator {
       ...(judged.realmId ? { realmId: judged.realmId } : {}),
       at: this.now().toISOString(),
     });
+    // S15 V2: drop the stream view with the settled resume result.
+    this.streamViews.delete(intentId);
+    this.intentBranchTotals.delete(intentId);
     return structuredClone(judged);
   }
 
@@ -1052,7 +1159,7 @@ export class Orchestrator {
         this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
         this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
       }
-      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs, budgetedRealmHits);
+      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs, budgetedRealmHits, intentId);
     } finally {
       release();
     }
@@ -1060,11 +1167,34 @@ export class Orchestrator {
     // cancel that arrives before the sibling branches finish.
     this.publishBranch(intentId, branch);
     metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
+    const settledAt = this.now().toISOString();
     this.emit({
       type: 'branch-ended', intentId, runId: branchRunId, vassal,
       outcome: outcomeOf(branch), ...(branch.ok ? { state: branch.state } : {}),
-      at: this.now().toISOString(),
+      at: settledAt,
     });
+    // S15 V2 (design-streaming §5): settle the branch in the stream view and
+    // report the partially-ready count (N of M formal outcomes) as a count
+    // fact on the event spine — never content.
+    const liveView = this.streamViews.get(intentId);
+    if (liveView !== undefined) {
+      const settled = appendStreamFrame(liveView, {
+        type: 'branch-settled',
+        runId: branchRunId,
+        outcome: streamOutcomeOf(outcomeOf(branch)),
+        at: settledAt,
+      });
+      this.streamViews.set(intentId, settled);
+      const settledCount = Object.values(settled.branches).filter(b => b.settled).length;
+      this.emit({
+        type: 'intent-partial',
+        intentId,
+        runId: branchRunId,
+        settledCount,
+        totalCount: this.intentBranchTotals.get(intentId) ?? settled.order.length,
+        at: settledAt,
+      });
+    }
     return branch;
   }
 
@@ -1073,7 +1203,30 @@ export class Orchestrator {
     return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs'], budgetedRealmHits?: DispatchRequest['realmHits']): Promise<BranchOutcome> {
+  /**
+   * S15 V2 (design-streaming §5): a working-frame increment arrived from a
+   * branch dispatch. Appended to the intent's stream view and surfaced on the
+   * progress spine as preview-only content; a fan-out with no live view (e.g.
+   * a resume continuation after the original settled) drops the increment —
+   * previews are replaceable and never persisted, so losing one is harmless.
+   */
+  private handleBranchDelta(intentId: string, delta: { vassal: string; runId: string; seq: number; preview: string; at: string }): void {
+    const view = this.streamViews.get(intentId);
+    if (view === undefined) return;
+    this.streamViews.set(
+      intentId,
+      appendStreamFrame(view, {
+        type: 'branch-delta',
+        runId: delta.runId,
+        seq: delta.seq,
+        preview: delta.preview,
+        at: delta.at,
+      }),
+    );
+    this.emit({ type: 'branch-delta', intentId, ...delta });
+  }
+
+  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs'], budgetedRealmHits?: DispatchRequest['realmHits'], intentId?: string): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     // deferred #33: execute-mode gate. An execute is an irreversible external
     // write, so it must carry a verified, unconsumed execution delegation; the
@@ -1127,7 +1280,20 @@ export class Orchestrator {
       // assembly rides the same layer — the branch sees which declared fields
       // were supplied and which were left unavailable.
       ...(skillInputs !== undefined && skillInputs.length > 0 ? { skillInputs } : {}),
+      // S6 V2 (design-observability §5): propagate the kernel's own trace
+      // lineage. traceId is the intent-level runId (the fan-out root), spanId
+      // the branch runId — both from runId naming, so the trace tree and the
+      // outbound header stay the same namespace.
+      ...(parentRunId !== undefined
+        ? { traceparent: `00-${parentRunId}-${branchRunId}-01` }
+        : {}),
       ...(signal !== undefined ? { signal } : {}),
+      // S15 V2 (design-streaming §5): surface working-frame increments on the
+      // request's narrow callback; the dispatcher adds vassal/runId lineage,
+      // this layer adds the intent that owns the stream view.
+      ...(intentId === undefined
+        ? {}
+        : { onBranchDelta: delta => this.handleBranchDelta(intentId, delta) }),
     };
     const pending = this.dispatcher
       .dispatch(dispatchRequest)
@@ -1279,4 +1445,10 @@ function outcomeOf(branch: BranchOutcome): BranchOutcomeKind {
   if (branch.state === 'canceled') return 'canceled';
   if (!branch.ok) return 'failed';
   return 'completed';
+}
+
+/** S15 V2: the stream view's settlement vocabulary uses `ok` for a completed
+ *  branch; the metrics kind maps onto it (completed -> ok). */
+function streamOutcomeOf(outcome: BranchOutcomeKind): 'ok' | 'failed' | 'canceled' | 'timeout' {
+  return outcome === 'completed' ? 'ok' : outcome;
 }

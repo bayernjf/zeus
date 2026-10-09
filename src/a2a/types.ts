@@ -96,7 +96,19 @@ export type A2AEvent =
       kind: 'status-update';
       taskId: string;
       contextId: string;
-      status: { state: TaskState; timestamp?: string };
+      status: {
+        state: TaskState;
+        timestamp?: string;
+        /**
+         * S15 V2 (design-streaming §5): optional incremental payload on a
+         * working frame — partial text or a stage marker the execution agent
+         * streams while still working. Absent for agents that do not stream
+         * increments (the branch then surfaces once, at settlement, as before).
+         * Preview data is never a conclusion: only the final task is consumed
+         * by aggregation, memory or any decision path.
+         */
+        data?: unknown;
+      };
       final: boolean;
       'x-zeus'?: { runId: string };
       'x-zeus-escalation'?: { level: string; reason: string; options: string[] };

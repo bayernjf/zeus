@@ -21,6 +21,14 @@ export interface StdioSpawnOptions {
   command: string;
   args?: string[];
   env?: Record<string, string>;
+  /**
+   * S16 V2 (design-sandbox §5): when set, the child inherits nothing but the
+   * listed variables — the allow-list from an IsolationManifest. Unset keeps
+   * the historical full-environment behaviour.
+   */
+  envAllowList?: string[];
+  /** S16 V2: wall-clock bound; the child is killed when exceeded. */
+  maxWallSeconds?: number;
   /** Injection seam for tests; defaults to node:child_process spawn. */
   spawnImpl?: typeof spawn;
 }
@@ -32,6 +40,16 @@ interface Pending {
 
 let requestCounter = 0;
 
+/** Copy only the allow-listed variables that actually exist. */
+function pickEnv(allowList: string[], source: NodeJS.ProcessEnv): Record<string, string> {
+  const picked: Record<string, string> = {};
+  for (const key of allowList) {
+    const value = source[key];
+    if (value !== undefined) picked[key] = value;
+  }
+  return picked;
+}
+
 export class McpStdioClient {
   private child: ChildProcessWithoutNullStreams | undefined;
   private readonly pending = new Map<number, Pending>();
@@ -42,11 +60,21 @@ export class McpStdioClient {
   private start(): ChildProcessWithoutNullStreams {
     if (this.child) return this.child;
     const spawnImpl = this.options.spawnImpl ?? spawn;
+    const env = this.options.envAllowList
+      ? pickEnv(this.options.envAllowList, { ...process.env, ...(this.options.env ?? {}) })
+      : { ...process.env, ...(this.options.env ?? {}) };
     const child = spawnImpl(this.options.command, this.options.args ?? [], {
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, ...(this.options.env ?? {}) },
+      env,
     });
     this.child = child;
+    if (this.options.maxWallSeconds !== undefined && this.options.maxWallSeconds > 0) {
+      setTimeout(() => {
+        if (this.child) {
+          this.child.kill();
+        }
+      }, this.options.maxWallSeconds * 1000).unref();
+    }
 
     const rl = createInterface({ input: child.stdout });
     rl.on('line', line => {

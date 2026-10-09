@@ -238,6 +238,20 @@ export type DispatchRequest = {
    * arrived and the stream ended, the signal has nothing left to cancel.
    */
   signal?: AbortSignal;
+  /**
+   * S6 V2 (design-observability §5): W3C-shaped trace context for the outbound
+   * A2A request, supplied by the orchestrator from its own runId lineage
+   * (`00-<traceId>-<spanId>-01`). Optional protocol metadata: a peer that does
+   * not propagate traces stays fully interoperable.
+   */
+  traceparent?: string;
+  /**
+   * S15 V2 (design-streaming §5): narrow per-request callback surfaced when an
+   * outbound working frame carries an incremental payload. The dispatcher adds
+   * the branch's vassal and runId before forwarding; preview content stays
+   * preview — it never reaches an outcome, memory or a decision path.
+   */
+  onBranchDelta?: (delta: { vassal: string; runId: string; seq: number; preview: string; at: string }) => void;
 };
 
 export type DispatchResult =
@@ -415,6 +429,9 @@ export class Dispatcher {
           },
           runId,
           ...(token !== undefined ? { token } : {}),
+          // S6 V2 (design-observability §5): the kernel-derived trace context
+          // rides the outbound request as optional metadata.
+          ...(request.traceparent === undefined ? {} : { traceparent: request.traceparent }),
         },
         {
           onEvent: event => {
@@ -422,6 +439,16 @@ export class Dispatcher {
             if (!ack) ack = { elapsedMs: clock() - startedAt, taskId: event.taskId };
           },
           ...(request.signal !== undefined ? { signal: request.signal } : {}),
+          // S15 V2 (design-streaming §5): forward working-frame increments out
+          // of the transport edge, tagged with the branch lineage the client
+          // cannot know. Absent a callback the increments are simply not
+          // surfaced and the branch stays one-shot-at-settlement.
+          ...(request.onBranchDelta === undefined
+            ? {}
+            : {
+                onBranchDelta: delta =>
+                  request.onBranchDelta!({ vassal: vassal.name, runId: delta.runId, seq: delta.seq, preview: delta.preview, at: delta.at }),
+              }),
         },
         this.options.fetchImpl
       );
