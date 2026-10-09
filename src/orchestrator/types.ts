@@ -4,6 +4,7 @@ import type { VassalStatus } from '../registry/registry.js';
 import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
 import type { DecisionBackendError, DecisionBackendKind } from '../decision/types.js';
 import type { BranchOutcomeKind } from './metrics.js';
+import type { CostAmount } from './cost-ledger.js';
 
 /** One vassal's participation in a fan-out intent. */
 export type BranchOutcome = {
@@ -98,6 +99,12 @@ export type FanOutRequest = {
   aggregation?: AggregationRule;
   /** Per-branch timeout; a branch still pending at the limit is recorded as timed out. */
   branchTimeoutMs?: number;
+  /**
+   * S9 V2 (design-cost-governance §5): operator-supplied cost estimate for
+   * this intent. Absent, the gate charges a default single-unit estimate.
+   * Self-reported cost never feeds the gate (V1 invariant).
+   */
+  costEstimate?: CostAmount;
 };
 
 export type FanOutResult = {
@@ -192,7 +199,7 @@ export type SkillGovernor = {
 
 /** Why the skill governor refused an auto-selected fan-out before dispatch. */
 export type GovernanceRefusal = {
-  reason: 'skill-uninstalled' | 'no-active-provider' | 'budget-exceeded' | 'circuit-open';
+  reason: 'skill-uninstalled' | 'no-active-provider' | 'budget-exceeded' | 'circuit-open' | 'cost-budget-exceeded' | 'cost-rate-circuit-open';
   detail: string;
 };
 

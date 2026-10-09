@@ -24,9 +24,11 @@ import { createRequire } from 'node:module';
 import {
   bootKernel,
   concurrencyBootOptions,
+  costBootOptions,
   KernelBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
+  resolveCostConfig,
   resolveDecisionConfig,
   resolveRealmConfig,
   resolveVassalSeedsConfig,
@@ -66,6 +68,7 @@ async function main(): Promise<void> {
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.
   const concurrency = resolveConcurrencyConfig(process.env);
+  const cost = resolveCostConfig(process.env);
   const audit = resolveAuditConfig(process.env);
   // E3.6: enterprise mounts carry their tenant scope; a malformed one aborts the
   // boot here rather than mounting an org-visible realm.
@@ -104,6 +107,7 @@ async function main(): Promise<void> {
     // A-01: the resolved config goes across whole; copying it by hand is how the
     // per-vassal cap was validated at boot and then never reached the kernel.
     ...concurrencyBootOptions(concurrency),
+    ...costBootOptions(cost),
     ...(process.env.ZEUS_VASSAL_SEEDS
       ? { vassalSeeds: resolveVassalSeedsConfig(process.env) }
       : {}),

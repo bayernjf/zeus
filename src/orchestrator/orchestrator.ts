@@ -44,8 +44,24 @@ import type {
   TargetLookup,
 } from './types.js';
 import type { IntentArchiveLookup } from '../state/archive.js';
+import {
+  costAdmit,
+  DEFAULT_COST_WINDOW_MS,
+  emptyCostBudget,
+  recordSettled,
+  type CostAmount,
+  type CostBudget,
+  type CostLimit,
+} from './cost-ledger.js';
 
 const TERMINAL_STATES = new Set<TaskState>(['completed', 'failed', 'canceled']);
+
+/**
+ * S9 V2 (design-cost-governance §5): the per-intent cost gate charges a
+ * default single-unit estimate when the caller supplies none. Real token
+ * pricing is deferred to deferred #9; the gate is a structural bound.
+ */
+const DEFAULT_COST_ESTIMATE: CostAmount = { tokens: 1 };
 
 /**
  * S1 context engineering V1: appendix entry cap per intent. Structural guard,
@@ -135,6 +151,16 @@ export type OrchestratorOptions = {
   /** Called when the skill governor refuses an auto-selected fan-out; bridge it
    *  into the audit spine at assembly time. */
   onRefusal?: (entry: { skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
+  /**
+   * S9 V2 (design-cost-governance §5): when set, the intent-level cost gate
+   * admits every fan-out before dispatch — an admission that would cross the
+   * window cap or an open rate circuit is refused and lands on `onCostRefused`.
+   * Self-reported cost never enters the gate.
+   */
+  costLimit?: CostLimit;
+  /** Called when the cost gate refuses an admission; bridge it into the audit
+   *  spine at assembly time (decisions cost-budget-exceeded / cost-rate-circuit-open). */
+  onCostRefused?: (entry: { intentId: string; skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
   /**
    * S4 (design-supervision §7.1): intent-level termination guard defaults. The
    * budget caps cumulative branches per intent (first fan-out N + each resume);
@@ -281,6 +307,12 @@ export class Orchestrator {
    * fan-out result shape.
    */
   private budgets = new Map<string, IntentBudget>();
+  /**
+   * S9 V2 (design-cost-governance §5): per-intent cost ledgers, admitted at
+   * the dispatch boundary and settled when the intent lands. Intent-scoped by
+   * design (the realm-period ledger is V3).
+   */
+  private costLedgers = new Map<string, CostBudget>();
   /** S4: resolved guard limits (options ?? structural defaults). */
   private budgetLimits: { maxBranchesPerIntent: number; maxConsecutiveBranchFailures: number };
   /**
@@ -494,6 +526,26 @@ export class Orchestrator {
     );
 
     let result: FanOutResult;
+    // S9 V2 (design-cost-governance §5): the cost gate sits between the
+    // termination guard and dispatch. An admission that would cross the window
+    // cap or an open rate circuit empties `names`, so the refusal settles
+    // through the same failed-result path below; the audit goes to
+    // onCostRefused (not onRefusal, which carries skill-governance semantics).
+    let costRefusal: GovernanceRefusal | undefined;
+    if (names.length > 0 && this.options.costLimit !== undefined) {
+      const now = this.now().getTime();
+      const estimate = request.costEstimate ?? DEFAULT_COST_ESTIMATE;
+      const current = this.costLedgers.get(intentId) ?? emptyCostBudget(now, this.options.costLimit.circuitWindowMs ?? DEFAULT_COST_WINDOW_MS);
+      const admitted = costAdmit(current, this.options.costLimit, estimate, now);
+      this.costLedgers.set(intentId, admitted.budget);
+      if (!admitted.ok) {
+        costRefusal = {
+          reason: admitted.reason === 'budget-exceeded' ? 'cost-budget-exceeded' : 'cost-rate-circuit-open',
+          detail: `intent ${intentId} cost ${admitted.reason === 'budget-exceeded' ? 'window cap crossed' : 'rate circuit open'} (spent ${admitted.budget.spent})`,
+        };
+        names = [];
+      }
+    }
     if (names.length === 0) {
       result = {
         intentId, runId, skill: request.skill, realm: request.realm,
@@ -501,10 +553,15 @@ export class Orchestrator {
         branches: [], stream: [],
         positions: [], decision: aggregate([], request.aggregation), conflicts: [],
         status: 'failed', createdAt: this.now().toISOString(),
-        ...(refused ? { refused } : {}),
+        ...(refused ? { refused } : costRefusal ? { refused: costRefusal } : {}),
       };
       if (refused) {
         this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
+      } else if (costRefusal) {
+        this.options.onCostRefused?.({
+          intentId, skill: request.skill, realm: request.realm,
+          reason: costRefusal.reason, detail: costRefusal.detail, at: this.now().toISOString(),
+        });
       }
     } else if (!gate.allowed) {
       // S4: the intent exhausted its branch budget, or its auto-selected path
@@ -738,6 +795,18 @@ export class Orchestrator {
     // intentId on the way in (the cache lookup above is gated on request.intentId).
     this.intents.set(intentId, result);
     this.requests.set(intentId, request);
+    // S9 V2: settle the admitted cost when the intent lands — the in-flight
+    // estimate is released, spent stays. Refused intents never reach here
+    // (they settle through the failed-result path above without a ledger
+    // charge beyond the admission that was already recorded).
+    if (this.options.costLimit !== undefined) {
+      const now = this.now().getTime();
+      const current = this.costLedgers.get(intentId);
+      if (current) {
+        const estimate = request.costEstimate ?? DEFAULT_COST_ESTIMATE;
+        this.costLedgers.set(intentId, recordSettled(current, this.options.costLimit, estimate, now));
+      }
+    }
     if (result.status === 'needs-driver') this.options.onConflict?.(result.conflicts, result);
     this.emit({
       type: 'intent-finished', intentId, runId: result.runId, status: result.status,

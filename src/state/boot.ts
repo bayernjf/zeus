@@ -57,6 +57,7 @@ import {
   type KernelSnapshot,
 } from './kernel-state.js';
 import { computeCheckpoint, executeRecovery } from '../orchestrator/recovery.js';
+import type { CostLimit } from '../orchestrator/cost-ledger.js';
 import type { DecisionBackend } from '../decision/types.js';
 import { createJevBackendFromEnv } from '../decision/decision-model.js';
 import { createLlmBackendFromEnv } from '../decision/llm.js';
@@ -136,6 +137,12 @@ export type KernelBootOptions = {
    * this is reclassified to awaiting the operator. Unset = no time bound.
    */
   recoveryMaxAutoResumeMs?: number;
+  /**
+   * S9 V2 (design-cost-governance §5): when set, every fan-out is admitted
+   * against this intent-level cost limit before dispatch; refusals land on
+   * the audit spine (cost-budget-exceeded / cost-rate-circuit-open).
+   */
+  costLimit?: CostLimit;
   now?: () => Date;
   /** Injected fetch for card registration / outbound A2A calls (tests / proxies). */
   fetchImpl?: FetchLike;
@@ -563,6 +570,22 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
         detail: entry.detail,
       });
     },
+    // S9 V2 (design-cost-governance §5): the cost gate refused an admission —
+    // a window-cap crossing or an open rate circuit lands on the same spine as
+    // the other governance refusals. The limit itself is handed through only
+    // when configured (an unset kernel keeps its historical uncharged path).
+    ...(options.costLimit !== undefined ? { costLimit: options.costLimit, onCostRefused: entry => {
+      if (entry.reason === 'cost-budget-exceeded' || entry.reason === 'cost-rate-circuit-open') {
+        auditSink({
+          ts: entry.at,
+          vassal: '(intent)',
+          skill: entry.skill,
+          realm: entry.realm,
+          decision: entry.reason,
+          detail: entry.detail,
+        });
+      }
+    } } : {}),
     // #9: a saturated target re-pointed to an alternate same-skill provider lands
     // on the same audit spine as refusals (design §4.5).
     onDiverted: entry => {
@@ -1157,6 +1180,29 @@ export function concurrencyBootOptions(
   concurrency: ProcessConcurrencyConfig,
 ): Pick<KernelBootOptions, 'maxConcurrentBranches' | 'branchQueueLimit' | 'maxConcurrentPerVassal'> {
   return { ...concurrency };
+}
+
+/**
+ * S9 V2 (design-cost-governance §5): resolve the intent-level cost gate from
+ * process env. Same discipline as resolveConcurrencyConfig — a malformed value
+ * fails boot loudly (an ignored cap would read as protection that is not
+ * there), and an unset variable leaves the corresponding dimension unlimited.
+ */
+export function resolveCostConfig(env: NodeJS.ProcessEnv = process.env): CostLimit {
+  const config: CostLimit = {};
+  const windowMs = envInteger(env.ZEUS_COST_WINDOW_MS, 'ZEUS_COST_WINDOW_MS', 1);
+  if (windowMs !== undefined) config.circuitWindowMs = windowMs;
+  const cap = envInteger(env.ZEUS_COST_MAX_WINDOW_COST, 'ZEUS_COST_MAX_WINDOW_COST', 1);
+  if (cap !== undefined) config.maxWindowCost = cap;
+  const rate = envInteger(env.ZEUS_COST_MAX_RATE_PER_WINDOW, 'ZEUS_COST_MAX_RATE_PER_WINDOW', 1);
+  if (rate !== undefined) config.maxRatePerWindow = rate;
+  return config;
+}
+
+export function costBootOptions(
+  cost: CostLimit,
+): Pick<KernelBootOptions, 'costLimit'> {
+  return { costLimit: cost };
 }
 
 function envInteger(

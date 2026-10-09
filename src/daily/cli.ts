@@ -31,9 +31,11 @@ import type { DecisionBackend } from '../decision/types.js';
 import {
   bootKernel,
   concurrencyBootOptions,
+  costBootOptions,
   KernelBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
+  resolveCostConfig,
   resolveDecisionConfig,
   resolveRealmConfig,
   resolveVassalSeedsConfig,
@@ -382,6 +384,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
     ...(roots.length > 0 ? { realmRoots: roots } : {}),
     ...(env.ZEUS_AUDIT_FILE ? { auditFile: env.ZEUS_AUDIT_FILE } : {}),
     ...concurrencyBootOptions(resolveConcurrencyConfig(env)),
+    ...costBootOptions(resolveCostConfig(env)),
     ...(env.ZEUS_INTENT_RETENTION ? { intentRetention: parseRetentionMode(env.ZEUS_INTENT_RETENTION) } : {}),
   };
   const seeds = collectSeeds(args, env);
