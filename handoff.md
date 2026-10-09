@@ -1149,6 +1149,8 @@ State of Zeus as of 2026-10-06.
 * [docs/tech-exploration-map.md](docs/tech-exploration-map.md) — Agent 技术探索地图 v0.3：A 组五条优先（已裁决）、B/C 议题登记、S14 Jev 已落设计、决策后端抽象层改为模型无关 ★
 * [docs/design-memory-consolidation.md](docs/design-memory-consolidation.md) — 记忆整理协议 **v0.5**（§8 生产者契约已采纳落地，deferred #27 销项）：记忆分层、Event/Fact 结构、整理流水线、置信度聚合、混合检索（§6.1）、漂移对账（§6.3）、八条验收 ★
 * [docs/design-supervision.md](docs/design-supervision.md) — Supervisor/Subagent 控制模型 v0.1：临时控制关系、契约结构、编排跨度、信任校准与失败/责任 ★
+* [docs/design-hil.md](docs/design-hil.md) — 人工介入时机设计稿 **v0.1（2026-10-09，tech map S10，纯设计未落码）**：L0 不介入 / L1 异步介入（升级队列挂起，不阻塞全局）/ L2 同步打断（仅"卡死"双条件）；判定链与既有原语一一对应（失败四步序、熔断、intent-conflict、task-input 缺参、delegation-limit、显式点名）；落地接口草案 `classifyInterruption` 纯函数，分期 V1 纯函数+审计 → V2 接升级队列
+* [docs/design-tool-discovery.md](docs/design-tool-discovery.md) — 工具/Skill 发现与组合设计稿 **v0.1（2026-10-09，tech map S11，纯设计未落码）**：技能族（SkillRegistry/activeProviders）与工具族（MCP 握手发现+声明边界裁剪）合一候选面；选择次序（点名 > 自动选靶 > 信任/能力面过滤）；工具链拼装随技能序列（不引入独立规划器）；失败恢复复用四步序（重试→换将→降级→升级）；落地接口草案 `selectCandidates`/`recoverChain` 纯函数，分期 V1 纯函数+审计 → V2 接 `selectTargets` 落码
 * [docs/design-fan-out.md](docs/design-fan-out.md) — 并发决策内核 v0.2（PRD E1）：fan-out/join、intentId 幂等、cancel 传播、多流合并、规则聚合、冲突升级、边界（§2 的 `realmHits` 类型与来源标记按 design-realm §3.1 对齐）★
 * [docs/design-backpressure.md](docs/design-backpressure.md) — 执行 Agent 背压分流策略 v0.2（deferred #9）：饱和信号、同技能候选集、可靠度×延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计 ★
 * [docs/pre-launch-checklist.md](docs/pre-launch-checklist.md) — 上线前 Checklist（2026-09-29，**A1 真机扇出已于 2026-09-29 销项**）：按是否阻塞上线分 A 硬阻塞 / B 部署运营 / C 阈值标定 / D 非阻塞决策 / E 发布动作 / F 验证门六层，配套 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) 的 MVP 判定 ★

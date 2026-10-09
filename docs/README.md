@@ -13,6 +13,8 @@
 | 梳理 Agent 技术议题与探索优先级 | [tech-exploration-map.md](tech-exploration-map.md) ★ |
 | 理解多 Agent 记忆如何沉淀与整理 | [design-memory-consolidation.md](design-memory-consolidation.md) |
 | 理解 supervisor 与 subagent 的控制关系 | [design-supervision.md](design-supervision.md) |
+| 何时打断人、何时异步介入（tech map S10，设计稿 v0.1，未落码） | [design-hil.md](design-hil.md) |
+| 工具/Skill 发现与组合（tech map S11，设计稿 v0.1，未落码） | [design-tool-discovery.md](design-tool-discovery.md) |
 | 每执行 Agent 装配什么上下文：四源装配 / 共享裁剪 / 预算分配 / 长任务换入换出（tech map S1，**V1+V2 已落地 v0.4 §10/§11**——V1 记忆装配进分支上下文；V2 技能声明输入装配（显式补全 / unavailable 不臆造）+ 共享裁剪完整规则（去重取最新 / 相关度闸 / 敏感面），V3 预算分配与换入换出待分期） | [design-context-engineering.md](design-context-engineering.md) |
 | 理解一个意图如何扇出多 Agent 并行并聚合成决策 | [design-fan-out.md](design-fan-out.md)（扇出/幂等/取消传播/合并流/规则聚合/冲突升级，PRD E1） |
 | 理解执行 Agent 饱和时如何把溢出意图分流给同技能最优提供方 | [design-backpressure.md](design-backpressure.md)（deferred #9：饱和信号、候选集过滤、可靠度×延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计） |

@@ -26,13 +26,13 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | S7 | Evals 与质量回归 | 离线 eval 集、改 prompt 防漂移、线上 A/B（呼应 verify before asserting） | 📝 |
 | S8 | Guardrails：注入/越权/PII | prompt injection 经数据跨 Agent 传播，多 Agent 放大攻击；越权工具调用 | 📝（高优，建议紧随 A 组） |
 | S9 | 成本治理 | 任务/租户 token 预算、执行中预算闸门、异常熔断；cost 字段已有 | 📝 |
-| S10 | Human-in-the-loop 时机 | 何时打断人、何时异步介入，不打断心流 | 📝 |
+| S10 | Human-in-the-loop 时机 | 何时打断人、何时异步介入，不打断心流 | ✅ 设计稿已出（2026-10-09，[design-hil.md](design-hil.md) v0.1：L0 不介入 / L1 异步介入 / L2 同步打断分级判定链 + `classifyInterruption` 接口草案，未落码） |
 
 ## C 组：能力与运行时（中期）
 
 | 编号 | 议题 | 要点 | 状态 |
 |---|---|---|---|
-| S11 | 工具/Skill 发现与组合 | 自动选工具、工具链拼装、工具失败恢复 | 📝 |
+| S11 | 工具/Skill 发现与组合 | 自动选工具、工具链拼装、工具失败恢复 | ✅ 设计稿已出（2026-10-09，[design-tool-discovery.md](design-tool-discovery.md) v0.1：技能族/工具族合一候选面、选择次序、工具链随技能序列、失败恢复四步序 + `selectCandidates`/`recoverChain` 接口草案，未落码） |
 | S12 | 规划：单/多 planner、重规划 | 计划竞争、计划与执行交错、replan | 📝 |
 | S13 | 长流程持久化执行 | checkpoint、崩溃恢复、断点续跑（随 H2） | 📝 |
 | S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**决策后端抽象层落此层（DecisionBackend：专用决策模型 Jev 与 LLM 均可接入，见 design-decision-backend.md）** | ✅ |
