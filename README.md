@@ -73,7 +73,7 @@
 ```bash
 npm install
 npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest：1643 项 / 149 个测试文件（以此命令的输出为准）
+npm test           # vitest：1652 项 / 150 个测试文件（以此命令的输出为准）
 npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 45 步（含契约操作面、watch 触发/操作面、契约派生与撤销断流、记忆召回装配进分支上下文出站载荷、技能声明输入装配（explicit/unavailable）；需先 build；只用回环与自造密钥）
 npm run typecheck  # tsc --noEmit
 npm run evals      # S7 evals V2 离线质量回归：逐 case boot 内核 + 脚本化执行 Agent，首批 14 条六族 eval 集喂 V1 评分器；--write-baseline 钉基线、--baseline 出退化 diff；退出码 0/1/2（需先 build）
@@ -310,7 +310,7 @@ curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
 > 状态以 [handoff.md](handoff.md) 为准；MVP 判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)。
 
 - **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
-- **已验证到什么程度**：1643 项测试 / 149 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复 → 契约操作面签发/读/撤销 → watch 触发恰一次真派发 → execute watch 派生一次性票据、**记忆召回装配进分支上下文出站载荷**（contextAppendix/memory-recall）、**技能声明输入装配**（带参意图出站含 skillInputs explicit / 缺参意图含 unavailable）、撤销契约断流，45 步），- **execute 授权链另有一条真进程验收**（`npm run verify:execute-delegation`，9 步：真 HTTP 进程 + 真 socket 执行 Agent——execute 无票据拒发零出站 / 签发端点 201 拿票 / 带票 execute 单次派发 / 同票重放拒发 / 两次拒绝与签发进审计链；dist 出货实现受检），- **E2.6 操作者意图识别另有一条真进程验收**（`npm run verify:intent-recognize`，7 步：本地规则命中零模型出域（backend:null）/ 未命中 422 fail-closed / realm 校验 400 / useModel 无后端 422 / 识别出的技能 id 回灌 `POST /api/intents` 真派发 completed）
+- **已验证到什么程度**：1652 项测试 / 150 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复 → 契约操作面签发/读/撤销 → watch 触发恰一次真派发 → execute watch 派生一次性票据、**记忆召回装配进分支上下文出站载荷**（contextAppendix/memory-recall）、**技能声明输入装配**（带参意图出站含 skillInputs explicit / 缺参意图含 unavailable）、撤销契约断流，45 步），- **execute 授权链另有一条真进程验收**（`npm run verify:execute-delegation`，9 步：真 HTTP 进程 + 真 socket 执行 Agent——execute 无票据拒发零出站 / 签发端点 201 拿票 / 带票 execute 单次派发 / 同票重放拒发 / 两次拒绝与签发进审计链；dist 出货实现受检），- **E2.6 操作者意图识别另有一条真进程验收**（`npm run verify:intent-recognize`，7 步：本地规则命中零模型出域（backend:null）/ 未命中 422 fail-closed / realm 校验 400 / useModel 无后端 422 / 识别出的技能 id 回灌 `POST /api/intents` 真派发 completed）
 - **TUI 意图识别面另有一条真进程验收**（`npm run verify:tui-recognize`，7 步：走 dist 出货的监督台 client/render/commands——真 socket 技能目录注册 / 本地命中（backend:null）/ 渲染含零出域+plan-only / 未命中 fail-closed / useModel 无后端 fail-closed / `i`/`im` 命令解析 / `info` 不误判）
 - **产品入口另有真进程验收**（`tests/daily-entry.test.ts` 20 例：真 socket 执行 Agent + 真目录 + 真状态文件；本机手工五档 2026-10-08 读数——成功档 exit 0 且**落盘页与打印页 sha256 同串**、Agent 报 `state=failed` 档 exit 1 而证据仍入库、两 Agent 立场分裂档进台账且跨重启可检、中文指令对英文目录 `no-candidates` 且**不写任何文件**、四类配置错误各 exit 2）。中文指令要选中英文技能目录需要显式 `--model` 且配了决策后端（Active work 148）。
 `tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
