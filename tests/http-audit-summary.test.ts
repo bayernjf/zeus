@@ -45,8 +45,8 @@ describe('public audit summary', () => {
   it('answers on the public face without a token and aggregates by decision', async () => {
     const file = auditFileWith([
       { ts: '2026-10-10T01:00:00.000Z', vassal: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', realm: 'personal', taskId: 't1', detail: 'secret detail' },
-      { ts: '2026-10-10T02:00:00.000Z', vassal: 'agent-7', decision: 'completed', runId: 'run-1', taskId: 't1' },
-      { ts: '2026-10-10T03:00:00.000Z', vassal: 'agent-8', decision: 'completed', runId: 'run-2', taskId: 't2' },
+      { ts: '2026-10-10T02:00:00.000Z', vassal: 'agent-7', decision: 'dispatch-failed', runId: 'run-1', taskId: 't1' },
+      { ts: '2026-10-10T03:00:00.000Z', vassal: 'agent-8', decision: 'dispatch-failed', runId: 'run-2', taskId: 't2' },
     ]);
     const res = await (await mount(file)).inject({ method: 'GET', url: '/api/audit/summary' });
     expect(res.statusCode).toBe(200);
@@ -56,7 +56,7 @@ describe('public audit summary', () => {
     expect(body.window.events).toBe(3);
     expect(body.window.earliest).toBe('2026-10-10T01:00:00.000Z');
     expect(body.window.latest).toBe('2026-10-10T03:00:00.000Z');
-    expect(body.byDecision).toEqual({ dispatched: 1, completed: 2 });
+    expect(body.byDecision).toEqual({ dispatched: 1, 'dispatch-failed': 2 });
   });
 
   it('never leaks per-event fields (vassal/runId/taskId/detail/realm)', async () => {
