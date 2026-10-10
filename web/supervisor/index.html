@@ -235,7 +235,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.10 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.11 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -1022,6 +1022,11 @@
       "esc.approveContractHint": "签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch；拒绝则放弃本次越界。",
       "esc.approve": "批准",
       "esc.reject": "拒绝",
+      "esc.approveResume": "修改参数并批准恢复",
+      "esc.resumeTitle": "批准并恢复分支",
+      "esc.resumeBody": "裁决 {id}（task-input）：输入恢复用参数（JSON 对象，必填，会并入分支参数后继续执行）。确认后先批准裁决、再以新参数恢复分支。",
+      "esc.resumed": "已批准并恢复 {id}",
+      "esc.resumeBadJson": "参数必须是合法 JSON 对象",
       "esc.confirmAction": "确定要{action}裁决 {id} 吗？",
       "esc.needStance": "请先选择立场",
       "esc.confirmStance": "确定按立场「{stance}」裁决 {id} 吗？",
@@ -1311,6 +1316,11 @@
       "esc.approveContractHint": "Issues a new execute-only contract (4 tickets / concurrency 1 / 24h) and rebinds the watch; rejecting abandons this breach.",
       "esc.approve": "Approve",
       "esc.reject": "Reject",
+      "esc.approveResume": "Edit params & approve-resume",
+      "esc.resumeTitle": "Approve and resume branch",
+      "esc.resumeBody": "Escalation {id} (task-input): enter the resume params (JSON object, required — merged into the branch params before continuing). Confirming approves the escalation, then resumes the branch with the new params.",
+      "esc.resumed": "approved and resumed {id}",
+      "esc.resumeBadJson": "params must be a valid JSON object",
       "esc.confirmAction": "{action} adjudication {id}?",
       "esc.needStance": "Select a stance first",
       "esc.confirmStance": "Resolve {id} with stance \"{stance}\"?",
@@ -2683,7 +2693,9 @@
       <div style="display:flex;gap:4px">
         <button class="btn small primary" data-act="approve" data-id="${esc(e.id)}">${esc(t('esc.approve'))}</button>
         <button class="btn small danger" data-act="reject" data-id="${esc(e.id)}">${esc(t('esc.reject'))}</button>
-      </div></div>`;
+      </div>
+      ${e.kind === 'task-input' ? `<button class="btn small" data-act="approve-resume" data-id="${esc(e.id)}">${esc(t('esc.approveResume'))}</button>` : ''}
+      </div>`;
   }
 
   // ===== 授权 =====
@@ -2960,6 +2972,27 @@
       if (!stanceEl || !stanceEl.value) { toast(t('esc.needStance'), 'bad'); return; }
       if (!(await confirmDialog({ body: t('esc.confirmStance', { stance: stanceEl.value, id }) }))) return;
       doAction('resolve', id, { stance: stanceEl.value, ...(note ? { note } : {}) });
+    } else if (act === 'approve-resume') {
+      const input = await promptDialog({
+        title: t('esc.resumeTitle'),
+        body: t('esc.resumeBody', { id }),
+        placeholder: '{"key": "value"}',
+        confirmLabel: t('esc.approveResume'),
+      });
+      if (input === null) return;
+      let params;
+      try {
+        params = JSON.parse(input);
+        if (!params || typeof params !== 'object' || Array.isArray(params)) throw new Error('not an object');
+      } catch { toast(t('esc.resumeBadJson'), 'bad'); return; }
+      const note = $('note-' + id) ? $('note-' + id).value.trim() : '';
+      (async () => {
+        try {
+          await api('POST', '/api/escalations/' + id + '/approve-resume', { params, ...(note ? { note } : {}) });
+          toast(t('esc.resumed', { id }), 'ok');
+          await loadEscalations();
+        } catch (e) { toast(t('action.failed', { msg: e.message }), 'bad'); }
+      })();
     } else if (act === 'revoke') {
       const subject = btn.getAttribute('data-subject') || '';
       if (!(await confirmDialog({ body: t('grant.confirmRevoke', { subject, id }), danger: true }))) return;

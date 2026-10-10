@@ -186,6 +186,7 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       .filter(a => a !== 'yes' && a !== 'no' && !a.includes('${'));
     const known = new Set([
       'approve', 'reject', 'resolve', // POST /api/escalations/:id/{approve,reject,resolve}
+      'approve-resume', // POST /api/escalations/:id/approve-resume
       'revoke', // DELETE /api/domains/grants/:id
       'revoke-contract', // DELETE /api/delegation-contracts/:id
       'revoke-watch', // DELETE /api/watches/:id
