@@ -235,7 +235,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.7 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.8 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -347,7 +347,18 @@
     <section id="view-oversight" hidden>
       <div class="panel">
         <h2><span data-i18n="esc.title">待裁决队列</span> <span class="hint" id="escCount"></span></h2>
-        <div class="body" id="escBody"></div>
+        <div class="body">
+          <div class="audit-filter">
+            <select id="escKindFilter">
+              <option value="" data-i18n="esc.allKinds">全部类型</option>
+              <option value="task-input" data-i18n="esc.kind.task-input">任务输入</option>
+              <option value="intent-conflict" data-i18n="esc.kind.intent-conflict">意图冲突</option>
+              <option value="memory-dispute" data-i18n="esc.kind.memory-dispute">记忆争议</option>
+              <option value="delegation-limit" data-i18n="esc.kind.delegation-limit">委托越限</option>
+            </select>
+          </div>
+          <div id="escBody"></div>
+        </div>
       </div>
     </section>
 
@@ -902,6 +913,7 @@
       "esc.status.rejected": "已拒绝",
       "esc.count": "共 {total} 条（待决 {pending}）",
       "esc.empty": "没有待处理的裁决",
+      "esc.allKinds": "全部类型",
       "esc.noStances": "无可选立场",
       "esc.optionsLine": "选项：",
       "esc.stancesLine": "立场：",
@@ -1178,6 +1190,7 @@
       "esc.status.rejected": "Rejected",
       "esc.count": "{total} total ({pending} pending)",
       "esc.empty": "No pending adjudications",
+      "esc.allKinds": "All kinds",
       "esc.noStances": "No stances available",
       "esc.optionsLine": "Options: ",
       "esc.stancesLine": "Stances: ",
@@ -1531,6 +1544,8 @@
     sseRetries: 0,
     auditFilter: { decision: '', vassal: '', keyword: '' },
     auditLast: null,
+    escList: null,
+    escKindFilter: '',
     trend: [],
     skillsCache: [],
   };
@@ -2480,13 +2495,18 @@
 
   function renderEscalations(list) {
     const el = $('escBody');
-    const pending = (list || []).filter(e => e.status === 'pending');
+    state.escList = list || [];
+    const kind = state.escKindFilter || '';
+    const shown = kind ? state.escList.filter(e => e.kind === kind) : state.escList;
+    const pending = state.escList.filter(e => e.status === 'pending');
     state.escPending = pending.length;
     $('escBadge').textContent = pending.length ? String(pending.length) : '';
-    $('escCount').textContent = (list || []).length ? t('esc.count', { total: (list || []).length, pending: pending.length }) : '';
-    if (!list || !list.length) { el.innerHTML = emptyRow(t('esc.empty')); return; }
+    $('escCount').textContent = state.escList.length
+      ? t('esc.count', { total: state.escList.length, pending: pending.length }) + (kind ? ' · ' + escKindLabel(kind) : '')
+      : '';
+    if (!shown.length) { el.innerHTML = emptyRow(t('esc.empty')); return; }
     let html = '<table><colgroup><col style="width:15%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:26%"><col style="width:10%"><col style="width:15%"></colgroup><tr><th>' + esc(t('col.escId')) + '</th><th>' + esc(t('col.kind')) + '</th><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.reasonOptions')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
-    for (const e of list) {
+    for (const e of shown) {
       const st = badge(escStatusLabel(e.status), e.status === 'pending' ? 'warn' : e.status === 'approved' ? 'ok' : 'bad');
       html += `<tr>
         <td class="mono" style="font-size:11.5px">${esc(e.id)}</td>
@@ -2953,6 +2973,12 @@
   // ===== 目录：技能状态前端过滤 =====
   $('catSkillStatus').addEventListener('change', function () {
     if (state.skillsCache) renderSkills(state.skillsCache);
+  });
+
+  // ===== 裁决：升级类型前端过滤 =====
+  $('escKindFilter').addEventListener('change', function () {
+    state.escKindFilter = this.value;
+    if (state.escList) renderEscalations(state.escList);
   });
 
   function startPoll() {
