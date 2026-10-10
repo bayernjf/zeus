@@ -176,7 +176,9 @@ describe('web supervisor design tokens (§7.1/§7.2/§7.3)', () => {
 
 describe('web supervisor audit-equivalence (§7.8)', () => {
   it('triggers only actions backed by a real API endpoint', () => {
-    const acts = [...HTML.matchAll(/data-act="([^"]+)"/g)].map(m => m[1]!).filter(a => a !== 'yes' && a !== 'no');
+    const acts = [...HTML.matchAll(/data-act="([^"]+)"/g)]
+      .map(m => m[1]!)
+      .filter(a => a !== 'yes' && a !== 'no' && !a.includes('${'));
     const known = new Set([
       'approve', 'reject', 'resolve', // POST /api/escalations/:id/{approve,reject,resolve}
       'revoke', // DELETE /api/domains/grants/:id
@@ -185,6 +187,10 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       'approve-contract', // POST /api/escalations/:id/approve-contract
       'revoke-vassal', // DELETE /api/vassals/:name
       'reinstate-vassal', // POST /api/vassals/:name/reinstate
+      'skill-install', // POST /api/skills/:id/install
+      'skill-uninstall', // POST /api/skills/:id/uninstall
+      'skill-deprecate', // POST /api/skills/:id/deprecate
+      'skill-harden', // POST /api/skills/:id/harden
     ]);
     expect(acts.length).toBeGreaterThan(5);
     for (const act of acts) expect(known.has(act), act).toBe(true);

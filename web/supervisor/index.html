@@ -204,6 +204,7 @@
   .dlg .dlg-body { padding: 12px 16px; font-size: 13px; color: var(--text-2); white-space: pre-wrap; word-break: break-word; }
   .dlg .dlg-body .mono { color: var(--text); }
   .dlg .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
+  .dlg .dlg-input { display: block; width: calc(100% - 32px); margin: 0 16px 4px; box-sizing: border-box; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-family: var(--mono); font-size: 12px; resize: vertical; }
 
   /* 键盘可达性：可见焦点环 */
   .btn:focus-visible, .nav-item:focus-visible, .form input:focus-visible, .form select:focus-visible, .form textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -231,6 +232,7 @@
     <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.grants">授权</span></a>
     <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.org">组织</span></a>
     <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.catalog">目录</span></a>
+    <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
     <div class="side-foot">v1.5 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
@@ -324,19 +326,6 @@
         <div class="panel">
           <h2><span data-i18n="roster.title">名册</span> <span class="hint">/api/roster</span></h2>
           <div class="body" id="rosterBody"></div>
-        </div>
-        <div class="panel">
-          <h2><span data-i18n="audit.title">扇出 / 决策时间线</span> <span class="hint">/api/audit · <span data-i18n="audit.hint">服务端过滤 decision/vassal · 关键字前端过滤</span></span></h2>
-          <div class="body">
-            <div class="audit-filter">
-              <select id="afDecision"><option value="" data-i18n="audit.allDecisions">全部决策</option></select>
-              <input id="afVassal" autocomplete="off" data-i18n-ph="audit.vassalPh" placeholder="主体过滤（服务端）" style="width:150px">
-              <input id="afKeyword" autocomplete="off" data-i18n-ph="audit.keywordPh" placeholder="关键字过滤（前端）" style="width:150px">
-              <button class="btn small" id="afApply" data-i18n="audit.apply">应用</button>
-              <span class="af-count" id="afCount"></span>
-            </div>
-            <div id="auditBody"></div>
-          </div>
         </div>
         <div class="panel">
           <h2><span data-i18n="domains.title">数据域与跨域授权</span> <span class="hint">/api/domains</span></h2>
@@ -527,6 +516,23 @@
       </div>
     </section>
 
+    <!-- ===== 视图：审计（方案 B 独立视图） ===== -->
+    <section id="view-audit" hidden>
+      <div class="panel">
+          <h2><span data-i18n="audit.title">扇出 / 决策时间线</span> <span class="hint">/api/audit · <span data-i18n="audit.hint">服务端过滤 decision/vassal · 关键字前端过滤</span></span></h2>
+          <div class="body">
+            <div class="audit-filter">
+              <select id="afDecision"><option value="" data-i18n="audit.allDecisions">全部决策</option></select>
+              <input id="afVassal" autocomplete="off" data-i18n-ph="audit.vassalPh" placeholder="主体过滤（服务端）" style="width:150px">
+              <input id="afKeyword" autocomplete="off" data-i18n-ph="audit.keywordPh" placeholder="关键字过滤（前端）" style="width:150px">
+              <button class="btn small" id="afApply" data-i18n="audit.apply">应用</button>
+              <span class="af-count" id="afCount"></span>
+            </div>
+            <div id="auditBody"></div>
+          </div>
+        </div>
+    </section>
+
     <!-- ===== 视图：意图详情（作战室） ===== -->
     <section id="view-intent" hidden>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
@@ -616,6 +622,21 @@
       "nav.org": "组织",
       "nav.catalog": "目录",
       "nav.connect": "连接",
+      "nav.audit": "审计",
+      "skill.action.install": "安装",
+      "skill.action.uninstall": "卸载",
+      "skill.action.deprecate": "弃用",
+      "skill.action.harden": "收敛权限",
+      "skill.confirmInstall": "确定将技能 {id}（{version}）置为 active 吗？",
+      "skill.confirmUninstall": "确定卸载技能 {id}（{version}）吗？卸载立即移出组队解析与默认查询，可重装。",
+      "skill.confirmDeprecate": "确定弃用技能 {id}（{version}）吗？弃用后不可新装。",
+      "skill.hardenTitle": "收敛技能权限",
+      "skill.hardenBody": "技能 {id}（{version}）的权限声明，每行一条（scope 或 scope:action）。harden 只能收窄：越出既有声明的请求会被 400 拒绝。留空则不修改 permissions。",
+      "skill.installed": "已安装 {id}",
+      "skill.uninstalled": "已卸载 {id}",
+      "skill.deprecatedDone": "已弃用 {id}",
+      "skill.hardened": "已收敛 {id} 权限",
+      "skill.actionFailed": "{action}失败：{msg}",
       "app.tagline": "只读监控 · 裁决 · 授权 · 组织",
       "app.apiOnly": "UI 仅消费现有 HTTP API",
       "conn.none": "未连接",
@@ -991,6 +1012,21 @@
       "nav.org": "Org",
       "nav.catalog": "Catalog",
       "nav.connect": "Connect",
+      "nav.audit": "Audit",
+      "skill.action.install": "Install",
+      "skill.action.uninstall": "Uninstall",
+      "skill.action.deprecate": "Deprecate",
+      "skill.action.harden": "Harden",
+      "skill.confirmInstall": "Set skill {id} ({version}) to active?",
+      "skill.confirmUninstall": "Uninstall skill {id} ({version})? It leaves team resolution and default queries immediately, and can be reinstalled.",
+      "skill.confirmDeprecate": "Deprecate skill {id} ({version})? Deprecated skills cannot be installed.",
+      "skill.hardenTitle": "Harden skill permissions",
+      "skill.hardenBody": "Permission claims for skill {id} ({version}), one per line (scope or scope:action). Harden can only narrow: claims beyond the current grant are rejected with 400. Leave empty to keep permissions unchanged.",
+      "skill.installed": "Installed {id}",
+      "skill.uninstalled": "Uninstalled {id}",
+      "skill.deprecatedDone": "Deprecated {id}",
+      "skill.hardened": "Hardened {id}",
+      "skill.actionFailed": "{action} failed: {msg}",
       "conn.none": "Not connected",
       "conn.title": "Connection settings",
       "conn.base": "API base URL",
@@ -1427,6 +1463,38 @@
       mask.querySelector('[data-act="yes"]').focus();
     });
   }
+  // 带输入的对话框：技能 harden 收敛权限声明等场景；Esc/取消回 null，确认回文本。
+  function promptDialog(opts) {
+    const o = opts || {};
+    return new Promise(resolve => {
+      const mask = document.createElement('div');
+      mask.className = 'dlg-mask';
+      mask.innerHTML = '<div class="dlg" role="dialog" aria-modal="true">'
+        + (o.title ? '<div class="dlg-title"></div>' : '')
+        + '<div class="dlg-body"></div>'
+        + '<textarea class="dlg-input" rows="4" spellcheck="false"></textarea>'
+        + '<div class="dlg-actions"><button class="btn" type="button" data-act="no"></button>'
+        + '<button class="btn ' + (o.danger ? 'danger' : 'primary') + '" type="button" data-act="yes"></button></div></div>';
+      if (o.title) mask.querySelector('.dlg-title').textContent = o.title;
+      mask.querySelector('.dlg-body').textContent = o.body || '';
+      const input = mask.querySelector('.dlg-input');
+      if (o.placeholder) input.setAttribute('placeholder', o.placeholder);
+      mask.querySelector('[data-act="no"]').textContent = t('dlg.cancel');
+      mask.querySelector('[data-act="yes"]').textContent = o.confirmLabel || t('dlg.ok');
+      const done = v => { window.removeEventListener('keydown', onKey, true); mask.remove(); resolve(v); };
+      const onKey = ev => { if (ev.key === 'Escape') { ev.stopPropagation(); done(null); } };
+      window.addEventListener('keydown', onKey, true);
+      mask.addEventListener('click', ev => {
+        if (ev.target === mask) { done(null); return; }
+        const act = ev.target && ev.target.dataset ? ev.target.dataset.act : '';
+        if (act === 'yes') done(input.value);
+        if (act === 'no') done(null);
+      });
+      $('dlgRoot').appendChild(mask);
+      input.focus();
+    });
+  }
+
   // 主题初始化（先于首帧，避免闪烁）：显式存储 > 系统偏好
   try {
     const savedTheme = localStorage.getItem(LS_THEME);
@@ -1545,7 +1613,7 @@
     }
     return text;
   }
-  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, connect: 1 };
+  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, audit: 1, connect: 1 };
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
@@ -1748,7 +1816,7 @@
     const countEl = $('catSkillCount');
     if (countEl) countEl.textContent = t('catalog.count', { total: all.length }) + (filter ? t('catalog.showing', { n: list.length }) : '');
     if (!list.length) { el.innerHTML = emptyRow(filter ? t('catalog.noneWithState', { status: filter }) : t('catalog.empty')); return; }
-    let rows = '<table><colgroup><col style="width:26%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:22%"><col style="width:18%"></colgroup><tr><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.provider')) + '</th><th>' + esc(t('col.perms')) + '</th></tr>';
+    let rows = '<table><colgroup><col style="width:22%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:19%"><col style="width:15%"><col style="width:15%"></colgroup><tr><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.provider')) + '</th><th>' + esc(t('col.perms')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const s of list) {
       const stCls = s.status === 'active' ? 'ok' : s.status === 'deprecated' ? 'warn' : '';
       rows += `<tr>
@@ -1758,9 +1826,19 @@
         <td>${badge(s.status, stCls)}</td>
         <td class="mono" style="font-size:11px">${esc((s.providedBy || []).join(', ') || '—')}</td>
         <td style="font-size:11px">${esc((s.permissions || []).join(', ') || '—')}</td>
+        <td>${skillActions(s)}</td>
       </tr>`;
     }
     el.innerHTML = rows + '</table>';
+  }
+
+  // 方案 B 技能治理：按状态给操作（deprecated 不可装，uninstalled 可重装，harden 只收窄）。
+  function skillActions(s) {
+    const id = esc(s.id), v = esc(s.version);
+    const btn = (act, label, cls) => `<button class="btn small${cls ? ' ' + cls : ''}" data-act="${act}" data-id="${id}" data-version="${v}">${esc(label)}</button>`;
+    if (s.status === 'active') return `<div style="display:flex;gap:4px;flex-wrap:wrap">${btn('skill-harden', t('skill.action.harden'))}${btn('skill-deprecate', t('skill.action.deprecate'), 'danger')}</div>`;
+    if (s.status === 'deprecated') return btn('skill-uninstall', t('skill.action.uninstall'), 'danger');
+    return btn('skill-install', t('skill.action.install'));
   }
 
   function renderConnectors(list) {
@@ -2624,6 +2702,9 @@
         // face must not blank the contract/watch panel (and vice versa).
         await Promise.allSettled([loadDomains(), loadContracts(), loadWatches()]);
       }
+      else if (view === 'audit') {
+        try { await loadAudit(); } catch (e2) { $('auditBody').innerHTML = emptyRow(t('audit.loadFailed', { msg: e2.message })); }
+      }
       else if (view === 'org') await loadOrg();
       else if (view === 'catalog') await loadCatalog();
       else if (view === 'intent') await loadIntent(state.intentId);
@@ -2666,11 +2747,6 @@
     try { decision = await api('GET', '/api/decision'); } catch { decision = null; } // 未装配决策状态面时静默
     renderState(s); renderDecision(decision); renderMetrics(m); renderRoster(r); renderDomains(d);
     renderRecent();
-    try {
-      await loadAudit();
-    } catch (e) {
-      $('auditBody').innerHTML = emptyRow(t('audit.loadFailed', { msg: e.message }));
-    }
   }
   async function loadEscalations() {
     const data = await api('GET', '/api/escalations');
@@ -2759,6 +2835,36 @@
           toast(t('watch.approved', { contract: (r && r.contract && r.contract.id) || '' }), 'ok');
           await loadEscalations();
         } catch (e) { toast(t('watch.approveFailed', { msg: e.message }), 'bad'); }
+      })();
+    } else if (act === 'skill-install' || act === 'skill-uninstall' || act === 'skill-deprecate') {
+      const version = btn.getAttribute('data-version') || '';
+      const kind = act === 'skill-install' ? 'install' : act === 'skill-uninstall' ? 'uninstall' : 'deprecate';
+      const confirmKey = { install: 'skill.confirmInstall', uninstall: 'skill.confirmUninstall', deprecate: 'skill.confirmDeprecate' }[kind];
+      if (!(await confirmDialog({ body: t(confirmKey, { id, version }), danger: kind !== 'install' }))) return;
+      (async () => {
+        try {
+          await api('POST', '/api/skills/' + encodeURIComponent(id) + '/' + kind, { version });
+          const doneKey = { install: 'skill.installed', uninstall: 'skill.uninstalled', deprecate: 'skill.deprecatedDone' }[kind];
+          toast(t(doneKey, { id }), 'ok');
+          await loadCatalog();
+        } catch (e) { toast(t('skill.actionFailed', { action: t('skill.action.' + kind), msg: e.message }), 'bad'); }
+      })();
+    } else if (act === 'skill-harden') {
+      const version = btn.getAttribute('data-version') || '';
+      const input = await promptDialog({
+        title: t('skill.hardenTitle'),
+        body: t('skill.hardenBody', { id, version }),
+        placeholder: 'realm:read\nfs:write',
+        confirmLabel: t('skill.action.harden'),
+      });
+      if (input === null) return;
+      const permissions = input.split('\n').map(l => l.trim()).filter(Boolean);
+      (async () => {
+        try {
+          await api('POST', '/api/skills/' + encodeURIComponent(id) + '/harden', { version, permissions });
+          toast(t('skill.hardened', { id }), 'ok');
+          await loadCatalog();
+        } catch (e) { toast(t('skill.actionFailed', { action: t('skill.action.harden'), msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-vassal' || act === 'reinstate-vassal') {
       const name = btn.getAttribute('data-name') || '';
