@@ -69,8 +69,10 @@ function reportLine(caseId, passed, detail = '') {
  * its agent-card and settles tasks with the declared stance/rationale from the
  * task data part (`stance` / `rationale` keys — the shapes src/orchestrator/
  * aggregate.ts extractStance reads). `dataPolicy` rides the card's fealty so
- * the data-policy family can exercise the origin gate.
- * @param {Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string }>} agents
+ * the data-policy family can exercise the origin gate. `fail` drives the
+ * S10/S11 adversarial cases: the branch's task settles failed, so the recovery
+ * chain (branch-failed -> escalate) is what the scorer observes.
+ * @param {Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean }>} agents
  */
 function makeFetch(agents) {
   const byName = new Map(agents.map(a => [a.name, a]));
@@ -84,6 +86,19 @@ function makeFetch(agents) {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+    if (spec.fail) {
+      const failed = {
+        kind: 'task',
+        id: `${name}-task`,
+        contextId: 'eval',
+        status: { state: 'failed', message: { code: 'EVAL_SCRIPTED_FAIL', message: 'scripted failure for the adversarial case' } },
+        artifacts: [],
+      };
+      return new Response(
+        `data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: failed })}\n\n`,
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      );
     }
     const task = {
       kind: 'task',
@@ -151,8 +166,9 @@ function makeOversightBridge(audits) {
  * @typedef {{
  *   id: string;
  *   skill: string;
- *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string }>;
+ *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean }>;
  *   request: Record<string, unknown>;
+ *   costLimit?: { maxWindowCost: number; circuitWindowMs: number };
  *   expect: Array<import('../dist/evals/types.js').EvalExpectation>;
  *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
  * }} RunnerCase
@@ -189,6 +205,7 @@ async function runCase(c) {
     vassalSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
     dispatchAudit: e => audits.push(e),
     oversightAudit: makeOversightBridge(audits),
+    ...(c.costLimit !== undefined ? { costLimit: c.costLimit } : {}),
   });
   if (c.memory !== undefined) {
     for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
