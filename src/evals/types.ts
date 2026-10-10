@@ -6,7 +6,7 @@
 // fully unit-testable and reproducible.
 
 import type { FanOutRequest, FanOutResult } from '../orchestrator/types.js';
-import type { ContentHandling } from '../guardrails/content-risk.js';
+import type { ContentHandling, ContentSignal } from '../guardrails/content-risk.js';
 
 /** One property assertion on an eval run. Every field is optional so a case
  *  asserts only what it cares about; `severity` is always required and decides
@@ -25,8 +25,11 @@ export type EvalExpectation = {
    *  (verify-before-asserting machine check). */
   evidence?: { mustCite?: string[]; forbidBareAssertions?: boolean };
   /** Guardrail handling expected for the case (S8): the audit row action must
-   *  match. */
-  guardrails?: { expectedHandling?: ContentHandling['action'] };
+   *  match. `signals` additionally requires the matched audit row's detail to
+   *  carry every listed signal — without it, an annotate assertion cannot tell
+   *  a signal-driven annotation apart from the plan-mode provenance label that
+   *  every recalled fact receives by construction. */
+  guardrails?: { expectedHandling?: ContentHandling['action']; signals?: ContentSignal[] };
   /** Budget: branch count cap (S4/S9). `maxCostTokens` is declared for the
    *  cost family but has no V1 data source, so the scorer marks it
    *  not-assessable instead of guessing. */

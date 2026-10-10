@@ -154,8 +154,30 @@ function makeOversightBridge(audits) {
  *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string }>;
  *   request: Record<string, unknown>;
  *   expect: Array<import('../dist/evals/types.js').EvalExpectation>;
+ *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
  * }} RunnerCase
  */
+
+/** Build a personal-realm claim event for the guardrails family (S8): the
+ *  memory assembly path scans recalled fact text through the content-risk
+ *  chain, so a case seeds facts whose rendered text carries (or deliberately
+ *  lacks) the adversarial signals.
+ * @param {{ id: string, subject: string, predicate: string, object: string }} m
+ * @returns {import('../dist/memory/types.js').MemoryEvent}
+ */
+function memoryClaim(m) {
+  return {
+    eventId: m.id,
+    realmId: 'personal',
+    runId: 'eval-memory-seed',
+    source: { agentId: 'eval-seed' },
+    kind: 'claim',
+    content: { subject: m.subject, predicate: m.predicate, object: m.object },
+    refs: [],
+    confidence: 0.9,
+    occurredAt: '2026-10-10T00:00:00.000Z',
+  };
+}
 
 /** @param {RunnerCase} c */
 async function runCase(c) {
@@ -168,6 +190,10 @@ async function runCase(c) {
     dispatchAudit: e => audits.push(e),
     oversightAudit: makeOversightBridge(audits),
   });
+  if (c.memory !== undefined) {
+    for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
+    kernel.memoryStore?.consolidateRealm('personal');
+  }
   const outcome = await kernel.orchestrator.fanOut(
     /** @type {import('../dist/orchestrator/types.js').FanOutRequest} */ ({
       intentId: `eval-${c.id.replaceAll('/', '-')}`,
