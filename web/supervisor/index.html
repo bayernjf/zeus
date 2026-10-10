@@ -232,9 +232,10 @@
     <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.grants">授权</span></a>
     <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.org">组织</span></a>
     <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.catalog">目录</span></a>
+    <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.5 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.7 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -324,10 +325,6 @@
       </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
-          <h2><span data-i18n="roster.title">名册</span> <span class="hint">/api/roster</span></h2>
-          <div class="body" id="rosterBody"></div>
-        </div>
-        <div class="panel">
           <h2><span data-i18n="domains.title">数据域与跨域授权</span> <span class="hint">/api/domains</span></h2>
           <div class="body" id="domainsBody"></div>
         </div>
@@ -335,6 +332,14 @@
       <div class="panel" style="margin-top:14px">
         <h2><span data-i18n="recent.title">最近意图</span> <span class="hint" data-i18n="recent.hint">本浏览器记录</span></h2>
         <div class="body" id="recentBody"></div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：名册（方案 B 独立视图） ===== -->
+    <section id="view-roster" hidden>
+      <div class="panel">
+        <h2><span data-i18n="roster.title">名册</span> <span class="hint">/api/roster · <span data-i18n="roster.hint">吊销即刻断流 · 恢复为显式审计动作</span></span></h2>
+        <div class="body" id="rosterBody"></div>
       </div>
     </section>
 
@@ -621,6 +626,7 @@
       "nav.grants": "授权",
       "nav.org": "组织",
       "nav.catalog": "目录",
+      "nav.roster": "名册",
       "nav.connect": "连接",
       "nav.audit": "审计",
       "skill.action.install": "安装",
@@ -660,6 +666,7 @@
       "trend.hint": "前端 3s 采样 · 最近 40 个采样点",
       "trend.waiting": "等待采样…",
       "roster.title": "名册",
+      "roster.hint": "吊销即刻断流 · 恢复为显式审计动作",
       "audit.title": "扇出 / 决策时间线",
       "audit.hint": "服务端过滤 decision/vassal · 关键字前端过滤",
       "audit.allDecisions": "全部决策",
@@ -1011,6 +1018,7 @@
       "nav.grants": "Grants",
       "nav.org": "Org",
       "nav.catalog": "Catalog",
+      "nav.roster": "Roster",
       "nav.connect": "Connect",
       "nav.audit": "Audit",
       "skill.action.install": "Install",
@@ -1134,6 +1142,7 @@
       "trend.hint": "3s client sampling · last 40 points",
       "trend.waiting": "Waiting for samples…",
       "roster.title": "Roster",
+      "roster.hint": "revocation cuts the wire immediately · reinstate is an explicit audited act",
       "roster.empty": "Roster empty (no execution agents registered)",
       "roster.revoked": "Revoked",
       "roster.revoke": "Revoke",
@@ -1613,7 +1622,7 @@
     }
     return text;
   }
-  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, audit: 1, connect: 1 };
+  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, roster: 1, audit: 1, connect: 1 };
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
@@ -2707,6 +2716,7 @@
       }
       else if (view === 'org') await loadOrg();
       else if (view === 'catalog') await loadCatalog();
+      else if (view === 'roster') await loadRoster();
       else if (view === 'intent') await loadIntent(state.intentId);
       setConn(true);
     } catch (e) {
@@ -2714,8 +2724,6 @@
       if (view === 'monitor') {
         $('stateBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
         $('metricsBody').innerHTML = '';
-        $('rosterBody').innerHTML = '';
-        $('auditBody').innerHTML = '';
         $('domainsBody').innerHTML = '';
       } else if (view === 'oversight') {
         $('escBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
@@ -2728,6 +2736,8 @@
       } else if (view === 'catalog') {
         $('catalogSkillsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
         $('catalogConnectorsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
+      } else if (view === 'roster') {
+        $('rosterBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'intent') {
         $('intentMeta').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       }
@@ -2739,14 +2749,17 @@
   }
 
   async function loadMonitor() {
-    const [s, m, r, d] = await Promise.all([
-      api('GET', '/api/state'), api('GET', '/api/metrics'), api('GET', '/api/roster'),
+    const [s, m, d] = await Promise.all([
+      api('GET', '/api/state'), api('GET', '/api/metrics'),
       api('GET', '/api/domains'),
     ]);
     let decision = null;
     try { decision = await api('GET', '/api/decision'); } catch { decision = null; } // 未装配决策状态面时静默
-    renderState(s); renderDecision(decision); renderMetrics(m); renderRoster(r); renderDomains(d);
+    renderState(s); renderDecision(decision); renderMetrics(m); renderDomains(d);
     renderRecent();
+  }
+  async function loadRoster() {
+    renderRoster(await api('GET', '/api/roster'));
   }
   async function loadEscalations() {
     const data = await api('GET', '/api/escalations');
