@@ -13,7 +13,7 @@ import type { RealmHit } from '../src/realm/types.js';
  */
 
 function skillInput(name: string, source: 'explicit' | 'unavailable' = 'explicit'): SkillInputEntry {
-  return source === 'explicit' ? { name, source, value: name } : { name, source };
+  return source === 'explicit' ? { name, source, value: name, provenance: 'driver-supplied' } : { name, source };
 }
 
 function realmHit(itemId: string): RealmHit {
