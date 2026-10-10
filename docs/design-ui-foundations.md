@@ -1,6 +1,6 @@
 # Zeus UI 基础规范：Design Token 与 i18n
 
-> 状态：**现行（基础契约，2026-09-30，v0.1）**。本文只规定 UI 基础变量与文案资源的工程契约，不构成 Web UI 立项；页面范围、交互方案与开工条件仍以 [design-ui.md](design-ui.md) 与 [deferred-items.md](deferred-items.md) #34 为准。
+> 状态：**现行（基础契约，2026-09-30，v0.2，2026-10-10 补 §8 实施进展）**。本文只规定 UI 基础变量与文案资源的工程契约，不构成 Web UI 立项；页面范围、交互方案与开工条件仍以 [design-ui.md](design-ui.md) 与 [deferred-items.md](deferred-items.md) #34 为准。
 >
 > 适用对象：方案 D（TUI）与方案 A/B/C（Web）。TUI 只消费终端可表达的 token 子集；Web v1 启动时必须先实现本规范，再开发页面。
 
@@ -262,3 +262,7 @@ Web v1 第一个页面前必须接入以下检查：
 | 版本 | 日期 | 内容 |
 |---|---|---|
 | v0.1 | 2026-09-30 | 初版：三层 design token、light/dark 与 TUI 子集、i18n key/ICU/资源完整性、无裸值与审计等价验收 |
+
+## 8. 实施进展
+
+- **2026-10-10 · 方案 A Web 监督台 v1.5 首批落地（Active work 191）**：§3 主题（light/dark CSS 变量 + 持久化 + 跟随系统偏好）、§5 i18n（`RES` 资源表 zh-CN/en 各 371 键，域前缀命名、`{param}` 参数、状态枚举原值不变仅展示映射且未知值回退原值、`data-i18n`/`data-i18n-ph` 静态标记 + `t()` 动态渲染）、§7 统一确认对话框（`confirmDialog()` Promise 化替换全部 11 处 `window.confirm`）在 `web/supervisor/index.html` 落地；契约闸门 `tests/web-supervisor-i18n.test.ts`（键集/参数奇偶、markup 引用全解析、无 `window.confirm`、脚本区零硬编码 CJK）。单文件零构建形态下 token/文案与页面同文件驻留（`:root` 变量块 + `RES` 表即本文件的单一事实源），多页面出现时再抽共享文件，契约不变。

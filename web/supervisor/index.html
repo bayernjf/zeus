@@ -19,8 +19,44 @@
     --ok: #3fb68b;
     --warn: #e2a336;
     --bad: #e05b4d;
+    --btn-primary-bg: #20334a;
+    --btn-primary-line: #2c4a6b;
+    --btn-danger-line: #5c2b27;
+    --btn-danger-text: #f0a59b;
+    --st-ok-line: #24483a;
+    --st-warn-line: #4a3a1f;
+    --st-bad-line: #552a26;
+    --st-info-line: #22415e;
+    --branch-bad-text: #d39a92;
+    --code-bg: #0d1218;
+    --shadow: rgba(0,0,0,.4);
     --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
     --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --panel-2: #eef1f4;
+    --line: #d7dee5;
+    --line-soft: #e3e9ee;
+    --text: #1c2630;
+    --text-2: #4d5a68;
+    --text-3: #7d8a97;
+    --accent: #1f6fb8;
+    --ok: #1d8a63;
+    --warn: #a06d10;
+    --bad: #c0392b;
+    --btn-primary-bg: #dceaf7;
+    --btn-primary-line: #a8c8e4;
+    --btn-danger-line: #e4b3ad;
+    --btn-danger-text: #a93226;
+    --st-ok-line: #a8d8c4;
+    --st-warn-line: #e0c48a;
+    --st-bad-line: #e4b3ad;
+    --st-info-line: #a8c8e4;
+    --branch-bad-text: #a93226;
+    --code-bg: #e8edf2;
+    --shadow: rgba(28,38,48,.18);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
@@ -49,8 +85,8 @@
   .btn { font: inherit; font-size: 13px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
   .btn:hover { border-color: var(--text-3); }
   .btn:disabled { opacity: .5; cursor: default; }
-  .btn.primary { background: #20334a; border-color: #2c4a6b; }
-  .btn.danger { border-color: #5c2b27; color: #f0a59b; }
+  .btn.primary { background: var(--btn-primary-bg); border-color: var(--btn-primary-line); }
+  .btn.danger { border-color: var(--btn-danger-line); color: var(--btn-danger-text); }
   .btn.small { padding: 2px 9px; font-size: 12px; }
 
   /* ===== 面板 ===== */
@@ -71,10 +107,10 @@
   /* 状态徽标 */
   .st { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--text-2); background: var(--panel-2); }
   .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-  .st.ok { color: var(--ok); border-color: #24483a; }
-  .st.warn { color: var(--warn); border-color: #4a3a1f; }
-  .st.bad { color: var(--bad); border-color: #552a26; }
-  .st.info { color: var(--accent); border-color: #22415e; }
+  .st.ok { color: var(--ok); border-color: var(--st-ok-line); }
+  .st.warn { color: var(--warn); border-color: var(--st-warn-line); }
+  .st.bad { color: var(--bad); border-color: var(--st-bad-line); }
+  .st.info { color: var(--accent); border-color: var(--st-info-line); }
 
   /* 表格 */
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -105,7 +141,7 @@
 
   /* toast */
   .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
-  .toast { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 9px 14px; font-size: 13px; max-width: 420px; box-shadow: 0 4px 18px rgba(0,0,0,.4); }
+  .toast { background: var(--panel-2); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 6px; padding: 9px 14px; font-size: 13px; max-width: 420px; box-shadow: 0 4px 18px var(--shadow); }
   .toast.ok { border-left-color: var(--ok); } .toast.bad { border-left-color: var(--bad); }
   .toast .t { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-bottom: 2px; }
 
@@ -132,7 +168,7 @@
   .kv .k { color: var(--text-3); font-family: var(--mono); font-size: 12px; padding-top: 1px; }
   .kv .v { word-break: break-all; }
   .branch-ok td { color: var(--text); }
-  .branch-bad td { color: #d39a92; }
+  .branch-bad td { color: var(--branch-bad-text); }
   .branch-pending td { color: var(--text-2); }
   .evt-list { list-style: none; margin: 0; padding: 2px 0; }
   .evt-list li { display: grid; grid-template-columns: 118px 22px 1fr; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); align-items: start; }
@@ -151,7 +187,19 @@
   .dag-node.node-bad { border-color: #c62828; }
   .dag-node.node-pending { border-color: #b26a00; }
   .dag-node.node-idle { border-color: var(--line); }
-  .cors-note code { font-family: var(--mono); background: #0d1218; padding: 1px 5px; border-radius: 4px; }
+  .cors-note code { font-family: var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+
+  /* 确认对话框（替代 window.confirm：可承载关键参数、键盘可达、E2E 可断言） */
+  .dlg-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 60; }
+  :root[data-theme="light"] .dlg-mask { background: rgba(28,38,48,.25); }
+  .dlg { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; width: 440px; max-width: calc(100vw - 32px); box-shadow: 0 8px 32px var(--shadow); }
+  .dlg .dlg-title { padding: 12px 16px; font-size: 13px; font-weight: 650; border-bottom: 1px solid var(--line-soft); }
+  .dlg .dlg-body { padding: 12px 16px; font-size: 13px; color: var(--text-2); white-space: pre-wrap; word-break: break-word; }
+  .dlg .dlg-body .mono { color: var(--text); }
+  .dlg .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
+
+  /* 键盘可达性：可见焦点环 */
+  .btn:focus-visible, .nav-item:focus-visible, .form input:focus-visible, .form select:focus-visible, .form textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr; }
@@ -169,44 +217,48 @@
   <nav class="side">
     <div class="brand">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="5" fill="none" stroke="#232d3a"/><path d="M12 4l5 3.5v5c0 3.6-2.2 6.3-5 7.5-2.8-1.2-5-3.9-5-7.5v-5L12 4z" fill="none" stroke="#e2a336" stroke-width="1.6"/><circle cx="12" cy="11.5" r="2" fill="#e2a336"/></svg>
-      Zeus 监督台
+      <span data-i18n="app.brand">Zeus 监督台</span>
     </div>
-    <a class="nav-item" data-view="monitor" href="#/monitor"><span class="dot"></span>监控</a>
-    <a class="nav-item" data-view="oversight" href="#/oversight"><span class="dot" style="background:var(--warn)"></span>裁决<span class="badge" id="escBadge"></span></a>
-    <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span>授权</a>
-    <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span>组织</a>
-    <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span>目录</a>
-    <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span>连接</a>
-    <div class="side-foot">v1.4 · 只读监控 · 裁决 · 授权 · 组织<br>UI 仅消费现有 HTTP API</div>
+    <a class="nav-item" data-view="monitor" href="#/monitor"><span class="dot"></span><span data-i18n="nav.monitor">监控</span></a>
+    <a class="nav-item" data-view="oversight" href="#/oversight"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.oversight">裁决</span><span class="badge" id="escBadge"></span></a>
+    <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.grants">授权</span></a>
+    <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.org">组织</span></a>
+    <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.catalog">目录</span></a>
+    <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
+    <div class="side-foot">v1.5 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn small" id="btnTheme" type="button">主题</button>
+        <button class="btn small" id="btnLang" type="button">EN</button>
+      </div></div>
   </nav>
 
   <main class="main">
     <div class="topbar">
       <h1 id="viewTitle">监控</h1>
-      <span class="conn" id="connBadge"><span class="dot"></span><span id="connText">未连接</span></span>
+      <span class="conn" id="connBadge"><span class="dot"></span><span id="connText" data-i18n="conn.none">未连接</span></span>
       <span class="spacer"></span>
-      <button class="btn" id="btnRefresh">刷新</button>
+      <button class="btn" id="btnRefresh" data-i18n="top.refresh">刷新</button>
       <button class="btn" id="btnPoll">轮询：开</button>
     </div>
 
     <!-- ===== 视图：监控 ===== -->
     <section id="view-monitor">
       <div class="panel" style="margin-bottom:14px">
-        <h2>意图识别 <span class="hint">POST /api/intents/recognize · E2.6 仅识别不派发</span></h2>
+        <h2><span data-i18n="recog.title">意图识别</span> <span class="hint">POST /api/intents/recognize · <span data-i18n="recog.hint">E2.6 仅识别不派发</span></span></h2>
         <div class="body">
           <div class="form">
             <div class="row inline">
               <div class="row" style="flex:1">
-                <label for="rText">操作者指令（自然语言）</label>
-                <input id="rText" autocomplete="off" placeholder="如：帮我审一下 zeus 的 PR 并给合并建议">
+                <label for="rText" data-i18n="recog.text">操作者指令（自然语言）</label>
+                <input id="rText" autocomplete="off" data-i18n-ph="recog.textPh" placeholder="如：帮我审一下 zeus 的 PR 并给合并建议">
               </div>
               <div class="row">
-                <label for="rRealm">数据域</label>
+                <label for="rRealm" data-i18n="common.realm">数据域</label>
                 <select id="rRealm"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
               </div>
               <div class="row">
                 <label>&nbsp;</label>
-                <button class="btn primary" id="btnRecognize">识别</button>
+                <button class="btn primary" id="btnRecognize" data-i18n="recog.run">识别</button>
               </div>
             </div>
             <div id="recognizeResult"></div>
@@ -214,78 +266,78 @@
         </div>
       </div>
       <div class="panel" style="margin-bottom:14px">
-        <h2>派发意图 <span class="hint">POST /api/intents</span></h2>
+        <h2><span data-i18n="dispatch.title">派发意图</span> <span class="hint">POST /api/intents</span></h2>
         <div class="body">
           <div class="form">
             <div class="row inline">
               <div class="row">
-                <label for="dSkill">技能</label>
+                <label for="dSkill" data-i18n="common.skill">技能</label>
                 <select id="dSkill"></select>
               </div>
               <div class="row">
-                <label for="dRealm">数据域</label>
+                <label for="dRealm" data-i18n="common.realm">数据域</label>
                 <select id="dRealm"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
               </div>
             </div>
             <div class="row inline">
               <div class="row">
-                <label for="dVassals">主体（逗号分隔，可选，缺省自动选靶）</label>
-                <input id="dVassals" autocomplete="off" placeholder="如 a1, a2">
+                <label for="dVassals" data-i18n="dispatch.vassals">主体（逗号分隔，可选，缺省自动选靶）</label>
+                <input id="dVassals" autocomplete="off" data-i18n-ph="dispatch.vassalsPh" placeholder="如 a1, a2">
               </div>
               <div class="row">
-                <label for="dMode">模式</label>
-                <select id="dMode"><option value="plan">plan（默认）</option><option value="execute">execute（需执行授权票据）</option></select>
+                <label for="dMode" data-i18n="common.mode">模式</label>
+                <select id="dMode"><option value="plan" data-i18n="dispatch.modePlan">plan（默认）</option><option value="execute" data-i18n="dispatch.modeExecute">execute（需执行授权票据）</option></select>
               </div>
             </div>
             <div class="row">
-              <label for="dParams">参数（JSON，可选）</label>
+              <label for="dParams" data-i18n="dispatch.params">参数（JSON，可选）</label>
               <textarea id="dParams" rows="3" autocomplete="off" placeholder='{"query": "…"}'></textarea>
             </div>
             <div class="actions">
-              <button class="btn primary" id="btnDispatch">派发</button>
+              <button class="btn primary" id="btnDispatch" data-i18n="dispatch.run">派发</button>
             </div>
           </div>
         </div>
       </div>
       <div class="grid">
         <div class="panel">
-          <h2>内核状态 <span class="hint">/api/state</span></h2>
+          <h2><span data-i18n="state.title">内核状态</span> <span class="hint">/api/state</span></h2>
           <div class="body" id="stateBody"></div>
         </div>
         <div class="panel">
-          <h2>并发指标 <span class="hint">/api/metrics</span></h2>
+          <h2><span data-i18n="metrics.title">并发指标</span> <span class="hint">/api/metrics</span></h2>
           <div class="body" id="metricsBody"></div>
         </div>
       </div>
       <div class="panel" style="margin-top:14px">
-        <h2>并发趋势 <span class="hint">前端 3s 采样 · 最近 40 个采样点</span></h2>
-        <div class="body" id="trendBody"><div class="empty">等待采样…</div></div>
+        <h2><span data-i18n="trend.title">并发趋势</span> <span class="hint" data-i18n="trend.hint">前端 3s 采样 · 最近 40 个采样点</span></h2>
+        <div class="body" id="trendBody"><div class="empty" data-i18n="trend.waiting">等待采样…</div></div>
       </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
-          <h2>名册 <span class="hint">/api/roster</span></h2>
+          <h2><span data-i18n="roster.title">名册</span> <span class="hint">/api/roster</span></h2>
           <div class="body" id="rosterBody"></div>
         </div>
         <div class="panel">
-          <h2>扇出 / 决策时间线 <span class="hint">/api/audit · 服务端过滤 decision/vassal · 关键字前端过滤</span></h2>
+          <h2><span data-i18n="audit.title">扇出 / 决策时间线</span> <span class="hint">/api/audit · <span data-i18n="audit.hint">服务端过滤 decision/vassal · 关键字前端过滤</span></span></h2>
           <div class="body">
             <div class="audit-filter">
-              <select id="afDecision"><option value="">全部决策</option></select>
-              <input id="afVassal" autocomplete="off" placeholder="主体过滤（服务端）" style="width:150px">
-              <input id="afKeyword" autocomplete="off" placeholder="关键字过滤（前端）" style="width:150px">
-              <button class="btn small" id="afApply">应用</button>
+              <select id="afDecision"><option value="" data-i18n="audit.allDecisions">全部决策</option></select>
+              <input id="afVassal" autocomplete="off" data-i18n-ph="audit.vassalPh" placeholder="主体过滤（服务端）" style="width:150px">
+              <input id="afKeyword" autocomplete="off" data-i18n-ph="audit.keywordPh" placeholder="关键字过滤（前端）" style="width:150px">
+              <button class="btn small" id="afApply" data-i18n="audit.apply">应用</button>
               <span class="af-count" id="afCount"></span>
             </div>
             <div id="auditBody"></div>
           </div>
         </div>
         <div class="panel">
-          <h2>数据域与跨域授权 <span class="hint">/api/domains</span></h2>
+          <h2><span data-i18n="domains.title">数据域与跨域授权</span> <span class="hint">/api/domains</span></h2>
           <div class="body" id="domainsBody"></div>
         </div>
       </div>
       <div class="panel" style="margin-top:14px">
-        <h2>最近意图 <span class="hint">本浏览器记录</span></h2>
+        <h2><span data-i18n="recent.title">最近意图</span> <span class="hint" data-i18n="recent.hint">本浏览器记录</span></h2>
         <div class="body" id="recentBody"></div>
       </div>
     </section>
@@ -293,7 +345,7 @@
     <!-- ===== 视图：裁决 ===== -->
     <section id="view-oversight" hidden>
       <div class="panel">
-        <h2>待裁决队列 <span class="hint" id="escCount"></span></h2>
+        <h2><span data-i18n="esc.title">待裁决队列</span> <span class="hint" id="escCount"></span></h2>
         <div class="body" id="escBody"></div>
       </div>
     </section>
@@ -302,136 +354,136 @@
     <section id="view-grants" hidden>
       <div class="grid" style="grid-template-columns: 340px 1fr">
         <div class="panel">
-          <h2>签发跨域授权 <span class="hint">POST /api/domains/grants</span></h2>
+          <h2><span data-i18n="grant.title">签发跨域授权</span> <span class="hint">POST /api/domains/grants</span></h2>
           <div class="body">
             <div class="form" id="grantForm">
               <div class="row">
-                <label for="gSubject">主体（vassal 名 / 身份）</label>
-                <input id="gSubject" autocomplete="off" placeholder="如 jev">
+                <label for="gSubject" data-i18n="grant.subject">主体（vassal 名 / 身份）</label>
+                <input id="gSubject" autocomplete="off" data-i18n-ph="grant.subjectPh" placeholder="如 jev">
               </div>
               <div class="row">
-                <label for="gRealm">企业数据域</label>
+                <label for="gRealm" data-i18n="grant.realm">企业数据域</label>
                 <select id="gRealm"></select>
               </div>
               <div class="row inline">
                 <div class="row">
-                  <label for="gAccess">访问级别</label>
-                  <select id="gAccess"><option value="read">read（读）</option><option value="write">write（写）</option></select>
+                  <label for="gAccess" data-i18n="grant.access">访问级别</label>
+                  <select id="gAccess"><option value="read" data-i18n="grant.accessRead">read（读）</option><option value="write" data-i18n="grant.accessWrite">write（写）</option></select>
                 </div>
                 <div class="row">
-                  <label for="gGrantedBy">签发者</label>
+                  <label for="gGrantedBy" data-i18n="common.grantedBy">签发者</label>
                   <input id="gGrantedBy" autocomplete="off" placeholder="driver">
                 </div>
               </div>
               <div class="row">
-                <label for="gReason">理由（进审计）</label>
-                <input id="gReason" autocomplete="off" placeholder="如 review">
+                <label for="gReason" data-i18n="grant.reason">理由（进审计）</label>
+                <input id="gReason" autocomplete="off" data-i18n-ph="grant.reasonPh" placeholder="如 review">
               </div>
               <div class="actions">
-                <button class="btn primary" id="btnGrant">签发授权</button>
+                <button class="btn primary" id="btnGrant" data-i18n="grant.run">签发授权</button>
               </div>
             </div>
           </div>
         </div>
         <div class="panel">
-          <h2>生效授权 <span class="hint" id="grantCount"></span></h2>
+          <h2><span data-i18n="grant.active">生效授权</span> <span class="hint" id="grantCount"></span></h2>
           <div class="body" id="grantListBody"></div>
         </div>
       </div>
       <div class="grid" style="grid-template-columns: 340px 1fr; margin-top: 16px">
         <div class="panel">
-          <h2>签发委托契约 <span class="hint">POST /api/delegation-contracts</span></h2>
+          <h2><span data-i18n="contract.title">签发委托契约</span> <span class="hint">POST /api/delegation-contracts</span></h2>
           <div class="body">
             <div class="form" id="contractForm">
               <div class="row">
-                <label for="cSkill">技能</label>
-                <input id="cSkill" autocomplete="off" placeholder="如 research">
+                <label for="cSkill" data-i18n="common.skill">技能</label>
+                <input id="cSkill" autocomplete="off" data-i18n-ph="common.skillPh" placeholder="如 research">
               </div>
               <div class="row inline">
                 <div class="row">
-                  <label for="cTickets">子票据上限</label>
+                  <label for="cTickets" data-i18n="contract.tickets">子票据上限</label>
                   <input id="cTickets" type="number" min="1" value="4">
                 </div>
                 <div class="row">
-                  <label for="cConcurrent">并发上限</label>
+                  <label for="cConcurrent" data-i18n="contract.concurrent">并发上限</label>
                   <input id="cConcurrent" type="number" min="1" value="1">
                 </div>
               </div>
               <div class="row">
-                <label for="cBy">签发者</label>
+                <label for="cBy" data-i18n="common.grantedBy">签发者</label>
                 <input id="cBy" autocomplete="off" placeholder="driver">
               </div>
-              <div class="hint" style="margin-top:6px">能力固定 execute，窗口 24 小时；越界自动停用并升级人工。撤销即刻阻断派生。</div>
+              <div class="hint" style="margin-top:6px" data-i18n="contract.hint">能力固定 execute，窗口 24 小时；越界自动停用并升级人工。撤销即刻阻断派生。</div>
               <div class="actions">
-                <button class="btn primary" id="btnContract">签发契约</button>
+                <button class="btn primary" id="btnContract" data-i18n="contract.run">签发契约</button>
               </div>
             </div>
           </div>
         </div>
         <div class="panel">
-          <h2>委托契约 <span class="hint" id="contractCount"></span></h2>
+          <h2><span data-i18n="contract.list">委托契约</span> <span class="hint" id="contractCount"></span></h2>
           <div class="body" id="contractListBody"></div>
         </div>
       </div>
       <div class="grid" style="grid-template-columns: 340px 1fr; margin-top: 16px">
         <div class="panel">
-          <h2>登记无人值守触发器 <span class="hint">POST /api/watches</span></h2>
+          <h2><span data-i18n="watch.title">登记无人值守触发器</span> <span class="hint">POST /api/watches</span></h2>
           <div class="body">
             <div class="form" id="watchForm">
               <div class="row">
-                <label for="wSkill">技能</label>
-                <input id="wSkill" autocomplete="off" placeholder="如 research">
+                <label for="wSkill" data-i18n="common.skill">技能</label>
+                <input id="wSkill" autocomplete="off" data-i18n-ph="common.skillPh" placeholder="如 research">
               </div>
               <div class="row">
-                <label for="wSubject">意图主题</label>
-                <input id="wSubject" autocomplete="off" placeholder="如 queue is deep">
+                <label for="wSubject" data-i18n="watch.subject">意图主题</label>
+                <input id="wSubject" autocomplete="off" data-i18n-ph="watch.subjectPh" placeholder="如 queue is deep">
               </div>
               <div class="row inline">
                 <div class="row">
-                  <label for="wMode">模式</label>
+                  <label for="wMode" data-i18n="common.mode">模式</label>
                   <select id="wMode"><option value="plan">plan</option><option value="execute">execute</option></select>
                 </div>
                 <div class="row">
-                  <label for="wSource">谓词源</label>
+                  <label for="wSource" data-i18n="watch.source">谓词源</label>
                   <select id="wSource"><option value="metrics">metrics</option><option value="realm">realm</option><option value="connector">connector</option></select>
                 </div>
               </div>
               <div class="row inline">
                 <div class="row">
-                  <label for="wField">字段</label>
+                  <label for="wField" data-i18n="watch.field">字段</label>
                   <input id="wField" autocomplete="off" placeholder="finished">
                 </div>
                 <div class="row">
-                  <label for="wValue">阈值</label>
+                  <label for="wValue" data-i18n="watch.value">阈值</label>
                   <input id="wValue" type="number" value="0">
                 </div>
               </div>
               <div class="row inline">
                 <div class="row">
-                  <label for="wInterval">间隔（秒）</label>
+                  <label for="wInterval" data-i18n="watch.interval">间隔（秒）</label>
                   <input id="wInterval" type="number" min="1" value="60">
                 </div>
                 <div class="row">
-                  <label for="wFires">触发预算</label>
+                  <label for="wFires" data-i18n="watch.fires">触发预算</label>
                   <input id="wFires" type="number" min="1" value="5">
                 </div>
               </div>
               <div class="row">
-                <label for="wDelegation">execute 委托契约 ID（execute 模式必填）</label>
-                <input id="wDelegation" autocomplete="off" placeholder="delegation contract id">
+                <label for="wDelegation" data-i18n="watch.delegation">execute 委托契约 ID（execute 模式必填）</label>
+                <input id="wDelegation" autocomplete="off" data-i18n-ph="watch.delegationPh" placeholder="delegation contract id">
               </div>
-              <div class="hint" style="margin-top:6px">内核不持定时器：登记后由外部调度器周期 POST /api/watch-tick 驱动。</div>
+              <div class="hint" style="margin-top:6px" data-i18n="watch.hint">内核不持定时器：登记后由外部调度器周期 POST /api/watch-tick 驱动。</div>
               <div class="actions">
-                <button class="btn primary" id="btnWatch">登记触发器</button>
+                <button class="btn primary" id="btnWatch" data-i18n="watch.run">登记触发器</button>
               </div>
             </div>
           </div>
         </div>
         <div class="panel">
-          <h2>无人值守触发器 <span class="hint" id="watchCount"></span></h2>
+          <h2><span data-i18n="watch.list">无人值守触发器</span> <span class="hint" id="watchCount"></span></h2>
           <div class="body" id="watchListBody"></div>
           <div class="actions" style="margin-top:10px">
-            <button class="btn" id="btnWatchTick">立即评估一次（POST /api/watch-tick）</button>
+            <button class="btn" id="btnWatchTick" data-i18n="watch.tick">立即评估一次（POST /api/watch-tick）</button>
           </div>
         </div>
       </div>
@@ -440,73 +492,73 @@
     <!-- ===== 视图：组织编制（E9.3，只读） ===== -->
     <section id="view-org" hidden>
       <div class="panel">
-        <h2>组织编制 <span class="hint">GET /api/org/chart · 部门 / lead / 成员 / 岗位技能</span></h2>
-        <div class="body" id="orgBody"><div class="empty">加载中…</div></div>
+        <h2><span data-i18n="org.title">组织编制</span> <span class="hint">GET /api/org/chart · <span data-i18n="org.hint">部门 / lead / 成员 / 岗位技能</span></span></h2>
+        <div class="body" id="orgBody"><div class="empty" data-i18n="common.loading">加载中…</div></div>
       </div>
     </section>
 
     <!-- ===== 视图：目录（技能 + 连接器，只读可见性） ===== -->
     <section id="view-catalog" hidden>
       <div class="panel" style="margin-bottom:14px">
-        <h2>技能目录 <span class="hint">GET /api/skills · 注册/生命周期管理走 CLI/API，监督台只读</span></h2>
+        <h2><span data-i18n="catalog.skillsTitle">技能目录</span> <span class="hint">GET /api/skills · <span data-i18n="catalog.skillsHint">注册/生命周期管理走 CLI/API，监督台只读</span></span></h2>
         <div class="body">
           <div class="audit-filter">
             <select id="catSkillStatus">
-              <option value="">全部状态</option>
+              <option value="" data-i18n="catalog.allStatus">全部状态</option>
               <option value="active">active</option>
               <option value="deprecated">deprecated</option>
               <option value="uninstalled">uninstalled</option>
             </select>
             <span class="af-count" id="catSkillCount"></span>
           </div>
-          <div id="catalogSkillsBody"><div class="empty">加载中…</div></div>
+          <div id="catalogSkillsBody"><div class="empty" data-i18n="common.loading">加载中…</div></div>
         </div>
       </div>
       <div class="panel">
-        <h2>连接器（MCP） <span class="hint">GET /api/connectors · 令牌只回显有无，不回显值</span></h2>
-        <div class="body" id="catalogConnectorsBody"><div class="empty">加载中…</div></div>
+        <h2><span data-i18n="catalog.connectorsTitle">连接器（MCP）</span> <span class="hint">GET /api/connectors · <span data-i18n="catalog.connectorsHint">令牌只回显有无，不回显值</span></span></h2>
+        <div class="body" id="catalogConnectorsBody"><div class="empty" data-i18n="common.loading">加载中…</div></div>
       </div>
     </section>
 
     <!-- ===== 视图：意图详情（作战室） ===== -->
     <section id="view-intent" hidden>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn" id="btnBackIntent">← 返回监控</button>
+        <button class="btn" id="btnBackIntent" data-i18n="intent.back">← 返回监控</button>
         <span class="st info" id="intentStatusBadge">—</span>
         <span class="mono" style="color:var(--text-2);font-size:12px" id="intentIdLabel"></span>
         <span class="spacer"></span>
-        <button class="btn danger" id="btnCancelIntent">取消派发</button>
+        <button class="btn danger" id="btnCancelIntent" data-i18n="intent.cancel">取消派发</button>
       </div>
       <div class="grid">
         <div class="panel">
-          <h2>意图 <span class="hint">GET /api/intents/:id</span></h2>
+          <h2><span data-i18n="intent.title">意图</span> <span class="hint">GET /api/intents/:id</span></h2>
           <div class="body"><div class="kv" id="intentMeta"></div></div>
         </div>
         <div class="panel">
-          <h2>决策 <span class="hint">聚合 / 冲突 / 仲裁</span></h2>
+          <h2><span data-i18n="intent.decision">决策</span> <span class="hint" data-i18n="intent.decisionHint">聚合 / 冲突 / 仲裁</span></h2>
           <div class="body" id="intentDecision"></div>
         </div>
       </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
-          <h2>分支 <span class="hint">fan-out</span></h2>
+          <h2><span data-i18n="intent.branches">分支</span> <span class="hint">fan-out</span></h2>
           <div class="body" id="intentBranches"></div>
         </div>
         <div class="panel">
-          <h2>实时事件 <span class="hint">SSE /api/intents/:id/events</span></h2>
+          <h2><span data-i18n="intent.events">实时事件</span> <span class="hint">SSE /api/intents/:id/events</span></h2>
           <div class="body" id="intentEvents"></div>
         </div>
       </div>
       <div class="panel" style="margin-top:14px" id="dagPanel" hidden>
-        <h2>DAG 编排 <span class="hint">GET /api/intents/:id/dag · S3 分层 / 关键路径</span></h2>
+        <h2><span data-i18n="intent.dag">DAG 编排</span> <span class="hint">GET /api/intents/:id/dag · <span data-i18n="intent.dagHint">S3 分层 / 关键路径</span></span></h2>
         <div class="body" id="dagBody"></div>
       </div>
       <div class="panel" style="margin-top:14px" id="accountabilityPanel" hidden>
-        <h2>责任链 <span class="hint">GET /api/org/accountability/:id · 执行 Agent → 部门 lead → 裁决者</span></h2>
+        <h2><span data-i18n="intent.acct">责任链</span> <span class="hint">GET /api/org/accountability/:id · <span data-i18n="intent.acctHint">执行 Agent → 部门 lead → 裁决者</span></span></h2>
         <div class="body" id="accountabilityBody"></div>
       </div>
       <div class="panel" style="margin-top:14px" id="replayPanel" hidden>
-        <h2>决策回放 <span class="hint">GET /api/intents/:id/replay?format=text · E1.6 离线重建</span></h2>
+        <h2><span data-i18n="intent.replay">决策回放</span> <span class="hint">GET /api/intents/:id/replay?format=text · <span data-i18n="intent.replayHint">E1.6 离线重建</span></span></h2>
         <div class="body" id="replayBody"></div>
       </div>
     </section>
@@ -514,26 +566,25 @@
     <!-- ===== 视图：连接 ===== -->
     <section id="view-connect" hidden>
       <div class="panel" style="max-width:560px">
-        <h2>连接配置 <span class="hint">localStorage</span></h2>
+        <h2><span data-i18n="conn.title">连接配置</span> <span class="hint">localStorage</span></h2>
         <div class="body">
           <div class="form">
             <div class="row">
-              <label for="cBase">API 地址</label>
+              <label for="cBase" data-i18n="conn.base">API 地址</label>
               <input id="cBase" autocomplete="off" placeholder="http://127.0.0.1:8787">
             </div>
             <div class="row">
-              <label for="cToken">内部令牌（ZEUS_INTERNAL_TOKEN）</label>
+              <label for="cToken" data-i18n="conn.token">内部令牌（ZEUS_INTERNAL_TOKEN）</label>
               <input id="cToken" type="password" autocomplete="off" placeholder="Bearer token">
             </div>
             <div class="actions">
-              <button class="btn primary" id="btnSaveConn">保存并测试</button>
-              <button class="btn" id="btnClearConn">清除</button>
+              <button class="btn primary" id="btnSaveConn" data-i18n="conn.save">保存并测试</button>
+              <button class="btn" id="btnClearConn" data-i18n="conn.clear">清除</button>
             </div>
           </div>
           <div class="cors-note" id="corsNote" hidden>
-            若页面提示连接失败：请以 <code>ZEUS_CORS_ORIGINS=http://localhost:5173</code>（你的页面地址）启动
-            <code>node dist/http/serve.js</code>，或使用 <code>--cors</code> 等价环境变量。
-            详情见 <code>docs/deferred-items.md</code> #34 方案 A。
+            <span data-i18n="conn.cors1">若页面提示连接失败：请以</span> <code>ZEUS_CORS_ORIGINS=http://localhost:5173</code><span data-i18n="conn.cors2">（你的页面地址）启动</span>
+            <code>node dist/http/serve.js</code><span data-i18n="conn.cors3">，或使用 </span><code>--cors</code><span data-i18n="conn.cors4"> 等价环境变量。详情见 docs/deferred-items.md #34 方案 A。</span>
           </div>
         </div>
       </div>
@@ -542,9 +593,844 @@
 </div>
 
 <div class="toasts" id="toasts"></div>
+<div id="dlgRoot"></div>
 <script>
 (function () {
   'use strict';
+
+  // ===== 设计基础：i18n / 主题 / 确认对话框（契约 docs/design-ui-foundations.md §3/§5/§7） =====
+  // I18N-RES-BEGIN
+  const RES = {
+    "zh-CN": {
+      "app.brand": "Zeus 监督台",
+      "nav.monitor": "监控",
+      "nav.oversight": "裁决",
+      "nav.grants": "授权",
+      "nav.org": "组织",
+      "nav.catalog": "目录",
+      "nav.connect": "连接",
+      "app.tagline": "只读监控 · 裁决 · 授权 · 组织",
+      "app.apiOnly": "UI 仅消费现有 HTTP API",
+      "conn.none": "未连接",
+      "top.refresh": "刷新",
+      "recog.title": "意图识别",
+      "recog.hint": "E2.6 仅识别不派发",
+      "recog.text": "操作者指令（自然语言）",
+      "common.realm": "数据域",
+      "recog.run": "识别",
+      "dispatch.title": "派发意图",
+      "common.skill": "技能",
+      "dispatch.vassals": "主体（逗号分隔，可选，缺省自动选靶）",
+      "common.mode": "模式",
+      "dispatch.modePlan": "plan（默认）",
+      "dispatch.modeExecute": "execute（需执行授权票据）",
+      "dispatch.params": "参数（JSON，可选）",
+      "dispatch.run": "派发",
+      "state.title": "内核状态",
+      "metrics.title": "并发指标",
+      "trend.title": "并发趋势",
+      "trend.hint": "前端 3s 采样 · 最近 40 个采样点",
+      "trend.waiting": "等待采样…",
+      "roster.title": "名册",
+      "audit.title": "扇出 / 决策时间线",
+      "audit.hint": "服务端过滤 decision/vassal · 关键字前端过滤",
+      "audit.allDecisions": "全部决策",
+      "audit.apply": "应用",
+      "domains.title": "数据域与跨域授权",
+      "recent.title": "最近意图",
+      "recent.hint": "本浏览器记录",
+      "esc.title": "待裁决队列",
+      "grant.title": "签发跨域授权",
+      "grant.subject": "主体（vassal 名 / 身份）",
+      "grant.realm": "企业数据域",
+      "grant.access": "访问级别",
+      "grant.accessRead": "read（读）",
+      "grant.accessWrite": "write（写）",
+      "common.grantedBy": "签发者",
+      "grant.reason": "理由（进审计）",
+      "grant.run": "签发授权",
+      "grant.active": "生效授权",
+      "contract.title": "签发委托契约",
+      "contract.tickets": "子票据上限",
+      "contract.concurrent": "并发上限",
+      "contract.hint": "能力固定 execute，窗口 24 小时；越界自动停用并升级人工。撤销即刻阻断派生。",
+      "contract.run": "签发契约",
+      "contract.list": "委托契约",
+      "watch.title": "登记无人值守触发器",
+      "watch.subject": "意图主题",
+      "watch.source": "谓词源",
+      "watch.field": "字段",
+      "watch.value": "阈值",
+      "watch.interval": "间隔（秒）",
+      "watch.fires": "触发预算",
+      "watch.delegation": "execute 委托契约 ID（execute 模式必填）",
+      "watch.hint": "内核不持定时器：登记后由外部调度器周期 POST /api/watch-tick 驱动。",
+      "watch.run": "登记触发器",
+      "watch.list": "无人值守触发器",
+      "watch.tick": "立即评估一次（POST /api/watch-tick）",
+      "org.title": "组织编制",
+      "org.hint": "部门 / lead / 成员 / 岗位技能",
+      "common.loading": "加载中…",
+      "catalog.skillsTitle": "技能目录",
+      "catalog.skillsHint": "注册/生命周期管理走 CLI/API，监督台只读",
+      "catalog.allStatus": "全部状态",
+      "catalog.connectorsTitle": "连接器（MCP）",
+      "catalog.connectorsHint": "令牌只回显有无，不回显值",
+      "intent.back": "← 返回监控",
+      "intent.cancel": "取消派发",
+      "intent.title": "意图",
+      "intent.decision": "决策",
+      "intent.decisionHint": "聚合 / 冲突 / 仲裁",
+      "intent.branches": "分支",
+      "intent.events": "实时事件",
+      "intent.dag": "DAG 编排",
+      "intent.dagHint": "S3 分层 / 关键路径",
+      "intent.acct": "责任链",
+      "intent.acctHint": "执行 Agent → 部门 lead → 裁决者",
+      "intent.replay": "决策回放",
+      "intent.replayHint": "E1.6 离线重建",
+      "conn.title": "连接配置",
+      "conn.base": "API 地址",
+      "conn.token": "内部令牌（ZEUS_INTERNAL_TOKEN）",
+      "conn.save": "保存并测试",
+      "conn.clear": "清除",
+      "conn.cors1": "若页面提示连接失败：请以",
+      "conn.cors2": "（你的页面地址）启动",
+      "conn.cors3": "，或使用 ",
+      "recog.textPh": "如：帮我审一下 zeus 的 PR 并给合并建议",
+      "dispatch.vassalsPh": "如 a1, a2",
+      "audit.vassalPh": "主体过滤（服务端）",
+      "audit.keywordPh": "关键字过滤（前端）",
+      "grant.subjectPh": "如 jev",
+      "grant.reasonPh": "如 review",
+      "common.skillPh": "如 research",
+      "watch.subjectPh": "如 queue is deep",
+      "watch.delegationPh": "delegation contract id",
+      "common.none": "暂无数据",
+      "common.netFail": "网络/跨域失败：{msg}",
+      "common.on": "开",
+      "common.off": "关",
+      "common.active": "生效",
+      "common.revoke": "撤销",
+      "common.revokeFailed": "撤销失败：{msg}",
+      "conn.cors4": " 等价环境变量。详情见 docs/deferred-items.md #34 方案 A。",
+      "top.poll": "轮询：{state}",
+      "theme.dark": "深色",
+      "theme.light": "浅色",
+      "dlg.ok": "确定",
+      "dlg.cancel": "取消",
+      "common.open": "打开",
+      "dag.layer": "层 {n}",
+      "dag.overallState": "整体状态：",
+      "org.emptyDept": "（空编）",
+      "org.headcountLine": "编制 {n} 人 · lead：",
+      "org.missionLine": "使命：",
+      "audit.count": "{n} 条",
+      "audit.countShown": "{shown} / {total} 条",
+      "trend.inflight": "在途",
+      "trend.queued": "排队",
+      "trend.peakInflight": "峰值在途",
+      "trend.samples": "采样",
+      "connect.items": "{n} 项",
+      "sse.settled": "意图已结算 · {status}",
+      "intent.viewTitle": "意图详情",
+      "skill.loading": "（加载中…）",
+      "skill.emptyRegistry": "（技能注册中心为空）",
+      "skill.deprecated": "（弃用）",
+      "skill.loadFailed": "（技能加载失败）",
+      "skill.listLoadFailed": "技能列表加载失败：{msg}",
+      "dispatch.needSkill": "请先选择技能",
+      "dispatch.badJson": "参数不是合法 JSON",
+      "dispatch.confirm": "派发意图：{skill} @ {realm}{vassals} ？",
+      "dispatch.dispatching": "派发中（同步等结算）…",
+      "dispatch.noIntentId": "派发未返回 intentId",
+      "dispatch.ok": "已派发：{id}",
+      "dispatch.failed": "派发失败：{msg}",
+      "recog.needInput": "请输入操作者指令",
+      "recog.running": "识别中…",
+      "recog.hit": "识别命中",
+      "recog.use": "以此派发",
+      "recog.hintSuggest": "识别仅建议形状，参数需人工确认",
+      "recog.mode": "模式",
+      "recog.confidence": "置信",
+      "recog.prefill": "已预填派发表单（技能 {skill}），确认参数后派发",
+      "recog.unknown": "未知",
+      "recog.miss": "识别未命中",
+      "recog.failed": "识别失败：{msg}",
+      "org.keyPath": "关键路径",
+      "org.noDepartments": "尚未建立任何部门（POST /api/org/departments 由 CLI/API 管理，监督台只读）",
+      "org.unspecified": "（未指定）",
+      "org.noRegistry": "本进程未装配组织注册中心（orgRegistry），无组织面",
+      "catalog.count": "共 {total} 个",
+      "catalog.showing": " · 显示 {n}",
+      "catalog.noneWithState": "无 {status} 状态的技能",
+      "catalog.empty": "技能注册中心为空",
+      "catalog.noSkillRegistry": "本进程未装配技能注册中心",
+      "catalog.skillLoadFailed": "技能目录加载失败：{msg}",
+      "conn2.none": "尚未声明任何连接器（POST /api/connectors 由 CLI/API 管理，监督台只读）",
+      "conn2.caps": "{tools} 工具 / {resources} 资源 / {prompts} 提示",
+      "conn2.tokenSet": "已配",
+      "conn2.tokenNone": "无",
+      "conn2.noRegistry": "本进程未装配连接器注册中心",
+      "conn2.loadFailed": "连接器加载失败：{msg}",
+      "recent.empty": "本浏览器尚无派发记录（派发后自动记录）",
+      "task.completed": "完成",
+      "task.failed": "失败",
+      "task.canceled": "已取消",
+      "task.running": "进行中",
+      "task.queued": "排队中",
+      "task.dispatched": "已派发",
+      "task.acknowledged": "已确认",
+      "task.timed_out": "超时",
+      "task.refused": "拒绝",
+      "intent.notFound": "未找到",
+      "intent.gone": "意图不存在或已过期",
+      "intent.settled": "已结算",
+      "intent.connecting": "意图尚未结算，连接实时事件流…",
+      "intent.loadFailed": "意图加载失败：{msg}",
+      "intent.cancelConfirm": "确定取消意图 {id} 的派发吗？（分支取消会写入审计）",
+      "intent.canceled": "已取消 {n} 个分支（{ids}）",
+      "intent.noActiveBranches": "无活动分支可取消（意图已结算）",
+      "intent.cancelFailed": "取消失败：{msg}",
+      "intent.resultState": " · 结果状态 ",
+      "intent.execAgents": "执行 Agent（{n}）",
+      "intent.deptLeads": "部门 lead（去重）",
+      "intent.unassigned": "无编制（不丢弃，单列）",
+      "intent.decider": "裁决者",
+      "replay.true": "true（回放）",
+      "dec.rule": "规则 ",
+      "dec.conclusion": "结论",
+      "dec.conclusionLine": "结论：",
+      "dec.noConclusion": "无结论",
+      "dec.reasonLine": "理由：",
+      "dec.marginLine": "票差：",
+      "dec.none": "尚无决策",
+      "dec.conflicts": "冲突 {n} 项",
+      "dec.operatorDecided": "操作者已裁决",
+      "dec.stanceLine": "立场「{stance}」",
+      "dec.backend": "决策后端",
+      "dec.confidence": " · 置信 ",
+      "dec.judge": "LLM 法官复核",
+      "dec.judgeRecommend": "推荐「",
+      "dec.judgeReviewed": "已复核",
+      "dec.judgeBelow": "未达门限",
+      "dec.judgeAgree": " · 同意规则结论",
+      "dec.judgeError": "后端错误",
+      "branch.none": "尚无分支",
+      "sse.branchStart": "分支开始 · {vassal} · {skill}",
+      "sse.branchEnd": "分支结束 · {vassal} · {outcome}",
+      "sse.branchReroute": "分支改道 · {from} → {to} · {skill}",
+      "sse.intentEnd": "意图结束 · {status}",
+      "sse.connecting": "连接实时事件流…",
+      "sse.broken": "事件流中断：{msg}，自动重连中…",
+      "state.persistOn": "持久化开",
+      "state.persistOff": "持久化关",
+      "state.auditDegraded": "审计降级",
+      "state.auditOk": "审计正常",
+      "state.signature": "签名 ",
+      "state.intents": "意图 ",
+      "state.escalations": "裁决 ",
+      "state.skills": "技能 ",
+      "state.domains": "域 ",
+      "state.backend": "决策后端：",
+      "state.backendRulesOnly": "决策后端：rules-only（本地规则聚合，无外部模型）",
+      "state.arbitration": "仲裁 ",
+      "state.threshold": "（门限 {value}）",
+      "metrics.inflight": "在途",
+      "metrics.peak": "峰值",
+      "metrics.queued": "队列",
+      "metrics.done": "完成",
+      "metrics.failed": "失败",
+      "metrics.timeout": "超时",
+      "metrics.canceled": "取消",
+      "roster.empty": "名册为空（尚未注册任何执行 Agent）",
+      "roster.revoked": "已吊销",
+      "roster.revoke": "吊销",
+      "roster.restore": "恢复",
+      "roster.stickyNote": "吊销对重新注册保持粘性；恢复是独立审计动作。",
+      "roster.confirmAction": "确定{action}执行 Agent「{name}」吗？{warn}",
+      "roster.actionDone": "已{action} {name}",
+      "roster.actionFailed": "{action}失败：{msg}",
+      "audit.noMatch": "无匹配当前关键字的审计条目",
+      "audit.empty": "审计为空（尚无扇出 / 决策事件）",
+      "audit.loadFailed": "审计加载失败：{msg}",
+      "domains.yes": "是",
+      "domains.no": "否",
+      "domains.empty": "尚未连接任何数据域",
+      "domains.grantsTitle": "跨域授权（{n}）",
+      "esc.kind.task-input": "任务输入",
+      "esc.kind.intent-conflict": "意图冲突",
+      "esc.kind.memory-dispute": "记忆争议",
+      "esc.kind.delegation-limit": "委托越限",
+      "esc.status.pending": "待决",
+      "esc.status.approved": "已批准",
+      "esc.status.rejected": "已拒绝",
+      "esc.count": "共 {total} 条（待决 {pending}）",
+      "esc.empty": "没有待处理的裁决",
+      "esc.noStances": "无可选立场",
+      "esc.optionsLine": "选项：",
+      "esc.stancesLine": "立场：",
+      "esc.notePh": "备注（可选，进审计）",
+      "esc.resolveStance": "裁决立场",
+      "esc.approveContractBtn": "签新契约并批准",
+      "esc.approveContractHint": "签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch；拒绝则放弃本次越界。",
+      "esc.approve": "批准",
+      "esc.reject": "拒绝",
+      "esc.confirmAction": "确定要{action}裁决 {id} 吗？",
+      "esc.needStance": "请先选择立场",
+      "esc.confirmStance": "确定按立场「{stance}」裁决 {id} 吗？",
+      "grant.count": "共 {n} 条",
+      "grant.empty": "没有生效中的跨域授权",
+      "grant.confirmRevoke": "确定吊销对 {subject} 的授权 {id} 吗？",
+      "grant.revoked": "已吊销授权 {id}",
+      "grant.revokeFailed": "吊销失败：{msg}",
+      "contract.unavailable": "契约面不可用：{msg}",
+      "contract.count": "共 {n} 份",
+      "contract.empty": "无契约——无人被授权自主执行",
+      "contract.revoked": "已撤销",
+      "contract.needSkill": "请填写技能",
+      "contract.badLimits": "票据上限与并发上限都要 ≥1，且并发 ≤ 票据",
+      "contract.confirm": "签发委托契约：{skill}（{tickets} 张 / 并发 {concurrent}，窗口 24h，能力 execute）？",
+      "contract.issued": "已签发契约",
+      "contract.failed": "签发失败：{msg}",
+      "contract.confirmRevoke": "撤销契约 {id} 吗？撤销即刻阻断后续派生。",
+      "contract.revokedOk": "已撤销契约 {id}",
+      "watch.unavailable": "watch 面不可用：{msg}",
+      "watch.count": "共 {n} 条",
+      "watch.empty": "无 watch——没有无人在场的意图来源",
+      "watch.disabled": "已停用",
+      "watch.needFields": "请填写技能、主题与谓词字段",
+      "watch.badNumbers": "间隔与触发预算都要 ≥1",
+      "watch.needContract": "execute 模式必须填委托契约 ID",
+      "watch.confirm": "登记无人值守触发器：{skill}（{mode}，{source}.{field}）？",
+      "watch.registered": "已登记 watch",
+      "watch.failed": "登记失败：{msg}",
+      "watch.tickDone": "已评估 {n}：触发 {fired} · 不可读 {unreadable} · 自动停用 {paused}",
+      "watch.tickFailed": "tick 失败：{msg}",
+      "watch.confirmRevoke": "撤销 watch {id} 吗？撤销后不再触发。",
+      "watch.revokedOk": "已撤销 watch {id}",
+      "watch.confirmApprove": "为 {id} 签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch 吗？",
+      "watch.approved": "已签新契约 {contract} 并换绑 watch",
+      "watch.approveFailed": "approve-contract 失败：{msg}",
+      "connect.noRealm": "（无企业数据域，先连接域）",
+      "connect.failed": "连接失败：{msg}",
+      "connect.loadFailed": "加载失败：{msg}",
+      "connect.ok": "已连接",
+      "connect.fail": "连接失败",
+      "action.executed": "已执行：{msg}",
+      "action.failed": "操作失败：{msg}",
+      "conn.savedTesting": "已保存，正在测试连接…",
+      "conn.testOk": "连接成功：{msg}",
+      "conn.cleared": "已清除连接配置",
+      "col.agent": "Agent",
+      "col.role": "角色",
+      "col.post": "岗位",
+      "col.skill": "技能",
+      "col.version": "版本",
+      "col.domain": "域",
+      "col.status": "状态",
+      "col.provider": "提供者",
+      "col.perms": "权限",
+      "col.connector": "连接器",
+      "col.transport": "传输",
+      "col.caps": "能力",
+      "col.token": "令牌",
+      "col.department": "部门",
+      "col.intentId": "意图 ID",
+      "col.time": "时间",
+      "col.actions": "操作",
+      "col.subject": "主体",
+      "col.stance": "立场",
+      "col.weight": "权重",
+      "col.reason": "理由",
+      "col.result": "结果",
+      "col.taskId": "taskId",
+      "col.timeout": "超时",
+      "col.calls": "调用",
+      "col.done": "完成",
+      "col.failed": "失败",
+      "col.failRate": "失败率",
+      "col.latency": "延迟 p50/p95",
+      "col.health": "健康",
+      "col.registered": "注册时间",
+      "col.governance": "治理",
+      "col.domainId": "域 ID",
+      "col.type": "类型",
+      "col.readonly": "只读",
+      "col.entries": "条目",
+      "col.summary": "内容摘要",
+      "col.level": "级别",
+      "col.escId": "裁决 ID",
+      "col.kind": "类型",
+      "col.reasonOptions": "原因 / 选项",
+      "col.grantId": "授权 ID",
+      "col.granterTime": "签发者 / 时间",
+      "col.contractId": "契约 ID",
+      "col.quota": "额度（已用/上限 · 在途/并发）",
+      "col.windowState": "窗口至 / 状态",
+      "col.watchId": "watch ID",
+      "col.mode": "模式",
+      "col.predicate": "谓词",
+      "col.firedBudget": "已触发/预算",
+      "col.lastFiredState": "上次触发 / 状态"
+    },
+    "en": {
+      "app.brand": "Zeus Supervisor",
+      "app.tagline": "Read-only monitoring · adjudication · grants · org",
+      "app.apiOnly": "UI consumes existing HTTP APIs only",
+      "nav.monitor": "Monitor",
+      "nav.oversight": "Adjudication",
+      "nav.grants": "Grants",
+      "nav.org": "Org",
+      "nav.catalog": "Catalog",
+      "nav.connect": "Connect",
+      "conn.none": "Not connected",
+      "conn.title": "Connection settings",
+      "conn.base": "API base URL",
+      "conn.token": "Internal token (ZEUS_INTERNAL_TOKEN)",
+      "conn.save": "Save & test",
+      "conn.clear": "Clear",
+      "conn.cors1": "If the page fails to connect, start with",
+      "conn.cors2": "(your page origin)",
+      "conn.cors3": ", or use the ",
+      "conn.cors4": " equivalent env var. See docs/deferred-items.md #34 plan A.",
+      "conn.savedTesting": "Saved; testing connection…",
+      "conn.testOk": "Connected: {msg}",
+      "conn.cleared": "Connection settings cleared",
+      "top.refresh": "Refresh",
+      "top.poll": "Poll: {state}",
+      "theme.dark": "Dark",
+      "theme.light": "Light",
+      "dlg.ok": "OK",
+      "dlg.cancel": "Cancel",
+      "common.open": "Open",
+      "dag.layer": "Layer {n}",
+      "dag.overallState": "Overall state: ",
+      "org.emptyDept": "(no members)",
+      "org.headcountLine": "Headcount {n} · lead: ",
+      "org.missionLine": "Mission: ",
+      "audit.count": "{n} entries",
+      "audit.countShown": "{shown} / {total} entries",
+      "trend.inflight": "In-flight",
+      "trend.queued": "Queued",
+      "trend.peakInflight": "Peak in-flight",
+      "trend.samples": "Samples",
+      "connect.items": "{n} items",
+      "sse.settled": "intent settled · {status}",
+      "common.none": "No data",
+      "common.netFail": "Network/CORS failure: {msg}",
+      "common.loading": "Loading…",
+      "common.skill": "Skill",
+      "common.realm": "Realm",
+      "common.mode": "Mode",
+      "common.grantedBy": "Granted by",
+      "common.skillPh": "e.g. research",
+      "common.on": "on",
+      "common.off": "off",
+      "common.active": "Active",
+      "common.revoke": "Revoke",
+      "common.revokeFailed": "Revoke failed: {msg}",
+      "recog.title": "Intent recognition",
+      "recog.hint": "E2.6 recognize only, no dispatch",
+      "recog.text": "Operator instruction (natural language)",
+      "recog.textPh": "e.g. Review zeus PRs and suggest merges",
+      "recog.run": "Recognize",
+      "recog.needInput": "Enter an operator instruction",
+      "recog.running": "Recognizing…",
+      "recog.hit": "Recognition hit",
+      "recog.use": "Dispatch with this",
+      "recog.hintSuggest": "Recognition only suggests a shape; confirm params before dispatch",
+      "recog.mode": "mode",
+      "recog.confidence": "confidence",
+      "recog.prefill": "Dispatch form prefilled (skill {skill}); confirm params, then dispatch",
+      "recog.unknown": "unknown",
+      "recog.miss": "No recognition hit",
+      "recog.failed": "Recognition failed: {msg}",
+      "dispatch.title": "Dispatch intent",
+      "dispatch.vassals": "Subjects (comma-separated, optional; auto-target by default)",
+      "dispatch.vassalsPh": "e.g. a1, a2",
+      "dispatch.modePlan": "plan (default)",
+      "dispatch.modeExecute": "execute (requires execution grant ticket)",
+      "dispatch.params": "Params (JSON, optional)",
+      "dispatch.run": "Dispatch",
+      "dispatch.needSkill": "Select a skill first",
+      "dispatch.badJson": "Params are not valid JSON",
+      "dispatch.confirm": "Dispatch intent: {skill} @ {realm}{vassals}?",
+      "dispatch.dispatching": "Dispatching (sync settle)…",
+      "dispatch.noIntentId": "Dispatch returned no intentId",
+      "dispatch.ok": "Dispatched: {id}",
+      "dispatch.failed": "Dispatch failed: {msg}",
+      "skill.loading": "(loading…)",
+      "skill.emptyRegistry": "(skill registry is empty)",
+      "skill.deprecated": "(deprecated)",
+      "skill.loadFailed": "(failed to load skills)",
+      "skill.listLoadFailed": "Failed to load skills: {msg}",
+      "state.title": "Kernel state",
+      "state.persistOn": "persistence on",
+      "state.persistOff": "persistence off",
+      "state.auditDegraded": "audit degraded",
+      "state.auditOk": "audit ok",
+      "state.signature": "signing ",
+      "state.intents": "intents ",
+      "state.escalations": "escalations ",
+      "state.skills": "skills ",
+      "state.domains": "realms ",
+      "state.backend": "Decision backend: ",
+      "state.backendRulesOnly": "Decision backend: rules-only (local rule aggregation, no external model)",
+      "state.arbitration": "arbitration ",
+      "state.threshold": " (threshold {value})",
+      "metrics.title": "Concurrency metrics",
+      "metrics.inflight": "In-flight",
+      "metrics.peak": "Peak",
+      "metrics.queued": "Queued",
+      "metrics.done": "Done",
+      "metrics.failed": "Failed",
+      "metrics.timeout": "Timed out",
+      "metrics.canceled": "Canceled",
+      "trend.title": "Concurrency trend",
+      "trend.hint": "3s client sampling · last 40 points",
+      "trend.waiting": "Waiting for samples…",
+      "roster.title": "Roster",
+      "roster.empty": "Roster empty (no execution agents registered)",
+      "roster.revoked": "Revoked",
+      "roster.revoke": "Revoke",
+      "roster.restore": "Reinstate",
+      "roster.stickyNote": "Revocation sticks across re-registration; reinstate is a separate audited action.",
+      "roster.confirmAction": "{action} execution agent \"{name}\"?{warn}",
+      "roster.actionDone": "{action} done: {name}",
+      "roster.actionFailed": "{action} failed: {msg}",
+      "audit.title": "Fan-out / decision timeline",
+      "audit.hint": "Server-side decision/vassal filters · keyword filtered client-side",
+      "audit.allDecisions": "All decisions",
+      "audit.apply": "Apply",
+      "audit.vassalPh": "Subject filter (server-side)",
+      "audit.keywordPh": "Keyword filter (client-side)",
+      "audit.noMatch": "No audit entries match the keyword",
+      "audit.empty": "Audit empty (no fan-out / decision events yet)",
+      "audit.loadFailed": "Failed to load audit: {msg}",
+      "domains.title": "Realms & cross-realm grants",
+      "domains.yes": "yes",
+      "domains.no": "no",
+      "domains.empty": "No realms connected yet",
+      "domains.grantsTitle": "Cross-realm grants ({n})",
+      "recent.title": "Recent intents",
+      "recent.hint": "Recorded by this browser",
+      "recent.empty": "No dispatches recorded in this browser yet (recorded automatically after dispatch)",
+      "esc.title": "Adjudication queue",
+      "esc.kind.task-input": "Task input",
+      "esc.kind.intent-conflict": "Intent conflict",
+      "esc.kind.memory-dispute": "Memory dispute",
+      "esc.kind.delegation-limit": "Delegation limit",
+      "esc.status.pending": "Pending",
+      "esc.status.approved": "Approved",
+      "esc.status.rejected": "Rejected",
+      "esc.count": "{total} total ({pending} pending)",
+      "esc.empty": "No pending adjudications",
+      "esc.noStances": "No stances available",
+      "esc.optionsLine": "Options: ",
+      "esc.stancesLine": "Stances: ",
+      "esc.notePh": "Note (optional, audited)",
+      "esc.resolveStance": "Resolve stance",
+      "esc.approveContractBtn": "Issue new contract & approve",
+      "esc.approveContractHint": "Issues a new execute-only contract (4 tickets / concurrency 1 / 24h) and rebinds the watch; rejecting abandons this breach.",
+      "esc.approve": "Approve",
+      "esc.reject": "Reject",
+      "esc.confirmAction": "{action} adjudication {id}?",
+      "esc.needStance": "Select a stance first",
+      "esc.confirmStance": "Resolve {id} with stance \"{stance}\"?",
+      "grant.title": "Issue cross-realm grant",
+      "grant.subject": "Subject (vassal name / identity)",
+      "grant.subjectPh": "e.g. jev",
+      "grant.realm": "Enterprise realm",
+      "grant.access": "Access level",
+      "grant.accessRead": "read",
+      "grant.accessWrite": "write",
+      "grant.reason": "Reason (audited)",
+      "grant.reasonPh": "e.g. review",
+      "grant.run": "Issue grant",
+      "grant.active": "Active grants",
+      "grant.count": "{n} total",
+      "grant.empty": "No active cross-realm grants",
+      "grant.confirmRevoke": "Revoke grant {id} for {subject}?",
+      "grant.revoked": "Revoked grant {id}",
+      "grant.revokeFailed": "Revoke failed: {msg}",
+      "contract.title": "Issue delegation contract",
+      "contract.tickets": "Ticket limit",
+      "contract.concurrent": "Concurrency limit",
+      "contract.hint": "Capability fixed to execute, 24h window; out-of-bounds auto-pauses and escalates. Revocation blocks derivation immediately.",
+      "contract.run": "Issue contract",
+      "contract.list": "Delegation contracts",
+      "contract.unavailable": "Contract face unavailable: {msg}",
+      "contract.count": "{n} total",
+      "contract.empty": "No contracts — no one is authorized to execute autonomously",
+      "contract.revoked": "Revoked",
+      "contract.needSkill": "Fill in the skill",
+      "contract.badLimits": "Ticket limit and concurrency must both be ≥1, and concurrency ≤ tickets",
+      "contract.confirm": "Issue delegation contract: {skill} ({tickets} tickets / concurrency {concurrent}, 24h window, execute capability)?",
+      "contract.issued": "Contract issued",
+      "contract.failed": "Issue failed: {msg}",
+      "contract.confirmRevoke": "Revoke contract {id}? Revocation immediately blocks further derivation.",
+      "contract.revokedOk": "Revoked contract {id}",
+      "watch.title": "Register unattended trigger",
+      "watch.subject": "Intent subject",
+      "watch.subjectPh": "e.g. queue is deep",
+      "watch.source": "Predicate source",
+      "watch.field": "Field",
+      "watch.value": "Threshold",
+      "watch.interval": "Interval (s)",
+      "watch.fires": "Fire budget",
+      "watch.delegation": "execute delegation contract ID (required in execute mode)",
+      "watch.delegationPh": "delegation contract id",
+      "watch.hint": "The kernel holds no timers: after registration an external scheduler drives periodic POST /api/watch-tick.",
+      "watch.run": "Register trigger",
+      "watch.list": "Unattended triggers",
+      "watch.tick": "Evaluate once now (POST /api/watch-tick)",
+      "watch.unavailable": "Watch face unavailable: {msg}",
+      "watch.count": "{n} total",
+      "watch.empty": "No watches — no unattended intent sources",
+      "watch.disabled": "Disabled",
+      "watch.needFields": "Fill in skill, subject and predicate fields",
+      "watch.badNumbers": "Interval and fire budget must both be ≥1",
+      "watch.needContract": "execute mode requires a delegation contract ID",
+      "watch.confirm": "Register unattended trigger: {skill} ({mode}, {source}.{field})?",
+      "watch.registered": "Watch registered",
+      "watch.failed": "Registration failed: {msg}",
+      "watch.tickDone": "Evaluated {n}: fired {fired} · unreadable {unreadable} · auto-paused {paused}",
+      "watch.tickFailed": "tick failed: {msg}",
+      "watch.confirmRevoke": "Revoke watch {id}? It will not fire again.",
+      "watch.revokedOk": "Revoked watch {id}",
+      "watch.confirmApprove": "Issue a new execute-only contract (4 tickets / concurrency 1 / 24h) for {id} and rebind the watch?",
+      "watch.approved": "Issued new contract {contract} and rebound watch",
+      "watch.approveFailed": "approve-contract failed: {msg}",
+      "org.title": "Org structure",
+      "org.hint": "Departments / leads / members / post skills",
+      "org.keyPath": "critical path",
+      "org.noDepartments": "No departments yet (POST /api/org/departments is managed via CLI/API; supervisor is read-only)",
+      "org.unspecified": "(unspecified)",
+      "org.noRegistry": "This process has no org registry (orgRegistry) assembled; no org face",
+      "catalog.skillsTitle": "Skill catalog",
+      "catalog.skillsHint": "Registration & lifecycle via CLI/API; supervisor is read-only",
+      "catalog.allStatus": "All statuses",
+      "catalog.connectorsTitle": "Connectors (MCP)",
+      "catalog.connectorsHint": "Tokens shown as present/absent only, never values",
+      "catalog.count": "{total} total",
+      "catalog.showing": " · showing {n}",
+      "catalog.noneWithState": "No skills with status {status}",
+      "catalog.empty": "Skill registry is empty",
+      "catalog.noSkillRegistry": "This process has no skill registry assembled",
+      "catalog.skillLoadFailed": "Failed to load skill catalog: {msg}",
+      "conn2.none": "No connectors declared yet (POST /api/connectors is managed via CLI/API; supervisor is read-only)",
+      "conn2.caps": "{tools} tools / {resources} resources / {prompts} prompts",
+      "conn2.tokenSet": "set",
+      "conn2.tokenNone": "none",
+      "conn2.noRegistry": "This process has no connector registry assembled",
+      "conn2.loadFailed": "Failed to load connectors: {msg}",
+      "intent.viewTitle": "Intent detail",
+      "intent.back": "← Back to monitor",
+      "intent.cancel": "Cancel dispatch",
+      "intent.title": "Intent",
+      "intent.decision": "Decision",
+      "intent.decisionHint": "Aggregation / conflicts / arbitration",
+      "intent.branches": "Branches",
+      "intent.events": "Live events",
+      "intent.dag": "DAG orchestration",
+      "intent.dagHint": "S3 layering / critical path",
+      "intent.acct": "Accountability chain",
+      "intent.acctHint": "Execution agent → department lead → adjudicator",
+      "intent.replay": "Decision replay",
+      "intent.replayHint": "E1.6 offline rebuild",
+      "intent.notFound": "Not found",
+      "intent.gone": "Intent does not exist or has expired",
+      "intent.settled": "Settled",
+      "intent.connecting": "Intent not settled yet; connecting live event stream…",
+      "intent.loadFailed": "Failed to load intent: {msg}",
+      "intent.cancelConfirm": "Cancel dispatch of intent {id}? (Branch cancellation is audited)",
+      "intent.canceled": "Canceled {n} branch(es) ({ids})",
+      "intent.noActiveBranches": "No active branches to cancel (intent settled)",
+      "intent.cancelFailed": "Cancel failed: {msg}",
+      "intent.resultState": " · result state ",
+      "intent.execAgents": "Execution agents ({n})",
+      "intent.deptLeads": "Department leads (deduped)",
+      "intent.unassigned": "Unassigned (kept, listed separately)",
+      "intent.decider": "Adjudicator",
+      "replay.true": "true (replay)",
+      "dec.rule": "rule ",
+      "dec.conclusion": "conclusion",
+      "dec.conclusionLine": "Conclusion: ",
+      "dec.noConclusion": "no conclusion",
+      "dec.reasonLine": "Rationale: ",
+      "dec.marginLine": "Margin: ",
+      "dec.none": "No decision yet",
+      "dec.conflicts": "{n} conflict(s)",
+      "dec.operatorDecided": "Operator adjudicated",
+      "dec.stanceLine": "stance \"{stance}\"",
+      "dec.backend": "Decision backend",
+      "dec.confidence": " · confidence ",
+      "dec.judge": "LLM judge review",
+      "dec.judgeRecommend": "recommends \"",
+      "dec.judgeReviewed": "reviewed",
+      "dec.judgeBelow": "below threshold",
+      "dec.judgeAgree": " · agrees with rule conclusion",
+      "dec.judgeError": "backend error",
+      "branch.none": "No branches yet",
+      "sse.branchStart": "branch started · {vassal} · {skill}",
+      "sse.branchEnd": "branch ended · {vassal} · {outcome}",
+      "sse.branchReroute": "branch rerouted · {from} → {to} · {skill}",
+      "sse.intentEnd": "intent finished · {status}",
+      "sse.connecting": "Connecting live event stream…",
+      "sse.broken": "Event stream interrupted: {msg}; reconnecting…",
+      "task.completed": "completed",
+      "task.failed": "failed",
+      "task.canceled": "canceled",
+      "task.running": "running",
+      "task.queued": "queued",
+      "task.dispatched": "dispatched",
+      "task.acknowledged": "acknowledged",
+      "task.timed_out": "timed out",
+      "task.refused": "refused",
+      "connect.noRealm": "(no enterprise realm; connect a realm first)",
+      "connect.failed": "Connection failed: {msg}",
+      "connect.loadFailed": "Load failed: {msg}",
+      "connect.ok": "Connected",
+      "connect.fail": "Connection failed",
+      "action.executed": "Executed: {msg}",
+      "action.failed": "Action failed: {msg}",
+      "col.agent": "Agent",
+      "col.role": "Role",
+      "col.post": "Post",
+      "col.skill": "Skill",
+      "col.version": "Version",
+      "col.domain": "Realm",
+      "col.status": "Status",
+      "col.provider": "Provider",
+      "col.perms": "Permissions",
+      "col.connector": "Connector",
+      "col.transport": "Transport",
+      "col.caps": "Capabilities",
+      "col.token": "Token",
+      "col.department": "Department",
+      "col.intentId": "Intent ID",
+      "col.time": "Time",
+      "col.actions": "Actions",
+      "col.subject": "Subject",
+      "col.stance": "Stance",
+      "col.weight": "Weight",
+      "col.reason": "Reason",
+      "col.result": "Result",
+      "col.taskId": "taskId",
+      "col.timeout": "Timeout",
+      "col.calls": "Calls",
+      "col.done": "Done",
+      "col.failed": "Failed",
+      "col.failRate": "Fail rate",
+      "col.latency": "Latency p50/p95",
+      "col.health": "Health",
+      "col.registered": "Registered",
+      "col.governance": "Governance",
+      "col.domainId": "Realm ID",
+      "col.type": "Type",
+      "col.readonly": "Readonly",
+      "col.entries": "Entries",
+      "col.summary": "Summary",
+      "col.level": "Level",
+      "col.escId": "Adjudication ID",
+      "col.kind": "Kind",
+      "col.reasonOptions": "Reason / options",
+      "col.grantId": "Grant ID",
+      "col.granterTime": "Granted by / time",
+      "col.contractId": "Contract ID",
+      "col.quota": "Quota (used/limit · in-flight/concurrency)",
+      "col.windowState": "Window ends / status",
+      "col.watchId": "Watch ID",
+      "col.mode": "Mode",
+      "col.predicate": "Predicate",
+      "col.firedBudget": "Fired/budget",
+      "col.lastFiredState": "Last fired / status"
+    }
+  };
+  // I18N-RES-END
+  const LS_LANG = 'zeus-supervisor-lang';
+  const LS_THEME = 'zeus-supervisor-theme';
+  let lang = 'zh-CN';
+  try {
+    const saved = localStorage.getItem(LS_LANG);
+    if (saved === 'en' || saved === 'zh-CN') lang = saved;
+  } catch { /* noop */ }
+  function t(key, params) {
+    const table = RES[lang] || RES['zh-CN'];
+    let out = Object.prototype.hasOwnProperty.call(table, key) ? table[key]
+      : (Object.prototype.hasOwnProperty.call(RES['zh-CN'], key) ? RES['zh-CN'][key] : key);
+    if (params) for (const k of Object.keys(params)) out = out.split('{' + k + '}').join(String(params[k]));
+    return out;
+  }
+  // 状态枚举：API 原值不变，仅展示层映射标签；未知值回退原值（契约 §5.4）
+  function tl(key, raw) { return Object.prototype.hasOwnProperty.call(RES['zh-CN'], key) ? t(key) : raw; }
+  function taskStateLabel(v) { return tl('task.' + v, v); }
+  function escKindLabel(v) { return tl('esc.kind.' + v, v); }
+  function escStatusLabel(v) { return tl('esc.status.' + v, v); }
+  function currentTheme() { return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark'; }
+  function applyTheme(th) {
+    document.documentElement.dataset.theme = th;
+    try { localStorage.setItem(LS_THEME, th); } catch { /* noop */ }
+    refreshChrome();
+  }
+  function toggleTheme() { applyTheme(currentTheme() === 'light' ? 'dark' : 'light'); }
+  function refreshChrome() {
+    const bt = $('btnTheme'); if (bt) bt.textContent = t(currentTheme() === 'light' ? 'theme.light' : 'theme.dark');
+    const bl = $('btnLang'); if (bl) bl.textContent = lang === 'en' ? '中文' : 'EN';
+    const bp = $('btnPoll'); if (bp) bp.textContent = t('top.poll', { state: state.poll ? t('common.on') : t('common.off') });
+  }
+  function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.getAttribute('data-i18n')); });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => { el.setAttribute('placeholder', t(el.getAttribute('data-i18n-ph'))); });
+    document.documentElement.lang = lang;
+    refreshChrome();
+  }
+  function setLang(next) {
+    lang = next === 'en' ? 'en' : 'zh-CN';
+    try { localStorage.setItem(LS_LANG, lang); } catch { /* noop */ }
+    applyI18n();
+    route();
+  }
+  // 统一确认对话框：替代 window.confirm，Promise 化、键盘可达（Esc 取消）、E2E 可断言（契约 §7）
+  function confirmDialog(opts) {
+    const o = typeof opts === 'string' ? { body: opts } : (opts || {});
+    return new Promise(resolve => {
+      const mask = document.createElement('div');
+      mask.className = 'dlg-mask';
+      mask.innerHTML = '<div class="dlg" role="alertdialog" aria-modal="true">'
+        + (o.title ? '<div class="dlg-title"></div>' : '')
+        + '<div class="dlg-body"></div>'
+        + '<div class="dlg-actions"><button class="btn" type="button" data-act="no"></button>'
+        + '<button class="btn ' + (o.danger ? 'danger' : 'primary') + '" type="button" data-act="yes"></button></div></div>';
+      if (o.title) mask.querySelector('.dlg-title').textContent = o.title;
+      mask.querySelector('.dlg-body').textContent = o.body || '';
+      mask.querySelector('[data-act="no"]').textContent = t('dlg.cancel');
+      mask.querySelector('[data-act="yes"]').textContent = o.confirmLabel || t('dlg.ok');
+      const done = v => { window.removeEventListener('keydown', onKey, true); mask.remove(); resolve(v); };
+      const onKey = ev => { if (ev.key === 'Escape') { ev.stopPropagation(); done(false); } };
+      window.addEventListener('keydown', onKey, true);
+      mask.addEventListener('click', ev => {
+        if (ev.target === mask) { done(false); return; }
+        const act = ev.target && ev.target.dataset ? ev.target.dataset.act : '';
+        if (act === 'yes') done(true);
+        if (act === 'no') done(false);
+      });
+      $('dlgRoot').appendChild(mask);
+      mask.querySelector('[data-act="yes"]').focus();
+    });
+  }
+  // 主题初始化（先于首帧，避免闪烁）：显式存储 > 系统偏好
+  try {
+    const savedTheme = localStorage.getItem(LS_THEME);
+    const preferLight = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.dataset.theme = savedTheme || (preferLight ? 'light' : 'dark');
+  } catch { document.documentElement.dataset.theme = 'dark'; }
+  setTimeout(function initChrome() {
+    applyI18n();
+    const bt = $('btnTheme'); if (bt) bt.addEventListener('click', toggleTheme);
+    const bl = $('btnLang'); if (bl) bl.addEventListener('click', function () { setLang(lang === 'en' ? 'zh-CN' : 'en'); });
+  }, 0);
   // ===== 状态与配置 =====
   const LS_KEY = 'zeus-supervisor-conn';
   const LS_RECENT = 'zeus-supervisor-recent';
@@ -598,7 +1484,7 @@
     setTimeout(() => el.remove(), kind === 'bad' ? 7000 : 4000);
   }
   const badge = (text, cls) => `<span class="st ${cls || ''}">${esc(text)}</span>`;
-  const emptyRow = msg => `<div class="empty">${esc(msg || '暂无数据')}</div>`;
+  const emptyRow = msg => `<div class="empty">${esc(msg || t('common.none'))}</div>`;
 
   // ===== API =====
   async function api(method, path, body) {
@@ -612,7 +1498,7 @@
     try {
       res = await fetch(url, opts);
     } catch (e) {
-      const err = new Error('网络/跨域失败：' + (e && e.message ? e.message : e));
+      const err = new Error(t('common.netFail', { msg: e && e.message ? e.message : e }));
       err.cors = true;
       throw err;
     }
@@ -638,7 +1524,7 @@
     try {
       res = await fetch(url, { method, headers });
     } catch (e) {
-      const err = new Error('网络/跨域失败：' + (e && e.message ? e.message : e));
+      const err = new Error(t('common.netFail', { msg: e && e.message ? e.message : e }));
       err.cors = true;
       throw err;
     }
@@ -652,7 +1538,7 @@
     }
     return text;
   }
-  const VIEWS = { monitor: '监控', oversight: '裁决', grants: '授权', org: '组织', catalog: '目录', connect: '连接' };
+  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, connect: 1 };
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
@@ -668,7 +1554,7 @@
     }
     $('view-intent').hidden = state.view !== 'intent';
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    $('viewTitle').textContent = state.view === 'intent' ? '意图详情' : VIEWS[state.view];
+    $('viewTitle').textContent = state.view === 'intent' ? t('intent.viewTitle') : t('nav.' + state.view);
     stopSse();
     if (state.view !== 'connect' && state.conn.base) refreshView();
   }
@@ -677,44 +1563,44 @@
   // ===== 派发意图 =====
   async function loadSkills() {
     const sel = $('dSkill');
-    sel.innerHTML = '<option value="">（加载中…）</option>';
+    sel.innerHTML = '<option value="">' + esc(t('skill.loading')) + '</option>';
     try {
       const data = await api('GET', '/api/skills');
       const skills = (data && data.skills) || [];
-      if (!skills.length) { sel.innerHTML = '<option value="">（技能注册中心为空）</option>'; return; }
-      sel.innerHTML = skills.map(s => `<option value="${esc(s.id)}">${esc(s.id)}${s.name && s.name !== s.id ? ' · ' + esc(s.name) : ''}${s.status === 'deprecated' ? '（弃用）' : ''}</option>`).join('');
+      if (!skills.length) { sel.innerHTML = '<option value="">' + esc(t('skill.emptyRegistry')) + '</option>'; return; }
+      sel.innerHTML = skills.map(s => `<option value="${esc(s.id)}">${esc(s.id)}${s.name && s.name !== s.id ? ' · ' + esc(s.name) : ''}${s.status === 'deprecated' ? t('skill.deprecated') : ''}</option>`).join('');
     } catch (e) {
-      sel.innerHTML = '<option value="">（技能加载失败）</option>';
-      toast('技能列表加载失败：' + e.message, 'bad');
+      sel.innerHTML = '<option value="">' + esc(t('skill.loadFailed')) + '</option>';
+      toast(t('skill.listLoadFailed', { msg: e.message }), 'bad');
     }
   }
 
   async function dispatchIntent() {
     const skill = $('dSkill').value;
-    if (!skill) { toast('请先选择技能', 'bad'); return; }
+    if (!skill) { toast(t('dispatch.needSkill'), 'bad'); return; }
     const realm = $('dRealm').value;
     const vassals = $('dVassals').value.split(',').map(v => v.trim()).filter(Boolean);
     const mode = $('dMode').value;
     let params = {};
     const raw = $('dParams').value.trim();
     if (raw) {
-      try { params = JSON.parse(raw); } catch { toast('参数不是合法 JSON', 'bad'); return; }
+      try { params = JSON.parse(raw); } catch { toast(t('dispatch.badJson'), 'bad'); return; }
     }
-    if (!window.confirm('派发意图：' + skill + ' @ ' + realm + (vassals.length ? ' → ' + vassals.join(', ') : '') + ' ？')) return;
+    if (!(await confirmDialog({ body: t('dispatch.confirm', { skill, realm, vassals: vassals.length ? ' → ' + vassals.join(', ') : '' }) }))) return;
     const btn = $('btnDispatch');
     btn.disabled = true;
     const prevLabel = btn.textContent;
-    btn.textContent = '派发中（同步等结算）…';
+    btn.textContent = t('dispatch.dispatching');
     try {
       const body = { skill, realm, params, ...(vassals.length ? { vassals } : {}), ...(mode === 'execute' ? { mode } : {}) };
       const r = await api('POST', '/api/intents', body);
       const intentId = r && r.intentId;
-      if (!intentId) { toast('派发未返回 intentId', 'bad'); return; }
+      if (!intentId) { toast(t('dispatch.noIntentId'), 'bad'); return; }
       rememberIntent(intentId, r.skill || skill, r.status || 'dispatched');
-      toast('已派发：' + intentId, 'ok');
+      toast(t('dispatch.ok', { id: intentId }), 'ok');
       location.hash = '#/intent/' + encodeURIComponent(intentId);
     } catch (e) {
-      toast('派发失败：' + e.message, 'bad');
+      toast(t('dispatch.failed', { msg: e.message }), 'bad');
     } finally {
       btn.disabled = false;
       btn.textContent = prevLabel;
@@ -724,20 +1610,20 @@
   // ===== 意图识别（E2.6，仅识别不派发） =====
   async function recognizeIntent() {
     const text = $('rText').value.trim();
-    if (!text) { toast('请输入操作者指令', 'bad'); return; }
+    if (!text) { toast(t('recog.needInput'), 'bad'); return; }
     const realm = $('rRealm').value;
     const btn = $('btnRecognize');
     const out = $('recognizeResult');
     btn.disabled = true;
-    btn.textContent = '识别中…';
+    btn.textContent = t('recog.running');
     try {
       const r = await api('POST', '/api/intents/recognize', { text, realm });
       if (r && r.ok && r.intent) {
         const it = r.intent;
         out.innerHTML = `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          ${badge('识别命中', 'ok')}<span style="font-size:13px">技能 <strong class="mono">${esc(it.skill)}</strong> · 模式 ${esc(it.mode)} · 置信 ${Math.round((r.confidence || 0) * 100)}%${r.backend && r.backend.model ? ' · ' + esc(r.backend.model) : ''}</span>
-          <button class="btn" id="btnUseRecognized">以此派发</button>
-          <span class="hint">识别仅建议形状，参数需人工确认</span>
+          ${badge(t('recog.hit'), 'ok')}<span style="font-size:13px">${esc(t('common.skill'))} <strong class="mono">${esc(it.skill)}</strong> · ${esc(t('recog.mode'))} ${esc(it.mode)} · ${esc(t('recog.confidence'))} ${Math.round((r.confidence || 0) * 100)}%${r.backend && r.backend.model ? ' · ' + esc(r.backend.model) : ''}</span>
+          <button class="btn" id="btnUseRecognized">${esc(t('recog.use'))}</button>
+          <span class="hint">${esc(t('recog.hintSuggest'))}</span>
         </div>`;
         const use = $('btnUseRecognized');
         use.addEventListener('click', () => {
@@ -747,19 +1633,19 @@
           $('dParams').value = JSON.stringify(it.params || {}, null, 2);
           $('dParams').focus();
           $('dParams').scrollIntoView({ behavior: 'smooth', block: 'center' });
-          toast('已预填派发表单（技能 ' + it.skill + '），确认参数后派发', 'ok');
+          toast(t('recog.prefill', { skill: it.skill }), 'ok');
         });
       } else {
-        const reason = r && r.reason ? r.reason : '未知';
+        const reason = r && r.reason ? r.reason : t('recog.unknown');
         const detail = r && r.detail ? '：' + r.detail : '';
-        out.innerHTML = `<div style="margin-top:8px">${badge('识别未命中', 'bad')} <span style="font-size:12px;color:var(--text-2)">${esc(reason)}${esc(detail)}</span></div>`;
+        out.innerHTML = `<div style="margin-top:8px">${badge(t('recog.miss'), 'bad')} <span style="font-size:12px;color:var(--text-2)">${esc(reason)}${esc(detail)}</span></div>`;
       }
     } catch (e) {
-      toast('识别失败：' + e.message, 'bad');
+      toast(t('recog.failed', { msg: e.message }), 'bad');
       out.innerHTML = '';
     } finally {
       btn.disabled = false;
-      btn.textContent = '识别';
+      btn.textContent = t('recog.run');
     }
   }
 
@@ -788,12 +1674,12 @@
       `<span class="dag-node ${nodeClass(state)}" title="${esc(nodeId)}">${esc(nodeId)}<i>${esc(state || '—')}</i></span>`;
     let html = '';
     if (dag.criticalPath && dag.criticalPath.length) {
-      html += `<div style="margin-bottom:8px;font-size:12px">${badge('关键路径', 'warn')} <span class="mono" style="font-size:11.5px">${dag.criticalPath.map(esc).join(' → ')}</span></div>`;
+      html += `<div style="margin-bottom:8px;font-size:12px">${badge(t('org.keyPath'), 'warn')} <span class="mono" style="font-size:11.5px">${dag.criticalPath.map(esc).join(' → ')}</span></div>`;
     }
     html += '<div style="display:flex;flex-direction:column;gap:8px">';
     dag.layers.forEach((layer, i) => {
       html += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span class="hint" style="flex:none">层 ${i + 1}</span>
+        <span class="hint" style="flex:none">${esc(t('dag.layer', { n: i + 1 }))}</span>
         ${layer.map(nid => {
           const node = (dag.nodes || []).find(n => n.nodeId === nid);
           return nodeLabel(nid, node ? node.state : undefined);
@@ -801,7 +1687,7 @@
       </div>`;
     });
     html += '</div>';
-    if (dag.state) html += `<div style="margin-top:8px;font-size:12px;color:var(--text-2)">整体状态：${badge(esc(dag.state), statusClass(dag.state))}</div>`;
+    if (dag.state) html += `<div style="margin-top:8px;font-size:12px;color:var(--text-2)">${esc(t('dag.overallState'))}${badge(esc(dag.state), statusClass(dag.state))}</div>`;
     body.innerHTML = html;
   }
 
@@ -809,13 +1695,13 @@
   function renderOrg(data) {
     const el = $('orgBody');
     const depts = (data && data.departments) || [];
-    if (!depts.length) { el.innerHTML = emptyRow('尚未建立任何部门（POST /api/org/departments 由 CLI/API 管理，监督台只读）'); return; }
+    if (!depts.length) { el.innerHTML = emptyRow(t('org.noDepartments')); return; }
     let html = '';
     for (const d of depts) {
       const members = d.members || [];
-      let rows = '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:20%"><col style="width:46%"></colgroup><tr><th>Agent</th><th>角色</th><th>岗位</th><th>技能</th></tr>';
+      let rows = '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:20%"><col style="width:46%"></colgroup><tr><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('col.role')) + '</th><th>' + esc(t('col.post')) + '</th><th>' + esc(t('col.skill')) + '</th></tr>';
       if (!members.length) {
-        rows += `<tr><td colspan="4" style="color:var(--text-3)">（空编）</td></tr>`;
+        rows += `<tr><td colspan="4" style="color:var(--text-3)">${esc(t('org.emptyDept'))}</td></tr>`;
       } else {
         for (const m of members) {
           const isLead = m.role === 'lead';
@@ -826,8 +1712,8 @@
       html += `<div class="panel" style="margin-bottom:14px;box-shadow:none;border:1px solid var(--line)">
         <h2 style="border:none;padding:0">${esc(d.name)} <span class="hint mono">${esc(d.departmentId)}</span></h2>
         <div class="body">
-          <div style="font-size:12.5px;color:var(--text-2);margin-bottom:6px">使命：${esc(d.mission || '—')}</div>
-          <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">编制 ${d.headcount} 人 · lead：${d.lead ? esc(d.lead) : '（未指定）'}</div>
+          <div style="font-size:12.5px;color:var(--text-2);margin-bottom:6px">${esc(t('org.missionLine'))}${esc(d.mission || '—')}</div>
+          <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">${esc(t('org.headcountLine', { n: d.headcount }))}${d.lead ? esc(d.lead) : t('org.unspecified')}</div>
           ${rows}
         </div>
       </div>`;
@@ -841,7 +1727,7 @@
       const data = await api('GET', '/api/org/chart');
       renderOrg(data);
     } catch (e) {
-      if (e.status === 404) { el.innerHTML = emptyRow('本进程未装配组织注册中心（orgRegistry），无组织面'); return; }
+      if (e.status === 404) { el.innerHTML = emptyRow(t('org.noRegistry')); return; }
       throw e;
     }
   }
@@ -853,9 +1739,9 @@
     const all = skills || [];
     const list = filter ? all.filter(s => s.status === filter) : all;
     const countEl = $('catSkillCount');
-    if (countEl) countEl.textContent = all.length + ' 个' + (filter ? ' · 显示 ' + list.length : '');
-    if (!list.length) { el.innerHTML = emptyRow(filter ? '无 ' + filter + ' 状态的技能' : '技能注册中心为空'); return; }
-    let rows = '<table><colgroup><col style="width:26%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:22%"><col style="width:18%"></colgroup><tr><th>技能</th><th>版本</th><th>域</th><th>状态</th><th>提供者</th><th>权限</th></tr>';
+    if (countEl) countEl.textContent = t('catalog.count', { total: all.length }) + (filter ? t('catalog.showing', { n: list.length }) : '');
+    if (!list.length) { el.innerHTML = emptyRow(filter ? t('catalog.noneWithState', { status: filter }) : t('catalog.empty')); return; }
+    let rows = '<table><colgroup><col style="width:26%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:22%"><col style="width:18%"></colgroup><tr><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.provider')) + '</th><th>' + esc(t('col.perms')) + '</th></tr>';
     for (const s of list) {
       const stCls = s.status === 'active' ? 'ok' : s.status === 'deprecated' ? 'warn' : '';
       rows += `<tr>
@@ -872,8 +1758,8 @@
 
   function renderConnectors(list) {
     const el = $('catalogConnectorsBody');
-    if (!list.length) { el.innerHTML = emptyRow('尚未声明任何连接器（POST /api/connectors 由 CLI/API 管理，监督台只读）'); return; }
-    let rows = '<table><colgroup><col style="width:24%"><col style="width:12%"><col style="width:36%"><col style="width:18%"><col style="width:10%"></colgroup><tr><th>连接器</th><th>状态</th><th>传输</th><th>能力</th><th>令牌</th></tr>';
+    if (!list.length) { el.innerHTML = emptyRow(t('conn2.none')); return; }
+    let rows = '<table><colgroup><col style="width:24%"><col style="width:12%"><col style="width:36%"><col style="width:18%"><col style="width:10%"></colgroup><tr><th>' + esc(t('col.connector')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.transport')) + '</th><th>' + esc(t('col.caps')) + '</th><th>' + esc(t('col.token')) + '</th></tr>';
     for (const c of list) {
       const stCls = c.status === 'connected' ? 'ok' : c.status === 'revoked' ? 'bad' : 'warn';
       const endpoint = c.endpoint || (c.transport && c.transport.endpoint) || '';
@@ -881,14 +1767,14 @@
         ? 'stdio: ' + c.command + ((c.args && c.args.length) ? ' ' + c.args.join(' ') : '')
         : (endpoint ? 'http: ' + endpoint : '—');
       const caps = c.capabilities
-        ? (c.capabilities.tools || []).length + ' 工具 / ' + (c.capabilities.resources || []).length + ' 资源 / ' + (c.capabilities.prompts || []).length + ' 提示'
+        ? t('conn2.caps', { tools: (c.capabilities.tools || []).length, resources: (c.capabilities.resources || []).length, prompts: (c.capabilities.prompts || []).length })
         : '—';
       rows += `<tr>
         <td class="mono">${esc(c.name)}<div class="hint" style="font-family:inherit">${esc(c.id)}</div></td>
         <td>${badge(c.status, stCls)}</td>
         <td class="mono" style="font-size:11px;word-break:break-all">${esc(transport)}</td>
         <td style="font-size:11px">${esc(caps)}</td>
-        <td>${c.hasToken ? badge('已配', 'ok') : badge('无', 'warn')}</td>
+        <td>${c.hasToken ? badge(t('conn2.tokenSet'), 'ok') : badge(t('conn2.tokenNone'), 'warn')}</td>
       </tr>`;
     }
     el.innerHTML = rows + '</table>';
@@ -904,13 +1790,13 @@
       renderSkills(state.skillsCache);
     } else {
       const e = skillsRes.reason || {};
-      $('catalogSkillsBody').innerHTML = emptyRow(e.status === 404 ? '本进程未装配技能注册中心' : '技能目录加载失败：' + (e.message || e));
+      $('catalogSkillsBody').innerHTML = emptyRow(e.status === 404 ? t('catalog.noSkillRegistry') : t('catalog.skillLoadFailed', { msg: e.message || e }));
     }
     if (connRes.status === 'fulfilled') {
       renderConnectors((connRes.value && connRes.value.connectors) || []);
     } else {
       const e = connRes.reason || {};
-      $('catalogConnectorsBody').innerHTML = emptyRow(e.status === 404 ? '本进程未装配连接器注册中心' : '连接器加载失败：' + (e.message || e));
+      $('catalogConnectorsBody').innerHTML = emptyRow(e.status === 404 ? t('conn2.noRegistry') : t('conn2.loadFailed', { msg: e.message || e }));
     }
   }
 
@@ -929,25 +1815,25 @@
     if (!chain) { panel.hidden = true; return; }
     panel.hidden = false;
     const nodeRow = n => `<tr><td class="mono">${esc(n.agentId)}</td><td>${esc(n.role)}</td><td>${esc(n.title || '—')}</td><td>${esc(n.departmentName || n.departmentId || '—')}</td></tr>`;
-    let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">技能 <strong class="mono">' + esc(chain.skill || '—') + '</strong> · 结果状态 ' + badge(esc(chain.status || '—'), statusClass(chain.status || '')) + '</div>';
+    let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px">' + esc(t('common.skill')) + ' <strong class="mono">' + esc(chain.skill || '—') + '</strong>' + esc(t('intent.resultState')) + badge(esc(chain.status || '—'), statusClass(chain.status || '')) + '</div>';
     const exec = chain.executing || [];
     if (exec.length) {
-      html += '<div style="font-size:12px;margin:6px 0 2px">执行 Agent（' + exec.length + '）</div>';
-      html += '<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:24%"><col style="width:36%"></colgroup><tr><th>Agent</th><th>角色</th><th>岗位</th><th>部门</th></tr>' + exec.map(nodeRow).join('') + '</table>';
+      html += '<div style="font-size:12px;margin:6px 0 2px">' + esc(t('intent.execAgents', { n: exec.length })) + '</div>';
+      html += '<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:24%"><col style="width:36%"></colgroup><tr><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('col.role')) + '</th><th>' + esc(t('col.post')) + '</th><th>' + esc(t('col.department')) + '</th></tr>' + exec.map(nodeRow).join('') + '</table>';
     }
     const leads = chain.leads || [];
     if (leads.length) {
-      html += '<div style="font-size:12px;margin:8px 0 2px">部门 lead（去重）</div>';
-      html += '<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:24%"><col style="width:36%"></colgroup><tr><th>Agent</th><th>角色</th><th>岗位</th><th>部门</th></tr>' + leads.map(nodeRow).join('') + '</table>';
+      html += '<div style="font-size:12px;margin:8px 0 2px">' + esc(t('intent.deptLeads')) + '</div>';
+      html += '<table><colgroup><col style="width:26%"><col style="width:14%"><col style="width:24%"><col style="width:36%"></colgroup><tr><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('col.role')) + '</th><th>' + esc(t('col.post')) + '</th><th>' + esc(t('col.department')) + '</th></tr>' + leads.map(nodeRow).join('') + '</table>';
     }
     const unassigned = chain.unassigned || [];
     if (unassigned.length) {
-      html += '<div style="font-size:12px;margin:8px 0 2px;color:var(--warn)">无编制（不丢弃，单列）</div>';
+      html += '<div style="font-size:12px;margin:8px 0 2px;color:var(--warn)">' + esc(t('intent.unassigned')) + '</div>';
       html += '<div class="mono" style="font-size:12px">' + unassigned.map(esc).join('、') + '</div>';
     }
     if (chain.driver) {
       const dr = chain.driver;
-      html += '<div style="font-size:12px;margin-top:8px">' + badge('裁决者', 'ok') + ' <span class="mono">' + esc(dr.escalationId || '—') + '</span> · 立场「' + esc(dr.stance || '—') + '」 · ' + fmtTime(dr.decidedAt) + '</div>';
+      html += '<div style="font-size:12px;margin-top:8px">' + badge(t('intent.decider'), 'ok') + ' <span class="mono">' + esc(dr.escalationId || '—') + '</span> · ' + esc(t('dec.stanceLine', { stance: dr.stance || '—' })) + ' · ' + fmtTime(dr.decidedAt) + '</div>';
     }
     body.innerHTML = html;
   }
@@ -987,8 +1873,8 @@
 
   function renderRecent() {
     const el = $('recentBody');
-    if (!state.recent.length) { el.innerHTML = emptyRow('本浏览器尚无派发记录（派发后自动记录）'); return; }
-    let rows = '<table><colgroup><col style="width:26%"><col style="width:20%"><col style="width:16%"><col style="width:22%"><col style="width:16%"></colgroup><tr><th>意图 ID</th><th>技能</th><th>状态</th><th>时间</th><th>操作</th></tr>';
+    if (!state.recent.length) { el.innerHTML = emptyRow(t('recent.empty')); return; }
+    let rows = '<table><colgroup><col style="width:26%"><col style="width:20%"><col style="width:16%"><col style="width:22%"><col style="width:16%"></colgroup><tr><th>' + esc(t('col.intentId')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.time')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const r of state.recent) {
       const cls = /fail/.test(r.status) ? 'bad' : /complet/.test(r.status) ? 'ok' : /needs-driver/.test(r.status) ? 'warn' : '';
       rows += `<tr>
@@ -996,7 +1882,7 @@
         <td>${esc(r.skill)}</td>
         <td>${badge(r.status, cls)}</td>
         <td class="mono" style="font-size:11.5px">${fmtTime(r.at)}</td>
-        <td><a href="#/intent/${encodeURIComponent(r.id)}">打开</a></td>
+        <td><a href="#/intent/${encodeURIComponent(r.id)}">${esc(t('common.open'))}</a></td>
       </tr>`;
     }
     el.innerHTML = rows + '</table>';
@@ -1009,13 +1895,12 @@
     if (/needs-driver|partial|pending/.test(st)) return 'warn';
     return 'info';
   }
-  const TASK_STATE_LABEL = { completed: '完成', failed: '失败', canceled: '已取消', running: '进行中', queued: '排队中', dispatched: '已派发', acknowledged: '已确认', timed_out: '超时', refused: '拒绝' };
 
   function renderIntent(r) {
     if (!r) {
-      $('intentStatusBadge').textContent = '未找到';
+      $('intentStatusBadge').textContent = t('intent.notFound');
       $('intentStatusBadge').className = 'st bad';
-      $('intentMeta').innerHTML = emptyRow('意图不存在或已过期');
+      $('intentMeta').innerHTML = emptyRow(t('intent.gone'));
       $('intentDecision').innerHTML = '';
       $('intentBranches').innerHTML = '';
       return;
@@ -1026,7 +1911,7 @@
     $('intentStatusBadge').className = 'st ' + statusClass(st);
     const terminal = st === 'completed' || st === 'failed' || st === 'canceled';
     $('btnCancelIntent').disabled = terminal;
-    $('btnCancelIntent').textContent = terminal ? '已结算' : '取消派发';
+    $('btnCancelIntent').textContent = terminal ? t('intent.settled') : t('intent.cancel');
 
     const kv = (k, v) => `<div class="k">${esc(k)}</div><div class="v">${v}</div>`;
     $('intentMeta').innerHTML = `<div class="kv">
@@ -1036,7 +1921,7 @@
       ${kv('realm', esc(r.realm + (r.realmId ? ' · ' + r.realmId : '')))}
       ${kv('createdAt', fmtTime(r.createdAt))}
       ${kv('status', badge(st, statusClass(st)))}
-      ${r.replayed ? kv('replayed', 'true（回放）') : ''}
+      ${r.replayed ? kv('replayed', t('replay.true')) : ''}
     </div>`;
 
     // 决策块
@@ -1044,25 +1929,25 @@
     const d = r.decision;
     if (r.intentId) rememberIntent(r.intentId, r.skill || '?', r.status || 'dispatched');
     if (d) {
-      dec += `<div style="margin-bottom:8px">${badge('规则 ' + (d.rule || '—'), 'info')} ${d.conclusion ? badge('结论', 'ok') : badge('无结论', 'warn')}</div>`;
-      if (d.conclusion) dec += `<div style="font-size:13px;margin-bottom:6px">结论：<strong>${esc(d.conclusion)}</strong></div>`;
-      dec += `<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">理由：${esc(d.reason || '—')}</div>`;
-      if (d.margin) dec += `<div style="font-size:12px;color:var(--text-2)">票差：${esc(d.margin.winner)} ${d.margin.winnerCount}/${d.margin.total}</div>`;
+      dec += `<div style="margin-bottom:8px">${badge(t('dec.rule') + (d.rule || '—'), 'info')} ${d.conclusion ? badge(t('dec.conclusion'), 'ok') : badge(t('dec.noConclusion'), 'warn')}</div>`;
+      if (d.conclusion) dec += `<div style="font-size:13px;margin-bottom:6px">${esc(t('dec.conclusionLine'))}<strong>${esc(d.conclusion)}</strong></div>`;
+      dec += `<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">${esc(t('dec.reasonLine'))}${esc(d.reason || '—')}</div>`;
+      if (d.margin) dec += `<div style="font-size:12px;color:var(--text-2)">${esc(t('dec.marginLine'))}${esc(d.margin.winner)} ${d.margin.winnerCount}/${d.margin.total}</div>`;
       const ps = d.positions || [];
       if (ps.length) {
-        dec += '<table style="margin-top:8px"><colgroup><col style="width:22%"><col style="width:20%"><col style="width:16%"><col style="width:42%"></colgroup><tr><th>主体</th><th>立场</th><th>权重</th><th>理由</th></tr>';
+        dec += '<table style="margin-top:8px"><colgroup><col style="width:22%"><col style="width:20%"><col style="width:16%"><col style="width:42%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.stance')) + '</th><th>' + esc(t('col.weight')) + '</th><th>' + esc(t('col.reason')) + '</th></tr>';
         for (const p of ps) {
           dec += `<tr><td class="mono">${esc(p.vassal)}</td><td>${esc(p.stance)}</td><td class="num">${p.weight != null ? p.weight : '—'}</td><td style="font-size:12px">${esc(p.rationale || '—')}</td></tr>`;
         }
         dec += '</table>';
       }
     } else {
-      dec = emptyRow('尚无决策');
+      dec = emptyRow(t('dec.none'));
     }
     // 冲突与仲裁
     const cs = r.conflicts || [];
     if (cs.length) {
-      dec += '<div style="margin-top:10px;font-size:12px;color:var(--warn)">冲突 ' + cs.length + ' 项</div>';
+      dec += '<div style="margin-top:10px;font-size:12px;color:var(--warn)">' + esc(t('dec.conflicts', { n: cs.length })) + '</div>';
       for (const c of cs) {
         const parties = (c.stances || []).map(s => `${esc(s.stance)}(${esc((s.vassals || []).join('+') || '?')})`).join(' vs ');
         dec += `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${esc(c.kind || 'split')} · ${parties || '—'}${c.summary ? ' · ' + esc(c.summary) : ''}<div style="font-size:11.5px;color:var(--text-3)">${esc(c.reason || '')}</div></div>`;
@@ -1070,24 +1955,24 @@
     }
     if (r.driverResolution) {
       const dr = r.driverResolution;
-      dec += `<div style="margin-top:10px;font-size:12px">${badge('司机已裁决', 'ok')} 立场「${esc(dr.stance)}」${dr.note ? ' · ' + esc(dr.note) : ''} · ${fmtTime(dr.decidedAt)}${dr.escalationId ? ' · ' + esc(dr.escalationId) : ''}</div>`;
+      dec += `<div style="margin-top:10px;font-size:12px">${badge(t('dec.operatorDecided'), 'ok')} ${esc(t('dec.stanceLine', { stance: dr.stance }))}${dr.note ? ' · ' + esc(dr.note) : ''} · ${fmtTime(dr.decidedAt)}${dr.escalationId ? ' · ' + esc(dr.escalationId) : ''}</div>`;
     }
     if (r.backendArbitration) {
       const ba = r.backendArbitration;
-      dec += `<div style="margin-top:10px;font-size:12px">${badge('决策后端', ba.concluded ? 'ok' : 'warn')} ${esc(ba.conclusion || '')}${ba.confidence != null ? ' · 置信 ' + Math.round(ba.confidence * 100) + '%' : ''}${ba.model ? ' · ' + esc(ba.model) : ''}</div>`;
+      dec += `<div style="margin-top:10px;font-size:12px">${badge(t('dec.backend'), ba.concluded ? 'ok' : 'warn')} ${esc(ba.conclusion || '')}${ba.confidence != null ? t('dec.confidence') + Math.round(ba.confidence * 100) + '%' : ''}${ba.model ? ' · ' + esc(ba.model) : ''}</div>`;
     }
     if (r.judgeReview) {
       const jr = r.judgeReview;
-      dec += `<div style="margin-top:10px;font-size:12px">${badge('LLM 法官复核', jr.escalated ? 'warn' : (jr.agreesWithRule ? 'ok' : 'info'))} ${jr.recommended ? '推荐「' + esc(jr.recommended) + '」' : (jr.judged ? '已复核' : '未达门限')}${jr.agreesWithRule ? ' · 同意规则结论' : ''}${jr.confidence != null ? ' · 置信 ' + Math.round(jr.confidence * 100) + '%' : ''}${jr.model ? ' · ' + esc(jr.model) : ''}${jr.error ? ' · ' + esc(jr.error.code || jr.error.message || '后端错误') : ''}</div>`;
+      dec += `<div style="margin-top:10px;font-size:12px">${badge(t('dec.judge'), jr.escalated ? 'warn' : (jr.agreesWithRule ? 'ok' : 'info'))} ${jr.recommended ? t('dec.judgeRecommend') + esc(jr.recommended) + '"' : (jr.judged ? t('dec.judgeReviewed') : t('dec.judgeBelow'))}${jr.agreesWithRule ? t('dec.judgeAgree') : ''}${jr.confidence != null ? t('dec.confidence') + Math.round(jr.confidence * 100) + '%' : ''}${jr.model ? ' · ' + esc(jr.model) : ''}${jr.error ? ' · ' + esc(jr.error.code || jr.error.message || t('dec.judgeError')) : ''}</div>`;
     }
     $('intentDecision').innerHTML = dec;
 
     // 分支块
     const bs = r.branches || [];
     if (!bs.length) {
-      $('intentBranches').innerHTML = emptyRow('尚无分支');
+      $('intentBranches').innerHTML = emptyRow(t('branch.none'));
     } else {
-      let rows = '<table><colgroup><col style="width:16%"><col style="width:12%"><col style="width:10%"><col style="width:14%"><col style="width:16%"><col style="width:32%"></colgroup><tr><th>主体</th><th>状态</th><th>结果</th><th>taskId</th><th>超时</th><th>原因</th></tr>';
+      let rows = '<table><colgroup><col style="width:16%"><col style="width:12%"><col style="width:10%"><col style="width:14%"><col style="width:16%"><col style="width:32%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.result')) + '</th><th>' + esc(t('col.taskId')) + '</th><th>' + esc(t('col.timeout')) + '</th><th>' + esc(t('col.reason')) + '</th></tr>';
       for (const b of bs) {
         // state is a TaskState string, not an object ({ state: ... }); normalize
         // so a §7-cancelled branch renders as 已取消 instead of 失败.
@@ -1095,10 +1980,10 @@
         const rowCls = b.ok ? 'branch-ok' : (stateName === 'running' || stateName === 'queued' || stateName === 'dispatched') ? 'branch-pending' : 'branch-bad';
         rows += `<tr class="${rowCls}">
           <td class="mono">${esc(b.vassal)}</td>
-          <td>${esc(TASK_STATE_LABEL[stateName] || stateName)}</td>
+          <td>${esc(taskStateLabel(stateName))}</td>
           <td>${b.ok ? badge('ok', 'ok') : badge('✗', 'bad')}</td>
           <td class="mono" style="font-size:11px">${esc(b.taskId || '—')}</td>
-          <td>${b.timedOut ? badge('超时', 'warn') : '—'}</td>
+          <td>${b.timedOut ? badge(t('task.timed_out'), 'warn') : '—'}</td>
           <td style="font-size:12px">${esc(b.reason || '—')}</td>
         </tr>`;
       }
@@ -1130,7 +2015,7 @@
           if (!evtEl.dataset.settledNote && !evtEl.querySelector('li')) {
             evtEl.dataset.settledNote = '1';
             const li = document.createElement('li');
-            li.innerHTML = `<span class="evt-time">${fmtTime(new Date().toISOString())}</span><span class="evt-mark finished"></span><span class="evt-body">意图已结算 · ${esc(r.status)}</span>`;
+            li.innerHTML = `<span class="evt-time">${fmtTime(new Date().toISOString())}</span><span class="evt-mark finished"></span><span class="evt-body">${esc(t('sse.settled', { status: r.status }))}</span>`;
             evtEl.appendChild(li);
           }
         }
@@ -1145,20 +2030,20 @@
         loadDag(id); // S3 DAG 视图（非阻塞；非 DAG 意图静默隐藏）
         $('accountabilityPanel').hidden = true; // 未结算：无 FanOutResult 可投影
         $('replayPanel').hidden = true;
-        $('intentStatusBadge').textContent = '进行中';
+        $('intentStatusBadge').textContent = t('task.running');
         $('intentStatusBadge').className = 'st warn';
         $('intentIdLabel').textContent = id;
-        $('intentMeta').innerHTML = '<div class="empty">意图尚未结算，连接实时事件流…</div>';
+        $('intentMeta').innerHTML = '<div class="empty">' + esc(t('intent.connecting')) + '</div>';
         $('intentDecision').innerHTML = '';
         $('intentBranches').innerHTML = '';
         $('btnCancelIntent').disabled = false;
-        $('btnCancelIntent').textContent = '取消派发';
+        $('btnCancelIntent').textContent = t('intent.cancel');
         startSse(id);
         return;
       }
       setConn(false);
       renderIntent(null);
-      toast('意图加载失败：' + e.message, 'bad');
+      toast(t('intent.loadFailed', { msg: e.message }), 'bad');
     }
   }
 
@@ -1172,10 +2057,10 @@
     if (!el) return;
     const now = fmtTime(new Date().toISOString());
     let mark = 'finished', head = esc(evt), detail = '';
-    if (evt === 'branch-started') { mark = 'started'; head = '分支开始 · ' + esc(payload.vassal || '?') + ' · ' + esc(payload.skill || ''); detail = 'runId ' + esc(payload.runId || '—'); }
-    else if (evt === 'branch-ended') { mark = 'ended'; head = '分支结束 · ' + esc(payload.vassal || '?') + ' · ' + esc(payload.outcome || ''); detail = payload.state ? 'state ' + esc(payload.state) : ''; }
-    else if (evt === 'branch-diverted') { mark = 'diverted'; head = '分支改道 · ' + esc(payload.from || '?') + ' → ' + esc(payload.to || '?') + ' · ' + esc(payload.skill || ''); }
-    else if (evt === 'intent-finished') { mark = 'finished'; head = '意图结束 · ' + esc(payload.status || ''); }
+    if (evt === 'branch-started') { mark = 'started'; head = esc(t('sse.branchStart', { vassal: payload.vassal || '?', skill: payload.skill || '' })); detail = 'runId ' + esc(payload.runId || '—'); }
+    else if (evt === 'branch-ended') { mark = 'ended'; head = esc(t('sse.branchEnd', { vassal: payload.vassal || '?', outcome: payload.outcome || '' })); detail = payload.state ? 'state ' + esc(payload.state) : ''; }
+    else if (evt === 'branch-diverted') { mark = 'diverted'; head = esc(t('sse.branchReroute', { from: payload.from || '?', to: payload.to || '?', skill: payload.skill || '' })); }
+    else if (evt === 'intent-finished') { mark = 'finished'; head = esc(t('sse.intentEnd', { status: payload.status || '' })); }
     const li = document.createElement('li');
     li.innerHTML = `<span class="evt-time">${now}</span><span class="evt-mark ${mark}"></span><span class="evt-body">${head}${detail ? `<div class="evt-detail">${detail}</div>` : ''}</span>`;
     el.appendChild(li);
@@ -1189,7 +2074,7 @@
     const { base, token } = state.conn;
     const url = base.replace(/\/+$/, '') + '/api/intents/' + encodeURIComponent(id) + '/events';
     const evtEl = $('intentEvents');
-    if (evtEl) { delete evtEl.dataset.settledNote; evtEl.innerHTML = '<div class="empty">连接实时事件流…</div>'; }
+    if (evtEl) { delete evtEl.dataset.settledNote; evtEl.innerHTML = '<div class="empty">' + esc(t('sse.connecting')) + '</div>'; }
     try {
       const res = await fetch(url, { headers: { authorization: 'Bearer ' + token, accept: 'text/event-stream' }, signal: ac.signal });
       if (!res.ok || !res.body) throw new Error('SSE ' + res.status);
@@ -1242,7 +2127,7 @@
         state.sseRetries = (state.sseRetries || 0) + 1;
         setTimeout(() => { state.sseRetries = 0; startSse(id); }, backoff);
       };
-      if (evtEl && !evtEl.querySelector('li')) evtEl.innerHTML = evtEl.innerHTML || emptyRow('事件流中断：' + esc(e.message) + '，自动重连中…');
+      if (evtEl && !evtEl.querySelector('li')) evtEl.innerHTML = evtEl.innerHTML || emptyRow(t('sse.broken', { msg: e.message }));
       if (state.view === 'intent' && state.intentId === id) {
         try {
           const r = await api('GET', '/api/intents/' + encodeURIComponent(id));
@@ -1258,21 +2143,21 @@
   async function cancelIntent() {
     const id = state.intentId;
     if (!id) return;
-    if (!window.confirm('确定取消意图 ' + id + ' 的派发吗？（分支取消会写入审计）')) return;
+    if (!(await confirmDialog({ body: t('intent.cancelConfirm', { id }), danger: true }))) return;
     try {
       const r = await api('POST', '/api/intents/' + encodeURIComponent(id) + '/cancel');
       const results = (r && r.results) || [];
       const canceled = results.filter(x => x && x.canceled).length;
       if (canceled > 0) {
-        toast('已取消 ' + canceled + ' 个分支（' + id + '）', 'ok');
+        toast(t('intent.canceled', { n: canceled, ids: id }), 'ok');
       } else {
         // All branches were already terminal when the cancel arrived.
-        toast('无活动分支可取消（意图已结算）', 'warn');
+        toast(t('intent.noActiveBranches'), 'warn');
       }
       stopSse();
       await loadIntent(id);
     } catch (e) {
-      toast('取消失败：' + e.message, 'bad');
+      toast(t('intent.cancelFailed', { msg: e.message }), 'bad');
     }
   }
 
@@ -1282,14 +2167,14 @@
     if (!s) { el.innerHTML = emptyRow(); return; }
     const c = s.counts || {};
     const bits = [];
-    bits.push(badge(s.persistence && s.persistence.enabled ? '持久化开' : '持久化关', s.persistence && s.persistence.enabled ? 'ok' : 'warn'));
-    bits.push(badge(s.audit && s.audit.degraded ? '审计降级' : '审计正常', s.audit && s.audit.degraded ? 'bad' : 'ok'));
-    bits.push(badge('签名 ' + (s.driverGrants ? s.driverGrants.authority : '?'), 'info'));
+    bits.push(badge(s.persistence && s.persistence.enabled ? t('state.persistOn') : t('state.persistOff'), s.persistence && s.persistence.enabled ? 'ok' : 'warn'));
+    bits.push(badge(s.audit && s.audit.degraded ? t('state.auditDegraded') : t('state.auditOk'), s.audit && s.audit.degraded ? 'bad' : 'ok'));
+    bits.push(badge(t('state.signature') + (s.driverGrants ? s.driverGrants.authority : '?'), 'info'));
     bits.push(badge('Agent ' + (c.vassals || 0), c.vassals ? 'ok' : ''));
-    bits.push(badge('意图 ' + (c.intents || 0)));
-    bits.push(badge('裁决 ' + (c.escalations || 0), c.escalations ? 'warn' : ''));
-    bits.push(badge('技能 ' + (c.skills || 0)));
-    bits.push(badge('域 ' + (c.realms || 0)));
+    bits.push(badge(t('state.intents') + (c.intents || 0)));
+    bits.push(badge(t('state.escalations') + (c.escalations || 0), c.escalations ? 'warn' : ''));
+    bits.push(badge(t('state.skills') + (c.skills || 0)));
+    bits.push(badge(t('state.domains') + (c.realms || 0)));
     el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px">${bits.join('')}</div>
       <div style="margin-top:10px;font-size:12px;color:var(--text-2);font-family:var(--mono)">
         keyId=${esc(s.rosterKey ? s.rosterKey.keyId : '—')} · source=${esc(s.rosterKey ? s.rosterKey.source : '—')}
@@ -1302,12 +2187,12 @@
     const el = $('stateBody');
     if (!el || !d) return;
     const head = d.configured
-      ? badge('决策后端：' + (d.kind || '?') + (d.model ? ' · ' + d.model : ''), 'ok')
-      : badge('决策后端：rules-only（本地规则聚合，无外部模型）', 'warn');
+      ? badge(t('state.backend') + (d.kind || '?') + (d.model ? ' · ' + d.model : ''), 'ok')
+      : badge(t('state.backendRulesOnly'), 'warn');
     const arb = d.arbitration || {};
     const judge = d.judge || {};
-    const bits = ['仲裁 ' + (arb.enabled ? '开' : '关'),
-      'LLM-judge ' + (judge.enabled ? '开' + (judge.threshold != null ? '（门限 ' + judge.threshold + '）' : '') : '关')];
+    const bits = [t('state.arbitration') + (arb.enabled ? t('common.on') : t('common.off')),
+      'LLM-judge ' + (judge.enabled ? t('common.on') + (judge.threshold != null ? t('state.threshold', { value: judge.threshold }) : '') : t('common.off'))];
     const div = document.createElement('div');
     div.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
     div.innerHTML = head + '<span class="hint" style="font-family:var(--mono)">' + esc(bits.join(' · ')) + '</span>';
@@ -1319,18 +2204,18 @@
     if (!m) { el.innerHTML = emptyRow(); return; }
     const cell = (label, value, cls, sub) => `<div class="metric"><div class="label">${label}</div><div class="value ${cls || ''}">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
     el.innerHTML = `<div class="grid metrics">
-      ${cell('在途', m.inFlight, m.inFlight ? 'warn' : 'ok')}
-      ${cell('峰值', m.maxInFlight)}
-      ${cell('队列', m.queueDepth, m.queueDepth ? 'warn' : '')}
-      ${cell('完成', m.completed, 'ok')}
-      ${cell('失败', m.failed, m.failed ? 'bad' : '')}
-      ${cell('超时', m.timedOut, m.timedOut ? 'warn' : '')}
-      ${cell('取消', m.canceled)}
+      ${cell(t('metrics.inflight'), m.inFlight, m.inFlight ? 'warn' : 'ok')}
+      ${cell(t('metrics.peak'), m.maxInFlight)}
+      ${cell(t('metrics.queued'), m.queueDepth, m.queueDepth ? 'warn' : '')}
+      ${cell(t('metrics.done'), m.completed, 'ok')}
+      ${cell(t('metrics.failed'), m.failed, m.failed ? 'bad' : '')}
+      ${cell(t('metrics.timeout'), m.timedOut, m.timedOut ? 'warn' : '')}
+      ${cell(t('metrics.canceled'), m.canceled)}
     </div>`;
     const pv = m.perVassal || {};
     const names = Object.keys(pv);
     if (names.length) {
-      let rows = '<table><colgroup><col style="width:18%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:26%"></colgroup><tr><th>主体</th><th>调用</th><th>完成</th><th>失败</th><th>失败率</th><th>延迟 p50/p95</th></tr>';
+      let rows = '<table><colgroup><col style="width:18%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:26%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.calls')) + '</th><th>' + esc(t('col.done')) + '</th><th>' + esc(t('col.failed')) + '</th><th>' + esc(t('col.failRate')) + '</th><th>' + esc(t('col.latency')) + '</th></tr>';
       for (const n of names) {
         const p = pv[n] || {};
         rows += `<tr><td class="mono">${esc(n)}</td><td class="num">${p.calls ?? 0}</td><td class="num">${p.completed ?? 0}</td><td class="num">${p.failed ?? 0}</td><td class="num">${p.failureRate != null ? Math.round(p.failureRate * 100) + '%' : '—'}</td><td class="mono">${p.latency ? p.latency.p50Ms + ' / ' + p.latency.p95Ms + 'ms' : '—'}</td></tr>`;
@@ -1343,16 +2228,16 @@
     const el = $('rosterBody');
     if (!r) { el.innerHTML = emptyRow(); return; }
     const entries = (r.snapshot && r.snapshot.entries) || [];
-    if (!entries.length) { el.innerHTML = emptyRow('名册为空（尚未注册任何执行 Agent）'); return; }
-    let rows = '<table><colgroup><col style="width:14%"><col style="width:10%"><col style="width:17%"><col style="width:10%"><col style="width:12%"><col style="width:17%"><col style="width:20%"></colgroup><tr><th>主体</th><th>域</th><th>技能</th><th>状态</th><th>健康</th><th>注册时间</th><th>治理</th></tr>';
+    if (!entries.length) { el.innerHTML = emptyRow(t('roster.empty')); return; }
+    let rows = '<table><colgroup><col style="width:14%"><col style="width:10%"><col style="width:17%"><col style="width:10%"><col style="width:12%"><col style="width:17%"><col style="width:20%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.health')) + '</th><th>' + esc(t('col.registered')) + '</th><th>' + esc(t('col.governance')) + '</th></tr>';
     for (const e of entries) {
       const revoked = e.status === 'revoked';
-      const status = revoked ? badge('已吊销', 'bad') : badge('active', 'ok');
+      const status = revoked ? badge(t('roster.revoked'), 'bad') : badge('active', 'ok');
       const health = (e.health && e.health.status) || 'unknown';
       const hb = health === 'healthy' ? badge('healthy', 'ok') : health === 'sick' ? badge('sick', 'bad') : badge(health, 'warn');
       const gov = revoked
-        ? `<button class="btn small" data-act="reinstate-vassal" data-name="${esc(e.name)}">恢复</button>`
-        : `<button class="btn small danger" data-act="revoke-vassal" data-name="${esc(e.name)}">吊销</button>`;
+        ? `<button class="btn small" data-act="reinstate-vassal" data-name="${esc(e.name)}">${esc(t('roster.restore'))}</button>`
+        : `<button class="btn small danger" data-act="revoke-vassal" data-name="${esc(e.name)}">${esc(t('roster.revoke'))}</button>`;
       rows += `<tr><td class="mono">${esc(e.name)}</td><td>${esc(e.domain)}</td><td>${esc((e.skills || []).map(s => s.id).join(', ') || '—')}</td><td>${status}</td><td>${hb}</td><td class="mono">${fmtTime(e.registeredAt)}</td><td>${gov}</td></tr>`;
     }
     el.innerHTML = rows + '</table>';
@@ -1373,8 +2258,8 @@
     const kw = (state.auditFilter.keyword || '').trim().toLowerCase();
     const shown = kw ? entries.filter(e => [e.decision, e.vassal, e.skill, e.detail, e.runId, e.realm].some(v => String(v || '').toLowerCase().includes(kw))) : entries;
     const countEl = $('afCount');
-    if (countEl) countEl.textContent = kw ? `${shown.length} / ${entries.length} 条` : `${entries.length} 条`;
-    if (!shown.length) { el.innerHTML = emptyRow(kw ? '无匹配当前关键字的审计条目' : '审计为空（尚无扇出 / 决策事件）'); return; }
+    if (countEl) countEl.textContent = kw ? t('audit.countShown', { shown: shown.length, total: entries.length }) : t('audit.count', { n: entries.length });
+    if (!shown.length) { el.innerHTML = emptyRow(kw ? t('audit.noMatch') : t('audit.empty')); return; }
     let html = '<ul class="timeline">';
     for (const e of shown) {
       const cls = auditClass(e.decision);
@@ -1399,7 +2284,7 @@
     const seen = new Set();
     for (const e of entries) if (e.decision) seen.add(e.decision);
     const vals = Array.from(seen).sort();
-    sel.innerHTML = '<option value="">全部决策</option>' + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    sel.innerHTML = '<option value="">' + esc(t('audit.allDecisions')) + '</option>' + vals.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
     if (vals.includes(cur)) sel.value = cur;
   }
 
@@ -1420,7 +2305,7 @@
     state.auditFilter.vassal = ($('afVassal') ? $('afVassal').value : '').trim();
     const kw = ($('afKeyword') ? $('afKeyword').value : '').trim();
     state.auditFilter.keyword = kw;
-    loadAudit().catch(e => { $('auditBody').innerHTML = emptyRow('审计加载失败：' + esc(e.message)); });
+    loadAudit().catch(e => { $('auditBody').innerHTML = emptyRow(t('audit.loadFailed', { msg: e.message })); });
   }
 
   // ===== 并发趋势采样（前端 3s 环形缓冲，零内核改动） =====
@@ -1438,23 +2323,23 @@
     const el = $('trendBody');
     if (!el) return;
     const pts = state.trend;
-    if (!pts.length) { el.innerHTML = '<div class="empty">等待采样…</div>'; return; }
+    if (!pts.length) { el.innerHTML = '<div class="empty">' + esc(t('trend.waiting')) + '</div>'; return; }
     const maxV = Math.max(1, ...pts.map(p => Math.max(p.inFlight, p.queueDepth)));
     const W = 300, H = 84, PAD = 4;
     const x = i => PAD + (W - PAD * 2) * (pts.length === 1 ? 0.5 : i / (pts.length - 1));
     const y = v => H - PAD - (H - PAD * 2) * (v / maxV);
     const line = key => pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p[key]).toFixed(1)}`).join('');
     const last = pts[pts.length - 1];
-    const svg = `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="并发趋势">
+    const svg = `<svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(t('trend.title'))}">
       <line x1="${PAD}" y1="${y(maxV)}" x2="${W - PAD}" y2="${y(maxV)}" stroke="var(--line)" stroke-dasharray="3 3"/>
       <path d="${line('inFlight')}" fill="none" stroke="var(--accent)" stroke-width="1.8"/>
       <path d="${line('queueDepth')}" fill="none" stroke="var(--warn)" stroke-width="1.4" stroke-dasharray="4 3"/>
     </svg>`;
     const leg = `<div class="trend-legend">
-      <span class="lg"><i style="background:var(--accent)"></i>在途<b>${last.inFlight}</b></span>
-      <span class="lg"><i style="background:var(--warn)"></i>排队<b>${last.queueDepth}</b></span>
-      <span class="lg peak">峰值在途<b>${last.maxInFlight}</b></span>
-      <span class="lg peak">采样<b>${pts.length}</b></span>
+      <span class="lg"><i style="background:var(--accent)"></i>${esc(t('trend.inflight'))}<b>${last.inFlight}</b></span>
+      <span class="lg"><i style="background:var(--warn)"></i>${esc(t('trend.queued'))}<b>${last.queueDepth}</b></span>
+      <span class="lg peak">${esc(t('trend.peakInflight'))}<b>${last.maxInFlight}</b></span>
+      <span class="lg peak">${esc(t('trend.samples'))}<b>${pts.length}</b></span>
     </div>`;
     el.innerHTML = `<div class="trend-wrap">${svg}${leg}</div>`;
   }
@@ -1478,17 +2363,17 @@
     const grants = d.grants || [];
     let html = '';
     if (realms.length) {
-      html += '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:46%"></colgroup><tr><th>域 ID</th><th>类型</th><th>只读</th><th>条目</th><th>内容摘要</th></tr>';
+      html += '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:46%"></colgroup><tr><th>' + esc(t('col.domainId')) + '</th><th>' + esc(t('col.type')) + '</th><th>' + esc(t('col.readonly')) + '</th><th>' + esc(t('col.entries')) + '</th><th>' + esc(t('col.summary')) + '</th></tr>';
       for (const r of realms) {
-        html += `<tr><td class="mono">${esc(r.realmId)}</td><td>${esc(r.type)}</td><td>${r.readOnly ? '是' : '否'}</td><td class="num">${r.itemCount ?? 0}</td><td class="mono" style="font-size:11px">${esc(r.contentDigest || '—')}</td></tr>`;
+        html += `<tr><td class="mono">${esc(r.realmId)}</td><td>${esc(r.type)}</td><td>${r.readOnly ? t('domains.yes') : t('domains.no')}</td><td class="num">${r.itemCount ?? 0}</td><td class="mono" style="font-size:11px">${esc(r.contentDigest || '—')}</td></tr>`;
       }
       html += '</table>';
     } else {
-      html += emptyRow('尚未连接任何数据域');
+      html += emptyRow(t('domains.empty'));
     }
     if (grants.length) {
-      html += '<div style="margin-top:10px;font-size:12px;color:var(--text-2)">跨域授权（' + grants.length + '）</div>';
-      html += '<table style="margin-top:4px"><colgroup><col style="width:18%"><col style="width:24%"><col style="width:10%"><col style="width:14%"><col style="width:34%"></colgroup><tr><th>主体</th><th>域</th><th>级别</th><th>签发者</th><th>理由</th></tr>';
+      html += '<div style="margin-top:10px;font-size:12px;color:var(--text-2)">' + esc(t('domains.grantsTitle', { n: grants.length })) + '</div>';
+      html += '<table style="margin-top:4px"><colgroup><col style="width:18%"><col style="width:24%"><col style="width:10%"><col style="width:14%"><col style="width:34%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.level')) + '</th><th>' + esc(t('col.grantedBy')) + '</th><th>' + esc(t('col.reason')) + '</th></tr>';
       for (const g of grants) {
         html += `<tr><td class="mono">${esc(g.subject)}</td><td class="mono" style="font-size:12px">${esc(g.realmId)}</td><td>${esc(g.access)}</td><td class="mono">${esc(g.grantedBy)}</td><td>${esc(g.reason || '—')}</td></tr>`;
       }
@@ -1498,28 +2383,26 @@
   }
 
   // ===== 裁决 =====
-  const KIND_LABEL = { 'task-input': '任务输入', 'intent-conflict': '意图冲突', 'memory-dispute': '记忆争议', 'delegation-limit': '委托越限' };
-  const ST_LABEL = { pending: '待决', approved: '已批准', rejected: '已拒绝' };
 
   function renderEscalations(list) {
     const el = $('escBody');
     const pending = (list || []).filter(e => e.status === 'pending');
     state.escPending = pending.length;
     $('escBadge').textContent = pending.length ? String(pending.length) : '';
-    $('escCount').textContent = (list || []).length ? (list || []).length + ' 条（待决 ' + pending.length + '）' : '';
-    if (!list || !list.length) { el.innerHTML = emptyRow('没有待处理的裁决'); return; }
-    let html = '<table><colgroup><col style="width:15%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:26%"><col style="width:10%"><col style="width:15%"></colgroup><tr><th>裁决 ID</th><th>类型</th><th>主体</th><th>技能</th><th>原因 / 选项</th><th>状态</th><th>操作</th></tr>';
+    $('escCount').textContent = (list || []).length ? t('esc.count', { total: (list || []).length, pending: pending.length }) : '';
+    if (!list || !list.length) { el.innerHTML = emptyRow(t('esc.empty')); return; }
+    let html = '<table><colgroup><col style="width:15%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:26%"><col style="width:10%"><col style="width:15%"></colgroup><tr><th>' + esc(t('col.escId')) + '</th><th>' + esc(t('col.kind')) + '</th><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.reasonOptions')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const e of list) {
-      const st = e.status === 'pending' ? badge('待决', 'warn') : e.status === 'approved' ? badge('已批准', 'ok') : badge('已拒绝', 'bad');
+      const st = badge(escStatusLabel(e.status), e.status === 'pending' ? 'warn' : e.status === 'approved' ? 'ok' : 'bad');
       html += `<tr>
         <td class="mono" style="font-size:11.5px">${esc(e.id)}</td>
-        <td>${esc(KIND_LABEL[e.kind] || e.kind)}</td>
+        <td>${esc(escKindLabel(e.kind))}</td>
         <td class="mono">${esc(e.vassal)}</td>
         <td>${esc(e.skill)}</td>
         <td>
           <div style="font-size:12px">${esc(e.reason || '—')}</div>
-          ${(e.options && e.options.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">选项：${esc(e.options.join(' / '))}</div>` : ''}
-          ${(e.stances && e.stances.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">立场：${esc(e.stances.map(s => s.vassal + ':' + s.stance).join(' / '))}</div>` : ''}
+          ${(e.options && e.options.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">${esc(t('esc.optionsLine'))}${esc(e.options.join(' / '))}</div>` : ''}
+          ${(e.stances && e.stances.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">${esc(t('esc.stancesLine'))}${esc(e.stances.map(s => s.vassal + ':' + s.stance).join(' / '))}</div>` : ''}
         </td>
         <td>${st}</td>
         <td>${escActionButtons(e)}</td>
@@ -1530,27 +2413,27 @@
 
   function escActionButtons(e) {
     if (e.status !== 'pending') return '<span style="color:var(--text-3);font-size:12px">—</span>';
-    const noteInput = `<input id="note-${esc(e.id)}" placeholder="备注（可选，进审计）" style="width:100%;margin-bottom:4px">`;
+    const noteInput = `<input id="note-${esc(e.id)}" placeholder="${esc(t('esc.notePh'))}" style="width:100%;margin-bottom:4px">`;
     if (e.kind === 'intent-conflict') {
       const opts = (e.stances && e.stances.map(s => s.stance)) || (e.options || []);
       const sel = opts.length
         ? `<select id="stance-${esc(e.id)}" style="width:100%;margin-bottom:4px">${opts.map(o => `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select>`
-        : '<span style="color:var(--text-3);font-size:11px">无可选立场</span>';
+        : '<span style="color:var(--text-3);font-size:11px">' + esc(t('esc.noStances')) + '</span>';
       return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}${sel}
-        <button class="btn small" data-act="resolve" data-id="${esc(e.id)}">裁决立场</button></div>`;
+        <button class="btn small" data-act="resolve" data-id="${esc(e.id)}">${esc(t('esc.resolveStance'))}</button></div>`;
     }
     if (e.kind === 'delegation-limit') {
       return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}
         <div style="display:flex;gap:4px">
-          <button class="btn small primary" data-act="approve-contract" data-id="${esc(e.id)}">签新契约并批准</button>
-          <button class="btn small danger" data-act="reject" data-id="${esc(e.id)}">拒绝</button>
+          <button class="btn small primary" data-act="approve-contract" data-id="${esc(e.id)}">${esc(t('esc.approveContractBtn'))}</button>
+          <button class="btn small danger" data-act="reject" data-id="${esc(e.id)}">${esc(t('esc.reject'))}</button>
         </div>
-        <div style="font-size:11px;color:var(--text-3)">签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch；拒绝则放弃本次越界。</div></div>`;
+        <div style="font-size:11px;color:var(--text-3)">${esc(t('esc.approveContractHint'))}</div></div>`;
     }
     return `<div style="display:flex;flex-direction:column;gap:4px">${noteInput}
       <div style="display:flex;gap:4px">
-        <button class="btn small primary" data-act="approve" data-id="${esc(e.id)}">批准</button>
-        <button class="btn small danger" data-act="reject" data-id="${esc(e.id)}">拒绝</button>
+        <button class="btn small primary" data-act="approve" data-id="${esc(e.id)}">${esc(t('esc.approve'))}</button>
+        <button class="btn small danger" data-act="reject" data-id="${esc(e.id)}">${esc(t('esc.reject'))}</button>
       </div></div>`;
   }
 
@@ -1558,9 +2441,9 @@
   function renderGrantList(d) {
     const el = $('grantListBody');
     const grants = (d && d.grants) || [];
-    $('grantCount').textContent = grants.length ? grants.length + ' 条' : '';
-    if (!grants.length) { el.innerHTML = emptyRow('没有生效中的跨域授权'); return; }
-    let html = '<table><colgroup><col style="width:20%"><col style="width:8%"><col style="width:26%"><col style="width:12%"><col style="width:18%"><col style="width:16%"></colgroup><tr><th>授权 ID</th><th>级别</th><th>域</th><th>主体</th><th>签发者 / 时间</th><th>操作</th></tr>';
+    $('grantCount').textContent = grants.length ? t('grant.count', { n: grants.length }) : '';
+    if (!grants.length) { el.innerHTML = emptyRow(t('grant.empty')); return; }
+    let html = '<table><colgroup><col style="width:20%"><col style="width:8%"><col style="width:26%"><col style="width:12%"><col style="width:18%"><col style="width:16%"></colgroup><tr><th>' + esc(t('col.grantId')) + '</th><th>' + esc(t('col.level')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.granterTime')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const g of grants) {
       html += `<tr>
         <td class="mono" style="font-size:11.5px">${esc(g.grantId)}</td>
@@ -1568,7 +2451,7 @@
         <td class="mono" style="font-size:11.5px">${esc(g.realmId)}</td>
         <td class="mono">${esc(g.subject)}</td>
         <td class="mono" style="font-size:11.5px">${esc(g.grantedBy)} · ${fmtTime(g.grantedAt)}</td>
-        <td><button class="btn small danger" data-act="revoke" data-id="${esc(g.grantId)}" data-subject="${esc(g.subject)}">吊销</button></td>
+        <td><button class="btn small danger" data-act="revoke" data-id="${esc(g.grantId)}" data-subject="${esc(g.subject)}">${esc(t('roster.revoke'))}</button></td>
       </tr>`;
     }
     el.innerHTML = html + '</table>';
@@ -1580,24 +2463,24 @@
       const d = await api('GET', '/api/delegation-contracts');
       renderContractList(d);
     } catch (e) {
-      $('contractListBody').innerHTML = emptyRow('契约面不可用：' + esc(e.message));
+      $('contractListBody').innerHTML = emptyRow(t('contract.unavailable', { msg: e.message }));
     }
   }
 
   function renderContractList(d) {
     const el = $('contractListBody');
     const list = (d && d.contracts) || [];
-    $('contractCount').textContent = list.length ? list.length + ' 份' : '';
-    if (!list.length) { el.innerHTML = emptyRow('无契约——无人被授权自主执行'); return; }
-    let html = '<table><colgroup><col style="width:15%"><col style="width:11%"><col style="width:22%"><col style="width:20%"><col style="width:12%"><col style="width:20%"></colgroup><tr><th>契约 ID</th><th>技能</th><th>额度（已用/上限 · 在途/并发）</th><th>窗口至 / 状态</th><th>能力</th><th>操作</th></tr>';
+    $('contractCount').textContent = list.length ? t('contract.count', { n: list.length }) : '';
+    if (!list.length) { el.innerHTML = emptyRow(t('contract.empty')); return; }
+    let html = '<table><colgroup><col style="width:15%"><col style="width:11%"><col style="width:22%"><col style="width:20%"><col style="width:12%"><col style="width:20%"></colgroup><tr><th>' + esc(t('col.contractId')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.quota')) + '</th><th>' + esc(t('col.windowState')) + '</th><th>' + esc(t('col.caps')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const c of list) {
       const revoked = !!c.revokedAt;
       const status = revoked
-        ? '<span style="color:var(--text-3)">已撤销</span>'
-        : '<span style="color:var(--ok)">生效</span>';
+        ? '<span style="color:var(--text-3)">' + esc(t('contract.revoked')) + '</span>'
+        : '<span style="color:var(--ok)">' + esc(t('common.active')) + '</span>';
       const action = revoked
         ? '<span style="color:var(--text-3);font-size:12px">—</span>'
-        : '<button class="btn small danger" data-act="revoke-contract" data-id="' + esc(c.id) + '">撤销</button>';
+        : '<button class="btn small danger" data-act="revoke-contract" data-id="' + esc(c.id) + '">' + esc(t('common.revoke')) + '</button>';
       html += '<tr>' +
         '<td class="mono" style="font-size:11.5px" title="' + esc(c.id) + '">' + esc((c.id || '').slice(0, 13)) + '…</td>' +
         '<td class="mono">' + esc(c.skill) + '</td>' +
@@ -1615,9 +2498,9 @@
     const tickets = parseInt($('cTickets').value, 10);
     const concurrent = parseInt($('cConcurrent').value, 10);
     const by = $('cBy').value.trim() || 'driver';
-    if (!skill) { toast('请填写技能', 'bad'); return; }
-    if (!(tickets > 0) || !(concurrent > 0) || concurrent > tickets) { toast('票据上限与并发上限都要 ≥1，且并发 ≤ 票据', 'bad'); return; }
-    if (!window.confirm('签发委托契约：' + skill + '（' + tickets + ' 张 / 并发 ' + concurrent + '，窗口 24h，能力 execute）？')) return;
+    if (!skill) { toast(t('contract.needSkill'), 'bad'); return; }
+    if (!(tickets > 0) || !(concurrent > 0) || concurrent > tickets) { toast(t('contract.badLimits'), 'bad'); return; }
+    if (!(await confirmDialog({ body: t('contract.confirm', { skill, tickets, concurrent }) }))) return;
     try {
       await api('POST', '/api/delegation-contracts', {
         grantedBy: by,
@@ -1625,9 +2508,9 @@
         capabilities: ['execute'],
         limits: { maxChildTickets: tickets, maxConcurrent: concurrent, windowEndsAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString() },
       });
-      toast('已签发契约', 'ok');
+      toast(t('contract.issued'), 'ok');
       await loadContracts();
-    } catch (e) { toast('签发失败：' + e.message, 'bad'); }
+    } catch (e) { toast(t('contract.failed', { msg: e.message }), 'bad'); }
   }
 
   $('btnContract').addEventListener('click', issueContract);
@@ -1637,26 +2520,26 @@
       const d = await api('GET', '/api/watches');
       renderWatchList(d);
     } catch (e) {
-      $('watchListBody').innerHTML = emptyRow('watch 面不可用：' + esc(e.message));
+      $('watchListBody').innerHTML = emptyRow(t('watch.unavailable', { msg: e.message }));
     }
   }
 
   function renderWatchList(d) {
     const el = $('watchListBody');
     const list = (d && d.watches) || [];
-    $('watchCount').textContent = list.length ? list.length + ' 条' : '';
-    if (!list.length) { el.innerHTML = emptyRow('无 watch——没有无人在场的意图来源'); return; }
-    let html = '<table><colgroup><col style="width:14%"><col style="width:9%"><col style="width:8%"><col style="width:18%"><col style="width:13%"><col style="width:18%"><col style="width:20%"></colgroup><tr><th>watch ID</th><th>技能</th><th>模式</th><th>谓词</th><th>已触发/预算</th><th>上次触发 / 状态</th><th>操作</th></tr>';
+    $('watchCount').textContent = list.length ? t('watch.count', { n: list.length }) : '';
+    if (!list.length) { el.innerHTML = emptyRow(t('watch.empty')); return; }
+    let html = '<table><colgroup><col style="width:14%"><col style="width:9%"><col style="width:8%"><col style="width:18%"><col style="width:13%"><col style="width:18%"><col style="width:20%"></colgroup><tr><th>' + esc(t('col.watchId')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.mode')) + '</th><th>' + esc(t('col.predicate')) + '</th><th>' + esc(t('col.firedBudget')) + '</th><th>' + esc(t('col.lastFiredState')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const w of list) {
       const on = w.enabled !== false;
       const status = on
-        ? '<span style="color:var(--ok)">生效</span>'
-        : '<span style="color:var(--text-3)">已停用</span>';
+        ? '<span style="color:var(--ok)">' + esc(t('common.active')) + '</span>'
+        : '<span style="color:var(--text-3)">' + esc(t('watch.disabled')) + '</span>';
       const last = w.lastFiredAt ? String(w.lastFiredAt).replace('T', ' ').slice(0, 16) : '—';
       const pred = esc((w.predicate && w.predicate.source || '') + '.' + (w.predicate && w.predicate.field || '')) +
         ' ' + esc(w.predicate && w.predicate.op || '') + ' ' + esc(w.predicate && w.predicate.value !== undefined ? String(w.predicate.value) : '');
       const action = on
-        ? '<button class="btn small danger" data-act="revoke-watch" data-id="' + esc(w.id) + '">撤销</button>'
+        ? '<button class="btn small danger" data-act="revoke-watch" data-id="' + esc(w.id) + '">' + esc(t('common.revoke')) + '</button>'
         : '<span style="color:var(--text-3);font-size:12px">—</span>';
       html += '<tr>' +
         '<td class="mono" style="font-size:11.5px" title="' + esc(w.id) + '">' + esc((w.id || '').slice(0, 13)) + '…</td>' +
@@ -1681,9 +2564,9 @@
     const interval = parseInt($('wInterval').value, 10);
     const fires = parseInt($('wFires').value, 10);
     const delegation = $('wDelegation').value.trim();
-    if (!skill || !subject || !field) { toast('请填写技能、主题与谓词字段', 'bad'); return; }
-    if (!(interval > 0) || !(fires > 0)) { toast('间隔与触发预算都要 ≥1', 'bad'); return; }
-    if (mode === 'execute' && !delegation) { toast('execute 模式必须填委托契约 ID', 'bad'); return; }
+    if (!skill || !subject || !field) { toast(t('watch.needFields'), 'bad'); return; }
+    if (!(interval > 0) || !(fires > 0)) { toast(t('watch.badNumbers'), 'bad'); return; }
+    if (mode === 'execute' && !delegation) { toast(t('watch.needContract'), 'bad'); return; }
     const body = {
       realm: 'personal',
       predicate: { source, op: 'above', field, ...(valueRaw !== '' ? { value: Number(valueRaw) } : {}) },
@@ -1692,22 +2575,21 @@
       budget: { fires, executes: mode === 'execute' ? fires : 0 },
       ...(delegation ? { delegationId: delegation } : {}),
     };
-    if (!window.confirm('登记无人值守触发器：' + skill + '（' + mode + '，' + source + '.' + field + '）？')) return;
+    if (!(await confirmDialog({ body: t('watch.confirm', { skill, mode, source, field }) }))) return;
     try {
       await api('POST', '/api/watches', body);
-      toast('已登记 watch', 'ok');
+      toast(t('watch.registered'), 'ok');
       await loadWatches();
-    } catch (e) { toast('登记失败：' + e.message, 'bad'); }
+    } catch (e) { toast(t('watch.failed', { msg: e.message }), 'bad'); }
   }
 
   async function runWatchTick() {
     try {
       const r = await api('POST', '/api/watch-tick', {});
       const rep = (r && r.report) || {};
-      toast('已评估 ' + (rep.evaluated || 0) + '：触发 ' + ((rep.fired || []).length) +
-        ' · 不可读 ' + ((rep.unavailable || []).length) + ' · 自动停用 ' + ((rep.autoDisabled || []).length), 'ok');
+      toast(t('watch.tickDone', { n: rep.evaluated || 0, fired: (rep.fired || []).length, unreadable: (rep.unavailable || []).length, paused: (rep.autoDisabled || []).length }), 'ok');
       await loadWatches();
-    } catch (e) { toast('tick 失败：' + e.message, 'bad'); }
+    } catch (e) { toast(t('watch.tickFailed', { msg: e.message }), 'bad'); }
   }
 
   $('btnWatch').addEventListener('click', registerWatch);
@@ -1717,10 +2599,10 @@
     const sel = $('gRealm');
     const enterprises = ((d && d.realms) || []).filter(r => r.type === 'enterprise');
     if (!enterprises.length) {
-      sel.innerHTML = '<option value="">（无企业数据域，先连接域）</option>';
+      sel.innerHTML = '<option value="">' + esc(t('connect.noRealm')) + '</option>';
       return;
     }
-    sel.innerHTML = enterprises.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} · ${r.itemCount ?? 0} 项</option>`).join('');
+    sel.innerHTML = enterprises.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} · ${t('connect.items', { n: r.itemCount ?? 0 })}</option>`).join('');
   }
 
   // ===== 数据加载 =====
@@ -1742,27 +2624,27 @@
     } catch (e) {
       setConn(false);
       if (view === 'monitor') {
-        $('stateBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('stateBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
         $('metricsBody').innerHTML = '';
         $('rosterBody').innerHTML = '';
         $('auditBody').innerHTML = '';
         $('domainsBody').innerHTML = '';
       } else if (view === 'oversight') {
-        $('escBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('escBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'grants') {
-        $('grantListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
-        $('contractListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
-        $('watchListBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('grantListBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
+        $('contractListBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
+        $('watchListBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'org') {
-        $('orgBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('orgBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'catalog') {
-        $('catalogSkillsBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
-        $('catalogConnectorsBody').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('catalogSkillsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
+        $('catalogConnectorsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'intent') {
-        $('intentMeta').innerHTML = emptyRow('连接失败：' + esc(e.message));
+        $('intentMeta').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       }
       if (e.cors) $('corsNote').hidden = false;
-      if (view !== 'connect') toast('加载失败：' + e.message, 'bad');
+      if (view !== 'connect') toast(t('connect.loadFailed', { msg: e.message }), 'bad');
     } finally {
       state.lastRefresh = Date.now();
     }
@@ -1780,7 +2662,7 @@
     try {
       await loadAudit();
     } catch (e) {
-      $('auditBody').innerHTML = emptyRow('审计加载失败：' + esc(e.message));
+      $('auditBody').innerHTML = emptyRow(t('audit.loadFailed', { msg: e.message }));
     }
   }
   async function loadEscalations() {
@@ -1796,7 +2678,7 @@
     const badgeEl = $('connBadge');
     badgeEl.classList.toggle('ok', ok);
     badgeEl.classList.toggle('bad', !ok);
-    $('connText').textContent = ok ? '已连接' : '连接失败';
+    $('connText').textContent = ok ? t('connect.ok') : t('connect.fail');
   }
 
   // ===== 写操作 =====
@@ -1805,59 +2687,59 @@
     try {
       const body = extra || {};
       await api('POST', path, body);
-      toast('已执行：' + act + ' ' + id, 'ok');
+      toast(t('action.executed', { msg: act + ' ' + id }), 'ok');
       await loadEscalations();
     } catch (e) {
-      toast('操作失败：' + e.message, 'bad');
+      toast(t('action.failed', { msg: e.message }), 'bad');
     }
   }
 
-  document.addEventListener('click', function (ev) {
+  document.addEventListener('click', async function (ev) {
     const btn = ev.target.closest('[data-act]');
     if (!btn) return;
     const act = btn.getAttribute('data-act');
     const id = btn.getAttribute('data-id');
     if (act === 'approve' || act === 'reject') {
       const note = $('note-' + id) ? $('note-' + id).value.trim() : '';
-      if (!window.confirm('确定要' + (act === 'approve' ? '批准' : '拒绝') + '裁决 ' + id + ' 吗？')) return;
+      if (!(await confirmDialog({ body: t('esc.confirmAction', { action: act === 'approve' ? t('esc.approve') : t('esc.reject'), id }), danger: act === 'reject' }))) return;
       doAction(act, id, note ? { note } : {});
     } else if (act === 'resolve') {
       const stanceEl = $('stance-' + id);
       const note = $('note-' + id) ? $('note-' + id).value.trim() : '';
-      if (!stanceEl || !stanceEl.value) { toast('请先选择立场', 'bad'); return; }
-      if (!window.confirm('确定按立场「' + stanceEl.value + '」裁决 ' + id + ' 吗？')) return;
+      if (!stanceEl || !stanceEl.value) { toast(t('esc.needStance'), 'bad'); return; }
+      if (!(await confirmDialog({ body: t('esc.confirmStance', { stance: stanceEl.value, id }) }))) return;
       doAction('resolve', id, { stance: stanceEl.value, ...(note ? { note } : {}) });
     } else if (act === 'revoke') {
       const subject = btn.getAttribute('data-subject') || '';
-      if (!window.confirm('确定吊销对 ' + subject + ' 的授权 ' + id + ' 吗？')) return;
+      if (!(await confirmDialog({ body: t('grant.confirmRevoke', { subject, id }), danger: true }))) return;
       (async () => {
         try {
           await api('DELETE', '/api/domains/grants/' + id);
-          toast('已吊销授权 ' + id, 'ok');
+          toast(t('grant.revoked', { id }), 'ok');
           await loadDomains();
-        } catch (e) { toast('吊销失败：' + e.message, 'bad'); }
+        } catch (e) { toast(t('grant.revokeFailed', { msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-contract') {
-      if (!window.confirm('撤销契约 ' + id + ' 吗？撤销即刻阻断后续派生。')) return;
+      if (!(await confirmDialog({ body: t('contract.confirmRevoke', { id }), danger: true }))) return;
       (async () => {
         try {
           await api('DELETE', '/api/delegation-contracts/' + id);
-          toast('已撤销契约 ' + id, 'ok');
+          toast(t('contract.revokedOk', { id }), 'ok');
           await loadContracts();
-        } catch (e) { toast('撤销失败：' + e.message, 'bad'); }
+        } catch (e) { toast(t('common.revokeFailed', { msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-watch') {
-      if (!window.confirm('撤销 watch ' + id + ' 吗？撤销后不再触发。')) return;
+      if (!(await confirmDialog({ body: t('watch.confirmRevoke', { id }), danger: true }))) return;
       (async () => {
         try {
           await api('DELETE', '/api/watches/' + id);
-          toast('已撤销 watch ' + id, 'ok');
+          toast(t('watch.revokedOk', { id }), 'ok');
           await loadWatches();
-        } catch (e) { toast('撤销失败：' + e.message, 'bad'); }
+        } catch (e) { toast(t('common.revokeFailed', { msg: e.message }), 'bad'); }
       })();
     } else if (act === 'approve-contract') {
       const note = $('note-' + id) ? $('note-' + id).value.trim() : '';
-      if (!window.confirm('为 ' + id + ' 签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch 吗？')) return;
+      if (!(await confirmDialog({ body: t('watch.confirmApprove', { id }) }))) return;
       (async () => {
         try {
           // The endpoint requires grantedBy + limits; the deck states the narrow
@@ -1867,24 +2749,24 @@
             limits: { maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: new Date(Date.now() + 24 * 3600 * 1000).toISOString() },
             ...(note ? { reason: note } : {}),
           });
-          toast('已签新契约 ' + ((r && r.contract && r.contract.id) || '') + ' 并换绑 watch', 'ok');
+          toast(t('watch.approved', { contract: (r && r.contract && r.contract.id) || '' }), 'ok');
           await loadEscalations();
-        } catch (e) { toast('approve-contract 失败：' + e.message, 'bad'); }
+        } catch (e) { toast(t('watch.approveFailed', { msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-vassal' || act === 'reinstate-vassal') {
       const name = btn.getAttribute('data-name') || '';
       const revoking = act === 'revoke-vassal';
-      const verb = revoking ? '吊销' : '恢复';
-      const warn = revoking ? '\n吊销对重新注册保持粘性；恢复是独立审计动作。' : '';
-      if (!window.confirm('确定' + verb + '执行 Agent「' + name + '」吗？' + warn)) return;
+      const verb = revoking ? t('roster.revoke') : t('roster.restore');
+      const warn = revoking ? '\n' + t('roster.stickyNote') : '';
+      if (!(await confirmDialog({ body: t('roster.confirmAction', { action: verb, name, warn }), danger: revoking }))) return;
       (async () => {
         try {
           if (revoking) await api('DELETE', '/api/vassals/' + encodeURIComponent(name));
           else await api('POST', '/api/vassals/' + encodeURIComponent(name) + '/reinstate');
-          toast('已' + verb + ' ' + name, 'ok');
+          toast(t('roster.actionDone', { action: verb, name }), 'ok');
           const r = await api('GET', '/api/roster');
           renderRoster(r);
-        } catch (e) { toast(verb + '失败：' + e.message, 'bad'); }
+        } catch (e) { toast(t('roster.actionFailed', { action: verb, msg: e.message }), 'bad'); }
       })();
     }
   });
@@ -1901,15 +2783,15 @@
     state.conn.token = $('cToken').value.trim();
     saveConn();
     $('corsNote').hidden = true;
-    toast('已保存，正在测试连接…');
+    toast(t('conn.savedTesting'));
     try {
       await api('GET', '/api/state');
       setConn(true);
-      toast('连接成功：' + state.conn.base, 'ok');
+      toast(t('conn.testOk', { msg: state.conn.base }), 'ok');
       location.hash = '#/monitor';
     } catch (e) {
       setConn(false);
-      toast('连接失败：' + e.message, 'bad');
+      toast(t('connect.failed', { msg: e.message }), 'bad');
       if (e.cors) $('corsNote').hidden = false;
     }
   });
@@ -1919,7 +2801,7 @@
     $('cBase').value = state.conn.base;
     $('cToken').value = '';
     setConn(false);
-    toast('已清除连接配置');
+    toast(t('conn.cleared'));
   });
 
   // ===== 刷新与轮询 =====
@@ -1929,7 +2811,7 @@
   });
   $('btnPoll').addEventListener('click', function () {
     state.poll = !state.poll;
-    $('btnPoll').textContent = '轮询：' + (state.poll ? '开' : '关');
+    $('btnPoll').textContent = t('top.poll', { state: state.poll ? t('common.on') : t('common.off') });
     if (state.poll) startPoll(); else stopPoll();
   });
 
