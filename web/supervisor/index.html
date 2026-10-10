@@ -235,7 +235,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.11 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.12 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -803,6 +803,9 @@
       "org.created": "已新建部门 {name}",
       "org.assigned": "已任命 {agent} 到 {dept}",
       "org.actionFailed": "{action}失败：{msg}",
+      "org.setLead": "设为 lead",
+      "org.confirmSetLead": "确定将 {dept} 的 lead 更换为 {agent} 吗？原 lead 降为 member。",
+      "org.leadSet": "已将 {dept} 的 lead 更换为 {agent}",
       "common.loading": "加载中…",
       "catalog.skillsTitle": "技能目录",
       "catalog.skillsHint": "注册/生命周期管理走 CLI/API，监督台只读",
@@ -1408,6 +1411,9 @@
       "org.created": "department {name} created",
       "org.assigned": "{agent} assigned to {dept}",
       "org.actionFailed": "{action} failed: {msg}",
+      "org.setLead": "Set as lead",
+      "org.confirmSetLead": "Change the lead of {dept} to {agent}? The current lead steps down to member.",
+      "org.leadSet": "lead of {dept} changed to {agent}",
       "org.keyPath": "critical path",
       "org.noDepartments": "No departments yet (POST /api/org/departments is managed via CLI/API; supervisor is read-only)",
       "org.unspecified": "(unspecified)",
@@ -1943,13 +1949,14 @@
     let html = '';
     for (const d of depts) {
       const members = d.members || [];
-      let rows = '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:20%"><col style="width:46%"></colgroup><tr><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('col.role')) + '</th><th>' + esc(t('col.post')) + '</th><th>' + esc(t('col.skill')) + '</th></tr>';
+      let rows = '<table><colgroup><col style="width:20%"><col style="width:10%"><col style="width:18%"><col style="width:36%"><col style="width:16%"></colgroup><tr><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('col.role')) + '</th><th>' + esc(t('col.post')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
       if (!members.length) {
-        rows += `<tr><td colspan="4" style="color:var(--text-3)">${esc(t('org.emptyDept'))}</td></tr>`;
+        rows += `<tr><td colspan="5" style="color:var(--text-3)">${esc(t('org.emptyDept'))}</td></tr>`;
       } else {
         for (const m of members) {
           const isLead = m.role === 'lead';
-          rows += `<tr${isLead ? ' class="branch-ok"' : ''}><td class="mono">${esc(m.agentId)}${isLead ? ' ' + badge('lead', 'ok') : ''}</td><td>${esc(m.role)}</td><td>${esc(m.title || '—')}</td><td style="font-size:12px">${esc((m.skills || []).join(', ') || '—')}</td></tr>`;
+          const leadBtn = isLead ? '' : `<button class="btn small" data-act="org-set-lead" data-id="${esc(d.departmentId)}" data-agent="${esc(m.agentId)}" data-dept="${esc(d.name)}">${esc(t('org.setLead'))}</button>`;
+          rows += `<tr${isLead ? ' class="branch-ok"' : ''}><td class="mono">${esc(m.agentId)}${isLead ? ' ' + badge('lead', 'ok') : ''}</td><td>${esc(m.role)}</td><td>${esc(m.title || '—')}</td><td style="font-size:12px">${esc((m.skills || []).join(', ') || '—')}</td><td>${leadBtn}</td></tr>`;
         }
       }
       rows += '</table>';
@@ -3002,6 +3009,17 @@
           toast(t('grant.revoked', { id }), 'ok');
           await loadDomains();
         } catch (e) { toast(t('grant.revokeFailed', { msg: e.message }), 'bad'); }
+      })();
+    } else if (act === 'org-set-lead') {
+      const agent = btn.getAttribute('data-agent') || '';
+      const dept = btn.getAttribute('data-dept') || id;
+      if (!(await confirmDialog({ body: t('org.confirmSetLead', { dept, agent }) }))) return;
+      (async () => {
+        try {
+          await api('POST', '/api/org/departments/' + encodeURIComponent(id) + '/lead', { agentId: agent });
+          toast(t('org.leadSet', { dept, agent }), 'ok');
+          await loadOrg();
+        } catch (e) { toast(t('org.actionFailed', { action: t('org.setLead'), msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-contract') {
       if (!(await confirmDialog({ body: t('contract.confirmRevoke', { id }), danger: true }))) return;

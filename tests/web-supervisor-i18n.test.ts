@@ -193,6 +193,7 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       'approve-contract', // POST /api/escalations/:id/approve-contract
       'revoke-vassal', // DELETE /api/vassals/:name
       'reinstate-vassal', // POST /api/vassals/:name/reinstate
+      'org-set-lead', // POST /api/org/departments/:id/lead
       'skill-install', // POST /api/skills/:id/install
       'skill-uninstall', // POST /api/skills/:id/uninstall
       'skill-deprecate', // POST /api/skills/:id/deprecate
