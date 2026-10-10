@@ -135,6 +135,17 @@
     <div class="body"><div class="kv" id="keysKv"><div class="empty" data-i18n="keys.waiting">等待数据…</div></div></div>
   </div>
 
+  <div class="panel">
+    <h2><span data-i18n="verify.title">离线验签</span> <span class="hint" data-i18n="verify.hint">产物来自已拉取响应，无新请求</span></h2>
+    <div class="body">
+      <div class="setup">
+        <button class="btn" id="btnDlRoster" data-i18n="verify.dlRoster">下载签名快照 roster.json</button>
+        <button class="btn" id="btnDlKey" data-i18n="verify.dlKey">下载根公钥 rsk-public.pem</button>
+      </div>
+      <p class="foot" style="margin:10px 0 0"><span data-i18n="verify.cmdLabel">验签命令：</span><code class="fp">node scripts/verify-roster.mjs --file roster.json --key rsk-public.pem</code></p>
+    </div>
+  </div>
+
   <p class="foot"><span data-i18n="app.foot1">吊销的 Agent 不出现在公开快照中；验签步骤见 scripts/verify-roster.mjs。</span> · <span data-i18n="app.apiOnly">UI 仅消费公开 HTTP API，零写路径</span></p>
 </div>
 
@@ -188,6 +199,12 @@
       "keys.spkiSha256": "SPKI SHA-256",
       "keys.custody": "密钥保管",
       "keys.unavailable": "该进程无法导出根公钥（key-material-unavailable）",
+      "verify.title": "离线验签",
+      "verify.hint": "产物来自已拉取响应，无新请求",
+      "verify.dlRoster": "下载签名快照 roster.json",
+      "verify.dlKey": "下载根公钥 rsk-public.pem",
+      "verify.cmdLabel": "验签命令：",
+      "verify.noData": "请先连接加载数据",
       "err.load": "加载失败：{msg}"
     },
     "en": {
@@ -236,6 +253,12 @@
       "keys.spkiSha256": "SPKI SHA-256",
       "keys.custody": "Key custody",
       "keys.unavailable": "This process cannot export its root key (key-material-unavailable)",
+      "verify.title": "Offline verification",
+      "verify.hint": "artifacts come from already-fetched responses — no new requests",
+      "verify.dlRoster": "Download signed snapshot roster.json",
+      "verify.dlKey": "Download root key rsk-public.pem",
+      "verify.cmdLabel": "Verify command:",
+      "verify.noData": "connect and load data first",
       "err.load": "load failed: {msg}"
     }
   };
@@ -416,6 +439,23 @@
       renderAll();
     });
     document.getElementById("btnRefresh").addEventListener("click", () => { if (state.base) load(); });
+    function download(filename, content, type) {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+    document.getElementById("btnDlRoster").addEventListener("click", () => {
+      if (!state.roster) { alert(t("verify.noData")); return; }
+      download("roster.json", JSON.stringify(state.roster, null, 2), "application/json");
+    });
+    document.getElementById("btnDlKey").addEventListener("click", () => {
+      const key = state.keys && state.keys.keys && state.keys.keys[0];
+      if (!key || !key.spkiPem) { alert(t("verify.noData")); return; }
+      download("rsk-public.pem", key.spkiPem, "application/x-pem-file");
+    });
     document.getElementById("btnConnect").addEventListener("click", () => {
       const value = document.getElementById("inBase").value.trim();
       if (!value) return;
