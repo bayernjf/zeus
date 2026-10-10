@@ -235,7 +235,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.9 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.10 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -527,6 +527,55 @@
         <h2><span data-i18n="org.title">组织编制</span> <span class="hint">GET /api/org/chart · <span data-i18n="org.hint">部门 / lead / 成员 / 岗位技能</span></span></h2>
         <div class="body" id="orgBody"><div class="empty" data-i18n="common.loading">加载中…</div></div>
       </div>
+      <div class="grid" style="margin-top:14px">
+        <div class="panel">
+          <h2><span data-i18n="org.createTitle">新建部门</span> <span class="hint">POST /api/org/departments</span></h2>
+          <div class="body">
+            <div class="row">
+              <label for="odName" data-i18n="org.deptName">部门名</label>
+              <input id="odName" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="odMission" data-i18n="org.deptMission">使命</label>
+              <input id="odMission" autocomplete="off">
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="btnOrgCreate" data-i18n="org.createRun">新建</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2><span data-i18n="org.assignTitle">任命成员</span> <span class="hint">POST /api/org/departments/:id/members</span></h2>
+          <div class="body">
+            <div class="row">
+              <label for="oaDept" data-i18n="org.pickDept">部门</label>
+              <select id="oaDept"></select>
+            </div>
+            <div class="row">
+              <label for="oaAgent" data-i18n="org.agentId">Agent ID</label>
+              <input id="oaAgent" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="oaRole" data-i18n="org.role">角色</label>
+              <select id="oaRole">
+                <option value="member">member</option>
+                <option value="lead">lead</option>
+              </select>
+            </div>
+            <div class="row">
+              <label for="oaTitle" data-i18n="org.postTitle">岗位（可选）</label>
+              <input id="oaTitle" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="oaSkills" data-i18n="org.postSkills">岗位技能（逗号分隔，可选）</label>
+              <input id="oaSkills" autocomplete="off">
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="btnOrgAssign" data-i18n="org.assignRun">任命</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== 视图：目录（技能 + 连接器，只读可见性） ===== -->
@@ -736,6 +785,24 @@
       "watch.tick": "立即评估一次（POST /api/watch-tick）",
       "org.title": "组织编制",
       "org.hint": "部门 / lead / 成员 / 岗位技能",
+      "org.createTitle": "新建部门",
+      "org.deptName": "部门名",
+      "org.deptMission": "使命",
+      "org.createRun": "新建",
+      "org.assignTitle": "任命成员",
+      "org.pickDept": "部门",
+      "org.agentId": "Agent ID",
+      "org.role": "角色",
+      "org.postTitle": "岗位（可选）",
+      "org.postSkills": "岗位技能（逗号分隔，可选）",
+      "org.assignRun": "任命",
+      "org.needDeptFields": "请填部门名与使命",
+      "org.needAssignFields": "请选部门并填 Agent ID",
+      "org.confirmCreate": "确定新建部门「{name}」（使命：{mission}）吗？",
+      "org.confirmAssign": "确定将 {agent} 任命为 {dept} 的 {role} 吗？",
+      "org.created": "已新建部门 {name}",
+      "org.assigned": "已任命 {agent} 到 {dept}",
+      "org.actionFailed": "{action}失败：{msg}",
       "common.loading": "加载中…",
       "catalog.skillsTitle": "技能目录",
       "catalog.skillsHint": "注册/生命周期管理走 CLI/API，监督台只读",
@@ -1313,6 +1380,24 @@
       "watch.approveFailed": "approve-contract failed: {msg}",
       "org.title": "Org structure",
       "org.hint": "Departments / leads / members / post skills",
+      "org.createTitle": "Create department",
+      "org.deptName": "Name",
+      "org.deptMission": "Mission",
+      "org.createRun": "Create",
+      "org.assignTitle": "Assign member",
+      "org.pickDept": "Department",
+      "org.agentId": "Agent ID",
+      "org.role": "Role",
+      "org.postTitle": "Post title (optional)",
+      "org.postSkills": "Post skills (comma-separated, optional)",
+      "org.assignRun": "Assign",
+      "org.needDeptFields": "department name and mission are required",
+      "org.needAssignFields": "pick a department and enter an agent ID",
+      "org.confirmCreate": "Create department \"{name}\" (mission: {mission})?",
+      "org.confirmAssign": "Assign {agent} as {role} of {dept}?",
+      "org.created": "department {name} created",
+      "org.assigned": "{agent} assigned to {dept}",
+      "org.actionFailed": "{action} failed: {msg}",
       "org.keyPath": "critical path",
       "org.noDepartments": "No departments yet (POST /api/org/departments is managed via CLI/API; supervisor is read-only)",
       "org.unspecified": "(unspecified)",
@@ -1838,6 +1923,12 @@
   function renderOrg(data) {
     const el = $('orgBody');
     const depts = (data && data.departments) || [];
+    const sel = $('oaDept');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = depts.map(d => `<option value="${esc(d.departmentId)}">${esc(d.name)}</option>`).join('');
+      if (prev && depts.some(d => d.departmentId === prev)) sel.value = prev;
+    }
     if (!depts.length) { el.innerHTML = emptyRow(t('org.noDepartments')); return; }
     let html = '';
     for (const d of depts) {
@@ -2964,6 +3055,39 @@
   // ===== 派发与意图详情操作 =====
   $('btnDispatch').addEventListener('click', dispatchIntent);
   $('btnRecognize').addEventListener('click', recognizeIntent);
+
+  $('btnOrgCreate').addEventListener('click', async function () {
+    const name = $('odName').value.trim();
+    const mission = $('odMission').value.trim();
+    if (!name || !mission) { toast(t('org.needDeptFields'), 'bad'); return; }
+    if (!(await confirmDialog({ body: t('org.confirmCreate', { name, mission }) }))) return;
+    try {
+      await api('POST', '/api/org/departments', { name, mission });
+      toast(t('org.created', { name }), 'ok');
+      $('odName').value = ''; $('odMission').value = '';
+      await loadOrg();
+    } catch (e) { toast(t('org.actionFailed', { action: t('org.createRun'), msg: e.message }), 'bad'); }
+  });
+
+  $('btnOrgAssign').addEventListener('click', async function () {
+    const deptId = $('oaDept').value;
+    const agentId = $('oaAgent').value.trim();
+    if (!deptId || !agentId) { toast(t('org.needAssignFields'), 'bad'); return; }
+    const role = $('oaRole').value;
+    const title = $('oaTitle').value.trim();
+    const skills = $('oaSkills').value.split(',').map(s => s.trim()).filter(Boolean);
+    const deptName = $('oaDept').selectedOptions[0] ? $('oaDept').selectedOptions[0].textContent : deptId;
+    if (!(await confirmDialog({ body: t('org.confirmAssign', { agent: agentId, role, dept: deptName }) }))) return;
+    try {
+      const body = { agentId, role };
+      if (title) body.title = title;
+      if (skills.length) body.skills = skills;
+      await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/members', body);
+      toast(t('org.assigned', { agent: agentId, dept: deptName }), 'ok');
+      $('oaAgent').value = ''; $('oaTitle').value = ''; $('oaSkills').value = '';
+      await loadOrg();
+    } catch (e) { toast(t('org.actionFailed', { action: t('org.assignRun'), msg: e.message }), 'bad'); }
+  });
 
   $('btnVassalRegister').addEventListener('click', async function () {
     const cardUrl = $('vrCardUrl').value.trim();
