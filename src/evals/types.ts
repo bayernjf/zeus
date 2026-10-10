@@ -7,6 +7,7 @@
 
 import type { FanOutRequest, FanOutResult } from '../orchestrator/types.js';
 import type { ContentHandling, ContentSignal } from '../guardrails/content-risk.js';
+import type { IsolationLevel } from '../mcp/isolation.js';
 
 /** One property assertion on an eval run. Every field is optional so a case
  *  asserts only what it cares about; `severity` is always required and decides
@@ -34,6 +35,21 @@ export type EvalExpectation = {
    *  cost family but has no V1 data source, so the scorer marks it
    *  not-assessable instead of guessing. */
   budget?: { maxBranches?: number; maxCostTokens?: number };
+  /** Planning outcome (S12): which PlanFlow verdict the run must land on,
+   *  read from the plan-* audit rows. `planner` (when set) must name the
+   *  planner of a selected plan. */
+  planning?: { expected: 'selected' | 'conflict' | 'unplannable'; planner?: string };
+  /** Crash-recovery decisions (S13): the recovery-* audit decisions the run
+   *  must (not) produce. */
+  recovery?: { expectedDecisions: string[]; forbiddenDecisions?: string[] };
+  /** Streaming progress (S15): working-frame deltas and partial-count facts
+   *  surfaced on the progress spine, and the guarantee that preview content
+   *  never enters the decision path. */
+  streaming?: { deltaCountAtLeast?: number; partialSeen?: boolean; previewNotInDecision?: boolean };
+  /** Execution isolation (S16): the classification/validation verdict for a
+   *  registered body. `forbiddenReasons` fails when any listed validation
+   *  reason is present. */
+  isolation?: { expectedLevel?: IsolationLevel; valid?: boolean; forbiddenReasons?: string[] };
   severity: 'block' | 'warn' | 'observe';
 };
 

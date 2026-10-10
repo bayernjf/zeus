@@ -417,4 +417,207 @@ export const evalCases = [
       { escalation: { expected: false }, severity: 'block' },
     ],
   },
+
+  // --- planning: PlanFlow verdicts (S12) ---
+  // The planner agents advertise the `planning` tag (their card registers the
+  // research skill into the catalogue) and return structured DagSpec drafts
+  // under the data part key `plan`. The runner drives PlanFlow with
+  // requireConfirmation:true so the case observes the verdict, never the DAG.
+  {
+    id: 'planning/feasible-draft-selected',
+    skill: 'planning',
+    agents: [
+      { name: 'planner-a', planner: true, planDraft: { nodes: [{ id: 'n1', skill: 'research' }], realm: 'personal' } },
+    ],
+    request: {},
+    planFlow: { goal: 'research the topic', plannerSkills: ['research'] },
+    expect: [
+      // A feasible single draft wins: the audit spine carries plan-selected
+      // and no conflict/unplannable row.
+      { planning: { expected: 'selected', planner: 'planner-a' }, severity: 'block' },
+    ],
+  },
+  {
+    id: 'planning/close-contest-escalates-conflict',
+    skill: 'planning',
+    agents: [
+      // Both drafts are feasible and cover the goal identically, so the lead
+      // is 0 ≤ tieThreshold — the contest escalates as plan-conflict instead
+      // of a silent arbitrary winner.
+      { name: 'planner-a', planner: true, planDraft: { nodes: [{ id: 'n1', skill: 'research' }], realm: 'personal' } },
+      { name: 'planner-b', planner: true, planDraft: { nodes: [{ id: 'n2', skill: 'research' }], realm: 'personal' } },
+    ],
+    request: {},
+    planFlow: { goal: 'research the topic', plannerSkills: ['research'] },
+    expect: [
+      { planning: { expected: 'conflict' }, severity: 'block' },
+    ],
+  },
+  {
+    id: 'planning/malformed-draft-unplannable',
+    skill: 'planning',
+    agents: [
+      // The planner settles without a structured draft: extractPlanDraft
+      // yields undefined, the candidate is audited plan-malformed and dropped,
+      // and the empty draft set settles unplannable — never guessed into shape.
+      { name: 'planner-a', planner: true },
+    ],
+    request: {},
+    planFlow: { goal: 'research the topic', plannerSkills: ['research'] },
+    expect: [
+      { planning: { expected: 'unplannable' }, severity: 'block' },
+    ],
+  },
+
+  // --- recovery: crash-recovery verdicts (S13) ---
+  // Each case projects one unsettled branch into a checkpoint and runs the
+  // pure executor; the recovery-* decision lands on the audit spine.
+  {
+    id: 'recovery/clean-plan-auto-resumes',
+    skill: 'research',
+    agents: [{ name: 'alpha', ...APPROVE }],
+    request: {},
+    recovery: {
+      intents: [{
+        intentId: 'r1',
+        status: 'running',
+        branch: {
+          mode: 'plan', skillDeclaresIdempotent: true, idempotencyKeyReusable: true,
+          unconsumedDelegationNonce: false, lastOutcome: 'running', hasFallbackProvider: true,
+          circuitOpen: false, budgetExhausted: false,
+        },
+      }],
+    },
+    expect: [
+      // A clean running plan branch resumes automatically, and nothing else is
+      // invented for it.
+      { recovery: { expectedDecisions: ['recovery-auto-resumed'], forbiddenDecisions: ['recovery-awaiting-operator', 'recovery-settled-failed'] }, severity: 'block' },
+    ],
+  },
+  {
+    id: 'recovery/non-idempotent-execute-awaits',
+    skill: 'research',
+    agents: [{ name: 'alpha', ...APPROVE }],
+    request: {},
+    recovery: {
+      intents: [{
+        intentId: 'r1',
+        status: 'running',
+        branch: {
+          mode: 'execute', skillDeclaresIdempotent: false, idempotencyKeyReusable: true,
+          unconsumedDelegationNonce: false, lastOutcome: 'running', hasFallbackProvider: true,
+          circuitOpen: false, budgetExhausted: false,
+        },
+      }],
+    },
+    expect: [
+      // An execute branch without an idempotency declaration must never
+      // auto-resume an external write — it awaits the operator.
+      { recovery: { expectedDecisions: ['recovery-awaiting-operator'], forbiddenDecisions: ['recovery-auto-resumed'] }, severity: 'block' },
+    ],
+  },
+  {
+    id: 'recovery/open-circuit-settles-failed',
+    skill: 'research',
+    agents: [{ name: 'alpha', ...APPROVE }],
+    request: {},
+    recovery: {
+      intents: [{
+        intentId: 'r1',
+        status: 'running',
+        branch: {
+          mode: 'plan', skillDeclaresIdempotent: true, idempotencyKeyReusable: true,
+          unconsumedDelegationNonce: false, lastOutcome: 'running', hasFallbackProvider: true,
+          circuitOpen: true, budgetExhausted: false,
+        },
+      }],
+    },
+    expect: [
+      // The S4 breaker governs the automatic path: an open circuit settles
+      // failed rather than resuming through it.
+      { recovery: { expectedDecisions: ['recovery-settled-failed'], forbiddenDecisions: ['recovery-auto-resumed'] }, severity: 'block' },
+    ],
+  },
+
+  // --- streaming: progress-spine facts (S15) ---
+  {
+    id: 'streaming/working-delta-surfaced-not-in-decision',
+    skill: 'research',
+    agents: [
+      // The agent streams a working-frame increment before settling; the
+      // dispatcher surfaces it as a branch-delta on the progress spine, and it
+      // must never leak into the settled conclusion or any rationale.
+      { name: 'alpha', ...APPROVE, deltas: ['PREVIEW-MARKER-ONE'] },
+    ],
+    request: { realm: 'personal', vassals: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-stream', predicate: 'surfaced' } },
+    expect: [
+      { decision: o => o.status === 'completed', severity: 'block' },
+      { streaming: { deltaCountAtLeast: 1, previewNotInDecision: true }, severity: 'block' },
+    ],
+  },
+  {
+    id: 'streaming/partial-count-emitted',
+    skill: 'research',
+    agents: [
+      { name: 'alpha', ...APPROVE },
+      { name: 'beta', ...APPROVE },
+    ],
+    request: { realm: 'personal', vassals: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-partial', predicate: 'counted' } },
+    expect: [
+      { decision: o => o.status === 'completed', severity: 'block' },
+      // Each settled branch reports the partially-ready count as a count fact
+      // on the progress spine (N of M), never content.
+      { streaming: { partialSeen: true }, severity: 'block' },
+    ],
+  },
+
+  // --- isolation: registration-time verdicts (S16) ---
+  {
+    id: 'isolation/stdio-direct-network-requires-container',
+    skill: 'research',
+    agents: [{ name: 'alpha', ...APPROVE }],
+    request: {},
+    isolation: {
+      transport: 'stdio',
+      tier: 'tier-1',
+      manifest: {
+        fs: { read: ['/realm-a'], write: [] },
+        network: 'direct',
+        resources: { maxWallSeconds: 30 },
+        exec: { command: '/bin/true', args: [], envAllowList: [] },
+      },
+      authorizedRealms: ['/realm-a'],
+      containerRuntimeAvailable: false,
+    },
+    expect: [
+      // Direct network is only legal under container isolation; with no
+      // container runtime the registration is refused, never silently
+      // downgraded to a process-level run.
+      { isolation: { expectedLevel: 'L-container', valid: false }, severity: 'block' },
+    ],
+  },
+  {
+    id: 'isolation/tier1-restricted-passes',
+    skill: 'research',
+    agents: [{ name: 'alpha', ...APPROVE }],
+    request: {},
+    isolation: {
+      transport: 'stdio',
+      tier: 'tier-1',
+      manifest: {
+        fs: { read: ['/realm-a'], write: [] },
+        network: 'off',
+        resources: { maxWallSeconds: 30 },
+        exec: { command: '/bin/true', args: [], envAllowList: ['PATH'] },
+      },
+      authorizedRealms: ['/realm-a'],
+      containerRuntimeAvailable: false,
+    },
+    expect: [
+      // A shape-trust stdio body with realm-bound fs, network off and a
+      // declared resource/exec profile maps to the strictest local level and
+      // passes the fail-closed gate.
+      { isolation: { expectedLevel: 'L-process-restricted', valid: true }, severity: 'block' },
+    ],
+  },
 ];

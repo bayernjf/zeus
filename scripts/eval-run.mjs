@@ -71,8 +71,12 @@ function reportLine(caseId, passed, detail = '') {
  * aggregate.ts extractStance reads). `dataPolicy` rides the card's fealty so
  * the data-policy family can exercise the origin gate. `fail` drives the
  * S10/S11 adversarial cases: the branch's task settles failed, so the recovery
- * chain (branch-failed -> escalate) is what the scorer observes.
- * @param {Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean }>} agents
+ * chain (branch-failed -> escalate) is what the scorer observes. S12 planner
+ * agents (`planner: true`) advertise the `planning` tag and, when `planDraft`
+ * is set, return a structured DagSpec under the data part key `plan`. S15
+ * streaming agents (`deltas`) emit working-frame status updates before the
+ * final task so the dispatcher surfaces branch-delta increments.
+ * @param {Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean, planner?: boolean, planDraft?: object, deltas?: string[] }>} agents
  */
 function makeFetch(agents) {
   const byName = new Map(agents.map(a => [a.name, a]));
@@ -82,9 +86,24 @@ function makeFetch(agents) {
     const spec = byName.get(name);
     if (!spec) return new Response(JSON.stringify({ error: `no scripted agent named ${name}` }), { status: 404 });
     if (url.includes('/api/a2a/agent-card')) {
-      return new Response(JSON.stringify(cardFor(name, spec.dataPolicy ?? 'read-task-scope')), {
+      return new Response(JSON.stringify(cardFor(name, spec.dataPolicy ?? 'read-task-scope', spec.planner === true)), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    const frames = [];
+    // S15: emit the agent's working-frame increments (one status-update per
+    // delta) before the final task snapshot, in SSE order.
+    for (const preview of spec.deltas ?? []) {
+      frames.push({
+        jsonrpc: '2.0',
+        id: 2,
+        result: {
+          kind: 'status-update',
+          id: `${name}-working`,
+          contextId: 'eval',
+          status: { state: 'working', data: { preview }, timestamp: '2026-10-10T00:00:00.000Z' },
+        },
       });
     }
     if (spec.fail) {
@@ -95,31 +114,39 @@ function makeFetch(agents) {
         status: { state: 'failed', message: { code: 'EVAL_SCRIPTED_FAIL', message: 'scripted failure for the adversarial case' } },
         artifacts: [],
       };
+      frames.push({ jsonrpc: '2.0', id: 2, result: failed });
       return new Response(
-        `data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: failed })}\n\n`,
+        frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join(''),
         { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
       );
     }
+    const artifacts = [{
+      artifactId: 'a',
+      name: 'verdict',
+      parts: [
+        { kind: 'data', data: { ...(spec.stance ? { stance: spec.stance } : {}), ...(spec.rationale ? { rationale: spec.rationale } : {}) } },
+        // S12: a planner draft rides a data part keyed `plan`; anything else
+        // (no draft) yields no structured candidate and is audited malformed.
+        ...(spec.planDraft !== undefined ? [{ kind: 'data', data: { plan: spec.planDraft } }] : []),
+      ],
+    }];
     const task = {
       kind: 'task',
       id: `${name}-task`,
       contextId: 'eval',
       status: { state: 'completed' },
-      artifacts: [{
-        artifactId: 'a',
-        name: 'verdict',
-        parts: [{ kind: 'data', data: { ...(spec.stance ? { stance: spec.stance } : {}), ...(spec.rationale ? { rationale: spec.rationale } : {}) } }],
-      }],
+      artifacts,
     };
+    frames.push({ jsonrpc: '2.0', id: 2, result: task });
     return new Response(
-      `data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: task })}\n\n`,
+      frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join(''),
       { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
     );
   });
 }
 
-/** @param {string} name @param {string} dataPolicy */
-function cardFor(name, dataPolicy) {
+/** @param {string} name @param {string} dataPolicy @param {boolean} isPlanner */
+function cardFor(name, dataPolicy, isPlanner) {
   return {
     name,
     url: `http://127.0.0.1/${name}/api/a2a/tasks`,
@@ -128,7 +155,9 @@ function cardFor(name, dataPolicy) {
     capabilities: { streaming: true, pushNotifications: false, stateTransitionHistory: true },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
-    skills: [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
+    skills: isPlanner
+      ? [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: ['planning'] }]
+      : [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
     'x-zeus-fealty': {
@@ -166,11 +195,14 @@ function makeOversightBridge(audits) {
  * @typedef {{
  *   id: string;
  *   skill: string;
- *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean }>;
+ *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean, planner?: boolean, planDraft?: object, deltas?: string[] }>;
  *   request: Record<string, unknown>;
  *   costLimit?: { maxWindowCost: number; circuitWindowMs: number };
  *   expect: Array<import('../dist/evals/types.js').EvalExpectation>;
  *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
+ *   planFlow?: { goal: string; plannerSkills?: string[] };
+ *   recovery?: { intents: Array<{ intentId: string, status: string, branch: Record<string, unknown> }>; maxAutoResumeMs?: number };
+ *   isolation?: { transport: 'stdio' | 'http'; tier: string; manifest: Record<string, unknown>; authorizedRealms: string[]; containerRuntimeAvailable: boolean };
  * }} RunnerCase
  */
 
@@ -211,18 +243,93 @@ async function runCase(c) {
     for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
     kernel.memoryStore?.consolidateRealm('personal');
   }
-  const outcome = await kernel.orchestrator.fanOut(
-    /** @type {import('../dist/orchestrator/types.js').FanOutRequest} */ ({
-      intentId: `eval-${c.id.replaceAll('/', '-')}`,
-      skill: c.skill,
-      ...c.request,
-    }),
-  );
-  const trace = { outcome, audit: audits, events: [] };
-  return {
-    caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
-    trace,
-  };
+
+  // S12 planning family: drive PlanFlow instead of a single fan-out. The
+  // planner fan-outs land on the same dispatch-audit collection; require
+  // confirmation so the case observes the verdict without executing the DAG.
+  if (c.planFlow !== undefined) {
+    const planFlow = kernel.planFlow;
+    if (planFlow === undefined) throw new Error(`case ${c.id}: kernel has no planFlow component`);
+    const planResult = await planFlow.run({
+      goal: { description: c.planFlow.goal },
+      realm: 'personal',
+      ...(c.planFlow.plannerSkills !== undefined ? { plannerSkills: c.planFlow.plannerSkills } : {}),
+      requireConfirmation: true,
+    });
+    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(planning)', runId: '(planning)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [], planFlow: planResult };
+    return {
+      caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
+      trace,
+    };
+  }
+
+  // S13 recovery family: run one checkpoint through the pure recovery
+  // executor; the recovery-* decisions land on the audit collection.
+  if (c.recovery !== undefined) {
+    const { executeRecovery } = await import('../dist/orchestrator/recovery.js');
+    const checkpoint = /** @type {import('../dist/orchestrator/recovery.js').RecoveryCheckpoint} */ ({
+      takenAt: '2026-10-10T00:00:00.000Z',
+      intents: c.recovery.intents.map(i => ({
+        intentId: i.intentId,
+        status: /** @type {import('../dist/orchestrator/types.js').FanOutStatus} */ (i.status),
+        branch: /** @type {import('../dist/orchestrator/recovery.js').RecoverableBranch} */ (i.branch),
+      })),
+    });
+    await executeRecovery(checkpoint, {
+      settleIntent: () => {},
+      awaitOperator: () => {},
+      autoResume: async () => {},
+    }, {
+      audit: e => audits.push(e),
+      ...(c.recovery.maxAutoResumeMs !== undefined ? { maxAutoResumeMs: c.recovery.maxAutoResumeMs } : {}),
+    });
+    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(recovery)', runId: '(recovery)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [] };
+    return {
+      caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
+      trace,
+    };
+  }
+
+  // S16 isolation family: classify + validate a registered body's declaration.
+  if (c.isolation !== undefined) {
+    const { classifyIsolation, validateIsolation } = await import('../dist/mcp/isolation.js');
+    const manifest = /** @type {import('../dist/mcp/isolation.js').IsolationManifest} */ (c.isolation.manifest);
+    const level = classifyIsolation({ transport: c.isolation.transport, tier: /** @type {import('../dist/trust/tier.js').TrustTier} */ (c.isolation.tier), manifest });
+    const verdict = validateIsolation({ level, manifest, authorizedRealms: c.isolation.authorizedRealms, containerRuntimeAvailable: c.isolation.containerRuntimeAvailable });
+    const trace = {
+      outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(isolation)', runId: '(isolation)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }),
+      audit: audits,
+      events: [],
+      isolation: { level, valid: verdict.ok, reasons: verdict.ok ? [] : verdict.reasons },
+    };
+    return {
+      caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
+      trace,
+    };
+  }
+
+  const intentId = `eval-${c.id.replaceAll('/', '-')}`;
+  // S15 streaming family: collect the intent's progress spine (branch-delta /
+  // intent-partial) through the booted hub before the fan-out dispatches.
+  /** @type {import('../dist/orchestrator/progress.js').ProgressEvent[]} */
+  const events = [];
+  const unsubscribe = kernel.progressHub?.subscribe(intentId, e => events.push(e));
+  try {
+    const outcome = await kernel.orchestrator.fanOut(
+      /** @type {import('../dist/orchestrator/types.js').FanOutRequest} */ ({
+        intentId,
+        skill: c.skill,
+        ...c.request,
+      }),
+    );
+    const trace = { outcome, audit: audits, events };
+    return {
+      caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
+      trace,
+    };
+  } finally {
+    unsubscribe?.();
+  }
 }
 
 /** @param {string} reason */
