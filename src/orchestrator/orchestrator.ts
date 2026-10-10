@@ -1170,7 +1170,13 @@ export class Orchestrator {
     const settledAt = this.now().toISOString();
     this.emit({
       type: 'branch-ended', intentId, runId: branchRunId, vassal,
-      outcome: outcomeOf(branch), ...(branch.ok ? { state: branch.state } : {}),
+      // `state` is the agent's own terminal verdict and `outcome` is the dispatch
+      // category; they disagree exactly where the war-room needs them apart: a
+      // vassal that reports `failed` and a branch whose transport never completed
+      // both settle as outcome `failed`. Publishing state whenever the kernel
+      // holds it - the !ok paths included - is what lets a subscriber tell those
+      // two apart (same conflation class as audit C-28).
+      outcome: outcomeOf(branch), ...(branch.state !== undefined ? { state: branch.state } : {}),
       at: settledAt,
     });
     // S15 V2 (design-streaming §5): settle the branch in the stream view and
