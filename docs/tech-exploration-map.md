@@ -1,6 +1,6 @@
 # Agent 技术探索地图（Tech Exploration Map）
 
-> 状态：**现行（活文档 v0.8，2026-10-10）**。这是 Agent 方向技术议题的登记处与优先级视图。
+> 状态：**现行（活文档 v0.9，2026-10-10）**。这是 Agent 方向技术议题的登记处与优先级视图。
 > 用法：议题先在本文登记（含触发条件/状态）；成熟且相关者升级为 `docs/design-*.md` 或转入 [deferred-items.md](deferred-items.md)；实施进度只记 [handoff.md](../handoff.md)。
 > 状态：🔜 A 组优先（已裁决）｜📝 待触发 / 登记中｜✅ 已有设计/已落地。
 
@@ -22,7 +22,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 
 | 编号 | 议题 | 要点 | 状态 |
 |---|---|---|---|
-| S6 | 可观测性：trace/metrics/log + LLM replay | 跨 Agent 调用链调试；审计已有，补分布式 trace | 📝→✅ 设计稿已出（2026-10-09，[design-observability.md](design-observability.md) v0.1——从既有审计/progress/runId 谱系装配 span 树的纯函数 `buildTraceTree`，trace 不出进程先落库内；V2 出站透传 traceparent + 只读端点；**V1 已落码（2026-10-10，Active work 180：`src/observability/trace.ts`，`tests/trace.test.ts` 12 例，零新增审计值）**） |
+| S6 | 可观测性：trace/metrics/log + LLM replay | 跨 Agent 调用链调试；审计已有，补分布式 trace | ✅ V1/V2 已落码、**V3 已落地**（Active work 180/187/190：[design-observability.md](design-observability.md) v0.2——V1 `buildTraceTree` 纯函数（`src/observability/trace.ts`，`tests/trace.test.ts` 12 例）；V2 出站透传 traceparent + `GET /api/intents/:id/trace` 只读端点；**V3 exporter + 指标史（Active work 190：`TraceExporter` 窄端口 + `JsonlTraceExporter` 本地 JSONL 导出（traceId 去重、0600）+ `MetricsHistory` 指标史 + boot 可选装配（默认关闭）+ `GET /api/metrics/history`，`tests/observability-v3.test.ts` 6 例，基线 1631/148）**） |
 | S7 | Evals 与质量回归 | 离线 eval 集、改 prompt 防漂移、线上 A/B（呼应 verify before asserting） | 📝→✅ 设计稿已出（2026-10-09，[design-evals.md](design-evals.md) v0.1——EvalCase 固定世界 + 双侧错误率指标族（误/漏升级、漏/误报、无证据断言恒 block）+ 纯函数评分器 scoreEvalRun，runner 复用 smoke 夹具；**V1 已落码（2026-10-10，Active work 181：`src/evals/types.ts` + `src/evals/score.ts`，`tests/evals-score.test.ts` 19 例，maxCostTokens 标记 not-assessable-in-v1 不猜数）**；**V2 已落地（2026-10-10，Active work 189：`scripts/eval-run.mjs` + `evals/cases/` 首批 14 条六族 eval 集——runner 复用 bootKernel + 脚本化执行 Agent，trace 喂 V1 评分器、JSON 报告 + 基线钉 `evals/baseline.json`，`npm run evals`；V3 CI 门禁 / V4 真机录制待后续分期）**） |
 | S8 | Guardrails：注入/越权/PII | prompt injection 经数据跨 Agent 传播，多 Agent 放大攻击；越权工具调用 | ✅ **V1 已落地**（2026-10-09，Active work 174：[design-guardrails.md](design-guardrails.md) v0.2——`src/guardrails/content-risk.ts` `classifyContentRisk` 判定表（refuse > escalate > redact > annotate > pass：audit 凭据打码 / cross-domain PII 按 grant 脱敏或拒绝 / execute 外联凭据升级 L1 / 其余 annotate 带 provenance 边界）+ `scanContentSignals` 确定性扫描器（内置最小指令短语清单 + URL/凭据/PII 正则）+ 审计 3 值登记 + TUI token；23 例测试；V2 接装配与记忆待分期） |
 | S9 | 成本治理 | 任务/租户 token 预算、执行中预算闸门、异常熔断；cost 字段已有 | 📝→✅ 设计稿已出（2026-10-09，[design-cost-governance.md](design-cost-governance.md) v0.1——可信/自报双层口径 + 与 S4 同构的 CostLedger 纯函数（admit/软阈值/速率熔断）+ 超限复用 cancel/降级/L1 升级；阈值标定挂 #9；**V1 已落码（2026-10-10，Active work 183：`src/orchestrator/cost-ledger.ts`，admit 闸门/软阈值/速率熔断/窗口 roll，`tests/cost-ledger.test.ts` 11 例，自报成本永不进闸门）+ 审计 4 值 cost-* 登记）**；**V2 已落地（2026-10-10，Active work 184：`fanOutNew` 意图级准入闸门 + 拒绝审计 + ZEUS_COST_* env 解析）** |
@@ -66,6 +66,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | v0.2 | 2026-09-22 | Jev 已核实并落设计（design-decision-backend.md v0.1，快决策层）；S14 状态 ✅ |
 | v0.3 | 2026-09-22 | 决策后端抽象层升级为**模型无关**（design-decision-backend.md v0.2）：DecisionBackendKind=decision-model/llm，Jev 为专用决策模型家族首个实现，传统 LLM 经适配器同端口接入（慢层） |
 | v0.4 | 2026-10-09 | B/C 组九篇设计稿一次出齐（均 v0.1，V1 纯函数切法，未落码）：S8 护栏 design-guardrails、S6 可观测性 design-observability、S9 成本治理 design-cost-governance、S13 长流程恢复 design-long-running、S7 evals design-evals、S12 规划 design-planning、S15 流式 design-streaming、S16 沙箱 design-sandbox、S17 Agent 测试 design-agent-testing；tech map 九行 📝→✅ 设计稿已出 |
+| v0.9 | 2026-10-10 | S6 V3 可观测导出（Active work 190）：`TraceExporter` 窄端口 + `JsonlTraceExporter`（traceId 去重、0600）+ `MetricsHistory` 指标史 + boot 可选装配（默认关闭）+ `GET /api/metrics/history`；S6 行补 ✅ V3 已落地；design-observability v0.1 → v0.2；基线 1625/147 → 1631/148 |
 | v0.8 | 2026-10-10 | S7 evals V2 离线质量回归（Active work 189）：`scripts/eval-run.mjs` runner + `evals/cases/` 首批 14 条六族 eval 集（决策 unanimous/majority/冲突、介入 L1、选靶显式/无换将、dataPolicy 拒绝/注入、证据 mustCite/forbidBareAssertions、预算上限），复用 bootKernel + 脚本化执行 Agent、trace 喂 V1 纯函数评分器、JSON 报告 + 基线钉 evals/baseline.json，S7 行补 ✅ V2 已落地；脚本 16 → 17 个；基线 1625/147 不变 |
 | v0.7 | 2026-10-10 | S12 V2 规划即扇出接线（Active work 188）：`src/orchestrator/plan-flow.ts` PlanFlow 编排器落码（planning tag 发现 + 扇出 + data part `plan` 草稿 + intent-conflict 升级复用 + DAG runner 执行），S12 行 ✅ V1 已落码 → ✅ V1+V2 已落地；基线 1619/146 → 1625/147 |
 | v0.6 | 2026-10-10 | V2 接线批（Active work 184–187）：S9 成本闸门接线（意图级准入 + 审计 + env）、S16 stdio 最小隔离（narrowSpawn + envAllowList）、S17 协议兼容矩阵首版；S9/S16/S17 三行 ✅ V1 已落码 → ✅ V1+V2 已落地；基线 1581/139 → 1619/146 |

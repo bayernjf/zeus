@@ -132,7 +132,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
    - 支持任务受理（intake）、状态回传、结果回传（report-back）、升级人工（escalation）。
    - 人类始终保留中断、改道、给出最终裁决的最高权限。
 
-## 7. 矩阵产品生态：联邦接入，不合并代码库
+## 7. 矩阵产品生态：协议级接入，不合并代码库
 
 现有矩阵——**agent-world、job-agent、agent-dev、pr-helper、atlas、loom**，以及展示站 **bayjf**——各自保持独立仓库、独立部署与独立定位，通过统一的**执行 Agent 协议（Vassal Protocol）**向 Zeus 负责：
 

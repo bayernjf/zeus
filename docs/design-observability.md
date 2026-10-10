@@ -1,7 +1,7 @@
 # 设计稿：可观测性——分布式 trace、调用链与重放（tech map S6）
 
-- 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文定义从既有事件/审计/runId 命名装配 trace span 树的纯函数切法，不新造事件流。
-- 演进：v0.1（2026-10-09）首版——现状盘点（审计脊 + 进程内 metrics + 决策 replay + progress SSE 已齐，缺统一 trace 树与跨 Agent 透传）+ span 模型 + `buildTraceTree` 草案 + 分期。
+- 状态：**现行 v0.2（2026-10-10）**：V1（span 树纯函数）、V2（出站透传 + 只读端点）已落地，**V3（exporter + 指标史）已落码**（`TraceExporter` 窄端口 + `JsonlTraceExporter` 本地 JSONL 导出 + `MetricsHistory` 指标史 + boot 可选装配 + `GET /api/metrics/history`，Active work 190，基线 1631/148）。本文定义从既有事件/审计/runId 命名装配 trace span 树的纯函数切法，不新造事件流。
+- 演进：v0.2（2026-10-10）V3 落码轮——`src/observability/trace.ts` 补 `TraceExporter` 窄端口（export(tree)，默认不装配即 V1/V2 行为）+ `src/observability/exporter.ts` `JsonlTraceExporter`（JSONL 按 traceId 去重追加、0700 目录/0600 文件、重启 loadIndex 回读、readBack 旧→新）+ `src/observability/metrics-history.ts` `MetricsHistory`（JSONL 按 capturedAt 去重、capture/read、重启回读）；boot 可选装配（`traceExportFile`/`metricsHistoryFile` 默认 undefined：settle 即 fire-and-forget 导出 settled trace 树、每次保存链采一个指标快照），`GET /api/metrics/history` bearer 只读全量；§5 V3 行由「待实现」翻「已落地」。v0.1（2026-10-09）首版——现状盘点（审计脊 + 进程内 metrics + 决策 replay + progress SSE 已齐，缺统一 trace 树与跨 Agent 透传）+ span 模型 + `buildTraceTree` 草案 + 分期。
 - 关联：tech map S6（跨 Agent 调用链调试；审计已有，补分布式 trace）；design-supervision.md（fan-out/DAG/升级的时间线）；design-fan-out.md（runId/resumeNo 命名）；design-tool-discovery.md（tool-selected/换将链入 trace）；design-hil.md（介入级别作为 span 事件）；design-cost-governance.md（S9，span 上挂 cost）；`src/orchestrator/metrics.ts`（ConcurrencyMetrics 进程内滚动窗口）、`src/orchestrator/replay.ts`（replayDecision 人读时间线）、`src/orchestrator/progress.ts`（branch 生命周期事件）、`src/dispatch/dispatcher.ts`（审计 runId 贯穿）。
 - 本文是 trace/调用链可观测性的单一事实源；handoff 与 PRD 只索引。
 
@@ -90,7 +90,7 @@ export interface TraceExporter { export(tree: TraceTree): void | Promise<void>; 
 
 - **V1（纯函数装配）**：`buildTraceTree` + 测试（单分支/扇出多分支/换将/resume/升级/DAG 各一树；时钟只用内核时间；缺事件不臆造）；不接 exporter、不改协议。
 - **V2（出站透传 + 只读端点）**：dispatcher 出站带 `traceparent`；`GET /api/intents/:id/trace` 返回装配树（bearer，与 replay 同授权）；external-link 记录。
-- **V3（exporter + 指标史）**：TraceExporter 的 JSON/OTLP 实现（默认关闭、本地文件优先，守数据主权）；metrics 快照按窗口落本地（复用 archive 形状），回答趋势问题。
+- **V3（exporter + 指标史）✅ 已落地（Active work 190）**：`TraceExporter` 窄端口（`src/observability/trace.ts`）+ `JsonlTraceExporter` 本地 JSONL 实现（`src/observability/exporter.ts`：按 traceId 去重追加、0700 目录/0600 文件、重启 loadIndex 回读；默认关闭、本地文件优先，守数据主权）；`MetricsHistory` 指标史（`src/observability/metrics-history.ts`：JSONL 按 capturedAt 去重、随 boot 保存链采样、重启回读）；boot 可选装配（`traceExportFile` / `metricsHistoryFile`，意图 settle 即 fire-and-forget 导出、每次保存采一个快照）；`GET /api/metrics/history` 只读趋势端点（bearer，失败 mapKernelError）。OTLP 实现留待外部 collector 需求触发。
 - **V4（可选）**：决策输入快照随 span 导出，支撑离线重放（与 S17 录制重放合流）。
 
 **验收（V1 实施时）**：每类 span/事件至少一例；同一输入（audit+progress 夹具）两次装配结果字节一致（确定性）；resume 与换将的父子关系断言；全量与冒烟不回归（V1 零运行时行为变化）。

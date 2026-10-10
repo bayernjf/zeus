@@ -219,7 +219,7 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 | 1 | 第 `maxChildTickets+1` 张子票据被拒，并审计 `delegation-limit-exceeded` | 上限设 2，发 3 次 → 第三次必须红 |
 | 2 | `windowEndsAt` 之后新子票据一律被拒 | 窗口设 1 秒，等到点再发 → 必须红 |
 | 3 | 撤销一份契约后，其下所有未消费票据立即不可用 | 撤销前后各发一次同一票据 → 后者必须红 |
-| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:170-170 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:1054-1054 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
+| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:170-170 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:1126-1126 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
 | 5 | 子票据的 `used` 计数持久化，重启不重置 | 重启后打到上限 → 必须仍然拒 |
 
 ## 6. 现在明确不要做的事（写下来防止顺手做掉）
