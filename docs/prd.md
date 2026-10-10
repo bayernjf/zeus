@@ -79,7 +79,7 @@
 | E3.7 | 备份策略执行器 + 漂移检测 | P2 | ✅ | `src/vault/cli.ts` 零依赖执行器（`dist/vault/cli.js` / `npm run vault`）：`build`（密封 manifest-only 图）、`check`（L0 重连现盘对账 ok/changed/missing/unexpected，只读）、`backup`（密封 map+full bundle 两文件）、`restore`（digest 绑定校验后跨位写盘并复验）；密钥经 `ZEUS_VAULT_PASSPHRASE`（scrypt）或 `--key-file`（32 字节/hex），退出码 0 健康/1 错误/2 漂移/3 root 不可达供调度器判断；12 项 tests/vault-cli.test.ts + 编译产物全链路冒烟。**调度不内置**（design-vault §9：由外部 cron/systemd timer 触发，示例见 deployment.md §7） |
 | E3.8 | 检索后端升级（倒排/向量） | P2 | ⬜ | SearchBackend 接口不变；阈值见 deferred #10 |
 
-### E4. 执行 Agent 联邦（Vassal Protocol）
+### E4. 执行 Agent 协同（Vassal Protocol）
 
 | ID | 需求 | 优先级 | 状态 | 验收标准 |
 |---|---|---|---|---|

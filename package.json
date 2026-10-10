@@ -35,6 +35,7 @@
     "acceptance:fanout": "node scripts/acceptance-real-fanout.mjs",
     "acceptance:loom": "node scripts/acceptance-loom-interop.mjs",
     "smoke:core": "node scripts/smoke-core.mjs",
+    "evals": "node scripts/eval-run.mjs",
     "watch:tick": "node scripts/run-watch-tick.mjs",
     "bench:capacity": "node scripts/bench-capacity.mjs",
     "test": "vitest run",

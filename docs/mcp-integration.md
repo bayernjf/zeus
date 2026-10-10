@@ -18,7 +18,7 @@ MCP 在 Zeus 里同时出现在两个方向，且**不是**第三个（跨 Agent
 
 术语提醒：本文的 **Realm / 数据域** 指"一个用户目录即一个数据边界"，与 Kerberos / LDAP 的 security realm 无关（见 [terminology.md](terminology.md) 的 C 类同名异义）。对外沟通建议直说"Zeus 的数据域 MCP 服务"。
 
-**文件正文不经 HTTP 面暴露**（代码级依据：`src/http/server.ts:76-76 #content` 的面定义——"Realm **content** 只走 MCP stdio"；带 `realm` 字样的路由只有治理动作 `/api/realms/:id/disconnect`、`/api/realms/:id/retarget-tenant`、`/api/realm/write-grants`，加上不读正文的挂载视图 `/api/domains`——后者逐字段是 `realmId / type / tenant / readOnly / itemCount / contentDigest`，既无正文也无绝对根路径，`src/http/server.ts:2004-1983 #`）。正文只经 §1 的 stdio 通道出入，这是"数据主权在用户"这条设计约束的执行点之一。
+**文件正文不经 HTTP 面暴露**（代码级依据：`src/http/server.ts:77-77 #content` 的面定义——"Realm **content** 只走 MCP stdio"；带 `realm` 字样的路由只有治理动作 `/api/realms/:id/disconnect`、`/api/realms/:id/retarget-tenant`、`/api/realm/write-grants`，加上不读正文的挂载视图 `/api/domains`——后者逐字段是 `realmId / type / tenant / readOnly / itemCount / contentDigest`，既无正文也无绝对根路径，`src/http/server.ts:2004-1983 #`）。正文只经 §1 的 stdio 通道出入，这是"数据主权在用户"这条设计约束的执行点之一。
 
 ---
 

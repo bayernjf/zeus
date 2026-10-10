@@ -36,6 +36,17 @@ export type TraceSpan = {
 
 export type TraceTree = { traceId: string; root: TraceSpan; spans: TraceSpan[] };
 
+/**
+ * S6 V3 (design-observability §5): exporter narrow port. Export happens after
+ * assembly; the default build attaches no exporter, so a kernel without one
+ * behaves exactly as V1/V2 did. Implementations are responsible for their own
+ * retention and data-sovereignty boundaries (a JSONL local-file exporter lives
+ * in exporter.ts; OTLP/network exporters are intentionally not shipped).
+ */
+export interface TraceExporter {
+  export(tree: TraceTree): void | Promise<void>;
+}
+
 /** Whether an intent id belongs to a DAG node intent (`${dagId}::${nodeId}`,
  *  dag-runner idempotency shape). */
 function isDagNodeIntent(intentId: string): boolean {

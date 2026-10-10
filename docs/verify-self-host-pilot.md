@@ -12,7 +12,7 @@ P0 = **一个人、一个目录、一条日常技能、意图由人发起、exec
 
 内核**不内置定时器**，这是明文设计而不是遗漏（`src/vault/cli.ts:7-7 #scheduler`：备份的调度刻意留在内核外，交给外部 cron/systemd 调 CLI）。全仓计时器调用共 **5 处**（2026-10-05 现测，`grep -rnE "setTimeout|setInterval" src/`）：SSE 保活 `src/http/server.ts:2926-2896 #`、编排分支超时 `src/orchestrator/orchestrator.ts:1306-1306 #setTimeout`、派发受理超时 `src/dispatch/client.ts:112-112 #setTimeout`、决策后端调用超时 `src/decision/shared.ts:42-42 #setTimeout`、终端监督台轮询 `src/tui/cli.ts:95-95 #setInterval`。**这五处全都是给一次已经在进行的调用设上限，或界面自刷新；没有一处"到点自己发起意图"。**
 
-同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:3-3 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:148-148 #executionDelegationNonces`）。
+同时，写侧一直被刻意压住：`execute` 必须携带一次性执行票据，闸门在派发路径上现算并核销（`src/orchestrator/orchestrator.ts:3-3 #verifyAndConsumeExecutionDelegation`，票据形状 `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation`，已花 nonce 持久化 `src/state/kernel-state.ts:151-151 #executionDelegationNonces`）。
 
 **所以试点当前的正确形态就是"人发起 + 一次性票据"**——这不是缩水版，这恰好是能诚实交付的版本。
 
@@ -154,7 +154,7 @@ npm run vault -- restore --map data/bundles/<stem>.map.json \
 - **退出判据（四条）**：
   1. 重启后 `GET /api/roster` 里 P0-3 那个 Agent 仍在册（注册表进快照）；
   2. 重启后 P0-2 那个 realm 自动重连（连接关系写进状态文件，`ZEUS_REALM_ROOTS` 只在首次需要）；
-  3. **P0-6 已花掉的票据重放仍被拒**——已花 nonce 跨重启有效（导出 `src/state/kernel-state.ts:148-148 #executionDelegationNonces`、回灌 `src/state/kernel-state.ts:169-169 #executionDelegationNonces`）；
+  3. **P0-6 已花掉的票据重放仍被拒**——已花 nonce 跨重启有效（导出 `src/state/kernel-state.ts:151-151 #executionDelegationNonces`、回灌 `src/state/kernel-state.ts:171-171 #executionDelegationNonces`）；
   4. `vault check` 退出码 **0**（无漂移）；把目录里任一被收录文件改一个字节再跑，退出码必须是 **2**（漂移档位 `src/vault/cli.ts:208-208 #drift`，四档定义 `src/vault/cli.ts:44-44 #VAULT_EXIT`），根目录整个不可达则是 **3**。这一步的正向对照就是"改一个字节"——不红就说明 check 是空转。四个子命令的标志形状以 `src/vault/cli.ts:16-16 #restore` 的用法块为准。
 - **备份调度在内核外**：cron/systemd 调 `npm run vault -- ...` 即可（`src/vault/cli.ts:7-7 #scheduler`）。试点期至少要跑一次**异地恢复**：`vault restore` 到另一个位置，然后 `vault check` 指过去。
 
@@ -219,7 +219,7 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 | 1 | 第 `maxChildTickets+1` 张子票据被拒，并审计 `delegation-limit-exceeded` | 上限设 2，发 3 次 → 第三次必须红 |
 | 2 | `windowEndsAt` 之后新子票据一律被拒 | 窗口设 1 秒，等到点再发 → 必须红 |
 | 3 | 撤销一份契约后，其下所有未消费票据立即不可用 | 撤销前后各发一次同一票据 → 后者必须红 |
-| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:170-170 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:1040-1040 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
+| 4 | 超限不静默：走既有升级台等待人工放行（`src/oversight/oversight.ts:170-170 #ingestDelegationLimit`、boot 接线 `src/state/boot.ts:1126-1126 #escalateLimit`） | 制造超限 → `GET /api/escalations` 必须能看到那条；内核侧已由 `tests/boot-watch-execution.test.ts` 证明，HTTP 回读待第 5 步 |
 | 5 | 子票据的 `used` 计数持久化，重启不重置 | 重启后打到上限 → 必须仍然拒 |
 
 ## 6. 现在明确不要做的事（写下来防止顺手做掉）

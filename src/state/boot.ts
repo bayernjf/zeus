@@ -5,6 +5,7 @@ import {
   DEFAULT_AUDIT_KEEP,
   DEFAULT_AUDIT_MAX_BYTES,
   jsonlAuditSink,
+  readAuditLog,
   reinstateAuditBridge,
   revokeAuditBridge,
 } from '../dispatch/audit.js';
@@ -12,6 +13,7 @@ import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
 import { DagRunner } from '../orchestrator/dag-runner.js';
+import { PlanFlow } from '../orchestrator/plan-flow.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
 import { DriverGrantLedger, type DriverGrantAuditEntry } from '../realm/grant.js';
@@ -32,6 +34,9 @@ import { normalizeTenant } from '../realm/tenant.js';
 import type { RealmAuditEntry } from '../realm/source.js';
 import type { RealmType, TenantScope } from '../realm/types.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
+import { buildTraceTree, type TraceExporter } from '../observability/trace.js';
+import { JsonlTraceExporter } from '../observability/exporter.js';
+import { MetricsHistory } from '../observability/metrics-history.js';
 import {
   IntentArchive,
   archiveFilePath,
@@ -125,6 +130,16 @@ export type KernelBoot = KernelComponents & {
   intentArchive?: IntentArchiveLookup;
   /** deferred #42: effective retention mode (retain | archive | evict). */
   retention: RetentionMode;
+  /**
+   * S6 V3: trace exporter attached when `traceExportFile` was set, otherwise
+   * undefined (the narrow port stays unattached — default is off).
+   */
+  traceExporter?: TraceExporter;
+  /**
+   * S6 V3: metrics history writer attached when `metricsHistoryFile` was set,
+   * otherwise undefined (default is off; the live window alone keeps working).
+   */
+  metricsHistory?: MetricsHistory;
   /** Atomically persist live kernel state; a no-op without stateFile. */
   saveState(): Promise<void>;
 };
@@ -187,6 +202,18 @@ export type KernelBootOptions = {
   /** deferred #42: time window for the out-window condition (ms). */
   intentRetentionWindowMs?: number;
   /**
+   * S6 V3 (design-observability §5): when set, each settled intent's trace tree
+   * is appended to this JSONL file via JsonlTraceExporter (local file, keyed by
+   * traceId). Unset = no exporter, exactly the V1/V2 behaviour.
+   */
+  traceExportFile?: string;
+  /**
+   * S6 V3: when set, a MetricsSnapshot is appended to this JSONL file on every
+   * state save (keyed by capturedAt), answering trend questions across
+   * restarts. Unset = no history, exactly the V1/V2 behaviour.
+   */
+  metricsHistoryFile?: string;
+  /**
    * E1.2/E1.3 decision backend wired into the orchestrator. When present the S2
    * critic arbitration path is live (rule-inconclusive fan-outs consult it);
    * when omitted the kernel runs rules-only exactly as before. serve.ts builds
@@ -244,6 +271,16 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   const fetchImpl = options.fetchImpl;
 
   const retention: RetentionMode = options.intentRetention ?? 'retain';
+  // S6 V3 (design-observability §5): exporter + metrics history attach only when
+  // a caller names a local file — the default build stays exactly V1/V2 (no
+  // exporter, live window only). Both are local-file JSONL; nothing leaves the
+  // machine through them.
+  const traceExporter: TraceExporter | undefined = options.traceExportFile
+    ? new JsonlTraceExporter(options.traceExportFile)
+    : undefined;
+  const metricsHistory: MetricsHistory | undefined = options.metricsHistoryFile
+    ? new MetricsHistory(options.metricsHistoryFile)
+    : undefined;
   // deferred #42: the archive lives beside the state file. Constructed before
   // the orchestrator so its read port can be injected; absent a state file or
   // in retain mode there is nothing to archive.
@@ -683,9 +720,20 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
       : {}),
     onProgress: event => {
       progressHub.publish(event);
-      if (event.type === 'intent-finished' && event.realmId) {
-        recordBranchVerdicts(event);
-        consolidateFinishedMemory(event);
+      if (event.type === 'intent-finished') {
+        if (event.realmId) {
+          recordBranchVerdicts(event);
+          consolidateFinishedMemory(event);
+        }
+        // S6 V3: a settled intent is the natural export point for its trace
+        // tree — every span fact now exists on the audit spine / progress hub,
+        // and the tree is a read-only projection (design-observability §2).
+        // Fire-and-forget: an export write failure degrades observability, it
+        // never blocks dispatch or the fan-out return path.
+        if (traceExporter !== undefined && options.auditFile !== undefined) {
+          void exportSettledTrace(event.intentId, options.auditFile, progressHub, traceExporter)
+            .catch(error => (options.onAuditError ?? noop)(`trace export failed for ${event.intentId}: ${error instanceof Error ? error.message : String(error)}`));
+        }
       }
     },
     ...(options.decisionBackend ? { decisionBackend: options.decisionBackend } : {}),
@@ -708,6 +756,19 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   // orchestrator, so node intents share the kernel's idempotency table and
   // persist with it. The runner only adds wave scheduling + spec/result recall.
   const dagRunner = new DagRunner(registry.asVassalLookup(), dispatcher, { now }, orchestrator);
+
+  // S12 V2 (design-planning §5): planning wired as a fan-out. Planner skills
+  // are found by their `planning` tag, drafts are validated/scored/selected by
+  // the V1 pure functions, and the selected plan runs through the same DAG
+  // runner. plan-conflict / unplannable goals land on the oversight desk.
+  const planFlow = new PlanFlow({
+    orchestrator,
+    skillRegistry,
+    dagRunner,
+    oversight,
+    audit: entry => auditSink(entry),
+    now,
+  });
 
   // Self-host loop step 2: the trigger primitive. It is assembled here rather
   // than left as a library type so "an intent can be raised with nobody present"
@@ -752,8 +813,27 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   };
 
   const components: KernelComponents = {
-    registry, oversight, orchestrator, dagRunner, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
+    registry, oversight, orchestrator, dagRunner, planFlow, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
   };
+
+  // S6 V3: assemble the settled intent's trace tree from what already exists
+  // (the audit spine scoped to this intent's runIds + the retained progress
+  // events) and hand it to the exporter. Same projection the /trace endpoint
+  // serves; here it runs at settle time for the local file, not on read.
+  async function exportSettledTrace(
+    intentId: string,
+    auditFile: string,
+    hub: ProgressHub,
+    exporter: TraceExporter,
+  ): Promise<void> {
+    const progress = hub.eventsOf(intentId);
+    const runIds = new Set<string>();
+    for (const e of progress) {
+      if ('runId' in e && e.runId !== undefined) runIds.add(e.runId);
+    }
+    const audit = readAuditLog(auditFile).filter(a => a.runId !== undefined && runIds.has(a.runId));
+    await exporter.export(buildTraceTree({ audit, progress }));
+  }
 
   // deferred #27: a finished fan-out's verdicts are the kernel's only memory
   // producer. Written one step before consolidation so an intent folds into
@@ -916,6 +996,12 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     const run = persistTail.then(async () => {
       await runRetention();
       await target.save(collectKernelState(components));
+      // S6 V3: one metrics snapshot per save, keyed by capturedAt. Landed inside
+      // the save chain so a burst of saves serializes the history file exactly
+      // like the state file — no interleaved partial lines.
+      if (metricsHistory !== undefined) {
+        await metricsHistory.capture(metrics.snapshot());
+      }
     });
     persistTail = run.catch(() => {});
     await run;
@@ -1084,6 +1170,8 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     snapshot,
     ...(intentArchive ? { intentArchive } : {}),
     retention,
+    ...(traceExporter ? { traceExporter } : {}),
+    ...(metricsHistory ? { metricsHistory } : {}),
     saveState: persistLiveState,
   };
 }

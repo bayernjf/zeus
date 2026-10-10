@@ -118,6 +118,8 @@ export type {
 // --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
 export { Orchestrator, UnknownIntentError, IntentRequestConflictError } from './orchestrator/orchestrator.js';
 export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
+export { PlanFlow, PLANNER_TAG, extractPlanDraft } from './orchestrator/plan-flow.js';
+export type { PlanFlowOptions, PlanFlowRequest, PlanFlowResult } from './orchestrator/plan-flow.js';
 export { Semaphore, QueueFullError, type SlotRelease } from './orchestrator/semaphore.js';
 export { mergeBranches } from './orchestrator/merge.js';
 export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
@@ -141,6 +143,12 @@ export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
 export { judgeDecision } from './orchestrator/judge.js';
 export type { JudgeDecisionInput } from './orchestrator/judge.js';
 export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
+// --- S6 observability: trace projection + local exporters ---
+export { buildTraceTree } from './observability/trace.js';
+export type { TraceSpan, TraceSpanKind, TraceSpanEventKind, TraceTree, TraceExporter } from './observability/trace.js';
+export { JsonlTraceExporter } from './observability/exporter.js';
+export type { ExportedTraceRecord } from './observability/exporter.js';
+export { MetricsHistory } from './observability/metrics-history.js';
 // --- deferred #40 read-only half: execution-after failure attribution ---
 export { attributeFailures, participantsToEntries } from './reflection/failure-attribution.js';
 export type {

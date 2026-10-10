@@ -13,6 +13,7 @@ import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub } from '../orchestrator/progress.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import { buildTraceTree } from '../observability/trace.js';
+import type { MetricsHistory } from '../observability/metrics-history.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
@@ -126,6 +127,8 @@ export type HttpDeps = {
   oversight?: OversightDesk;
   /** H2: concurrency metrics snapshot. */
   metrics?: ConcurrencyMetrics;
+  /** S6 V3: metrics history writer (local JSONL); read back for trends. */
+  metricsHistory?: MetricsHistory;
   /** H3: per-intent progress events for the SSE stream. */
   progressHub?: ProgressHub;
   /** H2 (E2.2/E2.3): skill catalogue, lifecycle and team resolution. */
@@ -1107,6 +1110,18 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
     if (deps.metrics) {
       app.get('/api/metrics', { preHandler: requireBearer }, async () => deps.metrics!.snapshot());
+      // S6 V3: persisted metrics snapshots, oldest first — the trend answer
+      // across restarts that the live window cannot give. Same bearer gate;
+      // 404 with the not-configured reason when no history was wired.
+      if (deps.metricsHistory) {
+        app.get('/api/metrics/history', { preHandler: requireBearer }, async (_request: FastifyRequest, reply: FastifyReply) => {
+          try {
+            return await deps.metricsHistory!.read();
+          } catch (e) {
+            return mapKernelError(reply, e);
+          }
+        });
+      }
     }
 
     if (deps.orgRegistry) {
