@@ -104,11 +104,12 @@ describe('web portal design tokens', () => {
 });
 
 describe('web portal read-only public surface', () => {
-  it('calls only the two unauthenticated public endpoints', () => {
+  it('calls only the three unauthenticated public endpoints', () => {
     const fetches = [...HTML.matchAll(/fetch\(([^)]*)\)/g)].map(m => m[1]!);
-    expect(fetches.length).toBe(2);
+    expect(fetches.length).toBe(3);
     expect(HTML).toContain('"/api/roster/public"');
     expect(HTML).toContain('"/api/roster/keys"');
+    expect(HTML).toContain('"/api/audit/summary"');
   });
 
   it('never attaches credentials or write methods', () => {
