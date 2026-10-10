@@ -388,7 +388,11 @@ describe('npm run daily', () => {
     );
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('no agent delivered: failing-agent=agent state failed');
-    expect(result.stdout).toContain('agent state `failed` · counted `completed`');
+    // S10 V2: a task that settles failed is now a failed branch — state and
+    // outcome agree (`failed`), so the settlement fact reads as the plain
+    // agent-state line (the pre-fix "counted `completed`" disambiguation
+    // existed only because the failed task used to render as completed).
+    expect(result.stdout).toContain('agent state `failed`');
     expect(readFileSync(join(root, 'failed.md'), 'utf8')).toContain('agent state `failed`');
   });
 

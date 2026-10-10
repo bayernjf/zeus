@@ -80,7 +80,17 @@ export type Task = {
   kind: 'task';
   id: string;
   contextId: string;
-  status: { state: TaskState; timestamp?: string };
+  status: {
+    state: TaskState;
+    timestamp?: string;
+    /**
+     * Standard A2A task-status message (code + human-readable text). Zeus
+     * never fabricates one — it is read verbatim when a branch settles
+     * failed, so the failure reason that lands on the audit spine and the
+     * intent result is the vassal's own, not a reconstruction.
+     */
+    message?: { code?: string; message?: string };
+  };
   artifacts: Artifact[];
   /**
    * Standard A2A state-transition history (capability stateTransitionHistory).
