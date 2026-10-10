@@ -18,6 +18,7 @@
  *   node scripts/eval-run.mjs                     # run all cases, print summary
  *   node scripts/eval-run.mjs --write-baseline    # also pin evals/baseline.json
  *   node scripts/eval-run.mjs --baseline          # diff the run against the pinned baseline
+ *   node scripts/eval-run.mjs --baseline-file f.json  # diff against an arbitrary baseline file
  *   node scripts/eval-run.mjs --filter data-policy
  *   node scripts/eval-run.mjs --out /tmp/eval.json
  * Exit codes: 0 every case passed, 1 any case failed or the diff regressed,
@@ -38,7 +39,7 @@ const BUDGET_MS = 120_000;
 const startedAt = Date.now();
 const args = new Set(process.argv.slice(2));
 const WRITE_BASELINE = args.has('--write-baseline');
-const USE_BASELINE = args.has('--baseline');
+const USE_BASELINE = args.has('--baseline') || args.has('--baseline-file');
 const filter = (() => {
   const at = process.argv.indexOf('--filter');
   return at >= 0 ? process.argv[at + 1] : undefined;
@@ -46,6 +47,12 @@ const filter = (() => {
 const outPath = (() => {
   const at = process.argv.indexOf('--out');
   return at >= 0 ? process.argv[at + 1] : undefined;
+})();
+// V3: defaults to the pinned evals/baseline.json; an explicit path lets CI
+// matrices and tests diff against an arbitrary baseline without touching it.
+const baselineFile = (() => {
+  const at = process.argv.indexOf('--baseline-file');
+  return at >= 0 ? (process.argv[at + 1] ?? BASELINE_PATH) : BASELINE_PATH;
 })();
 
 /** @type {Array<{ caseId: string, passed: boolean, detail: string }>} */
@@ -231,17 +238,23 @@ if (WRITE_BASELINE) {
 }
 
 if (USE_BASELINE) {
-  if (!existsSync(BASELINE_PATH)) fail('no evals/baseline.json - run with --write-baseline first');
-  const baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).report;
+  if (!existsSync(baselineFile)) fail(`no baseline file at ${baselineFile} - run with --write-baseline first`);
+  const baseline = JSON.parse(readFileSync(baselineFile, 'utf8')).report;
   const regressions = diffAgainstBaseline(report, baseline);
+  let blocked = false;
   if (regressions.length > 0) {
     console.log('regressions vs baseline:');
     for (const r of regressions) {
+      if (r.severity === 'block') blocked = true;
       console.log(`  [${r.severity}] ${r.family}.${r.metric} ${r.previous} -> ${r.current}`);
     }
   } else {
     console.log('no regression vs baseline');
   }
+  // design-evals V3: a block-severity regression (blocked count grew in any
+  // family) is what the CI gate exists to catch — it must fail the run, not
+  // just print. warn-severity (passed shrank) stays advisory for now.
+  if (blocked) process.exit(1);
 }
 
 process.exit(report.failed > 0 ? 1 : 0);
