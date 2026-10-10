@@ -3002,6 +3002,9 @@ export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, i
     write(`event: ${event}\n`);
     write(`data: ${JSON.stringify(data)}\n\n`);
   };
+  // Created before the replay so `stop` can always clear it: a backlog that
+  // already holds the terminal event ends the stream in this same tick.
+  const keepalive = setInterval(() => write(': ping\n\n'), 15_000);
   const stop = (end: boolean): void => {
     if (closed) return;
     closed = true;
@@ -3010,11 +3013,23 @@ export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, i
     if (end) raw.end();
     else raw.destroy();
   };
+  // Capture and subscribe in the same tick so no event can slip between them, then
+  // replay what this intent already published. Without the backlog a client that
+  // attaches mid-run starts from a false "nothing yet": branches that settled
+  // before it arrived would be invisible until the terminal event (S15 V3).
+  const backlog = hub.eventsOf(id);
   const unsubscribe = hub.subscribe(id, event => {
     send(event.type, event);
     if (event.type === 'intent-finished') stop(true);
   });
-  const keepalive = setInterval(() => write(': ping\n\n'), 15_000);
+  for (const event of backlog) {
+    if (closed) return;
+    send(event.type, event);
+    if (event.type === 'intent-finished') {
+      stop(true);
+      return;
+    }
+  }
   raw.on('close', () => stop(false));
   raw.on('error', () => stop(false));
 }
