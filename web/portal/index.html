@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zeus 公开名册门户</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%230f1419'/%3E%3Cpath d='M12 4l5 3.5v5c0 3.6-2.2 6.3-5 7.5-2.8-1.2-5-3.9-5-7.5v-5L12 4z' fill='none' stroke='%23e2a336' stroke-width='1.6'/%3E%3Ccircle cx='12' cy='11.5' r='2' fill='%23e2a336'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #151c24;
+    --panel-2: #1a222c;
+    --line: #232d3a;
+    --line-soft: #1d2630;
+    --text: #d8dee6;
+    --text-2: #8b96a3;
+    --text-3: #5d6a78;
+    --accent: #4d9de0;
+    --ok: #3fb68b;
+    --warn: #e2a336;
+    --bad: #e05b4d;
+    --btn-primary-bg: #20334a;
+    --btn-primary-line: #2c4a6b;
+    --st-ok-line: #24483a;
+    --st-warn-line: #4a3a1f;
+    --st-bad-line: #552a26;
+    --code-bg: #0d1218;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f8;
+    --panel: #ffffff;
+    --panel-2: #eef1f4;
+    --line: #d7dee5;
+    --line-soft: #e3e9ee;
+    --text: #1c2630;
+    --text-2: #4d5a68;
+    --text-3: #7d8a97;
+    --accent: #1f6fb8;
+    --ok: #1d8a63;
+    --warn: #a06d10;
+    --bad: #c0392b;
+    --btn-primary-bg: #dceaf7;
+    --btn-primary-line: #a8c8e4;
+    --st-ok-line: #a8d8c4;
+    --st-warn-line: #e0c48a;
+    --st-bad-line: #e4b3ad;
+    --code-bg: #e8edf2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
+  a { color: var(--accent); }
+
+  .wrap { max-width: 960px; margin: 0 auto; padding: 28px 20px 56px; }
+  .hero { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; flex-wrap: wrap; }
+  .hero svg { width: 34px; height: 34px; flex: none; }
+  .hero h1 { font-size: 21px; margin: 0; font-weight: 700; letter-spacing: .01em; }
+  .hero .spacer { flex: 1; }
+  .lede { color: var(--text-2); margin: 0 0 20px; max-width: 70ch; }
+
+  .btn { font: inherit; font-size: 13px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  .btn:hover { border-color: var(--text-3); }
+  .btn.primary { background: var(--btn-primary-bg); border-color: var(--btn-primary-line); }
+
+  .conn { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px; color: var(--text-2); padding: 3px 10px; border: 1px solid var(--line); border-radius: 20px; background: var(--panel); }
+  .conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+  .conn.ok .dot { background: var(--ok); }
+  .conn.bad .dot { background: var(--bad); }
+
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 16px; }
+  .panel h2 { margin: 0; padding: 10px 14px; font-size: 12px; font-weight: 650; color: var(--text-2); border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 8px; letter-spacing: .05em; }
+  .panel h2 .hint { margin-left: auto; font-weight: 400; color: var(--text-3); font-family: var(--mono); font-size: 11px; }
+  .panel .body { padding: 12px 14px; }
+
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 6px 14px; align-items: baseline; }
+  .kv .k { color: var(--text-3); font-size: 12px; }
+  .kv .v { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th { color: var(--text-3); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: none; }
+  td .name { font-weight: 600; }
+  td .desc { color: var(--text-3); font-size: 12px; }
+  td .skills { color: var(--text-2); font-family: var(--mono); font-size: 11.5px; }
+
+  .st { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--text-2); background: var(--panel-2); }
+  .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .st.ok { color: var(--ok); border-color: var(--st-ok-line); }
+  .st.warn { color: var(--warn); border-color: var(--st-warn-line); }
+  .st.bad { color: var(--bad); border-color: var(--st-bad-line); }
+
+  .empty { padding: 18px 14px; color: var(--text-3); font-size: 13px; }
+  .err { padding: 12px 14px; color: var(--bad); font-family: var(--mono); font-size: 12.5px; }
+  code.fp { background: var(--code-bg); border: 1px solid var(--line-soft); border-radius: 5px; padding: 1px 6px; }
+  .foot { color: var(--text-3); font-size: 12px; margin-top: 10px; }
+  .setup { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .setup input { font: inherit; font-family: var(--mono); font-size: 12.5px; color: var(--text); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; min-width: 320px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="5" fill="var(--panel)"/><path d="M12 4l5 3.5v5c0 3.6-2.2 6.3-5 7.5-2.8-1.2-5-3.9-5-7.5v-5L12 4z" fill="none" stroke="var(--warn)" stroke-width="1.6"/><circle cx="12" cy="11.5" r="2" fill="var(--warn)"/></svg>
+    <h1 data-i18n="app.title">Zeus 公开名册门户</h1>
+    <span class="conn" id="connBadge"><span class="dot"></span><span id="connText" data-i18n="conn.idle">待连接</span></span>
+    <span class="spacer"></span>
+    <button class="btn" id="btnTheme">◐</button>
+    <button class="btn" id="btnLang">EN</button>
+    <button class="btn primary" id="btnRefresh" data-i18n="top.refresh">刷新</button>
+  </div>
+  <p class="lede" data-i18n="app.lede">本页展示 Zeus 内核公开发布的签名名册快照与根公钥。任何人可据此离线验签、核对吊销状态；页面本身只读，不含任何写入口。</p>
+
+  <div class="panel" id="panelSetup" hidden>
+    <h2><span data-i18n="setup.title">数据源</span> <span class="hint" data-i18n="setup.hint">仅需内核 HTTP 基址，无需令牌</span></h2>
+    <div class="body setup">
+      <input id="inBase" autocomplete="off" data-i18n-ph="setup.basePh" placeholder="http://127.0.0.1:8799">
+      <button class="btn primary" id="btnConnect" data-i18n="setup.connect">连接</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2><span data-i18n="roster.title">在册 Agent（已验签快照）</span> <span class="hint">GET /api/roster/public</span></h2>
+    <div id="rosterBody"><div class="empty" data-i18n="roster.waiting">等待数据…</div></div>
+  </div>
+
+  <div class="panel">
+    <h2><span data-i18n="seal.title">签封信息</span> <span class="hint" data-i18n="seal.hint">seal / attestation 计数</span></h2>
+    <div class="body"><div class="kv" id="sealKv"></div></div>
+  </div>
+
+  <div class="panel">
+    <h2><span data-i18n="keys.title">根公钥</span> <span class="hint">GET /api/roster/keys</span></h2>
+    <div class="body"><div class="kv" id="keysKv"><div class="empty" data-i18n="keys.waiting">等待数据…</div></div></div>
+  </div>
+
+  <div class="panel">
+    <h2><span data-i18n="verify.title">离线验签</span> <span class="hint" data-i18n="verify.hint">产物来自已拉取响应，无新请求</span></h2>
+    <div class="body">
+      <div class="setup">
+        <button class="btn" id="btnDlRoster" data-i18n="verify.dlRoster">下载签名快照 roster.json</button>
+        <button class="btn" id="btnDlKey" data-i18n="verify.dlKey">下载根公钥 rsk-public.pem</button>
+      </div>
+      <p class="foot" style="margin:10px 0 0"><span data-i18n="verify.cmdLabel">验签命令：</span><code class="fp">node scripts/verify-roster.mjs --file roster.json --key rsk-public.pem</code></p>
+    </div>
+  </div>
+
+  <p class="foot"><span data-i18n="app.foot1">吊销的 Agent 不出现在公开快照中；验签步骤见 scripts/verify-roster.mjs。</span> · <span data-i18n="app.apiOnly">UI 仅消费公开 HTTP API，零写路径</span></p>
+</div>
+
+<script>
+"use strict";
+// I18N-RES-BEGIN
+  const RES = {
+    "zh-CN": {
+      "app.title": "Zeus 公开名册门户",
+      "app.lede": "本页展示 Zeus 内核公开发布的签名名册快照与根公钥。任何人可据此离线验签、核对吊销状态；页面本身只读，不含任何写入口。",
+      "app.foot1": "吊销的 Agent 不出现在公开快照中；验签步骤见 scripts/verify-roster.mjs。",
+      "app.apiOnly": "UI 仅消费公开 HTTP API，零写路径",
+      "conn.idle": "待连接",
+      "conn.ok": "已连接",
+      "conn.bad": "连接失败",
+      "top.refresh": "刷新",
+      "setup.title": "数据源",
+      "setup.hint": "仅需内核 HTTP 基址，无需令牌",
+      "setup.basePh": "http://127.0.0.1:8799",
+      "setup.connect": "连接",
+      "roster.title": "在册 Agent（已验签快照）",
+      "roster.waiting": "等待数据…",
+      "roster.empty": "公开快照中没有在册 Agent。",
+      "roster.colName": "名称",
+      "roster.colDomain": "数据域",
+      "roster.colSkills": "技能",
+      "roster.colHealth": "健康",
+      "roster.colRealms": "数据域承诺",
+      "roster.colSince": "注册时间",
+      "roster.colAttestation": "attestation",
+      "att.active": "active · 有效期至 {exp}",
+      "att.revoked": "revoked（永久）",
+      "att.none": "—",
+      "health.healthy": "健康",
+      "health.unhealthy": "异常",
+      "health.unknown": "未知",
+      "seal.title": "签封信息",
+      "seal.hint": "seal / attestation 计数",
+      "seal.generatedAt": "快照生成时间",
+      "seal.schemaVersion": "schemaVersion",
+      "seal.scope": "scope",
+      "seal.alg": "签名算法",
+      "seal.kid": "签名密钥 kid",
+      "seal.digest": "snapshotDigest",
+      "seal.maxAge": "maxAgeSeconds",
+      "seal.attestations": "attestation 条数",
+      "keys.title": "根公钥",
+      "keys.waiting": "等待数据…",
+      "keys.kid": "kid",
+      "keys.thumbprint": "JWK thumbprint（RFC 7638）",
+      "keys.spkiSha256": "SPKI SHA-256",
+      "keys.custody": "密钥保管",
+      "keys.unavailable": "该进程无法导出根公钥（key-material-unavailable）",
+      "verify.title": "离线验签",
+      "verify.hint": "产物来自已拉取响应，无新请求",
+      "verify.dlRoster": "下载签名快照 roster.json",
+      "verify.dlKey": "下载根公钥 rsk-public.pem",
+      "verify.cmdLabel": "验签命令：",
+      "verify.noData": "请先连接加载数据",
+      "err.load": "加载失败：{msg}"
+    },
+    "en": {
+      "app.title": "Zeus Public Roster Portal",
+      "app.lede": "This page shows the signed roster snapshot and root public key published by a Zeus kernel. Anyone can verify the seals offline and check revocation status; the page is read-only with no write paths.",
+      "app.foot1": "Revoked agents never appear in the public snapshot; see scripts/verify-roster.mjs for the verification steps.",
+      "app.apiOnly": "UI consumes public HTTP APIs only — zero write paths",
+      "conn.idle": "idle",
+      "conn.ok": "connected",
+      "conn.bad": "unreachable",
+      "top.refresh": "Refresh",
+      "setup.title": "Data source",
+      "setup.hint": "kernel HTTP base URL only — no token needed",
+      "setup.basePh": "http://127.0.0.1:8799",
+      "setup.connect": "Connect",
+      "roster.title": "Registered agents (signed snapshot)",
+      "roster.waiting": "Waiting for data…",
+      "roster.empty": "No agents in the public snapshot.",
+      "roster.colName": "Name",
+      "roster.colDomain": "Domain",
+      "roster.colSkills": "Skills",
+      "roster.colHealth": "Health",
+      "roster.colRealms": "Data realm commitments",
+      "roster.colSince": "Registered at",
+      "roster.colAttestation": "attestation",
+      "att.active": "active · expires {exp}",
+      "att.revoked": "revoked (permanent)",
+      "att.none": "—",
+      "health.healthy": "healthy",
+      "health.unhealthy": "unhealthy",
+      "health.unknown": "unknown",
+      "seal.title": "Seal",
+      "seal.hint": "seal / attestation counts",
+      "seal.generatedAt": "Snapshot generated at",
+      "seal.schemaVersion": "schemaVersion",
+      "seal.scope": "scope",
+      "seal.alg": "Signature algorithm",
+      "seal.kid": "Signing key kid",
+      "seal.digest": "snapshotDigest",
+      "seal.maxAge": "maxAgeSeconds",
+      "seal.attestations": "attestation count",
+      "keys.title": "Root public key",
+      "keys.waiting": "Waiting for data…",
+      "keys.kid": "kid",
+      "keys.thumbprint": "JWK thumbprint (RFC 7638)",
+      "keys.spkiSha256": "SPKI SHA-256",
+      "keys.custody": "Key custody",
+      "keys.unavailable": "This process cannot export its root key (key-material-unavailable)",
+      "verify.title": "Offline verification",
+      "verify.hint": "artifacts come from already-fetched responses — no new requests",
+      "verify.dlRoster": "Download signed snapshot roster.json",
+      "verify.dlKey": "Download root key rsk-public.pem",
+      "verify.cmdLabel": "Verify command:",
+      "verify.noData": "connect and load data first",
+      "err.load": "load failed: {msg}"
+    }
+  };
+// I18N-RES-END
+
+  const LS_THEME = "zeus-portal-theme";
+  const LS_LANG = "zeus-portal-lang";
+  const LS_BASE = "zeus-portal-base";
+
+  let lang = "zh-CN";
+  function t(key, params) {
+    let s = (RES[lang] && RES[lang][key]) || RES["zh-CN"][key] || key;
+    if (params) for (const [k, v] of Object.entries(params)) s = s.split("{" + k + "}").join(String(v));
+    return s;
+  }
+  function applyI18n() {
+    document.documentElement.lang = lang;
+    document.title = t("app.title");
+    for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
+    for (const el of document.querySelectorAll("[data-i18n-ph]")) el.placeholder = t(el.dataset.i18nPh);
+    document.getElementById("btnLang").textContent = lang === "zh-CN" ? "EN" : "中文";
+  }
+
+  const state = { base: "", roster: null, keys: null, keysError: null };
+
+  function baseUrl() {
+    return state.base.replace(/\/+$/, "");
+  }
+
+  async function load() {
+    const badge = document.getElementById("connBadge");
+    const text = document.getElementById("connText");
+    try {
+      const [rosterRes, keysRes] = await Promise.all([
+        // no-cache revalidates: the snapshot is served with max-age=3600 for
+        // offline verifiers, but a live console must see register/revoke now.
+        fetch(baseUrl() + "/api/roster/public", { cache: "no-cache" }),
+        fetch(baseUrl() + "/api/roster/keys", { cache: "no-cache" }),
+      ]);
+      if (!rosterRes.ok) throw new Error("roster/public HTTP " + rosterRes.status);
+      state.roster = await rosterRes.json();
+      if (keysRes.ok) {
+        state.keys = await keysRes.json();
+        state.keysError = null;
+      } else {
+        state.keys = null;
+        state.keysError = "HTTP " + keysRes.status;
+      }
+      badge.className = "conn ok";
+      text.textContent = t("conn.ok");
+    } catch (error) {
+      state.roster = null;
+      badge.className = "conn bad";
+      text.textContent = t("conn.bad");
+      // The same-origin guess did not front a kernel; surface the setup panel
+      // so the user can point at a real base URL instead of being stuck.
+      document.getElementById("panelSetup").hidden = false;
+      renderError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    renderAll();
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+
+  function healthBadge(health) {
+    const cls = health === "healthy" ? "ok" : health === "unhealthy" ? "bad" : "warn";
+    return `<span class="st ${cls}">${esc(t("health." + health) === "health." + health ? health : t("health." + health))}</span>`;
+  }
+
+  function renderRoster() {
+    const body = document.getElementById("rosterBody");
+    const entries = (state.roster && state.roster.snapshot && state.roster.snapshot.entries) || [];
+    const attestations = (state.roster && state.roster.attestations) || {};
+    if (!entries.length) {
+      body.innerHTML = `<div class="empty">${esc(t("roster.empty"))}</div>`;
+      return;
+    }
+    const rows = entries.map(e => {
+      const skills = (e.skills || []).map(s => s.id || s.name || "").filter(Boolean).join(", ");
+      const realms = (e.commitments && e.commitments.dataRealms || []).join(", ");
+      const att = attestations[e.name];
+      const attText = !att
+        ? t("att.none")
+        : att.status === "revoked"
+          ? t("att.revoked")
+          : t("att.active", { exp: att.expiresAt || "—" });
+      return `<tr>
+        <td><div class="name">${esc(e.name)}</div>${e.description ? `<div class="desc">${esc(e.description)}</div>` : ""}</td>
+        <td>${esc(e.domain)}</td>
+        <td class="skills">${esc(skills)}</td>
+        <td>${healthBadge(e.health)}</td>
+        <td>${esc(realms)}</td>
+        <td class="skills">${esc(e.registeredAt || "")}</td>
+        <td class="skills">${esc(attText)}</td>
+      </tr>`;
+    }).join("");
+    body.innerHTML = `<table><thead><tr>
+      <th>${esc(t("roster.colName"))}</th><th>${esc(t("roster.colDomain"))}</th><th>${esc(t("roster.colSkills"))}</th>
+      <th>${esc(t("roster.colHealth"))}</th><th>${esc(t("roster.colRealms"))}</th><th>${esc(t("roster.colSince"))}</th><th>${esc(t("roster.colAttestation"))}</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function kvRow(k, v) {
+    return `<div class="k">${esc(k)}</div><div class="v">${esc(v)}</div>`;
+  }
+
+  function renderSeal() {
+    const kv = document.getElementById("sealKv");
+    const r = state.roster;
+    if (!r) { kv.innerHTML = ""; return; }
+    const snap = r.snapshot || {};
+    const seal = r.seal || {};
+    const attestations = r.attestations ? Object.keys(r.attestations).length : 0;
+    kv.innerHTML =
+      kvRow(t("seal.generatedAt"), snap.generatedAt || "-") +
+      kvRow(t("seal.schemaVersion"), String(snap.schemaVersion ?? "-")) +
+      kvRow(t("seal.scope"), snap.scope || "-") +
+      kvRow(t("seal.alg"), seal.alg || "-") +
+      kvRow(t("seal.kid"), seal.keyId || "-") +
+      kvRow(t("seal.digest"), seal.snapshotDigest || "-") +
+      kvRow(t("seal.maxAge"), String(seal.maxAgeSeconds ?? "-")) +
+      kvRow(t("seal.attestations"), String(attestations));
+  }
+
+  function renderKeys() {
+    const kv = document.getElementById("keysKv");
+    if (state.keysError) {
+      kv.innerHTML = `<div class="err">${esc(t("keys.unavailable"))} (${esc(state.keysError)})</div>`;
+      return;
+    }
+    const key = state.keys && state.keys.keys && state.keys.keys[0];
+    if (!key) { kv.innerHTML = `<div class="empty">${esc(t("keys.waiting"))}</div>`; return; }
+    kv.innerHTML =
+      kvRow(t("keys.kid"), key.kid || "-") +
+      kvRow(t("keys.thumbprint"), key.jwkThumbprint || "-") +
+      kvRow(t("keys.spkiSha256"), key.spkiSha256 || "-") +
+      (state.keys.custody ? kvRow(t("keys.custody"), state.keys.custody) : "");
+  }
+
+  function renderError(msg) {
+    document.getElementById("rosterBody").innerHTML = `<div class="err">${esc(t("err.load", { msg }))}</div>`;
+  }
+
+  function renderAll() {
+    renderRoster();
+    renderSeal();
+    renderKeys();
+  }
+
+  function setTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem(LS_THEME, theme); } catch { /* noop */ }
+  }
+
+  function init() {
+    let savedTheme = null;
+    let savedLang = null;
+    let savedBase = null;
+    try {
+      savedTheme = localStorage.getItem(LS_THEME);
+      savedLang = localStorage.getItem(LS_LANG);
+      savedBase = localStorage.getItem(LS_BASE);
+    } catch { /* noop */ }
+    setTheme(savedTheme === "light" ? "light" : "dark");
+    lang = savedLang === "en" ? "en" : "zh-CN";
+    applyI18n();
+
+    document.getElementById("btnTheme").addEventListener("click", () => {
+      setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+    });
+    document.getElementById("btnLang").addEventListener("click", () => {
+      lang = lang === "zh-CN" ? "en" : "zh-CN";
+      try { localStorage.setItem(LS_LANG, lang); } catch { /* noop */ }
+      applyI18n();
+      renderAll();
+    });
+    document.getElementById("btnRefresh").addEventListener("click", () => { if (state.base) load(); });
+    function download(filename, content, type) {
+      const url = URL.createObjectURL(new Blob([content], { type }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+    document.getElementById("btnDlRoster").addEventListener("click", () => {
+      if (!state.roster) { alert(t("verify.noData")); return; }
+      download("roster.json", JSON.stringify(state.roster, null, 2), "application/json");
+    });
+    document.getElementById("btnDlKey").addEventListener("click", () => {
+      const key = state.keys && state.keys.keys && state.keys.keys[0];
+      if (!key || !key.spkiPem) { alert(t("verify.noData")); return; }
+      download("rsk-public.pem", key.spkiPem, "application/x-pem-file");
+    });
+    document.getElementById("btnConnect").addEventListener("click", () => {
+      const value = document.getElementById("inBase").value.trim();
+      if (!value) return;
+      state.base = value;
+      try { localStorage.setItem(LS_BASE, value); } catch { /* noop */ }
+      document.getElementById("panelSetup").hidden = true;
+      load();
+    });
+
+    if (savedBase) {
+      state.base = savedBase;
+      document.getElementById("inBase").value = savedBase;
+      load();
+    } else {
+      // Same-origin default: when the portal is served by the same host that
+      // fronts the kernel, no setup step is needed at all.
+      state.base = location.origin;
+      if (location.protocol.startsWith("http")) {
+        load();
+      } else {
+        document.getElementById("panelSetup").hidden = false;
+      }
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

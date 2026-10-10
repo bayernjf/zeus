@@ -9,3 +9,6 @@ _e2e/
 
 # eval run reports (machine-readable artifacts, regenerated on every run)
 evals/reports/
+
+# playwright-cli browser session artifacts (snapshots, console logs)
+.playwright-cli/

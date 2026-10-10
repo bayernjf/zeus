@@ -30,6 +30,10 @@
     --branch-bad-text: #d39a92;
     --code-bg: #0d1218;
     --shadow: rgba(0,0,0,.4);
+    --dag-ok: #2e7d32;
+    --dag-bad: #c62828;
+    --dag-pending: #b26a00;
+    --mask-bg: rgba(0,0,0,.45);
     --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
     --sans: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   }
@@ -57,6 +61,10 @@
     --branch-bad-text: #a93226;
     --code-bg: #e8edf2;
     --shadow: rgba(28,38,48,.18);
+    --dag-ok: #2e7d32;
+    --dag-bad: #c62828;
+    --dag-pending: #b26a00;
+    --mask-bg: rgba(28,38,48,.25);
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.5; }
@@ -183,20 +191,20 @@
   .cors-note { font-size: 12px; color: var(--text-2); background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-top: 10px; }
   .dag-node { display: inline-flex; flex-direction: column; gap: 2px; font-size: 12px; font-family: var(--mono); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; background: var(--panel-2); }
   .dag-node i { font-style: normal; font-size: 10.5px; color: var(--text-3); }
-  .dag-node.node-ok { border-color: #2e7d32; }
-  .dag-node.node-bad { border-color: #c62828; }
-  .dag-node.node-pending { border-color: #b26a00; }
+  .dag-node.node-ok { border-color: var(--dag-ok); }
+  .dag-node.node-bad { border-color: var(--dag-bad); }
+  .dag-node.node-pending { border-color: var(--dag-pending); }
   .dag-node.node-idle { border-color: var(--line); }
   .cors-note code { font-family: var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
 
   /* 确认对话框（替代 window.confirm：可承载关键参数、键盘可达、E2E 可断言） */
-  .dlg-mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 60; }
-  :root[data-theme="light"] .dlg-mask { background: rgba(28,38,48,.25); }
+  .dlg-mask { position: fixed; inset: 0; background: var(--mask-bg); display: flex; align-items: center; justify-content: center; z-index: 60; }
   .dlg { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; width: 440px; max-width: calc(100vw - 32px); box-shadow: 0 8px 32px var(--shadow); }
   .dlg .dlg-title { padding: 12px 16px; font-size: 13px; font-weight: 650; border-bottom: 1px solid var(--line-soft); }
   .dlg .dlg-body { padding: 12px 16px; font-size: 13px; color: var(--text-2); white-space: pre-wrap; word-break: break-word; }
   .dlg .dlg-body .mono { color: var(--text); }
   .dlg .dlg-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
+  .dlg .dlg-input { display: block; width: calc(100% - 32px); margin: 0 16px 4px; box-sizing: border-box; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-family: var(--mono); font-size: 12px; resize: vertical; }
 
   /* 键盘可达性：可见焦点环 */
   .btn:focus-visible, .nav-item:focus-visible, .form input:focus-visible, .form select:focus-visible, .form textarea:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -224,8 +232,10 @@
     <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.grants">授权</span></a>
     <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.org">组织</span></a>
     <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.catalog">目录</span></a>
+    <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
+    <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.5 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.10 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -315,23 +325,6 @@
       </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
-          <h2><span data-i18n="roster.title">名册</span> <span class="hint">/api/roster</span></h2>
-          <div class="body" id="rosterBody"></div>
-        </div>
-        <div class="panel">
-          <h2><span data-i18n="audit.title">扇出 / 决策时间线</span> <span class="hint">/api/audit · <span data-i18n="audit.hint">服务端过滤 decision/vassal · 关键字前端过滤</span></span></h2>
-          <div class="body">
-            <div class="audit-filter">
-              <select id="afDecision"><option value="" data-i18n="audit.allDecisions">全部决策</option></select>
-              <input id="afVassal" autocomplete="off" data-i18n-ph="audit.vassalPh" placeholder="主体过滤（服务端）" style="width:150px">
-              <input id="afKeyword" autocomplete="off" data-i18n-ph="audit.keywordPh" placeholder="关键字过滤（前端）" style="width:150px">
-              <button class="btn small" id="afApply" data-i18n="audit.apply">应用</button>
-              <span class="af-count" id="afCount"></span>
-            </div>
-            <div id="auditBody"></div>
-          </div>
-        </div>
-        <div class="panel">
           <h2><span data-i18n="domains.title">数据域与跨域授权</span> <span class="hint">/api/domains</span></h2>
           <div class="body" id="domainsBody"></div>
         </div>
@@ -342,11 +335,50 @@
       </div>
     </section>
 
+    <!-- ===== 视图：名册（方案 B 独立视图） ===== -->
+    <section id="view-roster" hidden>
+      <div class="panel">
+        <h2><span data-i18n="roster.title">名册</span> <span class="hint">/api/roster · <span data-i18n="roster.hint">吊销即刻断流 · 恢复为显式审计动作</span></span></h2>
+        <div class="body" id="rosterBody"></div>
+      </div>
+      <div class="panel" style="margin-top:14px">
+        <h2><span data-i18n="roster.regTitle">注册执行 Agent</span> <span class="hint">POST /api/vassals · <span data-i18n="roster.regHint">拉取卡片 + fealty 校验通过才入册</span></span></h2>
+        <div class="body">
+          <div class="row">
+            <label for="vrCardUrl" data-i18n="roster.regCardUrl">Agent Card URL（必填）</label>
+            <input id="vrCardUrl" autocomplete="off" data-i18n-ph="roster.regCardUrlPh" placeholder="http://127.0.0.1:9000/api/a2a/agent-card">
+          </div>
+          <div class="row">
+            <label for="vrTaskUrl" data-i18n="roster.regTaskUrl">任务端点 URL（可选，缺省用卡片 url）</label>
+            <input id="vrTaskUrl" autocomplete="off" data-i18n-ph="roster.regTaskUrlPh" placeholder="http://127.0.0.1:9000/api/a2a/tasks">
+          </div>
+          <div class="row">
+            <label for="vrToken" data-i18n="roster.regToken">对端凭证（可选，派发时作 bearer 带出）</label>
+            <input id="vrToken" type="password" autocomplete="off">
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="btnVassalRegister" data-i18n="roster.regRun">注册</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== 视图：裁决 ===== -->
     <section id="view-oversight" hidden>
       <div class="panel">
         <h2><span data-i18n="esc.title">待裁决队列</span> <span class="hint" id="escCount"></span></h2>
-        <div class="body" id="escBody"></div>
+        <div class="body">
+          <div class="audit-filter">
+            <select id="escKindFilter">
+              <option value="" data-i18n="esc.allKinds">全部类型</option>
+              <option value="task-input" data-i18n="esc.kind.task-input">任务输入</option>
+              <option value="intent-conflict" data-i18n="esc.kind.intent-conflict">意图冲突</option>
+              <option value="memory-dispute" data-i18n="esc.kind.memory-dispute">记忆争议</option>
+              <option value="delegation-limit" data-i18n="esc.kind.delegation-limit">委托越限</option>
+            </select>
+          </div>
+          <div id="escBody"></div>
+        </div>
       </div>
     </section>
 
@@ -495,6 +527,55 @@
         <h2><span data-i18n="org.title">组织编制</span> <span class="hint">GET /api/org/chart · <span data-i18n="org.hint">部门 / lead / 成员 / 岗位技能</span></span></h2>
         <div class="body" id="orgBody"><div class="empty" data-i18n="common.loading">加载中…</div></div>
       </div>
+      <div class="grid" style="margin-top:14px">
+        <div class="panel">
+          <h2><span data-i18n="org.createTitle">新建部门</span> <span class="hint">POST /api/org/departments</span></h2>
+          <div class="body">
+            <div class="row">
+              <label for="odName" data-i18n="org.deptName">部门名</label>
+              <input id="odName" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="odMission" data-i18n="org.deptMission">使命</label>
+              <input id="odMission" autocomplete="off">
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="btnOrgCreate" data-i18n="org.createRun">新建</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2><span data-i18n="org.assignTitle">任命成员</span> <span class="hint">POST /api/org/departments/:id/members</span></h2>
+          <div class="body">
+            <div class="row">
+              <label for="oaDept" data-i18n="org.pickDept">部门</label>
+              <select id="oaDept"></select>
+            </div>
+            <div class="row">
+              <label for="oaAgent" data-i18n="org.agentId">Agent ID</label>
+              <input id="oaAgent" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="oaRole" data-i18n="org.role">角色</label>
+              <select id="oaRole">
+                <option value="member">member</option>
+                <option value="lead">lead</option>
+              </select>
+            </div>
+            <div class="row">
+              <label for="oaTitle" data-i18n="org.postTitle">岗位（可选）</label>
+              <input id="oaTitle" autocomplete="off">
+            </div>
+            <div class="row">
+              <label for="oaSkills" data-i18n="org.postSkills">岗位技能（逗号分隔，可选）</label>
+              <input id="oaSkills" autocomplete="off">
+            </div>
+            <div class="actions">
+              <button class="btn primary" id="btnOrgAssign" data-i18n="org.assignRun">任命</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== 视图：目录（技能 + 连接器，只读可见性） ===== -->
@@ -518,6 +599,23 @@
         <h2><span data-i18n="catalog.connectorsTitle">连接器（MCP）</span> <span class="hint">GET /api/connectors · <span data-i18n="catalog.connectorsHint">令牌只回显有无，不回显值</span></span></h2>
         <div class="body" id="catalogConnectorsBody"><div class="empty" data-i18n="common.loading">加载中…</div></div>
       </div>
+    </section>
+
+    <!-- ===== 视图：审计（方案 B 独立视图） ===== -->
+    <section id="view-audit" hidden>
+      <div class="panel">
+          <h2><span data-i18n="audit.title">扇出 / 决策时间线</span> <span class="hint">/api/audit · <span data-i18n="audit.hint">服务端过滤 decision/vassal · 关键字前端过滤</span></span></h2>
+          <div class="body">
+            <div class="audit-filter">
+              <select id="afDecision"><option value="" data-i18n="audit.allDecisions">全部决策</option></select>
+              <input id="afVassal" autocomplete="off" data-i18n-ph="audit.vassalPh" placeholder="主体过滤（服务端）" style="width:150px">
+              <input id="afKeyword" autocomplete="off" data-i18n-ph="audit.keywordPh" placeholder="关键字过滤（前端）" style="width:150px">
+              <button class="btn small" id="afApply" data-i18n="audit.apply">应用</button>
+              <span class="af-count" id="afCount"></span>
+            </div>
+            <div id="auditBody"></div>
+          </div>
+        </div>
     </section>
 
     <!-- ===== 视图：意图详情（作战室） ===== -->
@@ -608,7 +706,23 @@
       "nav.grants": "授权",
       "nav.org": "组织",
       "nav.catalog": "目录",
+      "nav.roster": "名册",
       "nav.connect": "连接",
+      "nav.audit": "审计",
+      "skill.action.install": "安装",
+      "skill.action.uninstall": "卸载",
+      "skill.action.deprecate": "弃用",
+      "skill.action.harden": "收敛权限",
+      "skill.confirmInstall": "确定将技能 {id}（{version}）置为 active 吗？",
+      "skill.confirmUninstall": "确定卸载技能 {id}（{version}）吗？卸载立即移出组队解析与默认查询，可重装。",
+      "skill.confirmDeprecate": "确定弃用技能 {id}（{version}）吗？弃用后不可新装。",
+      "skill.hardenTitle": "收敛技能权限",
+      "skill.hardenBody": "技能 {id}（{version}）的权限声明，每行一条（scope 或 scope:action）。harden 只能收窄：越出既有声明的请求会被 400 拒绝。留空则不修改 permissions。",
+      "skill.installed": "已安装 {id}",
+      "skill.uninstalled": "已卸载 {id}",
+      "skill.deprecatedDone": "已弃用 {id}",
+      "skill.hardened": "已收敛 {id} 权限",
+      "skill.actionFailed": "{action}失败：{msg}",
       "app.tagline": "只读监控 · 裁决 · 授权 · 组织",
       "app.apiOnly": "UI 仅消费现有 HTTP API",
       "conn.none": "未连接",
@@ -632,6 +746,7 @@
       "trend.hint": "前端 3s 采样 · 最近 40 个采样点",
       "trend.waiting": "等待采样…",
       "roster.title": "名册",
+      "roster.hint": "吊销即刻断流 · 恢复为显式审计动作",
       "audit.title": "扇出 / 决策时间线",
       "audit.hint": "服务端过滤 decision/vassal · 关键字前端过滤",
       "audit.allDecisions": "全部决策",
@@ -670,6 +785,24 @@
       "watch.tick": "立即评估一次（POST /api/watch-tick）",
       "org.title": "组织编制",
       "org.hint": "部门 / lead / 成员 / 岗位技能",
+      "org.createTitle": "新建部门",
+      "org.deptName": "部门名",
+      "org.deptMission": "使命",
+      "org.createRun": "新建",
+      "org.assignTitle": "任命成员",
+      "org.pickDept": "部门",
+      "org.agentId": "Agent ID",
+      "org.role": "角色",
+      "org.postTitle": "岗位（可选）",
+      "org.postSkills": "岗位技能（逗号分隔，可选）",
+      "org.assignRun": "任命",
+      "org.needDeptFields": "请填部门名与使命",
+      "org.needAssignFields": "请选部门并填 Agent ID",
+      "org.confirmCreate": "确定新建部门「{name}」（使命：{mission}）吗？",
+      "org.confirmAssign": "确定将 {agent} 任命为 {dept} 的 {role} 吗？",
+      "org.created": "已新建部门 {name}",
+      "org.assigned": "已任命 {agent} 到 {dept}",
+      "org.actionFailed": "{action}失败：{msg}",
       "common.loading": "加载中…",
       "catalog.skillsTitle": "技能目录",
       "catalog.skillsHint": "注册/生命周期管理走 CLI/API，监督台只读",
@@ -848,6 +981,18 @@
       "roster.revoke": "吊销",
       "roster.restore": "恢复",
       "roster.stickyNote": "吊销对重新注册保持粘性；恢复是独立审计动作。",
+      "roster.regTitle": "注册执行 Agent",
+      "roster.regHint": "拉取卡片 + fealty 校验通过才入册",
+      "roster.regCardUrl": "Agent Card URL（必填）",
+      "roster.regCardUrlPh": "http://127.0.0.1:9000/api/a2a/agent-card",
+      "roster.regTaskUrl": "任务端点 URL（可选，缺省用卡片 url）",
+      "roster.regTaskUrlPh": "http://127.0.0.1:9000/api/a2a/tasks",
+      "roster.regToken": "对端凭证（可选，派发时作 bearer 带出）",
+      "roster.regRun": "注册",
+      "roster.regNeedUrl": "请填 Agent Card URL",
+      "roster.regConfirm": "确定从 {url} 拉取卡片并注册执行 Agent 吗？",
+      "roster.regDone": "已注册 {name}",
+      "roster.regFailed": "注册失败：{msg}",
       "roster.confirmAction": "确定{action}执行 Agent「{name}」吗？{warn}",
       "roster.actionDone": "已{action} {name}",
       "roster.actionFailed": "{action}失败：{msg}",
@@ -867,6 +1012,7 @@
       "esc.status.rejected": "已拒绝",
       "esc.count": "共 {total} 条（待决 {pending}）",
       "esc.empty": "没有待处理的裁决",
+      "esc.allKinds": "全部类型",
       "esc.noStances": "无可选立场",
       "esc.optionsLine": "选项：",
       "esc.stancesLine": "立场：",
@@ -983,7 +1129,23 @@
       "nav.grants": "Grants",
       "nav.org": "Org",
       "nav.catalog": "Catalog",
+      "nav.roster": "Roster",
       "nav.connect": "Connect",
+      "nav.audit": "Audit",
+      "skill.action.install": "Install",
+      "skill.action.uninstall": "Uninstall",
+      "skill.action.deprecate": "Deprecate",
+      "skill.action.harden": "Harden",
+      "skill.confirmInstall": "Set skill {id} ({version}) to active?",
+      "skill.confirmUninstall": "Uninstall skill {id} ({version})? It leaves team resolution and default queries immediately, and can be reinstalled.",
+      "skill.confirmDeprecate": "Deprecate skill {id} ({version})? Deprecated skills cannot be installed.",
+      "skill.hardenTitle": "Harden skill permissions",
+      "skill.hardenBody": "Permission claims for skill {id} ({version}), one per line (scope or scope:action). Harden can only narrow: claims beyond the current grant are rejected with 400. Leave empty to keep permissions unchanged.",
+      "skill.installed": "Installed {id}",
+      "skill.uninstalled": "Uninstalled {id}",
+      "skill.deprecatedDone": "Deprecated {id}",
+      "skill.hardened": "Hardened {id}",
+      "skill.actionFailed": "{action} failed: {msg}",
       "conn.none": "Not connected",
       "conn.title": "Connection settings",
       "conn.base": "API base URL",
@@ -1091,11 +1253,24 @@
       "trend.hint": "3s client sampling · last 40 points",
       "trend.waiting": "Waiting for samples…",
       "roster.title": "Roster",
+      "roster.hint": "revocation cuts the wire immediately · reinstate is an explicit audited act",
       "roster.empty": "Roster empty (no execution agents registered)",
       "roster.revoked": "Revoked",
       "roster.revoke": "Revoke",
       "roster.restore": "Reinstate",
       "roster.stickyNote": "Revocation sticks across re-registration; reinstate is a separate audited action.",
+      "roster.regTitle": "Register execution agent",
+      "roster.regHint": "card fetch + fealty validation must pass before enlistment",
+      "roster.regCardUrl": "Agent Card URL (required)",
+      "roster.regCardUrlPh": "http://127.0.0.1:9000/api/a2a/agent-card",
+      "roster.regTaskUrl": "Task endpoint URL (optional, defaults to card url)",
+      "roster.regTaskUrlPh": "http://127.0.0.1:9000/api/a2a/tasks",
+      "roster.regToken": "Peer credential (optional, sent as bearer on dispatch)",
+      "roster.regRun": "Register",
+      "roster.regNeedUrl": "Agent Card URL is required",
+      "roster.regConfirm": "Fetch the card from {url} and register the execution agent?",
+      "roster.regDone": "registered {name}",
+      "roster.regFailed": "register failed: {msg}",
       "roster.confirmAction": "{action} execution agent \"{name}\"?{warn}",
       "roster.actionDone": "{action} done: {name}",
       "roster.actionFailed": "{action} failed: {msg}",
@@ -1126,6 +1301,7 @@
       "esc.status.rejected": "Rejected",
       "esc.count": "{total} total ({pending} pending)",
       "esc.empty": "No pending adjudications",
+      "esc.allKinds": "All kinds",
       "esc.noStances": "No stances available",
       "esc.optionsLine": "Options: ",
       "esc.stancesLine": "Stances: ",
@@ -1204,6 +1380,24 @@
       "watch.approveFailed": "approve-contract failed: {msg}",
       "org.title": "Org structure",
       "org.hint": "Departments / leads / members / post skills",
+      "org.createTitle": "Create department",
+      "org.deptName": "Name",
+      "org.deptMission": "Mission",
+      "org.createRun": "Create",
+      "org.assignTitle": "Assign member",
+      "org.pickDept": "Department",
+      "org.agentId": "Agent ID",
+      "org.role": "Role",
+      "org.postTitle": "Post title (optional)",
+      "org.postSkills": "Post skills (comma-separated, optional)",
+      "org.assignRun": "Assign",
+      "org.needDeptFields": "department name and mission are required",
+      "org.needAssignFields": "pick a department and enter an agent ID",
+      "org.confirmCreate": "Create department \"{name}\" (mission: {mission})?",
+      "org.confirmAssign": "Assign {agent} as {role} of {dept}?",
+      "org.created": "department {name} created",
+      "org.assigned": "{agent} assigned to {dept}",
+      "org.actionFailed": "{action} failed: {msg}",
       "org.keyPath": "critical path",
       "org.noDepartments": "No departments yet (POST /api/org/departments is managed via CLI/API; supervisor is read-only)",
       "org.unspecified": "(unspecified)",
@@ -1420,6 +1614,38 @@
       mask.querySelector('[data-act="yes"]').focus();
     });
   }
+  // 带输入的对话框：技能 harden 收敛权限声明等场景；Esc/取消回 null，确认回文本。
+  function promptDialog(opts) {
+    const o = opts || {};
+    return new Promise(resolve => {
+      const mask = document.createElement('div');
+      mask.className = 'dlg-mask';
+      mask.innerHTML = '<div class="dlg" role="dialog" aria-modal="true">'
+        + (o.title ? '<div class="dlg-title"></div>' : '')
+        + '<div class="dlg-body"></div>'
+        + '<textarea class="dlg-input" rows="4" spellcheck="false"></textarea>'
+        + '<div class="dlg-actions"><button class="btn" type="button" data-act="no"></button>'
+        + '<button class="btn ' + (o.danger ? 'danger' : 'primary') + '" type="button" data-act="yes"></button></div></div>';
+      if (o.title) mask.querySelector('.dlg-title').textContent = o.title;
+      mask.querySelector('.dlg-body').textContent = o.body || '';
+      const input = mask.querySelector('.dlg-input');
+      if (o.placeholder) input.setAttribute('placeholder', o.placeholder);
+      mask.querySelector('[data-act="no"]').textContent = t('dlg.cancel');
+      mask.querySelector('[data-act="yes"]').textContent = o.confirmLabel || t('dlg.ok');
+      const done = v => { window.removeEventListener('keydown', onKey, true); mask.remove(); resolve(v); };
+      const onKey = ev => { if (ev.key === 'Escape') { ev.stopPropagation(); done(null); } };
+      window.addEventListener('keydown', onKey, true);
+      mask.addEventListener('click', ev => {
+        if (ev.target === mask) { done(null); return; }
+        const act = ev.target && ev.target.dataset ? ev.target.dataset.act : '';
+        if (act === 'yes') done(input.value);
+        if (act === 'no') done(null);
+      });
+      $('dlgRoot').appendChild(mask);
+      input.focus();
+    });
+  }
+
   // 主题初始化（先于首帧，避免闪烁）：显式存储 > 系统偏好
   try {
     const savedTheme = localStorage.getItem(LS_THEME);
@@ -1447,6 +1673,8 @@
     sseRetries: 0,
     auditFilter: { decision: '', vassal: '', keyword: '' },
     auditLast: null,
+    escList: null,
+    escKindFilter: '',
     trend: [],
     skillsCache: [],
   };
@@ -1538,7 +1766,7 @@
     }
     return text;
   }
-  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, connect: 1 };
+  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, roster: 1, audit: 1, connect: 1 };
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
@@ -1695,6 +1923,12 @@
   function renderOrg(data) {
     const el = $('orgBody');
     const depts = (data && data.departments) || [];
+    const sel = $('oaDept');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = depts.map(d => `<option value="${esc(d.departmentId)}">${esc(d.name)}</option>`).join('');
+      if (prev && depts.some(d => d.departmentId === prev)) sel.value = prev;
+    }
     if (!depts.length) { el.innerHTML = emptyRow(t('org.noDepartments')); return; }
     let html = '';
     for (const d of depts) {
@@ -1741,7 +1975,7 @@
     const countEl = $('catSkillCount');
     if (countEl) countEl.textContent = t('catalog.count', { total: all.length }) + (filter ? t('catalog.showing', { n: list.length }) : '');
     if (!list.length) { el.innerHTML = emptyRow(filter ? t('catalog.noneWithState', { status: filter }) : t('catalog.empty')); return; }
-    let rows = '<table><colgroup><col style="width:26%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:22%"><col style="width:18%"></colgroup><tr><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.provider')) + '</th><th>' + esc(t('col.perms')) + '</th></tr>';
+    let rows = '<table><colgroup><col style="width:22%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:19%"><col style="width:15%"><col style="width:15%"></colgroup><tr><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.provider')) + '</th><th>' + esc(t('col.perms')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const s of list) {
       const stCls = s.status === 'active' ? 'ok' : s.status === 'deprecated' ? 'warn' : '';
       rows += `<tr>
@@ -1751,9 +1985,19 @@
         <td>${badge(s.status, stCls)}</td>
         <td class="mono" style="font-size:11px">${esc((s.providedBy || []).join(', ') || '—')}</td>
         <td style="font-size:11px">${esc((s.permissions || []).join(', ') || '—')}</td>
+        <td>${skillActions(s)}</td>
       </tr>`;
     }
     el.innerHTML = rows + '</table>';
+  }
+
+  // 方案 B 技能治理：按状态给操作（deprecated 不可装，uninstalled 可重装，harden 只收窄）。
+  function skillActions(s) {
+    const id = esc(s.id), v = esc(s.version);
+    const btn = (act, label, cls) => `<button class="btn small${cls ? ' ' + cls : ''}" data-act="${act}" data-id="${id}" data-version="${v}">${esc(label)}</button>`;
+    if (s.status === 'active') return `<div style="display:flex;gap:4px;flex-wrap:wrap">${btn('skill-harden', t('skill.action.harden'))}${btn('skill-deprecate', t('skill.action.deprecate'), 'danger')}</div>`;
+    if (s.status === 'deprecated') return btn('skill-uninstall', t('skill.action.uninstall'), 'danger');
+    return btn('skill-install', t('skill.action.install'));
   }
 
   function renderConnectors(list) {
@@ -2386,13 +2630,18 @@
 
   function renderEscalations(list) {
     const el = $('escBody');
-    const pending = (list || []).filter(e => e.status === 'pending');
+    state.escList = list || [];
+    const kind = state.escKindFilter || '';
+    const shown = kind ? state.escList.filter(e => e.kind === kind) : state.escList;
+    const pending = state.escList.filter(e => e.status === 'pending');
     state.escPending = pending.length;
     $('escBadge').textContent = pending.length ? String(pending.length) : '';
-    $('escCount').textContent = (list || []).length ? t('esc.count', { total: (list || []).length, pending: pending.length }) : '';
-    if (!list || !list.length) { el.innerHTML = emptyRow(t('esc.empty')); return; }
+    $('escCount').textContent = state.escList.length
+      ? t('esc.count', { total: state.escList.length, pending: pending.length }) + (kind ? ' · ' + escKindLabel(kind) : '')
+      : '';
+    if (!shown.length) { el.innerHTML = emptyRow(t('esc.empty')); return; }
     let html = '<table><colgroup><col style="width:15%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:26%"><col style="width:10%"><col style="width:15%"></colgroup><tr><th>' + esc(t('col.escId')) + '</th><th>' + esc(t('col.kind')) + '</th><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.reasonOptions')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
-    for (const e of list) {
+    for (const e of shown) {
       const st = badge(escStatusLabel(e.status), e.status === 'pending' ? 'warn' : e.status === 'approved' ? 'ok' : 'bad');
       html += `<tr>
         <td class="mono" style="font-size:11.5px">${esc(e.id)}</td>
@@ -2617,8 +2866,12 @@
         // face must not blank the contract/watch panel (and vice versa).
         await Promise.allSettled([loadDomains(), loadContracts(), loadWatches()]);
       }
+      else if (view === 'audit') {
+        try { await loadAudit(); } catch (e2) { $('auditBody').innerHTML = emptyRow(t('audit.loadFailed', { msg: e2.message })); }
+      }
       else if (view === 'org') await loadOrg();
       else if (view === 'catalog') await loadCatalog();
+      else if (view === 'roster') await loadRoster();
       else if (view === 'intent') await loadIntent(state.intentId);
       setConn(true);
     } catch (e) {
@@ -2626,8 +2879,6 @@
       if (view === 'monitor') {
         $('stateBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
         $('metricsBody').innerHTML = '';
-        $('rosterBody').innerHTML = '';
-        $('auditBody').innerHTML = '';
         $('domainsBody').innerHTML = '';
       } else if (view === 'oversight') {
         $('escBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
@@ -2640,6 +2891,8 @@
       } else if (view === 'catalog') {
         $('catalogSkillsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
         $('catalogConnectorsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
+      } else if (view === 'roster') {
+        $('rosterBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'intent') {
         $('intentMeta').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       }
@@ -2651,19 +2904,17 @@
   }
 
   async function loadMonitor() {
-    const [s, m, r, d] = await Promise.all([
-      api('GET', '/api/state'), api('GET', '/api/metrics'), api('GET', '/api/roster'),
+    const [s, m, d] = await Promise.all([
+      api('GET', '/api/state'), api('GET', '/api/metrics'),
       api('GET', '/api/domains'),
     ]);
     let decision = null;
     try { decision = await api('GET', '/api/decision'); } catch { decision = null; } // 未装配决策状态面时静默
-    renderState(s); renderDecision(decision); renderMetrics(m); renderRoster(r); renderDomains(d);
+    renderState(s); renderDecision(decision); renderMetrics(m); renderDomains(d);
     renderRecent();
-    try {
-      await loadAudit();
-    } catch (e) {
-      $('auditBody').innerHTML = emptyRow(t('audit.loadFailed', { msg: e.message }));
-    }
+  }
+  async function loadRoster() {
+    renderRoster(await api('GET', '/api/roster'));
   }
   async function loadEscalations() {
     const data = await api('GET', '/api/escalations');
@@ -2753,6 +3004,36 @@
           await loadEscalations();
         } catch (e) { toast(t('watch.approveFailed', { msg: e.message }), 'bad'); }
       })();
+    } else if (act === 'skill-install' || act === 'skill-uninstall' || act === 'skill-deprecate') {
+      const version = btn.getAttribute('data-version') || '';
+      const kind = act === 'skill-install' ? 'install' : act === 'skill-uninstall' ? 'uninstall' : 'deprecate';
+      const confirmKey = { install: 'skill.confirmInstall', uninstall: 'skill.confirmUninstall', deprecate: 'skill.confirmDeprecate' }[kind];
+      if (!(await confirmDialog({ body: t(confirmKey, { id, version }), danger: kind !== 'install' }))) return;
+      (async () => {
+        try {
+          await api('POST', '/api/skills/' + encodeURIComponent(id) + '/' + kind, { version });
+          const doneKey = { install: 'skill.installed', uninstall: 'skill.uninstalled', deprecate: 'skill.deprecatedDone' }[kind];
+          toast(t(doneKey, { id }), 'ok');
+          await loadCatalog();
+        } catch (e) { toast(t('skill.actionFailed', { action: t('skill.action.' + kind), msg: e.message }), 'bad'); }
+      })();
+    } else if (act === 'skill-harden') {
+      const version = btn.getAttribute('data-version') || '';
+      const input = await promptDialog({
+        title: t('skill.hardenTitle'),
+        body: t('skill.hardenBody', { id, version }),
+        placeholder: 'realm:read\nfs:write',
+        confirmLabel: t('skill.action.harden'),
+      });
+      if (input === null) return;
+      const permissions = input.split('\n').map(l => l.trim()).filter(Boolean);
+      (async () => {
+        try {
+          await api('POST', '/api/skills/' + encodeURIComponent(id) + '/harden', { version, permissions });
+          toast(t('skill.hardened', { id }), 'ok');
+          await loadCatalog();
+        } catch (e) { toast(t('skill.actionFailed', { action: t('skill.action.harden'), msg: e.message }), 'bad'); }
+      })();
     } else if (act === 'revoke-vassal' || act === 'reinstate-vassal') {
       const name = btn.getAttribute('data-name') || '';
       const revoking = act === 'revoke-vassal';
@@ -2774,6 +3055,56 @@
   // ===== 派发与意图详情操作 =====
   $('btnDispatch').addEventListener('click', dispatchIntent);
   $('btnRecognize').addEventListener('click', recognizeIntent);
+
+  $('btnOrgCreate').addEventListener('click', async function () {
+    const name = $('odName').value.trim();
+    const mission = $('odMission').value.trim();
+    if (!name || !mission) { toast(t('org.needDeptFields'), 'bad'); return; }
+    if (!(await confirmDialog({ body: t('org.confirmCreate', { name, mission }) }))) return;
+    try {
+      await api('POST', '/api/org/departments', { name, mission });
+      toast(t('org.created', { name }), 'ok');
+      $('odName').value = ''; $('odMission').value = '';
+      await loadOrg();
+    } catch (e) { toast(t('org.actionFailed', { action: t('org.createRun'), msg: e.message }), 'bad'); }
+  });
+
+  $('btnOrgAssign').addEventListener('click', async function () {
+    const deptId = $('oaDept').value;
+    const agentId = $('oaAgent').value.trim();
+    if (!deptId || !agentId) { toast(t('org.needAssignFields'), 'bad'); return; }
+    const role = $('oaRole').value;
+    const title = $('oaTitle').value.trim();
+    const skills = $('oaSkills').value.split(',').map(s => s.trim()).filter(Boolean);
+    const deptName = $('oaDept').selectedOptions[0] ? $('oaDept').selectedOptions[0].textContent : deptId;
+    if (!(await confirmDialog({ body: t('org.confirmAssign', { agent: agentId, role, dept: deptName }) }))) return;
+    try {
+      const body = { agentId, role };
+      if (title) body.title = title;
+      if (skills.length) body.skills = skills;
+      await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/members', body);
+      toast(t('org.assigned', { agent: agentId, dept: deptName }), 'ok');
+      $('oaAgent').value = ''; $('oaTitle').value = ''; $('oaSkills').value = '';
+      await loadOrg();
+    } catch (e) { toast(t('org.actionFailed', { action: t('org.assignRun'), msg: e.message }), 'bad'); }
+  });
+
+  $('btnVassalRegister').addEventListener('click', async function () {
+    const cardUrl = $('vrCardUrl').value.trim();
+    const taskUrl = $('vrTaskUrl').value.trim();
+    const token = $('vrToken').value;
+    if (!cardUrl) { toast(t('roster.regNeedUrl'), 'bad'); return; }
+    if (!(await confirmDialog({ body: t('roster.regConfirm', { url: cardUrl }) }))) return;
+    try {
+      const body = { cardUrl };
+      if (taskUrl) body.taskUrl = taskUrl;
+      if (token.trim()) body.token = token;
+      const entry = await api('POST', '/api/vassals', body);
+      toast(t('roster.regDone', { name: (entry && entry.card && entry.card.name) || cardUrl }), 'ok');
+      $('vrCardUrl').value = ''; $('vrTaskUrl').value = ''; $('vrToken').value = '';
+      await loadRoster();
+    } catch (e) { toast(t('roster.regFailed', { msg: e.message }), 'bad'); }
+  });
   $('btnCancelIntent').addEventListener('click', cancelIntent);
   $('btnBackIntent').addEventListener('click', function () { location.hash = '#/monitor'; });
 
@@ -2827,6 +3158,12 @@
   // ===== 目录：技能状态前端过滤 =====
   $('catSkillStatus').addEventListener('change', function () {
     if (state.skillsCache) renderSkills(state.skillsCache);
+  });
+
+  // ===== 裁决：升级类型前端过滤 =====
+  $('escKindFilter').addEventListener('change', function () {
+    state.escKindFilter = this.value;
+    if (state.escList) renderEscalations(state.escList);
   });
 
   function startPoll() {
