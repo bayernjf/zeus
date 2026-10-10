@@ -114,6 +114,10 @@
 
   /* 状态徽标 */
   .st { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--text-2); background: var(--panel-2); }
+  .cm-gatebar { display: flex; gap: 3px; margin-top: 5px; flex-wrap: wrap; }
+  .cm-gate { font-size: 10.5px; font-family: var(--mono); padding: 0 6px; border-radius: 8px; border: 1px solid var(--line); color: var(--text-2); background: var(--panel-2); cursor: default; }
+  .cm-gate.ok { color: var(--ok); border-color: var(--st-ok-line); }
+  .cm-gate.blocked { color: var(--warn); border-color: var(--st-warn-line); }
   .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
   .st.ok { color: var(--ok); border-color: var(--st-ok-line); }
   .st.warn { color: var(--warn); border-color: var(--st-warn-line); }
@@ -235,7 +239,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.13 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.14 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -2105,6 +2109,21 @@
     return badge(tl('cm.stage.' + stage, stage), cls);
   }
 
+  const CM_GATES = [['seat', 'opened'], ['account', 'account'], ['authorization', 'authorization'], ['mentorship', 'mentorship']];
+
+  function cmGateBar(verdict, withdrawn) {
+    if (withdrawn) return '';
+    const checks = (verdict && verdict.checks) || {};
+    const cells = CM_GATES.map(([gate, stageKey]) => {
+      const check = checks[gate];
+      const ok = check && check.ok === true;
+      const reason = check && check.reason ? check.reason : '';
+      return `<span class="cm-gate ${ok ? 'ok' : 'blocked'}" title="${esc(t('cm.stage.' + stageKey) + (reason ? '：' + reason : ''))}">${esc(t('cm.stage.' + stageKey))}</span>`;
+    }).join('');
+    const commissioned = checks.commission && checks.commission.ok === true;
+    return `<div class="cm-gatebar">${cells}<span class="cm-gate ${commissioned ? 'ok' : 'blocked'}" title="${esc(t('cm.stage.commissioned'))}">${esc(t('cm.stage.commissioned'))}</span></div>`;
+  }
+
   function renderCommissions(data) {
     const el = $('cmBody');
     const list = (data && data.commissions) || [];
@@ -2121,7 +2140,7 @@
       } else if (!c.withdrawn) {
         actions = `<button class="btn small danger" data-act="cm-withdraw" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.withdraw'))}</button>`;
       }
-      html += `<tr><td class="mono">${esc(c.agentId)}</td><td class="mono">${esc(c.realmId)}</td><td>${cmStageBadge(stage, c.withdrawn)}</td><td class="mono">${fmtTime(c.openedAt)}</td><td>${actions}</td></tr>`;
+      html += `<tr><td class="mono">${esc(c.agentId)}</td><td class="mono">${esc(c.realmId)}</td><td>${cmStageBadge(stage, c.withdrawn)}${cmGateBar(c.verdict, c.withdrawn)}</td><td class="mono">${fmtTime(c.openedAt)}</td><td>${actions}</td></tr>`;
     }
     el.innerHTML = html + '</table>';
   }
