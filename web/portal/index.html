@@ -164,6 +164,10 @@
       "roster.colHealth": "健康",
       "roster.colRealms": "数据域承诺",
       "roster.colSince": "注册时间",
+      "roster.colAttestation": "attestation",
+      "att.active": "active · 有效期至 {exp}",
+      "att.revoked": "revoked（永久）",
+      "att.none": "—",
       "health.healthy": "健康",
       "health.unhealthy": "异常",
       "health.unknown": "未知",
@@ -208,6 +212,10 @@
       "roster.colHealth": "Health",
       "roster.colRealms": "Data realm commitments",
       "roster.colSince": "Registered at",
+      "roster.colAttestation": "attestation",
+      "att.active": "active · expires {exp}",
+      "att.revoked": "revoked (permanent)",
+      "att.none": "—",
       "health.healthy": "healthy",
       "health.unhealthy": "unhealthy",
       "health.unknown": "unknown",
@@ -303,6 +311,7 @@
   function renderRoster() {
     const body = document.getElementById("rosterBody");
     const entries = (state.roster && state.roster.snapshot && state.roster.snapshot.entries) || [];
+    const attestations = (state.roster && state.roster.attestations) || {};
     if (!entries.length) {
       body.innerHTML = `<div class="empty">${esc(t("roster.empty"))}</div>`;
       return;
@@ -310,6 +319,12 @@
     const rows = entries.map(e => {
       const skills = (e.skills || []).map(s => s.id || s.name || "").filter(Boolean).join(", ");
       const realms = (e.commitments && e.commitments.dataRealms || []).join(", ");
+      const att = attestations[e.name];
+      const attText = !att
+        ? t("att.none")
+        : att.status === "revoked"
+          ? t("att.revoked")
+          : t("att.active", { exp: att.expiresAt || "—" });
       return `<tr>
         <td><div class="name">${esc(e.name)}</div>${e.description ? `<div class="desc">${esc(e.description)}</div>` : ""}</td>
         <td>${esc(e.domain)}</td>
@@ -317,11 +332,12 @@
         <td>${healthBadge(e.health)}</td>
         <td>${esc(realms)}</td>
         <td class="skills">${esc(e.registeredAt || "")}</td>
+        <td class="skills">${esc(attText)}</td>
       </tr>`;
     }).join("");
     body.innerHTML = `<table><thead><tr>
       <th>${esc(t("roster.colName"))}</th><th>${esc(t("roster.colDomain"))}</th><th>${esc(t("roster.colSkills"))}</th>
-      <th>${esc(t("roster.colHealth"))}</th><th>${esc(t("roster.colRealms"))}</th><th>${esc(t("roster.colSince"))}</th>
+      <th>${esc(t("roster.colHealth"))}</th><th>${esc(t("roster.colRealms"))}</th><th>${esc(t("roster.colSince"))}</th><th>${esc(t("roster.colAttestation"))}</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
   }
 
