@@ -18,6 +18,7 @@
  *   node scripts/eval-run.mjs                     # run all cases, print summary
  *   node scripts/eval-run.mjs --write-baseline    # also pin evals/baseline.json
  *   node scripts/eval-run.mjs --baseline          # diff the run against the pinned baseline
+ *   node scripts/eval-run.mjs --baseline-file f.json  # diff against an arbitrary baseline file
  *   node scripts/eval-run.mjs --filter data-policy
  *   node scripts/eval-run.mjs --out /tmp/eval.json
  * Exit codes: 0 every case passed, 1 any case failed or the diff regressed,
@@ -38,7 +39,7 @@ const BUDGET_MS = 120_000;
 const startedAt = Date.now();
 const args = new Set(process.argv.slice(2));
 const WRITE_BASELINE = args.has('--write-baseline');
-const USE_BASELINE = args.has('--baseline');
+const USE_BASELINE = args.has('--baseline') || args.has('--baseline-file');
 const filter = (() => {
   const at = process.argv.indexOf('--filter');
   return at >= 0 ? process.argv[at + 1] : undefined;
@@ -46,6 +47,12 @@ const filter = (() => {
 const outPath = (() => {
   const at = process.argv.indexOf('--out');
   return at >= 0 ? process.argv[at + 1] : undefined;
+})();
+// V3: defaults to the pinned evals/baseline.json; an explicit path lets CI
+// matrices and tests diff against an arbitrary baseline without touching it.
+const baselineFile = (() => {
+  const at = process.argv.indexOf('--baseline-file');
+  return at >= 0 ? (process.argv[at + 1] ?? BASELINE_PATH) : BASELINE_PATH;
 })();
 
 /** @type {Array<{ caseId: string, passed: boolean, detail: string }>} */
@@ -62,8 +69,10 @@ function reportLine(caseId, passed, detail = '') {
  * its agent-card and settles tasks with the declared stance/rationale from the
  * task data part (`stance` / `rationale` keys — the shapes src/orchestrator/
  * aggregate.ts extractStance reads). `dataPolicy` rides the card's fealty so
- * the data-policy family can exercise the origin gate.
- * @param {Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string }>} agents
+ * the data-policy family can exercise the origin gate. `fail` drives the
+ * S10/S11 adversarial cases: the branch's task settles failed, so the recovery
+ * chain (branch-failed -> escalate) is what the scorer observes.
+ * @param {Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean }>} agents
  */
 function makeFetch(agents) {
   const byName = new Map(agents.map(a => [a.name, a]));
@@ -77,6 +86,19 @@ function makeFetch(agents) {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+    if (spec.fail) {
+      const failed = {
+        kind: 'task',
+        id: `${name}-task`,
+        contextId: 'eval',
+        status: { state: 'failed', message: { code: 'EVAL_SCRIPTED_FAIL', message: 'scripted failure for the adversarial case' } },
+        artifacts: [],
+      };
+      return new Response(
+        `data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: failed })}\n\n`,
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      );
     }
     const task = {
       kind: 'task',
@@ -144,11 +166,34 @@ function makeOversightBridge(audits) {
  * @typedef {{
  *   id: string;
  *   skill: string;
- *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string }>;
+ *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean }>;
  *   request: Record<string, unknown>;
+ *   costLimit?: { maxWindowCost: number; circuitWindowMs: number };
  *   expect: Array<import('../dist/evals/types.js').EvalExpectation>;
+ *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
  * }} RunnerCase
  */
+
+/** Build a personal-realm claim event for the guardrails family (S8): the
+ *  memory assembly path scans recalled fact text through the content-risk
+ *  chain, so a case seeds facts whose rendered text carries (or deliberately
+ *  lacks) the adversarial signals.
+ * @param {{ id: string, subject: string, predicate: string, object: string }} m
+ * @returns {import('../dist/memory/types.js').MemoryEvent}
+ */
+function memoryClaim(m) {
+  return {
+    eventId: m.id,
+    realmId: 'personal',
+    runId: 'eval-memory-seed',
+    source: { agentId: 'eval-seed' },
+    kind: 'claim',
+    content: { subject: m.subject, predicate: m.predicate, object: m.object },
+    refs: [],
+    confidence: 0.9,
+    occurredAt: '2026-10-10T00:00:00.000Z',
+  };
+}
 
 /** @param {RunnerCase} c */
 async function runCase(c) {
@@ -160,7 +205,12 @@ async function runCase(c) {
     vassalSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
     dispatchAudit: e => audits.push(e),
     oversightAudit: makeOversightBridge(audits),
+    ...(c.costLimit !== undefined ? { costLimit: c.costLimit } : {}),
   });
+  if (c.memory !== undefined) {
+    for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
+    kernel.memoryStore?.consolidateRealm('personal');
+  }
   const outcome = await kernel.orchestrator.fanOut(
     /** @type {import('../dist/orchestrator/types.js').FanOutRequest} */ ({
       intentId: `eval-${c.id.replaceAll('/', '-')}`,
@@ -231,17 +281,23 @@ if (WRITE_BASELINE) {
 }
 
 if (USE_BASELINE) {
-  if (!existsSync(BASELINE_PATH)) fail('no evals/baseline.json - run with --write-baseline first');
-  const baseline = JSON.parse(readFileSync(BASELINE_PATH, 'utf8')).report;
+  if (!existsSync(baselineFile)) fail(`no baseline file at ${baselineFile} - run with --write-baseline first`);
+  const baseline = JSON.parse(readFileSync(baselineFile, 'utf8')).report;
   const regressions = diffAgainstBaseline(report, baseline);
+  let blocked = false;
   if (regressions.length > 0) {
     console.log('regressions vs baseline:');
     for (const r of regressions) {
+      if (r.severity === 'block') blocked = true;
       console.log(`  [${r.severity}] ${r.family}.${r.metric} ${r.previous} -> ${r.current}`);
     }
   } else {
     console.log('no regression vs baseline');
   }
+  // design-evals V3: a block-severity regression (blocked count grew in any
+  // family) is what the CI gate exists to catch — it must fail the run, not
+  // just print. warn-severity (passed shrank) stays advisory for now.
+  if (blocked) process.exit(1);
 }
 
 process.exit(report.failed > 0 ? 1 : 0);

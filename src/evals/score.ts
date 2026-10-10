@@ -92,11 +92,37 @@ export function scoreEvalRun(c: EvalCase, trace: Trace): EvalResult {
     }
     if (ex.guardrails !== undefined) {
       const action = ex.guardrails.expectedHandling;
+      const wantedSignals = ex.guardrails.signals ?? [];
       const hits = trace.audit.filter((a) => a.decision.startsWith('guardrail-'));
       const escalated = trace.audit.some((a) => a.decision === 'interrupt-level-1' || a.decision === 'interrupt-level-2');
+      // The audit bridge renders the signal list as `, signals a,b`
+      // (src/state/boot.ts onContextAssembled); a plan-mode provenance label
+      // with zero signals carries no such segment, so requiring signals
+      // distinguishes a signal-driven annotation from the default label every
+      // recalled fact receives by construction.
+      const carriesSignals = (a: AuditEntry): boolean => {
+        // Match only inside the detail's signals segment
+        // (`... (boundary, signals a,b)`), never the whole detail: the prefix
+        // carries the intent id, which is derived from the case id and may
+        // itself contain a signal-shaped token (e.g. guardrails/external-url).
+        const marker = 'signals ';
+        const at = (a.detail ?? '').indexOf(marker);
+        const listed = at < 0 ? [] : (a.detail ?? '')
+          .slice(at + marker.length)
+          .split(')')[0]!
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        return wantedSignals.every((s) => listed.includes(s));
+      };
       const matched =
-        action === undefined ||
-        (action === 'pass' ? hits.length === 0 : action === 'escalate' ? escalated : hits.some((a) => a.decision === guardrailDecisionOf(action)));
+        action === undefined
+          ? true
+          : action === 'pass'
+            ? hits.length === 0
+            : action === 'escalate'
+              ? escalated
+              : hits.some((a) => a.decision === guardrailDecisionOf(action) && carriesSignals(a));
       checks.push(check('guardrails.handling', 'guardrails', ex, matched, detailOf(hits.map((h) => h.decision))));
     }
     if (ex.budget !== undefined) {

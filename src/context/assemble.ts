@@ -29,9 +29,12 @@ export type ContextAppendixEntry = {
   /** Retrieval relevance score (searchRecall's original value). */
   score: number;
   /**
-   * S8 V2 (design-guardrails §4/§5): content origin attached at assembly.
-   * Memory recall is kernel-resolved Realm text — data, never an operator
-   * instruction. The branch consumer reads the boundary, not the prose.
+   * S8 V2 (design-guardrails §3.3): content origin attached at assembly.
+   * A recalled fact carries the classification fixed at consolidation
+   * (agent-produced for every claim the consolidator produces), so the
+   * branch consumer sees "another agent said this", never an operator
+   * instruction. Facts written before the field existed fall back to
+   * kernel-resolved-realm.
    */
   provenance: ContentProvenance;
 };
@@ -149,16 +152,19 @@ export function assembleBranchContext(args: {
       events.push({ kind: 'context-trimmed', trimmed: 1, reason: 'sensitive' });
       continue;
     }
-    // S8 V2 (design-guardrails §4): every forwarded entry carries its
-    // provenance and has run through the content-risk decision chain. Memory
-    // recall is kernel-resolved Realm text, so plan-mode assembly annotates
+    // S8 V2 (design-guardrails §3.3/§4): every forwarded entry carries its
+    // provenance and has run through the content-risk decision chain. The
+    // entry's provenance is the origin classification fixed on the fact at
+    // consolidation (agent-produced for claims; kernel-resolved-realm for
+    // facts written before the field existed). Plan-mode assembly annotates
     // rather than refusing; an escalate verdict (external-url / credential
     // hit) also degrades to annotation here — this assembly point never
     // executes, so the L1 escalation belongs to the execute-destination
     // wiring (V3). A `pass` verdict emits nothing.
     const signals = scanContentSignals(text);
+    const provenance: ContentProvenance = hit.fact.origin ?? 'kernel-resolved-realm';
     const handling = classifyContentRisk({
-      provenance: 'kernel-resolved-realm',
+      provenance,
       destination: { kind: 'outbound', mode: 'plan' },
       signals,
     });
@@ -166,7 +172,7 @@ export function assembleBranchContext(args: {
       events.push({
         kind: 'guardrail-annotated',
         entry: hit.fact.factId,
-        boundary: 'data-boundary:kernel-resolved-realm',
+        boundary: `data-boundary:${provenance}`,
         signals,
       });
     }
@@ -176,7 +182,7 @@ export function assembleBranchContext(args: {
       source: 'memory-recall',
       realmId: hit.fact.realmId,
       score: hit.score,
-      provenance: 'kernel-resolved-realm',
+      provenance,
     });
   }
 

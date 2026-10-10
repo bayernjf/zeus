@@ -1,4 +1,9 @@
 import type { ContextAssemblyEvent } from './assemble.js';
+import {
+  classifyContentRisk,
+  scanContentSignals,
+  type ContentProvenance,
+} from '../guardrails/content-risk.js';
 
 /**
  * S1 context engineering V2 (design-context-engineering §10.3): skill-declared
@@ -31,6 +36,13 @@ export type SkillInputEntry =
       /** Filled from the caller's explicit payload. */
       source: 'explicit';
       value: unknown;
+      /**
+       * S8 V2 (design-guardrails §3.1/§4): the operator's explicit payload is
+       * driver-supplied content — trusted with the operator, never trimmed,
+       * but still data with a visible boundary. The label rides the entry so
+       * the branch consumer reads the boundary, not the prose.
+       */
+      provenance: ContentProvenance;
     }
   | {
       /** Field name as declared in `SkillSpec.inputs`. */
@@ -44,7 +56,9 @@ export type SkillInputAssembly = {
   inputs: SkillInputEntry[];
   /** Number of fields left unavailable (mirrors the audit events). */
   unavailable: number;
-  /** Trim events: one `context-trimmed (unavailable, skill-inputs)` per field. */
+  /** Assembly events: `context-trimmed (unavailable, skill-inputs)` per
+   *  unavailable field plus, for explicit fields, `guardrail-annotated`
+   *  when the content-risk chain finds a deterministic signal. */
   events: ContextAssemblyEvent[];
 };
 
@@ -55,6 +69,14 @@ export type SkillInputAssembly = {
  * other than `undefined`. `null` is treated as an explicit value — the caller
  * deliberately delivered it, and explicit content is never re-judged. A missing
  * or `undefined` field is `unavailable`, never fabricated.
+ *
+ * S8 V2 (design-guardrails §4): each explicit field is additionally run
+ * through the content-risk decision chain as driver-supplied content bound
+ * for an outbound plan. The disposition is annotation-only at this assembly
+ * point (driver-supplied payload is never trimmed or refused here — an
+ * escalate verdict from an external-url / credential hit degrades to an
+ * audited boundary annotation, matching the memory-assembly point), and only
+ * fields carrying a deterministic signal emit a `guardrail-annotated` event.
  */
 export function assembleSkillInputs(args: {
   declared: Record<string, unknown>;
@@ -68,7 +90,25 @@ export function assembleSkillInputs(args: {
   for (const name of Object.keys(declared)) {
     const value = params[name];
     if (value !== undefined) {
-      inputs.push({ name, source: 'explicit', value });
+      inputs.push({ name, source: 'explicit', value, provenance: 'driver-supplied' });
+      const signals = scanContentSignals(renderInputText(value));
+      const handling = classifyContentRisk({
+        provenance: 'driver-supplied',
+        destination: { kind: 'outbound', mode: 'plan' },
+        signals,
+      });
+      // Driver-supplied payload is never trimmed or refused here; only a
+      // deterministic signal produces an audited boundary annotation
+      // (design-guardrails §3.2 "命中信号时标注 + 审计" — plain explicit
+      // fields are the operator's own content and emit nothing).
+      if (signals.length > 0 && (handling.action === 'annotate' || handling.action === 'escalate')) {
+        events.push({
+          kind: 'guardrail-annotated',
+          entry: name,
+          boundary: 'data-boundary:driver-supplied',
+          signals,
+        });
+      }
     } else {
       inputs.push({ name, source: 'unavailable' });
       unavailable += 1;
@@ -82,4 +122,9 @@ export function assembleSkillInputs(args: {
   }
 
   return { inputs, unavailable, events };
+}
+
+/** Render an explicit payload value to the text the signal scanner reads. */
+function renderInputText(value: unknown): string {
+  return typeof value === 'string' ? value : JSON.stringify(value ?? null);
 }

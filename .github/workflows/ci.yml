@@ -177,3 +177,28 @@ jobs:
       - name: Runtime-reliability acceptance
         run: node scripts/verify-runtime-reliability.mjs
 
+  eval-gate:
+    # design-evals §V3: quality regression gate. The runner boots one kernel
+    # per case against loopback-only scripted agents and diffs the scored run
+    # against the pinned baseline; a regression exits non-zero and fails CI.
+    name: eval regression gate (offline)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Eval run against pinned baseline
+        run: node scripts/eval-run.mjs --baseline
+

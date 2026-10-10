@@ -113,6 +113,40 @@ describe('scoreEvalRun (S7 V1)', () => {
     expect(r.checks[0]!.passed).toBe(false);
   });
 
+  it('passes a signals requirement only when the audit detail signals segment lists it', () => {
+    const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
+    const hit: AuditEntry = {
+      ts: 't1', vassal: '(intent)', decision: 'guardrail-annotated',
+      detail: 'intent x: appendix entry f1 annotated (data-boundary:kernel-resolved-realm, signals external-url)',
+    };
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
+    expect(r.checks[0]!.passed).toBe(true);
+  });
+
+  it('fails a signals requirement when the row is the default plan-mode label with no signals', () => {
+    const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
+    const hit: AuditEntry = {
+      ts: 't1', vassal: '(intent)', decision: 'guardrail-annotated',
+      detail: 'intent x: appendix entry f1 annotated (data-boundary:kernel-resolved-realm)',
+    };
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
+    expect(r.checks[0]!.passed).toBe(false);
+  });
+
+  it('does not match a signal name that appears only in the intent-id prefix', () => {
+    // Regression: the detail prefix carries the intent id, which the runner
+    // derives from the case id — guardrails/external-url-* therefore contains
+    // the token "external-url" even when the annotation carried zero signals.
+    // Matching must stay inside the `signals …` segment.
+    const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
+    const hit: AuditEntry = {
+      ts: 't1', vassal: '(intent)', decision: 'guardrail-annotated',
+      detail: 'intent eval-guardrails-external-url-memory: appendix entry f1 annotated (data-boundary:kernel-resolved-realm)',
+    };
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
+    expect(r.checks[0]!.passed).toBe(false);
+  });
+
   it('scores the branch budget and declares cost-tokens not-assessable in V1', () => {
     const c = case_([{ budget: { maxBranches: 2, maxCostTokens: 100 }, severity: 'block' }]);
     const out = outcome({ branches: [{ vassal: 'a1', runId: 'r1', ok: true, events: [] }, { vassal: 'a2', runId: 'r2', ok: true, events: [] }, { vassal: 'a3', runId: 'r3', ok: true, events: [] }] });

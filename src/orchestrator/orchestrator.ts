@@ -1334,6 +1334,23 @@ export class Orchestrator {
         if (outcome.task.status.state === 'input-required') {
           this.options.onTaskInput?.(outcome, dispatchRequest);
         }
+        // S10 V2 (design-tool-discovery §5.1, pinned by the S7 eval escalation
+        // family): a task that settles *failed* is a branch failure, not a
+        // transport success. Returning ok:true here let the recovery chain
+        // skip it (`if (branch.ok) continue`) and the aggregate read it as a
+        // stance-less completed branch — the intent then settled "completed"
+        // with no conclusion, no tool-failed audit and no escalation (the
+        // silent-failure hole the eval case pins). A failed terminal state is
+        // therefore !ok with its failure reason, so the chain runs (verdict:
+        // escalate when no alternate), `tool-failed` lands on the audit spine
+        // and the intent fails.
+        if (outcome.task.status.state === 'failed') {
+          return {
+            vassal, runId: branchRunId, ok: false, state: 'failed',
+            taskId: outcome.task.id, task: outcome.task, events: outcome.events,
+            reason: outcome.task.status.message?.message ?? 'branch task failed',
+          };
+        }
         return {
           vassal, runId: branchRunId, ok: true, taskId: outcome.task.id,
           state: outcome.task.status.state, task: outcome.task, events: outcome.events,

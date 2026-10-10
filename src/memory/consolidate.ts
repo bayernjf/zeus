@@ -238,6 +238,12 @@ export function consolidate(
       object,
       status: unresolved.length > 0 ? 'disputed' : 'active',
       provenance: claimEvents.map(e => e.eventId),
+      // S8 V2 (design-guardrails §3.3): a claim is an execution agent's
+      // output — data, never an operator instruction — so the fact is
+      // classified agent-produced at consolidation, and the label travels
+      // with the fact into later recall (old facts without the field fall
+      // back to kernel-resolved-realm at assembly time).
+      origin: 'agent-produced',
       confidence: aggregateConfidence(claimEvents, options),
       version: 1,
       updatedAt: now().toISOString(),
