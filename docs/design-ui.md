@@ -1,6 +1,6 @@
 # Zeus UI 设计草案（UI Design Draft）
 
-> 状态：**历史（设计草案，2026-09-29；2026-10-03 方案 A 与方案 D 均已落地，v0.2）**。本文只记录候选方案与取舍顺序，不是立项结论；立项条件、缺口论证与触发条件以 [deferred-items.md](deferred-items.md) **#34** 为单一事实源；各方案的实现事实以代码与 #34 进展记录为准。
+> 状态：**历史（设计草案，2026-09-29；方案 A/D 已落地、方案 B 于 2026-10-10 立项并落地首批增量、方案 C 于 2026-10-10 立项待实施，v0.3）**。本文只记录候选方案与取舍顺序，不是立项结论；立项条件、缺口论证与触发条件以 [deferred-items.md](deferred-items.md) **#34** 为单一事实源；各方案的实现事实以代码与 #34 进展记录为准。
 > 约束（四个方案共同遵守）：UI 只消费现有 HTTP API 与 SSE，内核零改动；不引入 BFF 层或界面私有逻辑；定位是"监督台"（人是决策者），不是全能控制台；每个写操作都必须能在审计日志回读、与直接调 API 等价。
 >
 > 界面基础契约（design token 三层模型、light/dark 与 TUI 子集、i18n key/ICU/资源完整性、无裸值与审计等价的校验闸门）见 [design-ui-foundations.md](design-ui-foundations.md) v0.1（现行）。任何方案开工第一个页面前先实现该规范；本文不重复其内容。
@@ -39,7 +39,7 @@
 - **端点依赖**：`POST /api/intents`、`GET /api/intents/:id`、`GET /api/intents/:id/events`（SSE）、`POST /api/intents/:id/cancel`、`GET /api/escalations/:id`。
 - **定位**：Web v1，触发条件满足后的最小可用版。
 
-> **实现进展（2026-10-03）**：方案 A v1 经用户以 owner 身份裁定提前激活并落地（触发条件①未满足但用户决定优先，与方案 D 同口径：UI 仅消费现有 HTTP API、零新增内核端点、无界面私有逻辑）。产物 `web/supervisor/index.html`（单文件自包含、原生 JS、hash 路由四视图 monitor/oversight/grants/connect）：只读监控（`/api/state` 内核状态 / `/api/metrics` 并发指标含 perVassal 延迟 / `/api/roster` 名册 / `/api/audit` 扇出·决策时间线 / `/api/domains` 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve+立场，y/N 二次确认）、跨域授权（签发只能选企业域 + 吊销，均二次确认）；连接配置存 localStorage、首访无 token 落 connect 引导、轮询 10s 开关。为让浏览器跨域消费现有 API，补了最小可选传输层配置 `HttpDeps.corsOrigins`（精确 Origin 白名单 + OPTIONS 预检 204，默认空 = 行为不变，4 项测试）+ `ZEUS_CORS_ORIGINS` env。**浏览器真机 E2E 通过**（真服务 8799 + CORS 白名单 5173 + 真 socket mock agent：连接 → 监控真实数据 → 裁决/授权空态与表单）。启动：`ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 node dist/http/serve.js` + `python -m http.server 5173 --directory web` → `http://127.0.0.1:5173/supervisor/index.html`。与方案 D 共用同一组现有 API 与设计 token 规范，无界面私有旁路；实现细节与验收见 [deferred-items.md](deferred-items.md) #34 进展。
+> **实现进展（2026-10-10，v0.3）**：方案 B 立项并落地首批增量（审计独立视图 + 技能治理写操作，监督台 v1.6）；方案 C 立项待实施。**进展（2026-10-03）**：方案 A v1 经用户以 owner 身份裁定提前激活并落地（触发条件①未满足但用户决定优先，与方案 D 同口径：UI 仅消费现有 HTTP API、零新增内核端点、无界面私有逻辑）。产物 `web/supervisor/index.html`（单文件自包含、原生 JS、hash 路由四视图 monitor/oversight/grants/connect）：只读监控（`/api/state` 内核状态 / `/api/metrics` 并发指标含 perVassal 延迟 / `/api/roster` 名册 / `/api/audit` 扇出·决策时间线 / `/api/domains` 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve+立场，y/N 二次确认）、跨域授权（签发只能选企业域 + 吊销，均二次确认）；连接配置存 localStorage、首访无 token 落 connect 引导、轮询 10s 开关。为让浏览器跨域消费现有 API，补了最小可选传输层配置 `HttpDeps.corsOrigins`（精确 Origin 白名单 + OPTIONS 预检 204，默认空 = 行为不变，4 项测试）+ `ZEUS_CORS_ORIGINS` env。**浏览器真机 E2E 通过**（真服务 8799 + CORS 白名单 5173 + 真 socket mock agent：连接 → 监控真实数据 → 裁决/授权空态与表单）。启动：`ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 node dist/http/serve.js` + `python -m http.server 5173 --directory web` → `http://127.0.0.1:5173/supervisor/index.html`。与方案 D 共用同一组现有 API 与设计 token 规范，无界面私有旁路；实现细节与验收见 [deferred-items.md](deferred-items.md) #34 进展。
 
 ## 方案 B：按角色分区的多视图工作台
 
@@ -62,7 +62,7 @@
 
 - **优点**：覆盖完整治理面——escalation 分流（缺参 / 冲突 / 记忆争议）、名册吊销、技能 harden、审计回读均有入口；企业采购演示形态。
 - **缺点**：页面多，工作流未定型时返工面大；易膨胀成全能控制台，偏离 #34 第一版只做三件事的口径；开发量约为方案 A 的 3–4 倍。
-- **定位**：v2，方案 A 跑通且真实用户出现后按视图逐个扩展，不一次性建全。**未立项，待真实多角色治理需求触发。**
+- **定位**：v2，方案 A 跑通且真实用户出现后按视图逐个扩展，不一次性建全。**已立项（2026-10-10 用户拍板"B 和 C 都做，按顺序来"，原触发条件由负责人裁定豁免）；首批增量已落地**：审计独立视图 + 技能治理写操作（install/uninstall/deprecate/harden），随方案 A 同一单页迭代为 v1.6（2026-10-10，Active work 192），后续视图按真实使用逐个扩。
 
 ## 方案 C：双门户——对外只读门户 + 对内操作台
 
@@ -82,7 +82,7 @@
 - **优点**：把"数据主权 / 信任可验证"做成对外证据——任何人可验签名、看吊销状态；对内是操作面。与产品画像中 bayjf"对外签名目录"同源、可复用。
 - **缺点**：公开门户涉及对外暴露口径，与 A5 / bayjf 工作耦合；一个产品两个界面，维护成本高。
 - **端点依赖**：`GET /api/roster/public`、`GET /api/roster/keys`（公开面）+ 内部 bearer 面。
-- **定位**：企业场景先行时说服力最强；个人场景过重。**未立项，待企业场景（对外信任证据需求）触发。**
+- **定位**：企业场景先行时说服力最强；个人场景过重。**已立项（2026-10-10 用户拍板"B 和 C 都做，按顺序来"，原触发条件由负责人裁定豁免）；待实施**：对外只读门户（公开端点 `/api/roster/public` + `/api/roster/keys` 已在内核就位，只差前端页面）。
 
 ## 方案 D：终端 TUI / IDE 插件（不做 Web）
 
@@ -106,7 +106,7 @@
 
 > **实现进展（2026-09-30）**：方案 D 最小切片已落地（`npm run tui` → `dist/tui/cli.js`，源码 `src/tui/`）。零依赖行式终端监督台，只消费现有 bearer HTTP 面、内核零改动、无新增端点：只读监控（内核状态 / 并发指标 / 名册）、escalation 裁决（`a/x/s` approve/reject/resolve，均带 y/N 确认）、名册吊销（`d`，y/N）。严格按 [design-ui-foundations.md](design-ui-foundations.md) 实施：状态→语义 token→ANSI 一一映射（`tokens.ts`，`NO_COLOR`/非 TTY 不着色、未知状态降级不臆造）、zh-CN/en 双资源与占位符对齐由测试断言（`messages.ts`/`format.ts`）。25 项 TUI 单测（i18n/tokens/命令解析/纯渲染/控制器写操作）。2026-09-30 后续三批补齐：只读监控加扇出/决策时间线（`GET /api/audit?limit=N`）与数据域/跨域授权台账（`GET /api/domains`）、授权签发/吊销写操作（`g`/`k` 命令 + y/N），TUI 单测 25 → 48，至方案 D 第一版三类页面（只读监控/裁决/授权）在终端全部可操作（详见 #34 进展）。
 
-> **实现进展（2026-10-03）**：方案 A v1 已落地（见上文方案 A 段后"实现进展"块；单文件 `web/supervisor/index.html` + 可选 CORS 传输层 + 浏览器真机 E2E）。**四方案现状**：方案 D（TUI）✅ 完整可操作；方案 A（Web v1）✅ 落地（v1 以只读监控 + 裁决 + 授权三类页面为口径）；方案 B / C 未立项，分别待多角色治理需求与企业场景触发。此进度不改变方案 A→C/B 的后续推荐顺序。
+> **实现进展（2026-10-10，v0.3）**：方案 B 立项并落地首批增量（审计独立视图 + 技能治理写操作，监督台 v1.6）；方案 C 立项待实施。**进展（2026-10-03）**：方案 A v1 已落地（见上文方案 A 段后"实现进展"块；单文件 `web/supervisor/index.html` + 可选 CORS 传输层 + 浏览器真机 E2E）。**四方案现状**：方案 D（TUI）✅ 完整可操作；方案 A（Web v1）✅ 落地（v1 以只读监控 + 裁决 + 授权三类页面为口径）；方案 B / C 未立项，分别待多角色治理需求与企业场景触发。此进度不改变方案 A→C/B 的后续推荐顺序。
 
 ## 技术口径（适用于 A / B / C）
 
@@ -119,4 +119,5 @@
 | 版本 | 日期 | 内容 |
 |---|---|---|
 | v0.2 | 2026-10-03 | 记录方案 A（Web 监督台 v1）提前激活并落地：单文件 `web/supervisor/index.html` + 可选 CORS 传输层 + 浏览器真机 E2E，与方案 D 共用现有 API；方案 B / C 标注未立项及其触发场景；四方案现状汇总。状态行同步 v0.2 |
+| v0.3 | 2026-10-10 | 用户拍板"B 和 C 都做，按顺序来"（原触发条件负责人裁定豁免）：方案 B 立项并落地首批增量（审计独立视图 + 技能治理写操作，监督台 v1.6，Active work 192）；方案 C 立项待实施（对外只读门户，公开端点已在内核）。状态行同步 v0.3 |
 | v0.1 | 2026-09-29 | 初稿：记录 A / B / C / D 四方案与推荐顺序 D→A→C/B；交叉引用 deferred #34 |
