@@ -19,6 +19,7 @@ function hit(
   object: unknown,
   realmId = 'personal',
   updatedAt = '2026-10-09T00:00:00.000Z',
+  origin?: 'agent-produced' | 'kernel-resolved-realm',
 ): RecallHit {
   return {
     fact: {
@@ -29,6 +30,7 @@ function hit(
       object,
       status: 'active',
       provenance: [],
+      ...(origin !== undefined ? { origin } : {}),
       confidence: 0.9,
       version: 1,
       updatedAt,
@@ -197,6 +199,44 @@ describe('assembleBranchContext', () => {
       expect(Object.keys(entry).sort()).toEqual(['claimId', 'provenance', 'realmId', 'score', 'source', 'text']);
     }
     expect(events.at(-1)).toEqual({ kind: 'context-assembled', appendixEntries: 1 });
+  });
+
+  it('forwards the fact origin as the entry provenance (S8 V2)', () => {
+    // design-guardrails §3.3: the classification fixed at consolidation
+    // travels with the fact into recall, so the branch sees "another agent
+    // said this" — agent-produced — never an operator instruction.
+    const { appendix } = assembleBranchContext({
+      memoryHits: [
+        hit('f1', 0.9, 'alpha', 'reported', 'the build is green', 'personal', '2026-10-09T00:00:00.000Z', 'agent-produced'),
+        hit('f2', 0.8, 'user', 'prefers', 'typescript', 'personal', '2026-10-09T00:00:00.000Z', 'kernel-resolved-realm'),
+      ],
+      maxEntries: 20,
+    });
+    expect(appendix.find(e => e.claimId === 'f1')!.provenance).toBe('agent-produced');
+    expect(appendix.find(e => e.claimId === 'f2')!.provenance).toBe('kernel-resolved-realm');
+  });
+
+  it('falls back to kernel-resolved-realm for facts written before origin existed', () => {
+    const { appendix } = assembleBranchContext({
+      memoryHits: [hit('f1', 0.9, 'user', 'prefers', 'typescript')],
+      maxEntries: 20,
+    });
+    expect(appendix[0]!.provenance).toBe('kernel-resolved-realm');
+  });
+
+  it('carries the agent-produced boundary on an annotated recall (S8 V2)', () => {
+    const { events } = assembleBranchContext({
+      memoryHits: [
+        hit('f1', 0.9, 'alpha', 'says', 'see https://external.example.com/x', 'personal', '2026-10-09T00:00:00.000Z', 'agent-produced'),
+      ],
+      maxEntries: 20,
+    });
+    expect(events).toContainEqual({
+      kind: 'guardrail-annotated',
+      entry: 'f1',
+      boundary: 'data-boundary:agent-produced',
+      signals: ['external-url'],
+    });
   });
 });
 

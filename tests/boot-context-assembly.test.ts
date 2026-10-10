@@ -219,8 +219,8 @@ describe('S1 V2 skill-input assembly in a booted kernel', () => {
     const skillInputs = sent[0]!.params.skillInputs as Array<{ name: string; source: string }> | undefined;
     expect(skillInputs).toBeDefined();
     expect(skillInputs).toEqual([
-      { name: 'code', source: 'explicit', value: 'src/orchestrator.ts' },
-      { name: 'language', source: 'explicit', value: 'typescript' },
+      { name: 'code', source: 'explicit', value: 'src/orchestrator.ts', provenance: 'driver-supplied' },
+      { name: 'language', source: 'explicit', value: 'typescript', provenance: 'driver-supplied' },
     ]);
   });
 

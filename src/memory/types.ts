@@ -24,6 +24,18 @@ export interface MemoryEvent {
 
 export type FactStatus = 'active' | 'superseded' | 'disputed' | 'retracted';
 
+/**
+ * The content-origin classification fixed onto a fact at consolidation
+ * (design-guardrails §3.3). A claim is always an execution-agent's output —
+ * data, never an operator instruction — so every fact the consolidator
+ * produces carries `agent-produced`. The label travels with the fact into
+ * later recall, where the assembler forwards it as the entry's provenance
+ * (the consumer sees "another agent said this", not "the kernel/user
+ * requires this"). Absent on facts written before this field existed
+ * (old snapshots), where the assembler falls back to `kernel-resolved-realm`.
+ */
+export type FactOrigin = 'agent-produced' | 'kernel-resolved-realm';
+
 export interface FactRecord {
   factId: string;
   realmId: string;
@@ -33,6 +45,8 @@ export interface FactRecord {
   status: FactStatus;
   /** eventId list — the fact must be replayable to its sources. */
   provenance: string[];
+  /** Content-origin classification fixed at consolidation. */
+  origin?: FactOrigin;
   confidence: number;
   version: number;
   updatedAt: string;

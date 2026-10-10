@@ -42,6 +42,9 @@ describe('memory consolidation P0', () => {
     expect(facts).toHaveLength(1);
     expect(facts[0]!.provenance).toEqual(['evt-1']);
     expect(facts[0]!.status).toBe('active');
+    // S8 V2: a claim is an execution agent's output, so the fact is classified
+    // agent-produced at consolidation (design-guardrails §3.3).
+    expect(facts[0]!.origin).toBe('agent-produced');
     expect(result.added).toHaveLength(1);
   });
 
