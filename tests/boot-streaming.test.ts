@@ -158,4 +158,60 @@ describe('S15 V2 working-frame increments in a booted kernel', () => {
 
     expect(deltas).toHaveLength(0);
   });
+
+  it('publishes the agent-reported task state on the spine even for a branch that is not ok', async () => {
+    // `outcome` is the dispatch category, so a vassal that says "my task failed"
+    // and a branch whose transport never completed both settle as `failed`. A
+    // subscriber that only sees the event spine must still be able to tell them
+    // apart (design-streaming 3.3; the conflation class audit C-28 closed for
+    // cancels). Before this, `state` was withheld on the !ok paths.
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const name = url.split('/')[3]!;
+      if (url.includes('/api/a2a/agent-card')) {
+        return new Response(JSON.stringify(cardFor(name)), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (name === 'offline') throw new Error('connection refused');
+      return new Response(
+        `data: ${JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          result: { kind: 'task', id: 'broken-task', contextId: 'ctx', status: { state: 'failed' }, artifacts: [] },
+        })}\n\n`,
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      );
+    }) as typeof fetch;
+
+    const kernel = await bootKernel({
+      fetchImpl,
+      vassalSeeds: ['http://127.0.0.1/broken/api/a2a/agent-card', 'http://127.0.0.1/offline/api/a2a/agent-card'],
+    });
+    const ended: Array<Extract<ProgressEvent, { type: 'branch-ended' }>> = [];
+    kernel.progressHub.subscribe('intent-4', event => {
+      if (event.type === 'branch-ended') ended.push(event);
+    });
+
+    await kernel.orchestrator.fanOut({
+      intentId: 'intent-4',
+      skill: 'review',
+      params: { message: 'review this' },
+      realm: 'personal',
+      vassals: ['broken', 'offline'],
+    });
+
+    expect(ended).toHaveLength(2);
+    const byVassal = Object.fromEntries(ended.map(e => [e.vassal, e]));
+    // Same category, different fact: the agent reported a failed task.
+    expect(byVassal.broken!.outcome).toBe('failed');
+    expect(byVassal.broken!.state).toBe('failed');
+    // And this one never reached a task at all, so there is no state to carry.
+    expect(byVassal.offline!.outcome).toBe('failed');
+    expect(byVassal.offline!.state).toBeUndefined();
+    // The positive control: without `state` these two lines are identical, which
+    // is exactly the reading this change removes.
+    expect(byVassal.broken!.outcome).toBe(byVassal.offline!.outcome);
+  });
 });
