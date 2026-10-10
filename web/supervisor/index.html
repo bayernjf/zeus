@@ -235,7 +235,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.12 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.13 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -576,6 +576,35 @@
           </div>
         </div>
       </div>
+      <div class="panel" style="margin-top:14px">
+        <h2><span data-i18n="cm.title">委任（上岗）管理</span> <span class="hint">GET/POST /api/org/departments/:id/commissions · <span data-i18n="cm.hint">席位 → 账户 → 授权 → 带教 → 上岗</span></span></h2>
+        <div class="body">
+          <div class="audit-filter">
+            <select id="cmDept"></select>
+            <span class="af-count" id="cmCount"></span>
+          </div>
+          <div id="cmBody"><div class="empty" data-i18n="cm.waiting">选择部门查看委任</div></div>
+          <div class="row" style="margin-top:12px">
+            <label for="cmAgent" data-i18n="cm.agentId">Agent ID</label>
+            <input id="cmAgent" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="cmRealm" data-i18n="cm.realmId">数据域 ID</label>
+            <input id="cmRealm" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="cmOpenedBy" data-i18n="cm.openedBy">开设人（openedBy）</label>
+            <input id="cmOpenedBy" autocomplete="off">
+          </div>
+          <div class="row">
+            <label for="cmSkills" data-i18n="cm.requiredSkills">要求技能（逗号分隔，可空则需豁免带教）</label>
+            <input id="cmSkills" autocomplete="off">
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="btnCmOpen" data-i18n="cm.openRun">开设委任</button>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===== 视图：目录（技能 + 连接器，只读可见性） ===== -->
@@ -806,6 +835,44 @@
       "org.setLead": "设为 lead",
       "org.confirmSetLead": "确定将 {dept} 的 lead 更换为 {agent} 吗？原 lead 降为 member。",
       "org.leadSet": "已将 {dept} 的 lead 更换为 {agent}",
+      "cm.title": "委任（上岗）管理",
+      "cm.hint": "席位 → 账户 → 授权 → 带教 → 上岗",
+      "cm.waiting": "选择部门查看委任",
+      "cm.empty": "该部门暂无委任记录",
+      "cm.count": "共 {n} 条",
+      "cm.agentId": "Agent ID",
+      "cm.realmId": "数据域 ID",
+      "cm.openedBy": "开设人（openedBy）",
+      "cm.requiredSkills": "要求技能（逗号分隔，可空则需豁免带教）",
+      "cm.openRun": "开设委任",
+      "cm.needOpenFields": "请填 Agent ID、数据域 ID 与开设人",
+      "cm.confirmOpen": "确定为 {agent} 在 {dept} 开设委任（数据域 {realm}）吗？",
+      "cm.opened": "已开设委任 {agent}",
+      "cm.colAgent": "Agent",
+      "cm.colRealm": "数据域",
+      "cm.colStage": "阶段",
+      "cm.colOpened": "开设时间",
+      "cm.colActions": "操作",
+      "cm.waive": "豁免带教",
+      "cm.commission": "签发上岗",
+      "cm.withdraw": "撤回",
+      "cm.waiveTitle": "豁免带教阶段",
+      "cm.waiveBody": "委任 {id}：输入豁免理由。豁免是显式审计动作，带教未达标时这是唯一放行方式。",
+      "cm.byTitle": "签发上岗",
+      "cm.byBody": "委任 {id}：输入签发人（by）。签发前内核会重验四道闸，任一不过即拒签。",
+      "cm.withdrawTitle": "撤回委任",
+      "cm.withdrawBody": "委任 {id}：输入撤回理由。撤回即刻生效，该席位不能再接活。",
+      "cm.byPrompt": "操作人（by）",
+      "cm.reasonPrompt": "理由（reason）",
+      "cm.waived": "已豁免带教 {id}",
+      "cm.commissioned": "已签发上岗 {id}",
+      "cm.withdrawn": "已撤回 {id}",
+      "cm.actionFailed": "{action}失败：{msg}",
+      "cm.stage.opened": "席位",
+      "cm.stage.account": "账户",
+      "cm.stage.authorization": "授权",
+      "cm.stage.mentorship": "带教",
+      "cm.stage.commissioned": "已上岗",
       "common.loading": "加载中…",
       "catalog.skillsTitle": "技能目录",
       "catalog.skillsHint": "注册/生命周期管理走 CLI/API，监督台只读",
@@ -1414,6 +1481,44 @@
       "org.setLead": "Set as lead",
       "org.confirmSetLead": "Change the lead of {dept} to {agent}? The current lead steps down to member.",
       "org.leadSet": "lead of {dept} changed to {agent}",
+      "cm.title": "Commissions",
+      "cm.hint": "seat → account → authorization → mentorship → commissioned",
+      "cm.waiting": "pick a department to view commissions",
+      "cm.empty": "no commissions in this department",
+      "cm.count": "{n} total",
+      "cm.agentId": "Agent ID",
+      "cm.realmId": "Realm ID",
+      "cm.openedBy": "Opened by",
+      "cm.requiredSkills": "Required skills (comma-separated; empty requires a mentorship waiver)",
+      "cm.openRun": "Open commission",
+      "cm.needOpenFields": "agent ID, realm ID and opened-by are required",
+      "cm.confirmOpen": "Open a commission for {agent} in {dept} (realm {realm})?",
+      "cm.opened": "commission opened for {agent}",
+      "cm.colAgent": "Agent",
+      "cm.colRealm": "Realm",
+      "cm.colStage": "Stage",
+      "cm.colOpened": "Opened at",
+      "cm.colActions": "Actions",
+      "cm.waive": "Waive mentorship",
+      "cm.commission": "Sign off",
+      "cm.withdraw": "Withdraw",
+      "cm.waiveTitle": "Waive the mentorship stage",
+      "cm.waiveBody": "Commission {id}: enter the waiver reason. Waiving is an explicit audited act — the only way through when certification is short.",
+      "cm.byTitle": "Sign off the commission",
+      "cm.byBody": "Commission {id}: enter who signs (by). The kernel re-verifies all four gates before signing; any failure refuses.",
+      "cm.withdrawTitle": "Withdraw the commission",
+      "cm.withdrawBody": "Commission {id}: enter the withdrawal reason. Withdrawal takes effect immediately; the seat can no longer take work.",
+      "cm.byPrompt": "Operator (by)",
+      "cm.reasonPrompt": "Reason",
+      "cm.waived": "mentorship waived {id}",
+      "cm.commissioned": "commissioned {id}",
+      "cm.withdrawn": "withdrawn {id}",
+      "cm.actionFailed": "{action} failed: {msg}",
+      "cm.stage.opened": "seat",
+      "cm.stage.account": "account",
+      "cm.stage.authorization": "authorization",
+      "cm.stage.mentorship": "mentorship",
+      "cm.stage.commissioned": "commissioned",
       "org.keyPath": "critical path",
       "org.noDepartments": "No departments yet (POST /api/org/departments is managed via CLI/API; supervisor is read-only)",
       "org.unspecified": "(unspecified)",
@@ -1693,6 +1798,8 @@
     escKindFilter: '',
     trend: [],
     skillsCache: [],
+    orgDepts: [],
+    cmList: [],
   };
 
   function loadConn() {
@@ -1945,6 +2052,13 @@
       sel.innerHTML = depts.map(d => `<option value="${esc(d.departmentId)}">${esc(d.name)}</option>`).join('');
       if (prev && depts.some(d => d.departmentId === prev)) sel.value = prev;
     }
+    state.orgDepts = depts;
+    const cmSel = $('cmDept');
+    if (cmSel) {
+      const prev = cmSel.value;
+      cmSel.innerHTML = depts.map(d => `<option value="${esc(d.departmentId)}">${esc(d.name)}</option>`).join('');
+      if (prev && depts.some(d => d.departmentId === prev)) cmSel.value = prev;
+    }
     if (!depts.length) { el.innerHTML = emptyRow(t('org.noDepartments')); return; }
     let html = '';
     for (const d of depts) {
@@ -1977,9 +2091,48 @@
     try {
       const data = await api('GET', '/api/org/chart');
       renderOrg(data);
+      await loadCommissions();
     } catch (e) {
       if (e.status === 404) { el.innerHTML = emptyRow(t('org.noRegistry')); return; }
       throw e;
+    }
+  }
+
+  // ===== 委任（上岗）：四段闸门的可见性与操作面 =====
+  function cmStageBadge(stage, withdrawn) {
+    if (withdrawn) return badge(t('cm.withdraw'), 'bad');
+    const cls = stage === 'commissioned' ? 'ok' : stage === 'mentorship' || stage === 'authorization' ? 'warn' : '';
+    return badge(tl('cm.stage.' + stage, stage), cls);
+  }
+
+  function renderCommissions(data) {
+    const el = $('cmBody');
+    const list = (data && data.commissions) || [];
+    state.cmList = list;
+    $('cmCount').textContent = list.length ? t('cm.count', { n: list.length }) : '';
+    if (!list.length) { el.innerHTML = emptyRow(t('cm.empty')); return; }
+    let html = '<table><colgroup><col style="width:18%"><col style="width:16%"><col style="width:14%"><col style="width:20%"><col style="width:32%"></colgroup><tr><th>' + esc(t('cm.colAgent')) + '</th><th>' + esc(t('cm.colRealm')) + '</th><th>' + esc(t('cm.colStage')) + '</th><th>' + esc(t('cm.colOpened')) + '</th><th>' + esc(t('cm.colActions')) + '</th></tr>';
+    for (const c of list) {
+      const stage = (c.verdict && c.verdict.stage) || 'opened';
+      let actions = '';
+      if (!c.withdrawn && stage !== 'commissioned') {
+        actions = `<button class="btn small" data-act="cm-waive" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.waive'))}</button> `
+          + `<button class="btn small primary" data-act="cm-commission" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.commission'))}</button>`;
+      } else if (!c.withdrawn) {
+        actions = `<button class="btn small danger" data-act="cm-withdraw" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.withdraw'))}</button>`;
+      }
+      html += `<tr><td class="mono">${esc(c.agentId)}</td><td class="mono">${esc(c.realmId)}</td><td>${cmStageBadge(stage, c.withdrawn)}</td><td class="mono">${fmtTime(c.openedAt)}</td><td>${actions}</td></tr>`;
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  async function loadCommissions() {
+    const deptId = $('cmDept') && $('cmDept').value;
+    if (!deptId) { state.cmList = []; $('cmBody').innerHTML = emptyRow(t('cm.waiting')); $('cmCount').textContent = ''; return; }
+    try {
+      renderCommissions(await api('GET', '/api/org/departments/' + encodeURIComponent(deptId) + '/commissions'));
+    } catch (e) {
+      $('cmBody').innerHTML = emptyRow(t('cm.actionFailed', { action: 'GET', msg: e.message }));
     }
   }
 
@@ -3022,6 +3175,40 @@
         } catch (e) { toast(t('org.actionFailed', { action: t('org.setLead'), msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-contract') {
+    } else if (act === 'cm-waive' || act === 'cm-commission' || act === 'cm-withdraw') {
+      const deptId = id;
+      const agent = btn.getAttribute('data-agent') || '';
+      const verb = act === 'cm-waive' ? 'waive' : act === 'cm-commission' ? 'commission' : 'withdraw';
+      const cmId = deptId + '::' + agent;
+      const titleKey = verb === 'commission' ? 'cm.byTitle' : 'cm.' + verb + 'Title';
+      const bodyKey = verb === 'commission' ? 'cm.byBody' : 'cm.' + verb + 'Body';
+      const by = await promptDialog({
+        title: t(titleKey),
+        body: t(bodyKey, { id: cmId }),
+        placeholder: t('cm.byPrompt'),
+        confirmLabel: t('cm.' + verb),
+      });
+      if (by === null) return;
+      let reason = '';
+      if (verb !== 'commission') {
+        const r = await promptDialog({
+          title: t(titleKey),
+          body: t(bodyKey, { id: cmId }),
+          placeholder: t('cm.reasonPrompt'),
+          confirmLabel: t('cm.' + verb),
+        });
+        if (r === null) return;
+        reason = r.trim();
+      }
+      const payload = { by: by.trim() || 'operator', ...(reason ? { reason } : {}) };
+      (async () => {
+        try {
+          await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/commissions/' + encodeURIComponent(agent) + '/' + verb, payload);
+          toast(t('cm.' + (verb === 'waive' ? 'waived' : verb === 'commission' ? 'commissioned' : 'withdrawn'), { id: agent }), 'ok');
+          await loadCommissions(deptId);
+        } catch (e) { toast(t('cm.actionFailed', { action: t('cm.' + verb), msg: e.message }), 'bad'); }
+      })();
+    } else if (act === 'revoke-contract') {
       if (!(await confirmDialog({ body: t('contract.confirmRevoke', { id }), danger: true }))) return;
       (async () => {
         try {
@@ -3215,6 +3402,27 @@
   $('escKindFilter').addEventListener('change', function () {
     state.escKindFilter = this.value;
     if (state.escList) renderEscalations(state.escList);
+  });
+
+  // ===== 委任：部门切换 + 开设 =====
+  $('cmDept').addEventListener('change', loadCommissions);
+  $('btnCmOpen').addEventListener('click', async function () {
+    const deptId = $('cmDept').value;
+    const agentId = $('cmAgent').value.trim();
+    const realmId = $('cmRealm').value.trim();
+    const openedBy = $('cmOpenedBy').value.trim();
+    if (!deptId || !agentId || !realmId || !openedBy) { toast(t('cm.needOpenFields'), 'bad'); return; }
+    const skills = $('cmSkills').value.split(',').map(s => s.trim()).filter(Boolean);
+    const deptName = $('cmDept').selectedOptions[0] ? $('cmDept').selectedOptions[0].textContent : deptId;
+    if (!(await confirmDialog({ body: t('cm.confirmOpen', { agent: agentId, dept: deptName, realm: realmId }) }))) return;
+    try {
+      const body = { agentId, realmId, openedBy };
+      if (skills.length) body.requiredSkills = skills;
+      await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/commissions', body);
+      toast(t('cm.opened', { agent: agentId }), 'ok');
+      $('cmAgent').value = ''; $('cmRealm').value = ''; $('cmSkills').value = '';
+      await loadCommissions();
+    } catch (e) { toast(t('cm.actionFailed', { action: t('cm.openRun'), msg: e.message }), 'bad'); }
   });
 
   function startPoll() {

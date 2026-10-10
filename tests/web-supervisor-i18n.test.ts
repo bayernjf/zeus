@@ -194,6 +194,9 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       'revoke-vassal', // DELETE /api/vassals/:name
       'reinstate-vassal', // POST /api/vassals/:name/reinstate
       'org-set-lead', // POST /api/org/departments/:id/lead
+      'cm-waive', // POST /api/org/departments/:id/commissions/:agentId/waive
+      'cm-commission', // POST /api/org/departments/:id/commissions/:agentId/commission
+      'cm-withdraw', // POST /api/org/departments/:id/commissions/:agentId/withdraw
       'skill-install', // POST /api/skills/:id/install
       'skill-uninstall', // POST /api/skills/:id/uninstall
       'skill-deprecate', // POST /api/skills/:id/deprecate
