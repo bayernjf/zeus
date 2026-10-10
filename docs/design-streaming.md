@@ -1,7 +1,7 @@
 # 设计稿：流式体验工程——部分结果、流式合并与思考态（tech map S15）
 
-- 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文在不破坏 merge.ts 来源/排序不变量的前提下，定义分支内增量帧的归并纯函数与接线分期。
-- 演进：v0.1（2026-10-09）首版——现状盘点（A2A SSE 已消费到内核、progress 只到分支粒度、分支事件落定才全量可见）+ 增量帧归并模型 + `streamWindow`/`appendStreamFrame` 草案 + 分期。
+- 状态：**现行 v0.2（2026-10-10）**：V1 增量帧归并纯函数与 V2 真实 SSE 面接线均已落地（设计原稿分期）。本文在不破坏 merge.ts 来源/排序不变量的前提下，定义分支内增量帧的归并纯函数与接线分期。
+- 演进：v0.2（2026-10-10）——V1 已落码（Active work 177：`src/orchestrator/stream-merge.ts` 不可变 StreamView + settledViewMatchesMerge，`tests/stream-merge.test.ts` 12 例，零新增审计值）+ **V2 已落地并核验（ProgressEvent branch-delta/intent-partial 透传 + `src/orchestrator/progress.ts` ProgressHub 有界保留 + `src/http/server.ts` 全事件 SSE 透传 + `src/dispatch/client.ts` working 增量帧窄回调，`tests/progress-hub.test.ts` / `tests/boot-streaming.test.ts`）**；V3 流式 UI 呈现（监督台/TUI 视图模型）待后续分期。v0.1（2026-10-09）首版——现状盘点（A2A SSE 已消费到内核、progress 只到分支粒度、分支事件落定才全量可见）+ 增量帧归并模型 + `streamWindow`/`appendStreamFrame` 草案 + 分期。
 - 关联：tech map S15（部分结果先呈现、流式合并、思考态 UX）；design-fan-out.md（扇出与多流合并视图 F4）；design-supervision.md（DAG 节点级进度）；design-observability.md（S6，流式帧也是 span 事件来源）；design-backpressure.md（慢分支/饱和与流式窗口背压）；design-ui*.md（TUI/H2 呈现）；`src/dispatch/client.ts`（A2A SSE 帧消费）、`src/orchestrator/merge.ts`（分支事件合并，已立排序与来源原则）、`src/orchestrator/progress.ts`（branch 粒度事件，注释明示分支内不增量流式）、`src/http/server.ts`（progress SSE 广播）。
 - 本文是流式体验的单一事实源；handoff 与 PRD 只索引。
 
