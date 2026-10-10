@@ -168,6 +168,67 @@ describe('scoreEvalRun (S7 V1)', () => {
     const b = scoreEvalRun(c, trace);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
+
+  it('passes planning when the plan-selected row names the expected planner', () => {
+    const c = case_([{ planning: { expected: 'selected', planner: 'planner-a' }, severity: 'block' }]);
+    const hit: AuditEntry = { ts: 't1', vassal: '(planning)', decision: 'plan-selected', detail: 'planner planner-a: 1 nodes, coverage 0.5' };
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
+    expect(r.checks[0]).toMatchObject({ family: 'planning', passed: true });
+  });
+
+  it('fails planning when a conflict row appears under an expected selection', () => {
+    const c = case_([{ planning: { expected: 'selected' }, severity: 'block' }]);
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [audit('plan-conflict')], events: [] });
+    expect(r.checks[0]).toMatchObject({ family: 'planning', passed: false });
+    expect(r.checks[0]!.detail).toContain('plan-conflict');
+  });
+
+  it('passes recovery when every expected decision is present and none forbidden', () => {
+    const c = case_([{ recovery: { expectedDecisions: ['recovery-auto-resumed'], forbiddenDecisions: ['recovery-settled-failed'] }, severity: 'block' }]);
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [audit('recovery-auto-resumed')], events: [] });
+    expect(r.checks[0]).toMatchObject({ family: 'recovery', passed: true });
+  });
+
+  it('fails recovery when a decision is missing', () => {
+    const c = case_([{ recovery: { expectedDecisions: ['recovery-settled-failed'] }, severity: 'block' }]);
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [audit('recovery-auto-resumed')], events: [] });
+    expect(r.checks[0]!.passed).toBe(false);
+    expect(r.checks[0]!.detail).toContain('recovery-settled-failed');
+  });
+
+  it('passes streaming when deltas surfaced and preview stayed out of the decision', () => {
+    const c = case_([{ streaming: { deltaCountAtLeast: 1, previewNotInDecision: true }, severity: 'block' }]);
+    const out = outcome({ decision: { rule: 'unanimous', conclusion: 'approve', positions: [], reason: '' } });
+    const events = [
+      { type: 'branch-delta', intentId: 'i1', runId: 'r1', vassal: 'a1', seq: 1, preview: 'PREVIEW-MARKER-ONE', at: 't1' } as const,
+    ];
+    const r = scoreEvalRun(c, { outcome: out, audit: [], events });
+    expect(r.checks[0]).toMatchObject({ family: 'streaming', passed: true });
+  });
+
+  it('fails streaming when a preview leaked into a branch rationale', () => {
+    const c = case_([{ streaming: { previewNotInDecision: true }, severity: 'block' }]);
+    const out = outcome({ positions: [{ vassal: 'a1', stance: 'approve', rationale: 'per PREVIEW-MARKER-ONE' }] });
+    const events = [
+      { type: 'branch-delta', intentId: 'i1', runId: 'r1', vassal: 'a1', seq: 1, preview: 'PREVIEW-MARKER-ONE', at: 't1' } as const,
+    ];
+    const r = scoreEvalRun(c, { outcome: out, audit: [], events });
+    expect(r.checks[0]!.passed).toBe(false);
+    expect(r.checks[0]!.detail).toContain('leaked');
+  });
+
+  it('passes isolation when the verdict matches the expectation', () => {
+    const c = case_([{ isolation: { expectedLevel: 'L-process-restricted', valid: true }, severity: 'block' }]);
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [], events: [], isolation: { level: 'L-process-restricted', valid: true, reasons: [] } });
+    expect(r.checks[0]).toMatchObject({ family: 'isolation', passed: true });
+  });
+
+  it('fails isolation on a forbidden validation reason', () => {
+    const c = case_([{ isolation: { expectedLevel: 'L-container', valid: false, forbiddenReasons: ['container runtime unavailable; L-container cannot be satisfied'] }, severity: 'block' }]);
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [], events: [], isolation: { level: 'L-container', valid: false, reasons: ['container runtime unavailable; L-container cannot be satisfied'] } });
+    expect(r.checks[0]!.passed).toBe(false);
+    expect(r.checks[0]!.detail).toContain('forbidden');
+  });
 });
 
 describe('summarizeEvalRun + diffAgainstBaseline (S7 V1)', () => {
