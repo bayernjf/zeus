@@ -186,12 +186,17 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       .filter(a => a !== 'yes' && a !== 'no' && !a.includes('${'));
     const known = new Set([
       'approve', 'reject', 'resolve', // POST /api/escalations/:id/{approve,reject,resolve}
+      'approve-resume', // POST /api/escalations/:id/approve-resume
       'revoke', // DELETE /api/domains/grants/:id
       'revoke-contract', // DELETE /api/delegation-contracts/:id
       'revoke-watch', // DELETE /api/watches/:id
       'approve-contract', // POST /api/escalations/:id/approve-contract
       'revoke-vassal', // DELETE /api/vassals/:name
       'reinstate-vassal', // POST /api/vassals/:name/reinstate
+      'org-set-lead', // POST /api/org/departments/:id/lead
+      'cm-waive', // POST /api/org/departments/:id/commissions/:agentId/waive
+      'cm-commission', // POST /api/org/departments/:id/commissions/:agentId/commission
+      'cm-withdraw', // POST /api/org/departments/:id/commissions/:agentId/withdraw
       'skill-install', // POST /api/skills/:id/install
       'skill-uninstall', // POST /api/skills/:id/uninstall
       'skill-deprecate', // POST /api/skills/:id/deprecate

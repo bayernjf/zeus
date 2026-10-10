@@ -315,6 +315,42 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
   });
 
   // ---- Internal / driver face (H2): mounted only with a bearer token ----
+  // Public audit summary: aggregate counts only. The internal /api/audit face
+  // returns raw entries (vassal, runId, detail); this projection strips every
+  // per-event field and answers the only question a third party can ask without
+  // a token - "how much governance activity happened, of which kinds, over what
+  // window". Counts alone cannot name a vassal, a run, or a realm.
+  app.get('/api/audit/summary', async (_request, reply) => {
+    const generatedAt = now().toISOString();
+    let entries: AuditEntry[] = [];
+    if (deps.auditFile) {
+      try {
+        entries = readAuditLog(deps.auditFile, { limit: 1000 });
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+          if (e instanceof AuditLogError) return error(reply, 500, 'audit_unreadable', e.message);
+          throw e;
+        }
+      }
+    }
+    const byDecision: Record<string, number> = {};
+    let earliest: string | null = null;
+    let latest: string | null = null;
+    for (const entry of entries) {
+      byDecision[entry.decision] = (byDecision[entry.decision] ?? 0) + 1;
+      if (earliest === null || entry.ts < earliest) earliest = entry.ts;
+      if (latest === null || entry.ts > latest) latest = entry.ts;
+    }
+    reply.header('Cache-Control', `public, max-age=${maxAge}`);
+    reply.type('application/json; charset=utf-8');
+    return {
+      issuer: 'zeus',
+      generatedAt,
+      window: { events: entries.length, ...(earliest !== null ? { earliest } : {}), ...(latest !== null ? { latest } : {}) },
+      byDecision,
+    };
+  });
+
   if (deps.internalToken) {
     const expected = deps.internalToken;
     const requireBearer = async (request: FastifyRequest, reply: FastifyReply): Promise<void> => {

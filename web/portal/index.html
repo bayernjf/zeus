@@ -136,6 +136,11 @@
   </div>
 
   <div class="panel">
+    <h2><span data-i18n="audit.title">治理活动摘要</span> <span class="hint">GET /api/audit/summary</span></h2>
+    <div class="body"><div class="kv" id="auditKv"><div class="empty" data-i18n="audit.waiting">等待数据…</div></div></div>
+  </div>
+
+  <div class="panel">
     <h2><span data-i18n="verify.title">离线验签</span> <span class="hint" data-i18n="verify.hint">产物来自已拉取响应，无新请求</span></h2>
     <div class="body">
       <div class="setup">
@@ -199,6 +204,14 @@
       "keys.spkiSha256": "SPKI SHA-256",
       "keys.custody": "密钥保管",
       "keys.unavailable": "该进程无法导出根公钥（key-material-unavailable）",
+      "audit.title": "治理活动摘要",
+      "audit.waiting": "等待数据…",
+      "audit.events": "窗口事件数",
+      "audit.earliest": "最早事件",
+      "audit.latest": "最近事件",
+      "audit.byDecision": "按决策类型计数",
+      "audit.empty": "窗口内暂无治理事件",
+      "audit.unavailable": "审计摘要不可用",
       "verify.title": "离线验签",
       "verify.hint": "产物来自已拉取响应，无新请求",
       "verify.dlRoster": "下载签名快照 roster.json",
@@ -253,6 +266,14 @@
       "keys.spkiSha256": "SPKI SHA-256",
       "keys.custody": "Key custody",
       "keys.unavailable": "This process cannot export its root key (key-material-unavailable)",
+      "audit.title": "Governance activity summary",
+      "audit.waiting": "Waiting for data…",
+      "audit.events": "Events in window",
+      "audit.earliest": "Earliest event",
+      "audit.latest": "Latest event",
+      "audit.byDecision": "Counts by decision",
+      "audit.empty": "no governance events in the window",
+      "audit.unavailable": "Audit summary unavailable",
       "verify.title": "Offline verification",
       "verify.hint": "artifacts come from already-fetched responses — no new requests",
       "verify.dlRoster": "Download signed snapshot roster.json",
@@ -282,7 +303,7 @@
     document.getElementById("btnLang").textContent = lang === "zh-CN" ? "EN" : "中文";
   }
 
-  const state = { base: "", roster: null, keys: null, keysError: null };
+  const state = { base: "", roster: null, keys: null, keysError: null, audit: null, auditError: null };
 
   function baseUrl() {
     return state.base.replace(/\/+$/, "");
@@ -292,11 +313,12 @@
     const badge = document.getElementById("connBadge");
     const text = document.getElementById("connText");
     try {
-      const [rosterRes, keysRes] = await Promise.all([
+      const [rosterRes, keysRes, auditRes] = await Promise.all([
         // no-cache revalidates: the snapshot is served with max-age=3600 for
         // offline verifiers, but a live console must see register/revoke now.
         fetch(baseUrl() + "/api/roster/public", { cache: "no-cache" }),
         fetch(baseUrl() + "/api/roster/keys", { cache: "no-cache" }),
+        fetch(baseUrl() + "/api/audit/summary", { cache: "no-cache" }),
       ]);
       if (!rosterRes.ok) throw new Error("roster/public HTTP " + rosterRes.status);
       state.roster = await rosterRes.json();
@@ -306,6 +328,13 @@
       } else {
         state.keys = null;
         state.keysError = "HTTP " + keysRes.status;
+      }
+      if (auditRes.ok) {
+        state.audit = await auditRes.json();
+        state.auditError = null;
+      } else {
+        state.audit = null;
+        state.auditError = "HTTP " + auditRes.status;
       }
       badge.className = "conn ok";
       text.textContent = t("conn.ok");
@@ -409,6 +438,26 @@
     renderRoster();
     renderSeal();
     renderKeys();
+    renderAudit();
+  }
+
+  function renderAudit() {
+    const kv = document.getElementById("auditKv");
+    if (state.auditError) {
+      kv.innerHTML = `<div class="err">${esc(t("audit.unavailable"))} (${esc(state.auditError)})</div>`;
+      return;
+    }
+    const summary = state.audit;
+    if (!summary || !summary.window) { kv.innerHTML = `<div class="empty">${esc(t("audit.waiting"))}</div>`; return; }
+    const decisions = Object.entries(summary.byDecision || {})
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .map(([decision, count]) => `${esc(decision)} × ${count}`)
+      .join(" · ");
+    kv.innerHTML =
+      kvRow(t("audit.events"), String(summary.window.events)) +
+      kvRow(t("audit.earliest"), summary.window.earliest || "-") +
+      kvRow(t("audit.latest"), summary.window.latest || "-") +
+      kvRow(t("audit.byDecision"), decisions || t("audit.empty"));
   }
 
   function setTheme(theme) {

@@ -592,7 +592,7 @@ describe('documentation consistency', () => {
     const routes = [
       ...readFileSync('src/http/server.ts', 'utf8').matchAll(/app\.(get|post|put|delete|patch)\(\s*'([^']+)'/g),
     ].map(match => match[2] ?? '');
-    const publicPaths = new Set(['/healthz', '/api/roster/public', '/api/roster/keys']);
+    const publicPaths = new Set(['/healthz', '/api/roster/public', '/api/roster/keys', '/api/audit/summary']);
     const publicCount = routes.filter(path => publicPaths.has(path)).length;
     const bearerCount = routes.length - publicCount;
 
