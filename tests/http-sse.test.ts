@@ -194,4 +194,42 @@ describe('hijacked SSE stream lifecycle', () => {
     expect(socket.chunks).toEqual([]);
     socket.emit('close');
   });
+
+  it('replays what the intent published before the client attached', () => {
+    // A subscriber that arrives mid-run is the normal case, not the edge case:
+    // without the backlog it sees nothing about the branches that already
+    // settled, and the thinking-state view starts from a false "no branches".
+    const hub = new ProgressHub();
+    const pastEnd: ProgressEvent = {
+      type: 'branch-ended', intentId: 'i', runId: 'r', vassal: 'v', outcome: 'completed', state: 'completed',
+      at: '2026-10-01T00:00:00.500Z',
+    };
+    hub.publish(started);
+    hub.publish(pastEnd);
+    const socket = socketOf();
+    streamIntentProgress(socket, hub, 'i');
+    const buffer = socket.chunks.join('');
+    expect(buffer).toContain('event: branch-started');
+    expect(buffer).toContain('event: branch-ended');
+    expect(buffer).toContain('"state":"completed"');
+    // Live events keep flowing after the replay, in order and without duplication.
+    hub.publish(finished);
+    expect(socket.chunks.filter(c => c.includes('event: branch-started'))).toHaveLength(1);
+    expect(socket.chunks.join('')).toContain('event: intent-finished');
+    expect(socket.ended).toBe(true);
+  });
+
+  it('ends the stream at once when the backlog already holds the terminal event', () => {
+    const hub = new ProgressHub();
+    hub.publish(started);
+    hub.publish(finished);
+    const socket = socketOf();
+    streamIntentProgress(socket, hub, 'i');
+    expect(socket.chunks.join('')).toContain('event: intent-finished');
+    expect(socket.ended).toBe(true);
+    // Nothing is written after teardown, so a late publish cannot reach this socket.
+    const before = socket.chunks.length;
+    hub.publish(started);
+    expect(socket.chunks.length).toBe(before);
+  });
 });

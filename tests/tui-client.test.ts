@@ -40,6 +40,29 @@ describe('TUI client POST bodies (P0-8 pilot finding)', () => {
   });
 });
 
+describe('TUI reinstate face (A-02)', () => {
+  it('posts to the reinstate route with a JSON body', async () => {
+    const { calls, client } = mockClient(() => okJson({ name: 'p1', revoked: false }));
+    await client.reinstate('p 1');
+    const call = calls.find(c => c.url.includes('/api/vassals/p%201/reinstate'));
+    expect(call?.init?.method).toBe('POST');
+    // The route reads no body, but a JSON-labelled empty one is a 400 on Fastify.
+    expect(call?.init?.body).toBe('{}');
+    expect(call?.init?.headers?.['content-type']).toBe('application/json');
+  });
+});
+
+describe('TUI resume face (E6.3)', () => {
+  it('posts the operator-supplied parameters to approve-resume', async () => {
+    const { calls, client } = mockClient(() => okJson({ escalation: { id: 'esc-1' }, intent: {} }));
+    await client.resume('esc 1', { env: 'prod' });
+    const call = calls.find(c => c.url.includes('/api/escalations/esc%201/approve-resume'));
+    expect(call?.init?.method).toBe('POST');
+    expect(call?.init?.body).toBe(JSON.stringify({ params: { env: 'prod' } }));
+    expect(call?.init?.headers?.['content-type']).toBe('application/json');
+  });
+});
+
 describe('TUI contract face (self-host step 5)', () => {
   it('includes the contract ledger in the snapshot and degrades to null when unmounted', async () => {
     const withContracts = mockClient(url => {

@@ -187,9 +187,16 @@ export type DeckClient = {
   /** Revoke (settle) a watch; it fires no more. */
   revokeWatch(id: string): Promise<void>;
   revoke(name: string): Promise<void>;
+  /** The one way back from a revocation (A-02): re-registering does not clear a
+   *  revoked entry, so restoring it is a separate, audited act. */
+  reinstate(name: string): Promise<void>;
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
   resolve(id: string, stance: string, note?: string): Promise<void>;
+  /** E6.3: answer a task-input escalation with the parameters the agent asked
+   *  for. The kernel approves the row and re-dispatches that one branch; plain
+   *  `approve` records the decision and leaves the branch parked. */
+  resume(id: string, params: Record<string, unknown>): Promise<void>;
   /** E2.6: recognize an operator instruction as a plan-only intent. */
   recognize(text: string, opts?: { realm?: 'personal' | 'enterprise'; useModel?: boolean }): Promise<RecognizeView>;
 };
@@ -326,9 +333,11 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
     },
     approve: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/approve`, note !== undefined ? { note } : undefined),
+    reinstate: name => post(`/api/vassals/${encodeURIComponent(name)}/reinstate`),
     reject: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/reject`, note !== undefined ? { note } : undefined),
     resolve: (id, stance, note) =>
       post(`/api/escalations/${encodeURIComponent(id)}/resolve`, { stance, ...(note !== undefined ? { note } : {}) }),
+    resume: (id, params) => post(`/api/escalations/${encodeURIComponent(id)}/approve-resume`, { params }),
     recognize: async (text, opts) => {
       const res = await fetchImpl(`${baseUrl}/api/intents/recognize`, {
         method: 'POST',

@@ -1,15 +1,15 @@
 {
-  "pinnedAt": "2026-10-10T11:54:35.630Z",
+  "pinnedAt": "2026-10-10T13:22:47.971Z",
   "report": {
-    "caseCount": 21,
-    "passed": 44,
+    "caseCount": 31,
+    "passed": 56,
     "failed": 0,
     "blocked": 0,
     "warned": 0,
     "byFamily": {
       "decision": {
-        "total": 21,
-        "passed": 21,
+        "total": 23,
+        "passed": 23,
         "blocked": 0
       },
       "escalation": {
@@ -35,6 +35,26 @@
       "budget": {
         "total": 1,
         "passed": 1,
+        "blocked": 0
+      },
+      "planning": {
+        "total": 3,
+        "passed": 3,
+        "blocked": 0
+      },
+      "recovery": {
+        "total": 3,
+        "passed": 3,
+        "blocked": 0
+      },
+      "streaming": {
+        "total": 2,
+        "passed": 2,
+        "blocked": 0
+      },
+      "isolation": {
+        "total": 2,
+        "passed": 2,
         "blocked": 0
       }
     }

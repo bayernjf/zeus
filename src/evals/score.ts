@@ -10,6 +10,9 @@ import type { AuditEntry } from '../dispatch/dispatcher.js';
 import type { ProgressEvent } from '../orchestrator/progress.js';
 import type { FanOutResult } from '../orchestrator/types.js';
 import type { ContentHandling } from '../guardrails/content-risk.js';
+import type { PlanFlowResult } from '../orchestrator/plan-flow.js';
+import type { RecoveryExec } from '../orchestrator/recovery.js';
+import type { IsolationLevel } from '../mcp/isolation.js';
 import type { EvalCase, EvalExpectation } from './types.js';
 
 export type EvalCheck = {
@@ -43,9 +46,19 @@ export type EvalRegression = {
   severity: 'block' | 'warn';
 };
 
-const FAMILIES = ['decision', 'escalation', 'selection', 'evidence', 'guardrails', 'budget'] as const;
+const FAMILIES = ['decision', 'escalation', 'selection', 'evidence', 'guardrails', 'budget', 'planning', 'recovery', 'streaming', 'isolation'] as const;
 
-type Trace = { outcome: FanOutResult; audit: AuditEntry[]; events: ProgressEvent[] };
+type Trace = {
+  outcome: FanOutResult;
+  audit: AuditEntry[];
+  events: ProgressEvent[];
+  /** S12: the settled PlanFlow verdict, when the case drove the planner. */
+  planFlow?: PlanFlowResult;
+  /** S13: the recovery exec records, when the case ran a checkpoint. */
+  recovery?: RecoveryExec[];
+  /** S16: the isolation classification/validation verdict. */
+  isolation?: { level: IsolationLevel; valid: boolean; reasons: string[] };
+};
 
 /** Score one eval case against the settled trace (design-evals §4). Checks are
  *  evaluated in the declared order; a check that cannot be assessed from V1
@@ -137,6 +150,93 @@ export function scoreEvalRun(c: EvalCase, trace: Trace): EvalResult {
         // than guess a number.
         checks.push(check('budget.cost-tokens', 'budget', ex, true, 'not-assessable-in-v1: no cost ledger in trace'));
       }
+    }
+    if (ex.planning !== undefined) {
+      // S12: the plan verdict is a governance fact on the audit spine
+      // (plan-selected / plan-conflict / plan-rejected-unplannable /
+      // plan-malformed). The runner drives PlanFlow, whose internal fan-outs
+      // land on the same dispatch-audit collection.
+      const planRows: string[] = trace.audit.filter((a) => a.decision.startsWith('plan-')).map((a) => a.decision);
+      const reasons: string[] = [];
+      const expectedDecision =
+        ex.planning.expected === 'selected'
+          ? 'plan-selected'
+          : ex.planning.expected === 'conflict'
+            ? 'plan-conflict'
+            : 'plan-rejected-unplannable';
+      if (!planRows.includes(expectedDecision)) reasons.push(`no ${expectedDecision} row`);
+      if (ex.planning.expected === 'selected' && planRows.includes('plan-conflict')) reasons.push('unexpected plan-conflict');
+      if (ex.planning.expected === 'selected' && planRows.includes('plan-rejected-unplannable')) reasons.push('unexpected plan-rejected-unplannable');
+      if (ex.planning.expected === 'unplannable' && planRows.includes('plan-selected')) reasons.push('unexpected plan-selected');
+      if (ex.planning.planner !== undefined) {
+        const selectedRow = trace.audit.find((a) => a.decision === 'plan-selected');
+        if (selectedRow === undefined || !(selectedRow.detail ?? '').includes(ex.planning.planner)) {
+          reasons.push(`selected row does not name planner ${ex.planning.planner}`);
+        }
+      }
+      checks.push(check('planning.outcome', 'planning', ex, reasons.length === 0, reasons.join('; ')));
+    }
+    if (ex.recovery !== undefined) {
+      // S13: recovery decisions surface as recovery-* audit rows. A checkpoint
+      // with zero unsettled intents produces zero rows, so a case that expects
+      // a decision also proves the checkpoint projected the branch.
+      const rows: string[] = trace.audit.filter((a) => a.decision.startsWith('recovery-')).map((a) => a.decision);
+      const reasons: string[] = [];
+      for (const expected of ex.recovery.expectedDecisions ?? []) {
+        if (!rows.includes(expected)) reasons.push(`missing ${expected}`);
+      }
+      for (const forbidden of ex.recovery.forbiddenDecisions ?? []) {
+        if (rows.includes(forbidden)) reasons.push(`unexpected ${forbidden}`);
+      }
+      checks.push(check('recovery.decisions', 'recovery', ex, reasons.length === 0, reasons.join('; ')));
+    }
+    if (ex.streaming !== undefined) {
+      // S15: working-frame deltas and partial counts are facts on the progress
+      // spine (never the decision path). `previewNotInDecision` fails when a
+      // delta's preview text shows up in the settled conclusion or any branch
+      // rationale — preview content is replaceable and must stay out.
+      const deltas = trace.events.filter((e) => e.type === 'branch-delta');
+      const partials = trace.events.filter((e) => e.type === 'intent-partial');
+      const reasons: string[] = [];
+      if (ex.streaming.deltaCountAtLeast !== undefined && deltas.length < ex.streaming.deltaCountAtLeast) {
+        reasons.push(`only ${deltas.length} branch-delta event(s) < ${ex.streaming.deltaCountAtLeast}`);
+      }
+      if (ex.streaming.partialSeen === true && partials.length === 0) {
+        reasons.push('no intent-partial event');
+      }
+      if (ex.streaming.previewNotInDecision === true) {
+        const decisionText = [
+          trace.outcome.decision?.conclusion ?? '',
+          ...trace.outcome.positions.map((p) => `${p.stance ?? ''} ${p.rationale ?? ''}`.trim()),
+        ].join(' ');
+        for (const d of deltas) {
+          if (d.type === 'branch-delta' && decisionText.includes(d.preview)) {
+            reasons.push(`preview '${d.preview.slice(0, 24)}' leaked into decision path`);
+            break;
+          }
+        }
+      }
+      checks.push(check('streaming.progress', 'streaming', ex, reasons.length === 0, reasons.join('; ')));
+    }
+    if (ex.isolation !== undefined) {
+      // S16: the classification/validation verdict is a runner-supplied fact
+      // (the isolation gate is registration-time, not per-dispatch).
+      const got = trace.isolation;
+      const reasons: string[] = [];
+      if (got === undefined) {
+        reasons.push('no isolation result in trace');
+      } else {
+        if (ex.isolation.expectedLevel !== undefined && got.level !== ex.isolation.expectedLevel) {
+          reasons.push(`level ${got.level} != ${ex.isolation.expectedLevel}`);
+        }
+        if (ex.isolation.valid !== undefined && got.valid !== ex.isolation.valid) {
+          reasons.push(`valid ${got.valid} != ${ex.isolation.valid}`);
+        }
+        for (const forbidden of ex.isolation.forbiddenReasons ?? []) {
+          if (got.reasons.includes(forbidden)) reasons.push(`forbidden validation reason '${forbidden}'`);
+        }
+      }
+      checks.push(check('isolation.verdict', 'isolation', ex, reasons.length === 0, reasons.join('; ')));
     }
   }
   return { caseId: c.id, checks };

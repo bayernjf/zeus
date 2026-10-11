@@ -199,6 +199,26 @@
   .dag-node.node-bad { border-color: var(--dag-bad); }
   .dag-node.node-pending { border-color: var(--dag-pending); }
   .dag-node.node-idle { border-color: var(--line); }
+
+/* S15 V3 思考态视图（design-streaming §3.3）：预览与正式结论必须一眼可分 */
+.stream-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--text-2); margin-bottom: 8px; }
+.stream-count { font-family: var(--mono); font-size: 11.5px; color: var(--accent); border: 1px solid var(--st-info-line); border-radius: 6px; padding: 2px 8px; }
+.stream-list { display: flex; flex-direction: column; gap: 6px; }
+.stream-row { display: flex; gap: 10px; align-items: baseline; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; background: var(--panel-2); }
+.stream-row.s-thinking { border-color: var(--dag-pending); }
+.stream-row.s-settled { border-color: var(--st-ok-line); }
+.stream-row.s-blocked { border-color: var(--st-warn-line); }
+.stream-row.s-failed { border-color: var(--st-bad-line); }
+.stream-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); flex: none; transform: translateY(-1px); }
+.stream-row.s-thinking .stream-dot { background: var(--accent); }
+.stream-row.s-settled .stream-dot { background: var(--ok); }
+.stream-row.s-blocked .stream-dot { background: var(--warn); }
+.stream-row.s-failed .stream-dot { background: var(--bad); }
+.stream-vassal { font-family: var(--mono); font-size: 12.5px; }
+.stream-state { font-size: 11px; color: var(--text-2); }
+.stream-body { flex: 1; min-width: 0; }
+.stream-preview { font-size: 11.5px; color: var(--text-2); font-style: italic; border-left: 2px solid var(--warn); padding-left: 8px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stream-tag { font-family: var(--sans); font-style: normal; font-size: 10.5px; color: var(--warn); margin-right: 6px; }
   .cors-note code { font-family: var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
 
   /* 确认对话框（替代 window.confirm：可承载关键参数、键盘可达、E2E 可断言） */
@@ -670,6 +690,10 @@
           <div class="body" id="intentDecision"></div>
         </div>
       </div>
+      <div class="panel" style="margin-top:14px">
+        <h2><span data-i18n="stream.title">思考态</span> <span class="hint" data-i18n="stream.hint">分支内增量预览，非结论</span> <span class="hint">S15 · SSE</span></h2>
+        <div class="body" id="intentStream"></div>
+      </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
           <h2><span data-i18n="intent.branches">分支</span> <span class="hint">fan-out</span></h2>
@@ -950,7 +974,6 @@
       "dispatch.badJson": "参数不是合法 JSON",
       "dispatch.confirm": "派发意图：{skill} @ {realm}{vassals} ？",
       "dispatch.dispatching": "派发中（同步等结算）…",
-      "dispatch.noIntentId": "派发未返回 intentId",
       "dispatch.ok": "已派发：{id}",
       "dispatch.failed": "派发失败：{msg}",
       "recog.needInput": "请输入操作者指令",
@@ -1030,6 +1053,21 @@
       "sse.intentEnd": "意图结束 · {status}",
       "sse.connecting": "连接实时事件流…",
       "sse.broken": "事件流中断：{msg}，自动重连中…",
+      "stream.title": "思考态",
+      "stream.hint": "分支内增量预览，非结论",
+      "stream.empty": "等待事件…",
+      "stream.ready": "已就绪 {n}/{m}",
+      "stream.done": "意图结束 · {status}",
+      "stream.waiting": "未开始",
+      "stream.thinking": "思考中 · {n} 帧",
+      "stream.settled": "已落定",
+      "stream.blocked": "等你输入",
+      "stream.failedAgent": "执行 Agent 报失败",
+      "stream.failedDispatch": "派发未完成",
+      "stream.canceled": "已取消",
+      "stream.timeout": "超时",
+      "stream.diverted": "已改道 → {to}",
+      "stream.previewTag": "预览·非结论",
       "state.persistOn": "持久化开",
       "state.persistOff": "持久化关",
       "state.auditDegraded": "审计降级",
@@ -1298,7 +1336,6 @@
       "dispatch.badJson": "Params are not valid JSON",
       "dispatch.confirm": "Dispatch intent: {skill} @ {realm}{vassals}?",
       "dispatch.dispatching": "Dispatching (sync settle)…",
-      "dispatch.noIntentId": "Dispatch returned no intentId",
       "dispatch.ok": "Dispatched: {id}",
       "dispatch.failed": "Dispatch failed: {msg}",
       "skill.loading": "(loading…)",
@@ -1598,6 +1635,21 @@
       "sse.intentEnd": "intent finished · {status}",
       "sse.connecting": "Connecting live event stream…",
       "sse.broken": "Event stream interrupted: {msg}; reconnecting…",
+      "stream.title": "Live state",
+      "stream.hint": "in-branch increment previews, not conclusions",
+      "stream.empty": "Waiting for events…",
+      "stream.ready": "ready {n}/{m}",
+      "stream.done": "intent finished · {status}",
+      "stream.waiting": "not started",
+      "stream.thinking": "thinking · {n} frames",
+      "stream.settled": "settled",
+      "stream.blocked": "waiting for your input",
+      "stream.failedAgent": "agent reported failure",
+      "stream.failedDispatch": "dispatch did not complete",
+      "stream.canceled": "canceled",
+      "stream.timeout": "timed out",
+      "stream.diverted": "diverted → {to}",
+      "stream.previewTag": "preview · not a conclusion",
       "task.completed": "completed",
       "task.failed": "failed",
       "task.canceled": "canceled",
@@ -1947,14 +1999,22 @@
     const prevLabel = btn.textContent;
     btn.textContent = t('dispatch.dispatching');
     try {
-      const body = { skill, realm, params, ...(vassals.length ? { vassals } : {}), ...(mode === 'execute' ? { mode } : {}) };
-      const r = await api('POST', '/api/intents', body);
-      const intentId = r && r.intentId;
-      if (!intentId) { toast(t('dispatch.noIntentId'), 'bad'); return; }
-      rememberIntent(intentId, r.skill || skill, r.status || 'dispatched');
-      toast(t('dispatch.ok', { id: intentId }), 'ok');
+      // Mint the idempotency key here so the live view can attach while the run is
+      // still going: POST /api/intents resolves only after every branch settles, so
+      // routing afterwards showed the operator nothing during the whole fan-out
+      // (design-streaming §1 gap 1). GET /api/intents/:id answers 404 until it
+      // settles, which loadIntent already follows over SSE.
+      const intentId = 'web-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
+      const body = { intentId, skill, realm, params, ...(vassals.length ? { vassals } : {}), ...(mode === 'execute' ? { mode } : {}) };
       location.hash = '#/intent/' + encodeURIComponent(intentId);
+      const r = await api('POST', '/api/intents', body);
+      const settledId = (r && r.intentId) || intentId;
+      if (settledId !== intentId) location.hash = '#/intent/' + encodeURIComponent(settledId);
+      rememberIntent(settledId, r.skill || skill, r.status || 'dispatched');
+      toast(t('dispatch.ok', { id: settledId }), 'ok');
     } catch (e) {
+      // Nothing was created, so do not leave the operator on a dead intent view.
+      location.hash = '#/monitor';
       toast(t('dispatch.failed', { msg: e.message }), 'bad');
     } finally {
       btn.disabled = false;
@@ -2338,6 +2398,13 @@
       $('intentBranches').innerHTML = '';
       return;
     }
+    // S15 V3: a terminal intent never streams, and a page opened after the fact
+    // gets the stored snapshot instead of the live spine - fold that so this panel
+    // describes what is settled rather than sitting empty next to a finished run.
+    if (!state.stream || state.stream.order.length === 0) {
+      state.stream = foldStreamEvent(emptyStreamState(), 'intent', r);
+      renderStream();
+    }
     $('intentIdLabel').textContent = r.intentId + ' · runId ' + (r.runId || '—');
     const st = r.status || 'unknown';
     $('intentStatusBadge').textContent = st;
@@ -2500,8 +2567,134 @@
     el.scrollTop = el.scrollHeight;
   }
 
+  /**
+   * S15 V3 (design-streaming §3.3): the thinking-state view, folded from the
+   * progress events the SSE channel already carries - no new endpoint, no new
+   * kernel state. Branches are keyed by their branch runId (the spine's own
+   * identity) and shown in first-sight order, which is the fan-out selection
+   * order. A delta only ever updates a preview: the settled rows come from
+   * branch-ended, so a preview can never be read as a conclusion.
+   */
+  function emptyStreamState() {
+    return { order: [], byRun: {}, settledCount: 0, totalCount: 0, finished: null, diversions: [] };
+  }
+
+  function touchBranch(st, run, patch) {
+    let b = st.byRun[run];
+    if (b === undefined) {
+      b = { run, vassal: '?', skill: '', state: 'waiting', deltas: 0, preview: '' };
+      st.byRun[run] = b;
+      st.order.push(run);
+    }
+    for (const k of Object.keys(patch)) b[k] = patch[k];
+    return b;
+  }
+
+  // The agent's own task state and the dispatch category are different facts, and
+  // the whole point of this row is to keep them apart on screen: an agent that
+  // says "my task failed" is not a branch that never completed.
+  function endedStreamState(p) {
+    if (p.state === 'input-required') return 'blocked';
+    if (p.state === 'canceled' || p.outcome === 'canceled') return 'canceled';
+    if (p.outcome === 'timeout') return 'timeout';
+    if (p.state === 'failed') return 'failedAgent';
+    if (p.outcome === 'failed') return 'failedDispatch';
+    return 'settled';
+  }
+
+  function foldStreamEvent(st, evt, p) {
+    if (evt === 'branch-started') {
+      touchBranch(st, p.runId, { vassal: p.vassal || '?', skill: p.skill || '', state: 'thinking' });
+    } else if (evt === 'branch-delta') {
+      const b = touchBranch(st, p.runId, { vassal: p.vassal || '?' });
+      b.state = 'thinking';
+      b.deltas += 1;
+      b.preview = p.preview == null ? '' : String(p.preview);
+    } else if (evt === 'branch-ended') {
+      const b = touchBranch(st, p.runId, { vassal: p.vassal || '?' });
+      b.state = endedStreamState(p);
+      // The preview is superseded by the settled outcome; keeping it on screen
+      // next to a conclusion is how a preview starts being read as one.
+      b.preview = '';
+    } else if (evt === 'branch-diverted') {
+      // Diversion carries no runId (the branch was re-pointed before dispatch),
+      // so it is reported as its own line instead of inventing a branch row.
+      st.diversions.push({ from: p.from || '?', to: p.to || '?', skill: p.skill || '' });
+    } else if (evt === 'intent-partial') {
+      st.settledCount = Number(p.settledCount) || 0;
+      st.totalCount = Number(p.totalCount) || 0;
+    } else if (evt === 'intent-finished') {
+      st.finished = p.status || '';
+    } else if (evt === 'intent') {
+      // A late subscriber gets the stored snapshot instead of the live spine; the
+      // endpoint sends it as `event: intent`, so fold it or the panel would read
+      // "no branches" about an intent that already finished.
+      const branches = Array.isArray(p.branches) ? p.branches : [];
+      for (const b of branches) {
+        touchBranch(st, b.runId, {
+          vassal: b.vassal || '?',
+          state: b.ok ? 'settled' : endedStreamState({ state: b.state, outcome: b.outcome }),
+        });
+      }
+      st.settledCount = branches.length;
+      st.totalCount = branches.length;
+      st.finished = p.status || '';
+    }
+    return st;
+  }
+
+  function streamStateLabel(b) {
+    if (b.state === 'thinking') return t('stream.thinking', { n: b.deltas });
+    if (b.state === 'blocked') return t('stream.blocked');
+    if (b.state === 'canceled') return t('stream.canceled');
+    if (b.state === 'timeout') return t('stream.timeout');
+    if (b.state === 'failedAgent') return t('stream.failedAgent');
+    if (b.state === 'failedDispatch') return t('stream.failedDispatch');
+    if (b.state === 'settled') return t('stream.settled');
+    return t('stream.waiting');
+  }
+
+  function streamRowClass(s) {
+    if (s === 'thinking') return 's-thinking';
+    if (s === 'settled') return 's-settled';
+    if (s === 'blocked') return 's-blocked';
+    if (s === 'failedAgent' || s === 'failedDispatch' || s === 'canceled' || s === 'timeout') return 's-failed';
+    return '';
+  }
+
+  function renderStream() {
+    const el = $('intentStream');
+    if (!el) return;
+    const st = state.stream || emptyStreamState();
+    const settled = st.order.filter(r => st.byRun[r].state === 'settled').length;
+    const ready = st.totalCount > 0 ? st.settledCount : settled;
+    const total = st.totalCount > 0 ? st.totalCount : st.order.length;
+    let head = '<div class="stream-head"><span class="stream-count">' + esc(t('stream.ready', { n: ready, m: total })) + '</span>';
+    if (st.finished) head += '<span class="stream-count">' + esc(t('stream.done', { status: st.finished })) + '</span>';
+    for (const d of st.diversions) {
+      head += '<span class="stream-state">' + esc(d.from) + ' ' + esc(t('stream.diverted', { to: d.to })) + '</span>';
+    }
+    head += '</div>';
+    if (st.order.length === 0) {
+      el.innerHTML = head + '<div class="empty">' + esc(t('stream.empty')) + '</div>';
+      return;
+    }
+    const rows = st.order.map(run => {
+      const b = st.byRun[run];
+      const preview = b.preview
+        ? '<div class="stream-preview"><span class="stream-tag">' + esc(t('stream.previewTag')) + '</span>' + esc(b.preview.slice(0, 200)) + '</div>'
+        : '';
+      return '<div class="stream-row ' + streamRowClass(b.state) + '"><span class="stream-dot"></span><div class="stream-body">' +
+        '<div><span class="stream-vassal">' + esc(b.vassal) + '</span> <span class="stream-state">' + esc(streamStateLabel(b)) + '</span>' +
+        (b.skill ? ' <span class="stream-state">' + esc(b.skill) + '</span>' : '') + '</div>' + preview + '</div></div>';
+    }).join('');
+    el.innerHTML = head + '<div class="stream-list">' + rows + '</div>';
+  }
+
   async function startSse(id) {
     stopSse();
+    state.stream = emptyStreamState();
+    renderStream();
     const ac = new AbortController();
     state.sseAbort = ac;
     const { base, token } = state.conn;
@@ -2533,6 +2726,7 @@
           let payload = {};
           try { payload = JSON.parse(data); } catch { continue; }
           appendSseEvent(evt, payload);
+          if (state.stream) { foldStreamEvent(state.stream, evt, payload); renderStream(); }
           if (evt === 'intent-finished') {
             try {
               const r = await api('GET', '/api/intents/' + encodeURIComponent(id));
@@ -3375,6 +3569,10 @@
     try {
       await api('GET', '/api/state');
       setConn(true);
+      // The skill list is fetched once at page init, before any connection exists -
+      // without this the 派发 form's skill select stays "load failed" until the
+      // operator reloads the page, so a first visit cannot dispatch anything at all.
+      loadSkills();
       toast(t('conn.testOk', { msg: state.conn.base }), 'ok');
       location.hash = '#/monitor';
     } catch (e) {

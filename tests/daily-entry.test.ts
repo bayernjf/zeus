@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runDailyCli } from '../src/daily/cli.js';
 import { renderDailyReport, parsePreviousRecord, type DailyReportModel } from '../src/daily/report.js';
+import { parseCommand } from '../src/tui/commands.js';
 
 /**
  * The product entry (`npm run daily`) is assembly: recognize → fan out → write
@@ -489,5 +490,60 @@ describe('npm run daily', () => {
     expect(result.stdout).toContain('**Intent** `deployment-health` — chosen by llm / fake-chat, confidence 0.900');
     expect(result.stdout).toContain('the local ranker found no lexical match');
     expect(readFileSync(join(root, 'cjk.md'), 'utf8')).toContain('**Intent** `deployment-health`');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The waiting-for-you section: every route out of a stopped run has to exist.
+// ---------------------------------------------------------------------------
+
+describe('daily report settle hints agree with the surfaces they name', () => {
+  const serverSource = readFileSync(new URL('../src/http/server.ts', import.meta.url), 'utf8');
+  const mounted = new Set(
+    [...serverSource.matchAll(/app\.post\('\/api\/escalations\/:id\/([a-z-]+)'/g)].map(match => match[1]!),
+  );
+
+  it('lists the escalation actions the server actually mounts (positive control)', () => {
+    // Without this the assertion below could pass on an empty set.
+    expect([...mounted].sort()).toEqual(['approve', 'approve-contract', 'approve-resume', 'reject', 'resolve']);
+  });
+
+  it.each([
+    ['task-input', 'approve-resume'],
+    ['intent-conflict', 'resolve'],
+    ['memory-dispute', 'approve'],
+    ['delegation-limit', 'approve-contract'],
+    // A kind this renderer has never seen still gets a mounted action, not a guess.
+    ['some-future-kind', 'approve'],
+  ] as const)('sends a %s row to POST /api/escalations/<id>/%s', (kind, action) => {
+    expect(mounted.has(action), `${action} is not mounted by src/http/server.ts`).toBe(true);
+    const text = renderDailyReport(
+      baseModel({ status: 'partial', escalations: [{ id: 'esc-7', kind, reason: 'waiting for the operator', options: [] }] }),
+    );
+    expect(text).toContain('## Waiting for you');
+    expect(text).toContain(`POST /api/escalations/esc-7/${action}`);
+    // A templated id cannot be pasted; the page carries the real one.
+    expect(text).not.toContain(':id');
+  });
+
+  it.each([
+    ['task-input', 'r<n> {"key":"value"}', 'resume'],
+    ['intent-conflict', 's<n>.<m>', 'resolve'],
+    ['memory-dispute', 'a<n>', 'approve'],
+    ['delegation-limit', 'a<n>', 'approve'],
+  ] as const)('names a deck command the parser accepts for %s', (kind, form, parsedKind) => {
+    const text = renderDailyReport(baseModel({ escalations: [{ id: 'esc-7', kind, reason: 'r', options: [] }] }));
+    expect(text).toContain(form);
+    // What the operator types is the form with the placeholders filled in.
+    const typed = form.replace(/<n>/g, '1').replace(/<m>/g, '1');
+    const parsed = parseCommand(typed);
+    expect('error' in parsed ? `not a deck command: ${parsed.error}` : parsed.kind, typed).toBe(parsedKind);
+  });
+
+  it('never points at the endpoint that was never mounted', () => {
+    const text = renderDailyReport(
+      baseModel({ escalations: [{ id: 'esc-7', kind: 'task-input', reason: 'which environment?', options: [] }] }),
+    );
+    expect(text).not.toContain('/decision');
   });
 });

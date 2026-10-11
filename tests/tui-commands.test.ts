@@ -107,3 +107,46 @@ describe('TUI command parser', () => {
     expect(parseCommand('info')).toEqual({ error: 'unknown' });
   });
 });
+
+describe('TUI reinstate command (A-02 way back from a revocation)', () => {
+  it('parses a bare index and keeps the roster letters distinct', () => {
+    expect(parseCommand('b2')).toEqual({ kind: 'reinstate', index: 2 });
+    expect(parseCommand('B 2')).toEqual({ kind: 'reinstate', index: 2 });
+    // `d<n>` stays the irreversible direction; `b<n>` is the only way back.
+    expect(parseCommand('d2')).toEqual({ kind: 'revoke', index: 2 });
+    expect(parseCommand('b0')).toEqual({ error: 'bad-index' });
+    expect(parseCommand('b')).toEqual({ error: 'unknown' });
+    expect(parseCommand('b2 now')).toEqual({ error: 'unknown' });
+    expect(COMMAND_HELP).toContain('b<n>');
+  });
+});
+
+describe('TUI resume command (E6.3 parameters-and-redispatch)', () => {
+  it('parses an index with a JSON object payload', () => {
+    expect(parseCommand('r1 {"env":"prod"}')).toEqual({ kind: 'resume', index: 1, params: { env: 'prod' } });
+    expect(parseCommand('r 2 {"owner":"jiangfeng","repo":"zeus"}')).toEqual({
+      kind: 'resume',
+      index: 2,
+      params: { owner: 'jiangfeng', repo: 'zeus' },
+    });
+    // Nested values stay the operator's own JSON; the deck does not flatten it.
+    expect(parseCommand('r1 {"a":{"b":1}}')).toEqual({ kind: 'resume', index: 1, params: { a: { b: 1 } } });
+    expect(COMMAND_HELP).toContain('r<n> {json}');
+  });
+
+  it('refuses the forms that would send a payload the kernel rejects', () => {
+    // `r` alone stays refresh - the deck redraws, it never resumes nothing.
+    expect(parseCommand('r')).toEqual({ kind: 'refresh' });
+    expect(parseCommand('r1')).toEqual({ error: 'resume-needs-params' });
+    // Anything after the index is the payload, so a non-JSON one is a bad
+    // payload rather than an unknown command - the deck says which half is wrong.
+    expect(parseCommand('r1 env=prod')).toEqual({ error: 'resume-bad-json' });
+    expect(parseCommand('r0 {"env":"prod"}')).toEqual({ error: 'bad-index' });
+    expect(parseCommand('r1 {"env":')).toEqual({ error: 'resume-bad-json' });
+    // The endpoint requires an object: an array or a scalar is a usage error here,
+    // not a 400 round trip.
+    expect(parseCommand('r1 ["prod"]')).toEqual({ error: 'resume-bad-json' });
+    expect(parseCommand('r1 "prod"')).toEqual({ error: 'resume-bad-json' });
+    expect(parseCommand('r1 null')).toEqual({ error: 'resume-bad-json' });
+  });
+});

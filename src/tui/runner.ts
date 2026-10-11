@@ -6,9 +6,9 @@
  * readline loop and the refresh interval.
  */
 import type { DeckClient, DeckSnapshot, EscalationView } from './client.js';
-import { makeTranslator, resolveLocale, type Translator } from './format.js';
+import { makeTranslator, resolveLocale, statusLabel, type Translator } from './format.js';
 import { makePalette, type Palette } from './tokens.js';
-import { renderDeck, renderRecognize, escalationOptions } from './render.js';
+import { renderDeck, renderRecognize, escalationOptions, escalationKindLabel } from './render.js';
 import { COMMAND_HELP, parseCommand, type DeckCommand } from './commands.js';
 import type { Locale } from './messages.js';
 
@@ -55,7 +55,7 @@ export function createDeck(options: RunnerOptions): DeckController {
   };
 
   const applyEscalation = async (
-    cmd: Extract<DeckCommand, { kind: 'approve' | 'reject' | 'resolve' }>,
+    cmd: Extract<DeckCommand, { kind: 'approve' | 'reject' | 'resolve' | 'resume' }>,
     esc: EscalationView,
   ): Promise<void> => {
     if (cmd.kind === 'resolve') {
@@ -68,6 +68,20 @@ export function createDeck(options: RunnerOptions): DeckController {
       if (!(await confirm(t('escalation.confirm', { action, id: esc.id })))) return;
       await client.resolve(esc.id, stance);
       io.print(`${t('escalation.done', { action, id: esc.id })}\n`);
+      return;
+    }
+    if (cmd.kind === 'resume') {
+      // The kernel only resumes a branch that stopped for parameters; approving
+      // some other kind through this path would record a decision and silently
+      // leave the branch parked, so the deck refuses before any request goes out.
+      if (esc.kind !== 'task-input') {
+        io.print(`${t('escalation.resumeNeedsTaskInput', { kind: escalationKindLabel(t, esc.kind) })}\n`);
+        return;
+      }
+      const action = t('escalation.resume');
+      if (!(await confirm(t('escalation.resumeConfirm', { action, id: esc.id, params: JSON.stringify(cmd.params) })))) return;
+      await client.resume(esc.id, cmd.params);
+      io.print(`${t('escalation.resumed', { id: esc.id, vassal: esc.vassal })}\n`);
       return;
     }
     if (cmd.kind === 'approve' && esc.kind === 'delegation-limit') {
@@ -128,6 +142,29 @@ export function createDeck(options: RunnerOptions): DeckController {
         io.print(`${t('roster.revoked', { name: entry.name })}\n`);
       } catch (error) {
         io.print(`${t('roster.revokeFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
+    if (parsed.kind === 'reinstate') {
+      const entry = snapshot.roster.entries[parsed.index - 1];
+      if (!entry) {
+        io.print(`${t('roster.reinstateFailed', { message: `#${parsed.index}` })}\n`);
+        return true;
+      }
+      // Only a revoked entry has a way back; the kernel answers 404 for an
+      // active one, and the deck says which state it looked at instead.
+      if (entry.status !== 'revoked') {
+        io.print(`${t('roster.reinstateNeedsRevoked', { name: entry.name, status: statusLabel(t, entry.status) })}\n`);
+        return true;
+      }
+      if (!(await confirm(t('roster.confirmReinstate', { name: entry.name })))) return true;
+      try {
+        await client.reinstate(entry.name);
+        io.print(`${t('roster.reinstated', { name: entry.name })}\n`);
+      } catch (error) {
+        io.print(`${t('roster.reinstateFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
       }
       await draw();
       return true;

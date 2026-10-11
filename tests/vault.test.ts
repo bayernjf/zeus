@@ -145,7 +145,13 @@ describe('L0 in-place restore and drift detection', () => {
   });
 });
 
-describe('L1 full bundle: pack and portable restore', () => {
+// Same family the CLI and files suites already carry a ceiling for: two scrypt
+// seals plus an open. Measured 2026-10-11 on this machine - solo the case runs
+// 1.9s and the file 17.6s, but the full suite at load average 42 (parallel
+// sessions) pushed this case past the 20s global floor once. The ceiling is the
+// instrument's headroom under contention, not a slower assertion: the case still
+// fails on its own terms if the bundle stops round-tripping.
+describe('L1 full bundle: pack and portable restore', { timeout: 60_000 }, () => {
   it('packs map + bundle and round-trips the bundle', async () => {
     const packed = await packFull(inventoryFromRealm(store, realmId), 'pw');
     expect(packed.map.bundle?.digest).toBe(packed.map.contentDigest);

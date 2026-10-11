@@ -11,7 +11,7 @@
 | --- | --- | --- |
 | 端口注入缝 | DispatchPort（dispatch/cancel）可替换；stdio client 有 spawnImpl 注入缝；boot 接受 fetchImpl | 测试用 makeDispatcher / mock fetch 直接驱动内核 |
 | 脚本化 Agent | 测试内手写 vassalFetch：脚本化 agent-card + SSE 帧序列（working→final）、可控制挂起 gate（deferred） | 每个测试文件各写一份，**无统一格式、不可跨文件复用** |
-| 真实进程冒烟 | smoke-core 45 步：编译产物 + 临时目录 + 脚本 Agent，验证真实装配 | 黄金路径，故障场景覆盖靠各单测 |
+| 真实进程冒烟 | smoke-core 47 步：编译产物 + 临时目录 + 脚本 Agent，验证真实装配 | 黄金路径，故障场景覆盖靠各单测 |
 | 协议契约测试 | a2a-parts、http-delegation-contracts、acceptance-standard-a2a / loom-interop | 校验协议形状与互操作 |
 | 决策重放 | decision-replay 可回放单次决策输入输出 | 面向追溯，不是通用录制重放 |
 | 故障场景 | 散见于 backpressure/diversion/watch 测试（gate 挂起、失败分支） | 手写、覆盖不系统 |

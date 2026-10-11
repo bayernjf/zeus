@@ -1,7 +1,7 @@
 # 设计稿：流式体验工程——部分结果、流式合并与思考态（tech map S15）
 
-- 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文在不破坏 merge.ts 来源/排序不变量的前提下，定义分支内增量帧的归并纯函数与接线分期。
-- 演进：v0.1（2026-10-09）首版——现状盘点（A2A SSE 已消费到内核、progress 只到分支粒度、分支事件落定才全量可见）+ 增量帧归并模型 + `streamWindow`/`appendStreamFrame` 草案 + 分期。
+- 状态：**现行 v0.3（2026-10-10）**：V1 归并纯函数、V2 真实 SSE 面接线、**V3 监督台侧思考态呈现**均已落地（TUI 侧未做）。实现证伪了本文两处形状，记在 §5 下方分期注记与 handoff Active work 212：§3.3 的 blocked/failed 分界要求 `branch-ended` 携带任务态（原只随 ok 发），§3.2 的迟到订阅可读性要求 H3 先重放有界保留的事件（原只直播）。本文在不破坏 merge.ts 来源/排序不变量的前提下，定义分支内增量帧的归并纯函数与接线分期。
+- 演进：v0.3（2026-10-10）——**V3 监督台侧落地**（Active work 212），并被实现证伪两处形状：① §3.3 的 blocked / failed 分界要求 `branch-ended` 携带任务态——原文只写"分支落定后为现有聚合结果"，未规定事件脊在 `!ok` 分支上还该发 `state`，而不发就无法把"Agent 报失败"与"派发未完成"分开；② §3.2 第 5 条允许慢消费者丢增量，但 §4 的接线没写"迟到订阅者如何补上已发生的分支"——ProgressHub 已有有界保留，缺的只是重放，视图否则从假的 0/0 起步。两处均已修并各有测试。**TUI 侧未做**：它今天没有 SSE 客户端，接视图模型前要先接事件通道，故 V3 只算半落地。 v0.2（2026-10-10）——V1 已落码（Active work 177：`src/orchestrator/stream-merge.ts` 不可变 StreamView + settledViewMatchesMerge，`tests/stream-merge.test.ts` 12 例，零新增审计值）+ **V2 已落地并核验（ProgressEvent branch-delta/intent-partial 透传 + `src/orchestrator/progress.ts` ProgressHub 有界保留 + `src/http/server.ts` 全事件 SSE 透传 + `src/dispatch/client.ts` working 增量帧窄回调，`tests/progress-hub.test.ts` / `tests/boot-streaming.test.ts`）**；V3 流式 UI 呈现（监督台/TUI 视图模型）待后续分期。v0.1（2026-10-09）首版——现状盘点（A2A SSE 已消费到内核、progress 只到分支粒度、分支事件落定才全量可见）+ 增量帧归并模型 + `streamWindow`/`appendStreamFrame` 草案 + 分期。
 - 关联：tech map S15（部分结果先呈现、流式合并、思考态 UX）；design-fan-out.md（扇出与多流合并视图 F4）；design-supervision.md（DAG 节点级进度）；design-observability.md（S6，流式帧也是 span 事件来源）；design-backpressure.md（慢分支/饱和与流式窗口背压）；design-ui*.md（TUI/H2 呈现）；`src/dispatch/client.ts`（A2A SSE 帧消费）、`src/orchestrator/merge.ts`（分支事件合并，已立排序与来源原则）、`src/orchestrator/progress.ts`（branch 粒度事件，注释明示分支内不增量流式）、`src/http/server.ts`（progress SSE 广播）。
 - 本文是流式体验的单一事实源；handoff 与 PRD 只索引。
 
@@ -88,7 +88,7 @@ export function settledViewMatchesMerge(view: StreamView, branches: BranchOutcom
 
 - **V1（纯函数归并层）**：stream-merge.ts 三函数 + 测试（帧序、来源标签、预览替换、部分就绪计数、乱序/迟到帧处理、**全 settled 与 mergeBranches 等价**的收敛断言、慢消费者丢帧不丢最终帧）；不接 dispatcher/UI。
 - **V2（dispatcher 增量回调 + H2 SSE）**：client working 帧经 onBranchDelta 上报；H2 SSE 推 branch-delta 与 partially-ready；内存视图随意图落定清理。
-- **V3（TUI/H2 思考态 UI）**：按 §3.3 状态契约渲染（进行中预览、N/M 就绪、blocked 挂起）；预览视觉与正式结论明确区分。
+- **V3（TUI/H2 思考态 UI）**：按 §3.3 状态契约渲染（进行中预览、N/M 就绪、blocked 挂起）；预览视觉与正式结论明确区分。🟡 **半落地（2026-10-10，Active work 212）**：H2 监督台已按此契约渲染（含"落定即清除预览"与逐帧「预览·非结论」标注），TUI 侧未做——它没有 SSE 客户端，先要接事件通道。
 - **V4（可选）**：流式部分聚合（如多数分支已给一致结论时提前显示"倾向性结果（未裁决）"）——必须带未裁决水印且不触发任何下游动作，需 S8/S10 评审后再做。
 
 **验收（V1 实施时）**：五类帧状态迁移正反例；预览内容永不出现在 settled 正式结论之外的输出结构里（独立不变量）；收敛等价性对随机帧序列成立（属性测试思路）；全量与冒烟不回归（V1 零运行时行为变化）。

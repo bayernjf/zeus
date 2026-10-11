@@ -189,6 +189,10 @@ const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const stateFile = join(dataDir, 'kernel-state.json');
 const auditFile = join(dataDir, 'audit.jsonl');
+// S6 V3's two observability files: the smoke boots with both set so the shipped
+// assembly is what gets proven, not just the library that reads them.
+const traceFile = join(dataDir, 'trace-export.jsonl');
+const metricsHistoryFile = join(dataDir, 'metrics-history.jsonl');
 /** @type {Record<string, string | undefined>} */
 const env = {
   ...process.env,
@@ -197,6 +201,8 @@ const env = {
   ZEUS_PORT: String(port),
   ZEUS_STATE_FILE: stateFile,
   ZEUS_AUDIT_FILE: auditFile,
+  ZEUS_TRACE_EXPORT_FILE: traceFile,
+  ZEUS_METRICS_HISTORY_FILE: metricsHistoryFile,
   ZEUS_RSK_KEY_FILE: join(work, 'smoke-key.pem'),
   ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
   ZEUS_REALM_ROOTS: realmRoot,
@@ -571,6 +577,29 @@ try {
   record('restart restores the memory fact source, not just the roster', (restoredMemory.json?.state?.events?.length ?? 0) >= 3 && restoredFacts >= 1, `events=${restoredMemory.json?.state?.events?.length} facts=${restoredFacts}`);
   const afterRestart = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', vassals: ['a2'] });
   record('dispatch works after the restart', afterRestart.json?.status === 'completed', `status=${afterRestart.json?.status} agent requests=${agent('a2').requests}`);
+  // Both observability files are configured on this very process, so these two
+  // steps fail if serve.ts stops passing them to bootKernel - which is exactly
+  // the assembly a route test cannot see (deferred #25 discipline).
+  const metricsHistory = await api('GET', '/api/metrics/history');
+  record(
+    'the booted process serves its metrics history when the file is configured',
+    metricsHistory.status === 200 && Array.isArray(metricsHistory.json) && metricsHistory.json.length >= 1,
+    `status=${metricsHistory.status} snapshots=${Array.isArray(metricsHistory.json) ? metricsHistory.json.length : '(not an array)'}`,
+  );
+  /** @type {any[]} */
+  const exportedTraces = existsSync(traceFile)
+    ? readFileSync(traceFile, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line))
+    : [];
+  // buildTraceTree keys an exported tree by its root run id (no intent id is
+  // passed at the boot call site), so the pin is the run this step just made.
+  const settledRun = afterRestart.json?.runId;
+  record(
+    'a settled intent appends its trace tree to the export file',
+    exportedTraces.length >= 1 &&
+      exportedTraces.every(entry => typeof entry?.tree?.traceId === 'string' && entry.tree.traceId.length > 0) &&
+      exportedTraces.some(entry => entry.tree?.traceId === settledRun),
+    `lines=${exportedTraces.length} thisRun=${settledRun} exported=${exportedTraces.map(entry => entry.tree?.traceId).join(',')}`,
+  );
   writeFileSync(join(work, 'roster-restored.json'), JSON.stringify(restoredRoster));
   record('the restarted process publishes a roster that still verifies', verifyRoster(['--file', join(work, 'roster-restored.json'), '--key', publicKeyPath, '--now', restoredRoster.seal.issuedAt]).code === 0);
   // serve.ts is the only place that decides this label, and nothing below the
