@@ -116,6 +116,7 @@ function makeHarness(answers: string[]) {
     approve: vi.fn(async () => undefined),
     reject: vi.fn(async () => undefined),
     resolve: vi.fn(async () => undefined),
+    resume: vi.fn(async () => undefined),
     revoke: vi.fn(async () => undefined),
     issueGrant: vi.fn(async () => ({ grantId: 'grant-new' })),
     revokeGrant: vi.fn(async () => undefined),
@@ -129,7 +130,7 @@ function makeHarness(answers: string[]) {
     revokeWatch: vi.fn(async () => undefined),
   } as unknown as DeckClient;
   const deck = createDeck({ client, io, locale: 'en', color: false });
-  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; recognize: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn>; issueContract: ReturnType<typeof vi.fn>; revokeContract: ReturnType<typeof vi.fn>; approveContract: ReturnType<typeof vi.fn>; contracts: ReturnType<typeof vi.fn>; watches: ReturnType<typeof vi.fn>; watchTick: ReturnType<typeof vi.fn>; revokeWatch: ReturnType<typeof vi.fn> }, deck, printed };
+  return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; recognize: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn>; issueContract: ReturnType<typeof vi.fn>; revokeContract: ReturnType<typeof vi.fn>; approveContract: ReturnType<typeof vi.fn>; contracts: ReturnType<typeof vi.fn>; watches: ReturnType<typeof vi.fn>; watchTick: ReturnType<typeof vi.fn>; revokeWatch: ReturnType<typeof vi.fn> }, deck, printed };
 }
 
 describe('TUI contract writes go through the API with a confirm gate', () => {
@@ -226,6 +227,34 @@ describe('TUI controller writes go through the API with a confirm gate', () => {
     await deck.refresh();
     await deck.handle('s2.1');
     expect(client.resolve).toHaveBeenCalledWith('esc-2', 'postgres');
+  });
+
+  it('resumes a task-input row with the parameters the operator typed', async () => {
+    const { client, deck, printed } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('r1 {"env":"prod"}');
+    expect(client.resume).toHaveBeenCalledWith('esc-1', { env: 'prod' });
+    // Plain approve would record the decision and leave the branch parked.
+    expect(client.approve).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('re-dispatched pr-helper');
+  });
+
+  it('does not resume when the confirm is declined', async () => {
+    const { client, deck } = makeHarness(['n']);
+    await deck.refresh();
+    await deck.handle('r1 {"env":"prod"}');
+    expect(client.resume).not.toHaveBeenCalled();
+  });
+
+  it('refuses to resume a row that is not waiting for parameters, and writes nothing', async () => {
+    const { io, client, deck, printed } = makeHarness(['y']);
+    await deck.refresh();
+    await deck.handle('r2 {"env":"prod"}');
+    expect(client.resume).not.toHaveBeenCalled();
+    expect(client.approve).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('only answers an input-needed escalation');
+    // The refusal happens before the confirm gate: no prompt, no request.
+    expect(io.question).not.toHaveBeenCalled();
   });
 
   it('revokes the roster entry by name after confirm', async () => {

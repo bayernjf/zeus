@@ -239,6 +239,27 @@ describe('contracts section (self-host step 5 face)', () => {
     expect(out).toContain('签一份仅 execute 的新契约并换绑本 watch');
   });
 
+  it('flags a task-input escalation with the resume-with-parameters hint', () => {
+    const waiting: DeckSnapshot = {
+      ...snapshot,
+      escalations: [
+        {
+          id: 'esc-ti-1',
+          kind: 'task-input',
+          vassal: 'pr-helper',
+          skill: 'deployment-health',
+          realm: 'personal',
+          reason: 'missing owner, repo',
+          status: 'pending',
+          options: ['provide owner and repo', 'skip'],
+          createdAt: '',
+        },
+      ],
+    };
+    const out = renderDeck({ snapshot: waiting, t, palette, updatedAt: 'x' });
+    expect(out).toContain('用这些参数重派该分支');
+  });
+
   it('S10 V2: shows the interruption level badge and omits it on pre-V2 rows', () => {
     const leveled: DeckSnapshot = {
       ...snapshot,

@@ -190,6 +190,10 @@ export type DeckClient = {
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
   resolve(id: string, stance: string, note?: string): Promise<void>;
+  /** E6.3: answer a task-input escalation with the parameters the agent asked
+   *  for. The kernel approves the row and re-dispatches that one branch; plain
+   *  `approve` records the decision and leaves the branch parked. */
+  resume(id: string, params: Record<string, unknown>): Promise<void>;
   /** E2.6: recognize an operator instruction as a plan-only intent. */
   recognize(text: string, opts?: { realm?: 'personal' | 'enterprise'; useModel?: boolean }): Promise<RecognizeView>;
 };
@@ -329,6 +333,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
     reject: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/reject`, note !== undefined ? { note } : undefined),
     resolve: (id, stance, note) =>
       post(`/api/escalations/${encodeURIComponent(id)}/resolve`, { stance, ...(note !== undefined ? { note } : {}) }),
+    resume: (id, params) => post(`/api/escalations/${encodeURIComponent(id)}/approve-resume`, { params }),
     recognize: async (text, opts) => {
       const res = await fetchImpl(`${baseUrl}/api/intents/recognize`, {
         method: 'POST',

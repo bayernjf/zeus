@@ -40,6 +40,17 @@ describe('TUI client POST bodies (P0-8 pilot finding)', () => {
   });
 });
 
+describe('TUI resume face (E6.3)', () => {
+  it('posts the operator-supplied parameters to approve-resume', async () => {
+    const { calls, client } = mockClient(() => okJson({ escalation: { id: 'esc-1' }, intent: {} }));
+    await client.resume('esc 1', { env: 'prod' });
+    const call = calls.find(c => c.url.includes('/api/escalations/esc%201/approve-resume'));
+    expect(call?.init?.method).toBe('POST');
+    expect(call?.init?.body).toBe(JSON.stringify({ params: { env: 'prod' } }));
+    expect(call?.init?.headers?.['content-type']).toBe('application/json');
+  });
+});
+
 describe('TUI contract face (self-host step 5)', () => {
   it('includes the contract ledger in the snapshot and degrades to null when unmounted', async () => {
     const withContracts = mockClient(url => {

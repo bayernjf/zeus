@@ -8,7 +8,7 @@
 import type { DeckClient, DeckSnapshot, EscalationView } from './client.js';
 import { makeTranslator, resolveLocale, type Translator } from './format.js';
 import { makePalette, type Palette } from './tokens.js';
-import { renderDeck, renderRecognize, escalationOptions } from './render.js';
+import { renderDeck, renderRecognize, escalationOptions, escalationKindLabel } from './render.js';
 import { COMMAND_HELP, parseCommand, type DeckCommand } from './commands.js';
 import type { Locale } from './messages.js';
 
@@ -55,7 +55,7 @@ export function createDeck(options: RunnerOptions): DeckController {
   };
 
   const applyEscalation = async (
-    cmd: Extract<DeckCommand, { kind: 'approve' | 'reject' | 'resolve' }>,
+    cmd: Extract<DeckCommand, { kind: 'approve' | 'reject' | 'resolve' | 'resume' }>,
     esc: EscalationView,
   ): Promise<void> => {
     if (cmd.kind === 'resolve') {
@@ -68,6 +68,20 @@ export function createDeck(options: RunnerOptions): DeckController {
       if (!(await confirm(t('escalation.confirm', { action, id: esc.id })))) return;
       await client.resolve(esc.id, stance);
       io.print(`${t('escalation.done', { action, id: esc.id })}\n`);
+      return;
+    }
+    if (cmd.kind === 'resume') {
+      // The kernel only resumes a branch that stopped for parameters; approving
+      // some other kind through this path would record a decision and silently
+      // leave the branch parked, so the deck refuses before any request goes out.
+      if (esc.kind !== 'task-input') {
+        io.print(`${t('escalation.resumeNeedsTaskInput', { kind: escalationKindLabel(t, esc.kind) })}\n`);
+        return;
+      }
+      const action = t('escalation.resume');
+      if (!(await confirm(t('escalation.resumeConfirm', { action, id: esc.id, params: JSON.stringify(cmd.params) })))) return;
+      await client.resume(esc.id, cmd.params);
+      io.print(`${t('escalation.resumed', { id: esc.id, vassal: esc.vassal })}\n`);
       return;
     }
     if (cmd.kind === 'approve' && esc.kind === 'delegation-limit') {

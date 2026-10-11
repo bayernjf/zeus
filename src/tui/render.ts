@@ -140,6 +140,9 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
     if (esc.kind === 'delegation-limit') {
       lines.push(`      ${palette.paint('attention', t('escalation.approveContractHint'))}`);
     }
+    if (esc.kind === 'task-input') {
+      lines.push(`      ${palette.paint('attention', t('escalation.resumeHint'))}`);
+    }
   });
   lines.push(`  ${t('escalation.prompt')}`);
   return lines;

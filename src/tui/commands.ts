@@ -11,6 +11,7 @@ export type DeckCommand =
   | { kind: 'approve'; index: number }
   | { kind: 'reject'; index: number }
   | { kind: 'resolve'; index: number; stanceIndex: number }
+  | { kind: 'resume'; index: number; params: Record<string, unknown> }
   | { kind: 'revoke'; index: number }
   | { kind: 'grantIssue'; realmIndex: number; subject: string; access: 'read' | 'write'; grantedBy: string }
   | { kind: 'grantRevoke'; grantIndex: number }
@@ -109,6 +110,27 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
   }
   if (lower === 'w' || /^w\s+\D/i.test(line)) return { error: 'watch-needs-args' };
 
+  // Answering an agent that stopped for missing parameters (E6.3). `approve`
+  // alone only records the decision, so the deck needs the re-dispatch path the
+  // kernel already exposes: `r<n> {json}` carries the parameters the agent asked
+  // for. Parsing happens here, not in the runner, so a malformed payload is
+  // caught before any request goes out.
+  const resumeMatch = /^r\s*(\d+)(?:\s+(.+))?$/is.exec(line);
+  if (resumeMatch) {
+    const index = Number(resumeMatch[1]);
+    if (!Number.isInteger(index) || index < 1) return { error: 'bad-index' };
+    const rawParams = resumeMatch[2];
+    if (rawParams === undefined) return { error: 'resume-needs-params' };
+    let params: unknown;
+    try {
+      params = JSON.parse(rawParams);
+    } catch {
+      return { error: 'resume-bad-json' };
+    }
+    if (params === null || typeof params !== 'object' || Array.isArray(params)) return { error: 'resume-bad-json' };
+    return { kind: 'resume', index, params: params as Record<string, unknown> };
+  }
+
   const match = /^([axsd])\s*(\d+)(?:[\s.:-]+(\d+))?$/.exec(line.toLowerCase());
   if (!match) return { error: 'unknown' };
   const [, letter, indexStr, stanceStr] = match;
@@ -138,6 +160,7 @@ export const COMMAND_HELP = [
   '  a<n>       approve escalation #n',
   '  x<n>       reject escalation #n',
   '  s<n>.<m>   resolve escalation #n accepting stance #m',
+  '  r<n> {json}  answer escalation #n with these parameters and re-dispatch that branch',
   '  d<n>       revoke roster vassal #n (asks y/N)',
   '  g<n> <subject> <r|w> [by]  issue a personal->enterprise grant on realm #n',
   '  k<n>       revoke cross-domain grant #n (asks y/N)',
