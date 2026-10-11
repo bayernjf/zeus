@@ -199,6 +199,20 @@ jobs:
       - name: Build
         run: npm run build
 
+      # design-evals V3: besides gating on block regressions (exit 1), render
+      # the metrics diff as a PR comment body. The body is written before the
+      # exit-code decision, so the next step can still post it on failure.
       - name: Eval run against pinned baseline
-        run: node scripts/eval-run.mjs --baseline
+        id: eval
+        run: node scripts/eval-run.mjs --baseline --comment-out /tmp/eval-comment.md
+
+      # Idempotent upsert (one comment per PR, updated in place by marker).
+      # always() so a block regression still gets its diff posted; the job's
+      # conclusion stays red from the eval step. No-op on push builds and on
+      # fork PRs, whose GITHUB_TOKEN is read-only.
+      - name: Post eval metrics diff on the pull request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci-pr-comment.mjs --body-file /tmp/eval-comment.md --marker '<!-- zeus-eval-gate -->'
 
