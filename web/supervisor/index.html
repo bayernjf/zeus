@@ -175,6 +175,17 @@
   .trend-legend .lg b { margin-left: auto; color: var(--text); font-weight: 600; }
   .trend-legend .lg.peak { color: var(--text-3); }
 
+  /* 持久指标史（内核侧采样，跨重启；与上面的前端采样分开） */
+  .hist-head { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 0; padding: 10px 14px 0; border-top: 1px solid var(--line-soft); font-size: 12px; font-weight: 650; color: var(--text-2); letter-spacing: .05em; }
+  .hist-head .hint { margin-left: auto; font-weight: 400; color: var(--text-3); font-family: var(--mono); font-size: 11px; }
+  .hist-meta { padding: 8px 14px 0; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+  .hist-note { padding: 12px 14px; font-size: 12px; color: var(--text-3); }
+  .hist-note.warn { color: var(--warn); }
+  .hist-trend { font-weight: 600; }
+  .hist-trend.up { color: var(--ok); }
+  .hist-trend.down { color: var(--bad); }
+  .hist-trend.flat { color: var(--text-3); }
+
   /* 意图详情 */
   .kv { display: grid; grid-template-columns: 130px 1fr; gap: 3px 10px; font-size: 13px; }
   .kv .k { color: var(--text-3); font-family: var(--mono); font-size: 12px; padding-top: 1px; }
@@ -259,7 +270,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.14 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.15 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -346,6 +357,8 @@
       <div class="panel" style="margin-top:14px">
         <h2><span data-i18n="trend.title">并发趋势</span> <span class="hint" data-i18n="trend.hint">前端 3s 采样 · 最近 40 个采样点</span></h2>
         <div class="body" id="trendBody"><div class="empty" data-i18n="trend.waiting">等待采样…</div></div>
+        <h2 class="hist-head"><span data-i18n="hist.title">持久指标史</span> <span class="hint" data-i18n="hist.hint">/api/metrics/history · 内核侧采样，跨重启</span></h2>
+        <div class="body" id="histBody"><div class="empty" data-i18n="hist.waiting">等待读取…</div></div>
       </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
@@ -634,7 +647,7 @@
     <!-- ===== 视图：目录（技能 + 连接器，只读可见性） ===== -->
     <section id="view-catalog" hidden>
       <div class="panel" style="margin-bottom:14px">
-        <h2><span data-i18n="catalog.skillsTitle">技能目录</span> <span class="hint">GET /api/skills · <span data-i18n="catalog.skillsHint">注册/生命周期管理走 CLI/API，监督台只读</span></span></h2>
+        <h2><span data-i18n="catalog.skillsTitle">技能目录</span> <span class="hint">GET /api/skills · <span data-i18n="catalog.skillsHint">本面板即可装卸 / 弃用 / 收敛权限；显式规格注册与组队走 API</span></span></h2>
         <div class="body">
           <div class="audit-filter">
             <select id="catSkillStatus">
@@ -903,7 +916,7 @@
       "cm.stage.commissioned": "已上岗",
       "common.loading": "加载中…",
       "catalog.skillsTitle": "技能目录",
-      "catalog.skillsHint": "注册/生命周期管理走 CLI/API，监督台只读",
+      "catalog.skillsHint": "本面板即可装卸 / 弃用 / 收敛权限；显式规格注册与组队走 API",
       "catalog.allStatus": "全部状态",
       "catalog.connectorsTitle": "连接器（MCP）",
       "catalog.connectorsHint": "令牌只回显有无，不回显值",
@@ -962,6 +975,21 @@
       "trend.queued": "排队",
       "trend.peakInflight": "峰值在途",
       "trend.samples": "采样",
+      "hist.title": "持久指标史",
+      "hist.hint": "/api/metrics/history · 内核侧随状态保存采点，跨重启可读",
+      "hist.waiting": "等待读取…",
+      "hist.unconfigured": "该进程未配置 ZEUS_METRICS_HISTORY_FILE——端点不挂载，历史读不到",
+      "hist.failed": "读取失败：{msg}",
+      "hist.empty": "端点在，但还没有一次状态保存写入采样点",
+      "hist.count": "{n} 个持久采样点",
+      "hist.range": "跨度 {from} → {to}",
+      "hist.finishedDelta": "完成增量",
+      "hist.colTime": "采样时刻",
+      "hist.colInFlight": "在途",
+      "hist.colPeak": "峰值在途",
+      "hist.colQueue": "排队",
+      "hist.colFinished": "完成",
+      "hist.colFailed": "失败",
       "connect.items": "{n} 项",
       "sse.settled": "意图已结算 · {status}",
       "intent.viewTitle": "意图详情",
@@ -988,7 +1016,7 @@
       "recog.miss": "识别未命中",
       "recog.failed": "识别失败：{msg}",
       "org.keyPath": "关键路径",
-      "org.noDepartments": "尚未建立任何部门（POST /api/org/departments 由 CLI/API 管理，监督台只读）",
+      "org.noDepartments": "尚未建立任何部门（本视图即可新建：POST /api/org/departments）",
       "org.unspecified": "（未指定）",
       "org.noRegistry": "本进程未装配组织注册中心（orgRegistry），无组织面",
       "catalog.count": "共 {total} 个",
@@ -1294,6 +1322,21 @@
       "trend.queued": "Queued",
       "trend.peakInflight": "Peak in-flight",
       "trend.samples": "Samples",
+      "hist.title": "Durable metrics history",
+      "hist.hint": "/api/metrics/history · kernel-side sample on state save, survives restarts",
+      "hist.waiting": "Waiting for the read…",
+      "hist.unconfigured": "This process has no ZEUS_METRICS_HISTORY_FILE - the endpoint is not mounted, so there is no history to read",
+      "hist.failed": "History read failed: {msg}",
+      "hist.empty": "The endpoint is mounted; no state save has written a sample yet",
+      "hist.count": "durable sample points: {n}",
+      "hist.range": "span {from} → {to}",
+      "hist.finishedDelta": "finished delta",
+      "hist.colTime": "Sampled at",
+      "hist.colInFlight": "In flight",
+      "hist.colPeak": "Peak in flight",
+      "hist.colQueue": "Queued",
+      "hist.colFinished": "Finished",
+      "hist.colFailed": "Failed",
       "connect.items": "{n} items",
       "sse.settled": "intent settled · {status}",
       "common.none": "No data",
@@ -1561,11 +1604,11 @@
       "cm.stage.mentorship": "mentorship",
       "cm.stage.commissioned": "commissioned",
       "org.keyPath": "critical path",
-      "org.noDepartments": "No departments yet (POST /api/org/departments is managed via CLI/API; supervisor is read-only)",
+      "org.noDepartments": "No departments yet (create one from this view: POST /api/org/departments)",
       "org.unspecified": "(unspecified)",
       "org.noRegistry": "This process has no org registry (orgRegistry) assembled; no org face",
       "catalog.skillsTitle": "Skill catalog",
-      "catalog.skillsHint": "Registration & lifecycle via CLI/API; supervisor is read-only",
+      "catalog.skillsHint": "Install, deprecate and harden happen in this panel; explicit spec registration and team resolution go through the API",
       "catalog.allStatus": "All statuses",
       "catalog.connectorsTitle": "Connectors (MCP)",
       "catalog.connectorsHint": "Tokens shown as present/absent only, never values",
@@ -2971,6 +3014,41 @@
     el.innerHTML = `<div class="trend-wrap">${svg}${leg}</div>`;
   }
 
+  // ===== 持久指标史（内核侧：随状态保存采点，跨重启可读） =====
+  function renderHistory(payload) {
+    const el = $('histBody');
+    if (!el) return;
+    const error = payload && payload.__error;
+    if (error) {
+      // A 404 is not a failure to report as one: the endpoint is only mounted
+      // when the process was given a history file, and saying so is the answer.
+      const unconfigured = error.status === 404;
+      const key = unconfigured ? 'hist.unconfigured' : 'hist.failed';
+      el.innerHTML = '<div class="hist-note' + (unconfigured ? '' : ' warn') + '">'
+        + esc(unconfigured ? t(key) : t(key, { msg: error.message || String(error) })) + '</div>';
+      return;
+    }
+    const rows = Array.isArray(payload) ? payload : [];
+    if (rows.length === 0) { el.innerHTML = '<div class="hist-note">' + esc(t('hist.empty')) + '</div>'; return; }
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const delta = (last.finished ?? 0) - (first.finished ?? 0);
+    const dir = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+    const glyph = delta > 0 ? '▲' : delta < 0 ? '▼' : '·';
+    const cols = ['hist.colTime', 'hist.colInFlight', 'hist.colPeak', 'hist.colQueue', 'hist.colFinished', 'hist.colFailed'];
+    let html = '<div class="hist-meta">' + esc(t('hist.count', { n: rows.length }))
+      + ' · ' + esc(t('hist.range', { from: fmtTime(first.capturedAt), to: fmtTime(last.capturedAt) }))
+      + ' · ' + esc(t('hist.finishedDelta'))
+      + ' <b class="hist-trend ' + dir + '">' + glyph + ' ' + Math.abs(delta) + '</b></div>';
+    html += '<table><tr>' + cols.map(c => '<th>' + esc(t(c)) + '</th>').join('') + '</tr>';
+    for (const row of rows.slice(-8).reverse()) {
+      html += '<tr><td>' + esc(fmtTime(row.capturedAt)) + '</td><td>' + esc(String(row.inFlight ?? 0)) + '</td><td>'
+        + esc(String(row.maxInFlight ?? 0)) + '</td><td>' + esc(String(row.queueDepth ?? 0)) + '</td><td>'
+        + esc(String(row.finished ?? 0)) + '</td><td>' + esc(String(row.failed ?? 0)) + '</td></tr>';
+    }
+    el.innerHTML = html + '</table>';
+  }
+
   // ===== 裁决徽标全局刷新（不渲染列表，任何视图可见待决数） =====
   function refreshEscBadge() {
     if (!state.conn.base || state.view === 'oversight') return;
@@ -3295,7 +3373,12 @@
     ]);
     let decision = null;
     try { decision = await api('GET', '/api/decision'); } catch { decision = null; } // 未装配决策状态面时静默
+    // The durable series is the one answer the 3s client sampler cannot give
+    // (it dies with the tab). It is mounted only when the process was configured
+    // with ZEUS_METRICS_HISTORY_FILE, so a 404 is a fact to print, not an error.
+    const history = await api('GET', '/api/metrics/history').catch(e => ({ __error: e }));
     renderState(s); renderDecision(decision); renderMetrics(m); renderDomains(d);
+    renderHistory(history);
     renderRecent();
   }
   async function loadRoster() {

@@ -210,3 +210,90 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
     expect(fetches.length).toBe(3);
   });
 });
+
+/**
+ * Copy is an interface too. Two views told the operator "this supervisor is
+ * read-only" while the very panel they sit in issues POSTs (skill lifecycle,
+ * department creation) - a claim no key/parity check can see, and one that sends
+ * an operator to the CLI for a button that is on screen.
+ */
+describe('supervisor copy describes the actions the page actually has', () => {
+  // Every write path the page issues: from its literal api('POST'|'DELETE') calls
+  // and from the escalation action map that assembles the path before the call.
+  function writePaths(): Set<string> {
+    const paths = new Set<string>();
+    for (const line of HTML.split('\n')) {
+      if (!/api\(['"](POST|DELETE)['"]/.test(line) && !/const path = \{/.test(line)) continue;
+      for (const mention of line.matchAll(/'(\/api\/[^']*)/g)) paths.add(mention[1]!.replace(/\/+$/, ''));
+    }
+    return paths;
+  }
+
+  const writes = writePaths();
+
+  it('collects the write set from real call sites (positive control)', () => {
+    // Without this the read-only scan below could pass on an empty set.
+    expect(writes.size, 'the page appears to issue no writes at all - the scan is broken').toBeGreaterThan(8);
+    expect([...writes].some(p => p.startsWith('/api/skills')), 'skill lifecycle is a write').toBe(true);
+    expect([...writes].some(p => p.startsWith('/api/org/departments')), 'departments are a write').toBe(true);
+    expect(writes.has('/api/connectors'), 'connectors stay read-only').toBe(false);
+  });
+
+  it('never calls a view read-only for a path that same view writes', () => {
+    const offenders: string[] = [];
+    for (const [lang, table] of Object.entries(RES)) {
+      for (const [key, value] of Object.entries(table)) {
+        if (!/只读|read-only/i.test(value)) continue;
+        for (const mention of value.matchAll(/\/api\/[a-z0-9-]+(?:\/[a-z0-9-]+)*/gi)) {
+          const named = mention[0]!.replace(/\/+$/, '');
+          for (const write of writes) {
+            if (write === named || write.startsWith(`${named}/`) || named.startsWith(`${write}/`)) {
+              offenders.push(`${lang}:${key} claims ${named} is read-only while the page writes ${write}`);
+            }
+          }
+        }
+      }
+    }
+    expect(offenders, `read-only claims contradicted by the page's own writes:\n${offenders.join('\n')}`).toEqual([]);
+  });
+
+  it('keeps the inventory version marker equal to the page marker', () => {
+    // The ledger said "方案 A v1.7" for eight page versions because nothing
+    // compared it to the string the page prints about itself.
+    const pageVersion = HTML.match(/side-foot">v(\d+\.\d+)/);
+    expect(pageVersion, 'the page no longer prints its own version - the check would pass by finding nothing').not.toBeNull();
+    const inventory = readFileSync('docs/feature-inventory.md', 'utf8');
+    const claimed = [...inventory.matchAll(/Web 监督台（方案 A v(\d+\.\d+)）/g)].map(m => m[1]!);
+    expect(claimed.length, 'the inventory no longer states the page version in one place').toBe(1);
+    expect(claimed[0], `page says v${pageVersion![1]}, inventory says v${claimed[0]}`).toBe(pageVersion![1]!);
+  });
+
+  it('keeps the durable-history block wired with an honest unconfigured state', () => {
+    // The endpoint is mounted only when the process was given a history file, so
+    // the panel has to distinguish "404, nothing configured" from "read failed".
+    // Drop either branch and this check goes red; a page that only ever prints the
+    // array would show an empty box and read as a broken kernel.
+    expect(HTML.includes("id=\"histBody\""), 'the history block markup disappeared').toBe(true);
+    expect(HTML.includes("api('GET', '/api/metrics/history')"), 'the page stopped reading the endpoint').toBe(true);
+    expect(HTML.includes('error.status === 404'), 'the 404 branch was removed').toBe(true);
+    for (const lang of ['zh-CN', 'en'] as const) {
+      expect(Object.hasOwn(RES[lang]!, 'hist.unconfigured'), `${lang}: unconfigured copy missing`).toBe(true);
+      expect(Object.hasOwn(RES[lang]!, 'hist.failed'), `${lang}: failure copy missing`).toBe(true);
+      // The env name is the actionable half of the message - it says what to set.
+      expect(RES[lang]!['hist.unconfigured'], `${lang}: the message must name the switch`).toContain('ZEUS_METRICS_HISTORY_FILE');
+    }
+  });
+
+  it('keeps the skills hint naming operations the panel really offers', () => {
+    for (const lang of ['zh-CN', 'en'] as const) {
+      const hint = RES[lang]!['catalog.skillsHint']!;
+      expect(hint, `${lang}: the skills panel is not read-only`).not.toMatch(/只读|read-only/i);
+    }
+    // The hint advertises lifecycle work; the handlers it points at must exist.
+    for (const verb of ['install', 'uninstall', 'deprecate', 'harden']) {
+      expect(HTML.includes(`'skill-${verb}'`), verb).toBe(true);
+    }
+    expect(RES['zh-CN']!['catalog.skillsHint']).toContain('装卸');
+    expect(RES.en!['catalog.skillsHint']!).toMatch(/Install/i);
+  });
+});
