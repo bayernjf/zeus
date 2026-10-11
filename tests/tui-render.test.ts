@@ -197,6 +197,83 @@ describe('TUI pure render', () => {
   });
 });
 
+describe('active intents section (S15 V3, design-streaming §3.3)', () => {
+  const thinkingSnapshot: DeckSnapshot = {
+    ...snapshot,
+    active: {
+      intents: [
+        {
+          intentId: 'intent-live',
+          skill: 'review',
+          status: 'running',
+          settledCount: 1,
+          totalCount: 2,
+          view: {
+            order: ['run-1:loom', 'run-1:atlas'],
+            branches: {
+              'run-1:loom': { runId: 'run-1:loom', vassal: 'loom', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
+              'run-1:atlas': { runId: 'run-1:atlas', vassal: 'atlas', started: true, settled: false, lastSeq: 2, preview: 'weighing options' },
+            },
+            partiallyReady: true,
+          },
+        },
+      ],
+    },
+  };
+
+  it('renders running state, N/M readiness, thinking frames and a marked preview', () => {
+    const out = renderDeck({ snapshot: thinkingSnapshot, t, palette, updatedAt: '' });
+    expect(out).toContain('在途意图（1）');
+    expect(out).toContain('intent-live');
+    expect(out).toContain('运行中');
+    expect(out).toContain('1/2 就绪');
+    expect(out).toContain('思考中');
+    expect(out).toContain('3 帧');
+    expect(out).toContain('[预览·非结论] weighing options');
+    // the settled branch shows its formal outcome, not a preview
+    expect(out).toContain('已完成');
+  });
+
+  it('marks a needs-driver intent as awaiting decision', () => {
+    const blocked: DeckSnapshot = {
+      ...snapshot,
+      active: {
+        intents: [
+          {
+            intentId: 'intent-blocked', skill: 'review', status: 'needs-driver', settledCount: 2, totalCount: 2,
+            view: {
+              order: ['run-1:loom', 'run-1:atlas'],
+              branches: {
+                'run-1:loom': { runId: 'run-1:loom', vassal: 'loom', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
+                'run-1:atlas': { runId: 'run-1:atlas', vassal: 'atlas', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
+              },
+              partiallyReady: false,
+            },
+          },
+        ],
+      },
+    };
+    const out = renderDeck({ snapshot: blocked, t, palette, updatedAt: '' });
+    expect(out).toContain('intent-blocked');
+    expect(out).toContain('2/2 就绪');
+  });
+
+  it('omits the section when the face is absent or empty', () => {
+    expect(renderDeck({ snapshot: { ...snapshot, active: null }, t, palette, updatedAt: '' })).not.toContain('在途意图');
+    expect(renderDeck({ snapshot: { ...snapshot, active: { intents: [] } }, t, palette, updatedAt: '' })).not.toContain('在途意图');
+  });
+
+  it('localizes the section and preview marker in English', () => {
+    const en = makeTranslator('en');
+    const out = renderDeck({ snapshot: thinkingSnapshot, t: en, palette, updatedAt: '' });
+    expect(out).toContain('In-flight intents (1)');
+    expect(out).toContain('running');
+    expect(out).toContain('1/2 settled');
+    expect(out).toContain('thinking');
+    expect(out).toContain('[preview · not a conclusion] weighing options');
+  });
+});
+
 describe('contracts section (self-host step 5 face)', () => {
   it('renders active and revoked contracts with spend, ceilings and window', () => {
     const out = renderDeck({ snapshot, t, palette, updatedAt: '00:00:00' });
