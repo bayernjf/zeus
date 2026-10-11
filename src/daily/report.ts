@@ -109,6 +109,27 @@ export function parsePreviousRecord(markdown: string, itemId: string): DailyPrev
 }
 
 /**
+ * Where a desk row can actually be settled, per kind. The deck commands are the
+ * ones `src/tui/commands.ts` parses and the endpoint is the one
+ * `src/http/server.ts` mounts for that kind - tests/daily-entry.test.ts pins
+ * both halves against those surfaces, because a hint naming an action that does
+ * not exist sends the operator to a dead end mid-run. The row is matched by the
+ * id printed on the line above, not by position: the deck numbers its own queue,
+ * which can hold rows from other intents.
+ */
+const SETTLE_BY_KIND: Record<string, { deck: string; api: string }> = {
+  'task-input': {
+    deck: 'r<n> {"key":"value"} supplies the missing parameters and re-dispatches that branch',
+    api: 'approve-resume',
+  },
+  'intent-conflict': { deck: 's<n>.<m> accepts one stance', api: 'resolve' },
+  'memory-dispute': { deck: 'a<n> accepts / x<n> dismisses the disputed fact', api: 'approve' },
+  'delegation-limit': { deck: 'a<n> issues the bounded contract and rebinds the watch', api: 'approve-contract' },
+};
+
+const DEFAULT_SETTLE = { deck: 'a<n> approves / x<n> rejects the row', api: 'approve' };
+
+/**
  * The lines that answer "what did you decide, and on what authority". Ordered
  * so the operator reads the conclusion before the evidence: intent, decision,
  * then the branches behind it, then anything that stopped this run.
@@ -210,8 +231,9 @@ export function renderDailyReport(model: DailyReportModel): string {
     for (const item of model.escalations) {
       const options = item.options.length > 0 ? ` — options: ${item.options.map(o => clip(o, 80)).join(' · ')}` : '';
       lines.push(`- \`${item.id}\` (${item.kind}): ${clip(item.reason, 200)}${options}`);
+      const settle = SETTLE_BY_KIND[item.kind] ?? DEFAULT_SETTLE;
+      lines.push(`  - settle: \`npm run tui\` on this row — ${settle.deck}; or \`POST /api/escalations/${item.id}/${settle.api}\``);
     }
-    lines.push('  - settle it with `npm run tui` (escalation panel) or `POST /api/escalations/:id/decision`.');
   }
 
   lines.push('');
