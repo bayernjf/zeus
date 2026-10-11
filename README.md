@@ -79,7 +79,7 @@ npm run typecheck  # tsc --noEmit
 npm run evals      # S7 evals 离线质量回归：逐 case boot 内核 + 脚本化执行 Agent，现行 17 条六族 eval 集（含 guardrails 族记忆种子对抗样本）喂评分器；--write-baseline 钉基线、--baseline 出退化 diff（blocked 退化 exit 1）；退出码 0/1/2（需先 build）
 npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
 npm run daily -- "check the deployment health"   # 产品入口：一句话 → 意图 → 扇出到已注册的执行 Agent → 决策与依据，并把同一页 markdown 写回你挂的目录（需先 build；--root 挂目录、--agent 注册，旋钮见 --help）
-npm run tui        # 终端监督台（UI 方案 D：只读监视 + 升级裁决 + 名册吊销 + 意图识别；需先 build）
+npm run tui        # 终端监督台（UI 方案 D：监视 + 升级裁决 + 名册吊销 + 意图识别 + 连接器驱动（握手/吊销/调用）；需先 build）
 ```
 
 终端监督台复用既有 bearer HTTP 面，不新增内核路由、不把令牌落盘：
@@ -90,9 +90,9 @@ ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" npm run tui
 #       --interval 0（单次刷新后不轮询）、--no-color（或 NO_COLOR）
 ```
 
-监督台命令（进入后）：`<enter>/r` 刷新 · `a<n>`/`x<n>` 批准/拒绝升级 · `s<n>.<m>` 裁决 · `d<n>` 吊销 · `g<n> <subject> <r|w>` 跨域授权 · `k<n>` 吊销授权 · `i <文本>` **意图识别（本地规则，零出域，plan-only）** · `im <文本>` 意图识别（显式咨询决策后端，opt-in）· `q` 退出。识别结果恒 plan-only，execute 只能走执行授权票据。
+监督台命令（进入后）：`<enter>/r` 刷新 · `a<n>`/`x<n>` 批准/拒绝升级 · `s<n>.<m>` 裁决 · `d<n>` 吊销 · `g<n> <subject> <r|w>` 跨域授权 · `k<n>` 吊销授权 · `i <文本>` **意图识别（本地规则，零出域，plan-only）** · `im <文本>` 意图识别（显式咨询决策后端，opt-in）· `q` 退出。识别结果恒 plan-only，execute 只能走执行授权票据。连接器：`m<n>` 握手 · `mx<n>` 吊销 · `mt<n> <工具> {json}` 调用（仅已声明可握手、已连接可调用，每次写操作前 y/N 确认）。
 
-**Web 监督台（UI 方案 A v1，`web/supervisor/index.html`）**：浏览器端监督台，三类页面——只读监控（内核状态 / 并发指标 / 名册 / 扇出·决策时间线 / 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve）、跨域授权签发与吊销。UI 仅消费现有 HTTP API、零新增内核端点；浏览器跨域消费需服务端配 Origin 白名单（传输层可选配置，默认关闭，行为不变）：
+**Web 监督台（UI 方案 A v1.17，`web/supervisor/index.html`）**：浏览器端监督台，含只读监控页（内核状态 / 并发指标 / 名册 / 扇出·决策时间线 / 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve）、跨域授权签发与吊销、连接器目录面板（声明 / 握手 / 吊销 / 调用，不再是只读）。UI 仅消费现有 HTTP API、零新增内核端点；浏览器跨域消费需服务端配 Origin 白名单（传输层可选配置，默认关闭，行为不变）：
 
 ```bash
 # 终端 1：启动 Zeus（带 CORS 白名单）
