@@ -216,6 +216,7 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       'revoke-vassal', // DELETE /api/vassals/:name
       'reinstate-vassal', // POST /api/vassals/:name/reinstate
       'org-set-lead', // POST /api/org/departments/:id/lead
+      'org-remove-member', // DELETE /api/org/departments/:id/members/:agentId
       'cm-waive', // POST /api/org/departments/:id/commissions/:agentId/waive
       'cm-commission', // POST /api/org/departments/:id/commissions/:agentId/commission
       'cm-withdraw', // POST /api/org/departments/:id/commissions/:agentId/withdraw
@@ -253,6 +254,21 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
     expect(ids.length, 'the markup no longer carries id-bearing buttons - the scan would pass by finding nothing').toBeGreaterThan(15);
     const unwired = ids.filter(id => !(script.includes(`$('${id}')`) || script.includes(`getElementById('${id}')`) || script.includes(`"${id}"`) || script.includes(`'${id}'`)));
     expect(unwired, `buttons the page renders but never wires:\n${unwired.join('\n')}`).toEqual([]);
+  });
+
+  it('wires every delegated data-act to a handler branch in the script', () => {
+    // data-act buttons flow through one delegated click chain. A typo between
+    // the button's data-act and the `act === '...'` branch ships a button whose
+    // click silently does nothing; the endpoint-backed set check above cannot
+    // see it because the action name still looks known.
+    const cut = HTML.indexOf('<script>');
+    const script = HTML.slice(cut);
+    const acts = [...new Set([...HTML.matchAll(/data-act="([^"]+)"/g)]
+      .map(m => m[1]!)
+      .filter(a => a !== 'yes' && a !== 'no' && !a.includes('${')))];
+    expect(acts.length, 'the page no longer renders delegated actions - the scan would pass on nothing').toBeGreaterThan(15);
+    const unwired = acts.filter(a => !script.includes(`'${a}'`));
+    expect(unwired, `data-act values with no handler branch:\n${unwired.join('\n')}`).toEqual([]);
   });
 });
 
