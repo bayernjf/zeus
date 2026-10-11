@@ -108,6 +108,19 @@ describe('TUI command parser', () => {
   });
 });
 
+describe('TUI reinstate command (A-02 way back from a revocation)', () => {
+  it('parses a bare index and keeps the roster letters distinct', () => {
+    expect(parseCommand('b2')).toEqual({ kind: 'reinstate', index: 2 });
+    expect(parseCommand('B 2')).toEqual({ kind: 'reinstate', index: 2 });
+    // `d<n>` stays the irreversible direction; `b<n>` is the only way back.
+    expect(parseCommand('d2')).toEqual({ kind: 'revoke', index: 2 });
+    expect(parseCommand('b0')).toEqual({ error: 'bad-index' });
+    expect(parseCommand('b')).toEqual({ error: 'unknown' });
+    expect(parseCommand('b2 now')).toEqual({ error: 'unknown' });
+    expect(COMMAND_HELP).toContain('b<n>');
+  });
+});
+
 describe('TUI resume command (E6.3 parameters-and-redispatch)', () => {
   it('parses an index with a JSON object payload', () => {
     expect(parseCommand('r1 {"env":"prod"}')).toEqual({ kind: 'resume', index: 1, params: { env: 'prod' } });

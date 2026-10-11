@@ -239,6 +239,23 @@ describe('contracts section (self-host step 5 face)', () => {
     expect(out).toContain('签一份仅 execute 的新契约并换绑本 watch');
   });
 
+  it('flags a revoked roster row with the reinstate form for that position', () => {
+    const revoked: DeckSnapshot = {
+      ...snapshot,
+      roster: {
+        generatedAt: '',
+        entries: [
+          { name: 'keep', status: 'active', health: 'healthy', skills: [{ id: 'research' }] },
+          { name: 'gone', status: 'revoked', skills: [{ id: 'research' }] },
+        ],
+      },
+    };
+    const out = renderDeck({ snapshot: revoked, t, palette, updatedAt: 'x' });
+    // The hint carries the row number an operator has to type - `b<n>` names a position.
+    expect(out).toContain('b2');
+    expect(out).not.toMatch(/b1/);
+  });
+
   it('flags a task-input escalation with the resume-with-parameters hint', () => {
     const waiting: DeckSnapshot = {
       ...snapshot,

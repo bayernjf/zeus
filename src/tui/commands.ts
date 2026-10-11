@@ -12,6 +12,7 @@ export type DeckCommand =
   | { kind: 'reject'; index: number }
   | { kind: 'resolve'; index: number; stanceIndex: number }
   | { kind: 'resume'; index: number; params: Record<string, unknown> }
+  | { kind: 'reinstate'; index: number }
   | { kind: 'revoke'; index: number }
   | { kind: 'grantIssue'; realmIndex: number; subject: string; access: 'read' | 'write'; grantedBy: string }
   | { kind: 'grantRevoke'; grantIndex: number }
@@ -110,6 +111,17 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
   }
   if (lower === 'w' || /^w\s+\D/i.test(line)) return { error: 'watch-needs-args' };
 
+  // The one way back from a revocation. `d<n>` is deliberately irreversible and
+  // re-registering does not clear a revocation (A-02), so restoring an entry is
+  // a separate audited act - and until now the only surface that could ask for
+  // it was a browser.
+  const reinstateMatch = /^b\s*(\d+)\s*$/i.exec(line);
+  if (reinstateMatch) {
+    const index = Number(reinstateMatch[1]);
+    if (!Number.isInteger(index) || index < 1) return { error: 'bad-index' };
+    return { kind: 'reinstate', index };
+  }
+
   // Answering an agent that stopped for missing parameters (E6.3). `approve`
   // alone only records the decision, so the deck needs the re-dispatch path the
   // kernel already exposes: `r<n> {json}` carries the parameters the agent asked
@@ -162,6 +174,7 @@ export const COMMAND_HELP = [
   '  s<n>.<m>   resolve escalation #n accepting stance #m',
   '  r<n> {json}  answer escalation #n with these parameters and re-dispatch that branch',
   '  d<n>       revoke roster vassal #n (asks y/N)',
+  '  b<n>       reinstate revoked roster vassal #n (asks y/N)',
   '  g<n> <subject> <r|w> [by]  issue a personal->enterprise grant on realm #n',
   '  k<n>       revoke cross-domain grant #n (asks y/N)',
   '  c <skill> <tickets> <concurrent> [by]  issue a delegation contract (execute, 24h)',

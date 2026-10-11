@@ -133,6 +133,69 @@ function makeHarness(answers: string[]) {
   return { io, client: client as unknown as { approve: ReturnType<typeof vi.fn>; reject: ReturnType<typeof vi.fn>; resolve: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn>; issueGrant: ReturnType<typeof vi.fn>; revokeGrant: ReturnType<typeof vi.fn>; recognize: ReturnType<typeof vi.fn>; snapshot: ReturnType<typeof vi.fn>; issueContract: ReturnType<typeof vi.fn>; revokeContract: ReturnType<typeof vi.fn>; approveContract: ReturnType<typeof vi.fn>; contracts: ReturnType<typeof vi.fn>; watches: ReturnType<typeof vi.fn>; watchTick: ReturnType<typeof vi.fn>; revokeWatch: ReturnType<typeof vi.fn> }, deck, printed };
 }
 
+describe('TUI reinstate writes (A-02 way back)', () => {
+  const rosterWith: (status: 'revoked' | 'active') => DeckSnapshot = status => ({
+    ...baseSnapshot,
+    roster: {
+      generatedAt: '',
+      entries: [
+        status === 'revoked'
+          ? { name: 'pr-helper', status, skills: [{ id: 'deployment-health' }] }
+          : { name: 'pr-helper', status, health: 'healthy', skills: [{ id: 'deployment-health' }] },
+        { name: 'loom', status: 'active', health: 'healthy', skills: [{ id: 'research' }] },
+      ],
+    },
+  });
+
+  function harness(answers: string[], status: 'revoked' | 'active') {
+    const printed: string[] = [];
+    const io: RunnerIo = {
+      print: text => printed.push(text),
+      question: vi.fn(async () => answers.shift() ?? 'n'),
+      now: () => new Date('2026-09-30T00:00:00.000Z'),
+    };
+    const reinstate = vi.fn(async () => undefined);
+    const revoke = vi.fn(async () => undefined);
+    const deck = createDeck({
+      client: {
+        snapshot: vi.fn(async () => rosterWith(status)),
+        reinstate,
+        revoke,
+      } as unknown as DeckClient,
+      io,
+      locale: 'en',
+      color: false,
+    });
+    return { io, deck, printed, reinstate, revoke };
+  }
+
+  it('reinstates a revoked entry only after confirm', async () => {
+    const { deck, printed, reinstate, revoke } = harness(['y'], 'revoked');
+    await deck.refresh();
+    await deck.handle('b1');
+    expect(reinstate).toHaveBeenCalledWith('pr-helper');
+    // The restore is its own act; it must not be reaching for the revoke verb.
+    expect(revoke).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('reinstated pr-helper');
+  });
+
+  it('writes nothing when the confirm is declined', async () => {
+    const { deck, reinstate } = harness(['n'], 'revoked');
+    await deck.refresh();
+    await deck.handle('b1');
+    expect(reinstate).not.toHaveBeenCalled();
+  });
+
+  it('refuses an entry that is not revoked, and says which state it saw', async () => {
+    const { io, deck, printed, reinstate } = harness(['y'], 'active');
+    await deck.refresh();
+    await deck.handle('b1');
+    expect(reinstate).not.toHaveBeenCalled();
+    expect(io.question).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('only a revoked vassal can be reinstated');
+  });
+});
+
 describe('TUI contract writes go through the API with a confirm gate', () => {
   it('issues a contract with capabilities pinned to execute and a 24h window', async () => {
     const { client, deck } = makeHarness(['y']);

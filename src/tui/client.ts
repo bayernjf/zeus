@@ -187,6 +187,9 @@ export type DeckClient = {
   /** Revoke (settle) a watch; it fires no more. */
   revokeWatch(id: string): Promise<void>;
   revoke(name: string): Promise<void>;
+  /** The one way back from a revocation (A-02): re-registering does not clear a
+   *  revoked entry, so restoring it is a separate, audited act. */
+  reinstate(name: string): Promise<void>;
   approve(id: string, note?: string): Promise<void>;
   reject(id: string, note?: string): Promise<void>;
   resolve(id: string, stance: string, note?: string): Promise<void>;
@@ -330,6 +333,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
     },
     approve: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/approve`, note !== undefined ? { note } : undefined),
+    reinstate: name => post(`/api/vassals/${encodeURIComponent(name)}/reinstate`),
     reject: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/reject`, note !== undefined ? { note } : undefined),
     resolve: (id, stance, note) =>
       post(`/api/escalations/${encodeURIComponent(id)}/resolve`, { stance, ...(note !== undefined ? { note } : {}) }),

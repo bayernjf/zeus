@@ -6,7 +6,7 @@
  * readline loop and the refresh interval.
  */
 import type { DeckClient, DeckSnapshot, EscalationView } from './client.js';
-import { makeTranslator, resolveLocale, type Translator } from './format.js';
+import { makeTranslator, resolveLocale, statusLabel, type Translator } from './format.js';
 import { makePalette, type Palette } from './tokens.js';
 import { renderDeck, renderRecognize, escalationOptions, escalationKindLabel } from './render.js';
 import { COMMAND_HELP, parseCommand, type DeckCommand } from './commands.js';
@@ -142,6 +142,29 @@ export function createDeck(options: RunnerOptions): DeckController {
         io.print(`${t('roster.revoked', { name: entry.name })}\n`);
       } catch (error) {
         io.print(`${t('roster.revokeFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
+    if (parsed.kind === 'reinstate') {
+      const entry = snapshot.roster.entries[parsed.index - 1];
+      if (!entry) {
+        io.print(`${t('roster.reinstateFailed', { message: `#${parsed.index}` })}\n`);
+        return true;
+      }
+      // Only a revoked entry has a way back; the kernel answers 404 for an
+      // active one, and the deck says which state it looked at instead.
+      if (entry.status !== 'revoked') {
+        io.print(`${t('roster.reinstateNeedsRevoked', { name: entry.name, status: statusLabel(t, entry.status) })}\n`);
+        return true;
+      }
+      if (!(await confirm(t('roster.confirmReinstate', { name: entry.name })))) return true;
+      try {
+        await client.reinstate(entry.name);
+        io.print(`${t('roster.reinstated', { name: entry.name })}\n`);
+      } catch (error) {
+        io.print(`${t('roster.reinstateFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
       }
       await draw();
       return true;

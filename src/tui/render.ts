@@ -93,12 +93,17 @@ function renderRoster(palette: Palette, t: Translator, snapshot: DeckSnapshot): 
     lines.push(`  ${t('roster.empty')}`);
     return lines;
   }
-  for (const entry of entries) {
+  entries.forEach((entry, index) => {
     const label = statusLabel(t, entry.status);
     const badge = paintStatus(palette, entry.status, label);
     const health = entry.health && entry.health !== 'healthy' ? ` ${palette.paint('warning', entry.health)}` : '';
-    lines.push(`  ${badge}  ${palette.bold(entry.name)}  [${skillList(entry)}]${health}`);
-  }
+    // A revoked row is the one case where the deck can undo its own write, and
+    // `b<n>` names the row by position - so print the position and the form.
+    const hint = entry.status === 'revoked'
+      ? ` ${palette.paint('warning', t('roster.reinstateHint', { index: index + 1 }))}`
+      : '';
+    lines.push(`  ${badge}  ${palette.bold(entry.name)}  [${skillList(entry)}]${health}${hint}`);
+  });
   return lines;
 }
 
