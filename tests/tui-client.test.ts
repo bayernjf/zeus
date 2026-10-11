@@ -245,3 +245,73 @@ describe('TUI HTTP client', () => {
     await expect(client.recognize('review')).rejects.toBeInstanceOf(ApiError);
   });
 });
+
+describe('TUI connector face (E7 MCP)', () => {
+  const connectorPayload = {
+    connectors: [
+      { id: 'c1', name: 'GitHub', status: 'declared', permissions: ['repo:read'], hasToken: false },
+    ],
+  };
+
+  it('includes the connector ledger in the snapshot and degrades to null when unmounted', async () => {
+    const withConn = mockClient(url =>
+      url === 'http://kernel/api/connectors' ? okJson(connectorPayload) : snapshotRoute()(url),
+    );
+    const snap = await withConn.client.snapshot();
+    expect(snap.connectors?.connectors).toHaveLength(1);
+
+    const without = mockClient(url => (url === 'http://kernel/api/connectors' ? fail503 : snapshotRoute()(url)));
+    const degraded = await without.client.snapshot();
+    expect(degraded.connectors).toBeNull();
+  });
+
+  it('declares a connector via POST and sends the token without echoing it back', async () => {
+    const { calls, client } = mockClient(url =>
+      url === 'http://kernel/api/connectors'
+        ? okJson({ id: 'c1', name: 'GitHub', status: 'declared', permissions: ['repo:read'], hasToken: true })
+        : fail503,
+    );
+    const declared = await client.declareConnector({ id: 'c1', name: 'GitHub', permissions: ['repo:read'], token: 'secret' });
+    expect(declared.hasToken).toBe(true);
+    const call = calls.find(c => c.url === 'http://kernel/api/connectors');
+    expect(call?.init?.method).toBe('POST');
+    expect(JSON.parse(call?.init?.body ?? '{}')).toEqual({ id: 'c1', name: 'GitHub', permissions: ['repo:read'], token: 'secret' });
+  });
+
+  it('runs the handshake via POST /api/connectors/:id/connect', async () => {
+    const { calls, client } = mockClient(url =>
+      url === 'http://kernel/api/connectors/c1/connect'
+        ? okJson({ id: 'c1', name: 'GitHub', status: 'connected', permissions: [], hasToken: true, capabilities: { tools: ['search'], resources: [], prompts: [] } })
+        : fail503,
+    );
+    const bound = await client.connectConnector('c1');
+    expect(bound.status).toBe('connected');
+    expect(calls[0]!.url).toBe('http://kernel/api/connectors/c1/connect');
+    expect(calls[0]!.init?.method).toBe('POST');
+  });
+
+  it('revokes a connector via DELETE and surfaces a refusal as ApiError', async () => {
+    const { calls, client } = mockClient(url => (url.endsWith('/api/connectors/c1') ? okJson({ id: 'c1', status: 'revoked', permissions: [], hasToken: false }) : fail503));
+    const revoked = await client.revokeConnector('c1');
+    expect(revoked.status).toBe('revoked');
+    const call = calls.find(c => c.url.endsWith('/api/connectors/c1'));
+    expect(call?.init?.method).toBe('DELETE');
+
+    const refusing = mockClient(url => (url.endsWith('/api/connectors/c1') ? { ok: false, status: 409, json: async () => ({ message: 'already revoked' }) } : fail503));
+    await expect(refusing.client.revokeConnector('c1')).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('calls a tool with the arguments envelope and returns the raw result', async () => {
+    const { calls, client } = mockClient(url =>
+      url === 'http://kernel/api/connectors/c1/tools/search/call'
+        ? okJson({ result: { hits: 3 } })
+        : fail503,
+    );
+    const result = await client.callConnectorTool('c1', 'search', { q: 'zeus' });
+    expect(result).toEqual({ hits: 3 });
+    const call = calls[0]!;
+    expect(call.url).toBe('http://kernel/api/connectors/c1/tools/search/call');
+    expect(call.init?.method).toBe('POST');
+    expect(JSON.parse(call.init?.body ?? '{}')).toEqual({ arguments: { q: 'zeus' } });
+  });
+});

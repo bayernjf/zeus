@@ -436,4 +436,114 @@ describe('TUI controller intent recognition (E2.6)', () => {
   });
 });
 
+describe('TUI connector writes (E7 MCP face)', () => {
+  const connectorSnapshot: DeckSnapshot = {
+    ...baseSnapshot,
+    connectors: {
+      connectors: [
+        { id: 'c1', name: 'c1', status: 'declared', permissions: [], hasToken: false },
+        {
+          id: 'c2', name: 'c2', status: 'connected', permissions: [], hasToken: true,
+          capabilities: { tools: ['post', 'read'], resources: [], prompts: [] },
+        },
+        {
+          id: 'c3', name: 'c3', status: 'connected', permissions: [], hasToken: false,
+          capabilities: { tools: [], resources: [], prompts: [] },
+        },
+      ],
+    },
+  };
+
+  function harness(answers: string[]) {
+    const printed: string[] = [];
+    const io: RunnerIo = {
+      print: text => printed.push(text),
+      question: vi.fn(async () => answers.shift() ?? 'n'),
+      now: () => new Date('2026-09-30T00:00:00.000Z'),
+    };
+    const connectConnector = vi.fn(async () => ({
+      id: 'c1', name: 'c1', status: 'connected', permissions: [], hasToken: false,
+      capabilities: { tools: ['a', 'b'], resources: [], prompts: [] },
+    }));
+    const revokeConnector = vi.fn(async () => ({ id: 'c1', name: 'c1', status: 'revoked', permissions: [], hasToken: false }));
+    const callConnectorTool = vi.fn(async () => ({ ok: true }));
+    const deck = createDeck({
+      client: {
+        snapshot: vi.fn(async () => connectorSnapshot),
+        connectConnector,
+        revokeConnector,
+        callConnectorTool,
+      } as unknown as DeckClient,
+      io,
+      locale: 'en',
+      color: false,
+    });
+    return { io, deck, printed, connectConnector, revokeConnector, callConnectorTool };
+  }
+
+  it('runs one MCP handshake on a declared connector only after y', async () => {
+    const { deck, connectConnector } = harness(['y']);
+    await deck.refresh();
+    await deck.handle('m1');
+    expect(connectConnector).toHaveBeenCalledWith('c1');
+  });
+
+  it('does not handshake when the confirm is declined', async () => {
+    const { deck, connectConnector } = harness(['n']);
+    await deck.refresh();
+    await deck.handle('m1');
+    expect(connectConnector).not.toHaveBeenCalled();
+  });
+
+  it('refuses to handshake a connector that is not declared', async () => {
+    const { io, deck, connectConnector, printed } = harness(['y']);
+    await deck.refresh();
+    await deck.handle('m2');
+    expect(connectConnector).not.toHaveBeenCalled();
+    expect(io.question).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('only a declared connector can be handshaked');
+  });
+
+  it('revokes a connector by deck index only after y', async () => {
+    const { deck, revokeConnector } = harness(['y']);
+    await deck.refresh();
+    await deck.handle('mx2');
+    expect(revokeConnector).toHaveBeenCalledWith('c2');
+  });
+
+  it('calls a discovered tool on a connected connector only after y', async () => {
+    const { deck, callConnectorTool } = harness(['y']);
+    await deck.refresh();
+    await deck.handle('mt2 post {"channel":"#x"}');
+    expect(callConnectorTool).toHaveBeenCalledWith('c2', 'post', { channel: '#x' });
+  });
+
+  it('refuses to call a tool the handshake did not advertise', async () => {
+    const { io, deck, callConnectorTool, printed } = harness(['y']);
+    await deck.refresh();
+    await deck.handle('mt2 missing {}');
+    expect(callConnectorTool).not.toHaveBeenCalled();
+    expect(io.question).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('not among this connector');
+  });
+
+  it('refuses to call tools on a connector that advertised none', async () => {
+    const { io, deck, callConnectorTool, printed } = harness(['y']);
+    await deck.refresh();
+    await deck.handle('mt3 post {}');
+    expect(callConnectorTool).not.toHaveBeenCalled();
+    expect(io.question).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('advertises no callable tool');
+  });
+
+  it('refuses to call a tool on a connector that is not connected', async () => {
+    const { io, deck, callConnectorTool, printed } = harness(['y']);
+    await deck.refresh();
+    await deck.handle('mt1 post {}');
+    expect(callConnectorTool).not.toHaveBeenCalled();
+    expect(io.question).not.toHaveBeenCalled();
+    expect(printed.join('')).toContain('only a connected connector can serve tools');
+  });
+});
+
 });

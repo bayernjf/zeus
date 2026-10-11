@@ -175,6 +175,17 @@
   .trend-legend .lg b { margin-left: auto; color: var(--text); font-weight: 600; }
   .trend-legend .lg.peak { color: var(--text-3); }
 
+  /* 持久指标史（内核侧采样，跨重启；与上面的前端采样分开） */
+  .hist-head { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 0; padding: 10px 14px 0; border-top: 1px solid var(--line-soft); font-size: 12px; font-weight: 650; color: var(--text-2); letter-spacing: .05em; }
+  .hist-head .hint { margin-left: auto; font-weight: 400; color: var(--text-3); font-family: var(--mono); font-size: 11px; }
+  .hist-meta { padding: 8px 14px 0; font-family: var(--mono); font-size: 11px; color: var(--text-3); }
+  .hist-note { padding: 12px 14px; font-size: 12px; color: var(--text-3); }
+  .hist-note.warn { color: var(--warn); }
+  .hist-trend { font-weight: 600; }
+  .hist-trend.up { color: var(--ok); }
+  .hist-trend.down { color: var(--bad); }
+  .hist-trend.flat { color: var(--text-3); }
+
   /* 意图详情 */
   .kv { display: grid; grid-template-columns: 130px 1fr; gap: 3px 10px; font-size: 13px; }
   .kv .k { color: var(--text-3); font-family: var(--mono); font-size: 12px; padding-top: 1px; }
@@ -259,7 +270,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.14 · <span data-i18n="app.tagline">只读监控 · 裁决 · 授权 · 组织</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.17 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -346,6 +357,8 @@
       <div class="panel" style="margin-top:14px">
         <h2><span data-i18n="trend.title">并发趋势</span> <span class="hint" data-i18n="trend.hint">前端 3s 采样 · 最近 40 个采样点</span></h2>
         <div class="body" id="trendBody"><div class="empty" data-i18n="trend.waiting">等待采样…</div></div>
+        <h2 class="hist-head"><span data-i18n="hist.title">持久指标史</span> <span class="hint" data-i18n="hist.hint">/api/metrics/history · 内核侧采样，跨重启</span></h2>
+        <div class="body" id="histBody"><div class="empty" data-i18n="hist.waiting">等待读取…</div></div>
       </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
@@ -629,12 +642,47 @@
           </div>
         </div>
       </div>
+      <div class="panel" style="margin-top:14px">
+        <h2><span data-i18n="mt.title">带教台账</span> <span class="hint">GET/POST /api/mentorships · <span data-i18n="mt.hint">认证才算胜任；委任的第四闸读的就是这里</span></span></h2>
+        <div class="body">
+          <div class="audit-filter">
+            <select id="mtStatus">
+              <option value="" data-i18n="catalog.allStatus">全部状态</option>
+              <option value="teaching">teaching</option>
+              <option value="certified">certified</option>
+              <option value="failed">failed</option>
+              <option value="dismissed">dismissed</option>
+            </select>
+            <span class="af-count" id="mtCount"></span>
+          </div>
+          <div id="mtBody"><div class="empty" data-i18n="mt.waiting">加载带教台账…</div></div>
+          <div class="row" style="margin-top:12px">
+            <label for="mtSkill" data-i18n="mt.skill">技能</label>
+            <input id="mtSkill" autocomplete="off" data-i18n-ph="mt.skillPh" placeholder="如 research">
+          </div>
+          <div class="row">
+            <label for="mtVersion" data-i18n="mt.version">规格版本（可空）</label>
+            <input id="mtVersion" autocomplete="off" placeholder="1.0.0">
+          </div>
+          <div class="row">
+            <label for="mtMentor" data-i18n="mt.mentor">带教 Agent</label>
+            <input id="mtMentor" autocomplete="off" data-i18n-ph="mt.mentorPh" placeholder="如 a1">
+          </div>
+          <div class="row">
+            <label for="mtLearner" data-i18n="mt.learner">学习 Agent</label>
+            <input id="mtLearner" autocomplete="off" data-i18n-ph="mt.learnerPh" placeholder="如 a2">
+          </div>
+          <div class="actions">
+            <button class="btn primary" id="btnMtOpen" data-i18n="mt.openRun">开设带教</button>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <!-- ===== 视图：目录（技能 + 连接器，只读可见性） ===== -->
+    <!-- ===== 视图：目录（技能生命周期 + 连接器声明/握手/调用） ===== -->
     <section id="view-catalog" hidden>
       <div class="panel" style="margin-bottom:14px">
-        <h2><span data-i18n="catalog.skillsTitle">技能目录</span> <span class="hint">GET /api/skills · <span data-i18n="catalog.skillsHint">注册/生命周期管理走 CLI/API，监督台只读</span></span></h2>
+        <h2><span data-i18n="catalog.skillsTitle">技能目录</span> <span class="hint">GET /api/skills · <span data-i18n="catalog.skillsHint">本面板即可装卸 / 弃用 / 收敛权限；显式规格注册与组队走 API</span></span></h2>
         <div class="body">
           <div class="audit-filter">
             <select id="catSkillStatus">
@@ -649,8 +697,22 @@
         </div>
       </div>
       <div class="panel">
-        <h2><span data-i18n="catalog.connectorsTitle">连接器（MCP）</span> <span class="hint">GET /api/connectors · <span data-i18n="catalog.connectorsHint">令牌只回显有无，不回显值</span></span></h2>
+        <h2><span data-i18n="catalog.connectorsTitle">连接器（MCP）</span> <span class="hint"><span data-i18n="catalog.connectorsHint">令牌只回显有无，不回显值</span> · <span data-i18n="connector.lifecycleHint">声明 / 握手 / 调用</span></span></h2>
         <div class="body" id="catalogConnectorsBody"><div class="empty" data-i18n="common.loading">加载中…</div></div>
+        <div class="decl-form">
+          <h3 data-i18n="connector.declareTitle">声明一个 MCP 连接器</h3>
+          <p class="hint" data-i18n="connector.declareBody">监督台只负责声明；令牌随声明提交，永不回显。已声明后可握手、调用工具。</p>
+          <div class="grid2">
+            <label for="cnId" data-i18n="connector.id">连接器 ID</label><input id="cnId" autocomplete="off">
+            <label for="cnName" data-i18n="connector.name">名称（可选）</label><input id="cnName" autocomplete="off">
+            <label for="cnEndpoint" data-i18n="connector.endpoint">HTTP 端点（或填 stdio 命令）</label><input id="cnEndpoint" autocomplete="off">
+            <label for="cnCommand" data-i18n="connector.command">stdio 命令（或填 HTTP 端点）</label><input id="cnCommand" autocomplete="off">
+            <label for="cnArgs" data-i18n="connector.args">stdio 参数（每行一条，可选）</label><textarea id="cnArgs" rows="2"></textarea>
+            <label for="cnPerms" data-i18n="connector.perms">权限（每行一条，如 fs:read）</label><textarea id="cnPerms" rows="2"></textarea>
+            <label for="cnToken" data-i18n="connector.token">令牌（可选）</label><input id="cnToken" autocomplete="off" type="password">
+          </div>
+          <button class="btn primary" id="btnDeclareConnector" data-i18n="connector.declare">声明连接器</button>
+        </div>
       </div>
     </section>
 
@@ -780,7 +842,7 @@
       "skill.deprecatedDone": "已弃用 {id}",
       "skill.hardened": "已收敛 {id} 权限",
       "skill.actionFailed": "{action}失败：{msg}",
-      "app.tagline": "只读监控 · 裁决 · 授权 · 组织",
+      "app.tagline": "监控 · 裁决 · 授权 · 组织 · 连接器驱动",
       "app.apiOnly": "UI 仅消费现有 HTTP API",
       "conn.none": "未连接",
       "top.refresh": "刷新",
@@ -822,6 +884,11 @@
       "grant.reason": "理由（进审计）",
       "grant.run": "签发授权",
       "grant.active": "生效授权",
+      "grant.needSubject": "必须给出主体（执行 Agent 名或身份）",
+      "grant.needRealm": "没有可授权的企业数据域——先挂载一个企业域",
+      "grant.confirm": "确定向 {subject} 开放企业域 {realm} 的 {access} 权限吗？这是一次跨域放行，会进审计。",
+      "grant.issued": "已签发授权：{id}",
+      "grant.failed": "签发失败：{msg}",
       "contract.title": "签发委托契约",
       "contract.tickets": "子票据上限",
       "contract.concurrent": "并发上限",
@@ -901,9 +968,57 @@
       "cm.stage.authorization": "授权",
       "cm.stage.mentorship": "带教",
       "cm.stage.commissioned": "已上岗",
+      "mt.title": "带教台账",
+      "mt.hint": "认证才算胜任；委任的第四闸读的就是这里",
+      "mt.waiting": "加载带教台账…",
+      "mt.skill": "技能",
+      "mt.skillPh": "如 research",
+      "mt.version": "规格版本（可空）",
+      "mt.mentor": "带教 Agent",
+      "mt.mentorPh": "如 a1",
+      "mt.learner": "学习 Agent",
+      "mt.learnerPh": "如 a2",
+      "mt.openRun": "开设带教",
+      "mt.needFields": "技能、带教 Agent、学习 Agent 三项都要填",
+      "mt.opened": "带教已开设：{id}",
+      "mt.empty": "还没有带教记录——上面的表单可以开设第一条",
+      "mt.count": "{n} 条带教记录",
+      "mt.loadFailed": "带教台账读取失败：{msg}",
+      "mt.actionFailed": "{action}失败：{msg}",
+      "mt.colRecord": "技能 / 版本",
+      "mt.colPair": "带教 → 学习",
+      "mt.colStatus": "状态",
+      "mt.colProgress": "进度",
+      "mt.colScore": "胜任分",
+      "mt.colActions": "操作",
+      "mt.lessonsN": "{n} 课",
+      "mt.noLessons": "尚未记课",
+      "mt.status.teaching": "带教中",
+      "mt.status.certified": "已认证",
+      "mt.status.failed": "未通过",
+      "mt.status.dismissed": "已终止",
+      "mt.lesson": "记课",
+      "mt.lessonTitle": "记录一课：{id}",
+      "mt.lessonBody": "每行一课：主题，或 主题 | 参考",
+      "mt.lessonNothing": "没有解析出任何一课（每行至少要有主题）",
+      "mt.lessonDone": "已记课：{id}（共 {n} 课）",
+      "mt.assess": "评估",
+      "mt.assessTitle": "胜任评估：{id}",
+      "mt.assessBody": "每行一项：判据 | pass 或 fail | 分数（0-1）",
+      "mt.assessNothing": "没有解析出任何检查项（例：能独立复现派发 | pass | 0.9）",
+      "mt.checkBad": "这一行看不懂，整份评估都没有提交：{line}（要写 判据 | pass 或 fail | 0-1 分数）",
+      "mt.assessDone": "评估结论：{status}（分数 {score}）",
+      "mt.dismiss": "终止",
+      "mt.dismissTitle": "终止带教：{id}",
+      "mt.dismissBody": "终止理由（写入台账，不留空）",
+      "mt.dismissNeedReason": "终止必须给出理由",
+      "mt.dismissDone": "已终止带教：{id}",
+      "mt.notTeaching": "带教 {id} 已不在带教中，记课与评估都关闭了",
+      "mt.confirmOpen": "开设带教：{skill}（版本 {version}）· {mentor} → {learner}",
+      "mt.certifiedHint": "认证之后学习者才算该技能的提供者",
       "common.loading": "加载中…",
       "catalog.skillsTitle": "技能目录",
-      "catalog.skillsHint": "注册/生命周期管理走 CLI/API，监督台只读",
+      "catalog.skillsHint": "本面板即可装卸 / 弃用 / 收敛权限；显式规格注册与组队走 API",
       "catalog.allStatus": "全部状态",
       "catalog.connectorsTitle": "连接器（MCP）",
       "catalog.connectorsHint": "令牌只回显有无，不回显值",
@@ -962,6 +1077,21 @@
       "trend.queued": "排队",
       "trend.peakInflight": "峰值在途",
       "trend.samples": "采样",
+      "hist.title": "持久指标史",
+      "hist.hint": "/api/metrics/history · 内核侧随状态保存采点，跨重启可读",
+      "hist.waiting": "等待读取…",
+      "hist.unconfigured": "该进程未配置 ZEUS_METRICS_HISTORY_FILE——端点不挂载，历史读不到",
+      "hist.failed": "读取失败：{msg}",
+      "hist.empty": "端点在，但还没有一次状态保存写入采样点",
+      "hist.count": "{n} 个持久采样点",
+      "hist.range": "跨度 {from} → {to}",
+      "hist.finishedDelta": "完成增量",
+      "hist.colTime": "采样时刻",
+      "hist.colInFlight": "在途",
+      "hist.colPeak": "峰值在途",
+      "hist.colQueue": "排队",
+      "hist.colFinished": "完成",
+      "hist.colFailed": "失败",
       "connect.items": "{n} 项",
       "sse.settled": "意图已结算 · {status}",
       "intent.viewTitle": "意图详情",
@@ -988,7 +1118,7 @@
       "recog.miss": "识别未命中",
       "recog.failed": "识别失败：{msg}",
       "org.keyPath": "关键路径",
-      "org.noDepartments": "尚未建立任何部门（POST /api/org/departments 由 CLI/API 管理，监督台只读）",
+      "org.noDepartments": "尚未建立任何部门（本视图即可新建：POST /api/org/departments）",
       "org.unspecified": "（未指定）",
       "org.noRegistry": "本进程未装配组织注册中心（orgRegistry），无组织面",
       "catalog.count": "共 {total} 个",
@@ -997,12 +1127,44 @@
       "catalog.empty": "技能注册中心为空",
       "catalog.noSkillRegistry": "本进程未装配技能注册中心",
       "catalog.skillLoadFailed": "技能目录加载失败：{msg}",
-      "conn2.none": "尚未声明任何连接器（POST /api/connectors 由 CLI/API 管理，监督台只读）",
+      "conn2.none": "尚未声明任何连接器（监督台可声明、握手并调用 MCP 工具）",
       "conn2.caps": "{tools} 工具 / {resources} 资源 / {prompts} 提示",
       "conn2.tokenSet": "已配",
       "conn2.tokenNone": "无",
       "conn2.noRegistry": "本进程未装配连接器注册中心",
       "conn2.loadFailed": "连接器加载失败：{msg}",
+      "connector.connect": "握手",
+      "connector.revoke": "吊销",
+      "connector.call": "调用",
+      "connector.declare": "声明连接器",
+      "connector.lifecycleHint": "声明 / 握手 / 调用",
+      "connector.declareTitle": "声明一个 MCP 连接器",
+      "connector.declareBody": "监督台只负责声明；令牌随声明提交，永不回显。已声明后可握手、调用工具。",
+      "connector.id": "连接器 ID",
+      "connector.name": "名称（可选）",
+      "connector.endpoint": "HTTP 端点（或填 stdio 命令）",
+      "connector.command": "stdio 命令（或填 HTTP 端点）",
+      "connector.args": "stdio 参数（每行一条，可选）",
+      "connector.perms": "权限（每行一条，如 fs:read）",
+      "connector.token": "令牌（可选）",
+      "connector.needId": "连接器 ID 必填",
+      "connector.needTransport": "HTTP 端点与 stdio 命令至少填一个",
+      "connector.declared": "已声明连接器 {id}",
+      "connector.confirmConnect": "与 {name}（{id}）跑一次 MCP 握手？(y/N)",
+      "connector.confirmRevoke": "吊销连接器 {id}？已发现的能力立即失效 (y/N)",
+      "connector.confirmCall": "调用 {id} 的工具 {tool}，参数 {params}？(y/N)",
+      "connector.called": "已调用 {tool}：{result}",
+      "connector.connected": "已连接 {name}：{tools} 个工具可用",
+      "connector.revoked": "已吊销连接器 {id}",
+      "connector.needsDeclared": "{name} 当前是 {status}——只有已声明的连接器可以握手",
+      "connector.needsConnected": "{name} 当前是 {status}——只有已连接的连接器可以调用工具",
+      "connector.noTools": "{name} 握手后没有可调用的工具",
+      "connector.unknownTool": "{tool} 不在该连接器已发现的工具集合中",
+      "connector.badTool": "格式应为：工具名 {json}",
+      "connector.badJson": "参数不是合法 JSON",
+      "connector.callTitle": "调用 {id} 的工具",
+      "connector.callBody": "已发现工具：{tools}。输入「工具名 {json}」。",
+      "connector.failed": "连接器操作失败：{message}",
       "recent.empty": "本浏览器尚无派发记录（派发后自动记录）",
       "task.completed": "完成",
       "task.failed": "失败",
@@ -1228,6 +1390,7 @@
       "col.reasonOptions": "原因 / 选项",
       "col.grantId": "授权 ID",
       "col.granterTime": "签发者 / 时间",
+      "col.grantedBy": "授予人",
       "col.contractId": "契约 ID",
       "col.quota": "额度（已用/上限 · 在途/并发）",
       "col.windowState": "窗口至 / 状态",
@@ -1239,7 +1402,7 @@
     },
     "en": {
       "app.brand": "Zeus Supervisor",
-      "app.tagline": "Read-only monitoring · adjudication · grants · org",
+      "app.tagline": "Monitoring · adjudication · grants · org · connector drive",
       "app.apiOnly": "UI consumes existing HTTP APIs only",
       "nav.monitor": "Monitor",
       "nav.oversight": "Adjudication",
@@ -1294,6 +1457,21 @@
       "trend.queued": "Queued",
       "trend.peakInflight": "Peak in-flight",
       "trend.samples": "Samples",
+      "hist.title": "Durable metrics history",
+      "hist.hint": "/api/metrics/history · kernel-side sample on state save, survives restarts",
+      "hist.waiting": "Waiting for the read…",
+      "hist.unconfigured": "This process has no ZEUS_METRICS_HISTORY_FILE - the endpoint is not mounted, so there is no history to read",
+      "hist.failed": "History read failed: {msg}",
+      "hist.empty": "The endpoint is mounted; no state save has written a sample yet",
+      "hist.count": "durable sample points: {n}",
+      "hist.range": "span {from} → {to}",
+      "hist.finishedDelta": "finished delta",
+      "hist.colTime": "Sampled at",
+      "hist.colInFlight": "In flight",
+      "hist.colPeak": "Peak in flight",
+      "hist.colQueue": "Queued",
+      "hist.colFinished": "Finished",
+      "hist.colFailed": "Failed",
       "connect.items": "{n} items",
       "sse.settled": "intent settled · {status}",
       "common.none": "No data",
@@ -1446,6 +1624,11 @@
       "grant.reasonPh": "e.g. review",
       "grant.run": "Issue grant",
       "grant.active": "Active grants",
+      "grant.needSubject": "A subject (vassal name or identity) is required",
+      "grant.needRealm": "No enterprise realm available to authorize - mount one first",
+      "grant.confirm": "Grant {access} access to {subject} on enterprise realm {realm}? This opens a cross-domain path and is audited.",
+      "grant.issued": "Grant issued: {id}",
+      "grant.failed": "Issuing failed: {msg}",
       "grant.count": "{n} total",
       "grant.empty": "No active cross-realm grants",
       "grant.confirmRevoke": "Revoke grant {id} for {subject}?",
@@ -1560,12 +1743,60 @@
       "cm.stage.authorization": "authorization",
       "cm.stage.mentorship": "mentorship",
       "cm.stage.commissioned": "commissioned",
+      "mt.title": "Mentorship ledger",
+      "mt.hint": "Certification, not attendance, makes a provider; this is the fourth commission gate",
+      "mt.waiting": "Loading mentorships…",
+      "mt.skill": "Skill",
+      "mt.skillPh": "e.g. research",
+      "mt.version": "Spec version (optional)",
+      "mt.mentor": "Mentor agent",
+      "mt.mentorPh": "e.g. a1",
+      "mt.learner": "Learner agent",
+      "mt.learnerPh": "e.g. a2",
+      "mt.openRun": "Open mentorship",
+      "mt.needFields": "Skill, mentor and learner are all required",
+      "mt.opened": "Mentorship opened: {id}",
+      "mt.empty": "No mentorships yet - the form above opens the first one",
+      "mt.count": "{n} mentorships",
+      "mt.loadFailed": "Mentorship ledger failed to load: {msg}",
+      "mt.actionFailed": "{action} failed: {msg}",
+      "mt.colRecord": "Skill / version",
+      "mt.colPair": "Mentor → learner",
+      "mt.colStatus": "Status",
+      "mt.colProgress": "Progress",
+      "mt.colScore": "Score",
+      "mt.colActions": "Actions",
+      "mt.lessonsN": "{n} lessons",
+      "mt.noLessons": "No lessons recorded",
+      "mt.status.teaching": "teaching",
+      "mt.status.certified": "certified",
+      "mt.status.failed": "failed",
+      "mt.status.dismissed": "dismissed",
+      "mt.lesson": "record lesson",
+      "mt.lessonTitle": "Record a lesson: {id}",
+      "mt.lessonBody": "One lesson per line: topic, or topic | reference",
+      "mt.lessonNothing": "No lesson parsed (each line needs at least a topic)",
+      "mt.lessonDone": "Lesson recorded: {id} ({n} total)",
+      "mt.assess": "assess",
+      "mt.assessTitle": "Competency assessment: {id}",
+      "mt.assessBody": "One check per line: criterion | pass or fail | score (0-1)",
+      "mt.assessNothing": "No check parsed (e.g. can replay a dispatch unaided | pass | 0.9)",
+      "mt.checkBad": "Could not read this line, so nothing was submitted: {line} (expected criterion | pass or fail | score 0-1)",
+      "mt.assessDone": "Assessment outcome: {status} (score {score})",
+      "mt.dismiss": "dismiss",
+      "mt.dismissTitle": "Dismiss mentorship: {id}",
+      "mt.dismissBody": "Reason for dismissal (stored in the ledger, never blank)",
+      "mt.dismissNeedReason": "A dismissal needs a reason",
+      "mt.dismissDone": "Mentorship dismissed: {id}",
+      "mt.notTeaching": "Mentorship {id} is no longer teaching; lessons and assessment are closed",
+      "mt.confirmOpen": "Open mentorship {skill} (version {version}) · {mentor} → {learner}",
+      "mt.certifiedHint": "Once certified, the learner counts as a provider of the skill",
       "org.keyPath": "critical path",
-      "org.noDepartments": "No departments yet (POST /api/org/departments is managed via CLI/API; supervisor is read-only)",
+      "org.noDepartments": "No departments yet (create one from this view: POST /api/org/departments)",
       "org.unspecified": "(unspecified)",
       "org.noRegistry": "This process has no org registry (orgRegistry) assembled; no org face",
       "catalog.skillsTitle": "Skill catalog",
-      "catalog.skillsHint": "Registration & lifecycle via CLI/API; supervisor is read-only",
+      "catalog.skillsHint": "Install, deprecate and harden happen in this panel; explicit spec registration and team resolution go through the API",
       "catalog.allStatus": "All statuses",
       "catalog.connectorsTitle": "Connectors (MCP)",
       "catalog.connectorsHint": "Tokens shown as present/absent only, never values",
@@ -1575,12 +1806,44 @@
       "catalog.empty": "Skill registry is empty",
       "catalog.noSkillRegistry": "This process has no skill registry assembled",
       "catalog.skillLoadFailed": "Failed to load skill catalog: {msg}",
-      "conn2.none": "No connectors declared yet (POST /api/connectors is managed via CLI/API; supervisor is read-only)",
+      "conn2.none": "No connectors declared yet (you can declare, handshake and call MCP tools here)",
       "conn2.caps": "{tools} tools / {resources} resources / {prompts} prompts",
       "conn2.tokenSet": "set",
       "conn2.tokenNone": "none",
       "conn2.noRegistry": "This process has no connector registry assembled",
       "conn2.loadFailed": "Failed to load connectors: {msg}",
+      "connector.connect": "Handshake",
+      "connector.revoke": "Revoke",
+      "connector.call": "Call",
+      "connector.declare": "Declare connector",
+      "connector.lifecycleHint": "declare / handshake / call",
+      "connector.declareTitle": "Declare an MCP connector",
+      "connector.declareBody": "The supervisor only declares; the token travels with the declaration and is never echoed back. Once declared you can handshake and call tools.",
+      "connector.id": "Connector ID",
+      "connector.name": "Name (optional)",
+      "connector.endpoint": "HTTP endpoint (or fill the stdio command)",
+      "connector.command": "stdio command (or fill the HTTP endpoint)",
+      "connector.args": "stdio args (one per line, optional)",
+      "connector.perms": "Permissions (one per line, e.g. fs:read)",
+      "connector.token": "Token (optional)",
+      "connector.needId": "Connector ID is required",
+      "connector.needTransport": "Provide at least one of HTTP endpoint or stdio command",
+      "connector.declared": "Declared connector {id}",
+      "connector.confirmConnect": "Run a single MCP handshake with {name} ({id})? (y/N)",
+      "connector.confirmRevoke": "Revoke connector {id}? Its discovered capabilities die with it (y/N)",
+      "connector.confirmCall": "Call tool {tool} on {id} with {params}? (y/N)",
+      "connector.called": "called {tool}: {result}",
+      "connector.connected": "connected {name}: {tools} tools reachable",
+      "connector.revoked": "Connector revoked: {id}",
+      "connector.needsDeclared": "{name} is {status} - only a declared connector can be handshaked",
+      "connector.needsConnected": "{name} is {status} - only a connected connector can serve tools",
+      "connector.noTools": "{name} advertises no callable tool",
+      "connector.unknownTool": "{tool} is not in this connector's discovered tools",
+      "connector.badTool": "format: toolName {json}",
+      "connector.badJson": "Arguments are not valid JSON",
+      "connector.callTitle": "Call a tool on {id}",
+      "connector.callBody": "Discovered tools: {tools}. Enter \"toolName {json}\".",
+      "connector.failed": "Connector operation failed: {message}",
       "intent.viewTitle": "Intent detail",
       "intent.back": "← Back to monitor",
       "intent.cancel": "Cancel dispatch",
@@ -1709,6 +1972,7 @@
       "col.reasonOptions": "Reason / options",
       "col.grantId": "Grant ID",
       "col.granterTime": "Granted by / time",
+      "col.grantedBy": "Granted by",
       "col.contractId": "Contract ID",
       "col.quota": "Quota (used/limit · in-flight/concurrency)",
       "col.windowState": "Window ends / status",
@@ -1854,8 +2118,10 @@
     escKindFilter: '',
     trend: [],
     skillsCache: [],
+    connectorsCache: [],
     orgDepts: [],
     cmList: [],
+    mtList: [],
   };
 
   function loadConn() {
@@ -2156,6 +2422,7 @@
       const data = await api('GET', '/api/org/chart');
       renderOrg(data);
       await loadCommissions();
+      await loadMentorships();
     } catch (e) {
       if (e.status === 404) { el.innerHTML = emptyRow(t('org.noRegistry')); return; }
       throw e;
@@ -2205,6 +2472,78 @@
     el.innerHTML = html + '</table>';
   }
 
+  // ===== 带教台账（E2.5：委任第四闸的证据面） =====
+  // The ledger refuses teach/assess/dismiss once a record leaves 'teaching'
+  // (requireOpen in src/skills/mentor.ts), so those controls are only rendered
+  // while it is open - a button the kernel would reject is not offered.
+  async function loadMentorships() {
+    const status = $('mtStatus') ? $('mtStatus').value : '';
+    const path = '/api/mentorships' + (status ? '?status=' + encodeURIComponent(status) : '');
+    try {
+      renderMentorships(await api('GET', path));
+    } catch (e) {
+      $('mtBody').innerHTML = emptyRow(t('mt.loadFailed', { msg: e.message }));
+      $('mtCount').textContent = '';
+      state.mtList = [];
+    }
+  }
+
+  function mtBadge(status) {
+    const cls = status === 'certified' ? 'ok' : status === 'teaching' ? 'warn' : status === 'failed' ? 'bad' : '';
+    return badge(tl('mt.status.' + status, status), cls);
+  }
+
+  function renderMentorships(data) {
+    const el = $('mtBody');
+    const list = (data && data.mentorships) || [];
+    state.mtList = list;
+    $('mtCount').textContent = list.length ? t('mt.count', { n: list.length }) : '';
+    if (!list.length) { el.innerHTML = emptyRow(t('mt.empty')); return; }
+    let html = '<table><tr><th>' + esc(t('mt.colRecord')) + '</th><th>' + esc(t('mt.colPair')) + '</th><th>'
+      + esc(t('mt.colStatus')) + '</th><th>' + esc(t('mt.colProgress')) + '</th><th>' + esc(t('mt.colActions')) + '</th></tr>';
+    for (const m of list) {
+      const progress = (m.lessons || []).length ? t('mt.lessonsN', { n: m.lessons.length }) : t('mt.noLessons');
+      const scored = (m.checks || []).length ? ' · ' + t('mt.colScore') + ' ' + Number(m.score || 0).toFixed(2) : '';
+      const actions = m.status === 'teaching'
+        ? '<button class="btn small" data-act="mt-lesson" data-id="' + esc(m.id) + '">' + esc(t('mt.lesson')) + '</button> '
+          + '<button class="btn small primary" data-act="mt-assess" data-id="' + esc(m.id) + '">' + esc(t('mt.assess')) + '</button> '
+          + '<button class="btn small danger" data-act="mt-dismiss" data-id="' + esc(m.id) + '">' + esc(t('mt.dismiss')) + '</button>'
+        : m.status === 'certified'
+          ? '<span style="font-size:11.5px;color:var(--text-3)">' + esc(t('mt.certifiedHint')) + '</span>'
+          : '';
+      html += '<tr><td class="mono">' + esc(m.skillId) + (m.version ? '@' + esc(m.version) : '') + '</td>'
+        + '<td class="mono">' + esc(m.mentorId) + ' → ' + esc(m.learnerId) + '</td>'
+        + '<td>' + mtBadge(m.status) + '</td><td>' + esc(progress) + esc(scored) + '</td><td>' + actions + '</td></tr>';
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  // An unrecognised verdict rejects the whole submission rather than defaulting
+  // to "failed": a silent false would land in the ledger and drive certification.
+  const MT_PASS = /^(?:pass|passed|yes|y|true)$/i;
+  const MT_FAIL = /^(?:fail|failed|no|n|false)$/i;
+
+  function parseMentorLessons(raw) {
+    return String(raw || '').split('\n')
+      .map(line => line.split('|').map(part => part.trim()))
+      .filter(parts => parts.length > 0 && !!parts[0])
+      .map(parts => (parts[1] ? { topic: parts[0], ref: parts[1] } : { topic: parts[0] }));
+  }
+
+  function parseMentorChecks(raw) {
+    const checks = [];
+    for (const line of String(raw || '').split('\n')) {
+      if (!line.trim()) continue;
+      const parts = line.split('|').map(part => part.trim());
+      const score = Number(parts[2]);
+      if (parts.length < 3 || !parts[0] || !Number.isFinite(score) || score < 0 || score > 1) return { checks: [], bad: line };
+      const verdict = MT_PASS.test(parts[1]) ? true : MT_FAIL.test(parts[1]) ? false : null;
+      if (verdict === null) return { checks: [], bad: line };
+      checks.push({ criterion: parts[0], passed: verdict, score });
+    }
+    return { checks, bad: null };
+  }
+
   async function loadCommissions() {
     const deptId = $('cmDept') && $('cmDept').value;
     if (!deptId) { state.cmList = []; $('cmBody').innerHTML = emptyRow(t('cm.waiting')); $('cmCount').textContent = ''; return; }
@@ -2215,7 +2554,7 @@
     }
   }
 
-  // ===== 目录：技能 + 连接器（只读可见性，管理走 CLI/API） =====
+  // ===== 目录：技能生命周期 + 连接器可驱动面（声明/握手/调用） =====
   function renderSkills(skills) {
     const el = $('catalogSkillsBody');
     const filter = ($('catSkillStatus') && $('catSkillStatus').value) || '';
@@ -2252,7 +2591,7 @@
   function renderConnectors(list) {
     const el = $('catalogConnectorsBody');
     if (!list.length) { el.innerHTML = emptyRow(t('conn2.none')); return; }
-    let rows = '<table><colgroup><col style="width:24%"><col style="width:12%"><col style="width:36%"><col style="width:18%"><col style="width:10%"></colgroup><tr><th>' + esc(t('col.connector')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.transport')) + '</th><th>' + esc(t('col.caps')) + '</th><th>' + esc(t('col.token')) + '</th></tr>';
+    let rows = '<table><colgroup><col style="width:22%"><col style="width:10%"><col style="width:30%"><col style="width:16%"><col style="width:8%"><col style="width:14%"></colgroup><tr><th>' + esc(t('col.connector')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.transport')) + '</th><th>' + esc(t('col.caps')) + '</th><th>' + esc(t('col.token')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const c of list) {
       const stCls = c.status === 'connected' ? 'ok' : c.status === 'revoked' ? 'bad' : 'warn';
       const endpoint = c.endpoint || (c.transport && c.transport.endpoint) || '';
@@ -2262,12 +2601,21 @@
       const caps = c.capabilities
         ? t('conn2.caps', { tools: (c.capabilities.tools || []).length, resources: (c.capabilities.resources || []).length, prompts: (c.capabilities.prompts || []).length })
         : '—';
+      const actions = [];
+      if (c.status === 'declared') {
+        actions.push('<button class="btn small" data-act="connector-connect" data-id="' + esc(c.id) + '">' + esc(t('connector.connect')) + '</button>');
+        actions.push('<button class="btn small danger" data-act="connector-revoke" data-id="' + esc(c.id) + '">' + esc(t('connector.revoke')) + '</button>');
+      } else if (c.status === 'connected') {
+        actions.push('<button class="btn small primary" data-act="connector-call" data-id="' + esc(c.id) + '">' + esc(t('connector.call')) + '</button>');
+        actions.push('<button class="btn small danger" data-act="connector-revoke" data-id="' + esc(c.id) + '">' + esc(t('connector.revoke')) + '</button>');
+      }
       rows += `<tr>
         <td class="mono">${esc(c.name)}<div class="hint" style="font-family:inherit">${esc(c.id)}</div></td>
         <td>${badge(c.status, stCls)}</td>
         <td class="mono" style="font-size:11px;word-break:break-all">${esc(transport)}</td>
         <td style="font-size:11px">${esc(caps)}</td>
         <td>${c.hasToken ? badge(t('conn2.tokenSet'), 'ok') : badge(t('conn2.tokenNone'), 'warn')}</td>
+        <td style="white-space:nowrap">${actions.join(' ')}</td>
       </tr>`;
     }
     el.innerHTML = rows + '</table>';
@@ -2286,7 +2634,8 @@
       $('catalogSkillsBody').innerHTML = emptyRow(e.status === 404 ? t('catalog.noSkillRegistry') : t('catalog.skillLoadFailed', { msg: e.message || e }));
     }
     if (connRes.status === 'fulfilled') {
-      renderConnectors((connRes.value && connRes.value.connectors) || []);
+      state.connectorsCache = (connRes.value && connRes.value.connectors) || [];
+      renderConnectors(state.connectorsCache);
     } else {
       const e = connRes.reason || {};
       $('catalogConnectorsBody').innerHTML = emptyRow(e.status === 404 ? t('conn2.noRegistry') : t('conn2.loadFailed', { msg: e.message || e }));
@@ -2971,6 +3320,41 @@
     el.innerHTML = `<div class="trend-wrap">${svg}${leg}</div>`;
   }
 
+  // ===== 持久指标史（内核侧：随状态保存采点，跨重启可读） =====
+  function renderHistory(payload) {
+    const el = $('histBody');
+    if (!el) return;
+    const error = payload && payload.__error;
+    if (error) {
+      // A 404 is not a failure to report as one: the endpoint is only mounted
+      // when the process was given a history file, and saying so is the answer.
+      const unconfigured = error.status === 404;
+      const key = unconfigured ? 'hist.unconfigured' : 'hist.failed';
+      el.innerHTML = '<div class="hist-note' + (unconfigured ? '' : ' warn') + '">'
+        + esc(unconfigured ? t(key) : t(key, { msg: error.message || String(error) })) + '</div>';
+      return;
+    }
+    const rows = Array.isArray(payload) ? payload : [];
+    if (rows.length === 0) { el.innerHTML = '<div class="hist-note">' + esc(t('hist.empty')) + '</div>'; return; }
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    const delta = (last.finished ?? 0) - (first.finished ?? 0);
+    const dir = delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat';
+    const glyph = delta > 0 ? '▲' : delta < 0 ? '▼' : '·';
+    const cols = ['hist.colTime', 'hist.colInFlight', 'hist.colPeak', 'hist.colQueue', 'hist.colFinished', 'hist.colFailed'];
+    let html = '<div class="hist-meta">' + esc(t('hist.count', { n: rows.length }))
+      + ' · ' + esc(t('hist.range', { from: fmtTime(first.capturedAt), to: fmtTime(last.capturedAt) }))
+      + ' · ' + esc(t('hist.finishedDelta'))
+      + ' <b class="hist-trend ' + dir + '">' + glyph + ' ' + Math.abs(delta) + '</b></div>';
+    html += '<table><tr>' + cols.map(c => '<th>' + esc(t(c)) + '</th>').join('') + '</tr>';
+    for (const row of rows.slice(-8).reverse()) {
+      html += '<tr><td>' + esc(fmtTime(row.capturedAt)) + '</td><td>' + esc(String(row.inFlight ?? 0)) + '</td><td>'
+        + esc(String(row.maxInFlight ?? 0)) + '</td><td>' + esc(String(row.queueDepth ?? 0)) + '</td><td>'
+        + esc(String(row.finished ?? 0)) + '</td><td>' + esc(String(row.failed ?? 0)) + '</td></tr>';
+    }
+    el.innerHTML = html + '</table>';
+  }
+
   // ===== 裁决徽标全局刷新（不渲染列表，任何视图可见待决数） =====
   function refreshEscBadge() {
     if (!state.conn.base || state.view === 'oversight') return;
@@ -3239,6 +3623,35 @@
     sel.innerHTML = enterprises.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} · ${t('connect.items', { n: r.itemCount ?? 0 })}</option>`).join('');
   }
 
+  // ===== 跨域授权的签发 =====
+  // The form and its panel header have advertised POST /api/domains/grants since
+  // the grants view existed, but no handler was ever attached to #btnGrant - the
+  // page could revoke a grant and could not issue one.
+  async function issueGrant() {
+    const subject = $('gSubject').value.trim();
+    const realmId = $('gRealm').value;
+    const access = $('gAccess').value;
+    const by = $('gGrantedBy').value.trim() || 'driver';
+    const reason = $('gReason').value.trim();
+    if (!subject) { toast(t('grant.needSubject'), 'bad'); return; }
+    if (!realmId) { toast(t('grant.needRealm'), 'bad'); return; }
+    if (!(await confirmDialog({ body: t('grant.confirm', { subject, realm: realmId, access }) }))) return;
+    try {
+      const grant = await api('POST', '/api/domains/grants', {
+        subject,
+        realmId,
+        access,
+        grantedBy: by,
+        ...(reason ? { reason } : {}),
+      });
+      toast(t('grant.issued', { id: grant.grantId || grant.id || '' }), 'ok');
+      $('gSubject').value = ''; $('gReason').value = '';
+      await loadDomains();
+    } catch (e) { toast(t('grant.failed', { msg: e.message }), 'bad'); }
+  }
+
+  $('btnGrant').addEventListener('click', issueGrant);
+
   // ===== 数据加载 =====
   async function refreshView() {
     const view = state.view;
@@ -3295,7 +3708,12 @@
     ]);
     let decision = null;
     try { decision = await api('GET', '/api/decision'); } catch { decision = null; } // 未装配决策状态面时静默
+    // The durable series is the one answer the 3s client sampler cannot give
+    // (it dies with the tab). It is mounted only when the process was configured
+    // with ZEUS_METRICS_HISTORY_FILE, so a 404 is a fact to print, not an error.
+    const history = await api('GET', '/api/metrics/history').catch(e => ({ __error: e }));
     renderState(s); renderDecision(decision); renderMetrics(m); renderDomains(d);
+    renderHistory(history);
     renderRecent();
   }
   async function loadRoster() {
@@ -3485,6 +3903,47 @@
           await loadCatalog();
         } catch (e) { toast(t('skill.actionFailed', { action: t('skill.action.harden'), msg: e.message }), 'bad'); }
       })();
+    } else if (act === 'mt-lesson' || act === 'mt-assess' || act === 'mt-dismiss') {
+      const record = (state.mtList || []).find(m => m.id === id);
+      if (!record) { toast(t('mt.loadFailed', { msg: id }), 'bad'); return; }
+      if (record.status !== 'teaching') { toast(t('mt.notTeaching', { id }), 'bad'); return; }
+      const fail = action => e => toast(t('mt.actionFailed', { action, msg: e.message }), 'bad');
+      if (act === 'mt-dismiss') {
+        const reason = await promptDialog({ title: t('mt.dismissTitle', { id }), body: t('mt.dismissBody') });
+        if (reason === null) return;
+        if (!reason.trim()) { toast(t('mt.dismissNeedReason'), 'bad'); return; }
+        try {
+          await api('POST', '/api/mentorships/' + encodeURIComponent(id) + '/dismiss', { reason: reason.trim() });
+          toast(t('mt.dismissDone', { id }), 'ok');
+          await loadMentorships();
+        } catch (e) { fail(t('mt.dismiss'))(e); }
+        return;
+      }
+      if (act === 'mt-lesson') {
+        const raw = await promptDialog({ title: t('mt.lessonTitle', { id }), body: t('mt.lessonBody') });
+        if (raw === null) return;
+        const lessons = parseMentorLessons(raw);
+        if (!lessons.length) { toast(t('mt.lessonNothing'), 'bad'); return; }
+        try {
+          const updated = await api('POST', '/api/mentorships/' + encodeURIComponent(id) + '/lessons', { lessons });
+          toast(t('mt.lessonDone', { id, n: (updated.lessons || []).length }), 'ok');
+          await loadMentorships();
+        } catch (e) { fail(t('mt.lesson'))(e); }
+        return;
+      }
+      const raw = await promptDialog({ title: t('mt.assessTitle', { id }), body: t('mt.assessBody') });
+      if (raw === null) return;
+      const parsed = parseMentorChecks(raw);
+      if (parsed.bad !== null) { toast(t('mt.checkBad', { line: parsed.bad }), 'bad'); return; }
+      if (!parsed.checks.length) { toast(t('mt.assessNothing'), 'bad'); return; }
+      try {
+        const updated = await api('POST', '/api/mentorships/' + encodeURIComponent(id) + '/assess', { checks: parsed.checks });
+        // A failed assessment is an outcome, not a transport error: the toast
+        // colour follows what the ledger decided.
+        toast(t('mt.assessDone', { status: updated.status, score: Number(updated.score || 0).toFixed(2) }),
+          updated.status === 'certified' ? 'ok' : 'bad');
+        await loadMentorships();
+      } catch (e) { fail(t('mt.assess'))(e); }
     } else if (act === 'revoke-vassal' || act === 'reinstate-vassal') {
       const name = btn.getAttribute('data-name') || '';
       const revoking = act === 'revoke-vassal';
@@ -3499,6 +3958,49 @@
           const r = await api('GET', '/api/roster');
           renderRoster(r);
         } catch (e) { toast(t('roster.actionFailed', { action: verb, msg: e.message }), 'bad'); }
+      })();
+    } else if (act === 'connector-connect') {
+      const c = (state.connectorsCache || []).find(x => x.id === id);
+      if (!c) { toast(t('connector.failed', { message: id }), 'bad'); return; }
+      if (c.status !== 'declared') { toast(t('connector.needsDeclared', { name: c.id, status: c.status }), 'bad'); return; }
+      if (!(await confirmDialog({ body: t('connector.confirmConnect', { name: c.name, id }), danger: false }))) return;
+      (async () => {
+        try {
+          const r = await api('POST', '/api/connectors/' + encodeURIComponent(id) + '/connect');
+          toast(t('connector.connected', { name: id, tools: ((r && r.capabilities && r.capabilities.tools) || []).length }), 'ok');
+          await loadCatalog();
+        } catch (e) { toast(t('connector.failed', { message: e.message }), 'bad'); }
+      })();
+    } else if (act === 'connector-revoke') {
+      if (!(await confirmDialog({ body: t('connector.confirmRevoke', { id }), danger: true }))) return;
+      (async () => {
+        try {
+          await api('DELETE', '/api/connectors/' + encodeURIComponent(id));
+          toast(t('connector.revoked', { id }), 'ok');
+          await loadCatalog();
+        } catch (e) { toast(t('connector.failed', { message: e.message }), 'bad'); }
+      })();
+    } else if (act === 'connector-call') {
+      const c = (state.connectorsCache || []).find(x => x.id === id);
+      if (!c) { toast(t('connector.failed', { message: id }), 'bad'); return; }
+      if (c.status !== 'connected') { toast(t('connector.needsConnected', { name: c.id, status: c.status }), 'bad'); return; }
+      const tools = (c.capabilities && c.capabilities.tools) || [];
+      if (!tools.length) { toast(t('connector.noTools', { name: c.id }), 'bad'); return; }
+      const raw = await promptDialog({ title: t('connector.callTitle', { id }), body: t('connector.callBody', { tools: tools.join(', ') }), placeholder: 'toolName {"key":"value"}' });
+      if (raw === null) return;
+      const m = raw.trim().match(/^(\S+)(?:\s+([\s\S]*))?$/);
+      if (!m) { toast(t('connector.badTool', { json: '{}' }), 'bad'); return; }
+      const tool = m[1];
+      const json = m[2] ? m[2].trim() : '{}';
+      if (!tools.includes(tool)) { toast(t('connector.unknownTool', { tool }), 'bad'); return; }
+      let args = {};
+      try { args = json ? JSON.parse(json) : {}; } catch { toast(t('connector.badJson'), 'bad'); return; }
+      if (!(await confirmDialog({ body: t('connector.confirmCall', { id, tool, params: JSON.stringify(args) }), danger: false }))) return;
+      (async () => {
+        try {
+          const r = await api('POST', '/api/connectors/' + encodeURIComponent(id) + '/tools/' + encodeURIComponent(tool) + '/call', { arguments: args });
+          toast(t('connector.called', { tool, result: JSON.stringify(r && r.result !== undefined ? r.result : null) }), 'ok');
+        } catch (e) { toast(t('connector.failed', { message: e.message }), 'bad'); }
       })();
     }
   });
@@ -3590,6 +4092,38 @@
     toast(t('conn.cleared'));
   });
 
+  // ===== 连接器声明（catalog 连接器面，与 HTTP 面同一份 POST /api/connectors） =====
+  $('btnDeclareConnector').addEventListener('click', async function () {
+    const id = $('cnId').value.trim();
+    const name = $('cnName').value.trim() || id;
+    const endpoint = $('cnEndpoint').value.trim();
+    const command = $('cnCommand').value.trim();
+    const token = $('cnToken').value.trim();
+    const perms = $('cnPerms').value.split('\n').map(s => s.trim()).filter(Boolean);
+    const args = $('cnArgs').value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!id) { toast(t('connector.needId'), 'bad'); return; }
+    if (!endpoint && !command) { toast(t('connector.needTransport'), 'bad'); return; }
+    try {
+      await api('POST', '/api/connectors', {
+        id,
+        name,
+        ...(endpoint ? { endpoint } : {}),
+        ...(command ? { command, ...(args.length ? { args } : {}) } : {}),
+        permissions: perms,
+        ...(token ? { token } : {}),
+      });
+      toast(t('connector.declared', { id }), 'ok');
+      $('cnId').value = '';
+      $('cnName').value = '';
+      $('cnEndpoint').value = '';
+      $('cnCommand').value = '';
+      $('cnArgs').value = '';
+      $('cnPerms').value = '';
+      $('cnToken').value = '';
+      await loadCatalog();
+    } catch (e) { toast(t('connector.failed', { message: e.message }), 'bad'); }
+  });
+
   // ===== 刷新与轮询 =====
   $('btnRefresh').addEventListener('click', function () {
     if (state.view === 'connect') return;
@@ -3619,6 +4153,23 @@
   $('escKindFilter').addEventListener('change', function () {
     state.escKindFilter = this.value;
     if (state.escList) renderEscalations(state.escList);
+  });
+
+  // ===== 带教台账：状态过滤 + 开设 =====
+  $('mtStatus').addEventListener('change', loadMentorships);
+  $('btnMtOpen').addEventListener('click', async function () {
+    const skillId = $('mtSkill').value.trim();
+    const mentorId = $('mtMentor').value.trim();
+    const learnerId = $('mtLearner').value.trim();
+    const version = $('mtVersion').value.trim();
+    if (!skillId || !mentorId || !learnerId) { toast(t('mt.needFields'), 'bad'); return; }
+    if (!(await confirmDialog({ body: t('mt.confirmOpen', { skill: skillId, version: version || '-', mentor: mentorId, learner: learnerId }) }))) return;
+    try {
+      const created = await api('POST', '/api/mentorships', { skillId, mentorId, learnerId, ...(version ? { version } : {}) });
+      toast(t('mt.opened', { id: created.id }), 'ok');
+      $('mtSkill').value = ''; $('mtVersion').value = ''; $('mtMentor').value = ''; $('mtLearner').value = '';
+      await loadMentorships();
+    } catch (e) { toast(t('mt.actionFailed', { action: t('mt.openRun'), msg: e.message }), 'bad'); }
   });
 
   // ===== 委任：部门切换 + 开设 =====

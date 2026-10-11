@@ -309,6 +309,58 @@ describe('contracts section (self-host step 5 face)', () => {
   });
 });
 
+describe('connectors section (E7 MCP face)', () => {
+  it('renders declared/connected/revoked connectors with transport, caps and token', () => {
+    const withConn: DeckSnapshot = {
+      ...snapshot,
+      connectors: {
+        connectors: [
+          { id: 'c1', name: 'GitHub', status: 'declared', permissions: ['repo:read'], hasToken: false },
+          {
+            id: 'c2', name: 'Slack', status: 'connected', endpoint: 'https://slack', permissions: ['chat:write'], hasToken: true,
+            capabilities: { tools: ['post'], resources: [], prompts: [] },
+          },
+        ],
+      },
+    };
+    const out = renderDeck({ snapshot: withConn, t, palette, updatedAt: 'x' });
+    expect(out).toContain('连接器（MCP，2）');
+    expect(out).toContain('GitHub');
+    expect(out).toContain('Slack');
+    expect(out).toContain('已声明');
+    expect(out).toContain('已连接');
+    expect(out).toContain('http: https://slack');
+    expect(out).toContain('1 工具 / 0 资源 / 0 提示');
+    expect(out).toContain('有凭据');
+    expect(out).toContain('m<连接器#>');
+    expect(out).toContain('mx<#>');
+    expect(out).toContain('mt<#>');
+  });
+
+  it('renders stdio transport and no-caps (un-handshaked) distinctly', () => {
+    const withConn: DeckSnapshot = {
+      ...snapshot,
+      connectors: {
+        connectors: [
+          {
+            id: 'c3', name: 'local', status: 'declared', command: 'mcp-server', args: ['--foo'], permissions: [], hasToken: false,
+          },
+        ],
+      },
+    };
+    const out = renderDeck({ snapshot: withConn, t, palette, updatedAt: 'x' });
+    expect(out).toContain('stdio: mcp-server --foo');
+    expect(out).toContain('未握手');
+  });
+
+  it('renders empty vs unavailable distinctly, and never invents a connector', () => {
+    const empty = renderDeck({ snapshot: { ...snapshot, connectors: { connectors: [] } }, t, palette, updatedAt: 'x' });
+    expect(empty).toContain('无连接器——没有声明任何外部系统');
+    const unavailable = renderDeck({ snapshot: { ...snapshot, connectors: null }, t, palette, updatedAt: 'x' });
+    expect(unavailable).toContain('连接器面不可用（该进程未装配连接器注册中心）');
+  });
+});
+
 describe('renderRecognize (E2.6 operator intent)', () => {
   it('renders a local-rule hit with plan-only notice and zero-egress backend', () => {
     const out = renderRecognize({
