@@ -26,6 +26,8 @@
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含连接器 bearer token 与记忆事实，且以 uid 1000 落卷） |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
+| `ZEUS_TRACE_EXPORT_FILE` | 未设置 | S6 V3：每个落定意图的 trace 树追加到此 JSONL。**必须同时设 `ZEUS_AUDIT_FILE`**——树是从审计脊重建的，只设这一条会一直是空文件（启动日志会点明）。端点侧无读回面：文件是给人直接看的 |
+| `ZEUS_METRICS_HISTORY_FILE` | 未设置 | S6 V3：每次保存内核状态时追加一条指标快照（按 capturedAt 去重）。**设了才挂载 `GET /api/metrics/history`**——不设该路由不存在（404），趋势读数只有活窗口 |
 | `ZEUS_AUDIT_MAX_BYTES` | `67108864`（64MiB） | 活动审计文件的轮转阈值；`0`/`off`/`unlimited` = 不轮转（**需自行接 logrotate，否则迟早写满盘**） |
 | `ZEUS_AUDIT_KEEP` | `5` | 轮转后保留的旧代数（`<file>.1` … `<file>.<keep>`）；磁盘总上界 = `maxBytes × (keep+1)` |
 | `ZEUS_INTENT_RETENTION` | `retain` | deferred #42：决策记录出窗策略。`retain`（默认）= 已了结意图全部留在状态文件（历史行为）；`archive` = 出窗记录移到状态文件旁的 `intent-archive.jsonl`（追加式、按 intentId 去重、重启重建索引，replay/approve-resume 经归档继续可用）；`evict` = 直接删除（幂等性变成窗口内语义，replay 404 会带 `evicted: true` 标记）。非法值直接拒启。只对 `ZEUS_STATE_FILE` 生效 |
