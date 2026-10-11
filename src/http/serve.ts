@@ -113,6 +113,13 @@ async function main(): Promise<void> {
       : {}),
     ...(realm.realmRoots.length ? { realmRoots: realm.realmRoots } : {}),
     ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
+    // S6 V3: the two observability files are opt-in by path. Booted without them
+    // the process is exactly V1/V2 - live metrics window only, no trace export -
+    // and `GET /api/metrics/history` is not mounted at all. Before this they were
+    // reachable only from bootKernel callers: the shipped entry never passed the
+    // options, so the endpoint existed in the library and was dead in deployment.
+    ...(process.env.ZEUS_TRACE_EXPORT_FILE ? { traceExportFile: process.env.ZEUS_TRACE_EXPORT_FILE } : {}),
+    ...(process.env.ZEUS_METRICS_HISTORY_FILE ? { metricsHistoryFile: process.env.ZEUS_METRICS_HISTORY_FILE } : {}),
     ...(audit.auditMaxBytes !== undefined ? { auditMaxBytes: audit.auditMaxBytes } : {}),
     ...(audit.auditKeep !== undefined ? { auditKeep: audit.auditKeep } : {}),
     dispatchAudit: entry => {
@@ -145,6 +152,19 @@ async function main(): Promise<void> {
       ? 'no ceiling'
       : `${Math.round((kernel.auditMaxBytes ?? 0) / 1048576)}MiB x ${kernel.auditKeep ?? 0} kept`;
     log.info('audit-log', undefined, { file: kernel.auditFile, ceiling });
+  }
+  // Both switches print their resolved value, "off" included: an operator who
+  // cannot tell whether the history file was configured reads an unmounted
+  // endpoint as a broken one rather than an unset option.
+  log.info('observability-export', undefined, {
+    traceExport: process.env.ZEUS_TRACE_EXPORT_FILE ?? 'off',
+    metricsHistory: process.env.ZEUS_METRICS_HISTORY_FILE ?? 'off',
+  });
+  // The exported tree is rebuilt from the audit spine, so a trace file without
+  // an audit file stays empty forever (src/state/boot.ts guards on both). Say it
+  // at boot rather than letting the operator discover it through an empty file.
+  if (process.env.ZEUS_TRACE_EXPORT_FILE && !process.env.ZEUS_AUDIT_FILE) {
+    log.warn('trace-export-needs-audit-file', 'ZEUS_TRACE_EXPORT_FILE is set but ZEUS_AUDIT_FILE is not; no trace will be exported');
   }
 
   // The operator's first question after "is it up" is "which realms did it
@@ -266,6 +286,9 @@ async function main(): Promise<void> {
     ...(kernel.commissionLedger ? { commissions: kernel.commissionLedger } : {}),
     ...(kernel.connectorRegistry ? { connectorRegistry: kernel.connectorRegistry } : {}),
     ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
+    // The route is conditional on the port being present, so this is the line
+    // that decides whether an operator can read the trend at all.
+    ...(kernel.metricsHistory ? { metricsHistory: kernel.metricsHistory } : {}),
     kernelStats: () => kernelStats(kernel),
     // Same facts the boot log line prints, now readable over the bearer face.
     decisionStatus: {
