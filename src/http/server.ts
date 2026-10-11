@@ -11,6 +11,7 @@ import type { OversightDesk } from '../oversight/oversight.js';
 import type { EscalationKind, EscalationStatus } from '../oversight/types.js';
 import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub } from '../orchestrator/progress.js';
+import { settledCounts, streamViewFromProgress } from '../orchestrator/progress-view.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import { buildTraceTree } from '../observability/trace.js';
 import type { MetricsHistory } from '../observability/metrics-history.js';
@@ -872,6 +873,21 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
 
         streamIntentProgress(raw, deps.progressHub!, id);
+      });
+
+      // S15 V3 (design-streaming §3.3): polling-shaped thinking-state snapshot
+      // for operator faces without an SSE client (the terminal deck). Each
+      // active intent (fan-out running, or parked needs-driver) carries the
+      // StreamView projected from retained progress events plus N/M settled
+      // counts. Previews are projections only and never enter a decision path.
+      app.get('/api/active-intents', { preHandler: requireBearer }, async () => {
+        const intents = deps.orchestrator!.activeIntents().map(entry => {
+          const events = deps.progressHub ? deps.progressHub.eventsOf(entry.intentId) : [];
+          const view = streamViewFromProgress(events);
+          const { settled, total } = settledCounts(view);
+          return { ...entry, settledCount: settled, totalCount: total, view };
+        });
+        return { intents };
       });
 
       // E1.6: offline replay of one stored decision — participants, dispatch

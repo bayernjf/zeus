@@ -6,7 +6,7 @@
 import type { Translator } from './format.js';
 import { auditDecisionLabel, statusLabel } from './format.js';
 import { auditToken, paintStatus, type Palette } from './tokens.js';
-import type { ConnectorView, ContractView, ContractsView, ConnectorsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView, WatchesView, WatchView } from './client.js';
+import type { ActiveIntentBranchView, ActiveIntentView, ConnectorView, ContractView, ContractsView, ConnectorsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView, WatchesView, WatchView } from './client.js';
 
 export type RenderInput = {
   snapshot: DeckSnapshot;
@@ -315,6 +315,61 @@ function renderConnectors(palette: Palette, t: Translator, connectors: Connector
   return lines;
 }
 
+/** S15 V3 (design-streaming §3.3): live thinking state for in-flight intents.
+ *  The terminal deck polls (no SSE client), so this renders the projected
+ *  StreamView from GET /api/active-intents. Preview lines are visually
+ *  distinct from formal outcomes (muted + explicit "preview, not a
+ *  conclusion" marker) and cleared once the branch settles. Null (older
+ *  process / face not mounted) and an empty set both omit the section. */
+const PREVIEW_MAX_CHARS = 60;
+
+function activeOutcomeLabel(t: Translator, branch: ActiveIntentBranchView): string {
+  const outcome = branch.outcome?.outcome;
+  if (outcome === undefined) return '';
+  return t(`active.outcome.${outcome}` as Parameters<Translator>[0]);
+}
+
+function renderActiveIntent(palette: Palette, t: Translator, intent: ActiveIntentView, index: number): string[] {
+  const statusKey = intent.status === 'needs-driver' ? 'active.status.needsDriver' : 'active.status.running';
+  const statusToken = intent.status === 'needs-driver' ? 'warning' : 'info';
+  const lines: string[] = [
+    `  ${palette.paint('muted', `#${index + 1}`)} ${palette.bold(intent.intentId)}  [${intent.skill}]  ${palette.paint(
+      statusToken,
+      t(statusKey as Parameters<Translator>[0]),
+    )}  ${palette.paint('muted', t('active.ready', { settled: intent.settledCount, total: intent.totalCount }))}`,
+  ];
+  for (const runId of intent.view.order) {
+    const branch = intent.view.branches[runId];
+    if (!branch) continue;
+    const name = branch.vassal ?? runId;
+    if (!branch.started) {
+      lines.push(`      ${palette.paint('muted', `└ ${name}  ${t('active.branch.waiting')}`)}`);
+      continue;
+    }
+    if (!branch.settled) {
+      const frames = (branch.lastSeq ?? 0) + 1;
+      let line = `      └ ${name}  ${palette.paint('info', t('active.branch.thinking'))}  ${palette.paint('muted', t('active.frames', { frames }))}`;
+      if (branch.preview) {
+        const preview = branch.preview.length > PREVIEW_MAX_CHARS ? `${branch.preview.slice(0, PREVIEW_MAX_CHARS)}…` : branch.preview;
+        line += `  ${palette.paint('muted', t('active.preview', { preview }))}`;
+      }
+      lines.push(line);
+      continue;
+    }
+    const outcome = branch.outcome?.outcome;
+    const token = outcome === 'ok' ? 'success' : outcome === 'canceled' ? 'muted' : 'danger';
+    lines.push(`      └ ${name}  ${palette.paint(token, activeOutcomeLabel(t, branch))}`);
+  }
+  return lines;
+}
+
+function renderActive(palette: Palette, t: Translator, active: DeckSnapshot['active']): string[] {
+  if (!active || active.intents.length === 0) return [];
+  const lines: string[] = [heading(palette, t('active.title', { total: active.intents.length }))];
+  active.intents.forEach((intent, index) => lines.push(...renderActiveIntent(palette, t, intent, index)));
+  return lines;
+}
+
 /** Render the full deck to a string ready to print. */
 export function renderDeck(input: RenderInput): string {
   const { snapshot, t, palette, updatedAt } = input;
@@ -322,6 +377,7 @@ export function renderDeck(input: RenderInput): string {
     [`${palette.bold(t('app.title'))}  ${palette.paint('muted', updatedAt)}`],
     renderState(palette, t, snapshot),
     renderMetrics(palette, t, snapshot),
+    renderActive(palette, t, snapshot.active),
     renderRoster(palette, t, snapshot),
     renderTimeline(palette, t, snapshot),
     renderDomains(palette, t, snapshot.domains),
