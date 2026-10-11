@@ -6,7 +6,7 @@
 import type { Translator } from './format.js';
 import { auditDecisionLabel, statusLabel } from './format.js';
 import { auditToken, paintStatus, type Palette } from './tokens.js';
-import type { ContractView, ContractsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView, WatchesView, WatchView } from './client.js';
+import type { ConnectorView, ContractView, ContractsView, ConnectorsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView, WatchesView, WatchView } from './client.js';
 
 export type RenderInput = {
   snapshot: DeckSnapshot;
@@ -271,6 +271,50 @@ function renderWatches(palette: Palette, t: Translator, watches: WatchesView | n
   return lines;
 }
 
+const CONNECTOR_STATUS_KEYS = {
+  declared: 'connectors.status.declared',
+  connected: 'connectors.status.connected',
+  revoked: 'connectors.status.revoked',
+} as const;
+
+export function connectorStatusLabel(t: Translator, status: ConnectorView['status']): string {
+  return t(CONNECTOR_STATUS_KEYS[status] as Parameters<Translator>[0]);
+}
+
+function renderConnectors(palette: Palette, t: Translator, connectors: ConnectorsView | null | undefined): string[] {
+  // undefined = deck assembled before this face existed; null = the process has
+  // no registry. Both print their own copy, because "no connectors declared"
+  // and "this capability was never mounted" ask the operator for different things.
+  if (connectors === null || connectors === undefined) {
+    return [heading(palette, t('connectors.title', { total: 0 })), `  ${t('connectors.unavailable')}`];
+  }
+  const items = connectors.connectors;
+  const lines: string[] = [heading(palette, t('connectors.title', { total: items.length }))];
+  if (items.length === 0) {
+    lines.push(`  ${t('connectors.empty')}`);
+    return lines;
+  }
+  items.forEach((connector, index) => {
+    const token = connector.status === 'connected' ? 'success' : connector.status === 'revoked' ? 'muted' : 'info';
+    const badge = palette.paint(token, connectorStatusLabel(t, connector.status));
+    const transport = connector.command
+      ? `${t('connectors.transport.stdio')}: ${connector.command}${connector.args && connector.args.length ? ' ' + connector.args.join(' ') : ''}`
+      : `${t('connectors.transport.http')}: ${connector.endpoint ?? ''}`;
+    const caps = connector.capabilities
+      ? t('connectors.caps', {
+          tools: connector.capabilities.tools.length,
+          resources: connector.capabilities.resources.length,
+          prompts: connector.capabilities.prompts.length,
+        })
+      : t('connectors.noCaps');
+    lines.push(
+      `  ${palette.paint('muted', `#${index + 1}`)} ${badge}  ${palette.bold(connector.id)}  [${t('connectors.line', { name: connector.name, transport, caps })}]${connector.hasToken ? ` ${palette.paint('info', t('connectors.tokenSet'))}` : ''}`,
+    );
+  });
+  lines.push(`  ${palette.paint('muted', t('connectors.prompt'))}`);
+  return lines;
+}
+
 /** Render the full deck to a string ready to print. */
 export function renderDeck(input: RenderInput): string {
   const { snapshot, t, palette, updatedAt } = input;
@@ -283,6 +327,7 @@ export function renderDeck(input: RenderInput): string {
     renderDomains(palette, t, snapshot.domains),
     renderContracts(palette, t, snapshot.contracts),
     renderWatches(palette, t, snapshot.watches),
+    renderConnectors(palette, t, snapshot.connectors),
     renderEscalations(palette, t, snapshot),
     [rule, palette.paint('muted', t('app.quit'))],
   ];

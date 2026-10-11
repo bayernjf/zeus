@@ -8,7 +8,7 @@
 import type { DeckClient, DeckSnapshot, EscalationView } from './client.js';
 import { makeTranslator, resolveLocale, statusLabel, type Translator } from './format.js';
 import { makePalette, type Palette } from './tokens.js';
-import { renderDeck, renderRecognize, escalationOptions, escalationKindLabel } from './render.js';
+import { renderDeck, renderRecognize, escalationOptions, escalationKindLabel, connectorStatusLabel } from './render.js';
 import { COMMAND_HELP, parseCommand, type DeckCommand } from './commands.js';
 import type { Locale } from './messages.js';
 
@@ -279,6 +279,69 @@ export function createDeck(options: RunnerOptions): DeckController {
         io.print(`${t('watches.revoked', { id: watch.id })}\n`);
       } catch (error) {
         io.print(`${t('watches.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+      }
+      await draw();
+      return true;
+    }
+
+    if (parsed.kind === 'connectorConnect' || parsed.kind === 'connectorRevoke' || parsed.kind === 'connectorCall') {
+      const connector = snapshot.connectors?.connectors[parsed.index - 1];
+      if (!connector) {
+        io.print(`${t('connectors.failed', { message: `#${parsed.index}` })}\n`);
+        return true;
+      }
+      const status = connectorStatusLabel(t, connector.status);
+      if (parsed.kind === 'connectorConnect') {
+        // A handshake leaves the row usable; asking again on a connected row is
+        // a no-op upstream, not an error - so the deck says what it saw instead
+        // of re-running it silently.
+        if (connector.status !== 'declared') {
+          io.print(`${t('connectors.needsDeclared', { name: connector.id, status })}\n`);
+          return true;
+        }
+        if (!(await confirm(t('connectors.confirmConnect', { name: connector.name, id: connector.id })))) return true;
+        try {
+          const bound = await client.connectConnector(connector.id);
+          io.print(`${t('connectors.connected', { name: connector.id, tools: (bound.capabilities?.tools ?? []).length })}\n`);
+        } catch (error) {
+          io.print(`${t('connectors.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+        }
+        await draw();
+        return true;
+      }
+      if (parsed.kind === 'connectorRevoke') {
+        if (!(await confirm(t('connectors.confirmRevoke', { id: connector.id })))) return true;
+        try {
+          await client.revokeConnector(connector.id);
+          io.print(`${t('connectors.revoked', { id: connector.id })}\n`);
+        } catch (error) {
+          io.print(`${t('connectors.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
+        }
+        await draw();
+        return true;
+      }
+      // A tool call reaches an external system, so the deck does not carry one
+      // out on a connector whose handshake never happened: without it there is
+      // no advertised capability list to bound what we are asking for.
+      if (connector.status !== 'connected') {
+        io.print(`${t('connectors.needsConnected', { name: connector.id, status })}\n`);
+        return true;
+      }
+      const declared = connector.capabilities?.tools ?? [];
+      if (declared.length > 0 && !declared.includes(parsed.tool)) {
+        io.print(`${t('connectors.failed', { message: `${parsed.tool} is not among this connector's ${declared.length} discovered tools` })}\n`);
+        return true;
+      }
+      if (declared.length === 0) {
+        io.print(`${t('connectors.noTools', { name: connector.id })}\n`);
+        return true;
+      }
+      if (!(await confirm(t('connectors.confirmCall', { id: connector.id, tool: parsed.tool, params: JSON.stringify(parsed.args) })))) return true;
+      try {
+        const result = await client.callConnectorTool(connector.id, parsed.tool, parsed.args);
+        io.print(`${t('connectors.called', { tool: parsed.tool, result: JSON.stringify(result ?? null) })}\n`);
+      } catch (error) {
+        io.print(`${t('connectors.failed', { message: error instanceof Error ? error.message : String(error) })}\n`);
       }
       await draw();
       return true;

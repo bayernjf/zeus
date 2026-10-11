@@ -23,6 +23,9 @@ export type DeckSnapshot = {
   domains: DomainsView | null;
   contracts: ContractsView | null;
   watches: WatchesView | null;
+  /** Absent on decks assembled before E7 had a face; the ledger then renders
+   *  its unavailable copy rather than an empty box. */
+  connectors?: ConnectorsView | null;
 };
 
 export type RosterView = {
@@ -140,6 +143,21 @@ export type WatchView = {
 
 export type WatchesView = { watches: WatchView[] };
 
+/** GET /api/connectors: the E7 connector ledger (token presence, never its value). */
+export type ConnectorView = {
+  id: string;
+  name: string;
+  status: 'declared' | 'connected' | 'revoked';
+  endpoint?: string;
+  command?: string;
+  args?: string[];
+  permissions: string[];
+  hasToken: boolean;
+  capabilities?: { tools: string[]; resources: string[]; prompts: string[] };
+};
+
+export type ConnectorsView = { connectors: ConnectorView[] };
+
 /** POST /api/watch-tick: the caller-driven evaluation report. */
 export type WatchTickView = {
   report: { evaluated: number; fired: string[]; unavailable: string[]; autoDisabled: string[] };
@@ -186,6 +204,24 @@ export type DeckClient = {
   watchTick(): Promise<WatchTickView['report']>;
   /** Revoke (settle) a watch; it fires no more. */
   revokeWatch(id: string): Promise<void>;
+  /** E7 connector ledger: declared external systems and their handshake state. */
+  connectors(): Promise<ConnectorsView>;
+  /** Declare one connector. The token goes in here and is never echoed back. */
+  declareConnector(input: {
+    id: string;
+    name: string;
+    endpoint?: string;
+    command?: string;
+    args?: string[];
+    permissions: string[];
+    token?: string;
+  }): Promise<ConnectorView>;
+  /** Run the MCP handshake for a declared connector. */
+  connectConnector(id: string): Promise<ConnectorView>;
+  /** Revoke a connector; the capability set disappears with it. */
+  revokeConnector(id: string): Promise<ConnectorView>;
+  /** Call one tool the handshake advertised and the declaration kept visible. */
+  callConnectorTool(id: string, tool: string, args?: Record<string, unknown>): Promise<unknown>;
   revoke(name: string): Promise<void>;
   /** The one way back from a revocation (A-02): re-registering does not clear a
    *  revoked entry, so restoring it is a separate, audited act. */
@@ -254,7 +290,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
 
   return {
     async snapshot(): Promise<DeckSnapshot> {
-      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv, watchesEnv] = await Promise.allSettled([
+      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv, watchesEnv, connectorsEnv] = await Promise.allSettled([
         getJson<{ snapshot: RosterView }>('/api/roster'),
         getJson<{ escalations: EscalationView[] }>('/api/escalations?status=pending'),
         getJson<MetricsView>('/api/metrics'),
@@ -263,6 +299,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         getJson<DomainsView>('/api/domains'),
         getJson<ContractsView>('/api/delegation-contracts'),
         getJson<WatchesView>('/api/watches'),
+        getJson<ConnectorsView>('/api/connectors'),
       ]);
       // Roster + escalations are core; their failure aborts the render. Metrics/
       // state are additive and degrade to null if that face is not mounted.
@@ -277,6 +314,9 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         domains: domainsEnv.status === 'fulfilled' ? domainsEnv.value : null,
         contracts: contractsEnv.status === 'fulfilled' ? contractsEnv.value : null,
         watches: watchesEnv.status === 'fulfilled' ? watchesEnv.value : null,
+        // 404 here means the process has no connector registry - distinct from
+        // "none declared", which the ledger renders with its own empty copy.
+        connectors: connectorsEnv.status === 'fulfilled' ? connectorsEnv.value : null,
       };
     },
     timeline: async (limit = 12) => {
@@ -327,6 +367,24 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
     revokeWatch: async id => {
       const res = await fetchImpl(`${baseUrl}/api/watches/${encodeURIComponent(id)}`, { method: 'DELETE', headers });
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
+    },
+    connectors: async () => getJson<ConnectorsView>('/api/connectors'),
+    // Declare answers 201 with the redacted record itself (no envelope), so the
+    // deck reads the same shape GET returns.
+    declareConnector: input => postFor<ConnectorView>('/api/connectors', input),
+    connectConnector: id => postFor<ConnectorView>(`/api/connectors/${encodeURIComponent(id)}/connect`),
+    revokeConnector: async id => {
+      const res = await fetchImpl(`${baseUrl}/api/connectors/${encodeURIComponent(id)}`, { method: 'DELETE', headers });
+      const body = (await res.json().catch(() => null)) as ConnectorView | null;
+      if (!res.ok) throw new ApiError(res.status, body);
+      return body as ConnectorView;
+    },
+    callConnectorTool: async (id, tool, args) => {
+      const body = await postFor<{ result: unknown }>(
+        `/api/connectors/${encodeURIComponent(id)}/tools/${encodeURIComponent(tool)}/call`,
+        args !== undefined ? { arguments: args } : undefined,
+      );
+      return body.result;
     },
     revoke: async name => {
       const res = await fetchImpl(`${baseUrl}/api/vassals/${encodeURIComponent(name)}`, { method: 'DELETE', headers });

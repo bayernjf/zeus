@@ -21,6 +21,9 @@ export type DeckCommand =
   | { kind: 'contractRevoke'; index: number }
   | { kind: 'watchTick' }
   | { kind: 'watchRevoke'; index: number }
+  | { kind: 'connectorConnect'; index: number }
+  | { kind: 'connectorRevoke'; index: number }
+  | { kind: 'connectorCall'; index: number; tool: string; args: Record<string, unknown> }
   | { kind: 'help' };
 
 export type CommandError = { error: string };
@@ -111,6 +114,45 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
   }
   if (lower === 'w' || /^w\s+\D/i.test(line)) return { error: 'watch-needs-args' };
 
+  // E7 connectors (MCP). `m<n>` runs one MCP handshake, `mx<n>` revokes, and
+  // `mt<n> <tool> {json}` calls one tool the handshake discovered - the call is
+  // already bounded server-side by what was advertised and what the declaration
+  // kept visible, so the deck only names the tool and hands the arguments over.
+  // Declaration stays on the Web/HTTP face (its shape is too wide for one line),
+  // the same split watches already use.
+  const connectorRevokeMatch = /^mx\s*(\d+)\s*$/i.exec(line);
+  if (connectorRevokeMatch) {
+    const index = Number(connectorRevokeMatch[1]);
+    if (!Number.isInteger(index) || index < 1) return { error: 'bad-index' };
+    return { kind: 'connectorRevoke', index };
+  }
+  const connectorCallMatch = /^mt\s*(\d+)\s+(\S+)(?:\s+([\s\S]+))?$/i.exec(line);
+  if (connectorCallMatch) {
+    const index = Number(connectorCallMatch[1]);
+    if (!Number.isInteger(index) || index < 1) return { error: 'bad-index' };
+    const tool = connectorCallMatch[2]!;
+    const rawArgs = connectorCallMatch[3];
+    let args: Record<string, unknown> = {};
+    if (rawArgs !== undefined && rawArgs.trim() !== '') {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawArgs);
+      } catch {
+        return { error: 'connector-bad-json' };
+      }
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return { error: 'connector-bad-json' };
+      args = parsed as Record<string, unknown>;
+    }
+    return { kind: 'connectorCall', index, tool, args };
+  }
+  const connectorConnectMatch = /^m\s*(\d+)\s*$/i.exec(line);
+  if (connectorConnectMatch) {
+    const index = Number(connectorConnectMatch[1]);
+    if (!Number.isInteger(index) || index < 1) return { error: 'bad-index' };
+    return { kind: 'connectorConnect', index };
+  }
+  if (lower === 'm' || lower === 'mx' || lower === 'mt' || /^mt\s+\S*$/i.test(line)) return { error: 'connector-needs-tool' };
+
   // The one way back from a revocation. `d<n>` is deliberately irreversible and
   // re-registering does not clear a revocation (A-02), so restoring an entry is
   // a separate audited act - and until now the only surface that could ask for
@@ -181,6 +223,9 @@ export const COMMAND_HELP = [
   '  c<n>       revoke delegation contract #n (asks y/N)',
   '  wt         drive one watch evaluation tick (caller-owned cadence)',
   '  w<n>       revoke (settle) watch #n (asks y/N)',
+  '  m<n>       run one MCP handshake on connector #n (asks y/N)',
+  '  mx<n>      revoke connector #n (asks y/N)',
+  '  mt<n> <tool> {json}  call a discovered tool on connector #n (asks y/N)',
   '  i <text>   recognize an operator instruction locally (plan-only)',
   '  im <text>  recognize using the configured decision backend (opt-in)',
   '  q          quit',
