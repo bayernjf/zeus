@@ -150,3 +150,36 @@ describe('TUI resume command (E6.3 parameters-and-redispatch)', () => {
     expect(parseCommand('r1 null')).toEqual({ error: 'resume-bad-json' });
   });
 });
+
+describe('TUI connector commands (E7 MCP face)', () => {
+  it('parses handshake, revoke and tool-call with 1-based index', () => {
+    expect(parseCommand('m1')).toEqual({ kind: 'connectorConnect', index: 1 });
+    expect(parseCommand('m 2')).toEqual({ kind: 'connectorConnect', index: 2 });
+    expect(parseCommand('mx3')).toEqual({ kind: 'connectorRevoke', index: 3 });
+    expect(parseCommand('mt1 post {"channel":"#x"}')).toEqual({
+      kind: 'connectorCall', index: 1, tool: 'post', args: { channel: '#x' },
+    });
+    expect(parseCommand('mt 1 post')).toEqual({ kind: 'connectorCall', index: 1, tool: 'post', args: {} });
+    expect(COMMAND_HELP).toContain('m<n>');
+    expect(COMMAND_HELP).toContain('mx<n>');
+    expect(COMMAND_HELP).toContain('mt<n>');
+  });
+
+  it('rejects the forms that would reach the kernel malformed', () => {
+    expect(parseCommand('m0')).toEqual({ error: 'bad-index' });
+    expect(parseCommand('mx0')).toEqual({ error: 'bad-index' });
+    expect(parseCommand('mt0 post')).toEqual({ error: 'bad-index' });
+    // `m` / `mx` / `mt` alone are not a command; the deck asks for an index/tool.
+    expect(parseCommand('m')).toEqual({ error: 'connector-needs-tool' });
+    expect(parseCommand('mx')).toEqual({ error: 'connector-needs-tool' });
+    expect(parseCommand('mt')).toEqual({ error: 'connector-needs-tool' });
+    expect(parseCommand('mt post')).toEqual({ error: 'connector-needs-tool' });
+    // A non-JSON trailing argument is a bad payload, not an unknown command.
+    expect(parseCommand('mt1 post channel=#x')).toEqual({ error: 'connector-bad-json' });
+    expect(parseCommand('mt1 post {bad')).toEqual({ error: 'connector-bad-json' });
+    // The endpoint requires an object: an array or scalar is a usage error here.
+    expect(parseCommand('mt1 post ["x"]')).toEqual({ error: 'connector-bad-json' });
+    expect(parseCommand('mt1 post "x"')).toEqual({ error: 'connector-bad-json' });
+    expect(parseCommand('mt1 post null')).toEqual({ error: 'connector-bad-json' });
+  });
+});

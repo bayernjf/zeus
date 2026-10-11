@@ -64,6 +64,28 @@ describe('web supervisor i18n resources', () => {
     }
   });
 
+  it('resolves every translation key the script asks for', () => {
+    // Markup references were covered; keys used only from JS were not, so a
+    // table header could render its own key name at the operator (col.grantedBy
+    // shipped that way). Concatenated keys are excluded: the enum maps below
+    // build them at runtime, and each family is pinned by name in its own test.
+    const script = HTML.slice(HTML.indexOf('// I18N-RES-END'));
+    const refs = [...script.matchAll(/(?:^|[^A-Za-z0-9_.])t\(\s*'([^']+)'\s*[,)]/gm)].map(m => m[1]!);
+    expect(refs.length, 'the script no longer asks for keys by literal name - the scan would pass by finding nothing').toBeGreaterThan(200);
+    const missing = [...new Set(refs)].filter(key => !Object.hasOwn(zh, key) || !Object.hasOwn(en, key));
+    expect(missing, `keys the script asks for that no table defines:\n${missing.join('\n')}`).toEqual([]);
+  });
+
+  it('gives every mentorship status a label in both tables', () => {
+    // The ledger badge is built as tl('mt.status.' + status, status), so an
+    // absent label degrades to the raw API value instead of going red.
+    for (const status of ['teaching', 'certified', 'failed', 'dismissed']) {
+      for (const table of [zh, en]) {
+        expect(Object.hasOwn(table, `mt.status.${status}`), status).toBe(true);
+      }
+    }
+  });
+
   it('keeps status enums as raw API values with label maps and raw fallback', () => {
     for (const state of ['completed', 'failed', 'canceled', 'running', 'queued', 'dispatched', 'acknowledged', 'timed_out', 'refused']) {
       expect(Object.hasOwn(zh, `task.${state}`), state).toBe(true);
@@ -201,6 +223,12 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       'skill-uninstall', // POST /api/skills/:id/uninstall
       'skill-deprecate', // POST /api/skills/:id/deprecate
       'skill-harden', // POST /api/skills/:id/harden
+      'mt-lesson', // POST /api/mentorships/:id/lessons
+      'mt-assess', // POST /api/mentorships/:id/assess
+      'mt-dismiss', // POST /api/mentorships/:id/dismiss
+      'connector-connect', // POST /api/connectors/:id/connect
+      'connector-revoke', // DELETE /api/connectors/:id
+      'connector-call', // POST /api/connectors/:id/tools/:name/call
     ]);
     expect(acts.length).toBeGreaterThan(5);
     for (const act of acts) expect(known.has(act), act).toBe(true);
@@ -208,6 +236,23 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
     // confined to the three known consumers - api(), apiText() and the SSE stream
     const fetches = HTML.match(/fetch\(/g) || [];
     expect(fetches.length).toBe(3);
+  });
+
+  it('gives every button in the markup a handler in the script', () => {
+    // A form whose submit button never had a listener is worse than no form: the
+    // operator fills it in, clicks, and gets nothing back (#btnGrant shipped that
+    // way - the panel header advertised POST /api/domains/grants, the script only
+    // ever called DELETE). Buttons driven through the delegated data-act chain are
+    // excluded because they carry no id-based listener.
+    const cut = HTML.indexOf('<script>');
+    const markup = HTML.slice(0, cut);
+    const script = HTML.slice(cut);
+    const ids = [...markup.matchAll(/<button\b([^>]*)>/gi)]
+      .map(m => (/id="([^"]+)"/.exec(m[1]!) || [])[1])
+      .filter((id): id is string => !!id);
+    expect(ids.length, 'the markup no longer carries id-bearing buttons - the scan would pass by finding nothing').toBeGreaterThan(15);
+    const unwired = ids.filter(id => !(script.includes(`$('${id}')`) || script.includes(`getElementById('${id}')`) || script.includes(`"${id}"`) || script.includes(`'${id}'`)));
+    expect(unwired, `buttons the page renders but never wires:\n${unwired.join('\n')}`).toEqual([]);
   });
 });
 
@@ -236,7 +281,7 @@ describe('supervisor copy describes the actions the page actually has', () => {
     expect(writes.size, 'the page appears to issue no writes at all - the scan is broken').toBeGreaterThan(8);
     expect([...writes].some(p => p.startsWith('/api/skills')), 'skill lifecycle is a write').toBe(true);
     expect([...writes].some(p => p.startsWith('/api/org/departments')), 'departments are a write').toBe(true);
-    expect(writes.has('/api/connectors'), 'connectors stay read-only').toBe(false);
+    expect(writes.has('/api/connectors'), 'connectors are now drivable from the supervisor').toBe(true);
   });
 
   it('never calls a view read-only for a path that same view writes', () => {
@@ -295,5 +340,66 @@ describe('supervisor copy describes the actions the page actually has', () => {
     }
     expect(RES['zh-CN']!['catalog.skillsHint']).toContain('装卸');
     expect(RES.en!['catalog.skillsHint']!).toMatch(/Install/i);
+  });
+});
+
+/**
+ * The assessment dialog parses the operator's own text into the boolean the
+ * mentorship ledger stores, and `passed: false` is an outcome that can fail a
+ * candidate. So a verdict the parser does not recognise has to be refused
+ * outright: the earlier `MT_PASS.test(v)` inline would have coerced an
+ * unrecognised word (a Chinese 通过 while the token set is ASCII) to a silent
+ * "failed", writing a verdict the operator never gave. The dialog copy is the
+ * only place that tells the operator which tokens are accepted, so both
+ * locales are pinned to the same vocabulary the parser actually uses.
+ */
+describe('mentorship assessment parsing', () => {
+  type Checks = { checks: Array<{ criterion: string; passed: boolean; score: number }>; bad: string | null };
+  const begin = HTML.indexOf('  const MT_PASS');
+  const end = HTML.indexOf('\n  async function loadCommissions');
+  expect(begin, 'the verdict token set moved - the extraction would pass by taking no source').toBeGreaterThan(-1);
+  expect(end, 'the parser region no longer ends before loadCommissions').toBeGreaterThan(begin);
+  const sandbox: Record<string, unknown> = {};
+  vm.createContext(sandbox);
+  vm.runInContext(
+    `${HTML.slice(begin, end)}\nthis.parseMentorChecks = parseMentorChecks;`,
+    sandbox,
+  );
+  const parse = sandbox.parseMentorChecks as (raw: string) => Checks;
+
+  it('reads each accepted verdict token as the boolean it says', () => {
+    for (const word of ['pass', 'passed', 'yes', 'y', 'true', 'PASS']) {
+      expect(parse(`c | ${word} | 0.9`).checks[0]!.passed, word).toBe(true);
+    }
+    for (const word of ['fail', 'failed', 'no', 'n', 'false', 'FAIL']) {
+      expect(parse(`c | ${word} | 0.9`).checks[0]!.passed, word).toBe(false);
+    }
+  });
+
+  it('refuses a verdict outside the token set instead of calling it a failure', () => {
+    const line = '能独立复现派发 | 通过 | 0.9';
+    const out = parse(line);
+    expect(out.checks, 'an unrecognised verdict must not reach the ledger').toEqual([]);
+    expect(out.bad, 'the refused line must be shown to the operator').toBe(line);
+  });
+
+  it('refuses a malformed line before anything is submitted', () => {
+    for (const line of ['criterion only', 'c | pass', 'c | pass | 2', 'c | pass | -1', 'c | pass | abc', ' | pass | 0.5']) {
+      const out = parse(`${line}\nc2 | pass | 0.5`);
+      expect(out.bad, line).toBe(line);
+      expect(out.checks.length, `${line} blocks the whole submission`).toBe(0);
+    }
+    expect(parse('').checks).toEqual([]);
+    expect(parse('').bad, 'blank input is nothing to refuse').toBeNull();
+  });
+
+  it('advertises in both locales the verdict tokens the parser accepts', () => {
+    for (const lang of ['zh-CN', 'en'] as const) {
+      const body = RES[lang]!['mt.assessBody']!;
+      expect(body, `${lang}: the dialog must name the pass token`).toContain('pass');
+      expect(body, `${lang}: the dialog must name the fail token`).toContain('fail');
+      expect(Object.hasOwn(RES[lang]!, 'mt.checkBad'), `${lang}: refusal copy missing`).toBe(true);
+      expect(RES[lang]!['mt.checkBad']!, `${lang}: the refusal must show the offending line`).toContain('{line}');
+    }
   });
 });
