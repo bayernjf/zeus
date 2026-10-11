@@ -92,7 +92,7 @@ ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" npm run tui
 
 监督台命令（进入后）：`<enter>/r` 刷新 · `a<n>`/`x<n>` 批准/拒绝升级 · `s<n>.<m>` 裁决 · `d<n>` 吊销 · `g<n> <subject> <r|w>` 跨域授权 · `k<n>` 吊销授权 · `i <文本>` **意图识别（本地规则，零出域，plan-only）** · `im <文本>` 意图识别（显式咨询决策后端，opt-in）· `q` 退出。识别结果恒 plan-only，execute 只能走执行授权票据。连接器：`m<n>` 握手 · `mx<n>` 吊销 · `mt<n> <工具> {json}` 调用（仅已声明可握手、已连接可调用，每次写操作前 y/N 确认）。
 
-**Web 监督台（UI 方案 A v1.17，`web/supervisor/index.html`）**：浏览器端监督台，含只读监控页（内核状态 / 并发指标 / 名册 / 扇出·决策时间线 / 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve）、跨域授权签发与吊销、连接器目录面板（声明 / 握手 / 吊销 / 调用，不再是只读）。UI 仅消费现有 HTTP API、零新增内核端点；浏览器跨域消费需服务端配 Origin 白名单（传输层可选配置，默认关闭，行为不变）：
+**Web 监督台（UI 方案 A v1.18，`web/supervisor/index.html`）**：浏览器端监督台，含只读监控页（内核状态 / 并发指标 / 名册 / 扇出·决策时间线 / 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve）、跨域授权签发与吊销、连接器目录面板（声明 / 握手 / 吊销 / 调用，不再是只读）。UI 仅消费现有 HTTP API、零新增内核端点；浏览器跨域消费需服务端配 Origin 白名单（传输层可选配置，默认关闭，行为不变）：
 
 ```bash
 # 终端 1：启动 Zeus（带 CORS 白名单）
