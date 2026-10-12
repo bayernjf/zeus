@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
 import { SkillRegistry } from '../src/skills/registry.js';
-import type { DecisionBackend } from '../src/decision/types.js';
+import type { ChoiceResult, DecisionBackend, NoulResult, ScoreResult } from '../src/decision/types.js';
+import { createScriptedDecisionBackend, type ScriptedOptions } from '../src/testing/decision-backend.js';
 
 const TOKEN = 'driver-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
@@ -18,15 +19,17 @@ function registryWithSkills() {
   return registry;
 }
 
-function mockBackend(overrides: Partial<DecisionBackend> = {}): DecisionBackend {
-  return {
+const defaultChoice: ChoiceResult = { choice: 'research', probabilities: {}, confidence: 0.9, calibrated: false, decisionAt: 'x' };
+
+function mockBackend(overrides: ScriptedOptions = {}): DecisionBackend {
+  return createScriptedDecisionBackend({
     kind: 'llm',
     model: 'agnes-2.5-flash',
-    noul: vi.fn(async () => ({ probability: 0.5, confidence: 0.5, calibrated: false, decisionAt: 'x' })),
-    score: vi.fn(async () => ({ score: 50, distribution: {}, confidence: 0.5, calibrated: false, decisionAt: 'x' })),
-    choice: vi.fn(async () => ({ choice: 'research', probabilities: {}, confidence: 0.9, calibrated: false, decisionAt: 'x' })),
+    noul: { probability: 0.5, confidence: 0.5, calibrated: false, decisionAt: 'x' } satisfies NoulResult,
+    score: { score: 50, distribution: {}, confidence: 0.5, calibrated: false, decisionAt: 'x' } satisfies ScoreResult,
+    choice: defaultChoice,
     ...overrides,
-  };
+  });
 }
 
 let app: FastifyInstance | undefined;
@@ -86,7 +89,7 @@ describe('POST /api/intents/recognize', () => {
     expect(body.ok).toBe(true);
     expect(body.intent).toEqual({ skill: 'code-review', params: {}, mode: 'plan' });
     expect(body.backend).toBeNull();
-    expect((backend.choice as ReturnType<typeof vi.fn>)).not.toHaveBeenCalled();
+    expect((backend as ReturnType<typeof createScriptedDecisionBackend>).calls.choice).toHaveLength(0);
   });
 
   it('fails closed (422) when nothing matches', async () => {
@@ -107,12 +110,12 @@ describe('POST /api/intents/recognize', () => {
     expect(body.ok).toBe(true);
     expect(body.intent.skill).toBe('research');
     expect(body.backend).toEqual({ kind: 'llm', model: 'agnes-2.5-flash' });
-    expect(backend.choice as unknown as ReturnType<typeof vi.fn>).toHaveBeenCalledTimes(1);
+    expect((backend as ReturnType<typeof createScriptedDecisionBackend>).calls.choice).toHaveLength(1);
   });
 
   it('fails closed (422) on a low-confidence model answer', async () => {
     const backend = mockBackend({
-      choice: vi.fn(async () => ({ choice: 'research', probabilities: {}, confidence: 0.3, calibrated: false, decisionAt: 'x' })),
+      choice: { choice: 'research', probabilities: {}, confidence: 0.3, calibrated: false, decisionAt: 'x' },
     });
     const a = await server({ skillRegistry: registryWithSkills(), decisionBackend: backend });
     const response = await a.inject({ method: 'POST', url: '/api/intents/recognize', headers: AUTH, payload: { text: 'research agents', useModel: true } });
