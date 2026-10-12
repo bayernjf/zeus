@@ -10,6 +10,14 @@
  * record pointing at a private address, or changing between resolution and
  * connect, cannot reach a non-public target.
  *
+ * The connect lookup only runs for hostnames: net connects to an IP literal
+ * directly. undici follows redirects inside the fetch layer and re-enters the
+ * dispatcher for every hop, so a 302 Location naming a non-public literal would
+ * bypass both the synchronous URL precondition (it only sees the initial URL)
+ * and this lookup. createOutboundDispatcher therefore also composes a dispatch
+ * interceptor that runs the same precondition on every hop before a socket
+ * opens.
+ *
  * Escape-hatch semantics are unchanged: a host in ZEUS_OUTBOUND_ALLOW_HOSTS
  * skips the guard, including whatever its records resolve to.
  */
@@ -17,6 +25,7 @@ import { promises as dnsPromises, type LookupAddress } from 'node:dns';
 import type { LookupFunction } from 'node:net';
 import { Agent, type Dispatcher } from 'undici';
 import {
+  assertOutboundUrlAllowed,
   blockedReason,
   isAllowlisted,
   normaliseHost,
@@ -121,9 +130,32 @@ export function createGuardedLookup(options: GuardedLookupOptions = {}): LookupF
   return lookup as LookupFunction;
 }
 
+/**
+ * Per-hop URL precondition. The fetch layer re-enters dispatch for each
+ * redirect target, and a literal target skips the connect lookup, so the hop
+ * is checked here before it reaches the Agent. A thrown OutboundUrlError
+ * rejects the fetch as `TypeError('fetch failed', { cause })`; no connection
+ * opens.
+ */
+function guardEveryHop(dispatcher: Dispatcher, allowHosts: readonly string[]): Dispatcher {
+  return dispatcher.compose(dispatch => (dispatchOptions, handler) => {
+    if (dispatchOptions.origin !== undefined) {
+      const origin =
+        typeof dispatchOptions.origin === 'string'
+          ? dispatchOptions.origin
+          : dispatchOptions.origin.href;
+      assertOutboundUrlAllowed(new URL(dispatchOptions.path, origin).href, allowHosts);
+    }
+    return dispatch(dispatchOptions, handler);
+  });
+}
+
 /** Create an undici Agent whose connections go through the guarded lookup. */
 export function createOutboundDispatcher(options: GuardedLookupOptions = {}): Dispatcher {
-  return new Agent({ connect: { lookup: createGuardedLookup(options) } });
+  const allowHosts =
+    options.allowHosts ?? parseAllowHosts(process.env.ZEUS_OUTBOUND_ALLOW_HOSTS);
+  const agent = new Agent({ connect: { lookup: createGuardedLookup(options) } });
+  return guardEveryHop(agent, allowHosts);
 }
 
 let cachedDispatcher: Dispatcher | undefined;

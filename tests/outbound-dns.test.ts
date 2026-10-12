@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { LookupAddress } from 'node:dns';
 import type { LookupFunction } from 'node:net';
 import { createServer } from 'node:http';
+import type { Dispatcher } from 'undici';
 import {
   createGuardedLookup,
   createOutboundDispatcher,
@@ -184,6 +185,146 @@ describe('createGuardedLookup', () => {
       resolveAll: resolverFor([addr('93.184.216.34'), addr('10.0.0.1')]),
     });
     await expect(runLookupAll(lookup, 'evil.example')).rejects.toThrow(/RFC1918/);
+  });
+});
+
+describe('redirect-hop guard', () => {
+  it('refuses a dispatch to a blocked IP literal before any lookup or connect (302 hop)', () => {
+    const dispatcher = createOutboundDispatcher();
+    expect(() =>
+      dispatcher.dispatch(
+        { origin: 'http://169.254.169.254', path: '/latest/meta-data', method: 'GET' },
+        {} as Dispatcher.DispatchHandlers,
+      ),
+    ).toThrow(/non-public address \(link-local/);
+  });
+
+  it('refuses a dispatch to a blocked RFC1918 literal', () => {
+    const dispatcher = createOutboundDispatcher();
+    expect(() =>
+      dispatcher.dispatch(
+        { origin: 'http://10.0.0.5', path: '/', method: 'GET' },
+        {} as Dispatcher.DispatchHandlers,
+      ),
+    ).toThrow(/non-public address \(RFC1918/);
+  });
+
+  it('still dispatches a loopback literal (local-first deviation)', async () => {
+    const dispatcher = createOutboundDispatcher();
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('ok');
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const statusCode = await new Promise<number>((resolveDispatch, rejectDispatch) => {
+        dispatcher.dispatch(
+          { origin: `http://127.0.0.1:${port}`, path: '/healthz', method: 'GET' },
+          {
+            onConnect: () => {},
+            onError: rejectDispatch,
+            onHeaders: code => {
+              resolveDispatch(code);
+              return true;
+            },
+            onData: () => true,
+            onComplete: () => {},
+          },
+        );
+      });
+      expect(statusCode).toBe(200);
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('blocks following a 302 Location that names the metadata IP literal', async () => {
+    const server = createServer((req, res) => {
+      if (req.url === '/go') {
+        res.writeHead(302, { location: 'http://169.254.169.254/latest/meta-data' });
+        res.end();
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      // The abort is a test-time bound for the unguarded path: with the guard
+      // the second hop never opens a socket and the promise rejects at once.
+      await expect(
+        fetch(`http://127.0.0.1:${port}/go`, {
+          dispatcher: createOutboundDispatcher(),
+          signal: AbortSignal.timeout(3000),
+        } as RequestInit),
+      ).rejects.toMatchObject({
+        name: 'TypeError',
+        cause: expect.objectContaining({ message: expect.stringMatching(/non-public address \(link-local/) }),
+      });
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('still follows a redirect whose hop stays on an allowed loopback target', async () => {
+    const server = createServer((req, res) => {
+      if (req.url === '/go') {
+        res.writeHead(302, { location: `/landed` });
+        res.end();
+        return;
+      }
+      if (req.url === '/landed') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('ok');
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/go`, {
+        dispatcher: createOutboundDispatcher(),
+      } as RequestInit);
+      expect(res.status).toBe(200);
+      expect(res.url).toBe(`http://127.0.0.1:${port}/landed`);
+      expect(await res.text()).toBe('ok');
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  });
+
+  it('runs a redirect-hop hostname through the guarded lookup as well', async () => {
+    const server = createServer((req, res) => {
+      if (req.url === '/go') {
+        res.writeHead(302, { location: `http://redirected.evil.test:${port}/x` });
+        res.end();
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const dispatcher = createOutboundDispatcher({
+        resolveAll: resolverFor([addr('10.0.0.5')]),
+      });
+      await expect(
+        fetch(`http://127.0.0.1:${port}/go`, {
+          dispatcher,
+          signal: AbortSignal.timeout(3000),
+        } as RequestInit),
+      ).rejects.toMatchObject({
+        name: 'TypeError',
+        cause: expect.objectContaining({ message: expect.stringMatching(/RFC1918|outbound host refused/) }),
+      });
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
   });
 });
 
