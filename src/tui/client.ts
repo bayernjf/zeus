@@ -26,7 +26,38 @@ export type DeckSnapshot = {
   /** Absent on decks assembled before E7 had a face; the ledger then renders
    *  its unavailable copy rather than an empty box. */
   connectors?: ConnectorsView | null;
+  /** S15 V3: live thinking-state snapshot (design-streaming §3.3). Null when
+   *  the shipped process predates the endpoint or the face is not mounted. */
+  active?: ActiveIntentsView | null;
 };
+
+/** One branch's live state, mirroring the HTTP StreamView projection.
+ *  `preview` is an in-progress frame payload — never a formal conclusion. */
+export type ActiveIntentBranchView = {
+  runId: string;
+  vassal?: string;
+  skill?: string;
+  started: boolean;
+  settled: boolean;
+  outcome?: { outcome: 'ok' | 'failed' | 'canceled' | 'timeout' };
+  lastSeq?: number;
+  preview: string;
+};
+
+export type ActiveIntentView = {
+  intentId: string;
+  skill: string;
+  status: 'running' | 'needs-driver';
+  settledCount: number;
+  totalCount: number;
+  view: {
+    order: string[];
+    branches: Record<string, ActiveIntentBranchView>;
+    partiallyReady: boolean;
+  };
+};
+
+export type ActiveIntentsView = { intents: ActiveIntentView[] };
 
 export type RosterView = {
   generatedAt: string;
@@ -290,7 +321,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
 
   return {
     async snapshot(): Promise<DeckSnapshot> {
-      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv, watchesEnv, connectorsEnv] = await Promise.allSettled([
+      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv, watchesEnv, connectorsEnv, activeEnv] = await Promise.allSettled([
         getJson<{ snapshot: RosterView }>('/api/roster'),
         getJson<{ escalations: EscalationView[] }>('/api/escalations?status=pending'),
         getJson<MetricsView>('/api/metrics'),
@@ -300,6 +331,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         getJson<ContractsView>('/api/delegation-contracts'),
         getJson<WatchesView>('/api/watches'),
         getJson<ConnectorsView>('/api/connectors'),
+        getJson<ActiveIntentsView>('/api/active-intents'),
       ]);
       // Roster + escalations are core; their failure aborts the render. Metrics/
       // state are additive and degrade to null if that face is not mounted.
@@ -317,6 +349,9 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         // 404 here means the process has no connector registry - distinct from
         // "none declared", which the ledger renders with its own empty copy.
         connectors: connectorsEnv.status === 'fulfilled' ? connectorsEnv.value : null,
+        // S15 V3: additive thinking-state face; a 404 (older process) degrades
+        // to null and the section is omitted rather than failing the deck.
+        active: activeEnv.status === 'fulfilled' ? activeEnv.value : null,
       };
     },
     timeline: async (limit = 12) => {

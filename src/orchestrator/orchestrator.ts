@@ -846,6 +846,27 @@ export class Orchestrator {
     return { intents: this.intents.size, requests: this.requests.size };
   }
 
+  /**
+   * S15 V3 (design-streaming §3.3): intents with no terminal result yet —
+   * either a fan-out still running (in `pending`, including a branch parked on
+   * a task-input escalation whose promise has not resolved) or a settled row
+   * parked on `needs-driver` (blocked, awaiting an operator decision). Used by
+   * the operator faces' live thinking-state view; terminal rows are excluded.
+   * No deep clones — id/skill/status are scalars.
+   */
+  activeIntents(): Array<{ intentId: string; skill: string; status: 'running' | 'needs-driver' }> {
+    const out = new Map<string, { intentId: string; skill: string; status: 'running' | 'needs-driver' }>();
+    for (const [intentId, entry] of this.pending) {
+      out.set(intentId, { intentId, skill: entry.request.skill, status: 'running' });
+    }
+    for (const [intentId, result] of this.intents) {
+      if (result.status === 'needs-driver' && !out.has(intentId)) {
+        out.set(intentId, { intentId, skill: result.skill, status: 'needs-driver' });
+      }
+    }
+    return [...out.values()];
+  }
+
   /** E6.3: find the intent whose branch run matches a task-input escalation.
    *  Branch runIds are `${parentRunId}:${vassal}`, so the escalation's runId
    *  alone is enough to locate the stored intent. deferred #42: when the state

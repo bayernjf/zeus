@@ -315,3 +315,31 @@ describe('TUI connector face (E7 MCP)', () => {
     expect(JSON.parse(call.init?.body ?? '{}')).toEqual({ arguments: { q: 'zeus' } });
   });
 });
+
+describe('TUI active-intents face (S15 V3)', () => {
+  const activePayload = {
+    intents: [
+      {
+        intentId: 'intent-live',
+        skill: 'review',
+        status: 'running',
+        settledCount: 0,
+        totalCount: 1,
+        view: { order: ['run-1:loom'], branches: {}, partiallyReady: false },
+      },
+    ],
+  };
+
+  it('includes active intents in the snapshot and degrades to null when the face is absent', async () => {
+    const withFace = mockClient(url =>
+      url === 'http://kernel/api/active-intents' ? okJson(activePayload) : snapshotRoute()(url),
+    );
+    const snap = await withFace.client.snapshot();
+    expect(snap.active?.intents).toHaveLength(1);
+    expect(snap.active?.intents[0]?.intentId).toBe('intent-live');
+
+    const without = mockClient(url => (url === 'http://kernel/api/active-intents' ? fail503 : snapshotRoute()(url)));
+    const degraded = await without.client.snapshot();
+    expect(degraded.active).toBeNull();
+  });
+});

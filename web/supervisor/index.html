@@ -270,7 +270,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.17 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.18 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -930,6 +930,9 @@
       "org.setLead": "设为 lead",
       "org.confirmSetLead": "确定将 {dept} 的 lead 更换为 {agent} 吗？原 lead 降为 member。",
       "org.leadSet": "已将 {dept} 的 lead 更换为 {agent}",
+      "org.removeMember": "移除成员",
+      "org.confirmRemoveMember": "确定从 {dept} 移除成员 {agent} 吗？若该成员是 lead，部门将回到未指定 lead 状态。",
+      "org.memberRemoved": "已从 {dept} 移除成员 {agent}",
       "cm.title": "委任（上岗）管理",
       "cm.hint": "席位 → 账户 → 授权 → 带教 → 上岗",
       "cm.waiting": "选择部门查看委任",
@@ -1705,6 +1708,9 @@
       "org.setLead": "Set as lead",
       "org.confirmSetLead": "Change the lead of {dept} to {agent}? The current lead steps down to member.",
       "org.leadSet": "lead of {dept} changed to {agent}",
+      "org.removeMember": "Remove member",
+      "org.confirmRemoveMember": "Remove {agent} from {dept}? If they are the lead, the department goes back to having no lead.",
+      "org.memberRemoved": "{agent} removed from {dept}",
       "cm.title": "Commissions",
       "cm.hint": "seat → account → authorization → mentorship → commissioned",
       "cm.waiting": "pick a department to view commissions",
@@ -2400,7 +2406,8 @@
         for (const m of members) {
           const isLead = m.role === 'lead';
           const leadBtn = isLead ? '' : `<button class="btn small" data-act="org-set-lead" data-id="${esc(d.departmentId)}" data-agent="${esc(m.agentId)}" data-dept="${esc(d.name)}">${esc(t('org.setLead'))}</button>`;
-          rows += `<tr${isLead ? ' class="branch-ok"' : ''}><td class="mono">${esc(m.agentId)}${isLead ? ' ' + badge('lead', 'ok') : ''}</td><td>${esc(m.role)}</td><td>${esc(m.title || '—')}</td><td style="font-size:12px">${esc((m.skills || []).join(', ') || '—')}</td><td>${leadBtn}</td></tr>`;
+          const removeMemberBtn = `<button class="btn small danger" data-act="org-remove-member" data-id="${esc(d.departmentId)}" data-agent="${esc(m.agentId)}" data-dept="${esc(d.name)}">${esc(t('org.removeMember'))}</button>`;
+          rows += `<tr${isLead ? ' class="branch-ok"' : ''}><td class="mono">${esc(m.agentId)}${isLead ? ' ' + badge('lead', 'ok') : ''}</td><td>${esc(m.role)}</td><td>${esc(m.title || '—')}</td><td style="font-size:12px">${esc((m.skills || []).join(', ') || '—')}</td><td>${leadBtn} ${removeMemberBtn}</td></tr>`;
         }
       }
       rows += '</table>';
@@ -3804,6 +3811,17 @@
           toast(t('org.leadSet', { dept, agent }), 'ok');
           await loadOrg();
         } catch (e) { toast(t('org.actionFailed', { action: t('org.setLead'), msg: e.message }), 'bad'); }
+      })();
+    } else if (act === 'org-remove-member') {
+      const agent = btn.getAttribute('data-agent') || '';
+      const dept = btn.getAttribute('data-dept') || id;
+      if (!(await confirmDialog({ body: t('org.confirmRemoveMember', { dept, agent }) }))) return;
+      (async () => {
+        try {
+          await api('DELETE', '/api/org/departments/' + encodeURIComponent(id) + '/members/' + encodeURIComponent(agent));
+          toast(t('org.memberRemoved', { dept, agent }), 'ok');
+          await loadOrg();
+        } catch (e) { toast(t('org.actionFailed', { action: t('org.removeMember'), msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-contract') {
     } else if (act === 'cm-waive' || act === 'cm-commission' || act === 'cm-withdraw') {

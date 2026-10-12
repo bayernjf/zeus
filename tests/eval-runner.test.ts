@@ -118,4 +118,40 @@ describe('eval-run.mjs baseline gate (S7 V3)', () => {
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('no baseline file');
   });
+
+  it('writes the PR comment body (marker, verdict, family table) on a green run', async () => {
+    const baseline = writeBaseline('comment-green.json', () => {});
+    const comment = join(dir, 'green-comment.md');
+    const r = await runScript([
+      '--filter', CASE_ID,
+      '--baseline-file', baseline,
+      '--out', join(dir, 'comment-green-run.json'),
+      '--comment-out', comment,
+    ]);
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    const body = readFileSync(comment, 'utf8');
+    expect(body).toContain('<!-- zeus-eval-gate -->');
+    expect(body).toContain('PASS');
+    expect(body).toMatch(/\|\s*decision\s*\|/);
+    expect(body).toContain('No metric movement.');
+  });
+
+  it('still writes the PR comment body on a block regression before exiting 1', async () => {
+    const baseline = writeBaseline('comment-block.json', report => {
+      report.byFamily.decision!.blocked = -1;
+    });
+    const comment = join(dir, 'block-comment.md');
+    const r = await runScript([
+      '--filter', CASE_ID,
+      '--baseline-file', baseline,
+      '--out', join(dir, 'comment-block-run.json'),
+      '--comment-out', comment,
+    ]);
+    expect(r.status, r.stdout + r.stderr).toBe(1);
+    // The body must exist despite the failing gate — the CI publisher runs
+    // under if: always() and posts the regression diff.
+    const body = readFileSync(comment, 'utf8');
+    expect(body).toContain('BLOCK REGRESSION');
+    expect(body).toContain('`decision.blocked`');
+  });
 });
