@@ -91,6 +91,10 @@ describe('S12 V2 plan flow wiring', () => {
 
     expect(extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'text', text: 'I would research first.' }] }])).toBeUndefined();
     expect(extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { summary: 'no plan key' } }] }])).toBeUndefined();
+    // A draft naming a realm outside the RealmType union is not a DagSpec.
+    expect(
+      extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { plan: { realm: 'unknown-realm', nodes: [] } } }] }]),
+    ).toBeUndefined();
   });
 
   it('fans out to the planner, selects the single feasible draft, audits plan-selected and executes the DAG', async () => {
@@ -206,6 +210,60 @@ describe('S12 V2 plan flow wiring', () => {
 
     expect(result.kind).toBe('unplannable');
     expect(audit.some((entry) => entry.decision === 'plan-malformed')).toBe(true);
+  });
+
+  it('drops a draft whose realm does not match the request realm (C-01)', async () => {
+    const audit: AuditEntry[] = [];
+    const kernel = await bootKernel({
+      fetchImpl: approveFetch(() => ({
+        realm: 'enterprise',
+        nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }],
+      })),
+      vassalSeeds: [SEED],
+      dispatchAudit: (entry) => audit.push(entry),
+    });
+    const flow = new PlanFlow({
+      orchestrator: kernel.orchestrator,
+      skillRegistry: kernel.skillRegistry!,
+      dagRunner: kernel.dagRunner,
+      oversight: kernel.oversight,
+      audit: (entry) => audit.push(entry),
+    });
+
+    const result = await flow.run({
+      goal: { description: 'research the topic then write the document' },
+      realm: 'personal',
+    });
+
+    // The draft is data from an external planner: its self-declared realm can
+    // never promote execution into another realm. It is dropped exactly like a
+    // malformed draft instead of being selected or executed cross-realm.
+    expect(result.kind).toBe('unplannable');
+    const malformed = audit.find((entry) => entry.decision === 'plan-malformed');
+    expect(malformed?.detail).toContain('realm');
+  });
+
+  it('never returns a cross-realm draft as the confirmed selection either (C-01)', async () => {
+    const kernel = await bootKernel({
+      fetchImpl: approveFetch(() => ({
+        realm: 'enterprise',
+        nodes: [{ id: 'n1', skill: 'research' }],
+      })),
+      vassalSeeds: [SEED],
+    });
+    const flow = new PlanFlow({
+      orchestrator: kernel.orchestrator,
+      skillRegistry: kernel.skillRegistry!,
+      dagRunner: kernel.dagRunner,
+    });
+
+    const result = await flow.run({
+      goal: { description: 'research the topic then write the document' },
+      realm: 'personal',
+      requireConfirmation: true,
+    });
+
+    expect(result.kind).not.toBe('selected');
   });
 
   it('returns the selected plan without executing when confirmation is required', async () => {
