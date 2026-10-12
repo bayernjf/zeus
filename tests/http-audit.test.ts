@@ -95,7 +95,10 @@ describe('E4.7 audit HTTP face', () => {
     await writeFile(auditFile, '{"ts":"t1","vassal":"loom","decision":"dispatched"}\n{ not json }\n');
     const res = await a.inject({ method: 'GET', url: '/api/audit', headers: AUTH });
     expect(res.statusCode).toBe(500);
-    expect(await res.json()).toMatchObject({ error: 'audit_unreadable' });
+    const body = await res.json();
+    expect(body).toMatchObject({ error: 'audit_unreadable' });
+    // m-15: error details must not echo the realm-local absolute audit path.
+    expect(JSON.stringify(body)).not.toContain(auditFile);
   });
 
   it('validates the query', async () => {

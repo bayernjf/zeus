@@ -202,6 +202,19 @@ async function main(): Promise<void> {
     }
   }
 
+  // Live SSE caps (M-04): a per-process limit on concurrently attached live
+  // streams and the attach grace for "connect SSE, then POST fan-out". Both are
+  // positive integers like the concurrency caps; a malformed value aborts boot
+  // rather than silently disabling the bound.
+  const sseMaxStreams =
+    process.env.ZEUS_SSE_MAX_STREAMS !== undefined
+      ? parseIntPositive('ZEUS_SSE_MAX_STREAMS', process.env.ZEUS_SSE_MAX_STREAMS)
+      : undefined;
+  const sseAttachGraceMs =
+    process.env.ZEUS_SSE_ATTACH_GRACE_MS !== undefined
+      ? parseIntPositive('ZEUS_SSE_ATTACH_GRACE_MS', process.env.ZEUS_SSE_ATTACH_GRACE_MS)
+      : undefined;
+
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
   // §2.1); ZEUS_HOST / ZEUS_PORT only override them, so the process entry and the
   // published `zeus/http` API cannot drift into two different answers.
@@ -222,6 +235,13 @@ async function main(): Promise<void> {
     oversight: kernel.oversight,
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,
+    ...(sseMaxStreams !== undefined ? { sseMaxStreams } : {}),
+    ...(sseAttachGraceMs !== undefined ? { sseAttachGraceMs } : {}),
+    // Transport faults whose HTTP/JSON-RPC body stays generic keep their raw
+    // detail here; the logger's redaction sink is the only place it lands.
+    log: (event, msg, fields) => {
+      log.error(event, msg, fields);
+    },
     // deferred #42: replay/approve-resume read the out-window archive when the
     // state table misses; the retention mode is surfaced on replay misses so an
     // eviction-mode 404 is not mistaken for "never existed".

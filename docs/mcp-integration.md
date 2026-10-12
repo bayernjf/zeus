@@ -124,7 +124,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 ```
 
 要点：
-- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:374-374 #publicManifest`，序列化点 `src/realm/mcp.ts:324-324 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
+- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:380-380 #publicManifest`，序列化点 `src/realm/mcp.ts:330-330 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
 - `contentDigest` 是**连接时快照**的内容摘要；目录被改过它不会自己变（见 §1.6）。
 - `skipped[]` 是"为什么你的某个文件不在结果里"的官方答案，逐条带原因（§1.7）。
 - URI 的 scheme 不是 `zeus-realm://` → `-32602`；hostname 不是已连接域 → `-32002`；pathname 不是 manifest/search/item → `-32602 unknown realm resource`。都实测过。
@@ -139,7 +139,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 | `realm.search` | `realmId`、`text`、`since`（ISO 时间串）、`limit`（正数） | `realmId` | `content:[{type:"text",text:"<RealmHit 数组的 JSON 字符串>"}]` |
 | `realm.read` | `realmId`、`itemId`（根相对 POSIX 路径） | `realmId`、`itemId` | `content:[{type:"text",text:"<文件正文>"}]` |
 
-- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:220-220 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
+- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:226-226 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
 - `realm.read` 的正文按原样返回，包括换行；层级目录用 POSIX 分隔（实测 `itemId:"sub/dir/deep.md"` 可读）。
 - 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:521-521 #snippetFor`。
 - **没有写工具**（实测 `realm.write` → `-32602 unknown tool: realm.write`）。P0 的写能力只存在于库内端口 `Realm.write`，不经这条通道暴露（剩余半边登记在 [deferred-items.md](deferred-items.md) #14/#18 的口径里）。
@@ -176,7 +176,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.8 错误码与处置
 
-服务端可能回的全部码（码表 `src/realm/mcp.ts:39-39 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:387-387 #mapError`）。标 ✅ 的是本轮实测出现过原文：
+服务端可能回的全部码（码表 `src/realm/mcp.ts:39-39 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:393-399 #mapError`）。标 ✅ 的是本轮实测出现过原文：
 
 | code | 含义 | 什么时候出现 / 客户端该怎么办 |
 |---|---|---|

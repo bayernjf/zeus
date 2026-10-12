@@ -1,11 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createHttpServer } from '../src/http/server.js';
 import { VassalRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { OversightDesk, conflictsToDesk } from '../src/oversight/oversight.js';
 import { ConcurrencyMetrics } from '../src/orchestrator/metrics.js';
+import { MetricsHistory } from '../src/observability/metrics-history.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
@@ -401,6 +405,32 @@ describe('HTTP H2 driver API — metrics', () => {
     expect(snap.inFlight).toBe(0);
     expect(snap.perVassal.loom.calls).toBe(1);
     expect(snap.perVassal.atlas.failureRate).toBe(1);
+  });
+
+  it('answers an unreadable history file with a generic 500 and never echoes its path (m-15)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zeus-metrics-history-'));
+    try {
+      // A directory at the file path makes readFile reject with EISDIR, whose
+      // raw message carries the realm-local absolute path.
+      const filePath = join(dir, 'history.jsonl');
+      await mkdir(filePath);
+      app = await createHttpServer({
+        registry: new VassalRegistry(),
+        signer: new Ed25519MemorySigner('zeus-rsk-test'),
+        internalToken: TOKEN,
+        metrics: new ConcurrencyMetrics(),
+        metricsHistory: new MetricsHistory(filePath),
+      });
+      const reply = await app.inject({ method: 'GET', url: '/api/metrics/history', headers: AUTH });
+      expect(reply.statusCode).toBe(500);
+      const body = await reply.json();
+      expect(body.error).toBe('metrics_history_unreadable');
+      expect(JSON.stringify(body)).not.toContain(filePath);
+    } finally {
+      await app?.close();
+      app = undefined;
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

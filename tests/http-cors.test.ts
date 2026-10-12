@@ -64,6 +64,11 @@ describe('optional CORS allow-list (deferred #34 方案 A, ZEUS_CORS_ORIGINS)', 
     expect(res.statusCode).toBe(204);
     expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173');
     expect(res.headers['access-control-allow-methods']).toContain('POST');
-    expect(res.headers['access-control-allow-headers']).toContain('Authorization');
+    const allowHeaders = String(res.headers['access-control-allow-headers'] ?? '');
+    expect(allowHeaders).toContain('Authorization');
+    // m-15: every request header the server actually reads must be preflight-approved,
+    // otherwise browser cross-origin callers carrying them fail the CORS preflight.
+    expect(allowHeaders.toLowerCase()).toContain('x-zeus-caller-card');
+    expect(allowHeaders.toLowerCase()).toContain('x-zeus-realm-actor');
   });
 });
