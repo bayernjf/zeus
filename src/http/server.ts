@@ -1016,14 +1016,20 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
 
-      // H2 (E6.3): one-click approve-and-resume — approve a task-input
-      // escalation with human-supplied parameters, then automatically re-dispatch
-      // that single branch and recompute the intent.
+      // H2 (E6.3): one-click approve-and-resume — resume a task-input branch
+      // with human-supplied parameters, then mark the escalation approved.
+      // M-02: resume must succeed before the approval is recorded, otherwise a
+      // failed resume leaves the escalation permanently approved with no retry.
+      // Execute-mode intents require a fresh execution delegation; the one
+      // carried by the original fan-out was consumed at first dispatch.
       app.post('/api/escalations/:id/approve-resume', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const { id } = request.params as { id: string };
-        const body = (request.body ?? {}) as { params?: unknown; note?: unknown };
+        const body = (request.body ?? {}) as { params?: unknown; note?: unknown; executionDelegation?: unknown };
         if (!body.params || typeof body.params !== 'object' || Array.isArray(body.params)) {
           return error(reply, 400, 'invalid_request', 'body.params object is required');
+        }
+        if (body.executionDelegation !== undefined && (typeof body.executionDelegation !== 'object' || body.executionDelegation === null || Array.isArray(body.executionDelegation))) {
+          return error(reply, 400, 'invalid_request', 'body.executionDelegation must be an execution delegation object');
         }
         const escalation = deps.oversight!.get(id);
         if (!escalation) return error(reply, 404, 'not_found', `unknown escalation: ${id}`);
@@ -1034,8 +1040,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!intentId) return error(reply, 409, 'conflict', `no stored intent branch matches escalation ${id}`);
         const note = typeof body.note === 'string' ? body.note : undefined;
         try {
+          const intent = await deps.orchestrator!.resumeBranch(
+            intentId,
+            escalation.vassal,
+            body.params as Record<string, unknown>,
+            body.executionDelegation as FanOutRequest['executionDelegation'],
+          );
           const approved = deps.oversight!.approve(id, note);
-          const intent = await deps.orchestrator!.resumeBranch(intentId, escalation.vassal, body.params as Record<string, unknown>);
           return { escalation: approved, intent };
         } catch (e) {
           return mapKernelError(reply, e);

@@ -305,6 +305,34 @@ describe('Orchestrator.resumeBranch', () => {
     expect(first.branches[0]!.runId).toBe(second.branches[0]!.runId);
     expect(port.calls).toHaveLength(2);
   });
+
+  it('merges concurrent resumes of different branches so neither result is lost (M-03)', async () => {
+    const port = makePort({
+      loom: async () => { await delay(15); return okResult('loom'); },
+      atlas: async () => { await delay(15); return okResult('atlas'); },
+    });
+    const orch = newOrchestrator(port, ['loom', 'atlas']);
+    await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'personal' });
+
+    const [fromLoom, fromAtlas] = await Promise.all([
+      orch.resumeBranch('X', 'loom', { note: 'a' }),
+      orch.resumeBranch('X', 'atlas', { note: 'b' }),
+    ]);
+
+    // Each resume recomputes the WHOLE intent. When two resumes race from the
+    // same pre-resume snapshot, last-write-wins lets each reply drop the other
+    // vassal's fresh branch (and one re-dispatch vanishes from stored state).
+    const resumeRunIds = (result: FanOutResult) =>
+      result.branches.filter(branch => branch.runId.includes(':resume')).map(branch => branch.runId).sort();
+    expect(resumeRunIds(fromLoom)).toEqual(['run-1:atlas:resume1', 'run-1:loom:resume1']);
+    expect(resumeRunIds(fromAtlas)).toEqual(['run-1:atlas:resume1', 'run-1:loom:resume1']);
+    expect(port.calls.map(call => call.runId)).toEqual([
+      'run-1:loom',
+      'run-1:atlas',
+      'run-1:loom:resume1',
+      'run-1:atlas:resume1',
+    ]);
+  });
 });
 
 describe('Orchestrator.cancelIntent', () => {
