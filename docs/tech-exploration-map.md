@@ -1,6 +1,6 @@
 # Agent 技术探索地图（Tech Exploration Map）
 
-> 状态：**现行（活文档 v0.17，2026-10-12）**。这是 Agent 方向技术议题的登记处与优先级视图。
+> 状态：**现行（活文档 v0.18，2026-10-12）**。这是 Agent 方向技术议题的登记处与优先级视图。
 > 用法：议题先在本文登记（含触发条件/状态）；成熟且相关者升级为 `docs/design-*.md` 或转入 [deferred-items.md](deferred-items.md)；实施进度只记 [handoff.md](../handoff.md)。
 > 状态：🔜 A 组优先（已裁决）｜📝 待触发 / 登记中｜✅ 已有设计/已落地。
 
@@ -38,7 +38,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 | S14 | 多模型异构调度 | 按子任务难度路由强/便宜/快/本地模型；**决策后端抽象层落此层（DecisionBackend：专用决策模型 Jev 与 LLM 均可接入，见 design-decision-backend.md）** | ✅ |
 | S15 | 流式体验工程 | 部分结果先呈现、流式合并、思考态 UX | ✅ **V1+V2 已落地**（2026-10-09/2026-10-10：[design-streaming.md](design-streaming.md) v0.2——V1 `src/orchestrator/stream-merge.ts` 不可变 StreamView + settledViewMatchesMerge，`tests/stream-merge.test.ts` 12 例，零新增审计值；**V2 已落地并核验：`src/dispatch/client.ts` working 增量帧窄回调（preview 不进决策路径）+ `src/orchestrator/progress.ts` ProgressHub 有界保留 + `src/http/server.ts` 全事件 SSE 透传，`tests/progress-hub.test.ts` / `tests/boot-streaming.test.ts`**）；V3 两个操作者面均已落地：监督台侧（2026-10-10，Active work 212：`web/supervisor` 作战室折叠 §3.3 视图 + 「预览·非结论」逐帧标注 + 落定即清除预览；实现证伪两处形状——`branch-ended` 需带任务态、H3 迟到订阅需先重放有界保留事件，两处已修且各有测试）；**TUI 侧（2026-10-12，Active work 220，design-streaming v0.4）：不引入 SSE 客户端，新增 `GET /api/active-intents` 只读投影端点——`Orchestrator.activeIntents()` 枚举在途意图（running / needs-driver），`src/orchestrator/progress-view.ts` 的 `streamViewFromProgress()` 把保留事件褶合成同构 StreamView，TUI 随既有轮询渲染 waiting/thinking/settled 与 N/M 就绪，路由 95 → 96；V3 全量完成**） |
 | S16 | 沙箱与代码执行 | 容器/microVM 隔离、资源配额 | 📝→✅ 设计稿已出（2026-10-09，[design-sandbox.md](design-sandbox.md) v0.1——执行体四级隔离（内置/本地 stdio 子进程/容器/远程）+ IsolationManifest 启动前 fail-closed 校验纯函数，stdio 子进程最小权限面为首要缺口；**V1 已落码（2026-10-10，Active work 179：`src/mcp/isolation.ts` classifyIsolation/validateIsolation fail-closed，`tests/isolation.test.ts` 15 例）+ 审计 3 值 connector-* 登记**；**V2 已落地（2026-10-10，Active work 185：`narrowSpawn` env 收窄 + `McpStdioClient` envAllowList/maxWallSeconds 接线）**；容器挂 V3 真机阶段） |
-| S17 | Agent 测试策略 | 契约测试、录制重放、mock LLM、混沌测试 | 📝→✅ 设计稿已出（2026-10-09，[design-agent-testing.md](design-agent-testing.md) v0.1——Recording 录制格式（脱敏后做夹具）+ 七类故障确定性混沌注入器 `withChaos` + 协议兼容矩阵，供单测/冒烟/S7 eval 共用；**V1 已落码（2026-10-10，Active work 182：`src/testing/recording.ts` Recording/redactRecording/recordingToFetch + `withChaos` 七类故障，`tests/testing.test.ts` 10 例）**；**V2 已落地（2026-10-10，Active work 186：协议兼容矩阵首版 `tests/protocol-compat-matrix.test.ts` 8 例）**） |
+| S17 | Agent 测试策略 | 契约测试、录制重放、mock LLM、混沌测试 | 📝→✅ 设计稿已出（2026-10-09，[design-agent-testing.md](design-agent-testing.md) v0.1——Recording 录制格式（脱敏后做夹具）+ 七类故障确定性混沌注入器 `withChaos` + 协议兼容矩阵，供单测/冒烟/S7 eval 共用；**V1 已落码（2026-10-10，Active work 182：`src/testing/recording.ts` Recording/redactRecording/recordingToFetch + `withChaos` 七类故障，`tests/testing.test.ts` 10 例）**；**V2 部分落地（设计稿 §5 V2 含三件）：协议兼容矩阵首版 `tests/protocol-compat-matrix.test.ts` 8 例（2026-10-10，Active work 186）；脚本化 DecisionBackend `src/testing/decision-backend.ts`（固定值/结果队列/按请求函数三态 + 延迟 + 折叠错误码 + 三方法调用记录，框架无关，8 例，四处手抄桩迁入，Active work 226）；手写夹具迁移 Recording/withChaos 仍留后**） |
 
 ## D. 待确认外部输入
 
@@ -62,6 +62,7 @@ Zeus 是**高并发、多 Agent 协同决策平台**（见 [prd.md](prd.md) E1�
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
+| v0.18 | 2026-10-12 | S17 V2 脚本化 DecisionBackend 落地 + V2 台账据实修正（Active work 226）：新增 `src/testing/decision-backend.ts`（`createScriptedDecisionBackend`：固定值/结果队列/按请求与调用序号函数三态脚本、可配延迟与折叠错误码、noul/choice/score 三方法调用记录，框架无关可被 scripts/*.mjs 复用），`tests/testing-decision-backend.test.ts` 8 例；orchestrator-judge/arbitration、boot-decision、http-intent-recognize 四处手抄决策桩迁入原语（用例数不变，去 throw 占位的 noul/score）。台账修正：此前 S17 行登记「V2 已落地」仅对应协议兼容矩阵（Active work 186），设计稿 §5 V2 实为三件（手写夹具迁移 / 脚本后端 / 兼容矩阵），据实改为 V2 部分落地、手写夹具迁移仍留后。基线 1770/158 → 1778/159（+8 测试 / +1 文件，零运行时行为变化）。 |
 | v0.17 | 2026-10-12 | S7 V3 PR 评论指标 diff 落地（Active work 221）：S7 行 V3 至此全部完成——`eval-run.mjs --comment-out` 渲染带固定幂等标记的评论体（分族指标表 + 基线 diff，退出码判定前写出），零依赖发布器 `scripts/ci-pr-comment.mjs` 按标记 GET→PATCH/POST 幂等 upsert（非 PR 事件 / 无令牌 / API 失败均 warn + exit 0，不翻转门禁），ci.yml eval-gate job 加 `if: always()` 发布步；脚本 17 → 18 个，基线 1752/155 → 1758/156（+6 测试 / +1 文件），design-evals v0.6 → v0.7。 |
 | v0.16 | 2026-10-12 | S15 V3 TUI 侧落地（Active work 220）：S15 行 V3 由"半落地"改为"全量完成"——TUI 不引入 SSE 客户端，改由新端点 `GET /api/active-intents` 轮询只读 StreamView 投影（`Orchestrator.activeIntents()` + `src/orchestrator/progress-view.ts` 纯函数，不经公共出口），渲染在途意图 waiting/thinking/settled 与 N/M 就绪、预览带「预览·非结论」标注；路由 95 → 96（4 公开 + 92 bearer），基线 1733/152 → 1752/155（+19 测试 / +3 文件），冒烟 47/47，design-streaming v0.3 → v0.4。 |
 | v0.15 | 2026-10-10 | S15 V3 监督台侧落地（Active work 212）：S15 行 V3 由"待后续分期"改为"半落地"——作战室思考态视图（逐帧「预览·非结论」、已就绪 N/M、落定清除预览），并补两处被证伪的形状（`branch-ended` 携带任务态、H3 迟到订阅先重放有界保留事件），基线 1676/152 → 1679/152（`http-sse` +2、`boot-streaming` +1），TUI 侧视图模型仍待后续；本台账状态行原停 v0.13 而演进日志已到 v0.14，一并对齐为 v0.15。 |
