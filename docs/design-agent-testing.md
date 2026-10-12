@@ -1,6 +1,7 @@
 # 设计稿：Agent 测试策略——契约测试、录制重放、mock 与混沌注入（tech map S17）
 
-- 状态：**现行 v0.2（2026-10-12）**：V1（Recording/withChaos 纯层）与 V2 两件已落码——协议兼容矩阵（Active work 186）、脚本化 DecisionBackend（Active work 226）；V2 剩余手写夹具迁移 Recording/withChaos 仍留后，V3 录制器/V4 时序回放未启动。本文把现有手写夹具沉淀为标准录制/重放格式，并把故障注入做成确定性纯函数包装器。
+- 状态：**现行 v0.3（2026-10-12）**：V1（Recording/withChaos 纯层）与 V2 两件已落码——协议兼容矩阵（Active work 186）、脚本化 DecisionBackend（Active work 226）；**V2 原列的「手写夹具迁移」经 2026-10-12 逐项盘点判定为无同层目标、不做硬迁（见 §5 该条勘误）**，真实消费随 V3 录制器到达；V3 录制器/V4 时序回放未启动。本文把现有手写夹具沉淀为标准录制/重放格式，并把故障注入做成确定性纯函数包装器。
+- 演进：v0.3（2026-10-12，Active work 227）逐项盘点 V2「手写夹具迁移」后勘误：三类点名夹具（boot-oversight-audit/watch/diversion）均无同层迁移目标——fetchImpl 是传输层（V3 范畴）、DispatchPort 手写失败端口的 audit decision 用例专有、Recording/withChaos 全库零消费；结论改为「不做硬迁，消费面随 V3 录制器自然到达」，基线不变 1778/159。
 - 演进：v0.2（2026-10-12，Active work 226）V2 脚本化 DecisionBackend 落地（`src/testing/decision-backend.ts`，8 例，四处手抄桩迁入），并修正 tech map「V2 已落地」的过度声明（V2 实为三件，手写夹具迁移仍留后）；基线 1770/158 → 1778/159。
 - 演进：v0.1（2026-10-09）首版——现状盘点（注入缝与脚本化夹具已广泛存在、缺录制重放标准格式与混沌注入器）+ 测试金字塔 + Recording 格式与 `withChaos` 纯函数草案 + 分期。
 - 关联：tech map S17（契约测试、录制重放、mock LLM、混沌测试；契约测试已有实践）；design-vassal-protocol.md / design-http-transport.md（A2A 契约是兼容性测试对象）；design-evals.md（S7，录制重放为 eval 供给世界夹具）；design-long-running.md（S13，崩溃/断连恢复测试需要混沌注入）；design-backpressure.md（慢响应/饱和场景）；design-observability.md（S6，录制帧可同时生成 trace 期望）；`src/dispatch/client.ts`（SSE 消费，故障注入主战场）、`src/mcp/stdio-client.ts`（spawnImpl 注入缝先例）、`scripts/smoke-core.mjs`、`scripts/acceptance-*.mjs`、`tests/boot-oversight-audit.test.ts`（vassalFetch 脚本化夹具先例）。
