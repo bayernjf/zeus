@@ -1088,9 +1088,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
               ? { executionDelegation: request.executionDelegation as ExecutionDelegation }
               : {}),
           });
-          // A refusal is not a fire: the tick reports it so the operator can see
-          // that the condition held and nothing was dispatched.
-          if (result.refused) return { ok: false, reason: result.refused.reason };
+          // M-01: a refusal has been recorded at this boundary under the
+          // deterministic intent id, so replaying that id can only ever return
+          // the same recorded failure. The refused marker tells the tick to
+          // advance the fire sequence instead of pinning it forever; a throw
+          // carries no marker and stays a same-sequence replay (delivery
+          // unknown).
+          if (result.refused) return { ok: false, reason: result.refused.reason, refused: true };
           return { ok: true, ...(result.replayed ? { replayed: true } : {}) };
         } finally {
           // The child ticket's one dispatch has settled (fired, refused, or

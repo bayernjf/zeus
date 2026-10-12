@@ -46,7 +46,7 @@ async function harness() {
     watches,
     runWatchTick: async () => {
       ticked += 1;
-      return { evaluated: ticked, fired: [], unavailable: [], autoDisabled: [] };
+      return { evaluated: ticked, fired: [], refused: [], unavailable: [], autoDisabled: [] };
     },
     dispatchAudit: (entry: AuditEntry) => void dispatchAudit.push(entry),
   } as Parameters<typeof createHttpServer>[0]);
