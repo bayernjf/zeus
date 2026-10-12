@@ -3,8 +3,8 @@ import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, FanOutResult, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
-import { DecisionBackendFailure } from '../src/decision/types.js';
-import type { ChoiceResult, DecisionBackend, NoulResult, ScoreResult } from '../src/decision/types.js';
+import type { ChoiceResult } from '../src/decision/types.js';
+import { createScriptedDecisionBackend } from '../src/testing/decision-backend.js';
 import { replayDecision } from '../src/orchestrator/replay.js';
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
@@ -38,29 +38,10 @@ function lookupFor(names: string[]): TargetLookup {
   return { findBySkill: () => names.map(name => ({ name })) };
 }
 
-type MockBackend = DecisionBackend & { choiceCalls: number };
-
-function mockBackend(
+const mockBackend = (
   kind: 'decision-model' | 'llm',
   choice: (req: { options: string[] }) => ChoiceResult | Promise<ChoiceResult>
-): MockBackend {
-  const backend: MockBackend = {
-    choiceCalls: 0,
-    kind,
-    model: kind === 'llm' ? 'mock-llm' : 'mock-jev',
-    async noul(): Promise<NoulResult> {
-      throw new Error('noul should not be called');
-    },
-    async choice(req) {
-      backend.choiceCalls++;
-      return choice(req);
-    },
-    async score(): Promise<ScoreResult> {
-      throw new Error('score should not be called');
-    },
-  };
-  return backend;
-}
+) => createScriptedDecisionBackend({ kind, model: kind === 'llm' ? 'mock-llm' : 'mock-jev', choice: (req) => choice(req) });
 
 const choiceResult = (choice: string, confidence: number, calibrated: boolean): ChoiceResult => ({
   choice,
@@ -98,7 +79,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     expect(result.status).toBe('completed');
     expect(result.decision.conclusion).toBe('approve');
     expect(result.conflicts).toEqual([]);
-    expect(backend.choiceCalls).toBe(1);
+    expect(backend.calls.choice).toHaveLength(1);
     expect(escalated).toHaveLength(0);
     expect(result.judgeReview).toMatchObject({
       judged: true,
@@ -177,9 +158,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
   });
 
   it('survives a judge backend failure without throwing and keeps the rule conclusion', async () => {
-    const backend = mockBackend('decision-model', () => {
-      throw new DecisionBackendFailure('timeout', 'choice timed out');
-    });
+    const backend = createScriptedDecisionBackend({ failWith: 'timeout' });
     const orch = new Orchestrator(lookupFor(MAJORITY_NAMES), majorityPort(), {
       decisionBackend: backend,
       judgeEnabled: true,
@@ -209,7 +188,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     });
 
     expect(result.status).toBe('completed');
-    expect(backend.choiceCalls).toBe(0);
+    expect(backend.calls.choice).toHaveLength(0);
     expect(result.judgeReview).toMatchObject({ judged: false, reason: 'single-stance' });
   });
 
@@ -224,7 +203,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
 
     expect(result.status).toBe('needs-driver');
-    expect(backend.choiceCalls).toBe(1); // arbitration only
+    expect(backend.calls.choice).toHaveLength(1); // arbitration only
     expect(result.judgeReview).toMatchObject({ judged: false, reason: 'rule-inconclusive' });
   });
 
@@ -240,7 +219,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
 
     expect(result.status).toBe('completed');
     expect(result.backendArbitration?.concluded).toBe(true);
-    expect(backend.choiceCalls).toBe(1); // arbitration, no second call for judging
+    expect(backend.calls.choice).toHaveLength(1); // arbitration, no second call for judging
     expect(result.judgeReview).toMatchObject({ judged: false, reason: 'rule-inconclusive' });
   });
 
@@ -266,7 +245,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
 
     expect(result.status).toBe('completed');
-    expect(backend.choiceCalls).toBe(0);
+    expect(backend.calls.choice).toHaveLength(0);
     expect(result.judgeReview).toBeUndefined();
   });
 
@@ -282,7 +261,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
 
     const resumed = await orch.resumeBranch('X', 'prhelper', { note: 'redo' });
     expect(resumed.status).toBe('completed');
-    expect(backend.choiceCalls).toBe(2);
+    expect(backend.calls.choice).toHaveLength(2);
     expect(resumed.judgeReview?.judged).toBe(true);
   });
 

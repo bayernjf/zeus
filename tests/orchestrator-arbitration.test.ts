@@ -3,8 +3,8 @@ import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, FanOutResult, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
-import { DecisionBackendFailure } from '../src/decision/types.js';
-import type { ChoiceResult, DecisionBackend, NoulResult, ScoreResult } from '../src/decision/types.js';
+import { createScriptedDecisionBackend } from '../src/testing/decision-backend.js';
+import type { ChoiceResult } from '../src/decision/types.js';
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
@@ -37,29 +37,10 @@ function lookupFor(names: string[]): TargetLookup {
   return { findBySkill: () => names.map(name => ({ name })) };
 }
 
-type MockBackend = DecisionBackend & { choiceCalls: number };
-
-function mockBackend(
+const mockBackend = (
   kind: 'decision-model' | 'llm',
   choice: (req: { options: string[] }) => ChoiceResult | Promise<ChoiceResult>
-): MockBackend {
-  const backend: MockBackend = {
-    choiceCalls: 0,
-    kind,
-    model: kind === 'llm' ? 'mock-llm' : 'mock-jev',
-    async noul(): Promise<NoulResult> {
-      throw new Error('noul should not be called');
-    },
-    async choice(req) {
-      backend.choiceCalls++;
-      return choice(req);
-    },
-    async score(): Promise<ScoreResult> {
-      throw new Error('score should not be called');
-    },
-  };
-  return backend;
-}
+) => createScriptedDecisionBackend({ kind, model: kind === 'llm' ? 'mock-llm' : 'mock-jev', choice: (req) => choice(req) });
 
 const calibratedHigh = (): ChoiceResult => ({
   choice: 'approve',
@@ -104,7 +85,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
     expect(result.decision.conclusion).toBe('approve');
     expect(result.conflicts).toEqual([]);
     expect(result.decision.margin).toEqual({ winner: 'approve', winnerCount: 1, total: 2 });
-    expect(backend.choiceCalls).toBe(1);
+    expect(backend.calls.choice).toHaveLength(1);
     expect(escalated).toHaveLength(0);
     expect(result.backendArbitration).toMatchObject({
       concluded: true,
@@ -165,9 +146,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
   });
 
   it('survives a backend failure: stays needs-driver and records the error without throwing', async () => {
-    const backend = mockBackend('decision-model', () => {
-      throw new DecisionBackendFailure('timeout', 'choice timed out');
-    });
+    const backend = createScriptedDecisionBackend({ failWith: 'timeout' });
     const escalated: FanOutResult[] = [];
     const orch = new Orchestrator(lookupFor(['loom', 'atlas']), splitPort(), {
       decisionBackend: backend,

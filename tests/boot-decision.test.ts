@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bootKernel, resolveDecisionConfig } from '../src/state/boot.js';
-import type { ChoiceResult, DecisionBackend } from '../src/decision/types.js';
+import { createScriptedDecisionBackend } from '../src/testing/decision-backend.js';
 
 // ---------------------------------------------------------------------------
 // resolveDecisionConfig: pure env -> backend/judge wiring
@@ -132,30 +132,16 @@ function vassalFetch(stances: Record<string, 'approve' | 'reject'>): typeof fetc
   }) as typeof fetch;
 }
 
-function mockBackend(choice: 'approve' | 'reject', confidence = 0.92): { backend: DecisionBackend; choiceCalls: unknown[] } {
-  const choiceCalls: unknown[] = [];
-  const result: ChoiceResult = {
+function mockBackend(choice: 'approve' | 'reject', confidence = 0.92) {
+  const result = {
     choice,
     probabilities: choice === 'approve' ? { approve: confidence, reject: 1 - confidence } : { approve: 1 - confidence, reject: confidence },
     confidence,
     calibrated: true,
     decisionAt: '2026-09-24T00:00:00.000Z',
   };
-  const backend: DecisionBackend = {
-    kind: 'decision-model',
-    model: 'mock-jev',
-    async noul() {
-      throw new Error('noul not used in boot wiring');
-    },
-    async choice(input) {
-      choiceCalls.push(input);
-      return result;
-    },
-    async score() {
-      throw new Error('score not used in boot wiring');
-    },
-  };
-  return { backend, choiceCalls };
+  const backend = createScriptedDecisionBackend({ model: 'mock-jev', choice: result });
+  return { backend, choiceCalls: backend.calls.choice };
 }
 
 const seeds = (names: string[]) => names.map(n => `http://127.0.0.1/${n}/api/a2a/agent-card`);
