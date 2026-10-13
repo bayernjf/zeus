@@ -756,11 +756,24 @@ describe('documentation consistency', () => {
       unscoped += once.bareName;
       findings.push(...once.findings.map(finding => `${doc}: ${finding}`));
     }
+    // The read-only archive holds frozen ledger text: its citations are not held
+    // to resolving (the code they pointed at has moved on, which is the point of
+    // archiving), but its bare-basename count belongs in the excluded population.
+    // Without it this number would silently fall every time text rotates out, and
+    // the floor would then measure the rotation policy instead of the exclusion.
+    const archivedBareName = citationFindings(
+      'handoff-archive.md',
+      readFileSync('handoff-archive.md', 'utf8'),
+      read,
+    ).bareName;
     expect(resolved, 'the citation population collapsed, so this check would pass by finding nothing').toBeGreaterThan(250);
     expect(tokened, 'the verification-word population collapsed').toBeGreaterThan(70);
     // Ledgers still cite by bare basename (three files are named registry.ts). They are
     // counted, never guessed at, so that "0 findings" cannot be read as "all covered".
-    expect(unscoped, 'bare-basename citations: excluded by design, counted so it stays visible').toBeGreaterThan(100);
+    expect(
+      unscoped + archivedBareName,
+      `bare-basename citations: excluded by design, counted so it stays visible (live ledgers ${unscoped} + read-only archive ${archivedBareName})`,
+    ).toBeGreaterThan(100);
     expect(findings, `code citations that do not resolve, or a half-adopted contract:\n${findings.join('\n')}`).toEqual([]);
   });
 
