@@ -8,10 +8,13 @@
  * may stand in it (`queueLimit`; further arrivals are refused with
  * QueueFullError).
  *
- * There is deliberately no wait timeout here: a branch that has been handed a
- * slot waits for it, and bounding that wait is the caller's job (the branch
- * dispatch timeout). `queueLimit` is the last global backstop against an
- * unbounded line, not a per-waiter deadline.
+ * A queued waiter can be released from the line in two opt-in ways: an
+ * AbortSignal passed to `acquire` rejects the wait with
+ * QueueWaitCancelledError, and a `timeoutMs` deadline rejects it with
+ * QueueWaitTimeoutError. A released waiter is removed from the FIFO line and
+ * never consumes a later slot. Without those options the wait is unbounded;
+ * `queueLimit` remains the last global backstop against an unbounded line, not
+ * a per-waiter deadline.
  *
  * One semaphore per Orchestrator, which is per process in the long-running
  * assembly - so the cap bounds in-flight branches across all intents, which is
@@ -19,6 +22,13 @@
  */
 
 export type SlotRelease = () => void;
+
+export interface AcquireOptions {
+  /** Aborting while queued rejects the wait with QueueWaitCancelledError. */
+  signal?: AbortSignal;
+  /** Reject the wait with QueueWaitTimeoutError after this many milliseconds. */
+  timeoutMs?: number;
+}
 
 /** The gate is at capacity and no queue room is left. */
 export class QueueFullError extends Error {
@@ -30,12 +40,32 @@ export class QueueFullError extends Error {
   }
 }
 
+/** The wait for a slot was cancelled via AbortSignal before a lease was granted. */
+export class QueueWaitCancelledError extends Error {
+  constructor() {
+    super('branch slot wait cancelled before a lease was granted');
+    this.name = 'QueueWaitCancelledError';
+  }
+}
+
+/** The wait for a slot outlasted its caller-supplied deadline. */
+export class QueueWaitTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`timed out waiting for a branch slot after ${timeoutMs}ms`);
+    this.name = 'QueueWaitTimeoutError';
+  }
+}
+
+interface Waiter {
+  resolve: (release: SlotRelease) => void;
+  reject: (error: Error) => void;
+  settled: boolean;
+  cleanup: () => void;
+}
+
 export class Semaphore {
   private running = 0;
-  private readonly waiters: Array<{
-    resolve: (release: SlotRelease) => void;
-    reject: (error: Error) => void;
-  }> = [];
+  private readonly waiters: Waiter[] = [];
 
   constructor(
     private readonly max: number,
@@ -63,7 +93,11 @@ export class Semaphore {
   }
 
   /** Resolve with a release callback, or reject when the wait line is full. */
-  acquire(): Promise<SlotRelease> {
+  acquire(options: AcquireOptions = {}): Promise<SlotRelease> {
+    const { signal, timeoutMs } = options;
+    if (signal?.aborted) {
+      return Promise.reject(new QueueWaitCancelledError());
+    }
     if (this.running < this.max) {
       this.running += 1;
       return Promise.resolve(this.lease());
@@ -71,7 +105,33 @@ export class Semaphore {
     if (this.waiters.length >= this.queueLimit) {
       return Promise.reject(new QueueFullError(this.max, this.queueLimit));
     }
-    return new Promise<SlotRelease>((resolve, reject) => this.waiters.push({ resolve, reject }));
+    return new Promise<SlotRelease>((resolve, reject) => {
+      const waiter: Waiter = { resolve, reject, settled: false, cleanup: () => {} };
+
+      const releaseFromLine = (error: Error): void => {
+        if (waiter.settled) return;
+        waiter.settled = true;
+        waiter.cleanup();
+        const index = this.waiters.indexOf(waiter);
+        if (index !== -1) this.waiters.splice(index, 1);
+        reject(error);
+      };
+
+      const onAbort = (): void => releaseFromLine(new QueueWaitCancelledError());
+      signal?.addEventListener('abort', onAbort, { once: true });
+
+      let timer: NodeJS.Timeout | undefined;
+      if (timeoutMs !== undefined) {
+        timer = setTimeout(() => releaseFromLine(new QueueWaitTimeoutError(timeoutMs)), timeoutMs);
+        timer.unref();
+      }
+      waiter.cleanup = () => {
+        signal?.removeEventListener('abort', onAbort);
+        if (timer !== undefined) clearTimeout(timer);
+      };
+
+      this.waiters.push(waiter);
+    });
   }
 
   private lease(): SlotRelease {
@@ -87,6 +147,8 @@ export class Semaphore {
   private handOff(): void {
     while (this.running < this.max && this.waiters.length > 0) {
       const next = this.waiters.shift()!;
+      next.settled = true;
+      next.cleanup();
       this.running += 1;
       next.resolve(this.lease());
     }

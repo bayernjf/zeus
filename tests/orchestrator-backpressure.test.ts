@@ -181,6 +181,28 @@ describe('E1.5 bounded fan-out', () => {
     expect((await resumed).branches.find(b => b.vassal === 'a')?.ok).toBe(true);
   });
 
+  it('cancels branches waiting in the queue without ever dispatching them', async () => {
+    const { gated, metrics, orchestrator } = build(['a', 'b', 'c'], { maxConcurrentBranches: 1 });
+    const running = orchestrator.fanOut(request);
+    await flush();
+    expect(gated.started).toEqual(['a']);
+
+    const cancelResult = await orchestrator.cancelIntent('intent-1');
+    expect(cancelResult.results.map(r => r.vassal).sort()).toEqual(['a', 'b', 'c']);
+    await flush();
+    // b and c were still queued: the abort must reject their wait, not reserve
+    // them a slot for a dispatch after a finishes.
+    expect(gated.started).toEqual(['a']);
+    expect(metrics.snapshot().queueDepth).toBe(0);
+
+    gated.releaseOne();
+    const result = await running;
+    const byName = new Map(result.branches.map(b => [b.vassal, b]));
+    expect(byName.get('b')).toMatchObject({ ok: false, state: 'canceled', reason: 'canceled by the driver' });
+    expect(byName.get('c')).toMatchObject({ ok: false, state: 'canceled', reason: 'canceled by the driver' });
+    expect(gated.started).toEqual(['a']);
+  });
+
   // A-10: the lease used to sit outside the try that guarded the run itself, so
   // a throw from the start-of-branch bookkeeping (metrics, event emit, or the
   // onDiverted hook — boot wires onProgress to SSE broadcast + audit write +

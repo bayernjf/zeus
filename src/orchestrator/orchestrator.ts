@@ -12,7 +12,7 @@ import { judgeDecision } from './judge.js';
 import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
-import { Semaphore, type SlotRelease } from './semaphore.js';
+import { QueueWaitCancelledError, Semaphore, type SlotRelease } from './semaphore.js';
 import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
 import { recoverChain, selectCandidates, type RecoveryAction } from './discovery.js';
 import {
@@ -1256,9 +1256,22 @@ export class Orchestrator {
     // queue depth from a permanent 0 into a real signal.
     let release: SlotRelease;
     try {
-      release = await this.acquireSlot();
+      release = await this.acquireSlot(signal);
     } catch (error) {
       metrics?.dequeue();
+      // design-fan-out §7: a branch cancelled while still queued never reached
+      // a vassal; settle it as `canceled` (same shape as an aborted stream),
+      // not as a generic gate refusal/failure.
+      if (error instanceof QueueWaitCancelledError) {
+        return {
+          vassal,
+          runId: branchRunId,
+          ok: false,
+          events: [],
+          state: 'canceled',
+          reason: 'canceled by the driver',
+        };
+      }
       const reason = error instanceof Error ? error.message : 'branch refused';
       // #9: when the target was kept (saturated, no alternate) and still refused
       // by the global gate, attach the tried-candidates audit (design §4.5).
@@ -1332,8 +1345,8 @@ export class Orchestrator {
   }
 
   /** Immediately-resolved lease when no cap is configured. */
-  private acquireSlot(): Promise<SlotRelease> {
-    return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
+  private acquireSlot(signal?: AbortSignal): Promise<SlotRelease> {
+    return this.slots ? this.slots.acquire(signal ? { signal } : {}) : Promise.resolve(() => {});
   }
 
   /**
