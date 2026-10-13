@@ -1,6 +1,6 @@
 # Zeus MCP 集成说明（v0.2）
 
-> 状态：**现行（v0.2，2026-10-04）**。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:48-48 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
+> 状态：**现行（v0.2，2026-10-04）**。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:61-61 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
 >
 > **本文不含未取证的说法。** 标 **实测** 的条目来自**两批**真进程捕获：**§1 服务端面**出自 2026-09-28（`dist/realm/mcp-stdio.js`，HEAD `44b100b`，Node 22.23.1 与 20.20.2 各跑一遍，归一化 `realmId` / 时间戳 / `contentDigest` 后两份输出逐字节相同）；**§2 客户端面**出自 2026-10-01（真实 stdio 上游 `dist/realm/mcp-stdio.js` 与第三方 work-learn stdio server 各完成一次实连，见该节两条记录）。标 **代码级** 的只读了实现，没有跑；标 **未验证** 的明确待验。复跑方法见 §4。
 >
@@ -239,26 +239,26 @@ curl -s -X POST localhost:8787/api/connectors -H "Authorization: Bearer $TOKEN" 
 
 ### 2.1 权限词汇是封闭的，而且比工具名严格
 
-`permissions` 走 Skill 的同一套校验（`src/mcp/connectors.ts:41-41 #validatePermissionClaims` → `src/skills/validate-spec.ts:18-18 #PERMISSION_RE` 与 `src/skills/validate-spec.ts:27-27 #MCP_TOOL_NAME_RE`，判定函数在 `src/skills/validate-spec.ts:35-35 #permissionClaimIssue`）：
+`permissions` 走 Skill 的同一套校验（`src/mcp/connectors.ts:48-48 #validatePermissionClaims` → `src/skills/validate-spec.ts:18-18 #PERMISSION_RE` 与 `src/skills/validate-spec.ts:27-27 #MCP_TOOL_NAME_RE`，判定函数在 `src/skills/validate-spec.ts:35-35 #permissionClaimIssue`）：
 
 - 允许的前缀只有五个：`realm` / `execute` / `network` / `credential` / `mcp`。其他一律在**声明那一刻**被拒（库内 `validatePermissionClaims` 已实测；经 HTTP 面表现为 400，`src/http/server.ts:2803-2790 #`），消息形如 `unknown permission scope 'bogus'; allowed: realm, execute, network, credential, mcp`。
-- 工具级边界的写法是 `mcp:<工具名>`；**裸 `mcp` 等于全部放行**（判定在 `src/mcp/connectors.ts:286-286 #withinDeclaredBoundary`：`claim === \`mcp:${name}\` || claim === 'mcp'`）。
+- 工具级边界的写法是 `mcp:<工具名>`；**裸 `mcp` 等于全部放行**（判定在 `src/mcp/connectors.ts:328-328 #withinDeclaredBoundary`：`claim === \`mcp:${name}\` || claim === 'mcp'`）。
 - **非 `mcp` 作用域**（realm/execute/network/credential）仍走封闭词法 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$`；**`mcp:<工具名>` 则引用上游握手清单里的原样字符串**（deferred **#30** 已修复，2026-09-30）：`mcp:search`、`mcp:search_docs`、`mcp:Search`、`mcp:notion.search`、`mcp:A1.b-2_c` 均合法，允许字母/数字/`.`/`_`/`:`/`-`；仅 `mcp:`（空名）、带空白或控制字符被判 invalid。名字与上游 `tools/list` **精确匹配、大小写敏感**。
 - **上游改名会静默失权**：声明了但握手清单里没有的 `mcp:<工具名>` 不会报错（声明可能早于连接），连接时会产生一条 `boundary-unmatched` 连接器审计事件（`granted tools not discovered upstream: …`），据此发现改名/下线；该工具不会出现在裁剪后的能力清单里，调用即拒。
 
 ### 2.2 裁剪发生在哪一层
 
-- 握手回来的能力清单，**三类（tools / resources / prompts）都按声明裁剪**：`src/mcp/connectors.ts:291-291 #narrowCapabilities`，连接时在 `src/mcp/connectors.ts:150-150 #narrowCapabilities` 应用、状态恢复导入时再收一次（`src/mcp/connectors.ts:258-258 #narrowCapabilities`）；断言在 `tests/mcp-connectors.test.ts:261-261 #bounds`（三类同边界）与 `tests/mcp-connectors.test.ts:288-288 #narrows`（导入后重收）。因此"声明里没有的 resource 就看不见"**这句现在是成立的**——但 2026-09-28 写下这行时**不成立**（当时只有 tools 被裁），是 A-09 在 2026-10-01 把三类统一到同一条边界；本文那一版留下的过期陈述在本轮合并 B-39 的逐锚点复读中被改掉（登记为审计 B-41）。
-- 调用侧的闸在两处：不在裁剪后清单里的工具名直接拒（`src/mcp/connectors.ts:197-197 #expose`，测试锚点 `tests/mcp-connectors.test.ts:176-176 #refuses`）。上游没 advertised 的东西调不到，被边界裁掉的东西也调不到。
-- 上游不可达 / 握手失败 = **502 `bad_gateway`**，并写一条 `refused` 审计（错误分类 `src/http/server.ts:2807-2786 #`、审计落点 `src/mcp/connectors.ts:130-130 #refused`）；未知 id → 404（`src/http/server.ts:1837-1816 #`）；重复声明或已吊销 → 409；参数不合法 → 400。
+- 握手回来的能力清单，**三类（tools / resources / prompts）都按声明裁剪**：`src/mcp/connectors.ts:333-333 #narrowCapabilities`，连接时在 `src/mcp/connectors.ts:176-176 #narrowCapabilities` 应用、状态恢复导入时再收一次（`src/mcp/connectors.ts:300-300 #narrowCapabilities`）；断言在 `tests/mcp-connectors.test.ts:369-369 #bounds`（三类同边界）与 `tests/mcp-connectors.test.ts:396-396 #narrows`（导入后重收）。因此"声明里没有的 resource 就看不见"**这句现在是成立的**——但 2026-09-28 写下这行时**不成立**（当时只有 tools 被裁），是 A-09 在 2026-10-01 把三类统一到同一条边界；本文那一版留下的过期陈述在本轮合并 B-39 的逐锚点复读中被改掉（登记为审计 B-41）。
+- 调用侧的闸在两处：不在裁剪后清单里的工具名直接拒（`src/mcp/connectors.ts:240-240 #expose`，测试锚点 `tests/mcp-connectors.test.ts:179-179 #refuses`）。上游没 advertised 的东西调不到，被边界裁掉的东西也调不到。
+- 上游不可达 / 握手失败 = **502 `bad_gateway`**，并写一条 `refused` 审计（错误分类 `src/http/server.ts:2807-2786 #`、审计落点 `src/mcp/connectors.ts:156-156 #refused`）；未知 id → 404（`src/http/server.ts:1837-1816 #`）；重复声明或已吊销 → 409；参数不合法 → 400。
 
 ### 2.3 凭证的可见性
 
-`token` 只在 `POST /api/connectors` 那一瞬间进入，**任何响应（含 list / get / connect / revoke）都只报 `hasToken: true|false`，绝不回显**（脱敏在 `src/http/server.ts:1830-1809 #`；断言在 `tests/http-connectors.test.ts`）。审计记录同样只有 `{at, connectorId, action, detail}` 四个字段，没有 token 位（代码级：`src/mcp/connectors.ts:14-14 #ConnectorAuditEntry`）。
+`token` 只在 `POST /api/connectors` 那一瞬间进入，**任何响应（含 list / get / connect / revoke）都只报 `hasToken: true|false`，绝不回显**（脱敏在 `src/http/server.ts:1830-1809 #`；断言在 `tests/http-connectors.test.ts`）。审计记录同样只有 `{at, connectorId, action, detail}` 四个字段，没有 token 位（代码级：`src/mcp/connectors.ts:15-15 #ConnectorAuditEntry`）。
 
 ### 2.4 客户端侧的协议版本
 
-Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/client.ts:12-12 #PROTOCOL_VERSION`），不做多版本协商；响应接受两种帧（单一 JSON body 或 `text/event-stream` 的 `data:` 帧，实测覆盖在 `tests/mcp-connectors.test.ts:86-86 #accepts`）。服务端未实现的能力（tools/resources/prompts 任一类）列表失败即视为空清单，不阻断握手（`src/mcp/client.ts:119-119 #safeList`）。
+Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/client.ts:12-12 #PROTOCOL_VERSION`），不做多版本协商；响应接受两种帧（单一 JSON body 或 `text/event-stream` 的 `data:` 帧，实测覆盖在 `tests/mcp-connectors.test.ts:89-89 #accepts`）。服务端未实现的能力（tools/resources/prompts 任一类）列表失败即视为空清单，不阻断握手（`src/mcp/client.ts:119-119 #safeList`）。
 
 ### 2.5 最小权限分组样板：work-learn 的 21 个工具
 

@@ -16,7 +16,16 @@ export type ConnectorStatus = 'declared' | 'connected' | 'revoked';
  */
 export type ConnectorTransport =
   | { type?: 'http'; endpoint: string; token?: string }
-  | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> };
+  | {
+      type: 'stdio';
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      /** S16 V2 (design-sandbox §5): spawn env allow-list. */
+      envAllowList?: string[];
+      /** S16 V2: wall-clock bound in seconds for the spawned process. */
+      maxWallSeconds?: number;
+    };
 
 export interface ConnectorDeclaration {
   id: string;
@@ -30,6 +39,10 @@ export interface ConnectorDeclaration {
   args?: string[];
   /** Extra environment variables for the spawned process (merged over process.env). */
   env?: Record<string, string>;
+  /** S16 V2 (design-sandbox §5): the spawned child inherits only these variables (stdio only). */
+  envAllowList?: string[];
+  /** S16 V2: wall-clock bound in seconds for the spawned child (stdio only). */
+  maxWallSeconds?: number;
   /** Minimum rights the connector may exercise; closed Skill vocabulary. */
   permissions: string[];
   /** Optional bearer token presented to the connected system. */

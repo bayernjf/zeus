@@ -741,8 +741,8 @@ describe('documentation consistency', () => {
     // `[\w\-]+\.ts` a citation to `tests/x.test.ts:N` matched nothing, so five anchors
     // went unseen until the two patterns were diffed against each other. Pinned here so
     // the same class of miss cannot be reintroduced by editing the pattern again.
-    expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:261 #bounds')).findings, 'a dotted basename must be seen').toEqual([]);
-    expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:261 #NoSuchWord')).findings).toEqual([expect.stringContaining('没有校验词')]);
+    expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:369 #bounds')).findings, 'a dotted basename must be seen').toEqual([]);
+    expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:369 #NoSuchWord')).findings).toEqual([expect.stringContaining('没有校验词')]);
     expect(scan('docs/terminology.md', cite('tests/mcp-connectors.test.ts:99999')).findings).toEqual([expect.stringContaining('越界')]);
 
     let resolved = 0;

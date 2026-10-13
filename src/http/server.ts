@@ -2019,6 +2019,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const body = (request.body ?? {}) as {
           id?: unknown; name?: unknown; endpoint?: unknown; permissions?: unknown; token?: unknown;
           command?: unknown; args?: unknown; env?: unknown;
+          envAllowList?: unknown; maxWallSeconds?: unknown;
         };
         if (!isNonEmptyString(body.id)) {
           return error(reply, 400, 'invalid_request', 'body.id is required');
@@ -2047,6 +2048,16 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           && Object.entries(body.env).every(([k, v]) => typeof k === 'string' && typeof v === 'string'))) {
           return error(reply, 400, 'invalid_request', 'body.env must be an object of string values');
         }
+        if (body.envAllowList !== undefined
+          && !(Array.isArray(body.envAllowList)
+            && body.envAllowList.every(v => typeof v === 'string' && v.trim().length > 0))) {
+          return error(reply, 400, 'invalid_request', 'body.envAllowList must be an array of non-empty strings');
+        }
+        if (body.maxWallSeconds !== undefined
+          && !(typeof body.maxWallSeconds === 'number'
+            && Number.isFinite(body.maxWallSeconds) && body.maxWallSeconds > 0)) {
+          return error(reply, 400, 'invalid_request', 'body.maxWallSeconds must be a finite positive number');
+        }
         try {
           const record = deps.connectorRegistry!.declare({
             id: body.id,
@@ -2057,6 +2068,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
                   command: body.command as string,
                   ...(Array.isArray(body.args) ? { args: body.args as string[] } : {}),
                   ...(body.env ? { env: body.env as Record<string, string> } : {}),
+                  ...(Array.isArray(body.envAllowList) ? { envAllowList: body.envAllowList as string[] } : {}),
+                  ...(typeof body.maxWallSeconds === 'number' ? { maxWallSeconds: body.maxWallSeconds } : {}),
                 }
               : {}),
             permissions: body.permissions as string[],
