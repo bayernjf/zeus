@@ -204,16 +204,14 @@ const READ_PROTOCOL_FACES = new Set([
 /** Mounted per boot depending on configuration; reading them is a follow-up,
  *  each registered with why it is not on a face yet.
  *
- *  These ten are **registered gaps, not intended design**: the kernel computes
+ *  These six are **registered gaps, not intended design**: the kernel computes
  *  each one and no shipped surface reads it (2026-10-13: zero references in
  *  `web/supervisor`, `web/portal`, `src/tui` and `scripts`). A reason string must
  *  cite where the gap is tracked, so the table cannot be used to bury one.
- *  Closing them is M7 slice 4 in handoff Active work 232. */
+ *  Closing them is M7 slice 4 in handoff Active work 232; the first four
+ *  (trace tree / briefing / skill versions / access probe) were closed on
+ *  2026-10-14 by supervisor v1.20 and left this table. */
 const READ_API_ONLY: Record<string, string> = {
-  'GET /api/intents/:id/trace':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - S6 V2 trace tree, bearer-served, no face reads it',
-  'GET /api/org/departments/:id/briefing/:agentId':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - E9.1 first-day briefing, no face reads it',
   'GET /api/memory/events':
     'GAP (tracked: handoff Active work 232 M7 slice 4) - memory event log, operator HTTP face only',
   'GET /api/memory/facts':
@@ -226,10 +224,6 @@ const READ_API_ONLY: Record<string, string> = {
     'GAP (tracked: handoff Active work 232 M7 slice 4) - retraction (forgetting) ledger, no face reads it',
   'GET /api/memory/integrity':
     'GAP (tracked: handoff Active work 232 M7 slice 4) - append-only integrity check, no face reads it',
-  'GET /api/skills/:id/versions':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - skill version history, the catalogue view does not expand versions',
-  'GET /api/domains/access':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - realm access verdict probe, no face reads it',
 };
 
 describe('operator surface coverage - read routes', () => {
@@ -243,6 +237,13 @@ describe('operator surface coverage - read routes', () => {
     expect(readIn('/api/cost')).toEqual(expect.arrayContaining(['tui', 'web']));
     expect(readIn('/api/roster/public')).toContain('portal');
     expect(readIn('/api/state')).toContain('tui');
+    // M7 slice 4 first batch (2026-10-14, supervisor v1.20): the four read
+    // routes that left READ_API_ONLY must be seen on a real face, or their
+    // removal from the table would be the only thing keeping the gate green.
+    expect(readIn('/api/intents/:id/trace'), 'trace tree lost its reader').toContain('web');
+    expect(readIn('/api/skills/:id/versions'), 'skill versions lost their reader').toContain('web');
+    expect(readIn('/api/org/departments/:id/briefing/:agentId'), 'briefing lost its reader').toContain('web');
+    expect(readIn('/api/domains/access'), 'access probe lost its reader').toContain('web');
   });
 
   it('keeps the read-only tables honest: entries exist and are really unread', () => {
@@ -261,7 +262,9 @@ describe('operator surface coverage - read routes', () => {
 
   it('caps the registered read gaps so a new one cannot be added without a decision', () => {
     // 2026-10-13 baseline: ten routes the kernel computes that no face reads.
-    // Raising this number is the moment a new unread capability is being shipped.
+    // 2026-10-14: four closed by supervisor v1.20 (M7 slice 4 first batch),
+    // six remain. Raising this number is the moment a new unread capability is
+    // being shipped.
     expect(Object.keys(READ_API_ONLY).length, 'read-gap table grew past the tracked baseline').toBeLessThanOrEqual(10);
   });
 

@@ -360,6 +360,73 @@ describe('supervisor copy describes the actions the page actually has', () => {
 });
 
 /**
+ * M7 slice 4 (2026-10-14): four GET routes the kernel computes had no reader on
+ * any shipped face - the trace tree, the skill version history, the first-day
+ * briefing and the realm access probe. Supervisor v1.20 wired them and left
+ * READ_API_ONLY in operator-surface-coverage.test.ts. These gates pin the
+ * wiring itself: a call site that silently disappears (renamed variable,
+ * dropped during a refactor) would otherwise turn the face back into an
+ * unread capability with every other gate still green.
+ */
+describe('supervisor read faces (M7 slice 4)', () => {
+  it('reads the trace tree in the combat room', () => {
+    expect(HTML.includes("api('GET', '/api/intents/' + encodeURIComponent(id) + '/trace')"), 'the combat room stopped reading the trace tree').toBe(true);
+    expect(HTML.includes('id="tracePanel"'), 'the trace panel markup disappeared').toBe(true);
+    expect(HTML.includes('id="traceBody"'), 'the trace panel body disappeared').toBe(true);
+    // 404 (unknown intent / retention-evicted) hides the panel instead of
+    // rendering an empty tree, which would read as "this intent has no spans".
+    expect(HTML.includes('panel.hidden = true;'), 'the trace loader lost its hide-on-miss branch').toBe(true);
+  });
+
+  it('expands skill versions from the catalogue', () => {
+    expect(HTML.includes("api('GET', '/api/skills/' + encodeURIComponent(id) + '/versions')"), 'the catalogue stopped reading version history').toBe(true);
+    expect(HTML.includes('data-read="skill-versions"'), 'the versions expander button disappeared').toBe(true);
+    expect(HTML.includes("read === 'skill-versions'"), 'the versions expander has no handler branch').toBe(true);
+    // A read failure must print a reason, not an empty box.
+    expect(Object.hasOwn(zh, 'skill.versionsFailed')).toBe(true);
+    expect(Object.hasOwn(en, 'skill.versionsFailed')).toBe(true);
+  });
+
+  it('expands the first-day briefing from the org chart', () => {
+    expect(HTML.includes("api('GET', '/api/org/departments/' + encodeURIComponent(deptId) + '/briefing/' + encodeURIComponent(agentId))"), 'the org view stopped reading briefings').toBe(true);
+    expect(HTML.includes('data-read="org-briefing"'), 'the briefing expander button disappeared').toBe(true);
+    expect(HTML.includes("read === 'org-briefing'"), 'the briefing expander has no handler branch').toBe(true);
+    // The gaps list is the honest half of the briefing: an unknown seat must
+    // not render as "no gaps".
+    expect(Object.hasOwn(zh, 'org.briefingNone')).toBe(true);
+    expect(Object.hasOwn(en, 'org.briefingNone')).toBe(true);
+  });
+
+  it('probes realm access as a dry run from the domains panel', () => {
+    expect(HTML.includes("api('GET', '/api/domains/access' + qs)"), 'the domains panel stopped probing access').toBe(true);
+    expect(HTML.includes('id="btnAccessProbe"'), 'the probe button disappeared').toBe(true);
+    expect(HTML.includes("$('btnAccessProbe').addEventListener('click', probeAccess)"), 'the probe button is not wired').toBe(true);
+    // The realm dropdown is fed from the same /api/domains projection the
+    // panel renders; a static empty select would make the probe unusable.
+    expect(HTML.includes("const apRealm = $('apRealm')"), 'the probe realm select is not populated from the domains projection').toBe(true);
+    // Both verdict arms are rendered: an allowed-via and a denied-reason.
+    expect(Object.hasOwn(zh, 'access.allowed')).toBe(true);
+    expect(Object.hasOwn(zh, 'access.denied')).toBe(true);
+    expect(Object.hasOwn(en, 'access.allowed')).toBe(true);
+    expect(Object.hasOwn(en, 'access.denied')).toBe(true);
+  });
+
+  it('keeps the read expanders off the write-action chain', () => {
+    // Read expansions go through data-read, never data-act: the audit-
+    // equivalence gate below only knows write actions, and a read expander
+    // smuggled into data-act would either fail the whitelist or (worse) be
+    // taught to the whitelist as if it wrote something.
+    const reads = [...HTML.matchAll(/data-read="([^"]+)"/g)].map(m => m[1]!);
+    expect(reads.length, 'the page no longer renders read expanders').toBeGreaterThanOrEqual(2);
+    for (const read of reads) {
+      expect(HTML.includes(`read === '${read}'`), `data-read=${read} has no handler branch`).toBe(true);
+    }
+    // Network access stays confined to the three known consumers.
+    expect((HTML.match(/fetch\(/g) || []).length, 'a new fetch call site bypassed api()/apiText()/SSE').toBe(3);
+  });
+});
+
+/**
  * The assessment dialog parses the operator's own text into the boolean the
  * mentorship ledger stores, and `passed: false` is an outcome that can fail a
  * candidate. So a verdict the parser does not recognise has to be refused
