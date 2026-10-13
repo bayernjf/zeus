@@ -335,7 +335,10 @@ export class FsRealmStore implements RealmStore {
 
     // Atomic write: exclusive temp file in the same directory, then rename.
     const tmp = join(realParent, `.${basename(abs)}.zeus-tmp-${randomUUID().slice(0, 8)}`);
-    await writeFile(tmp, text, { encoding: 'utf8', flag: 'wx' });
+    // Owner-only: a realm can hold personal or enterprise data, so the temp
+    // file (and the inode the rename publishes) must never be group/world
+    // readable, even under a permissive umask.
+    await writeFile(tmp, text, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     try {
       await rename(tmp, abs);
     } catch (error) {
@@ -501,7 +504,7 @@ async function prepareParentDir(root: string, parent: string, itemId: string): P
   if (!isInsideRoot(root, await realpath(existing))) {
     throw new InvalidItemIdError(`target directory resolves outside the realm root: ${itemId}`);
   }
-  await mkdir(parent, { recursive: true });
+  await mkdir(parent, { recursive: true, mode: 0o700 });
   const realParent = await realpath(parent);
   if (!isInsideRoot(root, realParent)) {
     throw new InvalidItemIdError(`target directory resolves outside the realm root: ${itemId}`);

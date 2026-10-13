@@ -33,7 +33,7 @@ export async function ensureDirInsideRoot(root: string, parent: string, label: s
   if (!isInsideRoot(root, await realpath(existing))) {
     throw new VaultFormatError(`${label} resolves outside the target root`);
   }
-  await mkdir(parent, { recursive: true });
+  await mkdir(parent, { recursive: true, mode: 0o700 });
   const real = await realpath(parent);
   if (!isInsideRoot(root, real)) throw new VaultFormatError(`${label} resolves outside the target root`);
   return real;

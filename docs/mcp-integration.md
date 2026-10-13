@@ -141,7 +141,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 - **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:226-226 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
 - `realm.read` 的正文按原样返回，包括换行；层级目录用 POSIX 分隔（实测 `itemId:"sub/dir/deep.md"` 可读）。
-- 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:521-521 #snippetFor`。
+- 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:524-524 #snippetFor`。
 - **没有写工具**（实测 `realm.write` → `-32602 unknown tool: realm.write`）。P0 的写能力只存在于库内端口 `Realm.write`，不经这条通道暴露（剩余半边登记在 [deferred-items.md](deferred-items.md) #14/#18 的口径里）。
 
 ### 1.6 快照语义 vs 实时语义：一句话版
@@ -160,7 +160,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.7 哪些文件进得来（扫描规则）
 
-连接时递归扫描根目录，规则如下（常量表 `src/realm/store.ts:62-62 #TEXT_EXTENSIONS`、递归 `src/realm/store.ts:405-405 #EXCLUDED_DIR_NAMES`）。下表五行里有四行的 reason 在本轮实测的 `manifest.skipped` 里原样出现过（扩展名、隐藏文件、超限、符号链接）；`node_modules` / `.git` 与"点开头目录整棵剪掉且不进 skipped"是代码级（`src/realm/store.ts:408-408 #startsWith`）：
+连接时递归扫描根目录，规则如下（常量表 `src/realm/store.ts:62-62 #TEXT_EXTENSIONS`、递归 `src/realm/store.ts:408-408 #EXCLUDED_DIR_NAMES`）。下表五行里有四行的 reason 在本轮实测的 `manifest.skipped` 里原样出现过（扩展名、隐藏文件、超限、符号链接）；`node_modules` / `.git` 与"点开头目录整棵剪掉且不进 skipped"是代码级（`src/realm/store.ts:411-411 #startsWith`）：
 
 | 情况 | 处理 | 出现位置 |
 |---|---|---|

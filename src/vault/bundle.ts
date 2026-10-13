@@ -140,7 +140,7 @@ export class FsRestoreSink implements RestoreSink {
   async writeItem(targetRoot: string, item: { itemId: string; content: string; modifiedAt: string }): Promise<void> {
     assertSafeRestorePath(item.itemId);
     const absRoot = resolve(targetRoot);
-    await mkdir(absRoot, { recursive: true });
+    await mkdir(absRoot, { recursive: true, mode: 0o700 });
     const root = await realpath(absRoot);
     const abs = join(root, item.itemId);
     if (!isInsideRoot(root, abs)) {

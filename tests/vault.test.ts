@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createCipheriv, randomBytes, scryptSync } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FsRealmStore } from '../src/realm/store.js';
@@ -207,6 +207,17 @@ describe('L1 full bundle: pack and portable restore', { timeout: 60_000 }, () =>
 });
 
 describe('restore sink hardening', () => {
+  it('creates the restore target, parent directories and files owner-only (0700 / 0600)', async () => {
+    const target = join(root, 'restore-target', 'nested');
+    const sink = new FsRestoreSink();
+    await sink.writeItem(target, { itemId: 'a/b/c.md', content: 'secret\n', modifiedAt: new Date().toISOString() });
+    expect((await stat(join(root, 'restore-target'))).mode & 0o777).toBe(0o700);
+    expect((await stat(target)).mode & 0o777).toBe(0o700);
+    expect((await stat(join(target, 'a'))).mode & 0o777).toBe(0o700);
+    expect((await stat(join(target, 'a', 'b'))).mode & 0o777).toBe(0o700);
+    expect((await stat(join(target, 'a', 'b', 'c.md'))).mode & 0o777).toBe(0o600);
+  });
+
   it('refuses itemIds that escape the target root', async () => {
     const sink = new FsRestoreSink();
     await expect(
