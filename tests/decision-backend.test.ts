@@ -108,6 +108,21 @@ describe('LLM adapter (slow layer)', () => {
     expect(traces[0]!.cost?.cents).toBeCloseTo(0.052, 5);
   });
 
+  it('rejects a score level outside the declared bands, same as an out-of-options choice', async () => {
+    // The distribution map is already filtered to the declared levels; the
+    // headline level was passed through unchecked, so an LLM could pin any
+    // label (or a typo) on the result while `choice` fails closed on the
+    // same class of output.
+    const offBand = vi.fn(async () =>
+      jsonResponse(200, {
+        choices: [{ message: { content: JSON.stringify({ score: 55, level: 'mid', distribution: { low: 0.4, high: 0.6 }, confidence: 0.7 }) } }],
+      })
+    );
+    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: offBand as unknown as typeof fetch, now: fixedNow });
+    await expect(backend.score({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', levels: ['low', 'high'] }))
+      .rejects.toMatchObject({ code: 'invalid' });
+  });
+
   it('extracts JSON from code fences and folds unparseable output to invalid', async () => {
     const fenced = vi.fn(async () =>
       jsonResponse(200, { choices: [{ message: { content: '```json\n{"probability":0.3,"confidence":0.6}\n```' } }] })

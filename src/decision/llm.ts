@@ -194,6 +194,12 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
           if (Number.isFinite(v)) distribution[level] = v;
         }
       }
+      if (parsed.level !== undefined && !request.levels.includes(String(parsed.level))) {
+        // Fail closed, same as `choice` above: the distribution map is
+        // filtered to the declared bands, so the headline level must not
+        // carry a label the caller never offered.
+        throw new DecisionBackendFailure('invalid', 'LLM returned a level outside the provided bands');
+      }
       const result: ScoreResult = {
         score,
         ...(parsed.level !== undefined ? { level: String(parsed.level) } : {}),

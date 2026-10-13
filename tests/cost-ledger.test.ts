@@ -24,6 +24,26 @@ const WINDOW = 60_000;
 const noLimit: CostLimit = {};
 
 describe('costAdmit (S9 V1)', () => {
+  it('a NaN or negative amount cannot poison the ledger', () => {
+    // NaN slips past `??` (it is not nullish): spent would become NaN and
+    // every later gate comparison (`projected > cap`, `spent < rate`) is
+    // false — the soft cap and the rate circuit silently stop gating. A
+    // negative amount would erode the cap the same way. Neither is a real
+    // cost; both normalize to 0 and the gate keeps working.
+    const limit: CostLimit = { maxWindowCost: 100 };
+    const nan = costAdmit(emptyCostBudget(NOW, WINDOW), limit, { tokens: Number.NaN }, NOW);
+    expect(nan.ok).toBe(true);
+    if (nan.ok) expect(nan.budget.spent).toBe(0);
+    const neg = costAdmit(emptyCostBudget(NOW, WINDOW), limit, { credits: -50 }, NOW);
+    expect(neg.ok).toBe(true);
+    if (neg.ok) {
+      expect(neg.budget.spent).toBe(0);
+      const after = costAdmit(neg.budget, limit, { tokens: 150 }, NOW + 1);
+      expect(after.ok).toBe(false);
+      if (!after.ok) expect(after.reason).toBe('budget-exceeded');
+    }
+  });
+
   it('admits cost under the budget and tracks spent + in-flight', () => {
     const b0 = emptyCostBudget(NOW, WINDOW);
     const limit: CostLimit = { maxWindowCost: 100 };

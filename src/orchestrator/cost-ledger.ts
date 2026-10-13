@@ -134,7 +134,12 @@ function rollWindow(
  *  the configured 1:1 until real pricing data lands). Self-reports are never
  *  trusted here — this is the caller's conversion. */
 function toUnits(cost: CostAmount): number {
-  return cost.tokens ?? cost.credits ?? 0;
+  const units = cost.tokens ?? cost.credits ?? 0;
+  // NaN slips past `??` (it is not nullish) and would poison the ledger:
+  // spent becomes NaN and every later gate comparison is false, so the soft
+  // cap and the rate circuit silently stop gating. A negative amount erodes
+  // the cap the same way. Neither is a real cost.
+  return Number.isFinite(units) && units > 0 ? units : 0;
 }
 
 export const DEFAULT_COST_WINDOW_MS = 60_000;
