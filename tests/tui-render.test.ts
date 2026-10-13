@@ -454,11 +454,11 @@ describe('renderRecognize (E2.6 operator intent)', () => {
 
   it('renders a model-backed hit with the backend label', () => {
     const out = renderRecognize({
-      result: { ok: true, skill: 'research', confidence: 0.82, backend: { kind: 'llm', model: 'agnes-2.5-flash' }, decisionAt: '' },
+      result: { ok: true, skill: 'research', confidence: 0.82, backend: { kind: 'llm', model: 'agnes-3.0-flash' }, decisionAt: '' },
       t,
       palette,
     });
-    expect(out).toContain('llm agnes-2.5-flash');
+    expect(out).toContain('llm agnes-3.0-flash');
   });
 
   it('renders a fail-closed miss with the named reason, never a guess', () => {
