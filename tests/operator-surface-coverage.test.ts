@@ -19,7 +19,14 @@ import { join } from 'node:path';
  */
 
 const SERVER = readFileSync('src/http/server.ts', 'utf8');
-const WEB = readFileSync(join('web', 'supervisor', 'index.html'), 'utf8');
+// Only the script half of the page can read or drive a route: every api() call
+// site and every delegated action lives there. The markup half names routes in
+// `class="hint"` copy ("GET /api/domains"), which the substring match counted
+// as a reader - two M7 slice 4 defect injections proved it: renaming the real
+// call sites left the gate green because the panel label still named the path.
+// Prose is not a reader, exactly as a comment is not (comments were stripped
+// for the same reason).
+const WEB = readFileSync(join('web', 'supervisor', 'index.html'), 'utf8').replace(/^[\s\S]*?<script>/, '');
 const TUI = readdirSync('src/tui')
   .filter(f => f.endsWith('.ts'))
   .map(f => readFileSync(join('src', 'tui', f), 'utf8'))
@@ -50,9 +57,26 @@ function normalize(p: string): string {
 
 const NORMALIZED = CORPORA.map(([name, text]) => [name, normalize(text)] as const);
 
+/** True when `needle` occurs in `text` as a whole path, never as the prefix of
+ *  a longer one. Without this, the read route `/api/memory/retractions` that
+ *  the memory view legitimately shows would count as a driver of the write
+ *  route `POST /api/memory/retract` (2026-10-14: it did, and the gate went red
+ *  on a face that writes nothing). A trailing `?query` or string terminator is
+ *  a boundary; a path character is not. */
+function hasWholePath(text: string, needle: string): boolean {
+  let from = 0;
+  for (;;) {
+    const at = text.indexOf(needle, from);
+    if (at === -1) return false;
+    const after = text[at + needle.length];
+    if (after === undefined || !/[a-zA-Z0-9_-]/.test(after)) return true;
+    from = at + 1;
+  }
+}
+
 function drivenIn(path: string): string[] {
   const needle = normalize(path);
-  const direct = NORMALIZED.filter(([, text]) => text.includes(needle)).map(([name]) => name);
+  const direct = NORMALIZED.filter(([, text]) => hasWholePath(text, needle)).map(([name]) => name);
   if (direct.length) return direct;
   // Dynamic last segment: the call site ends with a variable (`+ kind`, `+ verb`)
   // and the concrete verbs arrive through data-act delegation. Driven only when
@@ -64,7 +88,7 @@ function drivenIn(path: string): string[] {
   // 'skill-install' / 'cm-waive' (the i18n gate pins those to real endpoints).
   const verbRx = new RegExp(`data-act="[^"]*${verb.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*"|['"\`][a-z]+-${verb.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"\`]`);
   return NORMALIZED.filter(([, text]) => {
-    if (!text.includes(shape)) return false;
+    if (!hasWholePath(text, shape)) return false;
     return verbRx.test(text);
   }).map(([name]) => name);
 }
@@ -182,7 +206,7 @@ const READ_NORMALIZED = READ_CORPORA.map(([name, text]) => [name, normalize(text
 
 function readIn(path: string): string[] {
   const needle = normalize(path);
-  return READ_NORMALIZED.filter(([, text]) => text.includes(needle)).map(([name]) => name);
+  return READ_NORMALIZED.filter(([, text]) => hasWholePath(text, needle)).map(([name]) => name);
 }
 
 const readRoutes: Route[] = [...SERVER.matchAll(/app\.get\(\s*'([^']+)'/g)].map(m => ({
@@ -204,27 +228,19 @@ const READ_PROTOCOL_FACES = new Set([
 /** Mounted per boot depending on configuration; reading them is a follow-up,
  *  each registered with why it is not on a face yet.
  *
- *  These six are **registered gaps, not intended design**: the kernel computes
- *  each one and no shipped surface reads it (2026-10-13: zero references in
- *  `web/supervisor`, `web/portal`, `src/tui` and `scripts`). A reason string must
- *  cite where the gap is tracked, so the table cannot be used to bury one.
- *  Closing them is M7 slice 4 in handoff Active work 232; the first four
- *  (trace tree / briefing / skill versions / access probe) were closed on
- *  2026-10-14 by supervisor v1.20 and left this table. */
-const READ_API_ONLY: Record<string, string> = {
-  'GET /api/memory/events':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - memory event log, operator HTTP face only',
-  'GET /api/memory/facts':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - derived facts including disputed ones, no face reads it',
-  'GET /api/memory/replay':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - offline memory replay, no face reads it',
-  'GET /api/memory/recall':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - hybrid recall used by context assembly, no face reads it',
-  'GET /api/memory/retractions':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - retraction (forgetting) ledger, no face reads it',
-  'GET /api/memory/integrity':
-    'GAP (tracked: handoff Active work 232 M7 slice 4) - append-only integrity check, no face reads it',
-};
+ *  This table was 10 entries on 2026-10-13 and 6 on 2026-10-14, when supervisor
+ *  v1.20 (M7 slice 4 first batch) put readers on the trace tree, the skill
+ *  version history, the first-day briefing and the access probe. The remaining
+ *  six (the memory face) were closed by v1.21 the same day, so the table is
+ *  empty again: every bearer-mounted read route now has a reader on at least
+ *  one shipped face, or is a protocol face.
+ *
+ *  An empty table is not permission to stop checking. The "leaves no read
+ *  route without a reader" test below is the invariant; this table is only the
+ *  honest escape hatch, and a reason string must cite where a gap is tracked
+ *  so the table cannot be used to bury one. If a future batch adds a read
+ *  route nobody can drive, it belongs here the day it ships, not later. */
+const READ_API_ONLY: Record<string, string> = {};
 
 describe('operator surface coverage - read routes', () => {
   it('collects the read set from real registration sites (positive control)', () => {
@@ -244,6 +260,15 @@ describe('operator surface coverage - read routes', () => {
     expect(readIn('/api/skills/:id/versions'), 'skill versions lost their reader').toContain('web');
     expect(readIn('/api/org/departments/:id/briefing/:agentId'), 'briefing lost its reader').toContain('web');
     expect(readIn('/api/domains/access'), 'access probe lost its reader').toContain('web');
+    // M7 slice 4 second batch (2026-10-14, supervisor v1.21): the memory face.
+    // The six endpoints that emptied READ_API_ONLY must stay read on a real
+    // face - an empty table is not permission to stop checking.
+    expect(readIn('/api/memory/events'), 'memory events lost their reader').toContain('web');
+    expect(readIn('/api/memory/facts'), 'memory facts lost their reader').toContain('web');
+    expect(readIn('/api/memory/replay'), 'memory replay lost its reader').toContain('web');
+    expect(readIn('/api/memory/recall'), 'memory recall lost its reader').toContain('web');
+    expect(readIn('/api/memory/retractions'), 'memory retractions lost their reader').toContain('web');
+    expect(readIn('/api/memory/integrity'), 'memory integrity lost its reader').toContain('web');
   });
 
   it('keeps the read-only tables honest: entries exist and are really unread', () => {
@@ -255,6 +280,25 @@ describe('operator surface coverage - read routes', () => {
       // becomes permanent.
       expect(reason, `${key} is registered with no tracking reference`).toMatch(/tracked: .*(Active work|deferred|PRD)/);
     }
+    // The table is empty as of 2026-10-14 (v1.21). Pin the closure of the ten
+    // routes it once held: re-registering one of them without a reader is
+    // exactly the "bury the gap" failure the table exists to prevent, and the
+    // loop above is vacuous while the table is empty.
+    const CLOSED_2026_10_14 = [
+      'GET /api/intents/:id/trace',
+      'GET /api/org/departments/:id/briefing/:agentId',
+      'GET /api/memory/events',
+      'GET /api/memory/facts',
+      'GET /api/memory/replay',
+      'GET /api/memory/recall',
+      'GET /api/memory/retractions',
+      'GET /api/memory/integrity',
+      'GET /api/skills/:id/versions',
+      'GET /api/domains/access',
+    ];
+    for (const key of CLOSED_2026_10_14) {
+      expect(Object.hasOwn(READ_API_ONLY, key), `${key} is registered read-only again - if it truly lost its reader, fix the reader, do not bury the gap`).toBe(false);
+    }
     for (const key of READ_PROTOCOL_FACES) {
       expect(readRoutes.find(r => r.key === key), `${key} vanished - update the read protocol face table`).toBeTruthy();
     }
@@ -263,8 +307,9 @@ describe('operator surface coverage - read routes', () => {
   it('caps the registered read gaps so a new one cannot be added without a decision', () => {
     // 2026-10-13 baseline: ten routes the kernel computes that no face reads.
     // 2026-10-14: four closed by supervisor v1.20 (M7 slice 4 first batch),
-    // six remain. Raising this number is the moment a new unread capability is
-    // being shipped.
+    // the memory six closed by v1.21 (second batch) - the table is empty.
+    // Raising this number is the moment a new unread capability is being
+    // shipped, and an entry without a tracked destination is a buried one.
     expect(Object.keys(READ_API_ONLY).length, 'read-gap table grew past the tracked baseline').toBeLessThanOrEqual(10);
   });
 

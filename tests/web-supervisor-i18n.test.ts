@@ -427,6 +427,67 @@ describe('supervisor read faces (M7 slice 4)', () => {
 });
 
 /**
+ * M7 slice 4 second batch (2026-10-14): the memory face - six bearer routes
+ * (events / facts / replay / recall / retractions / integrity) that emptied
+ * READ_API_ONLY in operator-surface-coverage.test.ts. The view is realm-scoped
+ * like the rest of the data domain, so these gates pin the realm selector
+ * (fed from the same /api/domains projection), the six call sites, the two
+ * on-demand query faces (recall / replay) and the independent degradation: one
+ * unreadable face must not blank the other five.
+ */
+describe('supervisor memory face (M7 slice 4 second batch)', () => {
+  it('registers the memory view in the router and the nav', () => {
+    expect(HTML.includes('data-view="memory"'), 'the nav lost the memory entry').toBe(true);
+    expect(HTML.includes('memory: 1'), 'the router lost the memory view').toBe(true);
+    expect(HTML.includes("else if (view === 'memory') await loadMemory()"), 'refreshView no longer loads the memory view').toBe(true);
+  });
+
+  it('reads all six memory routes, realm-scoped', () => {
+    expect(HTML.includes("api('GET', '/api/memory/events?realmId=' + encodeURIComponent(realmId))"), 'the memory view stopped reading events').toBe(true);
+    expect(HTML.includes("api('GET', '/api/memory/facts?realmId=' + encodeURIComponent(realmId))"), 'the memory view stopped reading facts').toBe(true);
+    expect(HTML.includes("api('GET', '/api/memory/recall' + qs)"), 'the memory view stopped reading recall').toBe(true);
+    expect(HTML.includes("api('GET', '/api/memory/replay?realmId=' + encodeURIComponent(realmId) + '&runId=' + encodeURIComponent(runId))"), 'the memory view stopped reading replay').toBe(true);
+    expect(HTML.includes("api('GET', '/api/memory/retractions')"), 'the memory view stopped reading retractions').toBe(true);
+    expect(HTML.includes("api('GET', '/api/memory/integrity')"), 'the memory view stopped reading integrity').toBe(true);
+  });
+
+  it('feeds the realm selector from the domains projection and keeps the operator choice', () => {
+    expect(HTML.includes("const apRealm = $('apRealm')"), 'the probe realm select is not populated').toBe(true);
+    expect(HTML.includes('function populateMemoryRealm'), 'the memory realm selector is not populated').toBe(true);
+    expect(HTML.includes("const prev = sel.value;"), 'the memory realm selector drops the operator choice on every poll').toBe(true);
+    // A memory view without a realm must say so, not query with an empty id.
+    expect(Object.hasOwn(zh, 'mem.needRealm')).toBe(true);
+    expect(Object.hasOwn(en, 'mem.needRealm')).toBe(true);
+  });
+
+  it('wires the two on-demand query faces (recall and replay)', () => {
+    expect(HTML.includes('id="btnMemoryRecall"'), 'the recall button disappeared').toBe(true);
+    expect(HTML.includes("$('btnMemoryRecall').addEventListener('click', probeMemoryRecall)"), 'the recall button is not wired').toBe(true);
+    expect(HTML.includes('id="btnMemoryReplay"'), 'the replay button disappeared').toBe(true);
+    expect(HTML.includes("$('btnMemoryReplay').addEventListener('click', probeMemoryReplay)"), 'the replay button is not wired').toBe(true);
+    // Both faces refuse to fire without their required input, in both locales.
+    expect(Object.hasOwn(zh, 'mem.needQuery')).toBe(true);
+    expect(Object.hasOwn(zh, 'mem.needRun')).toBe(true);
+    expect(Object.hasOwn(en, 'mem.needQuery')).toBe(true);
+    expect(Object.hasOwn(en, 'mem.needRun')).toBe(true);
+  });
+
+  it('degrades the six faces independently and caps long tables honestly', () => {
+    // One unreachable face must not blank the other five: the loader settles
+    // all four fetches before rendering any of them.
+    expect(HTML.includes('await Promise.allSettled(['), 'the memory faces no longer degrade independently').toBe(true);
+    expect(HTML.includes("const val = (r) => (r.status === 'fulfilled' ? r.value : null);"), 'the settled results are not split per face').toBe(true);
+    // A silently truncated table would read as "that is all there is".
+    expect(HTML.includes('const MEM_MAX_ROWS = 50;'), 'the row cap disappeared').toBe(true);
+    expect(HTML.includes('function memRowNote'), 'the truncation note disappeared').toBe(true);
+    expect(Object.hasOwn(zh, 'mem.moreRows')).toBe(true);
+    expect(Object.hasOwn(en, 'mem.moreRows')).toBe(true);
+    // Network access stays confined to the three known consumers.
+    expect((HTML.match(/fetch\(/g) || []).length, 'a new fetch call site bypassed api()/apiText()/SSE').toBe(3);
+  });
+});
+
+/**
  * The assessment dialog parses the operator's own text into the boolean the
  * mentorship ledger stores, and `passed: false` is an outcome that can fail a
  * candidate. So a verdict the parser does not recognise has to be refused

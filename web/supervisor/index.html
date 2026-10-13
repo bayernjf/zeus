@@ -267,10 +267,11 @@
     <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.grants">授权</span></a>
     <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.org">组织</span></a>
     <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.catalog">目录</span></a>
+    <a class="nav-item" data-view="memory" href="#/memory"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.memory">记忆</span></a>
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.20 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.21 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -726,6 +727,79 @@
             <label for="cnToken" data-i18n="connector.token">令牌（可选）</label><input id="cnToken" autocomplete="off" type="password">
           </div>
           <button class="btn primary" id="btnDeclareConnector" data-i18n="connector.declare">声明连接器</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== 视图：记忆（E8.5 操作者读数面：只读 + 检索，事实无公开写入口） ===== -->
+    <section id="view-memory" hidden>
+      <div class="panel" style="margin-bottom:14px">
+        <h2><span data-i18n="mem.title">组织记忆</span> <span class="hint" data-i18n="mem.hint">事件 → 事实 → 混合检索 → 遗忘权 → 完整性；事实只经整理产生，没有公开写入口</span></h2>
+        <div class="audit-filter">
+          <select id="memRealm"></select>
+          <button class="btn small" id="btnMemoryRefresh" data-i18n="top.refresh">刷新</button>
+          <span class="af-count" id="memCount"></span>
+        </div>
+        <div class="body" id="memSummary"><div class="empty" data-i18n="common.loading">加载中…</div></div>
+      </div>
+      <div class="grid" style="margin-bottom:14px">
+        <div class="panel">
+          <h2><span data-i18n="mem.recallTitle">混合检索</span> <span class="hint">GET /api/memory/recall</span></h2>
+          <div class="body">
+            <div class="row inline">
+              <div class="row" style="flex:1">
+                <label for="memQ" data-i18n="mem.query">检索词</label>
+                <input id="memQ" autocomplete="off" data-i18n-ph="mem.queryPh" placeholder="如 typescript">
+              </div>
+              <div class="row">
+                <label for="memLimit" data-i18n="mem.limit">条数</label>
+                <input id="memLimit" type="number" min="1" value="10" style="width:72px">
+              </div>
+              <div class="row">
+                <label for="memAlpha" data-i18n="mem.alpha">语义权重 α</label>
+                <input id="memAlpha" type="number" min="0" max="1" step="0.1" value="0.5" style="width:72px">
+              </div>
+              <div class="row">
+                <label>&nbsp;</label>
+                <button class="btn primary" id="btnMemoryRecall" data-i18n="mem.recallRun">检索</button>
+              </div>
+            </div>
+            <div id="memRecallBody"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2><span data-i18n="mem.replayTitle">按 run 回放</span> <span class="hint">GET /api/memory/replay</span></h2>
+          <div class="body">
+            <div class="row inline">
+              <div class="row" style="flex:1">
+                <label for="memRunId" data-i18n="mem.runId">run ID</label>
+                <input id="memRunId" autocomplete="off" placeholder="run-…">
+              </div>
+              <div class="row">
+                <label>&nbsp;</label>
+                <button class="btn" id="btnMemoryReplay" data-i18n="mem.replayRun">回放</button>
+              </div>
+            </div>
+            <div id="memReplayBody"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:14px">
+        <h2><span data-i18n="mem.factsTitle">事实</span> <span class="hint">GET /api/memory/facts · <span data-i18n="mem.factsHint">只经整理产生；含争议态</span></span></h2>
+        <div class="body" id="memFactsBody"></div>
+      </div>
+      <div class="panel" style="margin-bottom:14px">
+        <h2><span data-i18n="mem.eventsTitle">事件</span> <span class="hint">GET /api/memory/events · <span data-i18n="mem.eventsHint">append-only 日志</span></span></h2>
+        <div class="body" id="memEventsBody"></div>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <h2><span data-i18n="mem.retractionsTitle">遗忘台账</span> <span class="hint">GET /api/memory/retractions</span></h2>
+          <div class="body" id="memRetractionsBody"></div>
+        </div>
+        <div class="panel">
+          <h2><span data-i18n="mem.integrityTitle">完整性</span> <span class="hint">GET /api/memory/integrity</span></h2>
+          <div class="body" id="memIntegrityBody"></div>
         </div>
       </div>
     </section>
@@ -1482,7 +1556,64 @@
       "brief.needsGrant": "写另需签名凭证",
       "brief.gaps": "内核答不出的部分",
       "brief.noGaps": "无缺口——席位上下文齐备",
-      "brief.digest": "摘要"
+      "brief.digest": "摘要",
+      "col.predicate": "谓词",
+      "col.object": "取值",
+      "col.confidence": "置信度",
+      "col.occurredAt": "发生时间",
+      "col.updatedAt": "更新时间",
+      "col.origin": "来源",
+      "nav.memory": "记忆",
+      "mem.title": "组织记忆",
+      "mem.eventsTitle": "事件",
+      "mem.factsTitle": "事实",
+      "mem.factsHint": "只经整理产生；含争议态",
+      "mem.eventsHint": "append-only 日志",
+      "mem.retractionsTitle": "遗忘台账",
+      "mem.integrityTitle": "完整性",
+      "mem.hint": "事件 → 事实 → 混合检索 → 遗忘权 → 完整性；事实只经整理产生，没有公开写入口",
+      "mem.needRealm": "没有已挂载的数据域——先连接一个数据域",
+      "mem.moreRows": "仅显示最近 {n} 条（共 {total} 条）",
+      "mem.summaryActive": "生效事实",
+      "mem.disputed": "争议",
+      "mem.integrityOk": "无不变量违例",
+      "mem.integrityBad": "{n} 条违例——派生索引不可信",
+      "mem.integrityFailed": "完整性面读取失败",
+      "mem.noFacts": "该域还没有事实",
+      "mem.noEvents": "该域还没有事件",
+      "mem.noRetractions": "无遗忘记录",
+      "mem.provenance": "来源事件",
+      "mem.refsUnit": "条",
+      "mem.refs": "引用",
+      "mem.factId": "事实 ID",
+      "mem.requestedBy": "申请方",
+      "mem.violation": "违例",
+      "mem.detail": "明细",
+      "mem.runId": "run ID",
+      "mem.content": "内容",
+      "mem.loadFailed": "读取失败：{msg}",
+      "mem.origin.agent-produced": "执行 Agent 产出",
+      "mem.origin.kernel-resolved-realm": "内核解析（旧快照回退）",
+      "mem.recallTitle": "混合检索",
+      "mem.query": "检索词",
+      "mem.queryPh": "如 typescript",
+      "mem.limit": "条数",
+      "mem.alpha": "语义权重 α",
+      "mem.recallRun": "检索",
+      "mem.needQuery": "必须给出检索词",
+      "mem.recallEmpty": "无命中",
+      "mem.recallFailed": "检索失败：{msg}",
+      "mem.hits": "{n} 条命中",
+      "mem.score": "综合分",
+      "mem.lexical": "词汇分",
+      "mem.semantic": "语义分",
+      "mem.replayTitle": "按 run 回放",
+      "mem.replayRun": "回放",
+      "mem.needRun": "必须给出 run ID",
+      "mem.replayEmpty": "该 run 没有派生事实",
+      "mem.replayFailed": "回放失败：{msg}",
+      "mem.replayEvents": "{n} 条事件",
+      "mem.replayFacts": "{n} 条事实"
     },
     "en": {
       "app.brand": "Zeus Supervisor",
@@ -2130,7 +2261,64 @@
       "brief.needsGrant": "write also needs a signed grant",
       "brief.gaps": "What the kernel could NOT answer",
       "brief.noGaps": "no gaps - the seat context is complete",
-      "brief.digest": "Digest"
+      "brief.digest": "Digest",
+      "col.predicate": "Predicate",
+      "col.object": "Object",
+      "col.confidence": "Confidence",
+      "col.occurredAt": "Occurred at",
+      "col.updatedAt": "Updated at",
+      "col.origin": "Origin",
+      "nav.memory": "Memory",
+      "mem.title": "Org memory",
+      "mem.eventsTitle": "Events",
+      "mem.factsTitle": "Facts",
+      "mem.factsHint": "produced only by consolidation; includes disputed entries",
+      "mem.eventsHint": "append-only log",
+      "mem.retractionsTitle": "Retraction ledger",
+      "mem.integrityTitle": "Integrity",
+      "mem.hint": "events → facts → hybrid recall → right to be forgotten → integrity; facts are produced only by consolidation, there is no public write route",
+      "mem.needRealm": "no realm is connected - connect one first",
+      "mem.moreRows": "showing the latest {n} of {total}",
+      "mem.summaryActive": "active facts",
+      "mem.disputed": "disputed",
+      "mem.integrityOk": "no invariant violations",
+      "mem.integrityBad": "{n} violations - derived indexes must not be trusted",
+      "mem.integrityFailed": "failed to read the integrity face",
+      "mem.noFacts": "this realm has no facts yet",
+      "mem.noEvents": "this realm has no events yet",
+      "mem.noRetractions": "no retractions on record",
+      "mem.provenance": "source events",
+      "mem.refsUnit": "refs",
+      "mem.refs": "Refs",
+      "mem.factId": "Fact ID",
+      "mem.requestedBy": "Requested by",
+      "mem.violation": "Violation",
+      "mem.detail": "Detail",
+      "mem.runId": "run ID",
+      "mem.content": "Content",
+      "mem.loadFailed": "load failed: {msg}",
+      "mem.origin.agent-produced": "agent-produced",
+      "mem.origin.kernel-resolved-realm": "kernel-resolved (legacy snapshot fallback)",
+      "mem.recallTitle": "Hybrid recall",
+      "mem.query": "Query",
+      "mem.queryPh": "e.g. typescript",
+      "mem.limit": "Limit",
+      "mem.alpha": "Semantic weight α",
+      "mem.recallRun": "Recall",
+      "mem.needQuery": "a query is required",
+      "mem.recallEmpty": "no hits",
+      "mem.recallFailed": "recall failed: {msg}",
+      "mem.hits": "{n} hits",
+      "mem.score": "Score",
+      "mem.lexical": "Lexical",
+      "mem.semantic": "Semantic",
+      "mem.replayTitle": "Replay a run",
+      "mem.replayRun": "Replay",
+      "mem.needRun": "a run ID is required",
+      "mem.replayEmpty": "this run produced no facts",
+      "mem.replayFailed": "replay failed: {msg}",
+      "mem.replayEvents": "{n} events",
+      "mem.replayFacts": "{n} facts"
     }
   };
   // I18N-RES-END
@@ -2362,7 +2550,7 @@
     }
     return text;
   }
-  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, roster: 1, audit: 1, connect: 1 };
+  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, memory: 1, roster: 1, audit: 1, connect: 1 };
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
@@ -3942,6 +4130,7 @@
       }
       else if (view === 'org') await loadOrg();
       else if (view === 'catalog') await loadCatalog();
+      else if (view === 'memory') await loadMemory();
       else if (view === 'roster') await loadRoster();
       else if (view === 'intent') await loadIntent(state.intentId);
       setConn(true);
@@ -3962,6 +4151,8 @@
       } else if (view === 'catalog') {
         $('catalogSkillsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
         $('catalogConnectorsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
+      } else if (view === 'memory') {
+        $('memSummary').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'roster') {
         $('rosterBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'intent') {
@@ -4033,6 +4224,236 @@
   }
 
   $('btnAccessProbe').addEventListener('click', probeAccess);
+
+  // ===== 记忆（E8.5 操作者读数面：只读 + 检索；事实无公开写入口） =====
+  // The memory face is realm-scoped like the rest of the data domain, so the
+  // selector is fed from the same /api/domains projection the monitor panel
+  // renders. Long tables are capped with an honest row count: a silently
+  // truncated table would read as "that is all there is".
+  const MEM_MAX_ROWS = 50;
+
+  function populateMemoryRealm(d) {
+    const sel = $('memRealm');
+    if (!sel) return;
+    const realms = (d && d.realms) || [];
+    const prev = sel.value;
+    sel.innerHTML = realms.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} (${esc(r.type)})</option>`).join('');
+    if (prev && realms.some(r => r.realmId === prev)) sel.value = prev;
+  }
+
+  function memRowNote(shown, total) {
+    return total > shown ? `<div class="hint" style="margin-top:4px">${esc(t('mem.moreRows', { n: shown, total }))}</div>` : '';
+  }
+
+  function renderMemorySummary(events, facts, retractions, integrity) {
+    const el = $('memSummary');
+    const evs = (events && events.events) || [];
+    const fcs = (facts && facts.facts) || [];
+    const rts = (retractions && retractions.retractions) || [];
+    const active = fcs.filter(f => f.status === 'active').length;
+    const disputed = fcs.filter(f => f.status === 'disputed').length;
+    let html = '<div class="kv">';
+    html += `<div><span>${esc(t('mem.eventsTitle'))}</span><strong class="mono">${evs.length}</strong></div>`;
+    html += `<div><span>${esc(t('mem.factsTitle'))}</span><strong class="mono">${fcs.length}</strong></div>`;
+    html += `<div><span>${esc(t('mem.summaryActive'))}</span><strong class="mono">${active}</strong></div>`;
+    html += `<div><span>${esc(t('mem.disputed'))}</span><strong class="mono">${disputed}</strong></div>`;
+    html += `<div><span>${esc(t('mem.retractionsTitle'))}</span><strong class="mono">${rts.length}</strong></div>`;
+    const integ = integrity && typeof integrity.ok === 'boolean' ? integrity : null;
+    html += `<div><span>${esc(t('mem.integrityTitle'))}</span><strong>${integ ? badge(integ.ok ? t('mem.integrityOk') : t('mem.integrityBad', { n: (integ.violations || []).length }), integ.ok ? 'ok' : 'bad') : '—'}</strong></div>`;
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function renderMemoryFacts(facts) {
+    const el = $('memFactsBody');
+    const all = (facts && facts.facts) || [];
+    if (!all.length) { el.innerHTML = emptyRow(t('mem.noFacts')); return; }
+    const shown = all.slice(0, MEM_MAX_ROWS);
+    const stCls = s => s === 'active' ? 'ok' : s === 'disputed' ? 'warn' : s === 'superseded' ? '' : 'bad';
+    let html = '<table><colgroup><col style="width:14%"><col style="width:12%"><col style="width:14%"><col style="width:9%"><col style="width:8%"><col style="width:6%"><col style="width:6%"><col style="width:13%"><col style="width:18%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.predicate')) + '</th><th>' + esc(t('col.object')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.origin')) + '</th><th>' + esc(t('col.updatedAt')) + '</th><th>' + esc(t('mem.provenance')) + '</th></tr>';
+    for (const f of shown) {
+      html += `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(f.subject)}</td>
+        <td class="mono" style="font-size:11.5px">${esc(f.predicate)}</td>
+        <td class="mono" style="font-size:11.5px">${esc(typeof f.object === 'string' ? f.object : JSON.stringify(f.object))}</td>
+        <td>${badge(f.status, stCls(f.status))}</td>
+        <td class="num">${Math.round((f.confidence || 0) * 100)}%</td>
+        <td class="mono">${esc(f.version)}</td>
+        <td style="font-size:11px">${esc(f.origin ? tl('mem.origin.' + f.origin, f.origin) : '—')}</td>
+        <td class="mono" style="font-size:11px">${fmtTime(f.updatedAt)}</td>
+        <td class="mono" style="font-size:11px" title="${esc((f.provenance || []).join(', '))}">${(f.provenance || []).length} ${esc(t('mem.refsUnit'))}</td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>' + memRowNote(shown.length, all.length);
+  }
+
+  function renderMemoryEvents(events) {
+    const el = $('memEventsBody');
+    const all = (events && events.events) || [];
+    if (!all.length) { el.innerHTML = emptyRow(t('mem.noEvents')); return; }
+    const shown = all.slice(0, MEM_MAX_ROWS);
+    let html = '<table><colgroup><col style="width:15%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:30%"><col style="width:8%"><col style="width:12%"></colgroup><tr><th>' + esc(t('col.occurredAt')) + '</th><th>' + esc(t('col.kind')) + '</th><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('mem.runId')) + '</th><th>' + esc(t('mem.content')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('mem.refs')) + '</th></tr>';
+    for (const e of shown) {
+      const content = e.kind === 'claim' && e.content && typeof e.content === 'object'
+        ? `${esc(String((e.content as Record<string, unknown>).subject ?? ''))} ${esc(String((e.content as Record<string, unknown>).predicate ?? ''))} ${esc(String((e.content as Record<string, unknown>).object ?? ''))}`
+        : esc(JSON.stringify(e.content));
+      html += `<tr>
+        <td class="mono" style="font-size:11px">${fmtTime(e.occurredAt)}</td>
+        <td>${badge(e.kind, e.kind === 'claim' ? 'info' : '')}</td>
+        <td class="mono" style="font-size:11.5px">${esc((e.source && e.source.agentId) || '—')}</td>
+        <td class="mono" style="font-size:11px">${esc(e.runId)}</td>
+        <td class="mono" style="font-size:11px">${content}</td>
+        <td class="num">${Math.round((e.confidence || 0) * 100)}%</td>
+        <td class="mono" style="font-size:11px" title="${esc((e.refs || []).join(', '))}">${(e.refs || []).length}</td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>' + memRowNote(shown.length, all.length);
+  }
+
+  function renderMemoryRetractions(retractions) {
+    const el = $('memRetractionsBody');
+    const list = (retractions && retractions.retractions) || [];
+    if (!list.length) { el.innerHTML = emptyRow(t('mem.noRetractions')); return; }
+    let html = '<table><colgroup><col style="width:22%"><col style="width:16%"><col style="width:16%"><col style="width:16%"><col style="width:14%"><col style="width:16%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('mem.factId')) + '</th><th>' + esc(t('col.reason')) + '</th><th>' + esc(t('mem.requestedBy')) + '</th><th>' + esc(t('col.time')) + '</th><th>' + esc(t('col.domain')) + '</th></tr>';
+    for (const r of list) {
+      html += `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(r.subject)}</td>
+        <td class="mono" style="font-size:11px">${esc(r.factId)}</td>
+        <td style="font-size:11.5px">${esc(r.reason || '—')}</td>
+        <td class="mono" style="font-size:11.5px">${esc(r.requestedBy)}</td>
+        <td class="mono" style="font-size:11px">${fmtTime(r.at)}</td>
+        <td class="mono" style="font-size:11px">${esc(r.realmId)}</td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  function renderMemoryIntegrity(integrity) {
+    const el = $('memIntegrityBody');
+    if (!integrity || typeof integrity.ok !== 'boolean') { el.innerHTML = emptyRow(t('mem.integrityFailed')); return; }
+    const violations = integrity.violations || [];
+    let html = '<div style="margin-bottom:6px">' + badge(integrity.ok ? t('mem.integrityOk') : t('mem.integrityBad', { n: violations.length }), integrity.ok ? 'ok' : 'bad') + '</div>';
+    if (!integrity.ok) {
+      html += '<table><colgroup><col style="width:26%"><col style="width:22%"><col style="width:22%"><col style="width:30%"></colgroup><tr><th>' + esc(t('mem.violation')) + '</th><th>' + esc(t('mem.factId')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('mem.detail')) + '</th></tr>';
+      for (const v of violations) {
+        html += `<tr><td class="mono" style="font-size:11.5px">${esc(v.code)}</td><td class="mono" style="font-size:11px">${esc(v.factId || '—')}</td><td class="mono" style="font-size:11px">${esc(v.realmId || '—')}</td><td style="font-size:11.5px">${esc(v.detail)}</td></tr>`;
+      }
+      html += '</table>';
+    }
+    el.innerHTML = html;
+  }
+
+  async function loadMemory() {
+    let domains = null;
+    try { domains = await api('GET', '/api/domains'); } catch { domains = null; }
+    populateMemoryRealm(domains);
+    const realmId = $('memRealm').value;
+    $('memCount').textContent = realmId || '';
+    if (!realmId) {
+      $('memSummary').innerHTML = emptyRow(t('mem.needRealm'));
+      $('memFactsBody').innerHTML = '';
+      $('memEventsBody').innerHTML = '';
+      $('memRetractionsBody').innerHTML = '';
+      $('memIntegrityBody').innerHTML = '';
+      return;
+    }
+    // The four faces degrade independently: a realm whose events are readable
+    // but whose integrity face is not must not blank the rest of the view.
+    const [events, facts, retractions, integrity] = await Promise.allSettled([
+      api('GET', '/api/memory/events?realmId=' + encodeURIComponent(realmId)),
+      api('GET', '/api/memory/facts?realmId=' + encodeURIComponent(realmId)),
+      api('GET', '/api/memory/retractions'),
+      api('GET', '/api/memory/integrity'),
+    ]);
+    const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+    renderMemorySummary(val(events), val(facts), val(retractions), val(integrity));
+    if (events.status === 'fulfilled') renderMemoryEvents(events.value);
+    else $('memEventsBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: events.reason.message }));
+    if (facts.status === 'fulfilled') renderMemoryFacts(facts.value);
+    else $('memFactsBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: facts.reason.message }));
+    if (retractions.status === 'fulfilled') renderMemoryRetractions(retractions.value);
+    else $('memRetractionsBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: retractions.reason.message }));
+    if (integrity.status === 'fulfilled') renderMemoryIntegrity(integrity.value);
+    else $('memIntegrityBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: integrity.reason.message }));
+  }
+
+  $('btnMemoryRefresh').addEventListener('click', loadMemory);
+
+  async function probeMemoryRecall() {
+    const body = $('memRecallBody');
+    const realmId = $('memRealm').value;
+    const q = $('memQ').value.trim();
+    if (!realmId) { body.innerHTML = emptyRow(t('mem.needRealm')); return; }
+    if (!q) { body.innerHTML = emptyRow(t('mem.needQuery')); return; }
+    const limit = Number($('memLimit').value);
+    const alpha = Number($('memAlpha').value);
+    let qs = '?realmId=' + encodeURIComponent(realmId) + '&q=' + encodeURIComponent(q);
+    if (Number.isInteger(limit) && limit > 0) qs += '&limit=' + limit;
+    if (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) qs += '&alpha=' + alpha;
+    body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
+    try {
+      const d = await api('GET', '/api/memory/recall' + qs);
+      const hits = (d && d.hits) || [];
+      if (!hits.length) { body.innerHTML = emptyRow(t('mem.recallEmpty')); return; }
+      let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">' + esc(t('mem.hits', { n: hits.length })) + '</div>';
+      html += '<table><colgroup><col style="width:10%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:14%"><col style="width:12%"><col style="width:14%"><col style="width:9%"><col style="width:17%"></colgroup><tr><th>' + esc(t('mem.score')) + '</th><th>' + esc(t('mem.lexical')) + '</th><th>' + esc(t('mem.semantic')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.predicate')) + '</th><th>' + esc(t('col.object')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('col.updatedAt')) + '</th></tr>';
+      for (const h of hits) {
+        const f = h.fact || {};
+        html += `<tr>
+          <td class="num mono">${(h.score || 0).toFixed(3)}</td>
+          <td class="num mono">${(h.lexical || 0).toFixed(3)}</td>
+          <td class="num mono">${(h.semantic || 0).toFixed(3)}</td>
+          <td>${badge(f.status || '—', f.status === 'active' ? 'ok' : 'warn')}</td>
+          <td class="mono" style="font-size:11.5px">${esc(f.subject)}</td>
+          <td class="mono" style="font-size:11.5px">${esc(f.predicate)}</td>
+          <td class="mono" style="font-size:11.5px">${esc(typeof f.object === 'string' ? f.object : JSON.stringify(f.object))}</td>
+          <td class="num">${Math.round((f.confidence || 0) * 100)}%</td>
+          <td class="mono" style="font-size:11px">${fmtTime(f.updatedAt)}</td>
+        </tr>`;
+      }
+      body.innerHTML = html + '</table>';
+    } catch (e) {
+      body.innerHTML = emptyRow(t('mem.recallFailed', { msg: e.message }));
+    }
+  }
+
+  $('btnMemoryRecall').addEventListener('click', probeMemoryRecall);
+
+  async function probeMemoryReplay() {
+    const body = $('memReplayBody');
+    const realmId = $('memRealm').value;
+    const runId = $('memRunId').value.trim();
+    if (!realmId) { body.innerHTML = emptyRow(t('mem.needRealm')); return; }
+    if (!runId) { body.innerHTML = emptyRow(t('mem.needRun')); return; }
+    body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
+    try {
+      const d = await api('GET', '/api/memory/replay?realmId=' + encodeURIComponent(realmId) + '&runId=' + encodeURIComponent(runId));
+      const events = (d && d.events) || [];
+      const facts = (d && d.facts) || [];
+      let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">' + esc(t('mem.replayEvents', { n: events.length })) + ' · ' + esc(t('mem.replayFacts', { n: facts.length })) + '</div>';
+      if (facts.length) {
+        html += '<table><colgroup><col style="width:16%"><col style="width:14%"><col style="width:18%"><col style="width:10%"><col style="width:8%"><col style="width:34%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.predicate')) + '</th><th>' + esc(t('col.object')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('mem.provenance')) + '</th></tr>';
+        for (const f of facts) {
+          html += `<tr>
+            <td class="mono" style="font-size:11.5px">${esc(f.subject)}</td>
+            <td class="mono" style="font-size:11.5px">${esc(f.predicate)}</td>
+            <td class="mono" style="font-size:11.5px">${esc(typeof f.object === 'string' ? f.object : JSON.stringify(f.object))}</td>
+            <td>${badge(f.status, f.status === 'active' ? 'ok' : 'warn')}</td>
+            <td class="num">${Math.round((f.confidence || 0) * 100)}%</td>
+            <td class="mono" style="font-size:11px" title="${esc((f.provenance || []).join(', '))}">${(f.provenance || []).length} ${esc(t('mem.refsUnit'))}</td>
+          </tr>`;
+        }
+        html += '</table>';
+      } else {
+        html += emptyRow(t('mem.replayEmpty'));
+      }
+      body.innerHTML = html;
+    } catch (e) {
+      body.innerHTML = emptyRow(t('mem.replayFailed', { msg: e.message }));
+    }
+  }
+
+  $('btnMemoryReplay').addEventListener('click', probeMemoryReplay);
 
   function setConn(ok) {
     const badgeEl = $('connBadge');
