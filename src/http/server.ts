@@ -19,7 +19,8 @@ import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
 import type { CompetencyCheck, MentorshipStatus } from '../skills/mentor.js';
-import type { SkillSpecInput, SkillStatus } from '../skills/types.js';
+import type { SkillStatus } from '../skills/types.js';
+import { skillSpecInputFrom } from '../skills/spec-input.js';
 import { SkillValidationError } from '../skills/validate-spec.js';
 import { ConnectorError, type ConnectorRegistry } from '../mcp/connectors.js';
 import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
@@ -1845,23 +1846,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!isNonEmptyString(body.id)) {
           return error(reply, 400, 'invalid_request', 'body.id is required');
         }
-        const input = {
-          id: body.id,
-          name: body.name,
-          description: body.description,
-          version: body.version,
-          ...(body.domain !== undefined ? { domain: body.domain } : {}),
-          ...(body.tags !== undefined ? { tags: body.tags } : {}),
-          // E2.7: declared alternate names are part of the whitelisted copy, so
-          // an arbitrary payload key still cannot reach the persisted directory.
-          ...(body.aliases !== undefined ? { aliases: body.aliases } : {}),
-          ...(body.inputs !== undefined ? { inputs: body.inputs } : {}),
-          ...(body.outputs !== undefined ? { outputs: body.outputs } : {}),
-          ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),
-          ...(body.dependencies !== undefined ? { dependencies: body.dependencies } : {}),
-          ...(body.providedBy !== undefined ? { providedBy: body.providedBy } : {}),
-          ...(body.status !== undefined ? { status: body.status } : {}),
-        } as unknown as SkillSpecInput;
+        // E2.7: `aliases` is inside the shared whitelist, so an arbitrary payload
+        // key still cannot reach the persisted directory from either face.
+        const input = skillSpecInputFrom(body);
         try {
           return reply.code(201).send(deps.skillRegistry!.register(input));
         } catch (e) {

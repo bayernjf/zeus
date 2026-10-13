@@ -414,10 +414,10 @@ describe('TUI controller intent recognition (E2.6)', () => {
 
   it('forwards the model opt-in to the backend and prints the model label', async () => {
     const h = makeHarness([]);
-    h.client.recognize.mockResolvedValueOnce({ ok: true, skill: 'research', confidence: 0.82, backend: { kind: 'llm', model: 'agnes-2.5-flash' }, decisionAt: '' });
+    h.client.recognize.mockResolvedValueOnce({ ok: true, skill: 'research', confidence: 0.82, backend: { kind: 'llm', model: 'agnes-3.0-flash' }, decisionAt: '' });
     await h.deck.handle('im research postgres vs sqlite');
     expect(h.client.recognize).toHaveBeenCalledWith('research postgres vs sqlite', { useModel: true });
-    expect(h.printed.join('\n')).toContain('(llm agnes-2.5-flash)');
+    expect(h.printed.join('\n')).toContain('(llm agnes-3.0-flash)');
   });
 
   it('prints the fail-closed reason verbatim, never a guess', async () => {

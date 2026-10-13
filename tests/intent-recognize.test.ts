@@ -18,7 +18,7 @@ function mockBackend(overrides: Partial<DecisionBackend> = {}): DecisionBackend 
   }));
   const backend = {
     kind: 'llm' as const,
-    model: 'agnes-2.5-flash',
+    model: 'agnes-3.0-flash',
     noul: vi.fn(async () => ({ probability: 0.5, confidence: 0.5, calibrated: false, decisionAt: 'x' })),
     score: vi.fn(async () => ({ score: 50, distribution: {}, confidence: 0.5, calibrated: false, decisionAt: 'x' })),
     choice,
@@ -104,7 +104,7 @@ describe('recognizeIntent (model path, explicit opt-in)', () => {
     if (result.ok) {
       expect(result.intent.skill).toBe('research');
       expect(result.intent.mode).toBe('plan');
-      expect(result.backend).toEqual({ kind: 'llm', model: 'agnes-2.5-flash' });
+      expect(result.backend).toEqual({ kind: 'llm', model: 'agnes-3.0-flash' });
     }
   });
 

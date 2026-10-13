@@ -24,7 +24,7 @@ const defaultChoice: ChoiceResult = { choice: 'research', probabilities: {}, con
 function mockBackend(overrides: ScriptedOptions = {}): DecisionBackend {
   return createScriptedDecisionBackend({
     kind: 'llm',
-    model: 'agnes-2.5-flash',
+    model: 'agnes-3.0-flash',
     noul: { probability: 0.5, confidence: 0.5, calibrated: false, decisionAt: 'x' } satisfies NoulResult,
     score: { score: 50, distribution: {}, confidence: 0.5, calibrated: false, decisionAt: 'x' } satisfies ScoreResult,
     choice: defaultChoice,
@@ -109,7 +109,7 @@ describe('POST /api/intents/recognize', () => {
     const body = response.json();
     expect(body.ok).toBe(true);
     expect(body.intent.skill).toBe('research');
-    expect(body.backend).toEqual({ kind: 'llm', model: 'agnes-2.5-flash' });
+    expect(body.backend).toEqual({ kind: 'llm', model: 'agnes-3.0-flash' });
     expect((backend as ReturnType<typeof createScriptedDecisionBackend>).calls.choice).toHaveLength(1);
   });
 

@@ -6,7 +6,7 @@
 
 ## 1. 为什么要核（出处）
 
-`src/decision/decision-model.ts:22-22 #NOTE` 自注：*"the exact response envelope (answers/results key) has not been verified against the live API (no key in this environment); parsing tolerates the documented shapes and must be confirmed on first real call"*。LLM 适配器侧此限制已于 2026-10-03 解除（`npm run verify:decision-backend` 真机跑通 agnes-2.5-flash）；**Jev 侧限制不变**（无 key、endpoint 与 envelope 未核）。
+`src/decision/decision-model.ts:22-22 #NOTE` 自注：*"the exact response envelope (answers/results key) has not been verified against the live API (no key in this environment); parsing tolerates the documented shapes and must be confirmed on first real call"*。LLM 适配器侧此限制已于 2026-10-03 解除（`npm run verify:decision-backend` 真机跑通 agnes-3.0-flash）；**Jev 侧限制不变**（无 key、endpoint 与 envelope 未核）。
 
 ## 2. 四个未证实假设（引用代码现状）
 
