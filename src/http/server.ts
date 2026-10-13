@@ -175,6 +175,12 @@ export type HttpDeps = {
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
   memoryStore?: MemoryStore;
+  /**
+   * Durability hook for compliance mutations: retract / forget-subject await
+   * a kernel snapshot flush before answering, so a crash cannot resurrect a
+   * retracted fact in the window before the next periodic save.
+   */
+  persistState?: () => Promise<void>;
   /** H2 (E8.3): realm target for diary persistence. */
   realmStore?: RealmStore;
   /**
@@ -1587,7 +1593,21 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!context) {
           return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
         }
-        return { retractions: deps.memoryStore!.retractFacts(body.realmId, body.factIds, context) };
+        const retractions = deps.memoryStore!.retractFacts(body.realmId, body.factIds, context);
+        // A no-op retraction (unknown / already-retracted ids) changes no
+        // state; a real erasure is flushed before the answer so it survives a
+        // crash before the next periodic save.
+        if (retractions.length > 0) {
+          try {
+            await deps.persistState?.();
+          } catch (err) {
+            return error(
+              reply, 500, 'state_not_persisted',
+              `retraction applied in memory but the state flush failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+        return { retractions };
       });
 
       app.post('/api/memory/forget-subject', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -1604,7 +1624,18 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!context) {
           return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
         }
-        return { retractions: deps.memoryStore!.forgetSubject(body.realmId, body.subject, context) };
+        const retractions = deps.memoryStore!.forgetSubject(body.realmId, body.subject, context);
+        if (retractions.length > 0) {
+          try {
+            await deps.persistState?.();
+          } catch (err) {
+            return error(
+              reply, 500, 'state_not_persisted',
+              `retraction applied in memory but the state flush failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+        return { retractions };
       });
 
       app.get('/api/memory/retractions', { preHandler: requireBearer }, async () => ({

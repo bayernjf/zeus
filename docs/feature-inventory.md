@@ -163,7 +163,7 @@ PRD 共 **55 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **8 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 薄传输层：全库仅 `http/` 引 fastify，内核零传输依赖 | `http/server.ts` | ✅ |
-| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:389-389 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
+| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:395-395 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
 | 根公钥发布端点 | `GET /api/roster/keys` | ✅ |
 | 生产密钥硬化：内联 PEM / 文件挂载 / production 无钥拒启 | `http/rsk.ts` | ✅ |
 | 启动装配：四组件一次装配、快照恢复、信号优雅落盘 | `state/boot.ts` | ✅ |

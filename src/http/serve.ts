@@ -251,6 +251,8 @@ async function main(): Promise<void> {
     ...(kernel.mentorshipLedger ? { mentorshipLedger: kernel.mentorshipLedger } : {}),
     ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
     ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
+    // M-12: retract / forget-subject answer only once the erasure is durable.
+    persistState: () => kernel.saveState(),
     ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
     ...(kernel.realmStore
       ? {
