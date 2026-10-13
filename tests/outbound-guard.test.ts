@@ -9,6 +9,15 @@ import { Ed25519MemorySigner } from '../src/registry/signing.js';
 const AUTH = { authorization: 'Bearer driver-secret' };
 const NO_ALLOW: readonly string[] = [];
 
+function messageOf(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error('expected fn to throw');
+}
+
 describe('A-12 outbound URL guard', () => {
   describe('refuses a target that is not globally reachable', () => {
     const blocked: Array<[string, string]> = [
@@ -49,6 +58,24 @@ describe('A-12 outbound URL guard', () => {
     expect(() => assertOutboundUrlAllowed('file:///etc/passwd', NO_ALLOW)).toThrow(OutboundUrlError);
     expect(() => assertOutboundUrlAllowed('ftp://loom.example/card', NO_ALLOW)).toThrow(OutboundUrlError);
     expect(() => assertOutboundUrlAllowed('/card.json', NO_ALLOW)).toThrow(OutboundUrlError);
+  });
+
+  it('never echoes credentials embedded in a refused URL in the error message', () => {
+    const blocked = () =>
+      assertOutboundUrlAllowed('http://ops:hunter2@10.0.0.1/card?token=abc123&q=1', NO_ALLOW);
+    expect(blocked).toThrow(OutboundUrlError);
+    const message = messageOf(blocked);
+    expect(message).toMatch(/non-public address \(RFC1918 10\.0\.0\.0\/8\)/);
+    expect(message).not.toContain('hunter2');
+    expect(message).not.toContain('abc123');
+    // host/path survive so the refusal stays actionable
+    expect(message).toContain('10.0.0.1/card');
+    expect(message).toMatch(/token=REDACTED/);
+
+    // the non-absolute-URL branch carries credentials as free text too
+    const unparseable = () => assertOutboundUrlAllowed('Bearer abc123secret /card.json', NO_ALLOW);
+    expect(unparseable).toThrow(OutboundUrlError);
+    expect(messageOf(unparseable)).not.toContain('abc123secret');
   });
 
   it('lets an operator re-open a private host through the allowlist', () => {

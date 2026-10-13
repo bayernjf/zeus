@@ -1,6 +1,6 @@
 # Zeus MCP 集成说明（v0.2）
 
-> 状态：**现行（v0.2，2026-10-04）**。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:48-48 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
+> 状态：**现行（v0.2，2026-10-04）**。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:61-61 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
 >
 > **本文不含未取证的说法。** 标 **实测** 的条目来自**两批**真进程捕获：**§1 服务端面**出自 2026-09-28（`dist/realm/mcp-stdio.js`，HEAD `44b100b`，Node 22.23.1 与 20.20.2 各跑一遍，归一化 `realmId` / 时间戳 / `contentDigest` 后两份输出逐字节相同）；**§2 客户端面**出自 2026-10-01（真实 stdio 上游 `dist/realm/mcp-stdio.js` 与第三方 work-learn stdio server 各完成一次实连，见该节两条记录）。标 **代码级** 的只读了实现，没有跑；标 **未验证** 的明确待验。复跑方法见 §4。
 >
@@ -124,7 +124,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 ```
 
 要点：
-- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:374-374 #publicManifest`，序列化点 `src/realm/mcp.ts:324-324 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
+- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:380-380 #publicManifest`，序列化点 `src/realm/mcp.ts:330-330 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
 - `contentDigest` 是**连接时快照**的内容摘要；目录被改过它不会自己变（见 §1.6）。
 - `skipped[]` 是"为什么你的某个文件不在结果里"的官方答案，逐条带原因（§1.7）。
 - URI 的 scheme 不是 `zeus-realm://` → `-32602`；hostname 不是已连接域 → `-32002`；pathname 不是 manifest/search/item → `-32602 unknown realm resource`。都实测过。
@@ -139,9 +139,9 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 | `realm.search` | `realmId`、`text`、`since`（ISO 时间串）、`limit`（正数） | `realmId` | `content:[{type:"text",text:"<RealmHit 数组的 JSON 字符串>"}]` |
 | `realm.read` | `realmId`、`itemId`（根相对 POSIX 路径） | `realmId`、`itemId` | `content:[{type:"text",text:"<文件正文>"}]` |
 
-- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:220-220 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
+- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:226-226 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
 - `realm.read` 的正文按原样返回，包括换行；层级目录用 POSIX 分隔（实测 `itemId:"sub/dir/deep.md"` 可读）。
-- 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:521-521 #snippetFor`。
+- 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:524-524 #snippetFor`。
 - **没有写工具**（实测 `realm.write` → `-32602 unknown tool: realm.write`）。P0 的写能力只存在于库内端口 `Realm.write`，不经这条通道暴露（剩余半边登记在 [deferred-items.md](deferred-items.md) #14/#18 的口径里）。
 
 ### 1.6 快照语义 vs 实时语义：一句话版
@@ -160,7 +160,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.7 哪些文件进得来（扫描规则）
 
-连接时递归扫描根目录，规则如下（常量表 `src/realm/store.ts:62-62 #TEXT_EXTENSIONS`、递归 `src/realm/store.ts:405-405 #EXCLUDED_DIR_NAMES`）。下表五行里有四行的 reason 在本轮实测的 `manifest.skipped` 里原样出现过（扩展名、隐藏文件、超限、符号链接）；`node_modules` / `.git` 与"点开头目录整棵剪掉且不进 skipped"是代码级（`src/realm/store.ts:408-408 #startsWith`）：
+连接时递归扫描根目录，规则如下（常量表 `src/realm/store.ts:62-62 #TEXT_EXTENSIONS`、递归 `src/realm/store.ts:408-408 #EXCLUDED_DIR_NAMES`）。下表五行里有四行的 reason 在本轮实测的 `manifest.skipped` 里原样出现过（扩展名、隐藏文件、超限、符号链接）；`node_modules` / `.git` 与"点开头目录整棵剪掉且不进 skipped"是代码级（`src/realm/store.ts:411-411 #startsWith`）：
 
 | 情况 | 处理 | 出现位置 |
 |---|---|---|
@@ -176,7 +176,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.8 错误码与处置
 
-服务端可能回的全部码（码表 `src/realm/mcp.ts:39-39 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:387-387 #mapError`）。标 ✅ 的是本轮实测出现过原文：
+服务端可能回的全部码（码表 `src/realm/mcp.ts:39-39 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:393-399 #mapError`）。标 ✅ 的是本轮实测出现过原文：
 
 | code | 含义 | 什么时候出现 / 客户端该怎么办 |
 |---|---|---|
@@ -224,7 +224,7 @@ curl -s -X DELETE localhost:8787/api/connectors/kb -H "Authorization: Bearer $TO
 连接器支持两种 transport，二选一：
 
 - **http**（默认）：`endpoint` 为 streamable-HTTP URL，可选 `token`（出站 Bearer）。
-- **stdio**：`command` + 可选 `args` / `env`，Zeus 拉起本地子进程，走换行分隔 JSON-RPC。用于本地优先、没有 HTTP 面的 MCP server（如 work-learn 的 stdio server、Zeus 自己的 `dist/realm/mcp-stdio.js`）。声明与调用时 `endpoint` 与 `command` 互斥；`env` 的值（可能含凭证）不回显，HTTP 面只返回 `envKeys`。
+- **stdio**：`command` + 可选 `args` / `env`，Zeus 拉起本地子进程，走换行分隔 JSON-RPC。用于本地优先、没有 HTTP 面的 MCP server（如 work-learn 的 stdio server、Zeus 自己的 `dist/realm/mcp-stdio.js`）。声明与调用时 `endpoint` 与 `command` 互斥；`env` 的值（可能含凭证）不回显，HTTP 面只返回 `envKeys`；env 值与 bearer token 同口径，不进明文状态文件与备份束，恢复后需重新声明（`envAllowList` / `maxWallSeconds` 是非敏感配置，正常持久化）。
 
 stdio 声明示例（经 HTTP 面）：
 
@@ -239,26 +239,28 @@ curl -s -X POST localhost:8787/api/connectors -H "Authorization: Bearer $TOKEN" 
 
 ### 2.1 权限词汇是封闭的，而且比工具名严格
 
-`permissions` 走 Skill 的同一套校验（`src/mcp/connectors.ts:41-41 #validatePermissionClaims` → `src/skills/validate-spec.ts:18-18 #PERMISSION_RE` 与 `src/skills/validate-spec.ts:27-27 #MCP_TOOL_NAME_RE`，判定函数在 `src/skills/validate-spec.ts:35-35 #permissionClaimIssue`）：
+`permissions` 走 Skill 的同一套校验（`src/mcp/connectors.ts:48-48 #validatePermissionClaims` → `src/skills/validate-spec.ts:18-18 #PERMISSION_RE` 与 `src/skills/validate-spec.ts:27-27 #MCP_TOOL_NAME_RE`，判定函数在 `src/skills/validate-spec.ts:35-35 #permissionClaimIssue`）：
 
 - 允许的前缀只有五个：`realm` / `execute` / `network` / `credential` / `mcp`。其他一律在**声明那一刻**被拒（库内 `validatePermissionClaims` 已实测；经 HTTP 面表现为 400，`src/http/server.ts:2803-2790 #`），消息形如 `unknown permission scope 'bogus'; allowed: realm, execute, network, credential, mcp`。
-- 工具级边界的写法是 `mcp:<工具名>`；**裸 `mcp` 等于全部放行**（判定在 `src/mcp/connectors.ts:286-286 #withinDeclaredBoundary`：`claim === \`mcp:${name}\` || claim === 'mcp'`）。
+- 工具级边界的写法是 `mcp:<工具名>`；**裸 `mcp` 等于全部放行**（判定在 `src/mcp/connectors.ts:338-338 #withinDeclaredBoundary`：`claim === \`mcp:${name}\` || claim === 'mcp'`）。
 - **非 `mcp` 作用域**（realm/execute/network/credential）仍走封闭词法 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$`；**`mcp:<工具名>` 则引用上游握手清单里的原样字符串**（deferred **#30** 已修复，2026-09-30）：`mcp:search`、`mcp:search_docs`、`mcp:Search`、`mcp:notion.search`、`mcp:A1.b-2_c` 均合法，允许字母/数字/`.`/`_`/`:`/`-`；仅 `mcp:`（空名）、带空白或控制字符被判 invalid。名字与上游 `tools/list` **精确匹配、大小写敏感**。
 - **上游改名会静默失权**：声明了但握手清单里没有的 `mcp:<工具名>` 不会报错（声明可能早于连接），连接时会产生一条 `boundary-unmatched` 连接器审计事件（`granted tools not discovered upstream: …`），据此发现改名/下线；该工具不会出现在裁剪后的能力清单里，调用即拒。
 
 ### 2.2 裁剪发生在哪一层
 
-- 握手回来的能力清单，**三类（tools / resources / prompts）都按声明裁剪**：`src/mcp/connectors.ts:291-291 #narrowCapabilities`，连接时在 `src/mcp/connectors.ts:150-150 #narrowCapabilities` 应用、状态恢复导入时再收一次（`src/mcp/connectors.ts:258-258 #narrowCapabilities`）；断言在 `tests/mcp-connectors.test.ts:261-261 #bounds`（三类同边界）与 `tests/mcp-connectors.test.ts:288-288 #narrows`（导入后重收）。因此"声明里没有的 resource 就看不见"**这句现在是成立的**——但 2026-09-28 写下这行时**不成立**（当时只有 tools 被裁），是 A-09 在 2026-10-01 把三类统一到同一条边界；本文那一版留下的过期陈述在本轮合并 B-39 的逐锚点复读中被改掉（登记为审计 B-41）。
-- 调用侧的闸在两处：不在裁剪后清单里的工具名直接拒（`src/mcp/connectors.ts:197-197 #expose`，测试锚点 `tests/mcp-connectors.test.ts:176-176 #refuses`）。上游没 advertised 的东西调不到，被边界裁掉的东西也调不到。
-- 上游不可达 / 握手失败 = **502 `bad_gateway`**，并写一条 `refused` 审计（错误分类 `src/http/server.ts:2807-2786 #`、审计落点 `src/mcp/connectors.ts:130-130 #refused`）；未知 id → 404（`src/http/server.ts:1837-1816 #`）；重复声明或已吊销 → 409；参数不合法 → 400。
+- 握手回来的能力清单，**三类（tools / resources / prompts）都按声明裁剪**：`src/mcp/connectors.ts:343-343 #narrowCapabilities`，连接时在 `src/mcp/connectors.ts:176-176 #narrowCapabilities` 应用、状态恢复导入时再收一次（`src/mcp/connectors.ts:310-310 #narrowCapabilities`）；断言在 `tests/mcp-connectors.test.ts:391-391 #bounds`（三类同边界）与 `tests/mcp-connectors.test.ts:418-418 #narrows`（导入后重收）。因此"声明里没有的 resource 就看不见"**这句现在是成立的**——但 2026-09-28 写下这行时**不成立**（当时只有 tools 被裁），是 A-09 在 2026-10-01 把三类统一到同一条边界；本文那一版留下的过期陈述在本轮合并 B-39 的逐锚点复读中被改掉（登记为审计 B-41）。
+- 调用侧的闸在两处：不在裁剪后清单里的工具名直接拒（`src/mcp/connectors.ts:240-240 #expose`，测试锚点 `tests/mcp-connectors.test.ts:201-201 #refuses`）。上游没 advertised 的东西调不到，被边界裁掉的东西也调不到。
+- 上游不可达 / 握手失败 = **502 `bad_gateway`**，并写一条 `refused` 审计（错误分类 `src/http/server.ts:2807-2786 #`、审计落点 `src/mcp/connectors.ts:156-156 #refused`）；未知 id → 404（`src/http/server.ts:1837-1816 #`）；重复声明或已吊销 → 409；参数不合法 → 400。
 
 ### 2.3 凭证的可见性
 
-`token` 只在 `POST /api/connectors` 那一瞬间进入，**任何响应（含 list / get / connect / revoke）都只报 `hasToken: true|false`，绝不回显**（脱敏在 `src/http/server.ts:1830-1809 #`；断言在 `tests/http-connectors.test.ts`）。审计记录同样只有 `{at, connectorId, action, detail}` 四个字段，没有 token 位（代码级：`src/mcp/connectors.ts:14-14 #ConnectorAuditEntry`）。
+`token` 只在 `POST /api/connectors` 那一瞬间进入，**任何响应（含 list / get / connect / revoke）都只报 `hasToken: true|false`，绝不回显**（脱敏在 `src/http/server.ts:1830-1809 #`；断言在 `tests/http-connectors.test.ts`）。审计记录同样只有 `{at, connectorId, action, detail}` 四个字段，没有 token 位（代码级：`src/mcp/connectors.ts:15-15 #ConnectorAuditEntry`）。
 
 ### 2.4 客户端侧的协议版本
 
-Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/client.ts:12-12 #PROTOCOL_VERSION`），不做多版本协商；响应接受两种帧（单一 JSON body 或 `text/event-stream` 的 `data:` 帧，实测覆盖在 `tests/mcp-connectors.test.ts:86-86 #accepts`）。服务端未实现的能力（tools/resources/prompts 任一类）列表失败即视为空清单，不阻断握手（`src/mcp/client.ts:119-119 #safeList`）。
+Zeus 的 MCP 客户端在 `initialize` 里固定送 `2025-03-26`（`src/mcp/client.ts:12-12 #PROTOCOL_VERSION`），不做多版本协商；响应接受两种帧（单一 JSON body 或 `text/event-stream` 的 `data:` 帧，实测覆盖在 `tests/mcp-connectors.test.ts:89-89 #accepts`）。服务端未实现的能力（tools/resources/prompts 任一类）列表失败即视为空清单，不阻断握手（`src/mcp/client.ts:174-174 #safeList`）。
+
+HTTP 传输的运行时边界（M-07）：initialize 响应若下发 `Mcp-Session-Id`，客户端捕获并在此后全部 POST（含 `notifications/initialized` 与 `tools/call`）原样回传；服务端不下发则不发送该头，无状态服务端不受影响。registry 的 HTTP 调用每次构造新客户端，`tools/call` 前先在该客户端上跑完 initialize 握手，与 stdio 传输对称。每个请求挂 `AbortSignal`，默认 30 秒墙钟超时（可经 `McpClientDeps.callTimeoutSeconds` 注入），超时中止请求；响应体流式有界读取，默认上限 10 MiB（`maxResponseBytes` 可注入），超限即拒并取消流。
 
 ### 2.5 最小权限分组样板：work-learn 的 21 个工具
 

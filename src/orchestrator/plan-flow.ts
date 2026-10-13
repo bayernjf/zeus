@@ -130,6 +130,22 @@ export class PlanFlow {
           });
           continue;
         }
+        // The draft is planner-produced data, so its self-declared realm can
+        // never promote execution into another realm (design constraint: the
+        // personal and enterprise data domains stay isolated). A mismatched
+        // draft is dropped like any malformed candidate instead of scored.
+        if (draft.realm !== request.realm) {
+          this.audit({
+            ts: this.now().toISOString(),
+            vassal: branch.vassal,
+            runId: branch.runId,
+            skill,
+            realm: request.realm,
+            decision: 'plan-malformed',
+            detail: `planner ${branch.vassal} draft realm '${draft.realm}' does not match request realm '${request.realm}'; draft dropped`,
+          });
+          continue;
+        }
         drafts.push({ planner: branch.vassal, spec: draft });
       }
     }
@@ -299,12 +315,12 @@ function planFromPart(part: Part): DagSpec | undefined {
   if (raw === undefined || typeof raw !== 'object' || raw === null) return undefined;
   const spec = raw as Record<string, unknown>;
   if (!Array.isArray(spec.nodes)) return undefined;
-  if (typeof spec.realm !== 'string') return undefined;
+  if (typeof spec.realm !== 'string' || (spec.realm !== 'personal' && spec.realm !== 'enterprise')) return undefined;
   const nodes = spec.nodes.filter(isDagNodeShape);
   if (nodes.length !== spec.nodes.length) return undefined;
   return {
     nodes,
-    realm: spec.realm as RealmType,
+    realm: spec.realm,
     ...(typeof spec.dagId === 'string' ? { dagId: spec.dagId } : {}),
     ...(typeof spec.branchTimeoutMs === 'number' ? { branchTimeoutMs: spec.branchTimeoutMs } : {}),
   };

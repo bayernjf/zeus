@@ -51,6 +51,8 @@ describe('ci-pr-comment.mjs idempotent PR upsert (S7 V3)', () => {
   let server: Server;
   let calls: RecordedCall[];
   let listHandler: () => unknown;
+  let listLink: string | undefined;
+  let page2: unknown;
   let dir: string;
   let port: number;
 
@@ -58,6 +60,8 @@ describe('ci-pr-comment.mjs idempotent PR upsert (S7 V3)', () => {
     dir = mkdtempSync(join(tmpdir(), 'zeus-pr-comment-'));
     calls = [];
     listHandler = () => [];
+    listLink = undefined;
+    page2 = undefined;
     server = createServer((req, res) => {
       let raw = '';
       req.on('data', chunk => (raw += chunk));
@@ -69,8 +73,11 @@ describe('ci-pr-comment.mjs idempotent PR upsert (S7 V3)', () => {
         }
         calls.push({ method: req.method ?? '?', url, body: parsed });
         if (req.method === 'GET' && url.includes('/comments')) {
-          res.writeHead(200, { 'content-type': 'application/json' });
-          res.end(JSON.stringify(listHandler()));
+          const isPage2 = url.includes('page=2');
+          const headers: Record<string, string> = { 'content-type': 'application/json' };
+          if (!isPage2 && listLink !== undefined) headers.link = listLink;
+          res.writeHead(200, headers);
+          res.end(JSON.stringify(isPage2 && page2 !== undefined ? page2 : listHandler()));
           return;
         }
         res.writeHead(201, { 'content-type': 'application/json' });
@@ -137,6 +144,28 @@ describe('ci-pr-comment.mjs idempotent PR upsert (S7 V3)', () => {
     expect(patch?.url).toBe('/repos/bayjf/zeus/issues/comments/77');
     expect(calls.some(c => c.method === 'POST')).toBe(false);
     expect(r.stdout).toContain('updated PR comment 77');
+  });
+
+  it('follows pagination to find a marked comment beyond the first page', async () => {
+    // GitHub paginates issue comments at 100 per page; a long-lived PR can
+    // push the marker past page 1. The upsert contract (design-evals V3)
+    // still requires PATCHing that comment, not stacking a fresh one.
+    listHandler = () => Array.from({ length: 100 }, (_, i) => ({ id: i + 1, body: `filler ${i + 1}` }));
+    page2 = [{ id: 99, body: `${MARKER}\nstale body` }];
+    listLink = `<${apiBase()}/repos/bayjf/zeus/issues/42/comments?per_page=100&page=2>; rel="next"`;
+    const r = await runPublisher({
+      apiBase: apiBase(),
+      bodyFile: writeBodyFile(),
+      eventFile: writeEventFile({ number: 42 }),
+      eventName: 'pull_request',
+      token: 'ghs_test',
+    });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(calls.some(c => c.method === 'GET' && c.url.includes('page=2'))).toBe(true);
+    const patch = calls.find(c => c.method === 'PATCH');
+    expect(patch?.url).toBe('/repos/bayjf/zeus/issues/comments/99');
+    expect(calls.some(c => c.method === 'POST')).toBe(false);
+    expect(r.stdout).toContain('updated PR comment 99');
   });
 
   it('no-ops without touching the API on a push (non-pull_request) event', async () => {

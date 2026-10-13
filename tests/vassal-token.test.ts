@@ -94,7 +94,32 @@ describe('resolveVassalSeedsConfig (ZEUS_VASSAL_SEEDS parsing)', () => {
     expect(() => resolveVassalSeedsConfig({ ZEUS_VASSAL_SEEDS: 'http://a/card|' })).toThrow(/empty token/);
     expect(() => resolveVassalSeedsConfig({ ZEUS_VASSAL_SEEDS: '|tok' })).toThrow(/empty card URL/);
   });
+
+  it('never echoes the seed token or embedded URL credentials in parse errors', () => {
+    // The token half of a malformed entry must never reach the error message:
+    // boot refuses log that message straight to stderr.
+    const emptyCard = () => resolveVassalSeedsConfig({ ZEUS_VASSAL_SEEDS: '|seeded-token-value' });
+    expect(emptyCard).toThrow(/empty card URL/);
+    expect(tryMessage(emptyCard)).not.toContain('seeded-token-value');
+
+    const emptyToken = () =>
+      resolveVassalSeedsConfig({ ZEUS_VASSAL_SEEDS: 'http://ops:hunter2@host.example/card|' });
+    expect(emptyToken).toThrow(/empty token/);
+    const message = tryMessage(emptyToken);
+    expect(message).not.toContain('hunter2');
+    // the URL body stays so the operator can still see which entry failed
+    expect(message).toContain('host.example/card');
+  });
 });
+
+function tryMessage(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error('expected fn to throw');
+}
 
 describe('E4.8 boot wiring: dispatcher attaches the seeded bearer on fan-out', () => {
   it('sends Authorization for a vassal seeded with a token', async () => {

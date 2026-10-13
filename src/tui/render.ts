@@ -4,7 +4,7 @@
  * through semantic tokens (tokens.ts); labels only through the i18n translator.
  */
 import type { Translator } from './format.js';
-import { auditDecisionLabel, statusLabel } from './format.js';
+import { auditDecisionLabel, safeText, statusLabel } from './format.js';
 import { auditToken, paintStatus, type Palette } from './tokens.js';
 import type { ActiveIntentBranchView, ActiveIntentView, ConnectorView, ContractView, ContractsView, ConnectorsView, DeckSnapshot, DomainsView, EscalationView, RecognizeView, WatchesView, WatchView } from './client.js';
 
@@ -83,7 +83,7 @@ function renderMetrics(palette: Palette, t: Translator, snapshot: DeckSnapshot):
 }
 
 export function skillList(entry: { skills: Array<{ id?: string; name?: string }> }): string {
-  return entry.skills.map(skill => skill.id ?? skill.name ?? '?').join(',');
+  return entry.skills.map(skill => safeText(skill.id ?? skill.name ?? '?')).join(',');
 }
 
 function renderRoster(palette: Palette, t: Translator, snapshot: DeckSnapshot): string[] {
@@ -96,13 +96,13 @@ function renderRoster(palette: Palette, t: Translator, snapshot: DeckSnapshot): 
   entries.forEach((entry, index) => {
     const label = statusLabel(t, entry.status);
     const badge = paintStatus(palette, entry.status, label);
-    const health = entry.health && entry.health !== 'healthy' ? ` ${palette.paint('warning', entry.health)}` : '';
+    const health = entry.health && entry.health !== 'healthy' ? ` ${palette.paint('warning', safeText(entry.health))}` : '';
     // A revoked row is the one case where the deck can undo its own write, and
     // `b<n>` names the row by position - so print the position and the form.
     const hint = entry.status === 'revoked'
       ? ` ${palette.paint('warning', t('roster.reinstateHint', { index: index + 1 }))}`
       : '';
-    lines.push(`  ${badge}  ${palette.bold(entry.name)}  [${skillList(entry)}]${health}${hint}`);
+    lines.push(`  ${badge}  ${palette.bold(safeText(entry.name))}  [${skillList(entry)}]${health}${hint}`);
   });
   return lines;
 }
@@ -135,12 +135,12 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
   }
   items.forEach((esc, index) => {
     const badge = interruptionBadge(palette, t, esc.interruptLevel);
-    lines.push(`  ${palette.paint('attention', `#${index + 1}`)} ${palette.bold(esc.id)} ${palette.paint('info', escalationKindLabel(t, esc.kind))}${badge ? ` ${badge}` : ''} · ${esc.skill} · ${esc.vassal}`);
-    lines.push(`      ${esc.reason}`);
+    lines.push(`  ${palette.paint('attention', `#${index + 1}`)} ${palette.bold(safeText(esc.id))} ${palette.paint('info', escalationKindLabel(t, esc.kind))}${badge ? ` ${badge}` : ''} · ${safeText(esc.skill)} · ${safeText(esc.vassal)}`);
+    lines.push(`      ${safeText(esc.reason)}`);
     const options = escalationOptions(esc);
     if (options.length > 0) {
       const labelKey = esc.kind === 'intent-conflict' ? 'escalation.stances' : 'escalation.options';
-      lines.push(`      ${t(labelKey as Parameters<Translator>[0])}: ${options.map((option, i) => `${i + 1}.${option}`).join('  ')}`);
+      lines.push(`      ${t(labelKey as Parameters<Translator>[0])}: ${options.map((option, i) => `${i + 1}.${safeText(option)}`).join('  ')}`);
     }
     if (esc.kind === 'delegation-limit') {
       lines.push(`      ${palette.paint('attention', t('escalation.approveContractHint'))}`);
@@ -168,9 +168,9 @@ function renderTimeline(palette: Palette, t: Translator, snapshot: DeckSnapshot)
     const label = auditDecisionLabel(t, entry.decision);
     const badge = known
       ? palette.paint(token, label)
-      : palette.paint(token, `${label} (${entry.decision})`);
-    const stamp = entry.ts ? `[${entry.ts}] ` : '';
-    const context = [entry.vassal, entry.skill, entry.state].filter(Boolean).join(' · ');
+      : palette.paint(token, `${label} (${safeText(entry.decision)})`);
+    const stamp = entry.ts ? `[${safeText(entry.ts)}] ` : '';
+    const context = [entry.vassal, entry.skill, entry.state].filter((s): s is string => Boolean(s)).map(safeText).join(' · ');
     lines.push(`  ${stamp}${badge}  ${context}`.trimEnd());
   }
   return lines;
@@ -193,7 +193,7 @@ function renderDomains(palette: Palette, t: Translator, domains: DomainsView | n
       const tenantPath = [realm.tenant.org, realm.tenant.department, realm.tenant.member].filter(Boolean).join('/');
       flags.push(t('domains.tenant', { tenant: tenantPath }));
     }
-    lines.push(`  ${palette.paint('muted', `#${realmIndex + 1}`)} ${palette.paint(realm.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(realm.realmId)}  [${flags.join(' · ')}]`);
+    lines.push(`  ${palette.paint('muted', `#${realmIndex + 1}`)} ${palette.paint(realm.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(safeText(realm.realmId))}  [${flags.join(' · ')}]`);
   });
   lines.push(`  ${t('domains.grantsTitle')}`);
   if (domains.grants.length === 0) {
@@ -221,7 +221,7 @@ function renderContract(palette: Palette, t: Translator, contract: ContractView)
     concurrent: contract.limits.maxConcurrent,
     window,
   });
-  const scope = contract.vassal ? ` · ${contract.vassal}` : '';
+  const scope = contract.vassal ? ` · ${safeText(contract.vassal)}` : '';
   return `  ${badge}  ${palette.bold(body)}${scope}  [${t('contracts.caps', { caps: contract.capabilities.join(',') })}]`;
 }
 
@@ -308,7 +308,7 @@ function renderConnectors(palette: Palette, t: Translator, connectors: Connector
         })
       : t('connectors.noCaps');
     lines.push(
-      `  ${palette.paint('muted', `#${index + 1}`)} ${badge}  ${palette.bold(connector.id)}  [${t('connectors.line', { name: connector.name, transport, caps })}]${connector.hasToken ? ` ${palette.paint('info', t('connectors.tokenSet'))}` : ''}`,
+      `  ${palette.paint('muted', `#${index + 1}`)} ${badge}  ${palette.bold(safeText(connector.id))}  [${t('connectors.line', { name: connector.name, transport, caps })}]${connector.hasToken ? ` ${palette.paint('info', t('connectors.tokenSet'))}` : ''}`,
     );
   });
   lines.push(`  ${palette.paint('muted', t('connectors.prompt'))}`);
@@ -333,7 +333,7 @@ function renderActiveIntent(palette: Palette, t: Translator, intent: ActiveInten
   const statusKey = intent.status === 'needs-driver' ? 'active.status.needsDriver' : 'active.status.running';
   const statusToken = intent.status === 'needs-driver' ? 'warning' : 'info';
   const lines: string[] = [
-    `  ${palette.paint('muted', `#${index + 1}`)} ${palette.bold(intent.intentId)}  [${intent.skill}]  ${palette.paint(
+    `  ${palette.paint('muted', `#${index + 1}`)} ${palette.bold(safeText(intent.intentId))}  [${safeText(intent.skill)}]  ${palette.paint(
       statusToken,
       t(statusKey as Parameters<Translator>[0]),
     )}  ${palette.paint('muted', t('active.ready', { settled: intent.settledCount, total: intent.totalCount }))}`,
@@ -341,7 +341,7 @@ function renderActiveIntent(palette: Palette, t: Translator, intent: ActiveInten
   for (const runId of intent.view.order) {
     const branch = intent.view.branches[runId];
     if (!branch) continue;
-    const name = branch.vassal ?? runId;
+    const name = safeText(branch.vassal ?? runId);
     if (!branch.started) {
       lines.push(`      ${palette.paint('muted', `└ ${name}  ${t('active.branch.waiting')}`)}`);
       continue;

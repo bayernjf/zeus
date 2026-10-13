@@ -94,7 +94,11 @@ describe('S13 V2 crash recovery in a booted kernel', () => {
       // State stays needs-driver; no branch was re-dispatched.
       expect(second.orchestrator.getIntent('intent-needs-driver')?.status).toBe('needs-driver');
     } finally {
-      await import('node:fs/promises').then(fs => fs.rm(stateFile, { force: true }));
+      await import('node:fs/promises').then(fs =>
+        Promise.all([
+          fs.rm(stateFile, { force: true }),
+          fs.rm(`${stateFile}.lock`, { recursive: true, force: true }),
+        ]));
     }
   });
 
@@ -120,7 +124,11 @@ describe('S13 V2 crash recovery in a booted kernel', () => {
       expect(auditsOf(secondAudits)).toContain('recovery-settled-failed:settled failed: no-fallback-provider (intent-failed)');
       expect(second.orchestrator.getIntent('intent-failed')?.status).toBe('failed');
     } finally {
-      await import('node:fs/promises').then(fs => fs.rm(stateFile, { force: true }));
+      await import('node:fs/promises').then(fs =>
+        Promise.all([
+          fs.rm(stateFile, { force: true }),
+          fs.rm(`${stateFile}.lock`, { recursive: true, force: true }),
+        ]));
     }
   });
 

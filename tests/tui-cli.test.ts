@@ -24,6 +24,20 @@ describe('TUI CLI argument contract', () => {
     expect(() => parseArgs(['--token', 'secret'])).toThrow(/--token is not accepted/);
   });
 
+  it('refuses the --token=value form instead of misreporting a missing token', () => {
+    // Without '=' splitting, '--token=secret' parses as an unknown flag named
+    // 'token=secret': the refusal below never fires and main() reports
+    // "missing bearer token" — the wrong diagnosis for a leaky invocation.
+    expect(() => parseArgs(['--token=secret'])).toThrow(/--token is not accepted/);
+  });
+
+  it('accepts the --flag=value form for non-secret flags', () => {
+    const args = parseArgs(['--base-url=http://127.0.0.1:9/', '--interval=500', '--locale=en']);
+    expect(args.baseUrl).toBe('http://127.0.0.1:9');
+    expect(args.intervalMs).toBe(500);
+    expect(args.locale).toBe('en');
+  });
+
   it('takes the bearer token from ZEUS_INTERNAL_TOKEN only', () => {
     process.env.ZEUS_INTERNAL_TOKEN = 'from-env';
     expect(parseArgs([]).token).toBe('from-env');

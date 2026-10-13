@@ -16,7 +16,16 @@ export type ConnectorStatus = 'declared' | 'connected' | 'revoked';
  */
 export type ConnectorTransport =
   | { type?: 'http'; endpoint: string; token?: string }
-  | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> };
+  | {
+      type: 'stdio';
+      command: string;
+      args?: string[];
+      env?: Record<string, string>;
+      /** S16 V2 (design-sandbox §5): spawn env allow-list. */
+      envAllowList?: string[];
+      /** S16 V2: wall-clock bound in seconds for the spawned process. */
+      maxWallSeconds?: number;
+    };
 
 export interface ConnectorDeclaration {
   id: string;
@@ -30,6 +39,10 @@ export interface ConnectorDeclaration {
   args?: string[];
   /** Extra environment variables for the spawned process (merged over process.env). */
   env?: Record<string, string>;
+  /** S16 V2 (design-sandbox §5): the spawned child inherits only these variables (stdio only). */
+  envAllowList?: string[];
+  /** S16 V2: wall-clock bound in seconds for the spawned child (stdio only). */
+  maxWallSeconds?: number;
   /** Minimum rights the connector may exercise; closed Skill vocabulary. */
   permissions: string[];
   /** Optional bearer token presented to the connected system. */
@@ -51,15 +64,20 @@ export interface ConnectorRecord extends ConnectorDeclaration {
 
 /**
  * The persistable form of a connector record: everything except the bearer
- * token. The kernel state file is a plaintext document, and every backup bundle
- * is built from it, so a credential must not cross that boundary. The token
- * lives in memory for the life of the process; a connector restored from a
- * snapshot comes back without one and has to be re-declared to authenticate
- * upstream again.
+ * token and a stdio connector's env map. The kernel state file is a plaintext
+ * document, and every backup bundle is built from it, so a credential must not
+ * cross that boundary. A stdio env map may carry upstream API keys, so it is
+ * held to the same rule as the HTTP token. Both live in memory for the life of
+ * the process; a connector restored from a snapshot comes back without them and
+ * has to be re-declared to authenticate upstream again.
  */
-export type PersistedConnectorRecord = Omit<ConnectorRecord, 'token'>;
+export type PersistedConnectorRecord = Omit<ConnectorRecord, 'token' | 'env'>;
 
 export interface McpClientDeps {
   fetchImpl?: typeof fetch;
   token?: string;
+  /** Per-request wall-clock bound in seconds before the request is aborted. */
+  callTimeoutSeconds?: number;
+  /** Maximum response body size in bytes; larger bodies are rejected. */
+  maxResponseBytes?: number;
 }

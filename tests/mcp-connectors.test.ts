@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { Readable, Writable } from 'node:stream';
+import { describe, expect, it, vi } from 'vitest';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { ConnectorRegistry, ConnectorError, type ConnectorAuditEntry } from '../src/mcp/connectors.js';
 import { McpClient } from '../src/mcp/client.js';
 import type { ConnectorDeclaration } from '../src/mcp/types.js';
@@ -173,6 +176,28 @@ describe('E7 MCP connectors', () => {
     expect(result).toEqual({ content: [{ type: 'text', text: 'called:search' }] });
   });
 
+  it('M-07: runs the initialize handshake on the HTTP client before tools/call', async () => {
+    const seen: string[] = [];
+    const inner = mcpFetch();
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push((JSON.parse(String(init?.body)) as { method: string }).method);
+      return inner(input, init);
+    }) as typeof fetch;
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: ['mcp:search'] }));
+    await registry.connect('knowledge', fetchImpl);
+    seen.length = 0;
+    // callTool builds a fresh HTTP client; stateless servers aside, session-bearing
+    // servers require the initialization sequence on that client before tools/call.
+    await registry.callTool('knowledge', 'search', { q: 1 }, fetchImpl);
+    const initializeAt = seen.indexOf('initialize');
+    const initializedAt = seen.indexOf('notifications/initialized');
+    const callAt = seen.indexOf('tools/call');
+    expect(initializeAt).toBeGreaterThanOrEqual(0);
+    expect(initializedAt).toBeGreaterThan(initializeAt);
+    expect(callAt).toBeGreaterThan(initializedAt);
+  });
+
   it('refuses to call a tool the handshake never discovered (or the boundary dropped)', async () => {
     const registry = new ConnectorRegistry(now);
     registry.declare(declaration({ permissions: ['mcp:search'] }));
@@ -222,6 +247,111 @@ describe('E7 MCP connectors', () => {
   it('rejects a declaration with neither endpoint nor command', () => {
     const registry = new ConnectorRegistry(now);
     expect(() => registry.declare(declaration({ endpoint: undefined }))).toThrowError(/endpoint|command/);
+  });
+
+  it('M-06: runs the initialize handshake before a stdio tool call on the freshly spawned process', async () => {
+    const { spawnImpl, spawns } = stdioFakeSpawn();
+    const registry = new ConnectorRegistry(now, undefined, { spawnImpl });
+    registry.declare(
+      declaration({
+        id: 'local',
+        endpoint: undefined,
+        command: 'fake-server',
+        permissions: ['mcp:search'],
+      }),
+    );
+    await registry.connect('local');
+    const result = await registry.callTool('local', 'search', { q: 'x' });
+    expect(result).toMatchObject({ content: [{ type: 'text', text: 'ok' }] });
+
+    // connect() and callTool() each spawn a short-lived process; the call's own
+    // process must be initialized before tools/call is written to it.
+    expect(spawns).toHaveLength(2);
+    const methods = spawns[1]!.sent.map(line => (JSON.parse(line) as { method: string }).method);
+    const initializeAt = methods.indexOf('initialize');
+    const initializedAt = methods.indexOf('notifications/initialized');
+    const callAt = methods.indexOf('tools/call');
+    expect(initializeAt).toBeGreaterThanOrEqual(0);
+    expect(initializedAt).toBeGreaterThan(initializeAt);
+    expect(callAt).toBeGreaterThan(initializedAt);
+  });
+
+  it('M-06: persists the S16 V2 env allow-list and wall-clock bound declared for a stdio connector', () => {
+    const registry = new ConnectorRegistry(now);
+    const record = registry.declare(
+      declaration({
+        id: 'local',
+        endpoint: undefined,
+        command: 'fake-server',
+        env: { ZEUS_TEST_PINNED: 'x' },
+        envAllowList: ['ZEUS_TEST_PINNED'],
+        maxWallSeconds: 7,
+        permissions: ['mcp:search'],
+      }),
+    );
+    expect(record.envAllowList).toEqual(['ZEUS_TEST_PINNED']);
+    expect(record.maxWallSeconds).toBe(7);
+
+    // Both fields are non-sensitive configuration and survive a state restore.
+    const restored = new ConnectorRegistry(now);
+    restored.importState(registry.exportState());
+    expect(restored.get('local')).toMatchObject({
+      envAllowList: ['ZEUS_TEST_PINNED'],
+      maxWallSeconds: 7,
+    });
+  });
+
+  it('M-06: narrows the spawned child environment with the declared allow-list on both handshake and call', async () => {
+    const { spawnImpl, spawns } = stdioFakeSpawn();
+    const registry = new ConnectorRegistry(now, undefined, { spawnImpl });
+    registry.declare(
+      declaration({
+        id: 'local',
+        endpoint: undefined,
+        command: 'fake-server',
+        env: { ZEUS_TEST_PINNED: 'x' },
+        envAllowList: ['ZEUS_TEST_PINNED'],
+        permissions: ['mcp:search'],
+      }),
+    );
+    await registry.connect('local');
+    await registry.callTool('local', 'search', {});
+    expect(spawns).toHaveLength(2);
+    for (const spawn of spawns) {
+      // The child inherits nothing but the single allow-listed variable; the
+      // full host environment used to pass through unchanged.
+      expect(spawn.options.env).toEqual({ ZEUS_TEST_PINNED: 'x' });
+    }
+  });
+
+  it('M-06: enforces the declared wall-clock bound against the spawned connector process', async () => {
+    vi.useFakeTimers();
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    const { spawnImpl } = stdioFakeSpawn({ hangAll: true });
+    const registry = new ConnectorRegistry(now, undefined, { spawnImpl });
+    registry.declare(
+      declaration({
+        id: 'local',
+        endpoint: undefined,
+        command: 'fake-server',
+        maxWallSeconds: 1,
+        permissions: ['mcp:search'],
+      }),
+    );
+    try {
+      let rejection: Error | undefined;
+      const connecting = registry.connect('local').catch(error => {
+        rejection = error as Error;
+      });
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(rejection?.message).toMatch(/wall-clock/);
+      await connecting;
+      // Drain the SIGTERM -> SIGKILL escalation while process.kill is mocked.
+      await vi.advanceTimersByTimeAsync(2000);
+    } finally {
+      vi.useRealTimers();
+      killSpy.mockRestore();
+    }
   });
 });
 
@@ -322,4 +452,137 @@ describe('E7 connector credentials do not cross into the persisted state', () =>
     expect(restored.get('knowledge')).toMatchObject({ endpoint: ENDPOINT, permissions: ['mcp'] });
     expect(restored.get('knowledge')!.token).toBeUndefined();
   });
+
+  it('keeps a stdio connector env map in memory and out of every export', () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(
+      declaration({
+        id: 'local-notes',
+        name: 'Local notes',
+        endpoint: undefined,
+        command: 'node',
+        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
+        env: { ZEUS_REALM_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
+        permissions: ['mcp:realm.search'],
+      }),
+    );
+
+    // The env map may carry upstream credentials (the HTTP surface already
+    // redacts it as such), so it must not cross the plaintext state boundary.
+    const exported = registry.exportState();
+    expect(exported[0]).not.toHaveProperty('env');
+    expect(JSON.stringify(exported)).not.toContain('hidden-value');
+    // It is still held in memory for the spawned child process.
+    expect(registry.get('local-notes')!.env).toEqual({
+      ZEUS_REALM_ROOTS: '/tmp/notes',
+      SECRET: 'hidden-value',
+    });
+  });
+
+  it('purges a stdio env map carried by a legacy snapshot on import', () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(
+      declaration({
+        id: 'local-notes',
+        endpoint: undefined,
+        command: 'node',
+        env: { SECRET: 'hidden-value' },
+        permissions: ['mcp:realm.search'],
+      }),
+    );
+
+    // Snapshots written before the env strip landed still carry the plaintext
+    // map; import must drop it so the next save self-purges the old state file.
+    const legacy = registry.exportState();
+    (legacy[0] as { env?: Record<string, string> }).env = { SECRET: 'hidden-value' };
+    const restored = new ConnectorRegistry(now);
+    expect(() => restored.importState(legacy)).not.toThrow();
+    expect(restored.get('local-notes')).toMatchObject({ command: 'node' });
+    expect(restored.get('local-notes')!.env).toBeUndefined();
+    expect(restored.exportState()[0]).not.toHaveProperty('env');
+  });
 });
+
+interface CapturedStdioSpawn {
+  command: string;
+  args: string[];
+  options: { env?: NodeJS.ProcessEnv; detached?: boolean };
+  sent: string[];
+}
+
+/**
+ * Minimal stdio server fake: answers the MCP handshake, capability lists and
+ * tools/call on stdout, records every spawn and every frame written to stdin.
+ * `hangAll` models a wedged process that never answers (wall-clock tests).
+ */
+function stdioFakeSpawn(options: { hangAll?: boolean } = {}): {
+  spawnImpl: typeof import('node:child_process').spawn;
+  spawns: CapturedStdioSpawn[];
+} {
+  const spawns: CapturedStdioSpawn[] = [];
+  let spawnSeq = 0;
+  const respond = (
+    request: { id?: number | string; method: string },
+    push: (line: string) => void,
+  ): void => {
+    if (request.id === undefined || options.hangAll) return;
+    let result: unknown;
+    switch (request.method) {
+      case 'initialize':
+        result = { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'fake' } };
+        break;
+      case 'tools/list':
+        result = { tools: [{ name: 'search' }] };
+        break;
+      case 'resources/list':
+        result = { resources: [] };
+        break;
+      case 'prompts/list':
+        result = { prompts: [] };
+        break;
+      case 'tools/call':
+        result = { content: [{ type: 'text', text: 'ok' }] };
+        break;
+      default:
+        result = {};
+    }
+    push(JSON.stringify({ jsonrpc: '2.0', id: request.id, result }));
+  };
+  const spawnImpl = ((command: string, args: string[], spawnOptions: Record<string, unknown>) => {
+    const stdout = new Readable({ read() {} });
+    const stderr = new Readable({ read() {} });
+    const sent: string[] = [];
+    const captured: CapturedStdioSpawn = {
+      command,
+      args,
+      options: spawnOptions as CapturedStdioSpawn['options'],
+      sent,
+    };
+    spawns.push(captured);
+    const stdin = new Writable({
+      write(chunk, _enc, cb) {
+        sent.push(chunk.toString());
+        try {
+          const request = JSON.parse(chunk.toString()) as { id?: number | string; method: string };
+          respond(request, line => stdout.push(`${line}\n`));
+        } catch {
+          // Non-JSON frame: ignore.
+        }
+        cb();
+      },
+    });
+    const child = new EventEmitter() as unknown as ChildProcessWithoutNullStreams;
+    Object.assign(child, {
+      pid: 47000 + ++spawnSeq,
+      stdin,
+      stdout,
+      stderr,
+      killed: false,
+      kill() {
+        this.killed = true;
+      },
+    });
+    return child;
+  }) as unknown as typeof import('node:child_process').spawn;
+  return { spawnImpl, spawns };
+}

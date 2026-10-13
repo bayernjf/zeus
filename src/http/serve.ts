@@ -38,7 +38,7 @@ import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
-import { createLogger } from '../util/logger.js';
+import { createLogger, redactText } from '../util/logger.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -48,6 +48,16 @@ const pkg = require('../../package.json') as { version: string };
 // refusal and transport failures. Level defaults to info until a level env is
 // decided (deferred candidate, not in scope here).
 const log = createLogger();
+
+// The stderr audit mirror applies the same value-form redaction as the JSONL
+// sink: entry.detail is free text that may carry error messages with embedded
+// URL credentials or tokens. Structure is preserved; only detail is scrubbed.
+function mirrorAuditEntry(entry: { detail?: string }): string {
+  const safe = typeof entry.detail === 'string'
+    ? { ...entry, detail: redactText(entry.detail) }
+    : entry;
+  return `[zeus-audit] ${JSON.stringify(safe)}\n`;
+}
 
 /** deferred #42: retention bounds are positive integers. A silent coercion to
  *  0 or NaN would disable the out-window condition entirely; abort boot like
@@ -123,7 +133,7 @@ async function main(): Promise<void> {
     ...(audit.auditMaxBytes !== undefined ? { auditMaxBytes: audit.auditMaxBytes } : {}),
     ...(audit.auditKeep !== undefined ? { auditKeep: audit.auditKeep } : {}),
     dispatchAudit: entry => {
-      process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
+      process.stderr.write(mirrorAuditEntry(entry));
     },
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
     judgeEnabled: decision.judgeEnabled,
@@ -202,6 +212,19 @@ async function main(): Promise<void> {
     }
   }
 
+  // Live SSE caps (M-04): a per-process limit on concurrently attached live
+  // streams and the attach grace for "connect SSE, then POST fan-out". Both are
+  // positive integers like the concurrency caps; a malformed value aborts boot
+  // rather than silently disabling the bound.
+  const sseMaxStreams =
+    process.env.ZEUS_SSE_MAX_STREAMS !== undefined
+      ? parseIntPositive('ZEUS_SSE_MAX_STREAMS', process.env.ZEUS_SSE_MAX_STREAMS)
+      : undefined;
+  const sseAttachGraceMs =
+    process.env.ZEUS_SSE_ATTACH_GRACE_MS !== undefined
+      ? parseIntPositive('ZEUS_SSE_ATTACH_GRACE_MS', process.env.ZEUS_SSE_ATTACH_GRACE_MS)
+      : undefined;
+
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
   // §2.1); ZEUS_HOST / ZEUS_PORT only override them, so the process entry and the
   // published `zeus/http` API cannot drift into two different answers.
@@ -222,6 +245,13 @@ async function main(): Promise<void> {
     oversight: kernel.oversight,
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,
+    ...(sseMaxStreams !== undefined ? { sseMaxStreams } : {}),
+    ...(sseAttachGraceMs !== undefined ? { sseAttachGraceMs } : {}),
+    // Transport faults whose HTTP/JSON-RPC body stays generic keep their raw
+    // detail here; the logger's redaction sink is the only place it lands.
+    log: (event, msg, fields) => {
+      log.error(event, msg, fields);
+    },
     // deferred #42: replay/approve-resume read the out-window archive when the
     // state table misses; the retention mode is surfaced on replay misses so an
     // eviction-mode 404 is not mistaken for "never existed".
@@ -231,6 +261,8 @@ async function main(): Promise<void> {
     ...(kernel.mentorshipLedger ? { mentorshipLedger: kernel.mentorshipLedger } : {}),
     ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
     ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
+    // M-12: retract / forget-subject answer only once the erasure is durable.
+    persistState: () => kernel.saveState(),
     ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
     ...(kernel.realmStore
       ? {
@@ -261,7 +293,7 @@ async function main(): Promise<void> {
             })),
           },
           inboundAudit: entry => {
-            process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
+            process.stderr.write(mirrorAuditEntry(entry));
           },
         }
       : {}),
@@ -332,6 +364,14 @@ async function main(): Promise<void> {
       if (kernel.stateFile) log.info('kernel-state-saved', undefined, { file: kernel.stateFile });
     } catch (error) {
       log.error('kernel-state-save-failed', error instanceof Error ? error.message : String(error));
+    }
+    // M-10: release only after the final snapshot landed (or failed). A failed
+    // atomic save leaves the prior file intact, so the lock may still be handed
+    // to the next boot.
+    try {
+      await kernel.releaseLock();
+    } catch (error) {
+      log.error('kernel-state-unlock-failed', error instanceof Error ? error.message : String(error));
     }
     await app.close();
     process.exit(exitCode);

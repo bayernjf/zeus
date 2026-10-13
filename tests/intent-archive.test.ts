@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
@@ -13,6 +13,7 @@ import {
   archiveFilePath,
   parseRetentionMode,
   selectArchivable,
+  type ArchivedIntentRecord,
   type RetentionMode,
 } from '../src/state/archive.js';
 import { bootKernel } from '../src/state/boot.js';
@@ -237,6 +238,72 @@ describe('IntentArchive (append-only JSONL)', () => {
     const archive = new IntentArchive(join(dir, 'nope.jsonl'));
     await archive.loadIndex();
     expect(archive.size()).toBe(0);
+  });
+
+  function archivedRecord(id: string): ArchivedIntentRecord {
+    return {
+      intentId: id,
+      ts: '2026-03-01T00:00:00.000Z',
+      createdAt: '2026-01-10T00:00:00.000Z',
+      status: 'completed',
+      request: requestFor(id),
+      result: makeIntent(id, '2026-01-10T00:00:00.000Z'),
+    };
+  }
+
+  it('tolerates a single torn tail line left by a crashed append', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-archive-'));
+    const file = join(dir, 'intent-archive.jsonl');
+    // A kill mid-write leaves a partial final record with no trailing newline.
+    await writeFile(file, `${JSON.stringify(archivedRecord('a'))}\n{"intentId":"tor`, 'utf8');
+    const archive = new IntentArchive(file);
+    await archive.loadIndex();
+    expect(archive.size()).toBe(1);
+    await expect(archive.find('a')).resolves.toMatchObject({ intentId: 'a' });
+  });
+
+  it('refuses to start when an unparseable line sits between complete records', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-archive-'));
+    const file = join(dir, 'intent-archive.jsonl');
+    await writeFile(
+      file,
+      [JSON.stringify(archivedRecord('a')), '{not json', JSON.stringify(archivedRecord('b'))].join('\n') + '\n',
+      'utf8',
+    );
+    const archive = new IntentArchive(file);
+    await expect(archive.loadIndex()).rejects.toThrow(/line 2/);
+  });
+
+  it('truncates a torn tail before appending instead of concatenating onto it', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-archive-'));
+    const file = join(dir, 'intent-archive.jsonl');
+    await writeFile(file, `${JSON.stringify(archivedRecord('a'))}\n{"intentId":"tor`, 'utf8');
+    const archive = new IntentArchive(file);
+    await archive.loadIndex();
+    await archive.append([archivedRecord('b')]);
+    const raw = await readFile(file, 'utf8');
+    expect(raw.endsWith('\n')).toBe(true);
+    expect(raw).not.toContain('"tor');
+    const lines = raw.split('\n').filter(Boolean);
+    expect(lines).toHaveLength(2);
+    expect((JSON.parse(lines[1]!) as ArchivedIntentRecord).intentId).toBe('b');
+
+    const reopened = new IntentArchive(file);
+    await reopened.loadIndex();
+    expect(reopened.size()).toBe(2);
+    await expect(reopened.find('b')).resolves.toMatchObject({ intentId: 'b' });
+  });
+
+  it('creates the archive 0600 and re-tightens a file an older build left 0644', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-archive-'));
+    const file = join(dir, 'intent-archive.jsonl');
+    const archive = new IntentArchive(file);
+    await archive.append([archivedRecord('a')]);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+
+    await chmod(file, 0o644);
+    await archive.append([archivedRecord('b')]);
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 });
 

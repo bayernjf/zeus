@@ -8,6 +8,7 @@ import {
   type Watch,
   type WatchAuditEntry,
   type WatchSubmitResult,
+  type WatchTickOptions,
 } from '../src/watch/watch.js';
 import { FileKernelStateStore, collectKernelState, applyKernelState } from '../src/state/kernel-state.js';
 import type { MetricsSnapshot } from '../src/orchestrator/metrics.js';
@@ -579,6 +580,219 @@ describe('execute fires derive a child ticket (step 4)', () => {
     });
     expect(next.id).not.toBe(first.id);
     expect(desk.list(undefined, 'delegation-limit')).toHaveLength(2);
+  });
+});
+
+describe('M-01: a terminal submit refusal advances the fire sequence', () => {
+  it('plan mode: a refusal recorded at the dispatch boundary does not pin the intent id forever', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(baseInput());
+    const submitted: string[] = [];
+    const audits: string[] = [];
+    const tick = (
+      at: Date,
+      submit: (request: { intentId: string }) => Promise<WatchSubmitResult>,
+    ) =>
+      registry.runTick({
+        now: () => at,
+        sources: { metrics: () => metrics({ queueDepth: 5 }) },
+        submit,
+        audit: entry => audits.push(entry.decision),
+      });
+
+    const first = await tick(NOW, async request => {
+      submitted.push(request.intentId);
+      // The orchestrator recorded a failed intent for this id (e.g. the skill
+      // has no active provider): replaying the same deterministic id can only
+      // ever return the same recorded refusal.
+      return { ok: false, reason: 'skill-uninstalled', refused: true };
+    });
+    expect(first.fired).toEqual([]);
+    expect(first.refused).toEqual([{ id: 'w1', reason: 'skill-uninstalled' }]);
+    expect(registry.get('w1')!.used.fires).toBe(1);
+    expect(audits).toContain('watch-fire-refused');
+
+    await tick(new Date(NOW.getTime() + 61_000), async request => {
+      submitted.push(request.intentId);
+      return { ok: true };
+    });
+    // The next interval is a new fire with a new sequence; the dead intent id
+    // is never retried, and the fire budget bounds how often this can happen.
+    expect(submitted).toEqual(['watch:w1:1', 'watch:w1:2']);
+    expect(registry.get('w1')!.used.fires).toBe(2);
+  });
+
+  it('execute mode: a terminal refusal bounds child-ticket derivation by the fire budget and never spends executes', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(
+      baseInput({
+        intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
+        delegationId: 'contract-1',
+        budget: { fires: 3, executes: 2 },
+      })
+    );
+    const submitted: string[] = [];
+    let deriveCalls = 0;
+    let offset = 0;
+    const tick = () =>
+      registry.runTick({
+        now: () => new Date(NOW.getTime() + (offset += 60_000)),
+        sources: { metrics: () => metrics({ queueDepth: 5 }) },
+        deriveExecution: async () => {
+          deriveCalls += 1;
+          return { ok: true, delegation: { nonce: `ticket-${deriveCalls}` } };
+        },
+        submit: async request => {
+          submitted.push(request.intentId);
+          return { ok: false, reason: 'skill-uninstalled', refused: true };
+        },
+      });
+
+    for (let i = 0; i < 3; i += 1) await tick();
+    // Every refusal used a fresh sequence; no deterministic id is retried, so
+    // the contract's child-ticket counter can grow at most to the fire budget
+    // instead of by one per tick for the lifetime of the process.
+    expect(submitted).toEqual(['watch:w1:1', 'watch:w1:2', 'watch:w1:3']);
+    expect(deriveCalls).toBe(3);
+    expect(registry.get('w1')!.used).toEqual({ fires: 3, executes: 0 });
+
+    const fourth = await tick();
+    expect(fourth.evaluated).toBe(0);
+    expect(deriveCalls).toBe(3);
+  });
+
+  it('a non-terminal failure (delivery unknown) still replays the same sequence with a fresh ticket', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(
+      baseInput({
+        intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
+        delegationId: 'contract-1',
+        budget: { fires: 2, executes: 1 },
+      })
+    );
+    const submitted: string[] = [];
+    const tickets: unknown[] = [];
+    const options: WatchTickOptions = {
+      now: () => NOW,
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      deriveExecution: async () => {
+        const ticket = { nonce: `ticket-${tickets.length + 1}` };
+        tickets.push(ticket);
+        return { ok: true, delegation: ticket };
+      },
+      submit: async (request: { intentId: string; executionDelegation?: unknown }): Promise<WatchSubmitResult> => {
+        submitted.push(request.intentId);
+        if (submitted.length === 1) return { ok: false, reason: 'gateway reset' };
+        return { ok: true };
+      },
+    };
+    await registry.runTick(options);
+    await registry.runTick({ ...options, now: () => new Date(NOW.getTime() + 61_000) });
+    // No refused marker: the fire may or may not have landed, so the sequence
+    // stays and the orchestrator idempotency table decides what the retry is.
+    expect(submitted).toEqual(['watch:w1:1', 'watch:w1:1']);
+    expect(tickets).toHaveLength(2);
+    expect(registry.get('w1')!.used).toEqual({ fires: 1, executes: 1 });
+  });
+});
+
+describe('m-14: one bad watch cannot break a tick', () => {
+  it('isolates a throwing derive hook and still evaluates the other watches', async () => {
+    const registry = new WatchRegistry({ newId: () => 'wbad' });
+    registry.register(
+      baseInput({
+        intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
+        delegationId: 'contract-1',
+        budget: { fires: 2, executes: 1 },
+      })
+    );
+    registry.register({ ...baseInput(), id: 'wgood', owner: 'operator@bayjf' });
+    const audits: string[] = [];
+    const submitted: string[] = [];
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      deriveExecution: async () => {
+        throw new Error('signer unavailable');
+      },
+      submit: async request => {
+        submitted.push(request.intentId);
+        return { ok: true };
+      },
+      audit: entry => audits.push(entry.decision),
+    });
+    expect(report.fired).toEqual(['wgood']);
+    expect(submitted).toHaveLength(1);
+    expect(audits).toContain('watch-fire-failed');
+    // The failed fire did not record a sequence, so a later pass retries it.
+    expect(registry.get('wbad')!.used.fires).toBe(0);
+  });
+
+  it('never lets a throwing audit hook steer or kill a pass', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(baseInput());
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      submit: async () => ({ ok: true }),
+      audit: () => {
+        throw new Error('audit sink down');
+      },
+    });
+    expect(report.fired).toEqual(['w1']);
+    expect(registry.get('w1')!.used.fires).toBe(1);
+  });
+
+  it('fails closed on a watch whose persisted window dates do not parse (state bypasses register validation)', async () => {
+    const seeded = new WatchRegistry({ newId: () => 'w1' });
+    seeded.register(baseInput());
+    const [watch] = seeded.exportState();
+    watch!.startsAt = 'not-a-date';
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.importState([watch!]);
+
+    let submissions = 0;
+    const audits: string[] = [];
+    const report = await registry.runTick({
+      now: () => NOW,
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      submit: async () => {
+        submissions += 1;
+        return { ok: true };
+      },
+      audit: entry => audits.push(entry.decision),
+      maxEvalFailures: 1,
+    });
+    // NaN window comparisons are all false, so without the guard the watch
+    // would evaluate and fire forever. It is recorded unreadable and disabled
+    // instead, and never reaches submit.
+    expect(report.unavailable).toEqual(['w1']);
+    expect(report.autoDisabled).toEqual(['w1']);
+    expect(submissions).toBe(0);
+    expect(registry.get('w1')!.enabled).toBe(false);
+    expect(audits).toContain('watch-eval-unavailable');
+  });
+
+  it('serializes overlapping ticks so a fire is never double-counted', async () => {
+    const registry = new WatchRegistry({ newId: () => 'w1' });
+    registry.register(baseInput());
+    const submitted: string[] = [];
+    const options = {
+      now: () => NOW,
+      sources: { metrics: () => metrics({ queueDepth: 5 }) },
+      submit: async (request: { intentId: string }) => {
+        // Yield here too: without tick serialization both passes read the same
+        // pre-tick ledger at this await point and both count the fire.
+        await Promise.resolve();
+        submitted.push(request.intentId);
+        return { ok: true };
+      },
+    };
+    const [first, second] = await Promise.all([registry.runTick(options), registry.runTick(options)]);
+    expect(submitted).toEqual(['watch:w1:1']);
+    expect(registry.get('w1')!.used.fires).toBe(1);
+    expect(first.fired).toEqual(['w1']);
+    expect(second.evaluated).toBe(0);
   });
 });
 

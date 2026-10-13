@@ -60,7 +60,7 @@ export type KernelSnapshot = {
   skills?: SkillSpec[];
   /** Memory P1: event log and fact store. Optional for backward compat. */
   memory?: MemoryState;
-  /** E7: MCP connector declarations (never their bearer tokens). Optional for backward compat. */
+  /** E7: MCP connector declarations (never their bearer tokens or stdio env maps). Optional for backward compat. */
   connectors?: PersistedConnectorRecord[];
   /** E2.5: mentorship records. Optional for backward compat. */
   mentorships?: MentorshipRecord[];
@@ -203,9 +203,10 @@ export class FileKernelStateStore {
       ...(state.watches ? { watches: state.watches } : {}),
     };
     const dir = dirname(this.filePath);
-    // The snapshot holds connector bearer tokens and the user's memory facts in
-    // plain JSON. A 0755 directory (the umask default) lets any local user list
-    // and read it, so the directory is created owner-only. mkdir does not
+    // The snapshot holds the user's memory facts and connector declarations in
+    // plain JSON (connector bearer tokens and stdio env maps are stripped before
+    // persistence). A 0755 directory (the umask default) lets any local user
+    // list and read it, so the directory is created owner-only. mkdir does not
     // re-chmod a directory that already exists.
     await mkdir(dir, { recursive: true, mode: 0o700 });
     const tmp = `${this.filePath}.tmp`;

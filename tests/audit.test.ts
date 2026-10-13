@@ -28,6 +28,48 @@ describe('audit sinks', () => {
     }
   });
 
+  it('redacts credential-shaped detail before the line is persisted, keeping structure and ordinary text', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-redact-'));
+    const path = join(dir, 'audit.jsonl');
+    try {
+      const sink = jsonlAuditSink(path);
+      sink({
+        ts: '2026-10-13T10:00:00.000Z',
+        runId: 'run-1',
+        vassal: 'loom',
+        skill: 'research',
+        realm: 'personal',
+        decision: 'dispatch-failed',
+        detail: 'POST http://ops:hunter2@10.0.0.9/card?token=abc123 failed: Bearer xyz789',
+      });
+      sink({
+        ts: '2026-10-13T10:01:00.000Z',
+        runId: 'run-2',
+        vassal: 'atlas',
+        decision: 'dispatched',
+        detail: 'pilot note: skill research approved',
+      });
+      const lines = readFileSync(path, 'utf8').trim().split('\n');
+      const first = lines[0]!;
+      expect(first).not.toContain('hunter2');
+      expect(first).not.toContain('abc123');
+      expect(first).not.toContain('xyz789');
+      expect(first).toContain('10.0.0.9');
+      expect(JSON.parse(first)).toMatchObject({
+        ts: '2026-10-13T10:00:00.000Z',
+        runId: 'run-1',
+        vassal: 'loom',
+        skill: 'research',
+        realm: 'personal',
+        decision: 'dispatch-failed',
+      });
+      const second = JSON.parse(lines[1]!) as Record<string, unknown>;
+      expect(second.detail).toBe('pilot note: skill research approved');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('creates the directory the trail lives in, at sink construction', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-dir-'));
     // `./data/audit.jsonl` in a fresh data directory is what the deployment docs

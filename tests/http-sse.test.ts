@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer, streamIntentProgress, type EventStreamSocket } from '../src/http/server.js';
@@ -232,4 +232,170 @@ describe('hijacked SSE stream lifecycle', () => {
     hub.publish(started);
     expect(socket.chunks.length).toBe(before);
   });
+
+  it('closes with an error event when nothing arrives within the attach grace', async () => {
+    // Deterministic clock: 15/20/30ms graces against 40/45/55ms real sleeps are
+    // a CI-overload flake. Fake timers make the expiry exact (same pattern as
+    // mcp-stdio-client.test.ts).
+    vi.useFakeTimers();
+    try {
+      const hub = new ProgressHub();
+      const socket = socketOf();
+      streamIntentProgress(socket, hub, 'i', { attachGraceMs: 20 });
+      expect(socket.ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(45);
+      const buffer = socket.chunks.join('');
+      expect(buffer).toContain('event: error');
+      expect(socket.ended).toBe(true);
+      // The subscription is released: a late publish writes nothing.
+      const before = socket.chunks.length;
+      hub.publish(started);
+      expect(socket.chunks.length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the attach grace once a live event arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      const hub = new ProgressHub();
+      const socket = socketOf();
+      streamIntentProgress(socket, hub, 'i', { attachGraceMs: 30 });
+      hub.publish(started);
+      await vi.advanceTimersByTimeAsync(55);
+      expect(socket.ended).toBe(false);
+      expect(socket.chunks.join('')).not.toContain('event: error');
+      hub.publish(finished);
+      expect(socket.ended).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not arm the attach grace when a backlog already proves the intent exists', async () => {
+    vi.useFakeTimers();
+    try {
+      const hub = new ProgressHub();
+      hub.publish(started);
+      const socket = socketOf();
+      streamIntentProgress(socket, hub, 'i', { attachGraceMs: 15 });
+      await vi.advanceTimersByTimeAsync(40);
+      expect(socket.chunks.join('')).not.toContain('event: error');
+      expect(socket.ended).toBe(false);
+      socket.emit('close');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('runs onTeardown exactly once across terminal end, expiry and peer reset', async () => {
+    let torn = 0;
+
+    vi.useFakeTimers();
+    try {
+      const hubEnd = new ProgressHub();
+      const socketEnd = socketOf();
+      streamIntentProgress(socketEnd, hubEnd, 'i', { onTeardown: () => { torn += 1; } });
+      hubEnd.publish(finished);
+      socketEnd.emit('close');
+      expect(torn).toBe(1);
+
+      const hubGrace = new ProgressHub();
+      const socketGrace = socketOf();
+      streamIntentProgress(socketGrace, hubGrace, 'i', { attachGraceMs: 15, onTeardown: () => { torn += 1; } });
+      await vi.advanceTimersByTimeAsync(40);
+      expect(torn).toBe(2);
+
+      const hubReset = new ProgressHub();
+      const socketReset = socketOf();
+      streamIntentProgress(socketReset, hubReset, 'i', { onTeardown: () => { torn += 1; } });
+      socketReset.emit('close');
+      socketReset.emit('error', new Error('ECONNRESET'));
+      expect(torn).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('live SSE stream cap', () => {
+  async function cappedServer(maxStreams: number, attachGraceMs?: number): Promise<FastifyInstance> {
+    const hub = new ProgressHub();
+    const metrics = new ConcurrencyMetrics();
+    const orchestrator = new Orchestrator(
+      { findBySkill: () => [{ name: 'v1' }] },
+      { async dispatch() { return completed(); }, async cancel() {} },
+      {
+        newIntentId: () => 'intent-1', newRunId: () => 'run-1', metrics, onProgress: e => hub.publish(e),
+      }
+    );
+    return createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-test'),
+      internalToken: TOKEN,
+      orchestrator,
+      metrics,
+      progressHub: hub,
+      sseMaxStreams: maxStreams,
+      ...(attachGraceMs !== undefined ? { sseAttachGraceMs: attachGraceMs } : {}),
+    });
+  }
+
+  it('answers 503 past the cap for live streams but still replays stored intents', async () => {
+    const app = await cappedServer(0);
+    const blocked = await app.inject({
+      method: 'GET', url: '/api/intents/ghost/events', headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(blocked.statusCode).toBe(503);
+    expect((await blocked.json()).error).toBe('sse_unavailable');
+
+    // A finished intent is replayed inline and never occupies a live slot.
+    await app.inject({
+      method: 'POST', url: '/api/intents', headers: { authorization: `Bearer ${TOKEN}` },
+      payload: { skill: 'research', realm: 'personal' },
+    });
+    const replay = await app.inject({
+      method: 'GET', url: '/api/intents/intent-1/events', headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(replay.statusCode).toBe(200);
+    expect(replay.body).toContain('event: intent');
+    await app.close();
+  });
+
+  it('releases the slot once a capped-out stream expires', async () => {
+    const app = await cappedServer(1, 40);
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const address = app.server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    const base = `http://127.0.0.1:${port}`;
+
+    const first = await fetch(`${base}/api/intents/ghost-1/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(first.status).toBe(200);
+    const reader = first.body!.getReader();
+
+    const second = await fetch(`${base}/api/intents/ghost-2/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(second.status).toBe(503);
+
+    // Drain until the grace expiry closes the first stream.
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += new TextDecoder().decode(value);
+    }
+    expect(buffer).toContain('event: error');
+
+    const third = await fetch(`${base}/api/intents/ghost-3/events`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(third.status).toBe(200);
+    expect(await third.text()).toContain('event: error');
+
+    await app.close();
+  }, 10_000);
 });

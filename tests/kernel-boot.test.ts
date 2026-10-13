@@ -1,4 +1,5 @@
-import { existsSync, statSync } from 'node:fs';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -63,6 +64,57 @@ const portFor = (routes: Record<string, DispatchResult>): DispatchPort => ({
   async cancel() {},
 });
 const emptyLookup: TargetLookup = { findBySkill: () => [] };
+
+// M-10: a live foreign process holding the state lock, in the exact on-disk
+// format ProcessLock publishes.
+const HOLDER_SOURCE = `
+const fs = require('node:fs');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const dir = process.env.LOCK_DIR;
+fs.mkdirSync(dir, { recursive: false, mode: 0o700 });
+fs.writeFileSync(dir + '/owner.json', JSON.stringify({
+  pid: process.pid,
+  host: os.hostname(),
+  startedAt: new Date().toISOString(),
+  instanceId: crypto.randomUUID(),
+}), { mode: 0o600 });
+process.stdout.write('ready');
+setTimeout(() => {}, 1_000_000);
+`;
+
+function spawnHolder(lockPath: string): ChildProcess {
+  return spawn(process.execPath, ['-e', HOLDER_SOURCE], {
+    env: { ...process.env, LOCK_DIR: lockPath },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+}
+
+function waitForReady(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('lock holder never reported ready'));
+    }, 5_000);
+    child.stdout!.on('data', chunk => {
+      if (String(chunk).includes('ready')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.on('error', err => {
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
+}
+
+function exitOf(child: ChildProcess): Promise<void> {
+  return new Promise((resolve, reject) => {
+    child.on('close', () => resolve());
+    child.on('error', reject);
+  });
+}
 
 describe('E5.3 bootKernel assembly', () => {
   let dir: string;
@@ -142,6 +194,36 @@ describe('E5.3 bootKernel assembly', () => {
     // refused-to-start path (one line naming what to fix) rather than a stack trace.
     await expect(bootKernel({ stateFile: file })).rejects.toBeInstanceOf(KernelBootError);
     await expect(bootKernel({ stateFile: file })).rejects.toThrow(/kernel state file is unusable/);
+  });
+
+  it('holds a cross-process lock on the state file for the boot lifetime', async () => {
+    const file = join(dir, 'kernel-state.json');
+    await bootKernel({ stateFile: file });
+    const lockDir = `${file}.lock`;
+    const owner = JSON.parse(readFileSync(join(lockDir, 'owner.json'), 'utf8'));
+    expect(owner.pid).toBe(process.pid);
+    expect(typeof owner.instanceId).toBe('string');
+
+    // A second boot from the same process reclaims the unreleased lock (same
+    // pid), which keeps restart-in-process working.
+    const rebooted = await bootKernel({ stateFile: file });
+    await rebooted.releaseLock();
+    expect(existsSync(lockDir)).toBe(false);
+  });
+
+  it('refuses to boot while a live foreign process holds the state lock', async () => {
+    const file = join(dir, 'kernel-state.json');
+    const holder = spawnHolder(`${file}.lock`);
+    try {
+      await waitForReady(holder);
+      await expect(bootKernel({ stateFile: file })).rejects.toBeInstanceOf(KernelBootError);
+      await expect(bootKernel({ stateFile: file })).rejects.toThrow(
+        new RegExp(`locked by another Zeus process.*pid ${holder.pid}`),
+      );
+    } finally {
+      holder.kill('SIGKILL');
+      await exitOf(holder);
+    }
   });
 
   it('writes the audit spine to JSONL and still forwards each entry to the caller sink', async () => {

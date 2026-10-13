@@ -108,6 +108,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'watch-revoked': 'warning',
   'watch-eval-unavailable': 'warning',
   'watch-auto-disabled': 'danger',
+  // M-01: the dispatch boundary recorded a refusal and the fire sequence
+  // advanced; nothing ran and the watch stays live, a warning rather than an
+  // error. m-14: processing a watch threw and was skipped, which is danger.
+  'watch-fire-refused': 'warning',
+  'watch-fire-failed': 'danger',
   // self-host loop step 4: a child ticket minted for an unattended execute is
   // the governance fact that must stay visible (attention, like watch-fired);
   // a refused fire is the contract ceiling holding, which is danger.

@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { ConcurrencyMetrics, DEFAULT_METRICS_HISTORY_WINDOW } from '../src/orchestrator/metrics.js';
+import { MetricsHistory } from '../src/observability/metrics-history.js';
 
 /**
  * B-44: the derived observability ledger. Two properties matter and they are
@@ -134,5 +138,53 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
     // marginal cost of the first batch by 1,600 intents).
     expect(warmMs, `cold=${coldMs.toFixed(1)}ms warm=${warmMs.toFixed(1)}ms`).toBeLessThan(Math.max(coldMs * 6, 250));
     expect(warm.snapshot().perVassal.a1!.calls).toBe(4_500);
+  });
+});
+
+// ---- file-backed JSONL crash-safety ------------------------------------------
+
+describe('MetricsHistory JSONL crash-safety', () => {
+  let dir: string;
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  const snapshotAt = (capturedAt: string) => ({ ...new ConcurrencyMetrics().snapshot(), capturedAt });
+
+  it('tolerates a single torn tail line left by a crashed capture', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-metrics-history-'));
+    const file = join(dir, 'metrics.jsonl');
+    await writeFile(file, `${JSON.stringify(snapshotAt('2026-10-13T08:00:00.000Z'))}\n{"capturedAt":"20`, 'utf8');
+    const history = new MetricsHistory(file);
+    await history.loadIndex();
+    const records = await history.read();
+    expect(records.map(r => r.capturedAt)).toEqual(['2026-10-13T08:00:00.000Z']);
+  });
+
+  it('rejects an unparseable line sitting between complete records', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-metrics-history-'));
+    const file = join(dir, 'metrics.jsonl');
+    await writeFile(
+      file,
+      [JSON.stringify(snapshotAt('a')), '{not json', JSON.stringify(snapshotAt('b'))].join('\n') + '\n',
+      'utf8',
+    );
+    const history = new MetricsHistory(file);
+    await expect(history.loadIndex()).rejects.toThrow(/line 2/);
+  });
+
+  it('truncates a torn tail before capturing instead of concatenating onto it', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'zeus-metrics-history-'));
+    const file = join(dir, 'metrics.jsonl');
+    await writeFile(file, `${JSON.stringify(snapshotAt('a'))}\n{"capturedAt":"tor`, 'utf8');
+    const history = new MetricsHistory(file);
+    await history.loadIndex();
+    await history.capture(snapshotAt('b'));
+    const raw = await readFile(file, 'utf8');
+    expect(raw.endsWith('\n')).toBe(true);
+    expect(raw).not.toContain('"tor');
+    const reopened = new MetricsHistory(file);
+    const records = await reopened.read();
+    expect(records.map(r => r.capturedAt).sort()).toEqual(['a', 'b']);
   });
 });

@@ -125,6 +125,59 @@ describe('E7 connector HTTP face', () => {
     expect(body.args).toEqual(['dist/realm/mcp-stdio.js', '/tmp/notes']);
   });
 
+  it('accepts the S16 V2 isolation fields on a stdio connector declaration', async () => {
+    ({ app } = await server());
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      headers: AUTH,
+      payload: {
+        id: 'local-isolated',
+        name: 'Local Isolated',
+        command: 'node',
+        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
+        envAllowList: ['ZEUS_REALM_ROOTS', 'HOME'],
+        maxWallSeconds: 5,
+        permissions: ['mcp:realm.search'],
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(await res.json()).toMatchObject({
+      id: 'local-isolated',
+      envAllowList: ['ZEUS_REALM_ROOTS', 'HOME'],
+      maxWallSeconds: 5,
+    });
+  });
+
+  it('rejects malformed S16 V2 isolation fields on a connector declaration', async () => {
+    ({ app } = await server());
+    const badAllowList = await app.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      headers: AUTH,
+      payload: {
+        id: 'bad-allow-list', name: 'Bad', command: 'node',
+        envAllowList: ['PATH', 7],
+        permissions: ['mcp'],
+      },
+    });
+    expect(badAllowList.statusCode).toBe(400);
+    expect((await badAllowList.json()).detail).toMatch(/envAllowList/);
+
+    const badWall = await app.inject({
+      method: 'POST',
+      url: '/api/connectors',
+      headers: AUTH,
+      payload: {
+        id: 'bad-wall', name: 'Bad', command: 'node',
+        maxWallSeconds: 0,
+        permissions: ['mcp'],
+      },
+    });
+    expect(badWall.statusCode).toBe(400);
+    expect((await badWall.json()).detail).toMatch(/maxWallSeconds/);
+  });
+
   it('rejects connector declarations missing both endpoint and command, and rejects both set', async () => {
     ({ app } = await server());
     const neither = await app.inject({

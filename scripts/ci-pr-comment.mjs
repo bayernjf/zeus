@@ -32,6 +32,18 @@ function warn(/** @type {string} */ message) {
   console.warn(`ci-pr-comment: ${message}`);
 }
 
+/** Parse the RFC 5988 Link header for rel="next" (GitHub paginates issue
+ *  comments at 100 per page; the marker may sit beyond the first page).
+ *  Returns '' when there is no next page. */
+function nextPageUrl(/** @type {string | null} */ linkHeader) {
+  if (!linkHeader) return '';
+  for (const part of linkHeader.split(',')) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="next"/);
+    if (match) return match[1] ?? '';
+  }
+  return '';
+}
+
 async function main() {
   const bodyFile = argValue('--body-file');
   const marker = argValue('--marker');
@@ -79,15 +91,28 @@ async function main() {
     'content-type': 'application/json',
     'user-agent': 'zeus-ci-pr-comment',
   };
-  const commentsUrl = `${api}/repos/${repo}/issues/${prNumber}/comments?per_page=100`;
-  const listRes = await fetch(commentsUrl, { headers });
-  if (!listRes.ok) {
-    warn(`GET comments failed: ${listRes.status} ${listRes.statusText}; skipping (the gate verdict is unaffected)`);
-    process.exit(0);
+  // Page through the comment list: without this the marker search sees only
+  // the first 100 comments and a long-lived PR gets a second stacked comment,
+  // breaking the idempotent-upsert contract. 20 pages (2000 comments) is a
+  // runaway guard, not an expected scale.
+  /** @type {IssueComment | undefined} */
+  let existing;
+  let commentsUrl = `${api}/repos/${repo}/issues/${prNumber}/comments?per_page=100`;
+  for (let page = 0; page < 20 && commentsUrl !== ''; page++) {
+    const listRes = await fetch(commentsUrl, { headers });
+    if (!listRes.ok) {
+      warn(`GET comments failed: ${listRes.status} ${listRes.statusText}; skipping (the gate verdict is unaffected)`);
+      process.exit(0);
+    }
+    const payload = await listRes.json();
+    if (!Array.isArray(payload)) {
+      warn('GET comments returned a non-array payload; skipping (the gate verdict is unaffected)');
+      process.exit(0);
+    }
+    existing = payload.find(c => typeof c.body === 'string' && c.body.includes(marker));
+    if (existing) break;
+    commentsUrl = nextPageUrl(listRes.headers.get('link'));
   }
-  /** @type {IssueComment[]} */
-  const comments = await listRes.json();
-  const existing = comments.find(c => typeof c.body === 'string' && c.body.includes(marker));
 
   if (existing) {
     const patchRes = await fetch(`${api}/repos/${repo}/issues/comments/${existing.id}`, {

@@ -71,6 +71,12 @@ export type McpHandlerDeps = {
    * Absent an actor, the call stays anonymous with the full host whitelist.
    */
   actor?: RealmMcpActor;
+  /**
+   * Sink for fault details whose JSON-RPC response must stay generic
+   * (store errors may carry the realm-local absolute root). Absent = the
+   * detail is dropped after the fixed response is produced.
+   */
+  log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void;
 };
 
 /** Session-scoped caller identity (design-realm §6.5). */
@@ -129,7 +135,7 @@ export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) 
           return fail(id, METHOD_NOT_FOUND, `method not found: ${req.method}`);
       }
     } catch (error) {
-      return mapError(id, error);
+      return mapError(id, error, deps.log);
     }
   };
 }
@@ -384,7 +390,11 @@ class RealmNotConnectedMcpError extends Error {
   }
 }
 
-function mapError(id: JsonRpcId, error: unknown): JsonRpcResponse {
+function mapError(
+  id: JsonRpcId,
+  error: unknown,
+  log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void,
+): JsonRpcResponse {
   if (error instanceof McpParamError || error instanceof UnsupportedQueryError) {
     return errorResponse(id, INVALID_PARAMS, (error as Error).message);
   }
@@ -395,7 +405,12 @@ function mapError(id: JsonRpcId, error: unknown): JsonRpcResponse {
     // InvalidItemIdError messages carry only the root-relative itemId, never the root.
     return errorResponse(id, INVALID_ITEM, error.message);
   }
-  return errorResponse(id, REALM_ERROR, error instanceof Error ? error.message : 'realm error');
+  // Anything else is a store/transport fault: its message may carry the
+  // realm-local absolute root (EACCES, ENOSPC, ...), which must never cross the
+  // JSON-RPC boundary. Answer with the fixed code+message instead; the raw
+  // detail goes only to the host-supplied log sink, if any.
+  log?.('realm-mcp-error', error instanceof Error ? error.message : String(error));
+  return errorResponse(id, REALM_ERROR, 'realm error');
 }
 
 function errorResponse(id: JsonRpcId, code: number, message: string): JsonRpcResponse {

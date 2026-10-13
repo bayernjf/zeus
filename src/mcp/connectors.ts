@@ -1,9 +1,10 @@
+import type { spawn } from 'node:child_process';
 import { validatePermissionClaims } from '../skills/validate-spec.js';
 import { SkillValidationError } from '../skills/validate-spec.js';
 import { DomainError } from '../util/domain-error.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 import { McpClient } from './client.js';
-import { McpStdioClient } from './stdio-client.js';
+import { McpStdioClient, type StdioSpawnOptions } from './stdio-client.js';
 import type {
   ConnectorCapabilities,
   ConnectorDeclaration,
@@ -20,6 +21,11 @@ export interface ConnectorAuditEntry {
 
 export class ConnectorError extends DomainError {}
 
+export interface ConnectorRegistryDeps {
+  /** Injection seam for tests; McpStdioClient otherwise spawns itself. */
+  spawnImpl?: typeof spawn;
+}
+
 /**
  * E7 connector registry: declarations are the minimum-privilege boundary,
  * connection runs the MCP handshake and discovers capabilities, revoke drops
@@ -32,6 +38,7 @@ export class ConnectorRegistry {
   constructor(
     private now: () => Date = () => new Date(),
     private audit: (entry: ConnectorAuditEntry) => void = () => {},
+    private deps: ConnectorRegistryDeps = {},
   ) {}
 
   declare(input: ConnectorDeclaration): ConnectorRecord {
@@ -44,17 +51,38 @@ export class ConnectorRegistry {
     const isStdio =
       input.transport?.type === 'stdio' ||
       (input.transport?.type !== 'http' && typeof input.command === 'string' && input.command.trim().length > 0);
+    const stdioArgs = input.transport?.type === 'stdio' ? input.transport.args : input.args;
+    const stdioEnv = input.transport?.type === 'stdio' ? input.transport.env : input.env;
+    const stdioEnvAllowList =
+      input.transport?.type === 'stdio' ? input.transport.envAllowList : input.envAllowList;
+    const stdioMaxWallSeconds =
+      input.transport?.type === 'stdio' ? input.transport.maxWallSeconds : input.maxWallSeconds;
     if (isStdio) {
       const command = input.transport?.type === 'stdio' ? input.transport.command : input.command;
       if (typeof command !== 'string' || command.trim().length === 0) {
         throw new ConnectorError('stdio connector requires a non-empty command');
       }
+      // S16 V2: validate the isolation fields at the boundary so a malformed
+      // declaration can never reach the spawn.
+      if (
+        stdioEnvAllowList !== undefined &&
+        (!Array.isArray(stdioEnvAllowList) ||
+          stdioEnvAllowList.some(v => typeof v !== 'string' || v.trim().length === 0))
+      ) {
+        throw new ConnectorError('stdio connector envAllowList must be an array of non-empty strings');
+      }
+      if (
+        stdioMaxWallSeconds !== undefined &&
+        (typeof stdioMaxWallSeconds !== 'number' ||
+          !Number.isFinite(stdioMaxWallSeconds) ||
+          stdioMaxWallSeconds <= 0)
+      ) {
+        throw new ConnectorError('stdio connector maxWallSeconds must be a finite positive number');
+      }
     } else if (typeof input.endpoint !== 'string' || input.endpoint.trim().length === 0) {
       throw new ConnectorError('http connector requires a non-empty endpoint');
     }
 
-    const stdioArgs = input.transport?.type === 'stdio' ? input.transport.args : input.args;
-    const stdioEnv = input.transport?.type === 'stdio' ? input.transport.env : input.env;
     const normalised: ConnectorDeclaration = isStdio
       ? {
           id: input.id,
@@ -63,6 +91,8 @@ export class ConnectorRegistry {
             input.transport?.type === 'stdio' ? input.transport.command : input.command!,
           ...(stdioArgs !== undefined ? { args: stdioArgs } : {}),
           ...(stdioEnv !== undefined ? { env: stdioEnv } : {}),
+          ...(stdioEnvAllowList !== undefined ? { envAllowList: stdioEnvAllowList } : {}),
+          ...(stdioMaxWallSeconds !== undefined ? { maxWallSeconds: stdioMaxWallSeconds } : {}),
           permissions: input.permissions,
         }
       : {
@@ -110,11 +140,7 @@ export class ConnectorRegistry {
       // restored from a hand-edited snapshot never passed declare().
       if (!this.isStdio(record)) assertOutboundUrlAllowed(record.endpoint!);
       if (this.isStdio(record)) {
-        const stdio = new McpStdioClient({
-          command: record.command!,
-          ...(record.args !== undefined ? { args: record.args } : {}),
-          ...(record.env !== undefined ? { env: record.env } : {}),
-        });
+        const stdio = new McpStdioClient(this.stdioSpawnOptions(record));
         try {
           capabilities = await stdio.initialize();
         } finally {
@@ -162,6 +188,23 @@ export class ConnectorRegistry {
     return typeof record.command === 'string' && record.command.trim().length > 0;
   }
 
+  /**
+   * Build the spawn options for one short-lived stdio client. Centralising the
+   * mapping keeps the handshake site and the call site from drifting: the S16
+   * V2 isolation fields used to be accepted by the declaration but dropped at
+   * every spawn.
+   */
+  private stdioSpawnOptions(record: ConnectorRecord): StdioSpawnOptions {
+    return {
+      command: record.command!,
+      ...(record.args !== undefined ? { args: record.args } : {}),
+      ...(record.env !== undefined ? { env: record.env } : {}),
+      ...(record.envAllowList !== undefined ? { envAllowList: record.envAllowList } : {}),
+      ...(record.maxWallSeconds !== undefined ? { maxWallSeconds: record.maxWallSeconds } : {}),
+      ...(this.deps.spawnImpl !== undefined ? { spawnImpl: this.deps.spawnImpl } : {}),
+    };
+  }
+
   /** Revoke: the connector immediately disappears from active lookups. */
   revoke(id: string): ConnectorRecord {
     const record = this.require(id);
@@ -201,12 +244,11 @@ export class ConnectorRegistry {
       throw new ConnectorError(`connector ${id} does not expose tool '${name}' (discovered: ${record.capabilities.tools.join(', ') || 'none'})`);
     }
     if (this.isStdio(record)) {
-      const client = new McpStdioClient({
-        command: record.command!,
-        ...(record.args !== undefined ? { args: record.args } : {}),
-        ...(record.env !== undefined ? { env: record.env } : {}),
-      });
+      const client = new McpStdioClient(this.stdioSpawnOptions(record));
       try {
+        // M-06: each call spawns a fresh process, so the MCP initialize
+        // handshake must run on this process before tools/call is written.
+        await client.initialize();
         return await client.callTool(name, args);
       } finally {
         client.close();
@@ -218,6 +260,9 @@ export class ConnectorRegistry {
       ...(fetchImpl !== undefined ? { fetchImpl } : {}),
       ...(record.token !== undefined ? { token: record.token } : {}),
     });
+    // M-07: each call uses a fresh HTTP client; a session-bearing server needs
+    // the initialize handshake (and its Mcp-Session-Id) before tools/call.
+    await client.initialize();
     return client.callTool(name, args);
   }
 
@@ -232,15 +277,17 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Persistable form: everything but the bearer token. The state file - and so
-   * every backup bundle drawn from it - is a plaintext document, which is the
-   * wrong side of the credential boundary. The token stays in memory; after a
-   * restore the operator re-declares the connector with it.
+   * Persistable form: everything but the bearer token and the stdio env map.
+   * The state file - and so every backup bundle drawn from it - is a plaintext
+   * document, which is the wrong side of the credential boundary. A stdio env
+   * map may carry upstream API keys, so it is dropped together with the token.
+   * Both stay in memory; after a restore the operator re-declares the connector
+   * with them.
    */
   exportState(): PersistedConnectorRecord[] {
     return [...this.connectors.values()].map(record => {
-      // Omit-by-destructuring: `token` is dropped, `rest` is what persists.
-      const { token, ...rest } = record;
+      // Omit-by-destructuring: `token` and `env` are dropped, `rest` persists.
+      const { token, env, ...rest } = record;
       return structuredClone(rest);
     });
   }
@@ -253,7 +300,12 @@ export class ConnectorRegistry {
   importState(records: PersistedConnectorRecord[]): void {
     this.connectors = new Map(
       records.map(record => {
-        const restored = structuredClone(record);
+        // Snapshots written before the env strip landed may still carry a
+        // plaintext env map outside the current type; drop it on import so the
+        // next save self-purges such legacy state files and their backups.
+        const { env, ...restored } = structuredClone(record) as PersistedConnectorRecord & {
+          env?: Record<string, string>;
+        };
         if (restored.capabilities) {
           restored.capabilities = narrowCapabilities(restored.permissions, restored.capabilities);
         }

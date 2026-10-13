@@ -9,6 +9,7 @@ import {
   SUPPORTED_PROTOCOL_VERSIONS,
   type JsonRpcResponse,
 } from '../src/realm/mcp.js';
+import type { RealmStore } from '../src/realm/types.js';
 
 type Handle = (message: unknown) => Promise<JsonRpcResponse | null>;
 
@@ -246,5 +247,41 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
       rpc(3, 'tools/call', { name: 'realm.search', arguments: { realmId, tags: 123 } }),
     );
     expect(badTags!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
+  });
+});
+
+describe('Realm MCP unexpected store errors (m-15 path non-disclosure)', () => {
+  // A backend failure (EACCES/EIO/...) carries the realm-local absolute root in
+  // its raw message. The JSON-RPC surface must answer with a fixed generic
+  // message: the path non-disclosure invariant holds for failures too.
+  function throwingStore(root: string): RealmStore {
+    const boom: () => Promise<never> = () =>
+      Promise.reject(new Error(`EACCES: permission denied, open '${root}/notes/diary.md'`));
+    return {
+      connect: boom,
+      manifest: boom,
+      search: boom,
+      read: boom,
+      connections: () => [],
+      disconnect: boom,
+      retargetTenant: boom,
+      entries: boom,
+    };
+  }
+
+  it('maps an unexpected error to a generic REALM_ERROR message without the absolute root', async () => {
+    const root = '/srv/zeus/realms/personal-secret-root';
+    const handle = createRealmMcpHandler({ store: throwingStore(root), realmIds: ['personal'] });
+    const calls = [
+      rpc(1, 'tools/call', { name: 'realm.read', arguments: { realmId: 'personal', itemId: 'notes/diary.md' } }),
+      rpc(2, 'tools/call', { name: 'realm.search', arguments: { realmId: 'personal' } }),
+    ];
+    for (const call of calls) {
+      const res = await handle(call);
+      expect(res?.error).toBeDefined();
+      expect(res!.error!.code).toBe(JSON_RPC_CODES.REALM_ERROR);
+      expect(res!.error!.message).toBe('realm error');
+      expect(JSON.stringify(res)).not.toContain(root);
+    }
   });
 });

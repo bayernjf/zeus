@@ -27,10 +27,10 @@ interface EvalReport {
   byFamily: Record<string, FamilyMetrics>;
 }
 
-function runScript(args: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
+function runScript(args: string[], extraEnv: Record<string, string> = {}): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [SCRIPT, ...args], {
-      env: { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' },
+      env: { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost', ...extraEnv },
     });
     let stdout = '';
     let stderr = '';
@@ -117,6 +117,39 @@ describe('eval-run.mjs baseline gate (S7 V3)', () => {
     ]);
     expect(r.status).toBe(2);
     expect(r.stderr).toContain('no baseline file');
+  });
+
+  it('exits 2 (cannot start) when the baseline file is not valid JSON', async () => {
+    // A corrupt baseline is the same class of startup failure as a missing
+    // one (the runner cannot diff against it), not a gate regression — the
+    // unattended-run contract reserves exit 2 for "cannot start".
+    const garbage = join(dir, 'garbage.json');
+    writeFileSync(garbage, 'not json {');
+    const r = await runAgainst(garbage, 'garbage-run.json');
+    expect(r.status, r.stdout + r.stderr).toBe(2);
+    expect(r.stderr).toContain('baseline');
+  });
+
+  it('exits 2 (cannot start) when the baseline JSON carries no report', async () => {
+    const shapeless = join(dir, 'shapeless.json');
+    writeFileSync(shapeless, JSON.stringify({ pinnedAt: 'test-fixture' }));
+    const r = await runAgainst(shapeless, 'shapeless-run.json');
+    expect(r.status, r.stdout + r.stderr).toBe(2);
+    expect(r.stderr).toContain('baseline');
+  });
+
+  it('enforces the wall-clock budget set by ZEUS_EVAL_BUDGET_MS', async () => {
+    // The unattended-run rules promise a wall-clock budget. Forcing it to 1ms
+    // via the env override must stop the run with exit 2 — the default 120s
+    // budget would let this single case finish green (exit 0). Whether the
+    // watchdog or the between-cases check fires first is a scheduling race
+    // under load, so the test pins only the shared outcome.
+    const r = await runScript(
+      ['--filter', CASE_ID, '--out', join(dir, 'watchdog-run.json')],
+      { ZEUS_EVAL_BUDGET_MS: '1' },
+    );
+    expect(r.status, r.stdout + r.stderr).toBe(2);
+    expect(r.stderr).toContain('wall-clock budget');
   });
 
   it('writes the PR comment body (marker, verdict, family table) on a green run', async () => {

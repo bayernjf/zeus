@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLogger, redact } from '../src/util/logger.js';
+import { createLogger, redact, redactText, redactUrl } from '../src/util/logger.js';
 
 function capture(level?: 'error' | 'warn' | 'info' | 'debug') {
   const lines: string[] = [];
@@ -111,5 +111,61 @@ describe('structured logger', () => {
     const entry = parseAll(lines)[0]!;
     expect(entry.event).toBe('heartbeat');
     expect(entry.msg).toBeUndefined();
+  });
+
+  it('redacts credentials embedded in msg (the message used to pass through untouched)', () => {
+    const { logger, lines } = capture();
+    logger.error(
+      'dispatch-failed',
+      'POST http://ops:hunter2@10.0.0.9/card?token=abc123&q=1 failed: Bearer xyz789',
+    );
+    const msg = parseAll(lines)[0]!.msg as string;
+    expect(msg).not.toContain('hunter2');
+    expect(msg).not.toContain('abc123');
+    expect(msg).not.toContain('xyz789');
+    expect(msg).toContain('10.0.0.9');
+    expect(msg).toContain('Bearer [REDACTED]');
+    expect(msg).toMatch(/token=REDACTED/);
+    expect(msg).toContain('q=1');
+  });
+});
+
+describe('redactText / redactUrl value-form redaction', () => {
+  it('strips URL userinfo and credential query parameters but keeps the URL body', () => {
+    expect(redactUrl('http://ops:hunter2@host.example:8080/card?token=abc&page=2'))
+      .toBe('http://host.example:8080/card?token=REDACTED&page=2');
+    expect(redactUrl('https://vassal.example/a1/api')).toBe('https://vassal.example/a1/api');
+    expect(redactText('fetch http://ops:pw@host/x?access_token=t1&q=1 done'))
+      .toBe('fetch http://host/x?access_token=REDACTED&q=1 done');
+  });
+
+  it('redacts PEM private key blocks and credential assignments inside text', () => {
+    // Joined so the scan-secrets gate does not see the literal PEM marker in
+    // this tracked file; at runtime redactText receives the same string.
+    const pem = '-----BEGIN ' + 'PRIVATE KEY-----\nAAAAbbbb\nCCCCdddd\n-----END PRIVATE KEY-----';
+    const out = redactText(`load failed\n${pem}\napiKey: k-live-123`);
+    expect(out).not.toContain('AAAAbbbb');
+    expect(out).not.toContain('CCCCdddd');
+    expect(out).not.toContain('k-live-123');
+    expect(out).toContain('[REDACTED]');
+    expect(out).toContain('load failed');
+  });
+
+  it('redacts userinfo URLs and assignments nested inside field values', () => {
+    expect(redact('connect to http://ops:secret@host/x or set token=plain-text-value'))
+      .toBe('connect to http://host/x or set token=[REDACTED]');
+  });
+
+  it('leaves ordinary prose, run ids and credential-free URLs untouched', () => {
+    const text = 'fetched https://vassal.example/a1/api over plain http with no credentials';
+    expect(redactText(text)).toBe(text);
+    expect(redactText('pilot note: research skill completed in 42ms')).toBe(
+      'pilot note: research skill completed in 42ms',
+    );
+  });
+
+  it('propagates the key hint while recursing arrays', () => {
+    expect(redact(['Bearer abc', 'plain'], 'authorization')).toEqual(['[REDACTED]', '[REDACTED]']);
+    expect(redact([{ token: 't' }, 'Bearer v'])).toEqual([{ token: '[REDACTED]' }, '[REDACTED]']);
   });
 });

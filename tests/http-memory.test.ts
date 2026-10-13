@@ -175,6 +175,77 @@ describe('memory HTTP right to be forgotten', () => {
     expect(bySubject.get('pr-helper')).toBe('active');
   });
 
+  it('flushes state immediately once a retraction actually lands, but not on a no-op', async () => {
+    // The right to be forgotten must survive a crash: without an immediate
+    // flush the fact stays retracted in memory only until the next periodic
+    // save, and a kill in that window resurrects it on reboot.
+    let flushes = 0;
+    const store = new MemoryStore();
+    store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
+    store.consolidateRealm(REALM);
+    const target = store.facts(REALM, REALM)[0]!;
+    const app = await createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-test'),
+      internalToken: TOKEN,
+      memoryStore: store,
+      persistState: async () => { flushes += 1; },
+    });
+    const payload = {
+      realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver',
+    };
+    const first = await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
+    expect(first.statusCode).toBe(200);
+    expect(flushes).toBe(1);
+
+    // Idempotent repeat changes nothing on disk either.
+    const again = await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
+    expect(again.statusCode).toBe(200);
+    expect(flushes).toBe(1);
+  });
+
+  it('flushes state immediately after forget-subject', async () => {
+    let flushes = 0;
+    const store = new MemoryStore();
+    store.append(claim('evt-2', 'loom', 'language', 'python', 'agent-b'));
+    store.consolidateRealm(REALM);
+    const hooked = await createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-test'),
+      internalToken: TOKEN,
+      memoryStore: store,
+      persistState: async () => { flushes += 1; },
+    });
+    const res = await hooked.inject({
+      method: 'POST', url: '/api/memory/forget-subject', headers: AUTH,
+      payload: { realmId: REALM, subject: 'LOOM', reason: 'erasure', requestedBy: 'driver' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(flushes).toBe(1);
+  });
+
+  it('reports 500 when the retraction is in memory but the durability flush failed', async () => {
+    const store = new MemoryStore();
+    store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
+    store.consolidateRealm(REALM);
+    const target = store.facts(REALM, REALM)[0]!;
+    const app = await createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-test'),
+      internalToken: TOKEN,
+      memoryStore: store,
+      persistState: async () => { throw new Error('disk on fire'); },
+    });
+    const res = await app.inject({
+      method: 'POST', url: '/api/memory/retract', headers: AUTH,
+      payload: { realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver' },
+    });
+    expect(res.statusCode).toBe(500);
+    expect((await res.json()).error).toBe('state_not_persisted');
+    // The mutation itself landed in memory; the failure is about durability.
+    expect(store.facts(REALM, REALM)[0]!.status).toBe('retracted');
+  });
+
   it('rejects a retraction without fact ids, reason or requester', async () => {
     const { app } = await setup();
     const noFacts = await app.inject({

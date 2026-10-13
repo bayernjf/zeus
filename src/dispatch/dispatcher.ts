@@ -91,6 +91,12 @@ export const AUDIT_DECISIONS = [
   // never look healthy while silently never firing.
   'watch-eval-unavailable',
   'watch-auto-disabled',
+  // M-01: the dispatch boundary recorded a terminal refusal for a fire; the
+  // watch advanced its fire sequence rather than replaying a dead intent id.
+  'watch-fire-refused',
+  // m-14: processing one watch threw; the failure was recorded and the watch
+  // skipped without advancing its sequence, so the rest of the tick ran.
+  'watch-fire-failed',
   // self-host loop step 4: an unattended execute fire either received a
   // one-time child ticket, or was refused at a delegation ceiling (zero
   // outbound); both are governance facts about the contract.

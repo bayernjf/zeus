@@ -170,6 +170,15 @@ export type WatchAuditEntry = {
     | 'watch-revoked'
     | 'watch-eval-unavailable'
     | 'watch-auto-disabled'
+    // M-01: the dispatch boundary recorded a terminal refusal for this fire
+    // (skill uninstalled, no active provider, a gate rejection). The fire
+    // sequence advances so the deterministic intent id is not replayed forever
+    // against the same recorded failure.
+    | 'watch-fire-refused'
+    // m-14: processing one watch threw; the failure is recorded and the watch
+    // skipped without advancing its sequence, so one bad watch cannot stop a
+    // tick or burn the other watches' budgets.
+    | 'watch-fire-failed'
     | 'delegation-child-issued'
     | 'delegation-limit-exceeded';
   watchId: string;
@@ -190,7 +199,18 @@ export type WatchSubmitRequest = {
   executionDelegation?: unknown;
 };
 
-export type WatchSubmitResult = { ok: boolean; replayed?: boolean; reason?: string };
+export type WatchSubmitResult = {
+  ok: boolean;
+  replayed?: boolean;
+  reason?: string;
+  /** M-01: a terminal refusal that the dispatch boundary has already recorded
+   *  under this intent id (skill uninstalled, no active provider, gate
+   *  rejection). Replaying the same deterministic id can only ever return the
+   *  recorded failure, so the watch advances its fire sequence and spends fire
+   *  budget. Absent on a throw or an unknown delivery result: the sequence
+   *  stays and a later tick replays the same id through the idempotency table. */
+  refused?: boolean;
+};
 
 export type WatchTickOptions = {
   now: () => Date;
@@ -232,6 +252,9 @@ export type WatchTickOptions = {
 export type WatchTickReport = {
   evaluated: number;
   fired: string[];
+  /** M-01: fires whose condition held but the dispatch boundary returned a
+   *  recorded terminal refusal. The fire sequence advanced; no intent ran. */
+  refused: Array<{ id: string; reason: string }>;
   unavailable: string[];
   autoDisabled: string[];
 };
@@ -240,6 +263,8 @@ const DEFAULT_MAX_EVAL_FAILURES = 3;
 
 export class WatchRegistry {
   private watches = new Map<string, Watch>();
+  /** m-14: tail of the serialization chain; each runTick appends to it. */
+  private tickChain?: Promise<void>;
 
   constructor(
     private options: { newId?: () => string; audit?: (entry: WatchAuditEntry) => void; now?: () => Date } = {}
@@ -371,47 +396,65 @@ export class WatchRegistry {
   }
 
   /**
+   * One evaluation pass. Passes never overlap (m-14): a pass entered while
+   * another is in flight waits for it to finish and then runs against the
+   * post-pass state, so concurrent scheduler ticks can never double-count a
+   * fire or interleave per-watch ledger writes.
+   */
+  async runTick(options: WatchTickOptions): Promise<WatchTickReport> {
+    const previous = this.tickChain ?? Promise.resolve();
+    let release: () => void = () => {};
+    this.tickChain = new Promise<void>(resolve => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await this.runTickPass(options);
+    } finally {
+      release();
+    }
+  }
+
+  /**
    * One evaluation pass. Every watch is evaluated in order and a throwing
    * watch is recorded and skipped - one bad watch must not stop the tick.
    */
-  async runTick(options: WatchTickOptions): Promise<WatchTickReport> {
-    const report: WatchTickReport = { evaluated: 0, fired: [], unavailable: [], autoDisabled: [] };
+  private async runTickPass(options: WatchTickOptions): Promise<WatchTickReport> {
+    const report: WatchTickReport = { evaluated: 0, fired: [], refused: [], unavailable: [], autoDisabled: [] };
     const maxFailures = options.maxEvalFailures ?? DEFAULT_MAX_EVAL_FAILURES;
     const nowMs = options.now().getTime();
     const nowIso = options.now().toISOString();
+    // A throwing audit sink must never steer or kill a pass (m-14).
+    const emit = (entry: WatchAuditEntry): void => {
+      try {
+        options.audit?.(entry);
+      } catch {
+        // The audit trail is unavailable for this entry; the tick continues.
+      }
+    };
 
     for (const watch of this.watches.values()) {
       if (!watch.enabled) continue;
-      if (nowMs < Date.parse(watch.startsAt) || nowMs > Date.parse(watch.expiresAt)) continue;
-      if (watch.used.fires >= watch.budget.fires) continue;
-      if (watch.intervalSeconds > 0 && watch.lastEvaluatedAt) {
-        const elapsed = (nowMs - Date.parse(watch.lastEvaluatedAt)) / 1000;
-        if (elapsed < watch.intervalSeconds) continue;
-      }
-      report.evaluated += 1;
-      watch.lastEvaluatedAt = nowIso;
-
-      let reading: WatchReading;
-      try {
-        reading = await this.readSource(watch, options.sources ?? {});
-      } catch {
-        reading = { kind: 'unavailable' };
-      }
-
-      if (reading.kind === 'unavailable') {
+      const startsMs = Date.parse(watch.startsAt);
+      const expiresMs = Date.parse(watch.expiresAt);
+      // Persisted state bypasses register validation (importState): an
+      // unparseable window date is NaN and every NaN comparison is false,
+      // which would otherwise leave the watch evaluating forever. Fail
+      // closed through the same path as an unreadable source.
+      if (!Number.isFinite(startsMs) || !Number.isFinite(expiresMs)) {
         watch.evalFailures = (watch.evalFailures ?? 0) + 1;
         report.unavailable.push(watch.id);
-        options.audit?.({
+        emit({
           decision: 'watch-eval-unavailable',
           watchId: watch.id,
           owner: watch.owner,
-          detail: `source '${watch.predicate.source}' could not be read; not firing (failure ${watch.evalFailures})`,
+          detail: `persisted window could not be parsed (startsAt='${watch.startsAt}', expiresAt='${watch.expiresAt}'); not firing (failure ${watch.evalFailures})`,
           at: nowIso,
         });
         if (watch.evalFailures >= maxFailures) {
           watch.enabled = false;
           report.autoDisabled.push(watch.id);
-          options.audit?.({
+          emit({
             decision: 'watch-auto-disabled',
             watchId: watch.id,
             owner: watch.owner,
@@ -421,123 +464,200 @@ export class WatchRegistry {
         }
         continue;
       }
+      if (nowMs < startsMs || nowMs > expiresMs) continue;
+      if (watch.used.fires >= watch.budget.fires) continue;
+      if (watch.intervalSeconds > 0 && watch.lastEvaluatedAt) {
+        const elapsed = (nowMs - Date.parse(watch.lastEvaluatedAt)) / 1000;
+        if (elapsed < watch.intervalSeconds) continue;
+      }
 
-      watch.evalFailures = 0;
-      const matched = evaluatePredicate(watch.predicate, reading, watch.lastValue);
-      watch.lastValue = reading.value;
-      if (matched !== true) continue;
+      try {
+        report.evaluated += 1;
+        watch.lastEvaluatedAt = nowIso;
 
-      if (!options.submit) continue;
+        let reading: WatchReading;
+        try {
+          reading = await this.readSource(watch, options.sources ?? {});
+        } catch {
+          reading = { kind: 'unavailable' };
+        }
 
-      const seq = watch.used.fires + 1;
-      // The deterministic intent id is what makes a repeated condition a replay
-      // instead of a second dispatch: it hits the orchestrator's idempotency
-      // table rather than relying on the tick not to run twice.
-      const intentId = `watch:${watch.id}:${seq}`;
-
-      // Step 4: an unattended execute fire may only run inside a pre-signed,
-      // bounded contract. The watch never carries its own ticket (invariant 4);
-      // it asks the kernel to derive one for this fire. No derive hook, no
-      // contract, revoked/window-ended, or a spent ceiling all read the same
-      // way: zero outbound and a desk escalation naming the exact limit hit.
-      let childTicket: unknown;
-      if (watch.intent.mode === 'execute') {
-        const delegationId = watch.delegationId;
-        // The execute budget is the watch-local ceiling; the contract adds its
-        // own maxChildTickets/maxConcurrent. A spent watch budget refuses
-        // before asking for a ticket, so it never spends a contract slot.
-        let reason: string | null = null;
-        if (watch.used.executes >= watch.budget.executes) reason = 'execute-budget-exhausted';
-        else if (!delegationId) reason = 'no-contract';
-        else if (!options.deriveExecution) reason = 'no-trust-anchor';
-        if (reason) {
-          options.audit?.({
-            decision: 'delegation-limit-exceeded',
+        if (reading.kind === 'unavailable') {
+          watch.evalFailures = (watch.evalFailures ?? 0) + 1;
+          report.unavailable.push(watch.id);
+          emit({
+            decision: 'watch-eval-unavailable',
             watchId: watch.id,
             owner: watch.owner,
-            detail: `execute fire refused (${reason}); no outbound dispatch`,
+            detail: `source '${watch.predicate.source}' could not be read; not firing (failure ${watch.evalFailures})`,
             at: nowIso,
           });
-          if (options.escalateLimit) {
-            options.escalateLimit({
+          if (watch.evalFailures >= maxFailures) {
+            watch.enabled = false;
+            report.autoDisabled.push(watch.id);
+            emit({
+              decision: 'watch-auto-disabled',
               watchId: watch.id,
-              ...(delegationId ? { delegationId } : {}),
-              skill: watch.intent.skill,
-              realm: watch.realm,
-              ...(watch.realmId ? { realmId: watch.realmId } : {}),
-              reason,
-              tickSeq: seq,
-              interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
+              owner: watch.owner,
+              detail: `disabled after ${watch.evalFailures} consecutive unreadable evaluations`,
+              at: nowIso,
             });
           }
           continue;
         }
-        const derive = options.deriveExecution;
-        if (!derive) continue;
-        const derived = await derive({
-          watchId: watch.id,
-          delegationId: delegationId as string,
-          skill: watch.intent.skill,
-        });
-        if (!derived.ok) {
-          options.audit?.({
-            decision: 'delegation-limit-exceeded',
+
+        watch.evalFailures = 0;
+        const matched = evaluatePredicate(watch.predicate, reading, watch.lastValue);
+        watch.lastValue = reading.value;
+        if (matched !== true) continue;
+
+        if (!options.submit) continue;
+
+        const seq = watch.used.fires + 1;
+        // The deterministic intent id is what makes a repeated condition a replay
+        // instead of a second dispatch: it hits the orchestrator's idempotency
+        // table rather than relying on the tick not to run twice.
+        const intentId = `watch:${watch.id}:${seq}`;
+
+        // Step 4: an unattended execute fire may only run inside a pre-signed,
+        // bounded contract. The watch never carries its own ticket (invariant 4);
+        // it asks the kernel to derive one for this fire. No derive hook, no
+        // contract, revoked/window-ended, or a spent ceiling all read the same
+        // way: zero outbound and a desk escalation naming the exact limit hit.
+        let childTicket: unknown;
+        if (watch.intent.mode === 'execute') {
+          const delegationId = watch.delegationId;
+          // The execute budget is the watch-local ceiling; the contract adds its
+          // own maxChildTickets/maxConcurrent. A spent watch budget refuses
+          // before asking for a ticket, so it never spends a contract slot.
+          let reason: string | null = null;
+          if (watch.used.executes >= watch.budget.executes) reason = 'execute-budget-exhausted';
+          else if (!delegationId) reason = 'no-contract';
+          else if (!options.deriveExecution) reason = 'no-trust-anchor';
+          if (reason) {
+            emit({
+              decision: 'delegation-limit-exceeded',
+              watchId: watch.id,
+              owner: watch.owner,
+              detail: `execute fire refused (${reason}); no outbound dispatch`,
+              at: nowIso,
+            });
+            if (options.escalateLimit) {
+              options.escalateLimit({
+                watchId: watch.id,
+                ...(delegationId ? { delegationId } : {}),
+                skill: watch.intent.skill,
+                realm: watch.realm,
+                ...(watch.realmId ? { realmId: watch.realmId } : {}),
+                reason,
+                tickSeq: seq,
+                interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
+              });
+            }
+            continue;
+          }
+          const derive = options.deriveExecution;
+          if (!derive) continue;
+          const derived = await derive({
+            watchId: watch.id,
+            delegationId: delegationId as string,
+            skill: watch.intent.skill,
+          });
+          if (!derived.ok) {
+            emit({
+              decision: 'delegation-limit-exceeded',
+              watchId: watch.id,
+              owner: watch.owner,
+              detail: `execute fire refused (${derived.reason}); no outbound dispatch`,
+              at: nowIso,
+            });
+            options.escalateLimit?.({
+              watchId: watch.id,
+              ...(delegationId ? { delegationId: delegationId as string } : {}),
+              skill: watch.intent.skill,
+              realm: watch.realm,
+              ...(watch.realmId ? { realmId: watch.realmId } : {}),
+              reason: derived.reason,
+              tickSeq: seq,
+              interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
+            });
+            continue;
+          }
+          childTicket = derived.delegation;
+          emit({
+            decision: 'delegation-child-issued',
             watchId: watch.id,
             owner: watch.owner,
-            detail: `execute fire refused (${derived.reason}); no outbound dispatch`,
+            detail: `derived one-time child ticket from contract ${delegationId} for fire ${intentId}`,
             at: nowIso,
           });
-          options.escalateLimit?.({
-            watchId: watch.id,
-            ...(delegationId ? { delegationId: delegationId as string } : {}),
+        }
+
+        let outcome: WatchSubmitResult;
+        try {
+          outcome = await options.submit({
+            intentId,
             skill: watch.intent.skill,
+            subject: watch.intent.subject,
+            mode: watch.intent.mode,
             realm: watch.realm,
-            ...(watch.realmId ? { realmId: watch.realmId } : {}),
-            reason: derived.reason,
-            tickSeq: seq,
-            interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
+            maxFanOut: watch.intent.maxFanOut,
+            ...(childTicket !== undefined ? { executionDelegation: childTicket } : {}),
           });
+        } catch (error) {
+          // Delivery result unknown: no refused marker, so the sequence stays
+          // and a later pass replays the same deterministic id.
+          outcome = { ok: false, reason: error instanceof Error ? error.message : 'submit failed' };
+        }
+
+        if (!outcome.ok) {
+          if (outcome.refused === true) {
+            // M-01: the dispatch boundary already recorded a terminal failure
+            // under this id (skill uninstalled, no active provider, a gate
+            // rejection). Replaying the same deterministic id can only return
+            // that recorded failure forever, pinning the sequence and leaking
+            // one derived child ticket per tick in execute mode. Advance the
+            // fire sequence so the fire budget bounds retries and ticket
+            // derivation; the execute budget is not spent because no intent ran.
+            watch.used.fires += 1;
+            report.refused.push({ id: watch.id, reason: outcome.reason ?? 'refused' });
+            emit({
+              decision: 'watch-fire-refused',
+              watchId: watch.id,
+              owner: watch.owner,
+              detail: `fire ${intentId} refused at the dispatch boundary (${outcome.reason ?? 'refused'}); fire sequence advanced, no intent ran`,
+              at: nowIso,
+            });
+          }
           continue;
         }
-        childTicket = derived.delegation;
-        options.audit?.({
-          decision: 'delegation-child-issued',
+
+        watch.used.fires += 1;
+        if (watch.intent.mode === 'execute') watch.used.executes += 1;
+        watch.lastFiredAt = nowIso;
+        report.fired.push(watch.id);
+        emit({
+          decision: 'watch-fired',
           watchId: watch.id,
           owner: watch.owner,
-          detail: `derived one-time child ticket from contract ${delegationId} for fire ${intentId}`,
+          detail: outcome.replayed
+            ? `fired as a replay of ${intentId}; no second dispatch`
+            : `fired intent ${intentId} (skill ${watch.intent.skill}, mode ${watch.intent.mode})`,
+          at: nowIso,
+        });
+      } catch (error) {
+        // m-14: anything a single watch's hooks or persisted state can throw
+        // (derive, predicate evaluation, malformed state) is recorded and the
+        // watch skipped without advancing its fire sequence, leaving the rest
+        // of the pass untouched. A later pass retries the same sequence.
+        emit({
+          decision: 'watch-fire-failed',
+          watchId: watch.id,
+          owner: watch.owner,
+          detail: `tick processing for the watch failed (${error instanceof Error ? error.message : 'unknown error'}); skipped, fire sequence not advanced`,
           at: nowIso,
         });
       }
-
-      let outcome: WatchSubmitResult;
-      try {
-        outcome = await options.submit({
-          intentId,
-          skill: watch.intent.skill,
-          subject: watch.intent.subject,
-          mode: watch.intent.mode,
-          realm: watch.realm,
-          maxFanOut: watch.intent.maxFanOut,
-          ...(childTicket !== undefined ? { executionDelegation: childTicket } : {}),
-        });
-      } catch (error) {
-        outcome = { ok: false, reason: error instanceof Error ? error.message : 'submit failed' };
-      }
-      if (!outcome.ok) continue;
-
-      watch.used.fires += 1;
-      if (watch.intent.mode === 'execute') watch.used.executes += 1;
-      watch.lastFiredAt = nowIso;
-      report.fired.push(watch.id);
-      options.audit?.({
-        decision: 'watch-fired',
-        watchId: watch.id,
-        owner: watch.owner,
-        detail: outcome.replayed
-          ? `fired as a replay of ${intentId}; no second dispatch`
-          : `fired intent ${intentId} (skill ${watch.intent.skill}, mode ${watch.intent.mode})`,
-        at: nowIso,
-      });
     }
 
     return report;

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { QueueFullError, Semaphore } from '../src/orchestrator/semaphore.js';
+import {
+  QueueFullError,
+  QueueWaitCancelledError,
+  QueueWaitTimeoutError,
+  Semaphore,
+} from '../src/orchestrator/semaphore.js';
 
 /** Resolve the pending acquire callbacks one microtask at a time. */
 async function settle(): Promise<void> {
@@ -88,5 +93,69 @@ describe('E1.5 semaphore', () => {
     // 0 waiters (refuse as soon as the gate is busy) and Infinity stay valid
     expect(() => new Semaphore(1, 0)).not.toThrow();
     expect(() => new Semaphore(1, Number.POSITIVE_INFINITY)).not.toThrow();
+  });
+
+  it('cancels a queued waiter on abort and skips it when handing over a slot', async () => {
+    const gate = new Semaphore(1);
+    const held = await gate.acquire();
+    const first = new AbortController();
+    const second = new AbortController();
+    const w1 = gate.acquire({ signal: first.signal });
+    const w2 = gate.acquire({ signal: second.signal });
+    await settle();
+    expect(gate.waiting).toBe(2);
+
+    first.abort();
+    await expect(w1).rejects.toBeInstanceOf(QueueWaitCancelledError);
+    expect(gate.waiting).toBe(1);
+
+    // the cancelled waiter must not consume the freed slot
+    held();
+    const release2 = await w2;
+    expect(gate.active).toBe(1);
+    expect(gate.waiting).toBe(0);
+    release2();
+    expect(gate.active).toBe(0);
+  });
+
+  it('rejects a queued waiter after the wait timeout and removes it from the line', async () => {
+    const gate = new Semaphore(1);
+    const held = await gate.acquire();
+    const timed = gate.acquire({ timeoutMs: 10 });
+    await expect(timed).rejects.toBeInstanceOf(QueueWaitTimeoutError);
+    expect(gate.waiting).toBe(0);
+
+    held();
+    const next = await gate.acquire();
+    expect(gate.active).toBe(1);
+    next();
+    expect(gate.active).toBe(0);
+  });
+
+  it('refuses immediately when the abort signal is already aborted, without joining the line', async () => {
+    const gate = new Semaphore(1);
+    const held = await gate.acquire();
+    await expect(gate.acquire({ signal: AbortSignal.abort() })).rejects.toBeInstanceOf(
+      QueueWaitCancelledError,
+    );
+    expect(gate.waiting).toBe(0);
+
+    const queued = gate.acquire();
+    held();
+    const release = await queued;
+    expect(gate.active).toBe(1);
+    release();
+  });
+
+  it('treats abort and timeout after the lease was granted as a no-op', async () => {
+    const gate = new Semaphore(1);
+    const controller = new AbortController();
+    const release = await gate.acquire({ signal: controller.signal, timeoutMs: 10 });
+    controller.abort();
+    await new Promise(resolve => setTimeout(resolve, 30));
+    // still holding the single lease: no late rejection freed it
+    expect(gate.active).toBe(1);
+    release();
+    expect(gate.active).toBe(0);
   });
 });

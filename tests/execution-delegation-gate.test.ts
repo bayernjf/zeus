@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { ExecutionDelegationNonceLedger, issueExecutionDelegation } from '../src/delegation/execution-delegation.js';
+import { DomainError } from '../src/util/domain-error.js';
 import type { DispatchPort, FanOutRequest, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
@@ -148,5 +149,48 @@ describe('deferred #33 execute-mode dispatch gate', () => {
     expect(refused).toHaveLength(0);
     expect(dispatchCalls).toHaveLength(1);
     expect(result.branches[0]?.ok).toBe(true);
+  });
+
+  it('refuses to resume an execute intent without a fresh delegation instead of replaying the consumed one (M-02)', async () => {
+    const { signer, orchestrator, dispatchCalls, refused } = harness();
+    const first = await issueExecutionDelegation(
+      { grantedBy: 'op', skill: 'deployment-health', capabilities: ['execute'] },
+      { signer, now: () => T0 },
+    );
+    const seeded = await orchestrator.fanOut(executeRequest(first));
+    expect(dispatchCalls).toHaveLength(1);
+
+    // The seed delegation is spent. A resume that carries no new credential must
+    // fail as an invalid request BEFORE dispatch — it must not silently replay
+    // the consumed nonce into a refused branch while the desk records "approved".
+    const vassal = seeded.branches[0]!.vassal;
+    await expect(orchestrator.resumeBranch(seeded.intentId, vassal, { answer: '42' }))
+      .rejects.toMatchObject({ kind: 'invalid' });
+    await expect(orchestrator.resumeBranch(seeded.intentId, vassal, { answer: '42' }))
+      .rejects.toBeInstanceOf(DomainError);
+    expect(dispatchCalls).toHaveLength(1);
+    expect(refused.filter(entry => entry.vassal === vassal && entry.reason === 'replayed')).toHaveLength(0);
+  });
+
+  it('resumes an execute branch when the operator supplies a fresh, unconsumed delegation (M-02)', async () => {
+    const { signer, ledger, orchestrator, dispatchCalls, refused } = harness();
+    const first = await issueExecutionDelegation(
+      { grantedBy: 'op', skill: 'deployment-health', capabilities: ['execute'] },
+      { signer, now: () => T0 },
+    );
+    const seeded = await orchestrator.fanOut(executeRequest(first));
+    const vassal = seeded.branches[0]!.vassal;
+
+    const second = await issueExecutionDelegation(
+      { grantedBy: 'op', skill: 'deployment-health', capabilities: ['execute'] },
+      { signer, now: () => T0 },
+    );
+    const resumed = await orchestrator.resumeBranch(seeded.intentId, vassal, { answer: '42' }, second);
+
+    expect(refused).toHaveLength(0);
+    expect(dispatchCalls).toHaveLength(2);
+    expect(resumed.branches.find(branch => branch.vassal === vassal)?.ok).toBe(true);
+    // The resume credential is single-use: the resumed write consumed its nonce.
+    expect(ledger.consume(second.nonce)).toBe(false);
   });
 });

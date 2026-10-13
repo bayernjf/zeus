@@ -25,7 +25,7 @@ import { ConnectorError, type ConnectorRegistry } from '../mcp/connectors.js';
 import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
 import type { DecisionBackend, DecisionBackendKind } from '../decision/types.js';
 import { recognizeIntent } from '../intent/recognize.js';
-import { AuditLogError, readAuditLog } from '../dispatch/audit.js';
+import { readAuditLog } from '../dispatch/audit.js';
 import { AUDIT_DECISIONS, type AuditDecision, type AuditEntry } from '../dispatch/dispatcher.js';
 import type { KernelStats } from '../state/stats.js';
 import type { IntentArchiveLookup, RetentionMode } from '../state/archive.js';
@@ -89,8 +89,15 @@ import type { MemoryState } from '../memory/types.js';
  */
 
 export const DEFAULT_SEAL_MAX_AGE_SECONDS = 3600;
-export const DEFAULT_ATTESTATION_TTL_SECONDS = 24 * 3600;
-
+export const DEFAULT_ATTESTATION_TTL_SECONDS = 24 * 60 * 60;
+/**
+ * How long a freshly attached live SSE stream waits for the intent's first
+ * event when its backlog is still empty ("connect SSE, then POST fan-out" is
+ * a supported sequence). Past the grace the intent is treated as unknown: the
+ * client gets `event: error` and the stream closes, so an unknown id can no
+ * longer park a socket forever. The process entry may override the value.
+ */
+export const DEFAULT_SSE_ATTACH_GRACE_MS = 30_000;
 const ESCALATION_STATUSES: EscalationStatus[] = ['pending', 'approved', 'rejected'];
 const ESCALATION_KINDS: EscalationKind[] = ['task-input', 'intent-conflict', 'memory-dispute', 'delegation-limit'];
 const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
@@ -132,6 +139,24 @@ export type HttpDeps = {
   metricsHistory?: MetricsHistory;
   /** H3: per-intent progress events for the SSE stream. */
   progressHub?: ProgressHub;
+  /**
+   * Per-process cap on concurrently attached LIVE SSE streams. Finished-intent
+   * replays never occupy a slot (they write one event and close). Unset =
+   * unbounded; past the cap the route answers 503 `sse_unavailable`.
+   */
+  sseMaxStreams?: number;
+  /**
+   * Attach grace for live streams whose intent has no backlog yet: with no
+   * live event before it expires the stream closes with `event: error`.
+   * Defaults to DEFAULT_SSE_ATTACH_GRACE_MS; tests inject short values.
+   */
+  sseAttachGraceMs?: number;
+  /**
+   * Server-side detail sink for transport failures whose HTTP body must stay
+   * generic (local absolute paths never cross the HTTP boundary). Defaults to
+   * no-op; the process entry wires the structured logger here.
+   */
+  log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void;
   /** H2 (E2.2/E2.3): skill catalogue, lifecycle and team resolution. */
   skillRegistry?: SkillRegistry;
   /** H2 (E2.5): mentor-commissioned skill transfer ledger. */
@@ -150,6 +175,12 @@ export type HttpDeps = {
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
   memoryStore?: MemoryStore;
+  /**
+   * Durability hook for compliance mutations: retract / forget-subject await
+   * a kernel snapshot flush before answering, so a crash cannot resurrect a
+   * retracted fact in the window before the next periodic save.
+   */
+  persistState?: () => Promise<void>;
   /** H2 (E8.3): realm target for diary persistence. */
   realmStore?: RealmStore;
   /**
@@ -226,6 +257,10 @@ export type DecisionStatus = {
 
 export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
+  const log = deps.log ?? (() => {});
+  // Counts live SSE attachments only: a finished intent is replayed inline and
+  // never occupies a slot, so a capped process still serves stored replays.
+  let liveSseStreams = 0;
   if (deps.corsOrigins && deps.corsOrigins.length > 0) {
     app.addHook('onRequest', async (req, reply) => {
       const origin = req.headers.origin;
@@ -235,7 +270,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       if (req.method === 'OPTIONS') {
         reply
           .header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS')
-          .header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+          // Every request header the server actually reads must be preflight-approved,
+          // or browser cross-origin callers carrying them fail at the preflight.
+          .header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Zeus-Caller-Card, X-Zeus-Realm-Actor')
           .code(204)
           .send();
       }
@@ -329,8 +366,11 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         entries = readAuditLog(deps.auditFile, { limit: 1000 });
       } catch (e) {
         if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-          if (e instanceof AuditLogError) return error(reply, 500, 'audit_unreadable', e.message);
-          throw e;
+          // The body stays generic: corruption messages and raw fs errors
+          // (EACCES, ...) carry the realm-local absolute audit path, which goes
+          // to the server log instead of crossing the HTTP boundary.
+          log('audit-trail-unreadable', e instanceof Error ? e.message : String(e), { file: deps.auditFile });
+          return error(reply, 500, 'audit_unreadable', 'audit trail is not readable');
         }
       }
     }
@@ -409,7 +449,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           typeof actorHeaderValue === 'string' && actorHeaderValue.trim() !== ''
             ? { name: actorHeaderValue.trim() }
             : undefined;
-        const handle = createRealmMcpHandler({ store: realmStore, realmIds: mcp.realmIds, ...(actor ? { actor } : {}) });
+        const handle = createRealmMcpHandler({
+          store: realmStore,
+          realmIds: mcp.realmIds,
+          ...(actor ? { actor } : {}),
+          ...(deps.log ? { log: deps.log } : {}),
+        });
         const response = await handle(message);
         reply.type('application/json; charset=utf-8');
         return response ?? {};
@@ -843,6 +888,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!stored && !deps.progressHub) {
           return error(reply, 404, 'not_found', `unknown intent: ${id}`);
         }
+        // M-04: bound live attachments before hijacking (a 503 still goes
+        // through Fastify). Only live streams count; the stored replay below
+        // closes in this tick and must stay available on a saturated process.
+        if (!stored && deps.sseMaxStreams !== undefined && liveSseStreams >= deps.sseMaxStreams) {
+          return error(reply, 503, 'sse_unavailable', 'live event stream capacity is exhausted');
+        }
 
         const raw = reply.raw;
         reply.hijack();
@@ -872,7 +923,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return;
         }
 
-        streamIntentProgress(raw, deps.progressHub!, id);
+        liveSseStreams += 1;
+        streamIntentProgress(raw, deps.progressHub!, id, {
+          attachGraceMs: deps.sseAttachGraceMs ?? DEFAULT_SSE_ATTACH_GRACE_MS,
+          onTeardown: () => {
+            liveSseStreams -= 1;
+          },
+        });
       });
 
       // S15 V3 (design-streaming §3.3): polling-shaped thinking-state snapshot
@@ -958,9 +1015,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         try {
           audit = readAuditLog(deps.auditFile);
         } catch (e) {
-          if ((e as NodeJS.ErrnoException).code === 'ENOENT') audit = [];
-          else if (e instanceof AuditLogError) return error(reply, 500, 'audit_unreadable', e.message);
-          else throw e;
+          if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
+            audit = [];
+          } else {
+            log('audit-trail-unreadable', e instanceof Error ? e.message : String(e), { file: deps.auditFile });
+            return error(reply, 500, 'audit_unreadable', 'audit trail is not readable');
+          }
         }
         const scoped = audit.filter(a => a.runId !== undefined && runIds.has(a.runId));
         return buildTraceTree({ audit: scoped, progress });
@@ -1016,14 +1076,20 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
       });
 
-      // H2 (E6.3): one-click approve-and-resume — approve a task-input
-      // escalation with human-supplied parameters, then automatically re-dispatch
-      // that single branch and recompute the intent.
+      // H2 (E6.3): one-click approve-and-resume — resume a task-input branch
+      // with human-supplied parameters, then mark the escalation approved.
+      // M-02: resume must succeed before the approval is recorded, otherwise a
+      // failed resume leaves the escalation permanently approved with no retry.
+      // Execute-mode intents require a fresh execution delegation; the one
+      // carried by the original fan-out was consumed at first dispatch.
       app.post('/api/escalations/:id/approve-resume', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const { id } = request.params as { id: string };
-        const body = (request.body ?? {}) as { params?: unknown; note?: unknown };
+        const body = (request.body ?? {}) as { params?: unknown; note?: unknown; executionDelegation?: unknown };
         if (!body.params || typeof body.params !== 'object' || Array.isArray(body.params)) {
           return error(reply, 400, 'invalid_request', 'body.params object is required');
+        }
+        if (body.executionDelegation !== undefined && (typeof body.executionDelegation !== 'object' || body.executionDelegation === null || Array.isArray(body.executionDelegation))) {
+          return error(reply, 400, 'invalid_request', 'body.executionDelegation must be an execution delegation object');
         }
         const escalation = deps.oversight!.get(id);
         if (!escalation) return error(reply, 404, 'not_found', `unknown escalation: ${id}`);
@@ -1034,8 +1100,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!intentId) return error(reply, 409, 'conflict', `no stored intent branch matches escalation ${id}`);
         const note = typeof body.note === 'string' ? body.note : undefined;
         try {
+          const intent = await deps.orchestrator!.resumeBranch(
+            intentId,
+            escalation.vassal,
+            body.params as Record<string, unknown>,
+            body.executionDelegation as FanOutRequest['executionDelegation'],
+          );
           const approved = deps.oversight!.approve(id, note);
-          const intent = await deps.orchestrator!.resumeBranch(intentId, escalation.vassal, body.params as Record<string, unknown>);
           return { escalation: approved, intent };
         } catch (e) {
           return mapKernelError(reply, e);
@@ -1170,7 +1241,10 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           try {
             return await deps.metricsHistory!.read();
           } catch (e) {
-            return mapKernelError(reply, e);
+            // Raw fs/parse errors (EISDIR, a torn index line, ...) may carry the
+            // local history path; answer generically and keep the detail server-side.
+            log('metrics-history-unreadable', e instanceof Error ? e.message : String(e));
+            return error(reply, 500, 'metrics_history_unreadable', 'metrics history is not readable');
           }
         });
       }
@@ -1519,7 +1593,21 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!context) {
           return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
         }
-        return { retractions: deps.memoryStore!.retractFacts(body.realmId, body.factIds, context) };
+        const retractions = deps.memoryStore!.retractFacts(body.realmId, body.factIds, context);
+        // A no-op retraction (unknown / already-retracted ids) changes no
+        // state; a real erasure is flushed before the answer so it survives a
+        // crash before the next periodic save.
+        if (retractions.length > 0) {
+          try {
+            await deps.persistState?.();
+          } catch (err) {
+            return error(
+              reply, 500, 'state_not_persisted',
+              `retraction applied in memory but the state flush failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+        return { retractions };
       });
 
       app.post('/api/memory/forget-subject', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -1536,7 +1624,18 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!context) {
           return error(reply, 400, 'invalid_request', 'body.reason and body.requestedBy are required');
         }
-        return { retractions: deps.memoryStore!.forgetSubject(body.realmId, body.subject, context) };
+        const retractions = deps.memoryStore!.forgetSubject(body.realmId, body.subject, context);
+        if (retractions.length > 0) {
+          try {
+            await deps.persistState?.();
+          } catch (err) {
+            return error(
+              reply, 500, 'state_not_persisted',
+              `retraction applied in memory but the state flush failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+        return { retractions };
       });
 
       app.get('/api/memory/retractions', { preHandler: requireBearer }, async () => ({
@@ -1951,6 +2050,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const body = (request.body ?? {}) as {
           id?: unknown; name?: unknown; endpoint?: unknown; permissions?: unknown; token?: unknown;
           command?: unknown; args?: unknown; env?: unknown;
+          envAllowList?: unknown; maxWallSeconds?: unknown;
         };
         if (!isNonEmptyString(body.id)) {
           return error(reply, 400, 'invalid_request', 'body.id is required');
@@ -1979,6 +2079,16 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           && Object.entries(body.env).every(([k, v]) => typeof k === 'string' && typeof v === 'string'))) {
           return error(reply, 400, 'invalid_request', 'body.env must be an object of string values');
         }
+        if (body.envAllowList !== undefined
+          && !(Array.isArray(body.envAllowList)
+            && body.envAllowList.every(v => typeof v === 'string' && v.trim().length > 0))) {
+          return error(reply, 400, 'invalid_request', 'body.envAllowList must be an array of non-empty strings');
+        }
+        if (body.maxWallSeconds !== undefined
+          && !(typeof body.maxWallSeconds === 'number'
+            && Number.isFinite(body.maxWallSeconds) && body.maxWallSeconds > 0)) {
+          return error(reply, 400, 'invalid_request', 'body.maxWallSeconds must be a finite positive number');
+        }
         try {
           const record = deps.connectorRegistry!.declare({
             id: body.id,
@@ -1989,6 +2099,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
                   command: body.command as string,
                   ...(Array.isArray(body.args) ? { args: body.args as string[] } : {}),
                   ...(body.env ? { env: body.env as Record<string, string> } : {}),
+                  ...(Array.isArray(body.envAllowList) ? { envAllowList: body.envAllowList as string[] } : {}),
+                  ...(typeof body.maxWallSeconds === 'number' ? { maxWallSeconds: body.maxWallSeconds } : {}),
                 }
               : {}),
             permissions: body.permissions as string[],
@@ -2085,8 +2197,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return { file: deps.auditFile, entries };
         } catch (e) {
           if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { file: deps.auditFile, entries: [] };
-          if (e instanceof AuditLogError) return error(reply, 500, 'audit_unreadable', e.message);
-          throw e;
+          log('audit-trail-unreadable', e instanceof Error ? e.message : String(e), { file: deps.auditFile ?? null });
+          return error(reply, 500, 'audit_unreadable', 'audit trail is not readable');
         }
       });
     }
@@ -2998,6 +3110,22 @@ export interface EventStreamSocket {
   on(event: 'close' | 'error', listener: (error?: Error) => void): unknown;
 }
 
+/** Options for {@link streamIntentProgress}. */
+export interface StreamIntentProgressOptions {
+  /**
+   * Attach grace in milliseconds: when the intent has no backlog at attach
+   * time, the stream waits this long for the first live event. With no event
+   * before expiry it sends `event: error` ({ reason: 'intent_unknown' }) and
+   * closes, so an unknown intent can no longer hold the socket open forever.
+   */
+  attachGraceMs?: number;
+  /**
+   * Invoked exactly once when the stream tears down (terminal event, grace
+   * expiry or peer reset). Lets the caller release the live-stream slot.
+   */
+  onTeardown?: () => void;
+}
+
 /**
  * Wire a hijacked response to one intent's progress stream.
  *
@@ -3008,7 +3136,12 @@ export interface EventStreamSocket {
  * gone (`writableEnded`/`destroyed`) throws. Teardown is idempotent so a normal
  * finish and a later 'close' do not double-unsubscribe.
  */
-export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, id: string): void {
+export function streamIntentProgress(
+  raw: EventStreamSocket,
+  hub: ProgressHub,
+  id: string,
+  options: StreamIntentProgressOptions = {},
+): void {
   let closed = false;
   const write = (chunk: string): void => {
     if (closed || raw.writableEnded || raw.destroyed) return;
@@ -3020,14 +3153,28 @@ export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, i
   };
   // Created before the replay so `stop` can always clear it: a backlog that
   // already holds the terminal event ends the stream in this same tick.
+  // unref(): a keepalive timer must never keep the process (or the test run)
+  // alive on its own after every stream and handle are gone.
   const keepalive = setInterval(() => write(': ping\n\n'), 15_000);
+  keepalive.unref();
+  // Attach-grace timer, armed only when the backlog is empty. Cleared by the
+  // first live event or any teardown; unref'd for the same reason as keepalive.
+  let grace: NodeJS.Timeout | undefined;
+  const clearGrace = (): void => {
+    if (grace !== undefined) {
+      clearTimeout(grace);
+      grace = undefined;
+    }
+  };
   const stop = (end: boolean): void => {
     if (closed) return;
     closed = true;
     clearInterval(keepalive);
+    clearGrace();
     unsubscribe();
     if (end) raw.end();
     else raw.destroy();
+    options.onTeardown?.();
   };
   // Capture and subscribe in the same tick so no event can slip between them, then
   // replay what this intent already published. Without the backlog a client that
@@ -3035,6 +3182,7 @@ export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, i
   // before it arrived would be invisible until the terminal event (S15 V3).
   const backlog = hub.eventsOf(id);
   const unsubscribe = hub.subscribe(id, event => {
+    clearGrace();
     send(event.type, event);
     if (event.type === 'intent-finished') stop(true);
   });
@@ -3045,6 +3193,18 @@ export function streamIntentProgress(raw: EventStreamSocket, hub: ProgressHub, i
       stop(true);
       return;
     }
+  }
+  // A non-empty backlog already proves the intent exists (its fan-out published
+  // before this socket attached), so only an empty backlog needs the grace:
+  // until the first live event arrives it is indistinguishable from an unknown
+  // id, which previously parked the socket open indefinitely.
+  if (backlog.length === 0 && options.attachGraceMs !== undefined) {
+    grace = setTimeout(() => {
+      if (closed) return;
+      send('error', { reason: 'intent_unknown' });
+      stop(true);
+    }, options.attachGraceMs);
+    grace.unref();
   }
   raw.on('close', () => stop(false));
   raw.on('error', () => stop(false));

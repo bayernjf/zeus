@@ -1,6 +1,10 @@
 import type { TaskState } from '../a2a/types.js';
 import type { RosterVerifier } from '../registry/signing.js';
-import { verifyAndConsumeExecutionDelegation, type ExecutionDelegationNonceLedger } from '../delegation/execution-delegation.js';
+import {
+  verifyAndConsumeExecutionDelegation,
+  type ExecutionDelegation,
+  type ExecutionDelegationNonceLedger,
+} from '../delegation/execution-delegation.js';
 import { arbitrateConflict } from './arbitration.js';
 import { aggregate, extractPositions } from './aggregate.js';
 import { detectConflicts } from './conflict.js';
@@ -8,12 +12,11 @@ import { judgeDecision } from './judge.js';
 import { mergeBranches } from './merge.js';
 import { applyConflictResolution, recomputeResult, statusFromBranches } from './resolution.js';
 import { ConcurrencyMetrics, type BranchOutcomeKind } from './metrics.js';
-import { Semaphore, type SlotRelease } from './semaphore.js';
+import { QueueWaitCancelledError, Semaphore, type SlotRelease } from './semaphore.js';
 import { selectTargets, formatExhausted, type SelectTargetsResult } from './diversion.js';
 import { recoverChain, selectCandidates, type RecoveryAction } from './discovery.js';
 import {
   advanceBudget,
-  budgetExceeded,
   DEFAULT_MAX_BRANCHES_PER_INTENT,
   DEFAULT_MAX_CONSECUTIVE_FAILURES,
   emptyBudget,
@@ -290,6 +293,26 @@ export class IntentBudgetExceededError extends DomainError {
   }
 }
 
+/** One vassal's membership in a resume generation: the operator params for the
+ *  re-dispatch plus the fresh execution delegation required for execute intents. */
+type ResumeMember = {
+  vassal: string;
+  params: Record<string, unknown>;
+  executionDelegation?: ExecutionDelegation | undefined;
+};
+
+/**
+ * E6.3 / M-03: concurrent resumes of one intent merge into a generation. The
+ * first resume opens it; resumes arriving in the same synchronous turn add
+ * members. The generation seals after one microtask, dispatches every member
+ * branch in parallel and commits one recompute shared by all callers.
+ */
+type ResumeGeneration = {
+  sealed: boolean;
+  members: Map<string, ResumeMember>;
+  result: Promise<FanOutResult>;
+};
+
 /**
  * Fan-out decision kernel (PRD E1): one intent fans out to N vassals in
  * parallel through the existing Dispatcher, then merges streams, aggregates
@@ -339,9 +362,17 @@ export class Orchestrator {
    * before it joins.
    */
   private pending = new Map<string, { request: FanOutRequest; work: Promise<FanOutResult> }>();
-  /** E6.3 single-flight: resumes in flight keyed by `intentId::vassal`, so two
-   *  approvals of the same escalation cannot re-dispatch the branch twice. */
-  private resuming = new Map<string, Promise<FanOutResult>>();
+  /**
+   * E6.3 single-flight / M-03 merge: at most one open resume generation per
+   * intent. Resumes of different vassals that arrive in the same synchronous
+   * turn join one generation — their branches dispatch in parallel and the
+   * intent recomputes once, so neither fresh branch is dropped by a stale
+   * snapshot. A later resume waits for the generation to commit and then opens
+   * the next one (a sequential resume, hence the next resume run id). A repeat
+   * of a vassal already in the generation joins the shared result instead of
+   * dispatching twice.
+   */
+  private resumeGenerations = new Map<string, ResumeGeneration>();
   /**
    * S15 V2 (design-streaming §5): the per-intent incremental stream view,
    * maintained in memory for the lifetime of the fan-out and dropped when the
@@ -937,35 +968,89 @@ export class Orchestrator {
   }
 
   /**
-   * E6.3 minimal re-dispatch: after a vassal task is approved with human-supplied
-   * parameters, re-run that single branch and recompute the whole intent. The
-   * other branches are untouched; the new branch replaces the old one.
+   * E6.3 re-dispatch: after a vassal task is approved with human-supplied
+   * parameters, re-run that branch and recompute the whole intent. The other
+   * branches are untouched; the new branch replaces the old one.
+   *
+   * Execute intents (M-02): the fan-out delegation was single-use and is
+   * already consumed, so a resume must carry a freshly issued execution
+   * delegation. Replaying the consumed credential is rejected before dispatch
+   * instead of producing a refused branch the caller could mistake for a
+   * completed approval.
+   *
+   * Concurrency (M-03): same-turn resumes of different vassals merge into one
+   * generation that dispatches every member branch in parallel and commits a
+   * single recompute, instead of two recomputes racing on the same pre-resume
+   * snapshot and losing one branch.
    */
-  async resumeBranch(intentId: string, vassal: string, params: Record<string, unknown>): Promise<FanOutResult> {
-    const key = `${intentId}::${vassal}`;
-    const inFlight = this.resuming.get(key);
-    if (inFlight) return inFlight.then(result => structuredClone(result));
-    const work = this.resumeBranchNew(intentId, vassal, params);
-    this.resuming.set(key, work);
-    try {
-      return await work;
-    } finally {
-      this.resuming.delete(key);
+  async resumeBranch(
+    intentId: string,
+    vassal: string,
+    params: Record<string, unknown>,
+    executionDelegation?: ExecutionDelegation,
+  ): Promise<FanOutResult> {
+    for (;;) {
+      const generation = this.resumeGenerations.get(intentId);
+      if (!generation) {
+        const created: ResumeGeneration = {
+          sealed: false,
+          members: new Map([[vassal, { vassal, params, executionDelegation }]]),
+          result: undefined as never,
+        };
+        this.resumeGenerations.set(intentId, created);
+        created.result = this.runResumeGeneration(intentId, created).finally(() => {
+          if (this.resumeGenerations.get(intentId) === created) this.resumeGenerations.delete(intentId);
+        });
+        return created.result.then(result => structuredClone(result));
+      }
+      // Once sealed the member set is final. A caller that reaches a sealed
+      // generation is a later, sequential resume: wait for the commit and open
+      // the next generation against the fresh snapshot.
+      if (generation.sealed) {
+        await generation.result.catch(() => {});
+        continue;
+      }
+      if (generation.members.has(vassal)) {
+        return generation.result.then(result => structuredClone(result));
+      }
+      generation.members.set(vassal, { vassal, params, executionDelegation });
+      return generation.result.then(result => structuredClone(result));
     }
   }
 
-  private async resumeBranchNew(intentId: string, vassal: string, params: Record<string, unknown>): Promise<FanOutResult> {
+  private async runResumeGeneration(intentId: string, generation: ResumeGeneration): Promise<FanOutResult> {
+    // Seal one microtask after creation: every resume issued in the same
+    // synchronous turn (e.g. Promise.all of concurrent approvals) joins before
+    // any dispatch starts; anything later is a sequential resume.
+    await Promise.resolve();
+    generation.sealed = true;
+    const members = [...generation.members.values()];
+
     const previous = this.intents.get(intentId);
     const original = this.requests.get(intentId);
     if (!previous || !original) throw new UnknownIntentError(`unknown intent: ${intentId}`);
-    if (!previous.branches.some(branch => branch.vassal === vassal)) {
-      throw new Error(`intent ${intentId} has no branch for vassal ${vassal}`);
+    for (const member of members) {
+      if (!previous.branches.some(branch => branch.vassal === member.vassal)) {
+        throw new DomainError(
+          `intent ${intentId} has no branch for vassal ${member.vassal}`,
+          'conflict',
+        );
+      }
     }
-    // S4: a resume spawns one more branch — check and charge the budget first.
-    // The breaker does not govern resumes (an operator-driven explicit re-dispatch,
-    // design-supervision §7.1); the budget applies to every spawn.
+    // M-02: the original delegation was consumed when the execute fan-out
+    // dispatched. A resume without a fresh credential would only replay the
+    // spent nonce into a refused branch, so reject the request itself.
+    if (original.mode === 'execute' && members.some(member => !member.executionDelegation)) {
+      throw new DomainError(
+        `intent ${intentId} resume in execute mode requires a fresh execution delegation`,
+        'invalid',
+      );
+    }
+    // S4: each member spawns one branch — check and charge the full generation
+    // first. The breaker does not govern resumes (an operator-driven explicit
+    // re-dispatch, design-supervision §7.1); the budget applies to every spawn.
     const budget = this.budgetOf(intentId);
-    if (budgetExceeded(budget, this.budgetLimits.maxBranchesPerIntent)) {
+    if (budget.used + members.length > this.budgetLimits.maxBranchesPerIntent) {
       const detail = `intent ${intentId} branch budget exhausted (used ${budget.used} / limit ${this.budgetLimits.maxBranchesPerIntent})`;
       this.options.onTerminationRefused?.({
         intentId, skill: original.skill, realm: original.realm,
@@ -973,13 +1058,34 @@ export class Orchestrator {
       });
       throw new IntentBudgetExceededError(detail);
     }
-    this.budgets.set(intentId, advanceBudget(budget, 1));
-    const resumeNo = this.nextResumeNo(previous, vassal);
-    const resumeRequest: FanOutRequest = { ...original, params: { ...original.params, ...params } };
-    const branch = await this.runTrackedBranch(vassal, resumeRequest, previous.runId, intentId, resumeNo);
-    this.budgets.set(intentId, settleBranch(this.budgetOf(intentId), branch.ok));
-    const others = previous.branches.filter(existing => existing.vassal !== vassal);
-    const branches = [...others, branch];
+    this.budgets.set(intentId, advanceBudget(budget, members.length));
+
+    const resumeRequests = members.map(member => {
+      const resumeRequest: FanOutRequest = { ...original, params: { ...original.params, ...member.params } };
+      // The consumed fan-out credential must not ride the spread into dispatch.
+      delete resumeRequest.executionDelegation;
+      if (member.executionDelegation) resumeRequest.executionDelegation = member.executionDelegation;
+      return { member, resumeRequest };
+    });
+
+    const outcomes = await Promise.all(
+      resumeRequests.map(({ member, resumeRequest }) =>
+        this.runTrackedBranch(
+          member.vassal,
+          resumeRequest,
+          previous.runId,
+          intentId,
+          this.nextResumeNo(previous, member.vassal),
+        ),
+      ),
+    );
+    let settledBudget = this.budgetOf(intentId);
+    for (const outcome of outcomes) settledBudget = settleBranch(settledBudget, outcome.ok);
+    this.budgets.set(intentId, settledBudget);
+
+    const memberVassals = new Set(members.map(member => member.vassal));
+    const others = previous.branches.filter(existing => !memberVassals.has(existing.vassal));
+    const branches = [...others, ...outcomes];
     const recomputed = recomputeResult(previous, branches, original.aggregation, this.now);
     const arbitrated = await this.maybeArbitrate(recomputed);
     const judged = await this.maybeJudge(arbitrated);
@@ -1150,9 +1256,22 @@ export class Orchestrator {
     // queue depth from a permanent 0 into a real signal.
     let release: SlotRelease;
     try {
-      release = await this.acquireSlot();
+      release = await this.acquireSlot(signal);
     } catch (error) {
       metrics?.dequeue();
+      // design-fan-out §7: a branch cancelled while still queued never reached
+      // a vassal; settle it as `canceled` (same shape as an aborted stream),
+      // not as a generic gate refusal/failure.
+      if (error instanceof QueueWaitCancelledError) {
+        return {
+          vassal,
+          runId: branchRunId,
+          ok: false,
+          events: [],
+          state: 'canceled',
+          reason: 'canceled by the driver',
+        };
+      }
       const reason = error instanceof Error ? error.message : 'branch refused';
       // #9: when the target was kept (saturated, no alternate) and still refused
       // by the global gate, attach the tried-candidates audit (design §4.5).
@@ -1226,8 +1345,8 @@ export class Orchestrator {
   }
 
   /** Immediately-resolved lease when no cap is configured. */
-  private acquireSlot(): Promise<SlotRelease> {
-    return this.slots ? this.slots.acquire() : Promise.resolve(() => {});
+  private acquireSlot(signal?: AbortSignal): Promise<SlotRelease> {
+    return this.slots ? this.slots.acquire(signal ? { signal } : {}) : Promise.resolve(() => {});
   }
 
   /**
