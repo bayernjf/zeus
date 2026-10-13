@@ -277,15 +277,17 @@ export class ConnectorRegistry {
   }
 
   /**
-   * Persistable form: everything but the bearer token. The state file - and so
-   * every backup bundle drawn from it - is a plaintext document, which is the
-   * wrong side of the credential boundary. The token stays in memory; after a
-   * restore the operator re-declares the connector with it.
+   * Persistable form: everything but the bearer token and the stdio env map.
+   * The state file - and so every backup bundle drawn from it - is a plaintext
+   * document, which is the wrong side of the credential boundary. A stdio env
+   * map may carry upstream API keys, so it is dropped together with the token.
+   * Both stay in memory; after a restore the operator re-declares the connector
+   * with them.
    */
   exportState(): PersistedConnectorRecord[] {
     return [...this.connectors.values()].map(record => {
-      // Omit-by-destructuring: `token` is dropped, `rest` is what persists.
-      const { token, ...rest } = record;
+      // Omit-by-destructuring: `token` and `env` are dropped, `rest` persists.
+      const { token, env, ...rest } = record;
       return structuredClone(rest);
     });
   }
@@ -298,7 +300,12 @@ export class ConnectorRegistry {
   importState(records: PersistedConnectorRecord[]): void {
     this.connectors = new Map(
       records.map(record => {
-        const restored = structuredClone(record);
+        // Snapshots written before the env strip landed may still carry a
+        // plaintext env map outside the current type; drop it on import so the
+        // next save self-purges such legacy state files and their backups.
+        const { env, ...restored } = structuredClone(record) as PersistedConnectorRecord & {
+          env?: Record<string, string>;
+        };
         if (restored.capabilities) {
           restored.capabilities = narrowCapabilities(restored.permissions, restored.capabilities);
         }

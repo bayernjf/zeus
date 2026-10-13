@@ -224,7 +224,7 @@ curl -s -X DELETE localhost:8787/api/connectors/kb -H "Authorization: Bearer $TO
 连接器支持两种 transport，二选一：
 
 - **http**（默认）：`endpoint` 为 streamable-HTTP URL，可选 `token`（出站 Bearer）。
-- **stdio**：`command` + 可选 `args` / `env`，Zeus 拉起本地子进程，走换行分隔 JSON-RPC。用于本地优先、没有 HTTP 面的 MCP server（如 work-learn 的 stdio server、Zeus 自己的 `dist/realm/mcp-stdio.js`）。声明与调用时 `endpoint` 与 `command` 互斥；`env` 的值（可能含凭证）不回显，HTTP 面只返回 `envKeys`。
+- **stdio**：`command` + 可选 `args` / `env`，Zeus 拉起本地子进程，走换行分隔 JSON-RPC。用于本地优先、没有 HTTP 面的 MCP server（如 work-learn 的 stdio server、Zeus 自己的 `dist/realm/mcp-stdio.js`）。声明与调用时 `endpoint` 与 `command` 互斥；`env` 的值（可能含凭证）不回显，HTTP 面只返回 `envKeys`；env 值与 bearer token 同口径，不进明文状态文件与备份束，恢复后需重新声明（`envAllowList` / `maxWallSeconds` 是非敏感配置，正常持久化）。
 
 stdio 声明示例（经 HTTP 面）：
 
@@ -242,13 +242,13 @@ curl -s -X POST localhost:8787/api/connectors -H "Authorization: Bearer $TOKEN" 
 `permissions` 走 Skill 的同一套校验（`src/mcp/connectors.ts:48-48 #validatePermissionClaims` → `src/skills/validate-spec.ts:18-18 #PERMISSION_RE` 与 `src/skills/validate-spec.ts:27-27 #MCP_TOOL_NAME_RE`，判定函数在 `src/skills/validate-spec.ts:35-35 #permissionClaimIssue`）：
 
 - 允许的前缀只有五个：`realm` / `execute` / `network` / `credential` / `mcp`。其他一律在**声明那一刻**被拒（库内 `validatePermissionClaims` 已实测；经 HTTP 面表现为 400，`src/http/server.ts:2803-2790 #`），消息形如 `unknown permission scope 'bogus'; allowed: realm, execute, network, credential, mcp`。
-- 工具级边界的写法是 `mcp:<工具名>`；**裸 `mcp` 等于全部放行**（判定在 `src/mcp/connectors.ts:331-331 #withinDeclaredBoundary`：`claim === \`mcp:${name}\` || claim === 'mcp'`）。
+- 工具级边界的写法是 `mcp:<工具名>`；**裸 `mcp` 等于全部放行**（判定在 `src/mcp/connectors.ts:338-338 #withinDeclaredBoundary`：`claim === \`mcp:${name}\` || claim === 'mcp'`）。
 - **非 `mcp` 作用域**（realm/execute/network/credential）仍走封闭词法 `^[a-z][a-z-]*(:[a-z][a-z-]*)?$`；**`mcp:<工具名>` 则引用上游握手清单里的原样字符串**（deferred **#30** 已修复，2026-09-30）：`mcp:search`、`mcp:search_docs`、`mcp:Search`、`mcp:notion.search`、`mcp:A1.b-2_c` 均合法，允许字母/数字/`.`/`_`/`:`/`-`；仅 `mcp:`（空名）、带空白或控制字符被判 invalid。名字与上游 `tools/list` **精确匹配、大小写敏感**。
 - **上游改名会静默失权**：声明了但握手清单里没有的 `mcp:<工具名>` 不会报错（声明可能早于连接），连接时会产生一条 `boundary-unmatched` 连接器审计事件（`granted tools not discovered upstream: …`），据此发现改名/下线；该工具不会出现在裁剪后的能力清单里，调用即拒。
 
 ### 2.2 裁剪发生在哪一层
 
-- 握手回来的能力清单，**三类（tools / resources / prompts）都按声明裁剪**：`src/mcp/connectors.ts:336-336 #narrowCapabilities`，连接时在 `src/mcp/connectors.ts:176-176 #narrowCapabilities` 应用、状态恢复导入时再收一次（`src/mcp/connectors.ts:303-303 #narrowCapabilities`）；断言在 `tests/mcp-connectors.test.ts:391-391 #bounds`（三类同边界）与 `tests/mcp-connectors.test.ts:418-418 #narrows`（导入后重收）。因此"声明里没有的 resource 就看不见"**这句现在是成立的**——但 2026-09-28 写下这行时**不成立**（当时只有 tools 被裁），是 A-09 在 2026-10-01 把三类统一到同一条边界；本文那一版留下的过期陈述在本轮合并 B-39 的逐锚点复读中被改掉（登记为审计 B-41）。
+- 握手回来的能力清单，**三类（tools / resources / prompts）都按声明裁剪**：`src/mcp/connectors.ts:343-343 #narrowCapabilities`，连接时在 `src/mcp/connectors.ts:176-176 #narrowCapabilities` 应用、状态恢复导入时再收一次（`src/mcp/connectors.ts:310-310 #narrowCapabilities`）；断言在 `tests/mcp-connectors.test.ts:391-391 #bounds`（三类同边界）与 `tests/mcp-connectors.test.ts:418-418 #narrows`（导入后重收）。因此"声明里没有的 resource 就看不见"**这句现在是成立的**——但 2026-09-28 写下这行时**不成立**（当时只有 tools 被裁），是 A-09 在 2026-10-01 把三类统一到同一条边界；本文那一版留下的过期陈述在本轮合并 B-39 的逐锚点复读中被改掉（登记为审计 B-41）。
 - 调用侧的闸在两处：不在裁剪后清单里的工具名直接拒（`src/mcp/connectors.ts:240-240 #expose`，测试锚点 `tests/mcp-connectors.test.ts:201-201 #refuses`）。上游没 advertised 的东西调不到，被边界裁掉的东西也调不到。
 - 上游不可达 / 握手失败 = **502 `bad_gateway`**，并写一条 `refused` 审计（错误分类 `src/http/server.ts:2807-2786 #`、审计落点 `src/mcp/connectors.ts:156-156 #refused`）；未知 id → 404（`src/http/server.ts:1837-1816 #`）；重复声明或已吊销 → 409；参数不合法 → 400。
 

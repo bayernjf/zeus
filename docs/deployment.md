@@ -24,7 +24,7 @@
 | `ZEUS_VASSAL_SEEDS` | 未设置 | G1：启动时自动注册的执行 Agent Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。运行时上线走 `POST /api/vassals`，body 同样可带 `token`（存下后任何读视图都不回显，只有派发路径读取），因此**需要凭证的执行 Agent 不必为了上线而重启进程**。**某个 seed 拉不到或卡片没发誓 fealty → 整个进程拒启**（一行 `[zeus-http] refused to start: vassal seed failed for <url>: …`），不会静默少一个执行 Agent |
 | `ZEUS_OUTBOUND_ALLOW_HOSTS` | 未设置 | A-12：出站 URL 守卫的显式放行名单，逗号分隔（命中即跳过非公网地址检查）。守卫默认拒绝所有非全球可达地址（RFC 6890 专用地址段：RFC1918、`169.254/16`、CGNAT、多播/保留段，含 IPv6 ULA、link-local 与 IPv4 映射/兼容/NAT64 编码），**唯一例外是环回 `127.0.0.0/8` 与 `::1`**——本地优先，环回上的 vassal/MCP 服务是常态。要在私网里接入对端（如 `10.0.0.5`、容器里的 `host.docker.internal`）就把它写进这里；`.suffix` 前缀匹配整段后缀。**两层守卫**：同步 URL 检查只看得到 IP 字面量（主机名在该层放行），出站 fetch 还会经 DNS-rebinding 守卫（`src/util/outbound-dns.ts`，已实现并默认装配）解析主机名并校验全部结果地址，解析到私有/保留段仍拒绝；本名单对两层同时生效 |
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
-| `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含连接器 bearer token 与记忆事实，且以 uid 1000 落卷） |
+| `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值在持久化边界剥离、不进任何备份束，恢复后需重新声明；且以 uid 1000 落卷） |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
 | `ZEUS_TRACE_EXPORT_FILE` | 未设置 | S6 V3：每个落定意图的 trace 树追加到此 JSONL。**必须同时设 `ZEUS_AUDIT_FILE`**——树是从审计脊重建的，只设这一条会一直是空文件（启动日志会点明）。端点侧无读回面：文件是给人直接看的 |
 | `ZEUS_METRICS_HISTORY_FILE` | 未设置 | S6 V3：每次保存内核状态时追加一条指标快照（按 capturedAt 去重）。**设了才挂载 `GET /api/metrics/history`**——不设该路由不存在（404），趋势读数只有活窗口 |
@@ -216,7 +216,7 @@ WantedBy=multi-user.target
 - [ ] `GET /api/roster/keys` 有答且 `kid` 等于 `ZEUS_RSK_KEY_ID`，其 `jwkThumbprint` 已带外公告给每个验签方（该端点自身不构成信任，见 §3；KMS 后端返回 501 时改为在部署记录里发布公钥）
 - [ ] `NODE_ENV=production`，启动日志无 ephemeral 告警；**并读 `GET /api/roster/keys` 的 `keySource=configured` / `survivesRestart=true` 为准**（日志会被轮转掉，这个字段不会；配置了持久化时 `GET /api/state` 的 `rosterKey` 给同一个事实）
 - [ ] `ZEUS_INTERNAL_TOKEN` 为长随机串（或明确不挂载内部路由）
-- [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含连接器 token 与记忆事实明文）：`ls -l /data/kernel-state.json`
+- [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值不入库）：`ls -l /data/kernel-state.json`
 - [ ] `ZEUS_AUDIT_FILE` 已配置（否则审计只活在 stderr 里，重启即丢）；若把 `ZEUS_AUDIT_MAX_BYTES` 设成不轮转，确认已接外部 logrotate
 - [ ] **E3.6 边界自查**：每个企业域挂载都带 tenant；`GET /api/state` 里 `enterpriseRealms == tenantScopedRealms`（不等 = 有企业域没标边界，它只对操作者可达，但迟早被人当成"已经隔离了"）
 - [ ] **E6.4 授权自查**：`GET /api/domains` 的 `grants` 逐条读过——无 `expiresAt` 的长期授权必须是有意的；再用 `GET /api/domains/access` 抽查两类必答组合：企业主体读个人域（**必拒**）、未授权的个人侧主体读企业域（必拒）；`GET /api/audit?decision=domain-refused` 看有没有人正在撞边界
@@ -260,7 +260,7 @@ node dist/vault/cli.js restore --map backups/vault-xxxx.map.json \
 # 2. 退出码 0 且报告 recoverable: true 后，再切换挂载
 ```
 
-备份**内核状态文件**（`ZEUS_STATE_FILE` 指的那个文件：容器内是 `/data/kernel-state.json`，内容是名册、记忆事实、连接器声明含 token、部门编制、授权台账）走文件白名单——它在每个已连接 Realm 之外：
+备份**内核状态文件**（`ZEUS_STATE_FILE` 指的那个文件：容器内是 `/data/kernel-state.json`，内容是名册、记忆事实、连接器声明（bearer token 与 stdio env 值在持久化边界剥离，恢复后需重新声明）、部门编制、授权台账）走文件白名单——它在每个已连接 Realm 之外：
 
 ```bash
 # 宿主机上（把 $STATE_DIR 换成 ZEUS_STATE_FILE 所在目录，文件名以 basename 为准）

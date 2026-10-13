@@ -452,6 +452,55 @@ describe('E7 connector credentials do not cross into the persisted state', () =>
     expect(restored.get('knowledge')).toMatchObject({ endpoint: ENDPOINT, permissions: ['mcp'] });
     expect(restored.get('knowledge')!.token).toBeUndefined();
   });
+
+  it('keeps a stdio connector env map in memory and out of every export', () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(
+      declaration({
+        id: 'local-notes',
+        name: 'Local notes',
+        endpoint: undefined,
+        command: 'node',
+        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
+        env: { ZEUS_REALM_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
+        permissions: ['mcp:realm.search'],
+      }),
+    );
+
+    // The env map may carry upstream credentials (the HTTP surface already
+    // redacts it as such), so it must not cross the plaintext state boundary.
+    const exported = registry.exportState();
+    expect(exported[0]).not.toHaveProperty('env');
+    expect(JSON.stringify(exported)).not.toContain('hidden-value');
+    // It is still held in memory for the spawned child process.
+    expect(registry.get('local-notes')!.env).toEqual({
+      ZEUS_REALM_ROOTS: '/tmp/notes',
+      SECRET: 'hidden-value',
+    });
+  });
+
+  it('purges a stdio env map carried by a legacy snapshot on import', () => {
+    const registry = new ConnectorRegistry(now);
+    registry.declare(
+      declaration({
+        id: 'local-notes',
+        endpoint: undefined,
+        command: 'node',
+        env: { SECRET: 'hidden-value' },
+        permissions: ['mcp:realm.search'],
+      }),
+    );
+
+    // Snapshots written before the env strip landed still carry the plaintext
+    // map; import must drop it so the next save self-purges the old state file.
+    const legacy = registry.exportState();
+    (legacy[0] as { env?: Record<string, string> }).env = { SECRET: 'hidden-value' };
+    const restored = new ConnectorRegistry(now);
+    expect(() => restored.importState(legacy)).not.toThrow();
+    expect(restored.get('local-notes')).toMatchObject({ command: 'node' });
+    expect(restored.get('local-notes')!.env).toBeUndefined();
+    expect(restored.exportState()[0]).not.toHaveProperty('env');
+  });
 });
 
 interface CapturedStdioSpawn {
