@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -584,6 +584,53 @@ describe('npm run daily', () => {
     expect(result.stdout).toContain('**Intent** `deployment-health` — chosen by llm / fake-chat, confidence 0.900');
     expect(result.stdout).toContain('the local ranker found no lexical match');
     expect(readFileSync(join(root, 'cjk.md'), 'utf8')).toContain('**Intent** `deployment-health`');
+  });
+
+  it('resolves a CJK instruction from a --spec alias, with no model involved', async () => {
+    const specDir = tempRoot('spec');
+    const specPath = join(specDir, 'research.json');
+    writeFileSync(specPath, JSON.stringify({
+      id: 'research',
+      name: 'Deep Research',
+      description: 'multi-source research',
+      version: '9.9.9',
+      tags: [],
+      aliases: ['归纳要点'],
+      providedBy: ['demo-agent'],
+    }));
+    const sentence = '帮我把这份材料归纳要点';
+
+    // The control: same instruction, same agent, no declared alias. A card carries
+    // no aliases field, so this is the state the flag exists to leave behind.
+    const without = await runDailyCli(
+      ['--root', tempRoot('spec-off'), '--agent', agentUrl('demo-agent'), '--state', 'none', sentence],
+      cleanEnv(),
+    );
+    expect(without.code).toBe(1);
+    expect(without.stdout).toContain('no-candidates');
+
+    const onRoot = tempRoot('spec-on');
+    const withSpec = await runDailyCli(
+      ['--root', onRoot, '--agent', agentUrl('demo-agent'), '--state', 'none', '--spec', specPath, '--record', 'alias.md', sentence],
+      cleanEnv(),
+    );
+    expect(withSpec.code, withSpec.stderr).toBe(0);
+    // Local rules, and no backend configured in the environment: nothing could
+    // have left the machine to make this match.
+    expect(withSpec.stdout).toContain('**Intent** `research` — chosen by local rules');
+    expect(readFileSync(join(onRoot, 'alias.md'), 'utf8')).toContain('**Intent** `research`');
+  });
+
+  it('refuses a bad --spec before dispatching anything', async () => {
+    const root = tempRoot('spec-bad');
+    const result = await runDailyCli(
+      ['--root', root, '--agent', agentUrl('demo-agent'), '--state', 'none', '--spec', join(root, 'missing.json'), 'summarize the note'],
+      cleanEnv(),
+    );
+    expect(result.code).toBe(2);
+    expect(result.stderr).toContain('--spec file is not readable');
+    // Exit 2 means nothing was dispatched, so the directory stays untouched.
+    expect(readdirSync(root)).toEqual([]);
   });
 });
 

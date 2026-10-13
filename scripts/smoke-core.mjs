@@ -359,14 +359,51 @@ try {
       const failure = /** @type {{ status?: number, stdout?: unknown, stderr?: unknown }} */ (error);
       day1 = { code: failure.status ?? 1, out: String(failure.stdout ?? ''), err: String(failure.stderr ?? '') };
     }
+    const day1Pages = existsSync(join(day1Dir, 'zeus-daily')) ? readdirSync(join(day1Dir, 'zeus-daily')) : [];
+    record(
+      'a reader holding only a directory reaches the loop with the shipped reference agent',
+      day1.code === 0 && day1.out.includes('dispatch ok') && day1.out.includes('stored:') && day1Pages.length === 1,
+      `exit=${day1.code} pages=${day1Pages.length} stored=${/stored:/.test(day1.out)} err=${day1.err.trim().slice(0, 140)}`,
+    );
+
+    // The same reader, one declared alias away from naming the skill by hand: an
+    // Agent Card cannot carry aliases, so `--spec` is the product entry's only
+    // route to the local cross-language path. The spec file is kept outside the
+    // mounted directory so it cannot be mistaken for the user's content.
+    const day1Spec = join(work, 'day1-research.spec.json');
+    writeFileSync(day1Spec, JSON.stringify({
+      id: 'research', name: 'Deep Research', description: 'multi-source research',
+      version: '9.9.9', tags: [], aliases: ['归纳要点'], providedBy: ['example-agent'],
+    }));
+    let day1cjk = { code: 1, out: '', err: '' };
+    try {
+      day1cjk = {
+        code: 0,
+        out: execFileSync(process.execPath, [
+          join(REPO, 'dist/daily/cli.js'),
+          '--root', day1Dir,
+          '--agent', `http://127.0.0.1:${day1Port}/api/a2a/agent-card`,
+          '--spec', day1Spec,
+          '--state', 'none',
+          '帮我把这份材料归纳要点',
+        ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: day1Env }),
+        err: '',
+      };
+    } catch (error) {
+      const failure = /** @type {{ status?: number, stdout?: unknown, stderr?: unknown }} */ (error);
+      day1cjk = { code: failure.status ?? 1, out: String(failure.stdout ?? ''), err: String(failure.stderr ?? '') };
+    }
+    const day1CjkPages = existsSync(join(day1Dir, 'zeus-daily')) ? readdirSync(join(day1Dir, 'zeus-daily')) : [];
+    record(
+      'a CJK instruction resolves through a declared alias, on local rules with no backend',
+      day1cjk.code === 0
+        && day1cjk.out.includes('chosen by local rules')
+        && day1cjk.out.includes('dispatch ok')
+        && day1CjkPages.length === 2,
+      `exit=${day1cjk.code} pages=${day1CjkPages.length} rules=${/chosen by local rules/.test(day1cjk.out)} err=${day1cjk.err.trim().slice(0, 140)}`,
+    );
     day1Agent.kill('SIGKILL');
   }
-  const day1Pages = existsSync(join(day1Dir, 'zeus-daily')) ? readdirSync(join(day1Dir, 'zeus-daily')) : [];
-  record(
-    'a reader holding only a directory reaches the loop with the shipped reference agent',
-    day1.code === 0 && day1.out.includes('dispatch ok') && day1.out.includes('stored:') && day1Pages.length === 1,
-    `exit=${day1.code} pages=${day1Pages.length} stored=${/stored:/.test(day1.out)} err=${day1.err.trim().slice(0, 140)}`,
-  );
 
   proc = await bootProcess();
   const health = await api('GET', '/healthz', undefined, {});
