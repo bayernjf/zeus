@@ -61,6 +61,7 @@ import {
   type KernelComponents,
   type KernelSnapshot,
 } from './kernel-state.js';
+import { ProcessLock } from './process-lock.js';
 import { computeCheckpoint, executeRecovery } from '../orchestrator/recovery.js';
 import type { CostLimit } from '../orchestrator/cost-ledger.js';
 import type { DecisionBackend } from '../decision/types.js';
@@ -142,6 +143,11 @@ export type KernelBoot = KernelComponents & {
   metricsHistory?: MetricsHistory;
   /** Atomically persist live kernel state; a no-op without stateFile. */
   saveState(): Promise<void>;
+  /**
+   * Release the cross-process lock held on the state file for this boot's
+   * lifetime; a no-op without stateFile. Must run after the final saveState.
+   */
+  releaseLock(): Promise<void>;
 };
 
 export type KernelBootOptions = {
@@ -267,6 +273,34 @@ export type KernelBootOptions = {
 const noop = (): void => {};
 
 export async function bootKernel(options: KernelBootOptions = {}): Promise<KernelBoot> {
+  // M-10: one cross-process lock covers the whole load-mutate-save window for
+  // the boot's lifetime. Acquire is fail-fast (a live holder refuses this boot
+  // via KernelBootError). A boot that unwinds after taking the lock releases it,
+  // so a bad configuration leaves no directory behind; a hard crash cannot run
+  // this catch, and the next boot reclaims the stale pid.
+  let processLock: ProcessLock | null = null;
+  if (options.stateFile) {
+    try {
+      processLock = await ProcessLock.acquire(`${options.stateFile}.lock`);
+    } catch (error) {
+      throw new KernelBootError(
+        `kernel state file is locked by another Zeus process: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+  try {
+    return await assembleKernel(options, processLock);
+  } catch (error) {
+    // Never mask the original boot failure with a release failure.
+    if (processLock) await processLock.release().catch(() => {});
+    throw error;
+  }
+}
+
+async function assembleKernel(
+  options: KernelBootOptions,
+  processLock: ProcessLock | null,
+): Promise<KernelBoot> {
   const now = options.now ?? (() => new Date());
   const fetchImpl = options.fetchImpl;
 
@@ -905,6 +939,8 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   let store: FileKernelStateStore | null = null;
   let snapshot: KernelSnapshot | null = null;
   if (options.stateFile) {
+    // M-10: processLock was acquired by bootKernel() before this body ran and is
+    // released through the returned handle (or on a failed boot by the wrapper).
     store = new FileKernelStateStore(options.stateFile, now);
     try {
       snapshot = await store.load();
@@ -1177,6 +1213,11 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     ...(traceExporter ? { traceExporter } : {}),
     ...(metricsHistory ? { metricsHistory } : {}),
     saveState: persistLiveState,
+    releaseLock: async () => {
+      const lock = processLock;
+      processLock = null;
+      if (lock) await lock.release();
+    },
   };
 }
 

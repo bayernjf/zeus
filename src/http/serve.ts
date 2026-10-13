@@ -353,6 +353,14 @@ async function main(): Promise<void> {
     } catch (error) {
       log.error('kernel-state-save-failed', error instanceof Error ? error.message : String(error));
     }
+    // M-10: release only after the final snapshot landed (or failed). A failed
+    // atomic save leaves the prior file intact, so the lock may still be handed
+    // to the next boot.
+    try {
+      await kernel.releaseLock();
+    } catch (error) {
+      log.error('kernel-state-unlock-failed', error instanceof Error ? error.message : String(error));
+    }
     await app.close();
     process.exit(exitCode);
   };

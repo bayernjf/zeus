@@ -571,6 +571,17 @@ export async function runDailyCli(
       if (code === 0) code = 1;
     }
   }
+  // M-10: drop the cross-process lock last. A leftover lock is reclaimed by the
+  // next boot once this process' pid is gone, but a clean release is the normal
+  // path and its failure is reported.
+  if (ctx.kernel) {
+    try {
+      await ctx.kernel.releaseLock();
+    } catch (error) {
+      ctx.err.push(`state lock was not released: ${(error as Error).message}`);
+      if (code === 0) code = 1;
+    }
+  }
 
   const storedLine =
     ctx.report?.record && ctx.realm
