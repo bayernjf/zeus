@@ -267,10 +267,11 @@
     <a class="nav-item" data-view="grants" href="#/grants"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.grants">授权</span></a>
     <a class="nav-item" data-view="org" href="#/org"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.org">组织</span></a>
     <a class="nav-item" data-view="catalog" href="#/catalog"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.catalog">目录</span></a>
+    <a class="nav-item" data-view="memory" href="#/memory"><span class="dot" style="background:var(--accent)"></span><span data-i18n="nav.memory">记忆</span></a>
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.19 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.21 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -366,6 +367,18 @@
         <div class="panel">
           <h2><span data-i18n="domains.title">数据域与跨域授权</span> <span class="hint">/api/domains</span></h2>
           <div class="body" id="domainsBody"></div>
+          <h2 class="hist-head"><span data-i18n="access.title">访问判定探针</span> <span class="hint" data-i18n="access.hint">GET /api/domains/access · 干跑，不触域内容</span></h2>
+          <div class="body">
+            <div class="audit-filter">
+              <select id="apRealm"></select>
+              <input id="apSubject" autocomplete="off" data-i18n-ph="access.subjectPh" placeholder="主体（vassal 名 / 身份）" style="width:150px">
+              <select id="apKind"><option value="driver">driver</option><option value="vassal">vassal</option><option value="agent">agent</option></select>
+              <select id="apAccess"><option value="read">read</option><option value="write">write</option></select>
+              <input id="apTenant" autocomplete="off" data-i18n-ph="access.tenantPh" placeholder="租户（可选）" style="width:130px">
+              <button class="btn small" id="btnAccessProbe" data-i18n="access.run">判定</button>
+            </div>
+            <div id="accessProbeBody"></div>
+          </div>
         </div>
       </div>
       <div class="panel" style="margin-top:14px">
@@ -718,6 +731,79 @@
       </div>
     </section>
 
+    <!-- ===== 视图：记忆（E8.5 操作者读数面：只读 + 检索，事实无公开写入口） ===== -->
+    <section id="view-memory" hidden>
+      <div class="panel" style="margin-bottom:14px">
+        <h2><span data-i18n="mem.title">组织记忆</span> <span class="hint" data-i18n="mem.hint">事件 → 事实 → 混合检索 → 遗忘权 → 完整性；事实只经整理产生，没有公开写入口</span></h2>
+        <div class="audit-filter">
+          <select id="memRealm"></select>
+          <button class="btn small" id="btnMemoryRefresh" data-i18n="top.refresh">刷新</button>
+          <span class="af-count" id="memCount"></span>
+        </div>
+        <div class="body" id="memSummary"><div class="empty" data-i18n="common.loading">加载中…</div></div>
+      </div>
+      <div class="grid" style="margin-bottom:14px">
+        <div class="panel">
+          <h2><span data-i18n="mem.recallTitle">混合检索</span> <span class="hint">GET /api/memory/recall</span></h2>
+          <div class="body">
+            <div class="row inline">
+              <div class="row" style="flex:1">
+                <label for="memQ" data-i18n="mem.query">检索词</label>
+                <input id="memQ" autocomplete="off" data-i18n-ph="mem.queryPh" placeholder="如 typescript">
+              </div>
+              <div class="row">
+                <label for="memLimit" data-i18n="mem.limit">条数</label>
+                <input id="memLimit" type="number" min="1" value="10" style="width:72px">
+              </div>
+              <div class="row">
+                <label for="memAlpha" data-i18n="mem.alpha">语义权重 α</label>
+                <input id="memAlpha" type="number" min="0" max="1" step="0.1" value="0.5" style="width:72px">
+              </div>
+              <div class="row">
+                <label>&nbsp;</label>
+                <button class="btn primary" id="btnMemoryRecall" data-i18n="mem.recallRun">检索</button>
+              </div>
+            </div>
+            <div id="memRecallBody"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2><span data-i18n="mem.replayTitle">按 run 回放</span> <span class="hint">GET /api/memory/replay</span></h2>
+          <div class="body">
+            <div class="row inline">
+              <div class="row" style="flex:1">
+                <label for="memRunId" data-i18n="mem.runId">run ID</label>
+                <input id="memRunId" autocomplete="off" placeholder="run-…">
+              </div>
+              <div class="row">
+                <label>&nbsp;</label>
+                <button class="btn" id="btnMemoryReplay" data-i18n="mem.replayRun">回放</button>
+              </div>
+            </div>
+            <div id="memReplayBody"></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel" style="margin-bottom:14px">
+        <h2><span data-i18n="mem.factsTitle">事实</span> <span class="hint">GET /api/memory/facts · <span data-i18n="mem.factsHint">只经整理产生；含争议态</span></span></h2>
+        <div class="body" id="memFactsBody"></div>
+      </div>
+      <div class="panel" style="margin-bottom:14px">
+        <h2><span data-i18n="mem.eventsTitle">事件</span> <span class="hint">GET /api/memory/events · <span data-i18n="mem.eventsHint">append-only 日志</span></span></h2>
+        <div class="body" id="memEventsBody"></div>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <h2><span data-i18n="mem.retractionsTitle">遗忘台账</span> <span class="hint">GET /api/memory/retractions</span></h2>
+          <div class="body" id="memRetractionsBody"></div>
+        </div>
+        <div class="panel">
+          <h2><span data-i18n="mem.integrityTitle">完整性</span> <span class="hint">GET /api/memory/integrity</span></h2>
+          <div class="body" id="memIntegrityBody"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== 视图：审计（方案 B 独立视图） ===== -->
     <section id="view-audit" hidden>
       <div class="panel">
@@ -779,6 +865,10 @@
       <div class="panel" style="margin-top:14px" id="replayPanel" hidden>
         <h2><span data-i18n="intent.replay">决策回放</span> <span class="hint">GET /api/intents/:id/replay?format=text · <span data-i18n="intent.replayHint">E1.6 离线重建</span></span></h2>
         <div class="body" id="replayBody"></div>
+      </div>
+      <div class="panel" style="margin-top:14px" id="tracePanel" hidden>
+        <h2><span data-i18n="intent.trace">Trace 树</span> <span class="hint">GET /api/intents/:id/trace · <span data-i18n="intent.traceHint">S6 只读投影 · 审计脊 + 进度事件</span></span></h2>
+        <div class="body" id="traceBody"></div>
       </div>
     </section>
 
@@ -1419,7 +1509,111 @@
       "col.mode": "模式",
       "col.predicate": "谓词",
       "col.firedBudget": "已触发/预算",
-      "col.lastFiredState": "上次触发 / 状态"
+      "col.lastFiredState": "上次触发 / 状态",
+      "access.title": "访问判定探针",
+      "access.hint": "GET /api/domains/access · 干跑，不触域内容",
+      "access.run": "判定",
+      "access.subjectPh": "主体（vassal 名 / 身份）",
+      "access.tenantPh": "租户（可选）",
+      "access.needRealm": "没有已挂载的数据域——先连接一个数据域",
+      "access.needSubject": "必须给出主体（执行 Agent 名或身份）",
+      "access.allowed": "允许 · {via}",
+      "access.denied": "拒绝 · {reason}",
+      "access.grant": "凭授权 {grantId}",
+      "access.failed": "探针失败：{msg}",
+      "intent.trace": "Trace 树",
+      "intent.traceHint": "S6 只读投影 · 审计脊 + 进度事件",
+      "trace.span": "Span",
+      "trace.root": "根",
+      "trace.time": "起止",
+      "trace.events": "Span 事件",
+      "trace.open": "未闭合",
+      "trace.noEvents": "无 span 事件",
+      "trace.spanCount": "{n} 个 span",
+      "skill.versions": "版本史",
+      "skill.versionsLoading": "读取中…",
+      "skill.versionsEmpty": "该技能没有已登记版本",
+      "skill.versionsTitle": "{id} 的版本历史",
+      "skill.versionsFailed": "版本史读取失败：{msg}",
+      "org.briefing": "首日简报",
+      "org.briefingLoading": "读取中…",
+      "org.briefingNone": "该席位不存在——无简报可读",
+      "org.briefingFailed": "简报读取失败：{msg}",
+      "brief.seat": "席位",
+      "brief.requiredSkills": "必备能力",
+      "brief.competencies": "能力认证",
+      "brief.certified": "已认证",
+      "brief.missing": "缺失",
+      "brief.waived": "已豁免",
+      "brief.teammates": "同事",
+      "brief.mentors": "可带教",
+      "brief.culture": "组织记忆",
+      "brief.facts": "命中 {n} / 共 {total} 条事实",
+      "brief.emptyCulture": "该域记忆为空",
+      "brief.boundaries": "边界",
+      "brief.canRead": "可读",
+      "brief.canWrite": "可写",
+      "brief.needsGrant": "写另需签名凭证",
+      "brief.gaps": "内核答不出的部分",
+      "brief.noGaps": "无缺口——席位上下文齐备",
+      "brief.digest": "摘要",
+      "col.predicate": "谓词",
+      "col.object": "取值",
+      "col.confidence": "置信度",
+      "col.occurredAt": "发生时间",
+      "col.updatedAt": "更新时间",
+      "col.origin": "来源",
+      "nav.memory": "记忆",
+      "mem.title": "组织记忆",
+      "mem.eventsTitle": "事件",
+      "mem.factsTitle": "事实",
+      "mem.factsHint": "只经整理产生；含争议态",
+      "mem.eventsHint": "append-only 日志",
+      "mem.retractionsTitle": "遗忘台账",
+      "mem.integrityTitle": "完整性",
+      "mem.hint": "事件 → 事实 → 混合检索 → 遗忘权 → 完整性；事实只经整理产生，没有公开写入口",
+      "mem.needRealm": "没有已挂载的数据域——先连接一个数据域",
+      "mem.moreRows": "仅显示最近 {n} 条（共 {total} 条）",
+      "mem.summaryActive": "生效事实",
+      "mem.disputed": "争议",
+      "mem.integrityOk": "无不变量违例",
+      "mem.integrityBad": "{n} 条违例——派生索引不可信",
+      "mem.integrityFailed": "完整性面读取失败",
+      "mem.noFacts": "该域还没有事实",
+      "mem.noEvents": "该域还没有事件",
+      "mem.noRetractions": "无遗忘记录",
+      "mem.provenance": "来源事件",
+      "mem.refsUnit": "条",
+      "mem.refs": "引用",
+      "mem.factId": "事实 ID",
+      "mem.requestedBy": "申请方",
+      "mem.violation": "违例",
+      "mem.detail": "明细",
+      "mem.runId": "run ID",
+      "mem.content": "内容",
+      "mem.loadFailed": "读取失败：{msg}",
+      "mem.origin.agent-produced": "执行 Agent 产出",
+      "mem.origin.kernel-resolved-realm": "内核解析（旧快照回退）",
+      "mem.recallTitle": "混合检索",
+      "mem.query": "检索词",
+      "mem.queryPh": "如 typescript",
+      "mem.limit": "条数",
+      "mem.alpha": "语义权重 α",
+      "mem.recallRun": "检索",
+      "mem.needQuery": "必须给出检索词",
+      "mem.recallEmpty": "无命中",
+      "mem.recallFailed": "检索失败：{msg}",
+      "mem.hits": "{n} 条命中",
+      "mem.score": "综合分",
+      "mem.lexical": "词汇分",
+      "mem.semantic": "语义分",
+      "mem.replayTitle": "按 run 回放",
+      "mem.replayRun": "回放",
+      "mem.needRun": "必须给出 run ID",
+      "mem.replayEmpty": "该 run 没有派生事实",
+      "mem.replayFailed": "回放失败：{msg}",
+      "mem.replayEvents": "{n} 条事件",
+      "mem.replayFacts": "{n} 条事实"
     },
     "en": {
       "app.brand": "Zeus Supervisor",
@@ -2020,7 +2214,111 @@
       "col.mode": "Mode",
       "col.predicate": "Predicate",
       "col.firedBudget": "Fired/budget",
-      "col.lastFiredState": "Last fired / status"
+      "col.lastFiredState": "Last fired / status",
+      "access.title": "Access verdict probe",
+      "access.hint": "GET /api/domains/access · dry run, realm content untouched",
+      "access.run": "Probe",
+      "access.subjectPh": "subject (vassal name / identity)",
+      "access.tenantPh": "tenant (optional)",
+      "access.needRealm": "no realm is connected - connect one first",
+      "access.needSubject": "a subject (execution agent name or identity) is required",
+      "access.allowed": "allowed · {via}",
+      "access.denied": "denied · {reason}",
+      "access.grant": "via grant {grantId}",
+      "access.failed": "probe failed: {msg}",
+      "intent.trace": "Trace tree",
+      "intent.traceHint": "S6 read-only projection · audit spine + progress events",
+      "trace.span": "Span",
+      "trace.root": "root",
+      "trace.time": "Started → ended",
+      "trace.events": "Span events",
+      "trace.open": "open",
+      "trace.noEvents": "no span events",
+      "trace.spanCount": "{n} spans",
+      "skill.versions": "Versions",
+      "skill.versionsLoading": "loading…",
+      "skill.versionsEmpty": "this skill has no registered versions",
+      "skill.versionsTitle": "Version history of {id}",
+      "skill.versionsFailed": "failed to read version history: {msg}",
+      "org.briefing": "First-day briefing",
+      "org.briefingLoading": "loading…",
+      "org.briefingNone": "no such seat - nothing to brief",
+      "org.briefingFailed": "failed to read the briefing: {msg}",
+      "brief.seat": "Seat",
+      "brief.requiredSkills": "required competencies",
+      "brief.competencies": "Competencies",
+      "brief.certified": "certified",
+      "brief.missing": "missing",
+      "brief.waived": "waived",
+      "brief.teammates": "Teammates",
+      "brief.mentors": "Mentors",
+      "brief.culture": "Org memory",
+      "brief.facts": "{n} of {total} facts matched",
+      "brief.emptyCulture": "this realm's memory is empty",
+      "brief.boundaries": "Boundaries",
+      "brief.canRead": "can read",
+      "brief.canWrite": "can write",
+      "brief.needsGrant": "write also needs a signed grant",
+      "brief.gaps": "What the kernel could NOT answer",
+      "brief.noGaps": "no gaps - the seat context is complete",
+      "brief.digest": "Digest",
+      "col.predicate": "Predicate",
+      "col.object": "Object",
+      "col.confidence": "Confidence",
+      "col.occurredAt": "Occurred at",
+      "col.updatedAt": "Updated at",
+      "col.origin": "Origin",
+      "nav.memory": "Memory",
+      "mem.title": "Org memory",
+      "mem.eventsTitle": "Events",
+      "mem.factsTitle": "Facts",
+      "mem.factsHint": "produced only by consolidation; includes disputed entries",
+      "mem.eventsHint": "append-only log",
+      "mem.retractionsTitle": "Retraction ledger",
+      "mem.integrityTitle": "Integrity",
+      "mem.hint": "events → facts → hybrid recall → right to be forgotten → integrity; facts are produced only by consolidation, there is no public write route",
+      "mem.needRealm": "no realm is connected - connect one first",
+      "mem.moreRows": "showing the latest {n} of {total}",
+      "mem.summaryActive": "active facts",
+      "mem.disputed": "disputed",
+      "mem.integrityOk": "no invariant violations",
+      "mem.integrityBad": "{n} violations - derived indexes must not be trusted",
+      "mem.integrityFailed": "failed to read the integrity face",
+      "mem.noFacts": "this realm has no facts yet",
+      "mem.noEvents": "this realm has no events yet",
+      "mem.noRetractions": "no retractions on record",
+      "mem.provenance": "source events",
+      "mem.refsUnit": "refs",
+      "mem.refs": "Refs",
+      "mem.factId": "Fact ID",
+      "mem.requestedBy": "Requested by",
+      "mem.violation": "Violation",
+      "mem.detail": "Detail",
+      "mem.runId": "run ID",
+      "mem.content": "Content",
+      "mem.loadFailed": "load failed: {msg}",
+      "mem.origin.agent-produced": "agent-produced",
+      "mem.origin.kernel-resolved-realm": "kernel-resolved (legacy snapshot fallback)",
+      "mem.recallTitle": "Hybrid recall",
+      "mem.query": "Query",
+      "mem.queryPh": "e.g. typescript",
+      "mem.limit": "Limit",
+      "mem.alpha": "Semantic weight α",
+      "mem.recallRun": "Recall",
+      "mem.needQuery": "a query is required",
+      "mem.recallEmpty": "no hits",
+      "mem.recallFailed": "recall failed: {msg}",
+      "mem.hits": "{n} hits",
+      "mem.score": "Score",
+      "mem.lexical": "Lexical",
+      "mem.semantic": "Semantic",
+      "mem.replayTitle": "Replay a run",
+      "mem.replayRun": "Replay",
+      "mem.needRun": "a run ID is required",
+      "mem.replayEmpty": "this run produced no facts",
+      "mem.replayFailed": "replay failed: {msg}",
+      "mem.replayEvents": "{n} events",
+      "mem.replayFacts": "{n} facts"
     }
   };
   // I18N-RES-END
@@ -2252,7 +2550,7 @@
     }
     return text;
   }
-  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, roster: 1, audit: 1, connect: 1 };
+  const VIEWS = { monitor: 1, oversight: 1, grants: 1, org: 1, catalog: 1, memory: 1, roster: 1, audit: 1, connect: 1 };
   function route() {
     const h = location.hash.replace(/^#\//, '');
     let target = VIEWS[h] ? h : 'monitor';
@@ -2441,8 +2739,9 @@
         for (const m of members) {
           const isLead = m.role === 'lead';
           const leadBtn = isLead ? '' : `<button class="btn small" data-act="org-set-lead" data-id="${esc(d.departmentId)}" data-agent="${esc(m.agentId)}" data-dept="${esc(d.name)}">${esc(t('org.setLead'))}</button>`;
+          const briefingBtn = `<button class="btn small" data-read="org-briefing" data-dept="${esc(d.departmentId)}" data-agent="${esc(m.agentId)}">${esc(t('org.briefing'))}</button>`;
           const removeMemberBtn = `<button class="btn small danger" data-act="org-remove-member" data-id="${esc(d.departmentId)}" data-agent="${esc(m.agentId)}" data-dept="${esc(d.name)}">${esc(t('org.removeMember'))}</button>`;
-          rows += `<tr${isLead ? ' class="branch-ok"' : ''}><td class="mono">${esc(m.agentId)}${isLead ? ' ' + badge('lead', 'ok') : ''}</td><td>${esc(m.role)}</td><td>${esc(m.title || '—')}</td><td style="font-size:12px">${esc((m.skills || []).join(', ') || '—')}</td><td>${leadBtn} ${removeMemberBtn}</td></tr>`;
+          rows += `<tr${isLead ? ' class="branch-ok"' : ''}><td class="mono">${esc(m.agentId)}${isLead ? ' ' + badge('lead', 'ok') : ''}</td><td>${esc(m.role)}</td><td>${esc(m.title || '—')}</td><td style="font-size:12px">${esc((m.skills || []).join(', ') || '—')}</td><td>${leadBtn} ${briefingBtn} ${removeMemberBtn}</td></tr>`;
         }
       }
       rows += '</table>';
@@ -2615,7 +2914,7 @@
         <td>${badge(s.status, stCls)}</td>
         <td class="mono" style="font-size:11px">${esc((s.providedBy || []).join(', ') || '—')}</td>
         <td style="font-size:11px">${esc((s.permissions || []).join(', ') || '—')}</td>
-        <td>${skillActions(s)}</td>
+        <td>${skillActions(s)}<button class="btn small" data-read="skill-versions" data-id="${id}" style="margin-left:4px">${esc(t('skill.versions'))}</button></td>
       </tr>`;
     }
     el.innerHTML = rows + '</table>';
@@ -2737,6 +3036,41 @@
     if (!text || !text.trim()) { panel.hidden = true; return; }
     panel.hidden = false;
     body.innerHTML = '<pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--text-1)">' + esc(text) + '</pre>';
+  }
+
+  // ===== Trace 树（作战室，S6 只读投影；未知意图/留存出窗 404 静默隐藏） =====
+  async function loadTrace(id) {
+    const panel = $('tracePanel');
+    const body = $('traceBody');
+    if (!panel || !body) return;
+    let tree;
+    try {
+      tree = await api('GET', '/api/intents/' + encodeURIComponent(id) + '/trace');
+    } catch (e) {
+      // 404（未知意图 / 留存出窗）：树的事实随缓冲区一起没了，猜一棵空树比不显示更坏。
+      panel.hidden = true;
+      return;
+    }
+    const spans = (tree && tree.spans) || [];
+    if (!tree || !tree.root || !spans.length) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const kindCls = { intent: 'info', branch: '', 'dag-node': 'warn', decide: 'ok' };
+    const spanRow = s => {
+      const evts = (s.events || []).map(ev => `<span class="st" title="${esc(ev.detail || '')}">${esc(ev.kind)} · ${fmtTime(ev.at)}</span>`).join(' ');
+      return `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(s.spanId)}${s.spanId === tree.root.spanId ? ' ' + badge(t('trace.root'), 'ok') : ''}</td>
+        <td>${badge(s.kind, kindCls[s.kind] || '')}</td>
+        <td class="mono">${esc(s.vassal || '—')}</td>
+        <td class="mono">${esc(s.skill || '—')}</td>
+        <td class="mono">${esc(s.realm || '—')}</td>
+        <td class="mono" style="font-size:11px">${fmtTime(s.startedAt)} → ${s.endedAt ? fmtTime(s.endedAt) : t('trace.open')}</td>
+        <td>${s.outcome ? badge(s.outcome, statusClass(s.outcome)) : '—'}</td>
+        <td style="font-size:11px">${evts || '<span style="color:var(--text-3)">' + esc(t('trace.noEvents')) + '</span>'}</td>
+      </tr>`;
+    };
+    let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:6px"><span class="mono">' + esc(tree.traceId) + '</span> · ' + esc(t('trace.spanCount', { n: spans.length })) + '</div>';
+    html += '<table><colgroup><col style="width:16%"><col style="width:9%"><col style="width:11%"><col style="width:10%"><col style="width:10%"><col style="width:17%"><col style="width:9%"><col style="width:18%"></colgroup><tr><th>' + esc(t('trace.span')) + '</th><th>' + esc(t('col.kind')) + '</th><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('trace.time')) + '</th><th>' + esc(t('col.result')) + '</th><th>' + esc(t('trace.events')) + '</th></tr>' + spans.map(spanRow).join('') + '</table>';
+    body.innerHTML = html;
   }
 
   // ===== 最近意图 =====
@@ -2892,6 +3226,7 @@
       loadDag(id); // S3 DAG 视图（非阻塞；非 DAG 意图静默隐藏）
       loadAccountability(id); // E9.3 责任链（未装配/无编制静默隐藏）
       loadReplay(id); // E1.6 决策回放（未装配/损坏记录静默隐藏）
+      loadTrace(id); // S6 Trace 树（未知意图/留存出窗静默隐藏）
       if (r && r.status !== 'completed' && r.status !== 'failed' && r.status !== 'canceled') {
         startSse(id);
       } else {
@@ -2919,6 +3254,7 @@
         // fan-out record either — GET /api/intents/:id/dag resolves it (S3).
         setConn(true);
         loadDag(id); // S3 DAG 视图（非阻塞；非 DAG 意图静默隐藏）
+        loadTrace(id); // S6 Trace 树：进度事件在途即有，未结算也能投影
         $('accountabilityPanel').hidden = true; // 未结算：无 FanOutResult 可投影
         $('replayPanel').hidden = true;
         $('intentStatusBadge').textContent = t('task.running');
@@ -3491,6 +3827,12 @@
     if (!d) { el.innerHTML = emptyRow(); return; }
     const realms = d.realms || [];
     const grants = d.grants || [];
+    const apRealm = $('apRealm');
+    if (apRealm) {
+      const prev = apRealm.value;
+      apRealm.innerHTML = realms.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} (${esc(r.type)})</option>`).join('');
+      if (prev && realms.some(r => r.realmId === prev)) apRealm.value = prev;
+    }
     let html = '';
     if (realms.length) {
       html += '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:46%"></colgroup><tr><th>' + esc(t('col.domainId')) + '</th><th>' + esc(t('col.type')) + '</th><th>' + esc(t('col.readonly')) + '</th><th>' + esc(t('col.entries')) + '</th><th>' + esc(t('col.summary')) + '</th></tr>';
@@ -3788,6 +4130,7 @@
       }
       else if (view === 'org') await loadOrg();
       else if (view === 'catalog') await loadCatalog();
+      else if (view === 'memory') await loadMemory();
       else if (view === 'roster') await loadRoster();
       else if (view === 'intent') await loadIntent(state.intentId);
       setConn(true);
@@ -3808,6 +4151,8 @@
       } else if (view === 'catalog') {
         $('catalogSkillsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
         $('catalogConnectorsBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
+      } else if (view === 'memory') {
+        $('memSummary').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'roster') {
         $('rosterBody').innerHTML = emptyRow(t('connect.failed', { msg: e.message }));
       } else if (view === 'intent') {
@@ -3851,6 +4196,265 @@
     renderGrantList(d); renderRealmSelect(d);
   }
 
+  // ===== 访问判定探针（GET /api/domains/access 干跑；判定回答"放不放行"，不触域内容） =====
+  async function probeAccess() {
+    const body = $('accessProbeBody');
+    const realmId = $('apRealm').value;
+    const subject = $('apSubject').value.trim();
+    if (!realmId) { body.innerHTML = emptyRow(t('access.needRealm')); return; }
+    if (!subject) { body.innerHTML = emptyRow(t('access.needSubject')); return; }
+    const kind = $('apKind').value;
+    const access = $('apAccess').value;
+    const tenant = $('apTenant').value.trim();
+    let qs = '?realmId=' + encodeURIComponent(realmId) + '&subject=' + encodeURIComponent(subject) + '&kind=' + encodeURIComponent(kind) + '&access=' + encodeURIComponent(access);
+    if (tenant) qs += '&tenant=' + encodeURIComponent(tenant);
+    body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
+    try {
+      const d = await api('GET', '/api/domains/access' + qs);
+      if (d && d.ok) {
+        body.innerHTML = '<div style="font-size:12.5px">' + badge(t('access.allowed', { via: d.via }), 'ok')
+          + (d.grantId ? ' <span class="hint mono">' + esc(t('access.grant', { grantId: d.grantId })) + '</span>' : '') + '</div>';
+      } else {
+        body.innerHTML = '<div style="font-size:12.5px">' + badge(t('access.denied', { reason: (d && d.reason) || '—' }), 'bad')
+          + ' <span class="hint">' + esc((d && d.detail) || '') + '</span></div>';
+      }
+    } catch (e) {
+      body.innerHTML = emptyRow(t('access.failed', { msg: e.message }));
+    }
+  }
+
+  $('btnAccessProbe').addEventListener('click', probeAccess);
+
+  // ===== 记忆（E8.5 操作者读数面：只读 + 检索；事实无公开写入口） =====
+  // The memory face is realm-scoped like the rest of the data domain, so the
+  // selector is fed from the same /api/domains projection the monitor panel
+  // renders. Long tables are capped with an honest row count: a silently
+  // truncated table would read as "that is all there is".
+  const MEM_MAX_ROWS = 50;
+
+  function populateMemoryRealm(d) {
+    const sel = $('memRealm');
+    if (!sel) return;
+    const realms = (d && d.realms) || [];
+    const prev = sel.value;
+    sel.innerHTML = realms.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} (${esc(r.type)})</option>`).join('');
+    if (prev && realms.some(r => r.realmId === prev)) sel.value = prev;
+  }
+
+  function memRowNote(shown, total) {
+    return total > shown ? `<div class="hint" style="margin-top:4px">${esc(t('mem.moreRows', { n: shown, total }))}</div>` : '';
+  }
+
+  function renderMemorySummary(events, facts, retractions, integrity) {
+    const el = $('memSummary');
+    const evs = (events && events.events) || [];
+    const fcs = (facts && facts.facts) || [];
+    const rts = (retractions && retractions.retractions) || [];
+    const active = fcs.filter(f => f.status === 'active').length;
+    const disputed = fcs.filter(f => f.status === 'disputed').length;
+    let html = '<div class="kv">';
+    html += `<div><span>${esc(t('mem.eventsTitle'))}</span><strong class="mono">${evs.length}</strong></div>`;
+    html += `<div><span>${esc(t('mem.factsTitle'))}</span><strong class="mono">${fcs.length}</strong></div>`;
+    html += `<div><span>${esc(t('mem.summaryActive'))}</span><strong class="mono">${active}</strong></div>`;
+    html += `<div><span>${esc(t('mem.disputed'))}</span><strong class="mono">${disputed}</strong></div>`;
+    html += `<div><span>${esc(t('mem.retractionsTitle'))}</span><strong class="mono">${rts.length}</strong></div>`;
+    const integ = integrity && typeof integrity.ok === 'boolean' ? integrity : null;
+    html += `<div><span>${esc(t('mem.integrityTitle'))}</span><strong>${integ ? badge(integ.ok ? t('mem.integrityOk') : t('mem.integrityBad', { n: (integ.violations || []).length }), integ.ok ? 'ok' : 'bad') : '—'}</strong></div>`;
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  function renderMemoryFacts(facts) {
+    const el = $('memFactsBody');
+    const all = (facts && facts.facts) || [];
+    if (!all.length) { el.innerHTML = emptyRow(t('mem.noFacts')); return; }
+    const shown = all.slice(0, MEM_MAX_ROWS);
+    const stCls = s => s === 'active' ? 'ok' : s === 'disputed' ? 'warn' : s === 'superseded' ? '' : 'bad';
+    let html = '<table><colgroup><col style="width:14%"><col style="width:12%"><col style="width:14%"><col style="width:9%"><col style="width:8%"><col style="width:6%"><col style="width:6%"><col style="width:13%"><col style="width:18%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.predicate')) + '</th><th>' + esc(t('col.object')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.origin')) + '</th><th>' + esc(t('col.updatedAt')) + '</th><th>' + esc(t('mem.provenance')) + '</th></tr>';
+    for (const f of shown) {
+      html += `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(f.subject)}</td>
+        <td class="mono" style="font-size:11.5px">${esc(f.predicate)}</td>
+        <td class="mono" style="font-size:11.5px">${esc(typeof f.object === 'string' ? f.object : JSON.stringify(f.object))}</td>
+        <td>${badge(f.status, stCls(f.status))}</td>
+        <td class="num">${Math.round((f.confidence || 0) * 100)}%</td>
+        <td class="mono">${esc(f.version)}</td>
+        <td style="font-size:11px">${esc(f.origin ? tl('mem.origin.' + f.origin, f.origin) : '—')}</td>
+        <td class="mono" style="font-size:11px">${fmtTime(f.updatedAt)}</td>
+        <td class="mono" style="font-size:11px" title="${esc((f.provenance || []).join(', '))}">${(f.provenance || []).length} ${esc(t('mem.refsUnit'))}</td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>' + memRowNote(shown.length, all.length);
+  }
+
+  function renderMemoryEvents(events) {
+    const el = $('memEventsBody');
+    const all = (events && events.events) || [];
+    if (!all.length) { el.innerHTML = emptyRow(t('mem.noEvents')); return; }
+    const shown = all.slice(0, MEM_MAX_ROWS);
+    let html = '<table><colgroup><col style="width:15%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:30%"><col style="width:8%"><col style="width:12%"></colgroup><tr><th>' + esc(t('col.occurredAt')) + '</th><th>' + esc(t('col.kind')) + '</th><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('mem.runId')) + '</th><th>' + esc(t('mem.content')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('mem.refs')) + '</th></tr>';
+    for (const e of shown) {
+      const content = e.kind === 'claim' && e.content && typeof e.content === 'object'
+        ? `${esc(String((e.content as Record<string, unknown>).subject ?? ''))} ${esc(String((e.content as Record<string, unknown>).predicate ?? ''))} ${esc(String((e.content as Record<string, unknown>).object ?? ''))}`
+        : esc(JSON.stringify(e.content));
+      html += `<tr>
+        <td class="mono" style="font-size:11px">${fmtTime(e.occurredAt)}</td>
+        <td>${badge(e.kind, e.kind === 'claim' ? 'info' : '')}</td>
+        <td class="mono" style="font-size:11.5px">${esc((e.source && e.source.agentId) || '—')}</td>
+        <td class="mono" style="font-size:11px">${esc(e.runId)}</td>
+        <td class="mono" style="font-size:11px">${content}</td>
+        <td class="num">${Math.round((e.confidence || 0) * 100)}%</td>
+        <td class="mono" style="font-size:11px" title="${esc((e.refs || []).join(', '))}">${(e.refs || []).length}</td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>' + memRowNote(shown.length, all.length);
+  }
+
+  function renderMemoryRetractions(retractions) {
+    const el = $('memRetractionsBody');
+    const list = (retractions && retractions.retractions) || [];
+    if (!list.length) { el.innerHTML = emptyRow(t('mem.noRetractions')); return; }
+    let html = '<table><colgroup><col style="width:22%"><col style="width:16%"><col style="width:16%"><col style="width:16%"><col style="width:14%"><col style="width:16%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('mem.factId')) + '</th><th>' + esc(t('col.reason')) + '</th><th>' + esc(t('mem.requestedBy')) + '</th><th>' + esc(t('col.time')) + '</th><th>' + esc(t('col.domain')) + '</th></tr>';
+    for (const r of list) {
+      html += `<tr>
+        <td class="mono" style="font-size:11.5px">${esc(r.subject)}</td>
+        <td class="mono" style="font-size:11px">${esc(r.factId)}</td>
+        <td style="font-size:11.5px">${esc(r.reason || '—')}</td>
+        <td class="mono" style="font-size:11.5px">${esc(r.requestedBy)}</td>
+        <td class="mono" style="font-size:11px">${fmtTime(r.at)}</td>
+        <td class="mono" style="font-size:11px">${esc(r.realmId)}</td>
+      </tr>`;
+    }
+    el.innerHTML = html + '</table>';
+  }
+
+  function renderMemoryIntegrity(integrity) {
+    const el = $('memIntegrityBody');
+    if (!integrity || typeof integrity.ok !== 'boolean') { el.innerHTML = emptyRow(t('mem.integrityFailed')); return; }
+    const violations = integrity.violations || [];
+    let html = '<div style="margin-bottom:6px">' + badge(integrity.ok ? t('mem.integrityOk') : t('mem.integrityBad', { n: violations.length }), integrity.ok ? 'ok' : 'bad') + '</div>';
+    if (!integrity.ok) {
+      html += '<table><colgroup><col style="width:26%"><col style="width:22%"><col style="width:22%"><col style="width:30%"></colgroup><tr><th>' + esc(t('mem.violation')) + '</th><th>' + esc(t('mem.factId')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('mem.detail')) + '</th></tr>';
+      for (const v of violations) {
+        html += `<tr><td class="mono" style="font-size:11.5px">${esc(v.code)}</td><td class="mono" style="font-size:11px">${esc(v.factId || '—')}</td><td class="mono" style="font-size:11px">${esc(v.realmId || '—')}</td><td style="font-size:11.5px">${esc(v.detail)}</td></tr>`;
+      }
+      html += '</table>';
+    }
+    el.innerHTML = html;
+  }
+
+  async function loadMemory() {
+    let domains = null;
+    try { domains = await api('GET', '/api/domains'); } catch { domains = null; }
+    populateMemoryRealm(domains);
+    const realmId = $('memRealm').value;
+    $('memCount').textContent = realmId || '';
+    if (!realmId) {
+      $('memSummary').innerHTML = emptyRow(t('mem.needRealm'));
+      $('memFactsBody').innerHTML = '';
+      $('memEventsBody').innerHTML = '';
+      $('memRetractionsBody').innerHTML = '';
+      $('memIntegrityBody').innerHTML = '';
+      return;
+    }
+    // The four faces degrade independently: a realm whose events are readable
+    // but whose integrity face is not must not blank the rest of the view.
+    const [events, facts, retractions, integrity] = await Promise.allSettled([
+      api('GET', '/api/memory/events?realmId=' + encodeURIComponent(realmId)),
+      api('GET', '/api/memory/facts?realmId=' + encodeURIComponent(realmId)),
+      api('GET', '/api/memory/retractions'),
+      api('GET', '/api/memory/integrity'),
+    ]);
+    const val = (r) => (r.status === 'fulfilled' ? r.value : null);
+    renderMemorySummary(val(events), val(facts), val(retractions), val(integrity));
+    if (events.status === 'fulfilled') renderMemoryEvents(events.value);
+    else $('memEventsBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: events.reason.message }));
+    if (facts.status === 'fulfilled') renderMemoryFacts(facts.value);
+    else $('memFactsBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: facts.reason.message }));
+    if (retractions.status === 'fulfilled') renderMemoryRetractions(retractions.value);
+    else $('memRetractionsBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: retractions.reason.message }));
+    if (integrity.status === 'fulfilled') renderMemoryIntegrity(integrity.value);
+    else $('memIntegrityBody').innerHTML = emptyRow(t('mem.loadFailed', { msg: integrity.reason.message }));
+  }
+
+  $('btnMemoryRefresh').addEventListener('click', loadMemory);
+
+  async function probeMemoryRecall() {
+    const body = $('memRecallBody');
+    const realmId = $('memRealm').value;
+    const q = $('memQ').value.trim();
+    if (!realmId) { body.innerHTML = emptyRow(t('mem.needRealm')); return; }
+    if (!q) { body.innerHTML = emptyRow(t('mem.needQuery')); return; }
+    const limit = Number($('memLimit').value);
+    const alpha = Number($('memAlpha').value);
+    let qs = '?realmId=' + encodeURIComponent(realmId) + '&q=' + encodeURIComponent(q);
+    if (Number.isInteger(limit) && limit > 0) qs += '&limit=' + limit;
+    if (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) qs += '&alpha=' + alpha;
+    body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
+    try {
+      const d = await api('GET', '/api/memory/recall' + qs);
+      const hits = (d && d.hits) || [];
+      if (!hits.length) { body.innerHTML = emptyRow(t('mem.recallEmpty')); return; }
+      let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">' + esc(t('mem.hits', { n: hits.length })) + '</div>';
+      html += '<table><colgroup><col style="width:10%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:14%"><col style="width:12%"><col style="width:14%"><col style="width:9%"><col style="width:17%"></colgroup><tr><th>' + esc(t('mem.score')) + '</th><th>' + esc(t('mem.lexical')) + '</th><th>' + esc(t('mem.semantic')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.predicate')) + '</th><th>' + esc(t('col.object')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('col.updatedAt')) + '</th></tr>';
+      for (const h of hits) {
+        const f = h.fact || {};
+        html += `<tr>
+          <td class="num mono">${(h.score || 0).toFixed(3)}</td>
+          <td class="num mono">${(h.lexical || 0).toFixed(3)}</td>
+          <td class="num mono">${(h.semantic || 0).toFixed(3)}</td>
+          <td>${badge(f.status || '—', f.status === 'active' ? 'ok' : 'warn')}</td>
+          <td class="mono" style="font-size:11.5px">${esc(f.subject)}</td>
+          <td class="mono" style="font-size:11.5px">${esc(f.predicate)}</td>
+          <td class="mono" style="font-size:11.5px">${esc(typeof f.object === 'string' ? f.object : JSON.stringify(f.object))}</td>
+          <td class="num">${Math.round((f.confidence || 0) * 100)}%</td>
+          <td class="mono" style="font-size:11px">${fmtTime(f.updatedAt)}</td>
+        </tr>`;
+      }
+      body.innerHTML = html + '</table>';
+    } catch (e) {
+      body.innerHTML = emptyRow(t('mem.recallFailed', { msg: e.message }));
+    }
+  }
+
+  $('btnMemoryRecall').addEventListener('click', probeMemoryRecall);
+
+  async function probeMemoryReplay() {
+    const body = $('memReplayBody');
+    const realmId = $('memRealm').value;
+    const runId = $('memRunId').value.trim();
+    if (!realmId) { body.innerHTML = emptyRow(t('mem.needRealm')); return; }
+    if (!runId) { body.innerHTML = emptyRow(t('mem.needRun')); return; }
+    body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
+    try {
+      const d = await api('GET', '/api/memory/replay?realmId=' + encodeURIComponent(realmId) + '&runId=' + encodeURIComponent(runId));
+      const events = (d && d.events) || [];
+      const facts = (d && d.facts) || [];
+      let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">' + esc(t('mem.replayEvents', { n: events.length })) + ' · ' + esc(t('mem.replayFacts', { n: facts.length })) + '</div>';
+      if (facts.length) {
+        html += '<table><colgroup><col style="width:16%"><col style="width:14%"><col style="width:18%"><col style="width:10%"><col style="width:8%"><col style="width:34%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.predicate')) + '</th><th>' + esc(t('col.object')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('mem.provenance')) + '</th></tr>';
+        for (const f of facts) {
+          html += `<tr>
+            <td class="mono" style="font-size:11.5px">${esc(f.subject)}</td>
+            <td class="mono" style="font-size:11.5px">${esc(f.predicate)}</td>
+            <td class="mono" style="font-size:11.5px">${esc(typeof f.object === 'string' ? f.object : JSON.stringify(f.object))}</td>
+            <td>${badge(f.status, f.status === 'active' ? 'ok' : 'warn')}</td>
+            <td class="num">${Math.round((f.confidence || 0) * 100)}%</td>
+            <td class="mono" style="font-size:11px" title="${esc((f.provenance || []).join(', '))}">${(f.provenance || []).length} ${esc(t('mem.refsUnit'))}</td>
+          </tr>`;
+        }
+        html += '</table>';
+      } else {
+        html += emptyRow(t('mem.replayEmpty'));
+      }
+      body.innerHTML = html;
+    } catch (e) {
+      body.innerHTML = emptyRow(t('mem.replayFailed', { msg: e.message }));
+    }
+  }
+
+  $('btnMemoryReplay').addEventListener('click', probeMemoryReplay);
+
   function setConn(ok) {
     const badgeEl = $('connBadge');
     badgeEl.classList.toggle('ok', ok);
@@ -3870,6 +4474,87 @@
       toast(t('action.failed', { msg: e.message }), 'bad');
     }
   }
+
+  // ===== 只读展开（版本史 / 首日简报）：与 data-act 写链分离，无确认门、零写路径 =====
+  async function toggleSkillVersions(btn) {
+    const id = btn.getAttribute('data-id');
+    const row = btn.closest('tr');
+    if (!row || !id) return;
+    const open = row.nextElementSibling && row.nextElementSibling.classList.contains('ver-row');
+    if (open) { row.nextElementSibling.remove(); return; }
+    row.parentNode.querySelectorAll('.ver-row').forEach(el => el.remove());
+    const detail = document.createElement('tr');
+    detail.className = 'ver-row';
+    detail.innerHTML = '<td colspan="7"><div class="empty">' + esc(t('skill.versionsLoading')) + '</div></td>';
+    row.parentNode.insertBefore(detail, row.nextSibling);
+    try {
+      const d = await api('GET', '/api/skills/' + encodeURIComponent(id) + '/versions');
+      const versions = (d && d.versions) || [];
+      if (!versions.length) { detail.innerHTML = '<td colspan="7">' + emptyRow(t('skill.versionsEmpty')) + '</td>'; return; }
+      const vrow = v => `<tr>
+        <td class="mono">${esc(v.version)}</td>
+        <td>${badge(v.status || '—', v.status === 'active' ? 'ok' : v.status === 'deprecated' ? 'warn' : '')}</td>
+        <td>${esc(v.domain || '—')}</td>
+        <td class="mono" style="font-size:11px">${esc((v.providedBy || []).join(', ') || '—')}</td>
+        <td style="font-size:11px">${esc((v.permissions || []).join(', ') || '—')}</td>
+        <td class="mono" style="font-size:11px">${v.registeredAt ? fmtTime(v.registeredAt) : '—'}</td>
+      </tr>`;
+      detail.innerHTML = '<td colspan="7"><div style="font-size:12px;color:var(--text-2);margin-bottom:4px">' + esc(t('skill.versionsTitle', { id })) + '</div>'
+        + '<table><colgroup><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:24%"><col style="width:22%"><col style="width:20%"></colgroup><tr><th>' + esc(t('col.version')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.provider')) + '</th><th>' + esc(t('col.perms')) + '</th><th>' + esc(t('col.registered')) + '</th></tr>' + versions.map(vrow).join('') + '</table></td>';
+    } catch (e) {
+      detail.innerHTML = '<td colspan="7">' + emptyRow(t('skill.versionsFailed', { msg: e.message })) + '</td>';
+    }
+  }
+
+  function renderBriefing(b) {
+    if (!b) return emptyRow(t('org.briefingNone'));
+    const seat = b.seat || {};
+    const comp = b.competencies || {};
+    const biz = b.business || {};
+    const cul = b.culture || {};
+    const bnd = b.boundaries || {};
+    const cert = (comp.certified || []).map(c => esc(c.skillId) + '@' + esc(c.version) + ' (' + esc(c.mentorId) + ', ' + Math.round((c.score || 0) * 100) + '%)').join('、') || '—';
+    const mates = (biz.teammates || []).map(m => esc(m.agentId) + ':' + esc(m.role)).join('、') || '—';
+    const mentors = (biz.mentorsForMissing || []).filter(x => (x.mentors || []).length).map(x => esc(x.skillId) + '→' + x.mentors.map(esc).join(',')).join('；') || '—';
+    const facts = (cul.facts || []).map(f => esc(f.subject) + ' ' + esc(f.predicate) + ' ' + esc(String(f.object))).join('；') || '—';
+    const gaps = (b.gaps || []).map(g => '<li>' + esc(g) + '</li>').join('');
+    let html = '<div style="font-size:12.5px;margin-bottom:4px">' + badge(t('brief.seat'), 'info') + ' <strong>' + esc(seat.departmentName || '—') + '</strong> · ' + esc(seat.role || '—') + (seat.title ? ' · ' + esc(seat.title) : '') + ' · ' + esc(t('brief.requiredSkills')) + ' ' + esc((seat.requiredSkills || []).join(', ') || '—') + '</div>';
+    html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.competencies')) + ' ' + esc(t('brief.certified')) + ' ' + cert + ' · ' + esc(t('brief.missing')) + ' ' + esc((comp.missing || []).join(', ') || '—') + (comp.waived ? ' · ' + esc(t('brief.waived')) : '') + '</div>';
+    html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.teammates')) + ' ' + mates + ' · ' + esc(t('brief.mentors')) + ' ' + mentors + '</div>';
+    html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.culture')) + ' ' + esc(t('brief.facts', { n: (cul.facts || []).length, total: cul.totalFacts || 0 })) + (cul.empty ? ' · ' + esc(t('brief.emptyCulture')) : '') + '<div class="mono" style="font-size:11px;color:var(--text-3)">' + facts + '</div></div>';
+    html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.boundaries')) + ' <span class="mono">' + esc(bnd.realmId || '—') + '</span> ' + esc(bnd.realmType || '—') + (bnd.readOnly ? ' · ' + esc(t('col.readonly')) : '') + ' · ' + esc(t('brief.canRead')) + ' ' + (bnd.canRead ? '✓' : '✗') + ' · ' + esc(t('brief.canWrite')) + ' ' + (bnd.canWrite ? '✓' : '✗') + (bnd.writeNeedsGrant ? ' · ' + esc(t('brief.needsGrant')) : '') + ' · ' + esc((bnd.rules || []).join(' / ') || '—') + '</div>';
+    html += gaps ? '<div style="font-size:12px;margin:4px 0 2px;color:var(--warn)">' + esc(t('brief.gaps')) + '</div><ul style="margin:2px 0 0 16px;padding:0;font-size:12px">' + gaps + '</ul>' : '<div style="font-size:12px;color:var(--text-3);margin:4px 0 0">' + esc(t('brief.noGaps')) + '</div>';
+    html += '<div class="hint" style="margin-top:6px">' + esc(t('brief.digest')) + ' <span class="mono">' + esc(b.digest || '—') + '</span> · ' + fmtTime(b.generatedAt) + '</div>';
+    return html;
+  }
+
+  async function toggleBriefing(btn) {
+    const deptId = btn.getAttribute('data-dept');
+    const agentId = btn.getAttribute('data-agent');
+    const row = btn.closest('tr');
+    if (!row || !deptId || !agentId) return;
+    const open = row.nextElementSibling && row.nextElementSibling.classList.contains('brief-row');
+    if (open) { row.nextElementSibling.remove(); return; }
+    row.parentNode.querySelectorAll('.brief-row').forEach(el => el.remove());
+    const detail = document.createElement('tr');
+    detail.className = 'brief-row';
+    detail.innerHTML = '<td colspan="5"><div class="empty">' + esc(t('org.briefingLoading')) + '</div></td>';
+    row.parentNode.insertBefore(detail, row.nextSibling);
+    try {
+      const b = await api('GET', '/api/org/departments/' + encodeURIComponent(deptId) + '/briefing/' + encodeURIComponent(agentId));
+      detail.innerHTML = '<td colspan="5">' + renderBriefing(b) + '</td>';
+    } catch (e) {
+      detail.innerHTML = '<td colspan="5">' + emptyRow(e.status === 404 ? t('org.briefingNone') : t('org.briefingFailed', { msg: e.message })) + '</td>';
+    }
+  }
+
+  document.addEventListener('click', function (ev) {
+    const btn = ev.target.closest('[data-read]');
+    if (!btn) return;
+    const read = btn.getAttribute('data-read');
+    if (read === 'skill-versions') toggleSkillVersions(btn);
+    if (read === 'org-briefing') toggleBriefing(btn);
+  });
 
   document.addEventListener('click', async function (ev) {
     const btn = ev.target.closest('[data-act]');
