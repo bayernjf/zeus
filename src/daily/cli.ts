@@ -23,7 +23,7 @@
  * delivered, or the write-back failed · 2 configuration/usage error (nothing was
  * dispatched).
  */
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { TextPart } from '../a2a/types.js';
@@ -48,6 +48,8 @@ import { loadRskSigner } from '../http/rsk.js';
 import { issueDriverWriteGrant } from '../realm/grant.js';
 import type { BranchOutcome, FanOutResult } from '../orchestrator/types.js';
 import { RealmError, type RealmConnection } from '../realm/types.js';
+import { DuplicateSkillError, type SkillRegistry } from '../skills/registry.js';
+import { skillSpecInputFrom } from '../skills/spec-input.js';
 import { renderDailyReport, parsePreviousRecord, type DailyBranchView, type DailyReportModel } from './report.js';
 
 const DEFAULT_STATE_FILE = './data/daily-state.json';
@@ -66,6 +68,12 @@ Options:
                         roots saved by an earlier run are re-mounted by default)
   --agent CARD[|TOKEN]  register an execution agent before dispatch (repeatable;
                         merged with ZEUS_VASSAL_SEEDS)
+  --spec FILE           register an explicit skill spec before dispatch (repeatable;
+                        JSON object or array of them, same fields POST /api/skills
+                        accepts). This is how an operator declares aliases — the
+                        alternate names a non-English instruction is matched against
+                        by the local rules — because an Agent Card carries none.
+                        Nothing is dispatched when a spec is rejected.
   --skill ID            skip recognition and dispatch this skill instead
   --params JSON         skill parameters, merged over the default
                         {"prompt": "<your sentence>"}; an agent whose skill takes
@@ -88,12 +96,17 @@ Exit codes: 0 the report was produced and stored, including a run that ended in 
 split waiting for you · 1 nothing dispatchable, no agent delivered, or the
 write-back failed · 2 configuration or usage error, nothing was dispatched`;
 
-class UsageError extends Error {}
+/** Exported because the exit-code contract and the tests both key on the
+ *  identity of the error, not on a message match. */
+export class UsageError extends Error {}
 
 type DailyArgs = {
   instruction: string;
   roots: string[];
   agents: string[];
+  /** Explicit skill specs registered before dispatch (E2.7: the only way an
+   *  operator can declare aliases on this path — a card carries none). */
+  specs: string[];
   skill?: string;
   params: Record<string, unknown>;
   record?: string;
@@ -114,7 +127,7 @@ type RunContext = {
   realm: RealmConnection | null;
 };
 
-const VALUE_FLAGS = new Set(['--root', '--agent', '--skill', '--params', '--record', '--realm', '--timeout', '--state']);
+const VALUE_FLAGS = new Set(['--root', '--agent', '--skill', '--params', '--record', '--realm', '--timeout', '--state', '--spec']);
 
 /**
  * Resolves where kernel state lives. `undefined` means the operator said nothing
@@ -131,11 +144,63 @@ export function resolveStateFile(explicit: string | null | undefined, fromEnv: s
   return fromEnv === 'none' ? null : fromEnv;
 }
 
+/**
+ * Registers the `--spec` files into the capability catalogue before dispatch.
+ *
+ * This is the product entry's only route to a declared `aliases` list: an A2A
+ * Agent Card has no such field, so without it a non-English instruction stays
+ * unresolvable by the local rules and the operator has to name the skill.
+ *
+ * Every rejection — unreadable file, malformed JSON, a spec the validator
+ * refuses — is a `UsageError`, which the entry maps to exit 2: nothing was
+ * dispatched. A spec already in the catalogue is skipped instead, because a run
+ * that persisted its state will meet the same file again on the next invocation,
+ * and failing there would make the flag unusable rather than idempotent.
+ */
+export function registerSkillSpecs(
+  registry: SkillRegistry | undefined,
+  files: string[],
+  read: (path: string) => string = path => readFileSync(path, 'utf8'),
+): string[] {
+  if (files.length === 0) return [];
+  if (!registry) throw new UsageError('--spec needs the skill catalogue, which this kernel does not mount');
+  const registered: string[] = [];
+  for (const file of files) {
+    let raw: string;
+    try {
+      raw = read(file);
+    } catch (error) {
+      throw new UsageError(`--spec file is not readable: ${file} (${(error as Error).message})`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch (error) {
+      throw new UsageError(`--spec ${file} is not valid JSON: ${(error as Error).message}`);
+    }
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    for (const entry of entries) {
+      if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new UsageError(`--spec ${file} must hold a skill spec object, or an array of them`);
+      }
+      try {
+        const spec = registry.register(skillSpecInputFrom(entry as Record<string, unknown>));
+        registered.push(`${spec.id}@${spec.version}`);
+      } catch (error) {
+        if (error instanceof DuplicateSkillError) continue;
+        throw new UsageError(`--spec ${file} was rejected: ${(error as Error).message}`);
+      }
+    }
+  }
+  return registered;
+}
+
 function parseArgs(argv: string[]): DailyArgs {
   const args: DailyArgs = {
     instruction: '',
     roots: [],
     agents: [],
+    specs: [],
     params: {},
     realm: 'personal',
     timeoutMs: DEFAULT_BRANCH_TIMEOUT_MS,
@@ -165,6 +230,9 @@ function parseArgs(argv: string[]): DailyArgs {
           break;
         case '--agent':
           args.agents.push(value);
+          break;
+        case '--spec':
+          args.specs.push(value);
           break;
         case '--skill':
           args.skill = value;
@@ -447,6 +515,9 @@ async function runOnce(ctx: RunContext): Promise<number> {
   }
 
   ctx.kernel = await bootKernel(kernelOptions);
+  // Registered before the realm is picked and before anything dispatches: a
+  // rejected spec is a configuration fact, not a failed run.
+  registerSkillSpecs(ctx.kernel.skillRegistry, args.specs);
 
   const connections = ctx.kernel.realmStore?.connections() ?? [];
   const realm = pickRealm(connections, args.realm, args.roots);
