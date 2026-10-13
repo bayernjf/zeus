@@ -1218,6 +1218,7 @@
       "sse.intentEnd": "意图结束 · {status}",
       "sse.connecting": "连接实时事件流…",
       "sse.broken": "事件流中断：{msg}，自动重连中…",
+      "sse.authDenied": "事件流鉴权被拒绝（HTTP {status}），已停止自动重连，请检查监督令牌",
       "stream.title": "思考态",
       "stream.hint": "分支内增量预览，非结论",
       "stream.empty": "等待事件…",
@@ -1904,6 +1905,7 @@
       "sse.intentEnd": "intent finished · {status}",
       "sse.connecting": "Connecting live event stream…",
       "sse.broken": "Event stream interrupted: {msg}; reconnecting…",
+      "sse.authDenied": "Event stream access denied (HTTP {status}); stopped reconnecting — check the supervisor token",
       "stream.title": "Live state",
       "stream.hint": "in-branch increment previews, not conclusions",
       "stream.empty": "Waiting for events…",
@@ -2118,6 +2120,7 @@
     recent: loadRecent(),
     sseAbort: null,
     sseRetries: 0,
+    sseReconnect: null,
     auditFilter: { decision: '', vassal: '', keyword: '' },
     auditLast: null,
     escList: null,
@@ -2904,7 +2907,18 @@
   }
 
   // ===== SSE 实时事件（fetch + ReadableStream，携带 Bearer） =====
+  // SSE-POLICY-BEGIN
+  // Reconnect policy kept as pure functions so the backoff/auth-failure
+  // contract is testable without a DOM (tests/web-supervisor-sse.test.ts).
+  function sseBackoffMs(retries) {
+    return Math.min(30000, 2000 * Math.pow(2, retries));
+  }
+  function sseNonRetryableStatus(status) {
+    return status === 401 || status === 403;
+  }
+  // SSE-POLICY-END
   function stopSse() {
+    if (state.sseReconnect) { clearTimeout(state.sseReconnect); state.sseReconnect = null; }
     if (state.sseAbort) { state.sseAbort.abort(); state.sseAbort = null; }
   }
 
@@ -3057,9 +3071,22 @@
     const url = base.replace(/\/+$/, '') + '/api/intents/' + encodeURIComponent(id) + '/events';
     const evtEl = $('intentEvents');
     if (evtEl) { delete evtEl.dataset.settledNote; evtEl.innerHTML = '<div class="empty">' + esc(t('sse.connecting')) + '</div>'; }
+    // 无令牌（本地免鉴权部署）时不发空头；Authorization 仅在配置了令牌时携带。
+    const sseHeaders = { accept: 'text/event-stream' };
+    if (token) sseHeaders.authorization = 'Bearer ' + token;
     try {
-      const res = await fetch(url, { headers: { authorization: 'Bearer ' + token, accept: 'text/event-stream' }, signal: ac.signal });
-      if (!res.ok || !res.body) throw new Error('SSE ' + res.status);
+      const res = await fetch(url, { headers: sseHeaders, signal: ac.signal });
+      if (!res.ok || !res.body) {
+        // 401/403 是配置问题，指数退避重连只会刷出同样的拒绝，直接停机提示。
+        if (sseNonRetryableStatus(res.status)) {
+          if (evtEl) evtEl.innerHTML = emptyRow(t('sse.authDenied', { status: res.status }));
+          stopSse();
+          return;
+        }
+        throw new Error('SSE ' + res.status);
+      }
+      // 成功收到响应头才清零退避计数，使连续断线时退避能持续累积到上限。
+      state.sseRetries = 0;
       if (evtEl) evtEl.innerHTML = '<ul class="evt-list" style="max-height:360px;overflow:auto"></ul>';
       const reader = res.body.getReader();
       const dec = new TextDecoder();
@@ -3104,11 +3131,16 @@
     } catch (e) {
       if (e && e.name === 'AbortError') return;
       // 断线自动重连：仅当页面仍停留在该意图且尚未终态时；指数退避，上限 30s。
+      // 定时器持有句柄，stopSse/切视图可取消；计数只在成功收到响应头后清零，
+      // 连续断线时退避 2s→4s→8s→…→30s 累积，而不是每次恒为 2s。
       const reconnect = () => {
         if (state.view !== 'intent' || state.intentId !== id) return;
-        const backoff = Math.min(30000, 2000 * Math.pow(2, (state.sseRetries || 0)));
+        const backoff = sseBackoffMs(state.sseRetries || 0);
         state.sseRetries = (state.sseRetries || 0) + 1;
-        setTimeout(() => { state.sseRetries = 0; startSse(id); }, backoff);
+        state.sseReconnect = setTimeout(() => {
+          state.sseReconnect = null;
+          if (state.view === 'intent' && state.intentId === id) startSse(id);
+        }, backoff);
       };
       if (evtEl && !evtEl.querySelector('li')) evtEl.innerHTML = evtEl.innerHTML || emptyRow(t('sse.broken', { msg: e.message }));
       if (state.view === 'intent' && state.intentId === id) {
@@ -3118,7 +3150,11 @@
           if (r) rememberIntent(r.intentId || id, r.skill, r.status);
           if (r && r.status !== 'completed' && r.status !== 'failed' && r.status !== 'canceled') reconnect();
           else stopSse();
-        } catch { reconnect(); }
+        } catch (probeErr) {
+          // 探测请求本身被鉴权拒绝时同样不可重试，避免 401/403 无限重连。
+          if (sseNonRetryableStatus(probeErr && probeErr.status)) { stopSse(); return; }
+          reconnect();
+        }
       }
     }
   }
@@ -4214,10 +4250,16 @@
   function startPoll() {
     if (state.timer) return;
     state.timer = setInterval(function () {
-      if (state.poll && state.view !== 'connect' && state.conn.base) refreshView();
+      // 标签页隐藏时暂停后台轮询，与采样器一致，避免不可见时空打接口。
+      if (state.poll && state.view !== 'connect' && state.conn.base && !document.hidden) refreshView();
     }, 10000);
   }
   function stopPoll() { if (state.timer) { clearInterval(state.timer); state.timer = null; } }
+
+  // 标签页重新可见时立即刷新一次，不必等下一个 10s 周期。
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && state.poll && state.view !== 'connect' && state.conn.base) refreshView();
+  });
 
   // 并发趋势采样器：3s 常驻，仅在监控视图且页面可见时取数
   setInterval(sampleMetrics, 3000);

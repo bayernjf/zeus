@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer, streamIntentProgress, type EventStreamSocket } from '../src/http/server.js';
@@ -234,65 +234,88 @@ describe('hijacked SSE stream lifecycle', () => {
   });
 
   it('closes with an error event when nothing arrives within the attach grace', async () => {
-    const hub = new ProgressHub();
-    const socket = socketOf();
-    streamIntentProgress(socket, hub, 'i', { attachGraceMs: 20 });
-    expect(socket.ended).toBe(false);
-    await new Promise(resolve => setTimeout(resolve, 45));
-    const buffer = socket.chunks.join('');
-    expect(buffer).toContain('event: error');
-    expect(socket.ended).toBe(true);
-    // The subscription is released: a late publish writes nothing.
-    const before = socket.chunks.length;
-    hub.publish(started);
-    expect(socket.chunks.length).toBe(before);
+    // Deterministic clock: 15/20/30ms graces against 40/45/55ms real sleeps are
+    // a CI-overload flake. Fake timers make the expiry exact (same pattern as
+    // mcp-stdio-client.test.ts).
+    vi.useFakeTimers();
+    try {
+      const hub = new ProgressHub();
+      const socket = socketOf();
+      streamIntentProgress(socket, hub, 'i', { attachGraceMs: 20 });
+      expect(socket.ended).toBe(false);
+      await vi.advanceTimersByTimeAsync(45);
+      const buffer = socket.chunks.join('');
+      expect(buffer).toContain('event: error');
+      expect(socket.ended).toBe(true);
+      // The subscription is released: a late publish writes nothing.
+      const before = socket.chunks.length;
+      hub.publish(started);
+      expect(socket.chunks.length).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cancels the attach grace once a live event arrives', async () => {
-    const hub = new ProgressHub();
-    const socket = socketOf();
-    streamIntentProgress(socket, hub, 'i', { attachGraceMs: 30 });
-    hub.publish(started);
-    await new Promise(resolve => setTimeout(resolve, 55));
-    expect(socket.ended).toBe(false);
-    expect(socket.chunks.join('')).not.toContain('event: error');
-    hub.publish(finished);
-    expect(socket.ended).toBe(true);
+    vi.useFakeTimers();
+    try {
+      const hub = new ProgressHub();
+      const socket = socketOf();
+      streamIntentProgress(socket, hub, 'i', { attachGraceMs: 30 });
+      hub.publish(started);
+      await vi.advanceTimersByTimeAsync(55);
+      expect(socket.ended).toBe(false);
+      expect(socket.chunks.join('')).not.toContain('event: error');
+      hub.publish(finished);
+      expect(socket.ended).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('does not arm the attach grace when a backlog already proves the intent exists', async () => {
-    const hub = new ProgressHub();
-    hub.publish(started);
-    const socket = socketOf();
-    streamIntentProgress(socket, hub, 'i', { attachGraceMs: 15 });
-    await new Promise(resolve => setTimeout(resolve, 40));
-    expect(socket.chunks.join('')).not.toContain('event: error');
-    expect(socket.ended).toBe(false);
-    socket.emit('close');
+    vi.useFakeTimers();
+    try {
+      const hub = new ProgressHub();
+      hub.publish(started);
+      const socket = socketOf();
+      streamIntentProgress(socket, hub, 'i', { attachGraceMs: 15 });
+      await vi.advanceTimersByTimeAsync(40);
+      expect(socket.chunks.join('')).not.toContain('event: error');
+      expect(socket.ended).toBe(false);
+      socket.emit('close');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('runs onTeardown exactly once across terminal end, expiry and peer reset', async () => {
     let torn = 0;
 
-    const hubEnd = new ProgressHub();
-    const socketEnd = socketOf();
-    streamIntentProgress(socketEnd, hubEnd, 'i', { onTeardown: () => { torn += 1; } });
-    hubEnd.publish(finished);
-    socketEnd.emit('close');
-    expect(torn).toBe(1);
+    vi.useFakeTimers();
+    try {
+      const hubEnd = new ProgressHub();
+      const socketEnd = socketOf();
+      streamIntentProgress(socketEnd, hubEnd, 'i', { onTeardown: () => { torn += 1; } });
+      hubEnd.publish(finished);
+      socketEnd.emit('close');
+      expect(torn).toBe(1);
 
-    const hubGrace = new ProgressHub();
-    const socketGrace = socketOf();
-    streamIntentProgress(socketGrace, hubGrace, 'i', { attachGraceMs: 15, onTeardown: () => { torn += 1; } });
-    await new Promise(resolve => setTimeout(resolve, 40));
-    expect(torn).toBe(2);
+      const hubGrace = new ProgressHub();
+      const socketGrace = socketOf();
+      streamIntentProgress(socketGrace, hubGrace, 'i', { attachGraceMs: 15, onTeardown: () => { torn += 1; } });
+      await vi.advanceTimersByTimeAsync(40);
+      expect(torn).toBe(2);
 
-    const hubReset = new ProgressHub();
-    const socketReset = socketOf();
-    streamIntentProgress(socketReset, hubReset, 'i', { onTeardown: () => { torn += 1; } });
-    socketReset.emit('close');
-    socketReset.emit('error', new Error('ECONNRESET'));
-    expect(torn).toBe(3);
+      const hubReset = new ProgressHub();
+      const socketReset = socketOf();
+      streamIntentProgress(socketReset, hubReset, 'i', { onTeardown: () => { torn += 1; } });
+      socketReset.emit('close');
+      socketReset.emit('error', new Error('ECONNRESET'));
+      expect(torn).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
