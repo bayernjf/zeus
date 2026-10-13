@@ -118,4 +118,60 @@ describe('S9 V2 cost gate wiring', () => {
     expect(() => resolveCostConfig({ ZEUS_COST_MAX_RATE_PER_WINDOW: '0' })).toThrow(/>= 1/);
     expect(resolveCostConfig({})).toEqual({});
   });
+
+  describe('E6.5 costReadout', () => {
+    it('reports spend, limits and refusals as one account', async () => {
+      const kernel = await bootKernel({
+        fetchImpl: approveFetch(),
+        vassalSeeds: [SEED],
+        costLimit: { maxWindowCost: 3, circuitWindowMs: 60_000 },
+      });
+      await kernel.orchestrator.fanOut({
+        intentId: 'acct-cheap', skill: 'review', params: { message: 'x' }, realm: 'personal', vassals: ['alpha'],
+        costEstimate: { tokens: 2 },
+      });
+      await kernel.orchestrator.fanOut({
+        intentId: 'acct-over', skill: 'review', params: { message: 'y' }, realm: 'personal', vassals: ['alpha'],
+        costEstimate: { tokens: 5 },
+      });
+      const readout = kernel.orchestrator.costReadout();
+      expect(readout.configured).toBe(true);
+      expect(readout.limits).toEqual({ maxWindowCost: 3, circuitWindowMs: 60_000 });
+      expect(readout.refusals).toBe(1);
+      expect(readout.totals.intents).toBe(2);
+      expect(readout.windows.map(w => w.intentId)).toContain('acct-cheap');
+      // A settled intent releases its estimate; the refusals counter is what
+      // survives, so an operator can see the gate acted without grepping JSONL.
+      expect(readout.totals.inFlightEstimate).toBe(0);
+    });
+
+    it('says the gate is unconfigured instead of reporting an empty account as spent', async () => {
+      const kernel = await bootKernel({ fetchImpl: approveFetch(), vassalSeeds: [SEED] });
+      await kernel.orchestrator.fanOut({
+        intentId: 'free', skill: 'review', params: { message: 'x' }, realm: 'personal', vassals: ['alpha'],
+      });
+      const readout = kernel.orchestrator.costReadout();
+      expect(readout).toMatchObject({ configured: false, refusals: 0, limits: {}, totals: { intents: 0, spent: 0 } });
+    });
+
+    it('bounds the window list without hiding the totals', async () => {
+      const kernel = await bootKernel({
+        fetchImpl: approveFetch(),
+        vassalSeeds: [SEED],
+        costLimit: { maxWindowCost: 100, circuitWindowMs: 60_000 },
+      });
+      for (const intentId of ['win-a', 'win-b']) {
+        await kernel.orchestrator.fanOut({
+          intentId, skill: 'review', params: { message: 'x' }, realm: 'personal', vassals: ['alpha'],
+          costEstimate: { tokens: 2 },
+        });
+      }
+      const bounded = kernel.orchestrator.costReadout(1);
+      expect(bounded.windows).toHaveLength(1);
+      expect(bounded.truncated).toBe(true);
+      // The bound is a display limit: totals still cover every ledger, so a
+      // slice can never understate what the gate has charged.
+      expect(bounded.totals.intents).toBe(2);
+    });
+  });
 });

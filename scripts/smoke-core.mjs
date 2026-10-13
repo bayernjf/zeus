@@ -35,7 +35,7 @@
 
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, readFileSync, existsSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, existsSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
@@ -203,6 +203,9 @@ const env = {
   ZEUS_AUDIT_FILE: auditFile,
   ZEUS_TRACE_EXPORT_FILE: traceFile,
   ZEUS_METRICS_HISTORY_FILE: metricsHistoryFile,
+  // E6.5: the cost gate is env-configured, so the assembly that reads it is what
+  // gets proven here. The cap is far above this run's charge (1 token/intent).
+  ZEUS_COST_MAX_WINDOW_COST: '1000',
   ZEUS_RSK_KEY_FILE: join(work, 'smoke-key.pem'),
   ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
   ZEUS_REALM_ROOTS: realmRoot,
@@ -305,6 +308,65 @@ try {
     finish();
   }
   record('build present', true, 'dist/http/serve.js');
+
+  // E4.12: the Day-1 claim, on shipped artifacts and separate processes. Zeus
+  // dispatches and never executes, so before the reference agent existed a
+  // reader holding only a directory could not see the loop at all (an empty
+  // roster made `npm run daily` exit 2 - measured 2026-10-13).
+  const day1Dir = mkdtempSync(join(work, 'zeus-smoke-day1-'));
+  const day1Port = await freePort();
+  const day1Agent = spawn(process.execPath, [join(REPO, 'dist/a2a/example-agent.js'), '--port', String(day1Port)], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  children.push(day1Agent);
+  const day1CardReady = await new Promise(resolve => {
+    let seen = '';
+    const onData = (/** @type {Buffer} */ chunk) => {
+      seen += String(chunk);
+      if (seen.includes('card url:')) {
+        day1Agent.stdout?.off('data', onData);
+        resolve(true);
+      }
+    };
+    day1Agent.stdout?.on('data', onData);
+    day1Agent.once('exit', () => resolve(false));
+    setTimeout(() => resolve(false), 5000);
+  });
+  /** @type {Record<string, string | undefined>} */
+  const day1Env = { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' };
+  // The reader's own shell must not pre-seed the run: state, realm roots and
+  // agent seeds all come from the command line here.
+  for (const key of ['ZEUS_STATE_FILE', 'ZEUS_REALM_ROOTS', 'ZEUS_VASSAL_SEEDS', 'ZEUS_INTERNAL_TOKEN', 'ZEUS_RSK_KEY_FILE']) {
+    delete day1Env[key];
+  }
+  let day1 = { code: 1, out: '', err: day1CardReady ? '' : 'the reference agent never printed its card url' };
+  if (day1CardReady) {
+    try {
+      day1 = {
+        code: 0,
+        out: execFileSync(process.execPath, [
+          join(REPO, 'dist/daily/cli.js'),
+          '--root', day1Dir,
+          '--agent', `http://127.0.0.1:${day1Port}/api/a2a/agent-card`,
+          '--skill', 'research',
+          '--params', JSON.stringify({ prompt: 'summarize the note' }),
+          '--state', 'none',
+          'summarize the note',
+        ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: day1Env }),
+        err: '',
+      };
+    } catch (error) {
+      const failure = /** @type {{ status?: number, stdout?: unknown, stderr?: unknown }} */ (error);
+      day1 = { code: failure.status ?? 1, out: String(failure.stdout ?? ''), err: String(failure.stderr ?? '') };
+    }
+    day1Agent.kill('SIGKILL');
+  }
+  const day1Pages = existsSync(join(day1Dir, 'zeus-daily')) ? readdirSync(join(day1Dir, 'zeus-daily')) : [];
+  record(
+    'a reader holding only a directory reaches the loop with the shipped reference agent',
+    day1.code === 0 && day1.out.includes('dispatch ok') && day1.out.includes('stored:') && day1Pages.length === 1,
+    `exit=${day1.code} pages=${day1Pages.length} stored=${/stored:/.test(day1.out)} err=${day1.err.trim().slice(0, 140)}`,
+  );
 
   proc = await bootProcess();
   const health = await api('GET', '/healthz', undefined, {});
@@ -585,6 +647,19 @@ try {
     'the booted process serves its metrics history when the file is configured',
     metricsHistory.status === 200 && Array.isArray(metricsHistory.json) && metricsHistory.json.length >= 1,
     `status=${metricsHistory.status} snapshots=${Array.isArray(metricsHistory.json) ? metricsHistory.json.length : '(not an array)'}`,
+  );
+  // E6.5: the cost gate was wired long before any operator could read it. This
+  // step is the assembly proof: the shipped process must answer the account and
+  // must have charged the dispatches it actually ran.
+  const costAccount = await api('GET', '/api/cost');
+  record(
+    'the booted process answers the cost account for the work it dispatched',
+    costAccount.status === 200
+      && costAccount.json?.configured === true
+      && costAccount.json?.limits?.maxWindowCost === 1000
+      && costAccount.json?.refusals === 0
+      && costAccount.json?.totals?.intents >= 1,
+    `status=${costAccount.status} configured=${costAccount.json?.configured} cap=${costAccount.json?.limits?.maxWindowCost} spent=${costAccount.json?.totals?.spent} intents=${costAccount.json?.totals?.intents} refused=${costAccount.json?.refusals}`,
   );
   /** @type {any[]} */
   const exportedTraces = existsSync(traceFile)

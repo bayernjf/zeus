@@ -55,6 +55,7 @@ import {
   type CostAmount,
   type CostBudget,
   type CostLimit,
+  type CostReadout,
 } from './cost-ledger.js';
 
 const TERMINAL_STATES = new Set<TaskState>(['completed', 'failed', 'canceled']);
@@ -336,6 +337,9 @@ export class Orchestrator {
    * design (the realm-period ledger is V3).
    */
   private costLedgers = new Map<string, CostBudget>();
+  /** Admissions the cost gate refused since boot. The per-intent window is
+   *  transient state; this counter is what the operator face reports. */
+  private costRefusals = 0;
   /** S4: resolved guard limits (options ?? structural defaults). */
   private budgetLimits: { maxBranchesPerIntent: number; maxConsecutiveBranchFailures: number };
   /**
@@ -589,6 +593,7 @@ export class Orchestrator {
       if (refused) {
         this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
       } else if (costRefusal) {
+        this.costRefusals += 1;
         this.options.onCostRefused?.({
           intentId, skill: request.skill, realm: request.realm,
           reason: costRefusal.reason, detail: costRefusal.detail, at: this.now().toISOString(),
@@ -896,6 +901,48 @@ export class Orchestrator {
       }
     }
     return [...out.values()];
+  }
+
+  /**
+   * E6.5: the cost gate's account for the operator faces. Windows are the
+   * per-intent ledgers still held in memory, newest first and bounded to
+   * `windowLimit` rows; `totals` covers all of them, and `refusals` counts every
+   * admission the gate refused since boot. With no limit configured the gate
+   * admits everything, so the readout says `configured: false` rather than
+   * reporting an empty account as if it were a spent one.
+   */
+  costReadout(windowLimit = 20): CostReadout {
+    const limit = this.options.costLimit;
+    const entries = [...this.costLedgers.entries()];
+    let spent = 0;
+    let inFlightEstimate = 0;
+    for (const budget of entries.map(([, b]) => b)) {
+      spent += budget.spent;
+      inFlightEstimate += budget.inFlightEstimate;
+    }
+    const ordered = entries
+      .map(([intentId, budget]) => ({
+        intentId,
+        spent: budget.spent,
+        inFlightEstimate: budget.inFlightEstimate,
+        windowEndsAt: budget.window.windowEndsAt,
+        ...(budget.rateTrippedAt !== undefined ? { rateTrippedAt: budget.rateTrippedAt } : {}),
+      }))
+      .sort((a, b) => b.windowEndsAt - a.windowEndsAt || (a.intentId < b.intentId ? -1 : 1));
+    return {
+      configured: limit !== undefined,
+      refusals: this.costRefusals,
+      limits: limit
+        ? {
+            ...(limit.maxWindowCost !== undefined ? { maxWindowCost: limit.maxWindowCost } : {}),
+            ...(limit.maxRatePerWindow !== undefined ? { maxRatePerWindow: limit.maxRatePerWindow } : {}),
+            ...(limit.circuitWindowMs !== undefined ? { circuitWindowMs: limit.circuitWindowMs } : {}),
+          }
+        : {},
+      totals: { intents: entries.length, spent, inFlightEstimate },
+      windows: ordered.slice(0, Math.max(0, windowLimit)),
+      truncated: ordered.length > windowLimit,
+    };
   }
 
   /** E6.3: find the intent whose branch run matches a task-input escalation.

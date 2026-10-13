@@ -143,3 +143,25 @@ function toUnits(cost: CostAmount): number {
 }
 
 export const DEFAULT_COST_WINDOW_MS = 60_000;
+
+/** E6.5: one intent's ledger as an operator reads it — scalars only, so the
+ *  readout cannot hand out a live object the caller could mutate. */
+export type CostWindowReadout = {
+  intentId: string;
+  spent: number;
+  inFlightEstimate: number;
+  windowEndsAt: number;
+  rateTrippedAt?: number;
+};
+
+/** E6.5: the cost gate's account as the operator faces present it. `totals`
+ *  covers every ledger even when `windows` is a bounded slice, so a bound can
+ *  never hide spend. */
+export type CostReadout = {
+  configured: boolean;
+  refusals: number;
+  limits: { maxWindowCost?: number; maxRatePerWindow?: number; circuitWindowMs?: number };
+  totals: { intents: number; spent: number; inFlightEstimate: number };
+  windows: CostWindowReadout[];
+  truncated: boolean;
+};

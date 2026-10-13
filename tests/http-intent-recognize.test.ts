@@ -122,4 +122,51 @@ describe('POST /api/intents/recognize', () => {
     expect(response.statusCode).toBe(422);
     expect(response.json().reason).toBe('low-confidence');
   });
+
+  describe('E2.7 declared aliases over the operator face', () => {
+    it('registers aliases and resolves a CJK instruction with no model involved', async () => {
+      const registry = registryWithSkills();
+      const a = await server({ skillRegistry: registry });
+      const registered = await a.inject({
+        method: 'POST',
+        url: '/api/skills',
+        headers: AUTH,
+        payload: {
+          id: 'notes-digest', name: 'Notes Digest', description: 'restates a note', version: '1.0.0',
+          tags: [], providedBy: ['alpha'], aliases: ['归纳要点', '总结'],
+        },
+      });
+      expect(registered.statusCode).toBe(201);
+      expect(registered.json().aliases).toEqual(['归纳要点', '总结']);
+
+      // No decisionBackend is mounted: the local rules must resolve it, so this
+      // path keeps the zero-egress default.
+      const resolved = await a.inject({
+        method: 'POST',
+        url: '/api/intents/recognize',
+        headers: AUTH,
+        payload: { text: '帮我把这份材料归纳要点' },
+      });
+      expect(resolved.statusCode).toBe(200);
+      expect(resolved.json().intent.skill).toBe('notes-digest');
+      expect(resolved.json().backend).toBeNull();
+    });
+
+    it('refuses a malformed alias list before it reaches the persisted directory', async () => {
+      const registry = registryWithSkills();
+      const a = await server({ skillRegistry: registry });
+      const bad = await a.inject({
+        method: 'POST',
+        url: '/api/skills',
+        headers: AUTH,
+        payload: {
+          id: 'broken-aliases', name: 'Broken', description: 'd', version: '1.0.0',
+          tags: [], providedBy: ['alpha'], aliases: ['   '],
+        },
+      });
+      expect(bad.statusCode).toBe(400);
+      expect(bad.json().message ?? JSON.stringify(bad.json())).toMatch(/alias/i);
+      expect(registry.list().some(spec => spec.id === 'broken-aliases')).toBe(false);
+    });
+  });
 });

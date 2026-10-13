@@ -478,3 +478,49 @@ describe('renderRecognize (E2.6 operator intent)', () => {
     expect(out).not.toContain('undefined');
   });
 });
+
+describe('cost deck section (E6.5)', () => {
+  const configured = {
+    configured: true,
+    refusals: 2,
+    limits: { maxWindowCost: 100, maxRatePerWindow: 5 },
+    totals: { intents: 3, spent: 40, inFlightEstimate: 7 },
+    windows: [{ intentId: 'intent-1', spent: 40, inFlightEstimate: 7, windowEndsAt: 1 }],
+    truncated: true,
+  };
+
+  it('reports spend, caps and refusals when the gate is configured', () => {
+    const out = renderDeck({ snapshot: { ...snapshot, cost: configured }, t, palette, updatedAt: '' });
+    expect(out).toContain('成本闸门');
+    expect(out).toContain('窗口累计 40');
+    expect(out).toContain('拒绝 2');
+    expect(out).toContain('单意图上限 100');
+    expect(out).toContain('窗口只列最近若干条');
+  });
+
+  it('says the gate is unconfigured instead of showing a zero account', () => {
+    const out = renderDeck({
+      snapshot: { ...snapshot, cost: { ...configured, configured: false, limits: {}, totals: { intents: 0, spent: 0, inFlightEstimate: 0 }, windows: [], truncated: false } },
+      t,
+      palette,
+      updatedAt: '',
+    });
+    expect(out).toContain('未配置成本闸门');
+    expect(out).not.toContain('窗口累计 40');
+  });
+
+  it('prints an unset cap as unset', () => {
+    const out = renderDeck({
+      snapshot: { ...snapshot, cost: { ...configured, limits: {}, truncated: false } },
+      t,
+      palette,
+      updatedAt: '',
+    });
+    expect(out).toContain('单意图上限 未设');
+  });
+
+  it('omits the section when the face is not mounted or returns nothing', () => {
+    expect(renderDeck({ snapshot: { ...snapshot, cost: null }, t, palette, updatedAt: '' })).not.toContain('成本闸门');
+    expect(renderDeck({ snapshot, t, palette, updatedAt: '' })).not.toContain('成本闸门');
+  });
+});
