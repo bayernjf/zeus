@@ -4,7 +4,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runDailyCli } from '../src/daily/cli.js';
+import { runDailyCli, recordItemId, skillCatalogEntry, resolveStateFile } from '../src/daily/cli.js';
 import { renderDailyReport, parsePreviousRecord, type DailyReportModel } from '../src/daily/report.js';
 import { parseCommand } from '../src/tui/commands.js';
 
@@ -23,6 +23,72 @@ import { parseCommand } from '../src/tui/commands.js';
 // ---------------------------------------------------------------------------
 // Pure rendering
 // ---------------------------------------------------------------------------
+
+describe('recordItemId', () => {
+  const AT = '2026-10-08T09:00:00.000Z';
+
+  it('gives two runs inside the same second different records', () => {
+    const a = recordItemId(AT, 'research', 'intent-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+    const b = recordItemId(AT, 'research', 'intent-11111111-2222-3333-4444-555555555555');
+    // The stamp alone is second-resolution: without the intent suffix the two
+    // runs erase each other, and the read-back loop loses a page silently.
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/^zeus-daily\/2026-10-08T09-00-00Z-research-[A-Za-z0-9._-]{1,8}\.md$/);
+  });
+
+  it('keeps the zeus-daily prefix and the skill segment the read-back anchors on', () => {
+    const id = recordItemId(AT, 'deployment-health', 'intent-abcdef01-2345-6789-abcd-ef0123456789');
+    expect(id.startsWith('zeus-daily/')).toBe(true);
+    expect(id).toContain('deployment-health');
+  });
+
+  it('keeps the old shape when no intent id exists', () => {
+    expect(recordItemId(AT, 'unresolved')).toBe('zeus-daily/2026-10-08T09-00-00Z-unresolved.md');
+  });
+
+  it('never lets an intent id reach outside the zeus-daily directory', () => {
+    const hostile = recordItemId(AT, 'research', 'intent-../../etc/passwd');
+    expect(hostile.startsWith('zeus-daily/')).toBe(true);
+    expect(hostile).not.toContain('..');
+    expect(hostile.split('/')).toHaveLength(2);
+  });
+});
+
+describe('resolveStateFile (--state none really means none)', () => {
+  it('applies the default only when the operator said nothing', () => {
+    expect(resolveStateFile(undefined, undefined)).toBe('./data/daily-state.json');
+    expect(resolveStateFile(undefined, '/tmp/kernel.json')).toBe('/tmp/kernel.json');
+  });
+
+  it('honours an explicit none instead of silently writing the default file', () => {
+    // `null ?? env ?? DEFAULT` collapses "said nothing" with "said none", which
+    // made the run persist to the repo's own state file and then re-mount a realm
+    // root from a temp directory that no longer exists.
+    expect(resolveStateFile(null, undefined)).toBeNull();
+    expect(resolveStateFile(null, '/tmp/kernel.json')).toBeNull();
+    expect(resolveStateFile(undefined, 'none')).toBeNull();
+  });
+
+  it('keeps a named state file wins over the environment', () => {
+    expect(resolveStateFile('/tmp/mine.json', '/tmp/kernel.json')).toBe('/tmp/mine.json');
+  });
+});
+
+describe('skillCatalogEntry (E2.7 wiring)', () => {
+  it('carries the declared aliases into the recognition catalogue', () => {
+    expect(
+      skillCatalogEntry({ id: 'research', name: 'Deep Research', description: 'restates notes', aliases: ['归纳要点'] }),
+    ).toEqual({ id: 'research', name: 'Deep Research', description: 'restates notes', aliases: ['归纳要点'] });
+  });
+
+  it('adds no aliases field when none were declared', () => {
+    expect(skillCatalogEntry({ id: 'research', name: 'Deep Research' })).toEqual({
+      id: 'research',
+      name: 'Deep Research',
+      description: '',
+    });
+  });
+});
 
 function baseModel(overrides: Partial<DailyReportModel> = {}): DailyReportModel {
   return {
@@ -379,6 +445,34 @@ describe('npm run daily', () => {
     expect(readFileSync(join(root, 'zeus-daily', 'second.md'), 'utf8')).toContain(
       `intent \`${intentId}\` · concluded **healthy**`,
     );
+  });
+
+  it('keeps every page when two runs name their own record', async () => {
+    const root = tempRoot('no-clobber');
+    const argv = ['--root', root, '--agent', agentUrl('demo-agent'), '--state', join(root, 'state.json'), 'check the deployment health'];
+    const first = await runDailyCli(argv, cleanEnv());
+    expect(first.code, first.stderr).toBe(0);
+    const second = await runDailyCli(argv, cleanEnv());
+    expect(second.code, second.stderr).toBe(0);
+
+    const pages = readdirSync(join(root, 'zeus-daily'));
+    // Neither run passed --record, so both names come from the stamp + the intent
+    // id. Two distinct intents must leave two pages: a second-resolution stamp
+    // alone would have made the second run erase the first.
+    expect(new Set(pages).size).toBe(pages.length);
+    expect(pages).toHaveLength(2);
+    // Pin the wiring, not just the naming rule: each page must carry the suffix of
+    // the run that wrote it. A call site that drops the intent id still leaves two
+    // files whenever the two runs happen to straddle a second, so file count alone
+    // cannot see that defect.
+    const secondIntent = second.stdout.match(/`intent-([0-9a-f-]+)`/)?.[1];
+    expect(secondIntent).toBeTruthy();
+    const secondPage = pages.find(page => page.includes(secondIntent!.replace(/-/g, '').slice(0, 8)));
+    expect(secondPage, `no page carries the second run's intent id ${secondIntent}: ${pages.join(' ')}`).toBeTruthy();
+    expect(second.stdout).toContain('**Previous**');
+    const cited = second.stdout.match(/- \*\*Previous\*\* `(zeus-daily\/[^`]+)`/)?.[1];
+    expect(cited).toBeTruthy();
+    expect(pages).toContain(cited!.replace('zeus-daily/', ''));
   });
 
   it('exits 1 when the agent reports a failed task, and still keeps the evidence', async () => {
