@@ -41,7 +41,12 @@ import { evalCases } from '../evals/cases/index.mjs';
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const BASELINE_PATH = join(REPO, 'evals/baseline.json');
 const REPORTS_DIR = join(REPO, 'evals/reports');
-const BUDGET_MS = 120_000;
+// ZEUS_EVAL_BUDGET_MS overrides the wall-clock budget (used by tests to force
+// a near-zero budget; unattended runs keep the 120s default).
+const BUDGET_MS = (() => {
+  const override = Number(process.env.ZEUS_EVAL_BUDGET_MS ?? '');
+  return Number.isFinite(override) && override > 0 ? override : 120_000;
+})();
 const startedAt = Date.now();
 const args = new Set(process.argv.slice(2));
 const WRITE_BASELINE = args.has('--write-baseline');
@@ -391,7 +396,7 @@ async function runCase(c) {
   }
 }
 
-/** @param {string} reason */
+/** @param {string} reason @returns {never} */
 function fail(reason) {
   console.error(`FAIL  ${reason}`);
   process.exit(2);
@@ -400,6 +405,18 @@ function fail(reason) {
 if (!existsSync(join(REPO, 'dist/state/boot.js'))) {
   fail('run `npm run build` first - the runner exercises the shipped artifact, not the sources');
 }
+
+// Watchdog mirroring scripts/verify-runtime-reliability.mjs: the loop-top
+// budget check only fires between cases, so a case that stalls mid-run would
+// otherwise hold an unattended session forever. unref() lets a healthy run
+// exit without waiting for the timer.
+const budgetWatch = setInterval(() => {
+  if (Date.now() - startedAt > BUDGET_MS) {
+    console.error(`FAIL  wall-clock budget ${BUDGET_MS / 1000}s exceeded (watchdog: the run stalled mid-case)`);
+    process.exit(2);
+  }
+}, Math.min(1_000, BUDGET_MS));
+budgetWatch.unref();
 
 /** @type {import('../src/evals/score.js').EvalResult[]} */
 const results = [];
@@ -451,7 +468,23 @@ let baselineRegressions = null;
 let blockRegression = false;
 if (USE_BASELINE) {
   if (!existsSync(baselineFile)) fail(`no baseline file at ${baselineFile} - run with --write-baseline first`);
-  const baseline = JSON.parse(readFileSync(baselineFile, 'utf8')).report;
+  // A corrupt or shapeless baseline is a "cannot start" (exit 2), same as a
+  // missing file — an uncaught SyntaxError/TypeError would exit 1 and read as
+  // a gate regression, and would skip the PR comment body write below.
+  /** @type {unknown} */
+  let parsed = null;
+  let parseError = '';
+  try {
+    parsed = JSON.parse(readFileSync(baselineFile, 'utf8'));
+  } catch (error) {
+    parseError = error instanceof Error ? error.message : String(error);
+  }
+  if (parseError !== '') fail(`cannot start: baseline at ${baselineFile} is not valid JSON (${parseError})`);
+  const candidate = /** @type {{ report?: unknown } | null} */ (parsed)?.report;
+  if (candidate === undefined || candidate === null || typeof candidate !== 'object' || !('byFamily' in candidate)) {
+    fail(`cannot start: baseline at ${baselineFile} does not carry a pinned eval report`);
+  }
+  const baseline = /** @type {import('../src/evals/score.js').EvalMetricsReport} */ (candidate);
   const regressions = diffAgainstBaseline(report, baseline);
   baselineRegressions = regressions;
   if (regressions.length > 0) {
