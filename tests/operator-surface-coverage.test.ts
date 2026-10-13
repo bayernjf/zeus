@@ -156,3 +156,124 @@ describe('operator surface coverage (every write route is drivable or explicitly
     expect(missing, `undrivable write routes:\n${missing.join('\n')}`).toEqual([]);
   });
 });
+
+/**
+ * The read half of the same audit (M7 slice 1c, E6.5). The write half cannot see
+ * a capability the kernel computes but nobody can read: `GET /api/cost` would
+ * have shipped as an auditable-only fact with no face, which is exactly how the
+ * cost gate stayed invisible after it was wired. A GET route must be either a
+ * protocol/public face an external party consumes, read by a shipped surface
+ * (supervisor, portal, TUI, scripts), or registered as API-only with a reason.
+ */
+const PORTAL = readFileSync(join('web', 'portal', 'index.html'), 'utf8');
+/** Comment lines are prose, not readers: without this the gate would pass on a
+ *  doc comment naming a path it never requests. */
+function stripCommentLines(text: string): string {
+  return text
+    .split('\n')
+    .filter(line => !/^\s*(\/\/|\*|\/\*|<!--)/.test(line))
+    .join('\n');
+}
+const READ_CORPORA: Array<[string, string]> = [
+  ...CORPORA.map(([name, text]) => [name, stripCommentLines(text)] as [string, string]),
+  ['portal', stripCommentLines(PORTAL)],
+];
+const READ_NORMALIZED = READ_CORPORA.map(([name, text]) => [name, normalize(text)] as const);
+
+function readIn(path: string): string[] {
+  const needle = normalize(path);
+  return READ_NORMALIZED.filter(([, text]) => text.includes(needle)).map(([name]) => name);
+}
+
+const readRoutes: Route[] = [...SERVER.matchAll(/app\.get\(\s*'([^']+)'/g)].map(m => ({
+  method: 'GET',
+  path: m[1]!,
+  key: `GET ${m[1]}`,
+}));
+
+/** Faces a remote peer or an offline verifier consumes, not an operator deck. */
+const READ_PROTOCOL_FACES = new Set([
+  'GET /healthz',
+  'GET /api/roster/public',
+  'GET /api/roster/keys',
+  'GET /api/audit/summary',
+  'GET /.well-known/agent-card.json',
+  'GET /mcp',
+]);
+
+/** Mounted per boot depending on configuration; reading them is a follow-up,
+ *  each registered with why it is not on a face yet.
+ *
+ *  These ten are **registered gaps, not intended design**: the kernel computes
+ *  each one and no shipped surface reads it (2026-10-13: zero references in
+ *  `web/supervisor`, `web/portal`, `src/tui` and `scripts`). A reason string must
+ *  cite where the gap is tracked, so the table cannot be used to bury one.
+ *  Closing them is M7 slice 4 in handoff Active work 232. */
+const READ_API_ONLY: Record<string, string> = {
+  'GET /api/intents/:id/trace':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - S6 V2 trace tree, bearer-served, no face reads it',
+  'GET /api/org/departments/:id/briefing/:agentId':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - E9.1 first-day briefing, no face reads it',
+  'GET /api/memory/events':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - memory event log, operator HTTP face only',
+  'GET /api/memory/facts':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - derived facts including disputed ones, no face reads it',
+  'GET /api/memory/replay':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - offline memory replay, no face reads it',
+  'GET /api/memory/recall':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - hybrid recall used by context assembly, no face reads it',
+  'GET /api/memory/retractions':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - retraction (forgetting) ledger, no face reads it',
+  'GET /api/memory/integrity':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - append-only integrity check, no face reads it',
+  'GET /api/skills/:id/versions':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - skill version history, the catalogue view does not expand versions',
+  'GET /api/domains/access':
+    'GAP (tracked: handoff Active work 232 M7 slice 4) - realm access verdict probe, no face reads it',
+};
+
+describe('operator surface coverage - read routes', () => {
+  it('collects the read set from real registration sites (positive control)', () => {
+    expect(readRoutes.length, 'the scan found no GET routes - it is broken').toBeGreaterThanOrEqual(30);
+    expect(readRoutes.some(r => r.key === 'GET /api/cost'), 'GET /api/cost is not in the route table').toBe(true);
+    expect(new Set(readRoutes.map(r => r.key)).size).toBe(readRoutes.length);
+  });
+
+  it('sees a route that is genuinely read (normalization positive control)', () => {
+    expect(readIn('/api/cost')).toEqual(expect.arrayContaining(['tui', 'web']));
+    expect(readIn('/api/roster/public')).toContain('portal');
+    expect(readIn('/api/state')).toContain('tui');
+  });
+
+  it('keeps the read-only tables honest: entries exist and are really unread', () => {
+    for (const [key, reason] of Object.entries(READ_API_ONLY)) {
+      const route = readRoutes.find(r => r.key === key);
+      expect(route, `${key} is registered read-only but no longer exists - remove the stale entry`).toBeTruthy();
+      expect(readIn(route!.path), `${key} now has a reader - move it out of the read-only table`).toEqual([]);
+      // A registration without a tracked place to come back to is how a gap
+      // becomes permanent.
+      expect(reason, `${key} is registered with no tracking reference`).toMatch(/tracked: .*(Active work|deferred|PRD)/);
+    }
+    for (const key of READ_PROTOCOL_FACES) {
+      expect(readRoutes.find(r => r.key === key), `${key} vanished - update the read protocol face table`).toBeTruthy();
+    }
+  });
+
+  it('caps the registered read gaps so a new one cannot be added without a decision', () => {
+    // 2026-10-13 baseline: ten routes the kernel computes that no face reads.
+    // Raising this number is the moment a new unread capability is being shipped.
+    expect(Object.keys(READ_API_ONLY).length, 'read-gap table grew past the tracked baseline').toBeLessThanOrEqual(10);
+  });
+
+  it('leaves no read route without a reader, a protocol face, or a documented API-only registration', () => {
+    const unread: string[] = [];
+    for (const route of readRoutes) {
+      if (READ_PROTOCOL_FACES.has(route.key)) continue;
+      if (Object.hasOwn(READ_API_ONLY, route.key)) continue;
+      if (readIn(route.path).length === 0) {
+        unread.push(`${route.key} - read it on a surface or register it in READ_API_ONLY with a reason`);
+      }
+    }
+    expect(unread, `unread read routes (the kernel computes them, no operator can see them):\n${unread.join('\n')}`).toEqual([]);
+  });
+});

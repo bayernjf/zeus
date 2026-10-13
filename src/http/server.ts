@@ -947,6 +947,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         return { intents };
       });
 
+      // E6.5: the cost gate's account — per-intent window spend, the configured
+      // limits and the refusals since boot. Aggregates only: no branch payload,
+      // credential or endpoint reaches this face. An unconfigured gate says so
+      // rather than reporting an empty account as if it were a spent one.
+      app.get('/api/cost', { preHandler: requireBearer }, async () => deps.orchestrator!.costReadout());
+
       // E1.6: offline replay of one stored decision — participants, dispatch
       // input, stances, aggregation, arbitration/judge and the driver's
       // settlement, rebuilt read-only from the persisted records. Nothing is
@@ -1779,6 +1785,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           id: spec.id,
           name: spec.name,
           description: spec.description ?? '',
+          ...(spec.aliases !== undefined ? { aliases: spec.aliases } : {}),
         }));
         const result = await recognizeIntent({
           text: body.text,
@@ -1845,6 +1852,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           version: body.version,
           ...(body.domain !== undefined ? { domain: body.domain } : {}),
           ...(body.tags !== undefined ? { tags: body.tags } : {}),
+          // E2.7: declared alternate names are part of the whitelisted copy, so
+          // an arbitrary payload key still cannot reach the persisted directory.
+          ...(body.aliases !== undefined ? { aliases: body.aliases } : {}),
           ...(body.inputs !== undefined ? { inputs: body.inputs } : {}),
           ...(body.outputs !== undefined ? { outputs: body.outputs } : {}),
           ...(body.permissions !== undefined ? { permissions: body.permissions } : {}),

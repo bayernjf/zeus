@@ -82,6 +82,29 @@ function renderMetrics(palette: Palette, t: Translator, snapshot: DeckSnapshot):
   return lines;
 }
 
+function renderCost(palette: Palette, t: Translator, cost: DeckSnapshot['cost']): string[] {
+  if (!cost) return [];
+  const lines: string[] = [heading(palette, t('cost.title'))];
+  if (!cost.configured) {
+    // "no gate configured" and "gate configured, nothing spent" are different
+    // facts; collapsing them would let an unmeasured kernel look accounted for.
+    lines.push(`  ${t('cost.unconfigured')}`);
+    return lines;
+  }
+  lines.push(
+    '  ' +
+      t('cost.line', {
+        spent: cost.totals.spent,
+        inFlight: cost.totals.inFlightEstimate,
+        intents: cost.totals.intents,
+        refusals: cost.refusals,
+        cap: cost.limits.maxWindowCost ?? t('cost.capNone'),
+      }),
+  );
+  if (cost.truncated) lines.push(`  ${t('cost.truncated')}`);
+  return lines;
+}
+
 export function skillList(entry: { skills: Array<{ id?: string; name?: string }> }): string {
   return entry.skills.map(skill => safeText(skill.id ?? skill.name ?? '?')).join(',');
 }
@@ -377,6 +400,7 @@ export function renderDeck(input: RenderInput): string {
     [`${palette.bold(t('app.title'))}  ${palette.paint('muted', updatedAt)}`],
     renderState(palette, t, snapshot),
     renderMetrics(palette, t, snapshot),
+    renderCost(palette, t, snapshot.cost),
     renderActive(palette, t, snapshot.active),
     renderRoster(palette, t, snapshot),
     renderTimeline(palette, t, snapshot),

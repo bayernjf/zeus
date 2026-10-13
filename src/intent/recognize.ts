@@ -29,6 +29,9 @@ export type SkillCatalogEntry = {
   id: string;
   name: string;
   description: string;
+  /** E2.7: declared alternate names (translations, a CJK term for an English
+   *  id). Matching against these is literal; nothing is inferred. */
+  aliases?: string[];
 };
 
 /** Ranked candidate for model judgement. */
@@ -112,6 +115,7 @@ export function tokenize(text: string): string[] {
  */
 export function rankCandidates(catalog: SkillCatalogEntry[], text: string, limit = 5): IntentCandidate[] {
   const tokens = tokenize(text);
+  const haystack = text.toLowerCase();
   const scored = catalog
     .map(entry => {
       const id = entry.id.toLowerCase();
@@ -122,6 +126,13 @@ export function rankCandidates(catalog: SkillCatalogEntry[], text: string, limit
         if (id.includes(token) || token.includes(id)) score += 3;
         if (name.includes(token)) score += 2;
         if (description.includes(token)) score += 1;
+      }
+      // E2.7: a declared alias outranks inferred overlap — it is what the
+      // registrant said an operator would type. Matched against the whole
+      // instruction so a language without space-split tokens still hits.
+      for (const alias of entry.aliases ?? []) {
+        const needle = alias.trim().toLowerCase();
+        if (needle && haystack.includes(needle)) score += 4;
       }
       return { skill: entry.id, score };
     })

@@ -29,6 +29,10 @@ export type DeckSnapshot = {
   /** S15 V3: live thinking-state snapshot (design-streaming §3.3). Null when
    *  the shipped process predates the endpoint or the face is not mounted. */
   active?: ActiveIntentsView | null;
+  /** E6.5: the cost gate's account. Null when the face is not mounted or the
+   *  process predates the endpoint — the deck then says it cannot read cost
+   *  rather than showing a spent-zero account. */
+  cost?: CostView | null;
 };
 
 /** One branch's live state, mirroring the HTTP StreamView projection.
@@ -55,6 +59,26 @@ export type ActiveIntentView = {
     branches: Record<string, ActiveIntentBranchView>;
     partiallyReady: boolean;
   };
+};
+
+/** E6.5 GET /api/cost: the cost gate's account — window spend, configured
+ *  limits and refusals since boot. Aggregates only; no branch payload reaches
+ *  this face. */
+export type CostWindowView = {
+  intentId: string;
+  spent: number;
+  inFlightEstimate: number;
+  windowEndsAt: number;
+  rateTrippedAt?: number;
+};
+
+export type CostView = {
+  configured: boolean;
+  refusals: number;
+  limits: { maxWindowCost?: number; maxRatePerWindow?: number; circuitWindowMs?: number };
+  totals: { intents: number; spent: number; inFlightEstimate: number };
+  windows: CostWindowView[];
+  truncated: boolean;
 };
 
 export type ActiveIntentsView = { intents: ActiveIntentView[] };
@@ -321,7 +345,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
 
   return {
     async snapshot(): Promise<DeckSnapshot> {
-      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv, watchesEnv, connectorsEnv, activeEnv] = await Promise.allSettled([
+      const [rosterEnv, escEnv, metricsEnv, stateEnv, auditEnv, domainsEnv, contractsEnv, watchesEnv, connectorsEnv, activeEnv, costEnv] = await Promise.allSettled([
         getJson<{ snapshot: RosterView }>('/api/roster'),
         getJson<{ escalations: EscalationView[] }>('/api/escalations?status=pending'),
         getJson<MetricsView>('/api/metrics'),
@@ -332,6 +356,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         getJson<WatchesView>('/api/watches'),
         getJson<ConnectorsView>('/api/connectors'),
         getJson<ActiveIntentsView>('/api/active-intents'),
+        getJson<CostView>('/api/cost'),
       ]);
       // Roster + escalations are core; their failure aborts the render. Metrics/
       // state are additive and degrade to null if that face is not mounted.
@@ -352,6 +377,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         // S15 V3: additive thinking-state face; a 404 (older process) degrades
         // to null and the section is omitted rather than failing the deck.
         active: activeEnv.status === 'fulfilled' ? activeEnv.value : null,
+        cost: costEnv.status === 'fulfilled' ? costEnv.value : null,
       };
     },
     timeline: async (limit = 12) => {

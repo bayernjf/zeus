@@ -270,7 +270,7 @@
     <a class="nav-item" data-view="roster" href="#/roster"><span class="dot" style="background:var(--ok)"></span><span data-i18n="nav.roster">名册</span></a>
     <a class="nav-item" data-view="audit" href="#/audit"><span class="dot" style="background:var(--warn)"></span><span data-i18n="nav.audit">审计</span></a>
     <a class="nav-item" data-view="connect" href="#/connect"><span class="dot" style="background:var(--text-3)"></span><span data-i18n="nav.connect">连接</span></a>
-    <div class="side-foot">v1.18 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
+    <div class="side-foot">v1.19 · <span data-i18n="app.tagline">监控 · 裁决 · 授权 · 组织 · 连接器驱动</span><br><span data-i18n="app.apiOnly">UI 仅消费现有 HTTP API</span>
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="btn small" id="btnTheme" type="button">主题</button>
         <button class="btn small" id="btnLang" type="button">EN</button>
@@ -359,6 +359,8 @@
         <div class="body" id="trendBody"><div class="empty" data-i18n="trend.waiting">等待采样…</div></div>
         <h2 class="hist-head"><span data-i18n="hist.title">持久指标史</span> <span class="hint" data-i18n="hist.hint">/api/metrics/history · 内核侧采样，跨重启</span></h2>
         <div class="body" id="histBody"><div class="empty" data-i18n="hist.waiting">等待读取…</div></div>
+        <h2 class="hist-head"><span data-i18n="cost.title">成本闸门</span> <span class="hint" data-i18n="cost.hint">/api/cost · 窗口累计、上限与拒绝计数</span></h2>
+        <div class="body" id="costBody"><div class="empty" data-i18n="cost.waiting">等待读取…</div></div>
       </div>
       <div class="grid" style="margin-top:14px">
         <div class="panel">
@@ -1084,6 +1086,21 @@
       "hist.hint": "/api/metrics/history · 内核侧随状态保存采点，跨重启可读",
       "hist.waiting": "等待读取…",
       "hist.unconfigured": "该进程未配置 ZEUS_METRICS_HISTORY_FILE——端点不挂载，历史读不到",
+      "cost.title": "成本闸门",
+      "cost.hint": "/api/cost · 窗口累计、上限与拒绝计数（只出聚合）",
+      "cost.waiting": "等待读取…",
+      "cost.unavailable": "本轮没有取到成本读数",
+      "cost.unmounted": "该进程未装配编排器——成本端点不挂载",
+      "cost.failed": "成本读数读取失败：{msg}",
+      "cost.unconfigured": "未配置成本闸门（ZEUS_COST_MAX_WINDOW_COST 等）：闸门放行一切，因此没有计量台账",
+      "cost.summary": "窗口累计 {spent} · 在途估算 {inFlight} · 台账意图 {intents} · 自启动拒绝 {refusals} · 单意图上限 {cap} · 速率上限 {rate}",
+      "cost.capNone": "未设",
+      "cost.truncated": "窗口表只列最近 8 条，累计覆盖全部台账",
+      "cost.noWindows": "当前窗口内没有已计量的意图",
+      "cost.colIntent": "意图",
+      "cost.colSpent": "窗口累计",
+      "cost.colInFlight": "在途估算",
+      "cost.colWindowEnds": "窗口截止",
       "hist.failed": "读取失败：{msg}",
       "hist.empty": "端点在，但还没有一次状态保存写入采样点",
       "hist.count": "{n} 个持久采样点",
@@ -1465,6 +1482,21 @@
       "hist.hint": "/api/metrics/history · kernel-side sample on state save, survives restarts",
       "hist.waiting": "Waiting for the read…",
       "hist.unconfigured": "This process has no ZEUS_METRICS_HISTORY_FILE - the endpoint is not mounted, so there is no history to read",
+      "cost.title": "Cost gate",
+      "cost.hint": "/api/cost · window spend, caps and refusal counts (aggregates only)",
+      "cost.waiting": "Waiting for the read…",
+      "cost.unavailable": "No cost reading was returned for this refresh",
+      "cost.unmounted": "This process has no orchestrator - the cost endpoint is not mounted",
+      "cost.failed": "Cost readout failed: {msg}",
+      "cost.unconfigured": "No cost gate configured (ZEUS_COST_MAX_WINDOW_COST …): the gate admits everything, so there is nothing metered",
+      "cost.summary": "window spent {spent} · in-flight est. {inFlight} · metered intents {intents} · refused since boot {refusals} · per-intent cap {cap} · rate cap {rate}",
+      "cost.capNone": "none",
+      "cost.truncated": "The table shows the newest 8 windows; the totals cover every ledger",
+      "cost.noWindows": "No intent charged in the current window",
+      "cost.colIntent": "Intent",
+      "cost.colSpent": "Window spent",
+      "cost.colInFlight": "In-flight est.",
+      "cost.colWindowEnds": "Window ends",
       "hist.failed": "History read failed: {msg}",
       "hist.empty": "The endpoint is mounted; no state save has written a sample yet",
       "hist.count": "durable sample points: {n}",
@@ -3398,6 +3430,50 @@
     el.innerHTML = html + '</table>';
   }
 
+  // E6.5: the cost gate's account. Three facts must stay distinct on this face —
+  // the endpoint is not mounted, the gate is not configured, and the gate is
+  // configured but has charged nothing.
+  function renderCost(payload) {
+    const el = $('costBody');
+    if (!el) return;
+    if (!payload) { el.innerHTML = '<div class="hist-note">' + esc(t('cost.unavailable')) + '</div>'; return; }
+    const error = payload.__error;
+    if (error) {
+      const unmounted = error.status === 404;
+      el.innerHTML = '<div class="hist-note' + (unmounted ? '' : ' warn') + '">'
+        + esc(unmounted ? t('cost.unmounted') : t('cost.failed', { msg: error.message || String(error) })) + '</div>';
+      return;
+    }
+    if (!payload.configured) {
+      el.innerHTML = '<div class="hist-note">' + esc(t('cost.unconfigured')) + '</div>';
+      return;
+    }
+    const limits = payload.limits || {};
+    const totals = payload.totals || {};
+    let html = '<div class="hist-meta">' + esc(t('cost.summary', {
+      spent: totals.spent ?? 0,
+      inFlight: totals.inFlightEstimate ?? 0,
+      intents: totals.intents ?? 0,
+      refusals: payload.refusals ?? 0,
+      cap: limits.maxWindowCost === undefined ? t('cost.capNone') : String(limits.maxWindowCost),
+      rate: limits.maxRatePerWindow === undefined ? t('cost.capNone') : String(limits.maxRatePerWindow),
+    })) + '</div>';
+    if (payload.truncated) html += '<div class="hist-note">' + esc(t('cost.truncated')) + '</div>';
+    const rows = Array.isArray(payload.windows) ? payload.windows : [];
+    if (rows.length === 0) {
+      html += '<div class="hist-note">' + esc(t('cost.noWindows')) + '</div>';
+    } else {
+      const cols = ['cost.colIntent', 'cost.colSpent', 'cost.colInFlight', 'cost.colWindowEnds'];
+      html += '<table><tr>' + cols.map(c => '<th>' + esc(t(c)) + '</th>').join('') + '</tr>';
+      for (const row of rows.slice(0, 8)) {
+        html += '<tr><td>' + esc(String(row.intentId ?? '')) + '</td><td>' + esc(String(row.spent ?? 0)) + '</td><td>'
+          + esc(String(row.inFlightEstimate ?? 0)) + '</td><td>' + esc(fmtTime(new Date(row.windowEndsAt ?? 0).toISOString())) + '</td></tr>';
+      }
+      html += '</table>';
+    }
+    el.innerHTML = html;
+  }
+
   // ===== 裁决徽标全局刷新（不渲染列表，任何视图可见待决数） =====
   function refreshEscBadge() {
     if (!state.conn.base || state.view === 'oversight') return;
@@ -3755,8 +3831,12 @@
     // (it dies with the tab). It is mounted only when the process was configured
     // with ZEUS_METRICS_HISTORY_FILE, so a 404 is a fact to print, not an error.
     const history = await api('GET', '/api/metrics/history').catch(e => ({ __error: e }));
+    // E6.5: the cost account is bearer-mounted whenever an orchestrator is; a
+    // read failure is printed, never silently dropped.
+    const cost = await api('GET', '/api/cost').catch(e => ({ __error: e }));
     renderState(s); renderDecision(decision); renderMetrics(m); renderDomains(d);
     renderHistory(history);
+    renderCost(cost);
     renderRecent();
   }
   async function loadRoster() {

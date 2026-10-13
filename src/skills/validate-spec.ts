@@ -73,6 +73,27 @@ export function validateSkillSpecShape(input: SkillSpecInput): void {
 
   if (input.tags !== undefined && !Array.isArray(input.tags)) issues.push('tags must be an array of strings');
 
+  // E2.7: an alias is a declared search term, so it is checked for the things
+  // that would make matching meaningless (blank, unbounded, duplicated).
+  if (input.aliases !== undefined) {
+    if (!Array.isArray(input.aliases)) {
+      issues.push('aliases must be an array of strings');
+    } else {
+      if (input.aliases.length > 16) issues.push('aliases must hold at most 16 entries');
+      const seen = new Set<string>();
+      for (const alias of input.aliases) {
+        if (typeof alias !== 'string' || alias.trim() === '') {
+          issues.push(`every alias must be a non-empty string, got: ${String(alias)}`);
+          continue;
+        }
+        if (alias.trim().length > 64) issues.push(`alias too long (max 64): ${alias.trim().slice(0, 20)}…`);
+        const key = alias.trim().toLowerCase();
+        if (seen.has(key)) issues.push(`duplicate alias: ${alias.trim()}`);
+        seen.add(key);
+      }
+    }
+  }
+
   for (const field of ['inputs', 'outputs'] as const) {
     const value = input[field];
     if (value !== undefined && (typeof value !== 'object' || value === null || Array.isArray(value))) {

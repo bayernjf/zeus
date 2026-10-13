@@ -100,7 +100,8 @@ type DailyArgs = {
   realm: 'personal' | 'enterprise';
   timeoutMs: number;
   model: boolean;
-  stateFile: string | null;
+  /** undefined = operator said nothing; null = they passed `--state none`. */
+  stateFile?: string | null;
   help: boolean;
 };
 
@@ -115,6 +116,21 @@ type RunContext = {
 
 const VALUE_FLAGS = new Set(['--root', '--agent', '--skill', '--params', '--record', '--realm', '--timeout', '--state']);
 
+/**
+ * Resolves where kernel state lives. `undefined` means the operator said nothing
+ * and the default file applies; `null` means they said `none` and nothing is
+ * loaded or saved. Collapsing the two (a `??` chain over `null`) makes
+ * `--state none` write the repository's own default file, and the next run then
+ * re-mounts a realm root that the earlier run's temp directory no longer
+ * provides — the run fails with `realm root not accessible` for a path the
+ * operator never asked for.
+ */
+export function resolveStateFile(explicit: string | null | undefined, fromEnv: string | undefined): string | null {
+  if (explicit !== undefined) return explicit;
+  if (fromEnv === undefined || fromEnv === '') return DEFAULT_STATE_FILE;
+  return fromEnv === 'none' ? null : fromEnv;
+}
+
 function parseArgs(argv: string[]): DailyArgs {
   const args: DailyArgs = {
     instruction: '',
@@ -124,7 +140,6 @@ function parseArgs(argv: string[]): DailyArgs {
     realm: 'personal',
     timeoutMs: DEFAULT_BRANCH_TIMEOUT_MS,
     model: false,
-    stateFile: null,
     help: false,
   };
   const positional: string[] = [];
@@ -293,9 +308,33 @@ function fillFromFanOut(model: DailyReportModel, result: FanOutResult): void {
   if (result.refused) model.refused = { reason: result.refused.reason, detail: result.refused.detail };
 }
 
-function recordItemId(at: string, skill: string): string {
+/**
+ * Projects a registered skill onto the catalogue shape recognition reads. The
+ * aliases ride along only when the registrant declared them — recognition never
+ * invents a synonym (E2.7).
+ */
+export function skillCatalogEntry(spec: {
+  id: string;
+  name: string;
+  description?: string;
+  aliases?: string[];
+}): SkillCatalogEntry {
+  return {
+    id: spec.id,
+    name: spec.name,
+    description: spec.description ?? '',
+    ...(spec.aliases !== undefined ? { aliases: spec.aliases } : {}),
+  };
+}
+
+export function recordItemId(at: string, skill: string, intentId?: string): string {
   const stamp = at.replace(/:/g, '-').replace(/\.\d{3}Z$/, 'Z');
-  return `zeus-daily/${stamp}-${skill.replace(/[^A-Za-z0-9._-]/g, '-')}.md`;
+  const base = `zeus-daily/${stamp}-${skill.replace(/[^A-Za-z0-9._-]/g, '-')}`;
+  // The stamp is only second-resolution, so two runs in the same second would
+  // write the same path and the later one would erase the earlier page. The
+  // intent id is the one fact that differs between two dispatches.
+  const suffix = intentId?.replace(/^intent-/, '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8);
+  return suffix ? `${base}-${suffix}.md` : `${base}.md`;
 }
 
 /**
@@ -337,7 +376,7 @@ async function writeRecord(ctx: RunContext): Promise<boolean> {
     model.writeError = 'this kernel was booted without a realm store';
     return true;
   }
-  const itemId = ctx.args.record ?? recordItemId(model.at, model.skill ?? 'unresolved');
+  const itemId = ctx.args.record ?? recordItemId(model.at, model.skill ?? 'unresolved', model.intentId);
   // Named before rendering so the page carries its own path (see report.ts).
   model.itemId = itemId;
   const markdown = renderDailyReport(model);
@@ -377,7 +416,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
   // One backend instance serves both consumers: recognition chooses the intent
   // with it, the orchestrator arbitrates a split with the same one.
   let backend: DecisionBackend | null = null;
-  const stateFile = args.stateFile ?? env.ZEUS_STATE_FILE ?? DEFAULT_STATE_FILE;
+  const stateFile = resolveStateFile(args.stateFile, env.ZEUS_STATE_FILE);
   const roots = realmRootsFor(args, env);
   const kernelOptions: KernelBootOptions = {
     ...(stateFile ? { stateFile } : {}),
@@ -421,11 +460,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
   }
   ctx.realm = realm;
 
-  const catalog: SkillCatalogEntry[] = (ctx.kernel.skillRegistry?.list() ?? []).map(spec => ({
-    id: spec.id,
-    name: spec.name,
-    description: spec.description ?? '',
-  }));
+  const catalog: SkillCatalogEntry[] = (ctx.kernel.skillRegistry?.list() ?? []).map(skillCatalogEntry);
   const model: DailyReportModel = {
     at: new Date().toISOString(),
     instruction: args.instruction,

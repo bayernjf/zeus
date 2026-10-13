@@ -343,3 +343,29 @@ describe('TUI active-intents face (S15 V3)', () => {
     expect(degraded.active).toBeNull();
   });
 });
+
+describe('TUI cost face (E6.5)', () => {
+  const account = {
+    configured: true,
+    refusals: 2,
+    limits: { maxWindowCost: 100 },
+    totals: { intents: 3, spent: 40, inFlightEstimate: 7 },
+    windows: [{ intentId: 'intent-1', spent: 40, inFlightEstimate: 7, windowEndsAt: 1 }],
+    truncated: false,
+  };
+
+  it('reads /api/cost as the eleventh aggregate route', async () => {
+    const { calls, client } = mockClient(url => (url === 'http://kernel/api/cost' ? okJson(account) : snapshotRoute()(url)));
+    const snap = await client.snapshot();
+    expect(snap.cost).toEqual(account);
+    expect(calls.some(call => call.url === 'http://kernel/api/cost')).toBe(true);
+  });
+
+  it('degrades to null when the endpoint is not mounted, leaving the core faces authoritative', async () => {
+    const { client } = mockClient(url => (url === 'http://kernel/api/cost' ? fail503 : snapshotRoute()(url)));
+    const snap = await client.snapshot();
+    expect(snap.cost).toBeNull();
+    expect(snap.roster.entries).toBeDefined();
+    expect(snap.escalations).toBeDefined();
+  });
+});
