@@ -75,4 +75,8 @@ export type PersistedConnectorRecord = Omit<ConnectorRecord, 'token'>;
 export interface McpClientDeps {
   fetchImpl?: typeof fetch;
   token?: string;
+  /** Per-request wall-clock bound in seconds before the request is aborted. */
+  callTimeoutSeconds?: number;
+  /** Maximum response body size in bytes; larger bodies are rejected. */
+  maxResponseBytes?: number;
 }

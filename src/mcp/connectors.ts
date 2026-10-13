@@ -260,6 +260,9 @@ export class ConnectorRegistry {
       ...(fetchImpl !== undefined ? { fetchImpl } : {}),
       ...(record.token !== undefined ? { token: record.token } : {}),
     });
+    // M-07: each call uses a fresh HTTP client; a session-bearing server needs
+    // the initialize handshake (and its Mcp-Session-Id) before tools/call.
+    await client.initialize();
     return client.callTool(name, args);
   }
 

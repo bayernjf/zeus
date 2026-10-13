@@ -176,6 +176,28 @@ describe('E7 MCP connectors', () => {
     expect(result).toEqual({ content: [{ type: 'text', text: 'called:search' }] });
   });
 
+  it('M-07: runs the initialize handshake on the HTTP client before tools/call', async () => {
+    const seen: string[] = [];
+    const inner = mcpFetch();
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push((JSON.parse(String(init?.body)) as { method: string }).method);
+      return inner(input, init);
+    }) as typeof fetch;
+    const registry = new ConnectorRegistry(now);
+    registry.declare(declaration({ permissions: ['mcp:search'] }));
+    await registry.connect('knowledge', fetchImpl);
+    seen.length = 0;
+    // callTool builds a fresh HTTP client; stateless servers aside, session-bearing
+    // servers require the initialization sequence on that client before tools/call.
+    await registry.callTool('knowledge', 'search', { q: 1 }, fetchImpl);
+    const initializeAt = seen.indexOf('initialize');
+    const initializedAt = seen.indexOf('notifications/initialized');
+    const callAt = seen.indexOf('tools/call');
+    expect(initializeAt).toBeGreaterThanOrEqual(0);
+    expect(initializedAt).toBeGreaterThan(initializeAt);
+    expect(callAt).toBeGreaterThan(initializedAt);
+  });
+
   it('refuses to call a tool the handshake never discovered (or the boundary dropped)', async () => {
     const registry = new ConnectorRegistry(now);
     registry.declare(declaration({ permissions: ['mcp:search'] }));

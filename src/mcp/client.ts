@@ -11,9 +11,12 @@ import { guardedFetch } from '../util/outbound-dns.js';
 const JSONRPC = '2.0' as const;
 const PROTOCOL_VERSION = '2025-03-26';
 
-export class McpClientError extends Error {}
+// M-07: a peer that accepts a request but never answers must not hang the
+// kernel forever; a peer must not be able to exhaust memory with one body.
+const DEFAULT_CALL_TIMEOUT_SECONDS = 30;
+const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 
-let requestCounter = 0;
+export class McpClientError extends Error {}
 
 interface RpcResponse {
   id?: number | string;
@@ -40,32 +43,88 @@ function parseSse(body: string): RpcResponse[] {
 
 export class McpClient {
   private readonly fetchImpl: typeof fetch;
+  private readonly callTimeoutSeconds: number;
+  private readonly maxResponseBytes: number;
+  private requestCounter = 0;
+  private sessionId: string | undefined;
 
   constructor(
     private endpoint: string,
     deps: McpClientDeps = {},
   ) {
     this.fetchImpl = deps.fetchImpl ?? guardedFetch;
+    this.callTimeoutSeconds = deps.callTimeoutSeconds ?? DEFAULT_CALL_TIMEOUT_SECONDS;
+    this.maxResponseBytes = deps.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
     this.token = deps.token;
   }
 
   private token: string | undefined;
 
-  private async call(method: string, params?: unknown): Promise<unknown> {
-    const id = ++requestCounter;
-    const res = await this.fetchImpl(this.endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: JSON.stringify({ jsonrpc: JSONRPC, id, method, params }),
-    });
+  /**
+   * One POST: session header (once the server issued one), an AbortSignal tied
+   * to the per-call timeout, and a bounded body read covering the whole
+   * exchange — headers arriving is not the end of the response.
+   */
+  private async post(method: string, payload: object): Promise<{ res: Response; body: string }> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.callTimeoutSeconds * 1000);
+    if (typeof timer.unref === 'function') timer.unref();
+    try {
+      const res = await this.fetchImpl(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+          // M-07: streamable-HTTP servers may bind the connection to a session
+          // id issued on initialize; every later POST must echo it.
+          ...(this.sessionId !== undefined ? { 'mcp-session-id': this.sessionId } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      const body = await this.readBoundedBody(res);
+      return { res, body };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new McpClientError(`MCP ${method} timed out after ${this.callTimeoutSeconds} seconds`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async readBoundedBody(res: Response): Promise<string> {
+    const reader = res.body?.getReader();
+    if (!reader) return res.text();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > this.maxResponseBytes) {
+        await reader.cancel().catch(() => {});
+        throw new McpClientError(
+          `MCP response body exceeded the ${this.maxResponseBytes}-byte limit (read ${total} bytes)`,
+        );
+      }
+      chunks.push(value);
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  }
+
+  private async call(method: string, params?: unknown, captureSession = false): Promise<unknown> {
+    const id = ++this.requestCounter;
+    const { res, body } = await this.post(method, { jsonrpc: JSONRPC, id, method, params });
     if (!res.ok) throw new McpClientError(`MCP ${method} failed: HTTP ${res.status}`);
+    if (captureSession) {
+      const issued = res.headers.get('mcp-session-id');
+      if (issued) this.sessionId = issued;
+    }
 
     const contentType = res.headers.get('content-type') ?? '';
-    const body = await res.text();
     const responses = contentType.includes('text/event-stream')
       ? parseSse(body)
       : [JSON.parse(body) as RpcResponse];
@@ -83,15 +142,7 @@ export class McpClient {
   }
 
   private async notify(method: string, params?: unknown): Promise<void> {
-    const res = await this.fetchImpl(this.endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: JSON.stringify({ jsonrpc: JSONRPC, method, params }),
-    });
+    const { res } = await this.post(method, { jsonrpc: JSONRPC, method, params });
     // Notifications carry no id; 200 with empty body or 202 are both fine.
     if (res.status !== 200 && res.status !== 202 && res.status !== 204) {
       throw new McpClientError(`MCP notification ${method} failed: HTTP ${res.status}`);
@@ -100,11 +151,15 @@ export class McpClient {
 
   /** Full handshake and capability discovery; returns the summary. */
   async initialize(): Promise<ConnectorCapabilities> {
-    await this.call('initialize', {
-      protocolVersion: PROTOCOL_VERSION,
-      capabilities: {},
-      clientInfo: { name: 'zeus', version: '0.1.0' },
-    });
+    await this.call(
+      'initialize',
+      {
+        protocolVersion: PROTOCOL_VERSION,
+        capabilities: {},
+        clientInfo: { name: 'zeus', version: '0.1.0' },
+      },
+      true,
+    );
     await this.notify('notifications/initialized');
 
     const [tools, resources, prompts] = await Promise.all([
