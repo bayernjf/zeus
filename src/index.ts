@@ -159,7 +159,7 @@ export type {
   CategoryCounts,
 } from './reflection/failure-attribution.js';
 // --- Structured operator log (feature-inventory 结构化日志) ---
-export { createLogger, redact } from './util/logger.js';
+export { createLogger, redact, redactText, redactUrl } from './util/logger.js';
 export type { Logger, LogLevel, LogFields, LogSink, LoggerOptions } from './util/logger.js';
 export type {
   MetricsSnapshot,

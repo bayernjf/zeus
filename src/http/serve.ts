@@ -38,7 +38,7 @@ import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
-import { createLogger } from '../util/logger.js';
+import { createLogger, redactText } from '../util/logger.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -48,6 +48,16 @@ const pkg = require('../../package.json') as { version: string };
 // refusal and transport failures. Level defaults to info until a level env is
 // decided (deferred candidate, not in scope here).
 const log = createLogger();
+
+// The stderr audit mirror applies the same value-form redaction as the JSONL
+// sink: entry.detail is free text that may carry error messages with embedded
+// URL credentials or tokens. Structure is preserved; only detail is scrubbed.
+function mirrorAuditEntry(entry: { detail?: string }): string {
+  const safe = typeof entry.detail === 'string'
+    ? { ...entry, detail: redactText(entry.detail) }
+    : entry;
+  return `[zeus-audit] ${JSON.stringify(safe)}\n`;
+}
 
 /** deferred #42: retention bounds are positive integers. A silent coercion to
  *  0 or NaN would disable the out-window condition entirely; abort boot like
@@ -123,7 +133,7 @@ async function main(): Promise<void> {
     ...(audit.auditMaxBytes !== undefined ? { auditMaxBytes: audit.auditMaxBytes } : {}),
     ...(audit.auditKeep !== undefined ? { auditKeep: audit.auditKeep } : {}),
     dispatchAudit: entry => {
-      process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
+      process.stderr.write(mirrorAuditEntry(entry));
     },
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
     judgeEnabled: decision.judgeEnabled,
@@ -283,7 +293,7 @@ async function main(): Promise<void> {
             })),
           },
           inboundAudit: entry => {
-            process.stderr.write(`[zeus-audit] ${JSON.stringify(entry)}\n`);
+            process.stderr.write(mirrorAuditEntry(entry));
           },
         }
       : {}),

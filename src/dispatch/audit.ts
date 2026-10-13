@@ -1,6 +1,7 @@
 import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, renameSync, rmSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AuditDecision, AuditEntry, AuditSink } from './dispatcher.js';
+import { redactText } from '../util/logger.js';
 
 /** Rotation knobs for the JSONL audit sink. */
 export type JsonlAuditSinkOptions = {
@@ -51,7 +52,14 @@ export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}
   }
 
   return entry => {
-    const line = `${JSON.stringify(entry)}\n`;
+    // Value-form redaction at the persistence point: detail is the only free-text
+    // field and error messages routed through it may carry credential-shaped
+    // substrings (URL userinfo, bearer tokens, assignments). Structure and all
+    // other fields are kept so the trail stays attributable.
+    const safe = typeof entry.detail === 'string'
+      ? { ...entry, detail: redactText(entry.detail) }
+      : entry;
+    const line = `${JSON.stringify(safe)}\n`;
     if (Number.isFinite(maxBytes)) {
       let size = 0;
       try {

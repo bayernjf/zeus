@@ -67,6 +67,7 @@ import type { CostLimit } from '../orchestrator/cost-ledger.js';
 import type { DecisionBackend } from '../decision/types.js';
 import { createJevBackendFromEnv } from '../decision/decision-model.js';
 import { createLlmBackendFromEnv } from '../decision/llm.js';
+import { redactUrl } from '../util/logger.js';
 
 /**
  * E5.3 process boot assembly (design-http-transport §2.2/§2.3: the long-running
@@ -1453,8 +1454,14 @@ export function resolveVassalSeedsConfig(env: NodeJS.ProcessEnv = process.env): 
     }
     const cardUrl = entry.slice(0, separator).trim();
     const token = entry.slice(separator + 1).trim();
-    if (!cardUrl) throw new KernelBootError(`vassal seed entry has an empty card URL: '${entry}'`);
-    if (!token) throw new KernelBootError(`vassal seed entry '${entry}' has an empty token after '|'`);
+    // Parse errors must not echo the entry: the token segment after '|' (and any
+    // URL userinfo) is a credential, and boot errors travel into logs/audit.
+    if (!cardUrl) throw new KernelBootError('vassal seed entry has an empty card URL before \'|\'');
+    if (!token) {
+      throw new KernelBootError(
+        `vassal seed entry '${redactUrl(cardUrl)}' has an empty token after '|'`,
+      );
+    }
     seeds.push({ cardUrl, token });
   }
   return seeds;

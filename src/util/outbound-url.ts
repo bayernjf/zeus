@@ -21,6 +21,8 @@
  * this guard.
  */
 
+import { redactUrl } from './logger.js';
+
 export class OutboundUrlError extends Error {}
 
 /** Comma-separated hostnames; `.suffix` entries match a whole suffix. */
@@ -179,14 +181,18 @@ export function assertOutboundUrlAllowed(
   try {
     url = new URL(rawUrl);
   } catch {
-    throw new OutboundUrlError(`outbound URL is not an absolute URL: ${rawUrl}`);
+    // The message travels into audit detail via the dispatch catch path, so any
+    // userinfo/query credentials must be stripped while the URL body stays.
+    throw new OutboundUrlError(`outbound URL is not an absolute URL: ${redactUrl(rawUrl)}`);
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new OutboundUrlError(`outbound URL must use http or https: ${rawUrl}`);
+    throw new OutboundUrlError(`outbound URL must use http or https: ${redactUrl(rawUrl)}`);
   }
   const host = normaliseHost(url.hostname);
   if (isAllowlisted(host, allowHosts)) return url;
   const reason = blockedReason(host);
-  if (reason) throw new OutboundUrlError(`outbound URL targets a non-public address (${reason}): ${rawUrl}`);
+  if (reason) {
+    throw new OutboundUrlError(`outbound URL targets a non-public address (${reason}): ${redactUrl(rawUrl)}`);
+  }
   return url;
 }
