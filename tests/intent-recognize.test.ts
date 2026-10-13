@@ -185,4 +185,34 @@ describe('recognizeIntent (model path, explicit opt-in)', () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('backend-unavailable');
   });
+
+  describe('E2.7 cross-language aliases (local rules, zero egress)', () => {
+    const ALIASED = [
+      { id: 'release', name: 'Release Notes', description: 'draft changelog and release notes' },
+      { id: 'research', name: 'Deep Research', description: 'multi-source research across web and documents', aliases: ['总结', '归纳要点'] },
+    ];
+
+    it('resolves a CJK instruction from a declared alias without any backend', async () => {
+      const result = await recognizeIntent({ text: '帮我归纳要点的这三条', catalog: ALIASED });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.intent.skill).toBe('research');
+        // Recognition stays plan-only whatever resolved it, and the local path
+        // involves no backend at all.
+        expect(result.intent.mode).toBe('plan');
+        expect(result.backend).toBeNull();
+      }
+    });
+
+    it('still refuses when nothing was declared', async () => {
+      const result = await recognizeIntent({ text: '帮我归纳要点的这三条', catalog: ALIASED.map(({ aliases: _a, ...rest }) => rest) });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('no-candidates');
+    });
+
+    it('ranks a declared alias above incidental token overlap', () => {
+      const ranked = rankCandidates(ALIASED, 'summarize and 总结 this note');
+      expect(ranked[0]?.skill).toBe('research');
+    });
+  });
 });

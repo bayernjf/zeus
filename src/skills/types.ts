@@ -28,6 +28,13 @@ export type SkillSpec = {
   /** Capability domain, e.g. 'code' / 'research' / 'release'. */
   domain?: string;
   tags: string[];
+  /**
+   * E2.7: declared alternate names the operator may use for this skill —
+   * translations, abbreviations, a CJK term for an English id. Recognition
+   * matches an instruction against these literally; nothing here is inferred,
+   * so an alias is an explicit claim by whoever registered the skill.
+   */
+  aliases?: string[];
   /** Declared input shape (free-form schema descriptor for v0.1). */
   inputs?: Record<string, unknown>;
   /** Declared output shape. */

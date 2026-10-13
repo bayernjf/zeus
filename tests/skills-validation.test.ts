@@ -92,4 +92,29 @@ describe('E2.1 skill spec validation', () => {
     registry.register(spec({ id: 'b', version: '1.0.0', dependencies: ['a'] }));
     expect(() => registry.register(spec({ id: 'a', version: '2.0.0', dependencies: ['b'] }))).toThrow(/cycle/);
   });
+
+  describe('E2.7 declared aliases', () => {
+    it('keeps the aliases an operator declared', () => {
+      const registry = new SkillRegistry();
+      const registered = registry.register(spec({ aliases: ['总结', 'summarise'] }));
+      expect(registered.aliases).toEqual(['总结', 'summarise']);
+      expect(registry.get('code-review')?.aliases).toEqual(['总结', 'summarise']);
+    });
+
+    it.each([
+      { aliases: ['  '], why: 'blank' },
+      { aliases: [7], why: 'non-string' },
+      { aliases: ['ok', 'OK'], why: 'duplicate case-insensitively' },
+      { aliases: Array.from({ length: 17 }, (_, i) => `a${i}`), why: 'more than 16' },
+      { aliases: ['x'.repeat(65)], why: 'longer than 64 characters' },
+    ])('refuses an alias list with a $why entry', ({ aliases }) => {
+      const registry = new SkillRegistry();
+      expect(() => registry.register(spec({ aliases: aliases as unknown as string[] }))).toThrow(SkillValidationError);
+    });
+
+    it('leaves the field absent when nothing was declared', () => {
+      const registry = new SkillRegistry();
+      expect(registry.register(spec()).aliases).toBeUndefined();
+    });
+  });
 });
