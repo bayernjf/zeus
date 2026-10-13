@@ -1,351 +1,285 @@
 # Zeus
 
-一个**多 Agent 编排运行时**：把一个结构化任务并行派发给多个已注册的外部 Agent，收集它们带依据的返回结果，按确定性规则聚合为一个**可追溯、可复核、可人工裁决**的决策；用户的本地数据目录是这套运行时的数据底座，数据主权与可恢复性优先。完整产品定位见 [docs/product-portrait.md](docs/product-portrait.md)。
+一个**多 Agent 编排与决策运行时**：把一个意图并行派发给多个已注册的外部执行 Agent，收集它们带依据的结果，按确定性规则聚合为一个**可追溯、可复核、可人工裁决**的决策，并把整个过程落成可离线验证的记录。用户的本地数据目录是这套运行时的数据底座——数据主权与可恢复性优先于功能数量。
 
-## 这个仓库是什么
+完整定位与设计哲学见 [docs/product-portrait.md](docs/product-portrait.md)，需求拆解与优先级见 [docs/prd.md](docs/prd.md)，当前状态与待办见 [handoff.md](handoff.md)。
 
-当前形态是 **TypeScript 运行时核心库 + 薄 HTTP 传输层**：
+---
 
-- **库**（`src/`，除 `src/http/` 外零运行时依赖）：Agent 注册与派发、并发派发/汇聚、规则聚合、冲突检测与升级、模型无关的决策后端与对抗复核、离线决策回放、完整 DAG、并发治理（信号量 + 有界队列）、数据域访问与跨域授权、记忆存储与叙事日志、组织结构与问责、上岗资格校验、审计与持久化恢复。
-- **唯一生产依赖是 Fastify，且被限制在 `src/http/`**：H1 只读端点（健康检查、签名目录快照）+ H2 操作面（发起任务、回查决策、人工裁决、指标、盘点）+ H3 服务端 SSE。核心代码里 grep 不到 fastify。
-- **数据接入**：数据域（本地目录）通过 MCP 对外暴露，只读工具 `search` / `read` + resources，宿主预连接的白名单即边界；另有零 SDK 的 MCP 客户端做外部系统连接器。
-- **可恢复性**：备份清单（只存引用与逐条指纹）+ AES-256-GCM 加密内容包，可原地校验漂移、可跨位置恢复；运行时状态文件（含注册表、升级队列、意图结果、组织编制、授权台账）也在覆盖范围内。零依赖 CLI（`build` / `check` / `backup` / `restore`），调度交给外部 cron/systemd，核心不内置定时器。
-- **产品入口**：`npm run daily "<一句话>"`（`src/daily/`，无常驻进程、零新内核机制）一条命令走完「指令 → 意图 → 扇出到已注册执行 Agent → 决策与依据 → 待人工裁决项」，并把这一页 markdown 写回你挂的那个目录。默认零出域：只有显式 `--model` 才咨询配置里的决策后端，`--realm enterprise` 的记录只写企业域、不落个人目录。
+## 1. 产品
 
-## 术语
+### 1.1 解决的问题
 
-本仓库统一使用下面的术语，不使用叙事化别名。
+单个 Agent 的回答不可审计，多个 Agent 的回答互相矛盾。Zeus 把"多方给结论"做成一条可复盘的链路：并行派发、多路事件流合并且来源可辨、立场按确定性规则聚合、规则收敛不了就进人工处理队列而不是静默选边、操作者裁决回写后重算整体状态，事后还能从持久化事实离线重建那次决策的参与方·输入·立场·聚合·裁决。
 
-| 术语 | 含义 | 代码原语 |
+### 1.2 能力一览
+
+| 能力 | 说明 |
+| --- | --- |
+| 并行派发与汇聚 | 一个意图同时下发给提供该技能的多个执行 Agent；分支失败、超时、取消都如实计入最终状态 |
+| 确定性规则聚合 | 一致 / 多数 / 加权三种策略；无法收敛时结论为空并升级，不臆断 |
+| 人工裁决与补参重派 | 缺参、冲突、记忆争议进入队列；批准可附带参数只重派那一条分支 |
+| 决策回放 | 从持久化事实重建决策时间线，JSON 与可读文本两种输出 |
+| 并发与成本治理 | 在途分支上界 + 有界队列、意图级步数预算、连续失败熔断、成本闸门与其读数面 |
+| 数据域与跨域授权 | 本地目录即数据域（个人 / 企业两型）；企业域写需签名且一次性的授权凭证 |
+| 能力目录与认证 | 技能显式规格注册、多版本共存、权限只可收窄；被认定为"某技能提供者"需逐项评估通过 |
+| 组织与问责 | 部门、单一负责人、成员归属；任一任务可追到执行 Agent → 部门负责人 → 裁决操作者 |
+| 记忆与叙事日志 | 只追加事件日志 + 纯函数派生事实；矛盾默认标记争议；按天组织成可读记录 |
+| 备份与恢复 | 清单只存引用与逐条指纹，加密内容包可原地校验漂移、可跨位置恢复；运行时状态文件同样在覆盖范围内 |
+| 对外可验证 | 目录快照签名发布，第三方只持公钥即可离线验签；根公钥指纹由带外固定 |
+
+### 1.3 边界（先说清楚，避免误期望）
+
+- **Zeus 不执行任务，也不内置模型循环。** 执行体是你注册进来的外部 A2A Agent（跨进程、跨组织、跨厂商）。名册为空时产品入口以 `exit 2` 明说没有可派发的对象；想立刻看到闭环，用随仓库出货的参考执行体 `npm run agent:example`（只依据任务输入作答：不读文件、零出站、不调模型）。
+- **默认零出域。** 正文只在你的机器与你显式登记的 Agent 之间流动；只有显式 `--model` 才咨询配置里的决策后端。
+- **能力接入只有三条通道：MCP（连接外部系统）、Skill（能力与权限声明）、A2A（跨 Agent 协作）。** 不允许私有旁路。
+- **个人数据域与企业数据域不互通。** 企业域内容可进入决策，反向路径不存在；企业域的运行记录不落进个人目录。
+- **核心不内置调度器。** 备份与检查的周期交给 cron / systemd，运行时里没有自建定时器。
+
+### 1.4 三个使用者面与两条协议面
+
+| 面 | 入口 | 用途 |
 | --- | --- | --- |
-| 执行 Agent（worker agent） | 已注册、可被派发任务的外部 Agent，经标准 A2A 协议交互 | `VassalEntry`、`VassalRegistry` |
-| 注册握手（registration attestation） | Agent 卡片上的归属与数据策略声明，缺失或不合法即拒绝注册 | `x-zeus-fealty`、`Fealty` |
-| 目录快照（roster） | 注册表状态的不可变、可 JSON 序列化投影，分 internal / public 两版，均带签名 | `projectInternalRoster` / `projectPublicRoster`、`sealSnapshot` |
-| 并行派发（fan-out） | 一个任务同时下发给多个执行 Agent，多路事件流合并回一条 | `Orchestrator.fanOut`、`Dispatcher` |
-| 结果立场（position） | 单个 Agent 在任务终态后回传的结构化意见：立场 + 依据 + 权重 | `Position = { vassal, stance, weight?, rationale? }` |
-| 规则聚合（rule-based aggregation） | 一致 / 多数 / 加权三种确定性策略把多个立场合为一个决策 | `aggregate`、`AggregationRule` |
-| 冲突升级（conflict escalation） | 规则无法收敛或 Agent 索要缺失输入时，把事项交入人工处理队列 | `OversightDesk`、`ingestConflict` |
-| 人工裁决（operator decision） | 人给出立场后回写聚合结果并重算整体状态；也可补参重派 | `applyConflictResolution`、`resumeBranch` |
-| 模型仲裁 / 对抗复核 | 规则不收敛时按置信度闸门调用决策后端裁决；规则有结论后可再做一次对抗式复核 | `arbitrateSplit`、`judgeDecision` |
-| 决策回放（deterministic replay） | 从持久化事实重建一次决策的完整过程（参与方、输入、立场、聚合、裁决、人工裁决） | `replay.ts`、`GET /api/intents/:id/replay` |
-| 数据域（data domain） | 一个可连接的本地目录，分 `personal` 与 `enterprise` 两型；连接即建立检索索引 | `FsRealmStore` |
-| 租户范围（tenant scope） | 企业域的三级隔离：`org / department / member`；层级是结构性边界，任何凭证都不能放宽 | `TenantScope` |
-| 跨域授权（cross-domain grant） | 个人域→企业域的唯一放行通道：由运行时核心签名、绑定本域、带过期、nonce 一次性 | `DomainGrant`、`issueDriverWriteGrant` |
-| 单向隔离（data diode） | 企业域内容可进入决策，反向路径不存在；执行侧只看到任务范围内的输入 | 派发侧脱敏、`decideRealmAccess` |
-| 能力目录（skill catalogue） | 显式规格的技能登记：多版本共存、检索、组队解析、安装/卸载/权限收窄即时生效 | `SkillRegistry` |
-| 能力认证（capability attestation） | 一个 Agent 被授予"某技能提供者"身份需通过逐项评估，出勤不计入能力 | `MentorshipLedger` |
-| 组织结构与问责（org and accountability） | 部门、单一负责人、成员归属；任一任务可追到执行 Agent → 部门负责人 → 人工裁决者 | `OrgRegistry`、`traceAccountability` |
-| 上岗校验（onboarding gate） | 四道门：编制在册 + Agent 未吊销 + 数据域授权 + 能力认证；每次现算不缓存 | `src/onboarding/` |
-| 备份清单 / 加密包（backup manifest / bundle） | 清单只存引用与指纹；加密包含正文，可跨位置恢复 | `src/vault/` |
-| 记忆存储（memory store） | 只追加的事件日志 + 由纯函数派生的事实层；矛盾默认标记为争议并进入人工队列 | `MemoryStore`、`consolidate` |
-| 叙事日志（narrative log） | 把记忆事件按天组织成可读记录，内容只呈现不臆造，每条锚定事件 ID | `src/diary/` |
-| 审计日志（audit log） | JSONL 落盘、按字节上限自轮转、可按 runId / Agent / 决策类型回读 | `jsonlAuditSink`、`GET /api/audit` |
-| 状态快照（state snapshot） | 运行时状态原子落盘（tmp + rename）与启动恢复；文件权限固定 0600 | `KernelSnapshot`、`bootKernel` |
+| 产品入口 | `npm run daily` | 一句话走完「指令 → 意图 → 派发 → 决策与依据 → 待裁决项」，并把这一页 markdown 写回你自己的目录 |
+| 终端监督台 | `npm run tui` | 监视、裁决、名册治理、意图识别、连接器驱动，复用既有 bearer HTTP 面 |
+| Web 监督台 | `web/supervisor/index.html` | 多视图工作台：监控 / 名册 / 裁决 / 技能目录 / 审计 / 数据域与授权 / 组织 / 连接器 |
+| 操作者 HTTP API | `npm start` | 97 条路由（4 条公开、93 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
+| 协议面 | `/.well-known/agent-card.json`、`/mcp` | 入站 A2A（外部 Agent 派单进来）与数据域 MCP（外部宿主读你的目录） |
 
-## 模块与职责
+端点逐条清单与操作者可驱动面见 [docs/feature-inventory.md](docs/feature-inventory.md)。
 
-| 模块 | 路径 | 职责 |
-| --- | --- | --- |
-| 协议层 | `src/a2a/` | 标准 A2A 类型（Agent Card、任务生命周期、SSE 事件、file/URI part 与 history 透传）+ `x-zeus-*` 扩展 |
-| 执行 Agent 注册表 | `src/registry/registry.ts` | 拉取卡片注册、归属校验（缺字段即拒收并点名缺哪个字段）、健康探针、吊销、全量视图、实时查找；出站凭证存取与四视图脱敏 |
-| 目录快照投影 | `src/registry/roster.ts` | 注册表 → 不可变 internal / public 双投影，只重塑与裁剪不造字段；`active` / `revoked` 两态 attestation |
-| 派发器 | `src/dispatch/` | JSON-RPC + SSE 客户端（`send` / `sendSubscribe` / `cancel`）、按数据策略脱敏、派发前吊销阻断（不发请求也不发凭证）、审计 sink 与吊销审计桥 |
-| 人工处理队列 | `src/oversight/` | 收集缺参升级与冲突升级，支持 approve / reject / resolve；reject 联动取消对端任务；裁决立场回交编排器；可持久化 |
-| 编排引擎 | `src/orchestrator/` | 并行派发与汇聚、多流合并、确定性规则聚合、冲突检测与升级、对抗复核、按任务 ID 幂等重放（默认永久，`evict` 省空间模式下为窗口内）、取消传播、并发上限与有界队列、决议回写、补参重派、离线决策回放、完整 DAG、并发指标 |
-| 能力目录 | `src/skills/` | 显式规格校验（版本 / 封闭权限词汇 / 依赖须已注册且无环）、多版本共存与弃用标记、检索与组队解析（歧义不静默选边）、安装/卸载/权限收窄、能力认证台账；派发路径读取目录裁决可用提供者 |
-| 决策后端 | `src/decision/` | 模型无关端口 + 适配器 + 降级；规则不收敛时的置信闸门仲裁 |
-| 数据域 | `src/realm/` | `FsRealmStore` 的 connect / manifest / search / read / write、确定性 realmId、内容摘要基线、路径穿越与符号链接双检、原子写；两型均可连接且类型如实存储；企业域写需签名且一次性的授权凭证，只读连接即使持凭证仍拒写；三级租户范围与跨域授权判定；只读 MCP 服务端（resources + tools）与 stdio 宿主 |
-| 外部系统连接器 | `src/mcp/` | 零 SDK 的 streamable-HTTP JSON-RPC 客户端（握手 + tools/resources/prompts 发现，兼容 JSON 与 SSE 帧）；连接器声明（封闭权限词汇）/ 连接（失败即拒并审计）/ 吊销，最小权限精确裁剪发现结果，且只有经握手发现并被声明裁剪后保留的工具才可调用 |
-| 状态与装配 | `src/state/` | 状态快照原子落盘与恢复（注册表含已吊销、升级队列、任务结果与原始请求、组织编制、授权台账、凭证 nonce 账本）；一次性装配运行时；优雅退出落盘 |
-| HTTP 传输层 | `src/http/` | 全仓库唯一 fastify 依赖处。H1 只读：`/healthz`、`/api/roster/public`（离线可验签）、`/api/roster/keys`（根公钥发布：JWKS + SPKI PEM + 指纹，供验签方取钥，信任仍由带外固定）、`/api/roster`（bearer，同样签名）；H2 操作面（bearer，未配 token 时整组不挂载）：任务发起 / 回查 / 取消 / 决策回放 / 进度 SSE、人工处理队列（approve / reject / resolve / 补参重派 / 按类型分流）、并发指标、执行 Agent 注册与吊销、能力目录与认证、组织结构与问责链、记忆与遗忘权、连接器、决策后端实际配置、审计回读、运行时盘点（只报计数与路径）、数据域治理面（挂载、租户级、跨域授权签发/吊销、不读内容的访问探针）；`serve.ts` 为进程入口 |
-| 备份与恢复 | `src/vault/` | 清单来源可为数据域或逐一点名的文件白名单；出图只存引用与逐条指纹（正文零泄漏）；AES-256-GCM 加解密且密钥与图分离；原地校验与漂移检测；加密全包与跨位恢复；零依赖 CLI，退出码 0/1/2/3 |
-| 记忆层 | `src/memory/` | 只追加事件日志 + 纯函数派生事实、观察去重累积来源、矛盾默认争议并确定性进入人工队列、置信度按可靠度加权；BM25 + 向量混合检索（派生索引可随时重建、不持久化）；两时点漂移对账；遗忘权与撤回（墓碑随快照持久化） |
-| 叙事日志 | `src/diary/` | 事件按日历天分桶、确定性排序、每行锚定事件 ID；经数据域写路径落盘（幂等）并可稳定 JSON 导出 |
-| 组织结构 | `src/org/` | 部门单负责人、成员唯一、不可变；结构可视；任一任务结果追到执行 Agent → 部门负责人 → 人工裁决者，无编制则标记未分配 |
-| 上岗校验 | `src/onboarding/` | 不新增原语、只负责拒绝的组合层：四道门每次现算不缓存，因此签字后吊销 Agent 或撤出编制会自动失去资格；首日简报只从已有事实装配并把答不上来的逐条列为缺口；首个任务过门后真走一次并行派发 |
+---
 
-库的统一公共出口在 `src/index.ts`（不含 HTTP 传输面）。
+## 2. 启动方法
 
-## 快速开始
+### 2.1 前置
 
-要求 **Node.js ≥ 22**（`package.json` 的 `engines` 声明，`.npmrc` 开了 `engine-strict`，所以装依赖时越界会**直接失败**而不是警告；版本钉在 `.nvmrc`）。CI 与 Docker 基线同为 22 与 24。
+要求 **Node.js ≥ 22**（`package.json` 的 `engines` 声明，`.npmrc` 开了 `engine-strict`，越界时装依赖会**直接失败**而不是警告；版本钉在 `.nvmrc`）。CI 与 Docker 基线同为 22 与 24。
 
 ```bash
 npm install
-npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）
-npm test           # vitest：1904 项 / 166 个测试文件（以此命令的输出为准）
-npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 47 步（含契约操作面、watch 触发/操作面、契约派生与撤销断流、记忆召回装配进分支上下文出站载荷、技能声明输入装配（explicit/unavailable）；需先 build；只用回环与自造密钥）
-npm run typecheck  # tsc --noEmit
-npm run evals      # S7 evals 离线质量回归：逐 case boot 内核 + 脚本化执行 Agent，现行 17 条六族 eval 集（含 guardrails 族记忆种子对抗样本）喂评分器；--write-baseline 钉基线、--baseline 出退化 diff（blocked 退化 exit 1）；退出码 0/1/2（需先 build）
-npm start          # 启动 HTTP 服务（H1 只读 + H2 操作面 + H3 SSE；需先 build）
-npm run daily -- "check the deployment health"   # 产品入口：一句话 → 意图 → 扇出到已注册的执行 Agent → 决策与依据，并把同一页 markdown 写回你挂的目录（需先 build；--root 挂目录、--agent 注册，旋钮见 --help）
-npm run tui        # 终端监督台（UI 方案 D：监视 + 升级裁决 + 名册吊销 + 意图识别 + 连接器驱动（握手/吊销/调用）；需先 build）
+npm run build      # tsc 输出 dist/（.js + .d.ts + sourcemap）；下面所有 npm 脚本都跑出货件，需先 build
 ```
 
-终端监督台复用既有 bearer HTTP 面，不新增内核路由、不把令牌落盘：
+### 2.2 路径 A：一条命令走通闭环（无常驻进程）
 
 ```bash
+# 终端 1：起参考执行体，它打印一个可复制的 card url
+npm run agent:example
+
+# 终端 2：给一个目录和一句话，把上面打印的 url 贴进 --agent
+npm run daily -- "summarize the note" \
+  --root /path/to/your/dir \
+  --agent http://127.0.0.1:<端口>/api/a2a/agent-card
+```
+
+不挂常驻进程、不占端口、不需要 bearer。同一目录再跑一次，页面会带上「上一次」那一行——读回你自己目录里的上一页，不进出站载荷。
+
+| 旋钮 | 作用 |
+| --- | --- |
+| `--root DIR` | 挂载的目录，可重复；上一次运行挂过的域默认重新挂载 |
+| `--agent CARD` 或 `CARD｜TOKEN` | 派发前注册一个执行 Agent，可与 `ZEUS_VASSAL_SEEDS` 合并 |
+| `--skill ID` / `--params JSON` | 跳过识别直接派发；技能参数 |
+| `--realm personal` 或 `enterprise` | 意图操作的数据域；企业域记录只写企业域 |
+| `--model` | 本次允许咨询配置里的决策后端（默认零出域） |
+| `--state FILE` 或 `none` | 内核状态文件；`none` 保持纯内存，既不加载也不保存 |
+
+退出码：`0` 报告已产出并入库（含以分裂收场、等你裁决的运行）· `1` 无可派发对象、无 Agent 交付、或写回失败 · `2` 配置或用法错误，什么都没派发。完整旋钮见 `npm run daily -- --help`。
+
+非英文指令要命中技能，靠的是技能登记时显式声明的别名（`--skill` 之外的默认识别路径，本地规则、零出域）；只靠执行 Agent 卡片自报的目录没有别名字段，仍需 `--skill` 点名。
+
+### 2.3 路径 B：常驻服务与两个监督台
+
+```bash
+ZEUS_INTERNAL_TOKEN="$(openssl rand -hex 24)" \
+ZEUS_STATE_FILE=./data/kernel-state.json \
+ZEUS_AUDIT_FILE=./data/audit.jsonl \
+ZEUS_REALM_ROOTS=/path/to/your/dir \
+npm start
+```
+
+`ZEUS_INTERNAL_TOKEN` 不配则整个操作面不挂载；`NODE_ENV=production` 下没有签名密钥会拒绝启动（生成：`node scripts/gen-rsk-key.mjs rsk.pem`）。全部环境变量见 `.env.example`，逐项语义见 [docs/deployment.md](docs/deployment.md)。
+
+```bash
+# Web 监督台：跨源消费需服务端配 Origin 白名单，默认关闭时行为不变
+ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 node dist/http/serve.js   # 终端 1
+python -m http.server 5173 --directory web                        # 终端 2
+# 打开 http://127.0.0.1:5173/supervisor/index.html，在「连接」页填 API 地址与 bearer 令牌
+
+# 终端监督台
 ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" npm run tui
-# 可选：--base-url http://127.0.0.1:8787（或 ZEUS_BASE_URL）、--token、--locale en、
-#       --interval 0（单次刷新后不轮询）、--no-color（或 NO_COLOR）
 ```
 
-监督台命令（进入后）：`<enter>/r` 刷新 · `a<n>`/`x<n>` 批准/拒绝升级 · `s<n>.<m>` 裁决 · `d<n>` 吊销 · `g<n> <subject> <r|w>` 跨域授权 · `k<n>` 吊销授权 · `i <文本>` **意图识别（本地规则，零出域，plan-only）** · `im <文本>` 意图识别（显式咨询决策后端，opt-in）· `q` 退出。识别结果恒 plan-only，execute 只能走执行授权票据。连接器：`m<n>` 握手 · `mx<n>` 吊销 · `mt<n> <工具> {json}` 调用（仅已声明可握手、已连接可调用，每次写操作前 y/N 确认）。
+监督台命令：`r` 刷新 · `a<n>` / `x<n>` 批准或拒绝升级 · `s<n>.<m>` 裁决 · `r<n> {json}` 补参并只重派该分支 · `d<n>` 吊销 · `b<n>` 恢复已吊销的执行 Agent · `g<n>` / `k<n>` 跨域授权签发与吊销 · `i <文本>` / `im <文本>` 意图识别（前者本地规则、零出域，后者显式咨询决策后端；识别结果恒为 plan-only）· `m<n>` / `mx<n>` / `mt<n> <工具> {json}` 连接器握手 / 吊销 / 调工具。每个写动作都是一次 plain API 调用、先 `y/N` 确认，与 curl 进同一条审计日志。
 
-**Web 监督台（UI 方案 A v1.18，`web/supervisor/index.html`）**：浏览器端监督台，含只读监控页（内核状态 / 并发指标 / 名册 / 扇出·决策时间线 / 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve）、跨域授权签发与吊销、连接器目录面板（声明 / 握手 / 吊销 / 调用，不再是只读）。UI 仅消费现有 HTTP API、零新增内核端点；浏览器跨域消费需服务端配 Origin 白名单（传输层可选配置，默认关闭，行为不变）：
+两个面的连接配置只存本机（浏览器 localStorage / 进程环境），不写进内核状态文件；页面上每个读数都能从 HTTP 端点取到，UI 不新增内核端点。
+
+### 2.4 路径 C：Docker 与作为库嵌入
 
 ```bash
-# 终端 1：启动 Zeus（带 CORS 白名单）
-ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 node dist/http/serve.js
-# 终端 2：静态托管 web/ 目录（任意静态服务器即可，此处用 python）
-python -m http.server 5173 --directory web
-# 浏览器打开 http://127.0.0.1:5173/supervisor/index.html，在「连接」页填 API 地址与 ZEUS_INTERNAL_TOKEN
+docker build -t zeus:0.1.0 .
+docker run --rm -p 8787:8787 -v zeus-data:/data \
+  -e ZEUS_INTERNAL_TOKEN=… -e ZEUS_RSK_KEY_FILE=/data/rsk.pem zeus:0.1.0
 ```
 
-连接配置存浏览器 localStorage（仅本机，不落盘到内核状态文件）；写操作（裁决 / 授权）均可从 `GET /api/audit` 与授权台账回读，与直接调 API 等价。
+多阶段构建、非 root 运行、健康检查、`/data` 内状态与审计文件权限 0600、SIGTERM 走保存链。完整部署手册（含 systemd 备选与备份 cron 示例）在 [docs/deployment.md](docs/deployment.md)。
 
-环境变量见 `.env.example`；部署（Docker 多阶段非 root 镜像、签名密钥、状态卷、优雅退出、备份调度示例）见 **[docs/deployment.md](docs/deployment.md)**。签名密钥生成：
-
-```bash
-node scripts/gen-rsk-key.mjs rsk-private.pem   # 零依赖跨平台；NODE_ENV=production 无密钥时拒绝启动
-```
-
-验一份已发布的名册是否真实（**只需公钥**，不信任发布它的那个服务）。公钥可向该进程取，但**必须先与带外公告的指纹比对过**再用——发钥的就是签名的那个进程，它说不出"这把钥属于谁"：
-
-```bash
-curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].spkiPem' > zeus-rsk.pem
-curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].jwkThumbprint'   # 与公告值逐字符比对
-# 出钥时就打印这串（node scripts/gen-rsk-key.mjs），验签时它也打在报告的
-# seal fingerprint 行里：三处同串，所以"比对"不需要另算哈希
-```
-
-```bash
-npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk-private.public.pem
-# 退出码 0=验签通过 / 1=被拒（附原因：版本不认识、摘要不绑定、签名不符、过期…）/ 2=参数或 I/O 错
-# 也支持 --file 验一份存档、--key keyId=path 供多把钥、--token 验内部名册、--card name=path 对某条目做卡片深比对
-```
-
-跑一次「真实执行 Agent 上线并扇出」的验收（上线清单 A1 那条命令；执行型判据 13 步、投票型判据 15 步，`--revoke-test` 再验吊销即时性各 +2；A1 已于 2026-09-29 对线上 pr-helper 跑通销项）：
-
-```bash
-KERNEL_URL=http://127.0.0.1:8799 \
-ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" \
-CARD_URL=https://<agent-host>/api/a2a/agent-card \
-AGENT_TOKEN=<该 Agent 期待的 bearer，若需要> SKILL=deployment-health \
-REALM=enterprise PARAMS='{"owner":"<owner>","repo":"<repo>"}' EXPECT_STANCE=0 \
-npm run acceptance:fanout
-# 注册 → 内部名册在册 → 三视图不泄凭证 → 扇出到终端态 → 分支带回内容（artifact）
-# → 审计日志里有本次 dispatched → 用该部署发布的公钥离线验它自己的公开名册
-# 末尾打印可粘贴的证据块；EXPECT_STANCE=0 时立场聚合与记忆 claim 显式 SKIP（执行型 Agent 不投票）
-# 退出码 0=全过 / 1=某步失败（点名是哪步与原因）/ 2=配置或用法错（不调用任何东西）
-# 注意：拉卡片与派发都由 Zeus 进程自己发起，需要代理时配在 Zeus 的环境里，不是这里
-```
-
-数据域最小用法（自包含、无需网络）：
+作为库嵌入时，一次装配（编排器、注册表、人工队列、指标）由 `bootKernel()` 负责，生产进程入口 `src/http/serve.ts` 已按环境变量装配齐全；自定义装配只需把组件传给 `createHttpServer()`——**传入哪个组件就挂载哪组端点**：
 
 ```ts
-import { FsRealmStore } from 'zeus';
-
-const store = new FsRealmStore();
-const manifest = await store.connect('/path/to/your/dir', 'personal'); // 必须先连接
-const hits = await store.search(manifest.realmId, { text: 'keyword' }); // 检索走连接快照
-if (hits[0]) {
-  const item = await store.read(manifest.realmId, hits[0].itemId);     // 读取实时落盘，绝对路径不外泄
-  console.log(item.content);
-}
-```
-
-数据域 MCP 服务两条传输形态（零新增依赖；stdio 为换行分隔 JSON-RPC，HTTP 为 streamable HTTP）：
-
-```bash
-npm run build
-node dist/realm/mcp-stdio.js /path/to/your/dir   # 形态 A：stdio，启动时预连接并授权；协议不暴露 connect / root
-# 形态 B：streamable HTTP（2026-10-07 落地，Active work 144）——GET /mcp 公开元信息（零 realm 数据）；POST /mcp 需 Bearer，JSON-RPC 喂同一 handler；realmIds 由内核启动连接列表装配，运行时不可增删；x-zeus-realm-actor header 可把调用方身份收窄到宿主白名单子集（缺省 anonymous）
-```
-
-宿主怎么配、有哪些 URI 与工具、返回哪些错误码、边界在哪儿（只读、只有 personal 域、无鉴权、检索走连接快照）——**对接方需要的全部细节在 [docs/mcp-integration.md](docs/mcp-integration.md)**，含一轮真进程取证的请求/响应原文；Zeus 作为 MCP **客户端**（连接器，§外部系统连接器）的权限词汇与裁剪层次也写在那份文档里。
-
-备份与恢复 CLI（需先 build；密钥经 `ZEUS_VAULT_PASSPHRASE` 或 `--key-file` 提供）：
-
-```bash
-export ZEUS_VAULT_PASSPHRASE='your-passphrase'
-npm run vault -- build   --root /path/to/dir --out backups/map.json   # 出清单（只存引用与指纹）
-npm run vault -- check   --map backups/map.json                       # 原地漂移校验（只读；退出码 2=漂移，3=目录不可达）
-npm run vault -- backup  --root /path/to/dir --out-dir backups        # 加密全包（清单 + 内容包）
-npm run vault -- restore --map backups/x.map.json --bundle backups/x.bundle.json --target /restore/dir
-```
-
-备份调度不在运行时核心内：用 cron 或 systemd timer 周期调用 `backup` / `check`（示例见 [docs/deployment.md](docs/deployment.md) §7）。
-
-## 用库起一个带鉴权的服务
-
-```ts
-import { VassalRegistry, Ed25519MemorySigner, Orchestrator, OversightDesk, ConcurrencyMetrics } from 'zeus';
+import { bootKernel } from 'zeus';
 import { createHttpServer } from 'zeus/http';
 
-const registry = new VassalRegistry();
-const oversight = new OversightDesk();
-const metrics = new ConcurrencyMetrics();
-// 完整装配见 src/state/boot.ts 的 bootKernel()，生产进程入口已装配齐全
-const orchestrator = new Orchestrator(lookup, dispatcher, { metrics, onConflict: conflictsToDesk(oversight) });
-
+const kernel = await bootKernel({
+  vassalSeeds: ['https://agent.example/api/a2a/agent-card'],
+  realmRoots: ['/data/notes'],
+});
 const app = await createHttpServer({
-  registry,
-  signer: new Ed25519MemorySigner('zeus-rsk-dev'),
-  internalToken: process.env.ZEUS_INTERNAL_TOKEN, // 不配则 /api/roster 与整个 H2 不挂载
-  orchestrator,        // 传入即挂载任务端点
-  oversight,           // 传入即挂载人工处理队列端点
-  metrics,             // 传入即挂载 /api/metrics
-  orgRegistry,         // 传入即挂载 /api/org/*
-  skillRegistry, mentorshipLedger, // 传入即挂载 /api/skills*、/api/mentorships*
-  connectorRegistry,   // 传入即挂载 /api/connectors*
-  decisionStatus,      // 传入即挂载 /api/decision
-  auditFile,           // 传入即挂载 /api/audit
-  kernelStats,         // 传入即挂载 /api/state
-  memoryStore, realmStore, // 传入即挂载 /api/memory/* 与 /api/diary*
+  registry: kernel.registry,
+  orchestrator: kernel.orchestrator,   // 传入即挂载任务端点
+  oversight: kernel.oversight,         // 传入即挂载人工处理队列端点
+  metrics: kernel.metrics,             // 传入即挂载 /api/metrics
+  internalToken: process.env.ZEUS_INTERNAL_TOKEN,
 });
 await app.listen({ host: '127.0.0.1', port: 8787 });
 ```
 
-## 操作面示例（`npm start` 后）
+数据域可以脱离编排单独用（自包含、无需网络）：`connect` 建索引 → `search` 走连接快照 → `read` 实时落盘，绝对路径不外泄。
+
+### 2.5 数据保全与对外验签
 
 ```bash
-TOKEN=secret
-# 发起一个任务：并行派发给提供该技能的全部在册 Agent，返回聚合决策
-curl -s -X POST localhost:8787/api/intents -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"skill":"review-pr","realm":"enterprise","params":{"pr":42}}'
-# -> { "intentId": "intent-…", "status": "completed | partial | failed | needs-driver", "decision": {...} }
-
-curl -s localhost:8787/api/intents/intent-xxx -H "Authorization: Bearer $TOKEN"                       # 回查决策
-curl -s localhost:8787/api/intents/intent-xxx/replay -H "Authorization: Bearer $TOKEN"                # 决策过程回放（?format=text 可读版）
-curl -s -X POST localhost:8787/api/intents/intent-xxx/cancel -H "Authorization: Bearer $TOKEN"        # 取消全部非终态分支
-curl -s localhost:8787/api/intents/intent-xxx/events -H "Authorization: Bearer $TOKEN"                # SSE 进度
-
-curl -s 'localhost:8787/api/escalations?status=pending' -H "Authorization: Bearer $TOKEN"             # 待人工处理队列
-curl -s 'localhost:8787/api/escalations?status=pending&kind=memory-dispute' -H "Authorization: Bearer $TOKEN"  # 按类型分流：缺参 / 冲突 / 记忆争议
-curl -s -X POST localhost:8787/api/escalations/esc-xxx/resolve \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"stance":"approve","note":"人工裁决理由"}'                                                      # 裁决并回写聚合结果
-curl -s localhost:8787/api/metrics -H "Authorization: Bearer $TOKEN"                                  # 并发指标
-curl -s localhost:8787/api/state -H "Authorization: Bearer $TOKEN"                                    # 运行时盘点（只有计数与路径，不含快照内容）
-curl -s 'localhost:8787/api/audit?runId=run-xxx&limit=50' -H "Authorization: Bearer $TOKEN"          # 审计回读
-curl -s localhost:8787/api/decision -H "Authorization: Bearer $TOKEN"                                 # 进程实际使用的决策后端与复核闸门
-
-# 执行 Agent 上线与吊销（连接层不可达返回 502 并在 detail 中点名 URL）
-curl -s -X POST localhost:8787/api/vassals -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"cardUrl":"https://agent.example/api/a2a/agent-card"}'
-curl -s -X DELETE localhost:8787/api/vassals/pr-helper -H "Authorization: Bearer $TOKEN"
-
-# 能力目录：检索、注册显式规格、按所需技能解析组队；卸载与权限收窄即时影响自动派发
-curl -s 'localhost:8787/api/skills?domain=code' -H "Authorization: Bearer $TOKEN"
-curl -s -X POST localhost:8787/api/skills -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"id":"code-review","name":"Code review","description":"review a PR","version":"1.0.0","permissions":["realm"],"providedBy":["pr-helper"]}'
-curl -s -X POST localhost:8787/api/skills/team -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"skills":["code-review"]}'
-curl -s -X POST localhost:8787/api/skills/code-review/uninstall -H "Authorization: Bearer $TOKEN" -d '{}'
-curl -s -X POST localhost:8787/api/skills/code-review/harden \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"permissions":["realm:read"],"constraints":{"maxRuntimeMs":5000}}'
-
-# 能力认证：逐项评估通过后才把该 Agent 登记为技能提供者
-curl -s -X POST localhost:8787/api/mentorships -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"skillId":"code-review","mentorId":"pr-helper","learnerId":"agent-dev"}'
-curl -s -X POST localhost:8787/api/mentorships/mentor-xxxx/assess \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"checks":[{"criterion":"risk triage","required":true,"passed":true,"score":0.9}]}'
-
-# 组织结构与问责链（部门 id 前缀 dept:；纯中文名无 ASCII 可提取时落为 dept:<sha256 前 8 位>，显示名原样保留，后续操作请使用响应里的 id）
-curl -s localhost:8787/api/org/chart -H "Authorization: Bearer $TOKEN"
-curl -s -X POST localhost:8787/api/org/departments -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"name":"研发部","mission":"交付"}'
-curl -s -X POST localhost:8787/api/org/departments/dept:qa/members \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"agentId":"agent-1","role":"lead","title":"研发主管"}'
-curl -s -X POST localhost:8787/api/org/departments/dept:qa/lead \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"agentId":"agent-2"}'
-curl -s -X DELETE localhost:8787/api/org/departments/dept:qa/members/agent-1 -H "Authorization: Bearer $TOKEN"
-curl -s localhost:8787/api/org/accountability/intent-xxx -H "Authorization: Bearer $TOKEN"
-
-# 上岗校验与首日简报：台账、开档、豁免、签字、撤回、简报、首个任务
-curl -s localhost:8787/api/org/departments/dept:qa/commissions -H "Authorization: Bearer $TOKEN"
-curl -s localhost:8787/api/org/departments/dept:qa/briefing/agent-1 -H "Authorization: Bearer $TOKEN"
-
-# 记忆与遗忘权
-curl -s 'localhost:8787/api/memory/recall?realmId=realm-xxx&q=关键词&limit=5' -H "Authorization: Bearer $TOKEN"
-curl -s "localhost:8787/api/memory/facts?realmId=realm-xxx" -H "Authorization: Bearer $TOKEN"
-curl -s -X POST localhost:8787/api/memory/retract -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"realmId":"realm-xxx","factIds":["abcd1234"],"reason":"用户要求删除","requestedBy":"operator"}'
-curl -s localhost:8787/api/memory/integrity -H "Authorization: Bearer $TOKEN"
-curl -s localhost:8787/api/memory/snapshot -H "Authorization: Bearer $TOKEN" > before.json   # 留存时点快照
-jq -n --argjson p "$(cat before.json)" '{previous:$p.state}' | curl -s -X POST localhost:8787/api/memory/reconcile -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' --data-binary @- -o /dev/stdout | jq '{hasDrift,eventsAppended,eventsRemoved,factsAdded:(.factsAdded|length),factsChanged:(.factsChanged|length)}'   # 漂移对账：只读，不会导入传入的快照
-
-# 叙事日志
-curl -s 'localhost:8787/api/diary?date=2026-09-24' -H "Authorization: Bearer $TOKEN"
-curl -s 'localhost:8787/api/diary/export?date=2026-09-24' -H "Authorization: Bearer $TOKEN"   # 稳定 JSON 文档，与读视图同一选择器
-curl -s -X POST localhost:8787/api/diary/generate -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' -d '{"date":"2026-09-24"}'
-
-# 外部系统连接器：声明 → 握手（按权限边界裁剪工具）→ 调用 → 吊销
-curl -s -X POST localhost:8787/api/connectors -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"id":"kb","name":"Knowledge Base","endpoint":"http://127.0.0.1:9000/mcp","permissions":["mcp:search"],"token":"upstream-secret"}'
-curl -s -X POST localhost:8787/api/connectors/kb/connect -H "Authorization: Bearer $TOKEN"
-curl -s -X POST localhost:8787/api/connectors/kb/tools/search/call \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"arguments":{"query":"x"}}'
-curl -s -X DELETE localhost:8787/api/connectors/kb -H "Authorization: Bearer $TOKEN"
-# 所有连接器响应只报 hasToken，绝不回显上游凭证；权限词汇与裁剪层次见 docs/mcp-integration.md §2
-
-# 数据域治理面：挂载、跨域授权签发/吊销、不读内容的访问探针
-curl -s localhost:8787/api/domains -H "Authorization: Bearer $TOKEN"
+export ZEUS_VAULT_PASSPHRASE='…'
+npm run vault -- build   --root /path/to/dir --out backups/map.json   # 出清单：只存引用与逐条指纹
+npm run vault -- check   --map backups/map.json                       # 原地漂移校验（只读；退出码 2=漂移，3=目录不可达）
+npm run vault -- backup  --root /path/to/dir --out-dir backups        # 加密内容包
+npm run vault -- restore --map backups/x.map.json --bundle backups/x.bundle.json --target /restore/dir
 ```
 
-端到端闭环（发起 → 并行派发 → 冲突进入人工队列 → 裁决回写）在 `tests/http-h2.test.ts` 中用模拟执行 Agent 完整跑通。
+第三方只持公钥即可判一份已发布名册的真伪——但**先与带外公告的指纹逐字符比对**再用，因为发钥的那个进程说不出"这把钥属于谁"：
 
-## 当前状态与边界
+```bash
+npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk.pem
+# 退出码 0=验签通过 / 1=被拒（附原因：版本不认识、摘要不绑定、签名不符、过期…）/ 2=参数或 I/O 错
+```
 
-> 状态以 [handoff.md](handoff.md) 为准；MVP 判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)。
+数据域经 MCP 对外暴露时有两条传输形态：stdio（宿主预连接并授权，协议不暴露 connect）与 streamable HTTP（`GET /mcp` 只出元信息、`POST /mcp` 需 bearer，会话级身份只能收窄宿主白名单）。对接细节见 [docs/mcp-integration.md](docs/mcp-integration.md)。
 
-- **MVP 判定：产品核心完全可用 = ✅**（评审 v0.10 判定、v0.12 在真进程 / 真 socket / 自建容器上逐条复跑复核）。判定依据的边界也已写明：对线上执行 Agent 的那次标准协议验收是一次真实执行，非本评审复现；仓库外仍差的事是真实环境联调与密钥托管，不是代码缺口。
-- **已验证到什么程度**：1904 项测试 / 166 个测试文件，外加一条可重跑的**核心链路真机冒烟**（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → **发布的根公钥就是签名那把，且同一指纹在出钥·发布·验签三处同串** → 记忆快照与漂移对账（含「意图结论必须真的写进记忆」的读数断言）→ 日记导出 → 吊销断流 → 落盘 → 重启恢复 → 契约操作面签发/读/撤销 → watch 触发恰一次真派发 → execute watch 派生一次性票据、**记忆召回装配进分支上下文出站载荷**（contextAppendix/memory-recall）、**技能声明输入装配**（带参意图出站含 skillInputs explicit / 缺参意图含 unavailable）、撤销契约断流，47 步），- **execute 授权链另有一条真进程验收**（`npm run verify:execute-delegation`，9 步：真 HTTP 进程 + 真 socket 执行 Agent——execute 无票据拒发零出站 / 签发端点 201 拿票 / 带票 execute 单次派发 / 同票重放拒发 / 两次拒绝与签发进审计链；dist 出货实现受检），- **E2.6 操作者意图识别另有一条真进程验收**（`npm run verify:intent-recognize`，7 步：本地规则命中零模型出域（backend:null）/ 未命中 422 fail-closed / realm 校验 400 / useModel 无后端 422 / 识别出的技能 id 回灌 `POST /api/intents` 真派发 completed）
-- **TUI 意图识别面另有一条真进程验收**（`npm run verify:tui-recognize`，7 步：走 dist 出货的监督台 client/render/commands——真 socket 技能目录注册 / 本地命中（backend:null）/ 渲染含零出域+plan-only / 未命中 fail-closed / useModel 无后端 fail-closed / `i`/`im` 命令解析 / `info` 不误判）
-- **产品入口另有真进程验收**（`tests/daily-entry.test.ts` 20 例：真 socket 执行 Agent + 真目录 + 真状态文件；本机手工五档 2026-10-08 读数——成功档 exit 0 且**落盘页与打印页 sha256 同串**、Agent 报 `state=failed` 档 exit 1 而证据仍入库、两 Agent 立场分裂档进台账且跨重启可检、中文指令对英文目录 `no-candidates` 且**不写任何文件**、四类配置错误各 exit 2）。中文指令要选中英文技能目录需要显式 `--model` 且配了决策后端（Active work 148）。
-`tsc --noEmit` 与 build 各自 exit 0；GitHub Actions Node 22.x / 24.x 双矩阵每次推送均绿（**是否已推、领先几个 commit 以 `git rev-list --count origin/dev..HEAD` 现测为准**）；Docker 镜像实构实跑（健康检查、状态文件与审计文件 0600、SIGTERM 保存、重启恢复）；带出站凭证的执行 Agent 协作经真实 socket 验证（凭证不外泄、吊销即刻断流、重启后凭证仍在）；**离线名册验签有命令行入口**（`npm run verify:roster`，只持公钥即可判真伪）。
-- **协议验收**：对生产环境的执行 Agent 跑通过一次纯标准 A2A 客户端验收（卡片发现 + 任务受理）。
-- **仍待外部条件**：与 loom 的真机联调、决策后端的真实 endpoint/key 核对、签名密钥的实际托管与公钥发布（deferred #7）；MCP 暴露侧的主体身份判定（deferred #18）已于 2026-10-07 落地 streamable HTTP 传输层 + `x-zeus-realm-actor` 会话级 actor 收窄（Active work 144），剩真实读取方出现；另两条由本轮真进程取证抓出并已登记：**连接器权限词法绑不住带下划线/点/大写的工具名**（只能退裸 `mcp`＝放行全部，deferred #30）与 **MCP 面把未声明的查询参数静默丢掉**（`?tags=` 返回未过滤结果且不报错，deferred #31）——两者的修法都是对外契约决定，且都要等真实外部 MCP 服务出现才有实测对象；对接方视角的契约与避坑见 [docs/mcp-integration.md](docs/mcp-integration.md)。
-- **明确不存在的能力**：**入站 A2A 面的真实信任锚**——机制已于 2026-10-07 落地（`GET /.well-known/agent-card.json` 公开卡片 + 同路径 `POST` bearer 保护 JSON-RPC `tasks/send` 落 H2 意图面，调用方 `x-zeus-caller-card` 过 fealty 形状闸，Active work 144 / deferred #19），但真实上游调用者（loom 或公开执行 Agent）与在册名册验签仍待对端出现；数据域边界的显式变更操作（下线 / 改租户）无可执行路径（#17）；部分启动参数校验口径不一致，待人工裁定（#20）。
+### 2.6 验证你的安装
+
+```bash
+npm run typecheck    # tsc --noEmit
+npm test             # vitest：1950 项 / 168 个测试文件（以你本机这条命令的输出为准）
+npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 49 步（只用回环与自造密钥）
+npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline 相对钉住的基线出退化 diff（blocked 退化 exit 1）
+```
+
+这些可重跑的资产本身就是质量的读数：**已验证到什么程度**：1950 项测试 / 168 个测试文件，外加一条可重跑的核心链路真机冒烟（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → 发布的根公钥就是签名那把（同一指纹在出钥·发布·验签三处同串）→ 重启恢复名册·记忆·数据域 → 契约操作面签发/读/撤销 → watch 触发恰一次真派发 → 记忆召回装配进分支上下文 → 技能声明输入装配（explicit / unavailable）→ Day-1 双进程入口探针与出货进程成本账户读数、撤销契约断流，49 步）。
+
+---
+
+## 3. 架构概览
+
+### 3.1 分层
+
+```
+使用者面    产品入口 daily · 终端监督台 TUI · Web 监督台 · 操作者 HTTP API
+                 └──── 三面共用同一组 bearer 端点；写动作一律先确认，再进同一条审计日志 ────┘
+运行时核心  src/  纯 TypeScript 库（除 src/http/ 外零运行时依赖）
+                 编排 · 规则聚合 · 治理闸门 · 数据域 · 记忆 · 组织 · 能力目录 · 审计 · 状态
+传输层      src/http/  全仓库唯一 Fastify 依赖处：只做路由、鉴权与投影，不含决策逻辑
+协议面      A2A 客户端（派发）+ 入站 A2A 服务端（被派单）· MCP 服务端（数据域）+ MCP 客户端（连接器）
+存储        用户目录（数据域正文）· 内核状态快照 0600 · 审计 JSONL · 备份清单与加密内容包
+```
+
+库的统一公共出口是 `src/index.ts`（不含 HTTP 传输面）。
+
+### 3.2 一次派发的路径
+
+1. 意图进来（`npm run daily` / `POST /api/intents` / 入站 A2A `tasks/send`），按技能解析候选执行 Agent，能力目录裁决哪些提供者可用。
+2. 治理闸门在派发**之前**：并发上界与队列、步数预算与熔断、成本准入、执行授权票据（execute 模式）——拒绝即终止出站，并写进审计。
+3. 并行出站：每个分支一次 A2A 任务，出站前按数据策略脱敏、检查该 Agent 是否已被吊销（吊销即断流，不发请求也不发凭证）。
+4. 多路事件流合并回一条视图，事件保持来源可辨；分支超时或失败如实计入分支结果，不被重标成别的原因。
+5. 立场按确定性规则聚合；收敛则出结论，不收敛则 `needs-driver` 并进人工队列；可选再经决策后端做一次置信闸门内的仲裁或对抗复核。
+6. 操作者批准 / 拒绝 / 裁决；批准可带参数只重派那一条分支；拒绝联动取消对端任务。
+7. 结果与决策进状态快照与审计链；记忆层按事件追加、纯函数派生事实，矛盾进队列。
+
+### 3.3 模块
+
+| 层 | 路径 | 职责 |
+| --- | --- | --- |
+| 协议类型 | `src/a2a/` | 标准 A2A 类型（卡片、任务生命周期、SSE 事件、file/URI part 透传）与 `x-zeus-*` 扩展；随仓库出货的参考执行体也在此 |
+| 执行 Agent 目录 | `src/registry/` | 卡片拉取注册、归属声明校验（缺字段即拒收并点名缺哪个）、健康探针、吊销与恢复、出站凭证存取与四视图脱敏；目录快照 → internal / public 双投影并签名 |
+| 派发 | `src/dispatch/` | JSON-RPC + SSE 客户端、按数据策略脱敏、派发前吊销阻断、审计 sink 与治理审计桥 |
+| 编排 | `src/orchestrator/` | 并行派发与汇聚、多流合并、规则聚合、冲突检测与升级、幂等重放、取消传播、并发上限与有界队列、终止守卫、成本账本、补参重派、离线决策回放、DAG 与规划扇出、进度事件 |
+| 人工处理 | `src/oversight/` | 升级队列与 approve / reject / resolve、介入分级、裁决回写并重算状态 |
+| 能力目录 | `src/skills/` | 显式规格校验（版本 / 封闭权限词汇 / 依赖无环 / 别名声明）、多版本共存、检索与组队解析（歧义不静默选边）、装卸与权限收窄、能力认证台账 |
+| 决策后端 | `src/decision/` | 模型无关端口 + 规则 / 外部决策模型 / OpenAI 兼容适配器 + 降级；只在被显式咨询时出域 |
+| 数据域 | `src/realm/` | 连接即建检索索引、确定性 realmId、内容摘要基线、路径穿越与符号链接双检、原子写；三级租户范围与跨域授权判定、签名且一次性的企业写授权凭证；只读 MCP 服务端与 stdio 宿主 |
+| 外部系统连接器 | `src/mcp/` | 零 SDK 的 streamable-HTTP JSON-RPC 客户端；连接器声明 / 握手 / 吊销，最小权限精确裁剪——只有经握手发现且被声明保留的工具才可调用；子进程连接器的环境收窄 |
+| 记忆与叙事 | `src/memory/`、`src/diary/` | 只追加事件日志 + 纯函数派生事实、观察去重、矛盾默认争议、置信度按可靠度加权、混合检索、遗忘权与撤回；事件按日历天分桶成可读记录 |
+| 组织与自动触发 | `src/org/`、`src/onboarding/`、`src/watch/` | 部门与问责链；上岗四道门每次现算不缓存（签字后吊销 Agent 或撤出编制即自动失格）；watch 由调用方驱动计时，命中即派生意图 |
+| 护栏与观测 | `src/guardrails/`、`src/observability/`、`src/reflection/` | 内容风险判定与来源标注；trace 树、并发指标与指标史、日志结构化与凭证打码；失败归因 |
+| 状态与装配 | `src/state/`、`src/http/serve.ts` | 快照原子落盘与启动恢复、跨进程文件锁、优雅退出；按环境变量装配生产进程 |
+| 备份与恢复 | `src/vault/` | 清单来源可为数据域或文件白名单、只存引用与指纹、密钥与图分离的 AES-256-GCM 包、原地漂移校验、跨位置恢复；零依赖 CLI |
+
+### 3.4 持久化、审计与信任链
+
+- **状态**：单一 JSON 快照（名册含已吊销、待决队列、意图结果与原始请求、组织编制、授权台账、nonce 账本），tmp + rename 原子写、权限 0600、启动即恢复；意图记录默认保留并可出窗归档，同一意图键重放零出站。
+- **审计**：JSONL 落盘、按字节上限自轮转、可按运行 ID / 执行 Agent / 决策类型回读；治理动作（注册、吊销、恢复、授权、裁决）与派发决策进同一条链。审计写失败只计数、不改变派发结果，并由 `GET /api/state` 报降级——磁盘错误不会被冒充成执行 Agent 的失败。
+- **信任链**：目录快照由 Ed25519 根钥封签（规范化载荷 + 条目 attestation + 新鲜度绑定），`GET /api/roster/keys` 发布公钥与指纹，任何持有公钥的一方都能离线验；信任的锚点是**带外公告的指纹**，不是发布它的那个进程。
 - **数据主权的实现方式**：数据域内容对外的唯一传输是 MCP，HTTP 侧只到治理元数据与授权记录为止；`GET /api/state` 只报计数与路径，不服用含凭证与记忆明文的状态快照；上游凭证在任何响应中只以 `hasToken` 呈现。
-- **已知风险**：CI 构建机镜像已钉 `ubuntu-24.04`（deferred #16 于 2026-09-26 销项：`ubuntu-latest` 本会于 2026-10-19 自动迁 Ubuntu 26）。代价是升级镜像从此为手动动作，工作流内已注明。
 
-## 标识符说明
+### 3.5 术语（高频十条）
 
-源码与环境变量里保留了一批项目早期命名（`vassal`、`fealty`、`roster`、`realm`、`vault`、`kernel`、`driver`、`commission`、`mentorship`、`diary`、`noul`）。它们是接口的一部分，含义、出现面与"为什么不能顺手改名"逐条记在 [docs/terminology.md](docs/terminology.md) 的「历史标识符的含义」与「破坏性面」两节。一句话：**这些名字不代表任何第三方系统或集成**（例如 `src/vault/` 与 HashiCorp Vault 无关），本文档一律使用上文的工程术语，不使用这些历史名做叙述词。
+| 术语 | 含义 |
+| --- | --- |
+| 执行 Agent | 已注册、可被派发任务的外部 Agent，经标准 A2A 协议交互 |
+| 归属声明 | 卡片上的 `x-zeus-fealty`：服务哪些数据域、数据策略、回传与升级口径；不合法即拒绝注册 |
+| 并行派发（fan-out） | 一个意图同时下发给多个执行 Agent，多路事件流合并回一条 |
+| 立场与规则聚合 | 分支回传的结构化意见（立场 + 依据 + 权重）按一致 / 多数 / 加权合为一个决策 |
+| 冲突升级 / 人工裁决 | 规则无法收敛或 Agent 索要缺失输入时进队列；操作者给出立场后回写重算 |
+| 数据域 | 一个可连接的本地目录，分 `personal` / `enterprise`；连接即建立检索索引 |
+| 单向隔离 | 企业域内容可进入决策，反向路径不存在；跨域读写需签名且一次性的授权凭证 |
+| 能力目录 | 技能的显式规格：多版本共存、权限只可收窄、卸载与收窄即时影响自动派发 |
+| 决策回放 | 从持久化事实重建一次决策的参与方·输入·立场·聚合·裁决 |
+| 操作者 | 人类角色：监督、介入、给出最终裁决——不是被替代的手工执行者 |
 
-## 文档
+代码、环境变量与 HTTP 路径里保留了一批早期命名（`vassal` / `fealty` / `roster` / `realm` / `kernel` / `driver` / `commission` / `mentorship` / `noul`）。它们是接口的一部分，含义与"为什么不能顺手改名"逐条记在 [docs/terminology.md](docs/terminology.md)；**这些名字不代表任何第三方系统或集成**（例如 `src/vault/` 与 HashiCorp Vault 无关），本文档不使用它们做叙述词。
 
-- [handoff.md](handoff.md) — **接手必读**：当前状态、活跃任务、最近变更、完整文档清单
-- [docs/README.md](docs/README.md) — 文档地图（按场景导航）
-- [docs/terminology.md](docs/terminology.md) — 术语对照：内部标识符 ↔ 工程原语 ↔ 业界标准用语，含同名易混分级
-- [docs/product-portrait.md](docs/product-portrait.md) — 产品定位与设计哲学
-- [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) — 执行 Agent 协议：A2A 超集、注册握手、结果回传、升级与治理、六项验收
-- [docs/design-realm.md](docs/design-realm.md) — 数据域接口契约（connect / search / read / write、三级租户与跨域授权、签名且一次性的写授权凭证）
-- [docs/design-bayjf-roster.md](docs/design-bayjf-roster.md) — 目录快照投影与公开发布改造
-- [docs/design-fealty-signing.md](docs/design-fealty-signing.md) — 目录签名链（Ed25519 + JCS、条目 attestation、快照签名、TTL、八条验收）
-- [docs/design-http-transport.md](docs/design-http-transport.md) — HTTP 传输层选型与端点规划（薄传输层约束）
-- [docs/deployment.md](docs/deployment.md) — 部署手册：Docker、签名密钥与生产守卫、systemd 备选、备份 CLI 与 cron 示例、上线检查清单
-- [docs/design-fan-out.md](docs/design-fan-out.md) — 并发编排契约：并行派发与汇聚、合并流、幂等、取消、规则聚合、冲突升级、边界
-- [docs/design-decision-backend.md](docs/design-decision-backend.md) — 模型无关决策后端（适配器、置信闸门、降级到人工）
-- [docs/design-vault.md](docs/design-vault.md) — 备份与恢复协议（清单来源含文件白名单、只存引用、密钥分离、原地漂移校验、跨位恢复）
-- [docs/design-diary.md](docs/design-diary.md) — 叙事日志（事件按天分桶、不臆造内容、锚定事件 ID）
-- [docs/design-org.md](docs/design-org.md) — 组织结构与问责（部门单负责人、结构可视、责任链）
-- [docs/design-onboarding.md](docs/design-onboarding.md) — 上岗校验与首日简报（四道门现算不缓存）
-- [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) — 项目级评审（功能性 / 完整度 / 可上线；**现行判定：产品核心完全可用 MVP ✅**）
-- [docs/capacity-baseline.md](docs/capacity-baseline.md) — 本机容量基线（多场景，含并发闸门档）
-- [docs/deferred-items.md](docs/deferred-items.md) — 缓做项与各自的触发条件（单一事实源）
+### 3.6 现行判定与仍缺的外部条件
 
-## 协作约定
+- **产品核心完全可用的 MVP = ✅**；**可上线交付真实用户 = ❌**。判定的单一事实源是 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md)，理由清单与差距全部在仓库外（真实部署、密钥实际托管与公钥指纹带外公告、需要 ≥3 个真实执行 Agent 在线才能标定的治理阈值）。
+- 逐条待办与触发条件见 [docs/deferred-items.md](docs/deferred-items.md)；能力与操作面的现行清单见 [docs/feature-inventory.md](docs/feature-inventory.md)。
 
-见 [AGENTS.md](AGENTS.md)（任务追踪与文档分层、设计哲学、提交规范）与 [git-commit-message.md](git-commit-message.md)。进度统一登记在 `handoff.md`，设计文档只写设计、不重复记进度。
+---
+
+## 4. 文档
+
+| 想做什么 | 去哪份 |
+| --- | --- |
+| 接手项目：当前状态、活跃待办、最近变更 | [handoff.md](handoff.md) |
+| 按场景导航全部文档 | [docs/README.md](docs/README.md) |
+| 需求拆解、优先级与验收标准 | [docs/prd.md](docs/prd.md) |
+| 产品定位与设计哲学 | [docs/product-portrait.md](docs/product-portrait.md) |
+| 现行能力清单与操作面（路由 / 端点 / 三面可读） | [docs/feature-inventory.md](docs/feature-inventory.md) |
+| MVP 判定与可上线判定的单一事实源 | [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) |
+| 部署、密钥、备份调度、上线检查清单 | [docs/deployment.md](docs/deployment.md)、[docs/pre-launch-checklist.md](docs/pre-launch-checklist.md) |
+| 对接 MCP（数据域服务端与连接器客户端） | [docs/mcp-integration.md](docs/mcp-integration.md) |
+| 执行 Agent 协议（卡片、握手、回传、升级、验收） | [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) |
+| 数据域契约（connect / search / read / write、租户、跨域授权） | [docs/design-realm.md](docs/design-realm.md) |
+| 并发编排契约（派发与汇聚、合并流、幂等、取消、聚合、升级） | [docs/design-fan-out.md](docs/design-fan-out.md) |
+| 目录签名链与公钥发布、人工轮换手册 | [docs/design-fealty-signing.md](docs/design-fealty-signing.md) |
+| 备份与恢复协议 | [docs/design-vault.md](docs/design-vault.md) |
+| 模型无关决策后端 | [docs/design-decision-backend.md](docs/design-decision-backend.md) |
+| HTTP 传输层选型与端点规划 | [docs/design-http-transport.md](docs/design-http-transport.md) |
+| 组织结构与问责、上岗校验与首日简报、叙事日志 | [docs/design-org.md](docs/design-org.md)、[docs/design-onboarding.md](docs/design-onboarding.md)、[docs/design-diary.md](docs/design-diary.md) |
+| 本机容量基线 | [docs/capacity-baseline.md](docs/capacity-baseline.md) |
+| 缓做项与各自的触发条件 | [docs/deferred-items.md](docs/deferred-items.md) |
+| 术语对照与历史标识符 | [docs/terminology.md](docs/terminology.md) |
+
+子系统设计的完整清单（规划 / 流式 / 恢复 / 沙箱 / 护栏 / 观测 / 评测 / 上下文工程 / 监督 / 记忆整理 / 背压 / 自托管闭环 等）在 `docs/design-*.md`，一个主题一份，索引见 [docs/README.md](docs/README.md)。
+
+## 5. 协作约定
+
+见 [AGENTS.md](AGENTS.md)（文档分层、设计约束、写作语言、提交规范）与 [git-commit-message.md](git-commit-message.md)。一句话：**handoff = 状态 + 待办 + 索引，docs = 方案 + 设计 + 明细**；实施进度统一记在 `handoff.md`，设计文档只写设计、不重复记进度。
