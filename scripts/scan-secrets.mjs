@@ -23,6 +23,9 @@ const PATTERNS = [
   [/sk-ant-api03-[A-Za-z0-9_-]{20,}/, 'Anthropic API key'],
   [/npm_[A-Za-z0-9]{36}/, 'npm token'],
   [/AIza[0-9A-Za-z_-]{35}/, 'Google API key'],
+  // Project keys carry hyphens after "sk-proj-", so the plain sk- shape below
+  // cannot match them; the two shapes need separate patterns.
+  [/sk-proj-[A-Za-z0-9_-]{20,}/, 'OpenAI project API key'],
   [/sk-[A-Za-z0-9]{48,}/, 'OpenAI API key'],
 ];
 
@@ -35,12 +38,17 @@ if (diffBase === null && args.length > 0) {
   process.exit(2);
 }
 
+// -z: NUL-delimited, and core.quotePath=false keeps non-ASCII paths literal.
+// Without both, git emits paths like "秘.txt" as octal-escaped quoted
+// strings; reading those escaped paths fails and the file is silently skipped.
+/** @param {string[]} args */
+const git = args => execFileSync('git', ['-c', 'core.quotePath=false', ...args], { encoding: 'utf-8' });
+
 let files;
 if (diffBase !== null) {
-  files = execFileSync('git', ['diff', '--name-only', `${diffBase}...HEAD`], { encoding: 'utf-8' })
-    .split('\n').filter(Boolean);
+  files = git(['diff', '--name-only', '-z', `${diffBase}...HEAD`]).split('\0').filter(Boolean);
 } else {
-  files = execFileSync('git', ['ls-files'], { encoding: 'utf-8' }).split('\n').filter(Boolean);
+  files = git(['ls-files', '-z']).split('\0').filter(Boolean);
 }
 
 let hits = 0;
