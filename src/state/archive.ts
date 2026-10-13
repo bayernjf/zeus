@@ -21,7 +21,7 @@
  * IntentArchiveLookup, so the kernel never performs file I/O itself; the
  * booted process supplies the real JSONL-backed implementation.
  */
-import { mkdir, open, readFile } from 'node:fs/promises';
+import { mkdir, open, readFile, stat, type FileHandle } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { FanOutRequest, FanOutResult, FanOutStatus } from '../orchestrator/types.js';
 import type { Escalation } from '../oversight/types.js';
@@ -143,6 +143,13 @@ export function archiveFilePath(stateFile: string): string {
  * primary key, so appends skip duplicates (an interrupted flush followed by a
  * retry cannot double-write). The in-memory index is rebuilt on construction,
  * making a restart read the same archive the previous process left behind.
+ *
+ * A kill mid-write can leave one torn record on the tail without its newline:
+ * loadIndex tolerates exactly that case (a torn tail, never an interior line),
+ * and the next append truncates the partial bytes before writing. Each append
+ * is fsynced (and the directory when the file was created), and the file is
+ * owner-only — created 0600 and re-chmodded in case an older build left it at
+ * the umask default.
  */
 export class IntentArchive implements IntentArchiveLookup {
   private index = new Map<string, ArchivedIntentRecord>();
@@ -159,31 +166,67 @@ export class IntentArchive implements IntentArchiveLookup {
       throw error;
     }
     this.index.clear();
-    for (const line of raw.split('\n')) {
+    const lines = raw.split('\n');
+    let lastNonEmpty = -1;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (lines[i]!.trim() !== '') lastNonEmpty = i;
+    }
+    for (let i = 0; i < lines.length; i += 1) {
+      const line = lines[i]!;
       if (line.trim() === '') continue;
-      const record = JSON.parse(line) as ArchivedIntentRecord;
+      let record: ArchivedIntentRecord;
+      try {
+        record = JSON.parse(line) as ArchivedIntentRecord;
+      } catch (error) {
+        // Only the final non-empty line may be a torn tail from a crashed
+        // append; an unparseable interior line is corruption we must not
+        // paper over. The torn bytes are dropped here and reclaimed on the
+        // next append (the record still lives in the state file until the
+        // archive append + state snapshot sequence completed).
+        if (i === lastNonEmpty) break;
+        throw new Error(
+          `unreadable archive record on line ${i + 1} of ${this.filePath}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       this.index.set(record.intentId, record);
     }
   }
 
-  /** Append records atomically (tmp + rename per line batch is not needed:
-   *  duplicates are skipped by key, so a crash mid-write at worst loses the
-   *  tail and the next flush re-appends). New keys only. */
+  /** Append new-key records; a torn tail is truncated first. */
   async append(records: readonly ArchivedIntentRecord[]): Promise<void> {
     if (records.length === 0) return;
     const fresh = records.filter(record => !this.index.has(record.intentId));
     if (fresh.length === 0) return;
-    await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
-    const handle = await open(this.filePath, 'a');
+    const dir = dirname(this.filePath);
+    await mkdir(dir, { recursive: true, mode: 0o700 });
+    let created = false;
     try {
+      await stat(this.filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      created = true;
+    }
+    // 'a+' (not 'a') so the torn-tail check can read the final byte.
+    const handle = await open(this.filePath, 'a+', 0o600);
+    try {
+      // Mode on open only applies at creation; tighten a file an older build
+      // left at the default umask.
+      await handle.chmod(0o600);
+      const size = (await handle.stat()).size;
+      if (size > 0 && !(await endsWithNewline(handle, size))) {
+        await truncateTornTail(handle, size);
+      }
       for (const record of fresh) {
-        const line = JSON.stringify(record);
-        await handle.writeFile(`${line}\n`, { encoding: 'utf8' });
+        await handle.writeFile(`${JSON.stringify(record)}\n`, { encoding: 'utf8' });
         this.index.set(record.intentId, record);
       }
+      // Flush bytes before the state snapshot (saved right after this append)
+      // is allowed to consider the record durable.
+      await handle.sync();
     } finally {
       await handle.close();
     }
+    if (created) await fsyncDirectory(dir);
   }
 
   find(intentId: string): Promise<ArchivedIntentRecord | undefined> {
@@ -202,5 +245,45 @@ export class IntentArchive implements IntentArchiveLookup {
   /** Total archived records (index size). */
   size(): number {
     return this.index.size;
+  }
+}
+
+/** Whether the file's final byte is a newline (the only valid line ending). */
+async function endsWithNewline(handle: FileHandle, size: number): Promise<boolean> {
+  const tail = Buffer.alloc(1);
+  await handle.read(tail, 0, 1, size - 1);
+  return tail[0] === 0x0a;
+}
+
+/**
+ * Drop the partial bytes a crashed append left after the last complete line.
+ * Scans backwards in chunks so a large archive is not read into memory; a
+ * file whose very first record was torn (no newline anywhere) is emptied.
+ */
+async function truncateTornTail(handle: FileHandle, size: number): Promise<void> {
+  const CHUNK = 64 * 1024;
+  let position = size;
+  while (position > 0) {
+    const start = Math.max(0, position - CHUNK);
+    const length = position - start;
+    const buffer = Buffer.allocUnsafe(length);
+    await handle.read(buffer, 0, length, start);
+    const newline = buffer.lastIndexOf(0x0a);
+    if (newline !== -1) {
+      await handle.truncate(start + newline + 1);
+      return;
+    }
+    position = start;
+  }
+  await handle.truncate(0);
+}
+
+/** Flush a directory entry change (file creation) so it survives power loss. */
+async function fsyncDirectory(dir: string): Promise<void> {
+  const dirHandle = await open(dir, 'r');
+  try {
+    await dirHandle.sync();
+  } finally {
+    await dirHandle.close();
   }
 }
