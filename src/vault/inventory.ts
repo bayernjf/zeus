@@ -1,4 +1,5 @@
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, readFile, realpath } from 'node:fs/promises';
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { RealmStore } from '../realm/types.js';
 import {
@@ -118,7 +119,16 @@ async function readWhitelistedFile(realRoot: string, name: string, maxBytes: num
   }
   const real = await realpath(abs);
   if (!isInsideRoot(realRoot, real)) throw new VaultError(`file resolves outside the root: ${name}`);
-  const buffer = await readFile(real);
+  // Open by fd with O_NOFOLLOW so a trailing component swapped to a symlink in
+  // the realpath-to-read window is rejected, and the read is pinned to the
+  // inode that passed containment instead of re-resolving the path.
+  const handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let buffer: Buffer;
+  try {
+    buffer = await readFile(handle);
+  } finally {
+    await handle.close();
+  }
   // Binary content would be mangled by utf-8 round-tripping, so refuse it
   // instead of producing a backup that cannot be restored faithfully.
   if (buffer.includes(0)) throw new VaultUnreadableError(`binary file is outside the scope of a text backup: ${name}`);

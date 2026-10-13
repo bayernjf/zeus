@@ -43,15 +43,18 @@ export async function ensureDirInsideRoot(root: string, parent: string, label: s
  * Publish a file atomically: an exclusive temp file in the same directory, then
  * a rename over the target. A plain `writeFile` truncates the target first, so a
  * process that dies mid-write leaves a half-written envelope behind - and for a
- * backup artifact that is the one file the operator cannot regenerate. The fsync
- * is what makes the rename publish bytes that are actually on disk.
+ * backup artifact that is the one file the operator cannot regenerate. The file
+ * fsync makes the rename publish bytes that are actually on disk; the directory
+ * fsync afterwards makes the rename itself survive a power loss (same contract
+ * as KernelStateStore.save).
  *
  * Because the publish is a rename, a pre-existing symlink at the target path is
  * replaced rather than followed: the write can never land somewhere the caller
  * did not name.
  */
 export async function writeFileAtomic(filePath: string, contents: string): Promise<void> {
-  const tmp = join(dirname(filePath), `.${basename(filePath)}.zeus-tmp-${randomUUID().slice(0, 8)}`);
+  const dir = dirname(filePath);
+  const tmp = join(dir, `.${basename(filePath)}.zeus-tmp-${randomUUID().slice(0, 8)}`);
   const handle = await open(tmp, 'wx', 0o600);
   try {
     await handle.writeFile(contents, { encoding: 'utf8' });
@@ -64,5 +67,30 @@ export async function writeFileAtomic(filePath: string, contents: string): Promi
   } catch (error) {
     await rm(tmp, { force: true });
     throw error;
+  }
+  const dirHandle = await open(dir, 'r');
+  try {
+    await dirHandle.sync();
+  } finally {
+    await dirHandle.close();
+  }
+}
+
+/**
+ * Fail-closed revalidation immediately after a publish inside `root`: the
+ * directory entry the rename produced must still be a non-symlinked regular
+ * file whose resolved path stays inside `root`. The containment checks before a
+ * restore write describe the tree before the syscall; this one describes the
+ * entry that now exists, so a directory component swapped in the residual
+ * check-to-rename window is reported instead of silently restoring outside the
+ * target root.
+ */
+export async function assertPublishedInsideRoot(root: string, filePath: string, label: string): Promise<void> {
+  const published = await lstat(filePath);
+  if (published.isSymbolicLink() || !published.isFile()) {
+    throw new VaultFormatError(`${label} did not publish as a regular file inside the target root`);
+  }
+  if (!isInsideRoot(root, await realpath(filePath))) {
+    throw new VaultFormatError(`${label} resolves outside the target root after publish`);
   }
 }

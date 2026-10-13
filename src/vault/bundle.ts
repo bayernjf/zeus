@@ -1,6 +1,6 @@
 import { mkdir, realpath, utimes } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { ensureDirInsideRoot, isInsideRoot, writeFileAtomic } from './fs.js';
+import { assertPublishedInsideRoot, ensureDirInsideRoot, isInsideRoot, writeFileAtomic } from './fs.js';
 import { digestManifest } from '../realm/digest.js';
 import { FsRealmStore } from '../realm/store.js';
 import { open, seal, type VaultKey } from './cipher.js';
@@ -152,6 +152,7 @@ export class FsRestoreSink implements RestoreSink {
       throw new VaultFormatError(`restore item resolves outside the target root: ${item.itemId}`);
     }
     await writeFileAtomic(target, item.content);
+    await assertPublishedInsideRoot(root, target, `restore item ${item.itemId}`);
     const mtimeSec = Date.parse(item.modifiedAt) / 1000;
     if (!Number.isNaN(mtimeSec)) await utimes(target, mtimeSec, mtimeSec);
   }
