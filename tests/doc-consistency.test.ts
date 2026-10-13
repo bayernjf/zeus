@@ -696,9 +696,12 @@ describe('documentation consistency', () => {
     const cite = (body: string) => '`' + body + '`';
 
     // Controls first: each failure shape is reported, the clean one is not.
-    expect(anchorFindings(cite('src/realm/mcp.ts:29-30 #SUPPORTED_PROTOCOL_VERSIONS'), read), 'a clean anchor must pass').toEqual([]);
-    expect(anchorFindings(cite('src/realm/mcp.ts:29-30 #NOT_IN_RANGE'), read)).toEqual([expect.stringContaining('没有校验词')]);
-    expect(anchorFindings(cite('src/realm/mcp.ts:29-99999 #SUPPORTED_PROTOCOL_VERSIONS'), read)).toEqual([expect.stringContaining('超出文件长度')]);
+    // The clean sample points at SUPPORTED_PROTOCOL_VERSIONS wherever it lives
+    // now - adding the write step moved it (Active work 238), and a control that
+    // drifts stops testing the thing it was written for.
+    expect(anchorFindings(cite('src/realm/mcp.ts:47-48 #SUPPORTED_PROTOCOL_VERSIONS'), read), 'a clean anchor must pass').toEqual([]);
+    expect(anchorFindings(cite('src/realm/mcp.ts:47-48 #NOT_IN_RANGE'), read)).toEqual([expect.stringContaining('没有校验词')]);
+    expect(anchorFindings(cite('src/realm/mcp.ts:47-99999 #SUPPORTED_PROTOCOL_VERSIONS'), read)).toEqual([expect.stringContaining('超出文件长度')]);
     expect(anchorFindings(cite('src/realm/nope.ts:1-2 #anything'), read)).toEqual([expect.stringContaining('锚点文件不存在')]);
     expect(anchorFindings(cite('src/realm/mcp.ts:33-40'), read)).toEqual([expect.stringContaining('锚点缺校验词')]);
     expect(anchorFindings('、' + cite(':149'), read)).toEqual([expect.stringContaining('续写形式')]);

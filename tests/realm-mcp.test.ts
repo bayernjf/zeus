@@ -20,7 +20,7 @@ function notify(method: string) {
   return { jsonrpc: '2.0' as const, method };
 }
 
-describe('Realm MCP stdio surface (read-only scaffold)', () => {
+describe('Realm MCP stdio surface (read tools + grant-gated write)', () => {
   let sandbox: string;
   let root: string;
   let store: FsRealmStore;
@@ -53,7 +53,7 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
     rmSync(sandbox, { recursive: true, force: true });
   });
 
-  it('initialize negotiates protocol version and advertises resources + the two read-only tools', async () => {
+  it('initialize negotiates protocol version and advertises resources + the realm tools', async () => {
     const res = await handle(rpc(1, 'initialize', { protocolVersion: '2024-11-05' }));
     expect(res?.error).toBeUndefined();
     const result = res!.result as { protocolVersion: string; capabilities: { resources?: unknown; tools?: unknown }; serverInfo: unknown };
@@ -192,11 +192,13 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
     expect(res!.result).toEqual({});
   });
 
-  it('tools/list exposes realm.search and realm.read with schemas', async () => {
+  it('tools/list exposes realm.search, realm.read and realm.write with schemas', async () => {
     const res = await handle(rpc(1, 'tools/list'));
     expect(res?.error).toBeUndefined();
     const tools = (res!.result as { tools: Array<{ name: string; inputSchema: { required?: string[] } }> }).tools;
-    expect(tools.map(tool => tool.name).sort()).toEqual(['realm.read', 'realm.search']);
+    // realm.write joined the list with E3.4's remaining write step (Active work
+    // 238); its grant boundary is pinned in tests/realm-mcp-write.test.ts.
+    expect(tools.map(tool => tool.name).sort()).toEqual(['realm.read', 'realm.search', 'realm.write']);
     const read = tools.find(tool => tool.name === 'realm.read')!;
     expect(read.inputSchema.required).toContain('realmId');
     expect(read.inputSchema.required).toContain('itemId');
@@ -216,7 +218,10 @@ describe('Realm MCP stdio surface (read-only scaffold)', () => {
   });
 
   it('tools/call refuses unknown tools, non-whitelisted realms, and malformed arguments', async () => {
-    const unknownTool = await handle(rpc(1, 'tools/call', { name: 'realm.write', arguments: {} }));
+    // A name that is not declared at all. It used to be realm.write, back when
+    // the face had no write tool; that name is now real (E3.4 remaining 1), so
+    // sampling it here would assert nothing.
+    const unknownTool = await handle(rpc(1, 'tools/call', { name: 'realm.rename', arguments: {} }));
     expect(unknownTool!.error!.code).toBe(JSON_RPC_CODES.INVALID_PARAMS);
     expect(unknownTool!.error!.message).toMatch(/unknown tool/);
 
