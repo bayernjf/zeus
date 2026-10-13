@@ -268,9 +268,17 @@ export class UnsupportedQueryError extends RealmError {
 /** E3.5: an enterprise-realm write lacks a valid driver grant, or a read-only
  *  realm was asked to write. */
 export class UnauthorizedRealmWriteError extends RealmError {
-  constructor(message: string) {
+  /**
+   * Machine-readable refusal reason (grant-missing / grant-bad-signature / ...,
+   * or realm-read-only). Every face that has to report a refusal reads this
+   * instead of parsing the message: a prose message is for humans, and the
+   * reason is what a client branches on.
+   */
+  readonly reason: string;
+  constructor(message: string, reason = 'unauthorized') {
     super(message);
     this.name = 'UnauthorizedRealmWriteError';
+    this.reason = reason;
   }
 }
 

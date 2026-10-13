@@ -280,7 +280,10 @@ export class FsRealmStore implements RealmStore {
   async write(realmId: string, item: RealmWriteItem, grant?: DriverWriteGrant): Promise<RealmWriteResult> {
     const stored = this.requireRealm(realmId);
     if (stored.readOnly) {
-      throw new UnauthorizedRealmWriteError(`realm was connected read-only; write refused: ${realmId}`);
+      throw new UnauthorizedRealmWriteError(
+        `realm was connected read-only; write refused: ${realmId}`,
+        'realm-read-only',
+      );
     }
     if (item.tags && item.tags.length > 0) {
       throw new UnsupportedWriteError('tags are not persisted by the P0 filesystem backend (tag-capable backend is P1)');
@@ -326,6 +329,7 @@ export class FsRealmStore implements RealmStore {
       if (!verification.ok) {
         throw new UnauthorizedRealmWriteError(
           `enterprise write requires a valid driver grant (${verification.reason}): ${realmId}`,
+          `grant-${verification.reason}`,
         );
       }
     }

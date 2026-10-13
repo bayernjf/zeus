@@ -12,7 +12,7 @@ MCP 在 Zeus 里同时出现在两个方向，且**不是**第三个（跨 Agent
 
 | 方向 | 是什么 | 传输 | 本文位置 |
 |---|---|---|---|
-| **Zeus 作 MCP 服务端** | 把用户自己的目录（数据域 Realm）以**只读**资源 + 两个只读工具暴露给宿主 | **stdio**，换行分隔 JSON-RPC 2.0 | §1 |
+| **Zeus 作 MCP 服务端** | 把用户自己的目录（数据域 Realm）以资源 + 三个工具（检索/读取/**凭证受控的写入**）暴露给宿主 | **stdio**，换行分隔 JSON-RPC 2.0 | §1 |
 | **Zeus 作 MCP 客户端** | 连接器（connector）：接入外部系统已实现的 MCP 服务，发现能力并按声明裁剪 | streamable **HTTP**（`POST`，接受 JSON 或 SSE 帧）**或本地 stdio**（拉起子进程，换行分隔 JSON-RPC）；二选一，见 §2 | §2 |
 | 外部执行 Agent 接 Zeus 干活 | 任务派发与结果回传 | **A2A**（不是 MCP） | [design-vassal-protocol.md](design-vassal-protocol.md) |
 
@@ -66,7 +66,7 @@ ZEUS_REALM_ROOTS=/path/to/notes,/path/to/code \
 
 ### 1.2 握手与版本协商
 
-服务端声明支持三个协议版本，**新在前**（`src/realm/mcp.ts:29-29 #SUPPORTED_PROTOCOL_VERSIONS`）：`2025-06-18`、`2025-03-26`、`2024-11-05`。
+服务端声明支持三个协议版本，**新在前**（`src/realm/mcp.ts:47-47 #SUPPORTED_PROTOCOL_VERSIONS`）：`2025-06-18`、`2025-03-26`、`2024-11-05`。
 
 协商规则（实测）：客户端送的版本在表内 → 原样回该版本；不在表内 → 回服务端最新的那个。
 
@@ -92,7 +92,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 | `resources/templates/list` | ✅ | 返回下面 3 条 URI 模板 |
 | `resources/list` | ✅ | 每个已连接域 2 条（manifest、search） |
 | `resources/read` | ✅ | 三种 URI，见 §1.4 |
-| `tools/list` | ✅ | 两个只读工具，见 §1.5 |
+| `tools/list` | ✅ | 三个工具，见 §1.5 |
 | `tools/call` | ✅ | 同上 |
 | 其他一切（`prompts/list`、`completion/complete`、`notifications/*` 之外的自定义方法…） | ❌ `-32601` | |
 
@@ -124,7 +124,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 ```
 
 要点：
-- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:380-380 #publicManifest`，序列化点 `src/realm/mcp.ts:330-330 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
+- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:468-468 #publicManifest`，序列化点 `src/realm/mcp.ts:418-418 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
 - `contentDigest` 是**连接时快照**的内容摘要；目录被改过它不会自己变（见 §1.6）。
 - `skipped[]` 是"为什么你的某个文件不在结果里"的官方答案，逐条带原因（§1.7）。
 - URI 的 scheme 不是 `zeus-realm://` → `-32602`；hostname 不是已连接域 → `-32002`；pathname 不是 manifest/search/item → `-32602 unknown realm resource`。都实测过。
@@ -132,16 +132,26 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.5 工具参考
 
-`tools/list` 的返回就是两个工具（实测原文含完整 `inputSchema`，此处摘要）：
+`tools/list` 的返回就是三个工具（实测原文含完整 `inputSchema`，此处摘要）：
 
 | 工具 | 入参 | 必填 | 返回 |
 |---|---|---|---|
 | `realm.search` | `realmId`、`text`、`since`（ISO 时间串）、`limit`（正数） | `realmId` | `content:[{type:"text",text:"<RealmHit 数组的 JSON 字符串>"}]` |
 | `realm.read` | `realmId`、`itemId`（根相对 POSIX 路径） | `realmId`、`itemId` | `content:[{type:"text",text:"<文件正文>"}]` |
+| `realm.write` | `realmId`、`data`、`itemId`（可选，缺省由存储层在 `writes/` 下生成）、`grant`（**企业域必填**） | `realmId`、`data` | `content:[{type:"text",text:"{\"itemId\":\"<根相对路径>\"}"}]` |
 
-- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:226-226 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
+**`realm.write` 的边界（2026-10-14 落地，E3.4 剩余项①）**：它没有比读更强的权限，只是把内核既有的写入契约暴露到这条通道上——
+
+- **企业域**必须带 `grant`：`DriverWriteGrant`（由操作者经 `POST /api/realm/write-grants` 签发，Ed25519 签名、绑定 `realmId`、默认 5 分钟过期、单 nonce）。缺凭证、签名不符、陌生 keyId、过期、错域、重放一律拒绝并**点名原因**（`write refused: grant-missing` 等，见 §1.8）。
+- **个人域**不需要凭证——用户在写自己的目录，与内核其他写入路径同一口径。
+- 写入**立刻可被 `realm.search` / `realm.read` 读到**（落盘实时，与 §1.7 的检索索引口径不同：检索索引在连接时快照）。
+- 凭证的验签由存储层完成，MCP 面原样透传——同一套判定只有一份实现，换一条通道不会得到不同的答案。
+- 未声明的参数按名拒绝（`unsupported write parameter: <name>`），`data` 缺失同样拒绝：与检索参数同一 fail-loud 口径（deferred #31）。
+- 宿主若连的存储层没有实现写入（`RealmStore.write` 是可选方法，只读部署/P0 后端），工具**点名不可用**而不是调用 undefined。
+
+- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:262-262 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
 - `realm.read` 的正文按原样返回，包括换行；层级目录用 POSIX 分隔（实测 `itemId:"sub/dir/deep.md"` 可读）。
-- 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:524-524 #snippetFor`。
+- 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:528-528 #snippetFor`。
 - **没有写工具**（实测 `realm.write` → `-32602 unknown tool: realm.write`）。P0 的写能力只存在于库内端口 `Realm.write`，不经这条通道暴露（剩余半边登记在 [deferred-items.md](deferred-items.md) #14/#18 的口径里）。
 
 ### 1.6 快照语义 vs 实时语义：一句话版
@@ -160,7 +170,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.7 哪些文件进得来（扫描规则）
 
-连接时递归扫描根目录，规则如下（常量表 `src/realm/store.ts:62-62 #TEXT_EXTENSIONS`、递归 `src/realm/store.ts:408-408 #EXCLUDED_DIR_NAMES`）。下表五行里有四行的 reason 在本轮实测的 `manifest.skipped` 里原样出现过（扩展名、隐藏文件、超限、符号链接）；`node_modules` / `.git` 与"点开头目录整棵剪掉且不进 skipped"是代码级（`src/realm/store.ts:411-411 #startsWith`）：
+连接时递归扫描根目录，规则如下（常量表 `src/realm/store.ts:62-62 #TEXT_EXTENSIONS`、递归 `src/realm/store.ts:412-412 #EXCLUDED_DIR_NAMES`）。下表五行里有四行的 reason 在本轮实测的 `manifest.skipped` 里原样出现过（扩展名、隐藏文件、超限、符号链接）；`node_modules` / `.git` 与"点开头目录整棵剪掉且不进 skipped"是代码级（`src/realm/store.ts:415-415 #startsWith`）：
 
 | 情况 | 处理 | 出现位置 |
 |---|---|---|
@@ -176,7 +186,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.8 错误码与处置
 
-服务端可能回的全部码（码表 `src/realm/mcp.ts:39-39 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:393-399 #mapError`）。标 ✅ 的是本轮实测出现过原文：
+服务端可能回的全部码（码表 `src/realm/mcp.ts:57-57 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:481-487 #mapError`）。标 ✅ 的是本轮实测出现过原文：
 
 | code | 含义 | 什么时候出现 / 客户端该怎么办 |
 |---|---|---|
@@ -186,6 +196,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 | `-32602` invalid params ✅ | URI scheme 不对 / 未知 realm 资源 / `limit` 非正数 / `since` 不是合法日期 / `arguments` 不是对象 / 工具名未知 / 缺 `itemId` | 参数级错误，逐条改。`since=not-a-date` → `invalid since date: not-a-date`；`limit=0` → `limit must be a positive integer, got: 0` |
 | `-32002` realm not connected ✅ | URI 的 hostname 或 `realmId` 不在宿主授权集合内 | **这就是越界的标准信号**。不是重试，是改授权（重启宿主） |
 | `-32003` invalid itemId ✅ | 路径穿越、目标不存在、符号链接、目录、超限、扩展名不支持 | 消息里只带根相对 itemId，不带绝对路径 |
+| `-32004` write refused ✅ | 写入被拒：只读域，或凭证未带/签名不符/陌生 keyId/过期/错域/已重放（`write refused: grant-<reason>`） | **不是重试信号**。`grant-expired` 与 `grant-replayed` 要重新签发；`grant-bad-signature` / `grant-unsigned` / `grant-unknown-key` 说明凭证不是内核签发的那一把 |
 | `-32000` realm error | 存储层其他错误的兜底 | 本轮未触发（未实测） |
 
 - `limit` 超过 200 或省略时**不报错**：省略取默认 50，超了静默截到 200（代码级：`src/realm/store.ts:69-69 #DEFAULT_LIMIT`、夹取 `src/realm/store.ts:182-182 #MAX_LIMIT`；实测只证明了 `limit:1000000000` 不返回错误）。

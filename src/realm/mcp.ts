@@ -1,11 +1,16 @@
 /**
- * Minimal MCP (Model Context Protocol) JSON-RPC surface for a read-only Realm.
+ * Minimal MCP (Model Context Protocol) JSON-RPC surface for a Realm.
  *
  * Scope (P1 scaffold, design-realm.md §6.1):
  *  - resources map to manifest/search/read.
- *  - tools (Active work 47 §E-4): realm.search / realm.read — read-only access
- *    through the same store, with the realmId whitelist as the domain boundary.
- *    No write tool exists (P0 is read-only).
+ *  - tools: realm.search / realm.read (read access through the same store) and
+ *    realm.write, which is the E3.4 remaining write step. The realmId whitelist
+ *    is still the domain boundary for all three.
+ *  - realm.write carries no special authority of its own: an ENTERPRISE write is
+ *    refused unless the caller presents a signed, unexpired, single-use
+ *    DriverWriteGrant for that exact realmId (E3.5), and a personal realm takes
+ *    no grant — the same contract every other write path in the kernel obeys.
+ *    The grant is verified by the store, never here.
  *  - This is a transport-agnostic, dependency-free message handler: it speaks
  *    newline-delimited JSON-RPC semantics but does no I/O. mcp-stdio.ts wires
  *    it to stdin/stdout. No @modelcontextprotocol/sdk dependency by design;
@@ -19,8 +24,21 @@
  *  - tools/call follows the same rule: it accepts realmIds the host authorized
  *    and root-relative itemIds, and error messages never carry absolute paths.
  */
-import type { RealmItem, RealmManifest, RealmStore, SearchQuery } from './types.js';
-import { InvalidItemIdError, RealmNotConnectedError, UnsupportedQueryError } from './types.js';
+import type {
+  DriverWriteGrant,
+  RealmItem,
+  RealmManifest,
+  RealmStore,
+  RealmWriteItem,
+  SearchQuery,
+} from './types.js';
+import {
+  InvalidItemIdError,
+  RealmNotConnectedError,
+  UnauthorizedRealmWriteError,
+  UnsupportedQueryError,
+  UnsupportedWriteError,
+} from './types.js';
 
 export const JSONRPC_VERSION = '2.0' as const;
 export const REALM_URI_SCHEME = 'zeus-realm:';
@@ -38,6 +56,8 @@ const INTERNAL_ERROR = -32603;
 const REALM_ERROR = -32000;
 const REALM_NOT_CONNECTED = -32002;
 const INVALID_ITEM = -32003;
+/** A write the store refused: read-only realm, or a grant that failed a named check. */
+const REALM_UNAUTHORIZED = -32004;
 
 export type JsonRpcId = string | number | null;
 
@@ -153,8 +173,9 @@ function initializeResult(params: unknown, serverName: string, serverVersion: st
       : PREFERRED_PROTOCOL_VERSION;
   return {
     protocolVersion: negotiated,
-    // Read-only realm: resources plus the two read-only tools below; no write
-    // tool, no prompts.
+    // Realm face: resources plus the tools below. Two of them read; realm.write
+    // exists and carries no extra authority — an enterprise write still needs a
+    // DriverWriteGrant the store verifies. No prompts.
     capabilities: {
       resources: { listChanged: false, subscribe: false },
       tools: { listChanged: false },
@@ -205,6 +226,21 @@ const REALM_TOOLS: readonly ToolDescriptor[] = [
       required: ['realmId', 'itemId'],
     },
   },
+  {
+    name: 'realm.write',
+    description:
+      'Write one text item into a connected realm. An ENTERPRISE realm requires a signed, unexpired, single-use DriverWriteGrant for that exact realmId; a personal realm takes no grant. Grants are issued by the driver over POST /api/realm/write-grants.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        realmId: { type: 'string', description: 'A realmId the host connected' },
+        data: { type: 'string', description: 'Text written verbatim; JSON-compatible values are serialized' },
+        itemId: { type: 'string', description: 'Root-relative POSIX path; omitted lets the store mint one under writes/' },
+        grant: { type: 'object', description: 'DriverWriteGrant for an enterprise realm; refused by name when absent, unsigned, expired, replayed or bound to another realm' },
+      },
+      required: ['realmId', 'data'],
+    },
+  },
 ];
 
 async function callTool(store: RealmStore, realmIds: string[], params: unknown): Promise<Array<{ type: 'text'; text: string }>> {
@@ -226,12 +262,64 @@ async function callTool(store: RealmStore, realmIds: string[], params: unknown):
     return [{ type: 'text', text: JSON.stringify(hits) }];
   }
 
+  if (name === 'realm.write') {
+    // `RealmStore.write` is optional: a read-only deployment or a P0 backend
+    // may not implement it at all. Refuse by name instead of invoking undefined.
+    if (typeof store.write !== 'function') {
+      throw new McpParamError(
+        'realm.write is unavailable: the connected realm store does not implement writes',
+      );
+    }
+    const write = await store.write(realmId, toolWriteItem(args), toolWriteGrant(args));
+    return [{ type: 'text', text: JSON.stringify(write) }];
+  }
+
   const itemId = args.itemId;
   if (typeof itemId !== 'string' || itemId.trim() === '') {
     throw new McpParamError('realm.read requires a root-relative itemId string');
   }
   const item: RealmItem = await store.read(realmId, itemId);
   return [{ type: 'text', text: item.content }];
+}
+
+/**
+ * E3.4 remaining item (1): the write step. Same fail-loud contract as the search
+ * arguments (deferred #31): an argument the schema never declared is rejected by
+ * name rather than ignored.
+ */
+function toolWriteItem(args: Record<string, unknown>): RealmWriteItem {
+  const known = new Set(['realmId', 'data', 'itemId', 'grant']);
+  for (const name of Object.keys(args)) {
+    if (!known.has(name)) {
+      throw new McpParamError(`unsupported write parameter: ${name} (supported: data, itemId, grant)`);
+    }
+  }
+  if (!('data' in args)) {
+    throw new McpParamError('realm.write requires a data payload');
+  }
+  const item: RealmWriteItem = { data: args.data as unknown };
+  if (args.itemId !== undefined) {
+    if (typeof args.itemId !== 'string' || args.itemId.trim() === '') {
+      throw new McpParamError(`itemId must be a non-empty root-relative string, got: ${String(args.itemId)}`);
+    }
+    item.itemId = args.itemId;
+  }
+  return item;
+}
+
+/**
+ * The grant is handed to the store untouched on purpose: shape, realm binding,
+ * signature, expiry and single-use are verified by `verifyDriverWriteGrant`,
+ * which every write path shares. A second verification here would be a second
+ * answer to the same question, and the day they disagree one of them is wrong.
+ */
+function toolWriteGrant(args: Record<string, unknown>): DriverWriteGrant | undefined {
+  if (args.grant === undefined) return undefined;
+  const grant = args.grant;
+  if (typeof grant !== 'object' || grant === null || Array.isArray(grant)) {
+    throw new McpParamError('grant must be a DriverWriteGrant object when present');
+  }
+  return grant as DriverWriteGrant;
 }
 
 function toolSearchQuery(args: Record<string, unknown>): SearchQuery {
@@ -405,6 +493,18 @@ function mapError(
     // InvalidItemIdError messages carry only the root-relative itemId, never the root.
     return errorResponse(id, INVALID_ITEM, error.message);
   }
+  if (error instanceof UnauthorizedRealmWriteError) {
+    // The refusal REASON crosses the boundary, not the prose: a client branches
+    // on "grant-expired" vs "grant-bad-signature", and neither message carries a
+    // path. The store is the only place that decides this, so the name is read
+    // off the error rather than re-derived here.
+    return errorResponse(id, REALM_UNAUTHORIZED, `write refused: ${error.reason}`);
+  }
+  if (error instanceof UnsupportedWriteError) {
+    // Same contract as the P0 tag refusal on the read path (deferred #31): the
+    // backend states what it cannot do instead of silently accepting less.
+    return errorResponse(id, INVALID_PARAMS, error.message);
+  }
   // Anything else is a store/transport fault: its message may carry the
   // realm-local absolute root (EACCES, ENOSPC, ...), which must never cross the
   // JSON-RPC boundary. Answer with the fixed code+message instead; the raw
@@ -426,4 +526,5 @@ export const JSON_RPC_CODES = {
   REALM_ERROR,
   REALM_NOT_CONNECTED,
   INVALID_ITEM,
+  REALM_UNAUTHORIZED,
 } as const;
