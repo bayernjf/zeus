@@ -31,6 +31,14 @@ export function parseArgs(argv: string[]): CliArgs {
   for (let i = 0; i < argv.length; i += 1) {
     const current = argv[i]!; // loop bound guarantees existence
     if (current.startsWith('--')) {
+      const eq = current.indexOf('=');
+      if (eq !== -1) {
+        // --key=value form. Splitting it also keeps '--token=x' on the refusal
+        // path below — unsplit it would land as an unknown flag named
+        // 'token=x' and main() would misreport a "missing" bearer token.
+        flags.set(current.slice(2, eq), current.slice(eq + 1));
+        continue;
+      }
       const key = current.slice(2);
       const next = argv[i + 1];
       if (next !== undefined && !next.startsWith('--')) {
