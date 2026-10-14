@@ -40,6 +40,7 @@
 | 了解行业内决策层现状与分化趋势 | [research-decision-layer-industry.md](research-decision-layer-industry.md)（LLM-as-judge 主流 + 四条分化路线、对决策后端设计的印证、来源清单） |
 | 了解 Agent 与模型的「记忆 / 自进化」四个象限怎么说、有哪些技术 | [research-memory-self-evolution.md](research-memory-self-evolution.md)（2026-10-14 两轮外部咨询问答的整理稿，**只整理问答、不含本项目判断**：四象限与聚焦 Agent 层的理由 · Agent 记忆三层 + 四张技术栈表 + 好记忆五条标准 + MVP 选型 · Agent 自进化 L1–L3 + 五步最小闭环 + 四张技术栈表 · **模型的记忆与自进化（了解不做）** · 架构图 · 四个技术坑 · 三条实话 · 开放问题） |
 | 看这些记忆 / 自进化需求怎么接到本产品上（映射、缺口、硬口径、阶段路径） | [design-memory-self-evolution-integration.md](design-memory-self-evolution-integration.md)（草案，**设计待裁定未开工**：外部能力 ↔ 本项目部件逐项映射（记忆九项已有七项半）· zeus 独有的两个落点（同题可比数据 → 可靠度可量化；写回 = 决策参数而非提示词）· 四项真缺口与各自触发条件（#40/#10）· 三条硬口径（托管记忆服务与外部模型出域不可抄）· S1–S4 阶段路径与四条待裁定事项） |
+| 逐条勾定记忆写回与复盘的裁定事项（D1–D4），再开工 S2 | [decision-memory-writeback.md](decision-memory-writeback.md)（**待裁定清单**：外部模型能否参与复盘 S1 / 写回默认强度 / 经验卡是否进用户目录 / 是否立新 deferred；裁定后定 S1 复盘原语契约，代码仍挂 #40 真实样本触发） |
 | 给产品入口（`npm run daily`）补一条显式规格登记通道，让中文指令在零出域下也能命中 | [design-daily-spec-registration.md](design-daily-spec-registration.md)（E2.7 / --spec：白名单抽取为共享清单、拒绝即 exit 2、重复跳过、对照例与冒烟第 50 步） |
 | 上线前要跑哪些验收、哪几条是硬阻塞、每次必跑的回归门 | [pre-launch-checklist.md](pre-launch-checklist.md)（A 硬阻塞 / B 部署运营 / C 阈值标定 / D 待决定 / E 发布动作 / F 每次必跑的验证门；每条带证据分级：实测 / 记录 / 待做） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |

@@ -35,7 +35,7 @@ State of Zeus as of 2026-10-06.
   - **B 把它喂进出站上下文**：最近记录作为 `realmHits`（带 `realmHitsOrigin` 来源标记）附进派发，执行 Agent 才真的读得到用户自己的历史。代价是用户目录的**正文**从此进入出站载荷——设计约束 1（正文默认不出机器）与 `dataPolicy` 的收缩口径要先裁定，且"对端如何消费历史"是一条新协议面（对端未定义，参照 deferred #33 的投递字段为什么停在那里）。
   - **翻转条件**：若负责人要的产品体验就是"每天这一页自动接上前因、Agent 能引用我的历史"，直接上 B，并先补 `dataPolicy` 对"读取用户自己目录历史"的范围裁定；若试点期只需要人看到连续性，A 就够，B 等第一个真实读取方出现（与 #18「等真实读取方」同一口径）。0ms；已上 Cloudflare AI 目录。**角色判定：可接入的外部能力（决策模型 API），非驱动模型、非执行 Agent 模型**；落点 = 快决策层 DecisionBackend，Jev 为首个实现，见 [docs/design-decision-backend.md](docs/design-decision-backend.md)。技术地图 S14 落此层。
 
-- **记忆 / 自进化需求与本产品的结合（2026-10-14 负责人提问）** ⏸ **待裁定，未开工**：两轮外部咨询问答的整理稿见 [docs/research-memory-self-evolution.md](docs/research-memory-self-evolution.md)（四象限定位 + 记忆与自进化技术栈 + 模型层为何不做）；结合方案草案见 [docs/design-memory-self-evolution-integration.md](docs/design-memory-self-evolution-integration.md)（能力映射 / 本项目独有的两个落点 / 四项真缺口 / 三条硬口径 / S1–S4 阶段路径）。**记忆侧九项能力库内已有七项半**，缺的只有"从执行结果长出经验"（复盘）与"写回决策"两环。**唯一阻塞开工的裁定是 S1 第一条：外部模型能否参与复盘**（本地或自持模型 / 显式授权后的外部调用 / 先只做纯规则复盘）；另三条（写回只改排序权重还是也动阈值、经验卡是否进用户目录、是否立新 deferred）在该文档 §6。S2/S3 另挂 deferred #40 触发条件（真实执行 Agent 的失败样本分布），S4 挂 #10 检索容量阈值——三者不到则停在 S0。
+- **记忆 / 自进化需求与本产品的结合（2026-10-14 负责人提问）** ⏸ **待裁定，未开工**：两轮外部咨询问答的整理稿见 [docs/research-memory-self-evolution.md](docs/research-memory-self-evolution.md)（四象限定位 + 记忆与自进化技术栈 + 模型层为何不做）；结合方案草案见 [docs/design-memory-self-evolution-integration.md](docs/design-memory-self-evolution-integration.md)（能力映射 / 本项目独有的两个落点 / 四项真缺口 / 三条硬口径 / S1–S4 阶段路径）。**记忆侧九项能力库内已有七项半**，缺的只有"从执行结果长出经验"（复盘）与"写回决策"两环。**唯一阻塞开工的裁定是 S1 第一条：外部模型能否参与复盘**（本地或自持模型 / 显式授权后的外部调用 / 先只做纯规则复盘）；另三条（写回只改排序权重还是也动阈值、经验卡是否进用户目录、是否立新 deferred）在该文档 §6。S2/S3 另挂 deferred #40 触发条件（真实执行 Agent 的失败样本分布），S4 挂 #10 检索容量阈值——三者不到则停在 S0。**逐项可勾的裁定清单见 [docs/decision-memory-writeback.md](docs/decision-memory-writeback.md)（D1–D4），裁定后定 S1 复盘原语契约，代码仍挂 #40 真实样本触发。**
 
 ## Active work
 
@@ -264,6 +264,7 @@ State of Zeus as of 2026-10-06.
 * [docs/research-memory-self-evolution.md](docs/research-memory-self-evolution.md) — 记忆与自进化方向整理 **v0.1（2026-10-14，两轮外部咨询问答的整理稿：只整理问答内容，不含本项目判断与落地结论）**：§1 能不能做与值不值得做（四象限定位、聚焦 Agent 层的理由、两大痛点与护城河、产品路径三步）· §2 Agent 记忆（三层架构、好记忆的五条标准、短中长期与管理四张技术栈表、MVP 选型、三种产品形态）· §3 Agent 自进化（L1/L2/L3、五步最小闭环与「技术上三件事」、为什么没人做好、反思/经验/工具链/自我优化四张技术栈表）· §4 **模型的记忆与自进化（了解不做：Self-Play / Constitutional AI / RLHF-RLAIF / 自设计芯片）** · §5 整体架构图 · §6 四个技术坑 · §7 三条实话（体验难、需时间验证、隐私是生命线）· §8 问答留下的开放问题（从哪个场景切入 MVP）。术语按本项目口径转写：「藏宝图/数字资产港湾」→「用户数字记忆的备份与继承」
 * [docs/deferred-items.md](docs/deferred-items.md) — 缓做/低优事项登记表（开放问题与挂起项 + 触发条件的单一事实源）
 * [docs/design-memory-self-evolution-integration.md](docs/design-memory-self-evolution-integration.md) — 记忆与自进化需求的**结合方案草案**（2026-10-14，设计待裁定、未开工）：外部能力 ↔ 本项目部件逐项映射（记忆九项能力已有七项半，缺的是"从执行结果长出经验"与"写回决策"两环）· 两个本项目独有落点（同题可比数据 → 可靠度可量化并已接入选靶与事实合并；**写回面 = 选靶/恢复/召回/终止四个纯函数参数**，不是模型自改提示词，故可审计可回滚）· 四项真缺口与触发条件（复盘原语挂数据主权裁定、写回面挂 deferred #40、producer 只产 claim、检索规模化挂 #10）· 三条硬口径（托管记忆服务与外部模型出域不可抄；自进化落点可抄）· S1–S4 阶段路径 + 四条待裁定事项 + 明确不做的三件
+* [docs/decision-memory-writeback.md](docs/decision-memory-writeback.md) — 记忆写回与复盘的**待裁定清单**（2026-10-14，D1–D4 逐项可勾：外部模型能否参与复盘 S1 / 写回默认强度 / 经验卡是否进用户目录 / 是否立新 deferred；裁定后定 S1 复盘原语契约，代码仍挂 #40 真实样本触发）
 * [AGENTS.md](AGENTS.md) — AI 协作规范与文档分层约定
 * [git-commit-message.md](git-commit-message.md) — commit message 规范
 
