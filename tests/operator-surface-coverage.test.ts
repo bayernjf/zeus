@@ -130,6 +130,8 @@ const HTTP_ONLY: Record<string, string> = {
     'PRD v0.41: enterprise tenant compare-and-swap, deliberately HTTP operator API; CLI/MCP exposure deferred with item #18',
   'POST /api/realm/write-grants':
     'PRD E3.5 / v0.30: one-shot signed enterprise write-grant minting, an operations action over the bearer API',
+  'POST /api/a2a/push-notifications':
+    'PRD E4.11 / v0.86: peer callback receiver for push-delivered outbound tasks; the operator face is the peer A2A client sending the callback, not a local driver',
 };
 
 describe('operator surface coverage (every write route is drivable or explicitly API-only)', () => {
