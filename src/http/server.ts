@@ -34,7 +34,7 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import type { DriverWriteGrant, RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
 import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../realm/types.js';
 import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../realm/mcp.js';
-import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type TaskState } from '../a2a/types.js';
+import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type Task, type TaskState } from '../a2a/types.js';
 import { fealtyOathProblem } from '../registry/registry.js';
 import { isReadOnlyTagged, trustTierOf } from '../trust/tier.js';
 import {
@@ -102,6 +102,8 @@ export const DEFAULT_SSE_ATTACH_GRACE_MS = 30_000;
 const ESCALATION_STATUSES: EscalationStatus[] = ['pending', 'approved', 'rejected'];
 const ESCALATION_KINDS: EscalationKind[] = ['task-input', 'intent-conflict', 'memory-dispute', 'delegation-limit'];
 const AGGREGATION_KINDS = new Set(['unanimous', 'majority', 'weighted']);
+/** E4.11: the terminal states a push callback may land. */
+const VALID_TASK_STATES = new Set<TaskState>(['submitted', 'working', 'input-required', 'completed', 'failed', 'canceled']);
 const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
 const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
 const CONNECTOR_STATUSES: ConnectorStatus[] = ['declared', 'connected', 'revoked'];
@@ -715,6 +717,31 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     });
 
     if (deps.orchestrator) {
+      // E4.11 (design-a2a-push): bearer-protected callback receiver for A2A
+      // push notifications. An execution agent POSTs the final Task snapshot
+      // back; the orchestrator lands it idempotently (first settlement wins)
+      // into the intent result / audit spine / E6.1 queue. This block only
+      // exists when the internal token is set, so an unconfigured key leaves
+      // the endpoint unmounted (same convention as the rest of the driver face).
+      app.post('/api/a2a/push-notifications', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const raw = request.body as unknown;
+        const candidate = raw as { id?: unknown; status?: { state?: unknown } };
+        if (
+          candidate === null || typeof candidate !== 'object' ||
+          typeof candidate.id !== 'string' || candidate.id.length === 0 ||
+          candidate.status === null || typeof candidate.status !== 'object' ||
+          typeof candidate.status.state !== 'string' ||
+          !VALID_TASK_STATES.has(candidate.status.state as TaskState)
+        ) {
+          return error(reply, 400, 'invalid_push', 'body must be an A2A task with a non-empty id and a known status.state');
+        }
+        const result = await deps.orchestrator!.receivePushNotification(candidate as unknown as Task);
+        if (!result.ok) {
+          return error(reply, 404, 'unknown_task', 'no push-armed branch is waiting for this task id');
+        }
+        reply.code(200);
+        return { ok: true, idempotent: result.idempotent, state: result.state, at: result.at };
+      });
       // H2: fan one intent out to the vassals providing a skill.
       app.post('/api/intents', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const body = (request.body ?? {}) as Partial<FanOutRequest>;

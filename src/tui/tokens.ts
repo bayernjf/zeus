@@ -129,6 +129,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // a refused inbound task is the gate holding, which is a warning.
   'inbound-task-accepted': 'attention',
   'inbound-task-refused': 'warning',
+  // design-a2a-push (PRD E4.11): a pushed settlement landing is the same
+  // visibility as any inbound task; a refused push (unknown task after an
+  // armed intent timed out) is the gate holding, a warning.
+  'push-notification-received': 'attention',
+  'push-notification-refused': 'warning',
   // design-external-trust (PRD E9.4): admitting a caller on a trust tier is
   // visible like any governance fact; refusing one at the tier gate is the
   // gate holding, a warning.

@@ -100,6 +100,14 @@ export type FanOutRequest = {
   /** Per-branch timeout; a branch still pending at the limit is recorded as timed out. */
   branchTimeoutMs?: number;
   /**
+   * E4.11 (design-a2a-push): arm every branch of this intent with A2A push
+   * notification — outbound `tasks/send` carries `pushNotificationConfig` and
+   * the branch settles through the push callback instead of the SSE stream.
+   * Default off keeps SSE/polling unchanged; arming without a configured
+   * receiver is refused (`push-unconfigured`), never silently downgraded.
+   */
+  pushNotification?: boolean;
+  /**
    * S9 V2 (design-cost-governance §5): operator-supplied cost estimate for
    * this intent. Absent, the gate charges a default single-unit estimate.
    * Self-reported cost never feeds the gate (V1 invariant).
@@ -199,7 +207,7 @@ export type SkillGovernor = {
 
 /** Why the skill governor refused an auto-selected fan-out before dispatch. */
 export type GovernanceRefusal = {
-  reason: 'skill-uninstalled' | 'no-active-provider' | 'budget-exceeded' | 'circuit-open' | 'cost-budget-exceeded' | 'cost-rate-circuit-open';
+  reason: 'skill-uninstalled' | 'no-active-provider' | 'budget-exceeded' | 'circuit-open' | 'cost-budget-exceeded' | 'cost-rate-circuit-open' | 'push-unconfigured';
   detail: string;
 };
 

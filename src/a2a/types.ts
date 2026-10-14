@@ -48,6 +48,18 @@ export type TaskState =
   | 'failed'
   | 'canceled';
 
+/**
+ * E4.11 (design-a2a-push): receiver configuration for A2A push notification.
+ * Attached to an outbound `tasks/send` message as `pushNotificationConfig`
+ * when the caller arms push: the execution agent posts the final Task snapshot
+ * to `url` (bearer via `token` when present) instead of Zeus holding a stream.
+ * A missing `url` is a config error at the arming site, never accepted here.
+ */
+export type PushNotificationConfig = {
+  url: string;
+  token?: string;
+};
+
 export type ZeusReport = {
   summary: string;
   evidence: string[];

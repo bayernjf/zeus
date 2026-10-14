@@ -1,4 +1,4 @@
-import type { TaskState } from '../a2a/types.js';
+import type { PushNotificationConfig, Task, TaskState } from '../a2a/types.js';
 import type { RosterVerifier } from '../registry/signing.js';
 import {
   verifyAndConsumeExecutionDelegation,
@@ -28,7 +28,7 @@ import type { DecisionBackend } from '../decision/types.js';
 import { DomainError } from '../util/domain-error.js';
 import type { ProgressEvent } from './progress.js';
 import { appendStreamFrame, emptyStreamView, type StreamView } from './stream-merge.js';
-import type { DispatchRequest, DispatchResult } from '../dispatch/dispatcher.js';
+import type { DispatchRequest, DispatchResult, AuditEntry } from '../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../context/assemble.js';
 import { assembleSkillInputs } from '../context/skill-inputs.js';
 import { allocateContextBudget, DEFAULT_BRANCH_CONTEXT_LIMIT } from '../context/budget.js';
@@ -264,6 +264,19 @@ export type OrchestratorOptions = {
   skillInputsProvider?: (skillId: string) => Record<string, unknown> | undefined;
   /** Receives the assembly audit events (intent-level, no single vassal). */
   onContextAssembled?: (events: ContextAssemblyEvent[], entry: { intentId: string; runId: string; skill: string; realm: FanOutRequest['realm']; realmId?: string; at: string }) => void;
+  /**
+   * E4.11 (design-a2a-push): Zeus's own push receiver address, attached as
+   * `pushNotificationConfig` on outbound `tasks/send` for intents armed with
+   * `pushNotification: true`. Arming without a receiver is refused
+   * (`push-unconfigured`), never silently downgraded to streaming.
+   */
+  pushReceiver?: PushNotificationConfig;
+  /**
+   * E4.11 (design-a2a-push): governance sink for push-callback decisions
+   * (`push-notification-received` / `push-notification-refused`). Boot wires
+   * the same sink the dispatcher audits to, so the callback lands on one spine.
+   */
+  audit?: (entry: AuditEntry) => void;
 };
 
 export class UnknownIntentError extends DomainError {
@@ -313,6 +326,16 @@ type ResumeGeneration = {
   members: Map<string, ResumeMember>;
   result: Promise<FanOutResult>;
 };
+
+/**
+ * E4.11 (design-a2a-push): outcome of landing a pushed final Task on the
+ * callback endpoint. `ok:true` — the branch settled (or was already settled,
+ * `idempotent:true`); `ok:false` with `unknown-task` — bearer-valid push
+ * naming no branch waiting for it (HTTP 404).
+ */
+export type PushReceiveResult =
+  | { ok: true; idempotent: boolean; state: TaskState; at: string }
+  | { ok: false; reason: 'unknown-task' };
 
 /**
  * Fan-out decision kernel (PRD E1): one intent fans out to N vassals in
@@ -387,6 +410,18 @@ export class Orchestrator {
   /** S15 V2: the number of branches each live fan-out dispatches, so the
    *  partially-ready count (N of M settled) is exact rather than inferred. */
   private intentBranchTotals = new Map<string, number>();
+  /**
+   * E4.11 (design-a2a-push): branch settlement waiters keyed by the agent-side
+   * task id. A push-armed branch registers its waiter once the ack task id is
+   * known; `receivePushNotification` resolves it with the pushed final task so
+   * the branch settles through the exact same classification as the SSE path.
+   * `pushProcessed` answers idempotent replays — the first settlement wins.
+   */
+  private pushWaiters = new Map<
+    string,
+    { resolve: (result: DispatchResult) => void; runId: string; vassal: string; skill: string; realm: FanOutRequest['realm'] }
+  >();
+  private pushProcessed = new Map<string, { state: TaskState; at: string }>();
   private readonly slots: Semaphore | null;
 
   constructor(
@@ -475,6 +510,17 @@ export class Orchestrator {
         }
         names = governed;
       }
+    }
+
+    // E4.11 (design-a2a-push): arming push without a configured receiver is
+    // refused. The caller asked for a delivery contract Zeus cannot honor —
+    // silently streaming instead would change the semantics under them.
+    if (request.pushNotification === true && this.options.pushReceiver === undefined) {
+      refused = {
+        reason: 'push-unconfigured',
+        detail: `intent ${intentId} requested A2A push notification but no pushReceiver is configured (ZEUS_A2A_PUSH_URL); refusing instead of downgrading to streaming`,
+      };
+      names = [];
     }
 
     // S11 V2 (design-tool-discovery §5): the unified candidate face.
@@ -1282,6 +1328,57 @@ export class Orchestrator {
     return this.budgets.get(intentId) ?? emptyBudget();
   }
 
+  /**
+   * E4.11 (design-a2a-push): wait for the peer to push the final task back for
+   * a push-armed branch. Registers a waiter keyed by the agent-side task id;
+   * `receivePushNotification` resolves it with a synthetic DispatchResult whose
+   * terminal task goes through the exact same classification as a streamed one
+   * (input-required → onTaskInput, failed → branch failure, else ok).
+   */
+  private awaitPushSettlement(
+    taskId: string,
+    entry: { runId: string; vassal: string; skill: string; realm: FanOutRequest['realm'] },
+  ): Promise<DispatchResult> {
+    return new Promise<DispatchResult>(resolve => {
+      this.pushWaiters.set(taskId, { resolve, ...entry });
+    });
+  }
+
+  /**
+   * E4.11 (design-a2a-push): receive an execution agent's pushed final Task
+   * snapshot on the bearer-protected callback endpoint. Idempotent per taskId
+   * — the first settlement wins: a replay for an already-settled task answers
+   * `{ ok:true, idempotent:true }` and never re-lands, re-audits or re-escalates.
+   * A bearer-valid push naming no waiting branch is audited
+   * `push-notification-refused` and refused: an authenticated caller naming an
+   * unknown task is an anomaly, not transport noise.
+   */
+  async receivePushNotification(task: Task): Promise<PushReceiveResult> {
+    const now = this.now().toISOString();
+    const waiter = this.pushWaiters.get(task.id);
+    if (waiter === undefined) {
+      if (this.pushProcessed.has(task.id)) {
+        const prior = this.pushProcessed.get(task.id)!;
+        return { ok: true, idempotent: true, state: prior.state, at: prior.at };
+      }
+      this.options.audit?.({
+        ts: now, vassal: '(push)', taskId: task.id, state: task.status.state,
+        decision: 'push-notification-refused',
+        detail: 'no push-armed branch is waiting for this task id',
+      });
+      return { ok: false, reason: 'unknown-task' };
+    }
+    this.pushWaiters.delete(task.id);
+    this.pushProcessed.set(task.id, { state: task.status.state, at: now });
+    this.options.audit?.({
+      ts: now, runId: waiter.runId, vassal: waiter.vassal, skill: waiter.skill,
+      realm: waiter.realm, taskId: task.id, state: task.status.state,
+      decision: 'push-notification-received',
+    });
+    waiter.resolve({ ok: true, task, events: [], injectedHits: [] });
+    return { ok: true, idempotent: false, state: task.status.state, at: now };
+  }
+
   private async runTrackedBranch(
     vassal: string,
     request: FanOutRequest,
@@ -1487,9 +1584,39 @@ export class Orchestrator {
       ...(intentId === undefined
         ? {}
         : { onBranchDelta: delta => this.handleBranchDelta(intentId, delta) }),
+      // E4.11 (design-a2a-push): an armed branch carries the receiver config,
+      // so the dispatcher uses plain tasks/send and the peer pushes the final
+      // snapshot back; unarmed branches keep the SSE path unchanged.
+      ...(request.pushNotification === true && this.options.pushReceiver !== undefined
+        ? { pushNotification: this.options.pushReceiver }
+        : {}),
     };
+    // E4.11: a push-armed branch's plain tasks/send accepts synchronously, so
+    // the ack task id is known even though the branch is still waiting for the
+    // push. The timeout handler below cancels by that id directly; without it,
+    // `pending` would still be hanging on the push waiter and the late cancel
+    // could never name the vassal-side task.
+    let ackTaskId: string | undefined;
     const pending = this.dispatcher
       .dispatch(dispatchRequest)
+      .then(async result => {
+        if (!result.ok) return result;
+        ackTaskId = result.task.id;
+        if (request.pushNotification === true) {
+          // E4.11 (design-a2a-push): a plain tasks/send ack is not the final
+          // task — the branch settles when the peer pushes it back. Register
+          // the waiter keyed by the ack task id; receivePushNotification
+          // resolves it with the pushed final task, so the classification
+          // below stays identical to the streaming path.
+          return this.awaitPushSettlement(result.task.id, {
+            runId: branchRunId,
+            vassal,
+            skill: request.skill,
+            realm: request.realm,
+          });
+        }
+        return result;
+      })
       .catch(error => ({
         ok: false as const,
         reason: error instanceof Error ? error.message : 'dispatch rejected',
@@ -1513,10 +1640,19 @@ export class Orchestrator {
         // would ever cancel the vassal-side task. Settle the late result in the
         // background and best-effort cancel it, instead of leaving an orphan
         // running against a vassal the kernel has already stopped accounting for.
-        void pending.then(outcome => {
-          if (!outcome.ok) return;
-          void this.dispatcher.cancel(vassal, outcome.task.id).catch(() => {});
-        });
+        if (request.pushNotification === true && ackTaskId !== undefined) {
+          // E4.11: the ack task id is known (plain tasks/send accepted), so the
+          // vassal-side task is cancelled by its real id right away, and the
+          // abandoned waiter is dropped — a late push then reads as refused
+          // (audited) instead of resolving into nothing.
+          this.pushWaiters.delete(ackTaskId);
+          void this.dispatcher.cancel(vassal, ackTaskId).catch(() => {});
+        } else {
+          void pending.then(outcome => {
+            if (!outcome.ok) return;
+            void this.dispatcher.cancel(vassal, outcome.task.id).catch(() => {});
+          });
+        }
         return { vassal, runId: branchRunId, ok: false, events: [], timedOut: true, reason: `branch timed out after ${timeoutMs}ms` };
       }
       const outcome = settled.outcome;
