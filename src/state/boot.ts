@@ -589,6 +589,10 @@ async function assembleKernel(
     // assembles nothing, an unregistered skill yields undefined and degrades to
     // zero skill-input assembly.
     skillInputsProvider: skillId => skillRegistry.get(skillId)?.inputs,
+    // deferred #44 (design-memory-self-evolution §2.2): the runtime write-back
+    // face — active selection-weight cards feed the auto-selection pool. A
+    // store with no cards yields {} and dispatch stays at the baseline.
+    selectionWeightsProvider: realmId => memoryStore.selectionWeights(realmId),
     // E4.11 (design-a2a-push): the push receiver config rides outbound
     // tasks/send for armed intents; push callbacks audit to the same spine as
     // dispatches.

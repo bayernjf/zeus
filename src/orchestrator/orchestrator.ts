@@ -277,6 +277,14 @@ export type OrchestratorOptions = {
    * the same sink the dispatcher audits to, so the callback lands on one spine.
    */
   audit?: (entry: AuditEntry) => void;
+  /**
+   * deferred #44 (design-memory-self-evolution §2.2): the runtime write-back
+   * face. Returns the active selection-weight overrides for a realm; the empty
+   * map is the baseline (a missing key is weight 1). Boot wires this to
+   * `MemoryStore.selectionWeights(realmId)`; a missing provider keeps dispatch
+   * at the baseline exactly like a store with no active cards.
+   */
+  selectionWeightsProvider?: (realmId: string) => Record<string, number>;
 };
 
 export class UnknownIntentError extends DomainError {
@@ -534,6 +542,14 @@ export class Orchestrator {
     // them here would duplicate gates with no new boundary.
     const governedPool = explicit ? undefined : this.options.skillGovernor?.activeProviders(request.skill);
     const perVassalCap = this.options.maxConcurrentPerVassal;
+    // deferred #44 (design-memory-self-evolution §2.2): the runtime write-back
+    // face. Active selection-weight overrides for the request's realm re-order
+    // the auto pool only (named pins stay first, missing key = weight 1). No
+    // realmId or no provider degrades to the baseline — dispatch unchanged.
+    const selectionWeights =
+      request.realmId !== undefined
+        ? (this.options.selectionWeightsProvider?.(request.realmId) ?? {})
+        : undefined;
     const face =
       names.length > 0
         ? selectCandidates(request.skill, {
@@ -546,11 +562,24 @@ export class Orchestrator {
             tier: 'tier-0',
             readOnlyTagged: true,
             capabilityGranted: true,
+            ...(selectionWeights !== undefined && Object.keys(selectionWeights).length > 0
+              ? { weights: selectionWeights }
+              : {}),
           })
         : [];
     const pinnedNames = new Set(explicit ? request.vassals ?? [] : []);
     const faceAuto = face.filter(c => !pinnedNames.has(c.provider)).map(c => c.provider);
     const autoPoolBefore = governedPool ?? (explicit ? [] : names);
+    // deferred #44 (D2): without a per-vassal cap the S11 candidate face is
+    // the auto dispatch list — its write-back weight sort (and its pool order)
+    // is what actually reaches the vassals, not just the reporting. With no
+    // weights the face is the lookup order, so this is zero behavior change at
+    // baseline. With a per-vassal cap the #9 diversion owns `names` below (it
+    // needs the un-filtered list so a saturated target is re-pointed and
+    // audited as `diverted`, not silently dropped by the face).
+    if (!explicit && faceAuto.length > 0 && perVassalCap === undefined) {
+      names = faceAuto;
+    }
 
     // #9 backpressure diversion (design-backpressure.md): with a per-vassal
     // saturation cap configured, re-point saturated auto-selected targets to the
