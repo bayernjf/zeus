@@ -108,3 +108,95 @@
 - **模型层记忆与自进化**（持续学习、不遗忘、自我改进架构、RL）——不在本项目射程。
 - **隐式记忆衰减**——用户可擦除 + 显式遗忘已足够；隐式淡化会让用户失去"我到底让它记住了什么"的控制权。
 - **把记忆做成对外服务**——记忆能力以本项目既有通道（MCP / Skill / A2A）供他人接入，不新增第四条旁路。
+
+## 八、数据来源基座（本地目录）= 记录源，与记忆六面、文档技术栈的对应关系
+
+> 本节回答一个定位问题：用户提供给 Zeus 的接口（本地目录 / 数据库）在记忆体系里处什么位置。结论——**它是 raw data（原始数据层），是记忆的主要来源、也是长期记忆的原材料；同时也是记录源（Source of Record），即记忆的权威真相所在地**。文档（research 稿 §2.3/2.4/3.4/5/6）给的通用技术只是它之上、且必须自持的衍生索引。本节为新增定位，不改动上文结论与草案。
+
+### 8.1 用户提供的本地目录 / 数据库 = raw data 原始数据层
+
+用户给定的数据（本地文件夹、数据库等）是 **raw data（原始数据层）**：它是记忆的主要来源，也是「长期记忆」的原材料与原始数据。记忆不是凭空生成的，它的根就在用户提供的这份原始数据上；长期记忆是从 raw data 里抽取、结构化出来的衍生产物。
+
+记忆层是建在该 raw data 之上的、带时间戳与溯源的**衍生层**，而不是另起炉灶的副本：
+
+- **raw data 存正文（body）**：主权在用户、默认不出本机（设计约束 1）；
+- **记忆存衍生物**：抽取的事实 + 指向 raw data 的路径指针 + 内容哈希 + 变更事件，轻量、可备份、可与 raw data 一起恢复。
+
+由此，记忆的「重要来源就是用户给定的这份数据」被落实为机制：raw data 一动，记忆就有迹可循；raw data 恢复，记忆可重新验真。
+
+#### 8.1.1 与业界技术方案的关系：概念一致，部署更严
+
+- **概念层一致**：业界三层记忆（research 稿 §2.1）中，外部文档 / 数据库正是中期记忆（RAG 检索语料）与长期记忆（知识图谱 / 结构化 Profile 的抽取源）的共同原始数据。本项目的「raw data 是长期记忆的原始数据」判断与业界 RAG / 知识库产品的底层假设完全吻合。
+- **部署层更严**：业界多数 RAG 产品会把 raw data **复制进向量库 / 知识库**（正文进向量存储，记忆自带副本）；本项目出于数据主权（约束 1）**不复制正文**，记忆只存衍生物 + 路径指针，raw data 正文始终留在源（目录 / 数据库）。即：来源判断与业界一致，「记忆是否复制 raw data 正文」是 Zeus 出于主权做的不同选择。
+
+### 8.2 三个连接锚点（目录 ↔ 记忆六面）
+
+| 锚点 | 作用 | 对应六面 |
+|---|---|---|
+| 路径指针（path ref + offset/range） | 每条 fact/event 指向目录里的源文件与片段；recall 返回指针 + 摘要，不搬运正文 | `facts` / `recall` |
+| 内容哈希（content hash） | 目录文件内容的哈希是 `integrity` 面的基准，记忆自证未与源漂移 | `integrity` |
+| 变更事件流（change event stream） | 目录 create/modify/delete 驱动 `events`；目录变更推翻旧 fact 触发 `retractions` | `events` / `retractions` |
+
+### 8.3 文档技术栈 ↔ Zeus 六面 的映射
+
+research 文档给的是**行业通用参考技术**（含 Mem0 / Zep / Pinecone 等），不是 Zeus 实现。对应关系与采用口径如下：
+
+| 文档里的参考技术 | 通用定位 | Zeus 对应部件 | 采用口径 |
+|---|---|---|---|
+| 向量库 + RAG / 混合检索（pgvector / Qdrant…） | 中期记忆：语义召回 | `src/memory/recall.ts`（BM25 + 本地 embedder） | ✅ 自持 pgvector（同机），embedder 本地；**不做** Pinecone/Mem0/Zep 托管（约束 1，见 §四） |
+| 结构化 Profile / 知识图谱 | 长期记忆：人/事/物/关系/偏好 | `facts` + 编制（部门/席位/必备技能/认证） | ✅ 已以编制形态存在，不另建 Profile 层 |
+| 记忆提取（模型抽取结构化信息） | 把对话/文档抽成事实 | `src/memory/producer.ts`（claim 事件 → consolidate） | ✅ 已有（只产 claim，observation/action/decision 待接，见 §三③） |
+| 记忆更新 / 矛盾处理 | 合并/修正/遗忘 | 可靠度加权 + `disputed` 升级 + `retractFacts`/`forgetSubject` | ✅ 已有（显式遗忘，无隐式淡化，见 §三末） |
+| 记忆审计 / 可解释可编辑 | 用户可见可改 | 六面只读 + 监督台记忆视图 + 事实表 | ✅ 已有 |
+| Reflexion / 经验库 + RAG | 自进化 L1 闭环 | 只读失败归因 `failure-attribution.ts` + 写回面（§2.2） | 🟡 半有 / ❌ 缺（见 §三①②） |
+| PostgreSQL + pgvector + 对象存储 | 存储层 | 内核状态文件 + Vault 备份 | ✅ 自持；对象存储仅作备份目标，不托管正文 |
+
+### 8.4 三层关系（一图）
+
+```
+用户目录 (SoR, 主权, 正文)          ← 记忆的重要来源 / 记录源
+   │  change event stream + content hash
+   ▼
+记忆六面 (衍生层: 指针 + 事实 + 溯源)   ← events/facts/replay/recall/retractions/integrity
+   │  语义召回由自持 pgvector 支撑 (recall 面)
+   ▼
+存储/备份 (内核状态文件 + Vault)       ← 与目录一起备份恢复, 正文不出本机
+```
+
+一句话：**目录是记录源（正文归用户），六面是它的带溯源时间视图，文档里的 pgvector/RAG 等通用技术只是六面之上、且必须自持的衍生索引**——部署位置不能抄托管方案（§四）。
+
+## 九、S1 经验卡契约与 S2 写回面机械层（2026-10-14 落地，D1–D4 已裁定）
+
+> 本节是 §三 的落地记录，**新增，不改动 §一~§八 的结论与草案**。裁定见 [decision-memory-writeback.md](decision-memory-writeback.md)：D1=C（先只做纯规则复盘，不引入模型）、D2=只改排序权重、D3=经验卡进用户目录、D4=把「复盘原语」与「写回面」从 deferred #40 拆出，#40 退回「真实样本触发」单一职责。
+
+### 9.1 S1 经验卡契约（写回记录的形态）
+
+经验卡（`WritebackRecord`，`src/memory/types.ts`）是复盘产物与写回动作之间的唯一契约载体。D1=C 下它由**纯规则复盘**（`src/reflection/failure-attribution.ts` 的只读归因，对 `writebackCandidate` 的稳定模式）生成，不引入模型；模型复盘（A 本地/自持、B 显式授权外部）留作后续升级路径，其原语形状沿用同一 `WritebackRecord`。
+
+```ts
+export type WritebackParam = 'selection-weight';
+export interface WritebackRecord {
+  id: string; realmId: string; createdAt: string;
+  source: { kind: string; target: string; confidence: 'stable' | 'suggestive' };
+  param: WritebackParam;     // 当前只有 selection-weight（D2：只改排序权重）
+  target: string;            // 被调整的实体（selection-weight 下是 vassal id）
+  factor: number;            // 乘性权重，1=不变，<1 降低权重；下限 0.1（fail-soft）
+  reason: string; status: 'active' | 'retracted'; retractedAt?: string;
+}
+```
+
+约束落地：D2 只允许 `selection-weight`（排序权重），熔断/预算阈值默认关闭，待 #9 真实压测再开；D3 经验卡随 `MemoryState.writebacks` 落盘在用户目录快照（`MemoryStore` 的 `recordWriteback`/`retractWriteback`/`listWritebacks`/`selectionWeights` + `exportState`/`importState`），与记忆六面同一条主权/备份路径。
+
+### 9.2 S2 写回面机械层（apply / revert / audit / snapshot）
+
+机械层（`src/memory/writeback.ts`）只做**应用与吊销**，不决定写回什么——那是 §三① 复盘的职责。可逆性是结构性的，不是声明性的：active 卡片贡献一条覆盖，吊销/移除后 `selectionWeightsFromWritebacks` 回到基线（缺省权重 1），行为随之复原、无需额外动作。这正是可审计、可回滚（设计约束 2）的落点。
+
+- `selectionWeightsFromWritebacks(records)`：active 的 `selection-weight` 卡片按 target 取最新，得 `{target: factor}`；无卡片返回 `{}`（基线）。
+- `WritebackLedger`：管理 active 卡片，`record` 校验 `factor ∈ (0.1, 1]`（下限保证 fail-soft，被降权的 vassal 在他人饱和时仍可被选）、`retract` 保留行并翻转状态（全程可溯源）。
+
+真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(realm)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
+
+### 9.3 已验证（合成样本）+ 仍挂 #40
+
+- 验证面（`tests/memory-writeback.test.ts`，合成样本，**6/6 绿**，2026-10-14 本机实测）：稳定 `vassal-concentrated` 模式 → 经验卡 → `selectCandidates` 把降权 vassal 沉到末尾但保持可达（fail-soft）；吊销经验卡 → 排序回到基线、无其他改动；因子越界（`>1` 或 `<0.1`）`record` 抛 `RangeError`；`MemoryStore` 经 `exportState`/`importState` 往返后经验卡与权重 intact。缺陷植入断言（吊销 → 基线 / 越界 → 抛错）已在用例内结构化承载；定向复跑 `orchestrator-discovery` 17/17、`failure-attribution` 10/10 无回归。
+- **仍挂 #40**：① 运行时把权重接进编排器派发路径；② 真实失败样本下的阈值/权重调参（与 #9 同口径，≥3 真实 Agent）。这两条不到则停在「机制已建、合成已验」。

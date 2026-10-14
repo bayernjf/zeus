@@ -51,6 +51,13 @@ export type SelectionContext = {
   capabilityGranted: boolean;
   /** Which explicit names to omit (e.g. revoked), when the caller knows. */
   excludedNames?: string[];
+  /**
+   * Write-back selection weights (design-memory-self-evolution §九): a
+   * multiplicative weight per provider, applied only to the *auto* pool. Named
+   * pins are hard and never re-ordered. Absent/empty = baseline (weight 1) — a
+   * missing key is treated as 1. D2: only sorting weights are writable.
+   */
+  weights?: Record<string, number>;
 };
 
 /** Why the chain took the step it took — the audit-visible verdict. */
@@ -108,7 +115,18 @@ export function selectCandidates(skillId: string, ctx: SelectionContext): Dispat
           .filter((p) => !saturated(p, ctx))
           .map((p) => ({ provider: p, skillId, mode }));
 
-  return [...named, ...auto];
+  // Write-back weights (D2) re-order only the auto pool; named pins stay first.
+  // Stable sort so equal weights preserve the caller-supplied pool order; a
+  // missing key is weight 1 (baseline). Reverting the weight (or retracting its
+  // card) restores the original order with no other change — see writeback.ts.
+  const orderedAuto =
+    ctx.weights === undefined
+      ? auto
+      : [...auto].sort(
+          (a, b) => (ctx.weights![b.provider] ?? 1) - (ctx.weights![a.provider] ?? 1),
+        );
+
+  return [...named, ...orderedAuto];
 }
 
 /**
