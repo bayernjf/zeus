@@ -164,3 +164,39 @@ research 文档给的是**行业通用参考技术**（含 Mem0 / Zep / Pinecone
 ```
 
 一句话：**目录是记录源（正文归用户），六面是它的带溯源时间视图，文档里的 pgvector/RAG 等通用技术只是六面之上、且必须自持的衍生索引**——部署位置不能抄托管方案（§四）。
+
+## 九、S1 经验卡契约与 S2 写回面机械层（2026-10-14 落地，D1–D4 已裁定）
+
+> 本节是 §三 的落地记录，**新增，不改动 §一~§八 的结论与草案**。裁定见 [decision-memory-writeback.md](decision-memory-writeback.md)：D1=C（先只做纯规则复盘，不引入模型）、D2=只改排序权重、D3=经验卡进用户目录、D4=把「复盘原语」与「写回面」从 deferred #40 拆出，#40 退回「真实样本触发」单一职责。
+
+### 9.1 S1 经验卡契约（写回记录的形态）
+
+经验卡（`WritebackRecord`，`src/memory/types.ts`）是复盘产物与写回动作之间的唯一契约载体。D1=C 下它由**纯规则复盘**（`src/reflection/failure-attribution.ts` 的只读归因，对 `writebackCandidate` 的稳定模式）生成，不引入模型；模型复盘（A 本地/自持、B 显式授权外部）留作后续升级路径，其原语形状沿用同一 `WritebackRecord`。
+
+```ts
+export type WritebackParam = 'selection-weight';
+export interface WritebackRecord {
+  id: string; realmId: string; createdAt: string;
+  source: { kind: string; target: string; confidence: 'stable' | 'suggestive' };
+  param: WritebackParam;     // 当前只有 selection-weight（D2：只改排序权重）
+  target: string;            // 被调整的实体（selection-weight 下是 vassal id）
+  factor: number;            // 乘性权重，1=不变，<1 降低权重；下限 0.1（fail-soft）
+  reason: string; status: 'active' | 'retracted'; retractedAt?: string;
+}
+```
+
+约束落地：D2 只允许 `selection-weight`（排序权重），熔断/预算阈值默认关闭，待 #9 真实压测再开；D3 经验卡随 `MemoryState.writebacks` 落盘在用户目录快照（`MemoryStore` 的 `recordWriteback`/`retractWriteback`/`listWritebacks`/`selectionWeights` + `exportState`/`importState`），与记忆六面同一条主权/备份路径。
+
+### 9.2 S2 写回面机械层（apply / revert / audit / snapshot）
+
+机械层（`src/memory/writeback.ts`）只做**应用与吊销**，不决定写回什么——那是 §三① 复盘的职责。可逆性是结构性的，不是声明性的：active 卡片贡献一条覆盖，吊销/移除后 `selectionWeightsFromWritebacks` 回到基线（缺省权重 1），行为随之复原、无需额外动作。这正是可审计、可回滚（设计约束 2）的落点。
+
+- `selectionWeightsFromWritebacks(records)`：active 的 `selection-weight` 卡片按 target 取最新，得 `{target: factor}`；无卡片返回 `{}`（基线）。
+- `WritebackLedger`：管理 active 卡片，`record` 校验 `factor ∈ (0.1, 1]`（下限保证 fail-soft，被降权的 vassal 在他人饱和时仍可被选）、`retract` 保留行并翻转状态（全程可溯源）。
+
+真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(realm)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
+
+### 9.3 已验证（合成样本）+ 仍挂 #40
+
+- 验证面（`tests/memory-writeback.test.ts`，合成样本，**6/6 绿**，2026-10-14 本机实测）：稳定 `vassal-concentrated` 模式 → 经验卡 → `selectCandidates` 把降权 vassal 沉到末尾但保持可达（fail-soft）；吊销经验卡 → 排序回到基线、无其他改动；因子越界（`>1` 或 `<0.1`）`record` 抛 `RangeError`；`MemoryStore` 经 `exportState`/`importState` 往返后经验卡与权重 intact。缺陷植入断言（吊销 → 基线 / 越界 → 抛错）已在用例内结构化承载；定向复跑 `orchestrator-discovery` 17/17、`failure-attribution` 10/10 无回归。
+- **仍挂 #40**：① 运行时把权重接进编排器派发路径；② 真实失败样本下的阈值/权重调参（与 #9 同口径，≥3 真实 Agent）。这两条不到则停在「机制已建、合成已验」。
