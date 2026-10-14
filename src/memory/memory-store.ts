@@ -13,9 +13,21 @@ import type {
   RecallSearchOptions,
   ReliabilityCorrection,
   RetractionRecord,
+  WritebackRecord,
 } from './types.js';
+import {
+  MIN_WRITEWEIGHT_FACTOR,
+  selectionWeightsFromWritebacks,
+  type RecordWritebackInput,
+} from './writeback.js';
 
 export { MemoryConsolidationError } from './consolidate.js';
+export {
+  WritebackLedger,
+  MIN_WRITEWEIGHT_FACTOR,
+  selectionWeightsFromWritebacks,
+} from './writeback.js';
+export type { RecordWritebackInput } from './writeback.js';
 
 /** Per-correction penalty applied to future reliability scoring. */
 const CORRECTION_PENALTY = 0.15;
@@ -61,6 +73,7 @@ export class MemoryStore {
   private readonly factsByRealm = new Map<string, FactRecord[]>();
   private readonly corrections: ReliabilityCorrection[] = [];
   private readonly retractions: RetractionRecord[] = [];
+  private readonly writebacks: WritebackRecord[] = [];
   private readonly indexesByRealm = new Map<string, RecallIndex>();
 
   constructor(private readonly audit: (entry: MemoryAuditEntry) => void = () => {},
@@ -277,6 +290,54 @@ export class MemoryStore {
   }
 
   /**
+   * Record a write-back card (经验卡) from a pure-rule reflection. The factor
+   * is clamped to (MIN_WRITEWEIGHT_FACTOR, 1] so a down-weighted target stays
+   * fail-soft (reachable when others saturate) and is never zeroed. Cards are
+   * the S2 write-back face (design-memory-self-evolution §九); they live in the
+   * user-dir snapshot (D3).
+   */
+  recordWriteback(input: RecordWritebackInput): WritebackRecord {
+    if (!(input.factor >= MIN_WRITEWEIGHT_FACTOR) || input.factor > 1) {
+      throw new RangeError(
+        `writeback factor must be within (${MIN_WRITEWEIGHT_FACTOR}, 1], got ${input.factor}`,
+      );
+    }
+    const card: WritebackRecord = {
+      id: input.id ?? crypto.randomUUID(),
+      realmId: input.realmId,
+      createdAt: this.now().toISOString(),
+      source: input.source,
+      param: input.param,
+      target: input.target,
+      factor: input.factor,
+      reason: input.reason,
+      status: 'active',
+    };
+    this.writebacks.push(card);
+    return { ...card };
+  }
+
+  /** Retract a card by id (keeps the row, flips status) for full traceability. */
+  retractWriteback(id: string): WritebackRecord | null {
+    const card = this.writebacks.find((c) => c.id === id);
+    if (card === undefined || card.status === 'retracted') return null;
+    card.status = 'retracted';
+    card.retractedAt = this.now().toISOString();
+    return { ...card };
+  }
+
+  listWritebacks(realmId?: string): WritebackRecord[] {
+    return this.writebacks
+      .filter((c) => realmId === undefined || c.realmId === realmId)
+      .map((c) => ({ ...c }));
+  }
+
+  /** Active `selection-weight` overrides for a realm; `{}` is the baseline. */
+  selectionWeights(realmId: string): Record<string, number> {
+    return selectionWeightsFromWritebacks(this.listWritebacks(realmId));
+  }
+
+  /**
    * Offline decision replay along a runId: the run's events plus every fact
    * whose provenance cites one of those events.
    */
@@ -303,6 +364,7 @@ export class MemoryStore {
       ]),
       corrections: this.corrections.map(c => ({ ...c })),
       retractions: this.retractions.map(r => ({ ...r })),
+      writebacks: this.writebacks.map(w => ({ ...w })),
     };
   }
 
@@ -311,6 +373,7 @@ export class MemoryStore {
     this.factsByRealm.clear();
     this.corrections.length = 0;
     this.retractions.length = 0;
+    this.writebacks.length = 0;
     // Indexes are derived and never imported; they rebuild lazily.
     this.indexesByRealm.clear();
     for (const event of state.events) this.append(event);
@@ -319,6 +382,7 @@ export class MemoryStore {
     }
     for (const correction of state.corrections ?? []) this.corrections.push({ ...correction });
     for (const retraction of state.retractions ?? []) this.retractions.push({ ...retraction });
+    for (const writeback of state.writebacks ?? []) this.writebacks.push({ ...writeback });
   }
 
   static fromState(

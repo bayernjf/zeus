@@ -114,6 +114,36 @@ export interface Embedder {
   embed(text: string): number[];
 }
 
+/**
+ * A write-back card (经验卡): a pure-rule reflection's recommendation to adjust
+ * a decision parameter, derived from a stable failure pattern. This is the
+ * *write-back face* of the execution-after loop (design-memory-self-evolution
+ * §2.2 / §九). The card itself stores only the recommendation plus audit
+ * metadata; applying it is mechanical (see src/memory/writeback.ts) and fully
+ * reversible (retracting a card returns behaviour to baseline).
+ *
+ * D3: cards live in the user-dir memory snapshot, so they are backup-able and
+ * inheritable like the rest of memory. D2: only sorting-weight parameters are
+ * writable; circuit/threshold parameters stay closed until #9 real load.
+ */
+export type WritebackParam = 'selection-weight';
+
+export interface WritebackRecord {
+  id: string;
+  realmId: string;
+  createdAt: string;
+  /** The stable pattern that produced this recommendation (read-only attribution). */
+  source: { kind: string; target: string; confidence: 'stable' | 'suggestive' };
+  param: WritebackParam;
+  /** Entity the parameter applies to (a vassal id for `selection-weight`). */
+  target: string;
+  /** Multiplicative weight; 1 = no change, <1 down-weights a failure-concentrated target. */
+  factor: number;
+  reason: string;
+  status: 'active' | 'retracted';
+  retractedAt?: string;
+}
+
 /** One hybrid-retrieval result, with its lexical and semantic components. */
 export interface RecallHit {
   fact: FactRecord;
@@ -137,4 +167,6 @@ export type MemoryState = {
   facts: Array<[string, FactRecord[]]>;
   corrections?: ReliabilityCorrection[];
   retractions?: RetractionRecord[];
+  /** Write-back cards (经验卡); persisted in the user-dir snapshot (D3). */
+  writebacks?: WritebackRecord[];
 };
