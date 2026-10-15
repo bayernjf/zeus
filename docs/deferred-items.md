@@ -64,6 +64,7 @@
 - 第三方 Agent 接入的信任分级、权限沙箱边界。
 - **触发条件**：A2A 协作层需要接入第一个本矩阵之外的外部 Agent。
 - **裁定（2026-10-08，设计稿 v0.1，前置守卫先行）**：措辞「接入**前**完成」= 前置守卫，按 #6 先例不等触发先做——设计见 [design-external-trust.md](design-external-trust.md)（PRD E9.4）：四档判型（拒绝 / 形状信任 / 注册执行者 / 签名在册），每档绑定能力面、数据面、资源面、操作面上限；V1 实施范围 = 纯函数 `trustTierOf`/`tierConstraints` + 入站面装配 + 审计值（tier-1 立即生效：plan 模式 + 最严 dataPolicy + 1/3 资源 + execute 不可达）；V2 技能只读 tag、V3 签名锚随 bayjf R2（仓库外）。**V1 已于 2026-10-08 实施（Active work 161，基线 1335/121）：判档纯函数 `src/trust/tier.ts` + 入站 A2A 装配（tier-1 锁 plan）+ 审计 `external-agent-admitted/refused`（带 tier 字段）+ 测试 9 例；剩 V2/V3 待触发条件。**
+- **进展（2026-10-15）**：V3 的**签名锚前提已成就**——bayjf R2 落地、签名目录公开可验，对真 Zeus 进程四件套对接实测全过（E5.4 ✅，Active work 246，bayjf 仓 feature/20260719，未 push）。**本条仍不销项**：V3 剩余成分为 zeus 侧把 `rosterPubKey` 接入 `trustTierOf` 入站判档升 tier-3——下一批库内可执行项（参数位已留，design-external-trust §4 落点 4「接入即可升 tier-3，不重写」）。
 
 ### #6 个人/企业双数据域授权粒度 ✅ 已销项（2026-09-25）
 - 原议题：同一员工同时持有两个 Realm 时的数据二极管授权界面与审计呈现。
@@ -77,6 +78,7 @@
 - **进展（2026-09-24 更新）**：设计定稿 v0.1，见 [design-fealty-signing.md](design-fealty-signing.md)（v1 Zeus 单签：Ed25519 + RFC 8785，条目 attestation + 快照 seal，TTL 硬过期；v2 执行 Agent 自签交叉背书）。**v1 纯函数已库内实现**（`src/registry/signing.ts`，`tests/signing.test.ts` 24 项：覆盖设计稿 §8.1 八条验收 + 签名链 v1.1 两态封签 5 项）。**R1 已完整接线**：H1 `GET /api/roster/public` 与 bearer `GET /api/roster`（internal，含 revoked 行）均实时投影并 sealSnapshot 封签、离线可验——签名链 **v1.1（2026-09-24）** 把 attestation 扩为 `active|revoked` 两态，revoked attestation 证永久吊销事实、不带硬过期（快照新鲜度仍由 seal maxAge 绑定），验签要求状态与条目精确匹配（防提升/掩盖）、缺 source 或状态矛盾 fail-loud（public 封签 commit 3190a11）；**生产密钥已硬化**：`src/http/rsk.ts` 支持内联/文件注入，production 无密钥拒启（commit 4d99f43），生成脚本 `scripts/gen-rsk-key.mjs`。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 生产 RSK 托管/轮换与公钥发布的部署动作**，触发条件「bayjf 名册对外公开前」未到点。
 - **进展（2026-09-27）**：**「公钥发布」的库内侧已闭合**——`GET /api/roster/keys`（公开面，JWKS 形状 + `spkiPem` + RFC 7638 指纹 + SPKI DER 摘要；导不出公钥的后端返回 501 而非空数组）+ 契约与"它不是信任锚"记入 design-fealty-signing v0.2 §5.1、§9-3 销项；**人工轮换与托管运行手册**写进 §5.4（含"为什么库里不做自动轮换"：自动换钥留下的窗口在验签方一侧与名册被替换不可区分）。冒烟加 3 步把"发布的钥就是签名那把"钉成断言（含指纹独立复算）。本条**仍未销项**：只剩 **R2（bayjf 构建期客户端公钥验签展示）+ 托管选型决策与带外公告这个真实动作**，触发条件「bayjf 名册对外公开前」未到点。**原本要用户决策的一件事已决策（2026-09-27）**：私钥落在哪儿——选定 **容器 / systemd 的 secret 挂载 + 私钥文件 0600**（三档比较见 §5.4 表，落地口径写进 deployment.md §3「本项目选型」；企业 KMS/HSM 的触发条件是出现受治理的第二信任方）。故本条剩下的**全部是仓库外动作**：真实部署的 secret 后端落钥、`jwkThumbprint` 带外公告、bayjf 侧验签展示。
 - **进展（2026-09-27，第二批）**：**"要带外固定的那串"现在三个触点都能看见**——出钥时 `gen-rsk-key.mjs` 打印 `jwkThumbprint`/`spkiSha256`，发布时端点给同一函数算出的值，验签时 `verify-roster` 报告显示本次实际接受那把钥的指纹；冒烟第 33 步断言三处逐字符同串（单变量反证：让 keygen 少打印即 FAIL，其余 32 步不受影响）。**这使 §5.4 步骤 1（拿到要公告的值）与步骤 6（验签方完成比对）第一次不必自己算哈希**，并顺带补上此前在全库**零测试覆盖**的 keygen 脚本（4 例，含 0600 与拒绝覆盖）。剩余项＝公告动作与 R2 展示（**托管选型决策已于 2026-09-27 完成，见上一条**）。
+- **进展（2026-10-15）**：**R2 已落地并实测**——bayjf 仓构建期 SSG 拉 `/api/roster/public` 封签快照 + 带外固定 `ZEUS_ROSTER_KEY_THUMBPRINT` 客户端完整验签（fail-closed）+ 双语公开名册页 `/roster` 与 `/zh/roster`；对真 Zeus 进程四件套全过（正对照构建 56 页、负对照篡改指纹 exit 1、库内 CLI VERIFIED exit 0、双语内容断言全过；E5.4 ✅，Active work 246，未 push）。本条**仍未销项**：只剩**生产 RSK 托管落地与 `jwkThumbprint` 带外公告**两个真实环境动作，触发条件「bayjf 名册对外公开前」未到点。
 
 ### #8 结果回传成本口径
 - `x-zeus-report.cost` 的单位与结算口径，跨执行 Agent 可比性。
