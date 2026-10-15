@@ -20,7 +20,7 @@
 | `tier-0` 拒绝 | 无卡 / 无 fealty 字段 / `fealtyOathProblem` 非空 | 不可信，fail-closed 拒绝 + 审计（现状已如此，本设计固化） |
 | `tier-1` 形状信任 | fealty 形状通过，但**验签不可达**（签名目录未公开 / 公钥未取到） | 信任 = 声明信任：卡片自述 + 形状合法。给最低可用能力，全部上限最低档 |
 | `tier-2` 注册执行者 | fealty 形状通过 **且** 已在注册表 active（现行出站协作方，如 pr-helper / loom / atlas） | 信任 = 注册时卡片深比对 + active 状态；沿用现行派发规则 |
-| `tier-3` 签名在册 | fealty 形状通过 **且** 签名验证通过（bayjf 签名目录在册、公钥验签成功——R2 公开后才可达） | 信任 = 密码学验证；最高档，与注册执行者同权或略高（附签名档案） |
+| `tier-3` 签名在册 | fealty 形状通过 **且** 签名验证通过（名册 attestation 在册且与携卡内容精确一致——**已实施 2026-10-16**：锚来源为 Zeus 自签名名册快照，bayjf R2 公开后平移到其公钥锚，判档函数不动） | 信任 = 密码学验证；最高档，与注册执行者同权或略高（附签名档案） |
 
 **判档不跨域判定内容**：realm 可见性与数据边界**不在本模型内**——仍由 `decideRealmAccess` 与 `dataPolicy` 现行规则单独判定（跨域授权面不得被信任档位旁路）。
 
@@ -42,10 +42,10 @@
 
 ## 4. 契约落点
 
-1. **纯函数**：`src/trust/tier.ts` —— `trustTierOf(callerCard, { registry, rosterPubKey? })` 返回 `TrustTier`；`tierConstraints(tier)` 返回该档四个面的上限对象（能力白名单谓词 / dataPolicy 强制档 / 资源上限 / 凭证策略）。不持有状态，可单测。
+1. **纯函数**：`src/trust/tier.ts` —— `trustTierOf(card, isActive, rosterAnchor?)` 返回 `TrustTier`（实施签名，2026-10-16：`rosterAnchor` 在场且 `attestationMatchesCard` 通过 → tier-3，否则回落 `isActive` → tier-2/tier-1；异步验签在装配层，判档保持纯同步）；`tierConstraints(tier)` 返回该档四个面的上限对象（能力白名单谓词 / dataPolicy 强制档 / 资源上限 / 凭证策略）。不持有状态，可单测。
 2. **装配点（入站面）**：`src/http/serve.ts` 入站 A2A 判档处（现 `fealtyOathProblem` 之后）加档位解析；`tasks/send` 处理按 `tierConstraints` 收窄——tier-1 只放行白名单技能、强制最严 dataPolicy、走 1/3 资源上限、execute 不可达。
 3. **审计**：新 decision 值 `external-agent-admitted`（带 tier）/ `external-agent-refused`（带 reason）入 `AUDIT_DECISIONS` 单一来源 + TUI 语义 token；档位逐请求判定并记账，不做会话级缓存（对端身份可随时吊销，与执行 Agent 吊销同语义）。
-4. **出站侧不动**：注册执行 Agent 的派发路径零改动（tier-2 即现行规则）；签名目录（bayjf R2）公开后，`rosterPubKey` 接入档位判定即可升 tier-3，不重写。
+4. **出站侧不动**：注册执行 Agent 的派发路径零改动（tier-2 即现行规则）；签名锚接线**已实施（2026-10-16，Active work 247）**——`buildRosterAnchor`（src/trust/rosterAnchor.ts）每请求现签现验（`projectPublicRoster` → `sealSnapshot` → Ed25519 验签），公钥缺失 / 验签失败 / 任何异常三路 fail-closed 回落（最高 tier-2）；caller 携与 attestation 内容失配的卡回落 tier-2 而非拒绝。bayjf R2 公开后锚来源平移，判档函数不重写。
 
 ## 5. 不做什么（避免下次重新讨论）
 
@@ -60,9 +60,10 @@
 - **分期**：
   - **V1（已实施）**：`trustTierOf` / `tierConstraints` 纯函数 + 入站面装配 + 审计值 + 测试。tier-2/3 档位**先存在**（判定函数完整），但 tier-1 是唯一立即生效的收窄。
   - **V2（已实施，2026-10-08）**：技能只读 tag 体系（能力面白名单的正式形态）——`READ_ONLY_TAG` + `isReadOnlyTagged` 纯函数（src/trust/tier.ts）+ 入站 A2A 面 tier-1 能力面闸：缺 registry / 技能未注册 / 技能非只读 → `inbound-task-refused` 审计（带 tier-1）fail-closed 403，零出站；tier-2/3 保持现行规则。
-  - **V3**：bayjf R2 公开后接 `rosterPubKey` 升 tier-3（仓库外，随 E5.4）。
+  - **V3（已实施，2026-10-16，Active work 247）**：签名锚接入升 tier-3——`RosterAnchor` 可信只读视图 + `trustTierOf` 三参版 + `buildRosterAnchor` 装配（现签现验、三路 fail-closed）。锚来源现为 Zeus 自签名名册；bayjf R2 公开后平移到其公钥锚（随 E5.4 后续）。
 
 ## 7. 演进日志
 
+- v0.3（2026-10-16）：V3 落地——签名锚经 `RosterAnchor` / `buildRosterAnchor` 接入 `trustTierOf` 升 tier-3（attestation 精确匹配携卡，失配回落 tier-2，验签三路 fail-closed），§2 档位表、§4 落点 1/4、§6 分期同步。
 - v0.2（2026-10-08）：V2 落地——tag 体系正式化（`read-only` = `READ_ONLY_TAG`），tier-1 能力面收窄为只读技能白名单（缺 registry/未注册/非只读 fail-closed），§3 能力面行与 §6 分期同步。
 - v0.1（2026-10-08）：设计稿入库（deferred #5 前置守卫裁定，V1 实施范围 = 判档 + 审计 + 资源上限）。
