@@ -3,6 +3,9 @@
 // statement that unregistered callers get the lowest trust
 // (design-vassal-protocol §5) becomes an enforceable, audited tier decision.
 
+import type { AgentCard } from '../a2a/types.js';
+import { attestationMatchesCard, type Attestation } from '../registry/signing.js';
+
 /** Verification strength of a caller card whose fealty shape already passed
  *  the registration gate. `tier-0` is decided by the gate itself (fail-closed)
  *  and never reaches this module. */
@@ -53,14 +56,30 @@ export function isReadOnlyTagged(spec: { tags?: string[] }): boolean {
   return (spec.tags ?? []).includes(READ_ONLY_TAG);
 }
 
+/** Verified view of the signed roster (design-external-trust §4, V3): the
+ *  async seal/verify chain runs ahead of this pure decision and hands down
+ *  this lookup. An attestation is only half the check — the presented card
+ *  must still content-match it (attestationMatchesCard). */
+export type RosterAnchor = {
+  attestationFor(name: string): Attestation | undefined;
+};
+
 /** Decides the trust tier of a caller card whose fealty shape already passed
  *  the registration gate (version gate + fealtyOathProblem). Survivors map to
  *  tiers by verification strength:
- *  - tier-3: the signed roster verifies the oath — V3 wiring point, reachable
- *    once bayjf R2 publishes the roster public key (E5.4);
+ *  - tier-3: the signed roster anchors the exact card presented — the name is
+ *    on the roster AND the card content-matches its attestation (V3, reachable
+ *    once a RosterAnchor is wired in);
  *  - tier-2: the card names a registered, active agent;
  *  - tier-1: shape-trust only — the caller is not on the roster.
+ *  A caller whose card fails the attestation content check falls back to the
+ *  registry-row check rather than refusal: tier-2 never trusted the presented
+ *  card's content in the first place, so the fallback weakens nothing.
  */
-export function trustTierOf(card: { name: string }, isActive: (name: string) => boolean): TrustDecision {
+export function trustTierOf(card: AgentCard, isActive: (name: string) => boolean, rosterAnchor?: RosterAnchor): TrustDecision {
+  const attestation = rosterAnchor?.attestationFor(card.name);
+  if (attestation && attestationMatchesCard(attestation, card)) {
+    return { tier: 'tier-3', name: card.name };
+  }
   return isActive(card.name) ? { tier: 'tier-2', name: card.name } : { tier: 'tier-1', name: card.name };
 }
