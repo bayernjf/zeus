@@ -1,4 +1,4 @@
-import type { A2AEvent, Task } from '../a2a/types.js';
+import type { A2AEvent, PushNotificationConfig, Task } from '../a2a/types.js';
 import { guardedFetch } from '../util/outbound-dns.js';
 
 export type SendTaskInput = {
@@ -14,6 +14,13 @@ export type SendTaskInput = {
    * (observation field, never an authorization field).
    */
   traceparent?: string;
+  /**
+   * E4.11 (design-a2a-push): receiver configuration for A2A push notification.
+   * When present, the message carries `pushNotificationConfig` and the agent is
+   * expected to POST the final Task snapshot back instead of Zeus holding a
+   * stream (the sender picks `tasks/send` over `tasks/sendSubscribe`).
+   */
+  pushNotification?: PushNotificationConfig;
 };
 
 export type SubscribeHandlers = {
@@ -73,6 +80,11 @@ function taskMessage(input: SendTaskInput) {
       'x-zeus-runId': input.runId,
       ...(input.traceparent === undefined ? {} : { traceparent: input.traceparent }),
     },
+    // E4.11 (design-a2a-push): the receiver config rides the message root so a
+    // peer that implements push notification can POST the final task back.
+    ...(input.pushNotification === undefined
+      ? {}
+      : { pushNotificationConfig: input.pushNotification }),
     parts: [{ kind: 'data', data: { skill: input.skill, ...input.params } }],
   };
 }

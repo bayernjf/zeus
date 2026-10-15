@@ -1,9 +1,9 @@
-import type { A2AEvent, RealmType, Task } from '../a2a/types.js';
+import type { A2AEvent, PushNotificationConfig, RealmType, Task } from '../a2a/types.js';
 import type { VassalLike, VassalLookup } from './types.js';
 import type { RealmHit } from '../realm/types.js';
 import type { ContextAppendixEntry } from '../context/assemble.js';
 import type { SkillInputEntry } from '../context/skill-inputs.js';
-import { sendTaskSubscribe, cancelTask } from './client.js';
+import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
 
 /**
@@ -120,6 +120,11 @@ export const AUDIT_DECISIONS = [
   // the task id are the audit trail of "who asked Zeus to do what".
   'inbound-task-accepted',
   'inbound-task-refused',
+  // E4.11 (design-a2a-push): an execution agent pushed the final task snapshot
+  // back to Zeus's callback endpoint — accepted (received, incl. idempotent
+  // replays) or refused (bearer-valid but no branch waiting for that task id).
+  'push-notification-received',
+  'push-notification-refused',
   // design-external-trust (PRD E9.4): the trust face of the same call. A caller
   // card was admitted on a trust tier (1/2/3) or refused at the tier gate
   // (tier-0). Distinct from inbound-task-* — the tier says how much a caller
@@ -258,6 +263,13 @@ export type DispatchRequest = {
    * preview — it never reaches an outcome, memory or a decision path.
    */
   onBranchDelta?: (delta: { vassal: string; runId: string; seq: number; preview: string; at: string }) => void;
+  /**
+   * E4.11 (design-a2a-push): when set, dispatch via plain `tasks/send` and ask
+   * the peer to POST the final task back (no long-lived stream). The branch
+   * then settles through `Orchestrator.receivePushNotification` instead of the
+   * SSE path; SSE/polling for non-armed branches is unchanged.
+   */
+  pushNotification?: PushNotificationConfig;
 };
 
 export type DispatchResult =
@@ -413,7 +425,33 @@ export class Dispatcher {
       // but dispatch is the moment the request actually leaves the process, so
       // the same guard runs here — a stale or restored entry cannot bypass it.
       assertOutboundUrlAllowed(vassal.taskUrl);
-      task = await sendTaskSubscribe(
+      // E4.11 (design-a2a-push): an armed branch uses plain tasks/send and
+      // carries the receiver config, so the peer pushes the final snapshot back
+      // instead of Zeus holding a stream. Unarmed branches keep the SSE path
+      // exactly as before.
+      task = request.pushNotification
+        ? await sendTask(
+            {
+              taskUrl: vassal.taskUrl,
+              skill: request.skill,
+              params: {
+                ...request.params,
+                ...(injectedHits.length ? { realmHits: injectedHits } : {}),
+                ...(request.contextAppendix !== undefined && request.contextAppendix.length > 0
+                  ? { contextAppendix: request.contextAppendix }
+                  : {}),
+                ...(request.skillInputs !== undefined && request.skillInputs.length > 0
+                  ? { skillInputs: request.skillInputs }
+                  : {}),
+              },
+              runId,
+              ...(token !== undefined ? { token } : {}),
+              ...(request.traceparent === undefined ? {} : { traceparent: request.traceparent }),
+              pushNotification: request.pushNotification,
+            },
+            this.options.fetchImpl,
+          )
+        : await sendTaskSubscribe(
         {
           taskUrl: vassal.taskUrl,
           skill: request.skill,

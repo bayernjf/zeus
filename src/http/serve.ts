@@ -123,6 +123,19 @@ async function main(): Promise<void> {
       : {}),
     ...(realm.realmRoots.length ? { realmRoots: realm.realmRoots } : {}),
     ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
+    // E4.11 (design-a2a-push): Zeus's own push receiver address. Armed intents
+    // carry it as pushNotificationConfig; the callback endpoint is mounted with
+    // the same gate as the driver token (unset → not mounted).
+    ...(process.env.ZEUS_A2A_PUSH_URL
+      ? {
+          pushReceiver: {
+            url: process.env.ZEUS_A2A_PUSH_URL,
+            ...(process.env.ZEUS_INTERNAL_TOKEN
+              ? { token: process.env.ZEUS_INTERNAL_TOKEN }
+              : {}),
+          },
+        }
+      : {}),
     // S6 V3: the two observability files are opt-in by path. Booted without them
     // the process is exactly V1/V2 - live metrics window only, no trace export -
     // and `GET /api/metrics/history` is not mounted at all. Before this they were

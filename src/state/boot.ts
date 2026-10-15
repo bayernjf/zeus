@@ -269,6 +269,14 @@ export type KernelBootOptions = {
    * calibration; tuning is deferred to #9 once real-load distributions exist.
    */
   contextOptions?: { maxEntries?: number; minScore?: number; maxContextEntriesPerBranch?: number };
+  /**
+   * E4.11 (design-a2a-push): Zeus's own A2A push receiver address. When set,
+   * intents armed with `pushNotification: true` dispatch via plain `tasks/send`
+   * carrying this config and settle through the callback endpoint
+   * (`POST /api/a2a/push-notifications`, serve.ts mounts it only when the
+   * internal token is configured). Arming without this is refused.
+   */
+  pushReceiver?: { url: string; token?: string };
 }
 
 const noop = (): void => {};
@@ -581,6 +589,15 @@ async function assembleKernel(
     // assembles nothing, an unregistered skill yields undefined and degrades to
     // zero skill-input assembly.
     skillInputsProvider: skillId => skillRegistry.get(skillId)?.inputs,
+    // deferred #44 (design-memory-self-evolution §2.2): the runtime write-back
+    // face — active selection-weight cards feed the auto-selection pool. A
+    // store with no cards yields {} and dispatch stays at the baseline.
+    selectionWeightsProvider: realmId => memoryStore.selectionWeights(realmId),
+    // E4.11 (design-a2a-push): the push receiver config rides outbound
+    // tasks/send for armed intents; push callbacks audit to the same spine as
+    // dispatches.
+    ...(options.pushReceiver ? { pushReceiver: options.pushReceiver } : {}),
+    audit: auditSink,
     onContextAssembled: (events, entry) => {
       for (const event of events) {
         auditSink({
