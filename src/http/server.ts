@@ -37,6 +37,7 @@ import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../r
 import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type Task, type TaskState } from '../a2a/types.js';
 import { fealtyOathProblem } from '../registry/registry.js';
 import { isReadOnlyTagged, trustTierOf } from '../trust/tier.js';
+import { buildRosterAnchor } from '../trust/rosterAnchor.js';
 import {
   decideRealmAccess,
   DomainGrantError,
@@ -515,12 +516,22 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             return error(reply, 403, 'caller_refused', `invalid caller fealty: ${oathProblem}`);
           }
           // design-external-trust (PRD E9.4): the shape survived, so the caller
-          // is admitted on a tier — tier-2 when the card names a registered
-          // active agent, tier-1 (shape-trust) otherwise. tier-3 stays
-          // unreachable until the signed roster is public (E5.4).
+          // is admitted on a tier — tier-3 when the signed roster anchors the
+          // exact card it presents (V3), tier-2 when it merely names a
+          // registered active agent, tier-1 (shape-trust) otherwise. The anchor
+          // is re-sealed and re-verified per request (§4: no session caching);
+          // a signer without exportable key material fails closed to tier-2.
           callerName = card.name;
+          const rosterAnchor = await buildRosterAnchor({
+            registry: deps.registry,
+            signer: deps.signer,
+            now,
+            maxAgeSeconds: maxAge,
+            attestationTtlSeconds: attestationTtl,
+          });
           callerTier = trustTierOf(card, name =>
             deps.registry?.listAll().some(entry => entry.card.name === name && entry.status === 'active') ?? false,
+            rosterAnchor,
           ).tier;
           audit?.({
             ts: at,

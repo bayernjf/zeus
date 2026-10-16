@@ -8,7 +8,7 @@
 
 | 事实 | 证据 |
 | --- | --- |
-| 内核里没有任何调度器。全仓计时器调用共 **11 处**（2026-10-13 现测，不计 `src/testing` 测试工装），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、停机宽限、分支超时、派发受理超时、TUI 轮询、MCP stdio 调用墙钟/关停/在途请求三计时器、MCP HTTP 调用超时、分支排队等待的可选上限 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/http/server.ts:3226 #setTimeout`、`src/orchestrator/orchestrator.ts:1655 #setTimeout`、`src/dispatch/client.ts:124 #setTimeout`、`src/tui/cli.ts:103-103 #setInterval`、`src/mcp/stdio-client.ts:101-101 #setTimeout`、`src/mcp/stdio-client.ts:182-182 #setTimeout`、`src/mcp/stdio-client.ts:229-229 #setTimeout`、`src/mcp/client.ts:70-70 #setTimeout`、`src/orchestrator/semaphore.ts:125-125 #setTimeout` |
+| 内核里没有任何调度器。全仓计时器调用共 **11 处**（2026-10-13 现测，不计 `src/testing` 测试工装），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、停机宽限、分支超时、派发受理超时、TUI 轮询、MCP stdio 调用墙钟/关停/在途请求三计时器、MCP HTTP 调用超时、分支排队等待的可选上限 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/http/server.ts:3237 #setTimeout`、`src/orchestrator/orchestrator.ts:1655 #setTimeout`、`src/dispatch/client.ts:124 #setTimeout`、`src/tui/cli.ts:103-103 #setInterval`、`src/mcp/stdio-client.ts:101-101 #setTimeout`、`src/mcp/stdio-client.ts:182-182 #setTimeout`、`src/mcp/stdio-client.ts:229-229 #setTimeout`、`src/mcp/client.ts:70-70 #setTimeout`、`src/orchestrator/semaphore.ts:125-125 #setTimeout` |
 | 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:621-600 #` |
 | execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/orchestrator/orchestrator.ts:4-4 #verifyAndConsumeExecutionDelegation` |
 | 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation` |
