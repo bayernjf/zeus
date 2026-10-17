@@ -547,3 +547,14 @@ describe('mentorship assessment parsing', () => {
     }
   });
 });
+
+describe('supervisor script template hygiene', () => {
+  it('binds skill-row actions to the loop-scoped skill id, never an undeclared id', () => {
+    // Regression for the E2E-caught ReferenceError: renderSkills built each row with
+    // `data-id="${id}"` while the loop variable was `s`, so the catalogue view threw
+    // "id is not defined" and refreshView's catch cleared the skill + connector panels.
+    const skillRow = HTML.split('\n').find((l) => l.includes('${skillActions(s)}')) ?? '';
+    expect(skillRow).not.toContain('${id}');
+    expect(skillRow).toContain('data-id="${esc(s.id)}"');
+  });
+});
