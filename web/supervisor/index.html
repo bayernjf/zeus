@@ -2914,7 +2914,7 @@
         <td>${badge(s.status, stCls)}</td>
         <td class="mono" style="font-size:11px">${esc((s.providedBy || []).join(', ') || '—')}</td>
         <td style="font-size:11px">${esc((s.permissions || []).join(', ') || '—')}</td>
-        <td>${skillActions(s)}<button class="btn small" data-read="skill-versions" data-id="${id}" style="margin-left:4px">${esc(t('skill.versions'))}</button></td>
+        <td>${skillActions(s)}<button class="btn small" data-read="skill-versions" data-id="${esc(s.id)}" style="margin-left:4px">${esc(t('skill.versions'))}</button></td>
       </tr>`;
     }
     el.innerHTML = rows + '</table>';
@@ -4295,7 +4295,7 @@
     let html = '<table><colgroup><col style="width:15%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:30%"><col style="width:8%"><col style="width:12%"></colgroup><tr><th>' + esc(t('col.occurredAt')) + '</th><th>' + esc(t('col.kind')) + '</th><th>' + esc(t('col.agent')) + '</th><th>' + esc(t('mem.runId')) + '</th><th>' + esc(t('mem.content')) + '</th><th>' + esc(t('col.confidence')) + '</th><th>' + esc(t('mem.refs')) + '</th></tr>';
     for (const e of shown) {
       const content = e.kind === 'claim' && e.content && typeof e.content === 'object'
-        ? `${esc(String((e.content as Record<string, unknown>).subject ?? ''))} ${esc(String((e.content as Record<string, unknown>).predicate ?? ''))} ${esc(String((e.content as Record<string, unknown>).object ?? ''))}`
+        ? `${esc(String(e.content.subject ?? ''))} ${esc(String(e.content.predicate ?? ''))} ${esc(String(e.content.object ?? ''))}`
         : esc(JSON.stringify(e.content));
       html += `<tr>
         <td class="mono" style="font-size:11px">${fmtTime(e.occurredAt)}</td>
