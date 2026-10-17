@@ -180,7 +180,9 @@ export {
 } from './orchestrator/dag.js';
 export type { DagNode, DagSpec, DagNodeState, DagState } from './orchestrator/dag.js';
 export { DagRunner, DagIdInUseError } from './orchestrator/dag-runner.js';
-export type { DagResult, DagNodeResult, DagRunnerOptions } from './orchestrator/dag-runner.js';
+export type { DagResult, DagNodeResult, DagRunnerOptions, ChainRecoveryOptions, ChainRecoveryAudit } from './orchestrator/dag-runner.js';
+export { selectCandidates, recoverChain, planRecovery, buildChainPlan } from './orchestrator/discovery.js';
+export type { DispatchCandidate, DispatchMode, SelectionContext, ChainFailure, RecoveryAction, ChainStep, ChainPlan, RecoveryInstruction } from './orchestrator/discovery.js';
 export {
   FileKernelStateStore,
   collectKernelState,

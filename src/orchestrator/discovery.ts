@@ -15,7 +15,12 @@
 //
 // Recovery (design-tool-discovery §4): the fixed four-step chain retry ->
 // switch -> degrade -> escalate, with high-stakes skipping retry and the S4
-// circuit skipping retry/switch for automatic paths.
+// circuit skipping retry/switch for automatic paths. V3 slice 2 adds the
+// chain plan (each DAG node is one step with its own candidate face) and
+// `planRecovery`, which resolves one failed step into an executable
+// instruction the runtime can act on.
+
+import type { DagSpec } from './dag.js';
 
 export type DispatchMode = 'execute' | 'plan';
 
@@ -170,6 +175,27 @@ export type ChainPlan = {
   policy: 'sequential' | 'dag';
 };
 
+/**
+ * V3 slice 2 (design-tool-discovery §5): build the chain plan for a DAG spec —
+ * one step per node, in spec order, with the node's own candidate face and its
+ * `required` declaration. Pure and deterministic: the candidate resolver is
+ * caller-supplied (boot wires it to the live registry), mirroring how
+ * `selectCandidates` takes a caller-supplied snapshot.
+ */
+export function buildChainPlan(
+  spec: DagSpec,
+  resolveCandidates: (skillId: string) => DispatchCandidate[],
+): ChainPlan {
+  return {
+    policy: 'dag',
+    steps: spec.nodes.map(node => ({
+      skillId: node.skill,
+      candidates: resolveCandidates(node.skill),
+      required: node.required ?? true,
+    })),
+  };
+}
+
 /** The executable recovery instruction for one failed step (V3 slice 2).
  *  Unlike the slice-1 verdict (`RecoveryAction`), an instruction carries the
  *  concrete candidate to re-run or switch to, so the runtime can act on it
@@ -199,6 +225,11 @@ export type RecoveryInstruction =
  * `hasAlternateProvider` was always false at runtime. Here alternates are
  * decidable per step.
  *
+ * `excludeProviders` are providers already tried by the runtime (re-dispatched
+ * and failed); an alternate lookup never returns one of them, so a repeated
+ * failure cannot ping-pong back to a spent provider. Defaults to none — the
+ * single-decision caller is unaffected.
+ *
  * A `stepIndex` outside the plan is a caller bug, so it fails loudly
  * (RangeError) rather than guessing a verdict.
  */
@@ -207,6 +238,7 @@ export function planRecovery(
   stepIndex: number,
   failedProvider: string,
   failure: ChainFailure,
+  excludeProviders: string[] = [],
 ): RecoveryInstruction {
   const step = plan.steps[stepIndex];
   if (step === undefined) throw new RangeError(`chain step ${stepIndex} is out of range (plan has ${plan.steps.length} steps)`);
@@ -220,7 +252,7 @@ export function planRecovery(
     return { action: 'retry', stepIndex, candidate: sameProvider };
   }
 
-  const alternate = step.candidates.find((c) => c.provider !== failedProvider);
+  const alternate = step.candidates.find((c) => c.provider !== failedProvider && !excludeProviders.includes(c.provider));
   if (alternate !== undefined && !failure.circuitOpen) {
     return { action: 'switch', stepIndex, candidate: alternate, from: failedProvider };
   }
