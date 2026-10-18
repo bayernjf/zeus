@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { DagRunner, type ChainRecoveryAudit } from '../src/orchestrator/dag-runner.js';
 import { buildChainPlan, type DispatchCandidate } from '../src/orchestrator/discovery.js';
 import type { DagNode, DagSpec } from '../src/orchestrator/dag.js';
-import type { DispatchPort, DispatchRequest } from '../src/orchestrator/types.js';
-import type { DispatchResult } from '../src/dispatch/dispatcher.js';
+import type { DispatchPort } from '../src/orchestrator/types.js';
+import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 
 function completed(vassal: string, skill: string): DispatchResult {
@@ -32,8 +32,8 @@ function scriptedPort(script: DispatchResult[], calls: Array<{ skill: string; va
   let i = 0;
   return {
     async dispatch(req: DispatchRequest) {
-      calls.push({ skill: req.skill, vassal: req.vassal });
-      const result = script[Math.min(i, script.length - 1)];
+      calls.push(req.vassal === undefined ? { skill: req.skill } : { skill: req.skill, vassal: req.vassal });
+      const result = script[Math.min(i, script.length - 1)]!;
       i++;
       return result;
     },
