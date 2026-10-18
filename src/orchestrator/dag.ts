@@ -20,6 +20,19 @@ export type DagNode = {
   /** Node ids that must complete before this node starts. */
   dependsOn?: string[];
   aggregation?: AggregationRule;
+  /**
+   * S11 V3 slice 2 (design-tool-discovery §4): whether the step's result is
+   * required for the intent to converge. A non-required node that fails may be
+   * degraded by the recovery chain (skipped, dependents still run). Defaults to
+   * true.
+   */
+  required?: boolean;
+  /** S11 V3 slice 2: whether re-running the node is side-effect free. Retry is
+   *  only reachable for idempotent nodes. Defaults to false. */
+  idempotent?: boolean;
+  /** S11 V3 slice 2: high-stakes nodes skip retry entirely and escalate (same
+   *  rule as `recoverChain`). Defaults to false. */
+  highStakes?: boolean;
 };
 
 export type DagSpec = {
@@ -39,6 +52,12 @@ export function validateDag(nodes: DagNode[]): DagNode[] {
   for (const node of nodes) {
     if (!node.id) throw new DagValidationError('a DAG node is missing id');
     if (byId.has(node.id)) throw new DagValidationError(`duplicate DAG node id: ${node.id}`);
+    for (const field of ['required', 'idempotent', 'highStakes'] as const) {
+      const value = node[field];
+      if (value !== undefined && typeof value !== 'boolean') {
+        throw new DagValidationError(`node ${node.id} ${field} must be a boolean when set`);
+      }
+    }
     byId.set(node.id, node);
   }
   for (const node of nodes) {
@@ -140,12 +159,19 @@ export function criticalPath(nodes: DagNode[]): string[] {
  * The first dependency of `node` that has not completed, or undefined when every
  * dependency is satisfied. Single implementation behind both the exported
  * predicate and the runner's skip path, so the two can never disagree.
+ *
+ * A `degraded` dependency counts as satisfied (S11 V3 slice 2): a step that the
+ * recovery chain skipped is a deliberate scope reduction, so its dependents run
+ * on rather than being skipped behind it.
  */
 export function firstUnsatisfiedDependency(
   node: DagNode,
   statusOf: (id: string) => DagNodeState | undefined,
 ): string | undefined {
-  return (node.dependsOn ?? []).find(dep => statusOf(dep) !== 'completed');
+  return (node.dependsOn ?? []).find(dep => {
+    const status = statusOf(dep);
+    return status !== 'completed' && status !== 'degraded';
+  });
 }
 
 /** Node ids whose dependencies are all satisfied (or already known-failed). The
@@ -154,5 +180,5 @@ export function dependenciesSatisfied(node: DagNode, statusOf: (id: string) => D
   return firstUnsatisfiedDependency(node, statusOf) === undefined;
 }
 
-export type DagNodeState = 'pending' | 'running' | 'completed' | 'failed' | 'needs-driver' | 'skipped';
+export type DagNodeState = 'pending' | 'running' | 'completed' | 'failed' | 'needs-driver' | 'skipped' | 'degraded';
 export type DagState = 'completed' | 'partial' | 'failed' | 'needs-driver';
