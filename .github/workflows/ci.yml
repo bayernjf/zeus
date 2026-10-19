@@ -257,3 +257,24 @@ jobs:
           path: /tmp/capacity-report.json
           if-no-files-found: warn
 
+  image-verify:
+    # A3 (2026-10-19): the container-level four checks that review rounds used
+    # to re-shoot by hand are now scripted (scripts/verify-image.mjs) and gate
+    # every push: HEALTHCHECK healthy, /data/rsk.key 0600 node:node, SIGTERM
+    # drains to kernel-state.json (0600, non-empty), restart restores the
+    # snapshot; plus roster verification through the shipped verify-roster.mjs
+    # (public /api/roster/public endpoint, no token needed) both before and
+    # after the restart. Kept separate from image-smoke (build + module load)
+    # because it actually boots the server and exercises shutdown/restart.
+    name: image container-level verify (healthy / 0600 / SIGTERM / restore)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t zeus:ci-verify .
+
+      - name: Container-level verification
+        run: node scripts/verify-image.mjs --tag zeus:ci-verify
+
