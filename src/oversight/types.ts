@@ -10,8 +10,11 @@ export type EscalationStatus = 'pending' | 'approved' | 'rejected';
  *  memory-dispute: consolidation found contradictory facts it could not rule on.
  *  delegation-limit: an unattended watch fire hit a delegation-contract ceiling
  *  (self-host loop §4.2): no outbound dispatch happened; the operator answers by
- *  issuing a new contract or switching the watch intent to plan. */
-export type EscalationKind = 'task-input' | 'intent-conflict' | 'memory-dispute' | 'delegation-limit';
+ *  issuing a new contract or switching the watch intent to plan.
+ *  guardrail-content (S8 V3, design-guardrails §5): an execute-mode intent's
+ *  assembled content hit an external-url / credential signal. No outbound
+ *  dispatch happened; the operator decides whether the crossing may proceed. */
+export type EscalationKind = 'task-input' | 'intent-conflict' | 'memory-dispute' | 'delegation-limit' | 'guardrail-content';
 
 export type Escalation = {
   id: string;
@@ -57,6 +60,10 @@ export type Escalation = {
   delegationId?: string;
   /** delegation-limit only: which ceiling/guard refused the child ticket. */
   limitReason?: string;
+  /** guardrail-content only: the deterministic signals that escalated the intent. */
+  signals?: string[];
+  /** guardrail-content only: the data boundary the content carried. */
+  boundary?: string;
 };
 
 export type OversightAuditEntry = {

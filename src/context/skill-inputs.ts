@@ -81,8 +81,15 @@ export type SkillInputAssembly = {
 export function assembleSkillInputs(args: {
   declared: Record<string, unknown>;
   params: Record<string, unknown>;
+  /**
+   * S8 V3 (design-guardrails §5): destination mode for the assembled fields.
+   * Default 'plan' keeps the V2 behaviour (escalate degrades to an
+   * annotation); 'execute' keeps the escalate verdict and emits a
+   * `guardrail-escalated` event instead.
+   */
+  destinationMode?: 'plan' | 'execute';
 }): SkillInputAssembly {
-  const { declared, params } = args;
+  const { declared, params, destinationMode = 'plan' } = args;
   const inputs: SkillInputEntry[] = [];
   const events: ContextAssemblyEvent[] = [];
   let unavailable = 0;
@@ -94,14 +101,21 @@ export function assembleSkillInputs(args: {
       const signals = scanContentSignals(renderInputText(value));
       const handling = classifyContentRisk({
         provenance: 'driver-supplied',
-        destination: { kind: 'outbound', mode: 'plan' },
+        destination: { kind: 'outbound', mode: destinationMode },
         signals,
       });
-      // Driver-supplied payload is never trimmed or refused here; only a
-      // deterministic signal produces an audited boundary annotation
-      // (design-guardrails §3.2 "命中信号时标注 + 审计" — plain explicit
-      // fields are the operator's own content and emit nothing).
-      if (signals.length > 0 && (handling.action === 'annotate' || handling.action === 'escalate')) {
+      // Driver-supplied payload is never trimmed or refused at this assembly
+      // point (design-guardrails §3.2); plan mode degrades an escalate verdict
+      // to an audited boundary annotation, execute mode keeps it so the caller
+      // can raise the intent to the oversight queue before dispatch.
+      if (handling.action === 'escalate' && destinationMode === 'execute') {
+        events.push({
+          kind: 'guardrail-escalated',
+          entry: name,
+          boundary: 'data-boundary:driver-supplied',
+          signals,
+        });
+      } else if (signals.length > 0 && (handling.action === 'annotate' || handling.action === 'escalate')) {
         events.push({
           kind: 'guardrail-annotated',
           entry: name,

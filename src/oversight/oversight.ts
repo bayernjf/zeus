@@ -212,6 +212,57 @@ export class OversightDesk {
   }
 
   /**
+   * S8 V3 (design-guardrails §5): an execute-mode intent's assembled content
+   * hit a deterministic guardrail signal. Nothing was dispatched; the operator
+   * decides whether the crossing may proceed. L1 by construction (an async
+   * queue entry that never blocks other intents). Idempotent per intentId: the
+   * same escalated execute intent, replayed, returns the existing record.
+   */
+  ingestGuardrail(input: {
+    intentId: string;
+    runId: string;
+    skill: string;
+    realm: Escalation['realm'];
+    realmId?: string;
+    vassals: string[];
+    boundary: string;
+    signals: readonly string[];
+  }): Escalation {
+    const key = `guardrail:${input.intentId}`;
+    const existingId = this.conflictIndex.get(key);
+    if (existingId) return this.get(existingId)!;
+
+    const vassalList = input.vassals.length > 0 ? input.vassals.join(',') : '(intent)';
+    const escalation: Escalation = {
+      id: this.newId(),
+      kind: 'guardrail-content',
+      runId: input.runId,
+      vassal: vassalList,
+      skill: input.skill,
+      realm: input.realm,
+      reason:
+        `execute intent ${input.intentId} assembled content that must not run ` +
+        `automatically (${input.boundary}): the deterministic signals ` +
+        `${input.signals.join(', ') || '(none)'} were found. No outbound dispatch ` +
+        `happened; approve to re-dispatch with operator judgment.`,
+      options: ['approve', 'reject'],
+      status: 'pending',
+      createdAt: this.now().toISOString(),
+      // L1 by construction (design-hil §6): an async queue entry, the operator
+      // decides without blocking other intents.
+      interruptLevel: QUEUE_DEFAULT_LEVEL,
+      intentId: input.intentId,
+      signals: [...input.signals],
+      boundary: input.boundary,
+      ...(input.realmId ? { realmId: input.realmId } : {}),
+    };
+    this.escalations.set(escalation.id, escalation);
+    this.conflictIndex.set(key, escalation.id);
+    this.audit(escalation, 'escalated');
+    return structuredClone(escalation);
+  }
+
+  /**
    * Queue view, optionally narrowed by status and/or kind. The kind filter
    * matters to the driver because a missing-parameter request and a memory
    * dispute arrive in one queue but demand completely different answers.
@@ -248,6 +299,11 @@ export class OversightDesk {
         const seqPart = entry.runId.split(':').pop() ?? '0';
         const key = `${entry.watchId}::${entry.delegationId ?? '(none)'}::${entry.limitReason ?? 'unknown'}::${seqPart}`;
         this.conflictIndex.set(key, entry.id);
+      }
+      // guardrail-content rows rebuild their per-intent key so a replay of the
+      // same escalated execute intent resolves to the existing record.
+      if (entry.kind === 'guardrail-content' && entry.intentId) {
+        this.conflictIndex.set(`guardrail:${entry.intentId}`, entry.id);
       }
     }
   }

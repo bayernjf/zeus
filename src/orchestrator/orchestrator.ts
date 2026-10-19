@@ -104,6 +104,24 @@ export type OrchestratorOptions = {
    * sees intent conflicts and memory disputes in a booted process (C-28).
    */
   onTaskInput?: (result: DispatchResult, request: DispatchRequest) => void;
+  /**
+   * S8 V3 (design-guardrails §5): called when an execute-mode intent's
+   * assembled content hit a deterministic guardrail signal. Nothing was
+   * dispatched; the intent settles failed with `guardrail-escalated`. Wire it
+   * to `OversightDesk.ingestGuardrail` at assembly time so the crossing waits
+   * on the operator (L1) instead of running automatically.
+   */
+  onGuardrailEscalated?: (input: {
+    intentId: string;
+    runId: string;
+    skill: string;
+    realm: FanOutRequest['realm'];
+    realmId?: string;
+    vassals: string[];
+    boundary: string;
+    signals: readonly string[];
+    at: string;
+  }) => void;
   /** E1.7: collect in-flight / latency / failure metrics when provided. */
   metrics?: ConcurrencyMetrics;
   /** S2: when set, unresolved splits get one backend arbitration before escalating. */
@@ -729,6 +747,9 @@ export class Orchestrator {
           memoryHits: hits,
           maxEntries,
           ...(minScore !== undefined ? { minScore } : {}),
+          // S8 V3: execute-bound assembly keeps an escalate verdict so the
+          // content guardrail can raise the intent before any dispatch.
+          destinationMode: request.mode ?? 'plan',
         });
         contextAppendix = assembled.appendix;
         contextEvents = assembled.events;
@@ -748,7 +769,11 @@ export class Orchestrator {
           declared = undefined;
         }
         if (declared !== undefined) {
-          const assembled = assembleSkillInputs({ declared, params: request.params });
+          const assembled = assembleSkillInputs({
+            declared,
+            params: request.params,
+            destinationMode: request.mode ?? 'plan',
+          });
           skillInputs = assembled.inputs;
           contextEvents = contextEvents.concat(assembled.events);
         }
@@ -783,6 +808,45 @@ export class Orchestrator {
           ...(request.realmId ? { realmId: request.realmId } : {}),
           at: this.now().toISOString(),
         });
+      }
+      // S8 V3 (design-guardrails §5): an execute-mode intent whose assembled
+      // content hit a deterministic guardrail signal must not run automatically.
+      // The intent is raised to the oversight queue (L1) and settles failed —
+      // no outbound dispatch happens. Plan mode never produces an escalate
+      // event (assembly degrades it to an annotation), so this path is
+      // execute-only and the V2 plan behaviour is unchanged.
+      const escalatedEvent = contextEvents.find(event => event.kind === 'guardrail-escalated');
+      if (escalatedEvent && request.mode === 'execute') {
+        const detail =
+          `execute intent ${intentId} assembled ${escalatedEvent.entry} carrying ` +
+          `${escalatedEvent.signals.join(', ')} (${escalatedEvent.boundary}); ` +
+          `refusing automatic dispatch and raising to the oversight queue`;
+        this.options.onGuardrailEscalated?.({
+          intentId,
+          runId,
+          skill: request.skill,
+          realm: request.realm,
+          ...(request.realmId ? { realmId: request.realmId } : {}),
+          vassals: names,
+          boundary: escalatedEvent.boundary,
+          signals: escalatedEvent.signals,
+          at: this.now().toISOString(),
+        });
+        this.options.onRefusal?.({
+          skill: request.skill,
+          realm: request.realm,
+          reason: 'guardrail-escalated',
+          detail,
+          at: this.now().toISOString(),
+        });
+        return {
+          intentId, runId, skill: request.skill, realm: request.realm,
+          ...(request.realmId ? { realmId: request.realmId } : {}),
+          branches: [], stream: [], positions: [],
+          decision: aggregate([], request.aggregation), conflicts: [],
+          status: 'failed', createdAt: this.now().toISOString(),
+          refused: { reason: 'guardrail-escalated', detail },
+        };
       }
       // A-11: publish the intent before the first branch is dispatched so a
       // cancel arriving during the fan-out finds it. Previously the intent was
@@ -829,6 +893,7 @@ export class Orchestrator {
         this.inFlight.delete(intentId);
         this.branchSignals.delete(intentId);
       }
+
       // S11 V3 (design-tool-discovery §5): the recovery chain is wired onto the
       // failed-branch runtime. Every failed branch gets a fixed-order verdict
       // (retry -> switch -> degrade -> escalate) and the verdict is audited on
