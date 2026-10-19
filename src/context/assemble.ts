@@ -76,6 +76,20 @@ export type ContextAssemblyEvent =
       entry: string;
       boundary: string;
       signals: readonly ContentSignal[];
+    }
+  | {
+      /**
+       * S8 V3 (design-guardrails §5): execute-mode assembly kept its escalate
+       * verdict instead of degrading it to an annotation. The intent carries
+       * content the execute destination must not run on automatically — the
+       * orchestrator raises it to the oversight queue as an L1 escalation
+       * (design-hil) and dispatches nothing. Plan-mode assembly never emits
+       * this kind (escalate still degrades to `guardrail-annotated`).
+       */
+      kind: 'guardrail-escalated';
+      entry: string;
+      boundary: string;
+      signals: readonly ContentSignal[];
     };
 
 /**
@@ -122,8 +136,16 @@ export function assembleBranchContext(args: {
   memoryHits: RecallHit[];
   maxEntries: number;
   minScore?: number;
+  /**
+   * S8 V3 (design-guardrails §5): the destination mode the assembled content
+   * is bound for. Default 'plan' keeps the V2 behaviour — escalate degrades to
+   * an annotation. 'execute' keeps the escalate verdict and emits a
+   * `guardrail-escalated` event instead, so the caller can raise the intent to
+   * the oversight queue before any outbound dispatch.
+   */
+  destinationMode?: 'plan' | 'execute';
 }): { appendix: ContextAppendixEntry[]; events: ContextAssemblyEvent[] } {
-  const { memoryHits, maxEntries, minScore } = args;
+  const { memoryHits, maxEntries, minScore, destinationMode = 'plan' } = args;
   const events: ContextAssemblyEvent[] = [];
   const byFact = new Map<string, RecallHit>();
 
@@ -165,10 +187,29 @@ export function assembleBranchContext(args: {
     const provenance: ContentProvenance = hit.fact.origin ?? 'kernel-resolved-realm';
     const handling = classifyContentRisk({
       provenance,
-      destination: { kind: 'outbound', mode: 'plan' },
+      destination: { kind: 'outbound', mode: destinationMode },
       signals,
     });
-    if (handling.action === 'annotate' || handling.action === 'escalate') {
+    if (handling.action === 'escalate') {
+      if (destinationMode === 'execute') {
+        // S8 V3: an execute-bound entry hit an external-url / credential
+        // signal. The verdict is not degraded — the caller must raise the
+        // intent to the oversight queue instead of dispatching automatically.
+        events.push({
+          kind: 'guardrail-escalated',
+          entry: hit.fact.factId,
+          boundary: `data-boundary:${provenance}`,
+          signals,
+        });
+      } else {
+        events.push({
+          kind: 'guardrail-annotated',
+          entry: hit.fact.factId,
+          boundary: `data-boundary:${provenance}`,
+          signals,
+        });
+      }
+    } else if (handling.action === 'annotate') {
       events.push({
         kind: 'guardrail-annotated',
         entry: hit.fact.factId,

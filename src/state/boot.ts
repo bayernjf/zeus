@@ -572,6 +572,22 @@ async function assembleKernel(
     // already gated before token issuance inside dispatch, and tokenFor itself
     // yields nothing for revoked vassals, so no path can attach a retired token.
     tokenFor: name => registry.tokenFor(name),
+    // S8 V3 (design-guardrails §5): wire the DomainGrant registry into the
+    // dispatcher as the content-grant port. A vassal holds a content grant for
+    // a realm when it has a live (unrevoked, unexpired) grant entry for that
+    // realm. The gate is off until this port exists; an unconfigured kernel
+    // keeps the V2 dispatch behaviour.
+    ...(domainGrants
+      ? {
+          contentGrant: (vassal: string) =>
+            domainGrants.list().some(
+              grant =>
+                grant.subject === vassal &&
+                (grant.expiresAt === undefined ||
+                  Date.parse(grant.expiresAt) > now().getTime()),
+            ),
+        }
+      : {}),
     ...(fetchImpl ? { fetchImpl } : {}),
   });
   const orchestrator = new Orchestrator(registry.asVassalLookup(), dispatcher, {
@@ -612,6 +628,8 @@ async function assembleKernel(
               ? `intent ${entry.intentId}: ${event.appendixEntries} memory entries assembled${entry.realmId ? ` (realm ${entry.realmId})` : ''}`
               : event.kind === 'guardrail-annotated'
                 ? `intent ${entry.intentId}: appendix entry ${event.entry} annotated (${event.boundary}${event.signals.length > 0 ? `, signals ${event.signals.join(',')}` : ''})`
+                : event.kind === 'guardrail-escalated'
+                ? `intent ${entry.intentId}: appendix entry ${event.entry} escalated (${event.boundary}${event.signals.length > 0 ? `, signals ${event.signals.join(',')}` : ''})`
                 : event.kind === 'context-trimmed'
                 ? event.source === 'skill-inputs'
                   ? `intent ${entry.intentId}: ${event.trimmed} skill input field unavailable (${event.reason})`
@@ -629,6 +647,13 @@ async function assembleKernel(
     // conflicts and memory disputes reached the desk.
     onTaskInput: (result, request) => {
       oversight.ingest(result, request);
+    },
+    // S8 V3 (design-guardrails §5): an execute-mode intent whose assembled
+    // content hit a deterministic signal lands in the oversight queue as an L1
+    // guardrail-content escalation. Nothing was dispatched; the operator
+    // decides whether the crossing may proceed.
+    onGuardrailEscalated: input => {
+      oversight.ingestGuardrail(input);
     },
     // E2.2/E2.3/E2.4 (Active work 47 §E-3): auto-selected fan-out targets are
     // filtered through the skill catalogue, so uninstall/deprecate/harden take

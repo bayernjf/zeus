@@ -5,6 +5,7 @@ import type { ContextAppendixEntry } from '../context/assemble.js';
 import type { SkillInputEntry } from '../context/skill-inputs.js';
 import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
 import { assertOutboundUrlAllowed } from '../util/outbound-url.js';
+import { scanContentSignals } from '../guardrails/content-risk.js';
 
 /**
  * Every decision the governance spine records, as one list. The HTTP filter
@@ -160,6 +161,10 @@ export const AUDIT_DECISIONS = [
   'guardrail-annotated',
   'guardrail-redacted',
   'guardrail-refused',
+  // S8 V3 (design-guardrails §5): an execute-mode intent's assembled content
+  // hit a deterministic signal and was raised to the oversight queue (L1);
+  // nothing was dispatched.
+  'guardrail-escalated',
   // design-sandbox (tech map S16): the isolation gate refused a connector
   // registration, or spawned one under a declared isolation level, or a quota
   // enforcement killed it. V1 registers the names; the spawn-side wiring is V2,
@@ -290,6 +295,13 @@ export class Dispatcher {
       elapsed?: () => number;
       fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
       tokenFor?: (vassalName: string) => string | undefined;
+      /**
+       * S8 V3 (design-guardrails §5): whether a vassal holds a content grant
+       * (a valid DomainGrant) for the realm content being dispatched. Present
+       * only when the kernel is booted with a DomainGrant registry; absent, the
+       * enterprise-content guardrail is off and dispatch keeps its V2 behaviour.
+       */
+      contentGrant?: (vassalName: string) => boolean;
     }
   ) {
     this.lookup = directory instanceof Map ? mapAsLookup(directory) : directory;
@@ -385,6 +397,28 @@ export class Dispatcher {
         decision: 'content-injected',
         detail: `fealty.dataPolicy=${policy}, origin=${origin}, hits=${hits.length}`,
       });
+      // S8 V3 (design-guardrails §5): the content-side second gate. Domain
+      // isolation already made the hits task-scoped (dataPolicy/origin) and
+      // the vassal's dataRealms admit the realm type; this gate judges the
+      // *content* itself. Enterprise-realm hits carrying a deterministic PII
+      // pattern are never shipped verbatim: a content grant (DomainGrant)
+      // redacts the PII-bearing entries from the outbound copy, no grant
+      // refuses them. Both are audited on the same spine. Personal-realm
+      // content and signal-free enterprise content pass through unchanged.
+      // The gate is off until boot wires a contentGrant port (absent port =
+      // V2 behaviour).
+      if (this.options.contentGrant && request.realm === 'enterprise' && injectedHits.length > 0) {
+        const piiHits = injectedHits.filter(hit => scanContentSignals(hit.snippet).includes('pii-pattern'));
+        if (piiHits.length > 0) {
+          const granted = this.options.contentGrant(vassal.name);
+          injectedHits = injectedHits.filter(hit => !piiHits.includes(hit));
+          this.options.audit({
+            ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+            decision: granted ? 'guardrail-redacted' : 'guardrail-refused',
+            detail: `enterprise realm content: ${piiHits.length} PII hit(s) ${granted ? 'redacted from outbound copy (content grant)' : 'refused (no content grant)'} for vassal ${vassal.name}`,
+          });
+        }
+      }
     }
 
     // Re-affirm the revocation gate at the moment the credential is read.

@@ -160,10 +160,12 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'chain-switched': 'warning',
   'chain-degraded': 'warning',
   // design-guardrails (S8): a boundary annotation is information; a redaction
-  // or refusal is the guardrail working, so it warns.
+  // or refusal is the guardrail working, so it warns. An escalated execute
+  // intent (V3) waits on the operator, so it demands attention.
   'guardrail-annotated': 'info',
   'guardrail-redacted': 'warning',
   'guardrail-refused': 'warning',
+  'guardrail-escalated': 'attention',
   // design-sandbox (S16): an isolation refusal is the gate working, so it
   // warns; a spawned-isolated connector is normal operation.
   'connector-isolation-denied': 'warning',
