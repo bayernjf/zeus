@@ -250,11 +250,32 @@ try {
   record('TUI recognition acceptance', false, error instanceof Error ? error.message : String(error));
 } finally {
   proc?.kill('SIGTERM');
-  agentServer.close();
   if (KEEP) {
     console.log(`work kept at ${work}`);
   } else {
-    rmSync(work, { recursive: true, force: true });
+    // PR #145 合并后 main CI 实测命中：SIGTERM 是异步的，TUI 子进程可能仍在
+    // work 目录落文件，立即 rmSync 会抛 ENOTEMPTY（rmdir non-empty）。
+    // 先等子进程退出 + agent server 关闭（都带墙钟兜底），删除再带退避重试。
+    const tuiProc = proc;
+    if (tuiProc && tuiProc.exitCode === null) {
+      await new Promise(resolve => {
+        const timer = setTimeout(() => resolve(undefined), 2000);
+        tuiProc.once('exit', () => { clearTimeout(timer); resolve(undefined); });
+      });
+    }
+    await new Promise(resolve => {
+      const timer = setTimeout(() => resolve(undefined), 2000);
+      agentServer.close(() => { clearTimeout(timer); resolve(undefined); });
+    });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(work, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if (attempt >= 2) throw error;
+        await sleep(300);
+      }
+    }
   }
 }
 
