@@ -120,7 +120,7 @@ export function scanContentSignals(text: string, phrases: readonly string[]): Co
 - **V2（接装配与记忆）**：S1 装配器对出站内容附 provenance、过判定链；记忆 producer/recall 携带标记；审计真正 emit；最小内置信号清单。**✅ 已落地（2026-10-09，Active work 174 批内）**。
 - **V3（跨域与 execute 收紧）**：cross-domain 脱敏/拒绝接 DomainGrant；execute 分支命中信号接 design-hil L1 升级；执行 Agent 协议侧的不可信内容契约（design-vassal-protocol）。**✅ 已落地（2026-10-19，Active work 251）**——三落点接线如下：
   - **execute 升级（hil L1）**：装配器接受 `destinationMode`（默认 plan 行为不变）；execute 命中 external-url/credential 不再降级 annotate，发 `guardrail-escalated` 事件；fanOutNew 短路不派发、意图 failed（`guardrail-escalated`）、`onGuardrailEscalated` 回调入 OversightDesk（新 kind `guardrail-content`，L1 幂等 per intentId），审计新增 `guardrail-escalated`。
-  - **cross-domain 接 DomainGrant（企业内容 PII 门）**：dispatcher 装配 `contentGrant` 窄端口（boot 由 DomainGrantRegistry 派生）；enterprise 域 realmHits 命中 PII → 有 grant 则从出站副本剔除并审计 `guardrail-redacted`，无 grant 拒绝并审计 `guardrail-refused`；personal 域与无信号内容零行为变化，未装配端口保持 V2 行为。
+  - **cross-domain 接 DomainGrant（企业内容 PII 门，realm 级）**：dispatcher 装配 `contentGrant` 窄端口 `(vassalName, realmId) => boolean`（boot 由 DomainGrantRegistry 按 `grant.realmId` 匹配派生；kernel-resolved hits 由检索路径携带 realmId，caller-asserted hits 不带）；enterprise 域 realmHits 命中 PII → 逐 hit 按自身 realmId 核对：grant 覆盖该 realm 则此 hit 从出站副本剔除并审计 `guardrail-redacted`，任一 hit 无 realmId（不可核对）或 grant 不覆盖即整单拒绝并审计 `guardrail-refused`（fail-closed）；personal 域与无信号内容零行为变化，未装配端口保持 V2 行为。
   - **协议侧契约**：design-vassal-protocol §4.6 新增不可信内容契约（执行 Agent 把边界标记内容当数据不当指令）。
 - **V4（可选）**：本机可选的语义级二次判定（经 DecisionBackend 同端口，模型无关），只在确定性信号提级后触发，默认关闭。
 
