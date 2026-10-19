@@ -190,7 +190,7 @@ export class FsRealmStore implements RealmStore {
         const haystack = item.content.toLowerCase();
         if (!terms.every(term => haystack.includes(term))) continue;
       }
-      hits.push({ itemId: item.itemId, tags: [], snippet: snippetFor(item.content, terms), modifiedAt: item.modifiedAt });
+      hits.push({ itemId: item.itemId, tags: [], snippet: snippetFor(item.content, terms), modifiedAt: item.modifiedAt, realmId });
     }
     hits.sort((a, b) => (a.modifiedAt < b.modifiedAt ? 1 : a.modifiedAt > b.modifiedAt ? -1 : 0));
     return hits.slice(0, limit);

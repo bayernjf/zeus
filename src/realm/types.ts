@@ -50,6 +50,14 @@ export type RealmHit = {
   tags: string[];
   snippet: string;
   modifiedAt: string;
+  /**
+   * Realm the hit was read from. Set on kernel-resolved hits (the search
+   * backend knows the realmId it searched); absent on caller-asserted hits,
+   * which arrive without a realm binding. The realm-scoped content gate
+   * (design-guardrails §5) treats a missing realmId as unverifiable and
+   * refuses rather than guessing a realm.
+   */
+  realmId?: string;
 };
 
 export type SearchQuery = {

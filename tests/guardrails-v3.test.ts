@@ -308,8 +308,8 @@ describe('S8 V3 oversight: ingestGuardrail', () => {
 
 // --------------------------------------------------------------- dispatcher
 
-function realmHit(itemId: string, snippet: string): RealmHit {
-  return { itemId, tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet };
+function realmHit(itemId: string, snippet: string, realmId?: string): RealmHit {
+  return { itemId, tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet, ...(realmId ? { realmId } : {}) };
 }
 
 function fealty(overrides: Partial<Fealty> = {}): Fealty {
@@ -344,7 +344,7 @@ function sseResponse(finalTask: Task): Response {
   }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
-function dispatcherHarness(options: { contentGrant?: (name: string) => boolean; dataRealms?: Array<'personal' | 'enterprise'> } = {}) {
+function dispatcherHarness(options: { contentGrant?: (name: string, realmId: string) => boolean; dataRealms?: Array<'personal' | 'enterprise'>; dataPolicy?: Fealty['dataPolicy'] } = {}) {
   const { log, sink } = memoryAuditSink();
   const seenBodies: unknown[] = [];
   const fetchImpl = async (_url: string, init?: RequestInit): Promise<Response> => {
@@ -352,7 +352,7 @@ function dispatcherHarness(options: { contentGrant?: (name: string) => boolean; 
     return sseResponse({ kind: 'task', id: 'task-1', contextId: 'ctx', status: { state: 'completed' }, artifacts: [] });
   };
   const instance = new Dispatcher(
-    new Map([['pr-helper', vassal({ fealty: fealty({ dataRealms: options.dataRealms ?? ['enterprise'] }) })]]),
+    new Map([['pr-helper', vassal({ fealty: fealty({ dataRealms: options.dataRealms ?? ['enterprise'], ...(options.dataPolicy ? { dataPolicy: options.dataPolicy } : {}) }) })]]),
     {
       audit: sink,
       now: () => T0,
@@ -371,11 +371,11 @@ function outboundHits(body: unknown): RealmHit[] {
 }
 
 describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content grant', () => {
-  it('redacts PII-bearing enterprise hits from the outbound copy when the vassal holds a grant', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => true });
+  it('redacts PII-bearing enterprise hits from the outbound copy when the vassal holds a grant for that realm', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, realmId) => realmId === 'enterprise-a' });
     const hits = [
-      realmHit('doc-1', 'contact ops@acme.example for access'),
-      realmHit('doc-2', 'release notes v0.1'),
+      realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a'),
+      realmHit('doc-2', 'release notes v0.1', 'enterprise-a'),
     ];
     const result = await instance.dispatch({
       skill: 'create-pr',
@@ -391,9 +391,9 @@ describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content gra
     expect(redacted?.decision).toBe('guardrail-redacted');
   });
 
-  it('refuses PII-bearing enterprise hits when the vassal holds no grant', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => false });
-    const hits = [realmHit('doc-1', 'contact ops@acme.example for access')];
+  it('refuses the dispatch when the vassal holds no grant for the hit realm (fail-closed)', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, _realmId) => false });
+    const hits = [realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a')];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
@@ -401,14 +401,65 @@ describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content gra
       realmHits: hits,
       realmHitsOrigin: 'kernel-resolved',
     });
-    expect(result.ok).toBe(true);
-    expect(outboundHits(seenBodies[0])).toHaveLength(0);
+    expect(result.ok).toBe(false);
+    expect(seenBodies).toHaveLength(0);
+    const refused = audit.find(entry => entry.decision === 'guardrail-refused');
+    expect(refused?.decision).toBe('guardrail-refused');
+    if (!result.ok) expect(result.reason).toContain('realm-scoped content grant');
+  });
+
+  it('refuses PII hits from a realm the grant does not cover even when the vassal holds a grant for another realm', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, realmId) => realmId === 'enterprise-a' });
+    const hits = [realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-b')];
+    const result = await instance.dispatch({
+      skill: 'create-pr',
+      params: {},
+      realm: 'enterprise',
+      realmHits: hits,
+      realmHitsOrigin: 'kernel-resolved',
+    });
+    expect(result.ok).toBe(false);
+    expect(seenBodies).toHaveLength(0);
+    expect(audit.some(entry => entry.decision === 'guardrail-refused')).toBe(true);
+  });
+
+  it('refuses caller-asserted PII hits that carry no realmId (unverifiable, fail-closed)', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => true, dataPolicy: 'all' });
+    const hits = [realmHit('doc-1', 'contact ops@acme.example for access')];
+    const result = await instance.dispatch({
+      skill: 'create-pr',
+      params: {},
+      realm: 'enterprise',
+      realmHits: hits,
+      realmHitsOrigin: 'caller-asserted',
+    });
+    expect(result.ok).toBe(false);
+    expect(seenBodies).toHaveLength(0);
+    const refused = audit.find(entry => entry.decision === 'guardrail-refused');
+    expect(String(refused?.detail)).toContain('no realmId');
+  });
+
+  it('refuses a mixed batch when any PII hit is uncovered or unverifiable', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, realmId) => realmId === 'enterprise-a' });
+    const hits = [
+      realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a'),
+      realmHit('doc-2', 'call 13800138000 now', 'enterprise-b'),
+    ];
+    const result = await instance.dispatch({
+      skill: 'create-pr',
+      params: {},
+      realm: 'enterprise',
+      realmHits: hits,
+      realmHitsOrigin: 'kernel-resolved',
+    });
+    expect(result.ok).toBe(false);
+    expect(seenBodies).toHaveLength(0);
     expect(audit.some(entry => entry.decision === 'guardrail-refused')).toBe(true);
   });
 
   it('passes enterprise hits through unchanged when no PII signal fires', async () => {
     const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => false });
-    const hits = [realmHit('doc-1', 'release notes v0.1')];
+    const hits = [realmHit('doc-1', 'release notes v0.1', 'enterprise-a')];
     await instance.dispatch({
       skill: 'create-pr',
       params: {},

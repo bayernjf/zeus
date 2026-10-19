@@ -297,11 +297,16 @@ export class Dispatcher {
       tokenFor?: (vassalName: string) => string | undefined;
       /**
        * S8 V3 (design-guardrails §5): whether a vassal holds a content grant
-       * (a valid DomainGrant) for the realm content being dispatched. Present
-       * only when the kernel is booted with a DomainGrant registry; absent, the
-       * enterprise-content guardrail is off and dispatch keeps its V2 behaviour.
+       * (a valid DomainGrant) for a *specific realm*. Realm-scoped since the
+       * enterprise gate went realm-granular (an unexpired grant for realm A
+       * no longer covers enterprise content from realm B). The realmId is the
+       * hit's own realm binding; kernel-resolved hits always carry one,
+       * caller-asserted hits never do, and the gate refuses the latter as
+       * unverifiable. Present only when the kernel is booted with a DomainGrant
+       * registry; absent, the enterprise-content guardrail is off and dispatch
+       * keeps its V2 behaviour.
        */
-      contentGrant?: (vassalName: string) => boolean;
+      contentGrant?: (vassalName: string, realmId: string) => boolean;
     }
   ) {
     this.lookup = directory instanceof Map ? mapAsLookup(directory) : directory;
@@ -407,15 +412,35 @@ export class Dispatcher {
       // content and signal-free enterprise content pass through unchanged.
       // The gate is off until boot wires a contentGrant port (absent port =
       // V2 behaviour).
-      if (this.options.contentGrant && request.realm === 'enterprise' && injectedHits.length > 0) {
+      // Realm-scoped (S8 V3 + realm-granular pass): a PII hit is redacted
+      // only when the vassal holds a content grant for the hit's *own*
+      // realm. A hit without a realmId (caller-asserted) has no realm
+      // binding a grant could cover, so it is unverifiable and the dispatch
+      // fails closed; a hit whose realm the vassal has no grant for is
+      // refused outright. Any uncovered or unverifiable hit refuses the
+      // whole dispatch rather than silently leaking one entry (the "silent
+      // downgrade is a failure shape" rule from #20/#31).
+      const contentGrant = this.options.contentGrant;
+      if (contentGrant && request.realm === 'enterprise' && injectedHits.length > 0) {
         const piiHits = injectedHits.filter(hit => scanContentSignals(hit.snippet).includes('pii-pattern'));
         if (piiHits.length > 0) {
-          const granted = this.options.contentGrant(vassal.name);
-          injectedHits = injectedHits.filter(hit => !piiHits.includes(hit));
+          const unverifiable = piiHits.filter(hit => !hit.realmId);
+          const uncovered = piiHits.filter(hit => hit.realmId && !contentGrant(vassal.name, hit.realmId));
+          if (unverifiable.length > 0 || uncovered.length > 0) {
+            const audit: AuditEntry = {
+              ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+              decision: 'guardrail-refused',
+              detail: `enterprise realm content: ${piiHits.length} PII hit(s) refused (${unverifiable.length} carry no realmId; ${uncovered.length} have no realm-scoped content grant) for vassal ${vassal.name}`,
+            };
+            this.options.audit(audit);
+            return { ok: false, reason: audit.detail!, audit };
+          }
+          const covered = piiHits.filter(hit => hit.realmId);
+          injectedHits = injectedHits.filter(hit => !covered.includes(hit));
           this.options.audit({
             ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
-            decision: granted ? 'guardrail-redacted' : 'guardrail-refused',
-            detail: `enterprise realm content: ${piiHits.length} PII hit(s) ${granted ? 'redacted from outbound copy (content grant)' : 'refused (no content grant)'} for vassal ${vassal.name}`,
+            decision: 'guardrail-redacted',
+            detail: `enterprise realm content: ${covered.length} PII hit(s) redacted from outbound copy (realm-scoped content grant) for vassal ${vassal.name}`,
           });
         }
       }
