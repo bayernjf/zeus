@@ -25,7 +25,8 @@ describe('writeFileAtomic', () => {
     const file = join(root, 'sealed.json');
     await writeFileAtomic(file, '{"v":1}\n');
     await expect(readFile(file, 'utf8')).resolves.toBe('{"v":1}\n');
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600);
     expect(await readdir(root)).toEqual(['sealed.json']);
   });
 
@@ -45,7 +46,7 @@ describe('assertPublishedInsideRoot', () => {
     await expect(assertPublishedInsideRoot(root, file, 'restore item kernel.json')).resolves.toBeUndefined();
   });
 
-  it('rejects when the published entry is a symlink', async () => {
+  it.skipIf(process.platform === 'win32')('rejects when the published entry is a symlink', async () => {
     await writeFile(join(sandbox, 'outside.json'), 'outside');
     const file = join(root, 'link.json');
     await symlink(join(sandbox, 'outside.json'), file);

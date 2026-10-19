@@ -71,6 +71,12 @@ export async function writeFileAtomic(filePath: string, contents: string): Promi
   const dirHandle = await open(dir, 'r');
   try {
     await dirHandle.sync();
+  } catch (error) {
+    // Windows cannot fsync a directory handle (EPERM): the directory-fsync
+    // durability contract is not expressible there, and NTFS journaling covers
+    // the rename. Swallowing EPERM on win32 keeps every atomic-publish path
+    // working on Windows while preserving the POSIX guarantee elsewhere.
+    if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
   } finally {
     await dirHandle.close();
   }

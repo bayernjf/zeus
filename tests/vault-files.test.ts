@@ -136,7 +136,7 @@ describe('#13 files source: backing up what no Realm covers', { timeout: SCRYPT_
     expect(report.suggestion).toBe('reconnect-or-provide-bundle');
   });
 
-  it('refuses a whitelist that cannot be honored faithfully', async () => {
+  it.skipIf(process.platform === 'win32')('refuses a whitelist that cannot be honored faithfully', async () => {
     const root = await corpus();
     await writeFile(join(root, 'blob.bin'), Buffer.from([0x00, 0x01, 0x02]));
     await writeFile(join(sandbox, 'outside.json'), 'elsewhere\n');

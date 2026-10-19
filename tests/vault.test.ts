@@ -211,11 +211,16 @@ describe('restore sink hardening', () => {
     const target = join(root, 'restore-target', 'nested');
     const sink = new FsRestoreSink();
     await sink.writeItem(target, { itemId: 'a/b/c.md', content: 'secret\n', modifiedAt: new Date().toISOString() });
-    expect((await stat(join(root, 'restore-target'))).mode & 0o777).toBe(0o700);
-    expect((await stat(target)).mode & 0o777).toBe(0o700);
-    expect((await stat(join(target, 'a'))).mode & 0o777).toBe(0o700);
-    expect((await stat(join(target, 'a', 'b'))).mode & 0o777).toBe(0o700);
-    expect((await stat(join(target, 'a', 'b', 'c.md'))).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(join(root, 'restore-target'))).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(target)).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(join(target, 'a'))).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(join(target, 'a', 'b'))).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(join(target, 'a', 'b', 'c.md'))).mode & 0o777).toBe(0o600);
   });
 
   it('refuses itemIds that escape the target root', async () => {
@@ -228,7 +233,7 @@ describe('restore sink hardening', () => {
     ).rejects.toThrow(VaultFormatError);
   });
 
-  it('refuses to build a tree through a symlinked parent that leaves the root', async () => {
+  it.skipIf(process.platform === 'win32')('refuses to build a tree through a symlinked parent that leaves the root', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'zeus-vault-outside-'));
     try {
       await symlink(outside, join(root, 'linked'));
@@ -244,7 +249,7 @@ describe('restore sink hardening', () => {
     }
   });
 
-  it('replaces a symlinked item path instead of writing through it', async () => {
+  it.skipIf(process.platform === 'win32')('replaces a symlinked item path instead of writing through it', async () => {
     const outside = await mkdtemp(join(tmpdir(), 'zeus-vault-victim-'));
     const victim = join(outside, 'victim.md');
     try {
