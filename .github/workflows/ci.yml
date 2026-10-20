@@ -216,3 +216,65 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/ci-pr-comment.mjs --body-file /tmp/eval-comment.md --marker '<!-- zeus-eval-gate -->'
 
+  bench-capacity:
+    # B1/A2 (2026-10-19): capacity regression gate. bench-capacity.mjs drives
+    # the real kernel (Orchestrator -> Dispatcher -> undici -> loopback HTTP)
+    # against a mock vassal farm; correctness invariants (every intent
+    # completed, every branch canceled exactly once, no cancel lost/duplicated)
+    # are hard gates inside the harness itself. bench-gate.mjs then compares
+    # latency/throughput against the pinned per-fingerprint baseline in
+    # capacity-baseline.json (+30% delay / -30% throughput red, +15%/-15%
+    # warn). A runner whose fingerprint has no baseline yet passes in seeding
+    # mode and archives the report; the pinned file is updated out-of-band.
+    # Bench numbers are load-sensitive, so correctness is the hard gate here
+    # and the latency comparison is a regression tripwire with headroom.
+    name: capacity regression gate (loopback bench)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Capacity bench against pinned baseline
+        run: node scripts/bench-gate.mjs --report /tmp/capacity-report.json
+
+      - name: Archive capacity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capacity-report
+          path: /tmp/capacity-report.json
+          if-no-files-found: warn
+
+  image-verify:
+    # A3 (2026-10-19): the container-level four checks that review rounds used
+    # to re-shoot by hand are now scripted (scripts/verify-image.mjs) and gate
+    # every push: HEALTHCHECK healthy, /data/rsk.key 0600 node:node, SIGTERM
+    # drains to kernel-state.json (0600, non-empty), restart restores the
+    # snapshot; plus roster verification through the shipped verify-roster.mjs
+    # (public /api/roster/public endpoint, no token needed) both before and
+    # after the restart. Kept separate from image-smoke (build + module load)
+    # because it actually boots the server and exercises shutdown/restart.
+    name: image container-level verify (healthy / 0600 / SIGTERM / restore)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t zeus:ci-verify .
+
+      - name: Container-level verification
+        run: node scripts/verify-image.mjs --tag zeus:ci-verify
+

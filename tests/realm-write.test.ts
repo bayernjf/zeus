@@ -54,13 +54,17 @@ describe('E3.5 FsRealmStore.write (personal realm)', () => {
     const store = new FsRealmStore();
     const manifest = await connected(store);
     await store.write(manifest.realmId, { itemId: 'minted/deep/new.md', data: 'secret\n' });
-    expect(statSync(join(root, 'minted', 'deep', 'new.md')).mode & 0o777).toBe(0o600);
-    expect(statSync(join(root, 'minted')).mode & 0o777).toBe(0o700);
-    expect(statSync(join(root, 'minted', 'deep')).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'minted', 'deep', 'new.md')).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'minted')).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'minted', 'deep')).mode & 0o777).toBe(0o700);
     // The atomic publish also tightens a file an older build left at 0644.
     writeFileSync(join(root, 'notes', 'loose.md'), 'old\n', { mode: 0o644 });
     await store.write(manifest.realmId, { itemId: 'notes/loose.md', data: 'new\n' });
-    expect(statSync(join(root, 'notes', 'loose.md')).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'notes', 'loose.md')).mode & 0o777).toBe(0o600);
   });
 
   it('writes to an explicit itemId and overwrites it on a second write', async () => {

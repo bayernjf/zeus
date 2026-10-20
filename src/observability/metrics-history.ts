@@ -130,6 +130,11 @@ async function fsyncDirectory(dir: string): Promise<void> {
   const dirHandle = await open(dir, 'r');
   try {
     await dirHandle.sync();
+  } catch (error) {
+    // Windows cannot fsync a directory handle (EPERM); the directory-fsync
+    // durability contract is not expressible there and NTFS journaling covers
+    // the entry change. Ignore EPERM on win32 only; any other failure still throws.
+    if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
   } finally {
     await dirHandle.close();
   }

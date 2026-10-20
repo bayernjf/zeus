@@ -179,7 +179,7 @@ describe('vault CLI: key handling and usage errors', () => {
 });
 
 describe('vault CLI: published artifacts are written atomically', () => {
-  it('does not follow a symlink planted at the output path', async () => {
+  it.skipIf(process.platform === 'win32')('does not follow a symlink planted at the output path', async () => {
     const victim = join(work, 'victim.txt');
     await writeFile(victim, 'a file that is not a vault artifact\n');
     await mkdir(outDir, { recursive: true });

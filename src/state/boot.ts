@@ -574,15 +574,17 @@ async function assembleKernel(
     tokenFor: name => registry.tokenFor(name),
     // S8 V3 (design-guardrails §5): wire the DomainGrant registry into the
     // dispatcher as the content-grant port. A vassal holds a content grant for
-    // a realm when it has a live (unrevoked, unexpired) grant entry for that
-    // realm. The gate is off until this port exists; an unconfigured kernel
-    // keeps the V2 dispatch behaviour.
+    // a realm when it has a live (unrevoked, unexpired) grant entry whose
+    // realmId matches the hit's realm; an unexpired grant for realm A does not
+    // cover enterprise content from realm B. The gate is off until this port
+    // exists; an unconfigured kernel keeps the V2 dispatch behaviour.
     ...(domainGrants
       ? {
-          contentGrant: (vassal: string) =>
+          contentGrant: (vassal: string, realmId: string) =>
             domainGrants.list().some(
               grant =>
                 grant.subject === vassal &&
+                grant.realmId === realmId &&
                 (grant.expiresAt === undefined ||
                   Date.parse(grant.expiresAt) > now().getTime()),
             ),

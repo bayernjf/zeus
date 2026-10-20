@@ -44,7 +44,8 @@
     "lint": "eslint .",
     "lint:audit": "npm audit --omit=dev",
     "lint:secrets": "node scripts/scan-secrets.mjs",
-    "verify:tui-recognize": "node scripts/verify-tui-recognize.mjs"
+    "verify:tui-recognize": "node scripts/verify-tui-recognize.mjs",
+    "bench:gate": "node scripts/bench-gate.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

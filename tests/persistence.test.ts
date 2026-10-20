@@ -211,7 +211,8 @@ describe('E5.3 FileKernelStateStore', () => {
     const nested = join(dir, 'nested');
     const store = new FileKernelStateStore(join(nested, 'state.json'));
     await store.save({ registry: [], oversight: [], orchestrator: { intents: [], requests: [] } });
-    expect((await stat(nested)).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(nested)).mode & 0o777).toBe(0o700);
   });
 
   it('keeps the snapshot owner-readable, tightening a file an older build left open', async () => {
@@ -221,7 +222,8 @@ describe('E5.3 FileKernelStateStore', () => {
 
     const store = new FileKernelStateStore(file);
     await store.save({ registry: [], oversight: [], orchestrator: { intents: [], requests: [] } });
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600);
     // still readable by its owner, i.e. the round trip is unaffected
     expect(await store.load()).toMatchObject({ version: KERNEL_STATE_VERSION });
   });

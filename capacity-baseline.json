@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "note": "bench:capacity 防退化基线。键 = 环境指纹 <platform>-<arch>-<cpus>-<node>。跑 node scripts/bench-gate.mjs 按指纹取基线对比：正确性硬闸（非 completed / 取消丢失 / 泄漏即红）+ 延迟 +30% / 吞吐 -30% 红、+15% / -15% 告警；无该指纹时建档模式 exit 0（CI 首跑）。基线值为 2026-10-19 同机三连跑中位数。",
+  "baselines": {
+    "darwin-arm64-10-v22.23.2": {
+      "environment": {
+        "platform": "darwin 27.0.0",
+        "arch": "arm64",
+        "cpus": 10,
+        "model": "Apple M4",
+        "node": "v22.23.2",
+        "thinkDelayMs": 50,
+        "reps": 7,
+        "farmSize": 64
+      },
+      "measuredAt": "2026-10-19",
+      "runs": 3,
+      "fanoutWidth": [
+        {
+          "width": 1,
+          "p50": 54.1,
+          "p95": 61.1
+        },
+        {
+          "width": 2,
+          "p50": 53.5,
+          "p95": 55.2
+        },
+        {
+          "width": 4,
+          "p50": 55.5,
+          "p95": 57.7
+        },
+        {
+          "width": 8,
+          "p50": 55.6,
+          "p95": 58.5
+        },
+        {
+          "width": 16,
+          "p50": 58,
+          "p95": 62.8
+        },
+        {
+          "width": 32,
+          "p50": 62.3,
+          "p95": 70.9
+        },
+        {
+          "width": 64,
+          "p50": 68.9,
+          "p95": 74.3
+        }
+      ],
+      "concurrentIntents": [
+        {
+          "concurrentIntents": 1,
+          "intentsPerSecond": 18.65,
+          "latencyP95": 53.5,
+          "wallMs": 53.6
+        },
+        {
+          "concurrentIntents": 4,
+          "intentsPerSecond": 72.62,
+          "latencyP95": 55,
+          "wallMs": 55.1
+        },
+        {
+          "concurrentIntents": 8,
+          "intentsPerSecond": 135.36,
+          "latencyP95": 59,
+          "wallMs": 59.1
+        },
+        {
+          "concurrentIntents": 16,
+          "intentsPerSecond": 239.51,
+          "latencyP95": 66.6,
+          "wallMs": 66.8
+        },
+        {
+          "concurrentIntents": 32,
+          "intentsPerSecond": 387.35,
+          "latencyP95": 81.7,
+          "wallMs": 82.6
+        }
+      ],
+      "httpFace": [
+        {
+          "concurrentIntents": 1,
+          "intentsPerSecond": 18.38,
+          "latencyP95": 54.3
+        },
+        {
+          "concurrentIntents": 4,
+          "intentsPerSecond": 66.28,
+          "latencyP95": 59.5
+        },
+        {
+          "concurrentIntents": 8,
+          "intentsPerSecond": 122.88,
+          "latencyP95": 64.4
+        },
+        {
+          "concurrentIntents": 16,
+          "intentsPerSecond": 189.21,
+          "latencyP95": 83.7
+        },
+        {
+          "concurrentIntents": 32,
+          "intentsPerSecond": 329.64,
+          "latencyP95": 95.7
+        }
+      ],
+      "cancellation": [
+        {
+          "suspendedIntents": 4,
+          "cancelsPerSecond": 2372.01
+        },
+        {
+          "suspendedIntents": 8,
+          "cancelsPerSecond": 3018.78
+        },
+        {
+          "suspendedIntents": 16,
+          "cancelsPerSecond": 5311.22
+        },
+        {
+          "suspendedIntents": 32,
+          "cancelsPerSecond": 4851.86
+        }
+      ],
+      "cancelRequestsObserved": 240
+    }
+  }
+}

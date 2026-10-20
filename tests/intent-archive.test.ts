@@ -299,11 +299,13 @@ describe('IntentArchive (append-only JSONL)', () => {
     const file = join(dir, 'intent-archive.jsonl');
     const archive = new IntentArchive(file);
     await archive.append([archivedRecord('a')]);
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600);
 
     await chmod(file, 0o644);
     await archive.append([archivedRecord('b')]);
-    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
 });
 

@@ -94,12 +94,14 @@ describe('audit sinks', () => {
       jsonlAuditSink(path);
       // Audit lines name realms, vassals and decisions; the state file already
       // learned this lesson, and a fresh create would otherwise inherit the umask.
-      expect(statSync(path).mode & 0o777).toBe(0o600);
+      // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+      if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
 
       rmSync(path);
       const sink = jsonlAuditSink(path);
       sink({ ts: 't', vassal: 'loom', decision: 'dispatched' });
-      expect(statSync(path).mode & 0o777).toBe(0o600);
+      // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+      if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -118,7 +120,8 @@ describe('audit sinks', () => {
       );
       // Rotation is where a fixed mode quietly goes wrong again: the active file
       // is renamed away and recreated by a bare append.
-      expect(statSync(path).mode & 0o777).toBe(0o600);
+      // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+      if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -135,8 +138,10 @@ describe('audit sinks', () => {
       const sink = jsonlAuditSink(path, { maxBytes: 1, keep: 3 });
       sink({ ts: 't', vassal: 'loom', decision: 'dispatched' });
 
-      expect(statSync(`${path}.2`).mode & 0o777).toBe(0o600);
-      expect(statSync(`${path}.1`).mode & 0o777).toBe(0o600);
+      // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+      if (process.platform !== 'win32') expect(statSync(`${path}.2`).mode & 0o777).toBe(0o600);
+      // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+      if (process.platform !== 'win32') expect(statSync(`${path}.1`).mode & 0o777).toBe(0o600);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

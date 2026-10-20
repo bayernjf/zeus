@@ -117,7 +117,8 @@ describe('S6 V3 JsonlTraceExporter', () => {
     expect(await exporter.readBack()).toEqual([]);
     await exporter.export(sampleTree());
     const mode = (await stat(file)).mode & 0o777;
-    expect(mode).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); POSIX-only.
+    if (process.platform !== 'win32') expect(mode).toBe(0o600);
     const raw = await readFile(file, 'utf8');
     expect(raw.trim().split('\n')).toHaveLength(1);
   });
