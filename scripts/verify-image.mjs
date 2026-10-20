@@ -107,6 +107,16 @@ async function main() {
   mkdirSync(dataDir, { recursive: true });
 
   // 1. 生成 RSK 密钥（容器内 node 用户写挂载目录 → owner node:node 0600）
+  //    注意：bind mount 会用宿主目录属主遮蔽镜像内 `chown node:node /data`，
+  //    在 Linux CI 上宿主目录属主非 uid 1000 时 node 用户写卷根会 EACCES
+  //    （macOS Docker Desktop 权限宽松所以本机不触发）。先以 root 把卷根
+  //    chown 给 node:node，再以 node 用户生成密钥。
+  const own = run(['docker', 'run', '--rm', '-v', `${dataDir}:/data`, '--user', 'root', tag, 'chown', 'node:node', '/data'], { timeout: 30_000 });
+  if (own.status !== 0) {
+    console.error(own.stdout + own.stderr);
+    console.error('error: chown /data inside the image failed');
+    process.exit(1);
+  }
   const gen = run(['docker', 'run', '--rm', '-v', `${dataDir}:/data`, tag, 'node', 'scripts/gen-rsk-key.mjs', '/data/rsk.key'], { timeout: 60_000 });
   if (gen.status !== 0) {
     console.error(gen.stdout + gen.stderr);
