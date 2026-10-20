@@ -424,7 +424,7 @@ describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content gra
   });
 
   it('refuses caller-asserted PII hits that carry no realmId (unverifiable, fail-closed)', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => true, dataPolicy: 'all' });
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => true, dataPolicy: 'read-realm' });
     const hits = [realmHit('doc-1', 'contact ops@acme.example for access')];
     const result = await instance.dispatch({
       skill: 'create-pr',
