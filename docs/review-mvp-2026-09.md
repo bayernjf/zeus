@@ -1240,7 +1240,7 @@ boot seed/realm 连接不产生审计事件、运行时 dispatch 才审计——
 
 ### A. 验证基线（本机实跑，2026-10-19）
 - 全量 `npm test`：**2054 总量 / 2054 绿 / 0 失败 / 177 文件 / exit 0**（A1 批 guardrails-v3 16 → 19 例；A2–A4 零测试数变化）。
-- `npm run typecheck` / `npm run build` / `npm run lint`：各自 exit 0。
+- `npm run typecheck` / `npm run build` / `npm run lint`：各自 exit 0。**诚实注记（2026-10-20 补）**：v0.57 批当时的「typecheck exit 0」沿用了 v0.56 证据，A1 批引入的 `tests/guardrails-v3.test.ts` 用例 `dataPolicy: 'all'`（非 `'none' | 'read-task-scope' | 'read-realm' | 'write'` 联合成员）实际使 typecheck 长期为红；2026-10-20 推送后 CI 抓出，连同新 image-verify job 的 Linux 环境 3 连发问题一并修复（5 枚 fix，CI 8/8 全绿，见 handoff Active work 258）。教训：改测试文件必须重跑 typecheck。
 - `npm run smoke:core`：**50/50**。
 - doc-consistency：**18/18**（A1 批 7 处行号引用重钉、A4 批 1 处锚点重钉 kernel-state.ts 251→256；活基线 2051/177 → 2054/177 四份同步：README ×2、checklist ×2、handoff 代码索引）。
 - `node scripts/eval-run.mjs --baseline`：**31 例 / 56 checks**，十族全绿、0 blocked 0 warned、**no regression vs baseline**（A1 改 dispatcher 后 guardrails 族复验通过）。
