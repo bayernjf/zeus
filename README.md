@@ -43,7 +43,7 @@
 | 产品入口 | `npm run daily` | 一句话走完「指令 → 意图 → 派发 → 决策与依据 → 待裁决项」，并把这一页 markdown 写回你自己的目录 |
 | 终端监督台 | `npm run tui` | 监视、裁决、名册治理、意图识别、连接器驱动，复用既有 bearer HTTP 面 |
 | Web 监督台 | `web/supervisor/index.html` | 多视图工作台：监控 / 名册 / 裁决 / 技能目录 / 审计 / 数据域与授权 / 组织 / 连接器 |
-| 操作者 HTTP API | `npm start` | 97 条路由（4 条公开、93 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
+| 操作者 HTTP API | `npm start` | 98 条路由（4 条公开、94 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
 | 协议面 | `/.well-known/agent-card.json`、`/mcp` | 入站 A2A（外部 Agent 派单进来）与数据域 MCP（外部宿主读你的目录） |
 
 端点逐条清单与操作者可驱动面见 [docs/feature-inventory.md](docs/feature-inventory.md)。
