@@ -86,9 +86,18 @@ async function main() {
 
   // 前置：宿主 dist 需存在——名册验签在宿主侧跑 verify-roster.mjs，它
   // import dist/registry/signing.js；CI 工作树没有编译产物（build 只在
-  // Docker builder 阶段做），缺了就宿主侧构建一次。
+  // Docker builder 阶段做）。缺了就宿主侧装依赖并构建一次（build 依赖
+  // node_modules/@types/node，无依赖直接 tsc 会 TS2688）。
   if (!existsSync(path.join(repoRoot, 'dist/registry/signing.js'))) {
-    console.log('verify-image: host dist missing, building once (npm run build)');
+    console.log('verify-image: host dist missing, installing deps and building once');
+    if (!existsSync(path.join(repoRoot, 'node_modules'))) {
+      const ci = run(['npm', 'ci'], { cwd: repoRoot, timeout: 300_000 });
+      if (ci.status !== 0) {
+        console.error(ci.stdout + ci.stderr);
+        console.error('error: host npm ci failed, needed to build dist for roster verification');
+        process.exit(1);
+      }
+    }
     const b = run(['npm', 'run', 'build'], { cwd: repoRoot, timeout: 180_000 });
     if (b.status !== 0) {
       console.error(b.stdout + b.stderr);
