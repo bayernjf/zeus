@@ -84,6 +84,19 @@ async function main() {
     process.exit(2);
   }
 
+  // 前置：宿主 dist 需存在——名册验签在宿主侧跑 verify-roster.mjs，它
+  // import dist/registry/signing.js；CI 工作树没有编译产物（build 只在
+  // Docker builder 阶段做），缺了就宿主侧构建一次。
+  if (!existsSync(path.join(repoRoot, 'dist/registry/signing.js'))) {
+    console.log('verify-image: host dist missing, building once (npm run build)');
+    const b = run(['npm', 'run', 'build'], { cwd: repoRoot, timeout: 180_000 });
+    if (b.status !== 0) {
+      console.error(b.stdout + b.stderr);
+      console.error('error: host build (npm run build) failed, needed for roster verification');
+      process.exit(1);
+    }
+  }
+
   // 前置：docker 可用
   const dockerProbe = run(['docker', 'info', '--format', '{{.ServerVersion}}'], { timeout: 20_000 });
   if (dockerProbe.status !== 0) {
@@ -191,8 +204,10 @@ async function main() {
   if (!keep) {
     run(['docker', 'rm', '-f', container], { timeout: 30_000 });
     // 卷内文件属主 node（uid 1000），宿主进程删不动（Linux CI）：交给容器内
-    // root 清空，再删宿主目录（空目录可由父目录权限删除）。
+    // root 清空；再把卷根属主 chown 回宿主 uid:gid——Linux /tmp 带 sticky bit，
+    // 目录属主非宿主进程时 rmdir 会 EPERM（macOS 无此语义所以本机不触发）。
     run(['docker', 'run', '--rm', '-v', `${dataDir}:/data`, '--user', 'root', tag, 'find', '/data', '-mindepth', '1', '-delete'], { timeout: 30_000 });
+    run(['docker', 'run', '--rm', '-v', `${dataDir}:/data`, '--user', 'root', tag, 'chown', `${process.getuid()}:${process.getgid()}`, '/data'], { timeout: 30_000 });
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(path.join(os.tmpdir(), `zeus-verify-${process.pid}.pem`), { force: true });
     console.log('cleaned up container and data dir');
