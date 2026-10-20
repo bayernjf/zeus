@@ -28,6 +28,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 
 const args = process.argv.slice(2);
 /** @param {string} flag @param {string} fallback */
@@ -150,7 +151,9 @@ async function main() {
       const body = /** @type {any} */ (await res.json());
       const spki = body?.spkiPem ?? body?.keys?.[0]?.spkiPem;
       if (!spki) throw new Error('no spkiPem in /api/roster/keys response');
-      const pemFile = path.join(dataDir, 'verify-rsk.pem');
+      // pem 放宿主 tmp 而非挂载卷：bind mount 卷根在 Linux CI 上被 chown 成
+      // node(uid 1000)，宿主 runner 进程写卷内文件会 EACCES。
+      const pemFile = path.join(os.tmpdir(), `zeus-verify-${process.pid}.pem`);
       writeFileSync(pemFile, spki);
       const vr = run(['node', path.join(repoRoot, 'scripts/verify-roster.mjs'), '--url', `http://127.0.0.1:${port}/api/roster/public`, '--key', pemFile], { timeout: 60_000 });
       const ok = vr.status === 0;
@@ -187,7 +190,11 @@ async function main() {
   // 8. 清理
   if (!keep) {
     run(['docker', 'rm', '-f', container], { timeout: 30_000 });
+    // 卷内文件属主 node（uid 1000），宿主进程删不动（Linux CI）：交给容器内
+    // root 清空，再删宿主目录（空目录可由父目录权限删除）。
+    run(['docker', 'run', '--rm', '-v', `${dataDir}:/data`, '--user', 'root', tag, 'find', '/data', '-mindepth', '1', '-delete'], { timeout: 30_000 });
     rmSync(dataDir, { recursive: true, force: true });
+    rmSync(path.join(os.tmpdir(), `zeus-verify-${process.pid}.pem`), { force: true });
     console.log('cleaned up container and data dir');
   }
 
