@@ -11,7 +11,7 @@
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/'] },
+  { ignores: ['dist/', 'packages/zeus-client/dist/', 'node_modules/'] },
   ...tseslint.configs.recommended,
   {
     rules: {

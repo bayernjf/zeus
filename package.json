@@ -26,7 +26,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && npm run build:client",
+    "build:client": "tsc -p packages/zeus-client/tsconfig.json",
     "start": "node dist/http/serve.js",
     "daily": "node dist/daily/cli.js",
     "agent:example": "node dist/a2a/example-agent.js",
