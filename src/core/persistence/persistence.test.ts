@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -140,6 +141,24 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     const db = openSqlite(file);
     migrate(db);
     expect(() => new SqlitePolicyStore(db).get()).toThrow();
+    db.close();
+  });
+
+  it('fail-closed (T-M6-05): a corrupt db file is rejected and left intact', async () => {
+    const file = await freshFile();
+    writeFileSync(file, 'not-a-database-file'.repeat(30));
+    expect(() => openSqlite(file)).toThrow();
+    // The corrupt file must not be silently replaced by an empty database.
+    expect(readFileSync(file, 'utf8').startsWith('not-a-database-file')).toBe(true);
+  });
+
+  it('fail-closed (T-M6-05): a failed migration is not recorded as applied', async () => {
+    const file = await freshFile();
+    const db = openSqlite(file);
+    // A view occupying the schema_migrations name makes CREATE TABLE fail.
+    db.exec('CREATE VIEW schema_migrations AS SELECT 1 AS id;');
+    expect(() => migrate(db)).toThrow();
+    expect(appliedMigrations(db)).not.toContain(MIGRATION_ID);
     db.close();
   });
 });
