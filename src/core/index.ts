@@ -12,6 +12,24 @@
 // --- 决策分级基础类型（T-M1-01） ---
 export type { Grade, Impact, Reversibility } from './types.js';
 
+// --- 决策分级策略（T-M1-03/04） ---
+export { gradeDecision, modeForGrade, GRADE_MODES } from './grading/grade.js';
+export type { GradeMode } from './grading/grade.js';
+export { parsePolicy, validatePolicy, loadPolicyFromJson, MemoryPolicyStore } from './grading/policy-loader.js';
+export type { PolicyStore } from './grading/policy-loader.js';
+export { DEFAULT_POLICY_V1 } from './grading/default-policy.js';
+export { DECISION_ERROR_CODES, DecisionError, ValidationError, PolicyNotFoundError } from './grading/errors.js';
+export type { DecisionErrorCode } from './grading/errors.js';
+export type {
+  PolicyRule,
+  RuleMatch,
+  AmountRange,
+  DecisionPolicy,
+  DecisionRequest,
+  Amount,
+  GradeDecision,
+} from './grading/policy.js';
+
 // --- fealty 签名链 v1（纯函数，Ed25519 + JCS 子集，仅依赖 node:crypto） ---
 export {
   canonicalJson,
