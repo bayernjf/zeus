@@ -194,7 +194,7 @@ export interface WritebackRecord {
 - `selectionWeightsFromWritebacks(records)`：active 的 `selection-weight` 卡片按 target 取最新，得 `{target: factor}`；无卡片返回 `{}`（基线）。
 - `WritebackLedger`：管理 active 卡片，`record` 校验 `factor ∈ (0.1, 1]`（下限保证 fail-soft，被降权的 vassal 在他人饱和时仍可被选）、`retract` 保留行并翻转状态（全程可溯源）。
 
-真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(realm)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
+真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/core/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(realm)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
 
 ### 9.3 已验证（合成样本）+ 仍挂 #40
 

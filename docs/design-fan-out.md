@@ -2,7 +2,7 @@
 
 > 状态：**现行（设计稿 v0.2，2026-09-22，M2 第一批；2026-10-02 按 [design-realm](design-realm.md) §3.1 的 `dataPolicy` 收缩契约对齐 §2 的 `realmHits` 类型与来源标记）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
 > 上游需求：[prd.md](prd.md) E1（并发协同与决策内核）、E2.4（按技能组队）；技术议题 S3/S4/S5 见 [tech-exploration-map.md](tech-exploration-map.md)；控制关系见 [design-supervision.md](design-supervision.md)。
-> 边界：v0.1 只做**库内、确定性、不调 LLM** 的最小闭环；持久化、服务端 SSE、完整 DAG 当时不在内（见 §7）。**LLM-as-judge 对抗复核已于 v0.18 落地（见 §5.1，`src/orchestrator/judge.ts`），与 S2 决策后端端口对接见 [design-decision-backend.md](design-decision-backend.md)。**
+> 边界：v0.1 只做**库内、确定性、不调 LLM** 的最小闭环；持久化、服务端 SSE、完整 DAG 当时不在内（见 §7）。**LLM-as-judge 对抗复核已于 v0.18 落地（见 §5.1，`src/core/orchestrator/judge.ts`），与 S2 决策后端端口对接见 [design-decision-backend.md](design-decision-backend.md)。**
 
 ## 0. 一句话
 
@@ -13,7 +13,7 @@
 ```
 操作者 / 未来 H2 API
         │  一个意图 FanOutRequest
-   src/orchestrator/        ← 本设计：扇出 / 幂等 / 取消传播 / 合并 / 聚合 / 冲突
+   src/core/orchestrator/        ← 本设计：扇出 / 幂等 / 取消传播 / 合并 / 聚合 / 冲突
         │  逐路调用（复用，不重写治理）
    src/dispatch/Dispatcher  ← 数据二极管、脱敏、吊销阻断、SLA、审计
         │  A2A JSON-RPC + SSE（出站）
@@ -27,7 +27,7 @@
 3. 编排器不硬依赖 `OversightDesk`：需要人时经注入的 `onConflict` 回调上抛，由装配层接到监督台（内核平级解耦）。
 4. 状态仍是**进程内存**（幂等表、在途索引）；重启不丢任务的持久化是 E5.3，不在本批。
 
-## 2. 核心类型（`src/orchestrator/types.ts`）
+## 2. 核心类型（`src/core/orchestrator/types.ts`）
 
 ```ts
 type FanOutRequest = {

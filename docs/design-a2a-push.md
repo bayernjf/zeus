@@ -26,7 +26,7 @@ PRD E4.11（P1，原 ⬜）：`tasks/send` 可携带 `pushNotificationConfig`；
 | 类型 | `src/a2a/types.ts` | `PushNotificationConfig { url; token? }`；Task 消息携带 `pushNotificationConfig` |
 | 出站客户端 | `src/dispatch/client.ts` | `SendTaskInput.pushNotification?` → 消息根字段 `pushNotificationConfig`；armed 分支走 `tasks/send`（无订阅） |
 | 派发器 | `src/dispatch/dispatcher.ts` | `DispatchRequest.pushNotification?`；armed 时 `sendTask` 而非 `sendTaskSubscribe` |
-| 编排器 | `src/orchestrator/orchestrator.ts` | `pushReceiver?` 选项；`receivePushNotification(task)` 公开方法；`pushWaiters`（taskId→resolve）+ `pushProcessed`（幂等） |
+| 编排器 | `src/core/orchestrator/orchestrator.ts` | `pushReceiver?` 选项；`receivePushNotification(task)` 公开方法；`pushWaiters`（taskId→resolve）+ `pushProcessed`（幂等） |
 | HTTP | `src/http/server.ts` | `POST /api/a2a/push-notifications`，`requireBearer`，`internalToken` 未配不挂载，`deps.orchestrator` 缺失不挂载 |
 | 装配 | `src/state/boot.ts` + `serve.ts` | `ZEUS_A2A_PUSH_URL` → `pushReceiver`（token 同 `ZEUS_INTERNAL_TOKEN`） |
 | 审计 | `src/dispatch/dispatcher.ts` | 新决策 `push-notification-received` / `push-notification-refused` |

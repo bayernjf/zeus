@@ -12,21 +12,21 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 - **对外**（README、对外接口文档、演示、给非项目读者的一切正文）：**一律用专业术语，正文不出现隐喻词，也不写"隐喻 ↔ 专业词"的括注**。原 v0.1/v0.2 约定是"专业词为主 + 隐喻加注"，**2026-09-25 由用户收紧为"只要专业用语，不要比喻"**——加注仍会把读者的注意力带回隐喻，等于没换。
   - 唯一允许的例外：README 末尾一节独立的**「命名说明」**，声明源码标识符是内部命名且不代表任何第三方系统（`src/vault/` 与 HashiCorp Vault 无关），并把读者指向本对照表。这是**给读代码的人看的免责声明，不是行文里的比喻**。
   - 改口径时**顺手核实状态句**：README 从隐喻改专业词的同一批改动里，也修掉了三处已过期事实（MVP 判定仍写 ❌、测试数写 431、E4.8 写"没人跑过验收"）。措辞迁移是把文档重新对一遍代码的契机，别只换词。
-- 代码注释已有"叙事 + 专业"双写的先例（如 `src/orchestrator/types.ts` 中 `Position` 的注释直接使用专业描述），新写注释沿用此惯例。
+- 代码注释已有"叙事 + 专业"双写的先例（如 `src/core/orchestrator/types.ts` 中 `Position` 的注释直接使用专业描述），新写注释沿用此惯例。
 
 ## 核心映射表
 
 | 项目隐喻 | 专业/标准用语 | 代码/设计落点 |
 | --- | --- | --- |
 | 封臣（vassal） | 子代理 / 执行者 / worker / A2A agent | `VassalEntry`（`src/registry/registry.ts`：可派发执行者，经 A2A 标准交互注册、状态 active/revoked、带出站凭证） |
-| 封臣响应（vassal response） | 执行者的立场回传 / 子代理意见 | `Position = { vassal, stance, weight?, rationale? }`（`src/orchestrator/types.ts`：从任务终态产物提取的决策立场） |
+| 封臣响应（vassal response） | 执行者的立场回传 / 子代理意见 | `Position = { vassal, stance, weight?, rationale? }`（`src/core/orchestrator/types.ts`：从任务终态产物提取的决策立场） |
 | 立场（stance） | 决策立场 / 证据意见 | `Position.stance`，聚合规则的输入单位 |
 | 效忠（fealty） | 注册握手 / 凭证契约 | `x-zeus-fealty` 头 + `AgentCard` 校验（`src/registry/registry.ts`、`src/a2a/types.ts`、docs/design-vassal-protocol.md） |
 | 名册 / 封神榜（roster） | 可派发执行者目录 | `src/registry/roster.ts`（internal/public 双快照、签名封签） |
 | 扇出（fan-out） | 并行任务派发 / 扇出路由 | `src/dispatch/`（Dispatcher：JSON-RPC + SSE 客户端） |
-| 聚合规则 | 共识聚合（一致 / 多数 / 加权投票） | `AggregationRule`（`src/orchestrator/types.ts`） |
+| 聚合规则 | 共识聚合（一致 / 多数 / 加权投票） | `AggregationRule`（`src/core/orchestrator/types.ts`） |
 | 仲裁（arbitrate） | 模型裁决（置信闸门） | `arbitrateSplit`（`src/decision/arbitrate.ts`） |
-| 对抗复核（judge） | 对抗性复核 / adversarial review | `judgeDecision`（`src/orchestrator/judge.ts`，E1.3） |
+| 对抗复核（judge） | 对抗性复核 / adversarial review | `judgeDecision`（`src/core/orchestrator/judge.ts`，E1.3） |
 | 战报（report-back） | 任务产物回传 | A2A `Artifact`/`Task` 终态（docs/design-vassal-protocol.md） |
 | 升级（escalation） | 升级人工驾驶 / needs-driver | `src/oversight/`（OversightDesk：task-input / intent-conflict 升级队列） |
 | 上岗门 | 上岗资格校验（seat/account/authorization/mentorship） | `src/onboarding/`（E9.1/E9.2，现算不缓存） |
@@ -34,8 +34,8 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 藏宝图（vault） | 备份与恢复协议（引用 + 指纹 + 加密备份包） | `src/vault/`（E8.1/E8.2/E3.7） |
 | 立国三纲 | 能力接入三原语：MCP / Skill / A2A | docs/design-agentic-integration.md §2A |
 | 决策后端（decision backend） | 模型无关决策端口 | `DecisionBackend`（noul/choice/score，`src/decision/types.ts`） |
-| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/orchestrator/types.ts:75-75 #intentId`） |
-| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/orchestrator/types.ts:34-34 #FanOutStatus`）、`DriverResolution`（`src/orchestrator/resolution.ts:27-27 #applyConflictResolution`）、bearer 保护的 H2 面 |
+| 意图（intent） | 一次编排请求 / 目标 | `FanOutRequest.intentId`（`src/core/orchestrator/types.ts:75-75 #intentId`） |
+| 驾驶员（driver） | **人工在环的操作者**（human-in-the-loop operator），非"设备驱动" | `FanOutStatus = 'completed' \| 'partial' \| 'failed' \| 'needs-driver'`（`src/core/orchestrator/types.ts:34-34 #FanOutStatus`）、`DriverResolution`（`src/core/orchestrator/resolution.ts:27-27 #applyConflictResolution`）、bearer 保护的 H2 面 |
 | 拍板 | 人工裁决回写 | `applyConflictResolution` + `POST /api/escalations/:id/resolve`（E6.2） |
 | 监督台 | 升级队列 / HITL 控制台 | `OversightDesk`（`src/oversight/oversight.ts`） |
 | 数据二极管 | **data diode——业界本名，不是隐喻，可直说** | `src/index.ts:8-8 #diode`、`src/dispatch/dispatcher.ts:359 #diode`（执行点）、`src/realm/tenant.ts`（个人域/租户边界判定，按路径查）、README 的 dispatch 行 |
@@ -46,7 +46,7 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 上岗签字（commission） | 上岗授权的签署 / 豁免 / 撤回 | 审计枚举 `commission-granted\|waived\|withdrawn\|refused`（`src/dispatch/dispatcher.ts:43-45 #commission`）+ `src/onboarding/` |
 | 封神榜 | 对外发布的**已签名**公开名册 | `projectPublicRoster` + `sealSnapshot`（`src/registry/roster.ts`） |
 | 内核（kernel） | **运行时 / 编排引擎**，勿直译成 OS kernel | `bootKernel`（`src/state/boot.ts`） |
-| 决策回放 | 确定性重放（deterministic replay） | `src/orchestrator/replay.ts` + `GET /api/intents/:id/replay` |
+| 决策回放 | 确定性重放（deterministic replay） | `src/core/orchestrator/replay.ts` + `GET /api/intents/:id/replay` |
 | 连接器 | MCP 客户端接入点 | `src/mcp/connectors.ts`（`ConnectorRegistry.callTool`） |
 
 ## 哪些词该清除：比喻还是客观事实

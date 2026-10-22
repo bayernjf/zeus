@@ -1,8 +1,8 @@
 # 设计稿：长流程持久化执行——checkpoint、崩溃恢复、断点续跑（tech map S13）
 
 - 状态：**现行 v0.2（2026-10-10）**：V1 崩溃恢复四分类纯函数与 V2 启动恢复接线均已落地（设计原稿 §4/§5 分期）。本文区分"优雅退出快照（已有）"与"崩溃恢复（缺口）"，定义恢复分级纯函数。
-- 演进：v0.2（2026-10-10）——V1 已落码（Active work 178：`src/orchestrator/recovery.ts` `classifyRecoverable` 四分类 + `computeCheckpoint` 最小集，`tests/recovery.test.ts` 18 例全布尔面穷举 + 审计 4 值 recovery-* 登记）+ **V2 启动恢复接线已落地并核验（Active work 209 之后批次，`src/state/boot.ts` 静态状态恢复后逐在途意图执行恢复裁决 + `tests/recovery-boot.test.ts`）**；V3 周期 checkpoint 触发条件不变（首个连续运行 ≥2 周真实实例，或实测崩溃丢失窗口不可接受，与 design-intent-retention §5 同口径）；V4 分支内断点随真机阶段。v0.1（2026-10-09）首版——现状盘点（KernelSnapshot 优雅落盘 + 显式 resume 已有，崩溃后在途意图无恢复策略）+ 恢复三分类 + `classifyRecoverable`/`computeCheckpoint` 草案 + 分期。
-- 关联：tech map S13（checkpoint、崩溃恢复、断点续跑，随 H2）；design-intent-retention.md（状态窗口/归档，是**体积治理**；本设计是**执行连续性**，两者正交）；design-fan-out.md（幂等键与零出站重放，自动恢复的安全前提）；design-hil.md（恢复需人时落 L1/L2）；design-supervision.md §7.1（熔断随快照恢复）；design-cost-governance.md（S9，恢复重跑受预算约束）；design-sandbox.md（S16，外部写的不可逆性影响恢复分类）；`src/state/kernel-state.ts`（KernelSnapshot）、`src/state/archive.ts`、`src/orchestrator/orchestrator.ts`（resume/resumeNo）。
+- 演进：v0.2（2026-10-10）——V1 已落码（Active work 178：`src/core/orchestrator/recovery.ts` `classifyRecoverable` 四分类 + `computeCheckpoint` 最小集，`tests/recovery.test.ts` 18 例全布尔面穷举 + 审计 4 值 recovery-* 登记）+ **V2 启动恢复接线已落地并核验（Active work 209 之后批次，`src/state/boot.ts` 静态状态恢复后逐在途意图执行恢复裁决 + `tests/recovery-boot.test.ts`）**；V3 周期 checkpoint 触发条件不变（首个连续运行 ≥2 周真实实例，或实测崩溃丢失窗口不可接受，与 design-intent-retention §5 同口径）；V4 分支内断点随真机阶段。v0.1（2026-10-09）首版——现状盘点（KernelSnapshot 优雅落盘 + 显式 resume 已有，崩溃后在途意图无恢复策略）+ 恢复三分类 + `classifyRecoverable`/`computeCheckpoint` 草案 + 分期。
+- 关联：tech map S13（checkpoint、崩溃恢复、断点续跑，随 H2）；design-intent-retention.md（状态窗口/归档，是**体积治理**；本设计是**执行连续性**，两者正交）；design-fan-out.md（幂等键与零出站重放，自动恢复的安全前提）；design-hil.md（恢复需人时落 L1/L2）；design-supervision.md §7.1（熔断随快照恢复）；design-cost-governance.md（S9，恢复重跑受预算约束）；design-sandbox.md（S16，外部写的不可逆性影响恢复分类）；`src/state/kernel-state.ts`（KernelSnapshot）、`src/state/archive.ts`、`src/core/orchestrator/orchestrator.ts`（resume/resumeNo）。
 - 本文是长流程持久化执行的单一事实源；handoff 与 PRD 只索引。
 
 ## 1. 背景与现状
@@ -58,7 +58,7 @@
 ## 4. 落地接口草案（设计级，未落码）
 
 ```ts
-// src/orchestrator/recovery.ts（纯函数，零 IO）
+// src/core/orchestrator/recovery.ts（纯函数，零 IO）
 export type RecoveryVerdict =
   | { kind: 'auto-resume'; resumeNo: number }
   | { kind: 'await-operator'; level: 1 | 2; reason: string }

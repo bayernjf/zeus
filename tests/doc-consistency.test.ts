@@ -605,7 +605,7 @@ describe('documentation consistency', () => {
     // The group table describes the bearer face, so its cells must add up to it.
     const groupRows = inventory
       .split('\n')
-      .filter(line => /^\| (名册与执行 Agent|意图与编排|监督台|指标与状态|组织编制|记忆|日记|技能与带教|连接器|数据域与跨域|决策后端) \| \d+ \|/.test(line));
+      .filter(line => /^\| (名册与执行 Agent|意图与编排|监督台|指标与状态|组织编制|记忆|日记|技能与带教|连接器|数据域与跨域|决策后端|决策 API v1|组织 API v1) \| \d+ \|/.test(line));
     expect(groupRows.length, 'internal route group table anchor not found').toBeGreaterThan(9);
     const groupSum = groupRows.reduce((sum, line) => sum + Number(line.split('|')[2]?.trim() ?? 'NaN'), 0);
     expect(groupSum, `route groups sum to ${groupSum}, the bearer face has ${bearerCount}`).toBe(bearerCount);

@@ -14,7 +14,7 @@
 | 升级队列 | `task-input` / `intent-conflict` 两类升级，操作者 `approve` / `reject` / `resolveDecideConflict` 裁决 | `src/oversight/oversight.ts` |
 | watch 评估 | 调用方驱动的一次评估 tick（`POST /api/watch-tick`），条件满足才 fire | `src/watch/`、`scripts/run-watch-tick.mjs` |
 | 委托契约授权 | `delegation-limit` 越限时操作者"签新契约并批准"换绑 | `src/delegation/delegation-contract.ts`、H2 `approve-contract` |
-| 终止守卫 | 步数预算 256 / 连续失败熔断 8；显式点名与 resume（操作者驱动）不受熔断 | `src/orchestrator/termination.ts`、design-supervision §7.1 |
+| 终止守卫 | 步数预算 256 / 连续失败熔断 8；显式点名与 resume（操作者驱动）不受熔断 | `src/core/orchestrator/termination.ts`、design-supervision §7.1 |
 | 决策回放 | `GET /api/intents/:id/replay` 人读时间线，操作者据此裁决 | `src/http/` H2 |
 
 **缺口**：介入点存在，但没有统一的**时机判定**——"什么信号该打断操作者、什么信号异步挂起、什么信号完全不需要人"。现状是各点自定规则（升级队列只在冲突/补参时触发、watch 只在条件满足时 fire），没有一条贯穿的判定链。结果：要么该打扰时没打扰（intent 卡死而无人知），要么无关紧要的失败也涌进队列（心流被打断）。

@@ -117,7 +117,7 @@ subagent 失败时按固定次序判定：**重试（幂等前提下）→ 换�
 - **审计**：拒绝各记一条 `intent-branch-budget-exceeded` / `intent-circuit-opened`（含 intentId/used/limit 与 detail），经 onRefusal 桥进审计脊。
 - **边界**：意图级、进程内守卫；跨实例协调不做（同 #9 口径）。E1.5 的 `maxConcurrentBranches`/`branchQueueLimit` 不变。
 
-**纯函数**：`src/orchestrator/termination.ts`（`budgetExceeded` / `circuitOpen` / `advanceBudget`（spawn 时预记在途分支）/ `settleBranch`（分支结算折叠连续失败计数）/ `mayDispatch`（判别联合 `DispatchGate`，fan-out 派发边界的预算与熔断闸））。
+**纯函数**：`src/core/orchestrator/termination.ts`（`budgetExceeded` / `circuitOpen` / `advanceBudget`（spawn 时预记在途分支）/ `settleBranch`（分支结算折叠连续失败计数）/ `mayDispatch`（判别联合 `DispatchGate`，fan-out 派发边界的预算与熔断闸））。
 
 ## 8. 开放问题
 
