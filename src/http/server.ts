@@ -28,6 +28,16 @@ import type { DecisionBackend, DecisionBackendKind } from '../decision/types.js'
 import { recognizeIntent } from '../intent/recognize.js';
 import { readAuditLog } from '../dispatch/audit.js';
 import { AUDIT_DECISIONS, type AuditDecision, type AuditEntry } from '../dispatch/dispatcher.js';
+import type { DecisionService } from '../core/index.js';
+import {
+  approvalRoute,
+  createDecisionRoute,
+  getDecisionRoute,
+  getPolicyRoute,
+  listDecisionsRoute,
+  putPolicyRoute,
+  replayRoute,
+} from './decision-v1.js';
 import type { KernelStats } from '../state/stats.js';
 import type { IntentArchiveLookup, RetentionMode } from '../state/archive.js';
 import type { MemoryStore } from '../memory/memory-store.js';
@@ -171,6 +181,10 @@ export type HttpDeps = {
   decisionStatus?: DecisionStatus;
   /** H2 (E2.6): pluggable backend for operator intent recognition (opt-in). */
   decisionBackend?: DecisionBackend;
+  /** Decision API v1 (T-M1-06, design §4.2): graded business decisions with
+   *  approvals, SLA timeouts and idempotency. Absent, the /api/v1 face is not
+   *  mounted. */
+  decisionService?: DecisionService;
   /** H2 (E4.7): JSONL dispatch + governance audit log to expose read-only. */
   auditFile?: string;
   /** H2: live inventory of what the kernel holds and whether it persists. */
@@ -2719,6 +2733,28 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         return { report: await deps.runWatchTick() };
       });
     }
+
+    // Decision API v1 (Tier0 T-M1-06, design §4.2): graded business decisions,
+    // approval lifecycle, SLA timeouts, idempotency and versioned policy.
+    // Mounted only when the service was assembled at boot.
+    if (deps.decisionService) {
+      const decisionV1 = deps.decisionService;
+      app.post('/api/v1/decisions', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        createDecisionRoute(decisionV1, request, reply));
+      app.get('/api/v1/decisions', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listDecisionsRoute(decisionV1, request, reply));
+      app.get('/api/v1/decisions/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        getDecisionRoute(decisionV1, request, reply));
+      app.post('/api/v1/decisions/:id/approval', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        approvalRoute(decisionV1, request, reply));
+      app.get('/api/v1/decisions/:id/replay', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        replayRoute(decisionV1, request, reply));
+      app.get('/api/v1/policy', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        getPolicyRoute(decisionV1, request, reply));
+      app.put('/api/v1/policy', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        putPolicyRoute(decisionV1, request, reply));
+    }
+
   }
 
   return app;

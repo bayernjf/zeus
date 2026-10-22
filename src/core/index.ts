@@ -67,6 +67,28 @@ export {
   decodeAuditJsonl,
 } from './audit/jsonl.js';
 
+// --- 决策服务（T-M1-06：分级生命周期 / SLA / 幂等） ---
+export {
+  DecisionService,
+  DecisionRecordNotFoundError,
+  validateDecisionRequest,
+  filterAuditByDecision,
+  MemoryDecisionStore,
+} from './decision-service/index.js';
+export type {
+  DecisionServiceDeps,
+  DecisionRecordStore,
+  DecisionStatus,
+  DecisionMode,
+  ApprovalVerdict,
+  DecisionOutcome,
+  DecisionApprovalRecord,
+  DecisionResult,
+  DecisionRecord,
+  ApprovalRequest,
+  DecisionListFilter,
+} from './decision-service/index.js';
+
 // --- fealty 签名链 v1（纯函数，Ed25519 + JCS 子集，仅依赖 node:crypto） ---
 export {
   canonicalJson,

@@ -132,6 +132,12 @@ const HTTP_ONLY: Record<string, string> = {
     'PRD E3.5 / v0.30: one-shot signed enterprise write-grant minting, an operations action over the bearer API',
   'POST /api/a2a/push-notifications':
     'PRD E4.11 / v0.86: peer callback receiver for push-delivered outbound tasks; the operator face is the peer A2A client sending the callback, not a local driver',
+  'POST /api/v1/decisions':
+    'Tier0 PRD §6.2 / T-M1-06: cross-system decision API (design §4.2); zeus-client (T-M1-07), commerce-os (M3) and loom are the callers, so the bearer API is the face',
+  'POST /api/v1/decisions/:id/approval':
+    'Tier0 PRD §6.2 / T-M1-06: approval verdicts over the cross-system decision API; the calling system surfaces the human verdict, zeus only records it',
+  'PUT /api/v1/policy':
+    'Tier0 PRD §6.2 / T-M1-06: versioned policy administration over the bearer API; low-frequency high-blast-radius config action, no operator deck planned',
 };
 
 describe('operator surface coverage (every write route is drivable or explicitly API-only)', () => {
@@ -225,6 +231,12 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/audit/summary',
   'GET /.well-known/agent-card.json',
   'GET /mcp',
+  // Decision API v1 (T-M1-06, design §4.2): machine-to-machine reads for
+  // zeus-client (T-M1-07), commerce-os (M3) and loom; no operator deck.
+  'GET /api/v1/decisions',
+  'GET /api/v1/decisions/:id',
+  'GET /api/v1/decisions/:id/replay',
+  'GET /api/v1/policy',
 ]);
 
 /** Mounted per boot depending on configuration; reading them is a follow-up,

@@ -39,6 +39,10 @@ import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
 import { createLogger, redactText } from '../util/logger.js';
+import { DecisionAuditChain, DecisionService, MemoryDecisionStore } from '../core/index.js';
+import { MemoryPolicyStore } from '../core/grading/policy-loader.js';
+import { DEFAULT_POLICY_V1 } from '../core/grading/default-policy.js';
+import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -238,6 +242,30 @@ async function main(): Promise<void> {
       ? parseIntPositive('ZEUS_SSE_ATTACH_GRACE_MS', process.env.ZEUS_SSE_ATTACH_GRACE_MS)
       : undefined;
 
+  // Decision API v1 (T-M1-06): assemble the graded decision service. The
+  // sealing key is the same Ed25519 RSK key (key rotation stays a deployment
+  // concern). The JSONL trail is opt-in via ZEUS_DECISION_AUDIT_FILE; without
+  // it the chain is in-memory and the process restart loses the trail.
+  // Records are in-memory for M1 (SQLite/PG tables land with the deployment
+  // slice). A trail that fails verification refuses to open (fail-closed).
+  let decisionService: DecisionService | undefined;
+  if (process.env.ZEUS_INTERNAL_TOKEN) {
+    const policyStore = new MemoryPolicyStore();
+    policyStore.put(DEFAULT_POLICY_V1);
+    const audit = process.env.ZEUS_DECISION_AUDIT_FILE
+      ? await JsonlDecisionAuditStore.open(process.env.ZEUS_DECISION_AUDIT_FILE, signer, signer.verifier())
+      : new DecisionAuditChain(signer);
+    decisionService = new DecisionService({
+      policyStore,
+      recordStore: new MemoryDecisionStore(),
+      audit,
+    });
+    log.info('decision-service', 'assembled', {
+      defaultPolicy: `v${DEFAULT_POLICY_V1.version}`,
+      auditTrail: process.env.ZEUS_DECISION_AUDIT_FILE ?? 'in-memory',
+    });
+  }
+
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
   // §2.1); ZEUS_HOST / ZEUS_PORT only override them, so the process entry and the
   // published `zeus/http` API cannot drift into two different answers.
@@ -353,6 +381,8 @@ async function main(): Promise<void> {
     // operator intent recognition. Recognition is plan-only and the model is
     // only consulted when the caller explicitly opts in (useModel: true).
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
+    // Decision API v1 (T-M1-06): present only when the service assembled above.
+    ...(decisionService ? { decisionService } : {}),
   }, {
     ...(process.env.ZEUS_HOST ? { host: process.env.ZEUS_HOST } : {}),
     ...(process.env.ZEUS_PORT ? { port: Number(process.env.ZEUS_PORT) } : {}),
