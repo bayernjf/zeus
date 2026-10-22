@@ -30,6 +30,43 @@ export type {
   GradeDecision,
 } from './grading/policy.js';
 
+// --- 决策审计链式签名（T-M1-05，ADR-04） ---
+export {
+  AUDIT_GENESIS,
+  AUDIT_ENTRY_KEYS,
+  AUDIT_PAYLOAD_KEYS,
+  DECISION_AUDIT_KINDS,
+} from './audit/types.js';
+export type {
+  DecisionAuditKind,
+  DecisionAuditPayload,
+  DecisionAuditInput,
+  DecisionAuditEntry,
+} from './audit/types.js';
+export {
+  DecisionAuditChain,
+  DecisionAuditValidationError,
+  auditEntryHash,
+  auditSigningText,
+  validateAuditEntry,
+  validateAuditPayload,
+  verifyDecisionAuditChain,
+} from './audit/audit-chain.js';
+export type {
+  AuditSealingDoc,
+  AuditVerification,
+  DecisionAuditChainSigner,
+  DecisionAuditChainVerifier,
+  DecisionAuditAppender,
+} from './audit/audit-chain.js';
+export {
+  DecisionAuditCodecError,
+  encodeAuditLine,
+  encodeAuditJsonl,
+  decodeAuditLine,
+  decodeAuditJsonl,
+} from './audit/jsonl.js';
+
 // --- fealty 签名链 v1（纯函数，Ed25519 + JCS 子集，仅依赖 node:crypto） ---
 export {
   canonicalJson,
