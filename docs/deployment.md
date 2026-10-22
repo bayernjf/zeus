@@ -25,6 +25,7 @@
 | `ZEUS_OUTBOUND_ALLOW_HOSTS` | 未设置 | A-12：出站 URL 守卫的显式放行名单，逗号分隔（命中即跳过非公网地址检查）。守卫默认拒绝所有非全球可达地址（RFC 6890 专用地址段：RFC1918、`169.254/16`、CGNAT、多播/保留段，含 IPv6 ULA、link-local 与 IPv4 映射/兼容/NAT64 编码），**唯一例外是环回 `127.0.0.0/8` 与 `::1`**——本地优先，环回上的 vassal/MCP 服务是常态。要在私网里接入对端（如 `10.0.0.5`、容器里的 `host.docker.internal`）就把它写进这里；`.suffix` 前缀匹配整段后缀。**两层守卫**：同步 URL 检查只看得到 IP 字面量（主机名在该层放行），出站 fetch 还会经 DNS-rebinding 守卫（`src/util/outbound-dns.ts`，已实现并默认装配）解析主机名并校验全部结果地址，解析到私有/保留段仍拒绝；本名单对两层同时生效 |
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值在持久化边界剥离、不进任何备份束，恢复后需重新声明；且以 uid 1000 落卷） |
+| `ZEUS_DB_FILE` | 未设置 | T-M6-01 决策/组织持久化 SQLite 路径（decision_policy/records/approvals + organizations/departments/positions/org_tasks 七表）。设置后启动幂等迁移并 hydrate，重启保留全部决策/审批/组织/任务；不设则内存演示模式。文件须放持久卷、0600、不入镜像（.dockerignore） |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
 | `ZEUS_TRACE_EXPORT_FILE` | 未设置 | S6 V3：每个落定意图的 trace 树追加到此 JSONL。**必须同时设 `ZEUS_AUDIT_FILE`**——树是从审计脊重建的，只设这一条会一直是空文件（启动日志会点明）。端点侧无读回面：文件是给人直接看的 |
 | `ZEUS_METRICS_HISTORY_FILE` | 未设置 | S6 V3：每次保存内核状态时追加一条指标快照（按 capturedAt 去重）。**设了才挂载 `GET /api/metrics/history`**——不设该路由不存在（404），趋势读数只有活窗口 |
