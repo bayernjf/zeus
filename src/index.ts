@@ -67,7 +67,7 @@ export {
   publishRootKey,
   Ed25519MemorySigner,
   Ed25519Verifier,
-} from './registry/signing.js';
+} from './core/signing.js';
 export type {
   RosterSigner,
   RosterVerifier,
@@ -78,7 +78,7 @@ export type {
   AttestationSource,
   SealOptions,
   VerifyResult,
-} from './registry/signing.js';
+} from './core/signing.js';
 
 // --- A2 dispatch: orchestration, data diode, revocation gate ---
 export { Dispatcher, AmbiguousSkillError } from './dispatch/dispatcher.js';
@@ -116,34 +116,34 @@ export type {
 } from './oversight/types.js';
 
 // --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
-export { Orchestrator, UnknownIntentError, IntentRequestConflictError } from './orchestrator/orchestrator.js';
-export type { OrchestratorOptions } from './orchestrator/orchestrator.js';
-export type { PushReceiveResult } from './orchestrator/orchestrator.js';
-export { PlanFlow, PLANNER_TAG, extractPlanDraft } from './orchestrator/plan-flow.js';
-export type { PlanFlowOptions, PlanFlowRequest, PlanFlowResult } from './orchestrator/plan-flow.js';
-export { Semaphore, QueueFullError, type SlotRelease } from './orchestrator/semaphore.js';
-export { mergeBranches } from './orchestrator/merge.js';
-export { aggregate, extractPositions, extractStance } from './orchestrator/aggregate.js';
-export { detectConflicts } from './orchestrator/conflict.js';
-export { applyConflictResolution, recomputeResult, statusFromBranches } from './orchestrator/resolution.js';
+export { Orchestrator, UnknownIntentError, IntentRequestConflictError } from './core/orchestrator/orchestrator.js';
+export type { OrchestratorOptions } from './core/orchestrator/orchestrator.js';
+export type { PushReceiveResult } from './core/orchestrator/orchestrator.js';
+export { PlanFlow, PLANNER_TAG, extractPlanDraft } from './core/orchestrator/plan-flow.js';
+export type { PlanFlowOptions, PlanFlowRequest, PlanFlowResult } from './core/orchestrator/plan-flow.js';
+export { Semaphore, QueueFullError, type SlotRelease } from './core/orchestrator/semaphore.js';
+export { mergeBranches } from './core/orchestrator/merge.js';
+export { aggregate, extractPositions, extractStance } from './core/orchestrator/aggregate.js';
+export { detectConflicts } from './core/orchestrator/conflict.js';
+export { applyConflictResolution, recomputeResult, statusFromBranches } from './core/orchestrator/resolution.js';
 export {
   replayDecision,
   replayDecisions,
   replaySnapshot,
   renderReplay,
   ReplayError,
-} from './orchestrator/replay.js';
+} from './core/orchestrator/replay.js';
 export type {
   DecisionReplay,
   ReplayStep,
   ReplayStepKind,
   ReplayParticipant,
-} from './orchestrator/replay.js';
-export { arbitrateConflict } from './orchestrator/arbitration.js';
-export type { ArbitrateConflictInput } from './orchestrator/arbitration.js';
-export { judgeDecision } from './orchestrator/judge.js';
-export type { JudgeDecisionInput } from './orchestrator/judge.js';
-export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
+} from './core/orchestrator/replay.js';
+export { arbitrateConflict } from './core/orchestrator/arbitration.js';
+export type { ArbitrateConflictInput } from './core/orchestrator/arbitration.js';
+export { judgeDecision } from './core/orchestrator/judge.js';
+export type { JudgeDecisionInput } from './core/orchestrator/judge.js';
+export { ConcurrencyMetrics, percentile } from './core/orchestrator/metrics.js';
 // --- S6 observability: trace projection + local exporters ---
 export { buildTraceTree } from './observability/trace.js';
 export type { TraceSpan, TraceSpanKind, TraceSpanEventKind, TraceTree, TraceExporter } from './observability/trace.js';
@@ -169,7 +169,7 @@ export type {
   BranchMetricEvent,
   BranchOutcomeKind,
   MetricsOptions,
-} from './orchestrator/metrics.js';
+} from './core/orchestrator/metrics.js';
 export {
   validateDag,
   topologicalOrder,
@@ -177,12 +177,12 @@ export {
   criticalPath,
   dependenciesSatisfied,
   DagValidationError,
-} from './orchestrator/dag.js';
-export type { DagNode, DagSpec, DagNodeState, DagState } from './orchestrator/dag.js';
-export { DagRunner, DagIdInUseError } from './orchestrator/dag-runner.js';
-export type { DagResult, DagNodeResult, DagRunnerOptions, ChainRecoveryOptions, ChainRecoveryAudit } from './orchestrator/dag-runner.js';
-export { selectCandidates, recoverChain, planRecovery, buildChainPlan } from './orchestrator/discovery.js';
-export type { DispatchCandidate, DispatchMode, SelectionContext, ChainFailure, RecoveryAction, ChainStep, ChainPlan, RecoveryInstruction } from './orchestrator/discovery.js';
+} from './core/orchestrator/dag.js';
+export type { DagNode, DagSpec, DagNodeState, DagState } from './core/orchestrator/dag.js';
+export { DagRunner, DagIdInUseError } from './core/orchestrator/dag-runner.js';
+export type { DagResult, DagNodeResult, DagRunnerOptions, ChainRecoveryOptions, ChainRecoveryAudit } from './core/orchestrator/dag-runner.js';
+export { selectCandidates, recoverChain, planRecovery, buildChainPlan } from './core/orchestrator/discovery.js';
+export type { DispatchCandidate, DispatchMode, SelectionContext, ChainFailure, RecoveryAction, ChainStep, ChainPlan, RecoveryInstruction } from './core/orchestrator/discovery.js';
 export {
   FileKernelStateStore,
   collectKernelState,
@@ -194,7 +194,7 @@ export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
 export { kernelStats, type KernelStats } from './state/stats.js';
 export { bootKernel, resolveDecisionConfig, resolveConcurrencyConfig, resolveAuditConfig, KernelBootError } from './state/boot.js';
 export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig, ProcessConcurrencyConfig, ProcessAuditConfig } from './state/boot.js';
-export type { OrchestratorSnapshot } from './orchestrator/orchestrator.js';
+export type { OrchestratorSnapshot } from './core/orchestrator/orchestrator.js';
 export type {
   FanOutRequest,
   FanOutResult,
@@ -211,7 +211,7 @@ export type {
   DriverResolution,
   BackendArbitration,
   JudgeReview,
-} from './orchestrator/types.js';
+} from './core/orchestrator/types.js';
 
 // --- Decision backend (model-agnostic port; Jev decision-model + LLM adapters) ---
 export { createJevBackend, createJevBackendFromEnv } from './decision/decision-model.js';
