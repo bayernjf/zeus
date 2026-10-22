@@ -17,7 +17,7 @@ import type { DecisionPolicy } from '../grading/policy.js';
 import type { Grade } from '../types.js';
 import { parsePolicy } from '../grading/policy-loader.js';
 import { sha256Hex } from '../../util/crypto.js';
-import { MemoryOrgStore } from './store.js';
+import { MemoryOrgStore, type OrgStore } from './store.js';
 import {
   ORG_ERROR_CODES as EC,
   OrgServiceError,
@@ -40,7 +40,7 @@ const VALID_GRADES: Grade[] = ['D0', 'D1', 'D2', 'D3'];
 const MAX_DECISION_HOPS = 10;
 
 export interface OrgServiceDeps {
-  store?: MemoryOrgStore;
+  store?: OrgStore;
   /** Decision integration; when absent, tasks cannot pause at checkpoints. */
   decisions?: DecisionService;
   clock?: () => string;
@@ -104,7 +104,7 @@ function requireString(v: unknown, field: string): string {
 }
 
 export class OrgService {
-  private readonly store: MemoryOrgStore;
+  private readonly store: OrgStore;
   private readonly decisions: DecisionService | undefined;
   private readonly clock: () => string;
   private readonly newId: (prefix: string) => string;

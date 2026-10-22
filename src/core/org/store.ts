@@ -17,7 +17,32 @@ export interface OrgSnapshot {
   tasks: OrgTask[];
 }
 
-export class MemoryOrgStore {
+/**
+ * Org store port. MemoryOrgStore is the volatile implementation (test/demo);
+ * the durable SQLite implementation (T-M6-01) satisfies the same contract.
+ */
+export interface OrgStore {
+  putOrganization(org: Organization): void;
+  getOrganization(id: string): Organization | undefined;
+  listOrganizations(): Organization[];
+
+  putDepartment(dept: Department): void;
+  getDepartment(id: string): Department | undefined;
+  listDepartments(organizationId?: string): Department[];
+
+  putPosition(pos: Position): void;
+  getPosition(id: string): Position | undefined;
+  listPositions(organizationId?: string): Position[];
+
+  putTask(task: OrgTask): void;
+  getTask(id: string): OrgTask | undefined;
+  listTasks(organizationId?: string): OrgTask[];
+
+  exportSnapshot(): OrgSnapshot;
+  importSnapshot(snapshot: OrgSnapshot): void;
+}
+
+export class MemoryOrgStore implements OrgStore {
   private organizations = new Map<string, Organization>();
   private departments = new Map<string, Department>();
   private positions = new Map<string, Position>();
