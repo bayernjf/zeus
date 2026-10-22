@@ -138,6 +138,22 @@ const HTTP_ONLY: Record<string, string> = {
     'Tier0 PRD §6.2 / T-M1-06: approval verdicts over the cross-system decision API; the calling system surfaces the human verdict, zeus only records it',
   'PUT /api/v1/policy':
     'Tier0 PRD §6.2 / T-M1-06: versioned policy administration over the bearer API; low-frequency high-blast-radius config action, no operator deck planned',
+  'POST /api/v1/org/organizations':
+    'Tier0 PRD §7 / T-M2-02: organization establishment over the cross-system org API (design §4.4); consumed by org-os/commerce-os, the bearer API is the face',
+  'POST /api/v1/org/departments':
+    'Tier0 PRD §7 / T-M2-02: department establishment over the cross-system org API (design §4.4); no operator deck planned',
+  'POST /api/v1/org/positions':
+    'Tier0 PRD §7 / T-M2-02: position definition over the cross-system org API (design §4.4); no operator deck planned',
+  'POST /api/v1/org/positions/:id/assign-agent':
+    'Tier0 PRD §7 / T-M2-02: agent binding over the cross-system org API; the calling system manages agent lifecycle',
+  'POST /api/v1/org/tasks':
+    'Tier0 PRD §7 / T-M2-03: task intake over the cross-system org API (design §6.2); external systems submit work',
+  'POST /api/v1/org/tasks/:id/dispatch':
+    'Tier0 PRD §7 / T-M2-03: task dispatch over the cross-system org API; the assembled executor runs inside the process',
+  'POST /api/v1/org/tasks/:id/resume':
+    'Tier0 PRD §7 / T-M2-03: task resume after a decision checkpoint; human verdict arrives over the API',
+  'POST /api/v1/org/policy/thresholds':
+    'Tier0 PRD §11 / T-M2-04: per-organization D0-D3 threshold configuration; low-frequency high-blast-radius config action',
 };
 
 describe('operator surface coverage (every write route is drivable or explicitly API-only)', () => {
@@ -237,6 +253,14 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/v1/decisions/:id',
   'GET /api/v1/decisions/:id/replay',
   'GET /api/v1/policy',
+  // Org API v1 (T-M2, design §4.4): machine-to-machine reads for org-os and
+  // commerce-os; no operator deck in the self-use slice.
+  'GET /api/v1/org/organizations',
+  'GET /api/v1/org/organizations/:id',
+  'GET /api/v1/org/departments',
+  'GET /api/v1/org/positions',
+  'GET /api/v1/org/tasks',
+  'GET /api/v1/org/tasks/:id',
 ]);
 
 /** Mounted per boot depending on configuration; reading them is a follow-up,

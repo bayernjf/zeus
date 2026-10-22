@@ -180,3 +180,28 @@ export type {
   BackendArbitration,
   JudgeReview,
 } from './orchestrator/types.js';
+
+// ── Org v1 (Tier0 M2, design §4.4) ────────────────────────────────────────
+export { OrgService, MemoryOrgStore, ORG_ERROR_CODES, OrgServiceError } from './org/index.js';
+export type {
+  OrgServiceDeps,
+  OrgTaskExecutor,
+  OrgTaskRunContext,
+  OrgTaskRunResult,
+  OrgDecisionCheckpoint,
+  DispatchResult,
+  OrgSnapshot,
+  Json,
+  ScaleTier,
+  Organization,
+  Department,
+  Position as OrgPosition,
+  OrgTask,
+  OrgTaskStatus,
+  OrgTaskTransition,
+  CreateOrganizationInput,
+  CreateDepartmentInput,
+  CreatePositionInput,
+  AssignAgentInput,
+  CreateOrgTaskInput,
+} from './org/index.js';

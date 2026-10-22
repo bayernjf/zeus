@@ -29,6 +29,7 @@ import { recognizeIntent } from '../intent/recognize.js';
 import { readAuditLog } from '../dispatch/audit.js';
 import { AUDIT_DECISIONS, type AuditDecision, type AuditEntry } from '../dispatch/dispatcher.js';
 import type { DecisionService } from '../core/index.js';
+import type { OrgService, OrgTaskExecutor } from '../core/index.js';
 import {
   approvalRoute,
   createDecisionRoute,
@@ -38,6 +39,22 @@ import {
   putPolicyRoute,
   replayRoute,
 } from './decision-v1.js';
+import {
+  applyThresholdsRoute,
+  assignAgentRoute,
+  createDepartmentRoute,
+  createOrganizationRoute,
+  createPositionRoute,
+  createTaskRoute,
+  dispatchTaskRoute,
+  getOrganizationRoute,
+  getTaskRoute,
+  listDepartmentsRoute,
+  listOrganizationsRoute,
+  listPositionsRoute,
+  listTasksRoute,
+  resumeTaskRoute,
+} from './org-v1.js';
 import type { KernelStats } from '../state/stats.js';
 import type { IntentArchiveLookup, RetentionMode } from '../state/archive.js';
 import type { MemoryStore } from '../memory/memory-store.js';
@@ -185,6 +202,9 @@ export type HttpDeps = {
    *  approvals, SLA timeouts and idempotency. Absent, the /api/v1 face is not
    *  mounted. */
   decisionService?: DecisionService;
+  /** Tier0 M2 org v1 service and assembled task executor. */
+  orgService?: OrgService;
+  orgExecutor?: OrgTaskExecutor;
   /** H2 (E4.7): JSONL dispatch + governance audit log to expose read-only. */
   auditFile?: string;
   /** H2: live inventory of what the kernel holds and whether it persists. */
@@ -2755,6 +2775,40 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         putPolicyRoute(decisionV1, request, reply));
     }
 
+    // Org API v1 (Tier0 M2, design §4.4): organizations, departments,
+    // positions with agent binding, task dispatch and threshold config.
+    if (deps.orgService) {
+      const orgV1 = deps.orgService;
+      const orgExecutor = deps.orgExecutor;
+      app.post('/api/v1/org/organizations', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        createOrganizationRoute(orgV1, request, reply));
+      app.get('/api/v1/org/organizations', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listOrganizationsRoute(orgV1, request, reply));
+      app.get('/api/v1/org/organizations/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        getOrganizationRoute(orgV1, request, reply));
+      app.post('/api/v1/org/departments', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        createDepartmentRoute(orgV1, request, reply));
+      app.get('/api/v1/org/departments', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listDepartmentsRoute(orgV1, request, reply));
+      app.post('/api/v1/org/positions', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        createPositionRoute(orgV1, request, reply));
+      app.get('/api/v1/org/positions', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listPositionsRoute(orgV1, request, reply));
+      app.post('/api/v1/org/positions/:id/assign-agent', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        assignAgentRoute(orgV1, request, reply));
+      app.post('/api/v1/org/tasks', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        createTaskRoute(orgV1, request, reply));
+      app.get('/api/v1/org/tasks', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listTasksRoute(orgV1, request, reply));
+      app.get('/api/v1/org/tasks/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        getTaskRoute(orgV1, request, reply));
+      app.post('/api/v1/org/tasks/:id/dispatch', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        dispatchTaskRoute(orgV1, orgExecutor, request, reply));
+      app.post('/api/v1/org/tasks/:id/resume', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        resumeTaskRoute(orgV1, orgExecutor, request, reply));
+      app.post('/api/v1/org/policy/thresholds', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        applyThresholdsRoute(orgV1, request, reply));
+    }
   }
 
   return app;

@@ -39,7 +39,7 @@ import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
 import { createLogger, redactText } from '../util/logger.js';
-import { DecisionAuditChain, DecisionService, MemoryDecisionStore } from '../core/index.js';
+import { DecisionAuditChain, DecisionService, MemoryDecisionStore, OrgService } from '../core/index.js';
 import { MemoryPolicyStore } from '../core/grading/policy-loader.js';
 import { DEFAULT_POLICY_V1 } from '../core/grading/default-policy.js';
 import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
@@ -266,6 +266,17 @@ async function main(): Promise<void> {
     });
   }
 
+  // Org API v1 (T-M2): organizations/departments/positions, task dispatch and
+  // threshold configuration. In-memory for the M2 slice (same durability note
+  // as M1; durable tables land with the deployment slice). The kernel fan-out
+  // task executor is a later wiring slice; until assembled, dispatch returns
+  // 503 ORG_EXECUTOR_UNCONFIGURED rather than pretending to execute.
+  let orgService: OrgService | undefined;
+  if (decisionService) {
+    orgService = new OrgService({ decisions: decisionService });
+    log.info('org-service', 'assembled', { durability: 'in-memory', taskExecutor: 'not-assembled' });
+  }
+
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
   // §2.1); ZEUS_HOST / ZEUS_PORT only override them, so the process entry and the
   // published `zeus/http` API cannot drift into two different answers.
@@ -383,6 +394,8 @@ async function main(): Promise<void> {
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
     // Decision API v1 (T-M1-06): present only when the service assembled above.
     ...(decisionService ? { decisionService } : {}),
+    // Org API v1 (T-M2): present only when assembled above.
+    ...(orgService ? { orgService } : {}),
   }, {
     ...(process.env.ZEUS_HOST ? { host: process.env.ZEUS_HOST } : {}),
     ...(process.env.ZEUS_PORT ? { port: Number(process.env.ZEUS_PORT) } : {}),
