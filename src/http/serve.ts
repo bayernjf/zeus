@@ -42,6 +42,14 @@ import { createLogger, redactText } from '../util/logger.js';
 import { DecisionAuditChain, DecisionService, MemoryDecisionStore, OrgService } from '../core/index.js';
 import { MemoryPolicyStore } from '../core/grading/policy-loader.js';
 import { DEFAULT_POLICY_V1 } from '../core/grading/default-policy.js';
+import {
+  openSqlite,
+  migrate,
+  SqlitePolicyStore,
+  SqliteDecisionStore,
+  SqliteOrgStore,
+} from '../core/persistence/index.js';
+import type { OrgStore } from '../core/org/store.js';
 import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
 
 const require = createRequire(import.meta.url);
@@ -249,32 +257,50 @@ async function main(): Promise<void> {
   // Records are in-memory for M1 (SQLite/PG tables land with the deployment
   // slice). A trail that fails verification refuses to open (fail-closed).
   let decisionService: DecisionService | undefined;
+  let orgService: OrgService | undefined;
   if (process.env.ZEUS_INTERNAL_TOKEN) {
-    const policyStore = new MemoryPolicyStore();
-    policyStore.put(DEFAULT_POLICY_V1);
+    // Durable mode (T-M6-01) when ZEUS_DB_FILE is set: open SQLite, migrate
+    // (idempotent), hydrate policy/records/org from disk. Without it, the
+    // in-memory stores remain the single-process demo/test mode.
+    const dbFile = process.env.ZEUS_DB_FILE;
+    let durability: 'in-memory' | 'sqlite' = 'in-memory';
+    let policyStore: import('../core/grading/policy-loader.js').PolicyStore;
+    let recordStore: import('../core/decision-service/store.js').DecisionRecordStore;
+    let orgStore: OrgStore | undefined;
+    if (dbFile) {
+      const db = openSqlite(dbFile);
+      const firstBoot = migrate(db);
+      policyStore = new SqlitePolicyStore(db);
+      if (firstBoot) policyStore.put(DEFAULT_POLICY_V1);
+      recordStore = new SqliteDecisionStore(db);
+      orgStore = new SqliteOrgStore(db);
+      durability = 'sqlite';
+    } else {
+      const memoryPolicy = new MemoryPolicyStore();
+      memoryPolicy.put(DEFAULT_POLICY_V1);
+      policyStore = memoryPolicy;
+      recordStore = new MemoryDecisionStore();
+    }
+
     const audit = process.env.ZEUS_DECISION_AUDIT_FILE
       ? await JsonlDecisionAuditStore.open(process.env.ZEUS_DECISION_AUDIT_FILE, signer, signer.verifier())
       : new DecisionAuditChain(signer);
-    decisionService = new DecisionService({
-      policyStore,
-      recordStore: new MemoryDecisionStore(),
-      audit,
-    });
+    decisionService = new DecisionService({ policyStore, recordStore, audit });
     log.info('decision-service', 'assembled', {
       defaultPolicy: `v${DEFAULT_POLICY_V1.version}`,
       auditTrail: process.env.ZEUS_DECISION_AUDIT_FILE ?? 'in-memory',
+      durability,
     });
-  }
 
-  // Org API v1 (T-M2): organizations/departments/positions, task dispatch and
-  // threshold configuration. In-memory for the M2 slice (same durability note
-  // as M1; durable tables land with the deployment slice). The kernel fan-out
-  // task executor is a later wiring slice; until assembled, dispatch returns
-  // 503 ORG_EXECUTOR_UNCONFIGURED rather than pretending to execute.
-  let orgService: OrgService | undefined;
-  if (decisionService) {
-    orgService = new OrgService({ decisions: decisionService });
-    log.info('org-service', 'assembled', { durability: 'in-memory', taskExecutor: 'not-assembled' });
+    // Org API v1 (T-M2). Durable store is used when hydrated; otherwise the
+    // in-memory store is the demo mode. The kernel fan-out task executor is a
+    // later wiring slice; until assembled, dispatch returns 503
+    // ORG_EXECUTOR_UNCONFIGURED rather than pretending to execute.
+    orgService = new OrgService({
+      decisions: decisionService,
+      ...(orgStore ? { store: orgStore } : {}),
+    });
+    log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
   }
 
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
