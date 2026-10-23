@@ -13,6 +13,7 @@ import type { DatabaseSync } from 'node:sqlite';
 
 export const MIGRATION_ID = '0001_init_decision_org';
 export const MIGRATION_0002_ORG_TASK_EXECUTION = '0002_org_task_execution';
+export const MIGRATION_0003_ORG_TASK_ACTIONS = '0003_org_task_actions';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -125,6 +126,15 @@ CREATE TABLE IF NOT EXISTS org_tasks (
   updated_at TEXT NOT NULL,
   FOREIGN KEY (organization_id) REFERENCES organizations(id)
 );
+
+CREATE TABLE IF NOT EXISTS org_task_actions (
+  task_id TEXT NOT NULL,
+  action_key TEXT NOT NULL,
+  result_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (task_id, action_key),
+  FOREIGN KEY (task_id) REFERENCES org_tasks(id)
+);
 `;
 
 interface Migration {
@@ -160,6 +170,19 @@ const INCREMENTAL_MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, 'org_tasks', 'idempotency_key', 'TEXT');
       db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_org_tasks_idempotency
         ON org_tasks(organization_id, idempotency_key);`);
+    },
+  },
+  {
+    id: MIGRATION_0003_ORG_TASK_ACTIONS,
+    up: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS org_task_actions (
+        task_id TEXT NOT NULL,
+        action_key TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (task_id, action_key),
+        FOREIGN KEY (task_id) REFERENCES org_tasks(id)
+      );`);
     },
   },
 ];

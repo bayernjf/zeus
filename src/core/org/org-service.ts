@@ -66,6 +66,12 @@ export interface OrgServiceDeps {
   taskDeadlineMs?: number;
   /** T-M7-01 cap on distinct decision points per task. */
   maxDecisionHops?: number;
+  /**
+   * T-M7-01 supplies the per-task idempotent action store. When omitted an
+   * in-memory store is used; durable wiring (SQLite) passes a factory so action
+   * results survive restart and side effects are not replayed.
+   */
+  actionStoreFactory?: (taskId: string) => ActionResultStore;
 }
 
 /**
@@ -109,7 +115,8 @@ export class OrgService {
   private readonly retryPolicy: RetryPolicy;
   private readonly taskDeadlineMs: number;
   private readonly maxDecisionHops: number;
-  /** Per-task idempotent action results, retained across resume (in-memory). */
+  private readonly actionStoreFactory?: (taskId: string) => ActionResultStore;
+  /** Per-task idempotent action results for the default in-memory wiring. */
   private readonly actionStores = new Map<string, ActionResultStore>();
   private counter = 0;
 
@@ -121,6 +128,7 @@ export class OrgService {
     this.retryPolicy = deps.retryPolicy ?? DEFAULT_RETRY_POLICY;
     this.taskDeadlineMs = deps.taskDeadlineMs ?? DEFAULT_TASK_DEADLINE_MS;
     this.maxDecisionHops = deps.maxDecisionHops ?? DEFAULT_MAX_DECISION_HOPS;
+    this.actionStoreFactory = deps.actionStoreFactory;
   }
 
   // ── Organizations ──────────────────────────────────────────────────────
@@ -459,8 +467,9 @@ export class OrgService {
     return { task: this.store.getTask(failed.id)! };
   }
 
-  /** Per-task idempotent action store, retained across resume (in-memory). */
+  /** Per-task idempotent action store; durable when a factory is wired. */
   private actionStoreFor(taskId: string): ActionResultStore {
+    if (this.actionStoreFactory) return this.actionStoreFactory(taskId);
     let store = this.actionStores.get(taskId);
     if (!store) {
       store = new InMemoryActionStore();

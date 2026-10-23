@@ -10,9 +10,11 @@ import {
   appliedMigrations,
   MIGRATION_ID,
   MIGRATION_0002_ORG_TASK_EXECUTION,
+  MIGRATION_0003_ORG_TASK_ACTIONS,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
+import { SqliteActionStore } from './sqlite-action-store.js';
 import type { DecisionRecord } from '../decision-service/types.js';
 import type {
   Organization,
@@ -93,11 +95,13 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     expect(appliedMigrations(db)).toEqual([
       MIGRATION_ID,
       MIGRATION_0002_ORG_TASK_EXECUTION,
+      MIGRATION_0003_ORG_TASK_ACTIONS,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
       MIGRATION_ID,
       MIGRATION_0002_ORG_TASK_EXECUTION,
+      MIGRATION_0003_ORG_TASK_ACTIONS,
     ]);
     db.close();
   });
@@ -173,6 +177,29 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     expect(() =>
       store.putTask({ ...task, id: 'task-dup' }),
     ).toThrow();
+    db.close();
+  });
+
+  it('durable action store replays committed effects after a restart', async () => {
+    const file = await freshFile();
+    let db = openSqlite(file);
+    migrate(db);
+    new SqliteOrgStore(db).putOrganization(sampleOrg());
+    new SqliteOrgStore(db).putTask(sampleTask());
+    const before = new SqliteActionStore(db, 'task-1');
+    expect(before.get('refund-1').ok).toBe(false);
+    before.put('refund-1', { refunded: true, orderId: 'ord-1' });
+    db.close();
+
+    // Reopen as a new process and rebuild the per-task store from the table.
+    db = openSqlite(file);
+    migrate(db);
+    const after = new SqliteActionStore(db, 'task-1');
+    const hit = after.get('refund-1');
+    expect(hit.ok).toBe(true);
+    if (hit.ok) expect(hit.value).toEqual({ refunded: true, orderId: 'ord-1' });
+    // Other tasks/keys are isolated.
+    expect(new SqliteActionStore(db, 'task-other').get('refund-1').ok).toBe(false);
     db.close();
   });
 
