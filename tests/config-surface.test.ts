@@ -44,6 +44,13 @@ const DYNAMIC_READS: Record<string, string> = {
   // src/vault/cli.ts:118 `env[envName]` - the name itself is operator-chosen via
   // --passphrase-env, defaulting to this one (src/vault/cli.ts:56).
   ZEUS_VAULT_PASSPHRASE: 'src/vault/cli.ts',
+  // src/core/org/execution/credentials.ts:232 `vars[fileEnv]` - the local
+  // secret backend reads the optional secret-file path under this literal name.
+  ZEUS_SECRET_FILE: 'src/core/org/execution/credentials.ts',
+  // src/core/org/execution/credentials.ts:103 resolves a credential ref to its
+  // computed env name: `agent-world:login` -> ZEUS_SECRET_AGENT_WORLD_LOGIN via
+  // defaultEnvName(). The name is data-derived, not a literal process.env read.
+  ZEUS_SECRET_AGENT_WORLD_LOGIN: 'src/core/org/execution/credentials.ts',
 };
 
 function documented(name: string): string[] {

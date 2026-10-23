@@ -916,6 +916,20 @@ describe('documentation consistency', () => {
         file: 'src/vault/cli.ts',
         evidence: /DEFAULT_PASSPHRASE_ENV = 'ZEUS_VAULT_PASSPHRASE'[\s\S]*env\[envName\]/,
       },
+      {
+        // createLocalSecretBackend reads the optional secret-file path via
+        // vars[fileEnv] where fileEnv defaults to this literal name.
+        name: 'ZEUS_SECRET_FILE',
+        file: 'src/core/org/execution/credentials.ts',
+        evidence: /fileEnv = opts\.secretFileEnv \?\? 'ZEUS_SECRET_FILE'[\s\S]*vars\[fileEnv\]/,
+      },
+      {
+        // EnvSecretBackend resolves a credential ref to a computed env name via
+        // defaultEnvName(): `agent-world:login` -> ZEUS_SECRET_AGENT_WORLD_LOGIN.
+        name: 'ZEUS_SECRET_AGENT_WORLD_LOGIN',
+        file: 'src/core/org/execution/credentials.ts',
+        evidence: /defaultEnvName\(ref[\s\S]*ZEUS_SECRET_/,
+      },
     ];
     const dynamicNames = new Set<string>();
     for (const claim of DYNAMIC_NAME_VARS) {
