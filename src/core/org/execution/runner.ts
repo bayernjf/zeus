@@ -134,8 +134,7 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
     attempts = attempt + 1;
     assertLive();
 
-    let ctx!: ExecutorContext;
-    ctx = {
+    const ctx: ExecutorContext = {
       task,
       position,
       agentId,

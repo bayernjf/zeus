@@ -214,7 +214,7 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     const executor: OrgTaskExecutor = {
       run: async ctx => {
         seen = ctx.credentialRefs;
-        return { outcome: 'complete', result: { grantedRefs: ctx.credentialRefs } };
+        return { outcome: 'complete', result: { grantedRefs: [...ctx.credentialRefs] } };
       },
     };
     const res = await service.dispatch(task.id, executor);
