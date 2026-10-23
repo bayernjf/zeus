@@ -309,6 +309,21 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     expect(res.task.failedKind).toBe('business');
     expect(res.task.attempts).toBe(1);
   });
+
+  it('createTask is idempotent on idempotencyKey within an organization', () => {
+    const a = service.createTask({
+      organizationId: orgId, title: '任务 A', payload: {}, requiredSkill: 'ops', idempotencyKey: 'key-1',
+    });
+    const b = service.createTask({
+      organizationId: orgId, title: '任务 A 重复', payload: {}, requiredSkill: 'ops', idempotencyKey: 'key-1',
+    });
+    expect(b.id).toBe(a.id);
+    expect(service.listTasks(orgId).filter(t => t.idempotencyKey === 'key-1')).toHaveLength(1);
+    // The same key in a different organization is a distinct task.
+    const other = service.createOrganization({ name: '另一组织', scaleTier: 'small' });
+    const c = service.createTask({ organizationId: other.id, title: '任务 C', payload: {}, idempotencyKey: 'key-1' });
+    expect(c.id).not.toBe(a.id);
+  });
 });
 
 describe('OrgService threshold configuration (T-M2-04)', () => {

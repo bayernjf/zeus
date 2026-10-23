@@ -287,6 +287,13 @@ export class OrgService {
       throw new OrgServiceError(EC.VALIDATION_FAILED, 'payload is required');
     }
     if (input.positionId !== undefined) this.getPosition(input.positionId);
+    // Idempotent create: a repeat request with the same key (within the same
+    // organization) returns the existing task instead of creating a duplicate.
+    const idempotencyKey = input.idempotencyKey?.trim() || undefined;
+    if (idempotencyKey) {
+      const existing = this.store.getTaskByIdempotencyKey(input.organizationId, idempotencyKey);
+      if (existing) return existing;
+    }
     const now = this.clock();
     const id = this.newId('task');
     const task: OrgTask = {
@@ -298,6 +305,7 @@ export class OrgService {
       payload: input.payload,
       ...(input.requiredSkill ? { requiredSkill: input.requiredSkill } : {}),
       ...(input.positionId ? { positionId: input.positionId } : {}),
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       status: 'pending',
       transitions: [{ status: 'pending', at: now }],
       createdAt: now,

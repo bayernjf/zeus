@@ -1,12 +1,18 @@
 /**
- * Durable schema for zeus (T-M6-01). Seven domain tables:
- * decision_policy, decision_records, decision_approvals, organizations,
- * departments, positions, org_tasks. Migration is idempotent
- * (CREATE TABLE IF NOT EXISTS + schema_migrations bookkeeping).
+ * Durable schema for zeus (T-M6-01; T-M7-01 execution columns).
+ * Domain tables: decision_policy, decision_records, decision_approvals,
+ * organizations, departments, positions, org_tasks.
+ *
+ * Migration model: SCHEMA_SQL is the current baseline (every statement is
+ * CREATE ... IF NOT EXISTS, so a fresh database is created fully up to date).
+ * INCREMENTAL_MIGRATIONS upgrade older databases: each migration is recorded
+ * in schema_migrations only after its `up` succeeds, so a failed migration is
+ * not marked applied (fail-closed) and re-runs on the next start.
  */
 import type { DatabaseSync } from 'node:sqlite';
 
 export const MIGRATION_ID = '0001_init_decision_org';
+export const MIGRATION_0002_ORG_TASK_EXECUTION = '0002_org_task_execution';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -107,6 +113,12 @@ CREATE TABLE IF NOT EXISTS org_tasks (
   decision_id TEXT,
   result_json TEXT,
   error TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  failed_kind TEXT,
+  progress_json TEXT,
+  next_attempt_at TEXT,
+  deadline_at TEXT,
+  idempotency_key TEXT,
   unmatched_reason TEXT,
   transitions_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
@@ -115,18 +127,73 @@ CREATE TABLE IF NOT EXISTS org_tasks (
 );
 `;
 
-/** Apply the schema once; re-running is a no-op (idempotent). */
+interface Migration {
+  id: string;
+  up: (db: DatabaseSync) => void;
+}
+
+function columnExists(db: DatabaseSync, table: string, column: string): boolean {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  return cols.some((c) => c.name === column);
+}
+
+function addColumnIfMissing(db: DatabaseSync, table: string, column: string, ddl: string): void {
+  if (!columnExists(db, table, column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
+}
+
+/**
+ * Incremental migrations applied after the baseline. Each runs at most once;
+ * every statement is idempotent so re-running on a partially upgraded database
+ * is safe.
+ */
+const INCREMENTAL_MIGRATIONS: Migration[] = [
+  {
+    id: MIGRATION_0002_ORG_TASK_EXECUTION,
+    up: (db) => {
+      addColumnIfMissing(db, 'org_tasks', 'attempts', 'INTEGER NOT NULL DEFAULT 0');
+      addColumnIfMissing(db, 'org_tasks', 'failed_kind', 'TEXT');
+      addColumnIfMissing(db, 'org_tasks', 'progress_json', 'TEXT');
+      addColumnIfMissing(db, 'org_tasks', 'next_attempt_at', 'TEXT');
+      addColumnIfMissing(db, 'org_tasks', 'deadline_at', 'TEXT');
+      addColumnIfMissing(db, 'org_tasks', 'idempotency_key', 'TEXT');
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_org_tasks_idempotency
+        ON org_tasks(organization_id, idempotency_key);`);
+    },
+  },
+];
+
+function isRecorded(db: DatabaseSync, id: string): boolean {
+  const row = db.prepare('SELECT id FROM schema_migrations WHERE id = ?').get(id) as
+    | { id?: string }
+    | undefined;
+  return row?.id !== undefined;
+}
+
+function record(db: DatabaseSync, id: string, now: () => string): void {
+  db.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(id, now());
+}
+
+/**
+ * Apply the schema and any pending incremental migrations. Returns true when
+ * at least one migration was newly applied on this run. A migration is recorded
+ * only after its `up` succeeds, so a failure leaves it unrecorded (fail-closed).
+ */
 export function migrate(db: DatabaseSync, now: () => string = () => new Date().toISOString()): boolean {
   db.exec(SCHEMA_SQL);
-  const row = db
-    .prepare('SELECT id FROM schema_migrations WHERE id = ?')
-    .get(MIGRATION_ID) as { id?: string } | undefined;
-  if (row?.id) return false;
-  db.prepare('INSERT INTO schema_migrations (id, applied_at) VALUES (?, ?)').run(
-    MIGRATION_ID,
-    now(),
-  );
-  return true;
+  let applied = false;
+  if (!isRecorded(db, MIGRATION_ID)) {
+    record(db, MIGRATION_ID, now);
+    applied = true;
+  }
+  for (const migration of INCREMENTAL_MIGRATIONS) {
+    if (isRecorded(db, migration.id)) continue;
+    migration.up(db);
+    record(db, migration.id, now);
+    applied = true;
+  }
+  return applied;
 }
 
 export function appliedMigrations(db: DatabaseSync): string[] {

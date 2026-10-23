@@ -118,6 +118,12 @@ export interface OrgTask {
   failedKind?: OrgTaskFailureKind;
   /** T-M7-01: progress/recovery points reported during execution. */
   progress?: OrgTaskProgress[];
+  /** T-M7-01: caller-supplied idempotency key; unique within an organization. */
+  idempotencyKey?: string;
+  /** T-M7-01: when a retryable task is next eligible to run (async worker). */
+  nextAttemptAt?: string;
+  /** T-M7-01: task-level wall-clock deadline (ISO). */
+  deadlineAt?: string;
   /** Set when no position matches; task remains pending for human handling. */
   unmatchedReason?: string;
   transitions: OrgTaskTransition[];
@@ -161,6 +167,9 @@ export interface CreateOrgTaskInput {
   payload: Json;
   requiredSkill?: string;
   positionId?: string;
+  /** T-M7-01: idempotency key; a repeat create with the same key returns the
+   *  existing task instead of creating a duplicate. */
+  idempotencyKey?: string;
 }
 
 export class OrgServiceError extends DecisionError {

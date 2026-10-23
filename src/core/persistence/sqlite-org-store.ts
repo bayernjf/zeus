@@ -8,6 +8,7 @@ import type {
   Department,
   Position,
   OrgTask,
+  OrgTaskProgress,
   OrgTaskTransition,
 } from '../org/types.js';
 import type { OrgStore, OrgSnapshot } from '../org/store.js';
@@ -172,17 +173,21 @@ export class SqliteOrgStore implements OrgStore {
         `INSERT INTO org_tasks (
           id, organization_id, title, payload_json, required_skill, position_id,
           assigned_agent_id, run_id, status, decision_id, result_json, error,
-          unmatched_reason, transitions_json, created_at, updated_at
+          attempts, failed_kind, progress_json, next_attempt_at, deadline_at,
+          idempotency_key, unmatched_reason, transitions_json, created_at, updated_at
         ) VALUES (
           @id, @organization_id, @title, @payload_json, @required_skill, @position_id,
           @assigned_agent_id, @run_id, @status, @decision_id, @result_json, @error,
-          @unmatched_reason, @transitions_json, @created_at, @updated_at
+          @attempts, @failed_kind, @progress_json, @next_attempt_at, @deadline_at,
+          @idempotency_key, @unmatched_reason, @transitions_json, @created_at, @updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
           assigned_agent_id=@assigned_agent_id, run_id=@run_id, status=@status,
           decision_id=@decision_id, result_json=@result_json, error=@error,
-          unmatched_reason=@unmatched_reason, transitions_json=@transitions_json,
-          updated_at=@updated_at`,
+          attempts=@attempts, failed_kind=@failed_kind, progress_json=@progress_json,
+          next_attempt_at=@next_attempt_at, deadline_at=@deadline_at,
+          idempotency_key=@idempotency_key, unmatched_reason=@unmatched_reason,
+          transitions_json=@transitions_json, updated_at=@updated_at`,
       )
       .run({
         id: task.id,
@@ -197,6 +202,12 @@ export class SqliteOrgStore implements OrgStore {
         decision_id: opt(task.decisionId),
         result_json: opt(task.result ? JSON.stringify(task.result) : undefined),
         error: opt(task.error),
+        attempts: task.attempts ?? 0,
+        failed_kind: opt(task.failedKind),
+        progress_json: opt(task.progress && task.progress.length ? JSON.stringify(task.progress) : undefined),
+        next_attempt_at: opt(task.nextAttemptAt),
+        deadline_at: opt(task.deadlineAt),
+        idempotency_key: opt(task.idempotencyKey),
         unmatched_reason: opt(task.unmatchedReason),
         transitions_json: JSON.stringify(task.transitions),
         created_at: task.createdAt,
@@ -224,6 +235,14 @@ export class SqliteOrgStore implements OrgStore {
           ...(row.decision_id ? { decisionId: String(row.decision_id) } : {}),
           ...(row.result_json ? { result: parse(row.result_json as string) } : {}),
           ...(row.error ? { error: String(row.error) } : {}),
+          ...(typeof row.attempts === 'number' && row.attempts > 0
+            ? { attempts: row.attempts as number }
+            : {}),
+          ...(row.failed_kind ? { failedKind: String(row.failed_kind) as OrgTask['failedKind'] } : {}),
+          ...(row.progress_json ? { progress: parse<OrgTaskProgress[]>(row.progress_json as string) } : {}),
+          ...(row.next_attempt_at ? { nextAttemptAt: String(row.next_attempt_at) } : {}),
+          ...(row.deadline_at ? { deadlineAt: String(row.deadline_at) } : {}),
+          ...(row.idempotency_key ? { idempotencyKey: String(row.idempotency_key) } : {}),
           ...(row.unmatched_reason
             ? { unmatchedReason: String(row.unmatched_reason) }
             : {}),
@@ -232,6 +251,13 @@ export class SqliteOrgStore implements OrgStore {
           updatedAt: String(row.updated_at),
         }
       : undefined;
+  }
+
+  getTaskByIdempotencyKey(organizationId: string, idempotencyKey: string): OrgTask | undefined {
+    const row = this.db
+      .prepare('SELECT id FROM org_tasks WHERE organization_id = ? AND idempotency_key = ?')
+      .get(organizationId, idempotencyKey) as { id: string } | undefined;
+    return row ? this.getTask(row.id) : undefined;
   }
 
   listTasks(organizationId?: string): OrgTask[] {
