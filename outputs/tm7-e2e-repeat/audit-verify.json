@@ -1,0 +1,12 @@
+{
+  "entries": 6,
+  "keyId": "tm7-e2e-rsk",
+  "positive": {
+    "ok": true,
+    "count": 6
+  },
+  "tamperControl": {
+    "ok": false,
+    "reason": "detected"
+  }
+}
