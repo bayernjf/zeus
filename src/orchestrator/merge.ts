@@ -1,22 +1,2 @@
-import type { BranchOutcome, SourcedEvent } from './types.js';
-
-/**
- * Merge branch event streams into one driver-facing view.
- *
- * Ordering: events keep their in-branch SSE order; branches are concatenated
- * in selection order. We deliberately do NOT sort by event timestamp — vassal
- * clocks are untrusted and timestamps are optional. A presentation layer with a
- * trusted clock may re-order later without losing the source tag.
- */
-export function mergeBranches(branches: BranchOutcome[]): SourcedEvent[] {
-  const merged: SourcedEvent[] = [];
-  for (const branch of branches) {
-    for (const event of branch.events) {
-      merged.push({
-        source: { vassal: branch.vassal, runId: branch.runId, ...(branch.taskId ? { taskId: branch.taskId } : {}) },
-        event,
-      });
-    }
-  }
-  return merged;
-}
+// T-M1-02 兼容层：逻辑已迁入 src/core/orchestrator（zeus-core），本文件仅重导出；待调用方切换完成后移除。
+export * from '../core/orchestrator/merge.js';

@@ -2,7 +2,7 @@
 
 - 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文复用 S4 终止守卫的纯函数账本形状，定义 token/时长维度的预算与闸门。
 - 演进：v0.1（2026-10-09）首版——现状盘点（决策后端 cost 可信、Agent 自报 cost 只可对账、S4 只有步数维度）+ 双层成本来源 + CostLedger 纯函数草案 + 闸门动作与分期。
-- 关联：tech map S9（任务/租户 token 预算、执行中预算闸门、异常熔断；cost 字段已有）；design-supervision.md §7.1（S4 步数预算/熔断，本设计同构）；design-hil.md（预算耗尽的 L1/L2 介入）；design-decision-backend.md（S14，降级到便宜模型的后端路由）；design-observability.md（S6，cost 挂 span）；design-context-engineering.md（S1 V3 上下文预算是**token 空间**预算，本设计是**计费/配额**预算，两者互补不重叠）；`src/decision/types.ts`（内核可信 cost）、`src/a2a/types.ts`（ZeusReport 自报 cost）、`src/orchestrator/termination.ts`（预算纯函数范式）。
+- 关联：tech map S9（任务/租户 token 预算、执行中预算闸门、异常熔断；cost 字段已有）；design-supervision.md §7.1（S4 步数预算/熔断，本设计同构）；design-hil.md（预算耗尽的 L1/L2 介入）；design-decision-backend.md（S14，降级到便宜模型的后端路由）；design-observability.md（S6，cost 挂 span）；design-context-engineering.md（S1 V3 上下文预算是**token 空间**预算，本设计是**计费/配额**预算，两者互补不重叠）；`src/decision/types.ts`（内核可信 cost）、`src/a2a/types.ts`（ZeusReport 自报 cost）、`src/core/orchestrator/termination.ts`（预算纯函数范式）。
 - 本文是成本治理的单一事实源；handoff 与 PRD 只索引。
 
 ## 1. 背景与现状
@@ -62,7 +62,7 @@
 ## 4. 落地接口草案（设计级，未落码）
 
 ```ts
-// src/orchestrator/cost-ledger.ts（纯函数，与 termination.ts 同形状，零 IO）
+// src/core/orchestrator/cost-ledger.ts（纯函数，与 termination.ts 同形状，零 IO）
 export type CostAmount = { tokens: number; cents: number; wallSeconds: number };
 export type CostBudget = {
   spent: CostAmount;                         // 已落定累计（只计可信来源）

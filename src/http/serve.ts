@@ -39,6 +39,18 @@ import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
 import { createLogger, redactText } from '../util/logger.js';
+import { DecisionAuditChain, DecisionService, MemoryDecisionStore, OrgService } from '../core/index.js';
+import { MemoryPolicyStore } from '../core/grading/policy-loader.js';
+import { DEFAULT_POLICY_V1 } from '../core/grading/default-policy.js';
+import {
+  openSqlite,
+  migrate,
+  SqlitePolicyStore,
+  SqliteDecisionStore,
+  SqliteOrgStore,
+} from '../core/persistence/index.js';
+import type { OrgStore } from '../core/org/store.js';
+import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -238,6 +250,59 @@ async function main(): Promise<void> {
       ? parseIntPositive('ZEUS_SSE_ATTACH_GRACE_MS', process.env.ZEUS_SSE_ATTACH_GRACE_MS)
       : undefined;
 
+  // Decision API v1 (T-M1-06): assemble the graded decision service. The
+  // sealing key is the same Ed25519 RSK key (key rotation stays a deployment
+  // concern). The JSONL trail is opt-in via ZEUS_DECISION_AUDIT_FILE; without
+  // it the chain is in-memory and the process restart loses the trail.
+  // Records are in-memory for M1 (SQLite/PG tables land with the deployment
+  // slice). A trail that fails verification refuses to open (fail-closed).
+  let decisionService: DecisionService | undefined;
+  let orgService: OrgService | undefined;
+  if (process.env.ZEUS_INTERNAL_TOKEN) {
+    // Durable mode (T-M6-01) when ZEUS_DB_FILE is set: open SQLite, migrate
+    // (idempotent), hydrate policy/records/org from disk. Without it, the
+    // in-memory stores remain the single-process demo/test mode.
+    const dbFile = process.env.ZEUS_DB_FILE;
+    let durability: 'in-memory' | 'sqlite' = 'in-memory';
+    let policyStore: import('../core/grading/policy-loader.js').PolicyStore;
+    let recordStore: import('../core/decision-service/store.js').DecisionRecordStore;
+    let orgStore: OrgStore | undefined;
+    if (dbFile) {
+      const db = openSqlite(dbFile);
+      const firstBoot = migrate(db);
+      policyStore = new SqlitePolicyStore(db);
+      if (firstBoot) policyStore.put(DEFAULT_POLICY_V1);
+      recordStore = new SqliteDecisionStore(db);
+      orgStore = new SqliteOrgStore(db);
+      durability = 'sqlite';
+    } else {
+      const memoryPolicy = new MemoryPolicyStore();
+      memoryPolicy.put(DEFAULT_POLICY_V1);
+      policyStore = memoryPolicy;
+      recordStore = new MemoryDecisionStore();
+    }
+
+    const audit = process.env.ZEUS_DECISION_AUDIT_FILE
+      ? await JsonlDecisionAuditStore.open(process.env.ZEUS_DECISION_AUDIT_FILE, signer, signer.verifier())
+      : new DecisionAuditChain(signer);
+    decisionService = new DecisionService({ policyStore, recordStore, audit });
+    log.info('decision-service', 'assembled', {
+      defaultPolicy: `v${DEFAULT_POLICY_V1.version}`,
+      auditTrail: process.env.ZEUS_DECISION_AUDIT_FILE ?? 'in-memory',
+      durability,
+    });
+
+    // Org API v1 (T-M2). Durable store is used when hydrated; otherwise the
+    // in-memory store is the demo mode. The kernel fan-out task executor is a
+    // later wiring slice; until assembled, dispatch returns 503
+    // ORG_EXECUTOR_UNCONFIGURED rather than pretending to execute.
+    orgService = new OrgService({
+      decisions: decisionService,
+      ...(orgStore ? { store: orgStore } : {}),
+    });
+    log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
+  }
+
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
   // §2.1); ZEUS_HOST / ZEUS_PORT only override them, so the process entry and the
   // published `zeus/http` API cannot drift into two different answers.
@@ -353,6 +418,10 @@ async function main(): Promise<void> {
     // operator intent recognition. Recognition is plan-only and the model is
     // only consulted when the caller explicitly opts in (useModel: true).
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
+    // Decision API v1 (T-M1-06): present only when the service assembled above.
+    ...(decisionService ? { decisionService } : {}),
+    // Org API v1 (T-M2): present only when assembled above.
+    ...(orgService ? { orgService } : {}),
   }, {
     ...(process.env.ZEUS_HOST ? { host: process.env.ZEUS_HOST } : {}),
     ...(process.env.ZEUS_PORT ? { port: Number(process.env.ZEUS_PORT) } : {}),

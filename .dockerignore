@@ -4,9 +4,17 @@ coverage
 .git
 .github
 data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+backups
+*.pem
 *.log
 .DS_Store
 .env
+.env.*
 handoff.md
 AGENTS.md
 CLAUDE.md

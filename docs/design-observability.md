@@ -2,7 +2,7 @@
 
 - 状态：**现行 v0.2（2026-10-10）**：V1（span 树纯函数）、V2（出站透传 + 只读端点）已落地，**V3（exporter + 指标史）已落码**（`TraceExporter` 窄端口 + `JsonlTraceExporter` 本地 JSONL 导出 + `MetricsHistory` 指标史 + boot 可选装配 + `GET /api/metrics/history`，Active work 190，基线 1631/148）。本文定义从既有事件/审计/runId 命名装配 trace span 树的纯函数切法，不新造事件流。
 - 演进：v0.2（2026-10-10）V3 落码轮——`src/observability/trace.ts` 补 `TraceExporter` 窄端口（export(tree)，默认不装配即 V1/V2 行为）+ `src/observability/exporter.ts` `JsonlTraceExporter`（JSONL 按 traceId 去重追加、0700 目录/0600 文件、重启 loadIndex 回读、readBack 旧→新）+ `src/observability/metrics-history.ts` `MetricsHistory`（JSONL 按 capturedAt 去重、capture/read、重启回读）；boot 可选装配（`traceExportFile`/`metricsHistoryFile` 默认 undefined：settle 即 fire-and-forget 导出 settled trace 树、每次保存链采一个指标快照），`GET /api/metrics/history` bearer 只读全量；§5 V3 行由「待实现」翻「已落地」。v0.1（2026-10-09）首版——现状盘点（审计脊 + 进程内 metrics + 决策 replay + progress SSE 已齐，缺统一 trace 树与跨 Agent 透传）+ span 模型 + `buildTraceTree` 草案 + 分期。
-- 关联：tech map S6（跨 Agent 调用链调试；审计已有，补分布式 trace）；design-supervision.md（fan-out/DAG/升级的时间线）；design-fan-out.md（runId/resumeNo 命名）；design-tool-discovery.md（tool-selected/换将链入 trace）；design-hil.md（介入级别作为 span 事件）；design-cost-governance.md（S9，span 上挂 cost）；`src/orchestrator/metrics.ts`（ConcurrencyMetrics 进程内滚动窗口）、`src/orchestrator/replay.ts`（replayDecision 人读时间线）、`src/orchestrator/progress.ts`（branch 生命周期事件）、`src/dispatch/dispatcher.ts`（审计 runId 贯穿）。
+- 关联：tech map S6（跨 Agent 调用链调试；审计已有，补分布式 trace）；design-supervision.md（fan-out/DAG/升级的时间线）；design-fan-out.md（runId/resumeNo 命名）；design-tool-discovery.md（tool-selected/换将链入 trace）；design-hil.md（介入级别作为 span 事件）；design-cost-governance.md（S9，span 上挂 cost）；`src/core/orchestrator/metrics.ts`（ConcurrencyMetrics 进程内滚动窗口）、`src/core/orchestrator/replay.ts`（replayDecision 人读时间线）、`src/core/orchestrator/progress.ts`（branch 生命周期事件）、`src/dispatch/dispatcher.ts`（审计 runId 贯穿）。
 - 本文是 trace/调用链可观测性的单一事实源；handoff 与 PRD 只索引。
 
 ## 1. 背景与现状
@@ -12,9 +12,9 @@
 | 能力 | 现状 | 形状 | 位置 |
 | --- | --- | --- | --- |
 | 审计脊 | 全决策 jsonl（33+ decision 值），轮转、0600、bearer API 读回 | 事件日志，runId 贯穿 | dispatcher、boot auditSink、`/api/audit` |
-| 实时指标 | 在途数、每 Agent 在途、失败率、p50 延迟、熔断计数 | 进程内滚动窗口（默认 1000 次分支历史），快照可导出 | `src/orchestrator/metrics.ts`、`/api/metrics` |
-| 决策回放 | 一次 fan-out 的步骤时间线、参与方、冲突/仲裁 | 人读结构化时间线 | `src/orchestrator/replay.ts`、`/api/intents/:id/replay` |
-| 实时进度 | branch-started / branch-ended / intent-finished | SSE 广播，分支为最细粒度（分支内事件不增量流式，见 progress.ts 注释） | `src/orchestrator/progress.ts` |
+| 实时指标 | 在途数、每 Agent 在途、失败率、p50 延迟、熔断计数 | 进程内滚动窗口（默认 1000 次分支历史），快照可导出 | `src/core/orchestrator/metrics.ts`、`/api/metrics` |
+| 决策回放 | 一次 fan-out 的步骤时间线、参与方、冲突/仲裁 | 人读结构化时间线 | `src/core/orchestrator/replay.ts`、`/api/intents/:id/replay` |
+| 实时进度 | branch-started / branch-ended / intent-finished | SSE 广播，分支为最细粒度（分支内事件不增量流式，见 progress.ts 注释） | `src/core/orchestrator/progress.ts` |
 | runId 谱系 | 分支 runId；resume 为 `parentRunId:vassal:resumeN` | 命名约定已含父子/重试信息 | orchestrator `branchRunId` |
 | 归档 | out-window intent 可经 archive 读回 | 持久化 | `src/state/archive.ts` |
 

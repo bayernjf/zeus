@@ -19,6 +19,8 @@
   "include": [
     "src",
     "tests",
+    "packages/zeus-client/src",
+    "packages/zeus-client/test",
     "vitest.config.ts",
     "vitest.clock-skew.config.ts",
     "scripts/gen-rsk-key.mjs",
