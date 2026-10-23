@@ -63,6 +63,23 @@ export {
   OrgServiceError,
 } from './types.js';
 
+// T-M7-03 SOP/skill catalog + grade-scope guard
+export {
+  SKILL_IDS,
+  SOP_CATALOG,
+  TOOL_DEFAULT_GRADE,
+  GRADE_RAISE_ARG,
+  gradeAtLeast,
+  maxGrade,
+  requiredGradeForTool,
+  sopBySkill,
+  sopByWorkflow,
+  catalogTools,
+  fitPositionToSop,
+} from './sop/index.js';
+export type { PositionSop, SopStep, PositionSopFit } from './sop/index.js';
+export { GradeDeniedError, coverageCeil } from './execution/index.js';
+
 // T-M7-02 agent-world adapter (the first real ToolInvoker/executor).
 export {
   AgentWorldClient,

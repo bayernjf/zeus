@@ -43,6 +43,11 @@ export {
   grantedSubset,
 } from './tool-guard.js';
 export {
+  GradeDeniedError,
+  assertGradeScope,
+  coverageCeil,
+} from './grade-guard.js';
+export {
   CredentialError,
   UnconfiguredSecretBackend,
   EnvSecretBackend,

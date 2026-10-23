@@ -43,6 +43,9 @@ import {
   validateRetryPolicy,
 } from './backoff.js';
 import { assertToolGranted } from './tool-guard.js';
+import { assertGradeScope } from './grade-guard.js';
+import { GRADE_RAISE_ARG, maxGrade, requiredGradeForTool } from '../sop/catalog.js';
+import type { Grade } from '../../types.js';
 import {
   InMemoryActionStore,
   type ActionResultStore,
@@ -123,6 +126,11 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
   if (params.lastDecision?.idempotencyKey) {
     resolvedDecisions.set(params.lastDecision.idempotencyKey, params.lastDecision);
   }
+  // Highest decision grade this run is covered by: the resolved (auto-decided
+  // or resumed-and-approved) decisions. A tool call whose required grade is
+  // reachable from max(position.decisionScope, approvedCeil) may proceed;
+  // otherwise the grade guard fails closed (T-M7-03).
+  let approvedCeil: Grade = params.lastDecision?.grade ?? 'D0';
   // Distinct (non-replayed) decision points traversed this run; framework-capped.
   let decisionHops = 0;
 
@@ -162,7 +170,10 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
           });
         }
         const cached = resolvedDecisions.get(key);
-        if (cached) return cached;
+        if (cached) {
+          approvedCeil = maxGrade(approvedCeil, cached.grade);
+          return cached;
+        }
         if (!params.decisions) {
           throw ExecutorError.business('decision checkpoint reached but no DecisionService is wired');
         }
@@ -175,6 +186,7 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
         assertLive();
         if (decision.status === 'decided') {
           resolvedDecisions.set(key, decision);
+          approvedCeil = maxGrade(approvedCeil, decision.grade);
           return decision;
         }
         // blocked / awaiting_approval → suspend; the runner persists the pause.
@@ -187,7 +199,16 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
         assertLive();
         assertToolGranted(name, grantedTools);
         if (!params.toolInvoker) throw new ToolDeniedError(name, grantedTools);
-        const value = await params.toolInvoker.invoke(name, args, ctx);
+        // Grade-scope authority (T-M7-03): resolve the required grade from the
+        // SOP catalog (static default + per-call contextual raise), then fail
+        // closed unless the position scope or this run's approved-decision
+        // coverage reaches it. The raise hint is a runner-internal arg and must
+        // never reach the channel.
+        const channelArgs = { ...args };
+        const required = requiredGradeForTool(name, channelArgs);
+        delete channelArgs[GRADE_RAISE_ARG];
+        assertGradeScope(name, required, position.decisionScope ?? 'D2', approvedCeil, grantedTools);
+        const value = await params.toolInvoker.invoke(name, channelArgs, ctx);
         assertLive();
         return value as T;
       },
