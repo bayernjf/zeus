@@ -8,6 +8,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import { DecisionService } from '../decision-service/service.js';
 import {
+  ExecutorError,
   OrgService,
   ORG_ERROR_CODES,
   type OrgTaskExecutor,
@@ -29,12 +30,16 @@ function makeDecisionService(): DecisionService {
   });
 }
 
+const FAST_RETRY = { maxAttempts: 3, baseBackoffMs: 1, maxBackoffMs: 1, factor: 1, jitter: 0 } as const;
+
 function makeService(decisions?: DecisionService) {
   let seq = 0;
   const service = new OrgService({
     ...(decisions ? { decisions } : {}),
     clock: () => '2026-10-22T00:00:00.000Z',
     newId: prefix => `${prefix}-${++seq}`,
+    retryPolicy: { ...FAST_RETRY },
+    taskDeadlineMs: 60_000,
   });
   return { service, org: service.createOrganization({ name: '自营电商', scaleTier: 'small' }) };
 }
@@ -213,10 +218,12 @@ describe('OrgService dispatcher (T-M2-03)', () => {
       reversibility: 'reversible',
       idempotencyKey: `refund-${task.id}`,
     };
-    // first run pauses; after approval the executor completes.
+    // callback-style: the first run suspends at the blocked D2 decision;
+    // resume replays the approved decision and completes.
     const executor: OrgTaskExecutor = {
       run: async ctx => {
-        if (!ctx.resumed) return { request: refundReq };
+        const d = await ctx.requestDecision(refundReq);
+        expect(d.grade).toBe('D2');
         return { outcome: 'complete', result: { refunded: true } };
       },
     };
@@ -258,18 +265,14 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     });
     const executor: OrgTaskExecutor = {
       run: async ctx => {
-        if (!ctx.lastDecision) {
-          return {
-            request: {
-              intent: 'edit-title',
-              impact: 'self',
-              reversibility: 'reversible',
-              idempotencyKey: `t-${task.id}`,
-            },
-          };
-        }
-        expect(ctx.lastDecision.status).toBe('decided');
-        expect(ctx.lastDecision.grade).toBe('D0');
+        const d = await ctx.requestDecision({
+          intent: 'edit-title',
+          impact: 'self',
+          reversibility: 'reversible',
+          idempotencyKey: `t-${task.id}`,
+        });
+        expect(d.status).toBe('decided');
+        expect(d.grade).toBe('D0');
         return { outcome: 'complete', result: { edited: true } };
       },
     };
@@ -277,7 +280,7 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     expect(res.task.status).toBe('done');
   });
 
-  it('marks the task failed when the executor throws', async () => {
+  it('retries an unknown error then records failedKind when attempts are exhausted', async () => {
     service.assignAgent(positionId, { agentId: 'agent-ops-1' });
     const task = service.createTask({ organizationId: orgId, title: '炸', payload: {}, requiredSkill: 'ops' });
     const executor: OrgTaskExecutor = {
@@ -288,6 +291,23 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     const res = await service.dispatch(task.id, executor);
     expect(res.task.status).toBe('failed');
     expect(res.task.error).toBe('boom');
+    // An unclassified error is treated as retryable and retried up to maxAttempts.
+    expect(res.task.failedKind).toBe('retryable_exhausted');
+    expect(res.task.attempts).toBe(3);
+  });
+
+  it('fails immediately on a business error without consuming retries', async () => {
+    service.assignAgent(positionId, { agentId: 'agent-ops-1' });
+    const task = service.createTask({ organizationId: orgId, title: '业务失败', payload: {}, requiredSkill: 'ops' });
+    const executor: OrgTaskExecutor = {
+      run: async () => {
+        throw ExecutorError.business('invalid order');
+      },
+    };
+    const res = await service.dispatch(task.id, executor);
+    expect(res.task.status).toBe('failed');
+    expect(res.task.failedKind).toBe('business');
+    expect(res.task.attempts).toBe(1);
   });
 });
 

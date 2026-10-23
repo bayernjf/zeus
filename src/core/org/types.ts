@@ -70,6 +70,25 @@ export type OrgTaskStatus =
   | 'done'
   | 'failed';
 
+/**
+ * Failure classification for a failed task (T-M7-01 hardened runner). Kept as a
+ * local string union so org/types stays self-contained; it mirrors
+ * execution/errors TaskFailureKind.
+ */
+export type OrgTaskFailureKind =
+  | 'business'
+  | 'retryable_exhausted'
+  | 'timeout'
+  | 'tool_denied';
+
+/** A non-pausing progress / recovery point reported during execution. */
+export interface OrgTaskProgress {
+  stage: string;
+  percent?: number;
+  data?: Json;
+  at: string;
+}
+
 export interface OrgTaskTransition {
   status: OrgTaskStatus;
   at: string;
@@ -93,6 +112,12 @@ export interface OrgTask {
   decisionId?: string;
   result?: Json;
   error?: string;
+  /** T-M7-01: attempts consumed by the hardened runner. */
+  attempts?: number;
+  /** T-M7-01: failure classification when status === 'failed'. */
+  failedKind?: OrgTaskFailureKind;
+  /** T-M7-01: progress/recovery points reported during execution. */
+  progress?: OrgTaskProgress[];
   /** Set when no position matches; task remains pending for human handling. */
   unmatchedReason?: string;
   transitions: OrgTaskTransition[];
