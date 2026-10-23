@@ -26,8 +26,8 @@ npm run e2e:m7
 
 Ports are picked dynamically (the well-known one-off ports are avoided). A throwaway
 Ed25519 RSK is generated per run into a gitignored scratch dir; the login credential
-travels only through `ZEUS_SECRET_AGENT_WORLD_LOGIN` / SecretBackend — **no secret is
-written into this bundle or git**. Every spawned process and port is freed on exit.
+travels only through `ZEUS_SECRET_AGENT_WORLD_LOGIN` / SecretBackend (**no secret is
+written into this bundle or git**). Every spawned process and port is freed on exit.
 
 ## What it asserts (see `manifest.json.assertions`)
 
