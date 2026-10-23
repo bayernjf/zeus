@@ -48,6 +48,8 @@ import {
   type Position,
   type ScaleTier,
 } from './types.js';
+import { fitPositionToSop, sopBySkill, sopByWorkflow } from './sop/index.js';
+import type { PositionSop } from './sop/index.js';
 
 const VALID_SCALES: ScaleTier[] = ['single', 'small', 'team', 'division', 'enterprise'];
 const VALID_GRADES: Grade[] = ['D0', 'D1', 'D2', 'D3'];
@@ -370,6 +372,63 @@ export class OrgService {
     return candidates[0]!;
   }
 
+  /** Persist an unmatched reason on a task without changing its status. */
+  private persistUnmatched(taskId: string, reason: string): void {
+    const task = this.store.getTask(taskId);
+    if (!task) return;
+    this.store.putTask({ ...task, unmatchedReason: reason, updatedAt: this.clock() });
+  }
+
+  /**
+   * T-M7-03 SOP dispatch gate. A task is SOP-bound when it declares a catalogued
+   * skill (`requiredSkill`) or a channel `payload.workflow`:
+   *   - a workflow claimed but not in the catalog → SOP_MISSING (never dispatched);
+   *   - the resolved SOP does not fit the matched position (missing tool grants
+   *     or scope below minimumScope) → SOP_INCOMPATIBLE, listing the gaps;
+   *   - legacy generic org tasks (no catalogued skill, no workflow) are not
+   *     channel-bound and skip this gate entirely.
+   * Every failure leaves the task pending with unmatchedReason recorded.
+   */
+  private assertSopFits(task: OrgTask, position: Position): void {
+    let sop: PositionSop | undefined = task.requiredSkill ? sopBySkill(task.requiredSkill) : undefined;
+    if (!sop) {
+      const workflow = typeof task.payload === 'object' && task.payload !== null
+        ? (task.payload as Record<string, unknown>).workflow
+        : undefined;
+      if (typeof workflow === 'string' && workflow.trim() !== '') {
+        sop = sopByWorkflow(workflow);
+        if (!sop) {
+          const reason = `no SOP catalogued for workflow "${workflow}" (skill ${task.requiredSkill ?? '(none)'})`;
+          this.persistUnmatched(task.id, reason);
+          throw new OrgServiceError(EC.SOP_MISSING, reason, {
+            retryable: false,
+            details: { workflow, ...(task.requiredSkill ? { skill: task.requiredSkill } : {}) },
+          });
+        }
+      }
+    }
+    if (!sop) return;
+
+    const fit = fitPositionToSop(position, sop);
+    if (!fit.ok) {
+      const gaps = [
+        ...(fit.missingTools.length ? [`missing tools [${fit.missingTools.join(', ')}]`] : []),
+        ...(fit.scopeGap ? [`decisionScope ${position.decisionScope} below SOP minimum ${fit.scopeGap}`] : []),
+      ];
+      const reason = `position ${position.id} cannot execute SOP ${sop.skillId} (${sop.workflow}): ${gaps.join('; ')}`;
+      this.persistUnmatched(task.id, reason);
+      throw new OrgServiceError(EC.SOP_INCOMPATIBLE, reason, {
+        retryable: false,
+        details: {
+          skillId: sop.skillId,
+          workflow: sop.workflow,
+          ...(fit.missingTools.length ? { missingTools: fit.missingTools } : {}),
+          ...(fit.scopeGap ? { requiredScope: fit.scopeGap } : {}),
+        },
+      });
+    }
+  }
+
   /**
    * Claim a pending task for execution: match → bind → dispatched → running,
    * without running the executor. Persists the handoff so an async worker (or
@@ -383,6 +442,10 @@ export class OrgService {
     if (!position.agentId) {
       throw new OrgServiceError(EC.POSITION_UNBOUND, `position ${position.id} has no agent bound`);
     }
+    // T-M7-03: before the task leaves pending, resolve its SOP and verify the
+    // matched position can run it. Failures persist unmatchedReason and leave
+    // the task pending (never silently dispatched).
+    this.assertSopFits(existing, position);
     const now = this.clock();
     const dispatched: OrgTask = {
       ...existing,

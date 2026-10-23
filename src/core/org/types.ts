@@ -204,4 +204,8 @@ export const ORG_ERROR_CODES = {
   NO_MATCHING_POSITION: 'NO_MATCHING_POSITION',
   POSITION_UNBOUND: 'POSITION_UNBOUND',
   DECISION_REQUIRED: 'DECISION_REQUIRED',
+  /** T-M7-03: the task claims a channel skill/workflow the SOP catalog has no SOP for. */
+  SOP_MISSING: 'SOP_MISSING',
+  /** T-M7-03: the matched position cannot cover the resolved SOP (missing grants / low scope). */
+  SOP_INCOMPATIBLE: 'SOP_INCOMPATIBLE',
 } as const;

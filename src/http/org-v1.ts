@@ -30,6 +30,7 @@ function statusForOrgError(code: string): number {
   if (code.endsWith('_NOT_FOUND')) return 404;
   if (code === 'VALIDATION_FAILED') return 400;
   if (code === 'NO_MATCHING_POSITION' || code === 'POSITION_UNBOUND') return 409;
+  if (code === 'SOP_MISSING' || code === 'SOP_INCOMPATIBLE') return 409;
   if (code === 'HIERARCHY_CYCLE') return 409;
   if (code.endsWith('_CONFLICT') || code === 'TASK_CONFLICT') return 409;
   return 400;
