@@ -34,6 +34,14 @@ export const DEFAULT_RETRY_POLICY: RetryPolicy = {
 export const DEFAULT_TASK_DEADLINE_MS = 10 * 60_000;
 
 /**
+ * Default cap on distinct decision points a single task may traverse. A task
+ * that chains more than this many (auto-decided or blocked) decisions is
+ * failed by the framework rather than looping indefinitely. Replaying an
+ * already-resolved decision on resume does not consume a hop.
+ */
+export const DEFAULT_MAX_DECISION_HOPS = 10;
+
+/**
  * Delay before retrying after the given zero-based failed attempt
  * (attempt 0 failed → delay before attempt 1). Deterministic once `rng` is
  * supplied; equal jitter when rng is omitted (uses 0).

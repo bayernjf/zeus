@@ -29,6 +29,7 @@ export {
 export {
   DEFAULT_RETRY_POLICY,
   DEFAULT_TASK_DEADLINE_MS,
+  DEFAULT_MAX_DECISION_HOPS,
   backoffDelayMs,
   canRetry,
   deadlineExceeded,

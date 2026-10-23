@@ -33,6 +33,7 @@ import {
   type TaskFailureKind,
 } from './errors.js';
 import {
+  DEFAULT_MAX_DECISION_HOPS,
   DEFAULT_RETRY_POLICY,
   DEFAULT_TASK_DEADLINE_MS,
   backoffDelayMs,
@@ -79,12 +80,13 @@ function defaultWait(ms: number): WaitHandle {
 }
 
 export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
-  const { task, position, agentId, executor, decisions } = params;
+  const { task, position, agentId, executor } = params;
   const retryPolicy = params.retryPolicy ?? DEFAULT_RETRY_POLICY;
   const policyProblem = validateRetryPolicy(retryPolicy);
   if (policyProblem) throw new Error(`invalid retry policy: ${policyProblem}`);
 
   const deadlineMs = params.deadlineMs ?? DEFAULT_TASK_DEADLINE_MS;
+  const maxDecisionHops = params.maxDecisionHops ?? DEFAULT_MAX_DECISION_HOPS;
   const nowMs = params.nowMs ?? (() => Date.now());
   const iso = params.iso ?? (() => new Date().toISOString());
   const wait = params.wait ?? defaultWait;
@@ -120,6 +122,8 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
   if (params.lastDecision?.idempotencyKey) {
     resolvedDecisions.set(params.lastDecision.idempotencyKey, params.lastDecision);
   }
+  // Distinct (non-replayed) decision points traversed this run; framework-capped.
+  let decisionHops = 0;
 
   // Progress accumulates across attempts (a recovery point survives a retry).
   const allProgress: StoredProgress[] = [];
@@ -159,8 +163,15 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
         }
         const cached = resolvedDecisions.get(key);
         if (cached) return cached;
+        if (!params.decisions) {
+          throw ExecutorError.business('decision checkpoint reached but no DecisionService is wired');
+        }
+        if (decisionHops >= maxDecisionHops) {
+          throw ExecutorError.business(`task exceeded ${maxDecisionHops} decision checkpoints`);
+        }
+        decisionHops += 1;
         const domain = req.domain ?? `org:${task.organizationId}`;
-        const decision = await decisions.createDecision({ ...req, domain });
+        const decision = await params.decisions.createDecision({ ...req, domain });
         assertLive();
         if (decision.status === 'decided') {
           resolvedDecisions.set(key, decision);

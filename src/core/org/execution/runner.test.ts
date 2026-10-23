@@ -382,4 +382,26 @@ describe('T-M7-01 execution contract — five settlements', () => {
     }));
     expect(seen).toEqual(['agent-world:service-token']);
   });
+
+  it('框架强制决策点上限：超过 maxDecisionHops 的 auto-decided 决策链 → failed/business', async () => {
+    const decisions = makeDecisions();
+    const r = await runTask(baseParams(decisions, {
+      run: async ctx => {
+        let n = 0;
+        for (;;) {
+          await ctx.requestDecision({
+            intent: `edit-${n}`,
+            impact: 'self',
+            reversibility: 'reversible',
+            idempotencyKey: `hop-${n++}`,
+          });
+        }
+      },
+    }, { maxDecisionHops: 3 }));
+    expect(r.outcome).toBe('failed');
+    if (r.outcome === 'failed') {
+      expect(r.failureKind).toBe('business');
+      expect(r.error).toMatch(/exceeded 3 decision checkpoints/);
+    }
+  });
 });

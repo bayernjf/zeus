@@ -175,13 +175,19 @@ export interface RunTaskParams extends Timing {
   /** The decision that unblocked this resume, if any. */
   lastDecision?: DecisionRecord;
   executor: OrgTaskExecutorV2;
-  decisions: DecisionPort;
+  /**
+   * Decision port (DecisionService). Optional: when absent, reaching a
+   * decision checkpoint fails as a business error (no decisions can be made).
+   */
+  decisions?: DecisionPort;
   /** Supplies the actual tool effect; absent → any tool call is denied. */
   toolInvoker?: ToolInvoker;
   credentialRefs?: CredentialRef[];
   retryPolicy?: RetryPolicy;
   /** Task-level wall-clock deadline across all attempts; default 10 min. */
   deadlineMs?: number;
+  /** Cap on distinct decision points per task; default 10. */
+  maxDecisionHops?: number;
   /** Pre-populated action results (resume / restart) and/or shared store. */
   actionStore?: ActionResultStore;
   onProgress?: (progress: StoredProgress) => void;
