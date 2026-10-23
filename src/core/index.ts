@@ -183,6 +183,15 @@ export type {
 
 // ── Org (Tier0 M2; M7 hardened executor) ─────────────────────────────────
 export { OrgService, MemoryOrgStore, ORG_ERROR_CODES, OrgServiceError, TaskWorker } from './org/index.js';
+// T-M7-02 agent-world adapter (first real ToolInvoker/executor).
+export {
+  AgentWorldClient,
+  AgentWorldToolInvoker,
+  AgentWorldOrgTaskExecutor,
+  AGENT_WORLD_TOOLS,
+  AGENT_WORLD_LOGIN_REF,
+  createLocalSecretBackend,
+} from './org/index.js';
 export type {
   OrgServiceDeps,
   OrgTaskExecutor,

@@ -31,6 +31,7 @@ import {
   type ActionResultStore,
   type OrgTaskExecutorV2,
   type RetryPolicy,
+  type ToolInvoker,
 } from './execution/index.js';
 import {
   ORG_ERROR_CODES as EC,
@@ -66,6 +67,11 @@ export interface OrgServiceDeps {
   taskDeadlineMs?: number;
   /** T-M7-01 cap on distinct decision points per task. */
   maxDecisionHops?: number;
+  /**
+   * T-M7-02 supplies the framework-invoked tool seam. When absent, any
+   * `ctx.tool` call is denied by the runner (the pre-adapter fail-closed shape).
+   */
+  toolInvoker?: ToolInvoker;
   /**
    * T-M7-01 supplies the per-task idempotent action store. When omitted an
    * in-memory store is used; durable wiring (SQLite) passes a factory so action
@@ -116,6 +122,7 @@ export class OrgService {
   private readonly taskDeadlineMs: number;
   private readonly maxDecisionHops: number;
   private readonly actionStoreFactory: ((taskId: string) => ActionResultStore) | undefined;
+  private readonly toolInvoker: ToolInvoker | undefined;
   /** Per-task idempotent action results for the default in-memory wiring. */
   private readonly actionStores = new Map<string, ActionResultStore>();
   private counter = 0;
@@ -129,6 +136,7 @@ export class OrgService {
     this.taskDeadlineMs = deps.taskDeadlineMs ?? DEFAULT_TASK_DEADLINE_MS;
     this.maxDecisionHops = deps.maxDecisionHops ?? DEFAULT_MAX_DECISION_HOPS;
     this.actionStoreFactory = deps.actionStoreFactory;
+    this.toolInvoker = deps.toolInvoker;
   }
 
   // ── Organizations ──────────────────────────────────────────────────────
@@ -466,6 +474,7 @@ export class OrgService {
       ...(position.credentialRefs && position.credentialRefs.length
         ? { credentialRefs: position.credentialRefs }
         : {}),
+      ...(this.toolInvoker ? { toolInvoker: this.toolInvoker } : {}),
       iso: this.clock,
       onProgress: p => progress.push(p),
     });
