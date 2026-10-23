@@ -45,7 +45,17 @@ export {
 export {
   CredentialError,
   UnconfiguredSecretBackend,
+  EnvSecretBackend,
+  FileSecretBackend,
+  ChainedSecretBackend,
+  createLocalSecretBackend,
+  defaultEnvName,
+  resolveGrantedCredential,
   type CredentialRef,
   type ResolvedCredential,
   type SecretBackend,
+  type EnvSecretBackendOptions,
+  type FileSecretBackendOptions,
+  type LocalSecretBackendOptions,
+  type SecretFile,
 } from './credentials.js';

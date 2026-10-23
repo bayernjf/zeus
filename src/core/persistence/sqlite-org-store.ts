@@ -16,6 +16,18 @@ import type { OrgStore, OrgSnapshot } from '../org/store.js';
 
 const parse = <T>(json: string): T => JSON.parse(json) as T;
 const opt = <T>(value: T | undefined): T | null => value ?? null;
+/** Read credential refs; null/empty/malformed maps to undefined (no grants). */
+function parseCredentialRefs(value: unknown): string[] | undefined {
+  if (typeof value !== 'string' || value.length === 0) return undefined;
+  try {
+    const refs = parse<unknown>(value);
+    if (!Array.isArray(refs)) return undefined;
+    const cleaned = refs.filter((r): r is string => typeof r === 'string' && r.trim() !== '');
+    return cleaned.length ? cleaned : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export class SqliteOrgStore implements OrgStore {
   constructor(private readonly db: DatabaseSync) {}
@@ -112,14 +124,17 @@ export class SqliteOrgStore implements OrgStore {
       .prepare(
         `INSERT INTO positions (
           id, organization_id, department_id, name, responsibilities_json,
-          required_skills_json, allowed_tools_json, decision_scope, agent_id, created_at
+          required_skills_json, allowed_tools_json, credential_refs_json,
+          decision_scope, agent_id, created_at
         ) VALUES (
           @id, @organization_id, @department_id, @name, @responsibilities_json,
-          @required_skills_json, @allowed_tools_json, @decision_scope, @agent_id, @created_at
+          @required_skills_json, @allowed_tools_json, @credential_refs_json,
+          @decision_scope, @agent_id, @created_at
         )
         ON CONFLICT(id) DO UPDATE SET
           name=@name, responsibilities_json=@responsibilities_json,
           required_skills_json=@required_skills_json, allowed_tools_json=@allowed_tools_json,
+          credential_refs_json=@credential_refs_json,
           decision_scope=@decision_scope, agent_id=@agent_id`,
       )
       .run({
@@ -130,6 +145,7 @@ export class SqliteOrgStore implements OrgStore {
         responsibilities_json: JSON.stringify(pos.responsibilities),
         required_skills_json: JSON.stringify(pos.requiredSkills),
         allowed_tools_json: JSON.stringify(pos.allowedTools),
+        credential_refs_json: JSON.stringify(pos.credentialRefs ?? []),
         decision_scope: pos.decisionScope,
         agent_id: opt(pos.agentId),
         created_at: pos.createdAt,
@@ -140,6 +156,7 @@ export class SqliteOrgStore implements OrgStore {
     const row = this.db.prepare('SELECT * FROM positions WHERE id = ?').get(id) as
       | Record<string, unknown>
       | undefined;
+    const credentialRefs = row ? parseCredentialRefs(row.credential_refs_json) : undefined;
     return row
       ? {
           format: 'zeus-position',
@@ -151,6 +168,7 @@ export class SqliteOrgStore implements OrgStore {
           responsibilities: parse<string[]>(row.responsibilities_json as string),
           requiredSkills: parse<string[]>(row.required_skills_json as string),
           allowedTools: parse<string[]>(row.allowed_tools_json as string),
+          ...(credentialRefs ? { credentialRefs } : {}),
           decisionScope: row.decision_scope as Position['decisionScope'],
           ...(row.agent_id ? { agentId: String(row.agent_id) } : {}),
           createdAt: String(row.created_at),

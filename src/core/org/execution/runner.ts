@@ -32,6 +32,7 @@ import {
   ToolDeniedError,
   type TaskFailureKind,
 } from './errors.js';
+import { CredentialError } from './credentials.js';
 import {
   DEFAULT_MAX_DECISION_HOPS,
   DEFAULT_RETRY_POLICY,
@@ -237,6 +238,11 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
       }
       if (thrown instanceof ToolDeniedError) {
         return failed('tool_denied', thrown.message, attempts);
+      }
+      if (thrown instanceof CredentialError) {
+        // Configuration gap, not a transient fault: never retry (a retry would
+        // still lack the secret) and never call the channel anonymously.
+        return failed('business', thrown.message, attempts);
       }
       if (thrown instanceof ExecutorTimeoutError) {
         return failed('timeout', thrown.message, attempts);

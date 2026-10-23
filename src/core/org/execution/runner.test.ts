@@ -17,6 +17,7 @@ import { Ed25519MemorySigner } from '../../../registry/signing.js';
 import { MemoryPolicyStore } from '../../grading/policy-loader.js';
 import { DEFAULT_POLICY_V1 } from '../../grading/default-policy.js';
 import {
+  CredentialError,
   ExecutorError,
   InMemoryActionStore,
   runTask,
@@ -381,6 +382,30 @@ describe('T-M7-01 execution contract — five settlements', () => {
       credentialRefs: ['agent-world:service-token'],
     }));
     expect(seen).toEqual(['agent-world:service-token']);
+  });
+
+  it('credential gap: a CredentialError from the invoker fails closed as business and never retries', async () => {
+    const decisions = makeDecisions();
+    let runs = 0;
+    const invoker: ToolInvoker = {
+      invoke: async () => {
+        throw new CredentialError('agent-world:service-token', 'no backend (fail-closed)');
+      },
+    };
+    const executor: OrgTaskExecutorV2 = {
+      run: async (ctx: ExecutorContext) => {
+        runs++;
+        await ctx.tool('runs.create', {});
+        return { outcome: 'complete' };
+      },
+    };
+    const r = await runTask(baseParams(decisions, executor, {
+      toolInvoker: invoker,
+      position: makePosition(['runs.create']),
+      retryPolicy: { maxAttempts: 3, baseBackoffMs: 1, maxBackoffMs: 1, factor: 1, jitter: 0 },
+    }));
+    expect(r).toMatchObject({ outcome: 'failed', failureKind: 'business' });
+    expect(runs).toBe(1);
   });
 
   it('框架强制决策点上限：超过 maxDecisionHops 的 auto-decided 决策链 → failed/business', async () => {

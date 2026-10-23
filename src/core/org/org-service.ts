@@ -260,6 +260,9 @@ export class OrgService {
       responsibilities: [...(input.responsibilities ?? [])],
       requiredSkills: [...(input.requiredSkills ?? [])],
       allowedTools: [...(input.allowedTools ?? [])],
+      ...(input.credentialRefs && input.credentialRefs.length
+        ? { credentialRefs: [...new Set(input.credentialRefs.filter((r) => typeof r === 'string' && r.trim() !== ''))] }
+        : {}),
       decisionScope,
       createdAt: now,
     };
@@ -460,6 +463,9 @@ export class OrgService {
       retryPolicy: this.retryPolicy,
       deadlineMs: this.taskDeadlineMs,
       maxDecisionHops: this.maxDecisionHops,
+      ...(position.credentialRefs && position.credentialRefs.length
+        ? { credentialRefs: position.credentialRefs }
+        : {}),
       iso: this.clock,
       onProgress: p => progress.push(p),
     });

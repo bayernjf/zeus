@@ -14,6 +14,7 @@ import type { DatabaseSync } from 'node:sqlite';
 export const MIGRATION_ID = '0001_init_decision_org';
 export const MIGRATION_0002_ORG_TASK_EXECUTION = '0002_org_task_execution';
 export const MIGRATION_0003_ORG_TASK_ACTIONS = '0003_org_task_actions';
+export const MIGRATION_0004_POSITION_CREDENTIALS = '0004_position_credentials';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -94,6 +95,7 @@ CREATE TABLE IF NOT EXISTS positions (
   responsibilities_json TEXT NOT NULL,
   required_skills_json TEXT NOT NULL,
   allowed_tools_json TEXT NOT NULL,
+  credential_refs_json TEXT NOT NULL DEFAULT '[]',
   decision_scope TEXT NOT NULL,
   agent_id TEXT,
   created_at TEXT NOT NULL,
@@ -183,6 +185,17 @@ const INCREMENTAL_MIGRATIONS: Migration[] = [
         PRIMARY KEY (task_id, action_key),
         FOREIGN KEY (task_id) REFERENCES org_tasks(id)
       );`);
+    },
+  },
+  {
+    id: MIGRATION_0004_POSITION_CREDENTIALS,
+    up: (db) => {
+      addColumnIfMissing(
+        db,
+        'positions',
+        'credential_refs_json',
+        `TEXT NOT NULL DEFAULT '[]'`,
+      );
     },
   },
 ];

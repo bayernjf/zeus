@@ -191,6 +191,39 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     expect(res.task.transitions.map(t => t.status)).toEqual(['pending', 'dispatched', 'running', 'done']);
   });
 
+  it('flows the position credential references into the run context (never secret values)', async () => {
+    const dept = service.createDepartment({ organizationId: orgId, name: '渠道', mission: 'm' });
+    const refPosition = service.createPosition({
+      organizationId: orgId,
+      departmentId: dept.id,
+      name: '渠道执行',
+      requiredSkills: ['channel'],
+      allowedTools: ['runs.create'],
+      credentialRefs: ['agent-world:service-token', 'commerce:oauth'],
+      decisionScope: 'D0',
+    });
+    expect(refPosition.credentialRefs).toEqual(['agent-world:service-token', 'commerce:oauth']);
+    service.assignAgent(refPosition.id, { agentId: 'agent-ref-1' });
+    const task = service.createTask({
+      organizationId: orgId,
+      title: '起 graph',
+      payload: {},
+      requiredSkill: 'channel',
+    });
+    let seen: readonly string[] | undefined;
+    const executor: OrgTaskExecutor = {
+      run: async ctx => {
+        seen = ctx.credentialRefs;
+        return { outcome: 'complete', result: { grantedRefs: ctx.credentialRefs } };
+      },
+    };
+    const res = await service.dispatch(task.id, executor);
+    expect(seen).toEqual(['agent-world:service-token', 'commerce:oauth']);
+    expect(res.task.result).toEqual({
+      grantedRefs: ['agent-world:service-token', 'commerce:oauth'],
+    });
+  });
+
   it('pauses at a D2 checkpoint and resumes to done after approval', async () => {
     const decisions = makeDecisionService();
     const built = makeService(decisions);

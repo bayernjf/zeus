@@ -11,6 +11,7 @@ import {
   MIGRATION_ID,
   MIGRATION_0002_ORG_TASK_EXECUTION,
   MIGRATION_0003_ORG_TASK_ACTIONS,
+  MIGRATION_0004_POSITION_CREDENTIALS,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
@@ -75,7 +76,8 @@ function samplePosition(): Position {
   return {
     format: 'zeus-position', version: 1, id: 'pos-1', organizationId: 'org-1',
     departmentId: 'dept-1', name: '运营岗', responsibilities: ['上架'],
-    requiredSkills: ['listing'], allowedTools: ['loom'], decisionScope: 'D1', createdAt: TS,
+    requiredSkills: ['listing'], allowedTools: ['loom'],
+    credentialRefs: ['agent-world:service-token'], decisionScope: 'D1', createdAt: TS,
   };
 }
 function sampleTask(): OrgTask {
@@ -96,12 +98,14 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_ID,
       MIGRATION_0002_ORG_TASK_EXECUTION,
       MIGRATION_0003_ORG_TASK_ACTIONS,
+      MIGRATION_0004_POSITION_CREDENTIALS,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
       MIGRATION_ID,
       MIGRATION_0002_ORG_TASK_EXECUTION,
       MIGRATION_0003_ORG_TASK_ACTIONS,
+      MIGRATION_0004_POSITION_CREDENTIALS,
     ]);
     db.close();
   });
@@ -242,6 +246,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     expect(org2.getOrganization('org-1')?.name).toBe('自营');
     expect(org2.getDepartment('dept-1')?.mission).toBe('电商经营');
     expect(org2.getPosition('pos-1')?.decisionScope).toBe('D1');
+    expect(org2.getPosition('pos-1')?.credentialRefs).toEqual(['agent-world:service-token']);
     const task = org2.getTask('task-1');
     expect(task?.status).toBe('pending');
     expect(task?.transitions).toHaveLength(1);

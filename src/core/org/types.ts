@@ -55,6 +55,12 @@ export interface Position {
   responsibilities: string[];
   requiredSkills: string[];
   allowedTools: string[];
+  /**
+   * Opaque credential references the bound position may resolve at call time
+   * (e.g. 'agent-world:service-token'). Never secret values; secrets stay behind
+   * the SecretBackend. Absent/empty means no credentials are granted.
+   */
+  credentialRefs?: string[];
   /** Highest grade the bound agent may decide autonomously. */
   decisionScope: Grade;
   /** Agent bound to this position; unbound positions are never dispatched. */
@@ -154,6 +160,7 @@ export interface CreatePositionInput {
   responsibilities?: string[];
   requiredSkills?: string[];
   allowedTools?: string[];
+  credentialRefs?: string[];
   decisionScope?: Grade;
 }
 
