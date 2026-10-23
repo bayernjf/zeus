@@ -39,7 +39,18 @@ import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
 import { startServer } from './server.js';
 import { createLogger, redactText } from '../util/logger.js';
-import { DecisionAuditChain, DecisionService, MemoryDecisionStore, OrgService } from '../core/index.js';
+import {
+  DecisionAuditChain,
+  DecisionService,
+  MemoryDecisionStore,
+  OrgService,
+  TaskWorker,
+  AgentWorldClient,
+  AgentWorldToolInvoker,
+  AgentWorldOrgTaskExecutor,
+  createLocalSecretBackend,
+  type OrgTaskExecutor,
+} from '../core/index.js';
 import { MemoryPolicyStore } from '../core/grading/policy-loader.js';
 import { DEFAULT_POLICY_V1 } from '../core/grading/default-policy.js';
 import {
@@ -48,6 +59,7 @@ import {
   SqlitePolicyStore,
   SqliteDecisionStore,
   SqliteOrgStore,
+  SqliteActionStore,
 } from '../core/persistence/index.js';
 import type { OrgStore } from '../core/org/store.js';
 import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
@@ -258,6 +270,10 @@ async function main(): Promise<void> {
   // slice). A trail that fails verification refuses to open (fail-closed).
   let decisionService: DecisionService | undefined;
   let orgService: OrgService | undefined;
+  // T-M7-02: the assembled agent-world executor + async worker (undefined until
+  // ZEUS_AGENT_WORLD_BASE_URL is configured; dispatch then stays 503-fail-closed).
+  let orgExecutor: OrgTaskExecutor | undefined;
+  let orgTaskWorker: TaskWorker | undefined;
   if (process.env.ZEUS_INTERNAL_TOKEN) {
     // Durable mode (T-M6-01) when ZEUS_DB_FILE is set: open SQLite, migrate
     // (idempotent), hydrate policy/records/org from disk. Without it, the
@@ -267,8 +283,9 @@ async function main(): Promise<void> {
     let policyStore: import('../core/grading/policy-loader.js').PolicyStore;
     let recordStore: import('../core/decision-service/store.js').DecisionRecordStore;
     let orgStore: OrgStore | undefined;
+    let db: import('node:sqlite').DatabaseSync | undefined;
     if (dbFile) {
-      const db = openSqlite(dbFile);
+      db = openSqlite(dbFile);
       const firstBoot = migrate(db);
       policyStore = new SqlitePolicyStore(db);
       if (firstBoot) policyStore.put(DEFAULT_POLICY_V1);
@@ -293,14 +310,41 @@ async function main(): Promise<void> {
     });
 
     // Org API v1 (T-M2). Durable store is used when hydrated; otherwise the
-    // in-memory store is the demo mode. The kernel fan-out task executor is a
-    // later wiring slice; until assembled, dispatch returns 503
-    // ORG_EXECUTOR_UNCONFIGURED rather than pretending to execute.
-    orgService = new OrgService({
+    // in-memory store is the demo mode. Without an assembled adapter below,
+    // dispatch returns 503 ORG_EXECUTOR_UNCONFIGURED rather than pretending to
+    // execute.
+    const orgDeps: ConstructorParameters<typeof OrgService>[0] = {
       decisions: decisionService,
       ...(orgStore ? { store: orgStore } : {}),
-    });
-    log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
+      // Durable per-task action results (0003) when on SQLite: a worker restart
+      // replays already-committed channel effects instead of re-running them.
+      ...(db
+        ? { actionStoreFactory: (taskId: string) => new SqliteActionStore(db!, taskId) }
+        : {}),
+    };
+
+    // T-M7-02: the first real channel adapter. Opt-in via ZEUS_AGENT_WORLD_BASE_URL;
+    // unconfigured keeps the honest 503 (no fake execution, no anonymous calls).
+    const agentWorldBaseUrl = process.env.ZEUS_AGENT_WORLD_BASE_URL?.trim();
+    if (agentWorldBaseUrl) {
+      const secrets = createLocalSecretBackend();
+      const client = new AgentWorldClient({ baseUrl: agentWorldBaseUrl });
+      const toolInvoker = new AgentWorldToolInvoker({ client, secrets });
+      orgExecutor = new AgentWorldOrgTaskExecutor();
+      orgDeps.toolInvoker = toolInvoker;
+      orgService = new OrgService(orgDeps);
+      orgTaskWorker = new TaskWorker({ org: orgService, executor: orgExecutor });
+      orgTaskWorker.start();
+      log.info('org-service', 'assembled', {
+        durability,
+        taskExecutor: 'agent-world',
+        baseUrl: agentWorldBaseUrl,
+        actionStore: db ? 'sqlite' : 'memory',
+      });
+    } else {
+      orgService = new OrgService(orgDeps);
+      log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
+    }
   }
 
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
@@ -420,8 +464,11 @@ async function main(): Promise<void> {
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
     // Decision API v1 (T-M1-06): present only when the service assembled above.
     ...(decisionService ? { decisionService } : {}),
-    // Org API v1 (T-M2): present only when assembled above.
+    // Org API v1 (T-M2): present only when assembled above. T-M7-02 passes the
+    // channel executor + async worker when the agent-world adapter is configured.
     ...(orgService ? { orgService } : {}),
+    ...(orgExecutor ? { orgExecutor } : {}),
+    ...(orgTaskWorker ? { orgTaskWorker } : {}),
   }, {
     ...(process.env.ZEUS_HOST ? { host: process.env.ZEUS_HOST } : {}),
     ...(process.env.ZEUS_PORT ? { port: Number(process.env.ZEUS_PORT) } : {}),

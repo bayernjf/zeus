@@ -26,6 +26,9 @@
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值在持久化边界剥离、不进任何备份束，恢复后需重新声明；且以 uid 1000 落卷） |
 | `ZEUS_DB_FILE` | 未设置 | T-M6-01 决策/组织持久化 SQLite 路径（decision_policy/records/approvals + organizations/departments/positions/org_tasks 七表）。设置后启动幂等迁移并 hydrate，重启保留全部决策/审批/组织/任务；不设则内存演示模式。文件须放持久卷、0600、不入镜像（.dockerignore） |
+| `ZEUS_AGENT_WORLD_BASE_URL` | 未设置 | T-M7-02：agent-world Hono 服务基址（如 `http://127.0.0.1:3028`）。设置后才装配第一条真实通道适配器——agent-world `ToolInvoker` + 路由 `OrgTaskExecutor` + 异步 `TaskWorker`，组织任务经 dispatch 派发后由 worker 串行 FIFO 真实跑图；不设则保持诚实 503 `ORG_EXECUTOR_UNCONFIGURED`，绝不伪造执行、也绝不匿名调通道。本地离线验证用 agent-world `WORKER=fake`（模型调用回灌伪造文本，但图引擎/门禁/人工停等/产物全部真实） |
+| `ZEUS_SECRET_FILE` | 未设置 | T-M7-02：本地 SecretBackend 的密钥文件路径（env 优先，文件兜底）。装配 agent-world 适配器时生效；密钥以行解析，`ref=value`（如 `agent-world:login={"email":"...","password":"..."}`）。文件须 0600、不入镜像 |
+| `ZEUS_SECRET_AGENT_WORLD_LOGIN` | 未设置 | T-M7-02：`agent-world:login` 凭据引用的默认环境变量名（由 `defaultEnvName('agent-world:login')` 推导；值为 JSON `{"email":"...","password":"..."}`，用于在 agent-world 登录换取会话 JWT）。只有 position 的 `credential_refs` 显式授予 `agent-world:login` 时才可被对应任务解析——最小权限；未授予或后端解析不到一律 fail-closed（业务失败），绝不匿名调用 |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
 | `ZEUS_TRACE_EXPORT_FILE` | 未设置 | S6 V3：每个落定意图的 trace 树追加到此 JSONL。**必须同时设 `ZEUS_AUDIT_FILE`**——树是从审计脊重建的，只设这一条会一直是空文件（启动日志会点明）。端点侧无读回面：文件是给人直接看的 |
 | `ZEUS_METRICS_HISTORY_FILE` | 未设置 | S6 V3：每次保存内核状态时追加一条指标快照（按 capturedAt 去重）。**设了才挂载 `GET /api/metrics/history`**——不设该路由不存在（404），趋势读数只有活窗口 |

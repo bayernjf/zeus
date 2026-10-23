@@ -62,6 +62,28 @@ export {
   ORG_ERROR_CODES,
   OrgServiceError,
 } from './types.js';
+
+// T-M7-02 agent-world adapter (the first real ToolInvoker/executor).
+export {
+  AgentWorldClient,
+  AgentWorldApiError,
+  AgentWorldAuthRequired,
+  AgentWorldToolInvoker,
+  AgentWorldOrgTaskExecutor,
+  AGENT_WORLD_TOOLS,
+  AGENT_WORLD_LOGIN_REF,
+} from './adapters/agent-world/index.js';
+export type {
+  AgentWorldClientOptions,
+  AgentWorldLogin,
+  AgentWorldRunView,
+  AgentWorldRunStatus,
+  AgentWorldArtifactRef,
+  AgentWorldToolInvokerOptions,
+  AgentWorldWorkflow,
+  AgentWorldTaskPayload,
+  AgentWorldOrgTaskExecutorOptions,
+} from './adapters/agent-world/index.js';
 export type {
   Json,
   ScaleTier,
