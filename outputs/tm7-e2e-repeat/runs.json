@@ -1,0 +1,733 @@
+{
+  "content": {
+    "taskId": "task-mvljq2ij-01mb5",
+    "system": "agent-world",
+    "workflow": "content",
+    "template": "tpl-xiaohongshu",
+    "graphId": "e4a146ee-d5b8-4a0e-b89d-31be7020ee30",
+    "runId": "716f346c-379c-4be0-a269-85b72a7b1bcb",
+    "finalStatus": "done",
+    "checkpointGrade": "D0",
+    "artifacts": [
+      {
+        "id": "716f346c-intake-h80s9-text",
+        "kind": "text"
+      },
+      {
+        "id": "716f346c-banner-vfkr4-img-0",
+        "kind": "image",
+        "label": "AI 配图"
+      },
+      {
+        "id": "716f346c-scene-7hmpn-img-0",
+        "kind": "image",
+        "label": "AI 场景图"
+      },
+      {
+        "id": "716f346c-sellin-pnx2l-text",
+        "kind": "text"
+      },
+      {
+        "id": "716f346c-copy-xycne-text",
+        "kind": "text"
+      },
+      {
+        "id": "716f346c-layout-sm1ur-text",
+        "kind": "text"
+      },
+      {
+        "id": "716f346c-qc-gjwyb-text",
+        "kind": "text"
+      },
+      {
+        "id": "716f346c-depot-gud7v-text",
+        "kind": "text"
+      }
+    ],
+    "transitions": [
+      {
+        "status": "pending",
+        "at": "2026-10-23T22:33:01.243Z"
+      },
+      {
+        "status": "dispatched",
+        "at": "2026-10-23T22:33:01.246Z",
+        "note": "pos:tm7-e2e-rpt:content"
+      },
+      {
+        "status": "running",
+        "at": "2026-10-23T22:33:01.246Z",
+        "note": "agent agent:c01"
+      },
+      {
+        "status": "done",
+        "at": "2026-10-23T22:33:03.517Z"
+      }
+    ]
+  },
+  "listingHalted": {
+    "decisionId": "dec_mvljq5hp_1",
+    "grade": "D3",
+    "timeline": {
+      "run": {
+        "id": "4fcac56b-82e4-41ba-9690-fb8be230978a",
+        "graphId": "10eb5324-7c89-4485-9ebd-10ad039db58a",
+        "status": "halted",
+        "trigger": "manual",
+        "startedAt": 1792794784086,
+        "endedAt": 1792794784840,
+        "budgetUsd": null,
+        "haltedNodeId": "human-9wlhg",
+        "haltedReason": "human:请审阅这篇待发布文案：通过则发布；如需修改请直接编辑；不符合要求可驳回（驳回将触发失败回退）。",
+        "input": "上架 listing：薄荷精油 100ml"
+      },
+      "nodeMeta": {
+        "intake-e92wp": {
+          "name": "素材输入",
+          "kind": "source"
+        },
+        "writer-tea6m": {
+          "name": "自动成稿",
+          "kind": "textGen"
+        },
+        "qc-ujl9s": {
+          "name": "自检把关",
+          "kind": "gate"
+        },
+        "notify-7lq8k": {
+          "name": "送审通知",
+          "kind": "notify"
+        },
+        "notify-k4u9z": {
+          "name": "通知兜底",
+          "kind": "code"
+        },
+        "human-9wlhg": {
+          "name": "人工终审",
+          "kind": "human"
+        },
+        "publis-oo5px": {
+          "name": "正式发布",
+          "kind": "sink"
+        }
+      },
+      "timeline": {
+        "nodes": [
+          {
+            "nodeId": "intake-e92wp",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794784088,
+                "finishedAt": 1792794784088,
+                "durationMs": 0,
+                "outputPreview": "上架 listing：薄荷精油 100ml",
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              }
+            ],
+            "firstStartedAt": 1792794784088,
+            "status": "done"
+          },
+          {
+            "nodeId": "writer-tea6m",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794784088,
+                "finishedAt": 1792794784363,
+                "durationMs": 275,
+                "outputPreview": "[自动成稿] attempt 1 consuming 21 chars of input -> producing artifact",
+                "outputTruncated": false,
+                "tokensIn": 6,
+                "tokensOut": 17,
+                "costUsd": 0.000273,
+                "model": "agnes-2.5-flash",
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              },
+              {
+                "attempt": 2,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794784454,
+                "finishedAt": 1792794784729,
+                "durationMs": 275,
+                "outputPreview": "[自动成稿] attempt 2 consuming 132 chars of input -> producing artifact",
+                "outputTruncated": false,
+                "tokensIn": 33,
+                "tokensOut": 17,
+                "costUsd": 0.000354,
+                "model": "agnes-2.5-flash",
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              }
+            ],
+            "firstStartedAt": 1792794784088,
+            "status": "done"
+          },
+          {
+            "nodeId": "qc-ujl9s",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "running",
+                "startedAt": 1792794784363,
+                "finishedAt": null,
+                "durationMs": null,
+                "outputPreview": null,
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": 3,
+                "gate": {
+                  "passed": false,
+                  "reason": "Criterion not met: 文案无事实性错误、无敏感词/违禁词、结构完整（标题+正文+行动号召）、语气统一。\n补充判定规则：凡 URL 路径中包含 /api/artifacts/ 的图片或",
+                  "score": 3
+                },
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 0
+              },
+              {
+                "attempt": 2,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794784729,
+                "finishedAt": 1792794784821,
+                "durationMs": 92,
+                "outputPreview": "Meets criterion: 文案无事实性错误、无敏感词/违禁词、结构完整（标题+正文+行动号召）、语气统一。\n补充判定规则：凡 URL 路径中包含 /api/artifacts/ 的图片或",
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": 9,
+                "gate": {
+                  "passed": true,
+                  "reason": "Meets criterion: 文案无事实性错误、无敏感词/违禁词、结构完整（标题+正文+行动号召）、语气统一。\n补充判定规则：凡 URL 路径中包含 /api/artifacts/ 的图片或",
+                  "score": 9
+                },
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              }
+            ],
+            "firstStartedAt": 1792794784363,
+            "status": "done"
+          },
+          {
+            "nodeId": "notify-7lq8k",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794784821,
+                "finishedAt": 1792794784839,
+                "durationMs": 18,
+                "outputPreview": "通知已发送：feishu → feishu 群机器人 …s-notify（67 字符）",
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              }
+            ],
+            "firstStartedAt": 1792794784821,
+            "status": "done"
+          },
+          {
+            "nodeId": "human-9wlhg",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "reviewing",
+                "startedAt": 1792794784826,
+                "finishedAt": null,
+                "durationMs": null,
+                "outputPreview": null,
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 0
+              }
+            ],
+            "firstStartedAt": 1792794784826,
+            "status": "reviewing"
+          }
+        ],
+        "totals": {
+          "nodes": 5,
+          "done": 4,
+          "failed": 0,
+          "skipped": 0,
+          "running": 0,
+          "reviewing": 1,
+          "degraded": 0,
+          "tokensIn": 33,
+          "tokensOut": 17,
+          "costUsd": 0.000354
+        },
+        "budget": {
+          "budgetUsd": null,
+          "totalCostUsd": 0.000627,
+          "tripped": false,
+          "warnings": 0
+        }
+      }
+    }
+  },
+  "listing": {
+    "taskId": "task-mvljq4p5-2usd7",
+    "system": "agent-world",
+    "workflow": "listing",
+    "template": "tpl-review-publish",
+    "graphId": "10eb5324-7c89-4485-9ebd-10ad039db58a",
+    "runId": "4fcac56b-82e4-41ba-9690-fb8be230978a",
+    "finalStatus": "done",
+    "checkpointGrade": "D3",
+    "artifacts": [
+      {
+        "id": "4fcac56b-intake-e92wp-text",
+        "kind": "text"
+      },
+      {
+        "id": "4fcac56b-writer-tea6m-text",
+        "kind": "text"
+      },
+      {
+        "id": "4fcac56b-qc-ujl9s-text",
+        "kind": "text"
+      },
+      {
+        "id": "4fcac56b-notify-7lq8k-json",
+        "kind": "json"
+      },
+      {
+        "id": "4fcac56b-publis-oo5px-text",
+        "kind": "text"
+      }
+    ],
+    "transitions": [
+      {
+        "status": "pending",
+        "at": "2026-10-23T22:33:04.073Z"
+      },
+      {
+        "status": "dispatched",
+        "at": "2026-10-23T22:33:04.076Z",
+        "note": "pos:tm7-e2e-rpt:listing"
+      },
+      {
+        "status": "running",
+        "at": "2026-10-23T22:33:04.076Z",
+        "note": "agent agent:l01"
+      },
+      {
+        "status": "awaiting_decision",
+        "at": "2026-10-23T22:33:05.103Z",
+        "note": "dec_mvljq5hp_1"
+      },
+      {
+        "status": "running",
+        "at": "2026-10-23T22:33:05.504Z",
+        "note": "resumed after decision"
+      },
+      {
+        "status": "done",
+        "at": "2026-10-23T22:33:05.517Z"
+      }
+    ]
+  },
+  "asHalted": {
+    "decisionId": "dec_mvljq6r6_2",
+    "grade": "D2",
+    "timeline": {
+      "run": {
+        "id": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
+        "graphId": "68f8dfc1-9415-420e-bd00-762d4ad6ba8e",
+        "status": "halted",
+        "trigger": "manual",
+        "startedAt": 1792794786227,
+        "endedAt": 1792794786575,
+        "budgetUsd": null,
+        "haltedNodeId": "humanR-1xm9b",
+        "haltedReason": "human:这是需要人工介入的工单。请审核内容并给出处理方案：通过则确认回复；如需修改请直接编辑；不符合要求可驳回。",
+        "input": "工单：客户投诉音箱杂音要求退货"
+      },
+      "nodeMeta": {
+        "intake-vlfm9": {
+          "name": "工单",
+          "kind": "source"
+        },
+        "classi-oxg6k": {
+          "name": "工单分类",
+          "kind": "textGen"
+        },
+        "parse-jli4m": {
+          "name": "解析分类",
+          "kind": "code"
+        },
+        "judge-qrh5u": {
+          "name": "分流判断",
+          "kind": "branch"
+        },
+        "autoRe-1ygdt": {
+          "name": "自动回复",
+          "kind": "textGen"
+        },
+        "humanR-1xm9b": {
+          "name": "人工审核",
+          "kind": "human"
+        },
+        "notify-0zm89": {
+          "name": "通知用户",
+          "kind": "notify"
+        },
+        "depot-8s80h": {
+          "name": "处理记录",
+          "kind": "sink"
+        }
+      },
+      "timeline": {
+        "nodes": [
+          {
+            "nodeId": "intake-vlfm9",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794786229,
+                "finishedAt": 1792794786229,
+                "durationMs": 0,
+                "outputPreview": "工单：客户投诉音箱杂音要求退货",
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              }
+            ],
+            "firstStartedAt": 1792794786229,
+            "status": "done"
+          },
+          {
+            "nodeId": "classi-oxg6k",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794786229,
+                "finishedAt": 1792794786506,
+                "durationMs": 277,
+                "outputPreview": "[工单分类] attempt 1 consuming 15 chars of input -> producing artifact",
+                "outputTruncated": false,
+                "tokensIn": 4,
+                "tokensOut": 17,
+                "costUsd": 0.000267,
+                "model": "agnes-2.5-flash",
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              }
+            ],
+            "firstStartedAt": 1792794786229,
+            "status": "done"
+          },
+          {
+            "nodeId": "parse-jli4m",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794786507,
+                "finishedAt": 1792794786573,
+                "durationMs": 66,
+                "outputPreview": "{\n  \"category\": \"其他\",\n  \"complex\": true,\n  \"summary\": \"[工单分类] attempt 1 consuming 15 chars of input -> producing artifact\\n\\n[object Object]\"\n}",
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 1
+              }
+            ],
+            "firstStartedAt": 1792794786507,
+            "status": "done"
+          },
+          {
+            "nodeId": "judge-qrh5u",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "done",
+                "startedAt": 1792794786574,
+                "finishedAt": 1792794786574,
+                "durationMs": 0,
+                "outputPreview": "路由 → 人工审核（r-complex）",
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 0
+              }
+            ],
+            "firstStartedAt": 1792794786574,
+            "status": "done"
+          },
+          {
+            "nodeId": "autoRe-1ygdt",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "skipped",
+                "startedAt": null,
+                "finishedAt": null,
+                "durationMs": null,
+                "outputPreview": null,
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": "branch not taken",
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 0
+              }
+            ],
+            "firstStartedAt": null,
+            "status": "skipped"
+          },
+          {
+            "nodeId": "humanR-1xm9b",
+            "attempts": [
+              {
+                "attempt": 1,
+                "variant": "main",
+                "status": "reviewing",
+                "startedAt": 1792794786574,
+                "finishedAt": null,
+                "durationMs": null,
+                "outputPreview": null,
+                "outputTruncated": false,
+                "tokensIn": 0,
+                "tokensOut": 0,
+                "costUsd": 0,
+                "model": null,
+                "score": null,
+                "gate": null,
+                "error": null,
+                "errorCode": null,
+                "skipReason": null,
+                "degradedReason": null,
+                "remoteJob": null,
+                "degradedAccepted": false,
+                "toolCalls": 0,
+                "artifacts": 0
+              }
+            ],
+            "firstStartedAt": 1792794786574,
+            "status": "reviewing"
+          }
+        ],
+        "totals": {
+          "nodes": 6,
+          "done": 4,
+          "failed": 0,
+          "skipped": 1,
+          "running": 0,
+          "reviewing": 1,
+          "degraded": 0,
+          "tokensIn": 4,
+          "tokensOut": 17,
+          "costUsd": 0.000267
+        },
+        "budget": {
+          "budgetUsd": null,
+          "totalCostUsd": 0.000267,
+          "tripped": false,
+          "warnings": 0
+        }
+      }
+    }
+  },
+  "afterSales": {
+    "taskId": "task-mvljq6co-43192",
+    "system": "agent-world",
+    "workflow": "after-sales",
+    "template": "tpl-customer-service",
+    "graphId": "68f8dfc1-9415-420e-bd00-762d4ad6ba8e",
+    "runId": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
+    "finalStatus": "done",
+    "checkpointGrade": "D2",
+    "artifacts": [
+      {
+        "id": "0c27ebb3-intake-vlfm9-text",
+        "kind": "text"
+      },
+      {
+        "id": "0c27ebb3-classi-oxg6k-text",
+        "kind": "text"
+      },
+      {
+        "id": "0c27ebb3-parse-jli4m-code-json",
+        "kind": "json"
+      },
+      {
+        "id": "0c27ebb3-notify-0zm89-json",
+        "kind": "json"
+      },
+      {
+        "id": "0c27ebb3-depot-8s80h-text",
+        "kind": "text"
+      }
+    ],
+    "transitions": [
+      {
+        "status": "pending",
+        "at": "2026-10-23T22:33:06.216Z"
+      },
+      {
+        "status": "dispatched",
+        "at": "2026-10-23T22:33:06.219Z",
+        "note": "pos:tm7-e2e-rpt:as"
+      },
+      {
+        "status": "running",
+        "at": "2026-10-23T22:33:06.219Z",
+        "note": "agent agent:a01"
+      },
+      {
+        "status": "awaiting_decision",
+        "at": "2026-10-23T22:33:06.738Z",
+        "note": "dec_mvljq6r6_2"
+      },
+      {
+        "status": "running",
+        "at": "2026-10-23T22:33:06.937Z",
+        "note": "resumed after decision"
+      },
+      {
+        "status": "done",
+        "at": "2026-10-23T22:33:07.452Z"
+      }
+    ]
+  }
+}

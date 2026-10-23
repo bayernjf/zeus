@@ -1,0 +1,19 @@
+{
+  "noTools": {
+    "dispatchStatus": 409,
+    "code": "SOP_INCOMPATIBLE",
+    "taskStatus": "pending",
+    "unmatchedReason": "position pos:tm7-e2e-rpt:notools cannot execute SOP content-production (content): missing tools [agent-world:run-graph, agent-world:get-run]"
+  },
+  "unknownWorkflow": {
+    "dispatchStatus": 409,
+    "code": "SOP_MISSING"
+  },
+  "lowScopeD2OnD3": {
+    "decisionId": "dec_mvljq896_3",
+    "gradeBeforeApproval": "D3",
+    "haltedBeforeApproval": true,
+    "doneAfterExternalApprove": true,
+    "runId": "1b7ea11c-ae9b-4668-9047-7d0f1068dba7"
+  }
+}

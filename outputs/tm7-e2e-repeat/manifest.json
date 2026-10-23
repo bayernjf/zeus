@@ -1,0 +1,29 @@
+{
+  "format": "zeus-tm7-e2e-evidence",
+  "version": 1,
+  "generatedAt": "2026-10-23T22:33:09.807Z",
+  "agentWorld": {
+    "base": "http://127.0.0.1:65344",
+    "worker": "fake",
+    "note": "WORKER=fake fabricates model calls only; graph engine/gates/halts/run really ran"
+  },
+  "zeus": {
+    "base": "http://127.0.0.1:65345",
+    "sqlite": true,
+    "taskExecutor": "agent-world",
+    "actionStore": "sqlite"
+  },
+  "webhookCaptures": 3,
+  "assertions": {
+    "contentD0Autonomous": true,
+    "listingD3HaltApproveResume": true,
+    "afterSalesD2HaltApproveResume": true,
+    "failClosedNoToolsSopIncompatible": true,
+    "failClosedUnknownWorkflowSopMissing": true,
+    "failClosedD2onD3ParksThenUnlocks": true,
+    "idempotentSameKeySameRun": true,
+    "auditChainVerified": true,
+    "tamperDetected": true,
+    "webhookReceived": true
+  }
+}

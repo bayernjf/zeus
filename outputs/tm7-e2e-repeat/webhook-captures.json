@@ -1,0 +1,20 @@
+[
+  {
+    "at": "2026-10-23T22:33:04.834Z",
+    "method": "POST",
+    "url": "/cs-notify",
+    "body": "{\"msg_type\":\"interactive\",\"card\":{\"header\":{\"title\":{\"tag\":\"plain_text\",\"content\":\"送审通知\"}},\"elements\":[{\"tag\":\"markdown\",\"content\":\"[自动成稿] attempt 2 consuming 132 chars of input -> producing artifact\"}]}}"
+  },
+  {
+    "at": "2026-10-23T22:33:06.942Z",
+    "method": "POST",
+    "url": "/cs-notify",
+    "body": "{\"msg_type\":\"interactive\",\"card\":{\"header\":{\"title\":{\"tag\":\"plain_text\",\"content\":\"通知用户\"}},\"elements\":[{\"tag\":\"markdown\",\"content\":\"📋 工单处理完成：分类 其他，摘要：[工单分类] attempt 1 consuming 15 chars of input -> producing artifact\\n\\n[object Object]\"}]}}"
+  },
+  {
+    "at": "2026-10-23T22:33:08.408Z",
+    "method": "POST",
+    "url": "/cs-notify",
+    "body": "{\"msg_type\":\"interactive\",\"card\":{\"header\":{\"title\":{\"tag\":\"plain_text\",\"content\":\"送审通知\"}},\"elements\":[{\"tag\":\"markdown\",\"content\":\"[自动成稿] attempt 2 consuming 134 chars of input -> producing artifact\"}]}}"
+  }
+]
