@@ -1,23 +1,37 @@
 /**
- * Org v1 service (Tier0 M2, design §4.4/§6.2). Pure orchestration over
- * MemoryOrgStore: organization/department/position lifecycle, hierarchy cycle
- * rejection, agent binding, and the task dispatcher state machine.
+ * Org service (Tier0 M2; M7 T-M7-01 hardened executor). Pure orchestration
+ * over the org store: organization/department/position lifecycle, hierarchy
+ * cycle rejection, agent binding, and the task dispatcher state machine.
  *
  * Dispatcher state machine:
  *   pending → dispatched (match position, bound agent) → running
- *   running → awaiting_decision (executor hit a D1+ checkpoint)
+ *   running → awaiting_decision (the hardened runner hit a blocked decision)
  *   awaiting_decision → running (resume after approval) → done | failed
  * No matching position is an explicit, reported outcome: the task stays
  * pending with unmatchedReason and the call throws NO_MATCHING_POSITION.
+ *
+ * Execution is delegated to the hardened runner (execution/runner.ts), which
+ * enforces tool authority, the task deadline, bounded retry and idempotency
+ * around the callback-style OrgTaskExecutor. This slice runs the runner
+ * synchronously inside dispatch/resume; durable async scheduling is a later
+ * slice.
  */
 import type { DecisionService } from '../decision-service/service.js';
 import type { DecisionRecord, ApprovalRequest } from '../decision-service/types.js';
-import type { DecisionRequest } from '../grading/policy.js';
 import type { DecisionPolicy } from '../grading/policy.js';
 import type { Grade } from '../types.js';
 import { parsePolicy } from '../grading/policy-loader.js';
 import { sha256Hex } from '../../util/crypto.js';
 import { MemoryOrgStore, type OrgStore } from './store.js';
+import {
+  DEFAULT_RETRY_POLICY,
+  DEFAULT_TASK_DEADLINE_MS,
+  InMemoryActionStore,
+  runTask,
+  type ActionResultStore,
+  type OrgTaskExecutorV2,
+  type RetryPolicy,
+} from './execution/index.js';
 import {
   ORG_ERROR_CODES as EC,
   OrgServiceError,
@@ -27,17 +41,17 @@ import {
   type CreateOrgTaskInput,
   type CreatePositionInput,
   type Department,
-  type Json,
   type Organization,
   type OrgTask,
+  type OrgTaskProgress,
   type Position,
   type ScaleTier,
 } from './types.js';
 
 const VALID_SCALES: ScaleTier[] = ['single', 'small', 'team', 'division', 'enterprise'];
 const VALID_GRADES: Grade[] = ['D0', 'D1', 'D2', 'D3'];
-/** A single task run is bounded in how many decision checkpoints it can hit. */
-const MAX_DECISION_HOPS = 10;
+/** Default cap on distinct decision points a task may traverse. */
+const DEFAULT_MAX_DECISION_HOPS = 10;
 
 export interface OrgServiceDeps {
   store?: OrgStore;
@@ -46,36 +60,26 @@ export interface OrgServiceDeps {
   clock?: () => string;
   /** Id generator (tests inject a deterministic counter). */
   newId?: (prefix: string) => string;
-}
-
-export interface OrgDecisionCheckpoint {
-  /** What the executor wants to decide. Domain is prefilled with org scope. */
-  request: Omit<DecisionRequest, 'domain'> & { domain?: string };
-}
-
-export interface OrgTaskRunResult {
-  /** Executor completed; the task is done. */
-  outcome: 'complete';
-  result?: Json;
-}
-
-export interface OrgTaskRunContext {
-  task: OrgTask;
-  position: Position;
-  agentId: string;
-  /** True on re-invocation after a decision checkpoint resolved. */
-  resumed: boolean;
-  /** The decision record that unblocked this resume, if any. */
-  lastDecision?: DecisionRecord;
-}
-
-export interface OrgTaskExecutor {
+  /** T-M7-01 bounded retry policy for task execution. */
+  retryPolicy?: RetryPolicy;
+  /** T-M7-01 task-level wall-clock deadline in milliseconds. */
+  taskDeadlineMs?: number;
+  /** T-M7-01 cap on distinct decision points per task. */
+  maxDecisionHops?: number;
   /**
-   * Execute the task. Returning a checkpoint pauses the task in
-   * awaiting_decision; the service approves (or waits) and re-invokes run.
+   * T-M7-01 supplies the per-task idempotent action store. When omitted an
+   * in-memory store is used; durable wiring (SQLite) passes a factory so action
+   * results survive restart and side effects are not replayed.
    */
-  run(ctx: OrgTaskRunContext): Promise<OrgTaskRunResult | OrgDecisionCheckpoint>;
+  actionStoreFactory?: (taskId: string) => ActionResultStore;
 }
+
+/**
+ * The hardened executor contract (T-M7-01). The name is kept from M2 so call
+ * sites still refer to OrgTaskExecutor; the shape is now the callback-style
+ * hardened contract (see execution/contract.ts).
+ */
+export type OrgTaskExecutor = OrgTaskExecutorV2;
 
 export interface DispatchResult {
   task: OrgTask;
@@ -108,6 +112,12 @@ export class OrgService {
   private readonly decisions: DecisionService | undefined;
   private readonly clock: () => string;
   private readonly newId: (prefix: string) => string;
+  private readonly retryPolicy: RetryPolicy;
+  private readonly taskDeadlineMs: number;
+  private readonly maxDecisionHops: number;
+  private readonly actionStoreFactory: ((taskId: string) => ActionResultStore) | undefined;
+  /** Per-task idempotent action results for the default in-memory wiring. */
+  private readonly actionStores = new Map<string, ActionResultStore>();
   private counter = 0;
 
   constructor(deps: OrgServiceDeps = {}) {
@@ -115,6 +125,10 @@ export class OrgService {
     this.decisions = deps.decisions;
     this.clock = deps.clock ?? (() => new Date().toISOString());
     this.newId = deps.newId ?? ((prefix: string) => `${prefix}-${Date.now().toString(36)}-${(this.counter++).toString(36)}${Math.random().toString(36).slice(2, 6)}`);
+    this.retryPolicy = deps.retryPolicy ?? DEFAULT_RETRY_POLICY;
+    this.taskDeadlineMs = deps.taskDeadlineMs ?? DEFAULT_TASK_DEADLINE_MS;
+    this.maxDecisionHops = deps.maxDecisionHops ?? DEFAULT_MAX_DECISION_HOPS;
+    this.actionStoreFactory = deps.actionStoreFactory;
   }
 
   // ── Organizations ──────────────────────────────────────────────────────
@@ -246,6 +260,9 @@ export class OrgService {
       responsibilities: [...(input.responsibilities ?? [])],
       requiredSkills: [...(input.requiredSkills ?? [])],
       allowedTools: [...(input.allowedTools ?? [])],
+      ...(input.credentialRefs && input.credentialRefs.length
+        ? { credentialRefs: [...new Set(input.credentialRefs.filter((r) => typeof r === 'string' && r.trim() !== ''))] }
+        : {}),
       decisionScope,
       createdAt: now,
     };
@@ -281,6 +298,13 @@ export class OrgService {
       throw new OrgServiceError(EC.VALIDATION_FAILED, 'payload is required');
     }
     if (input.positionId !== undefined) this.getPosition(input.positionId);
+    // Idempotent create: a repeat request with the same key (within the same
+    // organization) returns the existing task instead of creating a duplicate.
+    const idempotencyKey = input.idempotencyKey?.trim() || undefined;
+    if (idempotencyKey) {
+      const existing = this.store.getTaskByIdempotencyKey(input.organizationId, idempotencyKey);
+      if (existing) return existing;
+    }
     const now = this.clock();
     const id = this.newId('task');
     const task: OrgTask = {
@@ -292,6 +316,7 @@ export class OrgService {
       payload: input.payload,
       ...(input.requiredSkill ? { requiredSkill: input.requiredSkill } : {}),
       ...(input.positionId ? { positionId: input.positionId } : {}),
+      ...(idempotencyKey ? { idempotencyKey } : {}),
       status: 'pending',
       transitions: [{ status: 'pending', at: now }],
       createdAt: now,
@@ -338,18 +363,20 @@ export class OrgService {
   }
 
   /**
-   * Dispatch a pending task: match → bind → execute until completion or a
-   * decision checkpoint. Idempotent: a non-pending task is returned as-is.
+   * Claim a pending task for execution: match → bind → dispatched → running,
+   * without running the executor. Persists the handoff so an async worker (or
+   * a restart recovery scan) can later run the claimed task. Idempotent: a
+   * non-pending task is returned unchanged.
    */
-  async dispatch(taskId: string, executor: OrgTaskExecutor): Promise<DispatchResult> {
+  claim(taskId: string): OrgTask {
     const existing = this.getTask(taskId);
-    if (existing.status !== 'pending') return { task: existing };
+    if (existing.status !== 'pending') return existing;
     const position = this.matchPosition(existing);
     if (!position.agentId) {
       throw new OrgServiceError(EC.POSITION_UNBOUND, `position ${position.id} has no agent bound`);
     }
     const now = this.clock();
-    let task: OrgTask = {
+    const dispatched: OrgTask = {
       ...existing,
       positionId: position.id,
       assignedAgentId: position.agentId,
@@ -357,13 +384,15 @@ export class OrgService {
       updatedAt: now,
       transitions: [...existing.transitions, { status: 'dispatched', at: now, note: position.id }],
     };
-    task = this.transition(task, 'running', `agent ${position.agentId}`);
-
-    return this.runUntilSettled(task, position, executor, false);
+    return this.transition(dispatched, 'running', `agent ${position.agentId}`);
   }
 
-  /** Resume after the caller approved (or the checkpoint auto-decided). */
-  async resume(taskId: string, executor: OrgTaskExecutor, approval?: ApprovalRequest): Promise<DispatchResult> {
+  /**
+   * Approve (or read) the blocking decision and move an awaiting_decision task
+   * back to running, without running the executor. The async worker then runs
+   * the claimed task.
+   */
+  async claimResume(taskId: string, approval?: ApprovalRequest): Promise<{ task: OrgTask; decision?: DecisionRecord }> {
     const task0 = this.getTask(taskId);
     if (task0.status !== 'awaiting_decision' || !task0.decisionId) {
       throw new OrgServiceError(EC.TASK_CONFLICT, `task ${taskId} is not awaiting_decision`);
@@ -374,75 +403,121 @@ export class OrgService {
     } else if (this.decisions) {
       decision = await this.decisions.get(task0.decisionId);
     }
-    const position = this.getPosition(task0.positionId!);
     const task = this.transition(task0, 'running', 'resumed after decision');
-    return this.runUntilSettled(task, position, executor, true, decision);
+    return { task, ...(decision ? { decision } : {}) };
   }
 
-  private async runUntilSettled(
-    start: OrgTask,
-    position: Position,
-    executor: OrgTaskExecutor,
-    resumed: boolean,
-    lastDecision?: DecisionRecord,
-  ): Promise<DispatchResult> {
-    let task = start;
-    let decision: DecisionRecord | undefined = lastDecision;
-    let hops = 0;
-    for (;;) {
-      let step: OrgTaskRunResult | OrgDecisionCheckpoint;
-      try {
-        step = await executor.run({
-          task,
-          position,
-          agentId: position.agentId!,
-          resumed,
-          ...(decision ? { lastDecision: decision } : {}),
-        });
-      } catch (thrown) {
-        const message = thrown instanceof Error ? thrown.message : String(thrown);
-        task = this.transition({ ...task, error: message }, 'failed', message);
-        return { task: this.store.getTask(task.id)! };
-      }
+  /**
+   * Synchronous dispatch: claim and run to a settlement in one call. Used by
+   * the in-process HTTP wiring and tests; async wiring claims and lets a
+   * TaskWorker run the claimed task. Idempotent: a non-pending task is
+   * returned as-is.
+   */
+  async dispatch(taskId: string, executor: OrgTaskExecutor): Promise<DispatchResult> {
+    const existing = this.getTask(taskId);
+    if (existing.status !== 'pending') return { task: existing };
+    const claimed = this.claim(taskId);
+    return this.runClaimed(claimed.id, executor);
+  }
 
-      if ('request' in step) {
-        // Decision checkpoint — handled below.
-      } else if (step.outcome === 'complete') {
-        const done = this.transition(
-          { ...task, ...(step.result !== undefined ? { result: step.result } : {}), runId: task.runId ?? this.newId('run') },
-          'done',
-        );
-        return { task: this.store.getTask(done.id)! };
-      }
+  /** Synchronous resume: approve and run to a settlement in one call. */
+  async resume(taskId: string, executor: OrgTaskExecutor, approval?: ApprovalRequest): Promise<DispatchResult> {
+    const { task } = await this.claimResume(taskId, approval);
+    return this.runClaimed(task.id, executor);
+  }
 
-      // Decision checkpoint
-      if ('request' in step) {
-        if (!this.decisions) {
-          const message = 'decision checkpoint reached but no DecisionService is wired';
-          task = this.transition({ ...task, error: message }, 'failed', message);
-          return { task: this.store.getTask(task.id)! };
-        }
-        if (hops++ >= MAX_DECISION_HOPS) {
-          const message = `task exceeded ${MAX_DECISION_HOPS} decision checkpoints`;
-          task = this.transition({ ...task, error: message }, 'failed', message);
-          return { task: this.store.getTask(task.id)! };
-        }
-        const req = step.request;
-        decision = await this.decisions.createDecision({
-          ...req,
-          domain: req.domain ?? `org:${task.organizationId}`,
-        });
-        task = this.store.getTask(task.id)!;
-        if (decision.status === 'decided') {
-          task = this.transition({ ...task, decisionId: decision.id }, 'running', `decision ${decision.id} auto-decided`);
-          resumed = true;
-          continue;
-        }
-        // blocked / awaiting_approval → pause
-        const paused = this.transition({ ...task, decisionId: decision.id }, 'awaiting_decision', decision.id);
-        return { task: this.store.getTask(paused.id)!, decision };
+  /**
+   * Run the hardened runner for a task already in running (freshly claimed or
+   * recovered after a restart) and map the settlement onto the task state.
+   * Resume is inferred from a carried, already-decided decision.
+   */
+  async runClaimed(taskId: string, executor: OrgTaskExecutor): Promise<DispatchResult> {
+    const task = this.getTask(taskId);
+    if (task.status !== 'running') {
+      throw new OrgServiceError(EC.TASK_CONFLICT, `task ${taskId} is not running (status=${task.status})`);
+    }
+    const position = this.getPosition(task.positionId!);
+
+    let resumed = false;
+    let lastDecision: DecisionRecord | undefined;
+    if (task.decisionId && this.decisions) {
+      const decided = await this.decisions.get(task.decisionId);
+      if (decided && decided.status === 'decided') {
+        resumed = true;
+        lastDecision = decided;
       }
     }
+
+    const actionStore = this.actionStoreFor(task.id);
+    const progress: OrgTaskProgress[] = [...(task.progress ?? [])];
+
+    const settlement = await runTask({
+      task,
+      position,
+      agentId: position.agentId!,
+      executor,
+      ...(this.decisions ? { decisions: this.decisions } : {}),
+      ...(resumed ? { resumed: true } : {}),
+      ...(lastDecision ? { lastDecision } : {}),
+      actionStore,
+      retryPolicy: this.retryPolicy,
+      deadlineMs: this.taskDeadlineMs,
+      maxDecisionHops: this.maxDecisionHops,
+      ...(position.credentialRefs && position.credentialRefs.length
+        ? { credentialRefs: position.credentialRefs }
+        : {}),
+      iso: this.clock,
+      onProgress: p => progress.push(p),
+    });
+
+    const progressPatch = progress.length ? { progress } : {};
+
+    if (settlement.outcome === 'complete') {
+      const done = this.transition(
+        {
+          ...task,
+          ...progressPatch,
+          attempts: settlement.attempts,
+          runId: task.runId ?? this.newId('run'),
+          ...(settlement.result !== undefined ? { result: settlement.result } : {}),
+        },
+        'done',
+      );
+      return { task: this.store.getTask(done.id)! };
+    }
+
+    if (settlement.outcome === 'awaiting_decision') {
+      const paused = this.transition(
+        { ...task, ...progressPatch, attempts: settlement.attempts, decisionId: settlement.decision.id },
+        'awaiting_decision',
+        settlement.decision.id,
+      );
+      return { task: this.store.getTask(paused.id)!, decision: settlement.decision };
+    }
+
+    const failed = this.transition(
+      {
+        ...task,
+        ...progressPatch,
+        attempts: settlement.attempts,
+        failedKind: settlement.failureKind,
+        error: settlement.error,
+      },
+      'failed',
+      settlement.error,
+    );
+    return { task: this.store.getTask(failed.id)! };
+  }
+
+  /** Per-task idempotent action store; durable when a factory is wired. */
+  private actionStoreFor(taskId: string): ActionResultStore {
+    if (this.actionStoreFactory) return this.actionStoreFactory(taskId);
+    let store = this.actionStores.get(taskId);
+    if (!store) {
+      store = new InMemoryActionStore();
+      this.actionStores.set(taskId, store);
+    }
+    return store;
   }
 
   private transition(task: OrgTask, status: OrgTask['status'], note?: string): OrgTask {

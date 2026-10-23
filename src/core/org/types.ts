@@ -55,6 +55,12 @@ export interface Position {
   responsibilities: string[];
   requiredSkills: string[];
   allowedTools: string[];
+  /**
+   * Opaque credential references the bound position may resolve at call time
+   * (e.g. 'agent-world:service-token'). Never secret values; secrets stay behind
+   * the SecretBackend. Absent/empty means no credentials are granted.
+   */
+  credentialRefs?: string[];
   /** Highest grade the bound agent may decide autonomously. */
   decisionScope: Grade;
   /** Agent bound to this position; unbound positions are never dispatched. */
@@ -69,6 +75,25 @@ export type OrgTaskStatus =
   | 'awaiting_decision'
   | 'done'
   | 'failed';
+
+/**
+ * Failure classification for a failed task (T-M7-01 hardened runner). Kept as a
+ * local string union so org/types stays self-contained; it mirrors
+ * execution/errors TaskFailureKind.
+ */
+export type OrgTaskFailureKind =
+  | 'business'
+  | 'retryable_exhausted'
+  | 'timeout'
+  | 'tool_denied';
+
+/** A non-pausing progress / recovery point reported during execution. */
+export interface OrgTaskProgress {
+  stage: string;
+  percent?: number;
+  data?: Json;
+  at: string;
+}
 
 export interface OrgTaskTransition {
   status: OrgTaskStatus;
@@ -93,6 +118,18 @@ export interface OrgTask {
   decisionId?: string;
   result?: Json;
   error?: string;
+  /** T-M7-01: attempts consumed by the hardened runner. */
+  attempts?: number;
+  /** T-M7-01: failure classification when status === 'failed'. */
+  failedKind?: OrgTaskFailureKind;
+  /** T-M7-01: progress/recovery points reported during execution. */
+  progress?: OrgTaskProgress[];
+  /** T-M7-01: caller-supplied idempotency key; unique within an organization. */
+  idempotencyKey?: string;
+  /** T-M7-01: when a retryable task is next eligible to run (async worker). */
+  nextAttemptAt?: string;
+  /** T-M7-01: task-level wall-clock deadline (ISO). */
+  deadlineAt?: string;
   /** Set when no position matches; task remains pending for human handling. */
   unmatchedReason?: string;
   transitions: OrgTaskTransition[];
@@ -123,6 +160,7 @@ export interface CreatePositionInput {
   responsibilities?: string[];
   requiredSkills?: string[];
   allowedTools?: string[];
+  credentialRefs?: string[];
   decisionScope?: Grade;
 }
 
@@ -136,6 +174,9 @@ export interface CreateOrgTaskInput {
   payload: Json;
   requiredSkill?: string;
   positionId?: string;
+  /** T-M7-01: idempotency key; a repeat create with the same key returns the
+   *  existing task instead of creating a duplicate. */
+  idempotencyKey?: string;
 }
 
 export class OrgServiceError extends DecisionError {

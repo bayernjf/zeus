@@ -352,22 +352,19 @@ describe('GATE-M2: one organization-level closed loop', () => {
     expect(created.status).toBe(201);
     const taskId = created.body.id as string;
 
-    // Scripted agent: first invocation hits the D2 refund checkpoint; after
-    // approval (resume) it completes the refund.
+    // Scripted agent (callback-style): the first run suspends at the D2
+    // refund checkpoint; on resume the approved decision is replayed by
+    // idempotencyKey and execution proceeds to completion.
     stack.setExecutor({
       run: async ctx => {
-        if (!ctx.resumed) {
-          const payload = ctx.task.payload as { amount: number };
-          return {
-            request: {
-              intent: 'refund-order',
-              amount: { value: payload.amount, currency: 'CNY' },
-              impact: 'self',
-              reversibility: 'reversible',
-              idempotencyKey: `refund-${taskId}`,
-            },
-          };
-        }
+        const payload = ctx.task.payload as { amount: number };
+        await ctx.requestDecision({
+          intent: 'refund-order',
+          amount: { value: payload.amount, currency: 'CNY' },
+          impact: 'self',
+          reversibility: 'reversible',
+          idempotencyKey: `refund-${taskId}`,
+        });
         return { outcome: 'complete', result: { refunded: true, orderId: 'ord-1' } };
       },
     });

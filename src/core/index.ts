@@ -181,14 +181,14 @@ export type {
   JudgeReview,
 } from './orchestrator/types.js';
 
-// ── Org v1 (Tier0 M2, design §4.4) ────────────────────────────────────────
-export { OrgService, MemoryOrgStore, ORG_ERROR_CODES, OrgServiceError } from './org/index.js';
+// ── Org (Tier0 M2; M7 hardened executor) ─────────────────────────────────
+export { OrgService, MemoryOrgStore, ORG_ERROR_CODES, OrgServiceError, TaskWorker } from './org/index.js';
 export type {
   OrgServiceDeps,
   OrgTaskExecutor,
-  OrgTaskRunContext,
-  OrgTaskRunResult,
-  OrgDecisionCheckpoint,
+  OrgTaskExecutorV2,
+  ExecutorContext,
+  TaskSettlement,
   DispatchResult,
   OrgSnapshot,
   Json,
@@ -198,10 +198,13 @@ export type {
   Position as OrgPosition,
   OrgTask,
   OrgTaskStatus,
+  OrgTaskFailureKind,
+  OrgTaskProgress,
   OrgTaskTransition,
   CreateOrganizationInput,
   CreateDepartmentInput,
   CreatePositionInput,
   AssignAgentInput,
   CreateOrgTaskInput,
+  TaskWorkerDeps,
 } from './org/index.js';

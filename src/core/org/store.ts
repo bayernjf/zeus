@@ -36,6 +36,8 @@ export interface OrgStore {
 
   putTask(task: OrgTask): void;
   getTask(id: string): OrgTask | undefined;
+  /** T-M7-01: idempotent task lookup, unique within an organization. */
+  getTaskByIdempotencyKey(organizationId: string, idempotencyKey: string): OrgTask | undefined;
   listTasks(organizationId?: string): OrgTask[];
 
   exportSnapshot(): OrgSnapshot;
@@ -100,6 +102,12 @@ export class MemoryOrgStore implements OrgStore {
     return [...this.tasks.values()]
       .filter(t => organizationId === undefined || t.organizationId === organizationId)
       .map(v => structuredClone(v));
+  }
+  getTaskByIdempotencyKey(organizationId: string, idempotencyKey: string): OrgTask | undefined {
+    const found = [...this.tasks.values()].find(
+      t => t.organizationId === organizationId && t.idempotencyKey === idempotencyKey,
+    );
+    return found ? structuredClone(found) : undefined;
   }
 
   exportSnapshot(): OrgSnapshot {
