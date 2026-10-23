@@ -182,7 +182,7 @@ export type {
 } from './orchestrator/types.js';
 
 // ── Org (Tier0 M2; M7 hardened executor) ─────────────────────────────────
-export { OrgService, MemoryOrgStore, ORG_ERROR_CODES, OrgServiceError } from './org/index.js';
+export { OrgService, MemoryOrgStore, ORG_ERROR_CODES, OrgServiceError, TaskWorker } from './org/index.js';
 export type {
   OrgServiceDeps,
   OrgTaskExecutor,
@@ -206,4 +206,5 @@ export type {
   CreatePositionInput,
   AssignAgentInput,
   CreateOrgTaskInput,
+  TaskWorkerDeps,
 } from './org/index.js';

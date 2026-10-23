@@ -115,7 +115,7 @@ export class OrgService {
   private readonly retryPolicy: RetryPolicy;
   private readonly taskDeadlineMs: number;
   private readonly maxDecisionHops: number;
-  private readonly actionStoreFactory?: (taskId: string) => ActionResultStore;
+  private readonly actionStoreFactory: ((taskId: string) => ActionResultStore) | undefined;
   /** Per-task idempotent action results for the default in-memory wiring. */
   private readonly actionStores = new Map<string, ActionResultStore>();
   private counter = 0;
@@ -360,18 +360,20 @@ export class OrgService {
   }
 
   /**
-   * Dispatch a pending task: match → bind → execute until completion or a
-   * decision checkpoint. Idempotent: a non-pending task is returned as-is.
+   * Claim a pending task for execution: match → bind → dispatched → running,
+   * without running the executor. Persists the handoff so an async worker (or
+   * a restart recovery scan) can later run the claimed task. Idempotent: a
+   * non-pending task is returned unchanged.
    */
-  async dispatch(taskId: string, executor: OrgTaskExecutor): Promise<DispatchResult> {
+  claim(taskId: string): OrgTask {
     const existing = this.getTask(taskId);
-    if (existing.status !== 'pending') return { task: existing };
+    if (existing.status !== 'pending') return existing;
     const position = this.matchPosition(existing);
     if (!position.agentId) {
       throw new OrgServiceError(EC.POSITION_UNBOUND, `position ${position.id} has no agent bound`);
     }
     const now = this.clock();
-    const task: OrgTask = {
+    const dispatched: OrgTask = {
       ...existing,
       positionId: position.id,
       assignedAgentId: position.agentId,
@@ -379,12 +381,15 @@ export class OrgService {
       updatedAt: now,
       transitions: [...existing.transitions, { status: 'dispatched', at: now, note: position.id }],
     };
-    const running = this.transition(task, 'running', `agent ${position.agentId}`);
-    return this.execute(running, position, executor, false);
+    return this.transition(dispatched, 'running', `agent ${position.agentId}`);
   }
 
-  /** Resume after the caller approved (or the checkpoint auto-decided). */
-  async resume(taskId: string, executor: OrgTaskExecutor, approval?: ApprovalRequest): Promise<DispatchResult> {
+  /**
+   * Approve (or read) the blocking decision and move an awaiting_decision task
+   * back to running, without running the executor. The async worker then runs
+   * the claimed task.
+   */
+  async claimResume(taskId: string, approval?: ApprovalRequest): Promise<{ task: OrgTask; decision?: DecisionRecord }> {
     const task0 = this.getTask(taskId);
     if (task0.status !== 'awaiting_decision' || !task0.decisionId) {
       throw new OrgServiceError(EC.TASK_CONFLICT, `task ${taskId} is not awaiting_decision`);
@@ -395,20 +400,51 @@ export class OrgService {
     } else if (this.decisions) {
       decision = await this.decisions.get(task0.decisionId);
     }
-    const position = this.getPosition(task0.positionId!);
     const task = this.transition(task0, 'running', 'resumed after decision');
-    return this.execute(task, position, executor, true, decision);
+    return { task, ...(decision ? { decision } : {}) };
   }
 
-  /** Run the hardened runner and map its settlement onto the task state. */
-  private async execute(
-    start: OrgTask,
-    position: Position,
-    executor: OrgTaskExecutor,
-    resumed: boolean,
-    lastDecision?: DecisionRecord,
-  ): Promise<DispatchResult> {
-    const task = start;
+  /**
+   * Synchronous dispatch: claim and run to a settlement in one call. Used by
+   * the in-process HTTP wiring and tests; async wiring claims and lets a
+   * TaskWorker run the claimed task. Idempotent: a non-pending task is
+   * returned as-is.
+   */
+  async dispatch(taskId: string, executor: OrgTaskExecutor): Promise<DispatchResult> {
+    const existing = this.getTask(taskId);
+    if (existing.status !== 'pending') return { task: existing };
+    const claimed = this.claim(taskId);
+    return this.runClaimed(claimed.id, executor);
+  }
+
+  /** Synchronous resume: approve and run to a settlement in one call. */
+  async resume(taskId: string, executor: OrgTaskExecutor, approval?: ApprovalRequest): Promise<DispatchResult> {
+    const { task } = await this.claimResume(taskId, approval);
+    return this.runClaimed(task.id, executor);
+  }
+
+  /**
+   * Run the hardened runner for a task already in running (freshly claimed or
+   * recovered after a restart) and map the settlement onto the task state.
+   * Resume is inferred from a carried, already-decided decision.
+   */
+  async runClaimed(taskId: string, executor: OrgTaskExecutor): Promise<DispatchResult> {
+    const task = this.getTask(taskId);
+    if (task.status !== 'running') {
+      throw new OrgServiceError(EC.TASK_CONFLICT, `task ${taskId} is not running (status=${task.status})`);
+    }
+    const position = this.getPosition(task.positionId!);
+
+    let resumed = false;
+    let lastDecision: DecisionRecord | undefined;
+    if (task.decisionId && this.decisions) {
+      const decided = await this.decisions.get(task.decisionId);
+      if (decided && decided.status === 'decided') {
+        resumed = true;
+        lastDecision = decided;
+      }
+    }
+
     const actionStore = this.actionStoreFor(task.id);
     const progress: OrgTaskProgress[] = [...(task.progress ?? [])];
 

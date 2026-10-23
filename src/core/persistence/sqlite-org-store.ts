@@ -8,6 +8,7 @@ import type {
   Department,
   Position,
   OrgTask,
+  OrgTaskFailureKind,
   OrgTaskProgress,
   OrgTaskTransition,
 } from '../org/types.js';
@@ -238,7 +239,7 @@ export class SqliteOrgStore implements OrgStore {
           ...(typeof row.attempts === 'number' && row.attempts > 0
             ? { attempts: row.attempts as number }
             : {}),
-          ...(row.failed_kind ? { failedKind: String(row.failed_kind) as OrgTask['failedKind'] } : {}),
+          ...(row.failed_kind ? { failedKind: String(row.failed_kind) as OrgTaskFailureKind } : {}),
           ...(row.progress_json ? { progress: parse<OrgTaskProgress[]>(row.progress_json as string) } : {}),
           ...(row.next_attempt_at ? { nextAttemptAt: String(row.next_attempt_at) } : {}),
           ...(row.deadline_at ? { deadlineAt: String(row.deadline_at) } : {}),

@@ -1,6 +1,8 @@
 export {
   OrgService,
 } from './org-service.js';
+export { TaskWorker } from './task-worker.js';
+export type { TaskWorkerDeps } from './task-worker.js';
 export type {
   OrgServiceDeps,
   OrgTaskExecutor,

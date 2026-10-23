@@ -15,6 +15,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
   OrgService,
   OrgServiceError,
+  TaskWorker,
   type AssignAgentInput,
   type CreateDepartmentInput,
   type CreateOrganizationInput,
@@ -145,6 +146,7 @@ export async function dispatchTaskRoute(
   executor: OrgTaskExecutor | undefined,
   request: FastifyRequest,
   reply: FastifyReply,
+  worker?: TaskWorker,
 ): Promise<unknown> {
   if (!executor) {
     return reply.code(503).send({
@@ -155,6 +157,13 @@ export async function dispatchTaskRoute(
   }
   try {
     const id = (request.params as { id: string }).id;
+    if (worker) {
+      // Async: claim synchronously and persist the handoff, then execute on the
+      // worker. Returns 202 with the running task; callers poll GET /tasks/:id.
+      const claimed = org.claim(id);
+      if (claimed.status === 'running') worker.enqueue(id);
+      return reply.code(202).send({ task: claimed });
+    }
     const res = await org.dispatch(id, executor);
     return reply.send(res);
   } catch (thrown) {
@@ -167,6 +176,7 @@ export async function resumeTaskRoute(
   executor: OrgTaskExecutor | undefined,
   request: FastifyRequest,
   reply: FastifyReply,
+  worker?: TaskWorker,
 ): Promise<unknown> {
   if (!executor) {
     return reply.code(503).send({
@@ -186,6 +196,12 @@ export async function resumeTaskRoute(
             ...(body.comment !== undefined ? { comment: body.comment } : {}),
           }
         : undefined;
+    if (worker) {
+      // Async: approve + claim synchronously, then run on the worker.
+      const { task } = await org.claimResume(id, approval);
+      worker.enqueue(id);
+      return reply.code(202).send({ task });
+    }
     const res = await org.resume(id, executor, approval);
     return reply.send(res);
   } catch (thrown) {
