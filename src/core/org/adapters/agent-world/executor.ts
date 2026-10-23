@@ -41,6 +41,7 @@ import type {
 import type { Grade } from '../../../types.js';
 import { AGENT_WORLD_TOOLS } from './tools.js';
 import type { AgentWorldRunView } from './client.js';
+import { GRADE_RAISE_ARG } from '../../sop/catalog.js';
 
 export type AgentWorldWorkflow = 'content' | 'listing' | 'after-sales';
 
@@ -130,7 +131,15 @@ export class AgentWorldOrgTaskExecutor implements OrgTaskExecutorV2 {
       const rejected = decision.result?.outcome === 'rejected';
       const verdict = rejected ? 'reject' : 'approve';
       await ctx.action(`aw:resume:${verdict}`, async () =>
-        ctx.tool(AGENT_WORLD_TOOLS.resumeRun, { runId: started.runId, action: verdict }),
+        ctx.tool(AGENT_WORLD_TOOLS.resumeRun, {
+          runId: started.runId,
+          action: verdict,
+          // Contextual grade raise (T-M7-03): the resume that follows a human
+          // checkpoint IS the graded channel effect (D3 publish / D2 ticket);
+          // the guard must require the checkpoint grade, not the tool's static
+          // default. The runner strips this hint before invoking the channel.
+          [GRADE_RAISE_ARG]: checkpoint.grade,
+        }),
       );
       if (rejected) {
         throw ExecutorError.business(`human reviewer rejected agent-world run ${started.runId}`);
