@@ -36,6 +36,8 @@ const env = process.env;
 
 /** @typedef {{ evaluated: number, fired: string[], unavailable: string[], autoDisabled: string[] }} TickReport */
 
+import { notify } from '../dist/watch/notify.js';
+
 const VALUE_FLAGS = new Set(['--interval', '--timeout']);
 const flags = new Set();
 const positional = [];
@@ -52,6 +54,12 @@ for (let i = 2; i < process.argv.length; i++) {
   }
 }
 const WATCH = flags.has('--watch');
+// Notifications default ON in the --watch loop (this is the daemon the operator
+// starts to be told when watches fire), OFF for one-shot cron runs. --no-notify
+// (or ZEUS_NOTIFY=0) silences them even in watch mode.
+const NOTIFY_EXPLICIT_OFF = flags.has('--no-notify') || env.ZEUS_NOTIFY === '0';
+const NOTIFY_EXPLICIT_ON = flags.has('--notify');
+const NOTIFY = NOTIFY_EXPLICIT_OFF ? false : WATCH || NOTIFY_EXPLICIT_ON;
 
 /** @param {string} message */
 function usageExit(message) {
@@ -189,6 +197,17 @@ while (!stopping) {
     console.error(`${timestamp()}  tick rejected: HTTP ${result.status}: ${result.detail}`);
   } else {
     printReport(result.report);
+    // Only a *fired* watch is worth a desktop ping. unavailable/autoDisabled are
+    // reported on the console line above; they are degradations, not new work.
+    if (NOTIFY && result.report.fired.length > 0) {
+      try {
+        const outcome = await notify(result.report);
+        if (!outcome.delivered) console.log(`${timestamp()}  notification: ${outcome.channel} (no desktop ping)`);
+      } catch (error) {
+        // A notification failure must never kill the loop.
+        console.error(`${timestamp()}  notification failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
   const cycleMs = INTERVAL_SECONDS * 1000;
   for (let waited = 0; waited < cycleMs && !stopping; waited += 250) {
