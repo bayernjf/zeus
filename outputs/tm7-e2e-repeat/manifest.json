@@ -1,14 +1,14 @@
 {
   "format": "zeus-tm7-e2e-evidence",
   "version": 1,
-  "generatedAt": "2026-10-23T22:33:09.807Z",
+  "generatedAt": "2026-10-23T22:57:07.779Z",
   "agentWorld": {
-    "base": "http://127.0.0.1:65344",
+    "base": "http://127.0.0.1:50412",
     "worker": "fake",
     "note": "WORKER=fake fabricates model calls only; graph engine/gates/halts/run really ran"
   },
   "zeus": {
-    "base": "http://127.0.0.1:65345",
+    "base": "http://127.0.0.1:50413",
     "sqlite": true,
     "taskExecutor": "agent-world",
     "actionStore": "sqlite"
