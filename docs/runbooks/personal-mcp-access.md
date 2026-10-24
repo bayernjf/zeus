@@ -6,7 +6,7 @@
 ## 0. 先认清你面对的是什么
 
 - 这个入口是 **stdio MCP 服务器**，实现是 `src/realm/mcp-stdio.ts`（构建产物 `dist/realm/mcp-stdio.js`）。
-- 它暴露的是**你启动时授权的一个或多个本地目录（个人 Realm）**，只做读取：`realm.search`、`realm.read`（外加一个在本入口会被拒的 `realm.write`，见 §7）。
+- 它暴露的是**你启动时授权的一个或多个本地目录（个人 Realm）**，只做读取：`realm.search`、`realm.read`（外加一个在本入口会被拒的 `realm.write`，见 §7）；另经内核只读装配暴露 `zeus.skills` / `zeus.plan` / `zeus.status` 三个内核算数工具（`zeus.plan` 只是本地技能识别，plan-only，绝不执行，见 §8）。
 - 它**不是** zeus 的编排/对话面：不能通过它派发任务、执行动作、或访问企业域。编排走 HTTP 门面（`POST /api/intents`，见 §8）。
 - **安全模型**：根目录只在启动时由命令行参数或 `ZEUS_REALM_ROOTS` 授权，连接为**只读**；协议里**没有**「连接任意路径」的方法——客户端无法把扫描器指向宿主没授权的目录。stdout 只跑 JSON-RPC，诊断信息走 stderr。
 
@@ -115,20 +115,25 @@ npm run mcp:realm -- ~/Documents/zeus-realm
 | 7 | `realm.read` 返回文件全文 | PASS |
 | 8 | 只读 stdio 宿主上 `realm.write` 被拒：`-32004 write refused: realm-read-only` | PASS |
 | 9 | 读取未授权（未连接）的 realm 被拒：`realm not connected: <id>` | PASS |
+| 10 | `tools/list` 另含 `zeus.skills` / `zeus.plan` / `zeus.status` | PASS |
+| 11 | `zeus.status` 返回 `realms`（realmId/type/readOnly）、`agents`、`pendingOversight`、`watches`，不含绝对路径 | PASS |
+| 12 | `zeus.skills` 返回技能目录数组（可按 `id` 取单个；未注册时为空数组而非报错） | PASS |
+| 13 | `zeus.plan` 返回结构化结果：`ok` / `chosenBy=local-ranker` / `candidates`，无匹配时 `reason=no-candidates`（本地 ranker，零出域） | PASS |
 
-> 验收脚本可按需放为 `scripts/` 下的固定验收项；本轮为临时探针（`/tmp/verify-personal-mcp.mjs`）。如需固化为 `npm run verify:personal-mcp`，按 §6 的 P1 清单立项。
+> 验收脚本即 `scripts/verify-personal-mcp.mjs`（`npm run verify:personal-mcp`，上表 13 项全绿）。
 
 ## 7. 环境变量清单（stdio 侧只有这些）
 
 | 变量 | 作用 |
 | --- | --- |
 | `ZEUS_REALM_ROOTS` | 逗号分隔的授权目录列表（与命令行参数取并集、去重）；冒号分隔不可用 |
+| `ZEUS_STATE_FILE` | 显式设置时内核状态落该文件；**默认不设置 = 内存态、零副作用**。不挂 decision backend，`zeus.plan` 只走本地 ranker |
 
 诊断信息只输出到 stderr（连接成功/失败、handler 错误），stdout 严格只输出 JSON-RPC 响应。
 
 ## 8. 目前「没有」的能力（接入方问起来先答这些）
 
-- **没有写入 / 没有执行**：stdio 宿主只读连接，`realm.write` 一律返回 `realm-read-only`；不能派发意图、不能调用其他 Agent、不可逆动作一律不通。
+- **没有写入 / 没有执行**：stdio 宿主只读连接，`realm.write` 一律返回 `realm-read-only`；不能派发意图、不能调用其他 Agent、不可逆动作一律不通。`zeus.plan` 只是把指令对本地技能目录做匹配并给出结构化候选，**plan-only**——不派发、不执行；执行仍走签名票据 + HTTP 门面。
 - **不能连任意目录**：没有运行期连接新路径的方法；换目录要重启并在启动时授权。
 - **不读企业域**：本入口只接个人 Realm（`personal`）；企业域、跨域授权走 HTTP 门面与 `decideRealmAccess`。
 - **没有远程/多设备**：远程 Streamable HTTP MCP、入站 A2A、跨设备同步要等门面真机部署（设计稿 §6 P2）。

@@ -198,7 +198,16 @@ describe('Realm MCP stdio surface (read tools + grant-gated write)', () => {
     const tools = (res!.result as { tools: Array<{ name: string; inputSchema: { required?: string[] } }> }).tools;
     // realm.write joined the list with E3.4's remaining write step (Active work
     // 238); its grant boundary is pinned in tests/realm-mcp-write.test.ts.
-    expect(tools.map(tool => tool.name).sort()).toEqual(['realm.read', 'realm.search', 'realm.write']);
+    // The read-only kernel face (zeus.skills/plan/status, design P1-1) joins the
+    // same list; its fail-closed contract is pinned in tests/personal-mcp-kernel.test.ts.
+    expect(tools.map(tool => tool.name).sort()).toEqual([
+      'realm.read',
+      'realm.search',
+      'realm.write',
+      'zeus.plan',
+      'zeus.skills',
+      'zeus.status',
+    ]);
     const read = tools.find(tool => tool.name === 'realm.read')!;
     expect(read.inputSchema.required).toContain('realmId');
     expect(read.inputSchema.required).toContain('itemId');

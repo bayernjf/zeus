@@ -23,6 +23,17 @@
  *    and never appears in any response; only realmId + root-relative itemIds.
  *  - tools/call follows the same rule: it accepts realmIds the host authorized
  *    and root-relative itemIds, and error messages never carry absolute paths.
+ *
+ * Kernel read-only face (design P1-1):
+ *  - zeus.skills / zeus.plan / zeus.status read kernel-internal registries
+ *    through the injected PersonalKernelQueries port. They bypass the realmId
+ *    whitelist on purpose - they never touch a connected realm - and their
+ *    output is a designed subset that carries no absolute path.
+ *  - The port is optional. When the host did not mount it, calling a zeus.*
+ *    tool fails closed with a named error instead of returning an empty result
+ *    a client would read as "nothing exists".
+ *  - This face is read-only by contract: it offers no execute, no write, no
+ *    remote call. Execution stays on the signed-ticket + HTTP face.
  */
 import type {
   DriverWriteGrant,
@@ -97,6 +108,12 @@ export type McpHandlerDeps = {
    * detail is dropped after the fixed response is produced.
    */
   log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void;
+  /**
+   * Read-only kernel queries (design P1-1). When absent, the zeus.* tools are
+   * advertised by tools/list but fail closed on tools/call - never answered
+   * with fabricated empty data.
+   */
+  kernelQueries?: PersonalKernelQueries;
 };
 
 /** Session-scoped caller identity (design-realm §6.5). */
@@ -104,6 +121,62 @@ export type RealmMcpActor = {
   name: string;
   /** Optional narrowing of the host whitelist for this session. */
   realmIds?: string[];
+};
+
+/**
+ * Dependency-inverted read-only kernel port for the zeus.* tools. The handler
+ * never reaches for a live kernel: the host (mcp-stdio.ts) implements this
+ * port over a booted, read-only kernel, so this file stays transport-agnostic
+ * and dependency-free. Every method is read-only; the shapes below deliberately
+ * omit absolute paths (realms expose realmId/type/readOnly, never root).
+ */
+export type PersonalKernelQueries = {
+  listSkills(filter?: {
+    domain?: string;
+    tag?: string;
+  }): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description?: string;
+      version: string;
+      domain?: string;
+      tags: string[];
+    }>
+  >;
+  getSkill(
+    id: string,
+    version?: string
+  ): Promise<
+    | {
+        id: string;
+        name: string;
+        description?: string;
+        version: string;
+        domain?: string;
+        tags: string[];
+      }
+    | undefined
+  >;
+  plan(input: {
+    text: string;
+    realm?: 'personal' | 'enterprise';
+  }): Promise<{
+    ok: boolean;
+    chosenBy: string;
+    skill?: string;
+    confidence?: number;
+    candidates: Array<{ skill: string; score: number }>;
+    reason?: string;
+    detail?: string;
+  }>;
+  status(): Promise<{
+    ts: string;
+    realms: Array<{ realmId: string; type: string; readOnly: boolean }>;
+    agents: { activeCount: number; names: string[] };
+    pendingOversight: number;
+    watches: number;
+  }>;
 };
 
 export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) => Promise<JsonRpcResponse | null> {
@@ -148,9 +221,9 @@ export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) 
         case 'resources/read':
           return ok(id, { contents: await readResource(deps.store, effectiveRealmIds, req.params) });
         case 'tools/list':
-          return ok(id, { tools: REALM_TOOLS });
+          return ok(id, { tools: [...REALM_TOOLS, ...KERNEL_TOOLS] });
         case 'tools/call':
-          return ok(id, { content: await callTool(deps.store, effectiveRealmIds, req.params) });
+          return ok(id, { content: await callTool(deps.store, effectiveRealmIds, deps.kernelQueries, req.params) });
         default:
           return fail(id, METHOD_NOT_FOUND, `method not found: ${req.method}`);
       }
@@ -243,10 +316,64 @@ const REALM_TOOLS: readonly ToolDescriptor[] = [
   },
 ];
 
-async function callTool(store: RealmStore, realmIds: string[], params: unknown): Promise<Array<{ type: 'text'; text: string }>> {
+const KERNEL_TOOLS: readonly ToolDescriptor[] = [
+  {
+    name: 'zeus.skills',
+    description:
+      'Read the kernel skill catalogue. Without id, list (optionally filtered by domain/tag); with id, fetch one skill. No realmId needed; read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'When present, return exactly this skill (latest version unless version is also given)' },
+        version: { type: 'string', description: 'Semver version; only meaningful with id' },
+        domain: { type: 'string', description: 'Catalogue filter by capability domain' },
+        tag: { type: 'string', description: 'Catalogue filter by tag' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'zeus.plan',
+    description:
+      'Recognize a natural-language instruction against the local skill catalogue (plan-only: returns chosenBy/skill/candidates or a named reason; local ranker, zero outbound; never executes).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The operator instruction in natural language' },
+        realm: { type: 'string', description: "'personal' (default) or 'enterprise'" },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'zeus.status',
+    description:
+      'Read-only kernel status: connected realms (realmId/type/readOnly, never absolute paths), active agents, pending oversight count, watches count.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+];
+
+async function callTool(
+  store: RealmStore,
+  realmIds: string[],
+  kernelQueries: PersonalKernelQueries | undefined,
+  params: unknown
+): Promise<Array<{ type: 'text'; text: string }>> {
   const { name, arguments: args } = (params ?? {}) as { name?: unknown; arguments?: Record<string, unknown> };
-  if (typeof name !== 'string' || !REALM_TOOLS.some(tool => tool.name === name)) {
+  if (typeof name !== 'string' || name.length === 0) {
     throw new McpParamError(`unknown tool: ${String(name)}`);
+  }
+  // The kernel face is its own boundary: it never goes through the realmId
+  // whitelist (it does not address a realm at all) and never writes.
+  if (name.startsWith('zeus.')) {
+    return callKernelTool(kernelQueries, name, args);
+  }
+  if (!REALM_TOOLS.some(tool => tool.name === name)) {
+    throw new McpParamError(`unknown tool: ${name}`);
   }
   if (typeof args !== 'object' || args === null || Array.isArray(args)) {
     throw new McpParamError('tools/call requires an arguments object');
@@ -280,6 +407,99 @@ async function callTool(store: RealmStore, realmIds: string[], params: unknown):
   }
   const item: RealmItem = await store.read(realmId, itemId);
   return [{ type: 'text', text: item.content }];
+}
+
+// --- Kernel face (design P1-1): zeus.skills / zeus.plan / zeus.status. ---
+
+/** Non-empty kernel-argument string; the schema never declares a free-form blob. */
+function asKernelString(value: unknown, key: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new McpParamError(`${key} must be a non-empty string, got: ${String(value)}`);
+  }
+  return value;
+}
+
+async function callKernelTool(
+  kernelQueries: PersonalKernelQueries | undefined,
+  name: string,
+  args: unknown
+): Promise<Array<{ type: 'text'; text: string }>> {
+  if (!kernelQueries) {
+    // Fail closed: the host advertised these tools (tools/list is static) but
+    // never mounted the read-only port. Say so by name - an empty catalogue or
+    // an empty status would be read as "the kernel has nothing", which is a lie
+    // the client would act on.
+    throw new KernelNotMountedError(name);
+  }
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    throw new McpParamError('tools/call requires an arguments object');
+  }
+  const kernelArgs = args as Record<string, unknown>;
+
+  if (name === 'zeus.skills') {
+    const known = new Set(['id', 'version', 'domain', 'tag']);
+    for (const key of Object.keys(kernelArgs)) {
+      if (!known.has(key)) {
+        throw new McpParamError(`unsupported skills parameter: ${key} (supported: id, version, domain, tag)`);
+      }
+    }
+    const id = kernelArgs.id === undefined ? undefined : asKernelString(kernelArgs.id, 'id');
+    const version = kernelArgs.version === undefined ? undefined : asKernelString(kernelArgs.version, 'version');
+    const domain = kernelArgs.domain === undefined ? undefined : asKernelString(kernelArgs.domain, 'domain');
+    const tag = kernelArgs.tag === undefined ? undefined : asKernelString(kernelArgs.tag, 'tag');
+    if (id !== undefined) {
+      const skill = await kernelQueries.getSkill(id, version);
+      if (!skill) {
+        return [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: false,
+              reason: 'not-found',
+              id,
+              ...(version !== undefined ? { version } : {}),
+            }),
+          },
+        ];
+      }
+      return [{ type: 'text', text: JSON.stringify(skill) }];
+    }
+    const skills = await kernelQueries.listSkills({
+      ...(domain !== undefined ? { domain } : {}),
+      ...(tag !== undefined ? { tag } : {}),
+    });
+    return [{ type: 'text', text: JSON.stringify(skills) }];
+  }
+
+  if (name === 'zeus.plan') {
+    const known = new Set(['text', 'realm']);
+    for (const key of Object.keys(kernelArgs)) {
+      if (!known.has(key)) {
+        throw new McpParamError(`unsupported plan parameter: ${key} (supported: text, realm)`);
+      }
+    }
+    const text = asKernelString(kernelArgs.text, 'text');
+    let realm: 'personal' | 'enterprise' | undefined;
+    if (kernelArgs.realm !== undefined) {
+      if (kernelArgs.realm !== 'personal' && kernelArgs.realm !== 'enterprise') {
+        throw new McpParamError(`realm must be 'personal' or 'enterprise', got: ${String(kernelArgs.realm)}`);
+      }
+      realm = kernelArgs.realm;
+    }
+    const result = await kernelQueries.plan({ text, ...(realm !== undefined ? { realm } : {}) });
+    return [{ type: 'text', text: JSON.stringify(result) }];
+  }
+
+  if (name === 'zeus.status') {
+    const extra = Object.keys(kernelArgs);
+    if (extra.length > 0) {
+      throw new McpParamError(`zeus.status takes no arguments (got: ${extra.join(', ')})`);
+    }
+    const status = await kernelQueries.status();
+    return [{ type: 'text', text: JSON.stringify(status) }];
+  }
+
+  throw new McpParamError(`unknown tool: ${name}`);
 }
 
 /**
@@ -477,13 +697,24 @@ class RealmNotConnectedMcpError extends Error {
     this.name = 'RealmNotConnectedMcpError';
   }
 }
+/** A zeus.* tool was called but the host did not mount the read-only kernel port. */
+class KernelNotMountedError extends Error {
+  constructor(readonly tool: string) {
+    super(`${tool} unavailable: kernel queries not mounted`);
+    this.name = 'KernelNotMountedError';
+  }
+}
 
 function mapError(
   id: JsonRpcId,
   error: unknown,
   log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void,
 ): JsonRpcResponse {
-  if (error instanceof McpParamError || error instanceof UnsupportedQueryError) {
+  if (
+    error instanceof McpParamError ||
+    error instanceof UnsupportedQueryError ||
+    error instanceof KernelNotMountedError
+  ) {
     return errorResponse(id, INVALID_PARAMS, (error as Error).message);
   }
   if (error instanceof RealmNotConnectedError || error instanceof RealmNotConnectedMcpError) {

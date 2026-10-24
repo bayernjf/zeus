@@ -37,7 +37,7 @@ ZEUS_REALM_ROOTS=/path/to/notes,/path/to/code \
 #   header x-zeus-realm-actor：宿主声明的调用方身份，仅可收窄到宿主白名单子集，缺省 anonymous
 ```
 
-规则只有一条：**授权集合只能在启动时定死，协议本身没有 connect。** stdio 入口 = 宿主启动进程时给的根目录，运行时无法增删（`src/realm/mcp-stdio.ts:11-11 #connect`、`src/realm/mcp-stdio.ts:92-92 #collectRoots`）；HTTP 入口 = 内核启动时的 Realm 连接列表（`src/http/serve.ts` 从 `kernel.realmStore.connections()` 装配），同样运行时不可增删。
+规则只有一条：**授权集合只能在启动时定死，协议本身没有 connect。** stdio 入口 = 宿主启动进程时给的根目录，运行时无法增删（`src/realm/mcp-stdio.ts:11-11 #connect`、`src/realm/mcp-stdio.ts:123-123 #collectRoots`）；HTTP 入口 = 内核启动时的 Realm 连接列表（`src/http/serve.ts` 从 `kernel.realmStore.connections()` 装配），同样运行时不可增删。
 
 两条入口的关系（实测）：
 
@@ -47,7 +47,7 @@ ZEUS_REALM_ROOTS=/path/to/notes,/path/to/code \
 | argv `[A, B, A, --flag]` + 同名变量 `ZEUS_REALM_ROOTS=A` | **仍然只有 2 个域**：argv 与 env 合并后按集合去重，`--` 前缀的参数被过滤掉，不会被当成根目录 |
 | argv 里一个不可达目录 `/no/such/dir` | 进程**退出码 1**、stderr 报 `connect failed … ENOENT`、**stdout 零条 JSON-RPC**——不存在"半启动的服务"，授权失败就不开门 |
 
-分隔符口径**只有一个**：`ZEUS_REALM_ROOTS` 按逗号切分，与运行时核心读同名变量的写法一致。**不要**用冒号——Windows 的 `C:\Users\…` 会被切成两个假根目录（这条踩坑记在 `src/realm/mcp-stdio.ts:98-98 #ZEUS_REALM_ROOTS`，此前评审 C-3 抓到过"同一变量两套语法"）。
+分隔符口径**只有一个**：`ZEUS_REALM_ROOTS` 按逗号切分，与运行时核心读同名变量的写法一致。**不要**用冒号——Windows 的 `C:\Users\…` 会被切成两个假根目录（这条踩坑记在 `src/realm/mcp-stdio.ts:129-129 #ZEUS_REALM_ROOTS`，此前评审 C-3 抓到过"同一变量两套语法"）。
 
 宿主侧配置的形状各家不同，语义相同（`command` + `args`，或 `command` + `env`）：
 
@@ -66,7 +66,7 @@ ZEUS_REALM_ROOTS=/path/to/notes,/path/to/code \
 
 ### 1.2 握手与版本协商
 
-服务端声明支持三个协议版本，**新在前**（`src/realm/mcp.ts:47-47 #SUPPORTED_PROTOCOL_VERSIONS`）：`2025-06-18`、`2025-03-26`、`2024-11-05`。
+服务端声明支持三个协议版本，**新在前**（`src/realm/mcp.ts:58-58 #SUPPORTED_PROTOCOL_VERSIONS`）：`2025-06-18`、`2025-03-26`、`2024-11-05`。
 
 协商规则（实测）：客户端送的版本在表内 → 原样回该版本；不在表内 → 回服务端最新的那个。
 
@@ -124,7 +124,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 ```
 
 要点：
-- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:468-468 #publicManifest`，序列化点 `src/realm/mcp.ts:418-418 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
+- **清单里没有 `root` 字段**。绝对路径在序列化前被剥掉（`src/realm/mcp.ts:688-688 #publicManifest`，序列化点 `src/realm/mcp.ts:638-638 #publicManifest`），实测 13/13 响应里根目录字符串零命中。客户端能拿到的定位符只有 `realmId` + 根相对 `itemId`。
 - `contentDigest` 是**连接时快照**的内容摘要；目录被改过它不会自己变（见 §1.6）。
 - `skipped[]` 是"为什么你的某个文件不在结果里"的官方答案，逐条带原因（§1.7）。
 - URI 的 scheme 不是 `zeus-realm://` → `-32602`；hostname 不是已连接域 → `-32002`；pathname 不是 manifest/search/item → `-32602 unknown realm resource`。都实测过。
@@ -149,7 +149,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 - 未声明的参数按名拒绝（`unsupported write parameter: <name>`），`data` 缺失同样拒绝：与检索参数同一 fail-loud 口径（deferred #31）。
 - 宿主若连的存储层没有实现写入（`RealmStore.write` 是可选方法，只读部署/P0 后端），工具**点名不可用**而不是调用 undefined。
 
-- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:262-262 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
+- **返回值是"文本里塞 JSON"**，不是结构化 result（`src/realm/mcp.ts:389-389 #JSON.stringify`）：`realm.search` 的 `text` 需要客户端再 `JSON.parse` 一次。这是 MCP 工具结果的通用形状，别指望宿主帮你渲染。
 - `realm.read` 的正文按原样返回，包括换行；层级目录用 POSIX 分隔（实测 `itemId:"sub/dir/deep.md"` 可读）。
 - 检索语义（`src/realm/store.ts:195-195 #sort`）：`text` 按空白切词后**全部命中**（AND）、大小写不敏感的子串匹配；命中按 `modifiedAt` **倒序**。`snippet` 是**包含任一检索词的第一行**（`trim` 后超过 200 字符则截断加 `…`；没给 `text` 时取第一行非空内容；一行都没匹配上则是空串）——它是给"挑一条去读"用的定位提示，不是富文本，代码级 `src/realm/store.ts:528-528 #snippetFor`。
 - **没有写工具**（实测 `realm.write` → `-32602 unknown tool: realm.write`）。P0 的写能力只存在于库内端口 `Realm.write`，不经这条通道暴露（剩余半边登记在 [deferred-items.md](deferred-items.md) #14/#18 的口径里）。
@@ -186,7 +186,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.8 错误码与处置
 
-服务端可能回的全部码（码表 `src/realm/mcp.ts:57-57 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:481-487 #mapError`）。标 ✅ 的是本轮实测出现过原文：
+服务端可能回的全部码（码表 `src/realm/mcp.ts:68-68 #REALM_NOT_CONNECTED`、出口 `src/realm/mcp.ts:708-715 #mapError`）。标 ✅ 的是本轮实测出现过原文：
 
 | code | 含义 | 什么时候出现 / 客户端该怎么办 |
 |---|---|---|
@@ -209,7 +209,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 | 没有 `connect` / `disconnect` / `reindex` | 授权集合与检索快照都在启动时定死；要改就重启宿主进程 |
 | 鉴权取决于传输形态 | **stdio：没有鉴权**——对端就是你启动它的那个宿主，能写这条管道 = 拥有宿主授权的全部读取权，不要把它接进多租户进程。**HTTP：Bearer 鉴权**——`POST /mcp` 过 `requireBearer`，未配 token 整组不挂载。主体（actor）判定已落地（deferred #18，2026-10-07）：`x-zeus-realm-actor` header 声明的会话级 actor **仅可收窄**宿主白名单，缺省 anonymous |
 | 没有写工具 | 想改用户目录请走库内 `Realm.write`（含企业域签名凭证），不是这条通道 |
-| 只有 personal 域（stdio） | stdio 宿主把类型写死为 `personal` 且 `readOnly:true`（`src/realm/mcp-stdio.ts:35-35 #personal`）。**HTTP 面例外**：realmIds 来自内核启动连接列表（可含 enterprise），企业域读取路径的隔离执行点 = 同一份 realmId 白名单（§6.5 裁定 ④）∩ actor 收窄 |
+| 只有 personal 域（stdio） | stdio 宿主把类型写死为 `personal` 且 `readOnly:true`（`src/realm/mcp-stdio.ts:43-43 #personal`）。**HTTP 面例外**：realmIds 来自内核启动连接列表（可含 enterprise），企业域读取路径的隔离执行点 = 同一份 realmId 白名单（§6.5 裁定 ④）∩ actor 收窄 |
 | 没有服务端→客户端推送 | `subscribe:false` / `listChanged:false`，改了不通知（§1.2） |
 
 ---
