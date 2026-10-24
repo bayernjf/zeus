@@ -48,6 +48,7 @@
     "e2e:m7": "node scripts/e2e-m7.mjs",
     "evals": "node scripts/eval-run.mjs",
     "watch:tick": "node scripts/run-watch-tick.mjs",
+    "daemon": "node scripts/run-watch-tick.mjs --watch --notify",
     "bench:capacity": "node scripts/bench-capacity.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

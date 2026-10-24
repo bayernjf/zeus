@@ -303,7 +303,7 @@ watch 按自己的 `intervalSeconds` 判断是否到期，但**内核进程刻�
 | 单次（默认） | `npm run watch:tick` | cron 每 N 分钟打一次，打完即退 |
 | 常驻 | `npm run watch:tick -- --watch --interval 60` | systemd 长驻服务，按秒级节奏循环 |
 
-环境变量：`KERNEL_URL`（必填，**只接受 loopback**：`127.0.0.1` / `localhost` / `[::1]`，指向非环回地址直接退出 2——内部 token 不许离开本机）、`ZEUS_INTERNAL_TOKEN`（必填，bearer；缺失即退出 2）、`WATCH_INTERVAL_SECONDS`（默认 60，也可 `--interval` 覆盖）、`WATCH_HTTP_TIMEOUT_MS`（默认 10000，或 `--timeout`）、`WATCH_MAX_BACKOFF_MS`（默认 30000，常驻模式内核不可达时的退避上限）。
+环境变量：`KERNEL_URL`（必填，**只接受 loopback**：`127.0.0.1` / `localhost` / `[::1]`，指向非环回地址直接退出 2——内部 token 不许离开本机）、`ZEUS_INTERNAL_TOKEN`（必填，bearer；缺失即退出 2）、`WATCH_INTERVAL_SECONDS`（默认 60，也可 `--interval` 覆盖）、`WATCH_HTTP_TIMEOUT_MS`（默认 10000，或 `--timeout`）、`WATCH_MAX_BACKOFF_MS`（默认 30000，常驻模式内核不可达时的退避上限）、`ZEUS_NOTIFY`（默认 `1`：常驻 `--watch` 模式里有 watch 真实 fired 时弹系统通知——macOS 用自带 `osascript display notification`，有 `terminal-notifier` 则用它，都没有则降级为日志；置 `0` 或传 `--no-notify` 关闭。单次模式默认不弹。unavailable / autoDisabled 的 watch 只打日志、不弹通知）。一键常驻带通知的入口为 `npm run daemon`（= `node scripts/run-watch-tick.mjs --watch --notify`）。
 
 退出码（供调度器判健康）：`0` 本次评估跑完（一个 watch 都没触发仍是成功）；`1` 内核拒绝（非 2xx，如 token 错 401）或报告里存在读数不可得 / 自动停用的 watch；`2` 起不来（配置缺失、参数非法、URL 非 loopback）或单次模式下内核不可达。常驻模式收到 SIGTERM/SIGINT 在当前一轮后干净退出（退出 0），内核重启窗口内按有界指数退避重试，不打死调度器。
 
