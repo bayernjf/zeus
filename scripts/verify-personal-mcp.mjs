@@ -57,6 +57,11 @@ try {
   const tools = await send('tools/list', {});
   const names = (tools.result?.tools || []).map(t => t.name);
   check('tools/list contains realm.search/read', names.includes('realm.search') && names.includes('realm.read'), names.join(','));
+  check(
+    'tools/list exposes the read-only kernel face (zeus.skills/plan/status)',
+    ['zeus.skills', 'zeus.plan', 'zeus.status'].every(n => names.includes(n)),
+    names.join(',')
+  );
 
   const resources = await send('resources/list', {});
   const uris = (resources.result?.resources || []).map(r => r.uri);
@@ -96,6 +101,45 @@ try {
     arguments: { realmId: 'not-connected', itemId: 'x' },
   });
   check('unknown realm read refused', !!rogue.error, JSON.stringify(rogue.error?.message || rogue).slice(0, 160));
+
+  // --- Read-only kernel face (design P1-1): zeus.skills / zeus.plan / zeus.status.
+
+  const status = await send('tools/call', { name: 'zeus.status', arguments: {} });
+  const statusText = status.result?.content?.[0]?.text || '';
+  let statusJson = null;
+  try { statusJson = JSON.parse(statusText); } catch { /* handled below */ }
+  check(
+    'zeus.status returns realms (realmId/type/readOnly) and counts, never the absolute root',
+    !!statusJson &&
+      Array.isArray(statusJson.realms) &&
+      statusJson.realms.some(r => r.realmId === realmId && r.type === 'personal' && r.readOnly === true) &&
+      typeof statusJson.agents?.activeCount === 'number' &&
+      typeof statusJson.pendingOversight === 'number' &&
+      typeof statusJson.watches === 'number' &&
+      !statusText.includes(root) &&
+      !/"root"\s*:/.test(statusText),
+    statusText.slice(0, 220)
+  );
+
+  const skills = await send('tools/call', { name: 'zeus.skills', arguments: {} });
+  const skillsText = skills.result?.content?.[0]?.text || '';
+  let skillsArr = null;
+  try { skillsArr = JSON.parse(skillsText); } catch { /* handled below */ }
+  check('zeus.skills returns the catalogue as an array', Array.isArray(skillsArr), skillsText.slice(0, 200));
+
+  const plan = await send('tools/call', { name: 'zeus.plan', arguments: { text: 'review the meeting notes' } });
+  const planText = plan.result?.content?.[0]?.text || '';
+  let planJson = null;
+  try { planJson = JSON.parse(planText); } catch { /* handled below */ }
+  check(
+    'zeus.plan returns a structured verdict (ok/chosenBy/candidates; local ranker, zero outbound)',
+    !!planJson &&
+      typeof planJson.ok === 'boolean' &&
+      typeof planJson.chosenBy === 'string' &&
+      Array.isArray(planJson.candidates) &&
+      (planJson.ok ? typeof planJson.skill === 'string' : typeof planJson.reason === 'string'),
+    planText.slice(0, 220)
+  );
 } catch (e) {
   check('probe ran without exception', false, String(e?.message || e));
 } finally {
