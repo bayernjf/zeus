@@ -30,6 +30,7 @@
     "build:client": "tsc -p packages/zeus-client/tsconfig.json",
     "start": "node dist/http/serve.js",
     "daily": "node dist/daily/cli.js",
+    "chat": "node dist/chat/cli.js",
     "agent:example": "node dist/a2a/example-agent.js",
     "mcp:realm": "node dist/realm/mcp-stdio.js",
     "mcp-config": "node scripts/mcp-config.mjs",
