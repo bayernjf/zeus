@@ -32,6 +32,7 @@
     "daily": "node dist/daily/cli.js",
     "agent:example": "node dist/a2a/example-agent.js",
     "mcp:realm": "node dist/realm/mcp-stdio.js",
+    "mcp-config": "node scripts/mcp-config.mjs",
     "vault": "node dist/vault/cli.js",
     "tui": "node dist/tui/cli.js",
     "verify:roster": "node scripts/verify-roster.mjs",
