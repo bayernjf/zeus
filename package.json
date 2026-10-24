@@ -39,6 +39,7 @@
     "verify:execute-delegation": "node scripts/verify-execute-delegation.mjs",
     "verify:intent-recognize": "node scripts/verify-intent-recognize.mjs",
     "verify:reliability": "node scripts/verify-runtime-reliability.mjs",
+    "verify:personal-mcp": "node scripts/verify-personal-mcp.mjs",
     "acceptance:fanout": "node scripts/acceptance-real-fanout.mjs",
     "acceptance:loom": "node scripts/acceptance-loom-interop.mjs",
     "smoke:core": "node scripts/smoke-core.mjs",
