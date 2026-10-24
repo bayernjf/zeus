@@ -1,6 +1,6 @@
 # 设计稿：Personal Agent 宿主层（Personal Agent Host）
 
-> 状态：**设计稿 v0.1（2026-10-25）**。本文回答「要不要做 Personal Agent、怎么做、与 Tier0 八个产品是什么关系」，是宿主层的单一事实源；内核能力的「怎么做」仍以各 `design-*.md` 为准。
+> 状态：**设计稿 v0.2（2026-10-25，修正 atlas 归属）**。本文回答「要不要做 Personal Agent、怎么做、与 Tier0 八个产品是什么关系」，是宿主层的单一事实源；内核能力的「怎么做」仍以各 `design-*.md` 为准。
 > 性质：**产品判断 + 架构分层文档**。它不新增内核原语，只规定「内核之外、用户身边」那一层的形状与落地顺序。
 > 关联：[design-agentic-integration.md](design-agentic-integration.md)（系统互联立场：Agent 是编排层、确定性原语是骨）、[design-self-host-loop.md](design-self-host-loop.md)（常驻 watch + 有界委托，内核已有，宿主不重做）、[design-inbound-a2a.md](design-inbound-a2a.md)（zeus 被外部 agent 反向派任务）、[design-realm.md](design-realm.md)（个人数据域）、[mcp-integration.md](mcp-integration.md)（MCP 三通道）、[prd.md](prd.md)（E1–E10）。
 
@@ -91,13 +91,14 @@
 | **job-agent** | stdio MCP（仅本机，v0 明确不做远程 HTTP/SSE；MCP_API_KEY 门控） | 求职**工具**，本机 stdio 接 zeus/个人助手 | 补落地页发现层（本轮）；远程是 v0 非目标，不擅改 |
 | **agent-dev** | stdio MCP（CLI 子命令，桥本机 daemon，Bearer） | 开发**工具**，本机 stdio 接入 | 已就绪，写入手册 |
 | **loom** | A2A（card/rpc，tasks 鉴权用 zeus 专用 key）+ MCP（默认关，仅 plan 只读） | zeus 的**远程下属（vassal）**，由 zeus 编排，不直接对个人助手开放 | 保持；开 MCP/公网需产品侧决策 + 部署 |
-| **atlas** | 无 MCP/A2A server；是 MCP 工具的管理/消费方 | 编排/管理台（人类面） | **不建议加 agent 协议面** |
+| **atlas** | **A2A 执行 Agent 面（W2 已接入 zeus，vassal，域 `ops-orchestration`，ADR T32，router 已挂 `api/main.py:522`）+ MCP 只读 stdio 面（`python -m atlas.mcp`，7 个只读工具，ADR T33）+ 平台 REST**；内部另有 Harness/Graph/Loop 编排内核 | **运营域执行 Agent（嵌套编排者）**：zeus 委派运营类任务，atlas 在自己域内自治 | 已接入，无需「加面」；重点是厘清嵌套边界（见 `bayjf/docs/tier0/zeus-vs-atlas-关系厘清.md`） |
 | **commerce-os** | Bearer REST `/api/v1` | 电商业务后端（平台面） | 保持 REST；需要时由 zeus 以连接器方式包一层，不重写 |
 | **ops-console** | Cookie 登录的人类 SSR 工作台；服务端 Bearer 调 zeus/commerce | 运营**人类工作台**（代码注释明确不直接给 agent） | 保持人类面 |
 
-**两条纪律**：
+**三条纪律**：
 1. 个人助手只面对 **zeus 一扇门**（PRD 目标 4）；矩阵产品以工具（MCP）或下属（A2A）身份归属，星型编排、可吊销、名册可验（bayjf 签名 roster）。
-2. 不为「凑齐 MCP」而给人类/平台面硬加协议层——commerce-os/ops-console/atlas 的正确归属是「人用的系统」，agent 要用它们，应经 zeus 连接器（MCP 包 REST）或保持 GUI 兜底，而不是重写业务内核（[design-agentic-integration.md](design-agentic-integration.md) §6A.2）。
+2. 不为「凑齐 MCP」而给人类/平台面硬加协议层——commerce-os/ops-console 的正确归属是「人用的系统」，agent 要用它们，应经 zeus 连接器（MCP 包 REST）或保持 GUI 兜底，而不是重写业务内核（[design-agentic-integration.md](design-agentic-integration.md) §6A.2）。
+3. **嵌套编排边界**：atlas 是已接入的运营域执行 Agent（W2），它在自己域内可用 Harness/Graph/Loop 自治，但**跨域的决策、授权、冲突、审计一律收敛回 zeus**，不形成第二个顶层门。
 
 ## 5. 能力发现层（让 AI 找得到、信得过）
 
@@ -131,7 +132,8 @@
 ### P3 — 长期/非目标，默认不做
 
 - 传承 dead-man switch + 密钥托管（E8.4，P3，法律框架 deferred #2/#3）。
-- 给 commerce-os / ops-console / atlas 加 MCP/A2A 协议面（保持人类/平台面）。
+- 给 commerce-os / ops-console 加 MCP/A2A 协议面（保持人类/平台面）。
+- atlas 已在 W2 接入（A2A + 只读 MCP）；其 MCP 进一步加 HTTP/写能力（atlas docs/117、D49）属 atlas 自身选型，落地时须与 zeus 授权/审计对齐，不由本方案代决。
 - 打开 loom 的 MCP 远程开关（产品默认有意关闭，须 loom 侧决策与公网 `public_base_url`）。
 - 给 job-agent / agent-dev 加远程 HTTP（其 v0 明确为非目标）。
 - 自造模型、自造私有协议、让模型自行决定发起不可逆动作。
@@ -177,4 +179,5 @@ P1 及以后均按本文 §6 单独立项，不在本轮扩范围。
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
+| v0.2 | 2026-10-25 | **修正 atlas 归属**：v0.1 误记 atlas「无协议面、不建议加」；实地核查确认其已有 A2A 执行 Agent 面（W2 接入 zeus，vassal，域 ops-orchestration，ADR T32）与 MCP 只读 stdio 面（7 工具，ADR T33），关系为「嵌套编排」（atlas 域内自治、跨域收敛回 zeus）。同步改 §4 表格、纪律（两条→三条）、P3；专项证据见 `bayjf/docs/tier0/zeus-vs-atlas-关系厘清.md`。 |
 | v0.1 | 2026-10-25 | 首版：基于 8 个 Tier0 仓库源码核查与外部调研，确定「不新建内核、补 zeus 宿主层」判断；给出四层宿主职责、Tier0 接入拓扑、P0–P3 路线图；本轮落地 P0 三项。 |
