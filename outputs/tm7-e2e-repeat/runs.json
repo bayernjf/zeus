@@ -1,112 +1,112 @@
 {
   "content": {
-    "taskId": "task-mvljq2ij-01mb5",
+    "taskId": "task-mvlkkw26-07ram",
     "system": "agent-world",
     "workflow": "content",
     "template": "tpl-xiaohongshu",
-    "graphId": "e4a146ee-d5b8-4a0e-b89d-31be7020ee30",
-    "runId": "716f346c-379c-4be0-a269-85b72a7b1bcb",
+    "graphId": "5fd49a0a-4629-456f-a850-e729787e835e",
+    "runId": "73b152ff-952c-4eae-a884-2f11c97ec99b",
     "finalStatus": "done",
     "checkpointGrade": "D0",
     "artifacts": [
       {
-        "id": "716f346c-intake-h80s9-text",
+        "id": "73b152ff-intake-d2ce0-text",
         "kind": "text"
       },
       {
-        "id": "716f346c-banner-vfkr4-img-0",
+        "id": "73b152ff-banner-bobin-img-0",
         "kind": "image",
         "label": "AI 配图"
       },
       {
-        "id": "716f346c-scene-7hmpn-img-0",
+        "id": "73b152ff-scene-1j7zo-img-0",
         "kind": "image",
         "label": "AI 场景图"
       },
       {
-        "id": "716f346c-sellin-pnx2l-text",
+        "id": "73b152ff-sellin-x0crd-text",
         "kind": "text"
       },
       {
-        "id": "716f346c-copy-xycne-text",
+        "id": "73b152ff-copy-tzim8-text",
         "kind": "text"
       },
       {
-        "id": "716f346c-layout-sm1ur-text",
+        "id": "73b152ff-layout-jw89v-text",
         "kind": "text"
       },
       {
-        "id": "716f346c-qc-gjwyb-text",
+        "id": "73b152ff-qc-kbraz-text",
         "kind": "text"
       },
       {
-        "id": "716f346c-depot-gud7v-text",
+        "id": "73b152ff-depot-cy5kz-text",
         "kind": "text"
       }
     ],
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:01.243Z"
+        "at": "2026-10-23T22:56:59.214Z"
       },
       {
         "status": "dispatched",
-        "at": "2026-10-23T22:33:01.246Z",
+        "at": "2026-10-23T22:56:59.217Z",
         "note": "pos:tm7-e2e-rpt:content"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:01.246Z",
+        "at": "2026-10-23T22:56:59.217Z",
         "note": "agent agent:c01"
       },
       {
         "status": "done",
-        "at": "2026-10-23T22:33:03.517Z"
+        "at": "2026-10-23T22:57:01.511Z"
       }
     ]
   },
   "listingHalted": {
-    "decisionId": "dec_mvljq5hp_1",
+    "decisionId": "dec_mvlkkz1n_1",
     "grade": "D3",
     "timeline": {
       "run": {
-        "id": "4fcac56b-82e4-41ba-9690-fb8be230978a",
-        "graphId": "10eb5324-7c89-4485-9ebd-10ad039db58a",
+        "id": "5f1d0672-5ae7-4821-b26d-6ff4584748c7",
+        "graphId": "0093eb4b-24c7-45ff-ae53-43dc2aef12c9",
         "status": "halted",
         "trigger": "manual",
-        "startedAt": 1792794784086,
-        "endedAt": 1792794784840,
+        "startedAt": 1792796222068,
+        "endedAt": 1792796222831,
         "budgetUsd": null,
-        "haltedNodeId": "human-9wlhg",
+        "haltedNodeId": "human-xzdye",
         "haltedReason": "human:请审阅这篇待发布文案：通过则发布；如需修改请直接编辑；不符合要求可驳回（驳回将触发失败回退）。",
         "input": "上架 listing：薄荷精油 100ml"
       },
       "nodeMeta": {
-        "intake-e92wp": {
+        "intake-j3vj1": {
           "name": "素材输入",
           "kind": "source"
         },
-        "writer-tea6m": {
+        "writer-4saed": {
           "name": "自动成稿",
           "kind": "textGen"
         },
-        "qc-ujl9s": {
+        "qc-8syct": {
           "name": "自检把关",
           "kind": "gate"
         },
-        "notify-7lq8k": {
+        "notify-oha9c": {
           "name": "送审通知",
           "kind": "notify"
         },
-        "notify-k4u9z": {
+        "notify-li8wy": {
           "name": "通知兜底",
           "kind": "code"
         },
-        "human-9wlhg": {
+        "human-xzdye": {
           "name": "人工终审",
           "kind": "human"
         },
-        "publis-oo5px": {
+        "publis-prv72": {
           "name": "正式发布",
           "kind": "sink"
         }
@@ -114,14 +114,14 @@
       "timeline": {
         "nodes": [
           {
-            "nodeId": "intake-e92wp",
+            "nodeId": "intake-j3vj1",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794784088,
-                "finishedAt": 1792794784088,
+                "startedAt": 1792796222071,
+                "finishedAt": 1792796222071,
                 "durationMs": 0,
                 "outputPreview": "上架 listing：薄荷精油 100ml",
                 "outputTruncated": false,
@@ -141,19 +141,19 @@
                 "artifacts": 1
               }
             ],
-            "firstStartedAt": 1792794784088,
+            "firstStartedAt": 1792796222071,
             "status": "done"
           },
           {
-            "nodeId": "writer-tea6m",
+            "nodeId": "writer-4saed",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794784088,
-                "finishedAt": 1792794784363,
-                "durationMs": 275,
+                "startedAt": 1792796222071,
+                "finishedAt": 1792796222349,
+                "durationMs": 278,
                 "outputPreview": "[自动成稿] attempt 1 consuming 21 chars of input -> producing artifact",
                 "outputTruncated": false,
                 "tokensIn": 6,
@@ -175,9 +175,9 @@
                 "attempt": 2,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794784454,
-                "finishedAt": 1792794784729,
-                "durationMs": 275,
+                "startedAt": 1792796222442,
+                "finishedAt": 1792796222719,
+                "durationMs": 277,
                 "outputPreview": "[自动成稿] attempt 2 consuming 132 chars of input -> producing artifact",
                 "outputTruncated": false,
                 "tokensIn": 33,
@@ -196,17 +196,17 @@
                 "artifacts": 1
               }
             ],
-            "firstStartedAt": 1792794784088,
+            "firstStartedAt": 1792796222071,
             "status": "done"
           },
           {
-            "nodeId": "qc-ujl9s",
+            "nodeId": "qc-8syct",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "running",
-                "startedAt": 1792794784363,
+                "startedAt": 1792796222349,
                 "finishedAt": null,
                 "durationMs": null,
                 "outputPreview": null,
@@ -234,8 +234,8 @@
                 "attempt": 2,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794784729,
-                "finishedAt": 1792794784821,
+                "startedAt": 1792796222719,
+                "finishedAt": 1792796222811,
                 "durationMs": 92,
                 "outputPreview": "Meets criterion: 文案无事实性错误、无敏感词/违禁词、结构完整（标题+正文+行动号召）、语气统一。\n补充判定规则：凡 URL 路径中包含 /api/artifacts/ 的图片或",
                 "outputTruncated": false,
@@ -259,19 +259,19 @@
                 "artifacts": 1
               }
             ],
-            "firstStartedAt": 1792794784363,
+            "firstStartedAt": 1792796222349,
             "status": "done"
           },
           {
-            "nodeId": "notify-7lq8k",
+            "nodeId": "notify-oha9c",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794784821,
-                "finishedAt": 1792794784839,
-                "durationMs": 18,
+                "startedAt": 1792796222811,
+                "finishedAt": 1792796222831,
+                "durationMs": 20,
                 "outputPreview": "通知已发送：feishu → feishu 群机器人 …s-notify（67 字符）",
                 "outputTruncated": false,
                 "tokensIn": 0,
@@ -290,17 +290,17 @@
                 "artifacts": 1
               }
             ],
-            "firstStartedAt": 1792794784821,
+            "firstStartedAt": 1792796222811,
             "status": "done"
           },
           {
-            "nodeId": "human-9wlhg",
+            "nodeId": "human-xzdye",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "reviewing",
-                "startedAt": 1792794784826,
+                "startedAt": 1792796222819,
                 "finishedAt": null,
                 "durationMs": null,
                 "outputPreview": null,
@@ -321,7 +321,7 @@
                 "artifacts": 0
               }
             ],
-            "firstStartedAt": 1792794784826,
+            "firstStartedAt": 1792796222819,
             "status": "reviewing"
           }
         ],
@@ -347,113 +347,113 @@
     }
   },
   "listing": {
-    "taskId": "task-mvljq4p5-2usd7",
+    "taskId": "task-mvlkky91-2m904",
     "system": "agent-world",
     "workflow": "listing",
     "template": "tpl-review-publish",
-    "graphId": "10eb5324-7c89-4485-9ebd-10ad039db58a",
-    "runId": "4fcac56b-82e4-41ba-9690-fb8be230978a",
+    "graphId": "0093eb4b-24c7-45ff-ae53-43dc2aef12c9",
+    "runId": "5f1d0672-5ae7-4821-b26d-6ff4584748c7",
     "finalStatus": "done",
     "checkpointGrade": "D3",
     "artifacts": [
       {
-        "id": "4fcac56b-intake-e92wp-text",
+        "id": "5f1d0672-intake-j3vj1-text",
         "kind": "text"
       },
       {
-        "id": "4fcac56b-writer-tea6m-text",
+        "id": "5f1d0672-writer-4saed-text",
         "kind": "text"
       },
       {
-        "id": "4fcac56b-qc-ujl9s-text",
+        "id": "5f1d0672-qc-8syct-text",
         "kind": "text"
       },
       {
-        "id": "4fcac56b-notify-7lq8k-json",
+        "id": "5f1d0672-notify-oha9c-json",
         "kind": "json"
       },
       {
-        "id": "4fcac56b-publis-oo5px-text",
+        "id": "5f1d0672-publis-prv72-text",
         "kind": "text"
       }
     ],
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:04.073Z"
+        "at": "2026-10-23T22:57:02.053Z"
       },
       {
         "status": "dispatched",
-        "at": "2026-10-23T22:33:04.076Z",
+        "at": "2026-10-23T22:57:02.057Z",
         "note": "pos:tm7-e2e-rpt:listing"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:04.076Z",
+        "at": "2026-10-23T22:57:02.057Z",
         "note": "agent agent:l01"
       },
       {
         "status": "awaiting_decision",
-        "at": "2026-10-23T22:33:05.103Z",
-        "note": "dec_mvljq5hp_1"
+        "at": "2026-10-23T22:57:03.085Z",
+        "note": "dec_mvlkkz1n_1"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:05.504Z",
+        "at": "2026-10-23T22:57:03.471Z",
         "note": "resumed after decision"
       },
       {
         "status": "done",
-        "at": "2026-10-23T22:33:05.517Z"
+        "at": "2026-10-23T22:57:03.477Z"
       }
     ]
   },
   "asHalted": {
-    "decisionId": "dec_mvljq6r6_2",
+    "decisionId": "dec_mvlkl0at_2",
     "grade": "D2",
     "timeline": {
       "run": {
-        "id": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
-        "graphId": "68f8dfc1-9415-420e-bd00-762d4ad6ba8e",
+        "id": "f42e35c1-bbfc-475f-900e-de63f32e6533",
+        "graphId": "e5d03b5c-421c-4e4f-901d-2561899d126d",
         "status": "halted",
         "trigger": "manual",
-        "startedAt": 1792794786227,
-        "endedAt": 1792794786575,
+        "startedAt": 1792796224200,
+        "endedAt": 1792796224548,
         "budgetUsd": null,
-        "haltedNodeId": "humanR-1xm9b",
+        "haltedNodeId": "humanR-mst0g",
         "haltedReason": "human:这是需要人工介入的工单。请审核内容并给出处理方案：通过则确认回复；如需修改请直接编辑；不符合要求可驳回。",
         "input": "工单：客户投诉音箱杂音要求退货"
       },
       "nodeMeta": {
-        "intake-vlfm9": {
+        "intake-nnzcl": {
           "name": "工单",
           "kind": "source"
         },
-        "classi-oxg6k": {
+        "classi-0l7y3": {
           "name": "工单分类",
           "kind": "textGen"
         },
-        "parse-jli4m": {
+        "parse-ccwvj": {
           "name": "解析分类",
           "kind": "code"
         },
-        "judge-qrh5u": {
+        "judge-19e7m": {
           "name": "分流判断",
           "kind": "branch"
         },
-        "autoRe-1ygdt": {
+        "autoRe-wj29i": {
           "name": "自动回复",
           "kind": "textGen"
         },
-        "humanR-1xm9b": {
+        "humanR-mst0g": {
           "name": "人工审核",
           "kind": "human"
         },
-        "notify-0zm89": {
+        "notify-xsxsr": {
           "name": "通知用户",
           "kind": "notify"
         },
-        "depot-8s80h": {
+        "depot-dyak9": {
           "name": "处理记录",
           "kind": "sink"
         }
@@ -461,14 +461,14 @@
       "timeline": {
         "nodes": [
           {
-            "nodeId": "intake-vlfm9",
+            "nodeId": "intake-nnzcl",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794786229,
-                "finishedAt": 1792794786229,
+                "startedAt": 1792796224202,
+                "finishedAt": 1792796224202,
                 "durationMs": 0,
                 "outputPreview": "工单：客户投诉音箱杂音要求退货",
                 "outputTruncated": false,
@@ -488,18 +488,18 @@
                 "artifacts": 1
               }
             ],
-            "firstStartedAt": 1792794786229,
+            "firstStartedAt": 1792796224202,
             "status": "done"
           },
           {
-            "nodeId": "classi-oxg6k",
+            "nodeId": "classi-0l7y3",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794786229,
-                "finishedAt": 1792794786506,
+                "startedAt": 1792796224202,
+                "finishedAt": 1792796224479,
                 "durationMs": 277,
                 "outputPreview": "[工单分类] attempt 1 consuming 15 chars of input -> producing artifact",
                 "outputTruncated": false,
@@ -519,18 +519,18 @@
                 "artifacts": 1
               }
             ],
-            "firstStartedAt": 1792794786229,
+            "firstStartedAt": 1792796224202,
             "status": "done"
           },
           {
-            "nodeId": "parse-jli4m",
+            "nodeId": "parse-ccwvj",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794786507,
-                "finishedAt": 1792794786573,
+                "startedAt": 1792796224480,
+                "finishedAt": 1792796224546,
                 "durationMs": 66,
                 "outputPreview": "{\n  \"category\": \"其他\",\n  \"complex\": true,\n  \"summary\": \"[工单分类] attempt 1 consuming 15 chars of input -> producing artifact\\n\\n[object Object]\"\n}",
                 "outputTruncated": false,
@@ -550,18 +550,18 @@
                 "artifacts": 1
               }
             ],
-            "firstStartedAt": 1792794786507,
+            "firstStartedAt": 1792796224480,
             "status": "done"
           },
           {
-            "nodeId": "judge-qrh5u",
+            "nodeId": "judge-19e7m",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "done",
-                "startedAt": 1792794786574,
-                "finishedAt": 1792794786574,
+                "startedAt": 1792796224547,
+                "finishedAt": 1792796224547,
                 "durationMs": 0,
                 "outputPreview": "路由 → 人工审核（r-complex）",
                 "outputTruncated": false,
@@ -581,11 +581,11 @@
                 "artifacts": 0
               }
             ],
-            "firstStartedAt": 1792794786574,
+            "firstStartedAt": 1792796224547,
             "status": "done"
           },
           {
-            "nodeId": "autoRe-1ygdt",
+            "nodeId": "autoRe-wj29i",
             "attempts": [
               {
                 "attempt": 1,
@@ -616,13 +616,13 @@
             "status": "skipped"
           },
           {
-            "nodeId": "humanR-1xm9b",
+            "nodeId": "humanR-mst0g",
             "attempts": [
               {
                 "attempt": 1,
                 "variant": "main",
                 "status": "reviewing",
-                "startedAt": 1792794786574,
+                "startedAt": 1792796224547,
                 "finishedAt": null,
                 "durationMs": null,
                 "outputPreview": null,
@@ -643,7 +643,7 @@
                 "artifacts": 0
               }
             ],
-            "firstStartedAt": 1792794786574,
+            "firstStartedAt": 1792796224547,
             "status": "reviewing"
           }
         ],
@@ -669,64 +669,64 @@
     }
   },
   "afterSales": {
-    "taskId": "task-mvljq6co-43192",
+    "taskId": "task-mvlkkzw7-4v5q0",
     "system": "agent-world",
     "workflow": "after-sales",
     "template": "tpl-customer-service",
-    "graphId": "68f8dfc1-9415-420e-bd00-762d4ad6ba8e",
-    "runId": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
+    "graphId": "e5d03b5c-421c-4e4f-901d-2561899d126d",
+    "runId": "f42e35c1-bbfc-475f-900e-de63f32e6533",
     "finalStatus": "done",
     "checkpointGrade": "D2",
     "artifacts": [
       {
-        "id": "0c27ebb3-intake-vlfm9-text",
+        "id": "f42e35c1-intake-nnzcl-text",
         "kind": "text"
       },
       {
-        "id": "0c27ebb3-classi-oxg6k-text",
+        "id": "f42e35c1-classi-0l7y3-text",
         "kind": "text"
       },
       {
-        "id": "0c27ebb3-parse-jli4m-code-json",
+        "id": "f42e35c1-parse-ccwvj-code-json",
         "kind": "json"
       },
       {
-        "id": "0c27ebb3-notify-0zm89-json",
+        "id": "f42e35c1-notify-xsxsr-json",
         "kind": "json"
       },
       {
-        "id": "0c27ebb3-depot-8s80h-text",
+        "id": "f42e35c1-depot-dyak9-text",
         "kind": "text"
       }
     ],
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:06.216Z"
+        "at": "2026-10-23T22:57:04.183Z"
       },
       {
         "status": "dispatched",
-        "at": "2026-10-23T22:33:06.219Z",
+        "at": "2026-10-23T22:57:04.188Z",
         "note": "pos:tm7-e2e-rpt:as"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:06.219Z",
+        "at": "2026-10-23T22:57:04.188Z",
         "note": "agent agent:a01"
       },
       {
         "status": "awaiting_decision",
-        "at": "2026-10-23T22:33:06.738Z",
-        "note": "dec_mvljq6r6_2"
+        "at": "2026-10-23T22:57:04.710Z",
+        "note": "dec_mvlkl0at_2"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:06.937Z",
+        "at": "2026-10-23T22:57:04.908Z",
         "note": "resumed after decision"
       },
       {
         "status": "done",
-        "at": "2026-10-23T22:33:07.452Z"
+        "at": "2026-10-23T22:57:05.427Z"
       }
     ]
   }

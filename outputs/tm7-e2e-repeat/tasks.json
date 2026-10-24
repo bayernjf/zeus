@@ -1,8 +1,8 @@
 {
-  "task-mvljq2ij-01mb5": {
+  "task-mvlkkw26-07ram": {
     "format": "zeus-org-task",
     "version": 1,
-    "id": "task-mvljq2ij-01mb5",
+    "id": "task-mvlkkw26-07ram",
     "organizationId": "org:tm7-e2e-rpt",
     "title": "content",
     "payload": {
@@ -12,49 +12,49 @@
     },
     "positionId": "pos:tm7-e2e-rpt:content",
     "assignedAgentId": "agent:c01",
-    "runId": "run-mvljq49p-15gkk",
+    "runId": "run-mvlkkxtz-175ki",
     "status": "done",
     "result": {
       "system": "agent-world",
       "workflow": "content",
       "template": "tpl-xiaohongshu",
-      "graphId": "e4a146ee-d5b8-4a0e-b89d-31be7020ee30",
-      "runId": "716f346c-379c-4be0-a269-85b72a7b1bcb",
+      "graphId": "5fd49a0a-4629-456f-a850-e729787e835e",
+      "runId": "73b152ff-952c-4eae-a884-2f11c97ec99b",
       "finalStatus": "done",
       "checkpointGrade": "D0",
       "artifacts": [
         {
-          "id": "716f346c-intake-h80s9-text",
+          "id": "73b152ff-intake-d2ce0-text",
           "kind": "text"
         },
         {
-          "id": "716f346c-banner-vfkr4-img-0",
+          "id": "73b152ff-banner-bobin-img-0",
           "kind": "image",
           "label": "AI 配图"
         },
         {
-          "id": "716f346c-scene-7hmpn-img-0",
+          "id": "73b152ff-scene-1j7zo-img-0",
           "kind": "image",
           "label": "AI 场景图"
         },
         {
-          "id": "716f346c-sellin-pnx2l-text",
+          "id": "73b152ff-sellin-x0crd-text",
           "kind": "text"
         },
         {
-          "id": "716f346c-copy-xycne-text",
+          "id": "73b152ff-copy-tzim8-text",
           "kind": "text"
         },
         {
-          "id": "716f346c-layout-sm1ur-text",
+          "id": "73b152ff-layout-jw89v-text",
           "kind": "text"
         },
         {
-          "id": "716f346c-qc-gjwyb-text",
+          "id": "73b152ff-qc-kbraz-text",
           "kind": "text"
         },
         {
-          "id": "716f346c-depot-gud7v-text",
+          "id": "73b152ff-depot-cy5kz-text",
           "kind": "text"
         }
       ]
@@ -67,45 +67,45 @@
           "workflow": "content",
           "template": "tpl-xiaohongshu"
         },
-        "at": "2026-10-23T22:33:01.247Z"
+        "at": "2026-10-23T22:56:59.218Z"
       },
       {
         "stage": "agent-world:done",
         "data": {
-          "runId": "716f346c-379c-4be0-a269-85b72a7b1bcb",
+          "runId": "73b152ff-952c-4eae-a884-2f11c97ec99b",
           "nodes": null
         },
-        "at": "2026-10-23T22:33:03.516Z"
+        "at": "2026-10-23T22:57:01.511Z"
       }
     ],
     "idempotencyKey": "idem-content",
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:01.243Z"
+        "at": "2026-10-23T22:56:59.214Z"
       },
       {
         "status": "dispatched",
-        "at": "2026-10-23T22:33:01.246Z",
+        "at": "2026-10-23T22:56:59.217Z",
         "note": "pos:tm7-e2e-rpt:content"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:01.246Z",
+        "at": "2026-10-23T22:56:59.217Z",
         "note": "agent agent:c01"
       },
       {
         "status": "done",
-        "at": "2026-10-23T22:33:03.517Z"
+        "at": "2026-10-23T22:57:01.511Z"
       }
     ],
-    "createdAt": "2026-10-23T22:33:01.243Z",
-    "updatedAt": "2026-10-23T22:33:03.517Z"
+    "createdAt": "2026-10-23T22:56:59.214Z",
+    "updatedAt": "2026-10-23T22:57:01.511Z"
   },
-  "task-mvljq4p5-2usd7": {
+  "task-mvlkky91-2m904": {
     "format": "zeus-org-task",
     "version": 1,
-    "id": "task-mvljq4p5-2usd7",
+    "id": "task-mvlkky91-2m904",
     "organizationId": "org:tm7-e2e-rpt",
     "title": "listing",
     "payload": {
@@ -113,41 +113,41 @@
       "input": "上架 listing：薄荷精油 100ml",
       "graphName": "zeus-listing-rpt",
       "fieldValues": {
-        "reviewWebhookUrl": "http://127.0.0.1:65346/cs-notify"
+        "reviewWebhookUrl": "http://127.0.0.1:50414/cs-notify"
       }
     },
     "positionId": "pos:tm7-e2e-rpt:listing",
     "assignedAgentId": "agent:l01",
-    "runId": "run-mvljq5t9-3k6ip",
+    "runId": "run-mvlkkzcl-3f44h",
     "status": "done",
-    "decisionId": "dec_mvljq5hp_1",
+    "decisionId": "dec_mvlkkz1n_1",
     "result": {
       "system": "agent-world",
       "workflow": "listing",
       "template": "tpl-review-publish",
-      "graphId": "10eb5324-7c89-4485-9ebd-10ad039db58a",
-      "runId": "4fcac56b-82e4-41ba-9690-fb8be230978a",
+      "graphId": "0093eb4b-24c7-45ff-ae53-43dc2aef12c9",
+      "runId": "5f1d0672-5ae7-4821-b26d-6ff4584748c7",
       "finalStatus": "done",
       "checkpointGrade": "D3",
       "artifacts": [
         {
-          "id": "4fcac56b-intake-e92wp-text",
+          "id": "5f1d0672-intake-j3vj1-text",
           "kind": "text"
         },
         {
-          "id": "4fcac56b-writer-tea6m-text",
+          "id": "5f1d0672-writer-4saed-text",
           "kind": "text"
         },
         {
-          "id": "4fcac56b-qc-ujl9s-text",
+          "id": "5f1d0672-qc-8syct-text",
           "kind": "text"
         },
         {
-          "id": "4fcac56b-notify-7lq8k-json",
+          "id": "5f1d0672-notify-oha9c-json",
           "kind": "json"
         },
         {
-          "id": "4fcac56b-publis-oo5px-text",
+          "id": "5f1d0672-publis-prv72-text",
           "kind": "text"
         }
       ]
@@ -160,16 +160,16 @@
           "workflow": "listing",
           "template": "tpl-review-publish"
         },
-        "at": "2026-10-23T22:33:04.077Z"
+        "at": "2026-10-23T22:57:02.057Z"
       },
       {
         "stage": "agent-world:awaiting-decision",
         "data": {
-          "runId": "4fcac56b-82e4-41ba-9690-fb8be230978a",
-          "haltedNodeId": "human-9wlhg",
+          "runId": "5f1d0672-5ae7-4821-b26d-6ff4584748c7",
+          "haltedNodeId": "human-xzdye",
           "haltedReason": "human:请审阅这篇待发布文案：通过则发布；如需修改请直接编辑；不符合要求可驳回（驳回将触发失败回退）。"
         },
-        "at": "2026-10-23T22:33:05.100Z"
+        "at": "2026-10-23T22:57:03.083Z"
       },
       {
         "stage": "agent-world:start",
@@ -177,63 +177,63 @@
           "workflow": "listing",
           "template": "tpl-review-publish"
         },
-        "at": "2026-10-23T22:33:05.505Z"
+        "at": "2026-10-23T22:57:03.472Z"
       },
       {
         "stage": "agent-world:awaiting-decision",
         "data": {
-          "runId": "4fcac56b-82e4-41ba-9690-fb8be230978a",
-          "haltedNodeId": "human-9wlhg",
+          "runId": "5f1d0672-5ae7-4821-b26d-6ff4584748c7",
+          "haltedNodeId": "human-xzdye",
           "haltedReason": "human:请审阅这篇待发布文案：通过则发布；如需修改请直接编辑；不符合要求可驳回（驳回将触发失败回退）。"
         },
-        "at": "2026-10-23T22:33:05.509Z"
+        "at": "2026-10-23T22:57:03.473Z"
       },
       {
         "stage": "agent-world:done",
         "data": {
-          "runId": "4fcac56b-82e4-41ba-9690-fb8be230978a",
+          "runId": "5f1d0672-5ae7-4821-b26d-6ff4584748c7",
           "nodes": null
         },
-        "at": "2026-10-23T22:33:05.517Z"
+        "at": "2026-10-23T22:57:03.477Z"
       }
     ],
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:04.073Z"
+        "at": "2026-10-23T22:57:02.053Z"
       },
       {
         "status": "dispatched",
-        "at": "2026-10-23T22:33:04.076Z",
+        "at": "2026-10-23T22:57:02.057Z",
         "note": "pos:tm7-e2e-rpt:listing"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:04.076Z",
+        "at": "2026-10-23T22:57:02.057Z",
         "note": "agent agent:l01"
       },
       {
         "status": "awaiting_decision",
-        "at": "2026-10-23T22:33:05.103Z",
-        "note": "dec_mvljq5hp_1"
+        "at": "2026-10-23T22:57:03.085Z",
+        "note": "dec_mvlkkz1n_1"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:05.504Z",
+        "at": "2026-10-23T22:57:03.471Z",
         "note": "resumed after decision"
       },
       {
         "status": "done",
-        "at": "2026-10-23T22:33:05.517Z"
+        "at": "2026-10-23T22:57:03.477Z"
       }
     ],
-    "createdAt": "2026-10-23T22:33:04.073Z",
-    "updatedAt": "2026-10-23T22:33:05.517Z"
+    "createdAt": "2026-10-23T22:57:02.053Z",
+    "updatedAt": "2026-10-23T22:57:03.477Z"
   },
-  "task-mvljq6co-43192": {
+  "task-mvlkkzw7-4v5q0": {
     "format": "zeus-org-task",
     "version": 1,
-    "id": "task-mvljq6co-43192",
+    "id": "task-mvlkkzw7-4v5q0",
     "organizationId": "org:tm7-e2e-rpt",
     "title": "after-sales",
     "payload": {
@@ -241,41 +241,41 @@
       "input": "工单：客户投诉音箱杂音要求退货",
       "graphName": "zeus-as-rpt",
       "fieldValues": {
-        "webhookUrl": "http://127.0.0.1:65346/cs-notify"
+        "webhookUrl": "http://127.0.0.1:50414/cs-notify"
       }
     },
     "positionId": "pos:tm7-e2e-rpt:as",
     "assignedAgentId": "agent:a01",
-    "runId": "run-mvljq7b0-50vrs",
+    "runId": "run-mvlkl0ur-5jgnh",
     "status": "done",
-    "decisionId": "dec_mvljq6r6_2",
+    "decisionId": "dec_mvlkl0at_2",
     "result": {
       "system": "agent-world",
       "workflow": "after-sales",
       "template": "tpl-customer-service",
-      "graphId": "68f8dfc1-9415-420e-bd00-762d4ad6ba8e",
-      "runId": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
+      "graphId": "e5d03b5c-421c-4e4f-901d-2561899d126d",
+      "runId": "f42e35c1-bbfc-475f-900e-de63f32e6533",
       "finalStatus": "done",
       "checkpointGrade": "D2",
       "artifacts": [
         {
-          "id": "0c27ebb3-intake-vlfm9-text",
+          "id": "f42e35c1-intake-nnzcl-text",
           "kind": "text"
         },
         {
-          "id": "0c27ebb3-classi-oxg6k-text",
+          "id": "f42e35c1-classi-0l7y3-text",
           "kind": "text"
         },
         {
-          "id": "0c27ebb3-parse-jli4m-code-json",
+          "id": "f42e35c1-parse-ccwvj-code-json",
           "kind": "json"
         },
         {
-          "id": "0c27ebb3-notify-0zm89-json",
+          "id": "f42e35c1-notify-xsxsr-json",
           "kind": "json"
         },
         {
-          "id": "0c27ebb3-depot-8s80h-text",
+          "id": "f42e35c1-depot-dyak9-text",
           "kind": "text"
         }
       ]
@@ -288,16 +288,16 @@
           "workflow": "after-sales",
           "template": "tpl-customer-service"
         },
-        "at": "2026-10-23T22:33:06.220Z"
+        "at": "2026-10-23T22:57:04.188Z"
       },
       {
         "stage": "agent-world:awaiting-decision",
         "data": {
-          "runId": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
-          "haltedNodeId": "humanR-1xm9b",
+          "runId": "f42e35c1-bbfc-475f-900e-de63f32e6533",
+          "haltedNodeId": "humanR-mst0g",
           "haltedReason": "human:这是需要人工介入的工单。请审核内容并给出处理方案：通过则确认回复；如需修改请直接编辑；不符合要求可驳回。"
         },
-        "at": "2026-10-23T22:33:06.737Z"
+        "at": "2026-10-23T22:57:04.709Z"
       },
       {
         "stage": "agent-world:start",
@@ -305,63 +305,63 @@
           "workflow": "after-sales",
           "template": "tpl-customer-service"
         },
-        "at": "2026-10-23T22:33:06.937Z"
+        "at": "2026-10-23T22:57:04.909Z"
       },
       {
         "stage": "agent-world:awaiting-decision",
         "data": {
-          "runId": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
-          "haltedNodeId": "humanR-1xm9b",
+          "runId": "f42e35c1-bbfc-475f-900e-de63f32e6533",
+          "haltedNodeId": "humanR-mst0g",
           "haltedReason": "human:这是需要人工介入的工单。请审核内容并给出处理方案：通过则确认回复；如需修改请直接编辑；不符合要求可驳回。"
         },
-        "at": "2026-10-23T22:33:06.939Z"
+        "at": "2026-10-23T22:57:04.912Z"
       },
       {
         "stage": "agent-world:done",
         "data": {
-          "runId": "0c27ebb3-0010-41d9-92c8-40c153ec0627",
+          "runId": "f42e35c1-bbfc-475f-900e-de63f32e6533",
           "nodes": null
         },
-        "at": "2026-10-23T22:33:07.452Z"
+        "at": "2026-10-23T22:57:05.427Z"
       }
     ],
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:06.216Z"
+        "at": "2026-10-23T22:57:04.183Z"
       },
       {
         "status": "dispatched",
-        "at": "2026-10-23T22:33:06.219Z",
+        "at": "2026-10-23T22:57:04.188Z",
         "note": "pos:tm7-e2e-rpt:as"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:06.219Z",
+        "at": "2026-10-23T22:57:04.188Z",
         "note": "agent agent:a01"
       },
       {
         "status": "awaiting_decision",
-        "at": "2026-10-23T22:33:06.738Z",
-        "note": "dec_mvljq6r6_2"
+        "at": "2026-10-23T22:57:04.710Z",
+        "note": "dec_mvlkl0at_2"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:06.937Z",
+        "at": "2026-10-23T22:57:04.908Z",
         "note": "resumed after decision"
       },
       {
         "status": "done",
-        "at": "2026-10-23T22:33:07.452Z"
+        "at": "2026-10-23T22:57:05.427Z"
       }
     ],
-    "createdAt": "2026-10-23T22:33:06.216Z",
-    "updatedAt": "2026-10-23T22:33:07.452Z"
+    "createdAt": "2026-10-23T22:57:04.183Z",
+    "updatedAt": "2026-10-23T22:57:05.427Z"
   },
-  "task-mvljq7gc-67o19": {
+  "task-mvlkl103-6fpkl": {
     "format": "zeus-org-task",
     "version": 1,
-    "id": "task-mvljq7gc-67o19",
+    "id": "task-mvlkl103-6fpkl",
     "organizationId": "org:tm7-e2e-rpt",
     "title": "fc-notools",
     "payload": {
@@ -374,16 +374,16 @@
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:07.644Z"
+        "at": "2026-10-23T22:57:05.619Z"
       }
     ],
-    "createdAt": "2026-10-23T22:33:07.644Z",
-    "updatedAt": "2026-10-23T22:33:07.646Z"
+    "createdAt": "2026-10-23T22:57:05.619Z",
+    "updatedAt": "2026-10-23T22:57:05.621Z"
   },
-  "task-mvljq7gi-7emp8": {
+  "task-mvlkl109-7oryb": {
     "format": "zeus-org-task",
     "version": 1,
-    "id": "task-mvljq7gi-7emp8",
+    "id": "task-mvlkl109-7oryb",
     "organizationId": "org:tm7-e2e-rpt",
     "title": "fc-unknown",
     "payload": {
@@ -396,16 +396,16 @@
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:07.650Z"
+        "at": "2026-10-23T22:57:05.625Z"
       }
     ],
-    "createdAt": "2026-10-23T22:33:07.650Z",
-    "updatedAt": "2026-10-23T22:33:07.653Z"
+    "createdAt": "2026-10-23T22:57:05.625Z",
+    "updatedAt": "2026-10-23T22:57:05.628Z"
   },
-  "task-mvljq7gn-8g7h5": {
+  "task-mvlkl10e-8ccti": {
     "format": "zeus-org-task",
     "version": 1,
-    "id": "task-mvljq7gn-8g7h5",
+    "id": "task-mvlkl10e-8ccti",
     "organizationId": "org:tm7-e2e-rpt",
     "title": "fc-lowscope-listing",
     "payload": {
@@ -413,41 +413,41 @@
       "input": "上架 listing：低scope 100ml",
       "graphName": "zeus-lowscope-rpt",
       "fieldValues": {
-        "reviewWebhookUrl": "http://127.0.0.1:65346/cs-notify"
+        "reviewWebhookUrl": "http://127.0.0.1:50414/cs-notify"
       }
     },
     "positionId": "pos:tm7-e2e-rpt:lowscope",
     "assignedAgentId": "agent:x01",
-    "runId": "run-mvljq8km-9yfbo",
+    "runId": "run-mvlkl24d-9jvjv",
     "status": "done",
-    "decisionId": "dec_mvljq896_3",
+    "decisionId": "dec_mvlkl1sy_3",
     "result": {
       "system": "agent-world",
       "workflow": "listing",
       "template": "tpl-review-publish",
-      "graphId": "69e8036b-bdbe-47ea-b81b-e347c7bf6e24",
-      "runId": "1b7ea11c-ae9b-4668-9047-7d0f1068dba7",
+      "graphId": "5024e681-8142-44e6-bdef-2507224f655d",
+      "runId": "abf7983b-8576-4731-a041-0069236f31b2",
       "finalStatus": "done",
       "checkpointGrade": "D3",
       "artifacts": [
         {
-          "id": "1b7ea11c-intake-na1s3-text",
+          "id": "abf7983b-intake-spqbj-text",
           "kind": "text"
         },
         {
-          "id": "1b7ea11c-writer-xpiev-text",
+          "id": "abf7983b-writer-dxe42-text",
           "kind": "text"
         },
         {
-          "id": "1b7ea11c-qc-lozcj-text",
+          "id": "abf7983b-qc-bjh2w-text",
           "kind": "text"
         },
         {
-          "id": "1b7ea11c-notify-pmh7d-json",
+          "id": "abf7983b-notify-za3ti-json",
           "kind": "json"
         },
         {
-          "id": "1b7ea11c-publis-6tr2h-text",
+          "id": "abf7983b-publis-uh6ac-text",
           "kind": "text"
         }
       ]
@@ -460,16 +460,16 @@
           "workflow": "listing",
           "template": "tpl-review-publish"
         },
-        "at": "2026-10-23T22:33:07.658Z"
+        "at": "2026-10-23T22:57:05.633Z"
       },
       {
         "stage": "agent-world:awaiting-decision",
         "data": {
-          "runId": "1b7ea11c-ae9b-4668-9047-7d0f1068dba7",
-          "haltedNodeId": "human-1u1s4",
+          "runId": "abf7983b-8576-4731-a041-0069236f31b2",
+          "haltedNodeId": "human-cnzpy",
           "haltedReason": "human:请审阅这篇待发布文案：通过则发布；如需修改请直接编辑；不符合要求可驳回（驳回将触发失败回退）。"
         },
-        "at": "2026-10-23T22:33:08.681Z"
+        "at": "2026-10-23T22:57:06.657Z"
       },
       {
         "stage": "agent-world:start",
@@ -477,57 +477,57 @@
           "workflow": "listing",
           "template": "tpl-review-publish"
         },
-        "at": "2026-10-23T22:33:09.082Z"
+        "at": "2026-10-23T22:57:07.056Z"
       },
       {
         "stage": "agent-world:awaiting-decision",
         "data": {
-          "runId": "1b7ea11c-ae9b-4668-9047-7d0f1068dba7",
-          "haltedNodeId": "human-1u1s4",
+          "runId": "abf7983b-8576-4731-a041-0069236f31b2",
+          "haltedNodeId": "human-cnzpy",
           "haltedReason": "human:请审阅这篇待发布文案：通过则发布；如需修改请直接编辑；不符合要求可驳回（驳回将触发失败回退）。"
         },
-        "at": "2026-10-23T22:33:09.085Z"
+        "at": "2026-10-23T22:57:07.059Z"
       },
       {
         "stage": "agent-world:done",
         "data": {
-          "runId": "1b7ea11c-ae9b-4668-9047-7d0f1068dba7",
+          "runId": "abf7983b-8576-4731-a041-0069236f31b2",
           "nodes": null
         },
-        "at": "2026-10-23T22:33:09.094Z"
+        "at": "2026-10-23T22:57:07.069Z"
       }
     ],
     "transitions": [
       {
         "status": "pending",
-        "at": "2026-10-23T22:33:07.655Z"
+        "at": "2026-10-23T22:57:05.630Z"
       },
       {
         "status": "dispatched",
-        "at": "2026-10-23T22:33:07.658Z",
+        "at": "2026-10-23T22:57:05.633Z",
         "note": "pos:tm7-e2e-rpt:lowscope"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:07.658Z",
+        "at": "2026-10-23T22:57:05.633Z",
         "note": "agent agent:x01"
       },
       {
         "status": "awaiting_decision",
-        "at": "2026-10-23T22:33:08.682Z",
-        "note": "dec_mvljq896_3"
+        "at": "2026-10-23T22:57:06.659Z",
+        "note": "dec_mvlkl1sy_3"
       },
       {
         "status": "running",
-        "at": "2026-10-23T22:33:09.082Z",
+        "at": "2026-10-23T22:57:07.055Z",
         "note": "resumed after decision"
       },
       {
         "status": "done",
-        "at": "2026-10-23T22:33:09.094Z"
+        "at": "2026-10-23T22:57:07.069Z"
       }
     ],
-    "createdAt": "2026-10-23T22:33:07.655Z",
-    "updatedAt": "2026-10-23T22:33:09.094Z"
+    "createdAt": "2026-10-23T22:57:05.630Z",
+    "updatedAt": "2026-10-23T22:57:07.069Z"
   }
 }
