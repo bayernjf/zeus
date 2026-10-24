@@ -99,6 +99,13 @@ export type ChatCliIO = {
   stdout: NodeJS.WritableStream;
   stderr: NodeJS.WritableStream;
   env: NodeJS.ProcessEnv;
+  /**
+   * Fired once the kernel is booted and the readline loop is attached and
+   * listening. Tests use it to feed a burst of lines only after the interface is
+   * ready (mimicking a real pipe), instead of writing before boot and relying on
+   * stream buffering. Optional; production passes nothing.
+   */
+  onReady?: () => void;
 };
 
 export type ChatCliResult = { code: number; stdout: string; stderr: string };
@@ -311,7 +318,11 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
   const prompt = () => writeOut(PROMPT);
 
   const finish = async (code: number): Promise<ChatCliResult> => {
-    rl.close();
+    try {
+      rl.close();
+    } catch {
+      // Already closed; teardown below still runs.
+    }
     if (kernel.stateFile) {
       try {
         await kernel.saveState();
@@ -327,24 +338,28 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
     return { code, stdout: out.join(''), stderr: err.join('') };
   };
 
-  const processLine = async (raw: string): Promise<void> => {
+  /**
+   * Process one raw line. Returns true when the line asked to exit.
+   *
+   * Deliberately plan-only: a recognized sentence fans out with `mode: 'plan'`
+   * and nothing is written back to the realm. A blank line is ignored.
+   */
+  const processLine = async (raw: string): Promise<boolean> => {
     const line = raw.trim();
-    if (line === '') return; // blank line: ignore, reprompt
+    if (line === '') return false; // blank line: ignore, reprompt
     if (line === '/exit' || line === '/quit') {
-      // Let the 'close' handler own teardown (saveState/releaseLock) exactly once.
       writeOut('bye.\n');
-      rl.close();
-      return;
+      return true;
     }
     if (line === '/help') {
       writeOut(`${USAGE}\n`);
-      return;
+      return false;
     }
 
     const catalog: SkillCatalogEntry[] = (kernel.skillRegistry?.list() ?? []).map(skillCatalogEntry);
     if (catalog.length === 0) {
       writeErr('no execution agent is registered, so there is no capability catalogue to choose from.\n');
-      return;
+      return false;
     }
     const recognition = await recognizeIntent({
       text: line,
@@ -358,7 +373,7 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
         `  no intent: ${recognition.reason}${recognition.detail ? ` — ${recognition.detail}` : ''}\n` +
           `  ranked candidates: ${candidates.map(c => `${c.skill}(${c.score.toFixed(2)})`).join(', ') || '(none)'}\n`,
       );
-      return;
+      return false;
     }
     const result = await kernel.orchestrator.fanOut({
       skill: recognition.intent.skill,
@@ -376,29 +391,68 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
         result,
       })}\n`,
     );
+    return false;
   };
 
-  let closed = false;
+  // Explicit FIFO serialization. readline fires one 'line' per newline, but when
+  // a whole script arrives in a single piped chunk those events are already queued
+  // in the stream — rl.pause() cannot hold them back, so multiple line handlers
+  // would interleave and a synchronous /exit (which closes the interface) could
+  // tear the process down before an earlier turn's await recognize/fanOut prints
+  // its plan. We instead buffer raw lines here and drain them strictly one at a
+  // time: /exit only ends the loop after every queued turn has fully rendered,
+  // and EOF only settles once the queue is drained.
+  const queue: string[] = [];
+  let draining = false;
+  let exitRequested = false;
+  let eof = false;
+
   return await new Promise<ChatCliResult>(resolve => {
-    rl.on('line', async raw => {
-      rl.pause();
-      try {
-        await processLine(raw);
-      } catch (error) {
-        writeErr(`turn failed: ${(error as Error).message}\n`);
-      }
-      if (!closed) {
-        prompt();
-        rl.resume();
-      }
-    });
-    rl.on('close', async () => {
-      if (closed) return;
-      closed = true;
+    let settled = false;
+    const settle = async (code: number) => {
+      if (settled) return;
+      settled = true;
       writeOut('\n');
-      resolve(await finish(0));
+      resolve(await finish(code));
+    };
+
+    const pump = async () => {
+      if (draining) return;
+      draining = true;
+      try {
+        while (queue.length > 0) {
+          const raw = queue.shift()!;
+          let wantsExit = false;
+          try {
+            wantsExit = await processLine(raw);
+          } catch (error) {
+            writeErr(`turn failed: ${(error as Error).message}\n`);
+          }
+          if (wantsExit) {
+            exitRequested = true;
+            break;
+          }
+          prompt();
+        }
+      } finally {
+        draining = false;
+      }
+      // Settle only once the queue is drained AND the run is actually over
+      // (operator asked to exit, or stdin reached EOF). Otherwise keep waiting
+      // for more lines — pump will be re-entered by the next 'line' or 'close'.
+      if ((eof || exitRequested) && !settled) void settle(0);
+    };
+
+    rl.on('line', raw => {
+      queue.push(raw);
+      void pump();
+    });
+    rl.on('close', () => {
+      eof = true;
+      void pump();
     });
     prompt();
+    io.onReady?.();
   });
 }
 

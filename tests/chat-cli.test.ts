@@ -137,6 +137,54 @@ describe('npm run chat', () => {
     expect(result.stdout).toContain('bye.');
   });
 
+  it('does not drop plans when many lines arrive in one piped chunk', async () => {
+    // Regression: a whole script arriving in a single write (like `printf ... |
+    // node dist/chat/cli.js`) used to race — /exit closed the interface before
+    // the earlier turns finished their async recognize/fanOut, so only "bye."
+    // printed. Feed all three lines as one chunk only after the loop is ready.
+    const root = tempRoot('burst');
+    const specDir = tempRoot('burst-spec');
+    const spec = specPathForSkills(specDir);
+    const before = readdirSync(root);
+    const stdin = new PassThrough();
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    let out = '';
+    let err = '';
+    stdout.on('data', chunk => (out += chunk.toString()));
+    stderr.on('data', chunk => (err += chunk.toString()));
+    let resolveReady!: () => void;
+    const ready = new Promise<void>(resolve => {
+      resolveReady = resolve;
+    });
+    const done = runChatCli(['--root', root, '--spec', spec, '--state', 'none'], {
+      stdin,
+      stdout,
+      stderr,
+      env: cleanEnv(),
+      onReady: () => resolveReady(),
+    });
+    await ready;
+    // One chunk, three lines — the exact shape of a piped script.
+    stdin.write('research the quarterly numbers\ncheck the deployment health\n/exit\n');
+    const result = await done;
+    expect(result.code).toBe(0);
+    // Both plans rendered, in order, and both BEFORE bye.
+    const stdoutText = result.stdout || out;
+    const researchIdx = stdoutText.indexOf('skill: research');
+    const deployIdx = stdoutText.indexOf('skill: deployment-health');
+    const byeIdx = stdoutText.indexOf('bye.');
+    expect(researchIdx).toBeGreaterThanOrEqual(0);
+    expect(deployIdx).toBeGreaterThanOrEqual(0);
+    expect(byeIdx).toBeGreaterThanOrEqual(0);
+    expect(researchIdx).toBeLessThan(byeIdx);
+    expect(deployIdx).toBeLessThan(byeIdx);
+    expect(stdoutText).not.toMatch(/mode:\s+execute/i);
+    expect(err).not.toContain('turn failed');
+    // Still plan-only, still no write-back.
+    expect(readdirSync(root)).toEqual(before);
+  });
+
   it('/help works inside the loop', async () => {
     const root = tempRoot('help');
     const specDir = tempRoot('help-spec');
