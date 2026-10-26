@@ -102,6 +102,9 @@ export interface DecisionRecord {
   updatedAt: string;
   auditSeq: number;
   decidedAt?: string;
+  /** Pending-but-late window start: the waiting decision breached its SLA but
+   *  is still approvable/rejectable until the grace window closes it. */
+  lateAt?: string;
   timeoutAt?: string;
   result?: DecisionResult;
   approvals: DecisionApprovalRecord[];
