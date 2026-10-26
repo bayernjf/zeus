@@ -46,6 +46,7 @@
 | `ZEUS_REALM_ENTERPRISE` | 未设置 | E3.6：企业域挂载，每项 `"<root>::<tenant>"`（tenant 为 `org[/department[/member]]`，如 `/srv/acme-eng::acme/eng`）。**缺 tenant 或写法非法直接拒启**——一个没有边界的企业域等于对整个名册可见；`::` 是因为 Windows 盘符已占用单冒号 |
 | `ZEUS_DECISION_BASE_URL` + `ZEUS_DECISION_API_KEY` | 未设置 | S2 critic 仲裁的决策后端（Jev 优先）。**两项同时给出才启用**，缺任一即 `backend: null`、内核退回 rules-only（这是设计好的降级，不是错误） |
 | `ZEUS_DECISION_MODEL` | 适配器默认 | 决策模型名，只在上面两项齐时生效 |
+| `ZEUS_DECISION_WEBHOOK_URL` + `ZEUS_DECISION_WEBHOOK_SECRET` | 未设置 | 决策生命周期事件推送（created/late/approved/rejected/timed-out）。**两项同时给出才启用**：投递带 `x-zeus-signature`（HMAC-SHA256）与幂等键 `x-zeus-delivery-id`，有限退避重试、失败不阻断决策写路径；URL 而无 secret 时 fail-closed 不推送。未设置 = 消费方继续轮询 `GET /api/v1/decisions?status=awaiting_approval\|blocked` |
 | `ZEUS_LLM_BASE_URL` + `ZEUS_LLM_API_KEY` + `ZEUS_LLM_MODEL` | 未设置 | 通用 OpenAI 兼容后端，**三项齐才启用**，优先级低于 `ZEUS_DECISION_*`。这是把裁决发给外部模型的通道——注意数据出境口径 |
 | `ZEUS_JUDGE_ENABLED` | 未设置（关） | E1.3 对抗式 judge。**必须有决策后端才生效**：只设它而后端不齐时保持关闭（后端状态看 `GET /api/decision` 或启动日志那一行） |
 | `ZEUS_JUDGE_THRESHOLD` | 内置阈值 | judge 采信阈值。**非数字值拒启**（与 `ZEUS_MAX_CONCURRENT_BRANCHES` 等其余 boot 参数口径一致，不再静默退回默认）——统一见 deferred #20 销项 |
