@@ -209,6 +209,63 @@ describe('T-M1-06 DecisionService: SLA timeout', () => {
   });
 });
 
+describe('T-M8 slaHours on default policy rules', () => {
+  it('D2 decisions created under DEFAULT_POLICY_V1 carry slaHours and timeoutAt', async () => {
+    const { service } = harnessed();
+    const d2 = await service.createDecision({
+      ...baseReq, impact: 'org', reversibility: 'hard', amount: { value: 1200, currency: 'CNY' },
+    });
+    expect(d2.ruleId).toBe('d2-amount');
+    expect(d2.slaHours).toBe(24);
+    expect(d2.timeoutAt).toBe('2026-10-23T00:00:00.000Z');
+  });
+
+  it('D3 decisions created under DEFAULT_POLICY_V1 carry slaHours and timeoutAt', async () => {
+    const { service } = harnessed();
+    const d3 = await service.createDecision({
+      ...baseReq, impact: 'external', reversibility: 'hard', amount: { value: 9000, currency: 'CNY' },
+    });
+    expect(d3.ruleId).toBe('d3-amount-large');
+    expect(d3.slaHours).toBe(72);
+    expect(d3.timeoutAt).toBe('2026-10-25T00:00:00.000Z');
+  });
+
+  it('reverse gate: D1 and D0 under the default policy carry no slaHours/timeoutAt', async () => {
+    const { service } = harnessed();
+    const d1 = await service.createDecision({ ...baseReq, amount: { value: 100, currency: 'CNY' } });
+    expect(d1.ruleId).toBe('d1-amount');
+    expect(d1.slaHours).toBeUndefined();
+    expect(d1.timeoutAt).toBeUndefined();
+    const d0 = await service.createDecision({ ...baseReq });
+    expect(d0.ruleId).toBe('d0-self-reversible');
+    expect(d0.slaHours).toBeUndefined();
+    expect(d0.timeoutAt).toBeUndefined();
+  });
+
+  it('reverse gate: a custom rule without slaHours never produces timeoutAt', async () => {
+    const h = harnessed();
+    const noSlaPolicy: DecisionPolicy = {
+      version: 2,
+      defaultGrade: 'D2',
+      rules: [
+        { id: 'd2-amount', match: { amount: { min: 500.01, max: 5000, currency: 'CNY' } }, grade: 'D2' },
+        { id: 'd0-self-reversible', match: { impact: ['self'], reversibility: ['reversible'] }, grade: 'D0' },
+      ],
+    };
+    h.policyStore.put(noSlaPolicy);
+    const rec = await h.service.createDecision({
+      ...baseReq, impact: 'org', reversibility: 'hard', amount: { value: 1200, currency: 'CNY' },
+    });
+    expect(rec.slaHours).toBeUndefined();
+    expect(rec.timeoutAt).toBeUndefined();
+    // Far past any plausible SLA: a rule without slaHours must not time out.
+    h.now.t = '2027-01-01T00:00:00.000Z';
+    expect(await h.service.sweepTimeouts(h.now.t)).toHaveLength(0);
+    const fetched = await h.service.get(rec.id);
+    expect(fetched?.status).toBe('blocked');
+  });
+});
+
 describe('T-M1-06 DecisionService: idempotency', () => {
   it('returns the same record for the same key and request', async () => {
     const { service } = harnessed();
