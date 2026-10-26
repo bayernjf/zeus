@@ -176,7 +176,7 @@ describe('T-M1-06 DecisionService: SLA timeout', () => {
     return h;
   }
 
-  it('sets timeoutAt from slaHours and sweeps after the deadline', async () => {
+  it('sets timeoutAt from slaHours; breach enters late, grace closes it timed-out', async () => {
     const h = slaHarness();
     const created = await h.service.createDecision({
       ...baseReq, impact: 'org', reversibility: 'hard', amount: { value: 100, currency: 'CNY' },
@@ -186,26 +186,131 @@ describe('T-M1-06 DecisionService: SLA timeout', () => {
     expect(await h.service.sweepTimeouts(h.now.t)).toHaveLength(0);
     h.now.t = '2026-10-22T00:59:59.000Z';
     expect(await h.service.sweepTimeouts(h.now.t)).toHaveLength(0);
+    // Phase 1: breach marks late; nothing terminal yet (default grace 72h).
     h.now.t = '2026-10-22T01:00:00.000Z';
+    expect(await h.service.sweepTimeouts(h.now.t)).toHaveLength(0);
+    const breached = await h.service.get(created.id);
+    expect(breached?.status).toBe('awaiting_approval');
+    expect(breached?.lateAt).toBe('2026-10-22T01:00:00.000Z');
+    expect(h.audit.list()[1]?.payload.kind).toBe('decision.late');
+    // Phase 2: the grace window elapsed -> terminal timed-out.
+    h.now.t = '2026-10-25T01:00:01.000Z';
     const timedOut = await h.service.sweepTimeouts(h.now.t);
     expect(timedOut).toHaveLength(1);
     expect(timedOut[0]?.status).toBe('rejected');
     expect(timedOut[0]?.result?.outcome).toBe('timed-out');
-    expect(h.audit.list()[1]?.payload.kind).toBe('decision.timed-out');
+    expect(h.audit.list()[h.audit.list().length - 1]?.payload.kind).toBe('decision.timed-out');
   });
 
-  it('applies the timeout lazily on get and refuses late verdicts', async () => {
+  it('marks late lazily on get while the window is open', async () => {
     const h = slaHarness();
     const created = await h.service.createDecision({
       ...baseReq, impact: 'org', reversibility: 'hard', amount: { value: 100, currency: 'CNY' },
     });
-    h.now.t = '2026-10-22T02:00:00.000Z';
+    h.now.t = '2026-10-22T02:00:00.000Z'; // past timeoutAt, inside the 72h grace window
+    const fetched = await h.service.get(created.id);
+    expect(fetched?.status).toBe('awaiting_approval');
+    expect(fetched?.lateAt).toBe('2026-10-22T02:00:00.000Z');
+    // Still approvable while the window is open.
+    await expect(
+      h.service.approve(created.id, { decision: 'approve', approver: 'owner' }),
+    ).resolves.toMatchObject({ status: 'decided', result: { outcome: 'approved' } });
+  });
+
+  it('refuses verdicts only after the grace window closed the decision timed-out', async () => {
+    const h = slaHarness();
+    const created = await h.service.createDecision({
+      ...baseReq, impact: 'org', reversibility: 'hard', amount: { value: 100, currency: 'CNY' },
+    });
+    h.now.t = '2026-10-25T01:00:01.000Z'; // breach (01:00) + 72h grace + 1s
     const fetched = await h.service.get(created.id);
     expect(fetched?.status).toBe('rejected');
     expect(fetched?.result?.outcome).toBe('timed-out');
     await expect(
       h.service.approve(created.id, { decision: 'approve', approver: 'owner' }),
     ).rejects.toBeInstanceOf(DecisionError);
+  });
+});
+
+describe('T-M8 pending-but-late window', () => {
+  function lateHarness(graceHours: number) {
+    const now = { t: '2026-10-22T00:00:00.000Z' };
+    const signer = new Ed25519MemorySigner('audit-seal-test');
+    const audit = new DecisionAuditChain(signer, () => now.t);
+    const policyStore = new MemoryPolicyStore();
+    policyStore.put(DEFAULT_POLICY_V1);
+    const recordStore = new MemoryDecisionStore();
+    const service = new DecisionService({
+      policyStore,
+      recordStore,
+      audit,
+      clock: () => now.t,
+      lateGraceHours: graceHours,
+      idGen: (() => {
+        let n = 0;
+        return () => `dec_${(++n).toString(36)}`;
+      })(),
+    });
+    return { service, audit, policyStore, recordStore, now };
+  }
+
+  it('stamps lateAt exactly once: repeated reads do not duplicate decision.late', async () => {
+    const h = lateHarness(72);
+    const created = await h.service.createDecision({
+      ...baseReq, impact: 'org', amount: { value: 1200, currency: 'CNY' },
+    });
+    h.now.t = '2026-10-23T00:00:01.000Z'; // past 24h D2 SLA, inside grace
+    await h.service.get(created.id);
+    await h.service.get(created.id);
+    await h.service.list({ domain: 'commerce' });
+    const lateEntries = h.audit.list().filter(e => e.payload.kind === 'decision.late');
+    expect(lateEntries).toHaveLength(1);
+    expect((await h.service.get(created.id))?.lateAt).toBe('2026-10-23T00:00:01.000Z');
+  });
+
+  it('a late decision can still be rejected by an operator', async () => {
+    const h = lateHarness(72);
+    const created = await h.service.createDecision({
+      ...baseReq, impact: 'org', amount: { value: 1200, currency: 'CNY' },
+    });
+    h.now.t = '2026-10-23T12:00:00.000Z';
+    const settled = await h.service.approve(created.id, { decision: 'reject', approver: 'ops' });
+    expect(settled.status).toBe('rejected');
+    expect(settled.result?.outcome).toBe('rejected');
+  });
+
+  it('lateGraceHours=0 reproduces the old read-and-reject behavior', async () => {
+    const h = lateHarness(0);
+    const created = await h.service.createDecision({
+      ...baseReq, impact: 'org', amount: { value: 1200, currency: 'CNY' },
+    });
+    h.now.t = '2026-10-23T00:00:00.000Z'; // exactly at the 24h SLA
+    const fetched = await h.service.get(created.id);
+    expect(fetched?.status).toBe('rejected');
+    expect(fetched?.result?.outcome).toBe('timed-out');
+  });
+
+  it('reverse gate: a decided D0 record never enters late no matter how late the clock', async () => {
+    const h = lateHarness(72);
+    const created = await h.service.createDecision({ ...baseReq });
+    h.now.t = '2027-01-01T00:00:00.000Z';
+    const fetched = await h.service.get(created.id);
+    expect(fetched?.status).toBe('decided');
+    expect(fetched?.lateAt).toBeUndefined();
+    expect(fetched?.timeoutAt).toBeUndefined();
+  });
+
+  it('replay renders the late event between created and approval', async () => {
+    const h = lateHarness(72);
+    const created = await h.service.createDecision({
+      ...baseReq, impact: 'org', amount: { value: 1200, currency: 'CNY' },
+    });
+    h.now.t = '2026-10-23T12:00:00.000Z';
+    await h.service.get(created.id);
+    await h.service.approve(created.id, { decision: 'approve', approver: 'ops' });
+    const record = (await h.service.get(created.id))!;
+    const types = h.service.replay(record).events.map(e => e.type);
+    expect(types).toEqual(['decision.created', 'decision.late', 'decision.approved']);
   });
 });
 
