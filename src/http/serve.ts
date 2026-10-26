@@ -63,6 +63,11 @@ import {
 } from '../core/persistence/index.js';
 import type { OrgStore } from '../core/org/store.js';
 import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
+import {
+  DecisionWebhookDispatcher,
+  MemoryDecisionWebhookStore,
+  type DecisionWebhookStore,
+} from '../core/decision-service/webhook.js';
 
 const require = createRequire(import.meta.url);
 const pkg = require('../../package.json') as { version: string };
@@ -269,6 +274,7 @@ async function main(): Promise<void> {
   // Records are in-memory for M1 (SQLite/PG tables land with the deployment
   // slice). A trail that fails verification refuses to open (fail-closed).
   let decisionService: DecisionService | undefined;
+  let decisionWebhookStore: DecisionWebhookStore | undefined;
   let orgService: OrgService | undefined;
   // T-M7-02: the assembled agent-world executor + async worker (undefined until
   // ZEUS_AGENT_WORLD_BASE_URL is configured; dispatch then stays 503-fail-closed).
@@ -302,11 +308,28 @@ async function main(): Promise<void> {
     const audit = process.env.ZEUS_DECISION_AUDIT_FILE
       ? await JsonlDecisionAuditStore.open(process.env.ZEUS_DECISION_AUDIT_FILE, signer, signer.verifier())
       : new DecisionAuditChain(signer);
-    decisionService = new DecisionService({ policyStore, recordStore, audit });
+
+    // Decision lifecycle push: opt-in via ZEUS_DECISION_WEBHOOK_URL + secret.
+    // URL without secret fails closed (no unsigned deliveries); neither set
+    // means in-memory demo mode with no sink and no webhook routes.
+    const webhookUrl = process.env.ZEUS_DECISION_WEBHOOK_URL?.trim();
+    const webhookSecret = process.env.ZEUS_DECISION_WEBHOOK_SECRET?.trim();
+    const decisionDeps: ConstructorParameters<typeof DecisionService>[0] = { policyStore, recordStore, audit };
+    if (webhookUrl) {
+      if (webhookSecret) {
+        decisionWebhookStore = new MemoryDecisionWebhookStore();
+        decisionWebhookStore.add({ id: 'env-seed', url: webhookUrl, secret: webhookSecret, active: true });
+        decisionDeps.events = new DecisionWebhookDispatcher({ store: decisionWebhookStore });
+      } else {
+        log.warn('decision-webhook', 'ZEUS_DECISION_WEBHOOK_URL set without ZEUS_DECISION_WEBHOOK_SECRET: push disabled');
+      }
+    }
+    decisionService = new DecisionService(decisionDeps);
     log.info('decision-service', 'assembled', {
       defaultPolicy: `v${DEFAULT_POLICY_V1.version}`,
       auditTrail: process.env.ZEUS_DECISION_AUDIT_FILE ?? 'in-memory',
       durability,
+      webhooks: decisionWebhookStore ? 1 : 0,
     });
 
     // Org API v1 (T-M2). Durable store is used when hydrated; otherwise the
@@ -464,6 +487,8 @@ async function main(): Promise<void> {
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
     // Decision API v1 (T-M1-06): present only when the service assembled above.
     ...(decisionService ? { decisionService } : {}),
+    // Decision webhook registry (push events), mounted only when seeded above.
+    ...(decisionWebhookStore ? { decisionWebhookStore } : {}),
     // Org API v1 (T-M2): present only when assembled above. T-M7-02 passes the
     // channel executor + async worker when the agent-world adapter is configured.
     ...(orgService ? { orgService } : {}),

@@ -7,6 +7,12 @@
  *   team → D1；org / 难逆(hard) → D2；external / 不可逆(irreversible) / 法律合规标签 → D3
  * 无金额、无 impact、无风险标签等任何规则都不命中 → defaultGrade D2（fail-closed）。
  * 非 CNY 金额不命中金额规则，走其余维度或默认 D2；多币种启用时由新版策略扩展。
+ *
+ * SLA（2026-10-26 起）：D2 规则 slaHours=24、D3 规则 slaHours=72——等待中的
+ * D2/D3 决策创建时即落 timeoutAt，超时后进入 pending-but-late 窗口（见
+ * DecisionService lateGraceHours），窗口仍可批准/驳回，窗口收口后按
+ * timed-out 归档。D1/D0 规则不配 slaHours：它们的行为与此前完全一致
+ * （无 timeoutAt、永不超时）；任何自定义策略未配 slaHours 的规则同样不超时。
  */
 import type { DecisionPolicy } from './policy.js';
 import { parsePolicy } from './policy-loader.js';
@@ -15,13 +21,13 @@ const DEFAULT_POLICY_V1_RAW: DecisionPolicy = {
   version: 1,
   defaultGrade: 'D2',
   rules: [
-    { id: 'd3-amount-large', match: { amount: { min: 5000.01, currency: 'CNY' } }, grade: 'D3' },
-    { id: 'd3-external', match: { impact: ['external'] }, grade: 'D3' },
-    { id: 'd3-irreversible', match: { reversibility: ['irreversible'] }, grade: 'D3' },
-    { id: 'd3-risk', match: { riskTags: ['legal', 'compliance'] }, grade: 'D3' },
-    { id: 'd2-amount', match: { amount: { min: 500.01, max: 5000, currency: 'CNY' } }, grade: 'D2' },
-    { id: 'd2-org', match: { impact: ['org'] }, grade: 'D2' },
-    { id: 'd2-hard', match: { reversibility: ['hard'] }, grade: 'D2' },
+    { id: 'd3-amount-large', match: { amount: { min: 5000.01, currency: 'CNY' } }, grade: 'D3', slaHours: 72 },
+    { id: 'd3-external', match: { impact: ['external'] }, grade: 'D3', slaHours: 72 },
+    { id: 'd3-irreversible', match: { reversibility: ['irreversible'] }, grade: 'D3', slaHours: 72 },
+    { id: 'd3-risk', match: { riskTags: ['legal', 'compliance'] }, grade: 'D3', slaHours: 72 },
+    { id: 'd2-amount', match: { amount: { min: 500.01, max: 5000, currency: 'CNY' } }, grade: 'D2', slaHours: 24 },
+    { id: 'd2-org', match: { impact: ['org'] }, grade: 'D2', slaHours: 24 },
+    { id: 'd2-hard', match: { reversibility: ['hard'] }, grade: 'D2', slaHours: 24 },
     { id: 'd1-amount', match: { amount: { min: 0, max: 500, currency: 'CNY' } }, grade: 'D1' },
     { id: 'd1-team', match: { impact: ['team'] }, grade: 'D1' },
     { id: 'd0-self-reversible', match: { impact: ['self'], reversibility: ['reversible'] }, grade: 'D0' },

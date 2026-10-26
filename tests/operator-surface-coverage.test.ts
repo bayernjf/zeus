@@ -136,6 +136,8 @@ const HTTP_ONLY: Record<string, string> = {
     'Tier0 PRD §6.2 / T-M1-06: approval verdicts over the cross-system decision API; the calling system surfaces the human verdict, zeus only records it',
   'PUT /api/v1/policy':
     'Tier0 PRD §6.2 / T-M1-06: versioned policy administration over the bearer API; low-frequency high-blast-radius config action, no operator deck planned',
+  'POST /api/v1/decision-webhooks':
+    'Tier0 T-M8: register a decision-event push receiver (HMAC secret); the calling ops console is the consumer of the pushed events, zeus only records subscriptions, no operator deck planned',
   'POST /api/v1/org/policy/thresholds':
     'Tier0 PRD §11 / T-M2-04: per-organization D0-D3 threshold configuration; low-frequency high-blast-radius config action',
 };
@@ -237,6 +239,7 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/v1/decisions/:id',
   'GET /api/v1/decisions/:id/replay',
   'GET /api/v1/policy',
+  'GET /api/v1/decision-webhooks',
   // Org API v1 (T-M2, design §4.4): machine-to-machine reads for org-os and
   // commerce-os; no operator deck in the self-use slice.
   'GET /api/v1/org/organizations',

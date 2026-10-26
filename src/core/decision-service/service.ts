@@ -17,6 +17,7 @@ import type {
   DecisionAuditAppender,
 } from '../audit/audit-chain.js';
 import type { DecisionAuditEntry } from '../audit/types.js';
+import { decisionEventFromRecord, type DecisionEvent, type DecisionEventSink } from './events.js';
 import type { DecisionRecordStore } from './store.js';
 import type {
   ApprovalRequest,
@@ -43,7 +44,20 @@ export interface DecisionServiceDeps {
   audit: DecisionAuditAppender;
   clock?: () => string;
   idGen?: () => string;
+  /**
+   * How long a waiting decision stays in the pending-but-late window after
+   * breaching timeoutAt before sweepTimeouts / lazy reads close it as
+   * timed-out. Default 72h; set 0 to reproduce the pre-window behavior where
+   * breach itself is the terminal timeout.
+   */
+  lateGraceHours?: number;
+  /** Optional lifecycle push sink (webhook dispatcher etc.). Fail-soft:
+   *  sink failures never break a decision write. */
+  events?: DecisionEventSink;
 }
+
+/** Default pending-but-late grace window before a breached SLA is closed. */
+export const DEFAULT_LATE_GRACE_HOURS = 72;
 
 /** Validate a POST /api/v1/decisions body. Returns all issues found. */
 export function validateDecisionRequest(value: unknown): string[] {
@@ -112,11 +126,16 @@ function validateApprovalRequest(value: unknown): string[] {
 export class DecisionService {
   private readonly clock: () => string;
   private readonly idGen: () => string;
+  private readonly lateGraceMs: number;
   private seq = 0;
 
   constructor(private readonly deps: DecisionServiceDeps) {
     this.clock = deps.clock ?? (() => new Date().toISOString());
     this.idGen = deps.idGen ?? (() => `dec_${Date.now().toString(36)}_${(this.seq += 1).toString(36)}`);
+    if (deps.lateGraceHours !== undefined && (!Number.isFinite(deps.lateGraceHours) || deps.lateGraceHours < 0)) {
+      throw new Error(`lateGraceHours must be a non-negative number, got ${String(deps.lateGraceHours)}`);
+    }
+    this.lateGraceMs = (deps.lateGraceHours ?? DEFAULT_LATE_GRACE_HOURS) * HOUR_MS;
   }
 
   /** Create a decision: grade it, settle D0 immediately, park D1-D3 for
@@ -202,6 +221,7 @@ export class DecisionService {
     });
     record.auditSeq = createdEntry.seq;
     await this.deps.recordStore.put(record);
+    await this.emitEvent('created', record, now);
     return record;
   }
 
@@ -248,6 +268,7 @@ export class DecisionService {
     });
     record.auditSeq = entry.seq;
     await this.deps.recordStore.put(record);
+    await this.emitEvent(body.decision === 'approve' ? 'approved' : 'rejected', record, at);
     return record;
   }
 
@@ -313,6 +334,9 @@ export class DecisionService {
         at: record.createdAt,
         detail: { grade: record.grade, mode: record.mode, status: record.status, ruleId: record.ruleId, policyVersion: record.policyVersion },
       },
+      ...(record.lateAt !== undefined
+        ? [{ type: 'decision.late' as const, at: record.lateAt, detail: { slaHours: record.slaHours ?? null, timeoutAt: record.timeoutAt ?? null } }]
+        : []),
       ...record.approvals.map(a => ({
         type: a.verdict === 'approve' ? 'decision.approved' : 'decision.rejected',
         at: a.at,
@@ -342,26 +366,71 @@ export class DecisionService {
     return 'blocked'; // approve-sync and human-led
   }
 
-  /** Apply the SLA timeout to one record. Returns true when it timed out. */
+  /**
+   * Apply SLA state to one waiting record. Two phases, both idempotent:
+   *
+   *  1. breach — timeoutAt has passed but lateAt is unset: stamp lateAt and
+   *     write one `decision.late` audit entry. The record stays
+   *     awaiting_approval/blocked in the pending-but-late window and remains
+   *     approvable/rejectable. Nothing is terminal yet.
+   *  2. close — the record already breached (lateAt set) and the grace window
+   *     has now elapsed: close it as rejected/timed-out, like the old
+   *     read-and-reject behavior.
+   *
+   * Returns true only for phase 2 (the record terminated as timed-out during
+   * this call), so sweepTimeouts keeps its old return contract.
+   */
   private async applyTimeout(record: DecisionRecord, now: string): Promise<boolean> {
-    if (
-      (record.status === 'awaiting_approval' || record.status === 'blocked') &&
-      record.timeoutAt !== undefined &&
-      Date.parse(now) >= Date.parse(record.timeoutAt)
-    ) {
-      record.status = 'rejected';
+    const waiting = record.status === 'awaiting_approval' || record.status === 'blocked';
+    if (!waiting || record.timeoutAt === undefined) return false;
+    const dueMs = Date.parse(record.timeoutAt);
+    const nowMs = Date.parse(now);
+    if (nowMs < dueMs) return false;
+
+    // Phase 1: first detection of the breach stamps the window start. lateAt is
+    // observational ("when we first saw it was late"); the grace deadline is
+    // always measured from timeoutAt below, so a first read arriving after the
+    // whole window elapses closes it in this same call.
+    if (record.lateAt === undefined) {
+      record.lateAt = now;
       record.updatedAt = now;
-      record.result = { outcome: 'timed-out', at: now };
       const entry = await this.deps.audit.append({
-        kind: 'decision.timed-out',
+        kind: 'decision.late',
         decisionId: record.id,
         data: { grade: record.grade, slaHours: record.slaHours ?? null, timeoutAt: record.timeoutAt },
       });
       record.auditSeq = entry.seq;
       await this.deps.recordStore.put(record);
-      return true;
+      await this.emitEvent('late', record, now);
     }
-    return false;
+
+    if (nowMs < dueMs + this.lateGraceMs) return false;
+
+    record.status = 'rejected';
+    record.updatedAt = now;
+    record.result = { outcome: 'timed-out', at: now };
+    const entry = await this.deps.audit.append({
+      kind: 'decision.timed-out',
+      decisionId: record.id,
+      data: { grade: record.grade, slaHours: record.slaHours ?? null, timeoutAt: record.timeoutAt, lateAt: record.lateAt },
+    });
+    record.auditSeq = entry.seq;
+    await this.deps.recordStore.put(record);
+    await this.emitEvent('timed-out', record, now);
+    return true;
+  }
+
+  /** Push one lifecycle event to the optional sink. Fail-soft: the record is
+   *  already persisted, so a broken observer must not turn the write into a
+   *  failure — the decision path returns regardless. */
+  private async emitEvent(type: DecisionEvent['type'], record: DecisionRecord, at: string): Promise<void> {
+    const sink = this.deps.events;
+    if (!sink) return;
+    try {
+      await sink.emit(decisionEventFromRecord(type, record, at));
+    } catch {
+      /* observers are optional; decisions win over notifications */
+    }
   }
 
   private fingerprint(req: DecisionRequest | DecisionRecord): string {

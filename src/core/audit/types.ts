@@ -17,6 +17,7 @@ export type DecisionAuditKind =
   | 'decision.completed'
   | 'decision.failed'
   | 'decision.timed-out'
+  | 'decision.late'
   | 'policy.updated';
 
 export const DECISION_AUDIT_KINDS: readonly DecisionAuditKind[] = [
@@ -26,6 +27,7 @@ export const DECISION_AUDIT_KINDS: readonly DecisionAuditKind[] = [
   'decision.completed',
   'decision.failed',
   'decision.timed-out',
+  'decision.late',
   'policy.updated',
 ];
 

@@ -35,7 +35,10 @@ interface Stack {
   port: number;
 }
 
-async function startStack(policy: DecisionPolicy = DEFAULT_POLICY_V1): Promise<Stack> {
+async function startStack(
+  policy: DecisionPolicy = DEFAULT_POLICY_V1,
+  options: { lateGraceHours?: number } = {},
+): Promise<Stack> {
   const registry = new VassalRegistry();
   const rskSigner = new Ed25519MemorySigner('zeus-rsk-contract');
   const auditSigner = new Ed25519MemorySigner('audit-seal-contract');
@@ -46,6 +49,7 @@ async function startStack(policy: DecisionPolicy = DEFAULT_POLICY_V1): Promise<S
     policyStore,
     recordStore: new MemoryDecisionStore(),
     audit: auditChain,
+    ...(options.lateGraceHours !== undefined ? { lateGraceHours: options.lateGraceHours } : {}),
   });
   const app = await createHttpServer({
     registry,
@@ -148,6 +152,32 @@ describe('T-M1-08 contract: SLA timeout', () => {
     });
     expect(d.status).toBe('awaiting_approval');
     await new Promise(resolve => setTimeout(resolve, 1_200));
+    // Phase 1: breach marks late but the decision stays approvable.
+    const late = await stack.client.getDecision(d.decisionId);
+    expect(late.status).toBe('awaiting_approval');
+    expect(late.lateAt).toBeDefined();
+    await expect(
+      stack.client.approve(d.decisionId, { decision: 'approve', approver: 'ops' }),
+    ).resolves.toMatchObject({ status: 'decided' });
+  });
+
+  it('an awaiting D1 decision closes timed-out once the late-grace window elapses', async () => {
+    const fastTimeoutPolicy: DecisionPolicy = {
+      version: 1,
+      defaultGrade: 'D2',
+      rules: [
+        { id: 'd1-amount', match: { amount: { min: 0, max: 500, currency: 'CNY' } }, grade: 'D1', slaHours: 1 / 3600 },
+        { id: 'd0-self-reversible', match: { impact: ['self'], reversibility: ['reversible'] }, grade: 'D0' },
+      ],
+    };
+    const stack = await startStack(fastTimeoutPolicy, { lateGraceHours: 1 / 3600 });
+    openApps.push(stack.app);
+    const d = await stack.client.decide({
+      intent: 'buy', domain: 'self', impact: 'self', reversibility: 'reversible',
+      amount: { value: 50, currency: 'CNY' },
+    });
+    expect(d.status).toBe('awaiting_approval');
+    await new Promise(resolve => setTimeout(resolve, 2_200)); // 1s SLA + 1s grace + margin
     const later = await stack.client.getDecision(d.decisionId);
     expect(later.status).toBe('rejected');
     expect(later.result?.outcome).toBe('timed-out');

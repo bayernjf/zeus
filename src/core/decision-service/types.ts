@@ -58,6 +58,11 @@ export interface DecisionRecord {
   /** Seq of the latest audit entry for this decision. */
   auditSeq: number;
   decidedAt?: string;
+  /** Waiting records with an SLA first enter the pending-but-late window at
+   *  this time: the record stays awaiting_approval/blocked and remains
+   *  approvable/rejectable until the late-grace window closes it as
+   *  timed-out. Absent on records that never breached their SLA. */
+  lateAt?: string;
   /** Waiting records with an SLA expire at this ISO time. */
   timeoutAt?: string;
   result?: DecisionResult;

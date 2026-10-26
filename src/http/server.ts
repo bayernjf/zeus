@@ -31,14 +31,17 @@ import { AUDIT_DECISIONS, type AuditDecision, type AuditEntry } from '../dispatc
 import type { DecisionService } from '../core/index.js';
 import type { OrgService, OrgTaskExecutor, TaskWorker } from '../core/index.js';
 import {
+  addWebhookRoute,
   approvalRoute,
   createDecisionRoute,
   getDecisionRoute,
   getPolicyRoute,
   listDecisionsRoute,
+  listWebhooksRoute,
   putPolicyRoute,
   replayRoute,
 } from './decision-v1.js';
+import type { DecisionWebhookStore } from '../core/decision-service/webhook.js';
 import {
   applyThresholdsRoute,
   assignAgentRoute,
@@ -202,6 +205,10 @@ export type HttpDeps = {
    *  approvals, SLA timeouts and idempotency. Absent, the /api/v1 face is not
    *  mounted. */
   decisionService?: DecisionService;
+  /** Decision webhook subscription registry (push lifecycle events). Mounts
+   *  GET/POST /api/v1/decision-webhooks only when provided alongside
+   *  decisionService. */
+  decisionWebhookStore?: DecisionWebhookStore;
   /** Tier0 M2 org v1 service and assembled task executor. */
   orgService?: OrgService;
   orgExecutor?: OrgTaskExecutor;
@@ -2776,6 +2783,16 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         getPolicyRoute(decisionV1, request, reply));
       app.put('/api/v1/policy', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         putPolicyRoute(decisionV1, request, reply));
+
+      // Decision webhook subscriptions: push lifecycle events instead of polling
+      // listPending. Mounted only when a registry was assembled at boot.
+      if (deps.decisionWebhookStore) {
+        const webhookStore = deps.decisionWebhookStore;
+        app.get('/api/v1/decision-webhooks', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+          listWebhooksRoute(webhookStore, request, reply));
+        app.post('/api/v1/decision-webhooks', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+          addWebhookRoute(webhookStore, request, reply));
+      }
     }
 
     // Org API v1 (Tier0 M2, design §4.4): organizations, departments,
