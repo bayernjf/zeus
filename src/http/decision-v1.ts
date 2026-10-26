@@ -15,6 +15,7 @@ import type {
   DecisionRecord,
   DecisionStatus,
 } from '../core/index.js';
+import type { DecisionWebhookStore, DecisionWebhookSubscription } from '../core/decision-service/webhook.js';
 import type { DecisionRequest, DecisionPolicy } from '../core/grading/policy.js';
 
 /** POST /api/v1/decisions response shape (design §4.2). */
@@ -169,4 +170,59 @@ export async function putPolicyRoute(service: DecisionService, request: FastifyR
   } catch (thrown) {
     return sendDecisionError(reply, thrown);
   }
+}
+
+// --- Decision webhook subscriptions (push lifecycle events instead of polling) ---
+
+const WEBHOOK_URL_PATTERN = /^https?:\/\/[^\s]+$/;
+let webhookIdCounter = 0;
+
+/** Secret is never returned: the registry is append/read of ids and urls. */
+export async function listWebhooksRoute(
+  store: DecisionWebhookStore,
+  _request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<unknown> {
+  try {
+    const webhooks = (await store.list()).map(s => ({ id: s.id, url: s.url, active: s.active }));
+    return reply.send({ webhooks });
+  } catch {
+    return reply.code(500).send({
+      code: 'INTERNAL_ERROR',
+      message: 'webhook registry failed',
+      retryable: false,
+    });
+  }
+}
+
+export async function addWebhookRoute(
+  store: DecisionWebhookStore,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const body = (request.body ?? {}) as { url?: unknown; secret?: unknown; active?: unknown };
+  const issues: string[] = [];
+  if (typeof body.url !== 'string' || !WEBHOOK_URL_PATTERN.test(body.url)) {
+    issues.push('url: expected an http(s) URL');
+  }
+  if (typeof body.secret !== 'string' || body.secret.length < 16) {
+    issues.push('secret: expected at least 16 characters (used to HMAC-sign every delivery)');
+  }
+  if (issues.length > 0) {
+    return reply.code(400).send({
+      code: 'VALIDATION_FAILED',
+      message: issues.join('; '),
+      retryable: false,
+      details: issues,
+    });
+  }
+  webhookIdCounter += 1;
+  const subscription: DecisionWebhookSubscription = {
+    id: `wh_${Date.now().toString(36)}_${webhookIdCounter.toString(36)}`,
+    url: body.url as string,
+    secret: body.secret as string,
+    active: body.active !== false,
+  };
+  await store.add(subscription);
+  return reply.code(201).send({ id: subscription.id, url: subscription.url, active: subscription.active });
 }
