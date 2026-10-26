@@ -18,3 +18,15 @@ export type {
   ApprovalRequest,
   DecisionListFilter,
 } from './types.js';
+export type { DecisionEvent, DecisionEventType, DecisionEventSink } from './events.js';
+export {
+  DecisionWebhookDispatcher,
+  MemoryDecisionWebhookStore,
+  signWebhookBody,
+  webhookDeliveryId,
+} from './webhook.js';
+export type {
+  DecisionWebhookStore,
+  DecisionWebhookSubscription,
+  DecisionWebhookDispatcherDeps,
+} from './webhook.js';

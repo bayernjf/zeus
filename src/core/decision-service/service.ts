@@ -17,6 +17,7 @@ import type {
   DecisionAuditAppender,
 } from '../audit/audit-chain.js';
 import type { DecisionAuditEntry } from '../audit/types.js';
+import { decisionEventFromRecord, type DecisionEvent, type DecisionEventSink } from './events.js';
 import type { DecisionRecordStore } from './store.js';
 import type {
   ApprovalRequest,
@@ -50,6 +51,9 @@ export interface DecisionServiceDeps {
    * breach itself is the terminal timeout.
    */
   lateGraceHours?: number;
+  /** Optional lifecycle push sink (webhook dispatcher etc.). Fail-soft:
+   *  sink failures never break a decision write. */
+  events?: DecisionEventSink;
 }
 
 /** Default pending-but-late grace window before a breached SLA is closed. */
@@ -217,6 +221,7 @@ export class DecisionService {
     });
     record.auditSeq = createdEntry.seq;
     await this.deps.recordStore.put(record);
+    await this.emitEvent('created', record, now);
     return record;
   }
 
@@ -263,6 +268,7 @@ export class DecisionService {
     });
     record.auditSeq = entry.seq;
     await this.deps.recordStore.put(record);
+    await this.emitEvent(body.decision === 'approve' ? 'approved' : 'rejected', record, at);
     return record;
   }
 
@@ -395,6 +401,7 @@ export class DecisionService {
       });
       record.auditSeq = entry.seq;
       await this.deps.recordStore.put(record);
+      await this.emitEvent('late', record, now);
     }
 
     if (nowMs < dueMs + this.lateGraceMs) return false;
@@ -409,7 +416,21 @@ export class DecisionService {
     });
     record.auditSeq = entry.seq;
     await this.deps.recordStore.put(record);
+    await this.emitEvent('timed-out', record, now);
     return true;
+  }
+
+  /** Push one lifecycle event to the optional sink. Fail-soft: the record is
+   *  already persisted, so a broken observer must not turn the write into a
+   *  failure — the decision path returns regardless. */
+  private async emitEvent(type: DecisionEvent['type'], record: DecisionRecord, at: string): Promise<void> {
+    const sink = this.deps.events;
+    if (!sink) return;
+    try {
+      await sink.emit(decisionEventFromRecord(type, record, at));
+    } catch {
+      /* observers are optional; decisions win over notifications */
+    }
   }
 
   private fingerprint(req: DecisionRequest | DecisionRecord): string {
