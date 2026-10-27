@@ -226,3 +226,31 @@ export async function addWebhookRoute(
   await store.add(subscription);
   return reply.code(201).send({ id: subscription.id, url: subscription.url, active: subscription.active });
 }
+
+/** DELETE /api/v1/decision-webhooks/:id: hard-delete a subscription.
+ *  204 on success, 404 WEBHOOK_NOT_FOUND when the id never existed (or was
+ *  already deleted) — repeated deletes are idempotent in outcome. */
+export async function deleteWebhookRoute(
+  store: DecisionWebhookStore,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<unknown> {
+  const id = (request.params as { id: string }).id;
+  try {
+    const removed = await store.remove(id);
+    if (!removed) {
+      return reply.code(404).send({
+        code: 'WEBHOOK_NOT_FOUND',
+        message: `decision webhook subscription not found: ${id}`,
+        retryable: false,
+      });
+    }
+    return reply.code(204).send();
+  } catch {
+    return reply.code(500).send({
+      code: 'INTERNAL_ERROR',
+      message: 'webhook registry failed',
+      retryable: false,
+    });
+  }
+}

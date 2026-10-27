@@ -138,6 +138,8 @@ const HTTP_ONLY: Record<string, string> = {
     'Tier0 PRD §6.2 / T-M1-06: versioned policy administration over the bearer API; low-frequency high-blast-radius config action, no operator deck planned',
   'POST /api/v1/decision-webhooks':
     'Tier0 T-M8: register a decision-event push receiver (HMAC secret); the calling ops console is the consumer of the pushed events, zeus only records subscriptions, no operator deck planned',
+  'DELETE /api/v1/decision-webhooks/:id':
+    'Tier0 T-M8 / Active work 276: remove a decision-event push subscription; same bearer API face as the register route, no operator deck planned',
   'POST /api/v1/org/policy/thresholds':
     'Tier0 PRD §11 / T-M2-04: per-organization D0-D3 threshold configuration; low-frequency high-blast-radius config action',
 };
