@@ -34,6 +34,7 @@ import {
   addWebhookRoute,
   approvalRoute,
   createDecisionRoute,
+  deleteWebhookRoute,
   getDecisionRoute,
   getPolicyRoute,
   listDecisionsRoute,
@@ -2792,6 +2793,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           listWebhooksRoute(webhookStore, request, reply));
         app.post('/api/v1/decision-webhooks', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
           addWebhookRoute(webhookStore, request, reply));
+        app.delete('/api/v1/decision-webhooks/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+          deleteWebhookRoute(webhookStore, request, reply));
       }
     }
 

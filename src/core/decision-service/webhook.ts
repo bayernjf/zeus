@@ -24,10 +24,12 @@ export interface DecisionWebhookSubscription {
   active: boolean;
 }
 
-/** Read-only-plus-append registry of receivers. */
+/** Read-only-plus-append registry of receivers. `remove` returns true when a
+ *  row existed and was deleted; the route layer maps false to 404. */
 export interface DecisionWebhookStore {
   list(): DecisionWebhookSubscription[] | Promise<DecisionWebhookSubscription[]>;
   add(subscription: DecisionWebhookSubscription): void | Promise<void>;
+  remove(id: string): boolean | Promise<boolean>;
 }
 
 export class MemoryDecisionWebhookStore implements DecisionWebhookStore {
@@ -39,6 +41,13 @@ export class MemoryDecisionWebhookStore implements DecisionWebhookStore {
 
   add(subscription: DecisionWebhookSubscription): void {
     this.subscriptions.push({ ...subscription });
+  }
+
+  remove(id: string): boolean {
+    const at = this.subscriptions.findIndex(s => s.id === id);
+    if (at === -1) return false;
+    this.subscriptions.splice(at, 1);
+    return true;
   }
 }
 

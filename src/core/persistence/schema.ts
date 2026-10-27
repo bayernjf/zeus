@@ -15,6 +15,7 @@ export const MIGRATION_ID = '0001_init_decision_org';
 export const MIGRATION_0002_ORG_TASK_EXECUTION = '0002_org_task_execution';
 export const MIGRATION_0003_ORG_TASK_ACTIONS = '0003_org_task_actions';
 export const MIGRATION_0004_POSITION_CREDENTIALS = '0004_position_credentials';
+export const MIGRATION_0005_DECISION_WEBHOOKS = '0005_decision_webhooks';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -137,6 +138,23 @@ CREATE TABLE IF NOT EXISTS org_task_actions (
   PRIMARY KEY (task_id, action_key),
   FOREIGN KEY (task_id) REFERENCES org_tasks(id)
 );
+
+CREATE TABLE IF NOT EXISTS decision_webhooks (
+  id TEXT PRIMARY KEY,
+  url TEXT NOT NULL,
+  -- HMAC signing key, stored like the rest of the local secrets: plaintext on
+  -- the operator's own disk (the DB file is opened 0600), never shipped back
+  -- over HTTP and never logged. At-rest encryption would need a key-management
+  -- story this local-first deployment does not have yet.
+  secret TEXT NOT NULL,
+  active INTEGER NOT NULL DEFAULT 1,
+  -- Rows seeded from ZEUS_DECISION_WEBHOOK_URL/_SECRET are re-upserted on every
+  -- boot that still declares them; rows an operator created over the API are
+  -- never touched by boot.
+  seeded_from_env INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 interface Migration {
@@ -196,6 +214,20 @@ const INCREMENTAL_MIGRATIONS: Migration[] = [
         'credential_refs_json',
         `TEXT NOT NULL DEFAULT '[]'`,
       );
+    },
+  },
+  {
+    id: MIGRATION_0005_DECISION_WEBHOOKS,
+    up: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS decision_webhooks (
+        id TEXT PRIMARY KEY,
+        url TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        seeded_from_env INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );`);
     },
   },
 ];

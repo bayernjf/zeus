@@ -60,6 +60,8 @@ import {
   SqliteDecisionStore,
   SqliteOrgStore,
   SqliteActionStore,
+  SqliteDecisionWebhookStore,
+  ENV_SEED_WEBHOOK_ID,
 } from '../core/persistence/index.js';
 import type { OrgStore } from '../core/org/store.js';
 import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
@@ -297,6 +299,9 @@ async function main(): Promise<void> {
       if (firstBoot) policyStore.put(DEFAULT_POLICY_V1);
       recordStore = new SqliteDecisionStore(db);
       orgStore = new SqliteOrgStore(db);
+      // Subscriptions persist across restarts; the operator-managed registry
+      // and routes are always mounted in durable mode (Active work 276).
+      decisionWebhookStore = new SqliteDecisionWebhookStore(db);
       durability = 'sqlite';
     } else {
       const memoryPolicy = new MemoryPolicyStore();
@@ -309,27 +314,33 @@ async function main(): Promise<void> {
       ? await JsonlDecisionAuditStore.open(process.env.ZEUS_DECISION_AUDIT_FILE, signer, signer.verifier())
       : new DecisionAuditChain(signer);
 
-    // Decision lifecycle push: opt-in via ZEUS_DECISION_WEBHOOK_URL + secret.
-    // URL without secret fails closed (no unsigned deliveries); neither set
-    // means in-memory demo mode with no sink and no webhook routes.
+    // Decision lifecycle push: the env pair seeds a built-in subscription.
+    // URL without secret fails closed (no unsigned deliveries). The env seed row
+    // is a deployment declaration: a complete pair re-applies it on every boot
+    // (a runtime DELETE lasts only until the next boot — unset the env vars to
+    // stop it permanently), and any missing this boot drops the persisted seed
+    // row. Operator-created rows are never touched by boot.
     const webhookUrl = process.env.ZEUS_DECISION_WEBHOOK_URL?.trim();
     const webhookSecret = process.env.ZEUS_DECISION_WEBHOOK_SECRET?.trim();
     const decisionDeps: ConstructorParameters<typeof DecisionService>[0] = { policyStore, recordStore, audit };
-    if (webhookUrl) {
-      if (webhookSecret) {
-        decisionWebhookStore = new MemoryDecisionWebhookStore();
-        decisionWebhookStore.add({ id: 'env-seed', url: webhookUrl, secret: webhookSecret, active: true });
-        decisionDeps.events = new DecisionWebhookDispatcher({ store: decisionWebhookStore });
-      } else {
-        log.warn('decision-webhook', 'ZEUS_DECISION_WEBHOOK_URL set without ZEUS_DECISION_WEBHOOK_SECRET: push disabled');
-      }
+    if (webhookUrl && webhookSecret) {
+      if (!decisionWebhookStore) decisionWebhookStore = new MemoryDecisionWebhookStore();
+      await decisionWebhookStore.add({ id: ENV_SEED_WEBHOOK_ID, url: webhookUrl, secret: webhookSecret, active: true });
+    } else if (webhookUrl) {
+      log.warn('decision-webhook', 'ZEUS_DECISION_WEBHOOK_URL set without ZEUS_DECISION_WEBHOOK_SECRET: push disabled');
+      if (decisionWebhookStore) await decisionWebhookStore.remove(ENV_SEED_WEBHOOK_ID);
+    } else if (decisionWebhookStore) {
+      await decisionWebhookStore.remove(ENV_SEED_WEBHOOK_ID);
+    }
+    if (decisionWebhookStore) {
+      decisionDeps.events = new DecisionWebhookDispatcher({ store: decisionWebhookStore });
     }
     decisionService = new DecisionService(decisionDeps);
     log.info('decision-service', 'assembled', {
       defaultPolicy: `v${DEFAULT_POLICY_V1.version}`,
       auditTrail: process.env.ZEUS_DECISION_AUDIT_FILE ?? 'in-memory',
       durability,
-      webhooks: decisionWebhookStore ? 1 : 0,
+      webhooks: decisionWebhookStore ? (await decisionWebhookStore.list()).length : 0,
     });
 
     // Org API v1 (T-M2). Durable store is used when hydrated; otherwise the

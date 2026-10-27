@@ -10,3 +10,4 @@ export {
 export { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 export { SqliteOrgStore } from './sqlite-org-store.js';
 export { SqliteActionStore } from './sqlite-action-store.js';
+export { SqliteDecisionWebhookStore, ENV_SEED_WEBHOOK_ID } from './sqlite-webhook-store.js';
