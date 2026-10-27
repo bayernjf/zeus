@@ -64,9 +64,10 @@ import {
 import { ProcessLock } from './process-lock.js';
 import { computeCheckpoint, executeRecovery } from '../orchestrator/recovery.js';
 import type { CostLimit } from '../orchestrator/cost-ledger.js';
-import type { DecisionBackend } from '../decision/types.js';
+import type { BackendOptions, DecisionBackend } from '../decision/types.js';
 import { createJevBackendFromEnv } from '../decision/decision-model.js';
 import { createLlmBackendFromEnv } from '../decision/llm.js';
+import { createHubDecisionBackend, type HubTestPort } from '../decision/hub-backend.js';
 import { redactUrl } from '../util/logger.js';
 
 /**
@@ -1283,10 +1284,12 @@ async function assembleKernel(
 export type ProcessDecisionConfig = {
   backend: DecisionBackend | null;
   /** Which factory produced the backend, for an unambiguous boot log line. */
-  backendKind: 'decision-model' | 'llm' | null;
+  backendKind: 'hub' | 'decision-model' | 'llm' | null;
   judgeEnabled: boolean;
   judgeThreshold?: number;
   allowUncalibratedJudge?: boolean;
+  /** L3/L4 hub test surface, present only when the hub backend is active. */
+  hubTest?: HubTestPort;
 };
 
 const ENV_TRUE = new Set(['1', 'true', 'yes', 'on']);
@@ -1312,6 +1315,69 @@ export function resolveDecisionConfig(env: NodeJS.ProcessEnv = process.env): Pro
   if (threshold !== undefined) config.judgeThreshold = threshold;
   if (envFlag(env.ZEUS_JUDGE_ALLOW_UNCALIBRATED)) config.allowUncalibratedJudge = true;
   return config;
+}
+
+type HubWiring = {
+  hubUrl: string;
+  token: string;
+  cachePath: string;
+};
+
+function readHubWiring(env: NodeJS.ProcessEnv): HubWiring | null {
+  const hubUrl = env.MODEL_HUB_URL?.trim();
+  const token = env.MODEL_HUB_TOKEN?.trim();
+  if (!hubUrl || !token) return null;
+  const cachePath =
+    env.MODEL_HUB_CACHE_PATH?.trim() ?? './data/model-cache.json';
+  return { hubUrl, token, cachePath };
+}
+
+function applyJudgeSettings(
+  env: NodeJS.ProcessEnv,
+  config: ProcessDecisionConfig,
+): ProcessDecisionConfig {
+  const threshold = envNumber(env.ZEUS_JUDGE_THRESHOLD, 'ZEUS_JUDGE_THRESHOLD', 0);
+  if (threshold !== undefined) config.judgeThreshold = threshold;
+  if (envFlag(env.ZEUS_JUDGE_ALLOW_UNCALIBRATED)) {
+    config.allowUncalibratedJudge = true;
+  }
+  return config;
+}
+
+/**
+ * Async decision wiring: model-hub first, then process-env fallback.
+ * MODEL_HUB_DISABLED is a kill switch that skips the hub without removing
+ * the env vars. When the hub is unreachable or has no assigned models,
+ * the migration-period env wiring (resolveDecisionConfig) is used.
+ */
+export async function resolveDecisionConfigWithHub(
+  env: NodeJS.ProcessEnv = process.env,
+  options: BackendOptions = {},
+): Promise<ProcessDecisionConfig> {
+  const hub = envFlag(env.MODEL_HUB_DISABLED)
+    ? null
+    : readHubWiring(env);
+
+  if (hub) {
+    try {
+      const wiring = await createHubDecisionBackend({
+        ...options,
+        hubUrl: hub.hubUrl,
+        token: hub.token,
+        cachePath: hub.cachePath,
+      });
+      return applyJudgeSettings(env, {
+        backend: wiring.backend,
+        backendKind: 'hub',
+        judgeEnabled: envFlag(env.ZEUS_JUDGE_ENABLED),
+        hubTest: wiring.testPort,
+      });
+    } catch {
+      // Hub unavailable / no models: fall through to env.
+    }
+  }
+
+  return resolveDecisionConfig(env);
 }
 
 /** A boot-time env value was present but unusable. */
