@@ -12,6 +12,7 @@ import {
   MIGRATION_0002_ORG_TASK_EXECUTION,
   MIGRATION_0003_ORG_TASK_ACTIONS,
   MIGRATION_0004_POSITION_CREDENTIALS,
+  MIGRATION_0005_DECISION_WEBHOOKS,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
@@ -99,6 +100,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0002_ORG_TASK_EXECUTION,
       MIGRATION_0003_ORG_TASK_ACTIONS,
       MIGRATION_0004_POSITION_CREDENTIALS,
+      MIGRATION_0005_DECISION_WEBHOOKS,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
@@ -106,6 +108,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0002_ORG_TASK_EXECUTION,
       MIGRATION_0003_ORG_TASK_ACTIONS,
       MIGRATION_0004_POSITION_CREDENTIALS,
+      MIGRATION_0005_DECISION_WEBHOOKS,
     ]);
     db.close();
   });
