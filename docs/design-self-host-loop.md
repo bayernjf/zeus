@@ -8,13 +8,13 @@
 
 | 事实 | 证据 |
 | --- | --- |
-| 内核里没有任何调度器。全仓计时器调用共 **11 处**（2026-10-13 现测，不计 `src/testing` 测试工装），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、停机宽限、分支超时、派发受理超时、TUI 轮询、MCP stdio 调用墙钟/关停/在途请求三计时器、MCP HTTP 调用超时、分支排队等待的可选上限 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/http/server.ts:3351 #setTimeout`、`src/core/orchestrator/orchestrator.ts:1726 #setTimeout`、`src/dispatch/client.ts:124 #setTimeout`、`src/tui/cli.ts:103-103 #setInterval`、`src/mcp/stdio-client.ts:101-101 #setTimeout`、`src/mcp/stdio-client.ts:182-182 #setTimeout`、`src/mcp/stdio-client.ts:229-229 #setTimeout`、`src/mcp/client.ts:70-70 #setTimeout`、`src/core/orchestrator/semaphore.ts:125-125 #setTimeout` |
+| 内核里没有任何调度器。全仓计时器调用共 **11 处**（2026-10-13 现测，不计 `src/testing` 测试工装），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、停机宽限、分支超时、派发受理超时、TUI 轮询、MCP stdio 调用墙钟/关停/在途请求三计时器、MCP HTTP 调用超时、分支排队等待的可选上限 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/http/server.ts:3373 #setTimeout`、`src/core/orchestrator/orchestrator.ts:1726 #setTimeout`、`src/dispatch/client.ts:124 #setTimeout`、`src/tui/cli.ts:103-103 #setInterval`、`src/mcp/stdio-client.ts:101-101 #setTimeout`、`src/mcp/stdio-client.ts:182-182 #setTimeout`、`src/mcp/stdio-client.ts:229-229 #setTimeout`、`src/mcp/client.ts:70-70 #setTimeout`、`src/core/orchestrator/semaphore.ts:125-125 #setTimeout` |
 | 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:621-600 #` |
 | execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/core/orchestrator/orchestrator.ts:4-4 #verifyAndConsumeExecutionDelegation` |
 | 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation` |
 | 票据默认 TTL 5 分钟、上限 60 分钟——即"签发一次、派发一次"，不是"一段时间内自动放行" | `src/delegation/execution-delegation.ts:35-35 #EXECUTION_DELEGATION_DEFAULT_TTL_MS` |
 | 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156-156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:151-151 #executionDelegationNonces`、`src/state/kernel-state.ts:171-171 #executionDelegationLedger` |
-| 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:76-76 #conflictsToDesk`、`src/http/server.ts:903-881 #` |
+| 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:77-77 #conflictsToDesk`、`src/http/server.ts:903-881 #` |
 
 结论：**缺的不是安全边界，是"在没有人的时候合法地产生一次意图"的那个入口**，以及"边界内自动、越限回到人"的那层授权。这两件必须一起做——只做前者会得到一个能自主发起不可逆动作的内核，那正是现在的闸门在防的东西。
 
