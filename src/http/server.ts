@@ -25,6 +25,7 @@ import { SkillValidationError } from '../skills/validate-spec.js';
 import { ConnectorError, type ConnectorRegistry } from '../mcp/connectors.js';
 import type { ConnectorRecord, ConnectorStatus } from '../mcp/types.js';
 import type { DecisionBackend, DecisionBackendKind } from '../decision/types.js';
+import type { HubTestPort } from '../decision/hub-backend.js';
 import { recognizeIntent } from '../intent/recognize.js';
 import { readAuditLog } from '../dispatch/audit.js';
 import { AUDIT_DECISIONS, type AuditDecision, type AuditEntry } from '../dispatch/dispatcher.js';
@@ -200,6 +201,8 @@ export type HttpDeps = {
   connectorRegistry?: ConnectorRegistry;
   /** H2: the decision layer this process resolved at boot. */
   decisionStatus?: DecisionStatus;
+  /** L3/L4 hub test surface (ping / per-model connection test). */
+  hubTest?: HubTestPort;
   /** H2 (E2.6): pluggable backend for operator intent recognition (opt-in). */
   decisionBackend?: DecisionBackend;
   /** Decision API v1 (T-M1-06, design §4.2): graded business decisions with
@@ -2236,6 +2239,25 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
     if (deps.decisionStatus) {
       app.get('/api/decision', { preHandler: requireBearer }, async () => deps.decisionStatus);
+    }
+
+    if (deps.hubTest) {
+      const hubTest = deps.hubTest;
+      // L3: hub reachability and current revision.
+      app.get('/api/decision/ping', { preHandler: requireBearer }, async () => hubTest.pingHub());
+      // L4: per-model end-to-end probe (alias); ?deep=true allows a paid call.
+      app.post('/api/decision/test', { preHandler: requireBearer }, async (req, reply) => {
+        const body = (req.body ?? {}) as { alias?: unknown; deep?: unknown };
+        if (typeof body.alias !== 'string' || body.alias.length === 0) {
+          return reply.code(400).send({ error: 'alias_required' });
+        }
+        const deep = body.deep === true || body.deep === 'true';
+        try {
+          return await hubTest.testConnection(body.alias, { deep });
+        } catch {
+          return reply.code(502).send({ error: 'test_failed' });
+        }
+      });
     }
 
     if (deps.kernelStats) {
