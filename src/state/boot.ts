@@ -1345,18 +1345,17 @@ function applyJudgeSettings(
 }
 
 /**
- * Async decision wiring: model-hub first, then process-env fallback.
- * MODEL_HUB_DISABLED is a kill switch that skips the hub without removing
- * the env vars. When the hub is unreachable or has no assigned models,
- * the migration-period env wiring (resolveDecisionConfig) is used.
+ * Async decision wiring: model-hub first. When the hub is unreachable or has
+ * no assigned models, the process-env wiring (resolveDecisionConfig) is used
+ * as a safety net. W7-3 removed the MODEL_HUB_DISABLED kill switch: the hub
+ * is now the only configured model source, and there is no way to silently
+ * skip it by env.
  */
 export async function resolveDecisionConfigWithHub(
   env: NodeJS.ProcessEnv = process.env,
   options: BackendOptions = {},
 ): Promise<ProcessDecisionConfig> {
-  const hub = envFlag(env.MODEL_HUB_DISABLED)
-    ? null
-    : readHubWiring(env);
+  const hub = readHubWiring(env);
 
   if (hub) {
     try {
