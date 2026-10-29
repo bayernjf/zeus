@@ -1003,14 +1003,31 @@ async function assembleKernel(
       // decision memory (category=decision) before consolidation, so the
       // next same-kind intent recalls it at the dispatch boundary. The
       // event id is deterministic per (intentId, runId): a replayed settle
-      // is append-deduped, never double-counted.
+      // is append-deduped, never double-counted. The writeback obeys the
+      // same mount-table authority as the verdict claims above: a realm
+      // disconnected mid-flight receives nothing, and the append goes
+      // through appendFromRealm so the realm-boundary invariant cannot be
+      // bypassed by this path either.
       const intent = orchestrator.getIntent(event.intentId);
       const conclusion = intent?.decision?.conclusion;
-      if (intent && event.realmId && typeof conclusion === 'string' && conclusion.length > 0) {
+      const realmId = event.realmId;
+      const mounted = realmId !== undefined &&
+        (realmStore?.connections() ?? []).some(connection => connection.realmId === realmId);
+      if (intent && realmId !== undefined && !mounted) {
+        auditSink({
+          ts: now().toISOString(),
+          vassal: '(kernel)',
+          skill: intent.skill,
+          realm: intent.realm,
+          decision: 'memory-writeback-skipped',
+          detail: `intent ${intent.intentId} finished on unmounted realm ${realmId}; settled conclusion not written back as a decision memory`,
+        });
+      }
+      if (intent && realmId !== undefined && mounted && typeof conclusion === 'string' && conclusion.length > 0) {
         try {
-          memoryStore.append({
+          memoryStore.appendFromRealm(realmId, {
             eventId: `mem-decision-${sha256Hex(`${event.intentId}|${event.runId}`).slice(0, 16)}`,
-            realmId: event.realmId,
+            realmId,
             runId: event.runId,
             source: { agentId: 'zeus-kernel' },
             kind: 'claim',

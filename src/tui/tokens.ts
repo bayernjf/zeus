@@ -98,6 +98,9 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'commission-withdrawn': 'warning',
   'commission-refused': 'warning',
   'memory-claim-skipped': 'warning',
+  // MemoryPort v1 §6: the settled conclusion that had nowhere to land (realm
+  // unmounted at settle time) — same family as the dropped-claim skip.
+  'memory-writeback-skipped': 'warning',
   // MemoryPort v1 §4: a routine authorised hub embed (audited by hash); an
   // info-level line, since the call itself is normal flow, not a refusal.
   'memory-embed-external': 'info',
