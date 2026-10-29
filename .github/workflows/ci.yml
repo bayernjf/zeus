@@ -305,6 +305,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # verify-image.mjs rebuilds on the host before exercising the container,
+      # so the model-hub sibling is needed here too.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+
       - name: Build image
         run: docker build -t zeus:ci-verify .
 
