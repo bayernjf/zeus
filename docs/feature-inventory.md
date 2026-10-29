@@ -54,7 +54,7 @@ PRD 共 **59 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **6 条**（E3
 | 监督台 | 7 | `GET /api/escalations`、`GET /:id`、`POST /:id/approve`、`/reject`、`/approve-resume`、`/resolve`、`/approve-contract`（自托管第 5 步：批准委托越限项 = 签新契约并换绑 watch） |
 | 指标与状态 | 4 | `GET /api/metrics`、`GET /api/metrics/history`（S6 V3 指标史只读）、`GET /api/state`、`GET /api/audit` |
 | 组织编制 | 13 | `GET /api/org/chart`、`GET /api/org/accountability/:intentId`、部门建编/安置/设 lead/移除成员、带教立项/授课/豁免/撤回/台账、`GET /:id/briefing/:agentId`、`POST /:id/first-task` |
-| 记忆 | 14 | `/api/memory/{events,facts,replay,recall}`、`/retract`、`/forget-subject`、`/retractions`、`/integrity`、`/snapshot`、`/reconcile`、跨 agent 消费面 `POST /api/v1/memory/{recall,remember,forget}` + `GET /api/v1/memory/counts`（MemoryPort v1 §7：`ZEUS_MEMORY_SERVICE_TOKEN` 在场才挂载，namespace=realm） |
+| 记忆 | 14 | `/api/memory/{events,facts,replay,recall}`、`/retract`、`/forget-subject`、`/retractions`、`/integrity`、`/snapshot`、`/reconcile`、跨 agent 消费面 `POST /api/v1/memory/{recall,remember,forget}` + `GET /api/v1/memory/counts`（MemoryPort v1 §7：`ZEUS_MEMORY_SERVICE_TOKENS` 在场才挂载，每个 token 绑定一个 namespace） |
 | 日记 | 3 | `GET /api/diary`、`GET /api/diary/export`、`POST /api/diary/generate` |
 | 技能与带教 | 14 | `/api/skills` 目录与版本、`install`/`uninstall`/`deprecate`/`harden`/`team`、`/api/mentorships` 全生命周期 |
 | 连接器 | 8 | `/api/connectors` 声明/连接/吊销、`POST /api/connectors/:id/tools/:name/call`、`GET`/`POST /mcp`（E3.4 streamable HTTP：公开元信息 + bearer 保护 JSON-RPC 喂同一 realm handler，`x-zeus-realm-actor` 会话级 actor） |
@@ -141,7 +141,7 @@ PRD 共 **59 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **6 条**（E3
 | 确定性 realmId（realpath 派生）与内容指纹 | `realm/store.ts` `realm/digest.ts` | ✅ |
 | 路径逃逸防护（路径段 + realpath 双检，拒符号链接） | `src/realm/store.ts:203-203 #isInsideRoot` | ✅ |
 | 文本白名单、隐藏与依赖目录剪枝、1MiB 上限 | `realm/store.ts` scan | ✅ |
-| 数据二极管：域须在 fealty 声明内才注入 | `src/dispatch/dispatcher.ts:366 #diode` | ✅ |
+| 数据二极管：域须在 fealty 声明内才注入 | `src/dispatch/dispatcher.ts:372 #diode` | ✅ |
 | 企业域三级租户（org/department/member） | `realm/tenant.ts` | ✅ |
 | 双域授权：个人↔企业单向隔离，显式签名一次性授权 | `realm/authorization.ts` | ✅ |
 | 企业域写凭证：签名且一次性，nonce 账本 | `realm/grant.ts` | ✅ |
@@ -159,7 +159,7 @@ PRD 共 **59 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **6 条**（E3
 | Ed25519 + JCS 两层信封（条目 attestation + 快照 seal），离线可验 | `core/signing.ts` | ✅ |
 | 吊销强制力：派发前阻断、凭据即刻断流、四视图不回显 | `registry/registry.ts` `dispatch/dispatcher.ts` | ✅ |
 | 出站凭据注入（`url｜token` seed、快照持久化、0600） | `registry/registry.ts` `tokenFor` | ✅ |
-| SLA 受理计时审计 | `src/dispatch/dispatcher.ts:474 #ackSeconds` | ✅ |
+| SLA 受理计时审计 | `src/dispatch/dispatcher.ts:480 #ackSeconds` | ✅ |
 | 文件/URI 产物部件（只呈现不自动拉取） | `a2a/parts.ts` | ✅ |
 | 对线上真实执行 Agent 的协议验收 | `scripts/acceptance-standard-a2a.mjs` | ✅（E4.8 已实跑 PASS） |
 | 凭据委派（execute 模式） | 未实现 | ⬜（deferred #33 投递字段：对端凭据代理接口未定义；PRD E4.10 是背压降级顺序，与凭据委派无关） |
@@ -171,7 +171,7 @@ PRD 共 **59 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **6 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 薄传输层：全库仅 `http/` 引 fastify，内核零传输依赖 | `http/server.ts` | ✅ |
-| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:450 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
+| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:453 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
 | 根公钥发布端点 | `GET /api/roster/keys` | ✅ |
 | 生产密钥硬化：内联 PEM / 文件挂载 / production 无钥拒启 | `http/rsk.ts` | ✅ |
 | 启动装配：四组件一次装配、快照恢复、信号优雅落盘 | `state/boot.ts` | ✅ |

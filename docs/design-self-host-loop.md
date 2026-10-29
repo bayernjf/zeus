@@ -8,12 +8,12 @@
 
 | 事实 | 证据 |
 | --- | --- |
-| 内核里没有任何调度器。全仓计时器调用共 **11 处**（2026-10-13 现测，不计 `src/testing` 测试工装），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、停机宽限、分支超时、派发受理超时、TUI 轮询、MCP stdio 调用墙钟/关停/在途请求三计时器、MCP HTTP 调用超时、分支排队等待的可选上限 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/http/server.ts:3508 #setTimeout`、`src/core/orchestrator/orchestrator.ts:1726 #setTimeout`、`src/dispatch/client.ts:124 #setTimeout`、`src/tui/cli.ts:103-103 #setInterval`、`src/mcp/stdio-client.ts:101-101 #setTimeout`、`src/mcp/stdio-client.ts:182-182 #setTimeout`、`src/mcp/stdio-client.ts:229-229 #setTimeout`、`src/mcp/client.ts:70-70 #setTimeout`、`src/core/orchestrator/semaphore.ts:125-125 #setTimeout` |
+| 内核里没有任何调度器。全仓计时器调用共 **11 处**（2026-10-13 现测，不计 `src/testing` 测试工装），全部是给一次已经在进行的调用设上限、或界面自刷新：决策请求超时、SSE keepalive、停机宽限、分支超时、派发受理超时、TUI 轮询、MCP stdio 调用墙钟/关停/在途请求三计时器、MCP HTTP 调用超时、分支排队等待的可选上限 | `src/decision/shared.ts:42-42 #setTimeout`、`src/http/server.ts:2926-2896 #`、`src/http/server.ts:3580 #setTimeout`、`src/core/orchestrator/orchestrator.ts:1726 #setTimeout`、`src/dispatch/client.ts:124 #setTimeout`、`src/tui/cli.ts:103-103 #setInterval`、`src/mcp/stdio-client.ts:101-101 #setTimeout`、`src/mcp/stdio-client.ts:182-182 #setTimeout`、`src/mcp/stdio-client.ts:229-229 #setTimeout`、`src/mcp/client.ts:70-70 #setTimeout`、`src/core/orchestrator/semaphore.ts:125-125 #setTimeout` |
 | 意图入口是 HTTP 的一次提交，语义是"人发起了这次编排" | `src/http/server.ts:621-600 #` |
 | execute 分支在派发前必须携带**已验签且未消费**的执行授权票据，缺票据是零出站拒绝 | `src/core/orchestrator/orchestrator.ts:4-4 #verifyAndConsumeExecutionDelegation` |
 | 票据结构已经支持能力集、技能绑定、有效期、单次 nonce、签名 key 与验签锚点 | `src/delegation/execution-delegation.ts:10-10 #ExecutionDelegation` |
 | 票据默认 TTL 5 分钟、上限 60 分钟——即"签发一次、派发一次"，不是"一段时间内自动放行" | `src/delegation/execution-delegation.ts:35-35 #EXECUTION_DELEGATION_DEFAULT_TTL_MS` |
-| 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156-156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:151-151 #executionDelegationNonces`、`src/state/kernel-state.ts:171-171 #executionDelegationLedger` |
+| 授权不可逆性的另一半靠 nonce 账本，且账本随内核快照持久化并在重启后回灌 | `src/delegation/execution-delegation.ts:156-156 #ExecutionDelegationNonceLedger`、`src/state/kernel-state.ts:155-155 #executionDelegationNonces`、`src/state/kernel-state.ts:175-175 #executionDelegationLedger` |
 | 人在环是既有能力：冲突升级进 desk，操作者裁决有端点与监督台 | `src/state/boot.ts:79-79 #conflictsToDesk`、`src/http/server.ts:903-881 #` |
 
 结论：**缺的不是安全边界，是"在没有人的时候合法地产生一次意图"的那个入口**，以及"边界内自动、越限回到人"的那层授权。这两件必须一起做——只做前者会得到一个能自主发起不可逆动作的内核，那正是现在的闸门在防的东西。
@@ -66,7 +66,7 @@ export type Watch = {
 | --- | --- | --- |
 | `metrics` | 本机内核读数（在途、队列深度、失败率） | `src/core/orchestrator/metrics.ts:58-58 #queueDepth`，纯内存只读 |
 | `realm` | 用户自己授权过的数据域里的条目元数据 | 只读面同一套扫描与边界，实时读取语义见 [mcp-integration.md](mcp-integration.md) §1.6 |
-| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:338-338 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:366 #diode`） |
+| `connector` | 已声明连接器的工具返回值 | 走既有连接器调用与其权限边界（`src/mcp/connectors.ts:338-338 #withinDeclaredBoundary`），**不新增出站面**；出站白名单与域名注入约束一并生效（`src/dispatch/dispatcher.ts:372 #diode`） |
 
 求值器**不做**的事：不执行任意 JS、不 eval 用户字符串、不引入表达式语言。比较符是封闭枚举，字段名是白名单——理由和权限词汇封闭同源：一旦能写表达式，边界就转移到求值器里，而那里没有闸门。
 
@@ -77,7 +77,7 @@ export type Watch = {
 3. 触发：满足 → 以 `owner` 为 actor 提交一次意图（`intent` 模板 + 自动 `intentId = watch:<id>:<seq>` 保幂等，命中既有幂等判定，重复触发不会重复派发）。
 4. `mode: 'execute'` 的触发**必须**带一个从 `delegationId` 派生的子票据，走 `src/core/orchestrator/orchestrator.ts:4-4 #verifyAndConsumeExecutionDelegation` 那条完全相同的闸门；拿不到子票据（预算耗尽/契约撤销/能力不覆盖）= **零出站拒绝**，并写一条升级项回给人。
 5. 撤销：`enabled: false` 或到期即不再求值；撤销是写状态 + 审计，不删历史。
-6. 持久化：watch 集合、`budget` 剩余、`lastFiredAt` 全部进内核快照，与既有 `executionDelegationNonces` 同一套写法（`src/state/kernel-state.ts:151-151 #executionDelegationNonces`）——**重启后不重置计数**，否则一次重启就是无限次触发。
+6. 持久化：watch 集合、`budget` 剩余、`lastFiredAt` 全部进内核快照，与既有 `executionDelegationNonces` 同一套写法（`src/state/kernel-state.ts:155-155 #executionDelegationNonces`）——**重启后不重置计数**，否则一次重启就是无限次触发。
 
 ### 3.3 失败语义（必须写清楚，否则实现会自己发明）
 

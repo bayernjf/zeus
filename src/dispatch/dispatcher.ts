@@ -60,6 +60,12 @@ export const AUDIT_DECISIONS = [
   // MemoryPort contract v1 §4 (ruling D-1): every hub embedding call is an
   // authorised out-of-realm call, so it is audited by content hash only.
   'memory-embed-external',
+  // MemoryPort contract v1 §7: one line per cross-agent consumer-face call
+  // (namespace-bound, content hashes only).
+  'memory-service-call',
+  // MemoryPort v1 §6: the fire-and-forget settle boundary failed; fail-soft
+  // but never silent, or memory would stop updating without a trace.
+  'memory-consolidation-failed',
   // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
   // leave no trace at all, so the governance surface could not see a branch ended.
   'cancel-requested',
