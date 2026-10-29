@@ -6,20 +6,29 @@ import type {
   RecallHit,
   RecallSearchOptions,
 } from './types.js';
+import { DEFAULT_FACT_IMPORTANCE } from './types.js';
 
 /**
  * Hybrid recall index (design-memory-consolidation.md §2, §4.2).
  *
  * The index is a derived, rebuildable artifact: it is never persisted and can
  * always be reconstructed from the fact store. It combines a BM25 lexical
- * score with a vector cosine score. Embeddings stay local/same-domain — the
- * default embedder is a deterministic signed-hashing bag-of-words; a real
- * local model can be injected through the Embedder port.
+ * score with a vector cosine score. Embeddings are asynchronous since the
+ * hub-backed embedder landed (MemoryPort contract v1 §4, ruling D-1): the
+ * default embedder stays the deterministic signed-hashing bag-of-words, a
+ * hub model is injected through the same Embedder port, and a dimension
+ * change on the embedder tells the store to rebuild the index.
  */
 
 const DEFAULT_ALPHA = 0.5;
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
+
+/**
+ * Hybrid-vs-importance blend (MemoryPort contract v1 §5.1):
+ * score = 0.7 × hybrid + 0.3 × importance.
+ */
+const IMPORTANCE_WEIGHT = 0.3;
 
 /** Facts in these statuses participate in recall; dead facts never do. */
 const INDEXABLE_STATUSES: ReadonlySet<FactStatus> = new Set(['active', 'disputed']);
@@ -55,8 +64,8 @@ function fnv1a(text: string): number {
 /**
  * Local, network-free embedder: each token is feature-hashed to a dimension
  * with a sign, accumulated, then L2-normalised. It carries no semantics beyond
- * token overlap — it is the offline-safe default until a same-domain model is
- * available (deferred #10).
+ * token overlap — it is the offline-safe default and the fallback when the
+ * hub embedder degrades (MemoryPort contract v1 §4).
  */
 export class LocalHashingEmbedder implements Embedder {
   readonly dimension: number;
@@ -65,7 +74,7 @@ export class LocalHashingEmbedder implements Embedder {
     this.dimension = dimension;
   }
 
-  embed(text: string): number[] {
+  async embed(text: string): Promise<number[]> {
     const vector = new Array<number>(this.dimension).fill(0);
     for (const token of tokenize(text)) {
       const hash = fnv1a(token);
@@ -91,6 +100,18 @@ export function factText(fact: FactRecord): string {
   return `${fact.subject} ${fact.predicate} ${stableStringify(fact.object)}`;
 }
 
+/** Effective importance at ranking time; episodic entries age down. */
+export function effectiveImportance(fact: FactRecord, nowMs: number): number {
+  const base = fact.importance ?? DEFAULT_FACT_IMPORTANCE;
+  if (fact.kind !== 'episodic') return base;
+  const last = fact.lastAccessAt ? Date.parse(fact.lastAccessAt) : Date.parse(fact.updatedAt);
+  if (!Number.isFinite(last)) return base;
+  const ageDays = Math.max(0, (nowMs - last) / 86_400_000);
+  // Fourteen-day half-life (MemoryPort contract v1 §5.2); never destructive —
+  // the stored importance stays the base, only the ranking discounts it.
+  return base * Math.pow(0.5, ageDays / 14);
+}
+
 interface IndexedDoc {
   fact: FactRecord;
   tokens: string[];
@@ -100,15 +121,20 @@ interface IndexedDoc {
 export class RecallIndex {
   private docs = new Map<string, IndexedDoc>();
 
-  constructor(private readonly embedder: Embedder = new LocalHashingEmbedder()) {}
+  /** Vector dimension of the embedder this index was built with. */
+  readonly dimension: number;
 
-  /** Replace the whole index from the fact source (acceptance #5). */
-  sync(facts: FactRecord[]): void {
-    this.docs.clear();
-    for (const fact of facts) this.upsert(fact);
+  constructor(private readonly embedder: Embedder = new LocalHashingEmbedder()) {
+    this.dimension = embedder.dimension;
   }
 
-  upsert(fact: FactRecord): void {
+  /** Replace the whole index from the fact source (acceptance #5). */
+  async sync(facts: FactRecord[]): Promise<void> {
+    this.docs.clear();
+    for (const fact of facts) await this.upsert(fact);
+  }
+
+  async upsert(fact: FactRecord): Promise<void> {
     if (!INDEXABLE_STATUSES.has(fact.status)) {
       this.docs.delete(fact.factId);
       return;
@@ -117,7 +143,7 @@ export class RecallIndex {
     this.docs.set(fact.factId, {
       fact,
       tokens: tokenize(text),
-      vector: this.embedder.embed(text),
+      vector: await this.embedder.embed(text),
     });
   }
 
@@ -129,12 +155,16 @@ export class RecallIndex {
     return this.docs.size;
   }
 
-  search(query: string, options: RecallSearchOptions = {}): RecallHit[] {
+  async search(
+    query: string,
+    options: RecallSearchOptions = {},
+    nowMs: number = Date.now(),
+  ): Promise<RecallHit[]> {
     const alpha = options.alpha ?? DEFAULT_ALPHA;
     const limit = options.limit ?? 10;
     const queryTokens = tokenize(query);
-    const queryVector = this.embedder.embed(query);
     if (queryTokens.length === 0) return [];
+    const queryVector = await this.embedder.embed(query);
 
     const docs = [...this.docs.values()];
     const lexicalById = this.bm25(queryTokens, docs);
@@ -148,8 +178,14 @@ export class RecallIndex {
       const rawLexical = lexicalById.get(doc.fact.factId) ?? 0;
       const lexical = maxLexical > 0 ? rawLexical / maxLexical : 0;
       const semantic = cosine(queryVector, doc.vector);
-      const score = alpha * semantic + (1 - alpha) * lexical;
-      if (score > 0) hits.push({ fact: doc.fact, score, lexical, semantic });
+      const hybrid = alpha * semantic + (1 - alpha) * lexical;
+      const importance = effectiveImportance(doc.fact, nowMs);
+      const score = (1 - IMPORTANCE_WEIGHT) * hybrid + IMPORTANCE_WEIGHT * importance;
+      // Relevance is decided by the hybrid term alone; importance only
+      // re-ranks relevant hits (contract v1 §5.1). Gating on the blended
+      // score would summon every indexed fact into every query — a legacy
+      // fact's 0.5 baseline already clears zero on its own.
+      if (hybrid > 0) hits.push({ fact: doc.fact, score, lexical, semantic });
     }
 
     return hits

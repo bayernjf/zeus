@@ -49,10 +49,23 @@ export const AUDIT_DECISIONS = [
   'refused-no-active-provider',
   // #9: a saturated/eligible-lacking target re-pointed to an alternate provider.
   'branch-diverted',
+  // MemoryPort v1 §6: the settled conclusion that could not be written back
+  // because its realm was unmounted at settle time. Like the dropped-claim
+  // case below, the skip is a governance fact, not a silent drop.
+  'memory-writeback-skipped',
   // deferred #27: finished-intent verdicts that could not become claims (the realm
   // they belonged to was unmounted mid-flight). A dropped claim is a governance
   // fact, so it is announced rather than swallowed.
   'memory-claim-skipped',
+  // MemoryPort contract v1 §4 (ruling D-1): every hub embedding call is an
+  // authorised out-of-realm call, so it is audited by content hash only.
+  'memory-embed-external',
+  // MemoryPort contract v1 §7: one line per cross-agent consumer-face call
+  // (namespace-bound, content hashes only).
+  'memory-service-call',
+  // MemoryPort v1 §6: the fire-and-forget settle boundary failed; fail-soft
+  // but never silent, or memory would stop updating without a trace.
+  'memory-consolidation-failed',
   // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
   // leave no trace at all, so the governance surface could not see a branch ended.
   'cancel-requested',

@@ -103,7 +103,9 @@ import { buildDiariesFromState } from '../diary/from-memory.js';
 import { exportDiary, persistDiary } from '../diary/persist.js';
 import { DiaryUnsupportedError } from '../diary/types.js';
 import { reconcileMemoryStates } from '../memory/reconcile.js';
-import type { MemoryState } from '../memory/types.js';
+import { factId } from '../memory/consolidate.js';
+import { sha256Hex } from '../util/crypto.js';
+import type { MemoryEvent, MemoryState } from '../memory/types.js';
 
 /**
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
@@ -227,6 +229,10 @@ export type HttpDeps = {
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
   memoryStore?: MemoryStore;
+  /** MemoryPort v1 §7: namespace-bound consumer tokens; unset = face not mounted. */
+  memoryServiceTokens?: Record<string, string>;
+  /** MemoryPort v1 §7: audit spine for service-call lines (content hashes only). */
+  memoryServiceAudit?: (decision: 'memory-service-call', detail: string) => void;
   /**
    * Durability hook for compliance mutations: retract / forget-subject await
    * a kernel snapshot flush before answering, so a crash cannot resurrect a
@@ -1662,7 +1668,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (query.alpha !== undefined && alpha === undefined) {
           return error(reply, 400, 'invalid_request', 'query.alpha must be a number in [0,1]');
         }
-        const hits = deps.memoryStore!.searchRecall(query.realmId, query.realmId, query.q, {
+        const hits = await deps.memoryStore!.searchRecall(query.realmId, query.realmId, query.q, {
           ...(limit !== undefined ? { limit } : {}),
           ...(alpha !== undefined ? { alpha } : {}),
         });
@@ -1767,6 +1773,207 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           (body.current ?? deps.memoryStore!.exportState()) as MemoryState
         );
       });
+
+      // MemoryPort v1 §7 (ruling D-6): cross-agent consumer face. Mounted
+      // only when ZEUS_MEMORY_SERVICE_TOKENS (namespace:token pairs) is
+      // configured (fail-closed). Each token binds to exactly one namespace:
+      // the bound namespace overrides any caller-claimed one, so a consumer
+      // cannot read, write, or erase another realm's memory. Every call is
+      // audited by the injected memoryServiceAudit line (content hashes only).
+      if (deps.memoryServiceTokens) {
+        const tokenToNamespace = deps.memoryServiceTokens;
+        const requireMemoryServiceToken = async (
+          request: FastifyRequest,
+          reply: FastifyReply,
+        ): Promise<void> => {
+          const header = request.headers.authorization ?? '';
+          const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
+          let bound: string | undefined;
+          if (presented) {
+            for (const [namespace, token] of Object.entries(tokenToNamespace)) {
+              if (constantTimeEqual(presented, token)) {
+                bound = namespace;
+                break;
+              }
+            }
+          }
+          if (!bound) {
+            await reply.code(401).header('WWW-Authenticate', 'Bearer').send({ error: 'unauthorized' });
+            return;
+          }
+          (request as FastifyRequest & { memoryNamespace: string }).memoryNamespace = bound;
+        };
+
+        const MEMORY_KINDS = ['preference', 'fact', 'decision', 'episodic'] as const;
+
+        app.post('/api/v1/memory/recall', { preHandler: requireMemoryServiceToken }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const namespace = (request as FastifyRequest & { memoryNamespace: string }).memoryNamespace;
+          const body = (request.body ?? {}) as { namespace?: unknown; query?: unknown; k?: unknown; kinds?: unknown };
+          if (body.namespace !== undefined && body.namespace !== namespace) {
+            return error(reply, 403, 'forbidden', 'body.namespace does not match the token-bound namespace');
+          }
+          if (!isNonEmptyString(body.query)) {
+            return error(reply, 400, 'invalid_request', 'body.query is required');
+          }
+          const k = body.k === undefined ? undefined : parsePositiveInt(body.k);
+          if (body.k !== undefined && k === undefined) {
+            return error(reply, 400, 'invalid_request', 'body.k must be a positive integer');
+          }
+          if (body.kinds !== undefined && !(Array.isArray(body.kinds) && body.kinds.every(isNonEmptyString))) {
+            return error(reply, 400, 'invalid_request', 'body.kinds must be an array of strings');
+          }
+          const hits = await deps.memoryStore!.searchRecall(namespace, namespace, body.query, {
+            ...(k !== undefined ? { limit: k } : {}),
+          });
+          const filtered = Array.isArray(body.kinds)
+            ? hits.filter(hit => (body.kinds as string[]).includes(hit.fact.kind ?? 'fact'))
+            : hits;
+          deps.memoryServiceAudit?.(
+            'memory-service-call',
+            `namespace=${namespace} action=recall queryHash=${sha256Hex(body.query).slice(0, 16)} hits=${filtered.length}`,
+          );
+          return {
+            hits: filtered.map(hit => ({
+              factId: hit.fact.factId,
+              kind: hit.fact.kind ?? 'fact',
+              subject: hit.fact.subject,
+              predicate: hit.fact.predicate,
+              object: hit.fact.object,
+              confidence: hit.fact.confidence,
+              score: Number(hit.score.toFixed(4)),
+              provenance: hit.fact.provenance,
+            })),
+          };
+        });
+
+        app.post('/api/v1/memory/remember', { preHandler: requireMemoryServiceToken }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const namespace = (request as FastifyRequest & { memoryNamespace: string }).memoryNamespace;
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (body.namespace !== undefined && body.namespace !== namespace) {
+            return error(reply, 403, 'forbidden', 'body.namespace does not match the token-bound namespace');
+          }
+          const kind = body.kind === undefined ? 'fact' : body.kind;
+          if (typeof kind !== 'string' || !(MEMORY_KINDS as readonly string[]).includes(kind)) {
+            return error(reply, 400, 'invalid_request', 'body.kind must be preference|fact|decision|episodic');
+          }
+          const importance = body.importance === undefined ? undefined : parseUnitInterval(body.importance);
+          if (body.importance !== undefined && importance === undefined) {
+            return error(reply, 400, 'invalid_request', 'body.importance must be a number in [0,1]');
+          }
+          // Contract §7 shape: { kind, content, importance? } lands as a
+          // single SPO claim rooted at the namespace; the SPO triple form is
+          // the structured alternative. provenance flows into the event refs.
+          let subject: string;
+          let predicate: string;
+          let object: unknown;
+          if (body.content !== undefined) {
+            if (!isNonEmptyString(body.content)) {
+              return error(reply, 400, 'invalid_request', 'body.content must be a non-empty string');
+            }
+            subject = namespace;
+            predicate = 'note';
+            object = body.content;
+          } else {
+            if (!isNonEmptyString(body.subject) || !isNonEmptyString(body.predicate)) {
+              return error(reply, 400, 'invalid_request', 'body.content, or body.subject and body.predicate, is required');
+            }
+            if (body.object === undefined) {
+              return error(reply, 400, 'invalid_request', 'body.object is required with body.subject/body.predicate');
+            }
+            subject = body.subject;
+            predicate = body.predicate;
+            object = body.object;
+          }
+          if (JSON.stringify(object ?? null).length > 65_536) {
+            return error(reply, 400, 'invalid_request', 'body.object exceeds the 64KB limit');
+          }
+          if (body.provenance !== undefined && !(Array.isArray(body.provenance) && body.provenance.every(isNonEmptyString))) {
+            return error(reply, 400, 'invalid_request', 'body.provenance must be an array of strings');
+          }
+          const event: MemoryEvent = {
+            eventId: `mem-svc-${crypto.randomUUID()}`,
+            realmId: namespace,
+            runId: 'memory-service',
+            source: { agentId: namespace },
+            kind: 'claim',
+            content: {
+              subject,
+              predicate,
+              object,
+              ...(kind !== 'fact' ? { category: kind as (typeof MEMORY_KINDS)[number] } : {}),
+              ...(importance !== undefined ? { importance } : {}),
+            },
+            refs: Array.isArray(body.provenance) ? [...(body.provenance as string[])] : [],
+            confidence: 0.9,
+            occurredAt: new Date().toISOString(),
+          };
+          deps.memoryStore!.append(event);
+          await deps.memoryStore!.consolidateRealm(namespace);
+          deps.memoryServiceAudit?.(
+            'memory-service-call',
+            `namespace=${namespace} action=remember factId=${factId(namespace, subject, predicate, object)}`,
+          );
+          return {
+            factId: factId(namespace, subject, predicate, object),
+            status: 'remembered',
+          };
+        });
+
+        app.post('/api/v1/memory/forget', { preHandler: requireMemoryServiceToken }, async (request: FastifyRequest, reply: FastifyReply) => {
+          const namespace = (request as FastifyRequest & { memoryNamespace: string }).memoryNamespace;
+          const body = (request.body ?? {}) as Record<string, unknown>;
+          if (body.namespace !== undefined && body.namespace !== namespace) {
+            return error(reply, 403, 'forbidden', 'body.namespace does not match the token-bound namespace');
+          }
+          if (!isNonEmptyString(body.reason)) {
+            return error(reply, 400, 'invalid_request', 'body.reason is required');
+          }
+          const context = { reason: body.reason, requestedBy: namespace };
+          let records;
+          if (Array.isArray(body.factIds) && body.factIds.length > 0 && body.factIds.every(isNonEmptyString)) {
+            records = deps.memoryStore!.retractFacts(namespace, body.factIds, context);
+          } else if (isNonEmptyString(body.subject)) {
+            records = deps.memoryStore!.forgetSubject(namespace, body.subject, context);
+          } else {
+            return error(reply, 400, 'invalid_request', 'body.factIds (non-empty array) or body.subject is required');
+          }
+          // M-12 parity with the internal face: a real erasure is flushed
+          // before the answer, so a crash cannot resurrect the memory.
+          if (records.length > 0) {
+            try {
+              await deps.persistState?.();
+            } catch (err) {
+              return error(
+                reply,
+                500,
+                'state_not_persisted',
+                `retraction applied but persistence failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+              );
+            }
+          }
+          deps.memoryServiceAudit?.(
+            'memory-service-call',
+            `namespace=${namespace} action=forget retracted=${records.length}`,
+          );
+          return { retracted: records.length, records };
+        });
+
+        app.get('/api/v1/memory/counts', { preHandler: requireMemoryServiceToken }, async (request: FastifyRequest) => {
+          const namespace = (request as FastifyRequest & { memoryNamespace: string }).memoryNamespace;
+          const facts = deps.memoryStore!.facts(namespace, namespace)
+            .filter(fact => fact.status !== 'retracted');
+          const byKind: Record<string, number> = {};
+          for (const fact of facts) {
+            const kind = fact.kind ?? 'fact';
+            byKind[kind] = (byKind[kind] ?? 0) + 1;
+          }
+          deps.memoryServiceAudit?.(
+            'memory-service-call',
+            `namespace=${namespace} action=counts facts=${facts.length}`,
+          );
+          return { namespace, facts: facts.length, byKind };
+        });
+      }
 
       // E8.3: read diary entries (optionally one realm/date), built on demand.
       app.get('/api/diary', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {

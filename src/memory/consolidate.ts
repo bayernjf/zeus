@@ -7,6 +7,7 @@ import type {
   FactRecord,
   MemoryEvent,
 } from './types.js';
+import { FACT_CATEGORY_BASELINE } from './types.js';
 
 /**
  * Pure, deterministic consolidation (design-memory-consolidation.md §4).
@@ -230,6 +231,16 @@ export function consolidate(
     );
     const unresolved = clashing.filter(f => !resolvable.includes(f));
 
+    // MemoryPort v1 §2/§5.1: the claim's category becomes the fact's memory
+    // category, driving the importance baseline and the decay policy; an
+    // explicit importance overrides the baseline (clamped to 0..1).
+    const lead = claimEvents[0]!; // a claim group always contains ≥1 event
+    // Every event in a claim group passed isClaimContent inside groupClaims,
+    // so the lead's content carries the ClaimContent shape.
+    const leadContent = lead.content as ClaimContent;
+    const category = leadContent.category;
+    const explicitImportance = leadContent.importance;
+
     const newFact: FactRecord = {
       factId: id,
       realmId: claimEvents[0]!.realmId, // a claim group always contains ≥1 event
@@ -244,6 +255,12 @@ export function consolidate(
       // with the fact into later recall (old facts without the field fall
       // back to kernel-resolved-realm at assembly time).
       origin: 'agent-produced',
+      ...(category !== undefined ? { kind: category } : {}),
+      ...(explicitImportance !== undefined
+        ? { importance: Math.min(1, Math.max(0, explicitImportance)) }
+        : category !== undefined
+          ? { importance: FACT_CATEGORY_BASELINE[category] }
+          : {}),
       confidence: aggregateConfidence(claimEvents, options),
       version: 1,
       updatedAt: now().toISOString(),

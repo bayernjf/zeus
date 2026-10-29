@@ -145,9 +145,10 @@ export async function composeBriefing(
   // boundary violation this layer exists to catch, and MemoryStore throws on it.
   const query = [department.mission, department.name, ...record.requiredSkills].join(' ').trim().slice(0, 160);
   const hits = query
-    ? deps.memory
-        .searchRecall(record.realmId, record.realmId, query, { limit: CULTURE_QUERIES })
-        .map(hit => ({
+    ? (
+        await deps.memory
+          .searchRecall(record.realmId, record.realmId, query, { limit: CULTURE_QUERIES })
+      ).map(hit => ({
           subject: hit.fact.subject,
           predicate: hit.fact.predicate,
           object: hit.fact.object,

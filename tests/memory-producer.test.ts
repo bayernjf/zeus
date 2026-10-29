@@ -48,6 +48,15 @@ function request(overrides: Partial<FanOutRequest> = {}): FanOutRequest {
 
 const claimOptions = { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' };
 
+/**
+ * The intent-finished boundary fires consolidation fire-and-forget (fail-soft,
+ * now that embedding is asynchronous); one macrotask boundary flushes its
+ * microtask chain before assertions read the desk or the store.
+ */
+function settleConsolidation(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
 describe('branchVerdictClaims (the claim contract)', () => {
   it('turns every stance into a claim the consolidator can actually use', () => {
     const events = branchVerdictClaims(fanOut(), request(), claimOptions);
@@ -194,14 +203,20 @@ describe('runtime producer (bootKernel, end to end)', () => {
     expect(result.status).toBe('completed');
 
     const events = kernel.memoryStore!.exportState().events;
-    expect(events).toHaveLength(2);
+    // The two branch verdict claims plus the kernel's own decision writeback
+    // (MemoryPort v1 §6): the settled conclusion lands as a decision claim.
+    expect(events).toHaveLength(3);
     expect(events.every(e => e.kind === 'claim' && e.realmId === realmId)).toBe(true);
+    const writeback = events.find(e => isClaimContent(e.content) && e.content.category === 'decision');
+    expect(writeback).toBeDefined();
+    expect(writeback!.source.agentId).toBe('zeus-kernel');
     // Consolidation is wired on the same seam, so the intent has already folded:
-    // two authors agreeing produce ONE fact carrying both provenances.
+    // two authors agreeing produce ONE fact carrying both provenances, next to
+    // the fact folded from the decision writeback.
     const facts = kernel.memoryStore!.facts(realmId, realmId);
-    expect(facts).toHaveLength(1);
-    expect(facts[0]!.provenance).toHaveLength(2);
-    expect(facts[0]!.subject).toBe('pr-helper');
+    expect(facts).toHaveLength(2);
+    expect(facts.find(f => f.subject === 'pr-helper')!.provenance).toHaveLength(2);
+    expect(facts.find(f => f.kind === 'decision')!.subject).toBe('research');
   });
 
   it('disagreement between authors becomes a memory dispute on the desk', async () => {
@@ -211,6 +226,7 @@ describe('runtime producer (bootKernel, end to end)', () => {
       params: { subject: 'pr-helper', predicate: 'primary-language' },
       aggregation: { kind: 'unanimous' },
     });
+    await settleConsolidation();
     const disputes = kernel.oversight.list('pending', 'memory-dispute');
     expect(disputes).toHaveLength(1);
     expect(disputes[0]!.conflictingFacts?.length ?? 0).toBeGreaterThan(0);
@@ -224,10 +240,16 @@ describe('runtime producer (bootKernel, end to end)', () => {
       params: { subject: 'pr-helper', predicate: 'primary-language' },
     });
     expect(result.status).toBe('completed');
+    // Zero events: neither the verdict claims nor the kernel's own decision
+    // writeback may land in a realm the mount table no longer hosts.
     expect(kernel.memoryStore!.exportState().events).toHaveLength(0);
     const skipped = audit.filter(entry => entry.decision === 'memory-claim-skipped');
     expect(skipped).toHaveLength(1);
     expect(String(skipped[0]!.detail)).toContain('realm-never-mounted');
+    // The settled conclusion had nowhere to go either, and says so.
+    const writebackSkipped = audit.filter(entry => entry.decision === 'memory-writeback-skipped');
+    expect(writebackSkipped).toHaveLength(1);
+    expect(String(writebackSkipped[0]!.detail)).toContain('realm-never-mounted');
   });
 
   it('an intent that named no realm stays out of memory, so no claim lands without an owner', async () => {

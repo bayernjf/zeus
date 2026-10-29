@@ -32,12 +32,12 @@ const claim = (subject: string, predicate: string, object: unknown, extra: Parti
   event({ kind: 'claim', content: { subject, predicate, object }, ...extra });
 
 describe('memory consolidation P0', () => {
-  it('acceptance 1/2: facts are produced only by consolidation and carry provenance', () => {
+  it('acceptance 1/2: facts are produced only by consolidation and carry provenance', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', { confidence: 0.9 }));
     expect(store.facts(REALM, REALM)).toEqual([]);
 
-    const result = store.consolidateRealm(REALM, { now: () => new Date('2026-09-22T10:05:00Z') });
+    const result = await store.consolidateRealm(REALM, { now: () => new Date('2026-09-22T10:05:00Z') });
     const facts = store.facts(REALM, REALM);
     expect(facts).toHaveLength(1);
     expect(facts[0]!.provenance).toEqual(['evt-1']);
@@ -48,25 +48,25 @@ describe('memory consolidation P0', () => {
     expect(result.added).toHaveLength(1);
   });
 
-  it('ingests non-claim events but they create no facts', () => {
+  it('ingests non-claim events but they create no facts', async () => {
     const store = new MemoryStore();
     store.append(event({ kind: 'observation', content: { note: 'saw something' } }));
     store.append(event({ kind: 'action', content: { did: 'thing' } }));
-    const result = store.consolidateRealm(REALM);
+    const result = await store.consolidateRealm(REALM);
     expect(result.ingested).toHaveLength(2);
     expect(store.facts(REALM, REALM)).toEqual([]);
   });
 
-  it('acceptance 3: repeated observations of the same fact yield one fact with accumulated provenance', () => {
+  it('acceptance 3: repeated observations of the same fact yield one fact with accumulated provenance', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', { source: { agentId: 'agent-a' }, confidence: 0.8 }));
-    store.consolidateRealm(REALM);
+    await store.consolidateRealm(REALM);
 
     store.append(claim('Zeus', 'runs-on', 'node', {
       eventId: 'evt-x', source: { agentId: 'agent-b' }, confidence: 0.6,
       occurredAt: '2026-09-22T10:10:00Z',
     }));
-    const result = store.consolidateRealm(REALM, { now: () => new Date('2026-09-22T10:15:00Z') });
+    const result = await store.consolidateRealm(REALM, { now: () => new Date('2026-09-22T10:15:00Z') });
 
     const facts = store.facts(REALM, REALM);
     expect(facts).toHaveLength(1);
@@ -75,14 +75,14 @@ describe('memory consolidation P0', () => {
     expect(result.merged).toEqual([{ factId: facts[0]!.factId, with: ['evt-x'] }]);
   });
 
-  it('acceptance 4: conflicting claims default to disputed + escalation, never overwrite', () => {
+  it('acceptance 4: conflicting claims default to disputed + escalation, never overwrite', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', { source: { agentId: 'agent-a' } }));
     store.append(claim('Zeus', 'runs-on', 'bun', {
       eventId: 'evt-2', source: { agentId: 'agent-b' },
       occurredAt: '2026-09-22T10:10:00Z',
     }));
-    const result = store.consolidateRealm(REALM);
+    const result = await store.consolidateRealm(REALM);
 
     const facts = store.facts(REALM, REALM);
     expect(facts).toHaveLength(2);
@@ -92,7 +92,7 @@ describe('memory consolidation P0', () => {
     expect(result.superseded).toEqual([]);
   });
 
-  it('resolves a conflict when the later claim comes from a strictly more reliable agent', () => {
+  it('resolves a conflict when the later claim comes from a strictly more reliable agent', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', {
       source: { agentId: 'rookie' }, confidence: 0.9, occurredAt: '2026-09-22T09:00:00Z',
@@ -101,7 +101,7 @@ describe('memory consolidation P0', () => {
       eventId: 'evt-2', source: { agentId: 'expert' }, confidence: 0.7,
       occurredAt: '2026-09-22T11:00:00Z',
     }));
-    const result = store.consolidateRealm(REALM, {
+    const result = await store.consolidateRealm(REALM, {
       reliability: { rookie: 0.4, expert: 0.95 },
     });
 

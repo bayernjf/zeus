@@ -25,6 +25,26 @@ export interface MemoryEvent {
 export type FactStatus = 'active' | 'superseded' | 'disputed' | 'retracted';
 
 /**
+ * Cross-session memory category fixed onto a fact at consolidation
+ * (MemoryPort contract v1 §2). Drives the importance baseline and the
+ * decay policy: episodic entries age out of the recall index, the other
+ * three categories are long-lived. Absent on legacy facts, where recall
+ * falls back to the neutral default.
+ */
+export type FactCategory = 'preference' | 'fact' | 'decision' | 'episodic';
+
+/** Default importance baseline per category (MemoryPort contract v1 §5.1). */
+export const FACT_CATEGORY_BASELINE: Record<FactCategory, number> = {
+  preference: 0.8,
+  fact: 0.5,
+  decision: 0.9,
+  episodic: 0.3,
+};
+
+/** Neutral importance for facts written before the field existed. */
+export const DEFAULT_FACT_IMPORTANCE = 0.5;
+
+/**
  * The content-origin classification fixed onto a fact at consolidation
  * (design-guardrails §3.3). A claim is always an execution-agent's output —
  * data, never an operator instruction — so every fact the consolidator
@@ -47,6 +67,12 @@ export interface FactRecord {
   provenance: string[];
   /** Content-origin classification fixed at consolidation. */
   origin?: FactOrigin;
+  /** Memory category; drives importance and decay. */
+  kind?: FactCategory;
+  /** Importance baseline 0..1; recall blends it into the ranking. */
+  importance?: number;
+  /** Last recall hit; the decay clock for episodic entries. */
+  lastAccessAt?: string;
   confidence: number;
   version: number;
   updatedAt: string;
@@ -63,7 +89,6 @@ export interface ConsolidationResult {  ingested: string[];
   merged: Array<{ factId: string; with: string[] }>;
   superseded: string[];
   disputes: DisputeRecord[];
-  /** Escalation identifiers produced for disputes (wired to the desk in P1). */
   escalations: string[];
 }
 
@@ -72,6 +97,10 @@ export interface ClaimContent {
   subject: string;
   predicate: string;
   object: unknown;
+  /** Memory category carried onto the fact (contract v1 §2). */
+  category?: FactCategory;
+  /** Explicit importance override; clamped to 0..1 at consolidation. */
+  importance?: number;
 }
 
 export interface ConsolidateOptions {
@@ -108,10 +137,25 @@ export interface RetractionRecord {
   at: string;
 }
 
-/** A local/same-domain text embedder; never an out-of-realm service. */
+/**
+ * Text embedder behind the recall index. Asynchronous since MemoryPort v1:
+ * the hub-backed implementation (ruling D-1) performs an authorised
+ * out-of-realm call, so embedding can no longer be a synchronous local
+ * operation. The `dimension` stays synchronous — it describes the vector
+ * space currently served, and a change of dimension (hub ↔ local fallback)
+ * tells the store to rebuild the index.
+ */
 export interface Embedder {
   readonly dimension: number;
-  embed(text: string): number[];
+  embed(text: string): Promise<number[]>;
+}
+
+/** Outcome of a decay pass (MemoryPort contract v1 §5.2). */
+export interface DecayResult {
+  /** Episodic facts whose effective importance dropped below the floor. */
+  downWeighted: number;
+  /** Fact ids evicted from the recall index (three half-lives unread). */
+  evicted: string[];
 }
 
 /**
@@ -147,7 +191,7 @@ export interface WritebackRecord {
 /** One hybrid-retrieval result, with its lexical and semantic components. */
 export interface RecallHit {
   fact: FactRecord;
-  /** Combined hybrid score in 0..1. */
+  /** Combined hybrid+importance score in 0..1 (contract v1 §5.1). */
   score: number;
   /** BM25 lexical score, normalised against the best lexical match. */
   lexical: number;

@@ -1,10 +1,11 @@
 import { consolidate, stableStringify } from './consolidate.js';
-import { RecallIndex } from './recall.js';
+import { LocalHashingEmbedder, RecallIndex } from './recall.js';
 import { verifyMemoryState } from './reconcile.js';
 import type { MemoryConsistencyViolation } from './reconcile.js';
 import type {
   ConsolidateOptions,
   ConsolidationResult,
+  DecayResult,
   Embedder,
   FactRecord,
   MemoryEvent,
@@ -75,10 +76,13 @@ export class MemoryStore {
   private readonly retractions: RetractionRecord[] = [];
   private readonly writebacks: WritebackRecord[] = [];
   private readonly indexesByRealm = new Map<string, RecallIndex>();
+  private readonly embedder: Embedder;
 
   constructor(private readonly audit: (entry: MemoryAuditEntry) => void = () => {},
               private readonly now: () => Date = () => new Date(),
-              private readonly options: { embedder?: Embedder } = {}) {}
+              options: { embedder?: Embedder } = {}) {
+    this.embedder = options.embedder ?? new LocalHashingEmbedder();
+  }
 
   append(event: MemoryEvent): void {
     const existing = this.events.find(e => e.eventId === event.eventId);
@@ -139,34 +143,52 @@ export class MemoryStore {
     return this.factsByRealm.get(targetRealmId) ?? [];
   }
 
-  consolidateRealm(realmId: string, options: ConsolidateOptions = {}): ConsolidationResult {
+  async consolidateRealm(realmId: string, options: ConsolidateOptions = {}): Promise<ConsolidationResult> {
     const events = this.events.filter(e => e.realmId === realmId);
     const facts = this.factsByRealm.get(realmId) ?? [];
     const output = consolidate(events, facts, options);
     this.factsByRealm.set(realmId, output.facts);
     // The index is derived; refresh only when one has been materialised.
-    this.indexesByRealm.get(realmId)?.sync(output.facts);
+    const index = this.indexesByRealm.get(realmId);
+    if (index) {
+      if (index.dimension !== this.embedder.dimension) {
+        // The embedder switched vector space (hub ↔ local fallback): rebuild
+        // instead of mixing dimensions in one index.
+        await this.buildRecall(realmId);
+      } else {
+        await index.sync(output.facts);
+      }
+      this.decayRealm(realmId);
+    }
     return output.result;
   }
 
   /** Materialise (or rebuild) the derived recall index for a realm. */
-  buildRecall(realmId: string): RecallIndex {
+  async buildRecall(realmId: string): Promise<RecallIndex> {
     let index = this.indexesByRealm.get(realmId);
-    if (!index) {
-      index = new RecallIndex(this.options.embedder);
+    if (!index || index.dimension !== this.embedder.dimension) {
+      index = new RecallIndex(this.embedder);
       this.indexesByRealm.set(realmId, index);
     }
-    index.sync(this.factsByRealm.get(realmId) ?? []);
+    await index.sync(this.factsByRealm.get(realmId) ?? []);
+    // The sync replays the whole fact source, which would resurrect episodic
+    // facts a previous decay pass evicted from the index; re-apply decay so
+    // the eviction survives a rebuild (searchRecall rebuilds on every call).
+    this.decayRealm(realmId);
     return index;
   }
 
-  /** Hybrid keyword+semantic recall; subject to the same realm boundary. */
-  searchRecall(
+  /**
+   * Hybrid keyword+semantic recall, importance-ranked; subject to the same
+   * realm boundary. Hits touch `lastAccessAt`, the decay clock for episodic
+   * entries.
+   */
+  async searchRecall(
     readerRealmId: string,
     targetRealmId: string,
     query: string,
     options?: RecallSearchOptions,
-  ): RecallHit[] {
+  ): Promise<RecallHit[]> {
     if (readerRealmId !== targetRealmId) {
       this.audit({
         at: this.now().toISOString(),
@@ -178,7 +200,45 @@ export class MemoryStore {
         `realm ${readerRealmId} cannot search memory of realm ${targetRealmId}`,
       );
     }
-    return this.buildRecall(targetRealmId).search(query, options);
+    const index = await this.buildRecall(targetRealmId);
+    const hits = await index.search(query, options);
+    const stored = this.factsByRealm.get(targetRealmId);
+    if (stored) {
+      const now = this.now().toISOString();
+      for (const hit of hits) {
+        // The indexed doc holds the same fact object as the store, so the
+        // touch is visible to the next snapshot export as well.
+        const fact = stored.find(f => f.factId === hit.fact.factId);
+        if (fact) fact.lastAccessAt = now;
+      }
+    }
+    return hits;
+  }
+
+  /**
+   * Episodic decay (MemoryPort contract v1 §5.2): non-destructive ranking
+   * discount by a fourteen-day half-life, plus eviction from the recall
+   * index after three half-lives without access. preference / fact /
+   * decision entries never decay. `downWeighted` counts episodic entries
+   * currently inside the discount window.
+   */
+  decayRealm(realmId: string): DecayResult {
+    const index = this.indexesByRealm.get(realmId);
+    const nowMs = this.now().getTime();
+    let downWeighted = 0;
+    const evicted: string[] = [];
+    for (const fact of this.factsByRealm.get(realmId) ?? []) {
+      if (fact.kind !== 'episodic' || fact.status === 'retracted') continue;
+      const last = Date.parse(fact.lastAccessAt ?? fact.updatedAt);
+      const ageDays = Number.isFinite(last) ? Math.max(0, (nowMs - last) / 86_400_000) : 0;
+      if (ageDays > 42) {
+        index?.remove(fact.factId);
+        evicted.push(fact.factId);
+      } else if (ageDays > 0) {
+        downWeighted += 1;
+      }
+    }
+    return { downWeighted, evicted };
   }
 
   /**
@@ -240,13 +300,28 @@ export class MemoryStore {
    * Table sizes for the operator face. exportState() clones the whole fact
    * source, which is too heavy for a polling endpoint, so this counts only.
    */
-  counts(): { events: number; facts: number; retractions: number; corrections: number; realms: number } {
+  counts(): {
+    events: number;
+    facts: number;
+    retractions: number;
+    corrections: number;
+    realms: number;
+    byKind: Record<string, number>;
+  } {
+    const byKind: Record<string, number> = {};
+    for (const facts of this.factsByRealm.values()) {
+      for (const fact of facts) {
+        const kind = fact.kind ?? 'fact';
+        byKind[kind] = (byKind[kind] ?? 0) + 1;
+      }
+    }
     return {
       events: this.events.length,
       facts: [...this.factsByRealm.values()].reduce((sum, facts) => sum + facts.length, 0),
       retractions: this.retractions.length,
       corrections: this.corrections.length,
       realms: this.factsByRealm.size,
+      byKind,
     };
   }
 

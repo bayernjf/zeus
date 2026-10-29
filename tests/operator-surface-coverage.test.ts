@@ -142,6 +142,12 @@ const HTTP_ONLY: Record<string, string> = {
     'Tier0 T-M8 / Active work 276: remove a decision-event push subscription; same bearer API face as the register route, no operator deck planned',
   'POST /api/v1/org/policy/thresholds':
     'Tier0 PRD §11 / T-M2-04: per-organization D0-D3 threshold configuration; low-frequency high-blast-radius config action',
+  'POST /api/v1/memory/recall':
+    'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent is the driver over the bearer API, namespace is its realm',
+  'POST /api/v1/memory/remember':
+    'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent writes its own namespace over the bearer API',
+  'POST /api/v1/memory/forget':
+    'MemoryPort v1 §7 (ruling D-6): cross-agent erasure face behind ZEUS_MEMORY_SERVICE_TOKEN; requestedBy is pinned to memory-service, the calling agent is the driver',
 };
 
 describe('operator surface coverage (every write route is drivable or explicitly API-only)', () => {
@@ -250,6 +256,10 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/v1/org/positions',
   'GET /api/v1/org/tasks',
   'GET /api/v1/org/tasks/:id',
+  // Memory API v1 (MemoryPort v1 §7, ruling D-6): machine-to-machine reads
+  // for the cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the
+  // calling agent is the reader, namespace is its realm. No operator deck.
+  'GET /api/v1/memory/counts',
 ]);
 
 /** Mounted per boot depending on configuration; reading them is a follow-up,

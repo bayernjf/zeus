@@ -734,7 +734,7 @@ export class Orchestrator {
         const minScore = this.options.contextOptions?.minScore;
         let hits: RecallHit[] = [];
         try {
-          hits = this.options.memoryStore.searchRecall(
+          hits = await this.options.memoryStore.searchRecall(
             request.realmId,
             request.realmId,
             buildRecallQuery(request.skill, request.params),

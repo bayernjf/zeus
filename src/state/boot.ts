@@ -1,4 +1,5 @@
 import { VassalRegistry } from '../registry/registry.js';
+import { sha256Hex } from '../util/crypto.js';
 import type { FetchLike } from '../dispatch/client.js';
 import { Dispatcher, type AuditSink } from '../dispatch/dispatcher.js';
 import {
@@ -51,6 +52,7 @@ import { SkillRegistry } from '../skills/registry.js';
 import { MentorshipLedger } from '../skills/mentor.js';
 import { OrgRegistry } from '../org/registry.js';
 import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
+import { createMemoryEmbedder } from '../memory/hub-embedder.js';
 import { branchVerdictClaims } from '../memory/producer.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
 import { CommissionLedger, type CommissionAuditEntry } from '../onboarding/commission.js';
@@ -67,7 +69,7 @@ import type { CostLimit } from '../orchestrator/cost-ledger.js';
 import type { BackendOptions, DecisionBackend } from '../decision/types.js';
 import { createJevBackendFromEnv } from '../decision/decision-model.js';
 import { createLlmBackendFromEnv } from '../decision/llm.js';
-import { createHubDecisionBackend, type HubTestPort } from '../decision/hub-backend.js';
+import { activeHubModelResolve, createHubDecisionBackend, type HubTestPort } from '../decision/hub-backend.js';
 import { redactUrl } from '../util/logger.js';
 
 /**
@@ -561,7 +563,33 @@ async function assembleKernel(
     commissionAudit,
   );
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
-  const memoryStore = new MemoryStore(memoryAudit, now);
+  // MemoryPort v1 §4 (ruling D-1): hub-backed embedding with local fallback;
+  // the kill switch pins the local hashing embedder. The hub resolver lands
+  // later (decision wiring) and is read lazily on every embed call.
+  const memoryEmbedder = createMemoryEmbedder({
+    enabled: (process.env.ZEUS_MEMORY_EMBEDDING ?? '').trim().toLowerCase() !== 'off',
+    resolveEndpoint: () => {
+      const resolved = activeHubModelResolve('embed');
+      return resolved
+        ? {
+            baseUrl: resolved.baseUrl,
+            apiKey: resolved.apiKey,
+            model: resolved.model,
+            ...(resolved.endpoints?.embeddings
+              ? { embeddingsPath: resolved.endpoints.embeddings }
+              : {}),
+          }
+        : null;
+    },
+    onExternalCall: entry =>
+      auditSink({
+        ts: now().toISOString(),
+        vassal: 'memory',
+        decision: 'memory-embed-external',
+        detail: `hash=${entry.hash} ok=${entry.ok} latencyMs=${entry.latencyMs}${entry.reason ? ` reason=${entry.reason}` : ''}`,
+      }),
+  });
+  const memoryStore = new MemoryStore(memoryAudit, now, { embedder: memoryEmbedder });
   const connectorRegistry = new ConnectorRegistry(
     now,
     options.connectorAudit ?? noop,
@@ -894,6 +922,9 @@ async function assembleKernel(
 
   const components: KernelComponents = {
     registry, oversight, orchestrator, dagRunner, planFlow, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
+    // MemoryPort v1 §7: the HTTP consumer face writes its service-call lines
+    // on the same audit spine; not part of any snapshot.
+    auditSink,
   };
 
   // S6 V3: assemble the settled intent's trace tree from what already exists
@@ -967,17 +998,81 @@ async function assembleKernel(
       const base = !stat || stat.calls === 0 ? 0.5 : 1 - stat.failureRate;
       return memoryStore.reliabilityScore(agentId, base);
     };
-    const result = memoryStore.consolidateRealm(event.realmId!, { now, reliability });
-    const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
-    result.disputes.forEach((dispute, i) => {
-      oversight.ingestMemoryDispute({
-        id: result.escalations[i]!,
-        runId: event.runId,
-        realm,
-        ...(event.realmId ? { realmId: event.realmId } : {}),
-        factId: dispute.factId,
-        conflictingFacts: dispute.conflicting,
-        reason: dispute.reason,
+    // Consolidation embeds facts through the (possibly hub-backed) embedder,
+    // so it is asynchronous; the progress boundary stays synchronous and
+    // fail-soft — a consolidation failure must not break the event stream.
+    void (async () => {
+      // MemoryPort v1 §6: the settled conclusion is written back as a
+      // decision memory (category=decision) before consolidation, so the
+      // next same-kind intent recalls it at the dispatch boundary. The
+      // event id is deterministic per (intentId, runId): a replayed settle
+      // is append-deduped, never double-counted. The writeback obeys the
+      // same mount-table authority as the verdict claims above: a realm
+      // disconnected mid-flight receives nothing, and the append goes
+      // through appendFromRealm so the realm-boundary invariant cannot be
+      // bypassed by this path either.
+      const intent = orchestrator.getIntent(event.intentId);
+      const conclusion = intent?.decision?.conclusion;
+      const realmId = event.realmId;
+      const mounted = realmId !== undefined &&
+        (realmStore?.connections() ?? []).some(connection => connection.realmId === realmId);
+      if (intent && realmId !== undefined && !mounted) {
+        auditSink({
+          ts: now().toISOString(),
+          vassal: '(kernel)',
+          skill: intent.skill,
+          realm: intent.realm,
+          decision: 'memory-writeback-skipped',
+          detail: `intent ${intent.intentId} finished on unmounted realm ${realmId}; settled conclusion not written back as a decision memory`,
+        });
+      }
+      if (intent && realmId !== undefined && mounted && typeof conclusion === 'string' && conclusion.length > 0) {
+        try {
+          memoryStore.appendFromRealm(realmId, {
+            eventId: `mem-decision-${sha256Hex(`${event.intentId}|${event.runId}`).slice(0, 16)}`,
+            realmId,
+            runId: event.runId,
+            source: { agentId: 'zeus-kernel' },
+            kind: 'claim',
+            content: {
+              subject: intent.skill,
+              predicate: 'settled-decision',
+              object: {
+                conclusion,
+                conflicts: intent.conflicts.length,
+                intentId: event.intentId,
+              },
+              category: 'decision',
+            },
+            refs: [event.runId],
+            confidence: 1,
+            occurredAt: now().toISOString(),
+          });
+        } catch {
+          // Fail-soft: a writeback failure must not block consolidation.
+        }
+      }
+      const result = await memoryStore.consolidateRealm(event.realmId!, { now, reliability });
+      const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
+      result.disputes.forEach((dispute, i) => {
+        oversight.ingestMemoryDispute({
+          id: result.escalations[i]!,
+          runId: event.runId,
+          realm,
+          ...(event.realmId ? { realmId: event.realmId } : {}),
+          factId: dispute.factId,
+          conflictingFacts: dispute.conflicting,
+          reason: dispute.reason,
+        });
+      });
+    })().catch((err: unknown) => {
+      // Fail-soft at the progress boundary, but never silent: the audit spine
+      // must show why memory stopped updating.
+      auditSink({
+        ts: now().toISOString(),
+        vassal: 'memory',
+        decision: 'memory-consolidation-failed',
+        detail: err instanceof Error ? err.message : String(err),
       });
     });
   }

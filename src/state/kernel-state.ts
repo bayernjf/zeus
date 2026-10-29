@@ -18,6 +18,7 @@ import type { SkillSpec } from '../skills/types.js';
 import { SkillRegistry } from '../skills/registry.js';
 import type { MemoryState } from '../memory/types.js';
 import { MemoryStore } from '../memory/memory-store.js';
+import type { AuditSink } from '../dispatch/dispatcher.js';
 import type { PersistedConnectorRecord } from '../mcp/types.js';
 import { ConnectorRegistry } from '../mcp/connectors.js';
 import type { MentorshipRecord } from '../skills/mentor.js';
@@ -128,6 +129,9 @@ export type KernelComponents = {
   delegationContracts?: DelegationContractRegistry;
   /** Self-host loop step 2: when assembled, watches and their spent budgets survive a restart. */
   watches?: WatchRegistry;
+  /** MemoryPort v1 §7: the dispatch audit spine, surfaced so the HTTP face can
+   *  write service-call lines on the same ledger (not persisted in snapshots). */
+  auditSink?: AuditSink;
 };
 
 export class KernelStateError extends Error {}
