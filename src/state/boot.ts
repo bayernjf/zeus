@@ -1,4 +1,5 @@
 import { VassalRegistry } from '../registry/registry.js';
+import { sha256Hex } from '../util/crypto.js';
 import type { FetchLike } from '../dispatch/client.js';
 import { Dispatcher, type AuditSink } from '../dispatch/dispatcher.js';
 import {
@@ -998,6 +999,39 @@ async function assembleKernel(
     // so it is asynchronous; the progress boundary stays synchronous and
     // fail-soft — a consolidation failure must not break the event stream.
     void (async () => {
+      // MemoryPort v1 §6: the settled conclusion is written back as a
+      // decision memory (category=decision) before consolidation, so the
+      // next same-kind intent recalls it at the dispatch boundary. The
+      // event id is deterministic per (intentId, runId): a replayed settle
+      // is append-deduped, never double-counted.
+      const intent = orchestrator.getIntent(event.intentId);
+      const conclusion = intent?.decision?.conclusion;
+      if (intent && event.realmId && typeof conclusion === 'string' && conclusion.length > 0) {
+        try {
+          memoryStore.append({
+            eventId: `mem-decision-${sha256Hex(`${event.intentId}|${event.runId}`).slice(0, 16)}`,
+            realmId: event.realmId,
+            runId: event.runId,
+            source: { agentId: 'zeus-kernel' },
+            kind: 'claim',
+            content: {
+              subject: intent.skill,
+              predicate: 'settled-decision',
+              object: {
+                conclusion,
+                conflicts: intent.conflicts.length,
+                intentId: event.intentId,
+              },
+              category: 'decision',
+            },
+            refs: [event.runId],
+            confidence: 1,
+            occurredAt: now().toISOString(),
+          });
+        } catch {
+          // Fail-soft: a writeback failure must not block consolidation.
+        }
+      }
       const result = await memoryStore.consolidateRealm(event.realmId!, { now, reliability });
       const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
       result.disputes.forEach((dispute, i) => {
