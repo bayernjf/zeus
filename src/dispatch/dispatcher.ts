@@ -53,6 +53,9 @@ export const AUDIT_DECISIONS = [
   // they belonged to was unmounted mid-flight). A dropped claim is a governance
   // fact, so it is announced rather than swallowed.
   'memory-claim-skipped',
+  // MemoryPort contract v1 §4 (ruling D-1): every hub embedding call is an
+  // authorised out-of-realm call, so it is audited by content hash only.
+  'memory-embed-external',
   // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
   // leave no trace at all, so the governance surface could not see a branch ended.
   'cancel-requested',

@@ -51,6 +51,7 @@ import { SkillRegistry } from '../skills/registry.js';
 import { MentorshipLedger } from '../skills/mentor.js';
 import { OrgRegistry } from '../org/registry.js';
 import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
+import { createMemoryEmbedder } from '../memory/hub-embedder.js';
 import { branchVerdictClaims } from '../memory/producer.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
 import { CommissionLedger, type CommissionAuditEntry } from '../onboarding/commission.js';
@@ -67,7 +68,7 @@ import type { CostLimit } from '../orchestrator/cost-ledger.js';
 import type { BackendOptions, DecisionBackend } from '../decision/types.js';
 import { createJevBackendFromEnv } from '../decision/decision-model.js';
 import { createLlmBackendFromEnv } from '../decision/llm.js';
-import { createHubDecisionBackend, type HubTestPort } from '../decision/hub-backend.js';
+import { activeHubModelResolve, createHubDecisionBackend, type HubTestPort } from '../decision/hub-backend.js';
 import { redactUrl } from '../util/logger.js';
 
 /**
@@ -561,7 +562,33 @@ async function assembleKernel(
     commissionAudit,
   );
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
-  const memoryStore = new MemoryStore(memoryAudit, now);
+  // MemoryPort v1 §4 (ruling D-1): hub-backed embedding with local fallback;
+  // the kill switch pins the local hashing embedder. The hub resolver lands
+  // later (decision wiring) and is read lazily on every embed call.
+  const memoryEmbedder = createMemoryEmbedder({
+    enabled: process.env.ZEUS_MEMORY_EMBEDDING !== 'off',
+    resolveEndpoint: () => {
+      const resolved = activeHubModelResolve('embed');
+      return resolved
+        ? {
+            baseUrl: resolved.baseUrl,
+            apiKey: resolved.apiKey,
+            model: resolved.model,
+            ...(resolved.endpoints?.embeddings
+              ? { embeddingsPath: resolved.endpoints.embeddings }
+              : {}),
+          }
+        : null;
+    },
+    onExternalCall: entry =>
+      auditSink({
+        ts: now().toISOString(),
+        vassal: 'memory',
+        decision: 'memory-embed-external',
+        detail: `hash=${entry.hash} ok=${entry.ok} latencyMs=${entry.latencyMs}${entry.reason ? ` reason=${entry.reason}` : ''}`,
+      }),
+  });
+  const memoryStore = new MemoryStore(memoryAudit, now, { embedder: memoryEmbedder });
   const connectorRegistry = new ConnectorRegistry(
     now,
     options.connectorAudit ?? noop,
@@ -967,18 +994,25 @@ async function assembleKernel(
       const base = !stat || stat.calls === 0 ? 0.5 : 1 - stat.failureRate;
       return memoryStore.reliabilityScore(agentId, base);
     };
-    const result = memoryStore.consolidateRealm(event.realmId!, { now, reliability });
-    const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
-    result.disputes.forEach((dispute, i) => {
-      oversight.ingestMemoryDispute({
-        id: result.escalations[i]!,
-        runId: event.runId,
-        realm,
-        ...(event.realmId ? { realmId: event.realmId } : {}),
-        factId: dispute.factId,
-        conflictingFacts: dispute.conflicting,
-        reason: dispute.reason,
+    // Consolidation embeds facts through the (possibly hub-backed) embedder,
+    // so it is asynchronous; the progress boundary stays synchronous and
+    // fail-soft — a consolidation failure must not break the event stream.
+    void (async () => {
+      const result = await memoryStore.consolidateRealm(event.realmId!, { now, reliability });
+      const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
+      result.disputes.forEach((dispute, i) => {
+        oversight.ingestMemoryDispute({
+          id: result.escalations[i]!,
+          runId: event.runId,
+          realm,
+          ...(event.realmId ? { realmId: event.realmId } : {}),
+          factId: dispute.factId,
+          conflictingFacts: dispute.conflicting,
+          reason: dispute.reason,
+        });
       });
+    })().catch(() => {
+      // Fail-soft at the progress boundary (see comment above).
     });
   }
 
