@@ -49,9 +49,9 @@ jobs:
       # target local development uses; W4-1a tag distribution is for external
       # consumers and lands with the W6 pnpm adoption.
       - name: "Clone model-hub sibling (file: dependency target)"
-        run: \
-          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub \
-          && npm ci --prefix ../model-hub --no-audit --no-fund
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
 
       - name: Install dependencies
         run: npm ci
@@ -113,9 +113,9 @@ jobs:
 
       # Same rationale as the verify job's model-hub sibling clone above.
       - name: "Clone model-hub sibling (file: dependency target)"
-        run: \
-          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub \
-          && npm ci --prefix ../model-hub --no-audit --no-fund
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
 
       - name: Install dependencies (real clock)
         run: npm ci
@@ -176,9 +176,9 @@ jobs:
 
       # Same rationale as the verify job's model-hub sibling clone above.
       - name: "Clone model-hub sibling (file dependency target)"
-        run: \
-          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub \
-          && npm ci --prefix ../model-hub --no-audit --no-fund
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
 
       - name: Install dependencies
         run: npm ci
@@ -216,9 +216,9 @@ jobs:
 
       # Same rationale as the verify job's model-hub sibling clone above.
       - name: "Clone model-hub sibling (file dependency target)"
-        run: \
-          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub \
-          && npm ci --prefix ../model-hub --no-audit --no-fund
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
 
       - name: Install dependencies
         run: npm ci
@@ -269,9 +269,9 @@ jobs:
 
       # Same rationale as the verify job's model-hub sibling clone above.
       - name: "Clone model-hub sibling (file dependency target)"
-        run: \
-          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub \
-          && npm ci --prefix ../model-hub --no-audit --no-fund
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
 
       - name: Install dependencies
         run: npm ci
