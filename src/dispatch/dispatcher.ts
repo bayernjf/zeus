@@ -49,6 +49,10 @@ export const AUDIT_DECISIONS = [
   'refused-no-active-provider',
   // #9: a saturated/eligible-lacking target re-pointed to an alternate provider.
   'branch-diverted',
+  // MemoryPort v1 §6: the settled conclusion that could not be written back
+  // because its realm was unmounted at settle time. Like the dropped-claim
+  // case below, the skip is a governance fact, not a silent drop.
+  'memory-writeback-skipped',
   // deferred #27: finished-intent verdicts that could not become claims (the realm
   // they belonged to was unmounted mid-flight). A dropped claim is a governance
   // fact, so it is announced rather than swallowed.
