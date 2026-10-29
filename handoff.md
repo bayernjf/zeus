@@ -8,6 +8,16 @@ State of Zeus as of 2026-10-17.
 
 ## Current state
 
+- **2026-10-29 决策后端经 model-hub 接通（替代 Jev，owner 授权「你搞」）**：
+  `.env` 已配 `MODEL_HUB_URL=http://localhost:8791` + `MODEL_HUB_TOKEN`
+  （hub 侧 zeus 项目 token，hint `****2329`）。实测 `node --env-file=.env` 跑
+  `resolveDecisionConfigWithHub()`：`backendKind='hub'`、backend 非 null
+  （model=`hub:noul/choice/score`，三个别名均指向 hub 里 enabled 的
+  `ark-code-latest` / Ark Plan 订阅）、hubTest present——**决策后端已从
+  规则兜底切换为模型，hub 连不上时才回退 env**。hub 侧 L1 真实复测 `ok`
+  （2401ms，model_echo=auto）。hub 侧记录见 model-hub 仓 handoff
+  「2026-10-29 zeus 决策模型接通」。Jev env 优先权保留，后续提供 key 自动胜出。
+
 - 🟢 **当前 MVP 判定（唯一事实源 = [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) v0.55 节）：产品核心"完全可用"的 MVP = ✅；可上线交付真实用户 = ❌（容器级证据已补齐，库内唯一理由 B-44 已于 2026-10-08 销项，Zeus↔loom 真机联调已于 2026-10-08 实跑销项，剩余理由全部在仓库外）。** v0.53 至 v0.10 的复核史摘要已移出至 [handoff-archive.md](handoff-archive.md)「MVP 判定复核史（2026-10-15 移出，只读）」，完整版本详情以 review 文档各复核节为准。
 - **复核抓到并已修的唯一缺陷（卡片连接层 502/400 分类）**记录已移出至 [handoff-archive.md](handoff-archive.md)「Current state 历史条目（2026-10-15 移出，只读）」，见 Active work 49。
 - **面向使用者的产品入口 `npm run daily "<一句话>"` 现行可用**（不常驻、不占端口、不用 bearer；指令→意图→扇出→决策与依据→写回用户目录→落台账）；该批里程碑细节（判定未翻转、可达性变化、本机真进程五档读数与两条边界）已移出至 [handoff-archive.md](handoff-archive.md)「Current state 历史条目（2026-10-15 移出，只读）」。
