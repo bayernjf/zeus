@@ -72,6 +72,16 @@ describe('memory P1 kernel persistence', () => {
   });
 });
 
+/**
+ * The intent-finished boundary fires consolidation fire-and-forget (fail-soft,
+ * now that embedding is asynchronous), so the disputes it ingests land a few
+ * microtask hops later. One macrotask boundary flushes that chain — the local
+ * embedder path is pure microtasks — before the assertions read the desk.
+ */
+function settleConsolidation(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
 describe('memory P1 auto-consolidation on intent completion', () => {
   it('consolidates the named realm when the intent reaches a terminal state', async () => {
     const kernel = await bootKernel({ vassalSeeds: [CARD_URL], fetchImpl });
@@ -95,6 +105,7 @@ describe('memory P1 auto-consolidation on intent completion', () => {
     await kernel.orchestrator.fanOut({
       skill: 'research', realm: 'personal', realmId: MEM_REALM, params: {},
     });
+    await settleConsolidation();
 
     const disputes = kernel.oversight.list().filter(e => e.kind === 'memory-dispute');
     expect(disputes).toHaveLength(1);
@@ -106,6 +117,7 @@ describe('memory P1 auto-consolidation on intent completion', () => {
     await kernel.orchestrator.fanOut({
       skill: 'research', realm: 'personal', realmId: MEM_REALM, params: {},
     });
+    await settleConsolidation();
     expect(kernel.oversight.list().filter(e => e.kind === 'memory-dispute')).toHaveLength(1);
   });
 
@@ -116,6 +128,7 @@ describe('memory P1 auto-consolidation on intent completion', () => {
     await kernel.orchestrator.fanOut({
       skill: 'research', realm: 'personal', realmId: MEM_REALM, params: {},
     });
+    await settleConsolidation();
 
     const dispute = kernel.oversight.list().find(e => e.kind === 'memory-dispute')!;
     // Reject the new fact ('bun', authored by agent-b): agent-b is corrected.

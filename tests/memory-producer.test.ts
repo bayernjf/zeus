@@ -48,6 +48,15 @@ function request(overrides: Partial<FanOutRequest> = {}): FanOutRequest {
 
 const claimOptions = { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' };
 
+/**
+ * The intent-finished boundary fires consolidation fire-and-forget (fail-soft,
+ * now that embedding is asynchronous); one macrotask boundary flushes its
+ * microtask chain before assertions read the desk or the store.
+ */
+function settleConsolidation(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
 describe('branchVerdictClaims (the claim contract)', () => {
   it('turns every stance into a claim the consolidator can actually use', () => {
     const events = branchVerdictClaims(fanOut(), request(), claimOptions);
@@ -211,6 +220,7 @@ describe('runtime producer (bootKernel, end to end)', () => {
       params: { subject: 'pr-helper', predicate: 'primary-language' },
       aggregation: { kind: 'unanimous' },
     });
+    await settleConsolidation();
     const disputes = kernel.oversight.list('pending', 'memory-dispute');
     expect(disputes).toHaveLength(1);
     expect(disputes[0]!.conflictingFacts?.length ?? 0).toBeGreaterThan(0);
