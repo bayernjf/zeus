@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bootKernel } from '../src/state/boot.js';
+import { sha256Hex } from '../src/util/crypto.js';
 import type { FetchLike } from '../src/registry/registry.js';
 import type { AgentCard, Task } from '../src/a2a/types.js';
 import type { MemoryEvent } from '../src/memory/types.js';
@@ -143,3 +145,83 @@ describe('memory P1 auto-consolidation on intent completion', () => {
 function restoredEvents(kernel: Awaited<ReturnType<typeof bootKernel>>): MemoryEvent[] {
   return kernel.memoryStore!.read(MEM_REALM, MEM_REALM);
 }
+
+/**
+ * MemoryPort v1 §6: the settled conclusion is written back as a decision
+ * memory. The vassal below returns a stance in its terminal artifact, so the
+ * majority rule concludes and the writeback has something to persist.
+ */
+function sseCompletedWithStance(): Response {
+  const finalTask: Task = {
+    kind: 'task', id: 'task-1', contextId: 'ctx', status: { state: 'completed' },
+    artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance: 'approve' } }] }],
+  };
+  const payload =
+    `data: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: { kind: 'status-update', taskId: 'task-1', contextId: 'ctx', status: { state: 'working' }, final: false } })}\n\n` +
+    `data: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: finalTask })}\n\n`;
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(payload));
+      controller.close();
+    },
+  }), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+}
+
+const stanceFetchImpl: FetchLike = async url => {
+  if (url === CARD_URL) {
+    return new Response(JSON.stringify(card), { status: 200, headers: { 'content-type': 'application/json' } });
+  }
+  if (url === TASK_URL) return sseCompletedWithStance();
+  return new Response('nope', { status: 404 });
+};
+
+describe('memory P1 decision writeback', () => {
+  it('writes the settled conclusion back as a deterministic decision fact, idempotently', async () => {
+    // The writeback obeys the mount-table authority, so the realm must be
+    // mounted for the settled conclusion to land (realmRoots mounts one).
+    const realmRoot = mkdtempSync(join(tmpdir(), 'zeus-mem-decision-'));
+    try {
+      const kernel = await bootKernel({ vassalSeeds: [CARD_URL], fetchImpl: stanceFetchImpl, realmRoots: [realmRoot] });
+      const realmId = kernel.realmStore!.connections()[0]!.realmId;
+      const intentId = 'intent-decision-1';
+      const result = await kernel.orchestrator.fanOut({
+        intentId, skill: 'research', realm: 'personal', realmId, params: {},
+      });
+      expect(result.status).toBe('completed');
+      expect(result.decision.conclusion).toBe('approve');
+      await settleConsolidation();
+
+      // The event id is deterministic per (intentId, runId) — recomputable from
+      // the identifiers alone.
+      const expectedEventId = `mem-decision-${sha256Hex(`${intentId}|${result.runId}`).slice(0, 16)}`;
+      const decisionEvent = kernel.memoryStore!.read(realmId, realmId)
+        .find(e => e.eventId === expectedEventId);
+      expect(decisionEvent).toBeDefined();
+      expect(decisionEvent!.content).toMatchObject({
+        subject: 'research',
+        predicate: 'settled-decision',
+        object: { conclusion: 'approve', intentId },
+        category: 'decision',
+      });
+
+      // Consolidation fixed the category onto the fact, ready for the next
+      // same-kind intent's dispatch-boundary recall.
+      const decisionFacts = kernel.memoryStore!.facts(realmId, realmId)
+        .filter(f => f.kind === 'decision');
+      expect(decisionFacts).toHaveLength(1);
+      expect(decisionFacts[0]!.subject).toBe('research');
+      expect(decisionFacts[0]!.provenance).toContain(expectedEventId);
+
+      // A replayed settle reaches the store as the byte-identical deterministic
+      // event; append dedupes it, so no second event or fact ever appears.
+      kernel.memoryStore!.append(decisionEvent!);
+      await kernel.memoryStore!.consolidateRealm(realmId);
+      expect(kernel.memoryStore!.read(realmId, realmId)
+        .filter(e => e.eventId === expectedEventId)).toHaveLength(1);
+      expect(kernel.memoryStore!.facts(realmId, realmId)
+        .filter(f => f.kind === 'decision')).toHaveLength(1);
+    } finally {
+      rmSync(realmRoot, { recursive: true, force: true });
+    }
+  });
+});
