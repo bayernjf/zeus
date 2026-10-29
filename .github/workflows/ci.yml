@@ -170,6 +170,10 @@ jobs:
           node-version: 22.x
           cache: npm
 
+      # Same rationale as the verify job's model-hub sibling clone above.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+
       - name: Install dependencies
         run: npm ci
 
@@ -203,6 +207,10 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
+
+      # Same rationale as the verify job's model-hub sibling clone above.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
 
       - name: Install dependencies
         run: npm ci
@@ -250,6 +258,10 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
+
+      # Same rationale as the verify job's model-hub sibling clone above.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
 
       - name: Install dependencies
         run: npm ci
