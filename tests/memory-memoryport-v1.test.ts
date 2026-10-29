@@ -157,7 +157,10 @@ describe('MemoryPort v1 importance / category / decay', () => {
     const store = new MemoryStore(undefined, () => now);
     store.append(claimEvent({ eventId: 'old1', content: { subject: '流水', predicate: 'event', object: '很老的一次操作', category: 'episodic' } }));
     store.append(claimEvent({ eventId: 'new1', content: { subject: '偏好', predicate: 'style', object: '喜欢简洁回复', category: 'preference' } }));
-    await store.consolidateRealm(REALM);
+    // Consolidation must stamp fact timestamps from the same injected clock as
+    // the decay pass below; the default (global Date.now) silently desyncs
+    // them under the wall-clock gate.
+    await store.consolidateRealm(REALM, { now: () => now });
 
     now = new Date('2027-01-15T00:00:00.000Z'); // ~77 days later
     const decay = store.decayRealm(REALM);
@@ -173,7 +176,7 @@ describe('MemoryPort v1 importance / category / decay', () => {
     now = new Date('2026-10-30T01:00:00.000Z');
     const fresh = new MemoryStore(undefined, () => now);
     fresh.append(claimEvent({ eventId: 't1', content: { subject: '口味', predicate: 'pref', object: '清淡', category: 'preference' } }));
-    await fresh.consolidateRealm(REALM);
+    await fresh.consolidateRealm(REALM, { now: () => now });
     now = new Date('2026-10-30T02:00:00.000Z');
     await fresh.searchRecall(REALM, REALM, '清淡');
     const fact = fresh.facts(REALM, REALM)[0]!;
