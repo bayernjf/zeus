@@ -72,6 +72,14 @@ export async function createHubDecisionBackend(
       baseUrl: resolved.baseUrl,
       apiKey: resolved.apiKey,
       model: resolved.model,
+      // Some models only accept a specific sampling temperature (e.g. Ark
+      // `ark-code-latest` rejects 0 with 400 and requires 1); the hub adapter
+      // declares the legal value and we honour it here.
+      ...(resolved.adapter !== null &&
+      typeof resolved.adapter === 'object' &&
+      'temperature' in resolved.adapter
+        ? { temperature: Number((resolved.adapter as Record<string, unknown>).temperature) }
+        : {}),
       ...(resolved.pricing?.input_usd_per_million !== undefined
         ? { inputUsdPerMillion: resolved.pricing.input_usd_per_million }
         : {}),
