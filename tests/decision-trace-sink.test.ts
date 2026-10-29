@@ -73,7 +73,9 @@ describe('decision trace sink', () => {
     const { dir, path } = tempFile('trace.jsonl');
     try {
       const sink = createDecisionTraceSink(path);
-      sink.onTrace(trace({ cost: undefined }));
+      const noCost = trace();
+      delete noCost.cost; // cost is absent when the unit price is unknown
+      sink.onTrace(noCost);
       const [record] = readRecords(path);
       expect(record!.cost_micros).toBeNull();
       expect(record!.tokens_in).toBe(0);
