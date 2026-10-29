@@ -6,7 +6,8 @@ WORKDIR /app
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git \
  && rm -rf /var/lib/apt/lists/* \
- && git clone --depth 1 https://github.com/bayernjf/model-hub.git /model-hub
+ && git clone --depth 1 https://github.com/bayernjf/model-hub.git /model-hub \
+ && npm ci --prefix /model-hub --no-audit --no-fund
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json tsconfig.build.json ./
