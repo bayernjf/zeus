@@ -13,8 +13,8 @@ State of Zeus as of 2026-10-17.
   （hub 侧 zeus 项目 token，hint `****2329`）。实测 `node --env-file=.env` 跑
   `resolveDecisionConfigWithHub()`：`backendKind='hub'`、backend 非 null
   （model=`hub:noul/choice/score`，三个别名均指向 hub 里 enabled 的
-  `ark-code-latest` / Ark Plan 订阅）、hubTest present——**决策后端已从
-  规则兜底切换为模型，hub 连不上时才回退 env**。hub 侧 L1 真实复测 `ok`
+  `ark-code-latest` / Ark Plan 订阅）、hubTest present——
+  **决策后端已从规则兜底切换为模型，hub 连不上时才回退 env**。hub 侧 L1 真实复测 `ok`
   （2401ms，model_echo=auto）。hub 侧记录见 model-hub 仓 handoff
   「2026-10-29 zeus 决策模型接通」。Jev env 优先权保留，后续提供 key 自动胜出。
 
