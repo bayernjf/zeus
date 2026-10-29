@@ -567,7 +567,7 @@ async function assembleKernel(
   // the kill switch pins the local hashing embedder. The hub resolver lands
   // later (decision wiring) and is read lazily on every embed call.
   const memoryEmbedder = createMemoryEmbedder({
-    enabled: process.env.ZEUS_MEMORY_EMBEDDING !== 'off',
+    enabled: (process.env.ZEUS_MEMORY_EMBEDDING ?? '').trim().toLowerCase() !== 'off',
     resolveEndpoint: () => {
       const resolved = activeHubModelResolve('embed');
       return resolved
@@ -922,6 +922,9 @@ async function assembleKernel(
 
   const components: KernelComponents = {
     registry, oversight, orchestrator, dagRunner, planFlow, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
+    // MemoryPort v1 §7: the HTTP consumer face writes its service-call lines
+    // on the same audit spine; not part of any snapshot.
+    auditSink,
   };
 
   // S6 V3: assemble the settled intent's trace tree from what already exists
@@ -1062,8 +1065,15 @@ async function assembleKernel(
           reason: dispute.reason,
         });
       });
-    })().catch(() => {
-      // Fail-soft at the progress boundary (see comment above).
+    })().catch((err: unknown) => {
+      // Fail-soft at the progress boundary, but never silent: the audit spine
+      // must show why memory stopped updating.
+      auditSink({
+        ts: now().toISOString(),
+        vassal: 'memory',
+        decision: 'memory-consolidation-failed',
+        detail: err instanceof Error ? err.message : String(err),
+      });
     });
   }
 

@@ -104,6 +104,11 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // MemoryPort v1 §4: a routine authorised hub embed (audited by hash); an
   // info-level line, since the call itself is normal flow, not a refusal.
   'memory-embed-external': 'info',
+  // MemoryPort v1 §7: a cross-agent consumer-face call (hash-only detail).
+  'memory-service-call': 'info',
+  // MemoryPort v1 §6: consolidation failed at the settle boundary — memory
+  // silently stops updating if nobody sees this.
+  'memory-consolidation-failed': 'warning',
   // design-self-host-loop §4.3: an intent raised with nobody present is the one
   // governance fact that must never be muted, so firing is attention; a watch
   // that stops evaluating is a warning, because "silently never fires" is the

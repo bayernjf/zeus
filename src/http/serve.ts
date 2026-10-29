@@ -102,6 +102,21 @@ function parseIntPositive(name: string, raw: string): number {
   return value;
 }
 
+/** MemoryPort v1 §7: parse "realm:token,realm2:token2" into a lookup map. */
+function parseMemoryServiceTokens(raw: string | undefined): Record<string, string> | null {
+  const value = raw?.trim();
+  if (!value) return null;
+  const map: Record<string, string> = {};
+  for (const pair of value.split(',')) {
+    const index = pair.indexOf(':');
+    if (index <= 0) continue;
+    const namespace = pair.slice(0, index).trim();
+    const token = pair.slice(index + 1).trim();
+    if (namespace && token) map[namespace] = token;
+  }
+  return Object.keys(map).length > 0 ? map : null;
+}
+
 async function main(): Promise<void> {
   // T-C: build the decision backend (Jev preferred, LLM fallback) and the
   // opt-in E1.3 judge from process env. No keys => null => rules-only kernel,
@@ -117,6 +132,7 @@ async function main(): Promise<void> {
     process.env,
     decisionTraceSink ? { onTrace: decisionTraceSink.onTrace } : {},
   );
+  const memoryServiceTokens = parseMemoryServiceTokens(process.env.ZEUS_MEMORY_SERVICE_TOKENS);
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.
   const concurrency = resolveConcurrencyConfig(process.env);
@@ -429,9 +445,16 @@ async function main(): Promise<void> {
     ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
     ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
     // MemoryPort v1 §7: cross-agent consumer face; unset env = face not mounted.
-    ...(process.env.ZEUS_MEMORY_SERVICE_TOKEN
-      ? { memoryServiceToken: process.env.ZEUS_MEMORY_SERVICE_TOKEN }
-      : {}),
+    // MemoryPort v1 §7: namespace-bound consumer tokens ("realm:token,..."
+    // comma-separated); unset env = face not mounted at all (fail-closed).
+    ...(memoryServiceTokens ? { memoryServiceTokens } : {}),
+    memoryServiceAudit: (decision: 'memory-service-call', detail: string) =>
+      kernel.auditSink?.({
+        ts: new Date().toISOString(),
+        vassal: 'memory',
+        decision,
+        detail,
+      }),
     // M-12: retract / forget-subject answer only once the erasure is durable.
     persistState: () => kernel.saveState(),
     ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
