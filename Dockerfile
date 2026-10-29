@@ -4,7 +4,7 @@ WORKDIR /app
 # @model-hub/model-kit is a file: sibling dependency (W4-4); fetch the public
 # monorepo to the expected path (pinned to main like local development).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git \
+ && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && git clone --depth 1 https://github.com/bayernjf/model-hub.git /model-hub \
  && npm ci --prefix /model-hub --no-audit --no-fund
