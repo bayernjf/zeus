@@ -44,6 +44,15 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
+      # @model-hub/model-kit is a file: sibling dependency (W4-4); clone the
+      # public monorepo to the expected path. Pinned to main — the same moving
+      # target local development uses; W4-1a tag distribution is for external
+      # consumers and lands with the W6 pnpm adoption.
+      - name: "Clone model-hub sibling (file: dependency target)"
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
+
       - name: Install dependencies
         run: npm ci
 
@@ -102,6 +111,12 @@ jobs:
           node-version: 22.x
           cache: npm
 
+      # Same rationale as the verify job's model-hub sibling clone above.
+      - name: "Clone model-hub sibling (file: dependency target)"
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
+
       - name: Install dependencies (real clock)
         run: npm ci
 
@@ -159,6 +174,12 @@ jobs:
           node-version: 22.x
           cache: npm
 
+      # Same rationale as the verify job's model-hub sibling clone above.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
+
       - name: Install dependencies
         run: npm ci
 
@@ -192,6 +213,12 @@ jobs:
         with:
           node-version: 22.x
           cache: npm
+
+      # Same rationale as the verify job's model-hub sibling clone above.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
 
       - name: Install dependencies
         run: npm ci
@@ -240,6 +267,12 @@ jobs:
           node-version: 22.x
           cache: npm
 
+      # Same rationale as the verify job's model-hub sibling clone above.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
+
       - name: Install dependencies
         run: npm ci
 
@@ -271,6 +304,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+
+      # verify-image.mjs rebuilds on the host before exercising the container,
+      # so the model-hub sibling is needed here too — with its own workspace
+      # install, because model-kit's prepare script (tsc) resolves @types/node
+      # up-tree from the clone.
+      - name: "Clone model-hub sibling (file dependency target)"
+        run: |
+          git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
+          npm ci --prefix ../model-hub --no-audit --no-fund
 
       - name: Build image
         run: docker build -t zeus:ci-verify .

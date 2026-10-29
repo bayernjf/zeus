@@ -1,6 +1,13 @@
 # ---- builder: install full deps and compile TypeScript ----
 FROM node:22-slim AS builder
 WORKDIR /app
+# @model-hub/model-kit is a file: sibling dependency (W4-4); fetch the public
+# monorepo to the expected path (pinned to main like local development).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && git clone --depth 1 https://github.com/bayernjf/model-hub.git /model-hub \
+ && npm ci --prefix /model-hub --no-audit --no-fund
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json tsconfig.build.json ./
@@ -29,6 +36,8 @@ ENV NODE_ENV=production \
     ZEUS_STATE_FILE=/data/kernel-state.json
 RUN mkdir /data && chown node:node /data
 WORKDIR /app
+# The runtime install resolves the same file: sibling; reuse the builder's clone.
+COPY --from=builder /model-hub /model-hub
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder --chown=node:node /app/dist ./dist

@@ -29,6 +29,13 @@ export type LlmConfig = BackendOptions & {
   /** Published unit prices in USD per million tokens; cost is omitted when unknown. */
   inputUsdPerMillion?: number;
   outputUsdPerMillion?: number;
+  /**
+   * Sampling temperature for chat/completions. Some models (e.g. Ark
+   * `ark-code-latest`) only accept temperature=1 and reject 0 with 400;
+   * the hub adapter declares the model's legal value and the backend honours
+   * it. Defaults to 0 (deterministic) when the caller does not set it.
+   */
+  temperature?: number;
   defaultTimeoutMs?: number;
 };
 
@@ -52,7 +59,7 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
     const stateText = typeof state === 'string' ? state : JSON.stringify(state);
     const body = JSON.stringify({
       model: config.model,
-      temperature: 0,
+      temperature: config.temperature ?? 0,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: systemPrompt },

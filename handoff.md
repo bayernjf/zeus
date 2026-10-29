@@ -8,6 +8,16 @@ State of Zeus as of 2026-10-17.
 
 ## Current state
 
+- **2026-10-29 决策后端经 model-hub 接通（替代 Jev，owner 授权「你搞」）**：
+  `.env` 已配 `MODEL_HUB_URL=http://localhost:8791` + `MODEL_HUB_TOKEN`
+  （hub 侧 zeus 项目 token，hint `****2329`）。实测 `node --env-file=.env` 跑
+  `resolveDecisionConfigWithHub()`：`backendKind='hub'`、backend 非 null
+  （model=`hub:noul/choice/score`，三个别名均指向 hub 里 enabled 的
+  `ark-code-latest` / Ark Plan 订阅）、hubTest present——
+  **决策后端已从规则兜底切换为模型，hub 连不上时才回退 env**。hub 侧 L1 真实复测 `ok`
+  （2401ms，model_echo=auto）。hub 侧记录见 model-hub 仓 handoff
+  「2026-10-29 zeus 决策模型接通」。Jev env 优先权保留，后续提供 key 自动胜出。
+
 - 🟢 **当前 MVP 判定（唯一事实源 = [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) v0.55 节）：产品核心"完全可用"的 MVP = ✅；可上线交付真实用户 = ❌（容器级证据已补齐，库内唯一理由 B-44 已于 2026-10-08 销项，Zeus↔loom 真机联调已于 2026-10-08 实跑销项，剩余理由全部在仓库外）。** v0.53 至 v0.10 的复核史摘要已移出至 [handoff-archive.md](handoff-archive.md)「MVP 判定复核史（2026-10-15 移出，只读）」，完整版本详情以 review 文档各复核节为准。
 - **复核抓到并已修的唯一缺陷（卡片连接层 502/400 分类）**记录已移出至 [handoff-archive.md](handoff-archive.md)「Current state 历史条目（2026-10-15 移出，只读）」，见 Active work 49。
 - **面向使用者的产品入口 `npm run daily "<一句话>"` 现行可用**（不常驻、不占端口、不用 bearer；指令→意图→扇出→决策与依据→写回用户目录→落台账）；该批里程碑细节（判定未翻转、可达性变化、本机真进程五档读数与两条边界）已移出至 [handoff-archive.md](handoff-archive.md)「Current state 历史条目（2026-10-15 移出，只读）」。
@@ -243,7 +253,7 @@ State of Zeus as of 2026-10-17.
     - **缺陷植入（注入后复原）**：摘除 Web 成员移除调用点 + 注入假写路由 `/api/zzz-mutation-probe` → 反向闸门 2 failed（正控与主断言各列出真缺口）；委托分支动作名拼错一位（org-remove-menber）→ i18n 新断言 1 failed；复原后两闸门 29/29 绿，`git diff --stat src/` 无输出（src 零改动）。
     - **台账**：feature-inventory v0.82 → **v0.83**（§2 监督台升 v1.18 + 成员移除说明、状态行前置）、handoff / README / pre-launch-checklist 活基线 1770/158、docs/README 索引同步。**本批 commit 现已在 origin/dev 上（2026-10-12 实测 `fee1113` 已推送，ahead=0，CI run 38206043440 六 job 全绿）。**
 215. **名册恢复命令批（2026-10-11，src+tests+docs 批，零新路由、文件数 152 不变，基线 1697/152 → 1703/152，全量 1703 绿 / 0 失败（`npm test` exit 0），typecheck / lint exit 0，`doc-consistency` 18/18，`smoke:core` 47/47）**：把 A-02 那"唯一的一条回头路"接到终端。
-   - **缺口**：审计 A-02 定的语义是"重新注册不抵消吊销，恢复是一次独立且被审计的动作"，HTTP 侧 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:767 #reinstate`）与审计桥 `reinstateAuditBridge`（落 `vassal-reinstated`）早已在库内，Web 监督台也有恢复按钮——**终端面板没有**：`d<n>` 是单向的，`src/tui/runner.ts` 对 revoked 行直接拒绝执行吊销，操作者要让一个已吊销的执行 Agent 重新可用只能去浏览器。这是待办 #44 对照扫出的第二条、也是同一次扫描里继 Active work 213 之后又一处"内核与一张面能做、另一张面不能"。
+   - **缺口**：审计 A-02 定的语义是"重新注册不抵消吊销，恢复是一次独立且被审计的动作"，HTTP 侧 `POST /api/vassals/:name/reinstate`（`src/http/server.ts:772 #reinstate`）与审计桥 `reinstateAuditBridge`（落 `vassal-reinstated`）早已在库内，Web 监督台也有恢复按钮——**终端面板没有**：`d<n>` 是单向的，`src/tui/runner.ts` 对 revoked 行直接拒绝执行吊销，操作者要让一个已吊销的执行 Agent 重新可用只能去浏览器。这是待办 #44 对照扫出的第二条、也是同一次扫描里继 Active work 213 之后又一处"内核与一张面能做、另一张面不能"。
    - **改动**：`src/tui/commands.ts` 加 `b<n>`（`reinstateMatch`，与 `d<n>` 分立的字母——吊销的不可逆性不该靠同一个键位两种含义来表达）；`src/tui/runner.ts` 的 reinstate 分支在**发出请求之前**判状态：非 revoked 行打印它看到的实际状态（走 `statusLabel`，不是原始枚举值）并零写出；`src/tui/client.ts` 复用既有的 `post()`（恒带 JSON 空体——该路由不读 body，但 Fastify 对带 JSON 标签的空体先 400，这是名册 DELETE 一课上过的课）；`src/tui/render.ts` 给已吊销行标出该行号（`b2 = 恢复该行`），因为 `b<n>` 指的是位置而不是名字。zh/en 各 5 个新键。
    - **闸门**：+6 例——parser 7 项断言（`b2` / `B 2` / `b0` / 裸 `b` 仍 unknown / `d2` 仍是吊销 / help 里出现 `b<n>`）、client 1 例（URL 编码 + 空体 + content-type）、controller 3 例（确认后调 `reinstate('pr-helper')` 且**没有**触碰 `revoke`、拒绝确认零写出、active 行被拒且**连确认都不弹**）、render 1 例（已吊销行带出 `b2`，未吊销行不带）。
    - **缺陷植入**：把 reinstate 的写出改成 `client.revoke` → 2 例红（断言的是"恢复不能借用吊销那条路"）；把状态闸门改成恒真 → 1 例红（active 行被 reinstate，确认框照弹）。两组复原后全绿。
@@ -251,7 +261,7 @@ State of Zeus as of 2026-10-17.
    - **台账**：feature-inventory v0.75 → v0.76（§2 终端面板行 + `b<n>`、命令格 15 → **16**，两种口径同数）、prd v0.77 → v0.78（E4.6 行写明恢复是独立且被审计的动作、两面可驱动）、docs/README 与 handoff 索引行随批同步。
 
 214. **可观测装配批（2026-10-11，src+scripts+docs 批，零新路由、零新测试文件、vitest 用例数 1697/152 不变，冒烟 45 → 47 步全过 exit 0，typecheck / lint exit 0，`doc-consistency` 18/18）**：把 S6 V3 的两个可观测面从"库里能用"变成"部署里能开"。
-   - **缺口**：`bootKernel` 认 `traceExportFile` / `metricsHistoryFile` 两个选项（Active work 190 落的地），`GET /api/metrics/history` 也按 `deps.metricsHistory` 在场才挂载（`src/http/server.ts:1329 #metricsHistory`）——但**出货入口 `src/http/serve.ts` 从不传这两个选项，全仓也没有对应的 env 名**。结果是：任何按 deployment.md 起起来的进程，该端点恒 404、trace 导出永不运行，而台账把它记成 ✅ V3 已落地。这是待办 #44（能力↔可驱动面对照）扫出来的一条，不是新写的能力。
+   - **缺口**：`bootKernel` 认 `traceExportFile` / `metricsHistoryFile` 两个选项（Active work 190 落的地），`GET /api/metrics/history` 也按 `deps.metricsHistory` 在场才挂载（`src/http/server.ts:1332 #metricsHistory`）——但**出货入口 `src/http/serve.ts` 从不传这两个选项，全仓也没有对应的 env 名**。结果是：任何按 deployment.md 起起来的进程，该端点恒 404、trace 导出永不运行，而台账把它记成 ✅ V3 已落地。这是待办 #44（能力↔可驱动面对照）扫出来的一条，不是新写的能力。
    - **改了什么**：serve 读两个 env 并接进 bootKernel（`src/http/serve.ts:175 #ZEUS_TRACE_EXPORT_FILE`），装配出来的指标史写进端点依赖（`src/http/serve.ts:479 #metricsHistory`）；启动日志新增一条 `observability-export`，**把两个开关的实际取值打出来（含 `off`）**——配了 trace 导出却没配审计文件时另打一条 warn，因为 trace 树是从审计脊重建的，只设前者会产出一个永远空着的文件。
    - **配置面随批补**：`.env.example` +2 条注释项，`docs/deployment.md` §2 +2 行（写明"设了才挂载 / 必须同时设 `ZEUS_AUDIT_FILE`"两条后果）。env 双向普查按闸门自己的量法现测：**模板 39 个 `ZEUS_*`＝38 个 src 直读 + 1 个动态名（`ZEUS_VAULT_PASSPHRASE`）**，无未文档化、无空挂。
    - **冒烟 +2 步（45 → 47）**：`the booted process serves its metrics history when the file is configured`（真进程 `GET /api/metrics/history` → `status=200 snapshots=1`）与 `a settled intent appends its trace tree to the export file`（导出文件 8 行、逐行有 traceId，且含本轮那条 run）。这两步钉的是 **serve.ts 的装配**而不是路由存在性——同一件事注入式测试看不见（deferred #25 的口径）。
@@ -261,7 +271,7 @@ State of Zeus as of 2026-10-17.
    - **未做**：导出文件本身没有读回端点——trace 是给人直接看的文件，`GET /api/intents/:id/trace` 仍从内存与审计重建，两条路径各有用途；指标史的读回面就是那个端点，无需再加。
 
 213. **补参重派批（2026-10-11，src+tests 批，零新路由、零新脚本、文件数 152 不变，基线 1679/152 → 1697/152，全量 1697 绿 / 0 失败（`npm test` exit 0），typecheck / lint exit 0，`doc-consistency` 18/18，`smoke:core` 45/45）**：把"执行 Agent 停下来问人"这条链在**终端面**接上，并修掉产品页把人指向不存在端点的指引。
-   - **缺口是怎么发现的**：待办 #44（能力↔可驱动面对照）的一次对照——内核与 HTTP 早有 `POST /api/escalations/:id/approve-resume`（补参数并只重派那一条分支，`src/http/server.ts:1006-1006 #approve-resume`），Web 监督台 2026-10-10 已接（Active work 200），**终端面板没接**：`src/tui/client.ts` 只有 approve / reject / resolve，于是 `a<n>` 打在缺参行上只记录裁决、分支永不重跑（`src/http/server.ts:1147 #approve` 的注释自己写着 "re-dispatch is the caller's job"）。更糟的是产品页 `src/daily/report.ts` 的「等你裁决」一行让操作者去 `npm run tui` 或调 `POST /api/escalations/:id/decision`——**后者从来没被挂载过**。
+   - **缺口是怎么发现的**：待办 #44（能力↔可驱动面对照）的一次对照——内核与 HTTP 早有 `POST /api/escalations/:id/approve-resume`（补参数并只重派那一条分支，`src/http/server.ts:1006-1006 #approve-resume`），Web 监督台 2026-10-10 已接（Active work 200），**终端面板没接**：`src/tui/client.ts` 只有 approve / reject / resolve，于是 `a<n>` 打在缺参行上只记录裁决、分支永不重跑（`src/http/server.ts:1155 #approve` 的注释自己写着 "re-dispatch is the caller's job"）。更糟的是产品页 `src/daily/report.ts` 的「等你裁决」一行让操作者去 `npm run tui` 或调 `POST /api/escalations/:id/decision`——**后者从来没被挂载过**。
    - **两处改动**：① 终端新增 `r<n> {json}`（`src/tui/commands.ts:172-182 #resumeMatch` 纯解析——载荷必须是 JSON 对象，数组 / 标量 / 残缺串都在**发请求之前**拒掉；`src/tui/runner.ts:73-86 #resume` 只对 `task-input` 行放行，别的类型直接说明原因、零写出；`src/tui/render.ts` 给缺参行挂出命令提示，zh/en 五键齐平）；② 产品页该节改为**按升级类型**逐行给出确实存在的路径（`src/daily/report.ts:118-131 #SETTLE_BY_KIND`：缺参→`approve-resume`、立场冲突→`resolve`、记忆争议→`approve`、委托越限→`approve-contract`，行内直接写该条升级项的真实 id，不留 `:id` 模板）。
    - **闸门入库**：`tests/daily-entry.test.ts` 新增 11 例，其中一条**正控**把 `src/http/server.ts` 里挂载的升级动作集合读出来断言为 `approve / approve-contract / approve-resume / reject / resolve` 五条（断言集为空即失败，防止扫描器退化成"零发现=全覆盖"），另一种类逐一断言页面给出的动作在该集合内、且提示的终端命令能被 `parseCommand` 真的解析成对应 kind——报告与解析器两处任一处漂移都会红。
    - **缺陷植入（每组注入后复原）**：把 `client.resume` 摘成 `client.approve` → 1 例红；把缺参类型闸门 `esc.kind !== 'task-input'` 改成恒真 → 1 例红；把产品页 `approve-resume` 写回 `decision` → 2 例红；把解析器的 `resume` 分支返回 `approve` → 3 文件 4 例红。

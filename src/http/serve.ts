@@ -29,7 +29,7 @@ import {
   resolveAuditConfig,
   resolveConcurrencyConfig,
   resolveCostConfig,
-  resolveDecisionConfig,
+  resolveDecisionConfigWithHub,
   resolveRealmConfig,
   resolveVassalSeedsConfig,
 } from '../state/boot.js';
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   // T-C: build the decision backend (Jev preferred, LLM fallback) and the
   // opt-in E1.3 judge from process env. No keys => null => rules-only kernel,
   // identical to the pre-backend behaviour (deployment keys are operator-owned).
-  const decision = resolveDecisionConfig(process.env);
+  const decision = await resolveDecisionConfigWithHub(process.env);
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.
   const concurrency = resolveConcurrencyConfig(process.env);
@@ -492,6 +492,7 @@ async function main(): Promise<void> {
           : {}),
       },
     },
+    ...(decision.hubTest ? { hubTest: decision.hubTest } : {}),
     // E2.6: the same pluggable backend that drives arbitration also powers
     // operator intent recognition. Recognition is plan-only and the model is
     // only consulted when the caller explicitly opts in (useModel: true).

@@ -1352,6 +1352,7 @@
       "state.domains": "域 ",
       "state.backend": "决策后端：",
       "state.backendRulesOnly": "决策后端：rules-only（本地规则聚合，无外部模型）",
+      "hub.test": "测试 hub 连接（L3/L4）",
       "state.arbitration": "仲裁 ",
       "state.threshold": "（门限 {value}）",
       "metrics.inflight": "在途",
@@ -1763,6 +1764,7 @@
       "state.domains": "realms ",
       "state.backend": "Decision backend: ",
       "state.backendRulesOnly": "Decision backend: rules-only (local rule aggregation, no external model)",
+      "hub.test": "Test hub connection (L3/L4)",
       "state.arbitration": "arbitration ",
       "state.threshold": " (threshold {value})",
       "metrics.title": "Concurrency metrics",
@@ -3584,6 +3586,50 @@
     div.style.cssText = 'margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center';
     div.innerHTML = head + '<span class="hint" style="font-family:var(--mono)">' + esc(bits.join(' · ')) + '</span>';
     el.appendChild(div);
+
+    // Hub L3/L4 test entry (only when the hub backend is active).
+    if (d.kind === 'hub') {
+      const panel = document.createElement('div');
+      panel.style.cssText = 'margin-top:8px';
+      panel.innerHTML =
+        '<button class="btn small" id="btnHubTest" type="button">' + esc(t('hub.test')) + '</button>' +
+        '<span class="hint" id="hubTestResult" style="margin-left:8px"></span>';
+      el.appendChild(panel);
+    }
+  }
+
+  // Event delegation: stateBody is re-rendered each poll, so bind once here.
+  const stateBodyEl = $('stateBody');
+  if (stateBodyEl) {
+    stateBodyEl.addEventListener('click', (ev) => {
+      const target = ev.target;
+      if (target && target.id === 'btnHubTest') runHubTest();
+    });
+  }
+
+  // L3 ping + L4 probes for the three decision aliases; report in one line.
+  async function runHubTest() {
+    const out = $('hubTestResult');
+    if (!out) return;
+    out.textContent = t('common.loading');
+    try {
+      const ping = await api('GET', '/api/decision/ping');
+      const aliases = ['noul', 'choice', 'score'];
+      const probes = [];
+      for (const alias of aliases) {
+        try {
+          const r = await api('POST', '/api/decision/test', { alias });
+          probes.push(alias + ':' + (r.ok ? 'ok' : 'fail'));
+        } catch {
+          probes.push(alias + ':fail');
+        }
+      }
+      const pingBit = 'L3 ' + (ping.ok ? 'ok' : 'fail') +
+        (ping.revision != null ? '@' + ping.revision : '');
+      out.textContent = pingBit + ' · L4 ' + probes.join(' ');
+    } catch (e) {
+      out.textContent = 'L3 fail (' + (e && e.message ? e.message : e) + ')';
+    }
   }
 
   function renderMetrics(m) {
