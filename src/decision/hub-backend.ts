@@ -28,6 +28,18 @@ export type HubDecisionWiring = {
 };
 
 /**
+ * Process-wide hub model resolver, published by createHubDecisionBackend
+ * when the hub wiring lands. Consumers that are constructed before the
+ * decision wiring (the memory embedder) read it lazily instead of threading
+ * the kit through boot; one wiring per process is the boot invariant.
+ */
+let activeResolveModel: ((alias: string) => ResolvedModel | null) | null = null;
+
+export function activeHubModelResolve(alias: string): ResolvedModel | null {
+  return activeResolveModel?.(alias) ?? null;
+}
+
+/**
  * Hub-backed decision backend. Each primitive (noul/choice/score) resolves
  * its own model by alias via model-kit, so different primitives can use
  * different models and the issued unit prices flow into the LLM config.
@@ -53,6 +65,16 @@ export async function createHubDecisionBackend(
     cachePath: options.cachePath,
     ...(options.fetchImpl ? { fetch: options.fetchImpl } : {}),
   });
+
+  // Publish the resolver for pre-wiring consumers (memory embedder); an
+  // unresolved alias surfaces as null rather than a throw.
+  activeResolveModel = alias => {
+    try {
+      return kit.resolve(alias);
+    } catch {
+      return null;
+    }
+  };
 
   const aliases = {
     noul: options.aliases?.noul ?? 'noul',

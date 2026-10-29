@@ -98,6 +98,9 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'commission-withdrawn': 'warning',
   'commission-refused': 'warning',
   'memory-claim-skipped': 'warning',
+  // MemoryPort v1 §4: a routine authorised hub embed (audited by hash); an
+  // info-level line, since the call itself is normal flow, not a refusal.
+  'memory-embed-external': 'info',
   // design-self-host-loop §4.3: an intent raised with nobody present is the one
   // governance fact that must never be muted, so firing is attention; a watch
   // that stops evaluating is a warning, because "silently never fires" is the

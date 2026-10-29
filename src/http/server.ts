@@ -1662,7 +1662,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (query.alpha !== undefined && alpha === undefined) {
           return error(reply, 400, 'invalid_request', 'query.alpha must be a number in [0,1]');
         }
-        const hits = deps.memoryStore!.searchRecall(query.realmId, query.realmId, query.q, {
+        const hits = await deps.memoryStore!.searchRecall(query.realmId, query.realmId, query.q, {
           ...(limit !== undefined ? { limit } : {}),
           ...(alpha !== undefined ? { alpha } : {}),
         });
