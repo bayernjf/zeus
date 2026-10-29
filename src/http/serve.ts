@@ -34,6 +34,7 @@ import {
   resolveVassalSeedsConfig,
 } from '../state/boot.js';
 import { kernelStats } from '../state/stats.js';
+import { createDecisionTraceSink } from '../observability/decision-trace-sink.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
@@ -105,7 +106,17 @@ async function main(): Promise<void> {
   // T-C: build the decision backend (Jev preferred, LLM fallback) and the
   // opt-in E1.3 judge from process env. No keys => null => rules-only kernel,
   // identical to the pre-backend behaviour (deployment keys are operator-owned).
-  const decision = await resolveDecisionConfigWithHub(process.env);
+  // TracePort v1 §6 (W2-1): opt-in per-call decision ledger — JSONL, 0600,
+  // redacted and truncated per D-4. Unset = no ledger, decision flow unchanged.
+  // The env-fallback backend path (hub down) does not carry the ledger; the
+  // hub is the only configured model source since W7-3.
+  const decisionTraceSink = process.env.ZEUS_DECISION_TRACE_FILE
+    ? createDecisionTraceSink(process.env.ZEUS_DECISION_TRACE_FILE)
+    : null;
+  const decision = await resolveDecisionConfigWithHub(
+    process.env,
+    decisionTraceSink ? { onTrace: decisionTraceSink.onTrace } : {},
+  );
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.
   const concurrency = resolveConcurrencyConfig(process.env);
@@ -417,6 +428,10 @@ async function main(): Promise<void> {
     ...(kernel.mentorshipLedger ? { mentorshipLedger: kernel.mentorshipLedger } : {}),
     ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
     ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
+    // MemoryPort v1 §7: cross-agent consumer face; unset env = face not mounted.
+    ...(process.env.ZEUS_MEMORY_SERVICE_TOKEN
+      ? { memoryServiceToken: process.env.ZEUS_MEMORY_SERVICE_TOKEN }
+      : {}),
     // M-12: retract / forget-subject answer only once the erasure is durable.
     persistState: () => kernel.saveState(),
     ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
