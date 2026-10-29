@@ -48,7 +48,7 @@ jobs:
       # public monorepo to the expected path. Pinned to main — the same moving
       # target local development uses; W4-1a tag distribution is for external
       # consumers and lands with the W6 pnpm adoption.
-      - name: Clone model-hub sibling (file: dependency target)
+      - name: "Clone model-hub sibling (file: dependency target)"
         run: git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
 
       - name: Install dependencies
@@ -110,7 +110,7 @@ jobs:
           cache: npm
 
       # Same rationale as the verify job's model-hub sibling clone above.
-      - name: Clone model-hub sibling (file: dependency target)
+      - name: "Clone model-hub sibling (file: dependency target)"
         run: git clone --depth 1 https://github.com/bayernjf/model-hub.git ../model-hub
 
       - name: Install dependencies (real clock)
