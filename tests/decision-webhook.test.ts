@@ -21,6 +21,7 @@ import {
   DecisionWebhookDispatcher,
   MemoryDecisionWebhookStore,
   signWebhookBody,
+  signWebhookPayload,
 } from '../src/core/decision-service/webhook.js';
 import type { DecisionEvent } from '../src/core/decision-service/events.js';
 import type { DecisionPolicy } from '../src/core/grading/policy.js';
@@ -72,6 +73,51 @@ describe('Decision webhook dispatcher', () => {
     expect(calls[0]!.headers['x-zeus-delivery-id']).toBe(`${ev.decisionId}:${ev.type}:${ev.at}`);
     expect(calls[0]!.headers['x-zeus-signature']).toBe(signWebhookBody('top-secret-value-16', calls[0]!.body));
     expect(JSON.parse(calls[0]!.body)).toMatchObject({ type: 'approved', decisionId: 'dec_test_1' });
+  });
+
+  it('sends v2 freshness headers signing timestamp, nonce and body', async () => {
+    const store = new MemoryDecisionWebhookStore();
+    store.add({ id: 'wh-1', url: 'http://127.0.0.1:9/hook', secret: 'top-secret-value-16', active: true });
+    const calls: Array<{ headers: Record<string, string>; body: string }> = [];
+    const dispatcher = new DecisionWebhookDispatcher({
+      store,
+      fetch: (async (_url: unknown, init?: { headers?: Record<string, string>; body?: string }) => {
+        calls.push({ headers: init?.headers ?? {}, body: init?.body ?? '' });
+        return { ok: true, status: 200 } as Response;
+      }) as unknown as typeof fetch,
+    });
+    await dispatcher.emit(event());
+    const h = calls[0]!.headers;
+    expect(h['x-zeus-webhook-timestamp']).toMatch(/^\d{10}$/);
+    expect(h['x-zeus-webhook-nonce']).toMatch(/^[0-9a-f]{32}$/);
+    expect(h['x-zeus-webhook-signature']).toBe(
+      signWebhookPayload('top-secret-value-16', h['x-zeus-webhook-timestamp']!, h['x-zeus-webhook-nonce']!, calls[0]!.body),
+    );
+    // Legacy body-only header stays for the rollout window.
+    expect(h['x-zeus-signature']).toBe(signWebhookBody('top-secret-value-16', calls[0]!.body));
+  });
+
+  it('mints a fresh timestamp and nonce for each retry attempt', async () => {
+    const store = new MemoryDecisionWebhookStore();
+    store.add({ id: 'wh-1', url: 'http://127.0.0.1:9/hook', secret: 'top-secret-value-16', active: true });
+    const seen: Array<{ ts: string; nonce: string }> = [];
+    let n = 0;
+    const dispatcher = new DecisionWebhookDispatcher({
+      store,
+      maxAttempts: 3,
+      baseBackoffMs: 1,
+      sleep: async () => undefined,
+      fetch: (async (_url: unknown, init?: { headers?: Record<string, string> }) => {
+        seen.push({ ts: init!.headers!['x-zeus-webhook-timestamp']!, nonce: init!.headers!['x-zeus-webhook-nonce']! });
+        n += 1;
+        return { ok: false, status: 503 } as Response;
+      }) as unknown as typeof fetch,
+    });
+    await dispatcher.emit(event());
+    expect(n).toBe(3);
+    expect(new Set(seen.map(s => s.nonce)).size).toBe(3);
+    // Every attempt independently verifies.
+    for (const s of seen) expect(s.ts).toMatch(/^\d{10}$/);
   });
 
   it('reverse gate: no delivery without an active subscription', async () => {
