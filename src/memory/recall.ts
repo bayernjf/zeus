@@ -172,7 +172,7 @@ export class RecallIndex {
     const limit = options.limit ?? 10;
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
-    const queryVector = await this.embedder.embed(query, { realmId: this.realmId });
+    const queryVector = await this.embedder.embed(query, ...(this.realmId !== undefined ? [{ realmId: this.realmId }] : []));
 
     const docs = [...this.docs.values()];
     const lexicalById = this.bm25(queryTokens, docs);
