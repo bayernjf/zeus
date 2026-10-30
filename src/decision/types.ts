@@ -90,6 +90,20 @@ export type DecisionTrace = {
   latencyMs: number;
   /** Audit-only cost estimate (not billing); absent when unit price is unknown. */
   cost?: { inputTokens: number; outputTokens: number; cents: number };
+  /**
+   * Token counts measured from the provider response (TracePort v1 §2);
+   * present even when unit prices — and thus `cost` — are unknown, so the
+   * ledger keeps token accounting for every call. Detail counters are set
+   * only when the provider reports them; `tokensEstimated` marks counts
+   * that fell back to the ~4 chars/token estimate.
+   */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens?: number;
+    cacheReadTokens?: number;
+    tokensEstimated?: boolean;
+  };
   decidedAt: string;
 };
 

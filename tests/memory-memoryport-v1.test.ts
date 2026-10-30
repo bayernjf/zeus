@@ -72,6 +72,31 @@ describe('HubEmbeddingEmbedder', () => {
     expect(audits[0]!.hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
+  it('carries the realm scope into the external-call audit line (P2-5)', async () => {
+    const audits: Array<{ hash: string; ok: boolean; realmId?: string; reason?: string }> = [];
+    let healthy = false;
+    let clock = 1_000_000;
+    const embedder = new HubEmbeddingEmbedder({
+      resolveEndpoint: () => ({ baseUrl: 'https://hub.test', apiKey: 'k', model: 'embed-m' }),
+      fetchImpl: (async () => {
+        if (!healthy) throw new Error('connection refused');
+        return hubResponse(2048);
+      }) as typeof fetch,
+      retryMinutes: 5,
+      now: () => clock,
+      onExternalCall: entry => audits.push(entry),
+    });
+
+    // Both the failed and the successful external call carry the realm.
+    await embedder.embed('realm text', { realmId: 'tenant-a' });
+    healthy = true;
+    clock += 10 * 60_000; // past the retry cooldown, so the hub is retried
+    await embedder.embed('realm text', { realmId: 'tenant-a' });
+    expect(audits).toHaveLength(2);
+    expect(audits[0]).toMatchObject({ ok: false, realmId: 'tenant-a', reason: 'connection refused' });
+    expect(audits[1]).toMatchObject({ ok: true, realmId: 'tenant-a' });
+  });
+
   it('degrades to the local space on hub failure and retries after the cooldown', async () => {
     let clock = 1_000_000;
     let calls = 0;

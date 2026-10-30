@@ -170,7 +170,8 @@ describe('createHubDecisionBackend', () => {
     expect(reports).toHaveLength(1);
     expect(reports[0]).toMatchObject({
       project: 'zeus',
-      feature: 'noul',
+      // TracePort v1 §6 D-7: the feature names the primitive behind the call.
+      feature: 'decision:noul',
       billing_source: 'builtin',
       provider: 'model-noul',
       model: 'model-noul',
@@ -181,6 +182,111 @@ describe('createHubDecisionBackend', () => {
       cached: false,
     });
     expect((reports[0]?.ts as string).length).toBeGreaterThan(0);
+  });
+
+  it('reports reasoning and cache-read tokens when the provider provides them', async () => {
+    const calls: Array<{ model: string }> = [];
+    const reports: Array<Record<string, unknown>> = [];
+    const raw = routingFetch(calls, reports);
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const response = await raw(input, init);
+      const url = String(input);
+      if (url.includes('/chat/completions')) {
+        const body = (await response.json()) as Record<string, unknown>;
+        body.usage = {
+          prompt_tokens: 5,
+          completion_tokens: 3,
+          prompt_tokens_details: { cached_tokens: 2 },
+          completion_tokens_details: { reasoning_tokens: 1 },
+        };
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      return response;
+    }) as typeof fetch;
+    const { backend } = await createHubDecisionBackend({
+      hubUrl: 'https://hub.local',
+      token: 'tok',
+      cachePath: join(dir, 'cache.json'),
+      fetchImpl,
+    });
+
+    await backend.noul({
+      state: {},
+      instructions: '',
+      runId: 'r1',
+      realm: 'personal',
+      question: 'q',
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      feature: 'decision:noul',
+      input_tokens: 5,
+      output_tokens: 3,
+      cache_read_tokens: 2,
+      reasoning_tokens: 1,
+    });
+  });
+
+  it('surfaces usage HTTP failures through the observer without breaking the decision', async () => {
+    const calls: Array<{ model: string }> = [];
+    const raw = routingFetch(calls);
+    const failures: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/pub/v1/usage')) {
+        return new Response(null, { status: 500 });
+      }
+      return raw(input, init);
+    }) as typeof fetch;
+    const { backend } = await createHubDecisionBackend({
+      hubUrl: 'https://hub.local',
+      token: 'tok',
+      cachePath: join(dir, 'cache.json'),
+      fetchImpl,
+      onUsageReportFailed: reason => failures.push(reason),
+    });
+
+    const result = await backend.noul({
+      state: {},
+      instructions: '',
+      runId: 'r1',
+      realm: 'personal',
+      question: 'q',
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(result.probability).toBe(0.7);
+    expect(failures).toEqual(['usage report failed: HTTP 500']);
+  });
+
+  it('surfaces usage transport failures through the observer without breaking the decision', async () => {
+    const calls: Array<{ model: string }> = [];
+    const raw = routingFetch(calls);
+    const failures: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/pub/v1/usage')) {
+        throw new Error('hub down');
+      }
+      return raw(input, init);
+    }) as typeof fetch;
+    const { backend } = await createHubDecisionBackend({
+      hubUrl: 'https://hub.local',
+      token: 'tok',
+      cachePath: join(dir, 'cache.json'),
+      fetchImpl,
+      onUsageReportFailed: reason => failures.push(reason),
+    });
+
+    const result = await backend.noul({
+      state: {},
+      instructions: '',
+      runId: 'r1',
+      realm: 'personal',
+      question: 'q',
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(result.probability).toBe(0.7);
+    expect(failures).toEqual(['hub down']);
   });
 
   it('still decides when the hub usage endpoint is unreachable', async () => {

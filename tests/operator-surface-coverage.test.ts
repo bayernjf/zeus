@@ -277,7 +277,11 @@ const READ_PROTOCOL_FACES = new Set([
  *  honest escape hatch, and a reason string must cite where a gap is tracked
  *  so the table cannot be used to bury one. If a future batch adds a read
  *  route nobody can drive, it belongs here the day it ships, not later. */
-const READ_API_ONLY: Record<string, string> = {};
+const READ_API_ONLY: Record<string, string> = {
+  // TracePort v1 §5 (D-5, W2-4): the cross-intent trace query face ships
+  // API-only; the ops-console /app/traces BFF page (W2-5) is its reader.
+  'GET /api/v1/traces': 'tracked: PRD F2 / D-5 (TracePort v1 section 5; ops-console reader lands with W2-5)',
+};
 
 describe('operator surface coverage - read routes', () => {
   it('collects the read set from real registration sites (positive control)', () => {

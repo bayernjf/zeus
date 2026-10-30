@@ -59,6 +59,13 @@ export type HubBackendOptions = BackendOptions & {
     choice?: string;
     score?: string;
   };
+  /**
+   * TracePort v1 §6 (D-7): usage reports are fire-and-forget — model-kit's
+   * postUsage swallows every transport failure, so without this observer they
+   * are invisible. Invoked once per failed report (HTTP error or network
+   * error); the decision path is never affected.
+   */
+  onUsageReportFailed?: (reason: string) => void;
 };
 
 export async function createHubDecisionBackend(
@@ -72,17 +79,40 @@ export async function createHubDecisionBackend(
   });
   const reportFetch = options.fetchImpl ?? fetch;
 
+  // D-7: postUsage swallows all errors (and ignores non-2xx responses), which
+  // makes a silently dropping report invisible. When an observer is present,
+  // wrap the report transport to surface HTTP and network failures — the
+  // rethrow keeps the swallow in place, so the decision path is unchanged.
+  const onUsageReportFailed = options.onUsageReportFailed;
+  const usageFetch: typeof fetch = onUsageReportFailed
+    ? async (input: RequestInfo | URL, init?: RequestInit) => {
+        try {
+          const response = await reportFetch(input, init);
+          if (!response.ok) {
+            onUsageReportFailed(`usage report failed: HTTP ${response.status}`);
+          }
+          return response;
+        } catch (error) {
+          onUsageReportFailed(error instanceof Error ? error.message : 'usage report network error');
+          throw error; // model-kit's postUsage catches this
+        }
+      }
+    : reportFetch;
+
   // Fire-and-forget usage report after each successful decision call, mirroring
   // model-kit's own chat() reporting for transports that bypass it. postUsage
   // swallows transport failures, so the decision path is never affected.
   function reportUsage(resolved: ResolvedModel, usage: LlmUsageReport): void {
-    void reportUsageInBackground(options.hubUrl, options.token, reportFetch, {
+    void reportUsageInBackground(options.hubUrl, options.token, usageFetch, {
       project: HUB_PROJECT_SLUG,
-      feature: resolved.alias ?? 'decision',
+      // D-7: the feature field distinguishes the primitive behind the call.
+      feature: `decision:${usage.kind}`,
       billingSource: resolved.source === 'byok' ? 'byok' : 'builtin',
       model: resolved,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,
+      reasoningTokens: usage.reasoningTokens,
+      cacheReadTokens: usage.cacheReadTokens,
       httpStatus: 200,
     });
   }

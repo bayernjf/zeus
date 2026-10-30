@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { LocalHashingEmbedder } from './recall.js';
-import type { Embedder } from './types.js';
+import type { EmbedContext, Embedder } from './types.js';
 
 /**
  * Hub-backed embedder (MemoryPort contract v1 §4, ruling D-1).
@@ -28,6 +28,8 @@ export interface HubEmbedCallAudit {
   hash: string;
   ok: boolean;
   latencyMs: number;
+  /** Realm whose memory the call served (P2-5); absent when unknown. */
+  realmId?: string;
   reason?: string;
 }
 
@@ -83,16 +85,16 @@ export class HubEmbeddingEmbedder implements Embedder {
     return this.hubDimension ?? this.local.dimension;
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, ctx?: EmbedContext): Promise<number[]> {
     const hash = createHash('sha256').update(text).digest('hex');
     const cached = this.cache.get(`${this.dimension}:${hash}`);
     if (cached) return cached;
 
-    const vector = await this.embedUncached(text, hash);
+    const vector = await this.embedUncached(text, hash, ctx);
     return vector;
   }
 
-  private async embedUncached(text: string, hash: string): Promise<number[]> {
+  private async embedUncached(text: string, hash: string, ctx?: EmbedContext): Promise<number[]> {
     const endpoint = this.options.resolveEndpoint();
     const mayRetry = this.now() - this.lastFailureAt >= this.retryMs;
     if (endpoint && (this.hubDimension !== null || mayRetry)) {
@@ -103,7 +105,7 @@ export class HubEmbeddingEmbedder implements Embedder {
         if (this.hubDimension === null) {
           this.hubDimension = vector.length;
         }
-        this.audit(hash, true, latencyMs);
+        this.audit(hash, true, latencyMs, undefined, ctx?.realmId);
         // Key by the dimension of the space this vector actually lives in, not
         // the `dimension` getter seen before the call: on the very first hub
         // success that getter still reads the local fallback, so keying with
@@ -119,7 +121,7 @@ export class HubEmbeddingEmbedder implements Embedder {
         this.hubDimension = null;
         this.cache.clear();
         this.lastFailureAt = this.now();
-        this.audit(hash, false, this.now() - started, error instanceof Error ? error.message : 'hub embed failed');
+        this.audit(hash, false, this.now() - started, error instanceof Error ? error.message : 'hub embed failed', ctx?.realmId);
         // Fall through to the local embedding for this call; the cooldown
         // gates further hub attempts until the retry window elapses.
       }
@@ -166,8 +168,14 @@ export class HubEmbeddingEmbedder implements Embedder {
     this.cache.set(key, vector);
   }
 
-  private audit(hash: string, ok: boolean, latencyMs: number, reason?: string): void {
-    this.onExternalCall?.(reason === undefined ? { hash, ok, latencyMs } : { hash, ok, latencyMs, reason });
+  private audit(hash: string, ok: boolean, latencyMs: number, reason?: string, realmId?: string): void {
+    this.onExternalCall?.({
+      hash,
+      ok,
+      latencyMs,
+      ...(realmId !== undefined ? { realmId } : {}),
+      ...(reason !== undefined ? { reason } : {}),
+    });
   }
 }
 

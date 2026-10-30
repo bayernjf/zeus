@@ -124,7 +124,15 @@ export class RecallIndex {
   /** Vector dimension of the embedder this index was built with. */
   readonly dimension: number;
 
-  constructor(private readonly embedder: Embedder = new LocalHashingEmbedder()) {
+  /**
+   * The index serves exactly one realm (the store keeps one index per realm),
+   * so every embed call carries the realm scope for the external-call audit
+   * line (P2-5); absent only in bare constructed indexes (tests).
+   */
+  constructor(
+    private readonly embedder: Embedder = new LocalHashingEmbedder(),
+    private readonly realmId?: string,
+  ) {
     this.dimension = embedder.dimension;
   }
 
@@ -143,7 +151,7 @@ export class RecallIndex {
     this.docs.set(fact.factId, {
       fact,
       tokens: tokenize(text),
-      vector: await this.embedder.embed(text),
+      vector: await this.embedder.embed(text, { realmId: fact.realmId ?? this.realmId }),
     });
   }
 
@@ -164,7 +172,7 @@ export class RecallIndex {
     const limit = options.limit ?? 10;
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
-    const queryVector = await this.embedder.embed(query);
+    const queryVector = await this.embedder.embed(query, ...(this.realmId !== undefined ? [{ realmId: this.realmId }] : []));
 
     const docs = [...this.docs.values()];
     const lexicalById = this.bm25(queryTokens, docs);

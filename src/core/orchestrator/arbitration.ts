@@ -29,6 +29,8 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
 
   // Non-empty conflicts is guaranteed by the guard above.
   const conflict = result.conflicts[0]!;
+  // TracePort v1 §2: the arbitration step's measured duration.
+  const startedAt = now();
   const outcome = await arbitrateSplit({
     backend,
     stances: conflict.stances,
@@ -39,6 +41,7 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
     ...(input.allowUncalibrated !== undefined ? { allowUncalibrated: input.allowUncalibrated } : {}),
     ...(input.maxWaitMs !== undefined ? { maxWaitMs: input.maxWaitMs } : {}),
   });
+  const latencyMs = now().getTime() - startedAt.getTime();
   const decidedAt = now().toISOString();
 
   if (!outcome.concluded || outcome.conclusion === null) {
@@ -48,6 +51,7 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
       ...(outcome.calibrated !== undefined ? { calibrated: outcome.calibrated } : {}),
       ...(outcome.backend ? { backend: outcome.backend } : {}),
       ...(outcome.model ? { model: outcome.model } : {}),
+      latencyMs,
       ...(outcome.error ? { error: outcome.error } : {}),
       decidedAt,
     };
@@ -62,6 +66,7 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
     ...(outcome.calibrated !== undefined ? { calibrated: outcome.calibrated } : {}),
     ...(outcome.backend ? { backend: outcome.backend } : {}),
     ...(outcome.model ? { model: outcome.model } : {}),
+    latencyMs,
     decidedAt,
   };
   return {

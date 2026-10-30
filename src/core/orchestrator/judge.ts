@@ -80,6 +80,8 @@ export async function judgeDecision(input: JudgeDecisionInput): Promise<FanOutRe
   };
 
   let review: ChoiceResult;
+  // TracePort v1 §2: the judge step's measured duration (failures included).
+  const callStarted = now();
   try {
     review = await backend.choice({
       question:
@@ -101,13 +103,21 @@ export async function judgeDecision(input: JudgeDecisionInput): Promise<FanOutRe
       error instanceof DecisionBackendFailure
         ? error.toJSON()
         : { code: 'unavailable', message: error instanceof Error ? error.message : 'judge review failed' };
-    return withReview(result, { judged: false, reason: 'backend-failure', error: backendError, ...auditBase });
+    return withReview(result, {
+      judged: false,
+      reason: 'backend-failure',
+      error: backendError,
+      latencyMs: now().getTime() - callStarted.getTime(),
+      ...auditBase,
+    });
   }
+  const latencyMs = now().getTime() - callStarted.getTime();
 
   const common = {
     confidence: review.confidence,
     calibrated: review.calibrated,
     probabilities: review.probabilities,
+    latencyMs,
     ...auditBase,
   };
   if (review.confidence < threshold) {

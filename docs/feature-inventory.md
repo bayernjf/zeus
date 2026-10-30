@@ -24,7 +24,7 @@ PRD 共 **59 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **6 条**（E3
 | 入口 | 形态 | 规模 | 鉴权 |
 | --- | --- | --- | --- |
 | 产品入口 `npm run daily` | 一次性进程内装配（无常驻服务、不占端口），`src/daily/cli.ts` 装配 + `src/daily/report.ts` 纯渲染 | 10 个旋钮（`--root` `--agent` `--spec` `--skill` `--params` `--record` `--realm` `--timeout` `--model` `--state`）；一句话 → 意图 → 扇出 → 决策页写回目录；`--spec FILE` 在派发前登记显式技能规格（与 `POST /api/skills` 共用 `src/skills/spec-input.ts` 白名单），是入口侧唯一能声明 `aliases` 的途径；**读回环（v0.38）：派发前查同一 realm 同类技能最近 daily 页，把上次结论与 intentId 打进新页「上一次」行（只读，不进进出站载荷）**；退出码 0/1/2 | 无 bearer：本地目录与本地状态文件就是边界；不带 `--model` 时指令正文不出本机；`--realm enterprise` 的写回用本地驱动钥签发的 grant（`ZEUS_RSK_KEY`） |
-| HTTP 门面 | Fastify 长驻进程，`npm start` | **128 条路由**（4 公开 + 124 bearer） | 公开 4 条无鉴权；其余同一 bearer |
+| HTTP 门面 | Fastify 长驻进程，`npm start` | **129 条路由**（4 公开 + 125 bearer） | 公开 4 条无鉴权；其余同一 bearer |
 | 终端面板 TUI | `npm run tui` | 16 类命令（`COMMAND_HELP` 条目数＝`DeckCommand` kind 数，2026-10-11 现测；原写 17 与两种口径都对不上，无从复现，改为可测数。本批 +1：`b<n>` 恢复已吊销行）；**在途意图思考态面板**（S15 V3，2026-10-12：随轮询消费 `GET /api/active-intents`，逐意图显示 running/needs-driver 状态、分支 waiting/thinking/settled、N/M 就绪与截断增量预览，预览带「预览·非结论」标注、落定即清除） | `ZEUS_INTERNAL_TOKEN`（env）——**`--token` 被显式拒绝**：命令行秘密在 `ps` 与 shell 历史里可见（`src/tui/cli.ts:52-52 #token`；原台账此格误写为 `--token`，见审计报告 §10 B-37） |
 | Web 监督台（方案 A v1.21） | `web/supervisor/index.html` + 静态托管 | 监控（内核状态/指标+决策后端徽章/名册含吊销·恢复治理/审计时间线+过滤/并发趋势（前端 3s 采样）+ **持久指标史（`/api/metrics/history`，跨重启）**+ **成本闸门账户（`/api/cost`，E6.5：窗口累计/上限/自启动拒绝计数，未配置与端点未挂载分别如实文案）**+ **访问判定探针（`/api/domains/access` 干跑：realm/主体/类型/级别/租户 → 允许 or 拒绝+detail，不触域内容）**）/ 意图派发+作战室（详情/SSE 实时/DAG/取消/决策回放/结果责任链/**Trace 树（`/api/intents/:id/trace`，S6 只读投影，404 静默隐藏）**）/ 裁决 / 授权 / 组织（编制树 + 委任面板 + **带教台账**：`/api/mentorships` 开设/记课/评估/终止 + **成员行内首日简报（E9.1 briefing，含 gaps 诚实清单）**）/ 目录（技能+连接器可驱动面；技能行**版本史展开**（`/api/skills/:id/versions`））/ **记忆（E8.5：汇总/事实/事件/混合检索/按 run 回放/遗忘台账/完整性，realm 维度，事实无公开写入口——擦除仍走 bearer API）**/ 连接；v1.1 派发作战室+SSE、v1.2 DAG+识别+loading+SSE 重连、v1.3 审计过滤+趋势+徽标全局刷新+历史回写、v1.4 回放+责任链+组织+目录+名册治理+决策徽章、v1.5 i18n zh-CN/en+light/dark 主题+统一确认对话框、v1.6 审计独立视图+技能治理写操作（方案 B 首批增量）、v1.7 思考态流式呈现、v1.15 持久指标史、v1.16 带教台账、v1.17 连接器可驱动面（声明/握手/调用，监督台不再只读）、v1.18 组织成员移除（DELETE /api/org/departments/:id/members/:agentId 操作者面补齐，反向覆盖闸门入库）、v1.20 M7 slice 4 第一批：trace 树 / 技能版本史 / 首日简报 / 访问判定探针四个此前三面无人读的 GET 面补上读者（READ_API_ONLY 10 → 6，剩记忆六面） | 浏览器侧 localStorage 存 bearer；服务侧 `ZEUS_CORS_ORIGINS` 白名单 |
 | 备份 CLI | `npm run vault` | 4 子命令 | 口令 env / key-file |
@@ -52,7 +52,7 @@ PRD 共 **59 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **6 条**（E3
 | 名册与执行 Agent | 4 | `GET /api/roster`、`POST /api/vassals`、`DELETE /api/vassals/:name`、`POST /api/vassals/:name/reinstate` |
 | 意图与编排 | 18 | `POST /api/intents`、`POST /api/intents/recognize`（E2.6）、`GET /api/intents/:id`、`POST /:id/cancel`、`GET /:id/dag`、`GET /:id/events`（SSE）、`GET /api/active-intents`（S15 V3：在途意图 StreamView 投影，供无 SSE 客户端的轮询面）、`GET /api/cost`（E6.5：成本闸门账户——窗口花费/配置上限/自启动拒绝计数，只出聚合）、`GET /:id/replay`、`GET /:id/trace`（S6 V2 只读 trace 树）、`POST`/`GET /api/watches`、`GET`/`DELETE /api/watches/:id`、`POST /api/watch-tick`（自托管 P1：watch 登记/读/撤销 + 调用方驱动 tick）、`GET`/`POST /.well-known/agent-card.json`（deferred #19 入站 A2A：公开卡片 + bearer 保护 JSON-RPC tasks/send 落意图面）、`POST /api/a2a/push-notifications`（E4.11：bearer 保护回调端点，taskId+状态幂等，回调落审计链与意图面/E6.1 队列） |
 | 监督台 | 7 | `GET /api/escalations`、`GET /:id`、`POST /:id/approve`、`/reject`、`/approve-resume`、`/resolve`、`/approve-contract`（自托管第 5 步：批准委托越限项 = 签新契约并换绑 watch） |
-| 指标与状态 | 4 | `GET /api/metrics`、`GET /api/metrics/history`（S6 V3 指标史只读）、`GET /api/state`、`GET /api/audit` |
+| 指标与状态 | 5 | `GET /api/metrics`、`GET /api/metrics/history`（S6 V3 指标史只读）、`GET /api/state`、`GET /api/audit`、`GET /api/v1/traces`（TracePort v1 D-5：跨意图 trace 查询——agent/时间窗/成本区间/trace_id 过滤 + 汇总，JSONL 导出索引上的只读面） |
 | 组织编制 | 13 | `GET /api/org/chart`、`GET /api/org/accountability/:intentId`、部门建编/安置/设 lead/移除成员、带教立项/授课/豁免/撤回/台账、`GET /:id/briefing/:agentId`、`POST /:id/first-task` |
 | 记忆 | 14 | `/api/memory/{events,facts,replay,recall}`、`/retract`、`/forget-subject`、`/retractions`、`/integrity`、`/snapshot`、`/reconcile`、跨 agent 消费面 `POST /api/v1/memory/{recall,remember,forget}` + `GET /api/v1/memory/counts`（MemoryPort v1 §7：`ZEUS_MEMORY_SERVICE_TOKENS` 在场才挂载，每个 token 绑定一个 namespace） |
 | 日记 | 3 | `GET /api/diary`、`GET /api/diary/export`、`POST /api/diary/generate` |
@@ -171,7 +171,7 @@ PRD 共 **59 条需求行**：**P0 26/26 ✅**；非 P0 未闭合 **6 条**（E3
 | 功能 | 落地位置 | 状态 |
 | --- | --- | --- |
 | 薄传输层：全库仅 `http/` 引 fastify，内核零传输依赖 | `http/server.ts` | ✅ |
-| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:453 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
+| 常量时间 bearer 比对，未配 token 则写面整组不挂载 | `src/http/server.ts:466 #internalToken`（无 token 则整组不挂载）、`src/http/server.ts:2877-2856 #` | ✅ |
 | 根公钥发布端点 | `GET /api/roster/keys` | ✅ |
 | 生产密钥硬化：内联 PEM / 文件挂载 / production 无钥拒启 | `http/rsk.ts` | ✅ |
 | 启动装配：四组件一次装配、快照恢复、信号优雅落盘 | `state/boot.ts` | ✅ |

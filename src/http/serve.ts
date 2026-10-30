@@ -35,6 +35,7 @@ import {
 } from '../state/boot.js';
 import { kernelStats } from '../state/stats.js';
 import { createDecisionTraceSink } from '../observability/decision-trace-sink.js';
+import { createDecisionTraceBuffer } from '../observability/trace.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
@@ -128,10 +129,21 @@ async function main(): Promise<void> {
   const decisionTraceSink = process.env.ZEUS_DECISION_TRACE_FILE
     ? createDecisionTraceSink(process.env.ZEUS_DECISION_TRACE_FILE)
     : null;
-  const decision = await resolveDecisionConfigWithHub(
-    process.env,
-    decisionTraceSink ? { onTrace: decisionTraceSink.onTrace } : {},
-  );
+  // TracePort v1 §2: every model call's DecisionTrace lands in the trace-tree
+  // assembly buffer (S6 projection input); when the JSONL ledger is configured
+  // the same record feeds it. One hook, both consumers, decision path untouched.
+  const decisionTraceBuffer = createDecisionTraceBuffer();
+  const decision = await resolveDecisionConfigWithHub(process.env, {
+    onTrace: trace => {
+      decisionTraceBuffer.add(trace);
+      decisionTraceSink?.onTrace(trace);
+    },
+    // TracePort v1 §6 (D-7): usage reports are fire-and-forget; surface their
+    // failures to the operator log without ever touching the decision path.
+    onUsageReportFailed: reason => {
+      log.error('usage-report-failed', reason);
+    },
+  });
   const memoryServiceTokens = parseMemoryServiceTokens(process.env.ZEUS_MEMORY_SERVICE_TOKENS);
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.
@@ -207,6 +219,9 @@ async function main(): Promise<void> {
       process.stderr.write(mirrorAuditEntry(entry));
     },
     ...(decision.backend ? { decisionBackend: decision.backend } : {}),
+    // TracePort v1 §2: the settled-trace exporter assembles model spans from
+    // the same buffer the /trace endpoint reads.
+    decisionTraceBuffer,
     judgeEnabled: decision.judgeEnabled,
     ...(decision.judgeThreshold !== undefined ? { judgeThreshold: decision.judgeThreshold } : {}),
     ...(decision.allowUncalibratedJudge !== undefined
@@ -428,6 +443,9 @@ async function main(): Promise<void> {
     oversight: kernel.oversight,
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,
+    ...(kernel.decisionTraceBuffer ? { decisionTraceBuffer: kernel.decisionTraceBuffer } : {}),
+    // TracePort v1 §5 (D-5): same instance serves the cross-intent query face.
+    ...(kernel.traceExporter ? { traceExporter: kernel.traceExporter } : {}),
     ...(sseMaxStreams !== undefined ? { sseMaxStreams } : {}),
     ...(sseAttachGraceMs !== undefined ? { sseAttachGraceMs } : {}),
     // Transport faults whose HTTP/JSON-RPC body stays generic keep their raw

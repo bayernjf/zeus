@@ -85,6 +85,52 @@ describe('decision trace sink', () => {
     }
   });
 
+  it('records reasoning/cache-read tokens and the estimate flag from the usage block', () => {
+    const { dir, path } = tempFile('trace.jsonl');
+    try {
+      const sink = createDecisionTraceSink(path);
+      sink.onTrace(trace({
+        usage: {
+          inputTokens: 10,
+          outputTokens: 4,
+          reasoningTokens: 6,
+          cacheReadTokens: 3,
+          tokensEstimated: true,
+        },
+      }));
+      const [record] = readRecords(path);
+      expect(record).toMatchObject({
+        tokens_in: 10,
+        tokens_out: 4,
+        reasoning_tokens: 6,
+        cache_read_tokens: 3,
+        tokens_estimated: true,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps token counts from the usage block even when unit prices are unknown', () => {
+    const { dir, path } = tempFile('trace.jsonl');
+    try {
+      const sink = createDecisionTraceSink(path);
+      const measured = trace();
+      delete measured.cost;
+      measured.usage = { inputTokens: 7, outputTokens: 2 };
+      sink.onTrace(measured);
+      const [record] = readRecords(path);
+      expect(record!.tokens_in).toBe(7);
+      expect(record!.tokens_out).toBe(2);
+      expect(record!.cost_micros).toBeNull();
+      expect(record).not.toHaveProperty('reasoning_tokens');
+      expect(record).not.toHaveProperty('cache_read_tokens');
+      expect(record).not.toHaveProperty('tokens_estimated');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('redacts credentials in the question, result, and error fields', () => {
     const { dir, path } = tempFile('trace.jsonl');
     try {

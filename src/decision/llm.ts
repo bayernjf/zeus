@@ -53,6 +53,12 @@ export type LlmUsageReport = {
   inputTokens: number;
   outputTokens: number;
   latencyMs: number;
+  /** Provider-reported detail counters (TracePort v1 §6 D-7); absent when the
+   *  provider response carries none. */
+  reasoningTokens?: number;
+  cacheReadTokens?: number;
+  /** True when any token count fell back to the ~4 chars/token estimate. */
+  tokensEstimated?: boolean;
 };
 
 export function createLlmBackend(config: LlmConfig): DecisionBackend {
@@ -66,7 +72,12 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
     systemPrompt: string,
     userPrompt: string,
     requestTokens: number
-  ): Promise<{ parsed: Record<string, unknown>; latencyMs: number; inputTokens: number; outputTokens: number; stateKeys: string[] }> {
+  ): Promise<{
+    parsed: Record<string, unknown>;
+    latencyMs: number;
+    tokens: Omit<LlmUsageReport, 'kind' | 'latencyMs'>;
+    stateKeys: string[];
+  }> {
     const timeoutMs = request.maxWaitMs ?? config.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS;
     const started = Date.now();
     const { state, stateKeys } = prepareState(request, config);
@@ -120,17 +131,34 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
       });
       throw new DecisionBackendFailure(failure.code, failure.message);
     }
-    const usage = (payload.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined) ?? {};
+    const usage = (payload.usage as {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
+      completion_tokens_details?: { reasoning_tokens?: number };
+      reasoning_tokens?: number;
+    } | undefined) ?? {};
     const inputTokens = usage.prompt_tokens ?? requestTokens + estimateTokens(stateText);
     const outputTokens = usage.completion_tokens ?? estimateTokens(content);
+    const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens;
+    const cacheReadTokens = usage.prompt_tokens_details?.cached_tokens;
+    const tokens = {
+      inputTokens,
+      outputTokens,
+      ...(reasoningTokens !== undefined ? { reasoningTokens } : {}),
+      ...(cacheReadTokens !== undefined ? { cacheReadTokens } : {}),
+      ...(usage.prompt_tokens === undefined || usage.completion_tokens === undefined
+        ? { tokensEstimated: true }
+        : {}),
+    };
     if (config.onUsage) {
       try {
-        config.onUsage({ kind, inputTokens, outputTokens, latencyMs });
+        config.onUsage({ kind, latencyMs, ...tokens });
       } catch {
         /* usage observers are optional; the decision call wins */
       }
     }
-    return { parsed, latencyMs, inputTokens, outputTokens, stateKeys };
+    return { parsed, latencyMs, tokens, stateKeys };
   }
 
   function emitCost(
@@ -139,21 +167,20 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
     stateKeys: string[],
     result: unknown,
     latencyMs: number,
-    inputTokens: number,
-    outputTokens: number
+    tokens: Omit<LlmUsageReport, 'kind' | 'latencyMs'>
   ): void {
     const cost =
       config.inputUsdPerMillion !== undefined && config.outputUsdPerMillion !== undefined
         ? {
-            inputTokens,
-            outputTokens,
-            cents: (inputTokens / 1_000_000) * config.inputUsdPerMillion! * 100 + (outputTokens / 1_000_000) * config.outputUsdPerMillion! * 100,
+            inputTokens: tokens.inputTokens,
+            outputTokens: tokens.outputTokens,
+            cents: (tokens.inputTokens / 1_000_000) * config.inputUsdPerMillion! * 100 + (tokens.outputTokens / 1_000_000) * config.outputUsdPerMillion! * 100,
           }
         : undefined;
     sink.emit({
       runId: request.runId, backend: 'llm', model: config.model,
       request: { kind, question: request.question, stateKeys },
-      result, latencyMs, ...(cost ? { cost } : {}),
+      result, latencyMs, usage: tokens, ...(cost ? { cost } : {}),
     });
   }
 
@@ -161,7 +188,7 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
     kind: 'llm',
     model: config.model,
     async noul(request: NoulRequest): Promise<NoulResult> {
-      const { parsed, latencyMs, inputTokens, outputTokens, stateKeys } = await completeJson(
+      const { parsed, latencyMs, tokens, stateKeys } = await completeJson(
         'noul', request,
         'You are a decision engine. Answer only with the requested JSON; no prose.',
         `Proposition: ${request.question}\nReturn {"probability": <0..1 truth probability>, "confidence": <0..1 self-assessed confidence>}.`,
@@ -173,11 +200,11 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
         calibrated: false,
         decisionAt: now().toISOString(),
       };
-      emitCost('noul', request, stateKeys, result, latencyMs, inputTokens, outputTokens);
+      emitCost('noul', request, stateKeys, result, latencyMs, tokens);
       return result;
     },
     async choice(request: ChoiceRequest): Promise<ChoiceResult> {
-      const { parsed, latencyMs, inputTokens, outputTokens, stateKeys } = await completeJson(
+      const { parsed, latencyMs, tokens, stateKeys } = await completeJson(
         'choice', request,
         'You are a decision engine. Choose exactly one of the given options. Answer only with the requested JSON.',
         `Question: ${request.question}\nOptions: ${request.options.join(' | ')}\nReturn {"choice": <one option>, "probabilities": {<option>: <0..1>}, "confidence": <0..1>}.`,
@@ -201,11 +228,11 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
         calibrated: false,
         decisionAt: now().toISOString(),
       };
-      emitCost('choice', request, stateKeys, result, latencyMs, inputTokens, outputTokens);
+      emitCost('choice', request, stateKeys, result, latencyMs, tokens);
       return result;
     },
     async score(request: ScoreRequest): Promise<ScoreResult> {
-      const { parsed, latencyMs, inputTokens, outputTokens, stateKeys } = await completeJson(
+      const { parsed, latencyMs, tokens, stateKeys } = await completeJson(
         'score', request,
         'You are a decision engine. Score against the given level bands. Answer only with the requested JSON.',
         `Question: ${request.question}\nLevels: ${request.levels.join(' | ')}\nReturn {"score": <0..100>, "level": <one level>, "distribution": {<level>: <0..1>}, "confidence": <0..1>}.`,
@@ -236,7 +263,7 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
         calibrated: false,
         decisionAt: now().toISOString(),
       };
-      emitCost('score', request, stateKeys, result, latencyMs, inputTokens, outputTokens);
+      emitCost('score', request, stateKeys, result, latencyMs, tokens);
       return result;
     },
   };
