@@ -147,6 +147,8 @@ export type BackendArbitration = {
   calibrated?: boolean;
   backend?: DecisionBackendKind;
   model?: string;
+  /** Measured backend-call duration (TracePort v1 §2); absent on skip paths. */
+  latencyMs?: number;
   error?: DecisionBackendError;
   decidedAt: string;
 };
@@ -165,6 +167,8 @@ export type JudgeReview = {
   escalated?: boolean;
   backend?: DecisionBackendKind;
   model?: string;
+  /** Measured backend-call duration (TracePort v1 §2); absent on skip paths. */
+  latencyMs?: number;
   error?: DecisionBackendError;
   /** Why judging did not produce a gated recommendation. */
   reason?: 'rule-inconclusive' | 'single-stance' | 'below-threshold' | 'uncalibrated' | 'backend-failure';
