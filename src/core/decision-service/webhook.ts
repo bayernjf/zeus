@@ -4,9 +4,18 @@
  *
  * Contract:
  *  - HMAC-SHA256 over the exact JSON body, `x-zeus-signature: sha256=<hex>`;
- *    receivers verify it before trusting the payload.
+ *    receivers verify it before trusting the payload. **Legacy body-only
+ *    signature — kept during the v2 rollout so an unupgraded receiver keeps
+ *    working; remove once every receiver verifies v2.**
+ *  - v2 freshness headers (replay defense), regenerated on every attempt:
+ *      x-zeus-webhook-timestamp: unix seconds
+ *      x-zeus-webhook-nonce:     random hex, unique per attempt
+ *      x-zeus-webhook-signature: sha256=<HMAC over "<ts>\n<nonce>\n<body>">
+ *    Receivers reject a stale timestamp (default 5 min skew) or a nonce that
+ *    was already consumed.
  *  - `x-zeus-delivery-id: <decisionId>:<type>:<at>` is deterministic per
  *    transition so a receiver can dedupe retries (at-least-once delivery).
+ *    The per-attempt nonce is deliberately different from this id.
  *  - Retryable failures (network error, 5xx, 429) get a small bounded
  *    exponential backoff; a 4xx other than 429 is a business rejection and
  *    is not retried.
@@ -14,7 +23,7 @@
  *    and never writes back into the kernel. Real external channels stay
  *    external — this module only ships the local delivery mechanism.
  */
-import { createHmac } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import type { DecisionEvent, DecisionEventSink } from './events.js';
 
 export interface DecisionWebhookSubscription {
@@ -61,9 +70,20 @@ export interface DecisionWebhookDispatcherDeps {
   baseBackoffMs?: number;
 }
 
-/** Compute the header signature a receiver must verify. */
+/** Compute the legacy body-only header signature a receiver must verify. */
 export function signWebhookBody(secret: string, body: string): string {
   return `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
+}
+
+/**
+ * v2 signature binding the freshness headers to the body. The signed string
+ * is exactly `<unixSeconds>\n<nonce>\n<body>` with LF separators; both sides
+ * must construct it identically.
+ */
+export function signWebhookPayload(secret: string, timestamp: string, nonce: string, body: string): string {
+  return `sha256=${createHmac('sha256', secret)
+    .update(`${timestamp}\n${nonce}\n${body}`)
+    .digest('hex')}`;
 }
 
 /** Deterministic per-transition idempotency key. */
@@ -101,13 +121,22 @@ export class DecisionWebhookDispatcher implements DecisionEventSink {
   /** Deliver to one subscription; never throws. */
   private async deliver(subscription: DecisionWebhookSubscription, event: DecisionEvent): Promise<void> {
     const body = JSON.stringify(event);
-    const headers = {
-      'content-type': 'application/json',
-      'x-zeus-delivery-id': webhookDeliveryId(event),
-      'x-zeus-signature': signWebhookBody(subscription.secret, body),
-    };
+    // Legacy body-only signature stays during the v2 rollout; the freshness
+    // headers and v2 signature are regenerated per attempt (a retried request
+    // is a fresh, independently signed delivery, never a captured replay).
+    const legacySignature = signWebhookBody(subscription.secret, body);
     let attempt = 0;
     for (;;) {
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const nonce = randomBytes(16).toString('hex');
+      const headers = {
+        'content-type': 'application/json',
+        'x-zeus-delivery-id': webhookDeliveryId(event),
+        'x-zeus-signature': legacySignature,
+        'x-zeus-webhook-timestamp': timestamp,
+        'x-zeus-webhook-nonce': nonce,
+        'x-zeus-webhook-signature': signWebhookPayload(subscription.secret, timestamp, nonce, body),
+      };
       let status: number | undefined;
       try {
         const response = await this.fetchImpl(subscription.url, { method: 'POST', headers, body });
