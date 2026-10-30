@@ -14,6 +14,8 @@ import { ProgressHub } from '../orchestrator/progress.js';
 import { settledCounts, streamViewFromProgress } from '../orchestrator/progress-view.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
 import { buildTraceTree, type DecisionTraceBuffer } from '../observability/trace.js';
+import type { JsonlTraceExporter } from '../observability/exporter.js';
+import { MAX_QUERY_LIMIT, queryTraceTrees } from '../observability/trace-query.js';
 import type { MetricsHistory } from '../observability/metrics-history.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
@@ -228,6 +230,12 @@ export type HttpDeps = {
    * intent trace tree. Absent = the tree has no model spans.
    */
   decisionTraceBuffer?: DecisionTraceBuffer;
+  /**
+   * TracePort v1 §5 (D-5): the JSONL trace exporter. Present, the cross-intent
+   * query face GET /api/v1/traces is mounted over its in-memory index; absent,
+   * no query face (default build stays exporter-less).
+   */
+  traceExporter?: JsonlTraceExporter;
   /** H2: live inventory of what the kernel holds and whether it persists. */
   kernelStats?: () => KernelStats;
   /** H2 (E9.3): department establishment chart, staffing and accountability. */
@@ -1144,6 +1152,55 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
                 },
               }
             : {}),
+        });
+      });
+    }
+
+    // TracePort v1 §5 (D-5): cross-intent trace query over the JSONL export's
+    // in-memory index (single-operator scale). Bearer-gated like every other
+    // observability face; payloads are redacted and bounded per D-4 in the
+    // query layer before anything leaves the process.
+    if (deps.traceExporter) {
+      const traceExporter = deps.traceExporter;
+      app.get('/api/v1/traces', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const q = request.query as Record<string, string | undefined>;
+        const param = (name: string): string | undefined => {
+          const v = q[name];
+          return v === undefined || v === '' ? undefined : v;
+        };
+        const from = param('from');
+        const to = param('to');
+        if (from !== undefined && Number.isNaN(Date.parse(from))) {
+          return error(reply, 400, 'invalid_request', 'from must be an ISO timestamp');
+        }
+        if (to !== undefined && Number.isNaN(Date.parse(to))) {
+          return error(reply, 400, 'invalid_request', 'to must be an ISO timestamp');
+        }
+        const microsOk = (v: string | undefined): boolean => {
+          if (v === undefined) return true;
+          const n = Number(v);
+          return Number.isInteger(n) && n >= 0;
+        };
+        const minCostRaw = param('min_cost_micros');
+        const maxCostRaw = param('max_cost_micros');
+        if (!microsOk(minCostRaw)) return error(reply, 400, 'invalid_request', 'min_cost_micros must be a non-negative integer');
+        if (!microsOk(maxCostRaw)) return error(reply, 400, 'invalid_request', 'max_cost_micros must be a non-negative integer');
+        const limitRaw = param('limit');
+        if (limitRaw !== undefined) {
+          const n = Number(limitRaw);
+          if (!Number.isInteger(n) || n < 1) return error(reply, 400, 'invalid_request', 'limit must be a positive integer');
+        }
+        const agent = param('agent');
+        const traceId = param('trace_id');
+        const trees = await traceExporter.readBack();
+        return queryTraceTrees(trees, {
+          ...(agent !== undefined ? { agent } : {}),
+          ...(from !== undefined ? { from } : {}),
+          ...(to !== undefined ? { to } : {}),
+          ...(minCostRaw !== undefined ? { minCostMicros: Number(minCostRaw) } : {}),
+          ...(maxCostRaw !== undefined ? { maxCostMicros: Number(maxCostRaw) } : {}),
+          ...(traceId !== undefined ? { traceId } : {}),
+          ...(limitRaw !== undefined ? { limit: Math.min(Number(limitRaw), MAX_QUERY_LIMIT) } : {}),
         });
       });
     }

@@ -138,9 +138,11 @@ export type KernelBoot = KernelComponents & {
   retention: RetentionMode;
   /**
    * S6 V3: trace exporter attached when `traceExportFile` was set, otherwise
-   * undefined (the narrow port stays unattached — default is off).
+   * undefined (the default build stays exporter-less). Typed concretely so the
+   * HTTP layer can serve the D-5 query face off the same instance's read side
+   * (readBack); the write side still satisfies the narrow TraceExporter port.
    */
-  traceExporter?: TraceExporter;
+  traceExporter?: JsonlTraceExporter;
   /**
    * TracePort v1 §2: the DecisionTrace registry the trace tree assembles model
    * spans from. Wired by the process entry (the same onTrace hook feeds the
@@ -334,7 +336,7 @@ async function assembleKernel(
   // a caller names a local file — the default build stays exactly V1/V2 (no
   // exporter, live window only). Both are local-file JSONL; nothing leaves the
   // machine through them.
-  const traceExporter: TraceExporter | undefined = options.traceExportFile
+  const traceExporter: JsonlTraceExporter | undefined = options.traceExportFile
     ? new JsonlTraceExporter(options.traceExportFile)
     : undefined;
   const metricsHistory: MetricsHistory | undefined = options.metricsHistoryFile

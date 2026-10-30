@@ -444,6 +444,8 @@ async function main(): Promise<void> {
     metrics: kernel.metrics,
     progressHub: kernel.progressHub,
     ...(kernel.decisionTraceBuffer ? { decisionTraceBuffer: kernel.decisionTraceBuffer } : {}),
+    // TracePort v1 §5 (D-5): same instance serves the cross-intent query face.
+    ...(kernel.traceExporter ? { traceExporter: kernel.traceExporter } : {}),
     ...(sseMaxStreams !== undefined ? { sseMaxStreams } : {}),
     ...(sseAttachGraceMs !== undefined ? { sseAttachGraceMs } : {}),
     // Transport faults whose HTTP/JSON-RPC body stays generic keep their raw
