@@ -41,6 +41,10 @@ export interface DecisionTraceRecord {
   error?: string;
   tokens_in: number;
   tokens_out: number;
+  reasoning_tokens?: number;
+  cache_read_tokens?: number;
+  /** True when token counts came from the ~4 chars/token estimate. */
+  tokens_estimated?: boolean;
   /** Family-wide cost unit (TracePort v1 §2); DecisionTrace computes cents. */
   cost_micros: number | null;
   latency_ms: number;
@@ -60,8 +64,13 @@ export function createDecisionTraceSink(filePath: string): {
       question: clip(trace.request.question),
       ...(trace.result !== undefined ? { result: clip(stringifyValue(trace.result)) } : {}),
       ...(trace.error !== undefined ? { error: clip(stringifyValue(trace.error)) } : {}),
-      tokens_in: trace.cost?.inputTokens ?? 0,
-      tokens_out: trace.cost?.outputTokens ?? 0,
+      // TracePort v1 §2: token counts come from the provider usage block when
+      // present, falling back to the cost block's audit estimate.
+      tokens_in: trace.usage?.inputTokens ?? trace.cost?.inputTokens ?? 0,
+      tokens_out: trace.usage?.outputTokens ?? trace.cost?.outputTokens ?? 0,
+      ...(trace.usage?.reasoningTokens !== undefined ? { reasoning_tokens: trace.usage.reasoningTokens } : {}),
+      ...(trace.usage?.cacheReadTokens !== undefined ? { cache_read_tokens: trace.usage.cacheReadTokens } : {}),
+      ...(trace.usage?.tokensEstimated ? { tokens_estimated: true } : {}),
       cost_micros: trace.cost ? Math.round(trace.cost.cents * 10_000) : null,
       latency_ms: trace.latencyMs,
       decided_at: trace.decidedAt,
