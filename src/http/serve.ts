@@ -128,10 +128,14 @@ async function main(): Promise<void> {
   const decisionTraceSink = process.env.ZEUS_DECISION_TRACE_FILE
     ? createDecisionTraceSink(process.env.ZEUS_DECISION_TRACE_FILE)
     : null;
-  const decision = await resolveDecisionConfigWithHub(
-    process.env,
-    decisionTraceSink ? { onTrace: decisionTraceSink.onTrace } : {},
-  );
+  const decision = await resolveDecisionConfigWithHub(process.env, {
+    ...(decisionTraceSink ? { onTrace: decisionTraceSink.onTrace } : {}),
+    // TracePort v1 §6 (D-7): usage reports are fire-and-forget; surface their
+    // failures to the operator log without ever touching the decision path.
+    onUsageReportFailed: reason => {
+      log.error('usage-report-failed', reason);
+    },
+  });
   const memoryServiceTokens = parseMemoryServiceTokens(process.env.ZEUS_MEMORY_SERVICE_TOKENS);
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.

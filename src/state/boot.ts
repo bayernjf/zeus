@@ -1448,7 +1448,7 @@ function applyJudgeSettings(
  */
 export async function resolveDecisionConfigWithHub(
   env: NodeJS.ProcessEnv = process.env,
-  options: BackendOptions = {},
+  options: BackendOptions & { onUsageReportFailed?: (reason: string) => void } = {},
 ): Promise<ProcessDecisionConfig> {
   const hub = readHubWiring(env);
 
