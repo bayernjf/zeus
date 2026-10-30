@@ -1,16 +1,21 @@
 import {
   initModelKit,
+  reportUsageInBackground,
   type ModelKit,
   type PingResult,
   type ResolvedModel,
   type TestResult,
 } from '@model-hub/model-kit';
-import { createLlmBackend } from './llm.js';
+import { createLlmBackend, type LlmUsageReport } from './llm.js';
 import {
   DecisionBackendFailure,
   type BackendOptions,
   type DecisionBackend,
 } from './types.js';
+
+/** The hub attributes usage to the token's project regardless of this body
+ *  field; like loom, we report the calling project's slug for readability. */
+const HUB_PROJECT_SLUG = 'zeus';
 
 /** L3/L4 test surface exposed to the operator console. */
 export type HubTestPort = {
@@ -65,6 +70,22 @@ export async function createHubDecisionBackend(
     cachePath: options.cachePath,
     ...(options.fetchImpl ? { fetch: options.fetchImpl } : {}),
   });
+  const reportFetch = options.fetchImpl ?? fetch;
+
+  // Fire-and-forget usage report after each successful decision call, mirroring
+  // model-kit's own chat() reporting for transports that bypass it. postUsage
+  // swallows transport failures, so the decision path is never affected.
+  function reportUsage(resolved: ResolvedModel, usage: LlmUsageReport): void {
+    void reportUsageInBackground(options.hubUrl, options.token, reportFetch, {
+      project: HUB_PROJECT_SLUG,
+      feature: resolved.alias ?? 'decision',
+      billingSource: resolved.source === 'byok' ? 'byok' : 'builtin',
+      model: resolved,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      httpStatus: 200,
+    });
+  }
 
   // Publish the resolver for pre-wiring consumers (memory embedder); an
   // unresolved alias surfaces as null rather than a throw.
@@ -108,6 +129,7 @@ export async function createHubDecisionBackend(
       ...(resolved.pricing?.output_usd_per_million !== undefined
         ? { outputUsdPerMillion: resolved.pricing.output_usd_per_million }
         : {}),
+      onUsage: (usage) => reportUsage(resolved, usage),
     });
   }
 

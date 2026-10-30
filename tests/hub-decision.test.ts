@@ -61,8 +61,12 @@ const catalog: CatalogResponse = {
   ],
 };
 
-// Record which model each provider call used.
-function routingFetch(calls: Array<{ model: string }>): typeof fetch {
+// Record which model each provider call used; optionally capture the usage
+// reports the backend fires at the hub in the background.
+function routingFetch(
+  calls: Array<{ model: string }>,
+  usageReports?: Array<Record<string, unknown>>,
+): typeof fetch {
   const answerFor = (model: string) => {
     if (model === 'model-noul') {
       return { probability: 0.7, confidence: 0.8 };
@@ -77,6 +81,12 @@ function routingFetch(calls: Array<{ model: string }>): typeof fetch {
     const url = String(input);
     if (url.includes('/pub/v1/models')) {
       return new Response(JSON.stringify(catalog), { status: 200 });
+    }
+    if (url.includes('/pub/v1/usage')) {
+      if (usageReports) {
+        usageReports.push(JSON.parse((init?.body as string) ?? '{}') as Record<string, unknown>);
+      }
+      return new Response(null, { status: 204 });
     }
     const body = JSON.parse((init?.body as string) ?? '{}') as {
       model: string;
@@ -134,6 +144,69 @@ describe('createHubDecisionBackend', () => {
       'model-choice',
       'model-score',
     ]);
+  });
+
+  it('reports usage to the hub after each decision call', async () => {
+    const calls: Array<{ model: string }> = [];
+    const reports: Array<Record<string, unknown>> = [];
+    const fetchImpl = routingFetch(calls, reports);
+    const { backend } = await createHubDecisionBackend({
+      hubUrl: 'https://hub.local',
+      token: 'tok',
+      cachePath: join(dir, 'cache.json'),
+      fetchImpl,
+    });
+
+    await backend.noul({
+      state: {},
+      instructions: '',
+      runId: 'r1',
+      realm: 'personal',
+      question: 'q',
+    });
+    // The report is fired in the background; flush the task queue.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      project: 'zeus',
+      feature: 'noul',
+      billing_source: 'builtin',
+      provider: 'model-noul',
+      model: 'model-noul',
+      assignment_id: 'asn_noul',
+      input_tokens: 5,
+      output_tokens: 3,
+      http_status: 200,
+      cached: false,
+    });
+    expect((reports[0]?.ts as string).length).toBeGreaterThan(0);
+  });
+
+  it('still decides when the hub usage endpoint is unreachable', async () => {
+    const calls: Array<{ model: string }> = [];
+    const raw = routingFetch(calls);
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/pub/v1/usage')) {
+        throw new Error('hub down');
+      }
+      return raw(input, init);
+    }) as typeof fetch;
+    const { backend } = await createHubDecisionBackend({
+      hubUrl: 'https://hub.local',
+      token: 'tok',
+      cachePath: join(dir, 'cache.json'),
+      fetchImpl,
+    });
+
+    const result = await backend.noul({
+      state: {},
+      instructions: '',
+      runId: 'r1',
+      realm: 'personal',
+      question: 'q',
+    });
+    expect(result.probability).toBe(0.7);
   });
 });
 

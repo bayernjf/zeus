@@ -12,6 +12,12 @@ import {
 } from '../src/core/index.js';
 import { DEFAULT_POLICY_V1 } from '../src/core/grading/default-policy.js';
 import type { DecisionPolicy } from '../src/core/grading/policy.js';
+import type {
+  DecisionAuditEntry,
+  DecisionAuditInput,
+  DecisionListFilter,
+  DecisionRecord,
+} from '../src/core/index.js';
 
 function harnessed(now: { t: string } = { t: '2026-10-22T00:00:00.000Z' }) {
   const signer = new Ed25519MemorySigner('audit-seal-test');
@@ -132,6 +138,57 @@ describe('T-M1-06 DecisionService: approval lifecycle', () => {
     expect(rejected.status).toBe('rejected');
     expect(rejected.result?.outcome).toBe('rejected');
     expect(audit.list()[1]?.payload.kind).toBe('decision.rejected');
+  });
+
+  it('keeps the stored record untouched when the approval audit entry cannot be sealed', async () => {
+    const { service, audit, policyStore, recordStore, now } = harnessed();
+    const created = await service.createDecision({
+      ...baseReq,
+      impact: 'org',
+      reversibility: 'hard',
+      amount: { value: 1000, currency: 'CNY' },
+    });
+
+    // Cloning wrappers around the same store: the memory store hands out
+    // records by reference, so without the copies a mutated-but-never-persisted
+    // record would be indistinguishable from a persisted one.
+    const snapshotStore = {
+      put: (record: DecisionRecord) => recordStore.put(structuredClone(record)),
+      get: (id: string) => {
+        const found = recordStore.get(id);
+        return found === undefined ? undefined : structuredClone(found);
+      },
+      findByIdempotencyKey: (key: string) => {
+        const found = recordStore.findByIdempotencyKey(key);
+        return found === undefined ? undefined : structuredClone(found);
+      },
+      list: (filter?: DecisionListFilter) => recordStore.list(filter).map(r => structuredClone(r)),
+    };
+    const sealed = audit.append.bind(audit);
+    const failingAudit = {
+      append: (input: DecisionAuditInput): Promise<DecisionAuditEntry> =>
+        input.kind === 'decision.approved'
+          ? Promise.reject(new Error('audit disk full'))
+          : sealed(input),
+    };
+    const broken = new DecisionService({
+      policyStore,
+      recordStore: snapshotStore,
+      audit: failingAudit,
+      clock: () => now.t,
+    });
+
+    await expect(
+      broken.approve(created.id, { decision: 'approve', approver: 'owner' }),
+    ).rejects.toThrow('audit disk full');
+    expect(recordStore.get(created.id)?.status).toBe('blocked');
+    expect(recordStore.get(created.id)?.approvals).toHaveLength(0);
+    expect(audit.list().some(e => e.payload.kind === 'decision.approved')).toBe(false);
+
+    // The healthy service still approves the same record afterwards: the
+    // failed attempt left no poisoned state behind.
+    const approved = await service.approve(created.id, { decision: 'approve', approver: 'owner' });
+    expect(approved.status).toBe('decided');
   });
 
   it('refuses approval on a settled decision', async () => {

@@ -259,7 +259,10 @@ export class DecisionService {
       record.status = 'rejected';
       record.result = { outcome: 'rejected', at, approver: body.approver, ...(body.comment !== undefined ? { comment: body.comment } : {}) };
     }
-    await this.deps.recordStore.put(record);
+    // Seal the audit entry before persisting, same ordering as createDecision
+    // and applyTimeout: a failed append then leaves the stored record
+    // untouched, so the verdict can never land as a state change with no
+    // audit trail behind it.
     const entry = await this.deps.audit.append({
       kind: body.decision === 'approve' ? 'decision.approved' : 'decision.rejected',
       decisionId,
