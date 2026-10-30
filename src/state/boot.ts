@@ -586,7 +586,8 @@ async function assembleKernel(
         ts: now().toISOString(),
         vassal: 'memory',
         decision: 'memory-embed-external',
-        detail: `hash=${entry.hash} ok=${entry.ok} latencyMs=${entry.latencyMs}${entry.reason ? ` reason=${entry.reason}` : ''}`,
+        // P2-5: the realm scope identifies whose memory the call served.
+        detail: `hash=${entry.hash} ok=${entry.ok} latencyMs=${entry.latencyMs}${entry.realmId ? ` realmId=${entry.realmId}` : ''}${entry.reason ? ` reason=${entry.reason}` : ''}`,
       }),
   });
   const memoryStore = new MemoryStore(memoryAudit, now, { embedder: memoryEmbedder });

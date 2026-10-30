@@ -167,7 +167,7 @@ export class MemoryStore {
   async buildRecall(realmId: string): Promise<RecallIndex> {
     let index = this.indexesByRealm.get(realmId);
     if (!index || index.dimension !== this.embedder.dimension) {
-      index = new RecallIndex(this.embedder);
+      index = new RecallIndex(this.embedder, realmId);
       this.indexesByRealm.set(realmId, index);
     }
     await index.sync(this.factsByRealm.get(realmId) ?? []);

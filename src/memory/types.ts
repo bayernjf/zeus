@@ -145,9 +145,19 @@ export interface RetractionRecord {
  * space currently served, and a change of dimension (hub ↔ local fallback)
  * tells the store to rebuild the index.
  */
+/**
+ * Per-call context for embed requests. The hub-backed embedder carries the
+ * realm scope into its external-call audit lines (P2-5) so the operator can
+ * tell which realm's memory an embedding call served; the local embedder
+ * ignores it (no external call, no audit line).
+ */
+export interface EmbedContext {
+  realmId?: string;
+}
+
 export interface Embedder {
   readonly dimension: number;
-  embed(text: string): Promise<number[]>;
+  embed(text: string, ctx?: EmbedContext): Promise<number[]>;
 }
 
 /** Outcome of a decay pass (MemoryPort contract v1 §5.2). */
