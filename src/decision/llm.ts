@@ -37,9 +37,23 @@ export type LlmConfig = BackendOptions & {
    */
   temperature?: number;
   defaultTimeoutMs?: number;
+  /**
+   * Optional usage observer, invoked once per successful backend call with the
+   * token counts taken from the response (estimated when the provider omits
+   * usage). Observer failures never break the decision call.
+   */
+  onUsage?: (usage: LlmUsageReport) => void;
 };
 
 const DEFAULT_TIMEOUT_MS = 15000;
+
+/** One successful backend call's measured usage, for hub usage reporting. */
+export type LlmUsageReport = {
+  kind: 'noul' | 'choice' | 'score';
+  inputTokens: number;
+  outputTokens: number;
+  latencyMs: number;
+};
 
 export function createLlmBackend(config: LlmConfig): DecisionBackend {
   const fetchImpl = config.fetchImpl ?? fetch;
@@ -109,6 +123,13 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
     const usage = (payload.usage as { prompt_tokens?: number; completion_tokens?: number } | undefined) ?? {};
     const inputTokens = usage.prompt_tokens ?? requestTokens + estimateTokens(stateText);
     const outputTokens = usage.completion_tokens ?? estimateTokens(content);
+    if (config.onUsage) {
+      try {
+        config.onUsage({ kind, inputTokens, outputTokens, latencyMs });
+      } catch {
+        /* usage observers are optional; the decision call wins */
+      }
+    }
     return { parsed, latencyMs, inputTokens, outputTokens, stateKeys };
   }
 
