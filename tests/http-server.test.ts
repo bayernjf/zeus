@@ -11,6 +11,9 @@ import {
   classifyOrgError,
   createHttpServer,
   constantTimeEqual,
+  mapCatalogueError,
+  mapKernelError,
+  mapOrgError,
   DEFAULT_HTTP_HOST,
   DEFAULT_HTTP_PORT,
   startServer,
@@ -307,13 +310,48 @@ describe('domain error -> HTTP status classification', () => {
       .toEqual({ status: 409, code: 'conflict' });
   });
 
-  it('does not classify an untyped throw by its message', () => {
+  it('does not classify an untyped throw by its message, and never as a client fault', () => {
     expect(classifyKernelError(new Error('unknown intent: x')))
-      .toEqual({ status: 400, code: 'invalid_request' });
+      .toEqual({ status: 500, code: 'internal_error' });
     expect(classifyOrgError(new Error('Unknown department dept:nope')))
-      .toEqual({ status: 400, code: 'invalid_request' });
+      .toEqual({ status: 500, code: 'internal_error' });
     expect(classifyCatalogueError(new Error('skill s not found')))
-      .toEqual({ status: 400, code: 'invalid_request' });
+      .toEqual({ status: 500, code: 'internal_error' });
+  });
+
+  it('maps untyped throws to a fixed 500 body and logs the original server-side', () => {
+    for (const mapper of [mapKernelError, mapOrgError, mapCatalogueError]) {
+      const errors: unknown[] = [];
+      let code = 0;
+      let sent: unknown;
+      const reply = {
+        code(status: number) { code = status; return this; },
+        send(body: unknown) { sent = body; return this; },
+        log: { error(entry: unknown) { errors.push(entry); } },
+      };
+      const secret = new Error('sqlite: no such table: internal_secrets at /srv/db.sqlite');
+      mapper(reply as never, secret);
+      expect(code).toBe(500);
+      expect(sent).toEqual({ error: 'internal_error', detail: 'internal error' });
+      expect(JSON.stringify(sent)).not.toContain('internal_secrets');
+      expect(errors).toHaveLength(1);
+      expect((errors[0] as { err: Error }).err).toBe(secret);
+    }
+  });
+
+  it('keeps domain error messages visible through the mappers', () => {
+    const errors: unknown[] = [];
+    let code = 0;
+    let sent: unknown;
+    const reply = {
+      code(status: number) { code = status; return this; },
+      send(body: unknown) { sent = body; return this; },
+      log: { error(entry: unknown) { errors.push(entry); } },
+    };
+    mapKernelError(reply as never, new DomainError('no such intent', 'not-found'));
+    expect(code).toBe(404);
+    expect(sent).toEqual({ error: 'not_found', detail: 'no such intent' });
+    expect(errors).toHaveLength(0);
   });
 
   it('keeps the caller-supplied handshake outcome for a non-domain throw', () => {
