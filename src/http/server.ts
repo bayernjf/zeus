@@ -13,7 +13,7 @@ import type { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { ProgressHub } from '../orchestrator/progress.js';
 import { settledCounts, streamViewFromProgress } from '../orchestrator/progress-view.js';
 import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '../orchestrator/replay.js';
-import { buildTraceTree } from '../observability/trace.js';
+import { buildTraceTree, type DecisionTraceBuffer } from '../observability/trace.js';
 import type { MetricsHistory } from '../observability/metrics-history.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
@@ -223,6 +223,11 @@ export type HttpDeps = {
   orgTaskWorker?: TaskWorker;
   /** H2 (E4.7): JSONL dispatch + governance audit log to expose read-only. */
   auditFile?: string;
+  /**
+   * TracePort v1 §2: DecisionTrace registry for model-span assembly in the
+   * intent trace tree. Absent = the tree has no model spans.
+   */
+  decisionTraceBuffer?: DecisionTraceBuffer;
   /** H2: live inventory of what the kernel holds and whether it persists. */
   kernelStats?: () => KernelStats;
   /** H2 (E9.3): department establishment chart, staffing and accountability. */
@@ -1122,7 +1127,24 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           }
         }
         const scoped = audit.filter(a => a.runId !== undefined && runIds.has(a.runId));
-        return buildTraceTree({ audit: scoped, progress });
+        // TracePort v1 §2: model spans from the intent's DecisionTrace records
+        // and decision-step spans from the settled decision layer's facts.
+        const result = deps.orchestrator?.getIntent(id);
+        const conclusion = result?.decision.conclusion;
+        return buildTraceTree({
+          audit: scoped,
+          progress,
+          ...(deps.decisionTraceBuffer ? { traces: deps.decisionTraceBuffer.forRuns(runIds) } : {}),
+          ...(result
+            ? {
+                steps: {
+                  ...(result.backendArbitration ? { arbitration: result.backendArbitration } : {}),
+                  ...(result.judgeReview ? { judge: result.judgeReview } : {}),
+                  ...(conclusion !== null && conclusion !== undefined ? { conclusion } : {}),
+                },
+              }
+            : {}),
+        });
       });
     }
 

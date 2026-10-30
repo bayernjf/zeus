@@ -8,7 +8,7 @@ import { VassalRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { ProgressHub, type ProgressEvent } from '../src/orchestrator/progress.js';
-import { buildTraceTree } from '../src/observability/trace.js';
+import { buildTraceTree, createDecisionTraceBuffer } from '../src/observability/trace.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult, AuditEntry } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
@@ -135,6 +135,52 @@ describe('S6 V2 trace endpoint', () => {
     expect(branch.kind).toBe('branch');
     expect(branch.vassal).toBe('loom');
     expect(branch.outcome).toBe('completed');
+  });
+
+  it('surfaces buffered decision traces as model spans in the endpoint tree', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'zeus-trace-'));
+    const auditFile = join(dir, 'audit.jsonl');
+    const hub = new ProgressHub();
+    orchestrator = new Orchestrator(lookupFor(['loom']), capturingPort([]), {
+      newIntentId: () => 'intent-1',
+      newRunId: () => 'run-1',
+      onProgress: e => hub.publish(e),
+    });
+    const decisionTraceBuffer = createDecisionTraceBuffer();
+    decisionTraceBuffer.add({
+      runId: 'run-1:loom',
+      backend: 'hub',
+      model: 'doubao-seed-1.6',
+      request: { kind: 'choice', question: 'route?', stateKeys: [] },
+      latencyMs: 800,
+      usage: { inputTokens: 42, outputTokens: 7 },
+      cost: { inputTokens: 42, outputTokens: 7, cents: 0.1 },
+      decidedAt: '2026-10-10T00:00:05.800Z',
+    });
+    app = await createHttpServer({
+      registry: new VassalRegistry(),
+      signer: new Ed25519MemorySigner('zeus-rsk-test'),
+      internalToken: TOKEN,
+      orchestrator,
+      progressHub: hub,
+      auditFile,
+      decisionTraceBuffer,
+      now: () => new Date('2026-10-10T00:00:00.000Z'),
+    });
+
+    const res = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'summarize', realm: 'personal' } });
+    expect(res.statusCode).toBe(200);
+
+    const trace = await app.inject({ method: 'GET', url: '/api/intents/intent-1/trace', headers: AUTH });
+    expect(trace.statusCode).toBe(200);
+    const tree = trace.json();
+    const model = tree.spans.find((s: { kind: string }) => s.kind === 'model');
+    expect(model).toBeDefined();
+    expect(model.parentSpanId).toBe('run-1:loom');
+    expect(model.call).toMatchObject({ backend: 'hub', model: 'doubao-seed-1.6', tokensIn: 42, tokensOut: 7, costMicros: 1000, latencyMs: 800 });
+    // The decision-step spans ride the same endpoint payload (TracePort v1 §2).
+    const stepIds = tree.spans.filter((s: { kind: string }) => s.kind === 'decision-step').map((s: { spanId: string }) => s.spanId);
+    expect(stepIds).toEqual(['step:aggregate', 'step:fanout']);
   });
 
   it('trace endpoint is bearer-gated like replay', async () => {

@@ -13,6 +13,7 @@ import {
 import { OversightDesk, conflictsToDesk } from '../oversight/oversight.js';
 import type { OversightAuditEntry } from '../oversight/types.js';
 import { Orchestrator } from '../orchestrator/orchestrator.js';
+import type { BackendArbitration, JudgeReview } from '../core/orchestrator/types.js';
 import { DagRunner } from '../orchestrator/dag-runner.js';
 import { PlanFlow } from '../orchestrator/plan-flow.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
@@ -35,7 +36,7 @@ import { normalizeTenant } from '../realm/tenant.js';
 import type { RealmAuditEntry } from '../realm/source.js';
 import type { RealmType, TenantScope } from '../realm/types.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
-import { buildTraceTree, type TraceExporter } from '../observability/trace.js';
+import { buildTraceTree, type DecisionTraceBuffer, type TraceExporter } from '../observability/trace.js';
 import { JsonlTraceExporter } from '../observability/exporter.js';
 import { MetricsHistory } from '../observability/metrics-history.js';
 import {
@@ -141,6 +142,12 @@ export type KernelBoot = KernelComponents & {
    */
   traceExporter?: TraceExporter;
   /**
+   * TracePort v1 §2: the DecisionTrace registry the trace tree assembles model
+   * spans from. Wired by the process entry (the same onTrace hook feeds the
+   * decision ledger); absent, tree assembly is unchanged (no model spans).
+   */
+  decisionTraceBuffer?: DecisionTraceBuffer;
+  /**
    * S6 V3: metrics history writer attached when `metricsHistoryFile` was set,
    * otherwise undefined (default is off; the live window alone keeps working).
    */
@@ -217,6 +224,12 @@ export type KernelBootOptions = {
    * traceId). Unset = no exporter, exactly the V1/V2 behaviour.
    */
   traceExportFile?: string;
+  /**
+   * TracePort v1 §2: the DecisionTrace registry the trace tree assembles model
+   * spans from (see the kernel component of the same name). Absent = no model
+   * spans, tree assembly unchanged.
+   */
+  decisionTraceBuffer?: DecisionTraceBuffer;
   /**
    * S6 V3: when set, a MetricsSnapshot is appended to this JSONL file on every
    * state save (keyed by capturedAt), answering trend questions across
@@ -944,7 +957,32 @@ async function assembleKernel(
       if ('runId' in e && e.runId !== undefined) runIds.add(e.runId);
     }
     const audit = readAuditLog(auditFile).filter(a => a.runId !== undefined && runIds.has(a.runId));
-    await exporter.export(buildTraceTree({ audit, progress }));
+    await exporter.export(buildTraceTree({
+      audit,
+      progress,
+      ...(options.decisionTraceBuffer ? { traces: options.decisionTraceBuffer.forRuns(runIds) } : {}),
+      ...decisionStepsOf(intentId),
+    }));
+  }
+
+  /**
+   * TracePort v1 §2: the decision-layer facts of a settled intent — measured
+   * arbitration/judge steps and the aggregation conclusion — for the
+   * decision-step spans. Unknown intent = no facts (nothing is guessed).
+   */
+  function decisionStepsOf(intentId: string): {
+    steps?: { arbitration?: BackendArbitration; judge?: JudgeReview; conclusion?: string };
+  } {
+    const result = orchestrator.getIntent(intentId);
+    if (!result) return {};
+    const conclusion = result.decision.conclusion;
+    return {
+      steps: {
+        ...(result.backendArbitration ? { arbitration: result.backendArbitration } : {}),
+        ...(result.judgeReview ? { judge: result.judgeReview } : {}),
+        ...(conclusion !== null ? { conclusion } : {}),
+      },
+    };
   }
 
   // deferred #27: a finished fan-out's verdicts are the kernel's only memory
@@ -1353,6 +1391,7 @@ async function assembleKernel(
     ...(intentArchive ? { intentArchive } : {}),
     retention,
     ...(traceExporter ? { traceExporter } : {}),
+    ...(options.decisionTraceBuffer ? { decisionTraceBuffer: options.decisionTraceBuffer } : {}),
     ...(metricsHistory ? { metricsHistory } : {}),
     saveState: persistLiveState,
     releaseLock: async () => {
