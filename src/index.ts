@@ -147,8 +147,8 @@ export { ConcurrencyMetrics, percentile } from './core/orchestrator/metrics.js';
 // --- S6 observability: trace projection + local exporters ---
 export { buildTraceTree } from './observability/trace.js';
 export type { TraceSpan, TraceSpanKind, TraceSpanEventKind, TraceTree, TraceExporter } from './observability/trace.js';
-export { JsonlTraceExporter } from './observability/exporter.js';
-export type { ExportedTraceRecord } from './observability/exporter.js';
+export { JsonlTraceExporter, OtlpTraceExporter } from './observability/exporter.js';
+export type { ExportedTraceRecord, OtlpTraceExporterOptions, OtlpExportPayload, OtlpSpan } from './observability/exporter.js';
 export { MetricsHistory } from './observability/metrics-history.js';
 // --- deferred #40 read-only half: execution-after failure attribution ---
 export { attributeFailures, participantsToEntries } from './reflection/failure-attribution.js';
@@ -422,6 +422,14 @@ export type {
   JsonRpcError,
   McpHandlerDeps,
 } from './realm/mcp.js';
+
+// --- G6: read-only kernel tool face over MCP (memory.recall / traces.query) ---
+export {
+  createKernelToolsMcpHandler,
+  KERNEL_MCP_PROTOCOL_VERSION,
+  KERNEL_MCP_ERROR_CODES,
+} from './mcp/kernel-tools.js';
+export type { KernelMcpActor, KernelToolsMcpDeps } from './mcp/kernel-tools.js';
 
 // --- Vault treasure map & recovery protocol (E8.1/E8.2; references only, sealed at rest) ---
 export { buildVault, parseMap, assertMap } from './vault/map.js';

@@ -148,6 +148,8 @@ const HTTP_ONLY: Record<string, string> = {
     'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent writes its own namespace over the bearer API',
   'POST /api/v1/memory/forget':
     'MemoryPort v1 §7 (ruling D-6): cross-agent erasure face behind ZEUS_MEMORY_SERVICE_TOKEN; requestedBy is pinned to memory-service, the calling agent is the driver',
+  'POST /api/mcp':
+    'G6 (design-observability §5): read-only kernel tool face over MCP JSON-RPC; the calling MCP client is the driver, memory.recall is token-namespace-bound and traces.query is driver-token only, no write tool exists on this face',
 };
 
 describe('operator surface coverage (every write route is drivable or explicitly API-only)', () => {
@@ -241,6 +243,10 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/audit/summary',
   'GET /.well-known/agent-card.json',
   'GET /mcp',
+  // G6 (design-observability §5): public MCP server metadata for the kernel
+  // tool face; deliberately carries no state about which backing stores are
+  // mounted, so there is nothing for an operator deck to read either.
+  'GET /api/mcp',
   // Decision API v1 (T-M1-06, design §4.2): machine-to-machine reads for
   // zeus-client (T-M1-07), commerce-os (M3) and loom; no operator deck.
   'GET /api/v1/decisions',

@@ -1,6 +1,6 @@
-# Zeus MCP 集成说明（v0.2）
+# Zeus MCP 集成说明（v0.3）
 
-> 状态：**现行（v0.2，2026-10-04）**。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:61-61 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
+> 状态：**现行（v0.3，2026-10-31）**。**v0.3 相对 v0.2 的改动**：新增 §1.10——内核只读工具 MCP 面 `POST /api/mcp`（G6，design-observability §5）：`memory.recall`（memory service token 绑定 namespace，跨 realm 拒绝沿用 MemoryBoundaryError）与 `traces.query`（仅 driver token，透传 `GET /api/v1/traces` 同一查询投影）；该面无写工具，remember/forget 仍走 HTTP 消费面（契约 v1 §7）。原有正文与锚点口径未变。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:61-61 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
 >
 > **本文不含未取证的说法。** 标 **实测** 的条目来自**两批**真进程捕获：**§1 服务端面**出自 2026-09-28（`dist/realm/mcp-stdio.js`，HEAD `44b100b`，Node 22.23.1 与 20.20.2 各跑一遍，归一化 `realmId` / 时间戳 / `contentDigest` 后两份输出逐字节相同）；**§2 客户端面**出自 2026-10-01（真实 stdio 上游 `dist/realm/mcp-stdio.js` 与第三方 work-learn stdio server 各完成一次实连，见该节两条记录）。标 **代码级** 的只读了实现，没有跑；标 **未验证** 的明确待验。复跑方法见 §4。
 >
@@ -18,7 +18,7 @@ MCP 在 Zeus 里同时出现在两个方向，且**不是**第三个（跨 Agent
 
 术语提醒：本文的 **Realm / 数据域** 指"一个用户目录即一个数据边界"，与 Kerberos / LDAP 的 security realm 无关（见 [terminology.md](terminology.md) 的 C 类同名异义）。对外沟通建议直说"Zeus 的数据域 MCP 服务"。
 
-**文件正文不经 HTTP 面暴露**（代码级依据：`src/http/server.ts:118 #content` 的面定义——"Realm **content** 只走 MCP stdio"；带 `realm` 字样的路由只有治理动作 `/api/realms/:id/disconnect`、`/api/realms/:id/retarget-tenant`、`/api/realm/write-grants`，加上不读正文的挂载视图 `/api/domains`——后者逐字段是 `realmId / type / tenant / readOnly / itemCount / contentDigest`，既无正文也无绝对根路径，`src/http/server.ts:2004-1983 #`）。正文只经 §1 的 stdio 通道出入，这是"数据主权在用户"这条设计约束的执行点之一。
+**文件正文不经 HTTP 面暴露**（代码级依据：`src/http/server.ts:119 #content` 的面定义——"Realm **content** 只走 MCP stdio"；带 `realm` 字样的路由只有治理动作 `/api/realms/:id/disconnect`、`/api/realms/:id/retarget-tenant`、`/api/realm/write-grants`，加上不读正文的挂载视图 `/api/domains`——后者逐字段是 `realmId / type / tenant / readOnly / itemCount / contentDigest`，既无正文也无绝对根路径，`src/http/server.ts:2004-1983 #`）。正文只经 §1 的 stdio 通道出入，这是"数据主权在用户"这条设计约束的执行点之一。
 
 ---
 
@@ -211,6 +211,21 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 | 没有写工具 | 想改用户目录请走库内 `Realm.write`（含企业域签名凭证），不是这条通道 |
 | 只有 personal 域（stdio） | stdio 宿主把类型写死为 `personal` 且 `readOnly:true`（`src/realm/mcp-stdio.ts:43-43 #personal`）。**HTTP 面例外**：realmIds 来自内核启动连接列表（可含 enterprise），企业域读取路径的隔离执行点 = 同一份 realmId 白名单（§6.5 裁定 ④）∩ actor 收窄 |
 | 没有服务端→客户端推送 | `subscribe:false` / `listChanged:false`，改了不通知（§1.2） |
+
+### 1.10 内核只读工具面：`POST /api/mcp`（v0.3 新增，G6）
+
+数据域之外，内核把两份只读事实也开成了 MCP 工具（memory service token 或 driver bearer token 双身份；`GET /api/mcp` 公开元信息，零状态）：
+
+| 工具 | 身份 | 语义 |
+|---|---|---|
+| `memory.recall` | 任意 memory service token（`ZEUS_MEMORY_SERVICE_TOKENS` 绑定一个 namespace）或 driver token | 与 `POST /api/v1/memory/recall` 同一命中形状（factId/kind/subject/predicate/object/confidence/score/provenance）；token 绑定的 namespace 覆盖任何入参声明，跨 realm 声明以 `MemoryBoundaryError` 拒绝（JSON-RPC -32004）；driver 必须显式给 namespace |
+| `traces.query` | 仅 driver token | 透传 `GET /api/v1/traces`（TracePort §5）的同一 `queryTraceTrees` 投影：agent/时间窗/成本区间/trace_id/limit 过滤 + 汇总，D-4 脱敏与 2048 字节截断随投影生效；memory service token 调用直接拒绝 |
+
+边界（与 §1.9 同一口径）：
+
+- **只读**。工具描述明示 read-only；`tools/list` 里不存在 `memory.remember`/`memory.forget`——写面留在 HTTP 消费面，因为"擦除先落盘再应答（M-12）+ 全调用审计"只在那一处背书，第二条写路径要重新背书一次而不是白拿。
+- 未挂载 backing store（无 memory store / 无 trace exporter）时对应工具按名失败（-32005），绝不回空结果冒充"不存在"。
+- 鉴权失败 401（driver token 或任一 memory service token 之外的身份不产生 actor）；未配 `ZEUS_INTERNAL_TOKEN` 整组不挂载。
 
 ---
 
