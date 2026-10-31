@@ -12,8 +12,10 @@ import {
   createHttpServer,
   constantTimeEqual,
   mapCatalogueError,
+  mapDiaryError,
   mapKernelError,
   mapOrgError,
+  mapRealmQueryError,
   DEFAULT_HTTP_HOST,
   DEFAULT_HTTP_PORT,
   startServer,
@@ -23,6 +25,9 @@ import { UnknownIntentError } from '../src/orchestrator/orchestrator.js';
 import { DuplicateSkillError, SkillNotFoundError } from '../src/skills/registry.js';
 import { OrgError } from '../src/org/types.js';
 import { ConnectorError } from '../src/mcp/connectors.js';
+import { DiaryBoundaryError, DiaryUnsupportedError } from '../src/diary/types.js';
+import { RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../src/realm/types.js';
+import { RealmSourceError } from '../src/realm/source.js';
 import type { AgentCard } from '../src/a2a/types.js';
 import type { SignedRosterSnapshot } from '../src/registry/signing.js';
 
@@ -348,6 +353,59 @@ describe('domain error -> HTTP status classification', () => {
     }
   });
 
+  it('maps an untyped diary throw to the fixed problem-details body without echoing it', () => {
+    // The message deliberately contains a keyword the retired mapper regex
+    // ("not connected", "read-only", ...) used to classify AND echo: an untyped
+    // throw must reach the fixed 500 whatever its text says.
+    const errors: unknown[] = [];
+    let code = 0;
+    let sent: unknown;
+    const reply = {
+      code(status: number) { code = status; return this; },
+      send(body: unknown) { sent = body; return this; },
+      log: { error(entry: unknown) { errors.push(entry); } },
+      request: { url: '/api/diary?date=2026-09-23' },
+    };
+    const secret = new Error('not connected to internal_secrets store at /srv/db.sqlite');
+    mapDiaryError(reply as never, secret);
+    expect(code).toBe(500);
+    expect(sent).toEqual({
+      type: 'about:blank',
+      title: 'Internal Server Error',
+      status: 500,
+      detail: 'internal error',
+      instance: '/api/diary',
+    });
+    expect(JSON.stringify(sent)).not.toContain('internal_secrets');
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as { err: Error }).err).toBe(secret);
+  });
+
+  it('maps an untyped realm-query throw to the fixed problem-details body instead of rethrowing', () => {
+    const errors: unknown[] = [];
+    let code = 0;
+    let sent: unknown;
+    const reply = {
+      code(status: number) { code = status; return this; },
+      send(body: unknown) { sent = body; return this; },
+      log: { error(entry: unknown) { errors.push(entry); } },
+      request: { url: '/api/v1/fan-out?mode=plan' },
+    };
+    const secret = new Error('sqlite: no such table: internal_secrets at /srv/db.sqlite');
+    mapRealmQueryError(reply as never, secret);
+    expect(code).toBe(500);
+    expect(sent).toEqual({
+      type: 'about:blank',
+      title: 'Internal Server Error',
+      status: 500,
+      detail: 'internal error',
+      instance: '/api/v1/fan-out',
+    });
+    expect(JSON.stringify(sent)).not.toContain('internal_secrets');
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as { err: Error }).err).toBe(secret);
+  });
+
   it('keeps domain error messages visible through the mappers', () => {
     const errors: unknown[] = [];
     let code = 0;
@@ -361,6 +419,48 @@ describe('domain error -> HTTP status classification', () => {
     expect(code).toBe(404);
     expect(sent).toEqual({ error: 'not_found', detail: 'no such intent' });
     expect(errors).toHaveLength(0);
+  });
+
+  it('keeps diary and realm-query business errors on their envelopes', () => {
+    // The untyped fallback moved to the fixed problem-details 500; every typed
+    // failure keeps the status and `{ error, detail }` body it had before.
+    const reply = (requestUrl?: string) => {
+      const errors: unknown[] = [];
+      let code = 0;
+      let sent: unknown;
+      return {
+        reply: {
+          code(status: number) { code = status; return this; },
+          send(body: unknown) { sent = body; return this; },
+          log: { error(entry: unknown) { errors.push(entry); } },
+          ...(requestUrl !== undefined ? { request: { url: requestUrl } } : {}),
+        },
+        outcome: () => ({ code, sent, logCount: errors.length }),
+      };
+    };
+
+    const diaryCases: Array<[unknown, number, unknown]> = [
+      [new UnauthorizedRealmWriteError('grant missing', 'grant-missing'), 403, { error: 'forbidden', detail: 'grant missing' }],
+      [new DiaryUnsupportedError('RealmStore has no write capability'), 409, { error: 'conflict', detail: 'RealmStore has no write capability' }],
+      [new RealmNotConnectedError('realm not connected: r1'), 409, { error: 'conflict', detail: 'realm not connected: r1' }],
+      [new DiaryBoundaryError('Diary cannot mix events from multiple realms'), 400, { error: 'invalid_request', detail: 'Diary cannot mix events from multiple realms' }],
+    ];
+    for (const [thrown, status, body] of diaryCases) {
+      const { reply: r, outcome } = reply();
+      mapDiaryError(r as never, thrown);
+      expect(outcome()).toMatchObject({ code: status, sent: body, logCount: 0 });
+    }
+
+    const realmCases: Array<[unknown, number, unknown]> = [
+      [new UnsupportedQueryError('tag search is not supported in P0'), 400, { error: 'invalid_request', detail: 'tag search is not supported in P0' }],
+      [new RealmNotConnectedError('realm not connected: r2'), 404, { error: 'not_found', detail: 'realm not connected: r2' }],
+      [new RealmSourceError({ ok: false, reason: 'unknown-realm', detail: 'no such realm' }), 403, { error: 'realm_source_refused', detail: '[unknown-realm] no such realm' }],
+    ];
+    for (const [thrown, status, body] of realmCases) {
+      const { reply: r, outcome } = reply();
+      mapRealmQueryError(r as never, thrown);
+      expect(outcome()).toMatchObject({ code: status, sent: body, logCount: 0 });
+    }
   });
 
   it('keeps the caller-supplied handshake outcome for a non-domain throw', () => {
