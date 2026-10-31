@@ -328,11 +328,20 @@ describe('domain error -> HTTP status classification', () => {
         code(status: number) { code = status; return this; },
         send(body: unknown) { sent = body; return this; },
         log: { error(entry: unknown) { errors.push(entry); } },
+        request: { url: '/api/v1/decisions?limit=5' },
       };
       const secret = new Error('sqlite: no such table: internal_secrets at /srv/db.sqlite');
       mapper(reply as never, secret);
       expect(code).toBe(500);
-      expect(sent).toEqual({ error: 'internal_error', detail: 'internal error' });
+      // Unified error contract (Tier0 review 2026-10-30 H2): the unhandled
+      // failure body is a minimal RFC 9457 ProblemDetails object.
+      expect(sent).toEqual({
+        type: 'about:blank',
+        title: 'Internal Server Error',
+        status: 500,
+        detail: 'internal error',
+        instance: '/api/v1/decisions',
+      });
       expect(JSON.stringify(sent)).not.toContain('internal_secrets');
       expect(errors).toHaveLength(1);
       expect((errors[0] as { err: Error }).err).toBe(secret);
