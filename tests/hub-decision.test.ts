@@ -82,6 +82,11 @@ function routingFetch(
     if (url.includes('/pub/v1/models')) {
       return new Response(JSON.stringify(catalog), { status: 200 });
     }
+    if (url.includes('/pub/v1/usage/summary')) {
+      // model-kit v0.2.0 polls the budget readout (GET, no body) on the same
+      // cadence as the catalog; an empty summary governs nothing.
+      return new Response(JSON.stringify({ models: [] }), { status: 200 });
+    }
     if (url.includes('/pub/v1/usage')) {
       if (usageReports) {
         usageReports.push(JSON.parse((init?.body as string) ?? '{}') as Record<string, unknown>);
