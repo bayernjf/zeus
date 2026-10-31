@@ -16,6 +16,8 @@ import { ReplayError, renderReplay, replayDecision, type DecisionReplay } from '
 import { buildTraceTree, type DecisionTraceBuffer } from '../observability/trace.js';
 import type { JsonlTraceExporter } from '../observability/exporter.js';
 import { MAX_QUERY_LIMIT, queryTraceTrees } from '../observability/trace-query.js';
+import type { JsonlEvalRunsStore } from '../evals/runs-store.js';
+import { MAX_EVAL_RUN_QUERY_LIMIT, queryEvalRuns } from '../evals/runs-store.js';
 import type { MetricsHistory } from '../observability/metrics-history.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
@@ -236,6 +238,13 @@ export type HttpDeps = {
    * no query face (default build stays exporter-less).
    */
   traceExporter?: JsonlTraceExporter;
+  /**
+   * design-evals W4-2 (FR5-2): the JSONL eval-runs store. Present, the run
+   * query face GET /api/v1/eval-runs is mounted over its in-memory index;
+   * absent, no eval face (the store is written by the offline runner; the
+   * serve process only reads).
+   */
+  evalRunsStore?: JsonlEvalRunsStore;
   /** H2: live inventory of what the kernel holds and whether it persists. */
   kernelStats?: () => KernelStats;
   /** H2 (E9.3): department establishment chart, staffing and accountability. */
@@ -1201,6 +1210,48 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           ...(maxCostRaw !== undefined ? { maxCostMicros: Number(maxCostRaw) } : {}),
           ...(traceId !== undefined ? { traceId } : {}),
           ...(limitRaw !== undefined ? { limit: Math.min(Number(limitRaw), MAX_QUERY_LIMIT) } : {}),
+        });
+      });
+    }
+
+    // design-evals W4-2 (FR5-2): eval run query over the JSONL store's
+    // in-memory index. Bearer-gated like every other observability face; the
+    // store is written by the offline runner (opt-in --runs-file) and only
+    // read here, so the serve process never produces eval data. Records are
+    // runner-produced facts (scored checks, metrics) — no user content — and
+    // carry the legacy reports/ JSON fields (ranAt/cases/report) unchanged.
+    if (deps.evalRunsStore) {
+      const evalRunsStore = deps.evalRunsStore;
+      app.get('/api/v1/eval-runs', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+        const q = request.query as Record<string, string | undefined>;
+        const param = (name: string): string | undefined => {
+          const v = q[name];
+          return v === undefined || v === '' ? undefined : v;
+        };
+        const from = param('from');
+        const to = param('to');
+        if (from !== undefined && Number.isNaN(Date.parse(from))) {
+          return error(reply, 400, 'invalid_request', 'from must be an ISO timestamp');
+        }
+        if (to !== undefined && Number.isNaN(Date.parse(to))) {
+          return error(reply, 400, 'invalid_request', 'to must be an ISO timestamp');
+        }
+        const limitRaw = param('limit');
+        if (limitRaw !== undefined) {
+          const n = Number(limitRaw);
+          if (!Number.isInteger(n) || n < 1) return error(reply, 400, 'invalid_request', 'limit must be a positive integer');
+        }
+        const suite = param('suite');
+        const model = param('model');
+        const runId = param('run_id');
+        const runs = await evalRunsStore.readBack();
+        return queryEvalRuns(runs, {
+          ...(suite !== undefined ? { suite } : {}),
+          ...(model !== undefined ? { model } : {}),
+          ...(runId !== undefined ? { runId } : {}),
+          ...(from !== undefined ? { from } : {}),
+          ...(to !== undefined ? { to } : {}),
+          ...(limitRaw !== undefined ? { limit: Math.min(Number(limitRaw), MAX_EVAL_RUN_QUERY_LIMIT) } : {}),
         });
       });
     }

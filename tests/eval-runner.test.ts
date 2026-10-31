@@ -187,4 +187,38 @@ describe('eval-run.mjs baseline gate (S7 V3)', () => {
     expect(body).toContain('BLOCK REGRESSION');
     expect(body).toContain('`decision.blocked`');
   });
+
+  it('appends a structured run record beside the legacy artifact (--runs-file, W4-2)', async () => {
+    const runsPath = join(dir, 'runs.jsonl');
+    const first = await runScript([
+      '--filter', CASE_ID,
+      '--out', join(dir, 'legacy-first.json'),
+      '--runs-file', runsPath,
+      '--suite', 'core',
+    ]);
+    expect(first.status, first.stdout + first.stderr).toBe(0);
+    // A retried run with the same ranAt second would key-append; two runs a
+    // moment apart both land, oldest first.
+    const second = await runScript([
+      '--filter', CASE_ID,
+      '--out', join(dir, 'legacy-second.json'),
+      '--runs-file', runsPath,
+      '--suite', 'core',
+      '--revision', 'abc123',
+    ]);
+    expect(second.status, second.stdout + second.stderr).toBe(0);
+    const raw = readFileSync(runsPath, 'utf8').trim().split('\n');
+    expect(raw).toHaveLength(2);
+    const lines = raw.map(line => JSON.parse(line) as Record<string, unknown>);
+    for (const record of lines) {
+      // Identity fields (W4-2) beside the legacy artifact fields, unchanged.
+      expect(String(record.runId)).toMatch(/^run-\d{4}-/);
+      expect(record.suite).toBe('core');
+      expect(record.model).toBe('rules-only');
+      expect(record.ranAt).toBeTypeOf('string');
+      expect(Array.isArray(record.cases)).toBe(true);
+      expect((record.report as Record<string, unknown>).caseCount).toBe(1);
+    }
+    expect(lines[1]!.revision).toBe('abc123');
+  });
 });

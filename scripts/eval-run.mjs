@@ -22,6 +22,7 @@
  *   node scripts/eval-run.mjs --filter data-policy
  *   node scripts/eval-run.mjs --out /tmp/eval.json
  *   node scripts/eval-run.mjs --baseline --comment-out /tmp/pr-comment.md
+ *   node scripts/eval-run.mjs --runs-file data/eval-runs.jsonl --suite core
  * Exit codes: 0 every case passed, 1 any case failed or the diff regressed,
  * 2 cannot start (missing build).
  *
@@ -29,6 +30,15 @@
  * a GitHub-flavoured Markdown body (carrying a fixed marker for idempotent
  * upserts) before the exit code is decided, so a block-regression run still
  * leaves the body behind for scripts/ci-pr-comment.mjs to post.
+ *
+ * W4-1 judge: when ZEUS_EVAL_JUDGE_ENABLED is set (and the hub wiring resolves
+ * the judge alias), cases declaring a `judge` expectation are scored by the
+ * LLM at temperature 0; every judge failure is fail-soft (observe, never
+ * blocks). W4-2 runs store: --runs-file appends a JSONL run record (0600,
+ * keyed by runId; suite/model/score/per-case results; legacy
+ * { ranAt, cases, report } fields unchanged at the top level) served by
+ * GET /api/v1/eval-runs when the serve process points ZEUS_EVAL_RUNS_FILE at
+ * the same file.
  */
 
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
@@ -37,6 +47,7 @@ import { fileURLToPath } from 'node:url';
 import { bootKernel } from '../dist/state/boot.js';
 import { scoreEvalRun, summarizeEvalRun, diffAgainstBaseline } from '../dist/evals/score.js';
 import { createEvalJudgeFromEnv } from '../dist/evals/judge.js';
+import { JsonlEvalRunsStore } from '../dist/evals/runs-store.js';
 import { evalCases } from '../evals/cases/index.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -73,6 +84,23 @@ const PR_COMMENT_MARKER = '<!-- zeus-eval-gate -->';
 const baselineFile = (() => {
   const at = process.argv.indexOf('--baseline-file');
   return at >= 0 ? (process.argv[at + 1] ?? BASELINE_PATH) : BASELINE_PATH;
+})();
+// W4-2: suite identity + opt-in structured run store. `--runs-file` appends
+// one JSONL record (0600, keyed by runId) beside the legacy reports/ JSON —
+// never instead of it; the legacy artifact stays the default output.
+const suite = (() => {
+  const at = process.argv.indexOf('--suite');
+  const v = at >= 0 ? process.argv[at + 1] : undefined;
+  return v && v.trim() !== '' ? v.trim() : 'core';
+})();
+const revision = (() => {
+  const at = process.argv.indexOf('--revision');
+  const v = at >= 0 ? process.argv[at + 1] : undefined;
+  return v && v.trim() !== '' ? v.trim() : undefined;
+})();
+const runsFile = (() => {
+  const at = process.argv.indexOf('--runs-file');
+  return at >= 0 ? process.argv[at + 1] : undefined;
 })();
 
 /** @type {Array<{ caseId: string, passed: boolean, detail: string }>} */
@@ -493,6 +521,27 @@ if (outPath) {
 if (WRITE_BASELINE) {
   writeFileSync(BASELINE_PATH, JSON.stringify({ pinnedAt: artifact.ranAt, report }, null, 2));
   console.log(`baseline pinned -> ${BASELINE_PATH}`);
+}
+
+// W4-2: opt-in structured run store (FR5-2). One JSONL record appended beside
+// the legacy artifact — the reports/ JSON stays the default output and its
+// shape (ranAt/cases/report) is carried unchanged at the top level of the
+// record, so legacy consumers keep working. Keyed by runId (derived from
+// ranAt), so a retried run cannot double-write.
+if (runsFile) {
+  const record = {
+    runId: `run-${artifact.ranAt}`,
+    suite,
+    model: 'rules-only',
+    ...(evalJudge !== undefined && evalJudge !== null ? { judgeModel: evalJudge.model } : {}),
+    ...(revision !== undefined ? { revision } : {}),
+    ranAt: artifact.ranAt,
+    cases: results,
+    report,
+  };
+  const store = new JsonlEvalRunsStore(runsFile);
+  await store.append(record);
+  console.log(`run record -> ${runsFile} (runId ${record.runId}, suite ${record.suite})`);
 }
 
 /** @type {ReadonlyArray<import('../src/evals/score.js').EvalRegression> | null} */
