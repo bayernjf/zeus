@@ -156,6 +156,15 @@ export interface DecisionErrorBody {
   details?: unknown;
 }
 
+/** Unhandled-failure body (RFC 9457 ProblemDetails, unified error contract). */
+interface ProblemDetailsBody {
+  type?: string;
+  title?: string;
+  status?: number;
+  detail?: string;
+  instance?: string;
+}
+
 export interface ZeusClientErrorOptions {
   retryable: boolean;
   details?: unknown;
@@ -396,6 +405,19 @@ export class ZeusClient {
           retryable: parsed.retryable ?? response.status >= 500,
           ...(parsed.details !== undefined ? { details: parsed.details } : {}),
         },
+      );
+    }
+    // RFC 9457 ProblemDetails (unified error contract): the server answers
+    // unhandled failures with this shape, where `about:blank` means the status
+    // code carries the meaning. Keep the machine code stable for that case and
+    // surface `detail` instead of the raw JSON text.
+    const problem = parsed as ProblemDetailsBody | undefined;
+    if (problem?.type !== undefined && problem?.detail !== undefined) {
+      return new ZeusClientError(
+        response.status,
+        response.status === 500 && problem.type === 'about:blank' ? 'internal_error' : `HTTP_${response.status}`,
+        problem.detail,
+        { retryable: response.status >= 500 },
       );
     }
     if (response.status === 401) {
