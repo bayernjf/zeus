@@ -13,7 +13,11 @@ import type { ContentHandling } from '../guardrails/content-risk.js';
 import type { PlanFlowResult } from '../orchestrator/plan-flow.js';
 import type { RecoveryExec } from '../orchestrator/recovery.js';
 import type { IsolationLevel } from '../mcp/isolation.js';
+import type { JudgeVerdict } from './judge.js';
 import type { EvalCase, EvalExpectation } from './types.js';
+
+/** Pass bar for an LLM-as-judge score when the case does not name one (W4-1). */
+export const DEFAULT_JUDGE_MIN_SCORE = 0.7;
 
 export type EvalCheck = {
   name: string;
@@ -46,9 +50,11 @@ export type EvalRegression = {
   severity: 'block' | 'warn';
 };
 
-const FAMILIES = ['decision', 'escalation', 'selection', 'evidence', 'guardrails', 'budget', 'planning', 'recovery', 'streaming', 'isolation'] as const;
+const FAMILIES = ['decision', 'escalation', 'selection', 'evidence', 'guardrails', 'budget', 'planning', 'recovery', 'streaming', 'isolation', 'judge'] as const;
 
-type Trace = {
+/** The settled artefacts one scored run exposes to the scorer (design-evals
+ *  §4). Every field is runner-collected; the scorer never runs the world. */
+export type EvalTrace = {
   outcome: FanOutResult;
   audit: AuditEntry[];
   events: ProgressEvent[];
@@ -58,14 +64,22 @@ type Trace = {
   recovery?: RecoveryExec[];
   /** S16: the isolation classification/validation verdict. */
   isolation?: { level: IsolationLevel; valid: boolean; reasons: string[] };
+  /** W4-1: pre-collected LLM-as-judge verdicts, one per judge expectation in
+   *  declaration order. Absent/short = judge not configured for that check —
+   *  the scorer degrades it to observe (fail-soft), keeping the scoring pure
+   *  and byte-deterministic (the verdicts are data, not calls). */
+  judgeVerdicts?: readonly JudgeVerdict[];
 };
 
 /** Score one eval case against the settled trace (design-evals §4). Checks are
  *  evaluated in the declared order; a check that cannot be assessed from V1
  *  facts (e.g. cost tokens) is marked passed with an explicit
- *  not-assessable detail — never silently dropped. */
-export function scoreEvalRun(c: EvalCase, trace: Trace): EvalResult {
+ *  not-assessable detail — never silently dropped. Judge checks (W4-1) consume
+ *  pre-collected verdicts in declaration order; a missing or failed verdict
+ *  degrades to observe severity (fail-soft) instead of blocking the gate. */
+export function scoreEvalRun(c: EvalCase, trace: EvalTrace): EvalResult {
   const checks: EvalCheck[] = [];
+  let judgeCursor = 0;
   for (const ex of c.expect) {
     if (ex.decision !== undefined) {
       checks.push(check('decision.decision', 'decision', ex, ex.decision(trace.outcome)));
@@ -238,6 +252,26 @@ export function scoreEvalRun(c: EvalCase, trace: Trace): EvalResult {
       }
       checks.push(check('isolation.verdict', 'isolation', ex, reasons.length === 0, reasons.join('; ')));
     }
+    if (ex.judge !== undefined) {
+      // W4-1: answer quality against a rubric. The verdicts were collected by
+      // the runner before scoring (one judge call per judge expectation, in
+      // declaration order). No verdict, a failed call, a timeout or a
+      // malformed answer is fail-soft: the check passes with an explicit
+      // judge-unavailable detail at observe severity, so an unavailable judge
+      // can never block the gate — only a real below-bar score at the case's
+      // declared severity can.
+      const verdict = trace.judgeVerdicts?.[judgeCursor];
+      judgeCursor += 1;
+      if (verdict === undefined) {
+        checks.push(check('judge.rubric', 'judge', { ...ex, severity: 'observe' }, true, 'judge-unavailable: no verdict collected (judge not configured)'));
+      } else if (!verdict.ok) {
+        checks.push(check('judge.rubric', 'judge', { ...ex, severity: 'observe' }, true, `judge-unavailable: ${clipJudgeReason(verdict.reason)}`));
+      } else {
+        const minScore = ex.judge.minScore ?? DEFAULT_JUDGE_MIN_SCORE;
+        const passed = verdict.score >= minScore;
+        checks.push(check('judge.rubric', 'judge', ex, passed, `score ${verdict.score.toFixed(2)} vs min ${minScore.toFixed(2)}: ${clipJudgeReason(verdict.reason)}`));
+      }
+    }
   }
   return { caseId: c.id, checks };
 }
@@ -302,6 +336,14 @@ function check(
 
 function detailOf(items: string[]): string {
   return items.length === 0 ? '' : items.join(', ');
+}
+
+/** Keep a judge reason inside the check detail: it is model-authored text and
+ *  must not bloat the report line. */
+function clipJudgeReason(reason: string): string {
+  const trimmed = reason.trim();
+  if (trimmed.length <= 240) return trimmed;
+  return `${trimmed.slice(0, 240)}…(truncated)`;
 }
 
 /** ContentHandling action -> audit decision name (S8): the audit suffix is the

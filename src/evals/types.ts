@@ -50,6 +50,12 @@ export type EvalExpectation = {
    *  registered body. `forbiddenReasons` fails when any listed validation
    *  reason is present. */
   isolation?: { expectedLevel?: IsolationLevel; valid?: boolean; forbiddenReasons?: string[] };
+  /** Open-ended answer quality (W4-1): the case is judged by an LLM against
+   *  this rubric, at temperature 0 with a 0–1 score. `minScore` is the pass
+   *  bar (default 0.7). Only cases that declare this expectation reach the
+   *  judge; when no judge is configured (or a call fails/times out) the check
+   *  degrades to observe severity — fail-soft, never gate-blocking. */
+  judge?: { rubric: string; minScore?: number };
   severity: 'block' | 'warn' | 'observe';
 };
 

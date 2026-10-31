@@ -36,6 +36,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bootKernel } from '../dist/state/boot.js';
 import { scoreEvalRun, summarizeEvalRun, diffAgainstBaseline } from '../dist/evals/score.js';
+import { createEvalJudgeFromEnv } from '../dist/evals/judge.js';
 import { evalCases } from '../evals/cases/index.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -320,6 +321,7 @@ async function runCase(c) {
       ...(c.planFlow.plannerSkills !== undefined ? { plannerSkills: c.planFlow.plannerSkills } : {}),
       requireConfirmation: true,
     });
+    /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(planning)', runId: '(planning)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [], planFlow: planResult };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
@@ -347,6 +349,7 @@ async function runCase(c) {
       audit: e => audits.push(e),
       ...(c.recovery.maxAutoResumeMs !== undefined ? { maxAutoResumeMs: c.recovery.maxAutoResumeMs } : {}),
     });
+    /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(recovery)', runId: '(recovery)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [] };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
@@ -360,6 +363,7 @@ async function runCase(c) {
     const manifest = /** @type {import('../dist/mcp/isolation.js').IsolationManifest} */ (c.isolation.manifest);
     const level = classifyIsolation({ transport: c.isolation.transport, tier: /** @type {import('../dist/trust/tier.js').TrustTier} */ (c.isolation.tier), manifest });
     const verdict = validateIsolation({ level, manifest, authorizedRealms: c.isolation.authorizedRealms, containerRuntimeAvailable: c.isolation.containerRuntimeAvailable });
+    /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = {
       outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(isolation)', runId: '(isolation)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }),
       audit: audits,
@@ -386,6 +390,7 @@ async function runCase(c) {
         ...c.request,
       }),
     );
+    /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = { outcome, audit: audits, events };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
@@ -420,6 +425,15 @@ budgetWatch.unref();
 
 /** @type {import('../src/evals/score.js').EvalResult[]} */
 const results = [];
+// W4-1: the LLM-as-judge is opt-in (ZEUS_EVAL_JUDGE_ENABLED + a resolvable hub
+// alias). One judge per process, created lazily on the first case that needs
+// it; without it, judge checks degrade to observe (fail-soft) in the scorer.
+/** @type {import('../dist/evals/judge.js').EvalJudge | null | undefined} */
+let evalJudge;
+function judgeFor() {
+  if (evalJudge === undefined) evalJudge = createEvalJudgeFromEnv(process.env);
+  return evalJudge;
+}
 for (const c of evalCases) {
   if (Date.now() - startedAt > BUDGET_MS) {
     fail(`wall-clock budget ${BUDGET_MS / 1000}s exceeded after ${results.length} cases`);
@@ -427,6 +441,24 @@ for (const c of evalCases) {
   try {
     const ran = await runCase(c);
     if (ran === null) continue;
+    // W4-1: only cases that declare a judge expectation reach the judge — one
+    // call per expectation, in declaration order; the scorer consumes the
+    // verdicts positionally. Every judge failure is a fail-soft verdict, so a
+    // hub outage slows the run but cannot flip its outcome.
+    const judgeExpectations = c.expect.filter(ex => ex.judge !== undefined);
+    if (judgeExpectations.length > 0) {
+      const judge = judgeFor();
+      if (judge !== null) {
+        /** @type {import('../dist/evals/judge.js').JudgeVerdict[]} */
+        const verdicts = [];
+        for (const ex of judgeExpectations) {
+          const judgeEx = ex.judge;
+          if (judgeEx === undefined) continue;
+          verdicts.push(await judge.score(judgeEx.rubric, ran.trace.outcome));
+        }
+        ran.trace.judgeVerdicts = verdicts;
+      }
+    }
     const scored = scoreEvalRun(ran.caseDef, ran.trace);
     results.push(scored);
     const failedChecks = scored.checks.filter(ch => !ch.passed);
