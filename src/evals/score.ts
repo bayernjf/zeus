@@ -13,6 +13,7 @@ import type { ContentHandling } from '../guardrails/content-risk.js';
 import type { PlanFlowResult } from '../orchestrator/plan-flow.js';
 import type { RecoveryExec } from '../orchestrator/recovery.js';
 import type { IsolationLevel } from '../mcp/isolation.js';
+import type { DecisionTrace } from '../decision/types.js';
 import type { JudgeVerdict } from './judge.js';
 import type { EvalCase, EvalExpectation } from './types.js';
 
@@ -69,6 +70,12 @@ export type EvalTrace = {
    *  the scorer degrades it to observe (fail-soft), keeping the scoring pure
    *  and byte-deterministic (the verdicts are data, not calls). */
   judgeVerdicts?: readonly JudgeVerdict[];
+  /** W4-3: the per-case DecisionTrace ledger records, collected by the runner
+   *  from the case's decision backend (arbitration/judge calls). Present, the
+   *  budget cost checks are assessed against the real token counts; absent
+   *  (no ledger path — the loopback-only default), they stay explicitly
+   *  not-assessable. An empty array is a ledger that observed zero calls. */
+  traces?: readonly DecisionTrace[];
 };
 
 /** Score one eval case against the settled trace (design-evals §4). Checks are
@@ -160,9 +167,18 @@ export function scoreEvalRun(c: EvalCase, trace: EvalTrace): EvalResult {
       }
       checks.push(check('budget.branches', 'budget', ex, reasons.length === 0, reasons.join('; ')));
       if (ex.budget.maxCostTokens !== undefined) {
-        // No cost source in the V1 trace (S9 wiring is V2); declare it rather
-        // than guess a number.
-        checks.push(check('budget.cost-tokens', 'budget', ex, true, 'not-assessable-in-v1: no cost ledger in trace'));
+        // W4-3: with a per-call ledger in the trace (the case declared a
+        // decision backend, so its arbitration/judge calls carry DecisionTrace
+        // records) the token total is a fact and the cap is assessed. Without
+        // one the check stays not-assessable — declared, never guessed.
+        if (trace.traces === undefined) {
+          checks.push(check('budget.cost-tokens', 'budget', ex, true, 'not-assessable: no DecisionTrace ledger in trace'));
+        } else {
+          const totalTokens = ledgerTokens(trace.traces);
+          const over = totalTokens > ex.budget.maxCostTokens;
+          const detail = `${totalTokens} tokens over ${trace.traces.length} decision call(s) ${over ? '>' : '<='} cap ${ex.budget.maxCostTokens}`;
+          checks.push(check('budget.cost-tokens', 'budget', ex, !over, detail));
+        }
       }
     }
     if (ex.planning !== undefined) {
@@ -344,6 +360,20 @@ function clipJudgeReason(reason: string): string {
   const trimmed = reason.trim();
   if (trimmed.length <= 240) return trimmed;
   return `${trimmed.slice(0, 240)}…(truncated)`;
+}
+
+/** TracePort v1 §2 token accounting: provider-reported usage when present,
+ *  the cost block's audit estimate as the fallback, plus reasoning tokens.
+ *  A failed call carries its (estimated or reported) tokens too — the ledger
+ *  records what the call spent, not only what it produced. */
+function ledgerTokens(traces: readonly DecisionTrace[]): number {
+  let total = 0;
+  for (const t of traces) {
+    total += t.usage?.inputTokens ?? t.cost?.inputTokens ?? 0;
+    total += t.usage?.outputTokens ?? t.cost?.outputTokens ?? 0;
+    total += t.usage?.reasoningTokens ?? 0;
+  }
+  return total;
 }
 
 /** ContentHandling action -> audit decision name (S8): the audit suffix is the

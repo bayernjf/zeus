@@ -48,6 +48,7 @@ import { bootKernel } from '../dist/state/boot.js';
 import { scoreEvalRun, summarizeEvalRun, diffAgainstBaseline } from '../dist/evals/score.js';
 import { createEvalJudgeFromEnv } from '../dist/evals/judge.js';
 import { JsonlEvalRunsStore } from '../dist/evals/runs-store.js';
+import { createScriptedDecisionBackend } from '../dist/testing/decision-backend.js';
 import { evalCases } from '../evals/cases/index.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -291,6 +292,7 @@ function makeOversightBridge(audits) {
  *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean, planner?: boolean, planDraft?: object, deltas?: string[] }>;
  *   request: Record<string, unknown>;
  *   costLimit?: { maxWindowCost: number; circuitWindowMs: number };
+ *   decisionBackend?: { model?: string, usage?: { inputTokens: number, outputTokens: number, reasoningTokens?: number }, failWith?: string };
  *   expect: Array<import('../dist/evals/types.js').EvalExpectation>;
  *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
  *   planFlow?: { goal: string; plannerSkills?: string[] };
@@ -325,12 +327,30 @@ async function runCase(c) {
   if (filter && !c.id.startsWith(filter)) return null;
   /** @type {import('../dist/dispatch/dispatcher.js').AuditEntry[]} */
   const audits = [];
+  // W4-3: a case-declared decision backend makes the arbitration/judge path
+  // live for this case and emits one DecisionTrace per call — the per-call
+  // ledger the budget cost checks consume. Loopback-only by construction
+  // (scripted answers, no network); cases without the fixture stay rules-only
+  // and their cost checks remain not-assessable. Enabling a backend changes
+  // arbitration behaviour, so a fixture case must account for it in its
+  // expectations.
+  /** @type {import('../dist/decision/types.js').DecisionTrace[]} */
+  const decisionTraces = [];
+  const scriptedBackend = c.decisionBackend !== undefined
+    ? createScriptedDecisionBackend({
+        ...(c.decisionBackend.model !== undefined ? { model: c.decisionBackend.model } : {}),
+        ...(c.decisionBackend.usage !== undefined ? { usage: c.decisionBackend.usage } : {}),
+        ...(c.decisionBackend.failWith !== undefined ? { failWith: /** @type {import('../dist/decision/types.js').DecisionBackendErrorCode} */ (c.decisionBackend.failWith) } : {}),
+        onTrace: t => decisionTraces.push(t),
+      })
+    : undefined;
   const kernel = await bootKernel({
     fetchImpl: makeFetch(c.agents),
     vassalSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
     dispatchAudit: e => audits.push(e),
     oversightAudit: makeOversightBridge(audits),
     ...(c.costLimit !== undefined ? { costLimit: c.costLimit } : {}),
+    ...(scriptedBackend !== undefined ? { decisionBackend: scriptedBackend } : {}),
   });
   if (c.memory !== undefined) {
     for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
@@ -419,7 +439,15 @@ async function runCase(c) {
       }),
     );
     /** @type {import('../src/evals/score.js').EvalTrace} */
-    const trace = { outcome, audit: audits, events };
+    const trace = {
+      outcome,
+      audit: audits,
+      events,
+      // W4-3: present whenever the case declared a decision backend — an empty
+      // array is a ledger that observed zero calls, which is assessable (0
+      // tokens); absent means no ledger path, which stays not-assessable.
+      ...(scriptedBackend !== undefined ? { traces: decisionTraces } : {}),
+    };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
       trace,

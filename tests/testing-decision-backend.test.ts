@@ -97,4 +97,46 @@ describe('scripted decision backend (S17 V2)', () => {
     await backend.choice(baseChoice as ChoiceRequest);
     expect(Date.now() - started).toBeGreaterThanOrEqual(15);
   });
+
+  it('emits one DecisionTrace per call with the configured usage (W4-3)', async () => {
+    const traces: unknown[] = [];
+    const backend = createScriptedDecisionBackend({
+      model: 'scripted-jev',
+      usage: { inputTokens: 120, outputTokens: 30, reasoningTokens: 10 },
+      choice: choiceResult('approve'),
+      onTrace: t => traces.push(t),
+    });
+    await backend.choice(baseChoice as ChoiceRequest);
+    await backend.noul({ ...baseChoice, question: 'n?' } as unknown as NoulRequest);
+    expect(traces).toHaveLength(2);
+    const trace = traces[0] as { runId: string; backend: string; model: string; request: { kind: string; question: string; stateKeys: string[] }; usage: { inputTokens: number; outputTokens: number; reasoningTokens: number }; result: unknown; latencyMs: number; decidedAt: string };
+    // TracePort v1 §2 shape: runId from the request, usage from the scripted
+    // block, the settled result, no cost block (no pricing on the fake).
+    expect(trace.runId).toBe('r1');
+    expect(trace.backend).toBe('decision-model');
+    expect(trace.model).toBe('scripted-jev');
+    expect(trace.request).toEqual({ kind: 'choice', question: 'q', stateKeys: [] });
+    expect(trace.usage).toEqual({ inputTokens: 120, outputTokens: 30, reasoningTokens: 10 });
+    expect(trace.result).toMatchObject({ choice: 'approve' });
+    expect(trace.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(trace.decidedAt).toBeTypeOf('string');
+  });
+
+  it('emits an error trace on a scripted failure and no usage on unconfigured calls', async () => {
+    const traces: Array<{ error?: { code: string }; usage?: unknown }> = [];
+    const backend = createScriptedDecisionBackend({
+      failWith: 'timeout',
+      onTrace: t => traces.push(t as { error?: { code: string }; usage?: unknown }),
+    });
+    await expect(backend.choice(baseChoice as ChoiceRequest)).rejects.toThrow(/scripted failure/);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]!.error).toEqual({ code: 'timeout', message: 'scripted failure: timeout' });
+    expect(traces[0]!.usage).toBeUndefined();
+  });
+
+  it('emits nothing when no onTrace hook is wired (V2 behaviour unchanged)', async () => {
+    const backend = createScriptedDecisionBackend({ usage: { inputTokens: 1, outputTokens: 1 } });
+    const result = await backend.choice(baseChoice as ChoiceRequest);
+    expect(result.choice).toBe('');
+  });
 });

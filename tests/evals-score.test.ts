@@ -9,7 +9,17 @@ import { describe, expect, it } from 'vitest';
 import { diffAgainstBaseline, scoreEvalRun, summarizeEvalRun } from '../src/evals/score.js';
 import type { EvalCase, EvalExpectation } from '../src/evals/types.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
+import type { DecisionTrace } from '../src/decision/types.js';
 import type { FanOutRequest, FanOutResult } from '../src/orchestrator/types.js';
+
+function trace(overrides: Partial<DecisionTrace> = {}): DecisionTrace {
+  return {
+    runId: 'r1', backend: 'hub', model: 'm1',
+    request: { kind: 'score', question: 'q', stateKeys: [] },
+    latencyMs: 10, decidedAt: '2026-10-31T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function outcome(overrides: Partial<FanOutResult> = {}): FanOutResult {
   return {
@@ -147,7 +157,7 @@ describe('scoreEvalRun (S7 V1)', () => {
     expect(r.checks[0]!.passed).toBe(false);
   });
 
-  it('scores the branch budget and declares cost-tokens not-assessable in V1', () => {
+  it('scores the branch budget and keeps cost-tokens not-assessable without a ledger', () => {
     const c = case_([{ budget: { maxBranches: 2, maxCostTokens: 100 }, severity: 'block' }]);
     const out = outcome({ branches: [{ vassal: 'a1', runId: 'r1', ok: true, events: [] }, { vassal: 'a2', runId: 'r2', ok: true, events: [] }, { vassal: 'a3', runId: 'r3', ok: true, events: [] }] });
     const r = scoreEvalRun(c, { outcome: out, audit: [], events: [] });
@@ -155,7 +165,42 @@ describe('scoreEvalRun (S7 V1)', () => {
     expect(branches).toMatchObject({ passed: false, detail: '3 branches > cap 2' });
     const cost = r.checks.find((ch) => ch.name === 'budget.cost-tokens');
     expect(cost).toMatchObject({ passed: true });
-    expect(cost!.detail).toContain('not-assessable-in-v1');
+    expect(cost!.detail).toContain('not-assessable');
+  });
+
+  it('assesses cost-tokens against the DecisionTrace ledger when one is present (W4-3)', () => {
+    const c = case_([{ budget: { maxCostTokens: 100 }, severity: 'block' }]);
+    const traces = [
+      trace({ usage: { inputTokens: 60, outputTokens: 20 } }),
+      trace({ usage: { inputTokens: 10, outputTokens: 5, reasoningTokens: 5 } }),
+    ];
+    const within = scoreEvalRun(c, { outcome: outcome(), audit: [], events: [], traces });
+    const cost = within.checks.find((ch) => ch.name === 'budget.cost-tokens');
+    // 60 + 20 + 10 + 5 + 5 = 100 <= cap 100 (inclusive cap passes).
+    expect(cost).toMatchObject({ passed: true, detail: '100 tokens over 2 decision call(s) <= cap 100' });
+
+    const over = scoreEvalRun(c, { outcome: outcome(), audit: [], events: [], traces: [...traces, trace({ usage: { inputTokens: 1, outputTokens: 1 } })] });
+    const overCost = over.checks.find((ch) => ch.name === 'budget.cost-tokens');
+    expect(overCost).toMatchObject({ passed: false, severity: 'block' });
+    expect(overCost!.detail).toContain('102 tokens over 3 decision call(s) > cap 100');
+  });
+
+  it('falls back to the audit-estimated cost tokens when usage is absent (W4-3)', () => {
+    const c = case_([{ budget: { maxCostTokens: 50 }, severity: 'warn' }]);
+    const r = scoreEvalRun(c, {
+      outcome: outcome(), audit: [], events: [],
+      traces: [trace({ cost: { inputTokens: 30, outputTokens: 25, cents: 0.1 } })],
+    });
+    const cost = r.checks.find((ch) => ch.name === 'budget.cost-tokens');
+    expect(cost).toMatchObject({ passed: false, severity: 'warn' });
+    expect(cost!.detail).toContain('55 tokens over 1 decision call(s) > cap 50');
+  });
+
+  it('treats an empty ledger as a zero-token fact, not as unassessable (W4-3)', () => {
+    const c = case_([{ budget: { maxCostTokens: 0 }, severity: 'observe' }]);
+    const r = scoreEvalRun(c, { outcome: outcome(), audit: [], events: [], traces: [] });
+    const cost = r.checks.find((ch) => ch.name === 'budget.cost-tokens');
+    expect(cost).toMatchObject({ passed: true, detail: '0 tokens over 0 decision call(s) <= cap 0' });
   });
 
   it('is deterministic for the same trace', () => {

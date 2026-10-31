@@ -31,9 +31,10 @@ export type EvalExpectation = {
    *  a signal-driven annotation apart from the plan-mode provenance label that
    *  every recalled fact receives by construction. */
   guardrails?: { expectedHandling?: ContentHandling['action']; signals?: ContentSignal[] };
-  /** Budget: branch count cap (S4/S9). `maxCostTokens` is declared for the
-   *  cost family but has no V1 data source, so the scorer marks it
-   *  not-assessable instead of guessing. */
+  /** Budget: branch count cap (S4/S9) and the model-call token cap. With a
+   *  per-case DecisionTrace ledger (W4-3: the case declared a decision
+   *  backend) `maxCostTokens` is assessed against the ledger's token total;
+   *  without one it is marked not-assessable instead of guessed. */
   budget?: { maxBranches?: number; maxCostTokens?: number };
   /** Planning outcome (S12): which PlanFlow verdict the run must land on,
    *  read from the plan-* audit rows. `planner` (when set) must name the
