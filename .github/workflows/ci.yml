@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, "**"]
   pull_request:
-    branches: [main, dev]
+    branches: [main, dev, "**"]
 
 # One run per ref. Without this a burst of pushes stacks matrix legs and
 # clock-skew runs on the same branch, and the oldest answers a question nobody
