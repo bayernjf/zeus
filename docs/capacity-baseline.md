@@ -1,6 +1,6 @@
 # Zeus 容量基线（E10.4，本机 mock 回环）
 
-> 状态：**现行 v0.5（2026-10-19）**。对应 PRD E10.4「并发压测与容量基线」与 §6 成功指标。**v0.5 做两件事**：① 在同机三连跑对照确认 A1 批（contentGrant 收窄 realm 级）与前述各批**无容量回归**；② 容量防退化**门禁入库**——`capacity-baseline.json`（按环境指纹钉基线）+ `scripts/bench-gate.mjs`（正确性硬闸 + 延迟/吞吐相对基线阈值）+ CI job `bench-capacity`（`npm run bench:gate`，正确性硬闸进 CI，延迟对比对无指纹环境先建档归档）。**推荐路径 A2（容量压测进 CI）随 v0.5 落地**，B1 前置完成。
+> 状态：**现行 v0.6（2026-10-31）**。**v0.6 变更**：新增 §10——recall 微基准（W2-1a）输出接进门禁：`scripts/bench-recall-gate.mjs` + `recall-baseline.json`（按指纹+bench 形状建档，首次建档不对比，单一 +30% 硬红、5ms 噪声下限），并进既有 `bench-capacity` CI job（job 名扩为 capacity + recall）。v0.5 及以前的历史口径见下。对应 PRD E10.4「并发压测与容量基线」与 §6 成功指标。**v0.5 做两件事**：① 在同机三连跑对照确认 A1 批（contentGrant 收窄 realm 级）与前述各批**无容量回归**；② 容量防退化**门禁入库**——`capacity-baseline.json`（按环境指纹钉基线）+ `scripts/bench-gate.mjs`（正确性硬闸 + 延迟/吞吐相对基线阈值）+ CI job `bench-capacity`（`npm run bench:gate`，正确性硬闸进 CI，延迟对比对无指纹环境先建档归档）。**推荐路径 A2（容量压测进 CI）随 v0.5 落地**，B1 前置完成。
 > 复跑：`npm run build && npm run bench:capacity`（脚本 `scripts/bench-capacity.mjs`，零依赖；`--json` 出机器可读结果，`--delay-ms` / `--reps` / `--farm` 可调）；门禁：`npm run bench:gate`（内部重跑 bench 并按指纹对比 `capacity-baseline.json`；`--report out.json` 归档原始结果）。
 >
 > **v0.5 变更（2026-10-19，Apple M4 / 10 核 / Node v22.23.2 / darwin arm64）**：HEAD（A1 批 `ff4d61b`）同机**三连跑**（`--json`，7 reps，64 台 mock farm，50ms think）与 v0.4 区间对照：A 场景 p50 各宽度 53.5–68.9ms（v0.4 区间 55–76ms，一致或略好）；B 场景吞吐 @8=135 / @16=239 / @32=387 intents/s（v0.4 区间 125–127 / 195–222 / 351–404，略好或持平），全部 `finishedBranches === total`（4/16/32/64/128）零丢失；C 场景 @32=329 intents/s（v0.2 后区间内，@32 档 222–337 方差大，与既往一致）；D 场景 4/8/16/32 档取消精确 16/32/64/128、mock farm 实收 **240** 个 `tasks/cancel` 零丢失零重复（cancels/s 2,100–5,400，v0.4 已记录的高方差带）。**结论：无容量回归**。门禁阈值口径：bench 自身方差约 ±15%（v0.4 对照实测），**硬红取 ±30%**（延迟 +30% / 吞吐 −30%）、**告警取 ±15%**；吞吐提升、延迟下降为改善不告警。三连跑中位数已钉入 `capacity-baseline.json`（指纹 `darwin-arm64-10-v22.23.2`）。门禁本地实测一次：43 项对比 42 项绿、1 项告警（A@32 p95 88.1 vs 70.9，退化 24.3%，落在已知尾延迟方差带，未到硬红——告警不拦截行为正确）。
@@ -145,3 +145,14 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
 - **v0.4 补一条跨版本对照方法论**：墙钟绝对值**跨机器不可直接比较**（v0.3 与 v0.4 不同机，B@32 从 351–404 到 263–332 intents/秒的差异主要来自机器/负载，不是回归）。判断某次内核改动是否引入容量回归，必须用 `git worktree` 在**同一台机器、相邻时间窗、空闲状态**下对改动前后 commit 各跑 ≥2 次交替对照；与 `docker build` 等 CPU/IO 重活并发的跑次作废（v0.4 实测污染跑 B@16 掉到干净值的 ~64%）。结论只取**比值趋势 + 正确性不变量（零分支丢失、240 取消零丢失零重复）**，不根据单次绝对数下判断。
 - 场景 D 的取消吞吐以 mock farm「立即 ack cancel」为前提；真实执行 Agent 可能异步取消，需在真机测量 cancel ack 延迟与最终一致性。
 - 触发 deferred #9（≥3 真实执行 Agent 在线）后，应在真机用本脚本同款方法（替换为真实 taskUrl）重测，并把有界队列阈值、背压降级顺序写入本文下一版。
+
+## 10. recall 微基准门禁（W2-1a 跟进，2026-10-31 并入门禁）
+
+`scripts/bench-recall.mjs`（PR #172 交付的 RecallIndex 冷建/热同步/热查询/维度重建微基准）原先只有 `npm run bench:recall` 一个人跑入口，CI 零覆盖。本批把它的输出接进门禁，**并进既有 `bench-capacity` CI job**（取舍：build 才是重步骤且两闸完全相同，独立 job 要为一条命令多付一次 install+build；代价只是 job 名扩为 capacity + recall）。
+
+- 脚本：`scripts/bench-recall-gate.mjs`（`npm run bench:recall:gate`）；基线文件 `recall-baseline.json`（与 `capacity-baseline.json` 同构，按指纹钉值）。
+- **正确性硬闸在 bench-recall 自身**（冷建恰好 N 次 embed、热同步 0、热查询恰好 1、维度重建 N、已知查询命中——违规 throw 非零退出），门禁透传非零退出。
+- **指纹**：`<platform>-<arch>-<cpus>-<node>-f<facts>-r<reps>-d<delay>`——比容量门禁多拼了 bench 形状参数，因为 CLI 可调 facts/reps/embed-delay，跨形状的数字不可比。
+- **对比阈值：单一 +30% 硬红**（有意不做 bench-gate 的 ±15% 告警层：微基准重跑成本低，一层阈值保可读；更快永不红）。
+- **噪声下限 5ms**：基线低于 5ms 的指标只打印不对比——local（纯 CPU）场景量的是亚毫秒级索引开销，±30% 落在抖动里不是回归；门禁实际由 simulated（模拟 hub 延迟）场景承载（默认形状下 gated 指标为 `simulated.coldBuild.p50` 与 `simulated.hotQuery.p50/p95`）。`hotSync.ms`（亚毫秒）与 `serialProjectionMs`（计算值非测量值）不参与。
+- **建档模式**：指纹无基线条目 → 只跑正确性硬闸 + 归档报告 + exit 0（CI ubuntu runner 与本地不共享指纹，与容量门禁同一契约）；本地 `--update-baseline` 可把当前跑钉入基线文件（CI 永不传该旗标）。当前 `recall-baseline.json` 内的 darwin 条目为单跑种子值，稳定后应人工复钉。

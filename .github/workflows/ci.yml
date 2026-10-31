@@ -255,7 +255,13 @@ jobs:
     # mode and archives the report; the pinned file is updated out-of-band.
     # Bench numbers are load-sensitive, so correctness is the hard gate here
     # and the latency comparison is a regression tripwire with headroom.
-    name: capacity regression gate (loopback bench)
+    #
+    # W2-1a follow-up (2026-10-31): the recall micro-benchmark rides the same
+    # job (bench-recall-gate.mjs, recall-baseline.json, +30% only, same
+    # seeding-mode contract). Merged into this job rather than a new one — the
+    # build is the expensive step and it is identical; a second job would pay
+    # install+build twice for one extra command.
+    name: capacity + recall regression gate (loopback bench)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -282,12 +288,23 @@ jobs:
       - name: Capacity bench against pinned baseline
         run: node scripts/bench-gate.mjs --report /tmp/capacity-report.json
 
+      - name: Recall bench against pinned baseline
+        run: node scripts/bench-recall-gate.mjs --report /tmp/recall-report.json
+
       - name: Archive capacity report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: capacity-report
           path: /tmp/capacity-report.json
+          if-no-files-found: warn
+
+      - name: Archive recall report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: recall-report
+          path: /tmp/recall-report.json
           if-no-files-found: warn
 
   image-verify:
