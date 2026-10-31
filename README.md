@@ -43,8 +43,8 @@
 | 产品入口 | `npm run daily` | 一句话走完「指令 → 意图 → 派发 → 决策与依据 → 待裁决项」，并把这一页 markdown 写回你自己的目录 |
 | 终端监督台 | `npm run tui` | 监视、裁决、名册治理、意图识别、连接器驱动，复用既有 bearer HTTP 面 |
 | Web 监督台 | `web/supervisor/index.html` | 多视图工作台：监控 / 名册 / 裁决 / 技能目录 / 审计 / 数据域与授权 / 组织 / 连接器 |
-| 操作者 HTTP API | `npm start` | 98 条路由（4 条公开、94 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
-| 协议面 | `/.well-known/agent-card.json`、`/mcp` | 入站 A2A（外部 Agent 派单进来）与数据域 MCP（外部宿主读你的目录） |
+| 操作者 HTTP API | `npm start` | 132 条路由（4 条公开、128 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
+| 协议面 | `/.well-known/agent-card.json`、`/mcp`、`/api/mcp` | 入站 A2A（外部 Agent 派单进来）、数据域 MCP（外部宿主读你的目录）与内核只读工具 MCP（G6：`memory.recall` 按绑定 namespace、`traces.query` 仅 driver token） |
 
 端点逐条清单与操作者可驱动面见 [docs/feature-inventory.md](docs/feature-inventory.md)。
 
@@ -164,18 +164,18 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk
 # 退出码 0=验签通过 / 1=被拒（附原因：版本不认识、摘要不绑定、签名不符、过期…）/ 2=参数或 I/O 错
 ```
 
-数据域经 MCP 对外暴露时有两条传输形态：stdio（宿主预连接并授权，协议不暴露 connect）与 streamable HTTP（`GET /mcp` 只出元信息、`POST /mcp` 需 bearer，会话级身份只能收窄宿主白名单）。对接细节见 [docs/mcp-integration.md](docs/mcp-integration.md)。
+数据域经 MCP 对外暴露时有两条传输形态：stdio（宿主预连接并授权，协议不暴露 connect）与 streamable HTTP（`GET /mcp` 只出元信息、`POST /mcp` 需 bearer，会话级身份只能收窄宿主白名单）。内核另有只读工具面 `POST /api/mcp`（G6）：`memory.recall`（memory service token 绑定一个 namespace，跨 realm 拒绝）与 `traces.query`（仅 driver token），只读、无写工具——remember/forget 仍走 HTTP 消费面。对接细节见 [docs/mcp-integration.md](docs/mcp-integration.md)。
 
 ### 2.6 验证你的安装
 
 ```bash
 npm run typecheck    # tsc --noEmit
-npm test             # vitest：2496 项 / 214 个测试文件（以你本机这条命令的输出为准）
+npm test             # vitest：2516 项 / 217 个测试文件（以你本机这条命令的输出为准）
 npm run smoke:core   # 核心链路真机冒烟：真进程 + 真 socket 跑完 50 步（只用回环与自造密钥）
 npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline 相对钉住的基线出退化 diff（blocked 退化 exit 1）
 ```
 
-这些可重跑的资产本身就是质量的读数：**已验证到什么程度**：2496 项测试 / 214 个测试文件，外加一条可重跑的核心链路真机冒烟（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → 发布的根公钥就是签名那把（同一指纹在出钥·发布·验签三处同串）→ 重启恢复名册·记忆·数据域 → 契约操作面签发/读/撤销 → watch 触发恰一次真派发 → 记忆召回装配进分支上下文 → 技能声明输入装配（explicit / unavailable）→ Day-1 双进程入口探针与出货进程成本账户读数、中文一句话经 `--spec` 声明的别名在本地规则下命中、撤销契约断流，50 步）。
+这些可重跑的资产本身就是质量的读数：**已验证到什么程度**：2516 项测试 / 217 个测试文件，外加一条可重跑的核心链路真机冒烟（`npm run smoke:core`：挂目录 → 带凭证注册 → 扇出 → 内核自读域 → 审计落盘 → 名册离线验签 → 发布的根公钥就是签名那把（同一指纹在出钥·发布·验签三处同串）→ 重启恢复名册·记忆·数据域 → 契约操作面签发/读/撤销 → watch 触发恰一次真派发 → 记忆召回装配进分支上下文 → 技能声明输入装配（explicit / unavailable）→ Day-1 双进程入口探针与出货进程成本账户读数、中文一句话经 `--spec` 声明的别名在本地规则下命中、撤销契约断流，50 步）。
 
 ---
 
