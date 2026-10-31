@@ -110,8 +110,9 @@ export function createDecisionTraceBuffer(maxRuns = 512): DecisionTraceBuffer {
  * S6 V3 (design-observability §5): exporter narrow port. Export happens after
  * assembly; the default build attaches no exporter, so a kernel without one
  * behaves exactly as V1/V2 did. Implementations are responsible for their own
- * retention and data-sovereignty boundaries (a JSONL local-file exporter lives
- * in exporter.ts; OTLP/network exporters are intentionally not shipped).
+ * retention and data-sovereignty boundaries (a JSONL local-file exporter and
+ * an opt-in OTLP/HTTP JSON exporter live in exporter.ts; both are attached
+ * only when explicitly configured).
  */
 export interface TraceExporter {
   export(tree: TraceTree): void | Promise<void>;

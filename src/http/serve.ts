@@ -36,6 +36,7 @@ import {
 import { kernelStats } from '../state/stats.js';
 import { createDecisionTraceSink } from '../observability/decision-trace-sink.js';
 import { createDecisionTraceBuffer } from '../observability/trace.js';
+import { OtlpTraceExporter } from '../observability/exporter.js';
 import { JsonlEvalRunsStore } from '../evals/runs-store.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
@@ -119,6 +120,30 @@ function parseMemoryServiceTokens(raw: string | undefined): Record<string, strin
   return Object.keys(map).length > 0 ? map : null;
 }
 
+/**
+ * G2 (design-observability §5): parse "Key:Value,Key2:Value2" header pairs for
+ * the OTLP endpoint. A pair without a colon is skipped silently — a header
+ * here is convenience auth for an operator-configured collector, and half a
+ * header is not a secret leak risk (the operator wrote the whole line), but
+ * dropping it namelessly would hide a typo, so a malformed pair logs at boot.
+ */
+function parseOtlpHeaders(raw: string | undefined, log: (msg: string) => void): Record<string, string> | undefined {
+  const value = raw?.trim();
+  if (!value) return undefined;
+  const headers: Record<string, string> = {};
+  for (const pair of value.split(',')) {
+    const index = pair.indexOf(':');
+    if (index <= 0) {
+      log(`ZEUS_OTLP_HEADERS: ignoring entry without "Key:Value" shape: ${pair.trim()}`);
+      continue;
+    }
+    const key = pair.slice(0, index).trim();
+    const headerValue = pair.slice(index + 1).trim();
+    if (key && headerValue) headers[key] = headerValue;
+  }
+  return Object.keys(headers).length > 0 ? headers : undefined;
+}
+
 async function main(): Promise<void> {
   // T-C: build the decision backend (Jev preferred, LLM fallback) and the
   // opt-in E1.3 judge from process env. No keys => null => rules-only kernel,
@@ -146,6 +171,19 @@ async function main(): Promise<void> {
     },
   });
   const memoryServiceTokens = parseMemoryServiceTokens(process.env.ZEUS_MEMORY_SERVICE_TOKENS);
+  // G2 (design-observability §5): OTLP/HTTP JSON trace export. Opt-in by
+  // endpoint like the trace file is by path: unset ZEUS_OTLP_ENDPOINT = no
+  // exporter is constructed and nothing dials out. Fail-soft lives in the
+  // exporter itself; export failures surface on the audit-error channel.
+  const otlpEndpoint = process.env.ZEUS_OTLP_ENDPOINT?.trim() || undefined;
+  const otlpHeaders = parseOtlpHeaders(process.env.ZEUS_OTLP_HEADERS, message => log.warn('otlp-config', message));
+  const otlpTraceExporter = otlpEndpoint
+    ? new OtlpTraceExporter({
+        endpoint: otlpEndpoint,
+        ...(otlpHeaders ? { headers: otlpHeaders } : {}),
+        log: (event, message) => log.error(event, message),
+      })
+    : undefined;
   // E1.5: an unusable cap value aborts the boot inside resolveConcurrencyConfig,
   // because a silently ignored cap would read as protection that is not there.
   const concurrency = resolveConcurrencyConfig(process.env);
@@ -214,6 +252,9 @@ async function main(): Promise<void> {
     // options, so the endpoint existed in the library and was dead in deployment.
     ...(process.env.ZEUS_TRACE_EXPORT_FILE ? { traceExportFile: process.env.ZEUS_TRACE_EXPORT_FILE } : {}),
     ...(process.env.ZEUS_METRICS_HISTORY_FILE ? { metricsHistoryFile: process.env.ZEUS_METRICS_HISTORY_FILE } : {}),
+    // G2: OTLP export is opt-in by endpoint; the exporter (with its headers and
+    // fail-soft log sink) is assembled above and handed to boot as an instance.
+    ...(otlpTraceExporter ? { otlpTraceExporter } : {}),
     ...(audit.auditMaxBytes !== undefined ? { auditMaxBytes: audit.auditMaxBytes } : {}),
     ...(audit.auditKeep !== undefined ? { auditKeep: audit.auditKeep } : {}),
     dispatchAudit: entry => {
@@ -256,6 +297,7 @@ async function main(): Promise<void> {
   log.info('observability-export', undefined, {
     traceExport: process.env.ZEUS_TRACE_EXPORT_FILE ?? 'off',
     metricsHistory: process.env.ZEUS_METRICS_HISTORY_FILE ?? 'off',
+    otlpExport: otlpEndpoint ?? 'off',
   });
   // The exported tree is rebuilt from the audit spine, so a trace file without
   // an audit file stays empty forever (src/state/boot.ts guards on both). Say it

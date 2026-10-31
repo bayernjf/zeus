@@ -144,6 +144,12 @@ export type KernelBoot = KernelComponents & {
    */
   traceExporter?: JsonlTraceExporter;
   /**
+   * G2 (design-observability §5): the opt-in OTLP exporter when a caller handed
+   * one in; undefined = no network export. The settle path fire-and-forgets the
+   * same tree to both this and `traceExporter` when both are attached.
+   */
+  otlpTraceExporter?: TraceExporter;
+  /**
    * TracePort v1 §2: the DecisionTrace registry the trace tree assembles model
    * spans from. Wired by the process entry (the same onTrace hook feeds the
    * decision ledger); absent, tree assembly is unchanged (no model spans).
@@ -226,6 +232,14 @@ export type KernelBootOptions = {
    * traceId). Unset = no exporter, exactly the V1/V2 behaviour.
    */
   traceExportFile?: string;
+  /**
+   * G2 (design-observability §5): a second, opt-in network exporter (the
+   * OTLP/HTTP JSON adapter). Accepted as an instance — endpoint/headers/transport
+   * stay the caller's configuration concern (serve.ts builds it from
+   * ZEUS_OTLP_ENDPOINT); boot only wires the settle-path fire-and-forget export.
+   * Unset = nothing dials out, exactly the V1/V2 behaviour.
+   */
+  otlpTraceExporter?: TraceExporter;
   /**
    * TracePort v1 §2: the DecisionTrace registry the trace tree assembles model
    * spans from (see the kernel component of the same name). Absent = no model
@@ -339,6 +353,9 @@ async function assembleKernel(
   const traceExporter: JsonlTraceExporter | undefined = options.traceExportFile
     ? new JsonlTraceExporter(options.traceExportFile)
     : undefined;
+  // G2: the OTLP exporter is handed in fully configured; boot never reads env
+  // and never constructs a network client on its own.
+  const otlpTraceExporter: TraceExporter | undefined = options.otlpTraceExporter;
   const metricsHistory: MetricsHistory | undefined = options.metricsHistoryFile
     ? new MetricsHistory(options.metricsHistoryFile)
     : undefined;
@@ -857,6 +874,13 @@ async function assembleKernel(
         if (traceExporter !== undefined && options.auditFile !== undefined) {
           void exportSettledTrace(event.intentId, options.auditFile, progressHub, traceExporter)
             .catch(error => (options.onAuditError ?? noop)(`trace export failed for ${event.intentId}: ${error instanceof Error ? error.message : String(error)}`));
+        }
+        // G2: the OTLP face shares the settle-path projection and the
+        // fire-and-forget contract; its own transport failures are fail-soft
+        // inside the exporter (log sink), this catch is the belt over braces.
+        if (otlpTraceExporter !== undefined && options.auditFile !== undefined) {
+          void exportSettledTrace(event.intentId, options.auditFile, progressHub, otlpTraceExporter)
+            .catch(error => (options.onAuditError ?? noop)(`otlp trace export failed for ${event.intentId}: ${error instanceof Error ? error.message : String(error)}`));
         }
       }
     },
@@ -1393,6 +1417,7 @@ async function assembleKernel(
     ...(intentArchive ? { intentArchive } : {}),
     retention,
     ...(traceExporter ? { traceExporter } : {}),
+    ...(otlpTraceExporter ? { otlpTraceExporter } : {}),
     ...(options.decisionTraceBuffer ? { decisionTraceBuffer: options.decisionTraceBuffer } : {}),
     ...(metricsHistory ? { metricsHistory } : {}),
     saveState: persistLiveState,
