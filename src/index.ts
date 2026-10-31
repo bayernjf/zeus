@@ -423,6 +423,14 @@ export type {
   McpHandlerDeps,
 } from './realm/mcp.js';
 
+// --- G6: read-only kernel tool face over MCP (memory.recall / traces.query) ---
+export {
+  createKernelToolsMcpHandler,
+  KERNEL_MCP_PROTOCOL_VERSION,
+  KERNEL_MCP_ERROR_CODES,
+} from './mcp/kernel-tools.js';
+export type { KernelMcpActor, KernelToolsMcpDeps } from './mcp/kernel-tools.js';
+
 // --- Vault treasure map & recovery protocol (E8.1/E8.2; references only, sealed at rest) ---
 export { buildVault, parseMap, assertMap } from './vault/map.js';
 export { seal, open, validateEnvelopeShape } from './vault/cipher.js';

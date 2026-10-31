@@ -70,6 +70,7 @@ import type { MemoryStore } from '../memory/memory-store.js';
 import type { DriverWriteGrant, RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
 import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../realm/types.js';
 import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../realm/mcp.js';
+import { createKernelToolsMcpHandler, KERNEL_MCP_PROTOCOL_VERSION, type KernelMcpActor } from '../mcp/kernel-tools.js';
 import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type Task, type TaskState } from '../a2a/types.js';
 import { fealtyOathProblem } from '../registry/registry.js';
 import { isReadOnlyTagged, trustTierOf } from '../trust/tier.js';
@@ -271,6 +272,15 @@ export type HttpDeps = {
    * name carrying the session-scoped actor (default `x-zeus-realm-actor`).
    */
   realmMcp?: { realmIds: string[]; actorHeader?: string };
+  /**
+   * G6 (design-observability §5): read-only kernel tool face over MCP
+   * (memory.recall / traces.query). Mounted at /api/mcp when an internal token
+   * exists and at least one backing store (memoryStore / traceExporter) is
+   * wired; authn accepts the driver bearer token or a memory service token,
+   * authz is per tool (memory.recall is namespace-bound, traces.query is
+   * driver-only). Unmounted backing stores fail closed by name.
+   */
+  kernelToolsMcp?: boolean;
   /**
    * Inbound A2A face (design-inbound-a2a, deferred #19): when set, mounts
    * GET /.well-known/agent-card.json (public Zeus agent card, no secrets) and
@@ -533,6 +543,69 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           store: realmStore,
           realmIds: mcp.realmIds,
           ...(actor ? { actor } : {}),
+          ...(deps.log ? { log: deps.log } : {}),
+        });
+        const response = await handle(message);
+        reply.type('application/json; charset=utf-8');
+        return response ?? {};
+      });
+    }
+
+    // G6 (design-observability §5): read-only kernel tool face over MCP —
+    // memory.recall (namespace-bound) and traces.query (driver-only), both
+    // mapped onto the same transport-agnostic handler. Mounted only when an
+    // internal token exists (auth material) and something backs the tools;
+    // otherwise a 404, exactly like every other conditional observability face.
+    if (deps.kernelToolsMcp && deps.internalToken && (deps.memoryStore || deps.traceExporter)) {
+      const driverToken = deps.internalToken;
+      const memoryServiceTokens = deps.memoryServiceTokens;
+      // Public server metadata for client discovery; carries no state about
+      // which backing stores are mounted (mount state would leak to
+      // unauthenticated callers — same rule as the realm face's GET /mcp).
+      app.get('/api/mcp', async () => ({
+        jsonrpc: JSONRPC_VERSION,
+        protocolVersion: KERNEL_MCP_PROTOCOL_VERSION,
+        capabilities: { tools: {} },
+        serverInfo: { name: 'zeus-kernel', version: deps.version ?? '0.1.0' },
+      }));
+      app.post('/api/mcp', async (request: FastifyRequest, reply: FastifyReply) => {
+        // Authn: driver bearer token or a memory service token, both compared
+        // constant-time; anything else is a 401 challenge. Authz is per tool
+        // inside the handler (actor kind), not per route: one endpoint serves
+        // both identities, and the tools say which identity they accept.
+        const header = request.headers.authorization ?? '';
+        const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
+        let actor: KernelMcpActor | undefined;
+        if (presented && constantTimeEqual(presented, driverToken)) {
+          actor = { kind: 'driver' };
+        } else if (presented && memoryServiceTokens) {
+          for (const [namespace, token] of Object.entries(memoryServiceTokens)) {
+            if (constantTimeEqual(presented, token)) {
+              actor = { kind: 'memory-consumer', namespace };
+              break;
+            }
+          }
+        }
+        if (actor === undefined) {
+          await reply.code(401).header('WWW-Authenticate', 'Bearer').send({ error: 'unauthorized' });
+          return;
+        }
+        const raw = request.body as unknown;
+        let message: unknown;
+        if (typeof raw === 'string') {
+          try {
+            message = JSON.parse(raw);
+          } catch {
+            return error(reply, 400, 'invalid_json', 'request body must be a JSON-RPC object');
+          }
+        } else {
+          message = raw;
+        }
+        const handle = createKernelToolsMcpHandler({
+          actor,
+          ...(deps.memoryStore ? { memoryStore: deps.memoryStore } : {}),
+          ...(deps.traceExporter ? { traceExporter: deps.traceExporter } : {}),
+          ...(deps.memoryServiceAudit ? { memoryServiceAudit: deps.memoryServiceAudit } : {}),
           ...(deps.log ? { log: deps.log } : {}),
         });
         const response = await handle(message);

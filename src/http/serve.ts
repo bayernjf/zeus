@@ -532,6 +532,10 @@ async function main(): Promise<void> {
           },
         }
       : {}),
+    // G6: the read-only kernel tool face (/api/mcp). The flag is constant —
+    // the route self-gates on internalToken + a mounted backing store, so an
+    // exporter-less, memory-less build still mounts nothing.
+    kernelToolsMcp: true,
     // Inbound A2A (design-inbound-a2a, deferred #19): publish Zeus' own agent
     // card when the kernel has a skill catalogue to advertise. The card URL is
     // the public-facing base (ZEUS_PUBLIC_URL when a reverse proxy fronts the
