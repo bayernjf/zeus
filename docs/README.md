@@ -48,6 +48,7 @@
 | 上线前要跑哪些验收、哪几条是硬阻塞、每次必跑的回归门 | [pre-launch-checklist.md](pre-launch-checklist.md)（A 硬阻塞 / B 部署运营 / C 阈值标定 / D 待决定 / E 发布动作 / F 每次必跑的验证门；每条带证据分级：实测 / 记录 / 待做） |
 | 知道现在做到哪、接下来做什么 | [handoff.md](../handoff.md) ★ 交接必读 |
 | 看历史批次归档（Active work 1–212，2026-09-21 – 2026-10-10） | [handoff-archive.md](../handoff-archive.md) 归档/只读 |
+| 看历史批次归档第二卷（Active work 213–276，2026-10-11 – 2026-10-27） | [handoff-archive-2.md](../handoff-archive-2.md) 归档/只读 |
 | 理解个人版与企业版的差异 | [product-portrait.md](product-portrait.md) §4 用户画像 |
 | 理解产品矩阵如何并入 Zeus | [product-portrait.md](product-portrait.md) §7 执行 Agent 式协同 |
 | 查看开放问题 / 缓做项 | [deferred-items.md](deferred-items.md) |
