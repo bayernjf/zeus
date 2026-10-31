@@ -106,7 +106,7 @@ import { composeBriefing } from '../onboarding/briefing.js';
 import { DomainError, type DomainErrorKind } from '../util/domain-error.js';
 import { buildDiariesFromState } from '../diary/from-memory.js';
 import { exportDiary, persistDiary } from '../diary/persist.js';
-import { DiaryUnsupportedError } from '../diary/types.js';
+import { DiaryError, DiaryUnsupportedError } from '../diary/types.js';
 import { reconcileMemoryStates } from '../memory/reconcile.js';
 import { factId } from '../memory/consolidate.js';
 import { sha256Hex } from '../util/crypto.js';
@@ -3618,13 +3618,17 @@ function mapCommissionError(reply: FastifyReply, thrown: unknown): FastifyReply 
   return mapOrgError(reply, thrown);
 }
 
-function mapRealmQueryError(reply: FastifyReply, thrown: unknown): FastifyReply {
+export function mapRealmQueryError(reply: FastifyReply, thrown: unknown): FastifyReply {
   if (thrown instanceof UnsupportedQueryError) return error(reply, 400, 'invalid_request', thrown.message);
   if (thrown instanceof RealmNotConnectedError) return error(reply, 404, 'not_found', thrown.message);
   if (thrown instanceof RealmSourceError) {
     return error(reply, 403, 'realm_source_refused', thrown.message);
   }
-  throw thrown;
+  // An untyped throw is a server bug: rethrowing used to land in Fastify's
+  // default 500 body, which echoes err.message. Send the fixed RFC 9457
+  // ProblemDetails body instead; the original error is logged server-side.
+  reply.log.error({ err: thrown }, 'unhandled realm query error');
+  return problemDetails(reply, INTERNAL_ERROR_DETAIL);
 }
 
 /** Classify a connector-registry failure. A `SkillValidationError` is a bad
@@ -3676,19 +3680,25 @@ export function mapCatalogueError(reply: FastifyReply, thrown: unknown): Fastify
   return problemDetails(reply, INTERNAL_ERROR_DETAIL);
 }
 
-/** Map DiaryError to HTTP status: unsupported/no writable realm → 409,
- *  anything else (boundary, malformed) → 400. */
-function mapDiaryError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const detail = thrown instanceof Error ? thrown.message : String(thrown);
+/** Map DiaryError to HTTP status: unauthorized writes → 403, unsupported/no
+ *  writable realm → 409, typed diary/realm failures (boundary, malformed) →
+ *  400. An untyped throw is a server bug: it gets the fixed RFC 9457
+ *  ProblemDetails 500 — never classified by its message text, never echoed —
+ *  and the original error is logged server-side. */
+export function mapDiaryError(reply: FastifyReply, thrown: unknown): FastifyReply {
   if (thrown instanceof UnauthorizedRealmWriteError) {
     // A well-formed request that lacked authorization is a 403, not a 400: the
     // caller needs to know to go mint a grant, not to fix their JSON.
-    return error(reply, 403, 'forbidden', detail);
+    return error(reply, 403, 'forbidden', thrown.message);
   }
-  if (thrown instanceof DiaryUnsupportedError || /no write|not connected|read-only|writable/i.test(detail)) {
-    return error(reply, 409, 'conflict', detail);
+  if (thrown instanceof DiaryUnsupportedError || thrown instanceof RealmNotConnectedError) {
+    return error(reply, 409, 'conflict', thrown.message);
   }
-  return error(reply, 400, 'invalid_request', detail);
+  if (thrown instanceof DiaryError || thrown instanceof RealmError) {
+    return error(reply, 400, 'invalid_request', thrown.message);
+  }
+  reply.log.error({ err: thrown }, 'unhandled diary error');
+  return problemDetails(reply, INTERNAL_ERROR_DETAIL);
 }
 
 /**
