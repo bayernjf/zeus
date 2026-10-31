@@ -3364,22 +3364,38 @@ export function classifyOrgError(thrown: unknown): { status: number; code: strin
 // An untyped throw is a server bug: classifying it as 400 would tell the
 // client to change a request that cannot succeed, and echoing its message
 // leaks internals (driver text, file paths). Surface a fixed 500 instead;
-// the original error is logged server-side by the mappers below.
+// the original error is logged server-side by the mappers below. The body
+// follows the batch-wide unified error contract: a minimal RFC 9457
+// ProblemDetails object, while DomainError bodies keep their
+// `{ error, detail }` envelope unchanged.
 const INTERNAL_ERROR_CLASSIFICATION = { status: 500, code: 'internal_error' } as const;
 const INTERNAL_ERROR_DETAIL = 'internal error';
+
+/** Send the fixed unhandled-failure body (RFC 9457 ProblemDetails). `about:blank`
+ *  means the status code carries the meaning; the path-only `instance` never
+ *  echoes query parameters. */
+function problemDetails(reply: FastifyReply, detail: string): FastifyReply {
+  return reply.code(500).send({
+    type: 'about:blank',
+    title: 'Internal Server Error',
+    status: 500,
+    detail,
+    instance: reply.request.url.split('?')[0],
+  });
+}
 
 export function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
   const { status, code } = classifyKernelError(thrown);
   if (thrown instanceof DomainError) return error(reply, status, code, messageOf(thrown));
   reply.log.error({ err: thrown }, 'unhandled kernel error');
-  return error(reply, status, code, INTERNAL_ERROR_DETAIL);
+  return problemDetails(reply, INTERNAL_ERROR_DETAIL);
 }
 
 export function mapOrgError(reply: FastifyReply, thrown: unknown): FastifyReply {
   const { status, code } = classifyOrgError(thrown);
   if (thrown instanceof DomainError) return error(reply, status, code, messageOf(thrown));
   reply.log.error({ err: thrown }, 'unhandled org error');
-  return error(reply, status, code, INTERNAL_ERROR_DETAIL);
+  return problemDetails(reply, INTERNAL_ERROR_DETAIL);
 }
 
 /** Validate a YYYY-MM-DD date string. */
@@ -3584,7 +3600,7 @@ export function mapCatalogueError(reply: FastifyReply, thrown: unknown): Fastify
     return error(reply, status, code, messageOf(thrown));
   }
   reply.log.error({ err: thrown }, 'unhandled catalogue error');
-  return error(reply, status, code, INTERNAL_ERROR_DETAIL);
+  return problemDetails(reply, INTERNAL_ERROR_DETAIL);
 }
 
 /** Map DiaryError to HTTP status: unsupported/no writable realm → 409,
