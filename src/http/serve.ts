@@ -36,6 +36,7 @@ import {
 import { kernelStats } from '../state/stats.js';
 import { createDecisionTraceSink } from '../observability/decision-trace-sink.js';
 import { createDecisionTraceBuffer } from '../observability/trace.js';
+import { JsonlEvalRunsStore } from '../evals/runs-store.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
 import { RealmError } from '../realm/types.js';
@@ -446,6 +447,12 @@ async function main(): Promise<void> {
     ...(kernel.decisionTraceBuffer ? { decisionTraceBuffer: kernel.decisionTraceBuffer } : {}),
     // TracePort v1 §5 (D-5): same instance serves the cross-intent query face.
     ...(kernel.traceExporter ? { traceExporter: kernel.traceExporter } : {}),
+    // design-evals W4-2: the eval-runs store is written by the offline runner
+    // (opt-in --runs-file); the serve process only mounts the read face over
+    // the same file. Unset = the query endpoint is not mounted.
+    ...(process.env.ZEUS_EVAL_RUNS_FILE
+      ? { evalRunsStore: new JsonlEvalRunsStore(process.env.ZEUS_EVAL_RUNS_FILE) }
+      : {}),
     ...(sseMaxStreams !== undefined ? { sseMaxStreams } : {}),
     ...(sseAttachGraceMs !== undefined ? { sseAttachGraceMs } : {}),
     // Transport faults whose HTTP/JSON-RPC body stays generic keep their raw

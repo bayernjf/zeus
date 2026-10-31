@@ -281,6 +281,10 @@ const READ_API_ONLY: Record<string, string> = {
   // TracePort v1 §5 (D-5, W2-4): the cross-intent trace query face ships
   // API-only; the ops-console /app/traces BFF page (W2-5) is its reader.
   'GET /api/v1/traces': 'tracked: PRD F2 / D-5 (TracePort v1 section 5; ops-console reader lands with W2-5)',
+  // design-evals W4-2 (FR5-2): the eval run query face is API-only by design —
+  // PRD F5's MVP boundary defers any eval UI ("CLI + JSON 报告够用"); the
+  // offline runner is the primary reader of its own reports.
+  'GET /api/v1/eval-runs': 'tracked: PRD F5 / FR5-2 (eval runs query face; eval UI is an explicit MVP non-goal)',
 };
 
 describe('operator surface coverage - read routes', () => {

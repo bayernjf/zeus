@@ -13,7 +13,9 @@ import type {
   ChoiceRequest,
   ChoiceResult,
   DecisionBackend,
+  DecisionBackendError,
   DecisionBackendErrorCode,
+  DecisionTrace,
   NoulRequest,
   NoulResult,
   ScoreRequest,
@@ -27,6 +29,14 @@ export type ScriptedOptions = {
   delayMs?: number;
   /** Every call fails with this folded error code after the configured delay. */
   failWith?: DecisionBackendErrorCode;
+  /** TracePort v1 §2: the token usage every call reports through
+   *  DecisionTrace (design-decision-backend keeps DecisionTrace the only cost
+   *  site). Absent, calls emit traces without a usage block — exactly what a
+   *  provider that returned no usage block would produce. */
+  usage?: { inputTokens: number; outputTokens: number; reasoningTokens?: number };
+  /** Receives one DecisionTrace per scripted call (E1.6 replayability, same
+   *  hook the real adapters expose). */
+  onTrace?: (trace: DecisionTrace) => void;
   noul?: ScriptedMethod<NoulRequest, NoulResult>;
   choice?: ScriptedMethod<ChoiceRequest, ChoiceResult>;
   score?: ScriptedMethod<ScoreRequest, ScoreResult>;
@@ -70,13 +80,41 @@ function resolveScripted<Request, Result>(
 
 /** Build a scripted decision backend. Methods with no script answer with a
  *  neutral fixed result, so a test that only drives `choice` does not have to
- *  construct the other two answers. */
+ *  construct the other two answers. When `onTrace` is wired, every call emits
+ *  one DecisionTrace — success carries the scripted result and usage, a
+ *  scripted failure carries the folded error — so eval runs (design-evals
+ *  W4-3) and reliability tests can drive the per-call ledger without a
+ *  network. */
 export function createScriptedDecisionBackend(options: ScriptedOptions = {}): ScriptedDecisionBackend {
   const kind = options.kind ?? 'decision-model';
   const calibrated = kind === 'decision-model';
+  const model = options.model ?? (kind === 'llm' ? 'scripted-llm' : 'scripted-jev');
   const calls: ScriptedDecisionBackend['calls'] = { noul: [], choice: [], score: [] };
+  const now = () => new Date().toISOString();
 
-  const run = async <Request, Result>(
+  const emit = (
+    primitive: 'noul' | 'choice' | 'score',
+    request: { runId: string; question: string; stateKeys?: string[] },
+    started: number,
+    outcome: { result?: unknown; error?: DecisionBackendError },
+  ): void => {
+    if (options.onTrace === undefined) return;
+    const trace: DecisionTrace = {
+      runId: request.runId,
+      backend: kind,
+      model: model,
+      request: { kind: primitive, question: request.question, stateKeys: request.stateKeys ?? [] },
+      ...(outcome.result !== undefined ? { result: outcome.result } : {}),
+      ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+      latencyMs: Date.now() - started,
+      ...(options.usage !== undefined ? { usage: options.usage } : {}),
+      decidedAt: now(),
+    };
+    options.onTrace(trace);
+  };
+
+  const run = async <Request extends { runId: string; question: string; stateKeys?: string[] }, Result>(
+    primitive: 'noul' | 'choice' | 'score',
     log: ScriptedCall<Request>[],
     scripted: ScriptedMethod<Request, Result> | undefined,
     fallback: Result,
@@ -84,18 +122,24 @@ export function createScriptedDecisionBackend(options: ScriptedOptions = {}): Sc
   ): Promise<Result> => {
     const callIndex = log.length;
     log.push({ callIndex, request });
+    const started = Date.now();
     if (options.delayMs !== undefined && options.delayMs > 0) await sleep(options.delayMs);
     if (options.failWith !== undefined) {
-      throw new DecisionBackendFailure(options.failWith, `scripted failure: ${options.failWith}`);
+      const failure = new DecisionBackendFailure(options.failWith, `scripted failure: ${options.failWith}`);
+      emit(primitive, request, started, { error: failure.toJSON() });
+      throw failure;
     }
-    return resolveScripted(scripted, fallback, request, callIndex);
+    const result = resolveScripted(scripted, fallback, request, callIndex);
+    emit(primitive, request, started, { result });
+    return result;
   };
 
   return {
     kind,
-    model: options.model ?? (kind === 'llm' ? 'scripted-llm' : 'scripted-jev'),
+    model: model,
     noul: (request) =>
       run<NoulRequest, NoulResult>(
+        'noul',
         calls.noul,
         options.noul,
         { probability: 0.5, confidence: 0.5, calibrated, decisionAt: 't0' },
@@ -103,6 +147,7 @@ export function createScriptedDecisionBackend(options: ScriptedOptions = {}): Sc
       ),
     choice: (request) =>
       run<ChoiceRequest, ChoiceResult>(
+        'choice',
         calls.choice,
         options.choice,
         { choice: '', probabilities: {}, confidence: 0, calibrated, decisionAt: 't0' },
@@ -110,6 +155,7 @@ export function createScriptedDecisionBackend(options: ScriptedOptions = {}): Sc
       ),
     score: (request) =>
       run<ScoreRequest, ScoreResult>(
+        'score',
         calls.score,
         options.score,
         { score: 50, distribution: {}, confidence: 0, calibrated, decisionAt: 't0' },

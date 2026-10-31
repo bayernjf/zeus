@@ -22,6 +22,7 @@
  *   node scripts/eval-run.mjs --filter data-policy
  *   node scripts/eval-run.mjs --out /tmp/eval.json
  *   node scripts/eval-run.mjs --baseline --comment-out /tmp/pr-comment.md
+ *   node scripts/eval-run.mjs --runs-file data/eval-runs.jsonl --suite core
  * Exit codes: 0 every case passed, 1 any case failed or the diff regressed,
  * 2 cannot start (missing build).
  *
@@ -29,6 +30,15 @@
  * a GitHub-flavoured Markdown body (carrying a fixed marker for idempotent
  * upserts) before the exit code is decided, so a block-regression run still
  * leaves the body behind for scripts/ci-pr-comment.mjs to post.
+ *
+ * W4-1 judge: when ZEUS_EVAL_JUDGE_ENABLED is set (and the hub wiring resolves
+ * the judge alias), cases declaring a `judge` expectation are scored by the
+ * LLM at temperature 0; every judge failure is fail-soft (observe, never
+ * blocks). W4-2 runs store: --runs-file appends a JSONL run record (0600,
+ * keyed by runId; suite/model/score/per-case results; legacy
+ * { ranAt, cases, report } fields unchanged at the top level) served by
+ * GET /api/v1/eval-runs when the serve process points ZEUS_EVAL_RUNS_FILE at
+ * the same file.
  */
 
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
@@ -36,6 +46,9 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bootKernel } from '../dist/state/boot.js';
 import { scoreEvalRun, summarizeEvalRun, diffAgainstBaseline } from '../dist/evals/score.js';
+import { createEvalJudgeFromEnv } from '../dist/evals/judge.js';
+import { JsonlEvalRunsStore } from '../dist/evals/runs-store.js';
+import { createScriptedDecisionBackend } from '../dist/testing/decision-backend.js';
 import { evalCases } from '../evals/cases/index.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -72,6 +85,23 @@ const PR_COMMENT_MARKER = '<!-- zeus-eval-gate -->';
 const baselineFile = (() => {
   const at = process.argv.indexOf('--baseline-file');
   return at >= 0 ? (process.argv[at + 1] ?? BASELINE_PATH) : BASELINE_PATH;
+})();
+// W4-2: suite identity + opt-in structured run store. `--runs-file` appends
+// one JSONL record (0600, keyed by runId) beside the legacy reports/ JSON —
+// never instead of it; the legacy artifact stays the default output.
+const suite = (() => {
+  const at = process.argv.indexOf('--suite');
+  const v = at >= 0 ? process.argv[at + 1] : undefined;
+  return v && v.trim() !== '' ? v.trim() : 'core';
+})();
+const revision = (() => {
+  const at = process.argv.indexOf('--revision');
+  const v = at >= 0 ? process.argv[at + 1] : undefined;
+  return v && v.trim() !== '' ? v.trim() : undefined;
+})();
+const runsFile = (() => {
+  const at = process.argv.indexOf('--runs-file');
+  return at >= 0 ? process.argv[at + 1] : undefined;
 })();
 
 /** @type {Array<{ caseId: string, passed: boolean, detail: string }>} */
@@ -262,6 +292,7 @@ function makeOversightBridge(audits) {
  *   agents: Array<{ name: string, stance?: string, rationale?: string, dataPolicy?: string, fail?: boolean, planner?: boolean, planDraft?: object, deltas?: string[] }>;
  *   request: Record<string, unknown>;
  *   costLimit?: { maxWindowCost: number; circuitWindowMs: number };
+ *   decisionBackend?: { model?: string, usage?: { inputTokens: number, outputTokens: number, reasoningTokens?: number }, failWith?: string };
  *   expect: Array<import('../dist/evals/types.js').EvalExpectation>;
  *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
  *   planFlow?: { goal: string; plannerSkills?: string[] };
@@ -296,12 +327,30 @@ async function runCase(c) {
   if (filter && !c.id.startsWith(filter)) return null;
   /** @type {import('../dist/dispatch/dispatcher.js').AuditEntry[]} */
   const audits = [];
+  // W4-3: a case-declared decision backend makes the arbitration/judge path
+  // live for this case and emits one DecisionTrace per call — the per-call
+  // ledger the budget cost checks consume. Loopback-only by construction
+  // (scripted answers, no network); cases without the fixture stay rules-only
+  // and their cost checks remain not-assessable. Enabling a backend changes
+  // arbitration behaviour, so a fixture case must account for it in its
+  // expectations.
+  /** @type {import('../dist/decision/types.js').DecisionTrace[]} */
+  const decisionTraces = [];
+  const scriptedBackend = c.decisionBackend !== undefined
+    ? createScriptedDecisionBackend({
+        ...(c.decisionBackend.model !== undefined ? { model: c.decisionBackend.model } : {}),
+        ...(c.decisionBackend.usage !== undefined ? { usage: c.decisionBackend.usage } : {}),
+        ...(c.decisionBackend.failWith !== undefined ? { failWith: /** @type {import('../dist/decision/types.js').DecisionBackendErrorCode} */ (c.decisionBackend.failWith) } : {}),
+        onTrace: t => decisionTraces.push(t),
+      })
+    : undefined;
   const kernel = await bootKernel({
     fetchImpl: makeFetch(c.agents),
     vassalSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
     dispatchAudit: e => audits.push(e),
     oversightAudit: makeOversightBridge(audits),
     ...(c.costLimit !== undefined ? { costLimit: c.costLimit } : {}),
+    ...(scriptedBackend !== undefined ? { decisionBackend: scriptedBackend } : {}),
   });
   if (c.memory !== undefined) {
     for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
@@ -320,6 +369,7 @@ async function runCase(c) {
       ...(c.planFlow.plannerSkills !== undefined ? { plannerSkills: c.planFlow.plannerSkills } : {}),
       requireConfirmation: true,
     });
+    /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(planning)', runId: '(planning)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [], planFlow: planResult };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
@@ -347,6 +397,7 @@ async function runCase(c) {
       audit: e => audits.push(e),
       ...(c.recovery.maxAutoResumeMs !== undefined ? { maxAutoResumeMs: c.recovery.maxAutoResumeMs } : {}),
     });
+    /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(recovery)', runId: '(recovery)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [] };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
@@ -360,6 +411,7 @@ async function runCase(c) {
     const manifest = /** @type {import('../dist/mcp/isolation.js').IsolationManifest} */ (c.isolation.manifest);
     const level = classifyIsolation({ transport: c.isolation.transport, tier: /** @type {import('../dist/trust/tier.js').TrustTier} */ (c.isolation.tier), manifest });
     const verdict = validateIsolation({ level, manifest, authorizedRealms: c.isolation.authorizedRealms, containerRuntimeAvailable: c.isolation.containerRuntimeAvailable });
+    /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = {
       outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(isolation)', runId: '(isolation)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }),
       audit: audits,
@@ -386,7 +438,16 @@ async function runCase(c) {
         ...c.request,
       }),
     );
-    const trace = { outcome, audit: audits, events };
+    /** @type {import('../src/evals/score.js').EvalTrace} */
+    const trace = {
+      outcome,
+      audit: audits,
+      events,
+      // W4-3: present whenever the case declared a decision backend — an empty
+      // array is a ledger that observed zero calls, which is assessable (0
+      // tokens); absent means no ledger path, which stays not-assessable.
+      ...(scriptedBackend !== undefined ? { traces: decisionTraces } : {}),
+    };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
       trace,
@@ -420,6 +481,15 @@ budgetWatch.unref();
 
 /** @type {import('../src/evals/score.js').EvalResult[]} */
 const results = [];
+// W4-1: the LLM-as-judge is opt-in (ZEUS_EVAL_JUDGE_ENABLED + a resolvable hub
+// alias). One judge per process, created lazily on the first case that needs
+// it; without it, judge checks degrade to observe (fail-soft) in the scorer.
+/** @type {import('../dist/evals/judge.js').EvalJudge | null | undefined} */
+let evalJudge;
+function judgeFor() {
+  if (evalJudge === undefined) evalJudge = createEvalJudgeFromEnv(process.env);
+  return evalJudge;
+}
 for (const c of evalCases) {
   if (Date.now() - startedAt > BUDGET_MS) {
     fail(`wall-clock budget ${BUDGET_MS / 1000}s exceeded after ${results.length} cases`);
@@ -427,6 +497,24 @@ for (const c of evalCases) {
   try {
     const ran = await runCase(c);
     if (ran === null) continue;
+    // W4-1: only cases that declare a judge expectation reach the judge — one
+    // call per expectation, in declaration order; the scorer consumes the
+    // verdicts positionally. Every judge failure is a fail-soft verdict, so a
+    // hub outage slows the run but cannot flip its outcome.
+    const judgeExpectations = c.expect.filter(ex => ex.judge !== undefined);
+    if (judgeExpectations.length > 0) {
+      const judge = judgeFor();
+      if (judge !== null) {
+        /** @type {import('../dist/evals/judge.js').JudgeVerdict[]} */
+        const verdicts = [];
+        for (const ex of judgeExpectations) {
+          const judgeEx = ex.judge;
+          if (judgeEx === undefined) continue;
+          verdicts.push(await judge.score(judgeEx.rubric, ran.trace.outcome));
+        }
+        ran.trace.judgeVerdicts = verdicts;
+      }
+    }
     const scored = scoreEvalRun(ran.caseDef, ran.trace);
     results.push(scored);
     const failedChecks = scored.checks.filter(ch => !ch.passed);
@@ -461,6 +549,27 @@ if (outPath) {
 if (WRITE_BASELINE) {
   writeFileSync(BASELINE_PATH, JSON.stringify({ pinnedAt: artifact.ranAt, report }, null, 2));
   console.log(`baseline pinned -> ${BASELINE_PATH}`);
+}
+
+// W4-2: opt-in structured run store (FR5-2). One JSONL record appended beside
+// the legacy artifact — the reports/ JSON stays the default output and its
+// shape (ranAt/cases/report) is carried unchanged at the top level of the
+// record, so legacy consumers keep working. Keyed by runId (derived from
+// ranAt), so a retried run cannot double-write.
+if (runsFile) {
+  const record = {
+    runId: `run-${artifact.ranAt}`,
+    suite,
+    model: 'rules-only',
+    ...(evalJudge !== undefined && evalJudge !== null ? { judgeModel: evalJudge.model } : {}),
+    ...(revision !== undefined ? { revision } : {}),
+    ranAt: artifact.ranAt,
+    cases: results,
+    report,
+  };
+  const store = new JsonlEvalRunsStore(runsFile);
+  await store.append(record);
+  console.log(`run record -> ${runsFile} (runId ${record.runId}, suite ${record.suite})`);
 }
 
 /** @type {ReadonlyArray<import('../src/evals/score.js').EvalRegression> | null} */
