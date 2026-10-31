@@ -50,6 +50,7 @@
     "watch:tick": "node scripts/run-watch-tick.mjs",
     "daemon": "node scripts/run-watch-tick.mjs --watch --notify",
     "bench:capacity": "node scripts/bench-capacity.mjs",
+    "bench:recall": "node scripts/bench-recall.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
