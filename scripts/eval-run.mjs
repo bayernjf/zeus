@@ -42,18 +42,34 @@
  */
 
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { bootKernel } from '../dist/state/boot.js';
 import { scoreEvalRun, summarizeEvalRun, diffAgainstBaseline } from '../dist/evals/score.js';
 import { createEvalJudgeFromEnv } from '../dist/evals/judge.js';
 import { JsonlEvalRunsStore } from '../dist/evals/runs-store.js';
 import { createScriptedDecisionBackend } from '../dist/testing/decision-backend.js';
-import { evalCases } from '../evals/cases/index.mjs';
+
+// W4-5: a second, product-vertical suite lives in its own module and pins its
+// own baseline; `--suite-file evals/cases/<name>.mjs` selects it. The module
+// is loaded below (after REPO is defined), the default staying the original
+// governance suite so the existing gate behaves unchanged.
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const BASELINE_PATH = join(REPO, 'evals/baseline.json');
 const REPORTS_DIR = join(REPO, 'evals/reports');
+// W4-5: optional second, product-vertical suite. Defaults to the original
+// governance suite so existing invocations and the primary gate are unchanged.
+const suiteFile = (() => {
+  const at = process.argv.indexOf('--suite-file');
+  if (at < 0) return 'evals/cases/index.mjs';
+  const v = process.argv[at + 1];
+  if (!v) throw new Error('`--suite-file` requires a path');
+  return v;
+})();
+const casesModule = await import(pathToFileURL(resolve(REPO, suiteFile)).href);
+/** @type {RunnerCase[]} */
+const evalCases = casesModule.evalCases;
 // ZEUS_EVAL_BUDGET_MS overrides the wall-clock budget (used by tests to force
 // a near-zero budget; unattended runs keep the 120s default).
 const BUDGET_MS = (() => {
@@ -547,8 +563,8 @@ if (outPath) {
 }
 
 if (WRITE_BASELINE) {
-  writeFileSync(BASELINE_PATH, JSON.stringify({ pinnedAt: artifact.ranAt, report }, null, 2));
-  console.log(`baseline pinned -> ${BASELINE_PATH}`);
+  writeFileSync(baselineFile, JSON.stringify({ pinnedAt: artifact.ranAt, suite, report }, null, 2));
+  console.log(`baseline pinned -> ${baselineFile}`);
 }
 
 // W4-2: opt-in structured run store (FR5-2). One JSONL record appended beside
