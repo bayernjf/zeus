@@ -233,6 +233,16 @@ jobs:
         id: eval
         run: node scripts/eval-run.mjs --baseline --comment-out /tmp/eval-comment.md
 
+      # W4-5: second, product-vertical benchmark (loom content recheck) with
+      # its own case module and pinned baseline. Independent gate; the primary
+      # governance suite above is unchanged.
+      - name: Eval run for the content-review suite
+        run: >-
+          node scripts/eval-run.mjs
+          --suite-file evals/cases/content-review.mjs
+          --suite content-review
+          --baseline-file evals/baseline-content-review.json
+
       # Idempotent upsert (one comment per PR, updated in place by marker).
       # always() so a block regression still gets its diff posted; the job's
       # conclusion stays red from the eval step. No-op on push builds and on

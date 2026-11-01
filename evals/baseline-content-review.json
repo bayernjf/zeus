@@ -1,0 +1,68 @@
+{
+  "pinnedAt": "2026-11-01T10:43:52.754Z",
+  "suite": "content-review",
+  "report": {
+    "caseCount": 8,
+    "passed": 18,
+    "failed": 0,
+    "blocked": 0,
+    "warned": 0,
+    "byFamily": {
+      "decision": {
+        "total": 8,
+        "passed": 8,
+        "blocked": 0
+      },
+      "escalation": {
+        "total": 6,
+        "passed": 6,
+        "blocked": 0
+      },
+      "selection": {
+        "total": 1,
+        "passed": 1,
+        "blocked": 0
+      },
+      "evidence": {
+        "total": 3,
+        "passed": 3,
+        "blocked": 0
+      },
+      "guardrails": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "budget": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "planning": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "recovery": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "streaming": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "isolation": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "judge": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      }
+    }
+  }
+}
