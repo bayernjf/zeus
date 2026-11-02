@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { writeFileSync, readFileSync } from 'node:fs';
+import { chmodSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openSqlite } from './sqlite-db.js';
 import {
@@ -270,6 +270,52 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     expect(() => openSqlite(file)).toThrow();
     // The corrupt file must not be silently replaced by an empty database.
     expect(readFileSync(file, 'utf8').startsWith('not-a-database-file')).toBe(true);
+  });
+
+  // File-permission contract (P1-1): the DB holds plaintext local secrets
+  // (decision_webhooks.secret), so openSqlite must leave the file and its
+  // WAL/SHM sidecars at 0600 and create the parent directory 0700. chmod is
+  // POSIX-only; the win32 no-op behavior is documented but not asserted.
+  describe('file permissions', () => {
+    const modeOf = (p: string): number => statSync(p).mode & 0o777;
+
+    it.skipIf(process.platform === 'win32')('creates db + WAL/SHM 0600 and a fresh parent dir 0700', async () => {
+      tempDir = await mkdtemp(join(tmpdir(), 'zeus-persist-'));
+      const file = join(tempDir, 'nested', 'zeus.db');
+      const db = openSqlite(file);
+      try {
+        expect(modeOf(file)).toBe(0o600);
+        expect(modeOf(`${file}-wal`)).toBe(0o600);
+        expect(modeOf(`${file}-shm`)).toBe(0o600);
+        expect(modeOf(dirname(file))).toBe(0o700);
+      } finally {
+        db.close();
+      }
+    });
+
+    it.skipIf(process.platform === 'win32')('tightens a pre-existing world-readable db (0644 → 0600) on open', async () => {
+      const file = await freshFile();
+      const db = openSqlite(file);
+      db.exec('CREATE TABLE t (id TEXT)');
+      db.close();
+      // Simulate a database left loose by an older build or the operator.
+      chmodSync(file, 0o644);
+      expect(modeOf(file)).toBe(0o644);
+      const reopened = openSqlite(file);
+      try {
+        expect(modeOf(file)).toBe(0o600);
+        expect(modeOf(`${file}-wal`)).toBe(0o600);
+        expect(modeOf(`${file}-shm`)).toBe(0o600);
+      } finally {
+        reopened.close();
+      }
+    });
+
+    it('skips file-permission work for :memory:', () => {
+      const db = openSqlite(':memory:');
+      db.exec('CREATE TABLE t (id TEXT)');
+      db.close();
+    });
   });
 
   it('fail-closed (T-M6-05): a failed migration is not recorded as applied', async () => {
