@@ -3,8 +3,17 @@ import type { AggregatedDecision, AggregationRule, BranchOutcome, Position } fro
 
 const STANCE_KEYS = ['stance', 'verdict'] as const;
 
-/** Pull a vassal's stance out of its terminal task's data parts, if it gave one. */
-export function extractStance(task: Task): { stance: string; rationale?: string; weight?: number } | null {
+/**
+ * Pull a vassal's stance out of its terminal task's data parts, if it gave one.
+ *
+ * Trust boundary (deep review 2026-11-02 P1-2): the artifact contract is
+ * stance + rationale only. A vassal-reported `weight` is never ingested —
+ * `Position.weight` is a voting weight assigned by the platform/caller, not an
+ * author-side claim (the memory producer reads no weight for the same reason).
+ * A vassal that wants a bigger say must be granted it operator-side; it cannot
+ * self-report one.
+ */
+export function extractStance(task: Task): { stance: string; rationale?: string } | null {
   for (const artifact of task.artifacts) {
     for (const part of artifact.parts) {
       if (part.kind !== 'data') continue;
@@ -14,7 +23,6 @@ export function extractStance(task: Task): { stance: string; rationale?: string;
         return {
           stance,
           ...(typeof data.rationale === 'string' ? { rationale: data.rationale } : {}),
-          ...(typeof data.weight === 'number' ? { weight: data.weight } : {}),
         };
       }
     }
@@ -83,10 +91,27 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
 
   // weighted
   const threshold = rule.threshold ?? 0.5;
-  const totalWeight = positions.reduce((sum, p) => sum + (p.weight ?? 1), 0);
-  const tally = distinct.map(stance => ({
+  // Fail-closed weight gate (deep review 2026-11-02 P1-2): a position whose
+  // weight is not finite and >= 0 is isolated — it neither votes nor poisons
+  // the total — and the exclusion is recorded in `reason` so the decision
+  // stays auditable. No upper clamp: the rule is a ratio, scale carries no
+  // meaning, and a sum overflowing to Infinity drives every share to 0/NaN,
+  // which fails the threshold and escalates (fail-closed by construction).
+  const weightValid = (p: Position): boolean => p.weight === undefined || (Number.isFinite(p.weight) && p.weight >= 0);
+  const voters = positions.filter(weightValid);
+  const excluded = positions.filter(p => !weightValid(p));
+  const exclusion = excluded.length > 0
+    ? `excluded ${excluded.length} position(s) with non-finite or negative weight (${excluded.map(p => p.vassal).join(', ')}); `
+    : '';
+  const voterGroups = groupByStance(voters);
+  const voterStances = [...voterGroups.keys()];
+  if (voterStances.length === 0) {
+    return { ...base, reason: `${exclusion}no position carries a valid weight; nothing to tally` };
+  }
+  const totalWeight = voters.reduce((sum, p) => sum + (p.weight ?? 1), 0);
+  const tally = voterStances.map(stance => ({
     stance,
-    weight: groups.get(stance)!.reduce((sum, p) => sum + (p.weight ?? 1), 0),
+    weight: voterGroups.get(stance)!.reduce((sum, p) => sum + (p.weight ?? 1), 0),
   }));
   tally.sort((a, b) => b.weight - a.weight || a.stance.localeCompare(b.stance));
   const top = tally[0]!;
@@ -97,9 +122,9 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
       conclusion: top.stance,
       // The margin reports voters, not weight, so it reads the same as majority
       // (the weight split stays visible in `reason`).
-      margin: { winner: top.stance, winnerCount: groups.get(top.stance)!.length, total: positions.length },
-      reason: `weighted: "${top.stance}" ${top.weight}/${totalWeight} >= threshold ${threshold}`,
+      margin: { winner: top.stance, winnerCount: voterGroups.get(top.stance)!.length, total: positions.length },
+      reason: `${exclusion}weighted: "${top.stance}" ${top.weight}/${totalWeight} >= threshold ${threshold}`,
     };
   }
-  return { ...base, reason: `weighted threshold ${threshold} not met or tied for "${top.stance}" (${top.weight}/${totalWeight})` };
+  return { ...base, reason: `${exclusion}weighted threshold ${threshold} not met or tied for "${top.stance}" (${top.weight}/${totalWeight})` };
 }

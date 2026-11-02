@@ -43,6 +43,13 @@ export type SourcedEvent = {
 export type Position = {
   vassal: string;
   stance: string;
+  /**
+   * Voting weight for the weighted rule — platform/caller-side only. Vassal
+   * artifacts never carry it: `extractStance` ignores `data.weight` because the
+   * artifact contract is stance + rationale (deep review 2026-11-02 P1-2).
+   * Must be finite and >= 0; the weighted rule isolates a position whose
+   * weight violates this and records the exclusion in the decision reason.
+   */
   weight?: number;
   rationale?: string;
 };
