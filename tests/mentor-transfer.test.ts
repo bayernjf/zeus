@@ -112,6 +112,17 @@ describe('E2.5 Mentor skill transfer', () => {
     const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     expect(() => ledger.assess(record.id, [])).toThrowError(MentorshipError);
     expect(() => ledger.assess(record.id, [{ criterion: 'c', passed: true, score: 2 }])).toThrowError(MentorshipError);
+    // NaN fails both directional comparisons; it must not slip into the mean.
+    expect(() => ledger.assess(record.id, [{ criterion: 'c', passed: true, score: NaN }])).toThrowError(MentorshipError);
+  });
+
+  it('rejects non-finite or negative check weights instead of poisoning the mean', () => {
+    const registry = registryWithMentor();
+    const ledger = new MentorshipLedger(registry);
+    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    for (const weight of [NaN, Infinity, -Infinity, -1]) {
+      expect(() => ledger.assess(record.id, [{ criterion: 'c', passed: true, score: 0.9, weight }])).toThrowError(MentorshipError);
+    }
   });
 
   it('dismisses an open mentorship and refuses mutations after closing', () => {

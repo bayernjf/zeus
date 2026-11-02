@@ -149,8 +149,15 @@ export class MentorshipLedger {
     const threshold = options.threshold ?? DEFAULT_PASS_SCORE;
     if (checks.length === 0) throw new MentorshipError('cannot certify without any competency check');
     for (const check of checks) {
-      if (check.score < 0 || check.score > 1) {
+      // `!(…)` on purpose: NaN fails both directional comparisons and would
+      // otherwise slip through into the weighted mean below (the same hole
+      // memory consolidation closed for self-reported confidence).
+      if (!(check.score >= 0 && check.score <= 1)) {
         throw new MentorshipError(`check '${check.criterion}' score out of range`);
+      }
+      const weight = check.weight ?? 1;
+      if (!Number.isFinite(weight) || weight < 0) {
+        throw new MentorshipError(`check '${check.criterion}' weight out of range`);
       }
     }
 
