@@ -111,7 +111,7 @@ type SourcedEvent = { source: { vassal: string; taskId?: string; runId: string }
 
 ## 5. F5 规则聚合（`aggregate.ts`，纯函数，不调 LLM）
 
-执行 Agent 立场从终态 `task.artifacts` 的 data part 中提取 `stance`（或同义 `verdict`）字符串；提不到的分支记为"无立场"，不参与投票、不构成冲突。
+执行 Agent 立场从终态 `task.artifacts` 的 data part 中提取 `stance`（或同义 `verdict`）字符串；提不到的分支记为"无立场"，不参与投票、不构成冲突。artifact 契约仅 stance + rationale：执行 Agent 自报的 `weight` 一律不采信——`Position.weight` 是平台/调用方侧的投票权重，不是作者侧声明（深度评审 2026-11-02 P1-2）。
 
 ```ts
 type Position = { vassal: string; stance: string; weight?: number; rationale?: string };
@@ -127,7 +127,7 @@ type AggregatedDecision = {
 
 - `unanimous`：有立场者全部一致 → 结论为该立场，否则 `null`。
 - `majority`（默认）：最多数且**过半** → 结论；平票/未过半 → `null`。
-- `weighted`：按 `weight`（缺省 1）累加，最高权重 stance 且达阈值（缺省 0.5）→ 结论，否则 `null`。
+- `weighted`：按 `weight`（缺省 1）累加，最高权重 stance 且达阈值（缺省 0.5）→ 结论，否则 `null`。权重须为有限非负数：违例立场被隔离（不计票、也不污染总权重），其余立场照常聚合，剔除事实记入 `reason`。不设上界钳制——规则是比值，尺度无意义；求和溢出为 Infinity 会使所有占比归零/NaN，阈值不通过而升级（构造上 fail-closed）。
 
 输出始终带每个执行 Agent 的立场与权重，保证可解释。
 
