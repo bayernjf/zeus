@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { redactText } from '../util/logger.js';
 import type { DecisionTrace } from '../decision/types.js';
@@ -55,6 +55,9 @@ export function createDecisionTraceSink(filePath: string): {
   onTrace: (trace: DecisionTrace) => void;
 } {
   mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 });
+  // Tighten on every boot — also corrects a file an older build or the
+  // operator left loose (same discipline as dispatch/audit.ts).
+  if (existsSync(filePath)) chmodSync(filePath, 0o600);
   const onTrace = (trace: DecisionTrace): void => {
     const record: DecisionTraceRecord = {
       runId: trace.runId,
