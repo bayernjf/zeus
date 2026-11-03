@@ -10,6 +10,7 @@
 // lands at observe severity and never blocks the gate.
 
 import { activeHubModelResolve } from '../decision/hub-backend.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 import type { FanOutResult } from '../orchestrator/types.js';
 
 /** A judge call's outcome. `ok: false` is the fail-soft shape (W4-1): the
@@ -79,7 +80,7 @@ export function decisionTranscript(outcome: FanOutResult): string {
 }
 
 export function createEvalJudge(options: EvalJudgeOptions & { alias: string }): EvalJudge {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? guardedFetch;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   let lastModel = '';
   return {

@@ -24,6 +24,7 @@
  *    external — this module only ships the local delivery mechanism.
  */
 import { createHmac, randomBytes } from 'node:crypto';
+import { guardedFetch } from '../../util/outbound-dns.js';
 import type { DecisionEvent, DecisionEventSink } from './events.js';
 
 export interface DecisionWebhookSubscription {
@@ -100,7 +101,7 @@ export class DecisionWebhookDispatcher implements DecisionEventSink {
 
   constructor(deps: DecisionWebhookDispatcherDeps) {
     this.store = deps.store;
-    this.fetchImpl = deps.fetch ?? globalThis.fetch;
+    this.fetchImpl = deps.fetch ?? guardedFetch;
     this.sleepImpl = deps.sleep ?? (ms => new Promise(resolve => setTimeout(resolve, ms)));
     this.maxAttempts = deps.maxAttempts ?? 3;
     this.baseBackoffMs = deps.baseBackoffMs ?? 200;

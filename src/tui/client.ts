@@ -3,6 +3,7 @@
  * route and no UI-private logic: every write is the same API call a curl user
  * would make, so it reads back identically in GET /api/audit.
  */
+import { guardedFetch } from '../util/outbound-dns.js';
 
 export class ApiError extends Error {
   constructor(
@@ -314,7 +315,7 @@ export type FetchLike = (url: string, init?: { method?: string; headers?: Record
   json(): Promise<unknown>;
 }>;
 
-export function createDeckClient(baseUrl: string, token: string, fetchImpl: FetchLike = fetch): DeckClient {
+export function createDeckClient(baseUrl: string, token: string, fetchImpl: FetchLike = guardedFetch): DeckClient {
   const headers = { authorization: `Bearer ${token}`, accept: 'application/json' };
 
   async function getJson<T>(path: string): Promise<T> {

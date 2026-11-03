@@ -15,6 +15,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { guardedFetch } from '../util/outbound-dns.js';
 import type { TraceExporter, TraceSpan, TraceTree } from './trace.js';
 
 /** One exported trace tree as persisted on the exporter JSONL. */
@@ -308,7 +309,7 @@ export class OtlpTraceExporter implements TraceExporter {
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly options: OtlpTraceExporterOptions) {
-    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.fetchImpl = options.fetchImpl ?? guardedFetch;
   }
 
   /** POST one tree; every failure path resolves (fail-soft, log-only). */

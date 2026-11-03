@@ -10,6 +10,7 @@ import type {
   ScoreResult,
 } from './types.js';
 import { DecisionBackendFailure } from './types.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 import { assertRanged, createTraceSink, estimateTokens, failureFromStatus, prepareState, timedFetch } from './shared.js';
 
 /**
@@ -62,7 +63,7 @@ export type LlmUsageReport = {
 };
 
 export function createLlmBackend(config: LlmConfig): DecisionBackend {
-  const fetchImpl = config.fetchImpl ?? fetch;
+  const fetchImpl = config.fetchImpl ?? guardedFetch;
   const now = config.now ?? (() => new Date());
   const sink = createTraceSink(config, now, 'llm', config.model);
 
