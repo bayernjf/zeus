@@ -1,3 +1,5 @@
+import { guardedFetch } from '../../../../util/outbound-dns.js';
+
 /**
  * T-M7-02: agent-world HTTP client.
  *
@@ -96,7 +98,7 @@ export class AgentWorldClient {
 
   constructor(opts: AgentWorldClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
-    this.fetchImpl = opts.fetchImpl ?? fetch;
+    this.fetchImpl = opts.fetchImpl ?? guardedFetch;
     this.timeoutMs = opts.timeoutMs ?? 15_000;
   }
 

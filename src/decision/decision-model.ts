@@ -10,6 +10,7 @@ import type {
   ScoreResult,
 } from './types.js';
 import { DecisionBackendFailure } from './types.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 import { assertRanged, createTraceSink, estimateTokens, failureFromStatus, prepareState, timedFetch } from './shared.js';
 
 /**
@@ -38,7 +39,7 @@ const DEFAULT_TIMEOUT_MS = 1500;
 
 export function createJevBackend(config: JevConfig): DecisionBackend {
   const model = config.model ?? 'jev-latest';
-  const fetchImpl = config.fetchImpl ?? fetch;
+  const fetchImpl = config.fetchImpl ?? guardedFetch;
   const now = config.now ?? (() => new Date());
   const sink = createTraceSink(config, now, 'decision-model', model);
   const inputCentsPerMillion = (config.inputUsdPerMillion ?? 0.042) * 100;

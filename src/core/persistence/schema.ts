@@ -143,7 +143,8 @@ CREATE TABLE IF NOT EXISTS decision_webhooks (
   id TEXT PRIMARY KEY,
   url TEXT NOT NULL,
   -- HMAC signing key, stored like the rest of the local secrets: plaintext on
-  -- the operator's own disk (the DB file is opened 0600), never shipped back
+  -- the operator's own disk (the DB file and its WAL/SHM sidecars are
+  -- tightened to 0600 on every open), never shipped back
   -- over HTTP and never logged. At-rest encryption would need a key-management
   -- story this local-first deployment does not have yet.
   secret TEXT NOT NULL,

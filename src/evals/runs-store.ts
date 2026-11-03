@@ -81,6 +81,9 @@ export class JsonlEvalRunsStore {
     await mkdir(dirname(this.filePath), { recursive: true, mode: 0o700 });
     const handle = await open(this.filePath, 'a', 0o600);
     try {
+      // Tighten on open — also corrects a file an older build left loose
+      // (same discipline as metrics-history.ts).
+      await handle.chmod(0o600);
       await handle.writeFile(`${JSON.stringify(record)}\n`, { encoding: 'utf8' });
       this.index.set(record.runId, record);
     } finally {

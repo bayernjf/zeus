@@ -12,6 +12,7 @@ import {
   type BackendOptions,
   type DecisionBackend,
 } from './types.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 
 /** The hub attributes usage to the token's project regardless of this body
  *  field; like loom, we report the calling project's slug for readability. */
@@ -75,9 +76,10 @@ export async function createHubDecisionBackend(
     hubUrl: options.hubUrl,
     token: options.token,
     cachePath: options.cachePath,
-    ...(options.fetchImpl ? { fetch: options.fetchImpl } : {}),
+    // 未注入测试 fetch 时默认走 DNS 重绑定守卫（携带 hub token，评审 P2-1）。
+    ...(options.fetchImpl ? { fetch: options.fetchImpl } : { fetch: guardedFetch }),
   });
-  const reportFetch = options.fetchImpl ?? fetch;
+  const reportFetch = options.fetchImpl ?? guardedFetch;
 
   // D-7: postUsage swallows all errors (and ignores non-2xx responses), which
   // makes a silently dropping report invisible. When an observer is present,

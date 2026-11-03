@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { LocalHashingEmbedder } from './recall.js';
 import type { EmbedContext, Embedder } from './types.js';
+import { guardedFetch } from '../util/outbound-dns.js';
 
 /**
  * Hub-backed embedder (MemoryPort contract v1 §4, ruling D-1).
@@ -68,7 +69,7 @@ export class HubEmbeddingEmbedder implements Embedder {
   private lastFailureAt = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly options: HubEmbeddingEmbedderOptions) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? guardedFetch;
     this.timeoutMs = options.timeoutMs ?? 15_000;
     this.cacheSize = options.cacheSize ?? 10_000;
     this.retryMs = (options.retryMinutes ?? 5) * 60_000;
