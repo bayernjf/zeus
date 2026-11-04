@@ -56,6 +56,11 @@ export function describeTransportError(e: unknown): string {
  *  and credential. Restoring a vassal is a separate, explicit act (reinstate). */
 export class VassalRevokedError extends Error {}
 
+/** A-03: an active vassal with the same name is already registered. Replacing
+ *  it silently swaps where dispatch posts and which bearer it presents, so the
+ *  overwrite has to be asked for explicitly (`force`). */
+export class VassalConflictError extends Error {}
+
 /** Live directory the dispatcher routes through. Revoked vassals are invisible
  *  to get/findBySkill but distinguishable via statusOf for governance audit. */
 export type VassalLookup = {
@@ -110,7 +115,7 @@ export class VassalRegistry {
    *  Requires a valid x-zeus-fealty; a card without fealty is a guest, not a vassal.
    *  `token` is the optional outbound bearer this vassal presents on dispatch
    *  (E4.8); it is stored for the dispatcher and the snapshot only. */
-  async register(cardUrl: string, options: { taskUrl?: string; token?: string; validate?: (card: AgentCard) => void } = {}): Promise<PublicVassalEntry> {
+  async register(cardUrl: string, options: { taskUrl?: string; token?: string; validate?: (card: AgentCard) => void; force?: boolean } = {}): Promise<PublicVassalEntry> {
     // A-12: the caller names where we fetch from, so the URL is untrusted input.
     // Refuse a non-public target before the request leaves the process, not after
     // its body has been read into the roster.
@@ -191,6 +196,15 @@ export class VassalRegistry {
     if (existing?.revoked) {
       throw new VassalRevokedError(
         `vassal '${card.name}' is revoked; re-registering does not clear a revocation — reinstate it explicitly first: ${cardUrl}`
+      );
+    }
+    // A-03: an active same-name entry used to be overwritten silently, which
+    // re-points dispatch and swaps the outbound bearer with no record. Refuse
+    // unless the caller asks to replace it (`force`), so the overwrite is an
+    // explicit operator act rather than an accident.
+    if (existing && options.force !== true) {
+      throw new VassalConflictError(
+        `vassal '${card.name}' is already active; re-registering would replace its taskUrl and bearer — pass force to overwrite explicitly: ${cardUrl}`
       );
     }
     this.entries.set(card.name, entry);

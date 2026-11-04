@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { CardFetchError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
+import { CardFetchError, VassalConflictError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -345,6 +345,19 @@ export type DecisionStatus = {
   judge: { enabled: boolean; threshold?: number; allowUncalibrated?: boolean };
 };
 
+/** P3-1: an inbound caller's own name is untrusted unless the registry (or the
+ *  signed roster) anchors it. For shape-trust (tier-1) callers the name is
+ *  recorded with this prefix so a spoofed identity can never be mistaken for
+ *  an account in the audit chain or in the fan-out params (memory). The peer
+ *  controls both the content and the length, so it is flattened and bounded
+ *  before it lands in an audit row. */
+function untrustedCallerName(raw: unknown, limit = 64): string {
+  const text = typeof raw === 'string' ? raw : '';
+  const flat = text.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const bounded = flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+  return `unverified:${bounded === '' ? 'unknown' : bounded}`;
+}
+
 export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   const log = deps.log ?? (() => {});
@@ -682,12 +695,22 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             deps.registry?.listAll().some(entry => entry.card.name === name && entry.status === 'active') ?? false,
             rosterAnchor,
           ).tier;
+          // P3-1: only a roster-anchored tier (tier-2 names a registered active
+          // agent, tier-3 content-matches the signed attestation) lets the
+          // reported name stand as an identity. Shape-trust (tier-1) callers
+          // keep dispatch, but their name is marked untrusted everywhere it is
+          // recorded — the audit chain below and the fan-out params (memory).
+          if (callerTier === 'tier-1') {
+            callerName = untrustedCallerName(card.name);
+          }
           audit?.({
             ts: at,
             vassal: callerName,
             decision: 'external-agent-admitted',
             tier: callerTier,
-            detail: 'caller card admitted on trust tier',
+            detail: callerTier === 'tier-1'
+              ? 'caller card admitted on shape trust; name not roster-anchored (recorded as untrusted)'
+              : 'caller card admitted on trust tier',
           });
         }
 
@@ -819,6 +842,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     // malformed request.
     app.post('/api/vassals', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
       const body = (request.body ?? {}) as { cardUrl?: unknown; taskUrl?: unknown; token?: unknown };
+      // A-03: replacing an already-active same-name vassal re-points dispatch
+      // and swaps its bearer; that overwrite must be asked for explicitly.
+      const force = (request.query as { force?: unknown } | undefined)?.force === 'true';
       if (typeof body.cardUrl !== 'string' || body.cardUrl.trim() === '') {
         return error(reply, 400, 'invalid_request', 'body.cardUrl is required');
       }
@@ -837,6 +863,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const entry = await deps.registry.register(body.cardUrl, {
           ...(typeof body.taskUrl === 'string' ? { taskUrl: body.taskUrl } : {}),
           ...(body.token !== undefined ? { token: body.token } : {}),
+          ...(force ? { force: true } : {}),
         });
         // The registry already hands back an entry without the stored credential,
         // so this route (and every other) echoes a token-free view by construction.
@@ -851,8 +878,10 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         // vassal can actually fix (400).
         if (e instanceof CardFetchError) return error(reply, 502, 'bad_gateway', detail);
         // A-02: a revoked name cannot be brought back by re-registering, so this
-        // is a state conflict (409), not a malformed request (400).
-        if (e instanceof VassalRevokedError) return error(reply, 409, 'conflict', detail);
+        // is a state conflict (409), not a malformed request (400). A-03: an
+        // active duplicate is refused the same way until `?force=true` asks
+        // for the replacement.
+        if (e instanceof VassalRevokedError || e instanceof VassalConflictError) return error(reply, 409, 'conflict', detail);
         return error(reply, 400, 'invalid_request', detail);
       }
     });

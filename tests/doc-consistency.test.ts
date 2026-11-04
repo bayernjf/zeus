@@ -884,10 +884,12 @@ describe('documentation consistency', () => {
     // be claimed in DYNAMIC_NAME_VARS below, each entry pointing at the file
     // that proves the indirect read; evidence that disappears fails too.
     //
-    // scripts/ is deliberately out of scope: .env.example is the deployment
-    // template for the serve process and its client CLIs, while developer/CI
-    // fixtures such as scripts/clock-skew-setup.mjs's ZEUS_CLOCK_SKEW_DAYS are
-    // never part of a deployment.
+    // scripts/ is deliberately out of scope for the *deployment* scan below:
+    // `.env.example` is the deployment template for the serve process and its
+    // client CLIs. Two developer/CI knobs are however listed in the template on
+    // purpose (operators ask about them; review P3-5), and their reads live in
+    // scripts/ — they are claimed here with that file as evidence, so the
+    // whitelist stays honest if the script ever stops reading the name.
     const srcFiles = readdirSync('src', { recursive: true })
       .filter((name): name is string => typeof name === 'string' && name.endsWith('.ts') && !name.endsWith('.d.ts'));
     expect(srcFiles.length, 'the src/ population collapsed, so this check would pass by finding nothing').toBeGreaterThan(50);
@@ -929,6 +931,19 @@ describe('documentation consistency', () => {
         name: 'ZEUS_SECRET_AGENT_WORLD_LOGIN',
         file: 'src/core/org/execution/credentials.ts',
         evidence: /defaultEnvName\(ref[\s\S]*ZEUS_SECRET_/,
+      },
+      {
+        // Developer/CI knob: scripts/eval-run.mjs bounds one offline eval run.
+        name: 'ZEUS_EVAL_BUDGET_MS',
+        file: 'scripts/eval-run.mjs',
+        evidence: /ZEUS_EVAL_BUDGET_MS/,
+      },
+      {
+        // Developer/CI knob: scripts/clock-skew-setup.mjs shifts the wall clock
+        // before the skew test config runs.
+        name: 'ZEUS_CLOCK_SKEW_DAYS',
+        file: 'scripts/clock-skew-setup.mjs',
+        evidence: /process\.env\.ZEUS_CLOCK_SKEW_DAYS/,
       },
     ];
     const dynamicNames = new Set<string>();
