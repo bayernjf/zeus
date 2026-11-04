@@ -180,6 +180,37 @@ describe('G1 vassal onboarding HTTP', () => {
     const again = await app.inject({ method: 'POST', url: '/api/vassals/vassal-1/reinstate', headers: AUTH });
     expect(again.statusCode).toBe(404);
   });
+
+  // A-03: an active same-name registration used to overwrite the entry in
+  // place, silently re-pointing dispatch and swapping its outbound bearer.
+  it('refuses to overwrite an active same-name vassal without an explicit force (A-03)', async () => {
+    const { app, registry } = await serverWithRegistry(fetchFor({ [CARD_URL]: card() }));
+    const first = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL, token: SECRET } });
+    expect(first.statusCode).toBe(201);
+
+    const again = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL, token: 'other-credential' } });
+    expect(again.statusCode).toBe(409);
+    expect((await again.json()).error).toBe('conflict');
+    // The original entry is untouched: still active, still holding its token.
+    expect(registry.get('vassal-1')?.cardUrl).toBe(CARD_URL);
+    expect(registry.tokenFor('vassal-1')).toBe(SECRET);
+  });
+
+  it('overwrites an active same-name vassal when force is passed explicitly (A-03)', async () => {
+    const { app, registry } = await serverWithRegistry(fetchFor({ [CARD_URL]: card() }));
+    const first = await app.inject({ method: 'POST', url: '/api/vassals', headers: AUTH, payload: { cardUrl: CARD_URL, token: SECRET } });
+    expect(first.statusCode).toBe(201);
+
+    const forced = await app.inject({
+      method: 'POST',
+      url: '/api/vassals?force=true',
+      headers: AUTH,
+      payload: { cardUrl: CARD_URL, token: 'replacement-credential', taskUrl: 'https://vassal.example/api/a2a/tasks' },
+    });
+    expect(forced.statusCode).toBe(201);
+    expect(registry.tokenFor('vassal-1')).toBe('replacement-credential');
+    expect(registry.get('vassal-1')?.taskUrl).toBe('https://vassal.example/api/a2a/tasks');
+  });
 });
 
 describe('G1 boot vassal seeds', () => {

@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { CardFetchError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
+import { CardFetchError, VassalConflictError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -819,6 +819,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     // malformed request.
     app.post('/api/vassals', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
       const body = (request.body ?? {}) as { cardUrl?: unknown; taskUrl?: unknown; token?: unknown };
+      // A-03: replacing an already-active same-name vassal re-points dispatch
+      // and swaps its bearer; that overwrite must be asked for explicitly.
+      const force = (request.query as { force?: unknown } | undefined)?.force === 'true';
       if (typeof body.cardUrl !== 'string' || body.cardUrl.trim() === '') {
         return error(reply, 400, 'invalid_request', 'body.cardUrl is required');
       }
@@ -837,6 +840,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const entry = await deps.registry.register(body.cardUrl, {
           ...(typeof body.taskUrl === 'string' ? { taskUrl: body.taskUrl } : {}),
           ...(body.token !== undefined ? { token: body.token } : {}),
+          ...(force ? { force: true } : {}),
         });
         // The registry already hands back an entry without the stored credential,
         // so this route (and every other) echoes a token-free view by construction.
@@ -851,8 +855,10 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         // vassal can actually fix (400).
         if (e instanceof CardFetchError) return error(reply, 502, 'bad_gateway', detail);
         // A-02: a revoked name cannot be brought back by re-registering, so this
-        // is a state conflict (409), not a malformed request (400).
-        if (e instanceof VassalRevokedError) return error(reply, 409, 'conflict', detail);
+        // is a state conflict (409), not a malformed request (400). A-03: an
+        // active duplicate is refused the same way until `?force=true` asks
+        // for the replacement.
+        if (e instanceof VassalRevokedError || e instanceof VassalConflictError) return error(reply, 409, 'conflict', detail);
         return error(reply, 400, 'invalid_request', detail);
       }
     });

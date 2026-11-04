@@ -35,7 +35,7 @@ export type {
 } from './a2a/types.js';
 
 // --- A1 vassal registry ---
-export { VassalRegistry, defaultTaskUrl, CardFetchError, VassalRevokedError } from './registry/registry.js';
+export { VassalRegistry, defaultTaskUrl, CardFetchError, VassalRevokedError, VassalConflictError } from './registry/registry.js';
 export type {
   VassalEntry,
   PublicVassalEntry,
