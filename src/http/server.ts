@@ -345,6 +345,19 @@ export type DecisionStatus = {
   judge: { enabled: boolean; threshold?: number; allowUncalibrated?: boolean };
 };
 
+/** P3-1: an inbound caller's own name is untrusted unless the registry (or the
+ *  signed roster) anchors it. For shape-trust (tier-1) callers the name is
+ *  recorded with this prefix so a spoofed identity can never be mistaken for
+ *  an account in the audit chain or in the fan-out params (memory). The peer
+ *  controls both the content and the length, so it is flattened and bounded
+ *  before it lands in an audit row. */
+function untrustedCallerName(raw: unknown, limit = 64): string {
+  const text = typeof raw === 'string' ? raw : '';
+  const flat = text.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const bounded = flat.length > limit ? `${flat.slice(0, limit)}…` : flat;
+  return `unverified:${bounded === '' ? 'unknown' : bounded}`;
+}
+
 export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   const log = deps.log ?? (() => {});
@@ -682,12 +695,22 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             deps.registry?.listAll().some(entry => entry.card.name === name && entry.status === 'active') ?? false,
             rosterAnchor,
           ).tier;
+          // P3-1: only a roster-anchored tier (tier-2 names a registered active
+          // agent, tier-3 content-matches the signed attestation) lets the
+          // reported name stand as an identity. Shape-trust (tier-1) callers
+          // keep dispatch, but their name is marked untrusted everywhere it is
+          // recorded — the audit chain below and the fan-out params (memory).
+          if (callerTier === 'tier-1') {
+            callerName = untrustedCallerName(card.name);
+          }
           audit?.({
             ts: at,
             vassal: callerName,
             decision: 'external-agent-admitted',
             tier: callerTier,
-            detail: 'caller card admitted on trust tier',
+            detail: callerTier === 'tier-1'
+              ? 'caller card admitted on shape trust; name not roster-anchored (recorded as untrusted)'
+              : 'caller card admitted on trust tier',
           });
         }
 

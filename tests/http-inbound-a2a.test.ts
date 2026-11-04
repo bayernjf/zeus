@@ -202,8 +202,9 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(task.kind).toBe('task');
     expect(task.id).toBe('caller-task-7');
     expect(task.status.state).toBe('completed');
-    // The caller's correlation id and identity ride along in params.
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.vassal === 'helper' && entry.taskId === 'caller-task-7')).toBe(true);
+    // The caller's correlation id rides along; its identity is recorded but
+    // marked untrusted because no roster anchors an unregistered tier-1 card.
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.vassal === 'unverified:helper' && entry.taskId === 'caller-task-7')).toBe(true);
   });
 
   it('defaults realm to personal and maps needs-driver to input-required', async () => {
@@ -230,7 +231,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-11', message: 'summarize the diary', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     // The shape-trust narrowing is visible on the outbound shape: plan only,
     // and the skill survived the read-only capability whitelist.
     expect(lastFanOutRequest?.mode).toBe('plan');
@@ -249,7 +250,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(res.json().error).toBe('skill_unavailable');
     expect(res.json().detail).toContain('read-only');
     // Refused on the task face at tier-1; the trust admission still happened.
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     // Capability-face refusal means zero outbound dispatch.
     expect(lastFanOutRequest).toBeUndefined();
   });
@@ -265,7 +266,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('skill_unavailable');
     expect(res.json().detail).toContain('not registered');
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     expect(lastFanOutRequest).toBeUndefined();
   });
 
@@ -280,7 +281,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('skill_unavailable');
     expect(res.json().detail).toContain('requires a skill registry');
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     expect(lastFanOutRequest).toBeUndefined();
   });
 
@@ -370,5 +371,46 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-2')).toBe(true);
+  });
+
+  // P3-1: a tier-1 caller picks its own name. Nothing anchors it, so the audit
+  // chain and the fan-out params (the memory side) must not present it as an
+  // identity — a bearer holder could otherwise forge accountability records.
+  it('marks an unregistered caller name as untrusted in both the audit row and fan-out params (P3-1)', async () => {
+    const server = await mount('completed', undefined, makeSkillRegistry());
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-20', message: 'summarize', skills: ['summarize'] }),
+    });
+    expect(res.statusCode).toBe(200);
+    const accepted = auditEntries.find(entry => entry.decision === 'inbound-task-accepted');
+    expect(accepted?.vassal).toBe('unverified:helper');
+    expect(lastFanOutRequest?.params.a2aCaller).toBe('unverified:helper');
+    // The forged name is not silently flattened into the roster's namespace.
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.tier === 'tier-3')).toBe(false);
+  });
+
+  // The legitimate path is untouched: a caller whose card the signed roster
+  // anchors (tier-3) keeps its registry name in audit and memory.
+  it('keeps a roster-anchored caller name unchanged in audit and fan-out params (P3-1)', async () => {
+    const registry = new VassalRegistry(
+      (async () => ({
+        ok: true,
+        json: async () => makeCard('helper', VALID_FEALTY),
+      })) as unknown as FetchLike,
+    );
+    await registry.register('http://127.0.0.1:9/agent-card');
+    const server = await mount('completed', registry, makeSkillRegistry());
+    const res = await server.inject({
+      method: 'POST',
+      url: '/.well-known/agent-card.json',
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      payload: rpc(1, 'tasks/send', { taskId: 'caller-task-21', message: 'summarize', skills: ['summarize'] }),
+    });
+    expect(res.statusCode).toBe(200);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.vassal === 'helper')).toBe(true);
+    expect(lastFanOutRequest?.params.a2aCaller).toBe('helper');
   });
 });
