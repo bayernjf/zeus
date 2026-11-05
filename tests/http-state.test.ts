@@ -28,10 +28,10 @@ function cardFor(name: string) {
   };
 }
 
-const nameAwareFetch = (async (input: RequestInfo | URL) =>
+const nameAwareFetch = async (input: RequestInfo | URL) =>
   new Response(JSON.stringify(cardFor(String(input).match(/\/(v\d+)\//)?.[1] ?? 'v')), {
     status: 200, headers: { 'Content-Type': 'application/json' },
-  })) as unknown as typeof fetch;
+  });
 
 let dir: string;
 let realmRoot: string;

@@ -30,7 +30,7 @@ describe('Jev decision-model adapter', () => {
       return jsonResponse(200, { answers: { [name]: answers[type!] } });
     });
     const backend = createJevBackend({
-      baseUrl: 'https://jev.example/v1', apiKey: 'k', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow,
+      baseUrl: 'https://jev.example/v1', apiKey: 'k', fetchImpl: fetchImpl, now: fixedNow,
       onTrace: trace => traces.push(trace),
     });
 
@@ -58,13 +58,13 @@ describe('Jev decision-model adapter', () => {
   it('folds auth/unavailable/timeout status and out-of-band choices into DecisionBackendFailure', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(403, { error: 'forbidden' }));
     const backend = createJevBackend({
-      baseUrl: 'https://jev.example', apiKey: 'k', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow,
+      baseUrl: 'https://jev.example', apiKey: 'k', fetchImpl: fetchImpl, now: fixedNow,
     });
     await expect(backend.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' }))
       .rejects.toMatchObject({ code: 'auth' });
 
     const fetch500 = vi.fn(async () => jsonResponse(500, {}));
-    const backend500 = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: fetch500 as unknown as typeof fetch, now: fixedNow });
+    const backend500 = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: fetch500, now: fixedNow });
     await expect(backend500.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' }))
       .rejects.toMatchObject({ code: 'unavailable' });
 
@@ -74,12 +74,12 @@ describe('Jev decision-model adapter', () => {
           init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
         })
     );
-    const backendSlow = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: slow as unknown as typeof fetch, now: fixedNow });
+    const backendSlow = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: slow, now: fixedNow });
     await expect(backendSlow.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', maxWaitMs: 10 }))
       .rejects.toMatchObject({ code: 'timeout' });
 
     const oob = vi.fn(async () => jsonResponse(200, { answers: { q_choice: { choice: 'not-an-option', confidence: 0.9 } } }));
-    const backendOob = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: oob as unknown as typeof fetch, now: fixedNow });
+    const backendOob = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: oob, now: fixedNow });
     await expect(backendOob.choice({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', options: ['a', 'b'] }))
       .rejects.toMatchObject({ code: 'invalid' });
   });
@@ -97,7 +97,7 @@ describe('LLM adapter (slow layer)', () => {
     const backend = createLlmBackend({
       baseUrl: 'https://llm.example', apiKey: 'k', model: 'gpt-x',
       inputUsdPerMillion: 2, outputUsdPerMillion: 8,
-      fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow, onTrace: t => traces.push(t),
+      fetchImpl: fetchImpl, now: fixedNow, onTrace: t => traces.push(t),
     });
     const result = await backend.choice({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', options: ['go', 'hold'] });
     expect(result.choice).toBe('go');
@@ -118,7 +118,7 @@ describe('LLM adapter (slow layer)', () => {
         choices: [{ message: { content: JSON.stringify({ score: 55, level: 'mid', distribution: { low: 0.4, high: 0.6 }, confidence: 0.7 }) } }],
       })
     );
-    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: offBand as unknown as typeof fetch, now: fixedNow });
+    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: offBand, now: fixedNow });
     await expect(backend.score({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', levels: ['low', 'high'] }))
       .rejects.toMatchObject({ code: 'invalid' });
   });
@@ -127,12 +127,12 @@ describe('LLM adapter (slow layer)', () => {
     const fenced = vi.fn(async () =>
       jsonResponse(200, { choices: [{ message: { content: '```json\n{"probability":0.3,"confidence":0.6}\n```' } }] })
     );
-    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fenced as unknown as typeof fetch, now: fixedNow });
+    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fenced, now: fixedNow });
     const noul = await backend.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' });
     expect(noul.probability).toBe(0.3);
 
     const garbage = vi.fn(async () => jsonResponse(200, { choices: [{ message: { content: 'I think maybe yes.' } }] }) );
-    const backendBad = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: garbage as unknown as typeof fetch, now: fixedNow });
+    const backendBad = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: garbage, now: fixedNow });
     await expect(backendBad.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' }))
       .rejects.toMatchObject({ code: 'invalid' });
   });
@@ -147,7 +147,7 @@ describe('data sovereignty (design §8)', () => {
     });
     const backend = createJevBackend({
       baseUrl: 'u', apiKey: 'k', stateKeys: ['public'],
-      fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow,
+      fetchImpl: fetchImpl, now: fixedNow,
     });
     await expect(backend.noul({ question: 'q', instructions: 'i', state: { secret: 'x' }, runId: 'r', realm: 'enterprise' }))
       .rejects.toMatchObject({ code: 'invalid' });
@@ -168,7 +168,7 @@ describe('data sovereignty (design §8)', () => {
       return jsonResponse(200, { answers: { q_noul: { probability: 0.5, confidence: 0.9 } } });
     });
     // no configured whitelist: the call's own declaration is the only one
-    const backend = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow });
+    const backend = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: fetchImpl, now: fixedNow });
     await backend.noul({ question: 'q', instructions: 'i', runId: 'r', realm: 'personal', state: { a: 1, secret: 2 }, stateKeys: ['a'] });
     expect(seenBodies[0]).toMatchObject({ state: { a: 1 } });
     expect(JSON.stringify(seenBodies[0])).not.toContain('secret');
@@ -183,7 +183,7 @@ describe('data sovereignty (design §8)', () => {
     const backend = createJevBackend({
       baseUrl: 'u', apiKey: 'k', stateKeys: ['name'],
       redact: state => ({ name: String(state.name ?? '').replace(/./g, '*') }),
-      fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow,
+      fetchImpl: fetchImpl, now: fixedNow,
     });
     await backend.noul({ question: 'q', instructions: 'i', runId: 'r', realm: 'personal', state: { name: 'alice' } });
     expect(sent.state).toEqual({ name: '*****' });
@@ -246,7 +246,7 @@ describe('arbitrateSplit (design §3.1 gating)', () => {
         choices: [{ message: { content: JSON.stringify({ choice: 'go', probabilities: { go: 0.9, hold: 0.1 }, confidence: 0.9 }) } }],
       });
     });
-    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow });
+    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl, now: fixedNow });
     await arbitrateSplit({ backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie on the review' });
     // the arbitration state is what the backend decides over; an empty {} would
     // mean the model is choosing with no evidence
@@ -265,7 +265,7 @@ describe('judgeDecision evidence', () => {
         choices: [{ message: { content: JSON.stringify({ choice: 'reject', probabilities: { approve: 0.1, reject: 0.9 }, confidence: 0.5 }) } }],
       });
     });
-    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl as unknown as typeof fetch, now: fixedNow });
+    const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl, now: fixedNow });
     const result: FanOutResult = {
       intentId: 'i', runId: 'r', skill: 's', realm: 'personal',
       branches: [], stream: [],

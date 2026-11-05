@@ -74,7 +74,7 @@ function themeTokens(selector: string): Record<string, string> {
   const block = STYLE.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([\\s\\S]*?)\\n  \\}`))!;
   expect(block, `${selector} block missing`).toBeTruthy();
   const out: Record<string, string> = {};
-  for (const m of block![1]!.matchAll(/(--[\w-]+):\s*([^;]+);/g)) out[m[1]!] = m[2]!.trim();
+  for (const m of block[1]!.matchAll(/(--[\w-]+):\s*([^;]+);/g)) out[m[1]!] = m[2]!.trim();
   return out;
 }
 

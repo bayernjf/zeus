@@ -39,14 +39,14 @@ function cardFor(name: string) {
 /** Card fetch and A2A dispatch share one transport; the task call answers with a
  *  card body, which the dispatcher records as a failed branch. The branch was
  *  still attempted, and that is what these tests assert. */
-const routingFetch = (async (input: string | URL | Request) => {
-  const url = String(typeof input === 'string' || input instanceof URL ? input : (input as Request).url);
+const routingFetch = async (input: string | URL | Request) => {
+  const url = String(typeof input === 'string' || input instanceof URL ? input : input.url);
   const name = new URL(url).pathname.split('/').filter(Boolean)[0] ?? '';
   return new Response(JSON.stringify(cardFor(name)), {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
-}) as unknown as typeof fetch;
+};
 
 type Face = {
   app: FastifyInstance;

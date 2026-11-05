@@ -54,7 +54,7 @@ function settlingFetch(): typeof fetch {
       `data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: task })}\n\n`,
       { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
     );
-  }) as typeof fetch;
+  });
 }
 
 function decisionTrace(runId: string): DecisionTrace {
@@ -109,7 +109,7 @@ describe('G2 OtlpTraceExporter payload shape', () => {
       fetchImpl: (async (url, init) => {
         fetchLog.push({ url: String(url), init });
         return new Response(null, { status: 200 });
-      }) as typeof fetch,
+      }),
     });
     await exporter.export(treeWithModelError());
 
@@ -192,7 +192,7 @@ describe('G2 OtlpTraceExporter fail-soft contract', () => {
       endpoint: ENDPOINT,
       fetchImpl: (async () => {
         throw new Error('connection refused');
-      }) as typeof fetch,
+      }),
       log: (event, message) => logged.push({ event, message }),
     });
     await expect(exporter.export(treeWithModelError())).resolves.toBeUndefined();
@@ -205,7 +205,7 @@ describe('G2 OtlpTraceExporter fail-soft contract', () => {
     const logged: Array<{ event: string; message: string | undefined }> = [];
     const exporter = new OtlpTraceExporter({
       endpoint: ENDPOINT,
-      fetchImpl: (async () => new Response('collector overloaded', { status: 503 })) as typeof fetch,
+      fetchImpl: (async () => new Response('collector overloaded', { status: 503 })),
       log: (event, message) => logged.push({ event, message }),
     });
     await expect(exporter.export(treeWithModelError())).resolves.toBeUndefined();
@@ -245,7 +245,7 @@ describe('G2 boot wiring (opt-in, unconfigured = silent)', () => {
         fetchImpl: (async (url, init) => {
           fetchLog.push({ url: String(url), init });
           return new Response(null, { status: 200 });
-        }) as typeof fetch,
+        }),
       }),
     });
     const result = await kernel.orchestrator.fanOut({

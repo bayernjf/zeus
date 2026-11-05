@@ -21,7 +21,7 @@ function prHelperCard(overrides: Record<string, unknown> = {}): AgentCard {
       escalationPolicy: 'auto',
     },
     ...overrides,
-  } as AgentCard;
+  };
 }
 
 describe('VassalRegistry', () => {

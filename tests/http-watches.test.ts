@@ -161,7 +161,7 @@ describe('HTTP watch operator face', () => {
       internalToken: TOKEN,
       watches: new WatchRegistry(),
       // runWatchTick deliberately absent
-    } as Parameters<typeof createHttpServer>[0]);
+    });
     const res = await app.inject({ method: 'POST', url: '/api/watch-tick', headers: AUTH });
     expect(res.statusCode).toBe(503);
     expect(String((res.json() as { detail?: string }).detail)).toMatch(/not assembled|watch/i);

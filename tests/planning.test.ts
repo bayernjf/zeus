@@ -129,7 +129,7 @@ describe('scorePlans + selectPlan (S12 V1)', () => {
 describe('replanDelta (S12 V1)', () => {
   it('keeps completed nodes, adds new nodes and removes only never-started ones', () => {
     const current = ['n1', 'n2', 'n3'];
-    const statusOf = (id: string) => (id === 'n1' ? 'completed' : id === 'n2' ? 'pending' : 'pending') as 'completed' | 'pending';
+    const statusOf = (id: string) => (id === 'n1' ? 'completed' : id === 'n2' ? 'pending' : 'pending');
     const delta = replanDelta(current, (id) => (id === 'n1' ? ['n0'] : id === 'n2' ? ['n1'] : []), {
       realm: 'personal',
       nodes: [node('n1', 'research', { query: 'x' }), node('n2', 'writeup', { draft: 'ok' }, ['n1']), node('n4', 'research', { query: 'z' })],
@@ -149,7 +149,7 @@ describe('replanDelta (S12 V1)', () => {
   it('never re-runs a completed node: kept nodes are exactly the completed ones', () => {
     const current = ['n1', 'n2'];
     const revised = { realm: 'personal' as const, nodes: [node('n1', 'research', { query: 'x' }), node('n2', 'writeup', { draft: 'ok' }, ['n1'])] };
-    const delta = replanDelta(current, () => [], revised, (id) => (id === 'n1' ? 'completed' : 'pending') as 'completed' | 'pending');
+    const delta = replanDelta(current, () => [], revised, (id) => (id === 'n1' ? 'completed' : 'pending'));
     expect(delta.kept).toEqual(['n1']);
     expect(delta.removed).toEqual([]);
     // n2 stays in the graph (pending) — not removed, not re-added.
@@ -161,7 +161,7 @@ describe('replanDelta (S12 V1)', () => {
     const delta = replanDelta(current, (id) => (id === 'n2' ? ['n0'] : []), {
       realm: 'personal',
       nodes: [node('n1', 'research', { query: 'x' }), node('n2', 'writeup', { draft: 'ok' }, ['n1'])],
-    }, (id) => (id === 'n1' ? 'completed' : 'pending') as 'completed' | 'pending');
+    }, (id) => (id === 'n1' ? 'completed' : 'pending'));
     expect(delta.rewired).toEqual([{ id: 'n2', deps: ['n1'] }]);
   });
 });

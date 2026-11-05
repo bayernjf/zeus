@@ -43,7 +43,7 @@ function fanOut(overrides: Partial<FanOutResult> = {}): FanOutResult {
 }
 
 function request(overrides: Partial<FanOutRequest> = {}): FanOutRequest {
-  return { skill: 'research', realm: 'personal', params: { q: 'language of pr-helper' }, ...overrides } as FanOutRequest;
+  return { skill: 'research', realm: 'personal', params: { q: 'language of pr-helper' }, ...overrides };
 }
 
 const claimOptions = { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' };
@@ -177,7 +177,7 @@ describe('runtime producer (bootKernel, end to end)', () => {
         `data: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: task })}\n\n`,
       ];
       return new Response(frames.join(''), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
-    }) as typeof fetch;
+    });
   }
 
   const seeds = ['vassal-a', 'vassal-b'].map(name => `http://127.0.0.1/${name}/api/a2a/agent-card`);

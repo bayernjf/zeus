@@ -42,14 +42,14 @@ function cardFor(name: string, skills: string[]) {
 }
 
 function routingFetch() {
-  return (async (input: string | URL | Request) => {
-    const url = String(typeof input === 'string' || input instanceof URL ? input : (input as Request).url);
+  return async (input: string | URL | Request) => {
+    const url = String(typeof input === 'string' || input instanceof URL ? input : input.url);
     const name = new URL(url).pathname.split('/').filter(Boolean)[0] ?? '';
     return new Response(JSON.stringify(cardFor(name, CARDS[name] ?? [])), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
-  }) as unknown as typeof fetch;
+  };
 }
 
 function claim(eventId: string, realmId: string, subject: string, predicate: string, object: unknown, agentId: string): MemoryEvent {

@@ -47,7 +47,7 @@ function card(name: string, overrides: Record<string, unknown> = {}): AgentCard 
       escalationPolicy: 'auto',
     },
     ...overrides,
-  } as AgentCard;
+  };
 }
 
 async function registryWithTwo(): Promise<VassalRegistry> {

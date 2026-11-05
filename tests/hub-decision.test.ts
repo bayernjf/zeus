@@ -106,7 +106,7 @@ function routingFetch(
       }),
       { status: 200 },
     );
-  }) as typeof fetch;
+  });
 }
 
 describe('createHubDecisionBackend', () => {
@@ -331,7 +331,7 @@ describe('resolveDecisionConfigWithHub', () => {
       },
       {
         fetchImpl: (async () =>
-          new Response(JSON.stringify(catalog), { status: 200 })) as typeof fetch,
+          new Response(JSON.stringify(catalog), { status: 200 })),
       },
     );
     expect(cfg.backendKind).toBe('hub');
@@ -351,7 +351,7 @@ describe('resolveDecisionConfigWithHub', () => {
       {
         fetchImpl: (async () => {
           throw new Error('hub down');
-        }) as typeof fetch,
+        }),
       },
     );
     expect(cfg.backendKind).toBe('llm');

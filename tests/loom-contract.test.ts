@@ -75,7 +75,7 @@ function loomCard(): AgentCard {
       notes:
         'Plan-mode vassal: every skill returns an advisory plan artifact and never touches the 13-segment chain, spends tokens, or bypasses a human gate.',
     },
-  } as AgentCard;
+  };
 }
 
 const REQUIRED_PARAMS: Record<string, string[]> = {
@@ -184,7 +184,7 @@ function loomFetch(seen: SeenRequest[], options: { requireAuth?: boolean } = {})
     if (url === CARD_URL) {
       return new Response(JSON.stringify(loomCard()), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    const body = JSON.parse(String(init?.body)) as any;
+    const body = JSON.parse(String(init?.body));
     const headers = (init?.headers ?? {}) as Record<string, string>;
     seen.push({ url, method: body.method, auth: headers.Authorization ?? null, accept: headers.Accept ?? null, body });
 

@@ -47,7 +47,7 @@ function vassalFetch(): typeof fetch {
       `data: ${JSON.stringify({ jsonrpc: '2.0', id: 1, result: task })}\n\n`,
     ];
     return new Response(frames.join(''), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
-  }) as typeof fetch;
+  });
 }
 
 const seeds = ['http://127.0.0.1/loom/api/a2a/agent-card'];

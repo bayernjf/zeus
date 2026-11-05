@@ -116,7 +116,7 @@ describe('watch registration (closed predicate surface)', () => {
       registry.register(baseInput({ predicate: { source: 'metrics', op: 'matches' as never, field: 'queueDepth' } }))
     ).toThrow(/predicate\.op/);
     expect(() =>
-      registry.register(baseInput({ predicate: { source: 'metrics', op: 'above', field: 'queueDepth', value: '3' as never } }))
+      registry.register(baseInput({ predicate: { source: 'metrics', op: 'above', field: 'queueDepth', value: '3' } }))
     ).toThrow(/numeric predicate\.value/);
   });
 

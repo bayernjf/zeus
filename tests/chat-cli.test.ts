@@ -57,7 +57,7 @@ afterAll(() => {
 });
 
 function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  return { ...extra } as NodeJS.ProcessEnv;
+  return { ...extra };
 }
 
 type Script = {

@@ -58,7 +58,7 @@ function approveFetch(draftFor: (name: string) => unknown): typeof fetch {
       `data: ${JSON.stringify({ jsonrpc: '2.0', id: 2, result: task })}\n\n`,
       { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
     );
-  }) as typeof fetch;
+  });
 }
 
 /** A card named after the agent that carries the planning tag, so every seeded

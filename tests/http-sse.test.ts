@@ -154,7 +154,7 @@ const finished: ProgressEvent = {
 };
 
 describe('hijacked SSE stream lifecycle', () => {
-  const socketOf = (): FakeSocket & EventStreamSocket => new FakeSocket() as FakeSocket & EventStreamSocket;
+  const socketOf = (): FakeSocket & EventStreamSocket => new FakeSocket();
 
   it('survives a peer reset without an unhandled error event', () => {
     const hub = new ProgressHub();

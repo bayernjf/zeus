@@ -58,7 +58,7 @@ describe('HubEmbeddingEmbedder', () => {
       fetchImpl: (async () => {
         calls += 1;
         return hubResponse(2048);
-      }) as typeof fetch,
+      }),
       onExternalCall: entry => audits.push(entry),
     });
 
@@ -81,7 +81,7 @@ describe('HubEmbeddingEmbedder', () => {
       fetchImpl: (async () => {
         if (!healthy) throw new Error('connection refused');
         return hubResponse(2048);
-      }) as typeof fetch,
+      }),
       retryMinutes: 5,
       now: () => clock,
       onExternalCall: entry => audits.push(entry),
@@ -107,7 +107,7 @@ describe('HubEmbeddingEmbedder', () => {
         calls += 1;
         if (!healthy) throw new Error('connection refused');
         return hubResponse(2048);
-      }) as typeof fetch,
+      }),
       retryMinutes: 5,
       now: () => clock,
     });
@@ -140,7 +140,7 @@ describe('HubEmbeddingEmbedder', () => {
     let dim = 2048;
     const embedder = new HubEmbeddingEmbedder({
       resolveEndpoint: () => ({ baseUrl: 'https://hub.test', apiKey: 'k', model: 'embed-m' }),
-      fetchImpl: (async () => hubResponse(dim)) as typeof fetch,
+      fetchImpl: (async () => hubResponse(dim)),
     });
     await embedder.embed('first');
     expect(embedder.dimension).toBe(2048);

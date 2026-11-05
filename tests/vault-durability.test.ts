@@ -23,7 +23,7 @@ vi.mock('node:fs/promises', async importOriginal => {
     ...actual,
     open: async (path: FileHandle | string, flags?: string | number, mode?: number) => {
       probes.opens.push({ path, flags });
-      const handle = await actual.open(path as string, flags as string, mode);
+      const handle = await actual.open(path as string, flags, mode);
       if (typeof handle.sync === 'function') {
         const sync = handle.sync.bind(handle);
         Object.assign(handle, {

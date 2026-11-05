@@ -126,10 +126,10 @@ describe('Decision webhook dispatcher', () => {
     let calls = 0;
     const dispatcher = new DecisionWebhookDispatcher({
       store,
-      fetch: (async () => {
+      fetch: async () => {
         calls += 1;
         return { ok: true } as Response;
-      }) as unknown as typeof fetch,
+      },
     });
     await dispatcher.emit(event());
     expect(calls).toBe(0);
@@ -164,11 +164,11 @@ describe('Decision webhook dispatcher', () => {
     const outcomes = [new Error('conn refused'), { ok: false, status: 503 }, { ok: true, status: 200 }];
     const dispatcher = new DecisionWebhookDispatcher({
       store,
-      fetch: (async () => {
+      fetch: async () => {
         const next = outcomes.shift();
         if (next instanceof Error) throw next;
         return next as Response;
-      }) as unknown as typeof fetch,
+      },
       sleep: async (ms: number) => {
         sleeps.push(ms);
       },
@@ -184,10 +184,10 @@ describe('Decision webhook dispatcher', () => {
     let attempts = 0;
     const dispatcher = new DecisionWebhookDispatcher({
       store,
-      fetch: (async () => {
+      fetch: async () => {
         attempts += 1;
         return { ok: false, status: 500 } as Response;
-      }) as unknown as typeof fetch,
+      },
       sleep: async () => { /* noop */ },
       maxAttempts: 3,
     });

@@ -78,7 +78,7 @@ describe('deferred #33 one-time execution delegation primitive', () => {
     // Tamper a signature-covered field that does not change the binding check,
     // so the failure must surface at the cryptographic step, not earlier.
     const forged = { ...d, grantedBy: 'attacker' };
-    expect(await verifyAndConsumeExecutionDelegation(forged as typeof d, ctx())).toEqual({ ok: false, reason: 'bad-signature' });
+    expect(await verifyAndConsumeExecutionDelegation(forged, ctx())).toEqual({ ok: false, reason: 'bad-signature' });
     expect(await verifyAndConsumeExecutionDelegation(d, ctx({ acceptedKeyIds: ['a-different-key'] }))).toEqual({
       ok: false,
       reason: 'unknown-key',

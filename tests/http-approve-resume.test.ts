@@ -122,7 +122,7 @@ describe('E6.3 one-click approve-resume', () => {
         return Promise.reject(new IntentBudgetExceededError('simulated budget exhaustion'));
       }
       return original(intentId, vassal, params);
-    }) as typeof orchestrator.resumeBranch;
+    });
 
     const failed = await app.inject({
       method: 'POST', url: '/api/escalations/esc-1/approve-resume', headers: AUTH,

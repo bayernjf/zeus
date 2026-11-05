@@ -161,7 +161,7 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
           }), { status: 200, headers: { 'Content-Type': 'application/json' } });
         }
         throw new Error('transport failed: peer unreachable');
-      }) as typeof fetch;
+      });
     }
 
     const kernel = await bootKernel({

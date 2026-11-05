@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { LookupAddress } from 'node:dns';
 import type { LookupFunction } from 'node:net';
 import { createServer } from 'node:http';
-import type { Dispatcher } from 'undici';
 import {
   createGuardedLookup,
   createOutboundDispatcher,
@@ -194,7 +193,7 @@ describe('redirect-hop guard', () => {
     expect(() =>
       dispatcher.dispatch(
         { origin: 'http://169.254.169.254', path: '/latest/meta-data', method: 'GET' },
-        {} as Dispatcher.DispatchHandlers,
+        {},
       ),
     ).toThrow(/non-public address \(link-local/);
   });
@@ -204,7 +203,7 @@ describe('redirect-hop guard', () => {
     expect(() =>
       dispatcher.dispatch(
         { origin: 'http://10.0.0.5', path: '/', method: 'GET' },
-        {} as Dispatcher.DispatchHandlers,
+        {},
       ),
     ).toThrow(/non-public address \(RFC1918/);
   });

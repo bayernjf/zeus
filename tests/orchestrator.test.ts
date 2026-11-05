@@ -125,8 +125,8 @@ describe('Orchestrator.fanOut', () => {
     // The fan-out reply and getIntent() share nested arrays if the reply is the
     // stored reference; a caller that mutates what it was handed would then
     // corrupt later replays. Both reads must stay isolated.
-    result.branches.push({ vassal: 'tampered', runId: 'x', ok: false, events: [] } as never);
-    result.positions.push({ vassal: 'tampered', stance: 'go' } as never);
+    result.branches.push({ vassal: 'tampered', runId: 'x', ok: false, events: [] });
+    result.positions.push({ vassal: 'tampered', stance: 'go' });
 
     const stored = orch.getIntent('intent-1');
     expect(stored!.branches.map(b => b.vassal)).toEqual(['loom', 'atlas']);

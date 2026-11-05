@@ -382,12 +382,12 @@ describe('audit rotation config', () => {
     const auditFile = join(dir, 'audit.jsonl');
     const seeds = Array.from({ length: 8 }, (_, i) => `http://127.0.0.1/v${i}/card.json`);
     // vassal name follows the URL, so each seed registers a distinct vassal
-    const nameAwareFetch = (async (input: RequestInfo | URL) => {
+    const nameAwareFetch = async (input: RequestInfo | URL) => {
       const name = String(input).match(/\/(v\d+)\//)?.[1] ?? 'v';
       return new Response(JSON.stringify(cardFor(name)), {
         status: 200, headers: { 'Content-Type': 'application/json' },
       });
-    }) as unknown as typeof fetch;
+    };
 
     const kernel = await bootKernel({
       auditFile,
