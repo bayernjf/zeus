@@ -63,4 +63,16 @@ export default tseslint.config(
       'require-await': 'warn',
     },
   },
+  {
+    // Files that no tsconfig covers must never reach the project service. An explicit
+    // non-type-aware block keeps them parsed as plain JavaScript (no ignore needed) and removes the
+    // parse-error bucket that a global projectService would produce.
+    files: ['**/*.mjs'],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: false,
+      },
+    },
+  },
 );
