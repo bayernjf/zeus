@@ -41,4 +41,26 @@ export default tseslint.config(
       '@typescript-eslint/no-misused-promises': 'error',
     },
   },
+  {
+    // Test doubles and fixtures are intentionally loosely typed: fake fetch implementations, partial
+    // ports and casted literals would otherwise flood the gate with unsafe-* findings. Keep them
+    // visible as warnings instead of switching the rules off, so new noise is still reviewable.
+    files: ['tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'warn',
+      '@typescript-eslint/no-unsafe-member-access': 'warn',
+      '@typescript-eslint/no-unsafe-call': 'warn',
+      '@typescript-eslint/no-unsafe-argument': 'warn',
+      '@typescript-eslint/no-unsafe-return': 'warn',
+      '@typescript-eslint/require-await': 'warn',
+    },
+  },
+  {
+    // Shipped scripts are plain .mjs without type information, so the type-aware unsafe-* rules
+    // cannot run there. Only the core require-await rule is downgraded to a warning.
+    files: ['scripts/**/*.mjs'],
+    rules: {
+      'require-await': 'warn',
+    },
+  },
 );
