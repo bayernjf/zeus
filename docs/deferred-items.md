@@ -367,3 +367,13 @@
 - **为什么登记不做（沿用 #40 原由）**：真实权重取值需要首个真实执行 Agent 的失败样本分布；凭空拍权重会重蹈 #9 教训（mock 失败模式是编的）。
 - **触发条件**：① 首个真实执行 Agent 长期运行、积累可统计失败样本（同 #9 的 ≥3 真实 Agent 压测数据面，即 #40 触发条件 ①）；② 同一类失败反复发生、操作者只能靠人工翻审计的报障（#40 触发条件 ②）。
 - **建议做法（决定后）**：触发后——按真实分布定 `factor` 取值档位（当前默认 `∈(0.1,1]` fail-soft）；D2 的熔断/预算阈值开闸仍待 #9 真实压测。
+
+### #45 `src` 剩余 type-checked lint 真债（57 条，本轮不修）
+- **现状**：`no-floating-promises` / `no-misused-promises` 已于 2026-11-05 在 `src/**`、`tests/**` 启用并清零。在仓库根用临时 `eslint.typechecked.tmp.mjs`（`recommendedTypeChecked` + `projectService`，只跑 `src`，跑完即删）复测，`src` 仍有 **57 条**本轮明确不修的告警：
+  - `no-base-to-string` **32** 条：`src/core/decision-service/service.ts:361`、`src/core/persistence/sqlite-decision-store.ts:99` / `:112`——把对象或 `unknown` 直接拼进字符串，可能得到 `[object Object]`。
+  - `unsafe-*` **21** 条（assignment 8 / argument 11 / call 1 / member 1）：`src/core/orchestrator/orchestrator.ts:1131`、`src/core/orchestrator/plan-flow.ts:322`、`src/mcp/stdio-client.ts:146`、`src/core/org/org-service.test.ts:60`。
+  - `unbound-method` **1** 条：`src/core/orchestrator/orchestrator.ts:1276`——方法引用脱绑后丢失 `this`。
+  - `prefer-promise-reject-errors` **3** 条：`src/mcp/stdio-client.ts:219` / `:241`、`src/watch/notify.ts:88`——reject 非 `Error`。
+- **另计**：同一临时配置还会报 `require-await` 69 条、`restrict-template-expressions` 3 条、`no-redundant-type-constituents` 1 条、`no-unnecessary-type-assertion` 1 条；`no-unused-vars` 16 条已被现有配置关闭，不计入。这些属于“风格噪音 / 待设计”面，`src` 全量切 `recommendedTypeChecked` 前需先定口径。
+- **为什么本轮不做**：已拍板先清 promise 族与机械可修部分；上述 57 条要逐条判断是真实缺陷还是类型设计问题（尤其 `no-base-to-string` 需要补序列化而不是强转）。
+- **建议做法**：按规则分批——先修 `no-base-to-string` 32 条（补 `JSON.stringify` 或结构化访问），再处理 3 条 `prefer-promise-reject-errors` 与 1 条 `unbound-method`，最后按目录迁移 `unsafe-*`；每批单独提交并跑全量门禁。
