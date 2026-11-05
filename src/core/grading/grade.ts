@@ -6,7 +6,7 @@
  * 字段间 AND、数组内 OR；条件给出但请求无对应值 = 不匹配（不降级为无条件）。
  */
 import type { Grade } from '../types.js';
-import type { DecisionPolicy, DecisionRequest, GradeDecision, PolicyRule, RuleMatch } from './policy.js';
+import type { DecisionPolicy, DecisionRequest, GradeDecision, RuleMatch } from './policy.js';
 
 /** 分级 → 执行模式（设计 §4.2）。 */
 export const GRADE_MODES = {
@@ -82,7 +82,7 @@ function describeMatch(match: RuleMatch, req: DecisionRequest): string {
  * 纯函数：按策略给请求分级。policy 假定已经过 parsePolicy 校验。
  */
 export function gradeDecision(policy: DecisionPolicy, req: DecisionRequest): GradeDecision {
-  for (const rule of policy.rules as PolicyRule[]) {
+  for (const rule of policy.rules) {
     if (matches(rule.match, req)) {
       return {
         grade: rule.grade,

@@ -1,5 +1,5 @@
 import { sha256Hex } from '../util/crypto.js';
-import type { FanOutRequest, FanOutResult, Position } from '../orchestrator/types.js';
+import type { FanOutRequest, FanOutResult } from '../orchestrator/types.js';
 import { stableStringify } from './consolidate.js';
 import type { MemoryEvent } from './types.js';
 
@@ -71,7 +71,7 @@ export function branchVerdictClaims(
   const seen = new Set<string>();
   const events: MemoryEvent[] = [];
 
-  for (const position of result.positions as Position[]) {
+  for (const position of result.positions) {
     const stance = typeof position.stance === 'string' ? position.stance.trim() : '';
     if (!stance) continue;
     const object = claimObject(stance);

@@ -517,7 +517,7 @@ function toolWriteItem(args: Record<string, unknown>): RealmWriteItem {
   if (!('data' in args)) {
     throw new McpParamError('realm.write requires a data payload');
   }
-  const item: RealmWriteItem = { data: args.data as unknown };
+  const item: RealmWriteItem = { data: args.data };
   if (args.itemId !== undefined) {
     if (typeof args.itemId !== 'string' || args.itemId.trim() === '') {
       throw new McpParamError(`itemId must be a non-empty root-relative string, got: ${String(args.itemId)}`);
@@ -715,10 +715,10 @@ function mapError(
     error instanceof UnsupportedQueryError ||
     error instanceof KernelNotMountedError
   ) {
-    return errorResponse(id, INVALID_PARAMS, (error as Error).message);
+    return errorResponse(id, INVALID_PARAMS, error.message);
   }
   if (error instanceof RealmNotConnectedError || error instanceof RealmNotConnectedMcpError) {
-    return errorResponse(id, REALM_NOT_CONNECTED, (error as Error).message);
+    return errorResponse(id, REALM_NOT_CONNECTED, error.message);
   }
   if (error instanceof InvalidItemIdError) {
     // InvalidItemIdError messages carry only the root-relative itemId, never the root.

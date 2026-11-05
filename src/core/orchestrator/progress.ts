@@ -119,8 +119,8 @@ export class ProgressHub {
     }
     set.add(listener);
     return () => {
-      set!.delete(listener);
-      if (set!.size === 0) this.listeners.delete(intentId);
+      set.delete(listener);
+      if (set.size === 0) this.listeners.delete(intentId);
     };
   }
 

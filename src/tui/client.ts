@@ -10,7 +10,7 @@ export class ApiError extends Error {
     readonly status: number,
     readonly body: unknown,
   ) {
-    super(typeof body === 'object' && body && 'message' in body ? String((body as { message: unknown }).message) : `HTTP ${status}`);
+    super(typeof body === 'object' && body && 'message' in body ? String(body.message) : `HTTP ${status}`);
     this.name = 'ApiError';
   }
 }
@@ -337,7 +337,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
     });
     const body = (await res.json().catch(() => null)) as T;
     if (!res.ok) throw new ApiError(res.status, body);
-    return body as T;
+    return body;
   }
 
   async function post(path: string, payload?: unknown): Promise<void> {

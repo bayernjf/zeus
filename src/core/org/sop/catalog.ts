@@ -186,7 +186,7 @@ function isGrade(v: unknown): v is Grade {
  * downgrade.
  */
 export function requiredGradeForTool(tool: string, args: Record<string, unknown>): Grade {
-  const base = TOOL_DEFAULT_GRADE[tool] ?? ('D0' as Grade);
+  const base = TOOL_DEFAULT_GRADE[tool] ?? ('D0');
   const raise = args[GRADE_RAISE_ARG];
   return isGrade(raise) ? maxGrade(base, raise) : base;
 }

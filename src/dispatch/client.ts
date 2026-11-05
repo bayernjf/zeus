@@ -282,7 +282,7 @@ async function readJson(response: Response, label: string): Promise<unknown> {
 function unwrapTask(payload: unknown): Task {
   const body = payload as { result?: Task; error?: { code: number; message: string } };
   if (body?.error) throw new A2AClientError(body.error.message, body.error.code);
-  if (!body?.result || (body.result as Task).kind !== 'task') throw new A2AClientError('malformed task response', -32000);
+  if (!body?.result || (body.result).kind !== 'task') throw new A2AClientError('malformed task response', -32000);
   return body.result;
 }
 

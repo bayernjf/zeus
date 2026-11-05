@@ -175,7 +175,7 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
         ? {
             inputTokens: tokens.inputTokens,
             outputTokens: tokens.outputTokens,
-            cents: (tokens.inputTokens / 1_000_000) * config.inputUsdPerMillion! * 100 + (tokens.outputTokens / 1_000_000) * config.outputUsdPerMillion! * 100,
+            cents: (tokens.inputTokens / 1_000_000) * config.inputUsdPerMillion * 100 + (tokens.outputTokens / 1_000_000) * config.outputUsdPerMillion * 100,
           }
         : undefined;
     sink.emit({

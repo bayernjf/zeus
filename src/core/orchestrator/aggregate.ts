@@ -17,7 +17,7 @@ export function extractStance(task: Task): { stance: string; rationale?: string 
   for (const artifact of task.artifacts) {
     for (const part of artifact.parts) {
       if (part.kind !== 'data') continue;
-      const data = part.data as Record<string, unknown>;
+      const data = part.data;
       const stance = STANCE_KEYS.map(key => data[key]).find(value => typeof value === 'string' && value.trim() !== '');
       if (typeof stance === 'string') {
         return {

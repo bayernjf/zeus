@@ -571,7 +571,7 @@ export class Orchestrator {
     const face =
       names.length > 0
         ? selectCandidates(request.skill, {
-            ...(explicit ? { named: [...new Set(request.vassals!)] } : {}),
+            ...(explicit ? { named: [...new Set(request.vassals)] } : {}),
             ...(explicit ? {} : { candidatePool: governedPool ?? names }),
             load: {
               inFlightOf: v => this.options.metrics?.inFlightByVassalNow(v) ?? 0,

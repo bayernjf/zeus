@@ -310,7 +310,7 @@ export function extractPlanDraft(artifacts: readonly Artifact[]): DagSpec | unde
 
 function planFromPart(part: Part): DagSpec | undefined {
   if (part.kind !== 'data') return undefined;
-  const data = part.data as Record<string, unknown>;
+  const data = part.data;
   const raw = data[PLAN_DATA_KEY];
   if (raw === undefined || typeof raw !== 'object' || raw === null) return undefined;
   const spec = raw as Record<string, unknown>;

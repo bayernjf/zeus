@@ -144,8 +144,8 @@ export function escalationOptions(escalation: EscalationView): string[] {
 
 function interruptionBadge(palette: Palette, t: Translator, level: 0 | 1 | 2 | undefined): string {
   if (level === undefined) return '';
-  if (level === 2) return palette.paint('attention', t('escalation.level.2' as Parameters<Translator>[0]));
-  if (level === 1) return palette.paint('info', t('escalation.level.1' as Parameters<Translator>[0]));
+  if (level === 2) return palette.paint('attention', t('escalation.level.2'));
+  if (level === 1) return palette.paint('info', t('escalation.level.1'));
   return '';
 }
 
@@ -163,7 +163,7 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
     const options = escalationOptions(esc);
     if (options.length > 0) {
       const labelKey = esc.kind === 'intent-conflict' ? 'escalation.stances' : 'escalation.options';
-      lines.push(`      ${t(labelKey as Parameters<Translator>[0])}: ${options.map((option, i) => `${i + 1}.${safeText(option)}`).join('  ')}`);
+      lines.push(`      ${t(labelKey)}: ${options.map((option, i) => `${i + 1}.${safeText(option)}`).join('  ')}`);
     }
     if (esc.kind === 'delegation-limit') {
       lines.push(`      ${palette.paint('attention', t('escalation.approveContractHint'))}`);
@@ -301,7 +301,7 @@ const CONNECTOR_STATUS_KEYS = {
 } as const;
 
 export function connectorStatusLabel(t: Translator, status: ConnectorView['status']): string {
-  return t(CONNECTOR_STATUS_KEYS[status] as Parameters<Translator>[0]);
+  return t(CONNECTOR_STATUS_KEYS[status]);
 }
 
 function renderConnectors(palette: Palette, t: Translator, connectors: ConnectorsView | null | undefined): string[] {
@@ -358,7 +358,7 @@ function renderActiveIntent(palette: Palette, t: Translator, intent: ActiveInten
   const lines: string[] = [
     `  ${palette.paint('muted', `#${index + 1}`)} ${palette.bold(safeText(intent.intentId))}  [${safeText(intent.skill)}]  ${palette.paint(
       statusToken,
-      t(statusKey as Parameters<Translator>[0]),
+      t(statusKey),
     )}  ${palette.paint('muted', t('active.ready', { settled: intent.settledCount, total: intent.totalCount }))}`,
   ];
   for (const runId of intent.view.order) {
