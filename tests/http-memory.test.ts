@@ -34,7 +34,7 @@ async function setup(): Promise<{ app: FastifyInstance; store: MemoryStore; fact
   const store = new MemoryStore();
   store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
   store.append(claim('evt-2', 'loom', 'language', 'python', 'agent-b'));
-  store.consolidateRealm(REALM);
+  await store.consolidateRealm(REALM);
   const app = await createHttpServer({
     registry: new VassalRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
@@ -182,7 +182,7 @@ describe('memory HTTP right to be forgotten', () => {
     let flushes = 0;
     const store = new MemoryStore();
     store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
-    store.consolidateRealm(REALM);
+    await store.consolidateRealm(REALM);
     const target = store.facts(REALM, REALM)[0]!;
     const app = await createHttpServer({
       registry: new VassalRegistry(),
@@ -208,7 +208,7 @@ describe('memory HTTP right to be forgotten', () => {
     let flushes = 0;
     const store = new MemoryStore();
     store.append(claim('evt-2', 'loom', 'language', 'python', 'agent-b'));
-    store.consolidateRealm(REALM);
+    await store.consolidateRealm(REALM);
     const hooked = await createHttpServer({
       registry: new VassalRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
@@ -227,7 +227,7 @@ describe('memory HTTP right to be forgotten', () => {
   it('reports 500 when the retraction is in memory but the durability flush failed', async () => {
     const store = new MemoryStore();
     store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
-    store.consolidateRealm(REALM);
+    await store.consolidateRealm(REALM);
     const target = store.facts(REALM, REALM)[0]!;
     const app = await createHttpServer({
       registry: new VassalRegistry(),
@@ -313,7 +313,7 @@ describe('E8.5 memory drift reconciliation HTTP', () => {
     const previous = (await snap.json()).state;
 
     store.append(claim('evt-3', 'atlas', 'language', 'golang', 'agent-c'));
-    store.consolidateRealm(REALM);
+    await store.consolidateRealm(REALM);
 
     const res = await app.inject({ method: 'POST', url: '/api/memory/reconcile', headers: AUTH, payload: { previous } });
     expect(res.statusCode).toBe(200);

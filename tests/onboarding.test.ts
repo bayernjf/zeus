@@ -408,7 +408,7 @@ describe('E9.1 the day-one briefing', () => {
       'shipping the compiler safely means two approvals before any deploy',
       'pr-helper',
     ));
-    harness.memory.consolidateRealm(harness.engRealmId);
+    await harness.memory.consolidateRealm(harness.engRealmId);
     const briefing = await brief(await briefedRecord());
     expect(briefing.culture.facts.length).toBeGreaterThan(0);
     expect(JSON.stringify(briefing.culture.facts)).toContain('two approvals before any deploy');

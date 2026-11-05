@@ -28,22 +28,22 @@ function claim(
   };
 }
 
-function settledState(events: MemoryEvent[]): MemoryState {
+async function settledState(events: MemoryEvent[]): Promise<MemoryState> {
   const store = new MemoryStore();
   for (const event of events) store.append(event);
-  store.consolidateRealm('personal');
+  await store.consolidateRealm('personal');
   return store.exportState();
 }
 
 describe('Memory drift reconciliation', () => {
-  it('reports no drift for identical snapshots', () => {
-    const state = settledState([claim('e1', 'user', 'language', 'rust')]);
+  it('reports no drift for identical snapshots', async () => {
+    const state = await settledState([claim('e1', 'user', 'language', 'rust')]);
     expect(reconcileMemoryStates(state, structuredClone(state)).hasDrift).toBe(false);
   });
 
-  it('reports appended events and added facts between two points', () => {
-    const before = settledState([claim('e1', 'user', 'language', 'rust')]);
-    const after = settledState([
+  it('reports appended events and added facts between two points', async () => {
+    const before = await settledState([claim('e1', 'user', 'language', 'rust')]);
+    const after = await settledState([
       claim('e1', 'user', 'language', 'rust'),
       claim('e2', 'user', 'editor', 'zed'),
     ]);
@@ -54,14 +54,14 @@ describe('Memory drift reconciliation', () => {
     expect(report.eventsRemoved).toBe(0);
   });
 
-  it('detects a fact field change and its specific field', () => {
+  it('detects a fact field change and its specific field', async () => {
     const store = new MemoryStore();
     store.append(claim('e1', 'user', 'city', 'Berlin', 'agent-a'));
-    store.consolidateRealm('personal');
+    await store.consolidateRealm('personal');
     const before = store.exportState();
 
     store.append(claim('e2', 'user', 'city', 'Munich', 'agent-b'));
-    store.consolidateRealm('personal');
+    await store.consolidateRealm('personal');
     const report = reconcileMemoryStates(before, store.exportState());
 
     const changed = report.factsChanged.find(d => d.changes?.some(c => c.field === 'status'));
@@ -69,10 +69,10 @@ describe('Memory drift reconciliation', () => {
     expect(changed!.changes!.find(c => c.field === 'status')?.after).toBe('disputed');
   });
 
-  it('reports retractions and removed events', () => {
+  it('reports retractions and removed events', async () => {
     const store = new MemoryStore();
     store.append(claim('e1', 'alice', 'phone', 'secret'));
-    store.consolidateRealm('personal');
+    await store.consolidateRealm('personal');
     const before = store.exportState();
 
     const factId = before.facts[0]![1][0]!.factId;
@@ -90,24 +90,24 @@ describe('Memory drift reconciliation', () => {
 });
 
 describe('Memory invariant verification', () => {
-  it('accepts a healthy consolidated state', () => {
-    const state = settledState([
+  it('accepts a healthy consolidated state', async () => {
+    const state = await settledState([
       claim('e1', 'user', 'language', 'rust'),
       claim('e2', 'user', 'editor', 'zed'),
     ]);
     expect(verifyMemoryState(state)).toEqual([]);
   });
 
-  it('flags a fact whose id does not rebuild (tampered content)', () => {
-    const state = settledState([claim('e1', 'user', 'language', 'rust')]);
+  it('flags a fact whose id does not rebuild (tampered content)', async () => {
+    const state = await settledState([claim('e1', 'user', 'language', 'rust')]);
     const fact = state.facts[0]![1][0]!;
     fact.object = 'python'; // id no longer matches
     const violations = verifyMemoryState(state);
     expect(violations.some(v => v.code === 'bad-fact-id')).toBe(true);
   });
 
-  it('flags provenance that points at a missing or cross-realm event', () => {
-    const state = settledState([claim('e1', 'user', 'language', 'rust')]);
+  it('flags provenance that points at a missing or cross-realm event', async () => {
+    const state = await settledState([claim('e1', 'user', 'language', 'rust')]);
 
     const missing = structuredClone(state);
     missing.facts[0]![1][0]!.provenance = ['ghost'];
@@ -120,8 +120,8 @@ describe('Memory invariant verification', () => {
     expect(verifyMemoryState(crossRealm).some(v => v.code === 'provenance-realm-mismatch')).toBe(true);
   });
 
-  it('flags a retracted fact without a tombstone and vice versa', () => {
-    const state = settledState([
+  it('flags a retracted fact without a tombstone and vice versa', async () => {
+    const state = await settledState([
       claim('e1', 'alice', 'phone', 'secret'),
       claim('e2', 'bob', 'city', 'Munich'),
     ]);
@@ -141,10 +141,10 @@ describe('Memory invariant verification', () => {
     expect(verifyMemoryState(state).some(v => v.code === 'retracted-without-tombstone')).toBe(false);
   });
 
-  it('MemoryStore.verifyIntegrity reports clean for normal operation', () => {
+  it('MemoryStore.verifyIntegrity reports clean for normal operation', async () => {
     const store = new MemoryStore();
     store.append(claim('e1', 'user', 'language', 'rust'));
-    store.consolidateRealm('personal');
+    await store.consolidateRealm('personal');
     expect(store.verifyIntegrity()).toEqual([]);
   });
 });

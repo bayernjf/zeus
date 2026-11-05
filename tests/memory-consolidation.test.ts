@@ -113,10 +113,10 @@ describe('memory consolidation P0', () => {
     expect(result.disputes).toEqual([]);
   });
 
-  it('acceptance 5: a store rebuilt from exported state exposes identical facts and replays', () => {
+  it('acceptance 5: a store rebuilt from exported state exposes identical facts and replays', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node'));
-    store.consolidateRealm(REALM);
+    await store.consolidateRealm(REALM);
 
     const rebuilt = MemoryStore.fromState(store.exportState());
     expect(rebuilt.facts(REALM, REALM)).toEqual(store.facts(REALM, REALM));
@@ -162,13 +162,13 @@ describe('memory consolidation P0', () => {
     expect(audits.map(a => a.reason)).toEqual(['cross-realm-read', 'cross-realm-read', 'cross-realm-append']);
   });
 
-  it('acceptance 8: replay along a runId returns events and the facts they produced', () => {
+  it('acceptance 8: replay along a runId returns events and the facts they produced', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', { runId: 'run-A' }));
     store.append(claim('Zeus', 'owned-by', 'user', {
       eventId: 'evt-2', runId: 'run-B', occurredAt: '2026-09-22T10:05:00Z',
     }));
-    store.consolidateRealm(REALM);
+    await store.consolidateRealm(REALM);
 
     const replay = store.replay(REALM, 'run-A');
     expect(replay.events.map(e => e.runId)).toEqual(['run-A']);
@@ -215,14 +215,14 @@ describe('memory consolidation P0', () => {
     expect(audits[0]!.at).toBe(frozen.toISOString());
   });
 
-  it('#14 resolves fact authors only within the named realm, never by scanning every domain', () => {
+  it('#14 resolves fact authors only within the named realm, never by scanning every domain', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', { realmId: REALM, source: { agentId: 'author-a' } }));
     store.append(claim('Zeus', 'runs-on', 'node', {
       eventId: 'evt-b', realmId: OTHER, source: { agentId: 'author-b' },
     }));
-    store.consolidateRealm(REALM);
-    store.consolidateRealm(OTHER);
+    await store.consolidateRealm(REALM);
+    await store.consolidateRealm(OTHER);
 
     const [inRealm] = store.facts(REALM, REALM);
     const [elsewhere] = store.facts(OTHER, OTHER);

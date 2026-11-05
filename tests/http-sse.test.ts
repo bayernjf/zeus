@@ -120,7 +120,7 @@ describe('H3 SSE intent events', () => {
     expect(buffer).toContain('event: branch-started');
     expect(buffer).toContain('event: branch-ended');
     expect(buffer).toContain('event: intent-finished');
-    reader.cancel();
+    await reader.cancel();
     await done;
     await app.close();
   }, 30000);
