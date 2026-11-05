@@ -107,7 +107,7 @@ async function bootedWithMemory() {
   });
   kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
   kernel.memoryStore!.append(claimEvent('e2', 'user', 'edits', 'vim'));
-  kernel.memoryStore!.consolidateRealm('personal');
+  await kernel.memoryStore!.consolidateRealm('personal');
   return { kernel, sent, audits };
 }
 
@@ -271,7 +271,7 @@ describe('S1 V3 per-branch context budget in a booted kernel', () => {
       contextOptions: { maxContextEntriesPerBranch: 3 },
     });
     kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
-    kernel.memoryStore!.consolidateRealm('personal');
+    await kernel.memoryStore!.consolidateRealm('personal');
     await kernel.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
@@ -301,7 +301,7 @@ describe('S1 V3 per-branch context budget in a booted kernel', () => {
       contextOptions: { maxContextEntriesPerBranch: 2 },
     });
     kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
-    kernel.memoryStore!.consolidateRealm('personal');
+    await kernel.memoryStore!.consolidateRealm('personal');
     await kernel.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },

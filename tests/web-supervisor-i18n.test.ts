@@ -140,7 +140,7 @@ function themeTokens(selector: string): Record<string, string> {
   const block = STYLE.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\{([\\s\\S]*?)\\n  \\}`))!;
   expect(block, `${selector} block missing`).toBeTruthy();
   const out: Record<string, string> = {};
-  for (const m of block![1]!.matchAll(/(--[\w-]+):\s*([^;]+);/g)) out[m[1]!] = m[2]!.trim();
+  for (const m of block[1]!.matchAll(/(--[\w-]+):\s*([^;]+);/g)) out[m[1]!] = m[2]!.trim();
   return out;
 }
 
@@ -306,7 +306,7 @@ describe('supervisor copy describes the actions the page actually has', () => {
       for (const [key, value] of Object.entries(table)) {
         if (!/只读|read-only/i.test(value)) continue;
         for (const mention of value.matchAll(/\/api\/[a-z0-9-]+(?:\/[a-z0-9-]+)*/gi)) {
-          const named = mention[0]!.replace(/\/+$/, '');
+          const named = mention[0].replace(/\/+$/, '');
           for (const write of writes) {
             if (write === named || write.startsWith(`${named}/`) || named.startsWith(`${write}/`)) {
               offenders.push(`${lang}:${key} claims ${named} is read-only while the page writes ${write}`);

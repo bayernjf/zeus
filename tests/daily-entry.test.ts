@@ -370,7 +370,7 @@ function agentUrl(name: string): string {
 
 /** Nothing from the developer's own shell reaches the run under test. */
 function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  return { ...extra } as NodeJS.ProcessEnv;
+  return { ...extra };
 }
 
 describe('npm run daily', () => {

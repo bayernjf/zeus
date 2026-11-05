@@ -120,7 +120,7 @@ describe('H3 SSE intent events', () => {
     expect(buffer).toContain('event: branch-started');
     expect(buffer).toContain('event: branch-ended');
     expect(buffer).toContain('event: intent-finished');
-    reader.cancel();
+    await reader.cancel();
     await done;
     await app.close();
   }, 30000);
@@ -154,7 +154,7 @@ const finished: ProgressEvent = {
 };
 
 describe('hijacked SSE stream lifecycle', () => {
-  const socketOf = (): FakeSocket & EventStreamSocket => new FakeSocket() as FakeSocket & EventStreamSocket;
+  const socketOf = (): FakeSocket & EventStreamSocket => new FakeSocket();
 
   it('survives a peer reset without an unhandled error event', () => {
     const hub = new ProgressHub();

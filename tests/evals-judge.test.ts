@@ -113,7 +113,7 @@ describe('createEvalJudge (W4-1)', () => {
     const judge = createEvalJudge({
       alias: 'choice',
       resolveEndpoint: () => endpoint,
-      fetchImpl: (async () => new Response('boom', { status: 500 })) as typeof fetch,
+      fetchImpl: (async () => new Response('boom', { status: 500 })),
     });
     const verdict = await judge.score('r', outcome());
     expect(verdict).toEqual({ ok: false, reason: 'judge http 500' });

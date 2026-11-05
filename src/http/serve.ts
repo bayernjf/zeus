@@ -438,7 +438,7 @@ async function main(): Promise<void> {
       // Durable per-task action results (0003) when on SQLite: a worker restart
       // replays already-committed channel effects instead of re-running them.
       ...(db
-        ? { actionStoreFactory: (taskId: string) => new SqliteActionStore(db!, taskId) }
+        ? { actionStoreFactory: (taskId: string) => new SqliteActionStore(db, taskId) }
         : {}),
     };
 
@@ -669,7 +669,7 @@ main().catch(error => {
   // what to change and leave the stack to everything else. The structured log
   // keeps the same semantics: named event, error class, message, exit 1.
   if (error instanceof KernelBootError || error instanceof RealmError || error instanceof RskConfigError) {
-    log.error('boot-refused', (error as Error).message, { errorClass: error.constructor.name });
+    log.error('boot-refused', error.message, { errorClass: error.constructor.name });
     process.exit(1);
   }
   log.error('boot-failed', error instanceof Error ? error.message : String(error), {

@@ -9,7 +9,7 @@ import { ConcurrencyMetrics } from '../src/orchestrator/metrics.js';
 import { ExecutionDelegationNonceLedger, issueExecutionDelegation } from '../src/delegation/execution-delegation.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchResult, AuditEntry } from '../src/dispatch/dispatcher.js';
-import type { A2AEvent, Task } from '../src/a2a/types.js';
+import type { Task } from '../src/a2a/types.js';
 
 const TOKEN = 'driver-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
@@ -20,7 +20,7 @@ function okResult(vassal: string): DispatchResult {
     kind: 'task', id: `${vassal}-task`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
-  return { ok: true, task, events: [{ kind: 'status-update', taskId: task.id, contextId: 'ctx', status: { state: 'completed' }, final: true } as A2AEvent], injectedHits: [] };
+  return { ok: true, task, events: [{ kind: 'status-update', taskId: task.id, contextId: 'ctx', status: { state: 'completed' }, final: true }], injectedHits: [] };
 }
 
 function makePort() {

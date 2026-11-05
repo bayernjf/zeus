@@ -27,7 +27,7 @@ function makePort(routes: Record<string, Route>): DispatchPort & { dispatchCount
       const name = req.vassal!;
       const no = (dispatchCount[name] = (dispatchCount[name] ?? 0) + 1);
       const route = routes[name];
-      return typeof route === 'function' ? (route as (r: DispatchRequest, n: number) => DispatchResult)(req, no) : route!;
+      return typeof route === 'function' ? (route)(req, no) : route!;
     },
     async cancel() {},
   };

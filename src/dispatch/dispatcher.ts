@@ -607,7 +607,7 @@ export class Dispatcher {
         decision: 'refused-revoked', detail: `cancel refused: vassal ${vassalName} is revoked; no request sent`,
       };
       this.options.audit(audit);
-      throw new Error(audit.detail!);
+      throw new Error(audit.detail);
     }
     const vassal = this.lookup.get(vassalName);
     if (!vassal) {
@@ -616,7 +616,7 @@ export class Dispatcher {
         decision: 'refused-unknown-vassal', detail: `cancel refused: ${vassalName} is not a registered vassal`,
       };
       this.options.audit(audit);
-      throw new Error(audit.detail!);
+      throw new Error(audit.detail);
     }
     const task = await cancelTask(vassal.taskUrl, taskId, this.options.tokenFor?.(vassalName), this.options.fetchImpl);
     this.options.audit({ ts: now().toISOString(), vassal: vassalName, taskId, decision: 'cancel-requested', state: task.status.state });

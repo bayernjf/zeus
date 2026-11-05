@@ -439,7 +439,7 @@ export class DecisionService {
   private fingerprint(req: DecisionRequest | DecisionRecord): string {
     if ('id' in req) {
       // Existing record: fingerprint its request-shape fields.
-      const r = req as DecisionRecord;
+      const r = req;
       return canonicalDigest({
         intent: r.intent,
         domain: r.domain,

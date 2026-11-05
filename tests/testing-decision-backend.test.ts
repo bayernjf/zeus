@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DecisionBackendFailure } from '../src/decision/types.js';
-import type { ChoiceRequest, ChoiceResult, NoulRequest, ScoreRequest } from '../src/decision/types.js';
+import type { ChoiceRequest, ChoiceResult } from '../src/decision/types.js';
 import { createScriptedDecisionBackend } from '../src/testing/decision-backend.js';
 
 const baseChoice = {
@@ -23,7 +23,7 @@ const choiceResult = (choice: string, confidence = 0.9): ChoiceResult => ({
 describe('scripted decision backend (S17 V2)', () => {
   it('answers an unscripted method with a neutral fixed result and logs the call', async () => {
     const backend = createScriptedDecisionBackend();
-    const result = await backend.noul({ ...baseChoice, question: 'is it true?' } as unknown as NoulRequest);
+    const result = await backend.noul({ ...baseChoice, question: 'is it true?' });
     expect(result.probability).toBe(0.5);
     expect(result.calibrated).toBe(true);
     expect(backend.calls.noul).toHaveLength(1);
@@ -32,7 +32,7 @@ describe('scripted decision backend (S17 V2)', () => {
 
   it('returns a fixed choice and reports the configured kind/model', async () => {
     const backend = createScriptedDecisionBackend({ kind: 'llm', model: 'agnes-x', choice: choiceResult('approve') });
-    const result = await backend.choice(baseChoice as ChoiceRequest);
+    const result = await backend.choice(baseChoice);
     expect(result.choice).toBe('approve');
     expect(backend.kind).toBe('llm');
     expect(backend.model).toBe('agnes-x');
@@ -41,9 +41,9 @@ describe('scripted decision backend (S17 V2)', () => {
 
   it('walks a result queue per call index and pins to the last entry once exhausted', async () => {
     const backend = createScriptedDecisionBackend({ choice: [choiceResult('approve', 0.8), choiceResult('reject', 0.7)] });
-    const first = await backend.choice(baseChoice as ChoiceRequest);
-    const second = await backend.choice(baseChoice as ChoiceRequest);
-    const third = await backend.choice(baseChoice as ChoiceRequest);
+    const first = await backend.choice(baseChoice);
+    const second = await backend.choice(baseChoice);
+    const third = await backend.choice(baseChoice);
     expect([first.choice, second.choice, third.choice]).toEqual(['approve', 'reject', 'reject']);
     expect(backend.calls.choice.map((c) => c.callIndex)).toEqual([0, 1, 2]);
   });
@@ -63,9 +63,9 @@ describe('scripted decision backend (S17 V2)', () => {
 
   it('records noul/choice/score calls on separate logs with the original request', async () => {
     const backend = createScriptedDecisionBackend();
-    await backend.choice(baseChoice as ChoiceRequest);
-    await backend.noul({ ...baseChoice, question: 'n?' } as unknown as NoulRequest);
-    await backend.score({ ...baseChoice, question: 's?', levels: ['low', 'high'] } as unknown as ScoreRequest);
+    await backend.choice(baseChoice);
+    await backend.noul({ ...baseChoice, question: 'n?' });
+    await backend.score({ ...baseChoice, question: 's?', levels: ['low', 'high'] });
     expect(backend.calls.choice).toHaveLength(1);
     expect(backend.calls.noul).toHaveLength(1);
     expect(backend.calls.score).toHaveLength(1);
@@ -76,7 +76,7 @@ describe('scripted decision backend (S17 V2)', () => {
     const backend = createScriptedDecisionBackend({ failWith: 'timeout' });
     let code: string | undefined;
     try {
-      await backend.choice(baseChoice as ChoiceRequest);
+      await backend.choice(baseChoice);
       throw new Error('expected rejection');
     } catch (error) {
       expect(error).toBeInstanceOf(DecisionBackendFailure);
@@ -94,7 +94,7 @@ describe('scripted decision backend (S17 V2)', () => {
   it('delays resolution deterministically', async () => {
     const backend = createScriptedDecisionBackend({ delayMs: 20, choice: choiceResult('approve') });
     const started = Date.now();
-    await backend.choice(baseChoice as ChoiceRequest);
+    await backend.choice(baseChoice);
     expect(Date.now() - started).toBeGreaterThanOrEqual(15);
   });
 
@@ -106,8 +106,8 @@ describe('scripted decision backend (S17 V2)', () => {
       choice: choiceResult('approve'),
       onTrace: t => traces.push(t),
     });
-    await backend.choice(baseChoice as ChoiceRequest);
-    await backend.noul({ ...baseChoice, question: 'n?' } as unknown as NoulRequest);
+    await backend.choice(baseChoice);
+    await backend.noul({ ...baseChoice, question: 'n?' });
     expect(traces).toHaveLength(2);
     const trace = traces[0] as { runId: string; backend: string; model: string; request: { kind: string; question: string; stateKeys: string[] }; usage: { inputTokens: number; outputTokens: number; reasoningTokens: number }; result: unknown; latencyMs: number; decidedAt: string };
     // TracePort v1 §2 shape: runId from the request, usage from the scripted
@@ -126,7 +126,7 @@ describe('scripted decision backend (S17 V2)', () => {
     const traces: Array<{ error?: { code: string }; usage?: unknown }> = [];
     const backend = createScriptedDecisionBackend({
       failWith: 'timeout',
-      onTrace: t => traces.push(t as { error?: { code: string }; usage?: unknown }),
+      onTrace: t => traces.push(t),
     });
     await expect(backend.choice(baseChoice as ChoiceRequest)).rejects.toThrow(/scripted failure/);
     expect(traces).toHaveLength(1);
@@ -136,7 +136,7 @@ describe('scripted decision backend (S17 V2)', () => {
 
   it('emits nothing when no onTrace hook is wired (V2 behaviour unchanged)', async () => {
     const backend = createScriptedDecisionBackend({ usage: { inputTokens: 1, outputTokens: 1 } });
-    const result = await backend.choice(baseChoice as ChoiceRequest);
+    const result = await backend.choice(baseChoice);
     expect(result.choice).toBe('');
   });
 });

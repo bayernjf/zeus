@@ -169,7 +169,7 @@ export function buildTraceTree(input: {
   const spans: TraceSpan[] = [];
   const root: TraceSpan = {
     traceId,
-    spanId: isDagOnly ? dagIdOf(intentId!) : rootSpanId,
+    spanId: isDagOnly ? dagIdOf(intentId) : rootSpanId,
     kind: 'intent',
     startedAt: firstIntentEvent?.at ?? '',
     events: [],
@@ -247,7 +247,7 @@ export function buildTraceTree(input: {
         // Resume: a `:resumeN` runId is its own span pointing back at the
         // parent branch runId.
         const resumeNo = a.runId.match(/:resume(\d+)$/);
-        const parentRunId = resumeNo ? a.runId.slice(0, a.runId.length - resumeNo[0]!.length) : a.runId;
+        const parentRunId = resumeNo ? a.runId.slice(0, a.runId.length - resumeNo[0].length) : a.runId;
         const parent = byRunId.get(parentRunId);
         const i = mark(a.runId, a.skill ?? root.spanId);
         const s = spans[i]!;

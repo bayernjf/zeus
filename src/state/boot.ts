@@ -376,7 +376,7 @@ async function assembleKernel(
   const fileSink: AuditSink | null = options.auditFile
     ? (() => {
         try {
-          return jsonlAuditSink(options.auditFile!, {
+          return jsonlAuditSink(options.auditFile, {
             ...(options.auditMaxBytes !== undefined ? { maxBytes: options.auditMaxBytes } : {}),
             ...(options.auditKeep !== undefined ? { keep: options.auditKeep } : {}),
           });

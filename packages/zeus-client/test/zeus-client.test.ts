@@ -52,12 +52,12 @@ const record: DecisionRecord = {
 
 /** A fetch that hangs until the request signal aborts, then rejects like real fetch. */
 function hangingFetch(): typeof fetch {
-  const impl = ((_input: RequestInfo | URL, init?: RequestInit) =>
+  const impl = (_input: RequestInfo | URL, init?: RequestInit) =>
     new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener('abort', () => {
         reject(new Error('The operation was aborted'));
       });
-    })) as unknown as typeof fetch;
+    });
   return impl;
 }
 

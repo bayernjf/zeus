@@ -67,7 +67,7 @@ import {
 import type { KernelStats } from '../state/stats.js';
 import type { IntentArchiveLookup, RetentionMode } from '../state/archive.js';
 import type { MemoryStore } from '../memory/memory-store.js';
-import type { DriverWriteGrant, RealmAccess, RealmActor, RealmStore } from '../realm/types.js';
+import type { DriverWriteGrant, RealmActor, RealmStore } from '../realm/types.js';
 import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../realm/types.js';
 import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../realm/mcp.js';
 import { createKernelToolsMcpHandler, KERNEL_MCP_PROTOCOL_VERSION, type KernelMcpActor } from '../mcp/kernel-tools.js';
@@ -534,7 +534,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         serverInfo: { name: 'zeus-realm', version: deps.version ?? '0.1.0' },
       }));
       app.post('/mcp', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
-        const raw = request.body as unknown;
+        const raw = request.body;
         let message: unknown;
         if (typeof raw === 'string') {
           try {
@@ -603,7 +603,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           await reply.code(401).header('WWW-Authenticate', 'Bearer').send({ error: 'unauthorized' });
           return;
         }
-        const raw = request.body as unknown;
+        const raw = request.body;
         let message: unknown;
         if (typeof raw === 'string') {
           try {
@@ -913,7 +913,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       // exists when the internal token is set, so an unconfigured key leaves
       // the endpoint unmounted (same convention as the rest of the driver face).
       app.post('/api/a2a/push-notifications', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
-        const raw = request.body as unknown;
+        const raw = request.body;
         const candidate = raw as { id?: unknown; status?: { state?: unknown } };
         if (
           candidate === null || typeof candidate !== 'object' ||
@@ -1477,7 +1477,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           if ((limits.maxConcurrent as number) > (limits.maxChildTickets as number)) {
             return error(reply, 400, 'invalid_request', 'body.limits.maxConcurrent cannot exceed maxChildTickets');
           }
-          if (!isNonEmptyString(limits.windowEndsAt) || Number.isNaN(Date.parse(limits.windowEndsAt as string))) {
+          if (!isNonEmptyString(limits.windowEndsAt) || Number.isNaN(Date.parse(limits.windowEndsAt))) {
             return error(reply, 400, 'invalid_request', 'body.limits.windowEndsAt must be a parseable future date');
           }
           if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
@@ -1486,16 +1486,16 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           try {
             const contract = await issueDelegationContract(
               {
-                grantedBy: body.grantedBy as string,
+                grantedBy: body.grantedBy,
                 skill: escalation.skill,
                 // An execute contract must cover the execute gate's capability;
                 // the caller cannot widen past what this escalation needs.
                 capabilities: ['execute'],
-                ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
+                ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal } : {}),
                 limits: {
                   maxChildTickets: limits.maxChildTickets as number,
                   maxConcurrent: limits.maxConcurrent as number,
-                  windowEndsAt: limits.windowEndsAt as string,
+                  windowEndsAt: limits.windowEndsAt,
                 },
               },
               { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
@@ -1519,7 +1519,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             const approved = deps.oversight!.approve(
               id,
               isNonEmptyString(body.reason)
-                ? (body.reason as string)
+                ? (body.reason)
                 : `new contract ${contract.id} bound to watch ${watch.id}`,
             );
             reply.code(201);
@@ -1635,9 +1635,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         try {
           const dept = deps.orgRegistry!.assignMember(id, {
             agentId: body.agentId,
-            ...(body.role ? { role: body.role as 'lead' | 'member' } : {}),
+            ...(body.role ? { role: body.role } : {}),
             ...(typeof body.title === 'string' ? { title: body.title } : {}),
-            ...(body.skills ? { skills: body.skills as string[] } : {}),
+            ...(body.skills ? { skills: body.skills } : {}),
           });
           return reply.code(201).send(dept);
         } catch (e) {
@@ -1739,7 +1739,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
               realmId: body.realmId,
               openedBy: body.openedBy,
               ...(typeof body.tenant === 'string' ? { tenant: body.tenant } : {}),
-              ...(Array.isArray(body.requiredSkills) ? { requiredSkills: body.requiredSkills as string[] } : {}),
+              ...(Array.isArray(body.requiredSkills) ? { requiredSkills: body.requiredSkills } : {}),
             });
             reply.code(201);
             return record;
@@ -1828,7 +1828,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             skill: body.skill,
             realm: realm.type,
             params: {
-              ...((body.params ?? {}) as Record<string, unknown>),
+              ...((body.params ?? {})),
               onboarding: {
                 commissionId: record.id,
                 departmentId: record.departmentId,
@@ -2135,7 +2135,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
               ...(kind !== 'fact' ? { category: kind as (typeof MEMORY_KINDS)[number] } : {}),
               ...(importance !== undefined ? { importance } : {}),
             },
-            refs: Array.isArray(body.provenance) ? [...(body.provenance as string[])] : [],
+            refs: Array.isArray(body.provenance) ? [...(body.provenance)] : [],
             confidence: 0.9,
             occurredAt: new Date().toISOString(),
           };
@@ -2273,7 +2273,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           }
           const generated: Array<{ realmId: string; date: string; itemId: string }> = [];
           for (const entry of entries) {
-            const { itemId } = await persistDiary(deps.realmStore!, entry, {
+            const { itemId } = await persistDiary(deps.realmStore, entry, {
               ...(typeof body.dir === 'string' ? { dir: body.dir } : {}),
               // An enterprise realm only accepts a diary write carrying a driver
               // grant (POST /api/realm/write-grants); the store is what refuses or
@@ -2431,8 +2431,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
         try {
           return deps.skillRegistry!.harden(id, {
-            ...(body.permissions ? { permissions: body.permissions as string[] } : {}),
-            ...(body.constraints ? { constraints: body.constraints as Record<string, unknown> } : {}),
+            ...(body.permissions ? { permissions: body.permissions } : {}),
+            ...(body.constraints ? { constraints: body.constraints } : {}),
           }, version);
         } catch (e) {
           return mapCatalogueError(reply, e);
@@ -2619,13 +2619,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             ...(hasCommand
               ? {
                   command: body.command as string,
-                  ...(Array.isArray(body.args) ? { args: body.args as string[] } : {}),
+                  ...(Array.isArray(body.args) ? { args: body.args } : {}),
                   ...(body.env ? { env: body.env as Record<string, string> } : {}),
                   ...(Array.isArray(body.envAllowList) ? { envAllowList: body.envAllowList as string[] } : {}),
                   ...(typeof body.maxWallSeconds === 'number' ? { maxWallSeconds: body.maxWallSeconds } : {}),
                 }
               : {}),
-            permissions: body.permissions as string[],
+            permissions: body.permissions,
             ...(isNonEmptyString(body.token) ? { token: body.token } : {}),
           });
           return reply.code(201).send(redactConnector(record));
@@ -2790,7 +2790,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         return decideRealmAccess({
           actor,
           realm,
-          access: (query.access ?? 'read') as RealmAccess,
+          access: (query.access ?? 'read'),
           grants: deps.domainGrants!.list(),
         });
       });
@@ -2819,7 +2819,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           const grant = deps.domainGrants!.issue({
             subject: body.subject as string,
             realmId: body.realmId as string,
-            access: body.access as RealmAccess,
+            access: body.access,
             grantedBy: body.grantedBy as string,
             ...(isNonEmptyString(body.reason) ? { reason: body.reason } : {}),
             ...(typeof body.expiresAt === 'string' ? { expiresAt: body.expiresAt } : {}),
@@ -2872,7 +2872,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', `only enterprise realms carry a tenant scope, not '${realm.type}'`);
         }
         try {
-          await deps.realmStore!.retargetTenant(id, body.from as string, body.to as string);
+          await deps.realmStore!.retargetTenant(id, body.from, body.to);
         } catch (thrown) {
           if (thrown instanceof RealmError) return error(reply, 409, 'conflict', thrown.message);
           throw thrown;
@@ -2918,8 +2918,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           const grant = await issueDriverWriteGrant(
             {
               realmId: realm.realmId,
-              grantedBy: body.grantedBy as string,
-              ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
+              grantedBy: body.grantedBy,
+              ...(isNonEmptyString(body.reason) ? { reason: body.reason } : {}),
               ...(typeof body.ttlSeconds === 'number' ? { ttlMs: body.ttlSeconds * 1000 } : {}),
             },
             { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
@@ -2966,11 +2966,11 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       try {
         const delegation = await issueExecutionDelegation(
           {
-            grantedBy: body.grantedBy as string,
-            skill: body.skill as string,
+            grantedBy: body.grantedBy,
+            skill: body.skill,
             capabilities: body.capabilities as string[],
-            ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
-            ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
+            ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal } : {}),
+            ...(isNonEmptyString(body.reason) ? { reason: body.reason } : {}),
             ...(typeof body.ttlSeconds === 'number' ? { ttlMs: body.ttlSeconds * 1000 } : {}),
           },
           { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
@@ -3026,20 +3026,20 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if ((limits.maxConcurrent as number) > (limits.maxChildTickets as number)) {
           return error(reply, 400, 'invalid_request', 'body.limits.maxConcurrent cannot exceed maxChildTickets');
         }
-        if (!isNonEmptyString(limits.windowEndsAt) || Number.isNaN(Date.parse(limits.windowEndsAt as string))) {
+        if (!isNonEmptyString(limits.windowEndsAt) || Number.isNaN(Date.parse(limits.windowEndsAt))) {
           return error(reply, 400, 'invalid_request', 'body.limits.windowEndsAt must be a parseable future date');
         }
         try {
           const contract = await issueDelegationContract(
             {
-              grantedBy: body.grantedBy as string,
-              skill: body.skill as string,
+              grantedBy: body.grantedBy,
+              skill: body.skill,
               capabilities: body.capabilities as string[],
-              ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal as string } : {}),
+              ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal } : {}),
               limits: {
                 maxChildTickets: limits.maxChildTickets as number,
                 maxConcurrent: limits.maxConcurrent as number,
-                windowEndsAt: limits.windowEndsAt as string,
+                windowEndsAt: limits.windowEndsAt,
               },
             },
             { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
@@ -3057,7 +3057,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             windowEndsAt: contract.limits.windowEndsAt,
             maxChildTickets: contract.limits.maxChildTickets,
             maxConcurrent: contract.limits.maxConcurrent,
-            ...(isNonEmptyString(body.reason) ? { reason: body.reason as string } : {}),
+            ...(isNonEmptyString(body.reason) ? { reason: body.reason } : {}),
           });
           reply.code(201);
           return { contract };
@@ -3122,21 +3122,21 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!budget || typeof budget !== 'object') {
           return error(reply, 400, 'invalid_request', 'body.budget { fires, executes } is required');
         }
-        const realm = body.realm as unknown;
+        const realm = body.realm;
         if (realm !== 'personal' && realm !== 'enterprise') {
           return error(reply, 400, 'invalid_request', "body.realm must be 'personal' or 'enterprise'");
         }
-        const mode = (intent as Record<string, unknown>).mode as unknown;
+        const mode = intent.mode;
         if (mode !== 'plan' && mode !== 'execute') {
           return error(reply, 400, 'invalid_request', "body.intent.mode must be 'plan' or 'execute'");
         }
-        if (!isNonEmptyString((intent as Record<string, unknown>).skill)) {
+        if (!isNonEmptyString(intent.skill)) {
           return error(reply, 400, 'invalid_request', 'body.intent.skill is required');
         }
-        if (!isNonEmptyString((intent as Record<string, unknown>).subject)) {
+        if (!isNonEmptyString(intent.subject)) {
           return error(reply, 400, 'invalid_request', 'body.intent.subject is required');
         }
-        const maxFanOut = (intent as Record<string, unknown>).maxFanOut as unknown;
+        const maxFanOut = intent.maxFanOut;
         if (!Number.isInteger(maxFanOut) || (maxFanOut as number) < 1) {
           return error(reply, 400, 'invalid_request', 'body.intent.maxFanOut must be a positive integer');
         }
@@ -3149,13 +3149,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!Number.isInteger(budget.executes) || (budget.executes as number) < 0) {
           return error(reply, 400, 'invalid_request', 'body.budget.executes must be a non-negative integer');
         }
-        const p = predicate as Record<string, unknown>;
-        const i = intent as Record<string, unknown>;
+        const p = predicate;
+        const i = intent;
         try {
           const watch = deps.watches!.register({
-            owner: isNonEmptyString(body.owner) ? (body.owner as string) : 'operator',
+            owner: isNonEmptyString(body.owner) ? (body.owner) : 'operator',
             realm,
-            ...(isNonEmptyString(body.realmId) ? { realmId: body.realmId as string } : {}),
+            ...(isNonEmptyString(body.realmId) ? { realmId: body.realmId } : {}),
             ...(body.connector !== undefined ? { connector: body.connector as { id: string; tool: string; args?: Record<string, unknown> } } : {}),
             predicate: {
               source: p.source as never,
@@ -3170,15 +3170,15 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
               maxFanOut: maxFanOut as number,
             },
             intervalSeconds: body.intervalSeconds as number,
-            startsAt: isNonEmptyString(body.startsAt) ? (body.startsAt as string) : (deps.now ?? (() => new Date()))().toISOString(),
+            startsAt: isNonEmptyString(body.startsAt) ? (body.startsAt) : (deps.now ?? (() => new Date()))().toISOString(),
             expiresAt: isNonEmptyString(body.expiresAt)
-              ? (body.expiresAt as string)
+              ? (body.expiresAt)
               : new Date((deps.now ?? (() => new Date()))().getTime() + 7 * 24 * 3600_000).toISOString(),
             budget: {
               fires: budget.fires as number,
               executes: budget.executes as number,
             },
-            ...(isNonEmptyString(body.delegationId) ? { delegationId: body.delegationId as string } : {}),
+            ...(isNonEmptyString(body.delegationId) ? { delegationId: body.delegationId } : {}),
           });
           reply.code(201);
           return { watch };
@@ -3396,10 +3396,10 @@ function parseDagSpec(input: unknown): Omit<DagSpec, 'realm'> | string {
     parsedNodes.push({
       id: node.id,
       skill: node.skill,
-      ...(dependsOn ? { dependsOn: dependsOn as string[] } : {}),
-      ...(vassals ? { vassals: vassals as string[] } : {}),
+      ...(dependsOn ? { dependsOn: dependsOn } : {}),
+      ...(vassals ? { vassals: vassals } : {}),
       ...(node.params ? { params: node.params as Record<string, unknown> } : {}),
-      ...(node.aggregation ? { aggregation: node.aggregation as AggregationRule } : {}),
+      ...(node.aggregation ? { aggregation: node.aggregation } : {}),
     });
   }
   const branchTimeoutMs = obj.branchTimeoutMs;

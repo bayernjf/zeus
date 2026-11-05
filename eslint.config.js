@@ -9,19 +9,14 @@
 // where `any` is the documented honest annotation (deferred #37 closed on the
 // same policy). Re-enable it as its own migration when those shapes get types.
 //
-// P3-4 (review 2026-11-02) — type-checked rules stay off for now. A trial run
-// with `recommendedTypeChecked` (projectService) reported 2,534 findings
-// (2,518 in TS files; the other 16 are `.mjs`/config files the project service
-// does not cover): no-unsafe-member-access 1,054, require-await 405,
-// no-unsafe-assignment 375, no-unnecessary-type-assertion 246, unsafe-call 153,
-// no-base-to-string 99, unsafe-argument 80, unsafe-return 56, and the one that
-// matters most, no-floating-promises 22. Far above the 50-finding budget for a
-// clean gate, so this batch does not flip it. Staged plan: (1) enable only
-// `no-floating-promises` + `no-misused-promises` and clear the 22 sites;
-// (2) then adopt `recommendedTypeChecked` per directory (core/ first) so each
-// step is reviewable; (3) only after the unsafe-* families are typed down to
-// zero does the whole config switch. Until then tsc strict remains the
-// type-level gate.
+// P3-4 (review 2026-11-05) — stage 1 is now enabled: `no-floating-promises` and
+// `no-misused-promises` run on `src/**` and `tests/**` through the project service (tsconfig.json
+// covers both). The remaining type-checked families still stay off: the original trial reported
+// 2,534 findings (2,518 in TS files; the other 16 are `.mjs`/config files the project service does
+// not cover) and unsafe-* / require-await are far above the 50-finding budget for a clean gate.
+// Staged plan: (2) adopt `recommendedTypeChecked` per directory (core/ first) so each step is
+// reviewable; (3) only after the unsafe-* families are typed down to zero does the whole config
+// switch. Until then tsc strict remains the type-level gate.
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -31,6 +26,53 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-unused-vars': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    files: ['src/**/*.ts', 'tests/**/*.ts'],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
+  {
+    // Test doubles and fixtures are intentionally loosely typed: fake fetch implementations, partial
+    // ports and casted literals would otherwise flood the gate with unsafe-* findings. Keep them
+    // visible as warnings instead of switching the rules off, so new noise is still reviewable.
+    files: ['tests/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-unsafe-assignment': 'warn',
+      '@typescript-eslint/no-unsafe-member-access': 'warn',
+      '@typescript-eslint/no-unsafe-call': 'warn',
+      '@typescript-eslint/no-unsafe-argument': 'warn',
+      '@typescript-eslint/no-unsafe-return': 'warn',
+      '@typescript-eslint/require-await': 'warn',
+    },
+  },
+  {
+    // Shipped scripts are plain .mjs without type information, so the type-aware unsafe-* rules
+    // cannot run there. Only the core require-await rule is downgraded to a warning.
+    files: ['scripts/**/*.mjs'],
+    rules: {
+      'require-await': 'warn',
+    },
+  },
+  {
+    // Files that no tsconfig covers must never reach the project service. An explicit
+    // non-type-aware block keeps them parsed as plain JavaScript (no ignore needed) and removes the
+    // parse-error bucket that a global projectService would produce.
+    files: ['**/*.mjs'],
+    languageOptions: {
+      parserOptions: {
+        projectService: false,
+        project: false,
+      },
     },
   },
 );

@@ -52,7 +52,7 @@ function validateAmount(v: unknown, at: string, out: string[]): AmountRange | nu
   if (max !== undefined && (!isFiniteNumber(max) || max < 0)) {
     out.push(`${at}.max: expected a finite number >= 0, or omit for an open upper bound`);
   }
-  if (isFiniteNumber(min) && isFiniteNumber(max) && min > (max as number)) {
+  if (isFiniteNumber(min) && isFiniteNumber(max) && min > (max)) {
     out.push(`${at}: min ${min} must be <= max ${max}`);
   }
   if (!isNonEmptyString(currency) || !CURRENCY_RE.test(currency)) {
@@ -92,7 +92,7 @@ function validateRule(raw: unknown, index: number, seenIds: Set<string>, out: st
     out.push(`${at}.match: expected an object`);
     return;
   }
-  const match = raw.match as Record<string, unknown>;
+  const match = raw.match;
   unknownKeys(match, MATCH_KEYS, `${at}.match`, out);
   if (match.domains !== undefined) validateStringList(match.domains, `${at}.match.domains`, out);
   if (match.intents !== undefined) validateStringList(match.intents, `${at}.match.intents`, out);

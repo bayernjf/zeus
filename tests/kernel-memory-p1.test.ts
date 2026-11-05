@@ -64,7 +64,7 @@ describe('memory P1 kernel persistence', () => {
     const stateFile = join(tmpdir(), `zeus-mem-${crypto.randomUUID()}.json`);
     const first = await bootKernel({ stateFile });
     first.memoryStore!.append(claim('node'));
-    first.memoryStore!.consolidateRealm(MEM_REALM);
+    await first.memoryStore!.consolidateRealm(MEM_REALM);
     await first.saveState();
 
     const restarted = await bootKernel({ stateFile });

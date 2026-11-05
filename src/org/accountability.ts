@@ -58,13 +58,13 @@ export function traceAccountability(
     const leadId = dept?.lead;
     if (leadId && !executingIds.has(leadId) && !seenLead.has(leadId)) {
       seenLead.add(leadId);
-      const leadMember = dept!.members.find(m => m.agentId === leadId);
+      const leadMember = dept.members.find(m => m.agentId === leadId);
       leads.push({
         agentId: leadId,
         role: 'lead',
         ...(leadMember?.title ? { title: leadMember.title } : {}),
-        departmentId: dept!.departmentId,
-        departmentName: dept!.name,
+        departmentId: dept.departmentId,
+        departmentName: dept.name,
       });
     }
   }

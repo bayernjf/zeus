@@ -127,11 +127,11 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
     const port: DispatchPort = {
       dispatch: req =>
         req.vassal === 'A'
-          ? new Promise(resolve =>
-              aGate.promise.then(() =>
+          ? new Promise(resolve => {
+              void aGate.promise.then(() =>
                 resolve({ ok: true, task: okTask(req.runId ?? 'A'), events: [], injectedHits: [] })
-              )
-            )
+              );
+            })
           : Promise.resolve({ ok: true, task: okTask(req.runId ?? req.vassal ?? 'B'), events: [], injectedHits: [] }),
       cancel: async () => undefined,
     };

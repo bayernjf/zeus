@@ -416,7 +416,7 @@ export async function verifySignedSnapshot(
   //    verification, not escape past the caller as an exception.
   let sealOk: boolean;
   try {
-    sealOk = await verifier.verify(seal.keyId, canonicalJson(stripSig(seal as unknown as Record<string, unknown>)), seal.sig);
+    sealOk = await verifier.verify(seal.keyId, canonicalJson(stripSig(seal)), seal.sig);
   } catch (error) {
     return { ok: false, reason: `seal signature verification could not run (keyId=${seal.keyId}): ${describeError(error)}` };
   }
@@ -493,7 +493,7 @@ export async function verifySignedSnapshot(
     try {
       attOk = await verifier.verify(
         attestation.keyId,
-        canonicalJson(stripSig(attestation as unknown as Record<string, unknown>)),
+        canonicalJson(stripSig(attestation)),
         attestation.sig
       );
     } catch (error) {

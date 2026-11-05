@@ -55,7 +55,7 @@ function mcpFetch(options: { sse?: boolean; fail?: boolean } = {}): typeof fetch
       default:
         return new Response('not found', { status: 404 });
     }
-  }) as typeof fetch;
+  });
 }
 
 describe('E7 MCP connectors', () => {
@@ -363,7 +363,7 @@ describe('A-08 MCP client response correlation', () => {
         JSON.stringify({ jsonrpc: '2.0', id: body.id + 100, result: { tools: [] } }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       );
-    }) as typeof fetch;
+    });
     const client = new McpClient(ENDPOINT, { fetchImpl: strayId });
     await expect(client.initialize()).rejects.toThrowError(/request id/);
   });
@@ -380,7 +380,7 @@ describe('A-08 MCP client response correlation', () => {
         `data: ${JSON.stringify({ jsonrpc: '2.0', id: body.id, result: { tools: [{ name: 'fresh' }] } })}`,
       ].join('\n\n') + '\n\n';
       return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    }) as typeof fetch;
+    });
     const client = new McpClient(ENDPOINT, { fetchImpl: frames });
     const capabilities = await client.initialize();
     expect(capabilities.tools).toEqual(['fresh']);
@@ -555,7 +555,7 @@ function stdioFakeSpawn(options: { hangAll?: boolean } = {}): {
     const captured: CapturedStdioSpawn = {
       command,
       args,
-      options: spawnOptions as CapturedStdioSpawn['options'],
+      options: spawnOptions,
       sent,
     };
     spawns.push(captured);

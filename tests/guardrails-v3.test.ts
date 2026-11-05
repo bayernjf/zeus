@@ -361,7 +361,7 @@ function dispatcherHarness(options: { contentGrant?: (name: string, realmId: str
       ...(options.contentGrant ? { contentGrant: options.contentGrant } : {}),
     },
   );
-  return { instance: instance as Dispatcher, audit: log, seenBodies };
+  return { instance: instance, audit: log, seenBodies };
 }
 
 /** The outbound A2A payload nests realm hits under params.message.parts[0].data. */

@@ -255,7 +255,7 @@ export class SqliteOrgStore implements OrgStore {
           ...(row.result_json ? { result: parse(row.result_json as string) } : {}),
           ...(row.error ? { error: String(row.error) } : {}),
           ...(typeof row.attempts === 'number' && row.attempts > 0
-            ? { attempts: row.attempts as number }
+            ? { attempts: row.attempts }
             : {}),
           ...(row.failed_kind ? { failedKind: String(row.failed_kind) as OrgTaskFailureKind } : {}),
           ...(row.progress_json ? { progress: parse<OrgTaskProgress[]>(row.progress_json as string) } : {}),

@@ -66,7 +66,7 @@ async function mount(options: {
   const store = new MemoryStore();
   store.append(claim('evt-1', 'pr-helper', 'language', 'typescript'));
   store.append(claim('evt-2', 'loom', 'language', 'python'));
-  store.consolidateRealm(REALM);
+  await store.consolidateRealm(REALM);
   const dir = mkdtempSync(join(tmpdir(), 'zeus-kernel-mcp-'));
   const exporter = new JsonlTraceExporter(join(dir, 'traces.jsonl'));
   await exporter.export(traceTree('t1', 'a1'));

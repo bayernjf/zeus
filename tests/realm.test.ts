@@ -127,7 +127,7 @@ describe('FsRealmStore P0', () => {
     // silently promote the mount back to writable.
     await store.connect(root, 'personal');
     expect(store.connections().find(c => c.realmId === manifest.realmId)?.readOnly).toBe(true);
-    await expect(store.write!(manifest.realmId, { data: 'x', itemId: 'notes/new.md' })).rejects.toThrow(
+    await expect(store.write(manifest.realmId, { data: 'x', itemId: 'notes/new.md' })).rejects.toThrow(
       /connected read-only/,
     );
   });

@@ -282,10 +282,10 @@ describe('DELETE /api/v1/decision-webhooks/:id routes', () => {
     let calls = 0;
     const dispatcher = new DecisionWebhookDispatcher({
       store,
-      fetch: (async () => {
+      fetch: async () => {
         calls += 1;
         return { ok: true } as Response;
-      }) as unknown as typeof fetch,
+      },
     });
     await dispatcher.emit(event());
     expect(calls).toBe(1);

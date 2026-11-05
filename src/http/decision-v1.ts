@@ -74,7 +74,7 @@ export function sendDecisionError(reply: FastifyReply, thrown: unknown): Fastify
 
 export async function createDecisionRoute(service: DecisionService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
   try {
-    const record = await service.createDecision(request.body as unknown as DecisionRequest);
+    const record = await service.createDecision(request.body as DecisionRequest);
     return reply.code(201).send(toResponse(record));
   } catch (thrown) {
     return sendDecisionError(reply, thrown);
@@ -165,7 +165,7 @@ export async function getPolicyRoute(service: DecisionService, _request: Fastify
 export async function putPolicyRoute(service: DecisionService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
   try {
     const actor = typeof request.headers['x-zeus-actor'] === 'string' ? request.headers['x-zeus-actor'] : 'system';
-    const policy = await service.updatePolicy(request.body as unknown as DecisionPolicy, actor);
+    const policy = await service.updatePolicy(request.body as DecisionPolicy, actor);
     return reply.send(policy);
   } catch (thrown) {
     return sendDecisionError(reply, thrown);

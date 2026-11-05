@@ -573,7 +573,7 @@ export class WatchRegistry {
             });
             options.escalateLimit?.({
               watchId: watch.id,
-              ...(delegationId ? { delegationId: delegationId as string } : {}),
+              ...(delegationId ? { delegationId: delegationId } : {}),
               skill: watch.intent.skill,
               realm: watch.realm,
               ...(watch.realmId ? { realmId: watch.realmId } : {}),

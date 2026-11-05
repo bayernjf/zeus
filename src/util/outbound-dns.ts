@@ -127,7 +127,7 @@ export function createGuardedLookup(options: GuardedLookupOptions = {}): LookupF
       });
   };
 
-  return lookup as LookupFunction;
+  return lookup;
 }
 
 /**
