@@ -179,8 +179,22 @@ function normalizeDistribution(raw: unknown, levels: string[]): Record<string, n
   return out;
 }
 
+/** Values that explicitly turn the dedicated decision model off (A4). */
+const JEV_DISABLED_VALUES = new Set(['0', 'false', 'no', 'off']);
+
+/**
+ * A4: the launch window may ship rules-only while the Jev credentials stay in
+ * place for later. Unset means "configured = enabled", exactly the historical
+ * behaviour; only an explicit false-ish value turns the dedicated model off.
+ */
+export function isJevExplicitlyDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.ZEUS_JEV_ENABLED;
+  return raw !== undefined && JEV_DISABLED_VALUES.has(raw.trim().toLowerCase());
+}
+
 /** env wiring (serve.ts style). Returns null when not configured → kernel unchanged. */
 export function createJevBackendFromEnv(env: NodeJS.ProcessEnv = process.env, options: BackendOptions = {}): DecisionBackend | null {
+  if (isJevExplicitlyDisabled(env)) return null;
   const apiKey = env.ZEUS_DECISION_API_KEY;
   const baseUrl = env.ZEUS_DECISION_BASE_URL;
   if (!apiKey || !baseUrl) return null;
