@@ -89,6 +89,7 @@ State of Zeus as of 2026-10-17.
 * [docs/design-backpressure.md](docs/design-backpressure.md) — 执行 Agent 背压分流策略 v0.2（deferred #9）：饱和信号、同技能候选集、可靠度×延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计 ★
 * [docs/design-a2a-push.md](docs/design-a2a-push.md) — A2A 长任务异步回传 **现行 v0.1（2026-10-14，PRD E4.11）**：出站显式选择 push 投递（plain tasks/send）时，本侧挂 bearer 保护回调端点 `POST /api/a2a/push-notifications`，按 taskId+状态幂等落审计链与意图面/E6.1 队列；未配置接收密钥端点不挂载；SSE 与轮询路径行为不变 ★
 * [docs/pre-launch-checklist.md](docs/pre-launch-checklist.md) — 上线前 Checklist（2026-09-29，**A1 真机扇出已于 2026-09-29 销项**）：按是否阻塞上线分 A 硬阻塞 / B 部署运营 / C 阈值标定 / D 非阻塞决策 / E 发布动作 / F 验证门六层，配套 [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) 的 MVP 判定 ★
+* [docs/env-verification-checklist.md](docs/env-verification-checklist.md) — 上线 env 逐行核对表（B2/B3/B4，2026-11-06）：从 `.env.example` 与 pre-launch-checklist 生成，65 行变量逐条列「变量 / 必需性 / 缺失后果 / 实际值确认栏」，另附反代-TLS、生产卷权限的部署核对项 ★
 * [docs/design-decision-backend.md](docs/design-decision-backend.md) — 决策后端抽象层 v0.2（模型无关）：DecisionBackend 端口（noul/choice/score）、两类实现家族（专用决策模型 Jev / 传统 LLM 适配）、四接线位、选择与降级、数据主权硬线 ★
 * [docs/design-agentic-integration.md](docs/design-agentic-integration.md) — Agent 时代系统互联与确定性边界 v0.4：§2A Zeus 定位（AI 原生多 Agent 团队运行时）、两层架构、划边界四轴、确定性闸门、MCP·A2A·Skill 插座、§6A 五种主流实践、§6A.2 三层成熟度与四步重构、闸门软肋 ★
 * [docs/design-vault.md](docs/design-vault.md) — Vault 备份与恢复协议 v0.2（E8.1/E8.2 + deferred #13）：`MapSource`（Realm 或**文件白名单**，内核状态文件因此可备份）、图只存引用 + 逐 item 指纹（**正文零泄漏**）、AES-256-GCM 密钥分离、L0 走 `LiveSource` 端口原地校验（scope 随图走）、L1 加密备份包跨位恢复（FsRestoreSink）、digest 漂移检测、v1 图读入归一化 ★
