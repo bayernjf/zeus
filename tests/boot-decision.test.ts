@@ -49,6 +49,37 @@ describe('T-C resolveDecisionConfig (process env wiring)', () => {
     expect(cfg.backendKind).toBe('decision-model');
   });
 
+  it('leaves Jev enabled when ZEUS_JEV_ENABLED is unset (historical default)', () => {
+    const cfg = resolveDecisionConfig({
+      ZEUS_DECISION_BASE_URL: 'http://jev.test/v1',
+      ZEUS_DECISION_API_KEY: 'k',
+    });
+    expect(cfg.backendKind).toBe('decision-model');
+  });
+
+  it('honours an explicit A4 opt-out even with credentials present', () => {
+    for (const value of ['0', 'false', 'no', 'off', ' FALSE ']) {
+      const cfg = resolveDecisionConfig({
+        ZEUS_DECISION_BASE_URL: 'http://jev.test/v1',
+        ZEUS_DECISION_API_KEY: 'k',
+        ZEUS_JEV_ENABLED: value,
+      });
+      expect(cfg.backend, `ZEUS_JEV_ENABLED=${value}`).toBeNull();
+      expect(cfg.backendKind, `ZEUS_JEV_ENABLED=${value}`).toBeNull();
+    }
+  });
+
+  it('does not disable Jev for values that are merely truthy spellings', () => {
+    for (const value of ['1', 'true', 'yes', 'on', 'maybe']) {
+      const cfg = resolveDecisionConfig({
+        ZEUS_DECISION_BASE_URL: 'http://jev.test/v1',
+        ZEUS_DECISION_API_KEY: 'k',
+        ZEUS_JEV_ENABLED: value,
+      });
+      expect(cfg.backendKind, `ZEUS_JEV_ENABLED=${value}`).toBe('decision-model');
+    }
+  });
+
   it('keeps the judge off when enabled but no backend exists', () => {
     const cfg = resolveDecisionConfig({ ZEUS_JUDGE_ENABLED: 'true' });
     expect(cfg.judgeEnabled).toBe(false);
