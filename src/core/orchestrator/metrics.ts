@@ -56,6 +56,16 @@ export type MetricsSnapshot = {
   maxInFlight: number;
   /** Submitted but not started; 0 unless a concurrency cap is configured. */
   queueDepth: number;
+  /** Highest submitted-but-not-started backlog observed. This includes
+   *  branches that acquire a slot immediately, so it tracks burst size rather
+   *  than wait-line length; use `refused` and `queueWait` for the cap's effect. */
+  queuedPeak: number;
+  /** Branches refused because the queue limit was reached. They never start,
+   *  so they are not part of `finished`; a nonzero value means backpressure
+   *  started rejecting work rather than merely delaying it. */
+  refused: number;
+  /** Branches auto-diverted from a saturated vassal (#9). */
+  diverted: number;
   finished: number;
   completed: number;
   failed: number;
@@ -66,10 +76,14 @@ export type MetricsSnapshot = {
   /** Real-time in-flight count per vassal (defensive copy). Enables per-vassal
    *  saturation checks (#9 backpressure diversion) without a full snapshot. */
   inFlightByVassal: Record<string, number>;
+  /** Time a branch spent waiting for a slot, over the same percentile window.
+   *  Null until a queued branch has started. Separates queue delay from
+   *  dispatch latency when calibrating a cap: growing wait means the cap binds. */
+  queueWait: LatencyStats | null;
   /** Percentile basis and bound. Counts and failure rates are all-time; only
    *  latency percentiles read the window, and `trimmedBranches` reports what the
    *  window has dropped rather than hiding it. */
-  historyWindow: { branchesPerVassal: number; trimmedBranches: number };
+  historyWindow: { branchesPerVassal: number; trimmedBranches: number; trimmedQueueWaits: number };
   capturedAt: string;
 };
 
@@ -101,6 +115,8 @@ type VassalTally = {
   stale: boolean;
 };
 
+export type BranchKeyEvent = Pick<BranchMetricEvent, 'intentId' | 'runId' | 'vassal'>;
+
 export class ConcurrencyMetrics {
   private active = new Map<string, { event: BranchMetricEvent; startedMs: number }>();
   private tallies = new Map<string, VassalTally>();
@@ -110,6 +126,16 @@ export class ConcurrencyMetrics {
   private trimmedBranches = 0;
   private maxInFlight = 0;
   private queueDepth = 0;
+  private queuedPeak = 0;
+  private refused = 0;
+  private diverted = 0;
+  /** Monotonic enqueue time per branch key, for queue-wait measurement. */
+  private queuedAt = new Map<string, number>();
+  /** Queue waits over the percentile window (bounded like per-vassal latency). */
+  private queueWaits: number[] = [];
+  private queueWaitStats: LatencyStats | null = null;
+  private queueWaitStale = true;
+  private trimmedQueueWaits = 0;
   /** Real-time in-flight count per vassal (#9 per-vassal saturation primitive). */
   private inFlightByVassal = new Map<string, number>();
   private readonly historyWindow: number;
@@ -130,14 +156,31 @@ export class ConcurrencyMetrics {
     return `${intentId}:${runId}:${vassal}`;
   }
 
-  /** A branch is queued for dispatch but has not started yet. */
-  enqueue(): void {
+  /** A branch is queued for dispatch but has not started yet. Passing the
+   *  branch key starts the queue-wait clock, so `branchStarted` can report how
+   *  long the cap actually delayed it. */
+  enqueue(event?: BranchKeyEvent): void {
     this.queueDepth += 1;
+    if (this.queueDepth > this.queuedPeak) this.queuedPeak = this.queueDepth;
+    if (event) this.queuedAt.set(ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal), this.clock()());
   }
 
-  /** A queued branch left the line without starting (refused, or gave up). */
-  dequeue(): void {
+  /** A queued branch left the line without starting (gave up or was refused). */
+  dequeue(event?: BranchKeyEvent): void {
     this.queueDepth = Math.max(0, this.queueDepth - 1);
+    if (event) this.queuedAt.delete(ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal));
+  }
+
+  /** A branch left the line because the queue limit was reached; it never
+   *  starts, so it is counted separately from finished outcomes. */
+  refuse(event?: BranchKeyEvent): void {
+    this.dequeue(event);
+    this.refused += 1;
+  }
+
+  /** A branch was auto-diverted from a saturated vassal (#9). */
+  recordDiversion(): void {
+    this.diverted += 1;
   }
 
   /**
@@ -150,10 +193,16 @@ export class ConcurrencyMetrics {
   }
 
   branchStarted(event: BranchMetricEvent): void {
-    this.dequeue();
     const key = ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal);
+    const at = this.clock()();
+    const queuedMs = this.queuedAt.get(key);
+    if (queuedMs !== undefined) {
+      this.queuedAt.delete(key);
+      this.recordQueueWait(at - queuedMs);
+    }
+    this.dequeue();
     const alreadyActive = this.active.has(key);
-    this.active.set(key, { event, startedMs: this.clock()() });
+    this.active.set(key, { event, startedMs: at });
     // A repeated start for a key that never ended (two branches sharing
     // intentId+runId, e.g. a recycled resume runId) would otherwise leave the
     // vassal permanently in flight: the counter is bumped twice but the single
@@ -198,6 +247,19 @@ export class ConcurrencyMetrics {
     const next = (this.inFlightByVassal.get(vassal) ?? 0) + delta;
     if (next <= 0) this.inFlightByVassal.delete(vassal);
     else this.inFlightByVassal.set(vassal, next);
+  }
+
+  private recordQueueWait(waitMs: number): void {
+    this.queueWaits.push(waitMs);
+    this.queueWaitStats = null;
+    this.queueWaitStale = true;
+    // Same amortised bound as per-vassal latency: slice once the window has
+    // doubled, so the write path stays O(1).
+    if (this.queueWaits.length > this.historyWindow * 2) {
+      const dropped = this.queueWaits.length - this.historyWindow;
+      this.queueWaits.splice(0, dropped);
+      this.trimmedQueueWaits += dropped;
+    }
   }
 
   /**
@@ -245,6 +307,9 @@ export class ConcurrencyMetrics {
       inFlight: this.active.size,
       maxInFlight: this.maxInFlight,
       queueDepth: this.queueDepth,
+      queuedPeak: this.queuedPeak,
+      refused: this.refused,
+      diverted: this.diverted,
       finished: this.totals.finished,
       completed: this.totals.completed,
       failed: this.totals.failed,
@@ -252,9 +317,23 @@ export class ConcurrencyMetrics {
       canceled: this.totals.canceled,
       perVassal,
       inFlightByVassal,
-      historyWindow: { branchesPerVassal: this.historyWindow, trimmedBranches: this.trimmedBranches },
+      queueWait: this.queueWaitSnapshot(),
+      historyWindow: {
+        branchesPerVassal: this.historyWindow,
+        trimmedBranches: this.trimmedBranches,
+        trimmedQueueWaits: this.trimmedQueueWaits,
+      },
       capturedAt: this.now().toISOString(),
     };
+  }
+
+  private queueWaitSnapshot(): LatencyStats | null {
+    if (this.queueWaits.length === 0) return null;
+    if (this.queueWaitStale || this.queueWaitStats === null) {
+      this.queueWaitStats = latencyStats([...this.queueWaits].sort((a, b) => a - b));
+      this.queueWaitStale = false;
+    }
+    return this.queueWaitStats;
   }
 
   private vassalMetric(vassal: string): VassalMetric | undefined {
