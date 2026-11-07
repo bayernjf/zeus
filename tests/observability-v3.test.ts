@@ -77,9 +77,11 @@ function sampleTree(): TraceTree {
 
 function sampleSnapshot(capturedAt: string): MetricsSnapshot {
   return {
-    inFlight: 0, maxInFlight: 1, queueDepth: 0, finished: 1, completed: 1,
+    inFlight: 0, maxInFlight: 1, queueDepth: 0, queuedPeak: 1, refused: 0, diverted: 0,
+    finished: 1, completed: 1,
     failed: 0, timedOut: 0, canceled: 0, perVassal: {}, inFlightByVassal: {},
-    historyWindow: { branchesPerVassal: 1000, trimmedBranches: 0 }, capturedAt,
+    queueWait: null,
+    historyWindow: { branchesPerVassal: 1000, trimmedBranches: 0, trimmedQueueWaits: 0 }, capturedAt,
   };
 }
 
