@@ -173,6 +173,9 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
     const second = await orchestrator.fanOut(req('i2'));
 
     expect(diverted).toContainEqual({ from: 'A', to: 'B' });
+    // The diversion is also counted on the metrics surface, so a calibration
+    // run can see how often the per-vassal cap actually fired.
+    expect(metrics.snapshot().diverted).toBeGreaterThanOrEqual(1);
     // A stayed in flight (saturated) across the second dispatch.
     expect(metrics.inFlightByVassalNow('A')).toBeGreaterThanOrEqual(1);
     expect(second.branches.some(b => b.vassal === 'B')).toBe(true);

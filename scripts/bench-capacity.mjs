@@ -20,6 +20,7 @@
  *   node scripts/bench-capacity.mjs --json                     # machine JSON
  *   node scripts/bench-capacity.mjs --delay-ms 50 --reps 7
  *   node scripts/bench-capacity.mjs --cap 16                   # one gate level only
+ *   node scripts/bench-capacity.mjs --queue                    # queue-limit sweep
  */
 import http from 'node:http';
 import os from 'node:os';
@@ -64,6 +65,12 @@ const capLevels = capArg
   : [Number.POSITIVE_INFINITY, 32, 16, 8];
 const PER_INTENT = 4;
 const FACE_TOKEN = 'bench-token';
+// Scenario F bounds the wait line, not just the in-flight window: with a fixed
+// cap it sweeps branchQueueLimit from 0 (refuse as soon as the cap binds) to
+// unbounded, measuring refusals, wait time and tail latency at the same load.
+const queueRequested = args.includes('--queue');
+const queueCap = argNumber('--queue-cap', 16);
+const queueLimits = [0, 8, 16, 32, 64, Number.POSITIVE_INFINITY];
 /**
  * Stall guard, not an SLO: a branch that never settles would hang the harness
  * forever, so each one is abandoned after this long. It must stay far above any
@@ -364,7 +371,7 @@ async function benchFanoutWidth(port) {
  * @param {any} orchestrator
  * @param {any} metrics
  * @param {number} intents
- * @param {{ sampleQueue?: boolean, label?: string }} [options]
+ * @param {{ sampleQueue?: boolean, label?: string, allowRefusals?: boolean }} [options]
  */
 async function runConcurrentIntents(orchestrator, metrics, intents, options = {}) {
   /** @type {number[]} */
@@ -392,7 +399,9 @@ async function runConcurrentIntents(orchestrator, metrics, intents, options = {}
           branchTimeoutMs: BRANCH_WATCHDOG_MS,
         });
         latencies.push(performance.now() - start);
-        if (result.status !== 'completed') {
+        // Scenario F deliberately overruns the queue limit; refusals are the
+        // measurement there, so only scenarios that expect none throw.
+        if (result.status !== 'completed' && !options.allowRefusals) {
           const label = options.label ?? `concurrency ${intents}`;
           const bad = result.branches.filter((/** @type {any} */ b) => !b.ok)
             .map((/** @type {any} */ b) => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
@@ -472,6 +481,70 @@ async function benchConcurrencyCap(port) {
       maxInFlightBranches: snapshot.maxInFlight,
       peakQueueDepth,
       failedBranches: snapshot.failed,
+    });
+  }
+  return rows;
+}
+
+/**
+ * Scenario F: what the wait line does to the same 128-branch burst. With the
+ * cap fixed, sweep `branchQueueLimit` from 0 (refuse as soon as the cap binds)
+ * to unbounded. This is the observation scenario E could not provide: E keeps
+ * `failedBranches` at zero because the wait line is unbounded, so it measures
+ * delay but never rejection. Refusals, queue wait and peak line are read from
+ * the metrics surface added for this calibration.
+ */
+/**
+ * @param {number} port
+ */
+async function benchQueueLimit(port) {
+  const intents = concurrencyLevels[concurrencyLevels.length - 1] ?? 1;
+  const totalBranches = intents * PER_INTENT;
+  /** @type {any[]} */
+  const rows = [];
+  for (const queueLimit of queueLimits) {
+    const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE), {
+      maxConcurrentBranches: queueCap,
+      ...(Number.isFinite(queueLimit) ? { branchQueueLimit: queueLimit } : {}),
+    });
+    const { latencies, wallMs, peakQueueDepth, snapshot } = await runConcurrentIntents(
+      orchestrator, metrics, intents,
+      { sampleQueue: true, allowRefusals: true, label: `scenario F queue ${queueLimit}` },
+    );
+    if (snapshot.maxInFlight > queueCap) {
+      throw new Error(`queue ${queueLimit}: observed ${snapshot.maxInFlight} in flight, above cap ${queueCap}`);
+    }
+    if (snapshot.finished + snapshot.refused !== totalBranches) {
+      throw new Error(
+        `queue ${queueLimit}: ${snapshot.finished} finished + ${snapshot.refused} refused != ${totalBranches} branches`,
+      );
+    }
+    if (Number.isFinite(queueLimit)) {
+      const expectedRefused = totalBranches - queueCap - queueLimit;
+      if (snapshot.refused !== expectedRefused) {
+        throw new Error(
+          `queue ${queueLimit}: refused ${snapshot.refused}, expected ${expectedRefused} ` +
+          `(${totalBranches} branches - ${queueCap} running - ${queueLimit} queued)`,
+        );
+      }
+    } else if (snapshot.refused !== 0) {
+      throw new Error(`unbounded queue refused ${snapshot.refused} branches`);
+    }
+    rows.push({
+      queueLimit: Number.isFinite(queueLimit) ? queueLimit : 'unbounded',
+      cap: queueCap,
+      totalBranches,
+      completedBranches: snapshot.completed,
+      refusedBranches: snapshot.refused,
+      wallMs: round(wallMs),
+      throughputBranchesPerSecond: round((snapshot.finished / wallMs) * 1000, 1),
+      latency: stats(latencies),
+      queueWait: snapshot.queueWait
+        ? { p50: round(snapshot.queueWait.p50Ms), p95: round(snapshot.queueWait.p95Ms), max: round(snapshot.queueWait.maxMs) }
+        : null,
+      maxInFlightBranches: snapshot.maxInFlight,
+      peakQueueDepth,
+      queuedPeak: snapshot.queuedPeak,
     });
   }
   return rows;
@@ -650,6 +723,7 @@ async function main() {
     const fanoutWidth = await benchFanoutWidth(port);
     const concurrentIntents = await benchConcurrentIntents(port);
     const concurrencyCap = capRequested ? await benchConcurrencyCap(port) : [];
+    const queueSweep = queueRequested ? await benchQueueLimit(port) : [];
     const httpFace = await benchHttpFace(port);
     const cancellation = await benchCancellation();
     const report = {
@@ -657,6 +731,7 @@ async function main() {
       fanoutWidth,
       concurrentIntents,
       concurrencyCap,
+      queueSweep,
       httpFace,
       cancellation: cancellation.rows,
       cancelRequestsObserved: cancellation.cancelRequestsObserved,
@@ -703,6 +778,23 @@ async function main() {
           { label: 'lat p50', width: 10, get: r => r.latency.p50 },
           { label: 'lat p95', width: 10, get: r => r.latency.p95 },
           { label: 'max inflight', width: 13, get: r => r.maxInFlightBranches },
+          { label: 'peak queue', width: 12, get: r => r.peakQueueDepth },
+        ],
+      );
+    }
+    if (queueSweep.length > 0) {
+      printTable(
+        `F. Queue limit (cap ${queueCap}, ${queueSweep[0]?.totalBranches ?? 0}-branch burst, ${delayMs}ms think)`,
+        queueSweep,
+        [
+          { label: 'queue', width: 11, get: r => r.queueLimit },
+          { label: 'wall ms', width: 10, get: r => r.wallMs },
+          { label: 'br/s', width: 9, get: r => r.throughputBranchesPerSecond },
+          { label: 'refused', width: 10, get: r => r.refusedBranches },
+          { label: 'lat p95', width: 10, get: r => r.latency.p95 },
+          { label: 'wait p50', width: 11, get: r => (r.queueWait ? r.queueWait.p50 : '-') },
+          { label: 'wait p95', width: 11, get: r => (r.queueWait ? r.queueWait.p95 : '-') },
+          { label: 'max inflight', width: 14, get: r => r.maxInFlightBranches },
           { label: 'peak queue', width: 12, get: r => r.peakQueueDepth },
         ],
       );

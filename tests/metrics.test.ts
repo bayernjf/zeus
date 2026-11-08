@@ -67,6 +67,30 @@ describe('ConcurrencyMetrics collector', () => {
     expect(done.perVassal.a!.latency?.count).toBe(1);
   });
 
+  it('measures queue wait, queue peak and refusals for threshold calibration', () => {
+    let mono = 0;
+    const metrics = new ConcurrencyMetrics({ elapsed: () => (mono += 10) });
+    const a = { intentId: 'i', runId: 'r:a', vassal: 'a' };
+    const b = { intentId: 'i', runId: 'r:b', vassal: 'b' };
+
+    metrics.enqueue(a); // t=10
+    metrics.enqueue(b); // t=20
+    expect(metrics.snapshot().queuedPeak).toBe(2);
+
+    // `a` waited 20ms in line (t=30 start); `b` is refused out of the line.
+    metrics.branchStarted({ ...a, skill: 's', startedAt: 't' });
+    metrics.refuse(b);
+
+    const snap = metrics.snapshot();
+    expect(snap.queueDepth).toBe(0);
+    expect(snap.queuedPeak).toBe(2);
+    expect(snap.refused).toBe(1);
+    expect(snap.queueWait).toMatchObject({ count: 1, p50Ms: 20, p95Ms: 20, maxMs: 20 });
+
+    metrics.recordDiversion();
+    expect(metrics.snapshot().diverted).toBe(1);
+  });
+
   it('classifies timeouts separately from failures', () => {
     const metrics = new ConcurrencyMetrics();
     metrics.branchStarted({ intentId: 'i', runId: 'r:a', vassal: 'a', skill: 's', startedAt: 't' });

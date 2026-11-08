@@ -1488,7 +1488,8 @@ export class Orchestrator {
   ): Promise<BranchOutcome> {
     const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
     const metrics = this.options.metrics;
-    metrics?.enqueue();
+    const metricKey = { intentId, runId: branchRunId, vassal };
+    metrics?.enqueue(metricKey);
 
     // E1.5: with a cap configured the branch waits here, which is what turns
     // queue depth from a permanent 0 into a real signal.
@@ -1496,11 +1497,11 @@ export class Orchestrator {
     try {
       release = await this.acquireSlot(signal);
     } catch (error) {
-      metrics?.dequeue();
       // design-fan-out §7: a branch cancelled while still queued never reached
       // a vassal; settle it as `canceled` (same shape as an aborted stream),
       // not as a generic gate refusal/failure.
       if (error instanceof QueueWaitCancelledError) {
+        metrics?.dequeue(metricKey);
         return {
           vassal,
           runId: branchRunId,
@@ -1510,6 +1511,9 @@ export class Orchestrator {
           reason: 'canceled by the driver',
         };
       }
+      // Queue limit reached: record the refusal so saturation is observable
+      // instead of only appearing as a failed branch.
+      metrics?.refuse(metricKey);
       const reason = error instanceof Error ? error.message : 'branch refused';
       // #9: when the target was kept (saturated, no alternate) and still refused
       // by the global gate, attach the tried-candidates audit (design §4.5).
@@ -1534,6 +1538,7 @@ export class Orchestrator {
       // #9: record a diversion decision alongside the branch start so the operator
       // can trace from→to on the audit/event spine (design §4.5).
       if (divertedFrom) {
+        metrics?.recordDiversion();
         this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
         this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
       }
