@@ -192,6 +192,32 @@ services:
     # init: true  # 可选：未来若引入子进程，启用 tini 做 PID 1 信号/僵尸处理
 ```
 
+### 4.6 代码回滚锚点
+
+本仓以显式版本 tag 发布（当前 `zeus:0.1.0`），**每次发布必须递增版本号**，
+不能覆盖同名 tag。发布前把当前镜像额外留一个带时间戳的 tag，**保留 3 个**
+（当前版本 + 2 个上一版）：
+
+```bash
+# 发布前：留档当前镜像（版本 tag 本身不要覆盖）
+docker tag zeus:0.1.0 "zeus:0.1.0-$(date -u +%Y%m%d-%H%M)"
+
+# 回滚：改用上一版的版本 tag
+docker rm -f zeus && docker run -d --name zeus ... zeus:0.0.9
+# compose 形态：把 image: 改成上一版 tag 后 docker compose up -d
+```
+
+**这条路径会在什么情况下失效**
+
+- 镜像只在本机 Docker daemon：换机、`docker image prune` 或重建后不存在；
+  本仓没有 registry 推送流程，不能当作跨机回滚方案。
+- 如果发布时复用 `zeus:0.1.0` 而不递增版本号，旧镜像会被同名覆盖，tag
+  “回滚”实际回到的是新代码；版本号递增是这条锚点的前提。
+- 需要跨机保留时 `docker save zeus:<tag> | gzip` 异地保存，目标机 `docker load`；
+  仍不等价于 registry 的不可变 digest。
+
+镜像回滚只回代码；审计/私钥/状态文件的回滚走 §7 的 `scripts/restore.mjs`。
+
 ## 5. 裸机 systemd（备选）
 
 ```ini
