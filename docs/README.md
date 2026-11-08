@@ -28,6 +28,7 @@
 | Agent 测试：契约 / 录制重放 / mock / 混沌（tech map S17，现行 v0.3：V1 Recording 格式 + `withChaos` 七类故障注入器；V2 协议兼容矩阵 + 脚本化 DecisionBackend 已落地（夹具迁移经盘点不做硬迁）） | [design-agent-testing.md](design-agent-testing.md) |
 | 理解一个意图如何扇出多 Agent 并行并聚合成决策 | [design-fan-out.md](design-fan-out.md)（扇出/幂等/取消传播/合并流/规则聚合/冲突升级，PRD E1） |
 | 理解执行 Agent 饱和时如何把溢出意图分流给同技能最优提供方 | [design-backpressure.md](design-backpressure.md)（deferred #9：饱和信号、候选集过滤、可靠度×延迟评分重排、显式靶硬钉、全饱和回退拒绝+审计） |
+| 显式启用背压前，先拿三个阈值的取值依据 | [backpressure-tuning-card.md](backpressure-tuning-card.md) **v0.1**（cap 对齐下游槽位数、queueLimit `1×cap` 起步与尾延迟取舍、`maxConcurrentPerVassal` 待真机标定、重标定触发条件；建议非默认值） |
 | 理解出站长任务如何经回调把结果异步回传（PRD E4.11） | [design-a2a-push.md](design-a2a-push.md)（出站显式选择 plain tasks/send + 本侧 bearer 回调端点按 taskId+状态幂等落审计与 E6.1 队列；未配密钥不挂载，SSE/轮询不变） |
 | 理解决策后端抽象层（模型无关）怎么接入决策能力 | [design-decision-backend.md](design-decision-backend.md)（DecisionBackend 端口：noul/choice/score、两类实现家族——专用决策模型 Jev（快层）/ 传统 LLM 适配（慢层）、四接线位、数据主权硬线） |
 | 探讨 AI 时代多系统怎么沟通、Agent 与确定性原语边界划在哪 | [design-agentic-integration.md](design-agentic-integration.md)（Agent 作编排层的两层架构、划边界四轴、确定性闸门、钉死/交给清单、MCP/A2A/Skill 插座） |
