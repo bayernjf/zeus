@@ -48,6 +48,7 @@
 | `ZEUS_DECISION_BASE_URL` + `ZEUS_DECISION_API_KEY` | 未设置 | S2 critic 仲裁的决策后端（Jev 优先）。**两项同时给出才启用**，缺任一即 `backend: null`、内核退回 rules-only（这是设计好的降级，不是错误） |
 | `ZEUS_DECISION_MODEL` | 适配器默认 | 决策模型名，只在上面两项齐时生效 |
 | `ZEUS_DECISION_WEBHOOK_URL` + `ZEUS_DECISION_WEBHOOK_SECRET` | 未设置 | 决策生命周期事件推送（created/late/approved/rejected/timed-out）。**两项同时给出才启用**：投递带 `x-zeus-signature`（HMAC-SHA256）与幂等键 `x-zeus-delivery-id`，有限退避重试、失败不阻断决策写路径；URL 而无 secret 时 fail-closed 不推送。未设置 = 消费方继续轮询 `GET /api/v1/decisions?status=awaiting_approval\|blocked` |
+| `ZEUS_WEBHOOK_SUBSCRIPTIONS_FILE` | 未设置 | 决策 webhook 订阅注册表的 JSONL 持久化（内存/演示模式专用，无 `ZEUS_DB_FILE` 时生效）：设置后 bearer API 的每次订阅增删都写入此文件（0700 目录 / 0600 文件，secret 明文落盘——投递签名需要取明文），启动 readBack 恢复订阅列表，重启不再丢失。未设置 = 注册表保持内存态（行为不变）。设了 `ZEUS_DB_FILE` 时忽略（SQLite 持有持久注册表，启动日志会点明） |
 | `ZEUS_LLM_BASE_URL` + `ZEUS_LLM_API_KEY` + `ZEUS_LLM_MODEL` | 未设置 | 通用 OpenAI 兼容后端，**三项齐才启用**，优先级低于 `ZEUS_DECISION_*`。这是把裁决发给外部模型的通道——注意数据出境口径 |
 | `ZEUS_JUDGE_ENABLED` | 未设置（关） | E1.3 对抗式 judge。**必须有决策后端才生效**：只设它而后端不齐时保持关闭（后端状态看 `GET /api/decision` 或启动日志那一行） |
 | `ZEUS_JUDGE_THRESHOLD` | 内置阈值 | judge 采信阈值。**非数字值拒启**（与 `ZEUS_MAX_CONCURRENT_BRANCHES` 等其余 boot 参数口径一致，不再静默退回默认）——统一见 deferred #20 销项 |

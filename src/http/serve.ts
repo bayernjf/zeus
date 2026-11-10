@@ -69,6 +69,7 @@ import {
 } from '../core/persistence/index.js';
 import type { OrgStore } from '../core/org/store.js';
 import { JsonlDecisionAuditStore } from '../app/audit/jsonl-chain-store.js';
+import { JsonlDecisionWebhookStore } from '../core/decision-service/webhook-jsonl.js';
 import {
   DecisionWebhookDispatcher,
   MemoryDecisionWebhookStore,
@@ -388,11 +389,30 @@ async function main(): Promise<void> {
       // and routes are always mounted in durable mode (Active work 276).
       decisionWebhookStore = new SqliteDecisionWebhookStore(db);
       durability = 'sqlite';
+      if (process.env.ZEUS_WEBHOOK_SUBSCRIPTIONS_FILE) {
+        // SQLite owns the registry here; a second JSONL registry would fork the
+        // subscription list. Say it instead of silently ignoring the knob.
+        log.warn(
+          'decision-webhook-subscriptions-file',
+          'ZEUS_WEBHOOK_SUBSCRIPTIONS_FILE is set but ZEUS_DB_FILE owns the durable subscription registry; the JSONL file is ignored',
+        );
+      }
     } else {
       const memoryPolicy = new MemoryPolicyStore();
       memoryPolicy.put(DEFAULT_POLICY_V1);
       policyStore = memoryPolicy;
       recordStore = new MemoryDecisionStore();
+      // Memory/demo mode: the registry is opt-in persistent through a JSONL
+      // file (same restart guarantee the SQLite mode gets from 0005). Unset =
+      // exactly the historical in-memory behavior; set = every add/delete is
+      // written through and a boot reads the file back, so operator-created
+      // subscriptions survive a restart.
+      const subscriptionsFile = process.env.ZEUS_WEBHOOK_SUBSCRIPTIONS_FILE?.trim();
+      if (subscriptionsFile) {
+        const jsonlWebhookStore = new JsonlDecisionWebhookStore(subscriptionsFile);
+        await jsonlWebhookStore.readBack();
+        decisionWebhookStore = jsonlWebhookStore;
+      }
     }
 
     const audit = process.env.ZEUS_DECISION_AUDIT_FILE
