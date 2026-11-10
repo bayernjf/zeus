@@ -25,6 +25,9 @@ services:
       ZEUS_STATE_FILE: /data/kernel-state.json
     ports:
       - "127.0.0.1:18787:8787"
+    networks:
+      - default
+      - tier0-net
     volumes:
       - zeus-data:/data
     restart: unless-stopped
@@ -42,6 +45,10 @@ services:
     entrypoint: ["node", "scripts/gen-rsk-key.mjs", "/data/rsk.key"]
     volumes:
       - zeus-data:/data
+
+networks:
+  tier0-net:
+    external: true
 
 volumes:
   zeus-data:
