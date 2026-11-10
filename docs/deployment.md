@@ -164,7 +164,7 @@ chown -R 1000:1000 data
 chmod 600 secrets/rsk-private.pem && chown 1000:1000 secrets/rsk-private.pem
 ```
 
-（Docker Desktop on macOS/Windows 的文件共享会映射宿主权限，也可在 `docker run` 加 `--user "$(id -u):$(id -g)"`。）
+（macOS 上本项目本地开发只用 OrbStack，不再使用 Docker Desktop：它的文件共享经 Linux VM 映射，权限按挂载点 uid/gid 处理；如遇权限问题，可在 `docker run` 加 `--user "$(id -u):$(id -g)"`。）
 
 ### 4.4 验证与优雅退出
 
