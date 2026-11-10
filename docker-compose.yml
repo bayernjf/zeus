@@ -1,0 +1,47 @@
+# zeus decision kernel, standalone. growth-agent builds and runs its own copy
+# from ../zeus, so this stack is for working on zeus directly.
+#
+# A roster signing key is mandatory: the kernel refuses to boot without one (an
+# unsigned kernel would publish a roster nothing can pin). Generate it once into
+# the volume:
+#
+#   docker compose run --rm zeus-keygen
+#
+# 8787 is already taken on this machine (commerce-os), so the kernel is published
+# on 18787.
+services:
+  zeus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: zeus:local
+    container_name: zeus
+    environment:
+      ZEUS_HOST: 0.0.0.0
+      ZEUS_PORT: "8787"
+      ZEUS_INTERNAL_TOKEN: ${ZEUS_INTERNAL_TOKEN:-local-dev-internal-token-16chars}
+      ZEUS_RSK_KEY_FILE: /data/rsk.key
+      ZEUS_RSK_KEY_ID: ${ZEUS_RSK_KEY_ID:-local-rsk}
+      ZEUS_STATE_FILE: /data/kernel-state.json
+    ports:
+      - "127.0.0.1:18787:8787"
+    volumes:
+      - zeus-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # One-shot helper that writes the signing keypair into the data volume.
+  zeus-keygen:
+    image: zeus:local
+    profiles: ["keygen"]
+    user: node
+    entrypoint: ["node", "scripts/gen-rsk-key.mjs", "/data/rsk.key"]
+    volumes:
+      - zeus-data:/data
+
+volumes:
+  zeus-data:
