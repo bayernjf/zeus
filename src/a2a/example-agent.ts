@@ -25,10 +25,17 @@ import { pathToFileURL } from 'node:url';
 export type ExampleAgentOptions = {
   port?: number;
   host?: string;
-  /** Skill the agent advertises and will accept a task for. */
-  skill?: string;
   /** Name the roster shows for this peer. */
   name?: string;
+  /**
+   * Hostname to advertise in the agent card. The bind address is often
+   * 0.0.0.0, and a card naming an unspecified address sends Zeus to a target
+   * its outbound guard refuses - which fails the whole boot when the card is
+   * seeded, not just one dispatch. Advertise the resolvable service name.
+   */
+  publicHost?: string;
+  /** Skill the agent advertises and will accept a task for. */
+  skill?: string;
 };
 
 const PROTOCOL_PATH = '/api/a2a/agent-card';
@@ -129,6 +136,7 @@ function buildTask(taskId: string, params: unknown) {
 
 export async function startExampleAgent(options: ExampleAgentOptions = {}): Promise<ExampleAgentHandle> {
   const host = options.host ?? '127.0.0.1';
+  const advertisedHost = options.publicHost ?? host;
   const skill = options.skill ?? 'research';
   const name = options.name ?? 'example-agent';
   const handle: ExampleAgentHandle = {
@@ -141,7 +149,7 @@ export async function startExampleAgent(options: ExampleAgentOptions = {}): Prom
   const server: Server = createServer((req, res) => {
     const url = req.url ?? '';
     if (req.method === 'GET' && url === PROTOCOL_PATH) {
-      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(cardFor({ skill, name }, handle.port, host)));
+      res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(cardFor({ skill, name }, handle.port, advertisedHost)));
       return;
     }
     if (req.method !== 'POST' || !url.startsWith(TASK_PATH)) {
@@ -186,7 +194,7 @@ export async function startExampleAgent(options: ExampleAgentOptions = {}): Prom
     throw new Error('the example agent did not bind a port');
   }
   handle.port = address.port;
-  handle.cardUrl = `http://${host}:${handle.port}${PROTOCOL_PATH}`;
+  handle.cardUrl = `http://${advertisedHost}:${handle.port}${PROTOCOL_PATH}`;
   handle.close = () => new Promise<void>(resolve => server.close(() => resolve()));
   return handle;
 }

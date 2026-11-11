@@ -74,7 +74,7 @@ services:
     working_dir: /app
     command:
       - -e
-      - "import('./dist/a2a/example-agent.js').then(m=>m.startExampleAgent({port:8090,host:'0.0.0.0',skill:'research',name:'example-agent'})).then(h=>console.log('card url: '+h.cardUrl))"
+      - "import('./dist/a2a/example-agent.js').then(m=>m.startExampleAgent({port:8090,host:'0.0.0.0',publicHost:'zeus-example-agent',skill:'research',name:'example-agent'})).then(h=>console.log('card url: '+h.cardUrl))"
     networks:
       - tier0-net
     restart: unless-stopped
