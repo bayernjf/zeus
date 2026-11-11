@@ -34,14 +34,14 @@ services:
       # protection), which would 502 every vassal registration against a
       # sibling container on the private network. This hostname allowlist is
       # the sanctioned escape hatch and must name each local vassal.
-      ZEUS_OUTBOUND_ALLOW_HOSTS: zeus-example-agent
+      ZEUS_OUTBOUND_ALLOW_HOSTS: zeus-example-agent,zeus-llm-agent
       # Registration is restored from kernel-state on restart, but a fresh
       # data volume starts with an empty roster - and an empty roster makes
       # fan-out produce zero branches, so every intent settles as "failed"
       # with "no vassal returned a stance". Seeding the card URL at boot keeps
       # the dispatch path working on a first boot too. Format is a comma list;
       # a vassal bearer token can follow the URL after '|'.
-      ZEUS_VASSAL_SEEDS: http://zeus-example-agent:8090/api/a2a/agent-card
+      ZEUS_VASSAL_SEEDS: http://zeus-example-agent:8090/api/a2a/agent-card,http://zeus-llm-agent:8091/api/a2a/agent-card
       # Without an audit sink the trace endpoint answers 404 for an intent
       # that just completed, because it requires both progress events and a
       # readable audit file. W2-7's span-tree check cannot run without it.
@@ -82,6 +82,33 @@ services:
     # /healthz on 8787; this process serves the A2A card on 8090 instead, so
     # the inherited probe always fails and the container reports unhealthy
     # while working correctly.
+    healthcheck:
+      disable: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Model-backed agent: same A2A shape as example-agent, except it actually
+  # asks a model through model-hub credentials and reports token usage back.
+  # This is what makes an intent produce billable work rather than a shape
+  # demonstration - example-agent, by contrast, never touches a model.
+  llm-agent:
+    image: zeus:local
+    container_name: zeus-llm-agent
+    entrypoint: ["node"]
+    working_dir: /app
+    environment:
+      MODEL_HUB_URL: http://model-hub:8791
+      MODEL_HUB_TOKEN: ${MODEL_HUB_TOKEN:-}
+      ZEUS_AGENT_ALIAS: choice
+    command:
+      - -e
+      - "import('./dist/a2a/llm-agent.js').then(m=>m.startLlmAgent({port:8091,host:'0.0.0.0',publicHost:'zeus-llm-agent',skill:'research',name:'llm-agent'})).then(h=>console.log('card url: '+h.cardUrl))"
+    networks:
+      - tier0-net
+    restart: unless-stopped
     healthcheck:
       disable: true
     logging:
