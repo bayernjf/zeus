@@ -78,6 +78,12 @@ services:
     networks:
       - tier0-net
     restart: unless-stopped
+    # The zeus image inherits a healthcheck that probes zeus's own
+    # /healthz on 8787; this process serves the A2A card on 8090 instead, so
+    # the inherited probe always fails and the container reports unhealthy
+    # while working correctly.
+    healthcheck:
+      disable: true
     logging:
       driver: json-file
       options:
