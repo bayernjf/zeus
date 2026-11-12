@@ -50,6 +50,10 @@ services:
       # that just completed, because it requires both progress events and a
       # readable audit file. W2-7's span-tree check cannot run without it.
       ZEUS_AUDIT_FILE: /data/audit.jsonl
+      # Trace tree export for W2-7 two-sided cost reconciliation. Requires
+      # ZEUS_AUDIT_FILE above (the tree is rebuilt from the audit spine);
+      # without it no trace is written. Local JSONL, opt-in by path.
+      ZEUS_TRACE_EXPORT_FILE: /data/trace-export.jsonl
       # Personal realm root connected on boot, so the memory producer has a
       # mounted realm to attribute claims to (W1-4 memory pilot e2e).
       ZEUS_REALM_ROOTS: /data/realm-personal
