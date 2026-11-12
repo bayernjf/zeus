@@ -35,7 +35,7 @@
  * Requires Node 18+ (global fetch). Zero dependencies.
  */
 
-import { Orchestrator, createLlmBackendFromEnv, createJevBackendFromEnv } from '../dist/index.js';
+import { Orchestrator, createLlmBackend, createJevBackendFromEnv } from '../dist/index.js';
 
 /** @param {string} [message] @returns {never} */
 function usage(message) {
@@ -99,6 +99,9 @@ const flags = parseFlags(process.argv.slice(2));
 /** @type {any[]} */
 const traces = [];
 
+/** @type {number | undefined} */
+let llmTemp;
+
 // Fallback: read model-hub cache if ZEUS_LLM_* not set
 if (!process.env.ZEUS_LLM_BASE_URL && !process.env.ZEUS_DECISION_BASE_URL) {
   try {
@@ -111,14 +114,25 @@ if (!process.env.ZEUS_LLM_BASE_URL && !process.env.ZEUS_DECISION_BASE_URL) {
         process.env.ZEUS_LLM_BASE_URL = primary.base_url;
         process.env.ZEUS_LLM_API_KEY = primary.api_key;
         process.env.ZEUS_LLM_MODEL = primary.litellm_id || primary.model;
-        console.log(`# loaded from model-cache: ${process.env.ZEUS_LLM_MODEL}`);
+        llmTemp = primary.adapter?.temperature;
+        console.log(`# loaded from model-cache: ${process.env.ZEUS_LLM_MODEL} (temp=${llmTemp ?? 'default'})`);
       }
     }
   } catch {}
 }
 
+const llmBaseUrl = process.env.ZEUS_LLM_BASE_URL ?? '';
+const llmApiKey = process.env.ZEUS_LLM_API_KEY ?? '';
+const llmModel = process.env.ZEUS_LLM_MODEL ?? '';
 const backend =
-  createJevBackendFromEnv(process.env) ?? createLlmBackendFromEnv(process.env, { onTrace: trace => traces.push(trace) });
+  createJevBackendFromEnv(process.env) ?? createLlmBackend({
+    baseUrl: llmBaseUrl,
+    apiKey: llmApiKey,
+    model: llmModel,
+    temperature: llmTemp ?? 0,
+    defaultTimeoutMs: 60000,
+    onTrace: trace => traces.push(trace),
+  });
 if (!backend) {
   console.error('error: no decision backend configured; set ZEUS_DECISION_* or ZEUS_LLM_* (see .env.example)');
   process.exit(2);
