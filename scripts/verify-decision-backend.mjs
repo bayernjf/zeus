@@ -113,7 +113,10 @@ if (!process.env.ZEUS_LLM_BASE_URL && !process.env.ZEUS_DECISION_BASE_URL) {
       if (primary) {
         process.env.ZEUS_LLM_BASE_URL = primary.base_url;
         process.env.ZEUS_LLM_API_KEY = primary.api_key;
-        process.env.ZEUS_LLM_MODEL = primary.litellm_id || primary.model;
+        // createLlmBackend dials the provider directly over HTTP, so the model
+        // must be the raw upstream id (ark-code-latest), not the litellm_id
+        // (openai/ark-code-latest) that only litellm understands.
+        process.env.ZEUS_LLM_MODEL = primary.model;
         llmTemp = primary.adapter?.temperature;
         console.log(`# loaded from model-cache: ${process.env.ZEUS_LLM_MODEL} (temp=${llmTemp ?? 'default'})`);
       }
