@@ -1,6 +1,9 @@
 # ---- builder: install full deps and compile TypeScript ----
 FROM node:22-slim AS builder
 WORKDIR /app
+# registry.npmjs.org drops TLS connections at random from this network; the
+# mirror serves the same packages.
+ENV npm_config_registry=https://registry.npmmirror.com
 # @model-hub/model-kit is a file: sibling dependency (W4-4); fetch the public
 # monorepo to the expected path (pinned to main like local development).
 RUN apt-get update \
@@ -30,6 +33,7 @@ RUN npm run build
 #     node scripts/gen-rsk-key.mjs /data/rsk.key
 # then start with -e ZEUS_RSK_KEY_FILE=/data/rsk.key. See docs/deployment.md.
 FROM node:22-slim AS runner
+ENV npm_config_registry=https://registry.npmmirror.com
 ENV NODE_ENV=production \
     ZEUS_HOST=0.0.0.0 \
     ZEUS_PORT=8787 \

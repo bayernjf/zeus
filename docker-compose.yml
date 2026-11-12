@@ -1,0 +1,134 @@
+# zeus decision kernel, standalone. growth-agent builds and runs its own copy
+# from ../zeus, so this stack is for working on zeus directly.
+#
+# A roster signing key is mandatory: the kernel refuses to boot without one (an
+# unsigned kernel would publish a roster nothing can pin). Generate it once into
+# the volume:
+#
+#   docker compose run --rm zeus-keygen
+#
+# 8787 is already taken on this machine (commerce-os), so the kernel is published
+# on 18787.
+services:
+  zeus:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: zeus:local
+    container_name: zeus
+    environment:
+      ZEUS_HOST: 0.0.0.0
+      ZEUS_PORT: "8787"
+      ZEUS_INTERNAL_TOKEN: ${ZEUS_INTERNAL_TOKEN:-local-dev-internal-token-16chars}
+      ZEUS_RSK_KEY_FILE: /data/rsk.key
+      ZEUS_RSK_KEY_ID: ${ZEUS_RSK_KEY_ID:-local-rsk}
+      ZEUS_STATE_FILE: /data/kernel-state.json
+      # model-hub is the only model source (the W7-3 kill switch for
+      # non-hub providers is gone). Address it by service name on tier0-net:
+      # inside the container localhost is the container itself, so the
+      # http://localhost:8791 value kept in .env resolves to nothing and the
+      # failure surfaces only as a silent "fetch failed".
+      MODEL_HUB_URL: http://model-hub:8791
+      MODEL_HUB_TOKEN: ${MODEL_HUB_TOKEN:-}
+      # The outbound guard rejects RFC1918 and 0.0.0.0/8 by default (SSRF
+      # protection), which would 502 every vassal registration against a
+      # sibling container on the private network. This hostname allowlist is
+      # the sanctioned escape hatch and must name each local vassal.
+      ZEUS_OUTBOUND_ALLOW_HOSTS: zeus-example-agent,zeus-llm-agent
+      # Registration is restored from kernel-state on restart, but a fresh
+      # data volume starts with an empty roster - and an empty roster makes
+      # fan-out produce zero branches, so every intent settles as "failed"
+      # with "no vassal returned a stance". Seeding the card URL at boot keeps
+      # the dispatch path working on a first boot too. Format is a comma list;
+      # a vassal bearer token can follow the URL after '|'.
+      ZEUS_VASSAL_SEEDS: http://zeus-example-agent:8090/api/a2a/agent-card,http://zeus-llm-agent:8091/api/a2a/agent-card
+      # Without an audit sink the trace endpoint answers 404 for an intent
+      # that just completed, because it requires both progress events and a
+      # readable audit file. W2-7's span-tree check cannot run without it.
+      ZEUS_AUDIT_FILE: /data/audit.jsonl
+    ports:
+      - "127.0.0.1:18787:8787"
+    networks:
+      - default
+      - tier0-net
+    volumes:
+      - zeus-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Reference execution agent, so the dispatch/aggregate loop has at least one
+  # registered vassal to fan out to. It reads only the A2A task message: no
+  # filesystem, no outbound network, no model call. Its report demonstrates
+  # the protocol shape and never asks model-hub for anything, so it produces
+  # zero real model cost - fine for proving the wiring, not for W2-7's
+  # two-sided cost reconciliation. The entry has no --host flag, hence the
+  # inline module call that overrides the 127.0.0.1 default.
+  example-agent:
+    image: zeus:local
+    container_name: zeus-example-agent
+    entrypoint: ["node"]
+    working_dir: /app
+    command:
+      - -e
+      - "import('./dist/a2a/example-agent.js').then(m=>m.startExampleAgent({port:8090,host:'0.0.0.0',publicHost:'zeus-example-agent',skill:'research',name:'example-agent'})).then(h=>console.log('card url: '+h.cardUrl))"
+    networks:
+      - tier0-net
+    restart: unless-stopped
+    # The zeus image inherits a healthcheck that probes zeus's own
+    # /healthz on 8787; this process serves the A2A card on 8090 instead, so
+    # the inherited probe always fails and the container reports unhealthy
+    # while working correctly.
+    healthcheck:
+      disable: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Model-backed agent: same A2A shape as example-agent, except it actually
+  # asks a model through model-hub credentials and reports token usage back.
+  # This is what makes an intent produce billable work rather than a shape
+  # demonstration - example-agent, by contrast, never touches a model.
+  llm-agent:
+    image: zeus:local
+    container_name: zeus-llm-agent
+    entrypoint: ["node"]
+    working_dir: /app
+    environment:
+      MODEL_HUB_URL: http://model-hub:8791
+      MODEL_HUB_TOKEN: ${MODEL_HUB_TOKEN:-}
+      ZEUS_AGENT_ALIAS: choice
+    command:
+      - -e
+      - "import('./dist/a2a/llm-agent.js').then(m=>m.startLlmAgent({port:8091,host:'0.0.0.0',publicHost:'zeus-llm-agent',skill:'research',name:'llm-agent'})).then(h=>console.log('card url: '+h.cardUrl))"
+    networks:
+      - tier0-net
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # One-shot helper that writes the signing keypair into the data volume.
+  zeus-keygen:
+    image: zeus:local
+    profiles: ["keygen"]
+    user: node
+    entrypoint: ["node", "scripts/gen-rsk-key.mjs", "/data/rsk.key"]
+    volumes:
+      - zeus-data:/data
+
+networks:
+  tier0-net:
+    external: true
+
+volumes:
+  zeus-data:

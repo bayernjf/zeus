@@ -2,6 +2,14 @@
 
 Zeus 项目的 AI 协作规范。写任何代码或文档前先读本节。
 
+## 本地容器运行时（macOS）
+
+本机 macOS 开发只用 OrbStack，不再使用 Docker Desktop。`docker` / `docker compose`
+命令不变（`docker context` 为 `orbstack`）。拉公共镜像直连失败时，用
+`docker.m.daocloud.io` 等镜像站前缀兜底。完整约定与恢复步骤见
+`../bayjf/AGENTS.md` 的「本地容器运行时约定（macOS）」和
+`~/000mycodes-backups/README.md`。
+
 ## 任务追踪与文档分层
 
 **任务追踪与待办的主入口是 `handoff.md`**（状态、进度、待办、文档索引都在这里）；**方案/设计/规格的全文放 `docs/` 的独立文档**，handoff 只索引、不复制全文。
