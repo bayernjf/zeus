@@ -305,6 +305,11 @@ export async function startLlmAgent(options: LlmAgentOptions = {}): Promise<LlmA
               {
                 kind: 'data',
                 data: {
+                  // Stance contract (aggregate.ts extractStance): a vassal's
+                  // vote travels in data.stance; the memory producer folds it
+                  // into claims. Omitted on failure so a failed branch carries
+                  // no stance and never feeds the memory producer.
+                  ...(answer ? { stance: answer } : {}),
                   summary: failure
                     ? `no answer: ${failure}`
                     : `answered via alias '${alias}' in ${wallSeconds}s`,
