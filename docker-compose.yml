@@ -30,6 +30,10 @@ services:
       # failure surfaces only as a silent "fetch failed".
       MODEL_HUB_URL: http://model-hub:8791
       MODEL_HUB_TOKEN: ${MODEL_HUB_TOKEN:-}
+      # Write the model catalogue cache to the data volume: the default
+      # ./data/model-cache.json resolves under /app, which is root-owned and
+      # not writable by the node process, so the cache silently never wrote.
+      MODEL_HUB_CACHE_PATH: /data/model-cache.json
       # The outbound guard rejects RFC1918 and 0.0.0.0/8 by default (SSRF
       # protection), which would 502 every vassal registration against a
       # sibling container on the private network. This hostname allowlist is
