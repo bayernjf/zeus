@@ -99,6 +99,24 @@ const flags = parseFlags(process.argv.slice(2));
 /** @type {any[]} */
 const traces = [];
 
+// Fallback: read model-hub cache if ZEUS_LLM_* not set
+if (!process.env.ZEUS_LLM_BASE_URL && !process.env.ZEUS_DECISION_BASE_URL) {
+  try {
+    const fs = await import('node:fs');
+    const cachePath = process.env.MODEL_HUB_CACHE_PATH || './data/model-cache.json';
+    if (fs.existsSync(cachePath)) {
+      const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+      const primary = cache.models?.find((/** @type {any} */ m) => m.role === 'primary') || cache.models?.[0];
+      if (primary) {
+        process.env.ZEUS_LLM_BASE_URL = primary.base_url;
+        process.env.ZEUS_LLM_API_KEY = primary.api_key;
+        process.env.ZEUS_LLM_MODEL = primary.litellm_id || primary.model;
+        console.log(`# loaded from model-cache: ${process.env.ZEUS_LLM_MODEL}`);
+      }
+    }
+  } catch {}
+}
+
 const backend =
   createJevBackendFromEnv(process.env) ?? createLlmBackendFromEnv(process.env, { onTrace: trace => traces.push(trace) });
 if (!backend) {
