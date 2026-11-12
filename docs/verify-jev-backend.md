@@ -33,7 +33,7 @@ npm run verify:decision-backend -- --realm personal
 npm run verify:decision-backend -- --realm enterprise
 ```
 
-脚本行为（`scripts/verify-decision-backend.mjs:103 #createJevBackendFromEnv`）：`createJevBackendFromEnv(process.env) ?? createLlmBackendFromEnv(...)`；真实 Orchestrator fan-out → S2 `maybeArbitrate` → 后端。Jev 适配器标 `calibrated: true`，默认闸门应采信；若实测置信度形状与声明不符，按 §5 处置。
+脚本行为（`scripts/verify-decision-backend.mjs:121 #createJevBackendFromEnv`）：`createJevBackendFromEnv(process.env) ?? createLlmBackendFromEnv(...)`；真实 Orchestrator fan-out → S2 `maybeArbitrate` → 后端。Jev 适配器标 `calibrated: true`，默认闸门应采信；若实测置信度形状与声明不符，按 §5 处置。
 
 ## 5. 判定矩阵（拿到实测后逐项填）
 
