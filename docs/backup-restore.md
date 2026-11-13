@@ -13,7 +13,8 @@
 
 ## 2. 备份操作
 
-每日一次（建议低峰），保留期可配（默认 7 份）：
+每日一次（建议低峰），保留期可配（默认 7 份；留存期声明建议 30 份，
+见 `docs/data-retention.md`）：
 
 ```bash
 node scripts/backup.mjs \
