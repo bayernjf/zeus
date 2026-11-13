@@ -36,6 +36,7 @@
     "scripts/verify-intent-recognize.mjs",
     "scripts/verify-tui-recognize.mjs",
     "scripts/eval-run.mjs",
+    "scripts/dsar.mjs",
     "evals/cases/index.mjs"
     ,"scripts/run-watch-tick.mjs"
   ]
