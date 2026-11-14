@@ -123,7 +123,8 @@ open → proposing → challenging ⇄ (下一轮) → converging → decided �
 **S4 对话框 UI（只读回放已完成 2026-11-15）**
 - 载体（ops-console `src/pages/app/meetings/index.astro` + `src/server/meetings-service.ts`）：列表 + `?id=` 详情，决策 rationale、按轮时间线、每条 claim 的证据与采纳/否决徽标、悬置主张；
 - 只读：决策仍只在 zeus 侧发生，页面不给写入口；
-- 待做：写入侧（发起会议、插入发言、点决策）、导出 Markdown 纪要。
+- 写入侧 API 已落库（`src/http/meetings-v1.ts`，6 条 bearer 路由：开新会 / 发言 / 推进轮次 / 决策 + 列会与详情），规则仍全部走 `src/meeting/protocol.ts`，console 不再直接改 JSON；
+- 待做：console 的写入 UI（按钮与表单）、导出 Markdown 纪要。
 - 载体：ops-console 新增一页（先只读回放：时间线 + 主张图 + 决策记录）；
 - 再做写入：发起会议、插入你的发言、点决策；
 - 导出 Markdown 会议纪要。
