@@ -7,6 +7,7 @@ import { advanceRound, claimGraph, createMeeting, decide, recordUtterance } from
 import { convene, type DraftClaim } from './convene.js';
 import { challenge, nextStep, projectClaims, selectTargets } from './challenge.js';
 import { decisionEvents } from './settle.js';
+import { meetingStats } from './stats.js';
 import type { Evidence, EvidenceKind, SpeakerKind, Stance, Utterance } from './types.js';
 
 const DEFAULT_DIR = process.env.ZEUS_MEETING_DIR ?? '.zeus-meetings';
@@ -261,8 +262,14 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'stats') {
+    const meeting = await store.load(meetingId);
+    print(meetingStats(meeting));
+    return;
+  }
+
   process.stderr.write(
-    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | targets <id> [--limit] | challenge <id> --critics <file.json> [--target id] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | settle <id> --events <file.jsonl> | show <id> [--graph] | list\n',
+    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | targets <id> [--limit] | challenge <id> --critics <file.json> [--target id] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | settle <id> --events <file.jsonl> | stats <id> | show <id> [--graph] | list\n',
   );
   process.exitCode = 1;
 }
