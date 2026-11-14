@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 /**
@@ -20,10 +20,10 @@ function statusEvent(taskId: string): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'completed' }, final: true };
 }
 
-function approveResult(vassal: string): DispatchResult {
+function approveResult(executor: string): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-t`,
+    id: `${executor}-t`,
     contextId: 'ctx',
     status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance: 'approve', summary: 'private branch text' } }] }],
@@ -33,7 +33,7 @@ function approveResult(vassal: string): DispatchResult {
 
 const port: DispatchPort = {
   async dispatch(req: DispatchRequest) {
-    return approveResult(req.vassal ?? 'unknown');
+    return approveResult(req.executor ?? 'unknown');
   },
   async cancel() {},
 };
@@ -44,7 +44,7 @@ function lookup(names: string[]): TargetLookup {
 
 async function server(orchestrator: Orchestrator) {
   return createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     orchestrator,
@@ -67,7 +67,7 @@ describe('GET /api/cost (E6.5)', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { ...AUTH, 'content-type': 'application/json' },
-      body: JSON.stringify({ skill: 'review', params: {}, realm: 'personal', vassals: ['alpha'] }),
+      body: JSON.stringify({ skill: 'review', params: {}, dataDomain: 'personal', executors: ['alpha'] }),
     });
     const res = await app.inject({ method: 'GET', url: '/api/cost', headers: AUTH });
     expect(res.statusCode).toBe(200);
@@ -87,11 +87,11 @@ describe('GET /api/cost (E6.5)', () => {
     });
     app = await server(orch);
     await orch.fanOut({
-      intentId: 'http-cheap', skill: 'review', params: { message: 'x' }, realm: 'personal', vassals: ['alpha'],
+      intentId: 'http-cheap', skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
       costEstimate: { tokens: 2 },
     });
     await orch.fanOut({
-      intentId: 'http-over', skill: 'review', params: { message: 'y' }, realm: 'personal', vassals: ['alpha'],
+      intentId: 'http-over', skill: 'review', params: { message: 'y' }, dataDomain: 'personal', executors: ['alpha'],
       costEstimate: { tokens: 9 },
     });
     const body = await (await app.inject({ method: 'GET', url: '/api/cost', headers: AUTH })).json();
@@ -108,7 +108,7 @@ describe('GET /api/cost (E6.5)', () => {
     const orch = new Orchestrator(lookup(['alpha']), port, { costLimit: { maxWindowCost: 3 } });
     app = await server(orch);
     await orch.fanOut({
-      intentId: 'http-clean', skill: 'review', params: { message: 'x' }, realm: 'personal', vassals: ['alpha'],
+      intentId: 'http-clean', skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
       costEstimate: { tokens: 2 },
     });
     const text = JSON.stringify(await (await app.inject({ method: 'GET', url: '/api/cost', headers: AUTH })).json());

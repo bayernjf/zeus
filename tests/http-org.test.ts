@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { OrgRegistry } from '../src/org/registry.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 async function server(): Promise<FastifyInstance> {
-  const registry = new VassalRegistry();
+  const registry = new ExecutorRegistry();
   const signer = new Ed25519MemorySigner('zeus-rsk-test');
   const orgRegistry = new OrgRegistry();
   return createHttpServer({ registry, signer, internalToken: TOKEN, orgRegistry });

@@ -33,7 +33,7 @@ PRD E4.11（P1，原 ⬜）：`tasks/send` 可携带 `pushNotificationConfig`；
 
 ## 审计决策
 
-- `push-notification-received`：每次被接受的 push（含幂等重放，detail 标 `idempotent`），带 runId/vassal/skill/realm/taskId/state。
+- `push-notification-received`：每次被接受的 push（含幂等重放，detail 标 `idempotent`），带 runId/executor/skill/dataDomain/taskId/state。
 - `push-notification-refused`：bearer 已验但 taskId 无等待分支（未知 task）。
 
 ## 非目标（V1 不做）

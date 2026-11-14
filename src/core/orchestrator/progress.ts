@@ -11,7 +11,7 @@ export type ProgressEvent =
       type: 'branch-started';
       intentId: string;
       runId: string;
-      vassal: string;
+      executor: string;
       skill: string;
       at: string;
     }
@@ -19,7 +19,7 @@ export type ProgressEvent =
       type: 'branch-ended';
       intentId: string;
       runId: string;
-      vassal: string;
+      executor: string;
       outcome: BranchOutcomeKind;
       state?: string;
       at: string;
@@ -29,8 +29,8 @@ export type ProgressEvent =
       intentId: string;
       runId: string;
       status: string;
-      /** Present when the intent named a connected realm; drives auto-consolidation. */
-      realmId?: string;
+      /** Present when the intent named a connected dataDomain; drives auto-consolidation. */
+      dataDomainId?: string;
       at: string;
     }
   | {
@@ -54,7 +54,7 @@ export type ProgressEvent =
       type: 'branch-delta';
       intentId: string;
       runId: string;
-      vassal: string;
+      executor: string;
       seq: number;
       preview: string;
       at: string;
@@ -73,12 +73,12 @@ export type ProgressEvent =
       at: string;
     };
 
-/** Per-intent pub/sub for the H3 SSE endpoint. One hub per kernel; subscribe
+/** Per-intent pub/sub for the H3 SSE endpoint. One hub per runtime; subscribe
  *  returns an unsubscribe function. Published events are additionally retained
  *  in a bounded per-intent buffer (S6 V2: the trace endpoint rebuilds the span
  *  tree from audit + progress without re-dispatched state; S15 V2: the stream
  *  view reads the same buffer). Retention is FIFO and capped so a long-lived
- *  kernel cannot grow the buffer without bound; a client that connects after
+ *  runtime cannot grow the buffer without bound; a client that connects after
  *  completion reads the stored intent snapshot instead. */
 export class ProgressHub {
   private listeners = new Map<string, Set<(event: ProgressEvent) => void>>();

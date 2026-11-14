@@ -156,13 +156,13 @@ describe('recognizeIntent (model path, explicit opt-in)', () => {
 
   it('sends the instruction as declared state keys only', async () => {
     const backend = mockBackend();
-    await recognizeIntent({ text: 'review the pr', catalog: CATALOG, backend, useModel: true, realm: 'enterprise' });
+    await recognizeIntent({ text: 'review the pr', catalog: CATALOG, backend, useModel: true, dataDomain: 'enterprise' });
     expect(backend.choice).toHaveBeenCalledTimes(1);
     const request = backend.choice.mock.calls[0]![0];
-    expect(request.state).toEqual({ instruction: 'review the pr', realm: 'enterprise' });
-    expect(request.stateKeys).toEqual(['instruction', 'realm']);
+    expect(request.state).toEqual({ instruction: 'review the pr', dataDomain: 'enterprise' });
+    expect(request.stateKeys).toEqual(['instruction', 'dataDomain']);
     expect(request.options).toContain('code-review');
-    expect(request.realm).toBe('enterprise');
+    expect(request.dataDomain).toBe('enterprise');
   });
 
   it('fails closed when the model answers outside the candidates', async () => {

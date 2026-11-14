@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   DecisionAuditChain,
@@ -50,7 +50,7 @@ async function startStack(executor: OrgTaskExecutor, scope: 'D0' | 'D2' = 'D2'):
   const worker = new TaskWorker({ org, executor });
   worker.start();
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer,
     internalToken: TOKEN,
     decisionService: decisions,

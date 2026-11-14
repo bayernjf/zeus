@@ -1,51 +1,51 @@
 #!/usr/bin/env node
 /**
- * `npm run chat` — a local, multi-turn REPL over the already-assembled kernel.
+ * `npm run chat` — a local, multi-turn REPL over the already-assembled runtime.
  *
  * design-personal-agent-host §6 P1-3: upgrade the one-shot `daily` sentence into
- * a conversation shell. This file is assembly, not a new mechanism: the kernel
+ * a conversation shell. This file is assembly, not a new mechanism: the runtime
  * already recognizes an instruction (`recognizeIntent`) and fans it out to the
  * registered execution agents (`orchestrator.fanOut`). What is new here is the
- * readline loop that keeps the same booted kernel — and the realm it mounted —
+ * readline loop that keeps the same booted runtime — and the dataDomain it mounted —
  * alive across many turns, instead of booting and tearing down per sentence.
  *
  * Three boundaries are deliberate, same as `daily`:
  *   - Plan-only. Every recognized sentence goes out with `mode: 'plan'`. No
  *     execute delegation is ever minted here, and no record is written back to
- *     the realm. The shell reads and plans; the driver decides what to run.
+ *     the dataDomain. The shell reads and plans; the operator decides what to run.
  *   - Zero out-of-domain by default. Recognition is the local rule ranker unless
  *     the operator passes `--model` (which attaches the configured decision
  *     backend for that whole session). Without it nothing leaves the machine.
- *   - The kernel owns no timer and this shell owns none either: it is a
+ *   - The runtime owns no timer and this shell owns none either: it is a
  *     foreground process the operator starts, not a daemon.
  *
  * Slash commands: `/exit` or `/quit` close the loop (exit 0); `/help` prints
  * this page; a blank line is ignored. Anything else is one operator sentence.
  *
  * Exit codes: 0 the loop ended cleanly (after /exit, EOF, or a broken pipe we
- * reported) · 2 boot/usage error (nothing was recognized, the kernel did not
- * start, or no writable realm was mounted).
+ * reported) · 2 boot/usage error (nothing was recognized, the runtime did not
+ * start, or no writable dataDomain was mounted).
  */
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 import type { DecisionBackend } from '../decision/types.js';
 import {
-  bootKernel,
+  bootRuntime,
   concurrencyBootOptions,
   costBootOptions,
-  KernelBootError,
+  RuntimeBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
   resolveCostConfig,
   resolveDecisionConfig,
-  resolveRealmConfig,
-  resolveVassalSeedsConfig,
-  type KernelBoot,
-  type KernelBootOptions,
+  resolveDataDomainConfig,
+  resolveExecutorSeedsConfig,
+  type RuntimeBoot,
+  type RuntimeBootOptions,
 } from '../state/boot.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { recognizeIntent, rankCandidates, type SkillCatalogEntry } from '../intent/recognize.js';
-import { RealmError, type RealmConnection } from '../realm/types.js';
+import { DataDomainError, type DataDomainConnection } from '../dataDomain/types.js';
 import type { BranchOutcome, FanOutResult } from '../core/orchestrator/types.js';
 import { registerSkillSpecs, skillCatalogEntry } from '../daily/cli.js';
 
@@ -56,20 +56,20 @@ const VALUE_FLAGS = new Set(['--root', '--agent', '--state', '--timeout', '--spe
 
 const USAGE = `usage: npm run chat [options]
 
-A local multi-turn planning shell. It boots the kernel once, then reads one
+A local multi-turn planning shell. It boots the runtime once, then reads one
 operator sentence per line, recognizes which registered skill it means, and
-prints a plan (never an execution). The same kernel and realm stay mounted
+prints a plan (never an execution). The same runtime and dataDomain stay mounted
 across turns.
 
 Options:
   --root DIR            directory to work in, mounted read-write (repeatable;
-                        ZEUS_REALM_ROOTS entries are mounted alongside)
+                        ZEUS_DATA_DOMAIN_ROOTS entries are mounted alongside)
   --agent CARD[|TOKEN]  register an execution agent before the loop starts
-                        (repeatable; merged with ZEUS_VASSAL_SEEDS)
+                        (repeatable; merged with ZEUS_EXECUTOR_SEEDS)
   --spec FILE           register an explicit skill spec before the loop starts
                         (repeatable; JSON object or array). This is how an
                         operator declares aliases on this path.
-  --state FILE          kernel state file (default: in-memory, ZEUS_STATE_FILE
+  --state FILE          runtime state file (default: in-memory, ZEUS_STATE_FILE
                         overrides, 'none' keeps state in memory)
   --model               let recognition consult the configured decision backend.
                         Without it nothing leaves the machine.
@@ -100,7 +100,7 @@ export type ChatCliIO = {
   stderr: NodeJS.WritableStream;
   env: NodeJS.ProcessEnv;
   /**
-   * Fired once the kernel is booted and the readline loop is attached and
+   * Fired once the runtime is booted and the readline loop is attached and
    * listening. Tests use it to feed a burst of lines only after the interface is
    * ready (mimicking a real pipe), instead of writing before boot and relying on
    * stream buffering. Optional; production passes nothing.
@@ -156,15 +156,15 @@ function parseArgs(argv: string[]): ChatArgs {
   return args;
 }
 
-/** Where kernel state lives. Default in-memory; ZEUS_STATE_FILE is the only env override. */
+/** Where runtime state lives. Default in-memory; ZEUS_STATE_FILE is the only env override. */
 function resolveStateFile(explicit: string | null | undefined, fromEnv: string | undefined): string | null {
   if (explicit !== undefined) return explicit;
   if (fromEnv === undefined || fromEnv === '') return null;
   return fromEnv === 'none' ? null : fromEnv;
 }
 
-function collectSeeds(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<KernelBootOptions['vassalSeeds']> {
-  const seeds: NonNullable<KernelBootOptions['vassalSeeds']> = [];
+function collectSeeds(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['executorSeeds']> {
+  const seeds: NonNullable<RuntimeBootOptions['executorSeeds']> = [];
   for (const entry of args.agents) {
     const separator = entry.indexOf('|');
     const cardUrl = (separator < 0 ? entry : entry.slice(0, separator)).trim();
@@ -173,26 +173,26 @@ function collectSeeds(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<Kerne
     if (separator >= 0 && !token) throw new UsageError(`--agent '${entry}' has nothing after '|'`);
     seeds.push(token ? { cardUrl, token } : { cardUrl });
   }
-  for (const seed of resolveVassalSeedsConfig(env)) {
+  for (const seed of resolveExecutorSeedsConfig(env)) {
     const url = typeof seed === 'string' ? seed : seed.cardUrl;
     if (!seeds.some(existing => (typeof existing === 'string' ? existing : existing.cardUrl) === url)) seeds.push(seed);
   }
   return seeds;
 }
 
-function realmRootsFor(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<KernelBootOptions['realmRoots']> {
-  const configured = resolveRealmConfig(env).realmRoots;
+function dataDomainRootsFor(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['dataDomainRoots']> {
+  const configured = resolveDataDomainConfig(env).dataDomainRoots;
   const personal = configured.filter((entry): entry is string => typeof entry === 'string');
   const enterprise = configured.filter(entry => typeof entry !== 'string');
   return [...new Set([...args.roots, ...personal]), ...enterprise];
 }
 
-function pickWritablePersonal(connections: RealmConnection[]): RealmConnection | undefined {
+function pickWritablePersonal(connections: DataDomainConnection[]): DataDomainConnection | undefined {
   return connections.find(connection => connection.type === 'personal' && !connection.readOnly);
 }
 
 function branchLine(branch: BranchOutcome): string {
-  const vassal = branch.vassal;
+  const executor = branch.executor;
   const state = branch.state ?? branch.outcome ?? branch.reason ?? 'no-state';
   const report = branch.task?.artifacts
     .flatMap(artifact => artifact.parts)
@@ -201,7 +201,7 @@ function branchLine(branch: BranchOutcome): string {
     .join(' ')
     .trim();
   const summary = report ? ` — ${report.slice(0, 120)}` : '';
-  return `    ${vassal}: ${state}${summary}`;
+  return `    ${executor}: ${state}${summary}`;
 }
 
 /** Renders one completed plan turn. Pure over the fan-out result. */
@@ -256,60 +256,60 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
     return { code: 0, stdout: out.join(''), stderr: '' };
   }
 
-  let kernel: KernelBoot;
-  let realm: RealmConnection;
+  let runtime: RuntimeBoot;
+  let dataDomain: DataDomainConnection;
   let backend: DecisionBackend | null = null;
   try {
     const stateFile = resolveStateFile(args.stateFile, env.ZEUS_STATE_FILE);
-    const roots = realmRootsFor(args, env);
-    const kernelOptions: KernelBootOptions = {
+    const roots = dataDomainRootsFor(args, env);
+    const runtimeOptions: RuntimeBootOptions = {
       ...(stateFile ? { stateFile } : {}),
-      ...(roots.length > 0 ? { realmRoots: roots } : {}),
+      ...(roots.length > 0 ? { dataDomainRoots: roots } : {}),
       ...(env.ZEUS_AUDIT_FILE ? { auditFile: env.ZEUS_AUDIT_FILE } : {}),
       ...concurrencyBootOptions(resolveConcurrencyConfig(env)),
       ...costBootOptions(resolveCostConfig(env)),
       ...(env.ZEUS_INTENT_RETENTION ? { intentRetention: parseRetentionMode(env.ZEUS_INTENT_RETENTION) } : {}),
     };
     const seeds = collectSeeds(args, env);
-    if (seeds.length > 0) kernelOptions.vassalSeeds = seeds;
+    if (seeds.length > 0) runtimeOptions.executorSeeds = seeds;
     const audit = resolveAuditConfig(env);
-    if (audit.auditMaxBytes !== undefined) kernelOptions.auditMaxBytes = audit.auditMaxBytes;
-    if (audit.auditKeep !== undefined) kernelOptions.auditKeep = audit.auditKeep;
+    if (audit.auditMaxBytes !== undefined) runtimeOptions.auditMaxBytes = audit.auditMaxBytes;
+    if (audit.auditKeep !== undefined) runtimeOptions.auditKeep = audit.auditKeep;
     if (args.model) {
       const decision = resolveDecisionConfig(env);
       backend = decision.backend ?? null;
       if (backend) {
-        kernelOptions.decisionBackend = backend;
-        kernelOptions.judgeEnabled = decision.judgeEnabled;
+        runtimeOptions.decisionBackend = backend;
+        runtimeOptions.judgeEnabled = decision.judgeEnabled;
       }
     }
-    kernel = await bootKernel(kernelOptions);
+    runtime = await bootRuntime(runtimeOptions);
     // Registered before the loop starts: a rejected spec is a configuration fact.
-    registerSkillSpecs(kernel.skillRegistry, args.specs);
-    const connections = kernel.realmStore?.connections() ?? [];
+    registerSkillSpecs(runtime.skillRegistry, args.specs);
+    const connections = runtime.dataDomainStore?.connections() ?? [];
     const picked = pickWritablePersonal(connections);
     if (!picked) {
       writeErr(
-        'no writable personal realm to work in: pass --root DIR (the folder your notes live in), or set ZEUS_REALM_ROOTS.\n',
+        'no writable personal dataDomain to work in: pass --root DIR (the folder your notes live in), or set ZEUS_DATA_DOMAIN_ROOTS.\n',
       );
       try {
-        await kernel.releaseLock();
+        await runtime.releaseLock();
       } catch {
         // The lock was ours; a release failure here is not the operator's error.
       }
       return { code: 2, stdout: '', stderr: err.join('') };
     }
-    realm = picked;
+    dataDomain = picked;
   } catch (error) {
-    const code = error instanceof KernelBootError || error instanceof UsageError || error instanceof RealmError ? 2 : 1;
+    const code = error instanceof RuntimeBootError || error instanceof UsageError || error instanceof DataDomainError ? 2 : 1;
     writeErr(`error: ${(error as Error).message}\n`);
     return { code, stdout: '', stderr: err.join('') };
   }
 
-  const agents = kernel.registry.listAll().filter(entry => entry.status === 'active').map(entry => entry.card.name);
+  const agents = runtime.registry.listAll().filter(entry => entry.status === 'active').map(entry => entry.card.name);
   writeOut(
     `Zeus chat (plan-only, local${args.model ? ' + model backend' : ''}). ` +
-      `Realm: ${realm.root} · agents: ${agents.join(', ') || 'none'}\n` +
+      `DataDomain: ${dataDomain.root} · agents: ${agents.join(', ') || 'none'}\n` +
       `Type a sentence to plan, /help for commands, /exit to quit.\n`,
   );
 
@@ -323,15 +323,15 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
     } catch {
       // Already closed; teardown below still runs.
     }
-    if (kernel.stateFile) {
+    if (runtime.stateFile) {
       try {
-        await kernel.saveState();
+        await runtime.saveState();
       } catch (error) {
         writeErr(`state was not saved: ${(error as Error).message}\n`);
       }
     }
     try {
-      await kernel.releaseLock();
+      await runtime.releaseLock();
     } catch (error) {
       writeErr(`state lock was not released: ${(error as Error).message}\n`);
     }
@@ -342,7 +342,7 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
    * Process one raw line. Returns true when the line asked to exit.
    *
    * Deliberately plan-only: a recognized sentence fans out with `mode: 'plan'`
-   * and nothing is written back to the realm. A blank line is ignored.
+   * and nothing is written back to the dataDomain. A blank line is ignored.
    */
   const processLine = async (raw: string): Promise<boolean> => {
     const line = raw.trim();
@@ -356,7 +356,7 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
       return false;
     }
 
-    const catalog: SkillCatalogEntry[] = (kernel.skillRegistry?.list() ?? []).map(skillCatalogEntry);
+    const catalog: SkillCatalogEntry[] = (runtime.skillRegistry?.list() ?? []).map(skillCatalogEntry);
     if (catalog.length === 0) {
       writeErr('no execution agent is registered, so there is no capability catalogue to choose from.\n');
       return false;
@@ -364,7 +364,7 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
     const recognition = await recognizeIntent({
       text: line,
       catalog,
-      realm: 'personal',
+      dataDomain: 'personal',
       ...(args.model && backend ? { useModel: true, backend } : {}),
     });
     if (!recognition.ok) {
@@ -375,11 +375,11 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
       );
       return false;
     }
-    const result = await kernel.orchestrator.fanOut({
+    const result = await runtime.orchestrator.fanOut({
       skill: recognition.intent.skill,
       params: { prompt: line },
-      realm: 'personal',
-      realmId: realm.realmId,
+      dataDomain: 'personal',
+      dataDomainId: dataDomain.dataDomainId,
       mode: 'plan',
       branchTimeoutMs: args.timeoutMs,
     });

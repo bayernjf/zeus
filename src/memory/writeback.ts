@@ -20,12 +20,12 @@
 import type { WritebackRecord } from './types.js';
 
 /** Lowest allowed factor; a target can be deprioritised but never zeroed
- *  (fail-soft: a down-weighted vassal stays reachable when others saturate). */
+ *  (fail-soft: a down-weighted executor stays reachable when others saturate). */
 export const MIN_WRITEWEIGHT_FACTOR = 0.1;
 
 export type RecordWritebackInput = {
   id?: string;
-  realmId: string;
+  dataDomainId: string;
   source: WritebackRecord['source'];
   param: WritebackRecord['param'];
   target: string;
@@ -51,7 +51,7 @@ export function selectionWeightsFromWritebacks(records: WritebackRecord[]): Reco
 }
 
 /**
- * Owns the active write-back cards for all realms. Records are append-only in
+ * Owns the active write-back cards for all dataDomains. Records are append-only in
  * spirit (a retract keeps the row, flips status) so the action is always
  * traceable. Pure with respect to persistence — the store decides where the
  * cards live.
@@ -74,7 +74,7 @@ export class WritebackLedger {
     }
     const card: WritebackRecord = {
       id: input.id ?? this.idOf(),
-      realmId: input.realmId,
+      dataDomainId: input.dataDomainId,
       createdAt: this.now().toISOString(),
       source: input.source,
       param: input.param,
@@ -96,14 +96,14 @@ export class WritebackLedger {
     return card;
   }
 
-  list(realmId?: string): WritebackRecord[] {
+  list(dataDomainId?: string): WritebackRecord[] {
     return this.cards
-      .filter((c) => realmId === undefined || c.realmId === realmId)
+      .filter((c) => dataDomainId === undefined || c.dataDomainId === dataDomainId)
       .map((c) => ({ ...c }));
   }
 
-  /** Active `selection-weight` overrides for a realm; baseline `{}` when none. */
-  selectionWeights(realmId: string): Record<string, number> {
-    return selectionWeightsFromWritebacks(this.list(realmId));
+  /** Active `selection-weight` overrides for a dataDomain; baseline `{}` when none. */
+  selectionWeights(dataDomainId: string): Record<string, number> {
+    return selectionWeightsFromWritebacks(this.list(dataDomainId));
   }
 }

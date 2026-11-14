@@ -6,7 +6,7 @@ import { guardedFetch } from '../util/outbound-dns.js';
 /**
  * Hub-backed embedder (MemoryPort contract v1 §4, ruling D-1).
  *
- * The embedding call is an *authorised* out-of-realm call: the model comes
+ * The embedding call is an *authorised* out-of-dataDomain call: the model comes
  * from the hub's `embed` alias assignment (doubao-embedding-vision, 2048
  * dimensions), enabled explicitly by leaving the kill switch off, and every
  * external call is audited by content hash only — plain text never reaches
@@ -29,8 +29,8 @@ export interface HubEmbedCallAudit {
   hash: string;
   ok: boolean;
   latencyMs: number;
-  /** Realm whose memory the call served (P2-5); absent when unknown. */
-  realmId?: string;
+  /** DataDomain whose memory the call served (P2-5); absent when unknown. */
+  dataDomainId?: string;
   reason?: string;
 }
 
@@ -106,7 +106,7 @@ export class HubEmbeddingEmbedder implements Embedder {
         if (this.hubDimension === null) {
           this.hubDimension = vector.length;
         }
-        this.audit(hash, true, latencyMs, undefined, ctx?.realmId);
+        this.audit(hash, true, latencyMs, undefined, ctx?.dataDomainId);
         // Key by the dimension of the space this vector actually lives in, not
         // the `dimension` getter seen before the call: on the very first hub
         // success that getter still reads the local fallback, so keying with
@@ -122,7 +122,7 @@ export class HubEmbeddingEmbedder implements Embedder {
         this.hubDimension = null;
         this.cache.clear();
         this.lastFailureAt = this.now();
-        this.audit(hash, false, this.now() - started, error instanceof Error ? error.message : 'hub embed failed', ctx?.realmId);
+        this.audit(hash, false, this.now() - started, error instanceof Error ? error.message : 'hub embed failed', ctx?.dataDomainId);
         // Fall through to the local embedding for this call; the cooldown
         // gates further hub attempts until the retry window elapses.
       }
@@ -169,12 +169,12 @@ export class HubEmbeddingEmbedder implements Embedder {
     this.cache.set(key, vector);
   }
 
-  private audit(hash: string, ok: boolean, latencyMs: number, reason?: string, realmId?: string): void {
+  private audit(hash: string, ok: boolean, latencyMs: number, reason?: string, dataDomainId?: string): void {
     this.onExternalCall?.({
       hash,
       ok,
       latencyMs,
-      ...(realmId !== undefined ? { realmId } : {}),
+      ...(dataDomainId !== undefined ? { dataDomainId } : {}),
       ...(reason !== undefined ? { reason } : {}),
     });
   }

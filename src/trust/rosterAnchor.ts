@@ -5,7 +5,7 @@
 // and the verify half is the same fail-closed chain an external verifier
 // (bayjf R2) runs against the published copy.
 
-import type { VassalRegistry } from '../registry/registry.js';
+import type { ExecutorRegistry } from '../registry/registry.js';
 import { projectPublicRoster } from '../registry/roster.js';
 import {
   Ed25519Verifier,
@@ -17,7 +17,7 @@ import {
 import type { RosterAnchor } from './tier.js';
 
 export type RosterAnchorDeps = {
-  registry: VassalRegistry;
+  registry: ExecutorRegistry;
   signer: RosterSigner;
   now?: () => Date;
   maxAgeSeconds: number;

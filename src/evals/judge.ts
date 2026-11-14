@@ -67,7 +67,7 @@ export function decisionTranscript(outcome: FanOutResult): string {
   if (outcome.positions.length > 0) {
     lines.push('positions:');
     for (const p of outcome.positions) {
-      lines.push(`- ${p.vassal}: stance=${p.stance ?? '(none)'} rationale=${p.rationale ?? '(none)'}`);
+      lines.push(`- ${p.executor}: stance=${p.stance ?? '(none)'} rationale=${p.rationale ?? '(none)'}`);
     }
   }
   if (outcome.conflicts.length > 0) {

@@ -3,8 +3,8 @@
 /**
  * Caller-owned watch scheduler for the self-host loop.
  *
- * design-self-host-loop §3.2 / verify-self-host-pilot: the kernel deliberately
- * holds no timer (the same boundary the vault CLI keeps with cron). Watches
+ * design-self-host-loop §3.2 / verify-self-host-pilot: the runtime deliberately
+ * holds no timer (the same boundary the backup CLI keeps with cron). Watches
  * honour their own `intervalSeconds`, but something outside the process has to
  * say "evaluate now". This is that thing: it drives POST /api/watch-tick, the
  * same endpoint the Web supervisor's "run one evaluation" button and the TUI
@@ -19,16 +19,16 @@
  *                            the scheduler).
  *
  * Cron/systemd shape for production rhythm (loopback only):
- *   KERNEL_URL=http://127.0.0.1:8787 \
+ *   RUNTIME_URL=http://127.0.0.1:8787 \
  *   ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" \
  *     node scripts/run-watch-tick.mjs                      # one tick (cron)
  *   node scripts/run-watch-tick.mjs --watch --interval 60  # long-running
  *
  * Exit codes (same contract as the other shipped runners):
  *   0 the tick(s) ran (a tick that fired nothing is still success),
- *   1 a tick was rejected by the kernel (non-2xx) or reported a watch whose
+ *   1 a tick was rejected by the runtime (non-2xx) or reported a watch whose
  *     source it could not evaluate,
- *   2 cannot start (missing config / bad flags / kernel unreachable in a
+ *   2 cannot start (missing config / bad flags / runtime unreachable in a
  *     one-shot run).
  */
 
@@ -65,7 +65,7 @@ const NOTIFY = NOTIFY_EXPLICIT_OFF ? false : WATCH || NOTIFY_EXPLICIT_ON;
 function usageExit(message) {
   if (message) console.error(`error: ${message}`);
   console.error(
-    'usage: KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… node scripts/run-watch-tick.mjs [--watch] [--interval SECONDS] [--timeout MS]',
+    'usage: RUNTIME_URL=… ZEUS_INTERNAL_TOKEN=… node scripts/run-watch-tick.mjs [--watch] [--interval SECONDS] [--timeout MS]',
   );
   process.exit(2);
 }
@@ -77,15 +77,15 @@ function numberFlag(name) {
 }
 if (positional.length > 0) usageExit(`unexpected argument: ${positional[0]}`);
 
-const KERNEL_URL = (env.KERNEL_URL ?? '').replace(/\/+$/, '');
+const RUNTIME_URL = (env.RUNTIME_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_TOKEN = env.ZEUS_INTERNAL_TOKEN ?? '';
 const INTERVAL_SECONDS = numberFlag('--interval') ?? Number(env.WATCH_INTERVAL_SECONDS ?? 60);
 const TIMEOUT_MS = numberFlag('--timeout') ?? Number(env.WATCH_HTTP_TIMEOUT_MS ?? 10_000);
 const MAX_BACKOFF_MS = Number(env.WATCH_MAX_BACKOFF_MS ?? 30_000);
-const loopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(KERNEL_URL);
+const loopback = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(RUNTIME_URL);
 
-if (!KERNEL_URL) usageExit('KERNEL_URL is required (e.g. http://127.0.0.1:8787)');
-if (!INTERNAL_TOKEN) usageExit('ZEUS_INTERNAL_TOKEN is required: /api/watch-tick is on the internal/driver face');
+if (!RUNTIME_URL) usageExit('RUNTIME_URL is required (e.g. http://127.0.0.1:8787)');
+if (!INTERNAL_TOKEN) usageExit('ZEUS_INTERNAL_TOKEN is required: /api/watch-tick is on the internal/operator face');
 if (!Number.isInteger(INTERVAL_SECONDS) || INTERVAL_SECONDS < 1) {
   usageExit('--interval (or WATCH_INTERVAL_SECONDS) must be a positive integer of seconds');
 }
@@ -93,7 +93,7 @@ if (!Number.isInteger(TIMEOUT_MS) || TIMEOUT_MS < 1) {
   usageExit('--timeout (or WATCH_HTTP_TIMEOUT_MS) must be a positive integer of ms');
 }
 if (!loopback) {
-  console.error(`refusing to run: KERNEL_URL ${KERNEL_URL} is not loopback - the internal token must not leave the host`);
+  console.error(`refusing to run: RUNTIME_URL ${RUNTIME_URL} is not loopback - the internal token must not leave the host`);
   process.exit(2);
 }
 
@@ -104,7 +104,7 @@ const timestamp = () => new Date().toISOString();
 const clip = value => value.replace(/\s+/g, ' ').slice(0, 200);
 
 /**
- * One evaluation pass. Returns "unreachable" when the kernel could not be
+ * One evaluation pass. Returns "unreachable" when the runtime could not be
  * reached (the loop backs off and retries; one-shot treats it as exit 2).
  * Never throws.
  * @returns {Promise<{ ok: true, status: number, report: TickReport } | { ok: false, status: number, detail: string } | { unreachable: true, detail: string }>}
@@ -113,7 +113,7 @@ async function tick() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const response = await fetch(`${KERNEL_URL}/api/watch-tick`, {
+    const response = await fetch(`${RUNTIME_URL}/api/watch-tick`, {
       method: 'POST',
       headers: { authorization: `Bearer ${INTERNAL_TOKEN}`, 'content-type': 'application/json' },
       body: '{}',
@@ -158,7 +158,7 @@ function reportIsHealthy(report) {
 if (!WATCH) {
   const result = await tick();
   if ('unreachable' in result) {
-    console.error(`cannot reach ${KERNEL_URL}: ${result.detail} - is Zeus running?`);
+    console.error(`cannot reach ${RUNTIME_URL}: ${result.detail} - is Zeus running?`);
     process.exit(2);
   }
   if (!result.ok) {
@@ -170,9 +170,9 @@ if (!WATCH) {
 }
 
 // --watch: caller-owned cadence. SIGTERM/SIGINT exit cleanly (a systemd stop is
-// not an error). An unreachable kernel backs off with a capped exponential
+// not an error). An unreachable runtime backs off with a capped exponential
 // delay so a restart window does not spam the endpoint.
-console.log(`${timestamp()}  watch scheduler started: ${KERNEL_URL} every ${INTERVAL_SECONDS}s (Ctrl-C / SIGTERM to stop)`);
+console.log(`${timestamp()}  watch scheduler started: ${RUNTIME_URL} every ${INTERVAL_SECONDS}s (Ctrl-C / SIGTERM to stop)`);
 let stopping = false;
 let backoff = 1000;
 for (const signal of /** @type {const} */ (['SIGTERM', 'SIGINT'])) {
@@ -185,7 +185,7 @@ while (!stopping) {
   const result = await tick();
   if ('unreachable' in result) {
     const wait = Math.min(backoff, MAX_BACKOFF_MS);
-    console.error(`${timestamp()}  cannot reach kernel: ${result.detail} - retrying in ${wait}ms`);
+    console.error(`${timestamp()}  cannot reach runtime: ${result.detail} - retrying in ${wait}ms`);
     await sleep(wait);
     backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
     continue;

@@ -2,11 +2,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createHttpServer, type DecisionStatus } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { ConnectorRegistry } from '../src/mcp/connectors.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const CONNECTOR_TOKEN = 'upstream-bearer-secret';
 
@@ -52,7 +52,7 @@ afterAll(() => mcpServer?.close());
 async function server(): Promise<{ app: Awaited<ReturnType<typeof createHttpServer>>; connectors: ConnectorRegistry }> {
   const connectors = new ConnectorRegistry(() => new Date('2026-09-25T00:00:00.000Z'));
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     connectorRegistry: connectors,
@@ -97,7 +97,7 @@ describe('E7 connector HTTP face', () => {
     expect(list.body).not.toContain(CONNECTOR_TOKEN);
     expect((await list.json()).connectors[0]).toMatchObject({ id: 'knowledge', hasToken: true });
 
-    // the secret is still held where it belongs: in the kernel record
+    // the secret is still held where it belongs: in the runtime record
     expect(connectors.get('knowledge')?.token).toBe(CONNECTOR_TOKEN);
   });
 
@@ -108,21 +108,21 @@ describe('E7 connector HTTP face', () => {
       url: '/api/connectors',
       headers: AUTH,
       payload: {
-        id: 'local-realm',
-        name: 'Local Realm',
+        id: 'local-dataDomain',
+        name: 'Local DataDomain',
         command: 'node',
-        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
-        env: { ZEUS_REALM_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
-        permissions: ['mcp:realm.search'],
+        args: ['dist/dataDomain/mcp-stdio.js', '/tmp/notes'],
+        env: { ZEUS_DATA_DOMAIN_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
+        permissions: ['mcp:dataDomain.search'],
       },
     });
     expect(res.statusCode).toBe(201);
     const body = await res.json();
-    expect(body).toMatchObject({ id: 'local-realm', status: 'declared', command: 'node' });
+    expect(body).toMatchObject({ id: 'local-dataDomain', status: 'declared', command: 'node' });
     expect(body.endpoint).toBeUndefined();
-    expect(body.envKeys).toEqual(['ZEUS_REALM_ROOTS', 'SECRET']);
+    expect(body.envKeys).toEqual(['ZEUS_DATA_DOMAIN_ROOTS', 'SECRET']);
     expect(res.body).not.toContain('hidden-value');
-    expect(body.args).toEqual(['dist/realm/mcp-stdio.js', '/tmp/notes']);
+    expect(body.args).toEqual(['dist/dataDomain/mcp-stdio.js', '/tmp/notes']);
   });
 
   it('accepts the S16 V2 isolation fields on a stdio connector declaration', async () => {
@@ -135,16 +135,16 @@ describe('E7 connector HTTP face', () => {
         id: 'local-isolated',
         name: 'Local Isolated',
         command: 'node',
-        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
-        envAllowList: ['ZEUS_REALM_ROOTS', 'HOME'],
+        args: ['dist/dataDomain/mcp-stdio.js', '/tmp/notes'],
+        envAllowList: ['ZEUS_DATA_DOMAIN_ROOTS', 'HOME'],
         maxWallSeconds: 5,
-        permissions: ['mcp:realm.search'],
+        permissions: ['mcp:dataDomain.search'],
       },
     });
     expect(res.statusCode).toBe(201);
     expect(await res.json()).toMatchObject({
       id: 'local-isolated',
-      envAllowList: ['ZEUS_REALM_ROOTS', 'HOME'],
+      envAllowList: ['ZEUS_DATA_DOMAIN_ROOTS', 'HOME'],
       maxWallSeconds: 5,
     });
   });
@@ -370,7 +370,7 @@ describe('decision status HTTP face', () => {
 
   it('is not mounted when the process reports nothing', async () => {
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
     });

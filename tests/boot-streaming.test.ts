@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import type { ProgressEvent } from '../src/orchestrator/progress.js';
 
 /**
- * S15 V2 (design-streaming §5): in a booted kernel a working frame carrying an
+ * S15 V2 (design-streaming §5): in a booted runtime a working frame carrying an
  * incremental payload surfaces as a `branch-delta` progress event (preview-only,
  * never a conclusion), and each settled branch reports the partially-ready
  * count. An execution agent that does not stream increments keeps the historical
@@ -22,16 +22,16 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
 }
 
 /**
- * A two-vassal fixture: alpha streams incremental working frames, beta does not
+ * A two-executor fixture: alpha streams incremental working frames, beta does not
  * (the compatibility case). Working frames carry an optional `data` payload
  * whose string form is surfaced as the preview.
  */
@@ -73,31 +73,31 @@ function streamingFetch(): { fetchImpl: typeof fetch; streamed: string[] } {
 const ALPHA_SEED = 'http://127.0.0.1/alpha/api/a2a/agent-card';
 const BETA_SEED = 'http://127.0.0.1/beta/api/a2a/agent-card';
 
-describe('S15 V2 working-frame increments in a booted kernel', () => {
+describe('S15 V2 working-frame increments in a booted runtime', () => {
   it('publishes branch-delta previews and keeps them out of the settled result', async () => {
     const { fetchImpl } = streamingFetch();
-    const kernel = await bootKernel({ fetchImpl, vassalSeeds: [ALPHA_SEED, BETA_SEED] });
+    const runtime = await bootRuntime({ fetchImpl, executorSeeds: [ALPHA_SEED, BETA_SEED] });
     const events: ProgressEvent[] = [];
-    kernel.progressHub.subscribe('intent-1', event => events.push(event));
+    runtime.progressHub.subscribe('intent-1', event => events.push(event));
 
-    const result = await kernel.orchestrator.fanOut({
+    const result = await runtime.orchestrator.fanOut({
       intentId: 'intent-1',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
-      vassals: ['alpha', 'beta'],
+      dataDomain: 'personal',
+      executors: ['alpha', 'beta'],
     });
 
     // Alpha streamed two increments; beta none.
     const deltas = events.filter(e => e.type === 'branch-delta');
     expect(deltas).toHaveLength(2);
-    expect(deltas.map(d => (d.type === 'branch-delta' ? d.vassal : ''))).toEqual(['alpha', 'alpha']);
+    expect(deltas.map(d => (d.type === 'branch-delta' ? d.executor : ''))).toEqual(['alpha', 'alpha']);
     expect(deltas.map(d => (d.type === 'branch-delta' ? d.seq : 0))).toEqual([1, 2]);
     // String payload and { preview } payload both surface; a seq-less frame's
     // preview is the increment's own content.
     expect(deltas[0]!.type === 'branch-delta' && deltas[0]!.preview).toBe('drafting…');
     expect(deltas[1]!.type === 'branch-delta' && deltas[1]!.preview).toBe('weighing options…');
-    // The branch lineage is attached (client sees no vassal; the dispatcher adds it).
+    // The branch lineage is attached (client sees no executor; the dispatcher adds it).
     for (const d of deltas) {
       expect(d.type === 'branch-delta' && d.runId).toContain('alpha');
     }
@@ -118,20 +118,20 @@ describe('S15 V2 working-frame increments in a booted kernel', () => {
 
   it('reports the partially-ready count as branches settle', async () => {
     const { fetchImpl } = streamingFetch();
-    const kernel = await bootKernel({ fetchImpl, vassalSeeds: [ALPHA_SEED, BETA_SEED] });
+    const runtime = await bootRuntime({ fetchImpl, executorSeeds: [ALPHA_SEED, BETA_SEED] });
     const partials: Array<{ settledCount: number; totalCount: number }> = [];
-    kernel.progressHub.subscribe('intent-2', event => {
+    runtime.progressHub.subscribe('intent-2', event => {
       if (event.type === 'intent-partial') {
         partials.push({ settledCount: event.settledCount, totalCount: event.totalCount });
       }
     });
 
-    await kernel.orchestrator.fanOut({
+    await runtime.orchestrator.fanOut({
       intentId: 'intent-2',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
-      vassals: ['alpha', 'beta'],
+      dataDomain: 'personal',
+      executors: ['alpha', 'beta'],
     });
 
     // Two branches, two settlement reports; the total is exact, the count climbs.
@@ -142,25 +142,25 @@ describe('S15 V2 working-frame increments in a booted kernel', () => {
 
   it('keeps agents without increments on the one-shot-at-settlement path', async () => {
     const { fetchImpl } = streamingFetch();
-    const kernel = await bootKernel({ fetchImpl, vassalSeeds: [BETA_SEED] });
+    const runtime = await bootRuntime({ fetchImpl, executorSeeds: [BETA_SEED] });
     const deltas: string[] = [];
-    kernel.progressHub.subscribe('intent-3', event => {
+    runtime.progressHub.subscribe('intent-3', event => {
       if (event.type === 'branch-delta') deltas.push(event.preview);
     });
 
-    await kernel.orchestrator.fanOut({
+    await runtime.orchestrator.fanOut({
       intentId: 'intent-3',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
-      vassals: ['beta'],
+      dataDomain: 'personal',
+      executors: ['beta'],
     });
 
     expect(deltas).toHaveLength(0);
   });
 
   it('publishes the agent-reported task state on the spine even for a branch that is not ok', async () => {
-    // `outcome` is the dispatch category, so a vassal that says "my task failed"
+    // `outcome` is the dispatch category, so a executor that says "my task failed"
     // and a branch whose transport never completed both settle as `failed`. A
     // subscriber that only sees the event spine must still be able to tell them
     // apart (design-streaming 3.3; the conflation class audit C-28 closed for
@@ -185,33 +185,33 @@ describe('S15 V2 working-frame increments in a booted kernel', () => {
       );
     }) as typeof fetch;
 
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl,
-      vassalSeeds: ['http://127.0.0.1/broken/api/a2a/agent-card', 'http://127.0.0.1/offline/api/a2a/agent-card'],
+      executorSeeds: ['http://127.0.0.1/broken/api/a2a/agent-card', 'http://127.0.0.1/offline/api/a2a/agent-card'],
     });
     const ended: Array<Extract<ProgressEvent, { type: 'branch-ended' }>> = [];
-    kernel.progressHub.subscribe('intent-4', event => {
+    runtime.progressHub.subscribe('intent-4', event => {
       if (event.type === 'branch-ended') ended.push(event);
     });
 
-    await kernel.orchestrator.fanOut({
+    await runtime.orchestrator.fanOut({
       intentId: 'intent-4',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
-      vassals: ['broken', 'offline'],
+      dataDomain: 'personal',
+      executors: ['broken', 'offline'],
     });
 
     expect(ended).toHaveLength(2);
-    const byVassal = Object.fromEntries(ended.map(e => [e.vassal, e]));
+    const byExecutor = Object.fromEntries(ended.map(e => [e.executor, e]));
     // Same category, different fact: the agent reported a failed task.
-    expect(byVassal.broken!.outcome).toBe('failed');
-    expect(byVassal.broken!.state).toBe('failed');
+    expect(byExecutor.broken!.outcome).toBe('failed');
+    expect(byExecutor.broken!.state).toBe('failed');
     // And this one never reached a task at all, so there is no state to carry.
-    expect(byVassal.offline!.outcome).toBe('failed');
-    expect(byVassal.offline!.state).toBeUndefined();
+    expect(byExecutor.offline!.outcome).toBe('failed');
+    expect(byExecutor.offline!.state).toBeUndefined();
     // The positive control: without `state` these two lines are identical, which
     // is exactly the reading this change removes.
-    expect(byVassal.broken!.outcome).toBe(byVassal.offline!.outcome);
+    expect(byExecutor.broken!.outcome).toBe(byExecutor.offline!.outcome);
   });
 });

@@ -9,7 +9,7 @@ export type SendTaskInput = {
   token?: string;
   /**
    * S6 V2 (design-observability §5): W3C-shaped trace context propagated to
-   * the execution agent as optional protocol metadata. The kernel derives it
+   * the execution agent as optional protocol metadata. The runtime derives it
    * from its own runId lineage; a peer that ignores it stays interoperable
    * (observation field, never an authorization field).
    */

@@ -16,16 +16,16 @@ function statusEvent(taskId: string): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'completed' }, final: true };
 }
 
-function taskResult(vassal: string, ok: boolean): DispatchResult {
+function taskResult(executor: string, ok: boolean): DispatchResult {
   if (!ok) {
     return {
       ok: false,
-      reason: `vassal ${vassal} failed`,
-      audit: { ts: new Date().toISOString(), vassal, decision: 'branch-aborted', detail: 'test failure' },
+      reason: `executor ${executor} failed`,
+      audit: { ts: new Date().toISOString(), executor, decision: 'branch-aborted', detail: 'test failure' },
     };
   }
   const task = {
-    kind: 'task' as const, id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' as const },
+    kind: 'task' as const, id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' as const },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data' as const, data: { stance: 'go' } }] }],
   };
   return { ok: true, task, events: [statusEvent(task.id)], injectedHits: [] };
@@ -40,8 +40,8 @@ function settlingPort(ok: boolean): DispatchPort & { started: string[] } {
   const started: string[] = [];
   return {
     async dispatch(req: DispatchRequest) {
-      started.push(req.vassal!);
-      return taskResult(req.vassal!, ok);
+      started.push(req.executor!);
+      return taskResult(req.executor!, ok);
     },
     async cancel() {},
     started,
@@ -57,7 +57,7 @@ function build(names: string[], options: OrchestratorOptions = {}, port: Dispatc
   return { orchestrator, port };
 }
 
-const request = { skill: 'review', realm: 'personal' as const, params: {} };
+const request = { skill: 'review', dataDomain: 'personal' as const, params: {} };
 
 describe('S4 termination guards (design-supervision §7.1)', () => {
   it('pure budget: cumulative cap trips at used >= limit', () => {
@@ -88,7 +88,7 @@ describe('S4 termination guards (design-supervision §7.1)', () => {
     // budget trips regardless of explicit / auto
     expect(mayDispatch({ used: 2, failureStreak: 0 }, limits, false).allowed).toBe(false);
     expect(mayDispatch({ used: 2, failureStreak: 0 }, limits, true).allowed).toBe(false);
-    // breaker trips auto-selection only; explicit driver-named targets stay ungoverned
+    // breaker trips auto-selection only; explicit operator-named targets stay ungoverned
     expect(mayDispatch({ used: 0, failureStreak: 2 }, limits, false).reason).toBe('circuit-open');
     expect(mayDispatch({ used: 0, failureStreak: 2 }, limits, true).allowed).toBe(true);
     // clean budget passes
@@ -108,7 +108,7 @@ describe('S4 termination guards (design-supervision §7.1)', () => {
   it('resume exhausts the budget: limit 2 → one resume ok, next throws with audit bridge fired', async () => {
     const onTerminationRefused = vi.fn();
     const { orchestrator } = build(['a'], { maxBranchesPerIntent: 2, onTerminationRefused });
-    const first = await orchestrator.fanOut({ ...request, vassals: ['a'] });
+    const first = await orchestrator.fanOut({ ...request, executors: ['a'] });
     expect(first.status).toBe('completed');
 
     const resumed = await orchestrator.resumeBranch('intent-1', 'a', { round: 2 });
@@ -134,7 +134,7 @@ describe('S4 termination guards (design-supervision §7.1)', () => {
     expect(refused.refused?.reason).toBe('circuit-open');
     expect(refused.branches).toHaveLength(0);
 
-    // the same intent, but the driver names the target: deliberate override
+    // the same intent, but the operator names the target: deliberate override
     const port = settlingPort(true);
     const second = new Orchestrator(lookupFor(['a']), port, {
       newIntentId: () => 'intent-2',
@@ -145,13 +145,13 @@ describe('S4 termination guards (design-supervision §7.1)', () => {
       intents: [], requests: [],
       budgets: { 'intent-1': { used: 2, failureStreak: 2 } },
     });
-    const admitted = await second.fanOut({ ...request, intentId: 'intent-1', vassals: ['a'] });
+    const admitted = await second.fanOut({ ...request, intentId: 'intent-1', executors: ['a'] });
     expect(admitted.status).toBe('completed');
   });
 
   it('budget state travels with exportState/importState: restart cannot reset the guard', async () => {
     const a = build(['a'], { maxBranchesPerIntent: 1 });
-    await a.orchestrator.fanOut({ ...request, vassals: ['a'] });
+    await a.orchestrator.fanOut({ ...request, executors: ['a'] });
     const snapshot = a.orchestrator.exportState();
     expect(snapshot.budgets?.['intent-1']?.used).toBe(1);
 

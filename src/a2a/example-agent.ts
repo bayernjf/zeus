@@ -6,12 +6,12 @@
  * had to stand up an A2A agent somewhere else before any command could show a
  * result — `npm run daily` with an empty roster exits 2 (measured 2026-10-13).
  * This is the smallest peer that makes the whole loop demonstrable on one
- * machine: a standard Agent Card, a complete `x-zeus-fealty` declaration, and
+ * machine: a standard Agent Card, a complete `x-zeus-handshake` declaration, and
  * the JSON-RPC task faces Zeus calls.
  *
  * Boundaries it must never cross, and the reason each one is here:
  *   - it reads nothing but the task message it was sent — no filesystem, no
- *     realm, no user directory;
+ *     dataDomain, no user directory;
  *   - it makes no outbound request of any kind (zero egress);
  *   - it does not call a model. Anything it "knows" is what the caller put in
  *     the task, so its report is a shape demonstration, not an answer.
@@ -68,13 +68,13 @@ function cardFor(options: Required<Pick<ExampleAgentOptions, 'skill' | 'name'>>,
     ],
     authentication: { schemes: ['none'] },
     preferredTransport: 'JSONRPC',
-    // The registration contract Zeus validates: which realms this peer may serve,
+    // The registration contract Zeus validates: which dataDomains this peer may serve,
     // and its data policy. Declaring personal only is the narrowest honest claim.
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: 'reference',
-      dataRealms: ['personal'],
+      dataDomains: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',

@@ -43,7 +43,7 @@ export class SkillConflictError extends DomainError {
 }
 
 /**
- * E2.2 Skill registry: catalogue of skill specs independent of vassal cards.
+ * E2.2 Skill registry: catalogue of skill specs independent of executor cards.
  *  - register: id + version is the unique key (re-registering is idempotent);
  *  - multiple versions of the same id coexist;
  *  - deprecate marks a version without deleting it (traceability);
@@ -110,7 +110,7 @@ export class SkillRegistry {
     return (edges.get(start) ?? []).some(visit);
   }
 
-  /** Import the skills advertised on a vassal Agent Card. Card skills carry no
+  /** Import the skills advertised on a executor Agent Card. Card skills carry no
    *  version/permissions, so they register a '0.0.0' catalogue entry tagged to
    *  the provider; explicit specs (register()) override the catalogue entry. */
   registerFromCard(card: AgentCard): SkillSpec[] {
@@ -264,7 +264,7 @@ export class SkillRegistry {
   /**
    * E2.4 team composition: map required skills to providers without silently
    *  picking among several candidates. A slot with multiple providers is
-   *  'ambiguous' (the driver/strategy must choose); a slot with none is 'missing'.
+   *  'ambiguous' (the operator/strategy must choose); a slot with none is 'missing'.
    */
   resolveTeam(requiredSkillIds: string[]): TeamResolution {
     const slots: TeamSlot[] = requiredSkillIds.map(skillId => {
@@ -352,7 +352,7 @@ export class SkillRegistry {
   }
 }
 
-/** Placeholder version for skills learned from a vassal card (cards carry no
+/** Placeholder version for skills learned from a executor card (cards carry no
  *  version). Explicitly registered specs always take precedence in lookups. */
 export const CARD_CATALOGUE_VERSION = '0.0.0';
 

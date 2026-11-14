@@ -44,8 +44,8 @@ describe('TUI i18n contract (design-ui-foundations §5)', () => {
   it('translates and resolves locales by BCP 47 prefix', () => {
     const zh = makeTranslator('zh-CN');
     const enT = makeTranslator('en');
-    expect(zh('intent.status.needs-driver')).toBe('待裁决');
-    expect(enT('intent.status.needs-driver')).toBe('needs driver');
+    expect(zh('intent.status.needs-operator')).toBe('待裁决');
+    expect(enT('intent.status.needs-operator')).toBe('needs operator');
     expect(resolveLocale('en_US.UTF-8')).toBe('en');
     expect(resolveLocale('zh_CN.UTF-8')).toBe('zh-CN');
     expect(resolveLocale(undefined)).toBe('zh-CN');

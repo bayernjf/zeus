@@ -2,11 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
 /**
- * design-self-host-loop §3.2 step 2, proved on a real kernel rather than on a
+ * design-self-host-loop §3.2 step 2, proved on a real runtime rather than on a
  * registry with stubs: a satisfied watch must raise exactly one real intent, and
  * the budget it spent must come back after a restart. Both are properties about
  * the assembled process - a watch that fires in a unit test and cannot fire in
@@ -25,15 +25,15 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
 }
 
-function vassalFetch(): typeof fetch {
+function executorFetch(): typeof fetch {
   return (async (input: unknown) => {
     const url = String(input);
     const name = url.split('/')[3]!;
@@ -61,7 +61,7 @@ function vassalFetch(): typeof fetch {
 
 const seeds = ['http://127.0.0.1/loom/api/a2a/agent-card'];
 
-describe('a watch fires on a booted kernel', () => {
+describe('a watch fires on a booted runtime', () => {
   let dir = '';
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'zeus-boot-watch-'));
@@ -72,16 +72,16 @@ describe('a watch fires on a booted kernel', () => {
 
   it('raises exactly one real intent and records it on the audit spine', async () => {
     const audits: AuditEntry[] = [];
-    const kernel = await bootKernel({
-      fetchImpl: vassalFetch(),
-      vassalSeeds: seeds,
+    const runtime = await bootRuntime({
+      fetchImpl: executorFetch(),
+      executorSeeds: seeds,
       dispatchAudit: entry => audits.push(entry),
     });
 
-    kernel.watches!.register({
+    runtime.watches!.register({
       id: 'w1',
       owner: 'operator@bayjf',
-      realm: 'personal',
+      dataDomain: 'personal',
       // metrics.finished is 0 at boot, so this predicate holds immediately.
       predicate: { source: 'metrics', op: 'above', field: 'finished', value: -1 },
       intent: { skill: 'review', subject: 'queue is deep', mode: 'plan', maxFanOut: 1 },
@@ -91,28 +91,28 @@ describe('a watch fires on a booted kernel', () => {
       budget: { fires: 1, executes: 0 },
     });
 
-    const report = await kernel.runWatchTick(new Date('2026-10-05T12:00:00.000Z'));
+    const report = await runtime.runWatchTick(new Date('2026-10-05T12:00:00.000Z'));
     expect(report.fired).toEqual(['w1']);
 
     // The intent really exists in the orchestrator's table, named by the
     // deterministic id - not merely reported as fired.
-    const intent = kernel.orchestrator.getIntent('watch:w1:1');
-    expect(intent?.branches.map(branch => branch.vassal)).toEqual(['loom']);
+    const intent = runtime.orchestrator.getIntent('watch:w1:1');
+    expect(intent?.branches.map(branch => branch.executor)).toEqual(['loom']);
     expect(intent?.status).toBe('completed');
     expect(audits.some(entry => entry.decision === 'watch-fired')).toBe(true);
 
     // Budget spent: a second tick within the interval must not fire again.
-    const second = await kernel.runWatchTick(new Date('2026-10-05T12:00:01.000Z'));
+    const second = await runtime.runWatchTick(new Date('2026-10-05T12:00:01.000Z'));
     expect(second.evaluated).toBe(0);
   });
 
   it('brings the spent budget back after a restart', async () => {
-    const file = join(dir, 'kernel-state.json');
-    const first = await bootKernel({ fetchImpl: vassalFetch(), vassalSeeds: seeds, stateFile: file });
+    const file = join(dir, 'runtime-state.json');
+    const first = await bootRuntime({ fetchImpl: executorFetch(), executorSeeds: seeds, stateFile: file });
     first.watches!.register({
       id: 'w1',
       owner: 'operator@bayjf',
-      realm: 'personal',
+      dataDomain: 'personal',
       predicate: { source: 'metrics', op: 'above', field: 'finished', value: -1 },
       intent: { skill: 'review', subject: 'queue is deep', mode: 'plan', maxFanOut: 1 },
       intervalSeconds: 60,
@@ -124,7 +124,7 @@ describe('a watch fires on a booted kernel', () => {
     expect(first.watches!.get('w1')!.used.fires).toBe(1);
     await first.saveState();
 
-    const restarted = await bootKernel({ fetchImpl: vassalFetch(), stateFile: file });
+    const restarted = await bootRuntime({ fetchImpl: executorFetch(), stateFile: file });
     expect(restarted.restoredFromSnapshot).toBe(true);
     // A reset budget would make every restart an unbounded trigger, which is
     // exactly the failure this persistence exists to prevent.

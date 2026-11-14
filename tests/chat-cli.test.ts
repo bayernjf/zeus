@@ -6,15 +6,15 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { runChatCli } from '../src/chat/cli.js';
 
 /**
- * The chat shell keeps one booted kernel across many turns. Its defects are in
+ * The chat shell keeps one booted runtime across many turns. Its defects are in
  * the wiring (boot once, REPL loop, plan-only fan-out, no write-back), so the
- * cases below drive the real thing: a kernel booted by the CLI itself, a real
- * realm directory the shell must never write into, and a skill catalogue seeded
- * by explicit --spec files (no vassal card fetch, so the tests are independent
+ * cases below drive the real thing: a runtime booted by the CLI itself, a real
+ * dataDomain directory the shell must never write into, and a skill catalogue seeded
+ * by explicit --spec files (no executor card fetch, so the tests are independent
  * of the local outbound-network environment).
  *
  * The shell's core promise is plan-only: every recognized sentence goes out
- * with mode 'plan', no execution delegation is ever minted, and the realm is
+ * with mode 'plan', no execution delegation is ever minted, and the dataDomain is
  * never written. The tests assert both directly.
  */
 
@@ -94,13 +94,13 @@ describe('npm run chat', () => {
     expect(result.stdout).toContain('/exit | /quit');
   });
 
-  it('rejects unknown options before booting the kernel', async () => {
+  it('rejects unknown options before booting the runtime', async () => {
     const result = await driveChat({ argv: ['--bogus', 'x'], lines: [] });
     expect(result.code).toBe(2);
     expect(result.stderr).toContain('unknown option: --bogus');
   });
 
-  it('runs multiple turns, each plan-only, and never writes to the realm', async () => {
+  it('runs multiple turns, each plan-only, and never writes to the dataDomain', async () => {
     const root = tempRoot('multi-turn');
     const specDir = tempRoot('multi-turn-spec');
     const spec = specPathForSkills(specDir);
@@ -119,7 +119,7 @@ describe('npm run chat', () => {
     expect(modeLines.length).toBeGreaterThanOrEqual(2);
     for (const line of modeLines) expect(line).toContain('plan');
     expect(result.stdout).not.toMatch(/mode:\s+execute/i);
-    // The realm directory was not written into (chat never calls store.write).
+    // The dataDomain directory was not written into (chat never calls store.write).
     expect(readdirSync(root)).toEqual(before);
   });
 
@@ -198,9 +198,9 @@ describe('npm run chat', () => {
     expect(result.stdout).toContain('/exit | /quit');
   });
 
-  it('exits 2 with guidance when no writable realm is mounted', async () => {
+  it('exits 2 with guidance when no writable dataDomain is mounted', async () => {
     const result = await driveChat({ argv: ['--state', 'none'], lines: [] });
     expect(result.code).toBe(2);
-    expect(result.stderr).toContain('no writable personal realm');
+    expect(result.stderr).toContain('no writable personal dataDomain');
   });
 });

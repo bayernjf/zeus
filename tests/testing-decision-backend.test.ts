@@ -7,7 +7,7 @@ const baseChoice = {
   state: {},
   instructions: 'criteria',
   runId: 'r1',
-  realm: 'personal' as const,
+  dataDomain: 'personal' as const,
   question: 'q',
   options: ['approve', 'reject'],
 };

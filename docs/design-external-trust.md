@@ -2,13 +2,13 @@
 
 ## 0. 一句话
 
-把执行 Agent 协议的既有声明——「未注册外部方按最低信任处理（沙箱、脱敏、不可逆操作一律升级）」（[design-vassal-protocol.md](design-vassal-protocol.md) §5）——落实为**可判档、可审计、可执行**的信任分级：调用方身份按验证锚定档，每档绑定能力面、数据面、资源面与操作面的上限，未注册外部方在最低档上被限流、隔离并留痕。机制入库为纯函数 + 装配点，不在没有真实调用方时把阈值拍死（阈值调参沿用 deferred #9 同口径：真实负载数据到了再定数）。
+把执行 Agent 协议的既有声明——「未注册外部方按最低信任处理（沙箱、脱敏、不可逆操作一律升级）」（[design-executor-protocol.md](design-executor-protocol.md) §5）——落实为**可判档、可审计、可执行**的信任分级：调用方身份按验证锚定档，每档绑定能力面、数据面、资源面与操作面的上限，未注册外部方在最低档上被限流、隔离并留痕。机制入库为纯函数 + 装配点，不在没有真实调用方时把阈值拍死（阈值调参沿用 deferred #9 同口径：真实负载数据到了再定数）。
 
 ## 1. 缺口与现状
 
-- **声明有、机制无**：设计文档写明了「外客按最低信任处理（沙箱、脱敏、不可逆操作一律升级）」，但 `src/` 全库搜索 `sandbox` 零命中——该声明从未变成代码。现状是：**任何过了入站形状闸的调用方，与注册执行 Agent 享有同一套派发能力**（realm 缺省 personal、可触发 fanOut），没有档位差异。
-- **入站面已建立判档挂钩**：`src/http/serve.ts` 的入站 A2A 面（Active work 144）对 `x-zeus-caller-card` 跑 `fealtyOathProblem` 形状闸——**只验形状（版本闸 + 必填字段），不验签名锚**（真实信任锚 = bayjf 签名目录，R2 未公开）。无卡或形状不过 → fail-closed 403 + 审计，已实现。
-- **既有信任原语可复用**：`DomainGrant`/`decideRealmAccess`（E6.4，realm 级授权）、`dataPolicy` 四档判（E4.5，出站内容边界）、执行授权票据（#33，execute 能力钉）、注册表 active/revoked 状态、`AUDIT_DECISIONS` 单一来源。
+- **声明有、机制无**：设计文档写明了「外客按最低信任处理（沙箱、脱敏、不可逆操作一律升级）」，但 `src/` 全库搜索 `sandbox` 零命中——该声明从未变成代码。现状是：**任何过了入站形状闸的调用方，与注册执行 Agent 享有同一套派发能力**（dataDomain 缺省 personal、可触发 fanOut），没有档位差异。
+- **入站面已建立判档挂钩**：`src/http/serve.ts` 的入站 A2A 面（Active work 144）对 `x-zeus-caller-card` 跑 `handshakeOathProblem` 形状闸——**只验形状（版本闸 + 必填字段），不验签名锚**（真实信任锚 = bayjf 签名目录，R2 未公开）。无卡或形状不过 → fail-closed 403 + 审计，已实现。
+- **既有信任原语可复用**：`DomainGrant`/`decideDataDomainAccess`（E6.4，dataDomain 级授权）、`dataPolicy` 四档判（E4.5，出站内容边界）、执行授权票据（#33，execute 能力钉）、注册表 active/revoked 状态、`AUDIT_DECISIONS` 单一来源。
 - **PRD 出处**：E9.4（P2）「外部 Agent 信任分级与沙箱」，触发条件「首个矩阵外 Agent 接入**前**完成」——措辞是前置守卫而非后续增强（同 #6「个人/企业双域授权粒度」先例：等外部方到了再补边界，等于先把门装歪再拆）。
 
 ## 2. 信任分级模型（档位判定）
@@ -17,12 +17,12 @@
 
 | 档位 | 判定依据 | 含义 |
 | --- | --- | --- |
-| `tier-0` 拒绝 | 无卡 / 无 fealty 字段 / `fealtyOathProblem` 非空 | 不可信，fail-closed 拒绝 + 审计（现状已如此，本设计固化） |
-| `tier-1` 形状信任 | fealty 形状通过，但**验签不可达**（签名目录未公开 / 公钥未取到） | 信任 = 声明信任：卡片自述 + 形状合法。给最低可用能力，全部上限最低档 |
-| `tier-2` 注册执行者 | fealty 形状通过 **且** 已在注册表 active（现行出站协作方，如 pr-helper / loom / atlas） | 信任 = 注册时卡片深比对 + active 状态；沿用现行派发规则 |
-| `tier-3` 签名在册 | fealty 形状通过 **且** 签名验证通过（名册 attestation 在册且与携卡内容精确一致——**已实施 2026-10-16**：锚来源为 Zeus 自签名名册快照，bayjf R2 公开后平移到其公钥锚，判档函数不动） | 信任 = 密码学验证；最高档，与注册执行者同权或略高（附签名档案） |
+| `tier-0` 拒绝 | 无卡 / 无 handshake 字段 / `handshakeOathProblem` 非空 | 不可信，fail-closed 拒绝 + 审计（现状已如此，本设计固化） |
+| `tier-1` 形状信任 | handshake 形状通过，但**验签不可达**（签名目录未公开 / 公钥未取到） | 信任 = 声明信任：卡片自述 + 形状合法。给最低可用能力，全部上限最低档 |
+| `tier-2` 注册执行者 | handshake 形状通过 **且** 已在注册表 active（现行出站协作方，如 pr-helper / loom / atlas） | 信任 = 注册时卡片深比对 + active 状态；沿用现行派发规则 |
+| `tier-3` 签名在册 | handshake 形状通过 **且** 签名验证通过（名册 attestation 在册且与携卡内容精确一致——**已实施 2026-10-16**：锚来源为 Zeus 自签名名册快照，bayjf R2 公开后平移到其公钥锚，判档函数不动） | 信任 = 密码学验证；最高档，与注册执行者同权或略高（附签名档案） |
 
-**判档不跨域判定内容**：realm 可见性与数据边界**不在本模型内**——仍由 `decideRealmAccess` 与 `dataPolicy` 现行规则单独判定（跨域授权面不得被信任档位旁路）。
+**判档不跨域判定内容**：dataDomain 可见性与数据边界**不在本模型内**——仍由 `decideDataDomainAccess` 与 `dataPolicy` 现行规则单独判定（跨域授权面不得被信任档位旁路）。
 
 ## 3. 沙箱边界（每档上限）
 
@@ -31,26 +31,26 @@
 | 面 | 维度 | tier-1（形状信任） | tier-2（注册执行者） | tier-3（签名在册） |
 | --- | --- | --- | --- | --- |
 | 能力面 | 可派发技能域 | **只读类技能白名单**（skill tags 含 `read-only` = `READ_ONLY_TAG`；tier-1 只放行只读 tag 技能，缺 registry / 未注册 / 非只读均拒绝） | 注册声明的技能域 | 同 tier-2 |
-| 数据面 | 出站内容边界 | `dataPolicy` 强制最严档（`none`：realmHits 不入出站载荷） | 现行 dataPolicy 声明档 | 现行 dataPolicy 声明档 |
-| 数据面 | realm 可见性 | 仅个人域、且无出站凭证注入 | 注册声明 + DomainGrant 现行规则 | 同 tier-2 |
+| 数据面 | 出站内容边界 | `dataPolicy` 强制最严档（`none`：dataDomainHits 不入出站载荷） | 现行 dataPolicy 声明档 | 现行 dataPolicy 声明档 |
+| 数据面 | dataDomain 可见性 | 仅个人域、且无出站凭证注入 | 注册声明 + DomainGrant 现行规则 | 同 tier-2 |
 | 资源面 | 并发分支上限 / 超时 / 回传字节 | 全局默认的 1/3（数值在启用时按实测定，不凭空拍） | 现行全局上限 | 现行全局上限 |
 | 操作面 | 不可逆操作 | **一律升级**：`execute` 能力不可达（只 `plan`），凭证代理不注入 | 现行执行授权票据规则（#33） | 同 tier-2 |
 
 **两处显式不做**：
 - 不做进程隔离（容器/子进程沙箱）——那是部署形态的事（E10.2 真机部署批），库里做的是**权限与资源沙箱**（能力、数据、并发、凭证四个面）。
-- 不建第二套身份体系——档位判定复用既有 fealty 形状闸与注册表，签名锚等 R2。
+- 不建第二套身份体系——档位判定复用既有 handshake 形状闸与注册表，签名锚等 R2。
 
 ## 4. 契约落点
 
 1. **纯函数**：`src/trust/tier.ts` —— `trustTierOf(card, isActive, rosterAnchor?)` 返回 `TrustTier`（实施签名，2026-10-16：`rosterAnchor` 在场且 `attestationMatchesCard` 通过 → tier-3，否则回落 `isActive` → tier-2/tier-1；异步验签在装配层，判档保持纯同步）；`tierConstraints(tier)` 返回该档四个面的上限对象（能力白名单谓词 / dataPolicy 强制档 / 资源上限 / 凭证策略）。不持有状态，可单测。
-2. **装配点（入站面）**：`src/http/serve.ts` 入站 A2A 判档处（现 `fealtyOathProblem` 之后）加档位解析；`tasks/send` 处理按 `tierConstraints` 收窄——tier-1 只放行白名单技能、强制最严 dataPolicy、走 1/3 资源上限、execute 不可达。
+2. **装配点（入站面）**：`src/http/serve.ts` 入站 A2A 判档处（现 `handshakeOathProblem` 之后）加档位解析；`tasks/send` 处理按 `tierConstraints` 收窄——tier-1 只放行白名单技能、强制最严 dataPolicy、走 1/3 资源上限、execute 不可达。
 3. **审计**：新 decision 值 `external-agent-admitted`（带 tier）/ `external-agent-refused`（带 reason）入 `AUDIT_DECISIONS` 单一来源 + TUI 语义 token；档位逐请求判定并记账，不做会话级缓存（对端身份可随时吊销，与执行 Agent 吊销同语义）。
 4. **出站侧不动**：注册执行 Agent 的派发路径零改动（tier-2 即现行规则）；签名锚接线**已实施（2026-10-16，Active work 247）**——`buildRosterAnchor`（src/trust/rosterAnchor.ts）每请求现签现验（`projectPublicRoster` → `sealSnapshot` → Ed25519 验签），公钥缺失 / 验签失败 / 任何异常三路 fail-closed 回落（最高 tier-2）；caller 携与 attestation 内容失配的卡回落 tier-2 而非拒绝。bayjf R2 公开后锚来源平移，判档函数不重写。
 
 ## 5. 不做什么（避免下次重新讨论）
 
 - 不做进程级沙箱/容器隔离（部署形态）。
-- 不建第二套身份体系、不加新协议字段（复用 `x-zeus-caller-card` 与 fealty 形状闸）。
+- 不建第二套身份体系、不加新协议字段（复用 `x-zeus-caller-card` 与 handshake 形状闸）。
 - 不把资源阈值拍死——tier-1 的 1/3 系数是占位，接入真实调用方后按负载数据调参（deferred #9 同口径）。
 - 不做外部 Agent 间的互相调用（星型拓扑：所有协作经 Zeus 编排，无 P2P）。
 

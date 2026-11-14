@@ -604,7 +604,7 @@ export class OrgService {
     return this.store.getTask(next.id)!;
   }
 
-  // ── Snapshot/restore (kernel state) ─────────────────────────────────────
+  // ── Snapshot/restore (runtime state) ─────────────────────────────────────
 
   exportSnapshot() {
     return this.store.exportSnapshot();

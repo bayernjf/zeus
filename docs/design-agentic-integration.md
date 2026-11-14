@@ -1,7 +1,7 @@
 # Agent 时代的系统互联与确定性边界设计
 
 > 状态：**现行（设计稿 v0.4，2026-09-23，补 Zeus 作为 AI 原生多 Agent 团队运行时的定位）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与判断。
-> 性质：这是**架构立场文档**，回答"AI 时代多个系统之间怎么沟通、边界划在哪"；具体协议契约看 [design-vassal-protocol.md](design-vassal-protocol.md)、[design-memory-consolidation.md](design-memory-consolidation.md)、[design-decision-backend.md](design-decision-backend.md)。
+> 性质：这是**架构立场文档**，回答"AI 时代多个系统之间怎么沟通、边界划在哪"；具体协议契约看 [design-executor-protocol.md](design-executor-protocol.md)、[design-memory-consolidation.md](design-memory-consolidation.md)、[design-decision-backend.md](design-decision-backend.md)。
 > 本文是对 Zeus「叙事化概念必须与真实可执行工程原语同构」这一设计哲学在系统互联层面的展开。
 
 ## 1. 问题
@@ -97,7 +97,7 @@ Zeus 已无意识地按此分层：**MCP** 接近带 schema 的 REST（确定性
 新产品要与 Zeus 联动，**不从头做**，按形态选现成插座（三条能力接入通道）：
 
 - **MCP（连接）**：新产品是工具 / 数据源、无状态、Zeus 单向调用 → `ConnectorRegistry.declare` 声明即用，`mcp:<tool>` 最小授权，`revoke` 断权。最轻。
-- **A2A / 执行 Agent 协议（协作）**：新产品要作为有状态 Agent 参与决策、回结果回传、在不可逆操作上升级 → 暴露 Agent Card + fealty，经 `/api/vassals` 登记，过定型全链路。
+- **A2A / 执行 Agent 协议（协作）**：新产品要作为有状态 Agent 参与决策、回结果回传、在不可逆操作上升级 → 暴露 Agent Card + handshake，经 `/api/executors` 登记，过定型全链路。
 - **Skill（技能）**：能力抽象而非传输；接入后把能力登记成 Skill，Orchestrator 按技能自动组队。
 
 MCP 轻但无状态单向；A2A 重但有完整协作与治理闭环。

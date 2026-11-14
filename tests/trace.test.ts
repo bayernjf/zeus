@@ -12,19 +12,19 @@ import type { DecisionTrace } from '../src/decision/types.js';
 import type { ProgressEvent } from '../src/orchestrator/progress.js';
 
 function audit(overrides: Partial<AuditEntry>): AuditEntry {
-  return { ts: 't0', vassal: 'a1', decision: 'dispatched', ...overrides };
+  return { ts: 't0', executor: 'a1', decision: 'dispatched', ...overrides };
 }
 
 function auditEntry(decision: AuditEntry['decision'], runId: string, ts = 't1', detail?: string): AuditEntry {
   return audit({ decision, runId, ts, ...(detail === undefined ? {} : { detail }) });
 }
 
-function branchStarted(intentId: string, runId: string, vassal: string, skill: string, at: string): ProgressEvent {
-  return { type: 'branch-started', intentId, runId, vassal, skill, at };
+function branchStarted(intentId: string, runId: string, executor: string, skill: string, at: string): ProgressEvent {
+  return { type: 'branch-started', intentId, runId, executor, skill, at };
 }
 
-function branchEnded(intentId: string, runId: string, vassal: string, outcome: string, at: string): ProgressEvent {
-  return { type: 'branch-ended', intentId, runId, vassal, outcome: outcome as never, at };
+function branchEnded(intentId: string, runId: string, executor: string, outcome: string, at: string): ProgressEvent {
+  return { type: 'branch-ended', intentId, runId, executor, outcome: outcome as never, at };
 }
 
 function intentFinished(intentId: string, runId: string, at: string): ProgressEvent {
@@ -44,12 +44,12 @@ describe('buildTraceTree (S6 V1)', () => {
     expect(tree.root.kind).toBe('intent');
     expect(tree.spans).toHaveLength(3);
     const [branch, aggregate, fanout] = tree.spans;
-    expect(branch).toMatchObject({ spanId: 'r1', kind: 'branch', vassal: 'a1', skill: 'research', startedAt: 't0', endedAt: 't1', outcome: 'completed' });
+    expect(branch).toMatchObject({ spanId: 'r1', kind: 'branch', executor: 'a1', skill: 'research', startedAt: 't0', endedAt: 't1', outcome: 'completed' });
     // TracePort v1 §2: the fanout step frames the window from intent start to
     // the last branch start; the aggregate step frames the window from the
     // last branch end to intent finish.
-    expect(fanout).toMatchObject({ spanId: 'step:fanout', kind: 'decision-step', parentSpanId: 'intent-1', startedAt: 't0', endedAt: 't0', step: { name: 'fanout', vassals: ['a1'] } });
-    expect(aggregate).toMatchObject({ spanId: 'step:aggregate', kind: 'decision-step', parentSpanId: 'intent-1', startedAt: 't1', endedAt: 't2', step: { name: 'aggregate', vassals: ['a1'] } });
+    expect(fanout).toMatchObject({ spanId: 'step:fanout', kind: 'decision-step', parentSpanId: 'intent-1', startedAt: 't0', endedAt: 't0', step: { name: 'fanout', executors: ['a1'] } });
+    expect(aggregate).toMatchObject({ spanId: 'step:aggregate', kind: 'decision-step', parentSpanId: 'intent-1', startedAt: 't1', endedAt: 't2', step: { name: 'aggregate', executors: ['a1'] } });
   });
 
   it('assembles a fan-out tree with multiple branches under one root', () => {
@@ -116,12 +116,12 @@ describe('buildTraceTree (S6 V1)', () => {
     }
     // The fan-out step spans the DAG root, not an individual node.
     const fanout = tree.spans.find((s) => s.spanId === 'step:fanout');
-    expect(fanout).toMatchObject({ parentSpanId: 'dag-7', startedAt: 't0', endedAt: 't0', step: { name: 'fanout', vassals: ['a1', 'a2'] } });
+    expect(fanout).toMatchObject({ parentSpanId: 'dag-7', startedAt: 't0', endedAt: 't0', step: { name: 'fanout', executors: ['a1', 'a2'] } });
   });
 
   it('assembles a decide span when the operator wrote back a decision', () => {
     const progress: ProgressEvent[] = [branchStarted('intent-1', 'r1', 'a1', 'research', 't0')];
-    const entries: AuditEntry[] = [auditEntry('driver-grant-issued', 'r1', 't1')];
+    const entries: AuditEntry[] = [auditEntry('operator-grant-issued', 'r1', 't1')];
     const tree = buildTraceTree({ audit: entries, progress });
     const decide = tree.spans.find((s) => s.kind === 'decide');
     expect(decide).toBeDefined();
@@ -161,11 +161,11 @@ describe('buildTraceTree (S6 V1)', () => {
     expect(tree.spans.some((s) => s.spanId === 'r1:resume1')).toBe(true);
   });
 
-  it('assembles tool spans from kernel-level audit facts (no runId)', () => {
+  it('assembles tool spans from runtime-level audit facts (no runId)', () => {
     const progress: ProgressEvent[] = [branchStarted('intent-1', 'r1', 'a1', 'research', 't0')];
     const entries: AuditEntry[] = [
-      audit({ ts: 't2', vassal: '(kernel)', decision: 'tool-selected', detail: 'tool=web.search' }),
-      audit({ ts: 't1', vassal: '(kernel)', decision: 'tool-failed', detail: 'tool=fs.read error=enoent' }),
+      audit({ ts: 't2', executor: '(runtime)', decision: 'tool-selected', detail: 'tool=web.search' }),
+      audit({ ts: 't1', executor: '(runtime)', decision: 'tool-failed', detail: 'tool=fs.read error=enoent' }),
     ];
     const tree = buildTraceTree({ audit: entries, progress });
     const toolSpans = tree.spans.filter((s) => s.kind === 'tool');
@@ -224,8 +224,8 @@ describe('buildTraceTree (S6 V1)', () => {
     expect(modelSpans).toHaveLength(2);
     expect(modelSpans[0]!.spanId).toBe('model:0');
     expect(modelSpans[0]!.parentSpanId).toBe('r1');
-    expect(modelSpans[0]!.vassal).toBe('a1');
-    // startedAt is derived from decidedAt - latencyMs (kernel clocks only).
+    expect(modelSpans[0]!.executor).toBe('a1');
+    // startedAt is derived from decidedAt - latencyMs (runtime clocks only).
     expect(modelSpans[0]!.startedAt).toBe('2026-10-30T00:00:00.000Z');
     expect(modelSpans[0]!.endedAt).toBe('2026-10-30T00:00:01.200Z');
     expect(modelSpans[0]!.call).toEqual({
@@ -264,7 +264,7 @@ describe('buildTraceTree (S6 V1)', () => {
       steps: {
         arbitration: {
           concluded: true,
-          conclusion: 'vassal a1 wins',
+          conclusion: 'executor a1 wins',
           backend: 'hub',
           latencyMs: 400,
           decidedAt: '2026-10-30T00:00:00.400Z',
@@ -289,7 +289,7 @@ describe('buildTraceTree (S6 V1)', () => {
       endedAt: '2026-10-30T00:00:00.400Z',
       outcome: 'concluded',
     });
-    expect(arbitration!.step).toEqual({ name: 'arbitration', conclusion: 'vassal a1 wins', latencyMs: 400 });
+    expect(arbitration!.step).toEqual({ name: 'arbitration', conclusion: 'executor a1 wins', latencyMs: 400 });
 
     const judge = tree.spans.find((s) => s.spanId === 'step:judge');
     expect(judge).toBeDefined();
@@ -298,7 +298,7 @@ describe('buildTraceTree (S6 V1)', () => {
 
     // The aggregation conclusion rides the aggregate step.
     const aggregate = tree.spans.find((s) => s.spanId === 'step:aggregate');
-    expect(aggregate!.step).toEqual({ name: 'aggregate', vassals: ['a1'], conclusion: 'aggregated: a1' });
+    expect(aggregate!.step).toEqual({ name: 'aggregate', executors: ['a1'], conclusion: 'aggregated: a1' });
   });
 
   it('buffers decision traces per run and evicts the oldest run at the cap', () => {

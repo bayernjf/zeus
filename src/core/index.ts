@@ -5,7 +5,7 @@
  * 被其他仓嵌入；HTTP/TUI 等外壳装配留在 src/app。
  *
  * T-M1-01：分级基础类型（Grade/Impact/Reversibility）。
- * T-M1-02：fan-out 编排（aggregate/arbitrate/replay/dag 等）与 fealty 签名链
+ * T-M1-02：fan-out 编排（aggregate/arbitrate/replay/dag 等）与 handshake 签名链
  *          从 src/orchestrator、src/registry/signing 迁入；旧路径保留兼容重导出。
  */
 
@@ -89,7 +89,7 @@ export type {
   DecisionListFilter,
 } from './decision-service/index.js';
 
-// --- fealty 签名链 v1（纯函数，Ed25519 + JCS 子集，仅依赖 node:crypto） ---
+// --- handshake 签名链 v1（纯函数，Ed25519 + JCS 子集，仅依赖 node:crypto） ---
 export {
   canonicalJson,
   canonicalDigest,
@@ -144,7 +144,7 @@ export type { JudgeDecisionInput } from './orchestrator/judge.js';
 export { ConcurrencyMetrics, percentile } from './orchestrator/metrics.js';
 export type {
   MetricsSnapshot,
-  VassalMetric,
+  ExecutorMetric,
   LatencyStats,
   BranchMetricEvent,
   BranchOutcomeKind,
@@ -176,7 +176,7 @@ export type {
   DispatchPort,
   TargetLookup,
   CancelBranchResult,
-  DriverResolution,
+  OperatorResolution,
   BackendArbitration,
   JudgeReview,
 } from './orchestrator/types.js';

@@ -15,10 +15,10 @@ import type { FanOutRequest, FanOutResult } from '../src/orchestrator/types.js';
 
 function outcome(overrides: Partial<FanOutResult> = {}): FanOutResult {
   return {
-    intentId: 'intent-1', runId: 'r1', skill: 'research', realm: 'personal', branches: [], stream: [],
+    intentId: 'intent-1', runId: 'r1', skill: 'research', dataDomain: 'personal', branches: [], stream: [],
     positions: [
-      { vassal: 'alpha', stance: 'approve', rationale: 'verified against brief.md' },
-      { vassal: 'beta', stance: 'approve', rationale: 'same finding, independent check' },
+      { executor: 'alpha', stance: 'approve', rationale: 'verified against brief.md' },
+      { executor: 'beta', stance: 'approve', rationale: 'same finding, independent check' },
     ],
     decision: { rule: 'unanimous', conclusion: 'approve', positions: [], reason: 'unanimous' },
     conflicts: [], status: 'completed', createdAt: 't0',
@@ -27,7 +27,7 @@ function outcome(overrides: Partial<FanOutResult> = {}): FanOutResult {
 }
 
 function request(): FanOutRequest {
-  return { skill: 'research', params: {}, realm: 'personal' };
+  return { skill: 'research', params: {}, dataDomain: 'personal' };
 }
 
 function judgeCase(expect: EvalExpectation[]): EvalCase {

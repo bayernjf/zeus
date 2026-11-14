@@ -2,11 +2,11 @@
  * E1.7 in-process concurrency metrics (library surface only; no HTTP endpoint —
  * that arrives with the long-running H2 transport). The Orchestrator reports
  * branch lifecycle events; this collector turns them into a queryable snapshot:
- * in-flight count, observed concurrency peak, per-vassal latency and failure
+ * in-flight count, observed concurrency peak, per-executor latency and failure
  * rate, and queue depth.
  *
  * Queue depth counts branches submitted but not yet started. With no concurrency
- * cap configured the kernel still dispatches every branch at once, so depth stays
+ * cap configured the runtime still dispatches every branch at once, so depth stays
  * 0; once `maxConcurrentBranches` is set it reports the real wait line.
  */
 
@@ -15,7 +15,7 @@ export type BranchOutcomeKind = 'completed' | 'failed' | 'timeout' | 'canceled';
 export type BranchMetricEvent = {
   intentId: string;
   runId: string;
-  vassal: string;
+  executor: string;
   skill: string;
   startedAt: string;
 };
@@ -35,16 +35,16 @@ export type LatencyStats = {
   p95Ms: number;
 };
 
-export type VassalMetric = {
+export type ExecutorMetric = {
   calls: number;
   completed: number;
   failed: number;
   timedOut: number;
-  /** Canceled by the driver; neither a success nor a failure of the vassal. */
+  /** Canceled by the operator; neither a success nor a failure of the executor. */
   canceled: number;
   /** failed + timedOut over finished calls that produced a verdict; canceled
    *  calls are excluded from both the numerator and the denominator, so a
-   *  driver's cancel never dilutes (or inflates) a vassal's reliability. */
+   *  operator's cancel never dilutes (or inflates) a executor's reliability. */
   failureRate: number;
   latency: LatencyStats | null;
 };
@@ -64,7 +64,7 @@ export type MetricsSnapshot = {
    *  so they are not part of `finished`; a nonzero value means backpressure
    *  started rejecting work rather than merely delaying it. */
   refused: number;
-  /** Branches auto-diverted from a saturated vassal (#9). */
+  /** Branches auto-diverted from a saturated executor (#9). */
   diverted: number;
   finished: number;
   completed: number;
@@ -72,10 +72,10 @@ export type MetricsSnapshot = {
   timedOut: number;
   /** Canceled branches. Present so `finished` equals the four outcome buckets. */
   canceled: number;
-  perVassal: Record<string, VassalMetric>;
-  /** Real-time in-flight count per vassal (defensive copy). Enables per-vassal
+  perExecutor: Record<string, ExecutorMetric>;
+  /** Real-time in-flight count per executor (defensive copy). Enables per-executor
    *  saturation checks (#9 backpressure diversion) without a full snapshot. */
-  inFlightByVassal: Record<string, number>;
+  inFlightByExecutor: Record<string, number>;
   /** Time a branch spent waiting for a slot, over the same percentile window.
    *  Null until a queued branch has started. Separates queue delay from
    *  dispatch latency when calibrating a cap: growing wait means the cap binds. */
@@ -83,7 +83,7 @@ export type MetricsSnapshot = {
   /** Percentile basis and bound. Counts and failure rates are all-time; only
    *  latency percentiles read the window, and `trimmedBranches` reports what the
    *  window has dropped rather than hiding it. */
-  historyWindow: { branchesPerVassal: number; trimmedBranches: number; trimmedQueueWaits: number };
+  historyWindow: { branchesPerExecutor: number; trimmedBranches: number; trimmedQueueWaits: number };
   capturedAt: string;
 };
 
@@ -91,20 +91,20 @@ export type MetricsOptions = {
   now?: () => Date;
   /** Monotonic millisecond clock for latency; defaults to Date.now. */
   elapsed?: () => number;
-  /** How many finished branches per vassal feed the latency percentiles. Counts
+  /** How many finished branches per executor feed the latency percentiles. Counts
    *  and failure rate stay all-time; only percentiles read the window. */
   historyWindowBranches?: number;
 };
 
-/** Default percentile window per vassal. Bounded by design: percentiles over the
+/** Default percentile window per executor. Bounded by design: percentiles over the
  *  whole history both report on behaviour from the distant past and were the
  *  reason branch accounting cost more with every finished branch (audit B-44). */
 export const DEFAULT_METRICS_HISTORY_WINDOW = 1_000;
 
-/** Per-vassal accounting. Counts are all-time running totals updated in O(1);
+/** Per-executor accounting. Counts are all-time running totals updated in O(1);
  *  latencies are kept only for the percentile window, and the computed stats are
  *  cached and rebuilt on read - never on the write path. */
-type VassalTally = {
+type ExecutorTally = {
   calls: number;
   completed: number;
   failed: number;
@@ -115,11 +115,11 @@ type VassalTally = {
   stale: boolean;
 };
 
-export type BranchKeyEvent = Pick<BranchMetricEvent, 'intentId' | 'runId' | 'vassal'>;
+export type BranchKeyEvent = Pick<BranchMetricEvent, 'intentId' | 'runId' | 'executor'>;
 
 export class ConcurrencyMetrics {
   private active = new Map<string, { event: BranchMetricEvent; startedMs: number }>();
-  private tallies = new Map<string, VassalTally>();
+  private tallies = new Map<string, ExecutorTally>();
   /** All-time outcome totals, so snapshot() never scans history. */
   private totals = { finished: 0, completed: 0, failed: 0, timedOut: 0, canceled: 0 };
   /** Records dropped from a percentile window - a bound that reports itself. */
@@ -131,13 +131,13 @@ export class ConcurrencyMetrics {
   private diverted = 0;
   /** Monotonic enqueue time per branch key, for queue-wait measurement. */
   private queuedAt = new Map<string, number>();
-  /** Queue waits over the percentile window (bounded like per-vassal latency). */
+  /** Queue waits over the percentile window (bounded like per-executor latency). */
   private queueWaits: number[] = [];
   private queueWaitStats: LatencyStats | null = null;
   private queueWaitStale = true;
   private trimmedQueueWaits = 0;
-  /** Real-time in-flight count per vassal (#9 per-vassal saturation primitive). */
-  private inFlightByVassal = new Map<string, number>();
+  /** Real-time in-flight count per executor (#9 per-executor saturation primitive). */
+  private inFlightByExecutor = new Map<string, number>();
   private readonly historyWindow: number;
 
   constructor(private options: MetricsOptions = {}) {
@@ -152,8 +152,8 @@ export class ConcurrencyMetrics {
     return this.options.now ? this.options.now() : new Date();
   }
 
-  private static key(intentId: string, runId: string, vassal: string): string {
-    return `${intentId}:${runId}:${vassal}`;
+  private static key(intentId: string, runId: string, executor: string): string {
+    return `${intentId}:${runId}:${executor}`;
   }
 
   /** A branch is queued for dispatch but has not started yet. Passing the
@@ -162,13 +162,13 @@ export class ConcurrencyMetrics {
   enqueue(event?: BranchKeyEvent): void {
     this.queueDepth += 1;
     if (this.queueDepth > this.queuedPeak) this.queuedPeak = this.queueDepth;
-    if (event) this.queuedAt.set(ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal), this.clock()());
+    if (event) this.queuedAt.set(ConcurrencyMetrics.key(event.intentId, event.runId, event.executor), this.clock()());
   }
 
   /** A queued branch left the line without starting (gave up or was refused). */
   dequeue(event?: BranchKeyEvent): void {
     this.queueDepth = Math.max(0, this.queueDepth - 1);
-    if (event) this.queuedAt.delete(ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal));
+    if (event) this.queuedAt.delete(ConcurrencyMetrics.key(event.intentId, event.runId, event.executor));
   }
 
   /** A branch left the line because the queue limit was reached; it never
@@ -178,14 +178,14 @@ export class ConcurrencyMetrics {
     this.refused += 1;
   }
 
-  /** A branch was auto-diverted from a saturated vassal (#9). */
+  /** A branch was auto-diverted from a saturated executor (#9). */
   recordDiversion(): void {
     this.diverted += 1;
   }
 
   /**
    * Current queue depth without building a snapshot. Safe to poll from a
-   * sampler: snapshot() reallocates per-vassal stats and re-filters records,
+   * sampler: snapshot() reallocates per-executor stats and re-filters records,
    * which is heavy enough to perturb the very run being measured.
    */
   queueDepthNow(): number {
@@ -193,7 +193,7 @@ export class ConcurrencyMetrics {
   }
 
   branchStarted(event: BranchMetricEvent): void {
-    const key = ConcurrencyMetrics.key(event.intentId, event.runId, event.vassal);
+    const key = ConcurrencyMetrics.key(event.intentId, event.runId, event.executor);
     const at = this.clock()();
     const queuedMs = this.queuedAt.get(key);
     if (queuedMs !== undefined) {
@@ -205,16 +205,16 @@ export class ConcurrencyMetrics {
     this.active.set(key, { event, startedMs: at });
     // A repeated start for a key that never ended (two branches sharing
     // intentId+runId, e.g. a recycled resume runId) would otherwise leave the
-    // vassal permanently in flight: the counter is bumped twice but the single
-    // `branchEnded` decrements once, and #9 diversion then reads the vassal as
-    // saturated forever. Counting the key once keeps `inFlightByVassal` equal to
+    // executor permanently in flight: the counter is bumped twice but the single
+    // `branchEnded` decrements once, and #9 diversion then reads the executor as
+    // saturated forever. Counting the key once keeps `inFlightByExecutor` equal to
     // the live entries in `active`.
-    if (!alreadyActive) this.bumpInFlight(event.vassal, 1);
+    if (!alreadyActive) this.bumpInFlight(event.executor, 1);
     if (this.active.size > this.maxInFlight) this.maxInFlight = this.active.size;
   }
 
-  branchEnded(intentId: string, runId: string, vassal: string, outcome: BranchOutcomeKind): void {
-    const key = ConcurrencyMetrics.key(intentId, runId, vassal);
+  branchEnded(intentId: string, runId: string, executor: string, outcome: BranchOutcomeKind): void {
+    const key = ConcurrencyMetrics.key(intentId, runId, executor);
     const active = this.active.get(key);
     if (!active) return;
     this.active.delete(key);
@@ -225,35 +225,35 @@ export class ConcurrencyMetrics {
       outcome,
     };
     this.tallyBranch(record);
-    this.bumpInFlight(vassal, -1);
+    this.bumpInFlight(executor, -1);
   }
 
-  /** Real-time in-flight branches for a single vassal (#9 saturation check). */
-  inFlightByVassalNow(vassal: string): number {
-    return this.inFlightByVassal.get(vassal) ?? 0;
+  /** Real-time in-flight branches for a single executor (#9 saturation check). */
+  inFlightByExecutorNow(executor: string): number {
+    return this.inFlightByExecutor.get(executor) ?? 0;
   }
 
-  /** Historical failure rate for a vassal; 0 when no finished call is recorded. */
-  failureRateOf(vassal: string): number {
-    return this.vassalMetric(vassal)?.failureRate ?? 0;
+  /** Historical failure rate for a executor; 0 when no finished call is recorded. */
+  failureRateOf(executor: string): number {
+    return this.executorMetric(executor)?.failureRate ?? 0;
   }
 
-  /** Historical p50 latency (ms) for a vassal; null when no finished call is recorded. */
-  p50MsOf(vassal: string): number | null {
-    return this.vassalMetric(vassal)?.latency?.p50Ms ?? null;
+  /** Historical p50 latency (ms) for a executor; null when no finished call is recorded. */
+  p50MsOf(executor: string): number | null {
+    return this.executorMetric(executor)?.latency?.p50Ms ?? null;
   }
 
-  private bumpInFlight(vassal: string, delta: number): void {
-    const next = (this.inFlightByVassal.get(vassal) ?? 0) + delta;
-    if (next <= 0) this.inFlightByVassal.delete(vassal);
-    else this.inFlightByVassal.set(vassal, next);
+  private bumpInFlight(executor: string, delta: number): void {
+    const next = (this.inFlightByExecutor.get(executor) ?? 0) + delta;
+    if (next <= 0) this.inFlightByExecutor.delete(executor);
+    else this.inFlightByExecutor.set(executor, next);
   }
 
   private recordQueueWait(waitMs: number): void {
     this.queueWaits.push(waitMs);
     this.queueWaitStats = null;
     this.queueWaitStale = true;
-    // Same amortised bound as per-vassal latency: slice once the window has
+    // Same amortised bound as per-executor latency: slice once the window has
     // doubled, so the write path stays O(1).
     if (this.queueWaits.length > this.historyWindow * 2) {
       const dropped = this.queueWaits.length - this.historyWindow;
@@ -268,10 +268,10 @@ export class ConcurrencyMetrics {
    * percentiles here is what used to make dispatch cost grow with history.
    */
   private tallyBranch(record: BranchRecord): void {
-    let tally = this.tallies.get(record.vassal);
+    let tally = this.tallies.get(record.executor);
     if (!tally) {
       tally = { calls: 0, completed: 0, failed: 0, timedOut: 0, canceled: 0, latencies: [], cached: null, stale: true };
-      this.tallies.set(record.vassal, tally);
+      this.tallies.set(record.executor, tally);
     }
     tally.calls += 1;
     this.totals.finished += 1;
@@ -299,10 +299,10 @@ export class ConcurrencyMetrics {
   }
 
   snapshot(): MetricsSnapshot {
-    const perVassal: Record<string, VassalMetric> = {};
-    for (const [vassal, tally] of this.tallies) perVassal[vassal] = this.toMetric(tally);
-    const inFlightByVassal: Record<string, number> = {};
-    for (const [vassal, count] of this.inFlightByVassal) inFlightByVassal[vassal] = count;
+    const perExecutor: Record<string, ExecutorMetric> = {};
+    for (const [executor, tally] of this.tallies) perExecutor[executor] = this.toMetric(tally);
+    const inFlightByExecutor: Record<string, number> = {};
+    for (const [executor, count] of this.inFlightByExecutor) inFlightByExecutor[executor] = count;
     return {
       inFlight: this.active.size,
       maxInFlight: this.maxInFlight,
@@ -315,11 +315,11 @@ export class ConcurrencyMetrics {
       failed: this.totals.failed,
       timedOut: this.totals.timedOut,
       canceled: this.totals.canceled,
-      perVassal,
-      inFlightByVassal,
+      perExecutor,
+      inFlightByExecutor,
       queueWait: this.queueWaitSnapshot(),
       historyWindow: {
-        branchesPerVassal: this.historyWindow,
+        branchesPerExecutor: this.historyWindow,
         trimmedBranches: this.trimmedBranches,
         trimmedQueueWaits: this.trimmedQueueWaits,
       },
@@ -336,19 +336,19 @@ export class ConcurrencyMetrics {
     return this.queueWaitStats;
   }
 
-  private vassalMetric(vassal: string): VassalMetric | undefined {
-    const tally = this.tallies.get(vassal);
+  private executorMetric(executor: string): ExecutorMetric | undefined {
+    const tally = this.tallies.get(executor);
     return tally ? this.toMetric(tally) : undefined;
   }
 
-  private toMetric(tally: VassalTally): VassalMetric {
+  private toMetric(tally: ExecutorTally): ExecutorMetric {
     if (tally.stale || tally.cached === null) {
       const sorted = [...tally.latencies].sort((a, b) => a - b);
       tally.cached = sorted.length ? latencyStats(sorted) : null;
       tally.stale = false;
     }
-    // Canceled calls are excluded from the rate: the driver's decision to cancel
-    // is not evidence about the vassal, and #9 diversion scores on this value.
+    // Canceled calls are excluded from the rate: the operator's decision to cancel
+    // is not evidence about the executor, and #9 diversion scores on this value.
     const verdicts = tally.failed + tally.timedOut + tally.completed;
     return {
       calls: tally.calls,

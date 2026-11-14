@@ -5,12 +5,12 @@ import type { DeckClient, DeckSnapshot } from '../src/tui/client.js';
 const baseSnapshot: DeckSnapshot = {
   audit: [],
   domains: {
-    realms: [
-      { realmId: 'realm-personal-1', type: 'personal', readOnly: false, itemCount: 2, contentDigest: 'sha256:p' },
-      { realmId: 'realm-acme-1', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 4, contentDigest: 'sha256:e' },
+    dataDomains: [
+      { dataDomainId: 'dataDomain-personal-1', type: 'personal', readOnly: false, itemCount: 2, contentDigest: 'sha256:p' },
+      { dataDomainId: 'dataDomain-acme-1', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 4, contentDigest: 'sha256:e' },
     ],
     grants: [
-      { grantId: 'grant-1', subject: 'loom', realmId: 'realm-acme-1', access: 'read', grantedBy: 'operator', grantedAt: '', nonce: 'n-1' },
+      { grantId: 'grant-1', subject: 'loom', dataDomainId: 'dataDomain-acme-1', access: 'read', grantedBy: 'operator', grantedAt: '', nonce: 'n-1' },
     ],
   },
   roster: {
@@ -24,9 +24,9 @@ const baseSnapshot: DeckSnapshot = {
     {
       id: 'esc-1',
       kind: 'task-input',
-      vassal: 'pr-helper',
+      executor: 'pr-helper',
       skill: 'deployment-health',
-      realm: 'personal',
+      dataDomain: 'personal',
       reason: 'missing owner, repo',
       status: 'pending',
       options: ['go', 'skip'],
@@ -35,16 +35,16 @@ const baseSnapshot: DeckSnapshot = {
     {
       id: 'esc-2',
       kind: 'intent-conflict',
-      vassal: '(intent)',
+      executor: '(intent)',
       skill: 'pick-db',
-      realm: 'personal',
+      dataDomain: 'personal',
       reason: 'split',
       status: 'pending',
       options: [],
       createdAt: '',
       stances: [
-        { stance: 'postgres', vassals: ['a'] },
-        { stance: 'sqlite', vassals: ['b'] },
+        { stance: 'postgres', executors: ['a'] },
+        { stance: 'sqlite', executors: ['b'] },
       ],
     },
   ],
@@ -68,7 +68,7 @@ const baseSnapshot: DeckSnapshot = {
       {
         id: 'watch-aaaaaaaa-1111-2222-3333-444444444444',
         owner: 'operator',
-        realm: 'personal',
+        dataDomain: 'personal',
         predicate: { source: 'metrics', op: 'above', field: 'finished', value: 0 },
         intent: { skill: 'research', subject: 'queue is deep', mode: 'plan', maxFanOut: 1 },
         intervalSeconds: 60,
@@ -89,9 +89,9 @@ const delegationLimitSnapshot: DeckSnapshot = {
     {
       id: 'esc-dl',
       kind: 'delegation-limit',
-      vassal: '(watch)',
+      executor: '(watch)',
       skill: 'research',
-      realm: 'personal',
+      dataDomain: 'personal',
       reason: 'execute fire refused (revoked); no outbound dispatch',
       status: 'pending',
       options: [],
@@ -192,7 +192,7 @@ describe('TUI reinstate writes (A-02 way back)', () => {
     await deck.handle('b1');
     expect(reinstate).not.toHaveBeenCalled();
     expect(io.question).not.toHaveBeenCalled();
-    expect(printed.join('')).toContain('only a revoked vassal can be reinstated');
+    expect(printed.join('')).toContain('only a revoked executor can be reinstated');
   });
 });
 
@@ -200,10 +200,10 @@ describe('TUI contract writes go through the API with a confirm gate', () => {
   it('issues a contract with capabilities pinned to execute and a 24h window', async () => {
     const { client, deck } = makeHarness(['y']);
     await deck.refresh();
-    await deck.handle('c research 4 2 driver');
+    await deck.handle('c research 4 2 operator');
     expect(client.issueContract).toHaveBeenCalledWith(
       expect.objectContaining({
-        grantedBy: 'driver',
+        grantedBy: 'operator',
         skill: 'research',
         capabilities: ['execute'],
         limits: expect.objectContaining({ maxChildTickets: 4, maxConcurrent: 2 }),
@@ -335,24 +335,24 @@ describe('TUI controller writes go through the API with a confirm gate', () => {
     expect(h.printed.join('')).toContain('approve');
   });
 
-  it('issues a cross-domain grant on an enterprise realm only after y', async () => {
+  it('issues a cross-domain grant on an enterprise dataDomain only after y', async () => {
     const { client, deck } = makeHarness(['y']);
     await deck.refresh();
     await deck.handle('g2 loom r');
     expect(client.issueGrant).toHaveBeenCalledWith({
       subject: 'loom',
-      realmId: 'realm-acme-1',
+      dataDomainId: 'dataDomain-acme-1',
       access: 'read',
       grantedBy: 'operator',
     });
   });
 
-  it('does not issue a grant against a personal realm and never calls the API', async () => {
+  it('does not issue a grant against a personal dataDomain and never calls the API', async () => {
     const { client, deck, printed } = makeHarness(['y']);
     await deck.refresh();
     await deck.handle('g1 loom r');
     expect(client.issueGrant).not.toHaveBeenCalled();
-    expect(printed.join('')).toContain('enterprise realms only');
+    expect(printed.join('')).toContain('enterprise dataDomains only');
   });
 
   it('does not issue when the confirm is declined', async () => {
@@ -375,7 +375,7 @@ describe('TUI controller writes go through the API with a confirm gate', () => {
     await deck.handle('g2 Pr-Helper r Operator-X');
     expect(client.issueGrant).toHaveBeenCalledWith({
       subject: 'Pr-Helper',
-      realmId: 'realm-acme-1',
+      dataDomainId: 'dataDomain-acme-1',
       access: 'read',
       grantedBy: 'Operator-X',
     });

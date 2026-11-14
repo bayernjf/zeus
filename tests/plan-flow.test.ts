@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import { PlanFlow, extractPlanDraft, PLANNER_TAG } from '../src/orchestrator/plan-flow.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 import type { AgentCard, Artifact } from '../src/a2a/types.js';
@@ -28,9 +28,9 @@ const PLANNER_CARD: AgentCard = {
   ],
   authentication: { schemes: ['bearer'] },
   preferredTransport: 'JSONRPC',
-  'x-zeus-fealty': {
+  'x-zeus-handshake': {
     version: '1', swornTo: 'zeus', domain: 'test-domain',
-    dataRealms: ['personal'], dataPolicy: 'read-task-scope',
+    dataDomains: ['personal'], dataPolicy: 'read-task-scope',
     reportBack: true, escalationPolicy: 'on-failure',
   },
 };
@@ -72,7 +72,7 @@ const SEED = 'http://127.0.0.1/alpha/api/a2a/agent-card';
 /** A valid draft: research then write, both skills in the catalogue. */
 function goodDraft() {
   return {
-    realm: 'personal',
+    dataDomain: 'personal',
     nodes: [
       { id: 'n1', skill: 'research' },
       { id: 'n2', skill: 'write', dependsOn: ['n1'] },
@@ -87,33 +87,33 @@ describe('S12 V2 plan flow wiring', () => {
     ];
     const extracted = extractPlanDraft(artifacts);
     expect(extracted?.nodes).toHaveLength(2);
-    expect(extracted?.realm).toBe('personal');
+    expect(extracted?.dataDomain).toBe('personal');
 
     expect(extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'text', text: 'I would research first.' }] }])).toBeUndefined();
     expect(extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { summary: 'no plan key' } }] }])).toBeUndefined();
-    // A draft naming a realm outside the RealmType union is not a DagSpec.
+    // A draft naming a dataDomain outside the DataDomainType union is not a DagSpec.
     expect(
-      extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { plan: { realm: 'unknown-realm', nodes: [] } } }] }]),
+      extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { plan: { dataDomain: 'unknown-dataDomain', nodes: [] } } }] }]),
     ).toBeUndefined();
   });
 
   it('fans out to the planner, selects the single feasible draft, audits plan-selected and executes the DAG', async () => {
     const audit: AuditEntry[] = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => goodDraft()),
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
       dispatchAudit: (entry) => audit.push(entry),
     });
     const flow = new PlanFlow({
-      orchestrator: kernel.orchestrator,
-      skillRegistry: kernel.skillRegistry!,
-      dagRunner: kernel.dagRunner,
+      orchestrator: runtime.orchestrator,
+      skillRegistry: runtime.skillRegistry!,
+      dagRunner: runtime.dagRunner,
       audit: (entry) => audit.push(entry),
     });
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('selected');
@@ -129,58 +129,58 @@ describe('S12 V2 plan flow wiring', () => {
 
   it('escalates a close contest as plan-conflict through the oversight desk', async () => {
     const audit: AuditEntry[] = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: approveFetch((name) =>
         name === 'beta'
-          ? { realm: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] }
-          : { realm: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] },
+          ? { dataDomain: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] }
+          : { dataDomain: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] },
       ),
       // Two planners with identical coverage produce a tie inside the default
       // threshold -> plan-conflict, not a silent selection.
-      vassalSeeds: [SEED, 'http://127.0.0.1/beta/api/a2a/agent-card'],
+      executorSeeds: [SEED, 'http://127.0.0.1/beta/api/a2a/agent-card'],
       dispatchAudit: (entry) => audit.push(entry),
     });
     const flow = new PlanFlow({
-      orchestrator: kernel.orchestrator,
-      skillRegistry: kernel.skillRegistry!,
-      oversight: kernel.oversight,
+      orchestrator: runtime.orchestrator,
+      skillRegistry: runtime.skillRegistry!,
+      oversight: runtime.oversight,
       audit: (entry) => audit.push(entry),
       tieThreshold: 0.5,
     });
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('conflict');
     if (result.kind !== 'conflict') return;
     expect(result.planners.length).toBeGreaterThan(0);
     expect(result.escalated.kind).toBe('intent-conflict');
-    expect(kernel.oversight.list('pending', 'intent-conflict').length).toBeGreaterThan(0);
+    expect(runtime.oversight.list('pending', 'intent-conflict').length).toBeGreaterThan(0);
     expect(audit.some((entry) => entry.decision === 'plan-conflict')).toBe(true);
   });
 
   it('marks a draft that references an unknown skill as unplannable and escalates', async () => {
     const audit: AuditEntry[] = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => ({
-        realm: 'personal',
+        dataDomain: 'personal',
         nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'missing-skill', dependsOn: ['n1'] }],
       })),
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
       dispatchAudit: (entry) => audit.push(entry),
     });
     const flow = new PlanFlow({
-      orchestrator: kernel.orchestrator,
-      skillRegistry: kernel.skillRegistry!,
-      oversight: kernel.oversight,
+      orchestrator: runtime.orchestrator,
+      skillRegistry: runtime.skillRegistry!,
+      oversight: runtime.oversight,
       audit: (entry) => audit.push(entry),
     });
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('unplannable');
@@ -192,74 +192,74 @@ describe('S12 V2 plan flow wiring', () => {
 
   it('audits plan-malformed and refuses to run when the draft is not structured', async () => {
     const audit: AuditEntry[] = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => ({ prose: 'I would start by researching.' })),
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
       dispatchAudit: (entry) => audit.push(entry),
     });
     const flow = new PlanFlow({
-      orchestrator: kernel.orchestrator,
-      skillRegistry: kernel.skillRegistry!,
+      orchestrator: runtime.orchestrator,
+      skillRegistry: runtime.skillRegistry!,
       audit: (entry) => audit.push(entry),
     });
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('unplannable');
     expect(audit.some((entry) => entry.decision === 'plan-malformed')).toBe(true);
   });
 
-  it('drops a draft whose realm does not match the request realm (C-01)', async () => {
+  it('drops a draft whose dataDomain does not match the request dataDomain (C-01)', async () => {
     const audit: AuditEntry[] = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => ({
-        realm: 'enterprise',
+        dataDomain: 'enterprise',
         nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }],
       })),
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
       dispatchAudit: (entry) => audit.push(entry),
     });
     const flow = new PlanFlow({
-      orchestrator: kernel.orchestrator,
-      skillRegistry: kernel.skillRegistry!,
-      dagRunner: kernel.dagRunner,
-      oversight: kernel.oversight,
+      orchestrator: runtime.orchestrator,
+      skillRegistry: runtime.skillRegistry!,
+      dagRunner: runtime.dagRunner,
+      oversight: runtime.oversight,
       audit: (entry) => audit.push(entry),
     });
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
-    // The draft is data from an external planner: its self-declared realm can
-    // never promote execution into another realm. It is dropped exactly like a
-    // malformed draft instead of being selected or executed cross-realm.
+    // The draft is data from an external planner: its self-declared dataDomain can
+    // never promote execution into another dataDomain. It is dropped exactly like a
+    // malformed draft instead of being selected or executed cross-dataDomain.
     expect(result.kind).toBe('unplannable');
     const malformed = audit.find((entry) => entry.decision === 'plan-malformed');
-    expect(malformed?.detail).toContain('realm');
+    expect(malformed?.detail).toContain('dataDomain');
   });
 
-  it('never returns a cross-realm draft as the confirmed selection either (C-01)', async () => {
-    const kernel = await bootKernel({
+  it('never returns a cross-dataDomain draft as the confirmed selection either (C-01)', async () => {
+    const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => ({
-        realm: 'enterprise',
+        dataDomain: 'enterprise',
         nodes: [{ id: 'n1', skill: 'research' }],
       })),
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
     });
     const flow = new PlanFlow({
-      orchestrator: kernel.orchestrator,
-      skillRegistry: kernel.skillRegistry!,
-      dagRunner: kernel.dagRunner,
+      orchestrator: runtime.orchestrator,
+      skillRegistry: runtime.skillRegistry!,
+      dagRunner: runtime.dagRunner,
     });
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
       requireConfirmation: true,
     });
 
@@ -267,19 +267,19 @@ describe('S12 V2 plan flow wiring', () => {
   });
 
   it('returns the selected plan without executing when confirmation is required', async () => {
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => goodDraft()),
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
     });
     const flow = new PlanFlow({
-      orchestrator: kernel.orchestrator,
-      skillRegistry: kernel.skillRegistry!,
-      dagRunner: kernel.dagRunner,
+      orchestrator: runtime.orchestrator,
+      skillRegistry: runtime.skillRegistry!,
+      dagRunner: runtime.dagRunner,
     });
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
       requireConfirmation: true,
     });
 

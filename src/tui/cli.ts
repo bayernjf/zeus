@@ -3,9 +3,9 @@
  * Zeus terminal supervision deck (UI design option D).
  *
  * Read-only monitoring + escalation settlement + roster revocation over the
- * existing bearer HTTP face. No kernel route is added and the bearer token is
+ * existing bearer HTTP face. No runtime route is added and the bearer token is
  * read from the environment only — never from a flag, which would be visible in
- * `ps` output and the shell history. This mirrors the vault CLI's rule for key
+ * `ps` output and the shell history. This mirrors the backup CLI's rule for key
  * material.
  *
  *   ZEUS_INTERNAL_TOKEN=... npm run tui

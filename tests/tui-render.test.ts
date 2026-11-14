@@ -9,16 +9,16 @@ const palette = makePalette(false);
 
 const snapshot: DeckSnapshot = {
   audit: [
-    { ts: '00:00:01', vassal: 'pr-helper', decision: 'dispatched', skill: 'deployment-health' },
-    { ts: '00:00:02', vassal: 'loom', decision: 'refused-revoked', skill: 'research' },
+    { ts: '00:00:01', executor: 'pr-helper', decision: 'dispatched', skill: 'deployment-health' },
+    { ts: '00:00:02', executor: 'loom', decision: 'refused-revoked', skill: 'research' },
   ],
   domains: {
-    realms: [
-      { realmId: 'notes-personal', type: 'personal', readOnly: false, itemCount: 12, contentDigest: 'sha256:aaa' },
-      { realmId: 'acme-eng', type: 'enterprise', tenant: { org: 'acme', department: 'eng' }, readOnly: true, itemCount: 5, contentDigest: 'sha256:bbb' },
+    dataDomains: [
+      { dataDomainId: 'notes-personal', type: 'personal', readOnly: false, itemCount: 12, contentDigest: 'sha256:aaa' },
+      { dataDomainId: 'acme-eng', type: 'enterprise', tenant: { org: 'acme', department: 'eng' }, readOnly: true, itemCount: 5, contentDigest: 'sha256:bbb' },
     ],
     grants: [
-      { grantId: 'g-1', subject: 'loom', realmId: 'acme-eng', access: 'read', grantedBy: 'operator', grantedAt: '2026-09-30T00:00:00.000Z', nonce: 'n1' },
+      { grantId: 'g-1', subject: 'loom', dataDomainId: 'acme-eng', access: 'read', grantedBy: 'operator', grantedAt: '2026-09-30T00:00:00.000Z', nonce: 'n1' },
     ],
   },
   contracts: {
@@ -56,9 +56,9 @@ const snapshot: DeckSnapshot = {
     {
       id: 'esc-1',
       kind: 'task-input',
-      vassal: 'pr-helper',
+      executor: 'pr-helper',
       skill: 'deployment-health',
-      realm: 'personal',
+      dataDomain: 'personal',
       reason: 'Missing required parameters: owner, repo',
       status: 'pending',
       options: ['provide params', 'skip'],
@@ -67,17 +67,17 @@ const snapshot: DeckSnapshot = {
     {
       id: 'esc-2',
       kind: 'intent-conflict',
-      vassal: '(intent)',
+      executor: '(intent)',
       skill: 'pick-db',
-      realm: 'personal',
+      dataDomain: 'personal',
       reason: 'split',
       status: 'pending',
       options: [],
       createdAt: '2026-09-30T00:00:00.000Z',
       intentId: 'intent-1',
       stances: [
-        { stance: 'postgres', vassals: ['a1'] },
-        { stance: 'sqlite', vassals: ['a2'] },
+        { stance: 'postgres', executors: ['a1'] },
+        { stance: 'sqlite', executors: ['a2'] },
       ],
     },
   ],
@@ -93,8 +93,8 @@ const snapshot: DeckSnapshot = {
   state: {
     persistence: { enabled: true, stateFile: '/tmp/k.json', restoredFromSnapshot: true },
     audit: { file: '/tmp/audit.jsonl', failures: 0, degraded: false },
-    counts: { vassals: 1, vassalsRevoked: 1, escalations: 2, intents: 3, skills: 4 },
-    driverGrants: { authority: 'signed', keyId: 'zeus-rsk-dev' },
+    counts: { executors: 1, executorsRevoked: 1, escalations: 2, intents: 3, skills: 4 },
+    operatorGrants: { authority: 'signed', keyId: 'zeus-rsk-dev' },
   },
 };
 
@@ -162,7 +162,7 @@ describe('TUI pure render', () => {
   it('shows the unknown-decision fallback with the raw enum, never inventing a label', () => {
     const future: DeckSnapshot = {
       ...snapshot,
-      audit: [{ ts: '00:00:03', vassal: 'pr-helper', decision: 'quorum-new-thing' }],
+      audit: [{ ts: '00:00:03', executor: 'pr-helper', decision: 'quorum-new-thing' }],
     };
     const out = renderDeck({ snapshot: future, t, palette, updatedAt: '00:00:00' });
     expect(out).toContain('未知审计类型 quorum-new-thing');
@@ -176,7 +176,7 @@ describe('TUI pure render', () => {
     expect(renderDeck({ snapshot: unavailable, t, palette, updatedAt: '' })).toContain('审计面不可用');
   });
 
-  it('renders mounted realms, tenant/read-only flags and the grant ledger', () => {
+  it('renders mounted dataDomains, tenant/read-only flags and the grant ledger', () => {
     const out = renderDeck({ snapshot, t, palette, updatedAt: '00:00:00' });
     expect(out).toContain('数据域与跨域授权（域 2 · 授权 1）');
     expect(out).toContain('notes-personal');
@@ -191,7 +191,7 @@ describe('TUI pure render', () => {
   it('renders domains unavailable vs empty distinctly', () => {
     const unavailable: DeckSnapshot = { ...snapshot, domains: null };
     expect(renderDeck({ snapshot: unavailable, t, palette, updatedAt: '' })).toContain('数据域面不可用');
-    const empty: DeckSnapshot = { ...snapshot, domains: { realms: [], grants: [] } };
+    const empty: DeckSnapshot = { ...snapshot, domains: { dataDomains: [], grants: [] } };
     const out = renderDeck({ snapshot: empty, t, palette, updatedAt: '' });
     expect(out).toContain('未挂载数据域');
   });
@@ -211,8 +211,8 @@ describe('active intents section (S15 V3, design-streaming §3.3)', () => {
           view: {
             order: ['run-1:loom', 'run-1:atlas'],
             branches: {
-              'run-1:loom': { runId: 'run-1:loom', vassal: 'loom', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
-              'run-1:atlas': { runId: 'run-1:atlas', vassal: 'atlas', started: true, settled: false, lastSeq: 2, preview: 'weighing options' },
+              'run-1:loom': { runId: 'run-1:loom', executor: 'loom', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
+              'run-1:atlas': { runId: 'run-1:atlas', executor: 'atlas', started: true, settled: false, lastSeq: 2, preview: 'weighing options' },
             },
             partiallyReady: true,
           },
@@ -234,18 +234,18 @@ describe('active intents section (S15 V3, design-streaming §3.3)', () => {
     expect(out).toContain('已完成');
   });
 
-  it('marks a needs-driver intent as awaiting decision', () => {
+  it('marks a needs-operator intent as awaiting decision', () => {
     const blocked: DeckSnapshot = {
       ...snapshot,
       active: {
         intents: [
           {
-            intentId: 'intent-blocked', skill: 'review', status: 'needs-driver', settledCount: 2, totalCount: 2,
+            intentId: 'intent-blocked', skill: 'review', status: 'needs-operator', settledCount: 2, totalCount: 2,
             view: {
               order: ['run-1:loom', 'run-1:atlas'],
               branches: {
-                'run-1:loom': { runId: 'run-1:loom', vassal: 'loom', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
-                'run-1:atlas': { runId: 'run-1:atlas', vassal: 'atlas', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
+                'run-1:loom': { runId: 'run-1:loom', executor: 'loom', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
+                'run-1:atlas': { runId: 'run-1:atlas', executor: 'atlas', started: true, settled: true, outcome: { outcome: 'ok' }, preview: '' },
               },
               partiallyReady: false,
             },
@@ -302,9 +302,9 @@ describe('contracts section (self-host step 5 face)', () => {
         {
           id: 'esc-dl-1',
           kind: 'delegation-limit',
-          vassal: '(watch)',
+          executor: '(watch)',
           skill: 'research',
-          realm: 'personal',
+          dataDomain: 'personal',
           reason: 'execute fire refused (revoked); no outbound dispatch',
           status: 'pending',
           options: [],
@@ -340,9 +340,9 @@ describe('contracts section (self-host step 5 face)', () => {
         {
           id: 'esc-ti-1',
           kind: 'task-input',
-          vassal: 'pr-helper',
+          executor: 'pr-helper',
           skill: 'deployment-health',
-          realm: 'personal',
+          dataDomain: 'personal',
           reason: 'missing owner, repo',
           status: 'pending',
           options: ['provide owner and repo', 'skip'],
@@ -359,13 +359,13 @@ describe('contracts section (self-host step 5 face)', () => {
       ...snapshot,
       escalations: [
         {
-          id: 'esc-l1', kind: 'memory-dispute', vassal: '(memory)', skill: '(memory)',
-          realm: 'personal', reason: 'dispute', status: 'pending', options: [],
+          id: 'esc-l1', kind: 'memory-dispute', executor: '(memory)', skill: '(memory)',
+          dataDomain: 'personal', reason: 'dispute', status: 'pending', options: [],
           createdAt: '', interruptLevel: 1,
         },
         {
-          id: 'esc-l2', kind: 'task-input', vassal: 'loom', skill: 'deploy',
-          realm: 'enterprise', reason: 'blocked', status: 'pending', options: [],
+          id: 'esc-l2', kind: 'task-input', executor: 'loom', skill: 'deploy',
+          dataDomain: 'enterprise', reason: 'blocked', status: 'pending', options: [],
           createdAt: '', interruptLevel: 2,
         },
       ],
@@ -377,8 +377,8 @@ describe('contracts section (self-host step 5 face)', () => {
       ...snapshot,
       escalations: [
         {
-          id: 'esc-old', kind: 'memory-dispute', vassal: '(memory)', skill: '(memory)',
-          realm: 'personal', reason: 'dispute', status: 'pending', options: [], createdAt: '',
+          id: 'esc-old', kind: 'memory-dispute', executor: '(memory)', skill: '(memory)',
+          dataDomain: 'personal', reason: 'dispute', status: 'pending', options: [], createdAt: '',
         },
       ],
     };

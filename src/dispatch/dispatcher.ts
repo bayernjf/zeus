@@ -1,6 +1,6 @@
-import type { A2AEvent, PushNotificationConfig, RealmType, Task } from '../a2a/types.js';
-import type { VassalLike, VassalLookup } from './types.js';
-import type { RealmHit } from '../realm/types.js';
+import type { A2AEvent, PushNotificationConfig, DataDomainType, Task } from '../a2a/types.js';
+import type { ExecutorLike, ExecutorLookup } from './types.js';
+import type { DataDomainHit } from '../dataDomain/types.js';
 import type { ContextAppendixEntry } from '../context/assemble.js';
 import type { SkillInputEntry } from '../context/skill-inputs.js';
 import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
@@ -12,53 +12,53 @@ import { scanContentSignals } from '../guardrails/content-risk.js';
  * (`GET /api/audit?decision=…`) validates against this same array, because a
  * second hand-maintained allowlist silently rots: five decisions
  * (`refused-skill-uninstalled`, `refused-no-active-provider`, `branch-diverted`,
- * `realm-disconnected`, `realm-tenant-retargeted`) were written to the audit
+ * `dataDomain-disconnected`, `dataDomain-tenant-retargeted`) were written to the audit
  * file but could not be queried, and the new one below would have been the sixth.
  */
 export const AUDIT_DECISIONS = [
   'dispatched',
-  'refused-realm-policy',
-  'refused-unknown-vassal',
+  'refused-dataDomain-policy',
+  'refused-unknown-executor',
   'refused-revoked',
-  'vassal-revoked',
+  'executor-revoked',
   // A-02: the explicit, audited act that is the only way back from a revocation.
-  'vassal-reinstated',
+  'executor-reinstated',
   'dispatch-failed',
   'sla-ack-breached',
-  // E6.4: a subject crossed (or tried to cross) a data-domain boundary.
+  // E6.4: a subject crossed (or tried to cross) a dataDomain boundary.
   'domain-read',
   'domain-refused',
   // E6.4: the authorization lifecycle for those crossings.
   'domain-grant-issued',
   'domain-grant-revoked',
-  // E3.5 / deferred #14: the single-use write credential for an enterprise realm.
-  'driver-grant-issued',
-  // deferred #17: explicit realm boundary mutations (teardown / tenant re-scope).
-  'realm-disconnected',
-  'realm-tenant-retargeted',
-  // A write that a driver grant authorized (personal writes are not logged: they
+  // E3.5 / deferred #14: the single-use write credential for an enterprise dataDomain.
+  'operator-grant-issued',
+  // deferred #17: explicit dataDomain boundary mutations (teardown / tenant re-scope).
+  'dataDomain-disconnected',
+  'dataDomain-tenant-retargeted',
+  // A write that a operator grant authorized (personal writes are not logged: they
   // are the user writing in their own directory, and logging them buries this).
-  'realm-write',
+  'dataDomain-write',
   // E9.1/E9.2: onboarding decisions for a seat in a department.
-  'commission-granted',
-  'commission-waived',
-  'commission-withdrawn',
-  'commission-refused',
+  'seatGrant-granted',
+  'seatGrant-waived',
+  'seatGrant-withdrawn',
+  'seatGrant-refused',
   // E2.2/E2.3/E2.4: the skill catalogue refused auto-selected fan-out targets.
   'refused-skill-uninstalled',
   'refused-no-active-provider',
   // #9: a saturated/eligible-lacking target re-pointed to an alternate provider.
   'branch-diverted',
   // MemoryPort v1 §6: the settled conclusion that could not be written back
-  // because its realm was unmounted at settle time. Like the dropped-claim
+  // because its dataDomain was unmounted at settle time. Like the dropped-claim
   // case below, the skip is a governance fact, not a silent drop.
   'memory-writeback-skipped',
-  // deferred #27: finished-intent verdicts that could not become claims (the realm
+  // deferred #27: finished-intent verdicts that could not become claims (the dataDomain
   // they belonged to was unmounted mid-flight). A dropped claim is a governance
   // fact, so it is announced rather than swallowed.
   'memory-claim-skipped',
   // MemoryPort contract v1 §4 (ruling D-1): every hub embedding call is an
-  // authorised out-of-realm call, so it is audited by content hash only.
+  // authorised out-of-dataDomain call, so it is audited by content hash only.
   'memory-embed-external',
   // MemoryPort contract v1 §7: one line per cross-agent consumer-face call
   // (namespace-bound, content hashes only).
@@ -66,18 +66,18 @@ export const AUDIT_DECISIONS = [
   // MemoryPort v1 §6: the fire-and-forget settle boundary failed; fail-soft
   // but never silent, or memory would stop updating without a trace.
   'memory-consolidation-failed',
-  // A cancellation forwarded to a vassal. Dispatch is audited; cancelling used to
+  // A cancellation forwarded to a executor. Dispatch is audited; cancelling used to
   // leave no trace at all, so the governance surface could not see a branch ended.
   'cancel-requested',
-  // design-fan-out §7: the driver aborted a live outbound A2A stream through the
+  // design-fan-out §7: the operator aborted a live outbound A2A stream through the
   // dispatcher port (no tasks/cancel was sent — there was no task id to name).
   'branch-aborted',
-  // design-realm §3.1: realm content was refused because fealty.dataPolicy does
-  // not admit its origin (none accepts none; read-task-scope only kernel-resolved;
+  // design-dataDomain §3.1: dataDomain content was refused because handshake.dataPolicy does
+  // not admit its origin (none accepts none; read-task-scope only runtime-resolved;
   // hits without a declared origin fail closed). The refusal is the policy
   // working, so it is visible rather than a silent drop.
   'refused-data-policy',
-  // design-realm §3.1: realm content was injected, recording the policy, the
+  // design-dataDomain §3.1: dataDomain content was injected, recording the policy, the
   // origin and the count so "what did this task give that agent" can be traced.
   'content-injected',
   // S1 context engineering V1 (design-context-engineering §10): the memory
@@ -87,6 +87,10 @@ export const AUDIT_DECISIONS = [
   'context-assembled',
   'context-trimmed',
   'context-budget-exceeded',
+  // D3-2: one folded run-level watermark per settled fan-out (entries
+  // assembled / trimmed / over-budget). Per-intent rows say what one intent
+  // got; this row says how much context the run as a whole consumed.
+  'context-watermark',
   // deferred #33: an operator issued a one-time, bounded approval for an
   // executing agent to perform an external write.
   'execution-delegation-issued',
@@ -217,12 +221,12 @@ export type AuditDecision = (typeof AUDIT_DECISIONS)[number];
 
 export type AuditEntry = {
   ts: string;
-  vassal: string;
+  executor: string;
   decision: AuditDecision;
-  /** Governance events (vassal-revoked) carry no task context. */
+  /** Governance events (executor-revoked) carry no task context. */
   runId?: string;
   skill?: string;
-  realm?: RealmType;
+  dataDomain?: DataDomainType;
   taskId?: string;
   state?: Task['status']['state'];
   /** Trust tier of a caller card on the external-agent-* face (PRD E9.4). */
@@ -231,30 +235,30 @@ export type AuditEntry = {
 };
 
 export type DispatchRequest = {
-  /** vassal name; omit to auto-select by skill */
-  vassal?: string;
+  /** executor name; omit to auto-select by skill */
+  executor?: string;
   skill: string;
   params: Record<string, unknown>;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   runId?: string;
-  /** Realm content offered to the vassal; gated by fealty.dataPolicy on *origin* (design-realm §3.1). */
-  realmHits?: RealmHit[];
-  /** Where the hits came from. Required whenever realmHits is non-empty; a
-   *  request whose hits carry no origin fails closed (the kernel can verify
-   *  kernel-resolved hits as task-scoped, and can verify nothing about
+  /** DataDomain content offered to the executor; gated by handshake.dataPolicy on *origin* (design-dataDomain §3.1). */
+  dataDomainHits?: DataDomainHit[];
+  /** Where the hits came from. Required whenever dataDomainHits is non-empty; a
+   *  request whose hits carry no origin fails closed (the runtime can verify
+   *  runtime-resolved hits as task-scoped, and can verify nothing about
    *  caller-asserted ones). */
-  realmHitsOrigin?: 'kernel-resolved' | 'caller-asserted';
+  dataDomainHitsOrigin?: 'runtime-resolved' | 'caller-asserted';
   /**
    * S1 context engineering V1: the read-only memory appendix assembled by the
-   * kernel at dispatch time (design-context-engineering §10). Never supplied
+   * runtime at dispatch time (design-context-engineering §10). Never supplied
    * by a caller — `FanOutRequest` has no such field — and never written back.
-   * Like `realmHits`, it is instantaneous at dispatch and a replay may omit it.
+   * Like `dataDomainHits`, it is instantaneous at dispatch and a replay may omit it.
    */
   contextAppendix?: ContextAppendixEntry[];
   /**
    * S1 context engineering V2: skill-declared input assembly (source 2 of the
    * assembly model, design-context-engineering §10.3). Read-only, assembled by
-   * the kernel at dispatch time — a caller cannot supply it, a replay may omit
+   * the runtime at dispatch time — a caller cannot supply it, a replay may omit
    * it, and an unavailable field is an explicit absence, never a fabricated
    * value. Travels the same outbound layer as `contextAppendix`.
    */
@@ -277,10 +281,10 @@ export type DispatchRequest = {
   /**
    * S15 V2 (design-streaming §5): narrow per-request callback surfaced when an
    * outbound working frame carries an incremental payload. The dispatcher adds
-   * the branch's vassal and runId before forwarding; preview content stays
+   * the branch's executor and runId before forwarding; preview content stays
    * preview — it never reaches an outcome, memory or a decision path.
    */
-  onBranchDelta?: (delta: { vassal: string; runId: string; seq: number; preview: string; at: string }) => void;
+  onBranchDelta?: (delta: { executor: string; runId: string; seq: number; preview: string; at: string }) => void;
   /**
    * E4.11 (design-a2a-push): when set, dispatch via plain `tasks/send` and ask
    * the peer to POST the final task back (no long-lived stream). The branch
@@ -291,35 +295,35 @@ export type DispatchRequest = {
 };
 
 export type DispatchResult =
-  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: RealmHit[] }
+  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: DataDomainHit[] }
   | { ok: false; reason: string; audit: AuditEntry };
 
 export type AuditSink = (entry: AuditEntry) => void;
 
 export class Dispatcher {
-  private lookup: VassalLookup;
+  private lookup: ExecutorLookup;
 
   constructor(
-    directory: VassalLookup | Map<string, VassalLike>,
+    directory: ExecutorLookup | Map<string, ExecutorLike>,
     private options: {
       audit: AuditSink;
       now?: () => Date;
       /** Monotonic millisecond clock for SLA measurement; defaults to Date.now. */
       elapsed?: () => number;
       fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
-      tokenFor?: (vassalName: string) => string | undefined;
+      tokenFor?: (executorName: string) => string | undefined;
       /**
-       * S8 V3 (design-guardrails §5): whether a vassal holds a content grant
-       * (a valid DomainGrant) for a *specific realm*. Realm-scoped since the
-       * enterprise gate went realm-granular (an unexpired grant for realm A
-       * no longer covers enterprise content from realm B). The realmId is the
-       * hit's own realm binding; kernel-resolved hits always carry one,
+       * S8 V3 (design-guardrails §5): whether a executor holds a content grant
+       * (a valid DomainGrant) for a *specific dataDomain*. DataDomain-scoped since the
+       * enterprise gate went dataDomain-granular (an unexpired grant for dataDomain A
+       * no longer covers enterprise content from dataDomain B). The dataDomainId is the
+       * hit's own dataDomain binding; runtime-resolved hits always carry one,
        * caller-asserted hits never do, and the gate refuses the latter as
-       * unverifiable. Present only when the kernel is booted with a DomainGrant
+       * unverifiable. Present only when the runtime is booted with a DomainGrant
        * registry; absent, the enterprise-content guardrail is off and dispatch
        * keeps its V2 behaviour.
        */
-      contentGrant?: (vassalName: string, realmId: string) => boolean;
+      contentGrant?: (executorName: string, dataDomainId: string) => boolean;
     }
   ) {
     this.lookup = directory instanceof Map ? mapAsLookup(directory) : directory;
@@ -328,81 +332,81 @@ export class Dispatcher {
   async dispatch(request: DispatchRequest): Promise<DispatchResult> {
     const now = this.options.now ?? (() => new Date());
     const runId = request.runId ?? `zeus-run-${crypto.randomUUID()}`;
-    let vassal: VassalLike | undefined;
+    let executor: ExecutorLike | undefined;
     let selectionDetail: string | undefined;
-    if (request.vassal) {
-      // Governance gate: a revoked vassal is blocked before any request is made
+    if (request.executor) {
+      // Governance gate: a revoked executor is blocked before any request is made
       // or token issued, and the block is audited distinctly from "unknown".
-      if (this.lookup.statusOf(request.vassal) === 'revoked') {
+      if (this.lookup.statusOf(request.executor) === 'revoked') {
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, vassal: request.vassal, skill: request.skill, realm: request.realm,
-          decision: 'refused-revoked', detail: `vassal ${request.vassal} is revoked; dispatch blocked before token issuance`,
+          ts: now().toISOString(), runId, executor: request.executor, skill: request.skill, dataDomain: request.dataDomain,
+          decision: 'refused-revoked', detail: `executor ${request.executor} is revoked; dispatch blocked before token issuance`,
         };
         this.options.audit(audit);
         return { ok: false, reason: audit.detail!, audit };
       }
-      vassal = this.lookup.get(request.vassal);
-      // Naming a vassal is not a licence to ask it for anything: the skill must
+      executor = this.lookup.get(request.executor);
+      // Naming a executor is not a licence to ask it for anything: the skill must
       // be one its card declares, or any registered agent could be made to run
       // any skill and the per-skill authorization would be nominal. Auto-select
       // already routes through findBySkill; this is the explicit-name path.
-      if (vassal && !vassal.card.skills.some(skill => skill.id === request.skill)) {
+      if (executor && !executor.card.skills.some(skill => skill.id === request.skill)) {
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
           decision: 'refused-skill-uninstalled',
-          detail: `vassal ${vassal.name} does not declare skill ${request.skill}`,
+          detail: `executor ${executor.name} does not declare skill ${request.skill}`,
         };
         this.options.audit(audit);
         return { ok: false, reason: audit.detail!, audit };
       }
     } else {
       try {
-        vassal = this.selectBySkill(request.skill);
+        executor = this.selectBySkill(request.skill);
       } catch (error) {
-        selectionDetail = error instanceof Error ? error.message : 'vassal selection failed';
+        selectionDetail = error instanceof Error ? error.message : 'executor selection failed';
       }
     }
 
-    if (!vassal || selectionDetail) {
-      const audit: AuditEntry = { ts: now().toISOString(), runId, vassal: request.vassal ?? '(auto)', skill: request.skill, realm: request.realm, decision: 'refused-unknown-vassal', detail: selectionDetail ?? 'no registered vassal provides this skill' };
+    if (!executor || selectionDetail) {
+      const audit: AuditEntry = { ts: now().toISOString(), runId, executor: request.executor ?? '(auto)', skill: request.skill, dataDomain: request.dataDomain, decision: 'refused-unknown-executor', detail: selectionDetail ?? 'no registered executor provides this skill' };
       this.options.audit(audit);
       return { ok: false, reason: audit.detail!, audit };
     }
 
-    // Data diode: task realm must be allowed by the vassal fealty
-    if (!vassal.fealty.dataRealms.includes(request.realm)) {
-      const audit: AuditEntry = { ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'refused-realm-policy', detail: `fealty.dataRealms=${vassal.fealty.dataRealms.join(',')} excludes ${request.realm}` };
+    // Data diode: task dataDomain must be allowed by the executor handshake
+    if (!executor.handshake.dataDomains.includes(request.dataDomain)) {
+      const audit: AuditEntry = { ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision: 'refused-dataDomain-policy', detail: `handshake.dataDomains=${executor.handshake.dataDomains.join(',')} excludes ${request.dataDomain}` };
       this.options.audit(audit);
       return { ok: false, reason: audit.detail!, audit };
     }
 
-    // design-realm §3.1: fealty.dataPolicy gates the *origin* the realm hits may
+    // design-dataDomain §3.1: handshake.dataPolicy gates the *origin* the dataDomain hits may
     // come from, not the field set (which is the same across policies). The two
     // failure modes — hits that cannot be traced to a declared origin, and a
     // policy that does not admit the origin — refuse the dispatch instead of
     // silently dropping content (the "silent downgrade is a failure shape" rule
     // from #20/#31). Refusals are audited, so a policy that blocked content is
     // visible as the policy working, not as a gap.
-    const hits = request.realmHits;
-    const origin = request.realmHitsOrigin;
-    const policy = vassal.fealty.dataPolicy;
-    let injectedHits: RealmHit[] = [];
+    const hits = request.dataDomainHits;
+    const origin = request.dataDomainHitsOrigin;
+    const policy = executor.handshake.dataPolicy;
+    let injectedHits: DataDomainHit[] = [];
     if (hits && hits.length > 0) {
       if (!origin) {
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
           decision: 'refused-data-policy',
-          detail: `fealty.dataPolicy=${policy}: ${hits.length} realm hits carry no origin; dispatch refused (fail-closed)`,
+          detail: `handshake.dataPolicy=${policy}: ${hits.length} dataDomain hits carry no origin; dispatch refused (fail-closed)`,
         };
         this.options.audit(audit);
         return { ok: false, reason: audit.detail!, audit };
       }
       if (policy === 'none' || (policy === 'read-task-scope' && origin === 'caller-asserted')) {
         const why = policy === 'none'
-          ? `fealty.dataPolicy=none does not accept realm content`
-          : `fealty.dataPolicy=read-task-scope accepts only kernel-resolved hits; self-asserted hits cannot be verified as task-scoped`;
+          ? `handshake.dataPolicy=none does not accept dataDomain content`
+          : `handshake.dataPolicy=read-task-scope accepts only runtime-resolved hits; self-asserted hits cannot be verified as task-scoped`;
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
           decision: 'refused-data-policy',
           detail: `${why} (origin=${origin})`,
         };
@@ -411,92 +415,92 @@ export class Dispatcher {
       }
       injectedHits = hits;
       this.options.audit({
-        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
         decision: 'content-injected',
-        detail: `fealty.dataPolicy=${policy}, origin=${origin}, hits=${hits.length}`,
+        detail: `handshake.dataPolicy=${policy}, origin=${origin}, hits=${hits.length}`,
       });
       // S8 V3 (design-guardrails §5): the content-side second gate. Domain
       // isolation already made the hits task-scoped (dataPolicy/origin) and
-      // the vassal's dataRealms admit the realm type; this gate judges the
-      // *content* itself. Enterprise-realm hits carrying a deterministic PII
+      // the executor's dataDomains admit the dataDomain type; this gate judges the
+      // *content* itself. Enterprise-dataDomain hits carrying a deterministic PII
       // pattern are never shipped verbatim: a content grant (DomainGrant)
       // redacts the PII-bearing entries from the outbound copy, no grant
-      // refuses them. Both are audited on the same spine. Personal-realm
+      // refuses them. Both are audited on the same spine. Personal-dataDomain
       // content and signal-free enterprise content pass through unchanged.
       // The gate is off until boot wires a contentGrant port (absent port =
       // V2 behaviour).
-      // Realm-scoped (S8 V3 + realm-granular pass): a PII hit is redacted
-      // only when the vassal holds a content grant for the hit's *own*
-      // realm. A hit without a realmId (caller-asserted) has no realm
+      // DataDomain-scoped (S8 V3 + dataDomain-granular pass): a PII hit is redacted
+      // only when the executor holds a content grant for the hit's *own*
+      // dataDomain. A hit without a dataDomainId (caller-asserted) has no dataDomain
       // binding a grant could cover, so it is unverifiable and the dispatch
-      // fails closed; a hit whose realm the vassal has no grant for is
+      // fails closed; a hit whose dataDomain the executor has no grant for is
       // refused outright. Any uncovered or unverifiable hit refuses the
       // whole dispatch rather than silently leaking one entry (the "silent
       // downgrade is a failure shape" rule from #20/#31).
       const contentGrant = this.options.contentGrant;
-      if (contentGrant && request.realm === 'enterprise' && injectedHits.length > 0) {
+      if (contentGrant && request.dataDomain === 'enterprise' && injectedHits.length > 0) {
         const piiHits = injectedHits.filter(hit => scanContentSignals(hit.snippet).includes('pii-pattern'));
         if (piiHits.length > 0) {
-          const unverifiable = piiHits.filter(hit => !hit.realmId);
-          const uncovered = piiHits.filter(hit => hit.realmId && !contentGrant(vassal.name, hit.realmId));
+          const unverifiable = piiHits.filter(hit => !hit.dataDomainId);
+          const uncovered = piiHits.filter(hit => hit.dataDomainId && !contentGrant(executor.name, hit.dataDomainId));
           if (unverifiable.length > 0 || uncovered.length > 0) {
             const audit: AuditEntry = {
-              ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+              ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
               decision: 'guardrail-refused',
-              detail: `enterprise realm content: ${piiHits.length} PII hit(s) refused (${unverifiable.length} carry no realmId; ${uncovered.length} have no realm-scoped content grant) for vassal ${vassal.name}`,
+              detail: `enterprise dataDomain content: ${piiHits.length} PII hit(s) refused (${unverifiable.length} carry no dataDomainId; ${uncovered.length} have no dataDomain-scoped content grant) for executor ${executor.name}`,
             };
             this.options.audit(audit);
             return { ok: false, reason: audit.detail!, audit };
           }
-          const covered = piiHits.filter(hit => hit.realmId);
+          const covered = piiHits.filter(hit => hit.dataDomainId);
           injectedHits = injectedHits.filter(hit => !covered.includes(hit));
           this.options.audit({
-            ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+            ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
             decision: 'guardrail-redacted',
-            detail: `enterprise realm content: ${covered.length} PII hit(s) redacted from outbound copy (realm-scoped content grant) for vassal ${vassal.name}`,
+            detail: `enterprise dataDomain content: ${covered.length} PII hit(s) redacted from outbound copy (dataDomain-scoped content grant) for executor ${executor.name}`,
           });
         }
       }
     }
 
     // Re-affirm the revocation gate at the moment the credential is read.
-    // `tokenFor` yields nothing for a revoked vassal, and a request that leaves
+    // `tokenFor` yields nothing for a revoked executor, and a request that leaves
     // without its bearer is a governance decision that failed open: the
     // revocation happened, and the dispatch should have been refused, not sent
-    // anonymously. The gate above only ran when the vassal was named explicitly,
+    // anonymously. The gate above only ran when the executor was named explicitly,
     // so this check covers both selection paths.
-    if (this.lookup.statusOf(vassal.name) === 'revoked') {
+    if (this.lookup.statusOf(executor.name) === 'revoked') {
       const audit: AuditEntry = {
-        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
-        decision: 'refused-revoked', detail: `vassal ${vassal.name} was revoked before its credential was issued; dispatch blocked`,
+        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
+        decision: 'refused-revoked', detail: `executor ${executor.name} was revoked before its credential was issued; dispatch blocked`,
       };
       this.options.audit(audit);
       return { ok: false, reason: audit.detail!, audit };
     }
-    const token = this.options.tokenFor?.(vassal.name);
+    const token = this.options.tokenFor?.(executor.name);
 
     const events: A2AEvent[] = [];
 
-    // SLA ack enforcement (fealty.sla.ackSeconds): acceptance is the first
+    // SLA ack enforcement (handshake.sla.ackSeconds): acceptance is the first
     // streamed event, or - for a peer that streams nothing and just returns its
     // terminal snapshot - the arrival of that snapshot. Without the fallback a
     // slow non-streaming peer escaped sla-ack-breached entirely. A breach is
     // audited, never fatal: the task may still succeed, and the audit trail is
     // the governance surface.
     const clock = this.options.elapsed ?? (() => Date.now());
-    const ackSeconds = vassal.fealty.sla?.ackSeconds;
+    const ackSeconds = executor.handshake.sla?.ackSeconds;
     const startedAt = clock();
     let ack: { elapsedMs: number; taskId: string } | undefined;
 
     // Only the outbound request lives inside this catch. Every audit write stays
     // outside it: writing the trail is bookkeeping, and a full disk must not be
-    // recorded as the *vassal* failing to serve the task.
+    // recorded as the *executor* failing to serve the task.
     let task: Task;
     try {
       // A-12: defense in depth. The registry validates taskUrl at registration,
       // but dispatch is the moment the request actually leaves the process, so
       // the same guard runs here — a stale or restored entry cannot bypass it.
-      assertOutboundUrlAllowed(vassal.taskUrl);
+      assertOutboundUrlAllowed(executor.taskUrl);
       // E4.11 (design-a2a-push): an armed branch uses plain tasks/send and
       // carries the receiver config, so the peer pushes the final snapshot back
       // instead of Zeus holding a stream. Unarmed branches keep the SSE path
@@ -504,11 +508,11 @@ export class Dispatcher {
       task = request.pushNotification
         ? await sendTask(
             {
-              taskUrl: vassal.taskUrl,
+              taskUrl: executor.taskUrl,
               skill: request.skill,
               params: {
                 ...request.params,
-                ...(injectedHits.length ? { realmHits: injectedHits } : {}),
+                ...(injectedHits.length ? { dataDomainHits: injectedHits } : {}),
                 ...(request.contextAppendix !== undefined && request.contextAppendix.length > 0
                   ? { contextAppendix: request.contextAppendix }
                   : {}),
@@ -525,27 +529,27 @@ export class Dispatcher {
           )
         : await sendTaskSubscribe(
         {
-          taskUrl: vassal.taskUrl,
+          taskUrl: executor.taskUrl,
           skill: request.skill,
           params: {
             ...request.params,
-            ...(injectedHits.length ? { realmHits: injectedHits } : {}),
-            // S1 (design-context-engineering §10): the kernel-assembled memory
-            // appendix travels the existing outbound channel — the vassal sees
-            // what context the kernel gave this branch.
+            ...(injectedHits.length ? { dataDomainHits: injectedHits } : {}),
+            // S1 (design-context-engineering §10): the runtime-assembled memory
+            // appendix travels the existing outbound channel — the executor sees
+            // what context the runtime gave this branch.
             ...(request.contextAppendix !== undefined && request.contextAppendix.length > 0
               ? { contextAppendix: request.contextAppendix }
               : {}),
             // S1 V2 (design-context-engineering §10.3): skill-declared inputs
-            // assembled by the kernel ride the same outbound channel — the
-            // vassal sees which declared fields were supplied and which absent.
+            // assembled by the runtime ride the same outbound channel — the
+            // executor sees which declared fields were supplied and which absent.
             ...(request.skillInputs !== undefined && request.skillInputs.length > 0
               ? { skillInputs: request.skillInputs }
               : {}),
           },
           runId,
           ...(token !== undefined ? { token } : {}),
-          // S6 V2 (design-observability §5): the kernel-derived trace context
+          // S6 V2 (design-observability §5): the runtime-derived trace context
           // rides the outbound request as optional metadata.
           ...(request.traceparent === undefined ? {} : { traceparent: request.traceparent }),
         },
@@ -563,20 +567,20 @@ export class Dispatcher {
             ? {}
             : {
                 onBranchDelta: delta =>
-                  request.onBranchDelta!({ vassal: vassal.name, runId: delta.runId, seq: delta.seq, preview: delta.preview, at: delta.at }),
+                  request.onBranchDelta!({ executor: executor.name, runId: delta.runId, seq: delta.seq, preview: delta.preview, at: delta.at }),
               }),
         },
         this.options.fetchImpl
       );
     } catch (error) {
-      // design-fan-out §7: an abort is a governance act (the driver cancelled the
-      // intent), not the vassal failing to serve the task — audit it distinctly
+      // design-fan-out §7: an abort is a governance act (the operator cancelled the
+      // intent), not the executor failing to serve the task — audit it distinctly
       // so the trail does not read the operator's own cancel as a peer failure.
       const aborted = request.signal?.aborted ?? false;
       const decision = aborted ? 'branch-aborted' : 'dispatch-failed';
-      const detail = aborted ? 'aborted by the driver' : error instanceof Error ? error.message : 'dispatch failed';
-      this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision, detail });
-      return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision, detail } };
+      const detail = aborted ? 'aborted by the operator' : error instanceof Error ? error.message : 'dispatch failed';
+      this.options.audit({ ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision, detail });
+      return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision, detail } };
     }
 
     // A peer that streamed no intermediate event still accepted the task by
@@ -585,48 +589,48 @@ export class Dispatcher {
 
     if (ackSeconds !== undefined && ack.elapsedMs > ackSeconds * 1000) {
       this.options.audit({
-        ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm,
+        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
         decision: 'sla-ack-breached', taskId: ack.taskId,
         detail: `accepted after ${ack.elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
       });
     }
-    this.options.audit({ ts: now().toISOString(), runId, vassal: vassal.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });
+    this.options.audit({ ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision: 'dispatched', taskId: task.id, state: task.status.state });
     return { ok: true, task, events, injectedHits };
   }
 
-  async cancel(vassalName: string, taskId: string): Promise<Task> {
+  async cancel(executorName: string, taskId: string): Promise<Task> {
     const now = this.options.now ?? (() => new Date());
     // A cancellation is a governance action, not a side channel: it must not
-    // reach a vassal the revocation gate blocks, and it must be as visible on the
+    // reach a executor the revocation gate blocks, and it must be as visible on the
     // trail as the dispatch it ends. Both refusals are audited before throwing so
     // the reason is recorded, not just returned to a caller that may swallow it.
-    const status = this.lookup.statusOf(vassalName);
+    const status = this.lookup.statusOf(executorName);
     if (status === 'revoked') {
       const audit: AuditEntry = {
-        ts: now().toISOString(), vassal: vassalName, taskId,
-        decision: 'refused-revoked', detail: `cancel refused: vassal ${vassalName} is revoked; no request sent`,
+        ts: now().toISOString(), executor: executorName, taskId,
+        decision: 'refused-revoked', detail: `cancel refused: executor ${executorName} is revoked; no request sent`,
       };
       this.options.audit(audit);
       throw new Error(audit.detail);
     }
-    const vassal = this.lookup.get(vassalName);
-    if (!vassal) {
+    const executor = this.lookup.get(executorName);
+    if (!executor) {
       const audit: AuditEntry = {
-        ts: now().toISOString(), vassal: vassalName, taskId,
-        decision: 'refused-unknown-vassal', detail: `cancel refused: ${vassalName} is not a registered vassal`,
+        ts: now().toISOString(), executor: executorName, taskId,
+        decision: 'refused-unknown-executor', detail: `cancel refused: ${executorName} is not a registered executor`,
       };
       this.options.audit(audit);
       throw new Error(audit.detail);
     }
-    const task = await cancelTask(vassal.taskUrl, taskId, this.options.tokenFor?.(vassalName), this.options.fetchImpl);
-    this.options.audit({ ts: now().toISOString(), vassal: vassalName, taskId, decision: 'cancel-requested', state: task.status.state });
+    const task = await cancelTask(executor.taskUrl, taskId, this.options.tokenFor?.(executorName), this.options.fetchImpl);
+    this.options.audit({ ts: now().toISOString(), executor: executorName, taskId, decision: 'cancel-requested', state: task.status.state });
     return task;
   }
 
-  private selectBySkill(skillId: string): VassalLike | undefined {
+  private selectBySkill(skillId: string): ExecutorLike | undefined {
     const candidates = this.lookup.findBySkill(skillId);
     if (candidates.length > 1) {
-      throw new AmbiguousSkillError(`multiple vassals provide skill ${skillId}; name one explicitly: ${candidates.map(vassal => vassal.name).join(', ')}`);
+      throw new AmbiguousSkillError(`multiple executors provide skill ${skillId}; name one explicitly: ${candidates.map(executor => executor.name).join(', ')}`);
     }
     return candidates[0];
   }
@@ -634,23 +638,23 @@ export class Dispatcher {
 
 export class AmbiguousSkillError extends Error {}
 
-/** Adapt a static vassal map (tests / single-process wiring) to VassalLookup.
+/** Adapt a static executor map (tests / single-process wiring) to ExecutorLookup.
  *  An entry may carry `revoked: true`; the adapter honors it exactly the way
- *  VassalRegistry.asVassalLookup does — invisible to get/findBySkill, reported
+ *  ExecutorRegistry.asExecutorLookup does — invisible to get/findBySkill, reported
  *  by statusOf. Previously the status was hard-coded `active`, so a Map-wired
  *  dispatcher had no revocation gate at all. */
-function mapAsLookup(map: Map<string, VassalLike>): VassalLookup {
+function mapAsLookup(map: Map<string, ExecutorLike>): ExecutorLookup {
   return {
     get: name => {
-      const vassal = map.get(name);
-      return vassal && !vassal.revoked ? vassal : undefined;
+      const executor = map.get(name);
+      return executor && !executor.revoked ? executor : undefined;
     },
     statusOf: name => {
-      const vassal = map.get(name);
-      if (!vassal) return 'unknown';
-      return vassal.revoked ? 'revoked' : 'active';
+      const executor = map.get(name);
+      if (!executor) return 'unknown';
+      return executor.revoked ? 'revoked' : 'active';
     },
     findBySkill: skillId =>
-      [...map.values()].filter(vassal => !vassal.revoked && vassal.card.skills.some(skill => skill.id === skillId)),
+      [...map.values()].filter(executor => !executor.revoked && executor.card.skills.some(skill => skill.id === skillId)),
   };
 }

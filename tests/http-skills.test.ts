@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { SkillRegistry } from '../src/skills/registry.js';
 import { MentorshipLedger } from '../src/skills/mentor.js';
 import type { SkillSpec, TeamResolution } from '../src/skills/types.js';
 import type { MentorshipRecord } from '../src/skills/mentor.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = () => new Date('2026-09-24T00:00:00.000Z');
 
@@ -19,7 +19,7 @@ const REVIEW_SPEC = {
   version: '1.0.0',
   domain: 'code',
   tags: ['review'],
-  permissions: ['realm', 'execute'],
+  permissions: ['data-domain', 'execute'],
   providedBy: ['mentor-a'],
 };
 
@@ -33,7 +33,7 @@ async function server(): Promise<{ app: FastifyInstance; skills: SkillRegistry }
   const skills = new SkillRegistry(NOW);
   const mentorships = new MentorshipLedger(skills, NOW);
   app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     skillRegistry: skills,
@@ -125,11 +125,11 @@ describe('E2.3 skill lifecycle HTTP', () => {
 
     const narrowed = await a.inject({
       method: 'POST', url: '/api/skills/code-review/harden', headers: AUTH,
-      payload: { permissions: ['realm:read'], constraints: { maxRuntimeMs: 5000 } },
+      payload: { permissions: ['data-domain:read'], constraints: { maxRuntimeMs: 5000 } },
     });
     expect(narrowed.statusCode).toBe(200);
     expect((await narrowed.json()).hardening).toMatchObject({
-      permissions: ['realm:read'], constraints: { maxRuntimeMs: 5000 },
+      permissions: ['data-domain:read'], constraints: { maxRuntimeMs: 5000 },
     });
 
     const escalated = await a.inject({
@@ -183,7 +183,7 @@ describe('E2.3 skill lifecycle HTTP', () => {
 });
 
 describe('E2.5 mentorship HTTP', () => {
-  async function commission(a: FastifyInstance, learnerId = 'learner-b') {
+  async function seatGrant(a: FastifyInstance, learnerId = 'learner-b') {
     await register(a);
     return a.inject({
       method: 'POST', url: '/api/mentorships', headers: AUTH,
@@ -204,9 +204,9 @@ describe('E2.5 mentorship HTTP', () => {
 
   it('certifies a learner who passes, adding them to the provider set', async () => {
     const { app: a } = await server();
-    const commissioned = await commission(a);
-    expect(commissioned.statusCode).toBe(201);
-    const record = (await commissioned.json()) as MentorshipRecord;
+    const seatGranted = await seatGrant(a);
+    expect(seatGranted.statusCode).toBe(201);
+    const record = (await seatGranted.json()) as MentorshipRecord;
     expect(record.status).toBe('teaching');
 
     const taught = await a.inject({
@@ -232,7 +232,7 @@ describe('E2.5 mentorship HTTP', () => {
 
   it('leaves the provider set untouched when the assessment fails', async () => {
     const { app: a } = await server();
-    const record = (await (await commission(a)).json()) as MentorshipRecord;
+    const record = (await (await seatGrant(a)).json()) as MentorshipRecord;
 
     const assessed = await a.inject({
       method: 'POST', url: `/api/mentorships/${record.id}/assess`, headers: AUTH,
@@ -248,7 +248,7 @@ describe('E2.5 mentorship HTTP', () => {
 
   it('dismisses an open mentorship and refuses to act on a closed one', async () => {
     const { app: a } = await server();
-    const record = (await (await commission(a)).json()) as MentorshipRecord;
+    const record = (await (await seatGrant(a)).json()) as MentorshipRecord;
 
     const dismissed = await a.inject({
       method: 'POST', url: `/api/mentorships/${record.id}/dismiss`, headers: AUTH,
@@ -297,7 +297,7 @@ describe('E2.5 mentorship HTTP', () => {
   it('is not mounted when no ledger is wired', async () => {
     const skills = new SkillRegistry(NOW);
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       skillRegistry: skills,

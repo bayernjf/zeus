@@ -15,7 +15,7 @@ function registryWithMentor(): SkillRegistry {
     version: '1.0.0',
     domain: 'code',
     tags: ['qa'],
-    permissions: ['realm:read'],
+    permissions: ['data-domain:read'],
     providedBy: ['mentor-1'],
   });
   return registry;
@@ -28,10 +28,10 @@ const passChecks: CompetencyCheck[] = [
 ];
 
 describe('E2.5 Mentor skill transfer', () => {
-  it('commissions a mentorship only when the mentor already provides the skill', () => {
+  it('seatGrants a mentorship only when the mentor already provides the skill', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({
+    const record = ledger.seatGrant({
       skillId: 'code-review',
       mentorId: 'mentor-1',
       learnerId: 'newbie-1',
@@ -40,24 +40,24 @@ describe('E2.5 Mentor skill transfer', () => {
     expect(record.version).toBe('1.0.0');
   });
 
-  it('refuses commission for a non-provider, unknown skill, or self-mentoring', () => {
+  it('refuses seatGrant for a non-provider, unknown skill, or self-mentoring', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
     expect(() =>
-      ledger.commission({ skillId: 'code-review', mentorId: 'impostor', learnerId: 'n' }),
+      ledger.seatGrant({ skillId: 'code-review', mentorId: 'impostor', learnerId: 'n' }),
     ).toThrowError(MentorshipError);
     expect(() =>
-      ledger.commission({ skillId: 'nope', mentorId: 'mentor-1', learnerId: 'n' }),
+      ledger.seatGrant({ skillId: 'nope', mentorId: 'mentor-1', learnerId: 'n' }),
     ).toThrowError();
     expect(() =>
-      ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'mentor-1' }),
+      ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'mentor-1' }),
     ).toThrowError(MentorshipError);
   });
 
   it('records lessons while teaching', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     const taught = ledger.teach(record.id, [{ topic: 'reading diffs', ref: 'res-1' }]);
     expect(taught.lessons).toHaveLength(1);
     expect(taught.lessons[0]!.topic).toBe('reading diffs');
@@ -66,7 +66,7 @@ describe('E2.5 Mentor skill transfer', () => {
   it('certifies and registers the learner as a new provider', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     const assessed = ledger.assess(record.id, passChecks);
 
     expect(assessed.status).toBe('certified');
@@ -82,7 +82,7 @@ describe('E2.5 Mentor skill transfer', () => {
   it('fails certification on a failed required check without adding a provider', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     const checks: CompetencyCheck[] = [
       { criterion: 'hard gate', required: true, passed: false, score: 0.2 },
       { criterion: 'other', passed: true, score: 0.99 },
@@ -96,7 +96,7 @@ describe('E2.5 Mentor skill transfer', () => {
   it('fails when the weighted score is below threshold, honoring a custom threshold', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     const assessed = ledger.assess(
       record.id,
       [{ criterion: 'c', passed: true, score: 0.6 }],
@@ -109,7 +109,7 @@ describe('E2.5 Mentor skill transfer', () => {
   it('rejects assessment without checks or with an out-of-range score', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     expect(() => ledger.assess(record.id, [])).toThrowError(MentorshipError);
     expect(() => ledger.assess(record.id, [{ criterion: 'c', passed: true, score: 2 }])).toThrowError(MentorshipError);
     // NaN fails both directional comparisons; it must not slip into the mean.
@@ -119,7 +119,7 @@ describe('E2.5 Mentor skill transfer', () => {
   it('rejects non-finite or negative check weights instead of poisoning the mean', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     for (const weight of [NaN, Infinity, -Infinity, -1]) {
       expect(() => ledger.assess(record.id, [{ criterion: 'c', passed: true, score: 0.9, weight }])).toThrowError(MentorshipError);
     }
@@ -128,7 +128,7 @@ describe('E2.5 Mentor skill transfer', () => {
   it('dismisses an open mentorship and refuses mutations after closing', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     expect(ledger.dismiss(record.id, 'not a fit').status).toBe('dismissed');
     expect(() => ledger.teach(record.id, [{ topic: 'x' }])).toThrowError(MentorshipError);
   });
@@ -136,12 +136,12 @@ describe('E2.5 Mentor skill transfer', () => {
   it('re-opens the same pairing after a dismissal (C-audit 19)', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const first = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const first = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     ledger.dismiss(first.id, 'not a fit');
-    // The id is a pure function of the tuple, so a re-commission collides with
+    // The id is a pure function of the tuple, so a re-seatGrant collides with
     // the dismissed record; it must be allowed to replace it, teaching from
     // scratch. A certified/failed pairing stays a conflict.
-    const reopened = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const reopened = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     expect(reopened.id).toBe(first.id);
     expect(reopened.status).toBe('teaching');
     expect(reopened.lessons).toEqual([]);
@@ -152,7 +152,7 @@ describe('E2.5 Mentor skill transfer', () => {
   it('survives export/import of the ledger', () => {
     const registry = registryWithMentor();
     const ledger = new MentorshipLedger(registry);
-    const record = ledger.commission({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
+    const record = ledger.seatGrant({ skillId: 'code-review', mentorId: 'mentor-1', learnerId: 'newbie-1' });
     ledger.assess(record.id, passChecks);
 
     const restored = new MentorshipLedger(registry);

@@ -1,7 +1,7 @@
 /**
  * E1.5 concurrency gate.
  *
- * The kernel used to dispatch every branch of every intent at once
+ * The runtime used to dispatch every branch of every intent at once
  * (`Promise.all`), so "concurrency control" meant nothing and the queue-depth
  * metric was permanently 0. This is the smallest thing that makes both true:
  * a fixed number of leases, a FIFO wait line, and a bound on how many branches
@@ -18,7 +18,7 @@
  *
  * One semaphore per Orchestrator, which is per process in the long-running
  * assembly - so the cap bounds in-flight branches across all intents, which is
- * what protects a shared downstream vassal.
+ * what protects a shared downstream executor.
  */
 
 export type SlotRelease = () => void;

@@ -16,9 +16,9 @@
 
 ```bash
 ZEUS_INTERNAL_TOKEN="$(openssl rand -hex 24)" \
-ZEUS_STATE_FILE=./data/kernel-state.json \
+ZEUS_STATE_FILE=./data/runtime-state.json \
 ZEUS_AUDIT_FILE=./data/audit.jsonl \
-ZEUS_REALM_ROOTS=/path/to/your/dir \
+ZEUS_DATA_DOMAIN_ROOTS=/path/to/your/dir \
 ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 \
 npm start
 ```
@@ -60,9 +60,9 @@ npm run daily -- "summarize the note" --root /path/to/your/dir --agent http://12
 
 | 操作 | 预期 | 判定 |
 |---|---|---|
-| `npm run vault -- build --root /path/to/dir --out backups/map.json` | 出清单：只存引用与逐条指纹，不存正文 | 文件生成 |
-| `npm run vault -- check --map backups/map.json` | 原地漂移校验只读 | exit 0=无漂移；2=漂移，3=目录不可达 |
-| `npm run vault -- backup` 后 `restore --target /restore/dir` | 加密内容包可恢复 | 恢复目录内容可读回 |
+| `npm run backup -- build --root /path/to/dir --out backups/map.json` | 出清单：只存引用与逐条指纹，不存正文 | 文件生成 |
+| `npm run backup -- check --map backups/map.json` | 原地漂移校验只读 | exit 0=无漂移；2=漂移，3=目录不可达 |
+| `npm run backup -- backup` 后 `restore --target /restore/dir` | 加密内容包可恢复 | 恢复目录内容可读回 |
 
 ### 2.3 签名信任链
 
@@ -89,8 +89,8 @@ npm run daily -- "summarize the note" --root /path/to/your/dir --agent http://12
 
 | 操作 | 预期 | 判定 |
 |---|---|---|
-| 意图运行中 `kill -TERM <serve pid>` | 内核状态落盘 `kernel-state.json` 0600 | 文件存在且权限 0600 |
-| 重启 `npm start` | 名册 / 记忆 / 治理状态恢复 | 日志 `kernel-state-restored`；`/api/roster/keys` 验签仍过；派发照常 |
+| 意图运行中 `kill -TERM <serve pid>` | 内核状态落盘 `runtime-state.json` 0600 | 文件存在且权限 0600 |
+| 重启 `npm start` | 名册 / 记忆 / 治理状态恢复 | 日志 `runtime-state-restored`；`/api/roster/keys` 验签仍过；派发照常 |
 
 ## 3. Web 监督台九视图核对表（浏览器 E2E 主体）
 

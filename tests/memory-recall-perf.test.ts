@@ -13,12 +13,12 @@ import type { Embedder, FactRecord, MemoryEvent } from '../src/memory/types.js';
  * abort a sync, and a dimension switch still rebuilds from scratch.
  */
 
-const REALM = 'personal';
+const DATA_DOMAIN = 'personal';
 
 function claimEvent(overrides: Partial<MemoryEvent> = {}): MemoryEvent {
   return {
     eventId: `evt-${Math.random().toString(36).slice(2, 10)}`,
-    realmId: REALM,
+    dataDomainId: DATA_DOMAIN,
     runId: 'run-1',
     source: { agentId: 'tester' },
     kind: 'claim',
@@ -32,7 +32,7 @@ function claimEvent(overrides: Partial<MemoryEvent> = {}): MemoryEvent {
 
 function fact(overrides: Partial<FactRecord> & Pick<FactRecord, 'factId'>): FactRecord {
   return {
-    realmId: REALM,
+    dataDomainId: DATA_DOMAIN,
     subject: 'user',
     predicate: 'city',
     object: 'Berlin',
@@ -74,7 +74,7 @@ function countingEmbedder(dimension = 256): Embedder & { calls: string[]; dimens
 describe('RecallIndex incremental sync (W2-1a)', () => {
   it('re-embeds only the changed fact on a re-sync', async () => {
     const embedder = countingEmbedder();
-    const index = new RecallIndex(embedder, REALM);
+    const index = new RecallIndex(embedder, DATA_DOMAIN);
     const a = fact({ factId: 'a', object: 'Berlin' });
     const b = fact({ factId: 'b', object: 'Munich' });
 
@@ -98,7 +98,7 @@ describe('RecallIndex incremental sync (W2-1a)', () => {
 
   it('drops a fact whose status left INDEXABLE_STATUSES even though its text hash is unchanged', async () => {
     const embedder = countingEmbedder();
-    const index = new RecallIndex(embedder, REALM);
+    const index = new RecallIndex(embedder, DATA_DOMAIN);
     const a = fact({ factId: 'a', object: 'Berlin' });
     const b = fact({ factId: 'b', object: 'Munich' });
     await index.sync([a, b]);
@@ -134,7 +134,7 @@ describe('RecallIndex incremental sync (W2-1a)', () => {
         return local.embed(text);
       },
     };
-    const index = new RecallIndex(embedder, REALM);
+    const index = new RecallIndex(embedder, DATA_DOMAIN);
 
     await index.sync([
       fact({ factId: 'ok1', object: 'coffee' }),
@@ -181,7 +181,7 @@ describe('bounded embed pool (W2-1a)', () => {
         return new Array<number>(8).fill(0.5);
       },
     };
-    const index = new RecallIndex(embedder, REALM);
+    const index = new RecallIndex(embedder, DATA_DOMAIN);
     const facts = Array.from({ length: 40 }, (_, i) =>
       fact({ factId: `f${i}`, object: `topic-${i}` }),
     );
@@ -205,26 +205,26 @@ describe('MemoryStore hot recall path (W2-1a)', () => {
         content: { subject: `user-${id}`, predicate: 'language', object: 'typescript' },
       }));
     }
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
     expect(embedder.calls).toHaveLength(0); // no index materialised yet
 
-    await store.buildRecall(REALM);
+    await store.buildRecall(DATA_DOMAIN);
     expect(embedder.calls).toHaveLength(3); // cold cache: one embed per fact
 
-    await store.searchRecall(REALM, REALM, '退款政策 typescript');
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '退款政策 typescript');
     const afterFirstQuery = embedder.calls.length;
     expect(afterFirstQuery).toBe(4); // +1: the query text only
 
-    await store.searchRecall(REALM, REALM, '退款政策 typescript');
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '退款政策 typescript');
     expect(embedder.calls).toHaveLength(afterFirstQuery + 1); // still query-only
 
     // A new fact via consolidation embeds exactly that fact.
     store.append(claimEvent({ eventId: 'e4', content: { subject: 'user-e4', predicate: 'editor', object: 'zed' } }));
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
     expect(embedder.calls).toHaveLength(afterFirstQuery + 2);
     expect(embedder.calls.at(-1)).toContain('zed');
 
-    await store.searchRecall(REALM, REALM, 'zed');
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, 'zed');
     expect(embedder.calls).toHaveLength(afterFirstQuery + 3);
   });
 
@@ -236,22 +236,22 @@ describe('MemoryStore hot recall path (W2-1a)', () => {
       eventId: 'd2',
       content: { subject: '发票', predicate: 'policy', object: '月结 30 天' },
     }));
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
 
-    await store.searchRecall(REALM, REALM, '退款');
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '退款');
     const afterFirst = embedder.calls.length; // 2 facts + 1 query
     expect(afterFirst).toBe(3);
 
     (embedder as { dimension: number }).dimension = 8;
-    await store.searchRecall(REALM, REALM, '退款');
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '退款');
     // Dimension rebuild: every fact re-embeds in the new space, plus the query.
     expect(embedder.calls.length).toBe(afterFirst + 3);
-    const index = await store.buildRecall(REALM);
+    const index = await store.buildRecall(DATA_DOMAIN);
     expect(index.dimension).toBe(8);
 
     // The rebuilt index then serves further recalls without fact embeds.
     const before = embedder.calls.length;
-    await store.searchRecall(REALM, REALM, '退款');
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '退款');
     expect(embedder.calls.length).toBe(before + 1);
   });
 
@@ -268,22 +268,22 @@ describe('MemoryStore hot recall path (W2-1a)', () => {
       content: { subject: '偏好', predicate: 'style', object: '喜欢简洁回复', category: 'preference' },
     }));
     // Consolidation and the decay pass must read the same injected clock.
-    await store.consolidateRealm(REALM, { now: () => now });
+    await store.consolidateDataDomain(DATA_DOMAIN, { now: () => now });
 
     now = new Date('2026-10-30T00:00:00.000Z'); // ~151 days later
-    const first = await store.searchRecall(REALM, REALM, '很老的一次操作');
+    const first = await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '很老的一次操作');
     expect(first.find(h => h.fact.subject === '流水')).toBeUndefined(); // evicted
     const afterFirst = embedder.calls.length; // 2 facts + 1 query
     expect(afterFirst).toBe(3);
 
     // The next recall re-syncs the evicted fact into the index and decay
     // evicts it again — from the cached vector, with zero embed calls.
-    const second = await store.searchRecall(REALM, REALM, '很老的一次操作');
+    const second = await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '很老的一次操作');
     expect(second.find(h => h.fact.subject === '流水')).toBeUndefined();
     expect(embedder.calls.length).toBe(afterFirst + 1);
 
     // Non-decaying facts keep recallable, also without re-embedding.
-    const kept = await store.searchRecall(REALM, REALM, '喜欢简洁回复');
+    const kept = await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '喜欢简洁回复');
     expect(kept).toHaveLength(1);
     expect(embedder.calls.length).toBe(afterFirst + 2);
   });

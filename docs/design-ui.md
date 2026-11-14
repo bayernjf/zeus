@@ -19,18 +19,18 @@
 
 ```
 ┌─ Intent intent-9f3a ─ deployment-health ─ ⏱ 00:12 ─ [Cancel] ─┐
-│  状态: partial (2/3 completed, 1 needs-driver)                 │
+│  状态: partial (2/3 completed, 1 needs-operator)                 │
 ├───────────────────────────────┬───────────────────────────────┤
 │  分支                           │  聚合 / 决策                   │
 │  ● pr-helper   completed  2.1s │  rule: majority               │
 │    └ deployment-health plan    │  positions: []                │
 │  ● agent-dev   completed  3.4s │  conclusion: null             │
 │    └ report: 8/9 checks ok     │  ┌─────────────────────────┐  │
-│  ◐ loom        running…   9s   │  │ needs-driver: no stance │  │
+│  ◐ loom        running…   9s   │  │ needs-operator: no stance │  │
 │                               │  │ [View escalation]       │  │
 │  [events ▾]                    │  └─────────────────────────┘  │
 ├───────────────────────────────┴───────────────────────────────┤
-│  审计时间线  dispatched ×2 · vassal-revoked · 12:04:31 …       │
+│  审计时间线  dispatched ×2 · executor-revoked · 12:04:31 …       │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,7 +39,7 @@
 - **端点依赖**：`POST /api/intents`、`GET /api/intents/:id`、`GET /api/intents/:id/events`（SSE）、`POST /api/intents/:id/cancel`、`GET /api/escalations/:id`。
 - **定位**：Web v1，触发条件满足后的最小可用版。
 
-> **实现进展（2026-10-10，v0.4）**：方案 C 首批增量落地——对外只读门户 `web/portal/index.html`（仅消费 `GET /api/roster/public` + `GET /api/roster/keys` 两公开端点，名册表格 / 签封信息 / 根公钥指纹，零写路径，i18n zh-CN/en + light/dark 主题，与监督台同 token 契约，Active work 193）。**进展（2026-10-10，v0.3）**：方案 B 立项并落地首批增量（审计独立视图 + 技能治理写操作，监督台 v1.6）。**进展（2026-10-03）**：方案 A v1 经用户以 owner 身份裁定提前激活并落地（触发条件①未满足但用户决定优先，与方案 D 同口径：UI 仅消费现有 HTTP API、零新增内核端点、无界面私有逻辑）。产物 `web/supervisor/index.html`（单文件自包含、原生 JS、hash 路由四视图 monitor/oversight/grants/connect）：只读监控（`/api/state` 内核状态 / `/api/metrics` 并发指标含 perVassal 延迟 / `/api/roster` 名册 / `/api/audit` 扇出·决策时间线 / `/api/domains` 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve+立场，y/N 二次确认）、跨域授权（签发只能选企业域 + 吊销，均二次确认）；连接配置存 localStorage、首访无 token 落 connect 引导、轮询 10s 开关。为让浏览器跨域消费现有 API，补了最小可选传输层配置 `HttpDeps.corsOrigins`（精确 Origin 白名单 + OPTIONS 预检 204，默认空 = 行为不变，4 项测试）+ `ZEUS_CORS_ORIGINS` env。**浏览器真机 E2E 通过**（真服务 8799 + CORS 白名单 5173 + 真 socket mock agent：连接 → 监控真实数据 → 裁决/授权空态与表单）。启动：`ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 node dist/http/serve.js` + `python -m http.server 5173 --directory web` → `http://127.0.0.1:5173/supervisor/index.html`。与方案 D 共用同一组现有 API 与设计 token 规范，无界面私有旁路；实现细节与验收见 [deferred-items.md](deferred-items.md) #34 进展。
+> **实现进展（2026-10-10，v0.4）**：方案 C 首批增量落地——对外只读门户 `web/portal/index.html`（仅消费 `GET /api/roster/public` + `GET /api/roster/keys` 两公开端点，名册表格 / 签封信息 / 根公钥指纹，零写路径，i18n zh-CN/en + light/dark 主题，与监督台同 token 契约，Active work 193）。**进展（2026-10-10，v0.3）**：方案 B 立项并落地首批增量（审计独立视图 + 技能治理写操作，监督台 v1.6）。**进展（2026-10-03）**：方案 A v1 经用户以 owner 身份裁定提前激活并落地（触发条件①未满足但用户决定优先，与方案 D 同口径：UI 仅消费现有 HTTP API、零新增内核端点、无界面私有逻辑）。产物 `web/supervisor/index.html`（单文件自包含、原生 JS、hash 路由四视图 monitor/oversight/grants/connect）：只读监控（`/api/state` 内核状态 / `/api/metrics` 并发指标含 perExecutor 延迟 / `/api/roster` 名册 / `/api/audit` 扇出·决策时间线 / `/api/domains` 数据域与跨域授权台账）、escalation 裁决（approve / reject / resolve+立场，y/N 二次确认）、跨域授权（签发只能选企业域 + 吊销，均二次确认）；连接配置存 localStorage、首访无 token 落 connect 引导、轮询 10s 开关。为让浏览器跨域消费现有 API，补了最小可选传输层配置 `HttpDeps.corsOrigins`（精确 Origin 白名单 + OPTIONS 预检 204，默认空 = 行为不变，4 项测试）+ `ZEUS_CORS_ORIGINS` env。**浏览器真机 E2E 通过**（真服务 8799 + CORS 白名单 5173 + 真 socket mock agent：连接 → 监控真实数据 → 裁决/授权空态与表单）。启动：`ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 node dist/http/serve.js` + `python -m http.server 5173 --directory web` → `http://127.0.0.1:5173/supervisor/index.html`。与方案 D 共用同一组现有 API 与设计 token 规范，无界面私有旁路；实现细节与验收见 [deferred-items.md](deferred-items.md) #34 进展。
 
 ## 方案 B：按角色分区的多视图工作台
 

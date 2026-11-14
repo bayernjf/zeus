@@ -2,7 +2,7 @@
  * User-facing notifications for the caller-owned watch daemon (design-self-host
  * §3.2 / design-personal-agent-host §6 P1-4).
  *
- * The kernel deliberately holds no timer and never pings a user itself; when a
+ * The runtime deliberately holds no timer and never pings a user itself; when a
  * watch fires, the caller-owned `scripts/run-watch-tick.mjs` loop decides what
  * to do about it. This module is that loop's "tell the human" step: pick the
  * best available desktop-notification channel, build a short message from the

@@ -1,0 +1,244 @@
+import { randomUUID } from 'node:crypto';
+import { canonicalJson, type RosterSigner, type RosterVerifier } from '../registry/signing.js';
+import type { OperatorWriteGrant, GrantVerification, SignedOperatorWriteGrant } from './types.js';
+
+/**
+ * E3.5 operator write grants (design-dataDomain §7.5, deferred #14).
+ *
+ * A grant is a signed statement: "key K authorized a write into dataDomain R until
+ * time T, once". Before this module the runtime could only check a grant's
+ * *shape*, which meant `verifyOperatorWriteGrant` trusted that the JSON it was
+ * handed came from the operator - anyone able to reach `write()` could author an
+ * authorization. Issuance, signature verification and nonce consumption are
+ * what turn it into a credential.
+ */
+
+/** Default lifetime of an issued grant: enough to do one write, short enough
+ *  that a leaked grant expires before anyone notices. */
+export const OPERATOR_GRANT_DEFAULT_TTL_MS = 5 * 60_000;
+/** A grant that asks to live longer than this is refused rather than clamped:
+ *  a long-lived write credential is a different object, and pretending
+ *  otherwise would silently downgrade what the operator signed. */
+export const OPERATOR_GRANT_MAX_TTL_MS = 24 * 3600_000;
+
+export type IssueOperatorGrantInput = {
+  dataDomainId: string;
+  /** Who authorized it, as a human-readable identity (not a key id: `keyId` carries that). */
+  grantedBy: string;
+  reason?: string;
+  ttlMs?: number;
+  /** Defaults to a fresh random UUID. Provide one only to make issuance deterministic in a test. */
+  nonce?: string;
+};
+
+export type IssueOperatorGrantOptions = {
+  signer: RosterSigner;
+  now?: () => Date;
+  maxTtlMs?: number;
+};
+
+export class OperatorGrantError extends Error {}
+
+/**
+ * One record per issued write grant. Issuance is the moment a human said "yes,
+ * write this", so it belongs on the audit spine even when the write that follows
+ * never happens.
+ */
+export type OperatorGrantAuditEntry = {
+  at: string;
+  decision: 'operator-grant-issued';
+  dataDomainId: string;
+  grantedBy: string;
+  keyId: string;
+  expiresAt: string;
+  reason?: string;
+};
+
+/** The fields the signature covers: everything except the signature itself. */
+function grantClaim(grant: OperatorWriteGrant): Record<string, unknown> {
+  const { sig: _sig, ...claim } = grant;
+  return claim;
+}
+
+/**
+ * Mint and sign a single-use write grant for one enterprise dataDomain.
+ *
+ * Refuses an unknown dataDomain type at the caller boundary is the transport's job;
+ * this refuses malformed inputs and an unbounded lifetime, because those are the
+ * two ways a "grant" stops meaning "one write".
+ */
+export async function issueOperatorWriteGrant(
+  input: IssueOperatorGrantInput,
+  options: IssueOperatorGrantOptions
+): Promise<SignedOperatorWriteGrant> {
+  const now = (options.now ?? (() => new Date()))();
+  if (!input.dataDomainId?.trim()) throw new OperatorGrantError('grant needs a dataDomainId');
+  if (!input.grantedBy?.trim()) throw new OperatorGrantError('grant needs a grantedBy identity');
+  const ttlMs = input.ttlMs ?? OPERATOR_GRANT_DEFAULT_TTL_MS;
+  const maxTtlMs = options.maxTtlMs ?? OPERATOR_GRANT_MAX_TTL_MS;
+  if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new OperatorGrantError(`grant ttl must be a positive number of ms: ${String(input.ttlMs)}`);
+  if (ttlMs > maxTtlMs) throw new OperatorGrantError(`grant ttl ${ttlMs}ms exceeds the ${maxTtlMs}ms ceiling`);
+  const nonce = input.nonce?.trim() || randomUUID();
+  if (!nonce) throw new OperatorGrantError('grant needs a nonce');
+
+  const grant: SignedOperatorWriteGrant = {
+    kind: 'operator-write',
+    dataDomainId: input.dataDomainId.trim(),
+    grantedBy: input.grantedBy.trim(),
+    ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
+    grantedAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + ttlMs).toISOString(),
+    nonce,
+    keyId: options.signer.keyId,
+    sig: '',
+  };
+  grant.sig = await options.signer.sign(canonicalJson(grantClaim(grant)));
+  return grant;
+}
+
+/**
+ * Bounded set of consumed nonces. A grant is single-use, and that is the only
+ * thing standing between a captured grant and a second write inside its ttl -
+ * so the window has to be at least as long as the longest ttl in force.
+ *
+ * Bounded on purpose: an unbounded ledger is a memory leak in a long-running
+ * runtime, and `MAX_SPENT` entries at grant-issue rates far past anything this
+ * project sees still covers hours. Evicting the oldest is logged through
+ * `onEvict` so a deployment that wants the audit trail can keep it.
+ */
+export const MAX_SPENT_GRANT_NONCES = 10_000;
+
+export type OperatorGrantLedgerOptions = {
+  limit?: number;
+  /** Fired when a nonce is newly consumed. The ledger is only worth having if it
+   *  survives a restart, so the runtime persists state from here rather than
+   *  waiting for shutdown - a nonce lost to a crash is a grant that replays. */
+  onChange?: () => void;
+  /** Fired when the bounded window evicts an old nonce. */
+  onEvict?: (nonce: string) => void;
+};
+
+export class OperatorGrantLedger {
+  private spent = new Set<string>();
+  private order: string[] = [];
+  private readonly limit: number;
+  private readonly onChange: (() => void) | undefined;
+  private readonly onEvict: (nonce: string) => void;
+
+  constructor(options: OperatorGrantLedgerOptions = {}) {
+    this.limit = options.limit ?? MAX_SPENT_GRANT_NONCES;
+    this.onChange = options.onChange;
+    this.onEvict = options.onEvict ?? (() => {});
+  }
+
+  isSpent(nonce: string): boolean {
+    return this.spent.has(nonce);
+  }
+
+  /** Claim a nonce. False means it was already consumed (replay). */
+  consume(nonce: string): boolean {
+    if (this.spent.has(nonce)) return false;
+    this.spent.add(nonce);
+    this.order.push(nonce);
+    while (this.order.length > this.limit) {
+      const oldest = this.order.shift();
+      if (oldest !== undefined) {
+        this.spent.delete(oldest);
+        this.onEvict(oldest);
+      }
+    }
+    // Persist on every accepted nonce, eviction or not. `onChange` is the only
+    // path that gets the consumed set to disk, and an eviction is part of that
+    // change - gating it on "no eviction" left the just-consumed nonce off disk
+    // exactly when the window was full, so a crash re-admitted a spent grant.
+    this.onChange?.();
+    return true;
+  }
+
+  get size(): number {
+    return this.spent.size;
+  }
+
+  exportState(): string[] {
+    return [...this.order];
+  }
+
+  importState(nonces: string[]): void {
+    this.spent.clear();
+    this.order = [];
+    for (const nonce of nonces ?? []) {
+      if (typeof nonce !== 'string' || !nonce.trim() || this.spent.has(nonce)) continue;
+      this.spent.add(nonce);
+      this.order.push(nonce);
+    }
+    while (this.order.length > this.limit) {
+      const oldest = this.order.shift();
+      if (oldest !== undefined) this.spent.delete(oldest);
+    }
+  }
+}
+
+export type GrantVerificationContext = {
+  now?: () => Date;
+  /** When present, the grant must carry a signature this verifier accepts. */
+  verifier?: RosterVerifier;
+  /** Key ids treated as operator keys. Empty/absent accepts any key the verifier knows. */
+  acceptedKeyIds?: string[];
+  /** When present, nonces are compared and consumed (single-use enforcement). */
+  ledger?: OperatorGrantLedger;
+};
+
+/**
+ * Verify a operator write grant against the dataDomain about to be written.
+ *
+ * Order matters: shape and binding first (cheap, and they say what is wrong),
+ * then the signature (the expensive check that proves provenance), then expiry,
+ * then consumption. A grant that fails any check never reaches the ledger, so a
+ * rejected attempt cannot burn someone else's nonce.
+ */
+export async function verifyOperatorWriteGrant(
+  grant: OperatorWriteGrant | undefined,
+  dataDomainId: string,
+  context: GrantVerificationContext = {}
+): Promise<GrantVerification> {
+  if (!grant) return { ok: false, reason: 'missing' };
+
+  const malformed =
+    grant.kind !== 'operator-write' ||
+    typeof grant.dataDomainId !== 'string' ||
+    grant.dataDomainId.length === 0 ||
+    typeof grant.grantedBy !== 'string' ||
+    grant.grantedBy.length === 0 ||
+    typeof grant.grantedAt !== 'string' ||
+    Number.isNaN(Date.parse(grant.grantedAt)) ||
+    typeof grant.nonce !== 'string' ||
+    grant.nonce.length === 0 ||
+    (grant.expiresAt !== undefined && Number.isNaN(Date.parse(grant.expiresAt)));
+  if (malformed) return { ok: false, reason: 'malformed' };
+
+  if (grant.dataDomainId !== dataDomainId) return { ok: false, reason: 'wrong-dataDomain' };
+
+  if (context.verifier) {
+    if (typeof grant.sig !== 'string' || grant.sig.length === 0) return { ok: false, reason: 'unsigned' };
+    if (typeof grant.keyId !== 'string' || grant.keyId.length === 0) return { ok: false, reason: 'unsigned' };
+    if (context.acceptedKeyIds && context.acceptedKeyIds.length > 0 && !context.acceptedKeyIds.includes(grant.keyId)) {
+      return { ok: false, reason: 'unknown-key' };
+    }
+    const valid = await context.verifier.verify(grant.keyId, canonicalJson(grantClaim(grant)), grant.sig);
+    if (!valid) return { ok: false, reason: 'bad-signature' };
+  }
+
+  const now = (context.now ?? (() => new Date()))();
+  if (grant.expiresAt === undefined) {
+    // An open-ended write credential is not a credential; it is a permission,
+    // and permissions are E6.4's business (DomainGrant), not this one's.
+    return { ok: false, reason: 'no-expiry' };
+  }
+  if (now.getTime() > Date.parse(grant.expiresAt)) return { ok: false, reason: 'expired' };
+
+  if (context.ledger && !context.ledger.consume(grant.nonce)) {
+    return { ok: false, reason: 'replayed' };
+  }
+
+  return { ok: true };
+}

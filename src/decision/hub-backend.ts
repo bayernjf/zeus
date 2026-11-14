@@ -78,6 +78,9 @@ export async function createHubDecisionBackend(
     cachePath: options.cachePath,
     // 未注入测试 fetch 时默认走 DNS 重绑定守卫（携带 hub token，评审 P2-1）。
     ...(options.fetchImpl ? { fetch: options.fetchImpl } : { fetch: guardedFetch }),
+    // D-7: the kit's own usage reports swallow transport errors as well; the
+    // same observer makes them visible without touching the decision path.
+    ...(options.onUsageReportFailed ? { onUsageReportError: options.onUsageReportFailed } : {}),
   });
   const reportFetch = options.fetchImpl ?? guardedFetch;
 

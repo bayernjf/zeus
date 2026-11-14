@@ -5,7 +5,7 @@ export type FormatParams = Record<string, string | number>;
 
 /**
  * Neutralize terminal control sequences in untrusted text before it reaches a
- * TTY. Agent-controlled fields (vassal names, escalation reasons, branch
+ * TTY. Agent-controlled fields (executor names, escalation reasons, branch
  * previews, connector commands, ...) could otherwise embed SGR/CSI/OSC
  * sequences or CR/LF and forge or disrupt the governance surface.
  *
@@ -62,7 +62,7 @@ export function resolveLocale(value: string | undefined): Locale {
   return 'zh-CN';
 }
 
-/** Localized label for a kernel/API status; the enum itself stays untranslated. */
+/** Localized label for a runtime/API status; the enum itself stays untranslated. */
 export function statusLabel(t: Translator, status: string): string {
   const key = `intent.status.${status}` as MessageKey;
   if (key in messages['zh-CN']) return t(key);

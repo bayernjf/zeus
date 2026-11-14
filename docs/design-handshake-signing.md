@@ -1,0 +1,279 @@
+# handshake 签名链设计（Roster Attestation & Signing）
+
+> 状态：**现行（设计稿 v0.2，2026-09-27；初稿 v0.1 2026-09-21）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计与契约，不记进度。
+> 上游：[deferred-items.md](deferred-items.md) #7（触发条件：bayjf 名册对外公开前）；[design-bayjf-roster.md](design-bayjf-roster.md) §7 信任闸门、§8 交付阶段 R2；[design-executor-protocol.md](design-executor-protocol.md) §4.1 handshake、§4.5 治理。
+> 本文给出 v1 裁决与可实现的数据结构；**v1 实现随 R1（签名/验签纯函数）与 R2（bayjf 验签展示）落地，设计本身不触发「名册公开」**。
+
+## 0. 一句话
+
+公开名册上的每一个字都派生自执行 Agent 的 Agent Card + handshake；签名链让任何拿到名册条目的人都能密码学地验证两件事——**这份 card（含承诺）确实经过 Zeus 核验在册**，且**它此刻仍在有效期内、未被吊销、未被篡改或重放**。
+
+## 1. 威胁模型与边界
+
+### 1.1 必须防住
+
+| 编号 | 攻击 | 后果 |
+| --- | --- | --- |
+| T1 | 伪造名册条目：攻击者发布假 card + 假 handshake，诱使第三方相信其为在册执行 Agent | 假执行 Agent 冒名招募/接单 |
+| T2 | 篡改在册执行 Agent 承诺：中间人改写 handshake（如 `dataPolicy: none` → `read-dataDomain`）或 card 内容 | 名册替假承诺背书；调度方误判数据权限 |
+| T3 | 重放已吊销执行 Agent：`revoke()` 后拿历史有效快照/签名继续冒充 | 叛将不下榜 |
+| T4 | 伪造/裁剪整份快照：虚构在榜名单、增删条目、隐瞒吊销、重放旧快照 | 名册整体不可信 |
+
+### 1.2 明确不解决（边界）
+
+- **不防 Zeus 自身**：Zeus 是名册唯一聚合点与信任根（design-bayjf-roster §2.1）；RSK 私钥泄露属最高等级运行事故，靠密钥管理与轮换缓解，不在协议内解决。
+- **不解决 card 通道的传输保密/鉴权**：那是 HTTPS / mTLS / A2A 认证方案的职责（design-executor-protocol §3.5）。
+- **不做签名的数学撤销**：数字签名签发后无法「撤回」；吊销靠**状态 + 时间维度**让旧签名不再被接受（见 §6）。
+- **不担保执行 Agent 行为或 SLA**：签名只证明「某时刻在册、承诺原文如此」，不是履约担保；健康与 SLA 仍由探针与结果回传体现。
+
+## 2. 方案裁决
+
+design-bayjf-roster §7 给了两个候选，本文决定：
+
+### 2.1 v1 基线：**Zeus 单签背书（方向 1）**
+
+注册时 Zeus 核验 handshake，用 **Zeus 名册签名密钥（RSK, Roster Signing Key）** 对「执行 Agent 身份 + card/handshake 摘要 + 在册状态 + 有效期」签名，签名随名册快照分发；验签方只需信任一个 Zeus 根公钥。
+
+裁决理由：
+
+1. 架构上 Zeus 本就是唯一聚合点和信任根，名册要防的是「替假承诺背书」，Zeus 对自己注册时核验过的 card 签名，语义恰好闭合。
+2. **执行 Agent 零改造**：矩阵产品只需按既有超集协议发 card，不必各自管理签名密钥——符合「超集而非闭墙、矩阵改造成本最低」的总原则（design-executor-protocol §0）。
+3. 吊销立即反映在 Zeus 下一份签名里，不依赖执行 Agent 配合（与 §4.5「吊销不需要执行 Agent 配合」一致）。
+
+### 2.2 v2 增强：**执行 Agent 自签 + Zeus 交叉背书（方向 2），作为 v1 的超集**
+
+执行 Agent 自持密钥对 card 自签（不可否认性），Zeus 再对「执行 Agent 公钥指纹 + 在册状态」交叉签名。v1 数据结构预留 `executorSig` 位置，v2 叠加而非推翻。
+
+**v2 触发条件**（满足其一才立项，登记为开放问题）：出现承诺不可否认性/法律追责需求；执行 Agent 要求其承诺可脱离 Zeus 独立验证；或首个矩阵外外部 Agent 生态需要自证身份（联动 deferred #5）。
+
+## 3. 签名对象与规范化
+
+### 3.1 签什么
+
+- **主签名覆盖整张 Agent Card 的摘要 `cardDigest`**：名册条目每个字段都派生自 card（roster §3），公开版连 skills/description 一并展示，故签名覆盖整张 card，任何字段被改即验签失败（防 T2 的全部面，而不只是 handshake）。
+- **显式冗余 `handshakeDigest`**：治理承诺（dataDomains/dataPolicy/reportBack/escalationPolicy/swornTo/version）单独列摘要，便于审计日志、调度侧快速比对与告警，不必反查整张 card。
+- card 任何无害改动（改 typo）也会使 cardDigest 变化——这是**有意为之**：card 变更本就应触发重新拉取与重签（注册侧自动化，成本在 Zeus 不在执行 Agent）；承诺变更史另见 roster §9.2（R1）。
+
+### 3.2 规范化（Canonicalization）
+
+摘要前必须对 JSON 做**确定性规范化**，否则不同序列化/键序/空白会导致验签不稳定：
+
+- 采用 **RFC 8785 JSON Canonicalization Scheme（JCS）**：UTF-8、对象键按 UTF-16 码元排序、无多余空白、数字确定性表示。不自造规范化规则。
+- `cardDigest = "sha256:" + hex(sha256(JCS(card)))`；`handshakeDigest` 同法作用于 `card["x-zeus-handshake"]`。
+
+### 3.3 算法
+
+- 签名算法：**Ed25519**（RFC 8032）。实现简单、无曲线参数陷阱、签名短、验证快；Node `crypto` 原生支持。
+- 编码：签名为 **base64url（无填充）**；摘要 hex。
+- **不引入 JWS/JWT 全家桶**：避免算法协商攻击面与依赖膨胀；信封是下文 §4 的扁平结构（TUF/Sigstore 式的简单封装）。
+
+## 4. 信封结构（两层签名）
+
+```jsonc
+// 第一层：条目级 attestation——单条目可独立验证（防 T1/T2/T3）
+{
+  "v": 1,
+  "alg": "Ed25519",
+  "keyId": "zeus-rsk-2026-09",
+  "issuer": "zeus",
+  "executor": { "name": "pr-helper", "cardUrl": "https://.../agent-card.json" },
+  "cardDigest": "sha256:…",
+  "handshakeDigest": "sha256:…",
+  "status": "active",
+  "issuedAt": "2026-09-21T10:00:00Z",
+  "expiresAt": "2026-09-22T10:00:00Z",
+  "sig": "base64url…"            // 对上述除 sig 外字段的 JCS 规范化字节签名
+  // v2 预留："executorSig": { "jwkThumbprint": "…", "sig": "…" }
+}
+```
+
+```jsonc
+// 第二层：快照级封签——包在现有 RosterSnapshot 外层（防 T4）
+{
+  "snapshot": { /* 现有 RosterSnapshot 原样，结构不改 */ },
+  "attestations": { "<executorName>": <Attestation> },
+  "seal": {
+    "v": 1, "alg": "Ed25519", "keyId": "zeus-rsk-2026-09",
+    "snapshotDigest": "sha256:…",   // JCS(snapshot)，含 generatedAt/scope/entries 及其顺序
+    "issuedAt": "…", "maxAgeSeconds": 3600,
+    "sig": "base64url…"
+  }
+}
+```
+
+设计要点：
+
+1. **R0 的 `projectInternalRoster` / `projectPublicRoster` 的纯函数性完全不动**；签名是外层信封，投影器保持「只重塑不造字段」的纯净。**原话还包含"`RosterSnapshot` 结构不动"这半句，v1.2 把它打破了**：载荷新增一个形状标记 `schemaVersion`（见 §4.1），因为要防的正是"载荷变了但没人能察觉"。投影器仍然纯（写入常量），但这是契约变更，记下而不是假装未发生。
+2. **条目级**让第三方拿到单个条目也能验真伪与有效期；**快照级**防增删、重排、隐瞒吊销与整份重放。公开页的根证据是 seal。
+3. internal / public 两份快照各自封签；**public 信封只含 active 条目**（投影层已过滤 revoked，attestations 不为 revoked 出条）。
+
+### 4.1 版本闸（v1.2，2026-09-25）
+
+信封从 v1 起就带 `v: 1`（`Attestation.v` 与 `Seal.v`，同一个 `ENVELOPE_VERSION`），**但验签路径从不读它**——一个不被校验的版本字段是装饰性的，挡不住任何东西。同时，真正会随演进而变形的**载荷** `RosterSnapshot = { generatedAt, scope, entries }` 连这样一个字段都没有。v1.2 把两件事一起补上：
+
+| 闸 | 位置 | 行为 |
+|---|---|---|
+| 载荷形状 | `snapshot.schemaVersion`（由两个投影器写入常量 1） | 缺字段读作 1（v1.1 及更早的件本就不含它，摘要与签名自洽，**必须仍可验**）；不等于本版本 → 拒绝，原因点名 `unsupported roster schemaVersion <值>` |
+| 信封版本 | `seal.v` | 不等于 1（含缺失）→ 拒绝 |
+| 条目版本 | `attestation.v`，逐条 | 同上，原因带条目名 |
+
+三条设计约束：
+
+1. **`schemaVersion` 放在载荷里，不放信封里**。它落在 `seal.snapshotDigest` 已覆盖的对象内，因此**不必改动签名输入就被签名保护**——改它必然破摘要；不改签名输入也就不动摇既有验签语义。两个位置只留一个真相。
+2. **闸门在任何密码学之前**（摘要、签名、TTL 都排在其后），且拒绝原因点名是哪道闸。否则"版本不认识"会表现为一个含糊的签名失败，运维无法区分"格式太新"和"被人改过"——这两种处置完全相反。
+3. **向后兼容是单向门，所以用正向对照测**。测试必须包含"旧形状仍能验签"这一条：只在坏输入上验证过的校验器，可能永远都是错的。对应 `tests/signing.test.ts` 的四例（含把 `schemaVersion: 99` **重新签名**后仍被拒——用来证明拒绝确实来自闸门，而不是摘要或签名顺带失败）。
+
+**对消费方的影响**：公开名册的 JSON 多一个键；按精确键集做严格 schema 校验的外部消费者需要放宽。`seal.v` 不变（仍是 1），因此只读签名的老验签代码路径不受影响。
+
+## 5. 密钥归属、分发与轮换
+
+### 5.1 Zeus 名册签名密钥（RSK）
+
+- **私钥**：Zeus 部署侧持有，经环境/密钥管理注入，**绝不入库、绝不下发、绝不进快照**。
+  - 个人版：用户本机密钥链或本地密钥文件（具体存放联动 deferred #2 备份清单加密托管，见 §9）。
+  - 企业版：KMS / HSM；签名动作留审计。
+- **公钥（Zeus 根公钥）**：随名册公开，供 bayjf 与第三方验签。**发布通道已定并实现（v0.2，§9-3 销项）**：H1 只读端点 `GET /api/roster/keys`（与它所签名的 `/api/roster/public` 同样不鉴权——要求持 token 才能拿到的公钥，第三方读者用不上），描述符字段：`kid`/`kty`/`crv`/`x`/`alg`/`use`（JWKS 形状，标准库可直接消费）+ `spkiPem`（`scripts/verify-roster.mjs --key` 的输入形状）+ `jwkThumbprint`（RFC 7638，**带外公告与固定用的就是这一个值**）+ `spkiSha256`（冒号分组的 SPKI DER 摘要，供 `openssl` 口径核对）。三条契约：
+  - **它不是信任根**：应答方就是产出封签的那个进程，所以它能说明"这份名册由哪个 keyId 签的"，不能说明"这把钥属于 Zeus"。验签方必须在带外取得并固定 `jwkThumbprint`（TOFU）；`seal.keyId` 在 `keys[]` 中不存在 → 拒；存在但指纹与带外值不符 → 先分辨是轮换还是被替换，未分辨前不验。
+  - **密钥后端无法导出公钥时返回 501，不返回空数组**：`keys: []` 会被忽略状态码的客户端读成"没有需要固定的钥"，从而继续信任名册——一个安静的"无可固定项"比一个错误码危险。`RosterSigner.publicKey` 因此是可选的，KMS/HSM 后端不实现它即可。
+  - **非 Ed25519 的钥一律拒绝发布**（签名链只有 Ed25519 一种算法），错误原因点名算法，避免运维把它读成"端点坏了"。
+  - **固定值只有一个来源**：`publishRootKey` 是唯一算 `jwkThumbprint`/`spkiSha256` 的函数，三个触点都调它——出钥时（`scripts/gen-rsk-key.mjs` 打印，公告用）、发布时（本端点）、验签时（`scripts/verify-roster.mjs` 的 `seal fingerprint` 行）。理由是这条契约只在下述情形成立：验签方手里的公告值与端点发布的值是**同一串**；如果三处各算一遍哈希，"逐字符比对"就会变成"比对三套实现是否巧合一致"。冒烟第 33 步把这三点相等钉成断言（keygen stdout ⊇ 端点字段 ⊇ 验签器报告）。
+  - 未配密钥的非生产进程用临时内存钥签名：它每次重启都换钥，故其发布值**不可固定**，只用于开发。这条事实不由 `kid` 推定（`ZEUS_RSK_KEY_ID` 任何人可设），而由**装载密钥的那段代码上报**：发布文档带 `keySource`（`configured` / `ephemeral`）与 `survivesRestart`，配置了持久化时 `GET /api/state` 的 `rosterKey` 同步给出。生产由 `NODE_ENV=production` 无钥拒启挡住（§5.1 第 1 条）。
+- 纯库阶段只定义 `RosterSigner` / `RosterVerifier` 接口（§7.3），不实现私钥存储。
+
+### 5.2 执行 Agent 密钥（v2）
+
+执行 Agent 自签私钥自持；公钥以 JWK 置于 card 扩展字段（建议 `x-zeus-key`），Zeus 注册时把 JWK 指纹（RFC 7638）绑进交叉背书。v1 不要求、不校验该字段。
+
+### 5.3 轮换
+
+- `keyId` 标识密钥版本（建议 `zeus-rsk-YYYY-MM`）。
+- 轮换设**重叠期**：新钥签发新签名，旧钥仅用于验证历史签名、不再签发；重叠期内条目随快照刷新逐步用新钥重签。
+- seal 始终用当前 RSK。
+- **根公钥轮换是最高治理动作**：须人工执行 + 带外公告，不做库内自动化（运行手册见 §5.4）。
+
+### 5.4 托管与轮换运行手册（人工执行）
+
+**为什么库里没有自动轮换**：seal 永远用当前钥签，而验签方是在**带外**固定指纹的。自动换钥必然制造一段"新钥已在签、对方还没固定新指纹"的窗口，而该窗口在验签方一侧的表现与"名册被人替换"**完全同类**——一个无法区分的失败。次序（公告 → 对方固定 → 切流）只能由人保证，所以本手册不落成代码，也不落成配置开关。
+
+**托管选项**（选哪个是部署决策，库内三条都支持：`ZEUS_RSK_KEY_FILE` 指向何处由部署侧决定）：
+
+| 形态 | 私钥位置 | 成立条件 | 轮换时谁执行 |
+| --- | --- | --- | --- |
+| 个人版本机 | 用户机器上的密钥文件，权限 0600（或与 deferred #2 的备份加密托管合并存放） | 单机、操作者即所有者 | 操作者本人 |
+| 容器 / systemd | secret 挂载路径，`ZEUS_RSK_KEY_FILE` 指过去（不把多行 PEM 塞进环境） | 有 secret 后端 | 部署负责人 |
+| 企业 KMS / HSM | 私钥不出后端，`RosterSigner` 由部署侧另实现 | 需要签名动作留审计、密钥不可导出 | 治理方；此时 `/api/roster/keys` 返回 501，公钥改由部署记录发布 |
+
+**轮换步骤**（计划内换钥；怀疑泄露走本节末尾的响应路径，两者处置不同）：
+
+1. 出新生钥对：`node scripts/gen-rsk-key.mjs secrets/rsk-<新keyId>`（私钥 0600、公钥 0644，已存在的文件拒绝覆盖；**它同时打印这次要公告的 `jwkThumbprint` 与 `spkiSha256`**——由 `publishRootKey` 算，与端点发布同源）。`keyId` 用带年月的稳定标识（`zeus-rsk-2026-10`），它是验签方选钥的键，不是注释。
+2. **先公告，再切流**：把新公钥的 `jwkThumbprint`（§5.1）与生效时间窗经**独立于该端点的渠道**发给每个验签方（bayjf 构建、第三方）。公告内容含旧钥停用时刻。
+3. 新私钥入托管后端；**旧私钥保持可用**，既不下线也不删除——重叠期它仍要用于验证历史封签。
+4. 用 `ZEUS_RSK_KEY_ID=<新keyId>` + 新私钥路径重启进程，然后 `GET /api/roster/keys` 确认 `kid` 已是新值、`jwkThumbprint` 与刚公告的那串逐字符相同。这一步是"进程真的在用新钥"的唯一证据，跳过它等于把配置当事实。
+5. 双向验签对照：新名册用**新公钥**验须 exit 0；切换前留存的历史名册用**旧公钥**验仍须 exit 0。两条缺一不算完成。
+6. 验签方在重叠期同时持两把公钥：`--key <旧keyId>=<旧.pem> --key <新keyId>=<新.pem>`（脚本按 `seal.keyId` 选钥，见 §7.1b）。它报告的 `seal fingerprint` 行就是本次实际接受的那把钥的 `jwk=`/`spki=` 串——**与公告值逐字符比对即完成固定动作**，不必另算哈希。
+7. 收尾：等旧钥签出的 attestation 全部过期（TTL 24h，加 seal maxAge 与缓存余量）后，旧私钥按托管后端的销毁流程归档或销毁；旧**公钥可以继续公开**——历史名册上仍带着旧 `keyId` 的签名，只增不删。再发一次带外公告，记明旧钥停用时刻。
+
+**泄露响应路径**（与计划内轮换的区别是"没有公告窗口"）：发现 `seal.keyId` 不认识、或指纹与带外固定值不符 → 立即停止消费名册，按"已被替换"处理而不是按"已轮换"处理；生成第三把钥、直接跳到步骤 4 的确认与步骤 5 的对照，并核对两把旧钥的私钥访问记录；最后才决定停用哪一把。事后必须回答"这份名册在被替换期间被谁消费过"，所以 `keyId` 与指纹要进变更台账。
+
+## 6. 吊销与签名链失效语义
+
+区分四层，缺一不可：
+
+| 层 | 机制 | 生效时机 | 防 |
+| --- | --- | --- | --- |
+| 治理移除 | `revoke()` 后下一份 public 快照不含该条目（R0 投影已实现），internal 留痕 | 下一次投影/发布 | T1/T3 的常态路径 |
+| 条目硬过期 | attestation `expiresAt`；验签方拒绝过期条目，**不依赖 bayjf 及时重建** | TTL 到达即失效 | T3（缓存旧页） |
+| 快照时效 | seal `maxAgeSeconds`；拒绝超龄快照，即使签名本身有效 | maxAge 到达 | T4（整份旧快照重放） |
+| 内容绑定 | cardDigest/handshakeDigest 不符即拒 | 实时 | T2 |
+
+关键语义：
+
+1. **吊销不是「撤销签名」，而是让签名在状态/时间维度不再被接受**。被吊销执行 Agent 在 TTL 窗口内的旧静态缓存，最坏可见时间 = 其 attestation 的剩余有效期；**故 R2 必须把 TTL 压到可接受上限**（roster §7 已要求 R2 定义缓存 TTL 上限，本设计把它升级为密码学硬过期，而非仅靠重建）。
+2. v1 **不设在线 CRL/OCSP**：公开名册是 SSG/只读 JSON 产物，验签应离线可完成；实时吊销以「短 TTL + 下一份快照移除」覆盖。在线吊销清单端点列为 v2（R1 之后），用于需要「TTL 窗口内立即作废」的场景。
+3. **handshake/card 变更**：cardDigest 变化 → 旧 attestation 对新 card 验签失败 → 必须重新注册重签；`handshake.version` 不匹配仍按 §4.5 拒绝注册、不静默兼容。
+4. 签名的自然语言语义固定为：**「Zeus 于 issuedAt 核验并认可：此 card（含 handshake）持有者在 expiresAt 前为在册 active 执行 Agent」**——不含永久可信、不含履约担保。
+
+## 7. 与现有代码的衔接
+
+### 7.1 不改的部分
+
+- `ExecutorRegistry`（register/revoke/listAll/asExecutorLookup）、`projectInternalRoster`/`projectPublicRoster`、`RosterSnapshot` 类型：全部保持现状。
+- 投影器不碰密钥、不产生签名，维持纯函数可测。
+
+### 7.1b 操作面入口（2026-09-26 补）
+
+`verifySignedSnapshot` / `attestationMatchesCard` 从 v1 起就只是**库函数**：`scripts/` 里只有验收脚本、压测脚本和 keygen，**没有任何入口能让一个人不写 TypeScript 就验一次名册**。后果具体过：`docs/deployment.md` §6 的上线检查清单里"封签经独立通道验签通过"这一项**长期无法执行**——它要求的能力没有工具。
+
+现在由 `scripts/verify-roster.mjs`（`npm run verify:roster`）补上：`--url` / `--file` 取件、`--key [keyId=]<公钥 PEM>`（可多次，供轮换期同时提供新旧两把）、`--token` 支持内部名册、`--card name=path` 做卡片深比对、`--now` 让新鲜度可复现。两条设计约束：
+
+1. **它调用库里同一套实现**（`dist/registry/signing.js`），不自己重写规范化——否则脚本会"自己验自己的副本"通过，而真实验签方拿到的是另一套判定，这类假通过比没工具更糟。
+2. **深比对必须能失败整个进程**。第一版只把 `MISMATCH` 打到 stdout、退出码仍为 0——一个不影响结论的检查就是装饰。现在任一不匹配、或给了名册里没有的 `--card`，都退 1。
+
+退出码 0/1/2 = 通过 / 被拒（stderr 给原因）/ 参数与 I/O 错；`tests/verify-roster.test.ts` 8 例覆盖正负两向（含"用同钥重签名但改内容"与"`schemaVersion` 99"这两种只有对应闸门能拦的情形）。新鲜度一例专门做成正负对：**同一份产物、同一把钥，只有 `--now` 不同**——窗口内 exit 0，越过 `maxAgeSeconds` 后 exit 1。这条对偶不是装饰：测试 fixture 最初没传 `--now`，脚本便按墙上时钟判定，4 例在封签窗口过期之后必然全红而实现一行未改（2026-09-26 实测）。
+
+### 7.2 新增的发布管线（概念）
+
+```
+listAll() → project(internal/public) → canonicalize → digest
+        → attestEntries(signer) → sealSnapshot(signer) → SignedRosterSnapshot 分发
+验签侧：verifySeal(publicKey) → 逐条目 verifyAttestation → 比对实时拉取的 cardDigest（可选）
+```
+
+签名发生在**发布/投影之后**，属于 R1（HTTP 只读端点产出签名快照）与 R2（bayjf 构建期验签）；P0/R0 无传输层，不产生签名。
+
+### 7.3 接口草案（实现期落地，本文不编码）
+
+```ts
+// 纯函数（无密钥依赖，R1 可在库内实现并单测）
+declare function canonicalJson(value: unknown): string;          // RFC 8785 JCS
+declare function digestCard(card: AgentCard): { cardDigest: string; handshakeDigest?: string };
+
+// 密钥边界（实现由部署侧注入）
+interface RosterSigner {
+  readonly keyId: string;
+  sign(canonicalBytes: string): Promise<string>;                  // base64url Ed25519
+}
+interface RosterVerifier {
+  verify(keyId: string, canonicalBytes: string, sig: string): Promise<boolean>;
+}
+
+// 组装与验证
+declare function sealSnapshot(snapshot: RosterSnapshot, signer: RosterSigner, opts: { maxAgeSeconds: number }): Promise<SignedRosterSnapshot>;
+declare function verifySignedSnapshot(envelope: unknown, verifier: RosterVerifier, now?: Date): Promise<{ ok: true; snapshot: RosterSnapshot } | { ok: false; reason: string }>;
+```
+
+## 8. 阶段与验收
+
+### 8.1 v1（R2 公开闸门，deferred #7 销项标准）
+
+Ed25519 + RFC 8785；条目 attestation（cardDigest + handshakeDigest + status + issuedAt/expiresAt）+ 快照 seal；Zeus 单签；短 TTL 硬过期；离线可验。
+
+验收用例（实现期测试，逐条必过）：
+
+1. 正常签名快照验签通过，能取回原 snapshot。
+2. 篡改 handshake 任一字段（dataDomains/dataPolicy/reportBack/escalationPolicy/swornTo/version）→ 摘要不符 → 失败。
+3. 篡改 skills / description / name → cardDigest 不符 → 失败。
+4. 增删条目、调整 entries 顺序、改 scope/generatedAt → seal 失败。
+5. revoked 执行 Agent 不出现在 public 信封；构造含该条目的旧信封 → expiresAt/maxAge 过期拒绝。
+6. 篡改 sig 本体、用错误公钥验签 → 失败。
+7. keyId 轮换重叠期：新钥签的新信封、旧钥签的历史信封各自验证结论正确；旧钥签的「超 maxAge」信封被拒。
+8. 规范化稳定性：同一对象不同键序/空白输入，digest 一致（JCS）。
+
+### 8.2 v2（触发条件见 §2.2，不早做）
+
+执行 Agent 自签 + Zeus 交叉背书（`executorSig`/`x-zeus-key`/JWK 指纹）；在线吊销清单端点；handshake 变更史（roster §9.2）；根公钥分发的多方治理。
+
+## 9. 开放问题（立项时决定，不在本文锁死）
+
+1. **TTL 具体值**：建议条目 attestation 24h、seal maxAge 与 bayjf SSG 重建周期一致（如 1h）；R2 结合重建频率与吊销最坏可见时间定。
+2. **个人版 RSK 存放**：钥匙链 vs 本地加密密钥文件，与 deferred #2（备份清单加密与托管）统一方案。
+3. ~~**根公钥分发**：well-known 端点 + 带外固定（TOFU 升级）vs 仅带外~~ → **已定（v0.2，2026-09-27）**：端点发布 + 带外固定并用，`GET /api/roster/keys` 描述符形状与"它不是信任根"的三条契约见 §5.1，固定值取 `jwkThumbprint`。选它的理由不是省事：仅带外在个人版根本没有可达渠道（用户本机没有公告板），而纯端点发布会把信任锚交给被验证的那个进程。
+4. **是否要时间戳权威（TSA）**：v1 不需要（Zeus 即信任根，issuedAt 由其签名背书）；v2 若有多方争议再议。
+5. **在线吊销清单**是否提前到 v1：仅当出现「TTL 窗口不可接受」的业务要求时（默认不做）。
+
+## 10. 演进日志
+
+| 版本 | 日期 | 变更 |
+| --- | --- | --- |
+| v0.1 | 2026-09-21 | 初稿：威胁模型；裁决 Zeus 单签为 v1 基线、执行 Agent 自签为 v2 超集；Ed25519 + RFC 8785；条目 attestation + 快照 seal 两层信封；RSK 密钥归属与轮换；吊销四层失效语义；发布管线与接口草案；v1 八条验收用例 |
+| v0.2 | 2026-09-27 | §9-3 销项并实现：H1 `GET /api/roster/keys` 发布根公钥描述符（JWKS 形状 + `spkiPem` + RFC 7638 指纹 + SPKI DER 摘要），写清三条契约——发布方即被验证方故**不构成信任锚**、后端导不出公钥时返 501 而非空数组、非 Ed25519 拒绝发布（§5.1）。新增 **§5.4 托管与轮换运行手册**：为何不做库内自动轮换（自动换钥制造的窗口在验签方一侧与"名册被替换"不可区分）、三种托管形态、七步轮换流程含"先公告再切流"与双向验签对照、泄露响应路径与计划内轮换的差别。`RosterSigner.publicKey` 定为可选字段。 |

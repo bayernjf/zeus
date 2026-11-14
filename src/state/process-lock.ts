@@ -4,7 +4,7 @@ import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 
 /**
- * Cross-process advisory lock for one kernel state file (M-10).
+ * Cross-process advisory lock for one runtime state file (M-10).
  *
  * Two Zeus processes (a long-running server and a one-shot CLI, or two
  * servers) must never load-mutate-rename the same state file concurrently:
@@ -73,12 +73,12 @@ function readOwner(lockPath: string): LockOwner | null {
     parsed = JSON.parse(raw);
   } catch (err) {
     throw new ProcessLockHeldError(
-      `kernel state lock at ${lockPath} has a corrupt owner record (invalid JSON); refusing to guess whether it is stale: ${(err as Error).message}`,
+      `runtime state lock at ${lockPath} has a corrupt owner record (invalid JSON); refusing to guess whether it is stale: ${(err as Error).message}`,
     );
   }
   if (!isLockOwner(parsed)) {
     throw new ProcessLockHeldError(
-      `kernel state lock at ${lockPath} has a corrupt owner record (missing pid/host/startedAt/instanceId fields); refusing to guess whether it is stale`,
+      `runtime state lock at ${lockPath} has a corrupt owner record (missing pid/host/startedAt/instanceId fields); refusing to guess whether it is stale`,
     );
   }
   return parsed;
@@ -129,13 +129,13 @@ export class ProcessLock {
         if (owner.pid !== process.pid) {
           if (owner.host !== localHost()) {
             throw new ProcessLockHeldError(
-              `kernel state lock at ${lockPath} is held on a different host (${owner.host}) by pid ${owner.pid} since ${owner.startedAt}; liveness cannot be probed across hosts`,
+              `runtime state lock at ${lockPath} is held on a different host (${owner.host}) by pid ${owner.pid} since ${owner.startedAt}; liveness cannot be probed across hosts`,
               owner,
             );
           }
           if (isPidAlive(owner.pid)) {
             throw new ProcessLockHeldError(
-              `kernel state lock at ${lockPath} is held by a live process (pid ${owner.pid}, host ${owner.host}, since ${owner.startedAt})`,
+              `runtime state lock at ${lockPath} is held by a live process (pid ${owner.pid}, host ${owner.host}, since ${owner.startedAt})`,
               owner,
             );
           }

@@ -30,6 +30,7 @@ import type { ProgressEvent } from './progress.js';
 import { appendStreamFrame, emptyStreamView, type StreamView } from './stream-merge.js';
 import type { DispatchRequest, DispatchResult, AuditEntry } from '../../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../../context/assemble.js';
+import { accumulateWatermark, estimateContextChars, watermarkDetail, type ContextWatermark } from './context-watermark.js';
 import { assembleSkillInputs } from '../../context/skill-inputs.js';
 import { allocateContextBudget, DEFAULT_BRANCH_CONTEXT_LIMIT } from '../../context/budget.js';
 import type { MemoryStore } from '../../memory/memory-store.js';
@@ -39,7 +40,7 @@ import type {
   CancelBranchResult,
   Conflict,
   DispatchPort,
-  DriverResolution,
+  OperatorResolution,
   FanOutRequest,
   FanOutResult,
   GovernanceRefusal,
@@ -93,13 +94,13 @@ export type OrchestratorOptions = {
   newRunId?: () => string;
   /** deferred #42: out-window intents read from the archive when the state
    *  table misses (idempotent replay / findIntentForBranchRun). Optional; the
-   *  kernel itself performs no file I/O. */
+   *  runtime itself performs no file I/O. */
   archive?: IntentArchiveLookup;
-  /** Called when a fan-out ends in needs-driver; wire it to OversightDesk at assembly time. */
+  /** Called when a fan-out ends in needs-operator; wire it to OversightDesk at assembly time. */
   onConflict?: (conflicts: Conflict[], result: FanOutResult) => void;
   /**
-   * E6.1: called when a branch settles at input-required, i.e. a vassal stopped
-   * and is asking the driver for the parameters it lacks. Wire it to
+   * E6.1: called when a branch settles at input-required, i.e. a executor stopped
+   * and is asking the operator for the parameters it lacks. Wire it to
    * `OversightDesk.ingest` at assembly time — without this the desk only ever
    * sees intent conflicts and memory disputes in a booted process (C-28).
    */
@@ -115,9 +116,9 @@ export type OrchestratorOptions = {
     intentId: string;
     runId: string;
     skill: string;
-    realm: FanOutRequest['realm'];
-    realmId?: string;
-    vassals: string[];
+    dataDomain: FanOutRequest['dataDomain'];
+    dataDomainId?: string;
+    executors: string[];
     boundary: string;
     signals: readonly string[];
     at: string;
@@ -138,7 +139,7 @@ export type OrchestratorOptions = {
   judgeThreshold?: number;
   /** Permit uncalibrated (LLM) judge confidence to count (default false). */
   allowUncalibratedJudge?: boolean;
-  /** A gated high-confidence judge disagreement escalates to the driver (default true). */
+  /** A gated high-confidence judge disagreement escalates to the operator (default true). */
   judgeEscalateOnDisagreement?: boolean;
   /** Per-call timeout for the judge backend. */
   judgeMaxWaitMs?: number;
@@ -153,26 +154,26 @@ export type OrchestratorOptions = {
   /** Branches allowed to wait for a slot before one is refused. Default unbounded. */
   branchQueueLimit?: number;
   /**
-   * #9 per-vassal saturation cap. Distinct from `maxConcurrentBranches`: a vassal
+   * #9 per-executor saturation cap. Distinct from `maxConcurrentBranches`: a executor
    * is saturated when its live in-flight count reaches this cap, and a saturated
    * auto-selected target is re-pointed to the best available same-skill provider
    * (see diversion.ts). MUST be set below `maxConcurrentBranches` for diversion to
    * fire — if it equalled the global cap, a saturated agent would imply the global
-   * pool was full and no idle alternate could take a slot. Unset = no per-vassal
+   * pool was full and no idle alternate could take a slot. Unset = no per-executor
    * saturation check (current behaviour, global gate unchanged).
    */
-  maxConcurrentPerVassal?: number;
+  maxConcurrentPerExecutor?: number;
   /**
    * E2.2/E2.3/E2.4: when set, auto-selected fan-out targets (by skill) are
    * filtered through the skill catalogue's active providers; a registered skill
-   * with no active provider is refused. Driver-named explicit vassals stay
+   * with no active provider is refused. Operator-named explicit executors stay
    * ungoverned (a deliberate override). Card-advertised skills without a
    * catalogue record pass through unchanged.
    */
   skillGovernor?: SkillGovernor;
   /** Called when the skill governor refuses an auto-selected fan-out; bridge it
    *  into the audit spine at assembly time. */
-  onRefusal?: (entry: { skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
+  onRefusal?: (entry: { skill: string; dataDomain: FanOutRequest['dataDomain']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
   /**
    * S9 V2 (design-cost-governance §5): when set, the intent-level cost gate
    * admits every fan-out before dispatch — an admission that would cross the
@@ -182,12 +183,12 @@ export type OrchestratorOptions = {
   costLimit?: CostLimit;
   /** Called when the cost gate refuses an admission; bridge it into the audit
    *  spine at assembly time (decisions cost-budget-exceeded / cost-rate-circuit-open). */
-  onCostRefused?: (entry: { intentId: string; skill: string; realm: FanOutRequest['realm']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
+  onCostRefused?: (entry: { intentId: string; skill: string; dataDomain: FanOutRequest['dataDomain']; reason: GovernanceRefusal['reason']; detail: string; at: string }) => void;
   /**
    * S4 (design-supervision §7.1): intent-level termination guard defaults. The
    * budget caps cumulative branches per intent (first fan-out N + each resume);
    * the breaker refuses auto-selected dispatch after N consecutive branch
-   * failures (explicit driver-named targets stay ungoverned by the breaker).
+   * failures (explicit operator-named targets stay ungoverned by the breaker).
    * Both default ON (fail-closed safety guard); unset here means the default
    * constants in termination.ts apply. Values are structural defaults, not
    * calibrated limits — real-load calibration rides the #9 trigger.
@@ -197,13 +198,13 @@ export type OrchestratorOptions = {
   /** S4: fired when the termination guard refuses a fan-out / resume; bridge it
    *  into the audit spine (decisions `intent-branch-budget-exceeded` /
    *  `intent-circuit-opened`). */
-  onTerminationRefused?: (entry: { intentId: string; skill: string; realm: FanOutRequest['realm']; reason: 'budget-exceeded' | 'circuit-open'; detail: string; at: string }) => void;
+  onTerminationRefused?: (entry: { intentId: string; skill: string; dataDomain: FanOutRequest['dataDomain']; reason: 'budget-exceeded' | 'circuit-open'; detail: string; at: string }) => void;
   /** #9: fired when a saturated/eligible-lacking target is re-pointed to an
    *  alternate same-skill provider before dispatch; bridge into the audit spine. */
-  onDiverted?: (entry: { skill: string; realm: FanOutRequest['realm']; from: string; to: string; at: string }) => void;
+  onDiverted?: (entry: { skill: string; dataDomain: FanOutRequest['dataDomain']; from: string; to: string; at: string }) => void;
   /**
    * S11 V2 (design-tool-discovery §5): fired once per fan-out after the unified
-   * candidate face is assembled from live per-vassal saturation, before the
+   * candidate face is assembled from live per-executor saturation, before the
    * scored switch layer. Bridge into the audit spine as `tool-selected` so
    * "why this provider" is replayable: how many names were pinned, how large
    * the governed pool was, how many live-saturated providers the face dropped,
@@ -212,7 +213,7 @@ export type OrchestratorOptions = {
   onCandidatesSelected?: (entry: {
     intentId: string;
     skill: string;
-    realm: FanOutRequest['realm'];
+    dataDomain: FanOutRequest['dataDomain'];
     pinned: boolean;
     namedCount: number;
     poolSize: number;
@@ -224,18 +225,18 @@ export type OrchestratorOptions = {
    * S11 V3 (design-tool-discovery §5): fired once per failed branch after the
    * recovery chain has produced its fixed-order verdict (retry -> switch ->
    * degrade -> escalate). The failure itself is audited as `tool-failed`; the
-   * verdict decides the `chain-*` line. In intent-level fan-out the kernel
+   * verdict decides the `chain-*` line. In intent-level fan-out the runtime
    * holds no idempotency fact, no retry budget and no optional-step
    * declaration, and the whole candidate face is already dispatched, so the
-   * verdict is escalate (the existing needs-driver semantics) — the
+   * verdict is escalate (the existing needs-operator semantics) — the
    * retry/switch/degrade executable actions belong to the ChainPlan/DAG step
    * face (V3 slice 2) where an un-dispatched alternate exists.
    */
   onChainRecovered?: (entry: {
     intentId: string;
     skill: string;
-    realm: FanOutRequest['realm'];
-    vassal: string;
+    dataDomain: FanOutRequest['dataDomain'];
+    executor: string;
     reason: string;
     action: RecoveryAction;
     alternateProvider?: string;
@@ -244,7 +245,7 @@ export type OrchestratorOptions = {
   /**
    * deferred #33: the execute-mode gate. When set, an execute-mode branch is
    * refused (no outbound dispatch) unless the supplied execution delegation
-   * verifies, matches this branch's skill/vassal, and is consumed exactly once.
+   * verifies, matches this branch's skill/executor, and is consumed exactly once.
    * When unset, execute mode fails closed with a 'no-trust-anchor' refusal — an
    * execute that cannot be authorized is not an execute.
    */
@@ -256,7 +257,7 @@ export type OrchestratorOptions = {
   };
   /** deferred #33: fired when the execute gate refuses a branch; bridge into
    *  the audit spine at assembly time (decision `execution-delegation-denied`). */
-  onExecutionDelegationRefused?: (entry: { skill: string; realm: FanOutRequest['realm']; vassal: string; reason: string; at: string }) => void;
+  onExecutionDelegationRefused?: (entry: { skill: string; dataDomain: FanOutRequest['dataDomain']; executor: string; reason: string; at: string }) => void;
   /**
    * S1 context engineering V1 (design-context-engineering §10): the memory
    * store whose recall feeds the branch dispatch context. Narrow port — only
@@ -269,7 +270,7 @@ export type OrchestratorOptions = {
   /** V1 tuning: appendix entry cap per intent (structural guard, default 20;
    *  numeric calibration deferred to #9 real-agent load). V2 tuning: optional
    *  relevance gate threshold (hybrid score 0..1; unset = gate off). V3
-   *  tuning: per-branch total context entry budget across skill inputs, realm
+   *  tuning: per-branch total context entry budget across skill inputs, dataDomain
    *  hits and the memory appendix (structural guard, default 64, design §5). */
   contextOptions?: { maxEntries?: number; minScore?: number; maxContextEntriesPerBranch?: number };
   /**
@@ -280,8 +281,8 @@ export type OrchestratorOptions = {
    * skill-input assembly — exactly like an unconfigured memory store.
    */
   skillInputsProvider?: (skillId: string) => Record<string, unknown> | undefined;
-  /** Receives the assembly audit events (intent-level, no single vassal). */
-  onContextAssembled?: (events: ContextAssemblyEvent[], entry: { intentId: string; runId: string; skill: string; realm: FanOutRequest['realm']; realmId?: string; at: string }) => void;
+  /** Receives the assembly audit events (intent-level, no single executor). */
+  onContextAssembled?: (events: ContextAssemblyEvent[], entry: { intentId: string; runId: string; skill: string; dataDomain: FanOutRequest['dataDomain']; dataDomainId?: string; at: string }) => void;
   /**
    * E4.11 (design-a2a-push): Zeus's own push receiver address, attached as
    * `pushNotificationConfig` on outbound `tasks/send` for intents armed with
@@ -297,12 +298,12 @@ export type OrchestratorOptions = {
   audit?: (entry: AuditEntry) => void;
   /**
    * deferred #44 (design-memory-self-evolution §2.2): the runtime write-back
-   * face. Returns the active selection-weight overrides for a realm; the empty
+   * face. Returns the active selection-weight overrides for a dataDomain; the empty
    * map is the baseline (a missing key is weight 1). Boot wires this to
-   * `MemoryStore.selectionWeights(realmId)`; a missing provider keeps dispatch
+   * `MemoryStore.selectionWeights(dataDomainId)`; a missing provider keeps dispatch
    * at the baseline exactly like a store with no active cards.
    */
-  selectionWeightsProvider?: (realmId: string) => Record<string, number>;
+  selectionWeightsProvider?: (dataDomainId: string) => Record<string, number>;
 };
 
 export class UnknownIntentError extends DomainError {
@@ -333,10 +334,10 @@ export class IntentBudgetExceededError extends DomainError {
   }
 }
 
-/** One vassal's membership in a resume generation: the operator params for the
+/** One executor's membership in a resume generation: the operator params for the
  *  re-dispatch plus the fresh execution delegation required for execute intents. */
 type ResumeMember = {
-  vassal: string;
+  executor: string;
   params: Record<string, unknown>;
   executionDelegation?: ExecutionDelegation | undefined;
 };
@@ -364,7 +365,7 @@ export type PushReceiveResult =
   | { ok: false; reason: 'unknown-task' };
 
 /**
- * Fan-out decision kernel (PRD E1): one intent fans out to N vassals in
+ * Fan-out decision runtime (PRD E1): one intent fans out to N executors in
  * parallel through the existing Dispatcher, then merges streams, aggregates
  * stances, detects conflicts and escalates unresolved splits. Governance
  * (data diode / redaction / revocation / audit) stays in Dispatcher.
@@ -383,12 +384,19 @@ export class Orchestrator {
   /**
    * S9 V2 (design-cost-governance §5): per-intent cost ledgers, admitted at
    * the dispatch boundary and settled when the intent lands. Intent-scoped by
-   * design (the realm-period ledger is V3).
+   * design (the dataDomain-period ledger is V3).
    */
   private costLedgers = new Map<string, CostBudget>();
   /** Admissions the cost gate refused since boot. The per-intent window is
    *  transient state; this counter is what the operator face reports. */
   private costRefusals = 0;
+  /**
+   * D3-2: per-run folded context watermark (entries assembled / trimmed /
+   * over-budget). Folded from the intent's assembly events and emitted once as
+   * the `context-watermark` audit row when the fan-out settles, so context
+   * growth is observable per run instead of per intent only.
+   */
+  private contextWatermarks = new Map<string, ContextWatermark>();
   /** S4: resolved guard limits (options ?? structural defaults). */
   private budgetLimits: { maxBranchesPerIntent: number; maxConsecutiveBranchFailures: number };
   /**
@@ -417,12 +425,12 @@ export class Orchestrator {
   private pending = new Map<string, { request: FanOutRequest; work: Promise<FanOutResult> }>();
   /**
    * E6.3 single-flight / M-03 merge: at most one open resume generation per
-   * intent. Resumes of different vassals that arrive in the same synchronous
+   * intent. Resumes of different executors that arrive in the same synchronous
    * turn join one generation — their branches dispatch in parallel and the
    * intent recomputes once, so neither fresh branch is dropped by a stale
    * snapshot. A later resume waits for the generation to commit and then opens
    * the next one (a sequential resume, hence the next resume run id). A repeat
-   * of a vassal already in the generation joins the shared result instead of
+   * of a executor already in the generation joins the shared result instead of
    * dispatching twice.
    */
   private resumeGenerations = new Map<string, ResumeGeneration>();
@@ -445,7 +453,7 @@ export class Orchestrator {
    */
   private pushWaiters = new Map<
     string,
-    { resolve: (result: DispatchResult) => void; runId: string; vassal: string; skill: string; realm: FanOutRequest['realm'] }
+    { resolve: (result: DispatchResult) => void; runId: string; executor: string; skill: string; dataDomain: FanOutRequest['dataDomain'] }
   >();
   private pushProcessed = new Map<string, { state: TaskState; at: string }>();
   private readonly slots: Semaphore | null;
@@ -469,7 +477,7 @@ export class Orchestrator {
     // F2 idempotency: a known intent replays its stored result with zero dispatch.
     // A key already in flight joins that fan-out instead of starting a second one,
     // and either way the incoming request must agree with the one already on
-    // record — a reused key naming a different skill/params/realm is a client bug,
+    // record — a reused key naming a different skill/params/dataDomain is a client bug,
     // not a replay, and silently answering it with the old result would hide it.
     if (request.intentId) {
       const cached = this.intents.get(request.intentId);
@@ -507,15 +515,15 @@ export class Orchestrator {
   private async fanOutNew(request: FanOutRequest): Promise<FanOutResult> {
     const intentId = request.intentId ?? this.newIntentId();
     const runId = request.runId ?? this.newRunId();
-    const explicit = request.vassals && request.vassals.length > 0;
+    const explicit = request.executors && request.executors.length > 0;
     let names =
       explicit
-        ? [...new Set(request.vassals)]
-        : this.lookup.findBySkill(request.skill).map(vassal => vassal.name);
+        ? [...new Set(request.executors)]
+        : this.lookup.findBySkill(request.skill).map(executor => executor.name);
     let refused: GovernanceRefusal | undefined;
 
     // E2.2/E2.3/E2.4 (Active work 47 §E-3): the skill catalogue governs
-    // auto-selected targets. Explicit driver-named vassals are a deliberate
+    // auto-selected targets. Explicit operator-named executors are a deliberate
     // override and stay ungoverned; a skill with no catalogue record (never
     // registered) is the historical pass-through.
     if (!explicit) {
@@ -531,7 +539,7 @@ export class Orchestrator {
         if (governed.length === 0) {
           refused = {
             reason: 'no-active-provider',
-            detail: `no vassal of skill '${request.skill}' is an active provider per the skill catalogue (card-advertised providers are not auto-selected)`,
+            detail: `no executor of skill '${request.skill}' is an active provider per the skill catalogue (card-advertised providers are not auto-selected)`,
           };
         }
         names = governed;
@@ -550,7 +558,7 @@ export class Orchestrator {
     }
 
     // S11 V2 (design-tool-discovery §5): the unified candidate face.
-    // selectCandidates consumes the *live* per-vassal in-flight counters from
+    // selectCandidates consumes the *live* per-executor in-flight counters from
     // ConcurrencyMetrics (the same source as the switch layer below), so the
     // saturation face is runtime data rather than a V1 caller-supplied fixture.
     // The trust face (tier-1 read-only narrowing, E9.4) and the capability face
@@ -559,23 +567,23 @@ export class Orchestrator {
     // tier-0/granted defaults and contributes only live saturation; re-checking
     // them here would duplicate gates with no new boundary.
     const governedPool = explicit ? undefined : this.options.skillGovernor?.activeProviders(request.skill);
-    const perVassalCap = this.options.maxConcurrentPerVassal;
+    const perExecutorCap = this.options.maxConcurrentPerExecutor;
     // deferred #44 (design-memory-self-evolution §2.2): the runtime write-back
-    // face. Active selection-weight overrides for the request's realm re-order
+    // face. Active selection-weight overrides for the request's dataDomain re-order
     // the auto pool only (named pins stay first, missing key = weight 1). No
-    // realmId or no provider degrades to the baseline — dispatch unchanged.
+    // dataDomainId or no provider degrades to the baseline — dispatch unchanged.
     const selectionWeights =
-      request.realmId !== undefined
-        ? (this.options.selectionWeightsProvider?.(request.realmId) ?? {})
+      request.dataDomainId !== undefined
+        ? (this.options.selectionWeightsProvider?.(request.dataDomainId) ?? {})
         : undefined;
     const face =
       names.length > 0
         ? selectCandidates(request.skill, {
-            ...(explicit ? { named: [...new Set(request.vassals)] } : {}),
+            ...(explicit ? { named: [...new Set(request.executors)] } : {}),
             ...(explicit ? {} : { candidatePool: governedPool ?? names }),
             load: {
-              inFlightOf: v => this.options.metrics?.inFlightByVassalNow(v) ?? 0,
-              capOf: () => perVassalCap ?? Number.POSITIVE_INFINITY,
+              inFlightOf: v => this.options.metrics?.inFlightByExecutorNow(v) ?? 0,
+              capOf: () => perExecutorCap ?? Number.POSITIVE_INFINITY,
             },
             tier: 'tier-0',
             readOnlyTagged: true,
@@ -585,36 +593,36 @@ export class Orchestrator {
               : {}),
           })
         : [];
-    const pinnedNames = new Set(explicit ? request.vassals ?? [] : []);
+    const pinnedNames = new Set(explicit ? request.executors ?? [] : []);
     const faceAuto = face.filter(c => !pinnedNames.has(c.provider)).map(c => c.provider);
     const autoPoolBefore = governedPool ?? (explicit ? [] : names);
-    // deferred #44 (D2): without a per-vassal cap the S11 candidate face is
+    // deferred #44 (D2): without a per-executor cap the S11 candidate face is
     // the auto dispatch list — its write-back weight sort (and its pool order)
-    // is what actually reaches the vassals, not just the reporting. With no
+    // is what actually reaches the executors, not just the reporting. With no
     // weights the face is the lookup order, so this is zero behavior change at
-    // baseline. With a per-vassal cap the #9 diversion owns `names` below (it
+    // baseline. With a per-executor cap the #9 diversion owns `names` below (it
     // needs the un-filtered list so a saturated target is re-pointed and
     // audited as `diverted`, not silently dropped by the face).
-    if (!explicit && faceAuto.length > 0 && perVassalCap === undefined) {
+    if (!explicit && faceAuto.length > 0 && perExecutorCap === undefined) {
       names = faceAuto;
     }
 
-    // #9 backpressure diversion (design-backpressure.md): with a per-vassal
+    // #9 backpressure diversion (design-backpressure.md): with a per-executor
     // saturation cap configured, re-point saturated auto-selected targets to the
-    // best available same-skill provider before dispatch. Explicit driver-named
-    // vassals stay hard-pinned (a deliberate override, §4.4). The candidate
+    // best available same-skill provider before dispatch. Explicit operator-named
+    // executors stay hard-pinned (a deliberate override, §4.4). The candidate
     // pool is the S11 face (live-saturated providers already dropped); the
     // score uses historical reliability and latency from the same collector.
     let diversion: SelectTargetsResult | null = null;
-    if (names.length > 0 && perVassalCap !== undefined) {
+    if (names.length > 0 && perExecutorCap !== undefined) {
       diversion = selectTargets({
         skill: request.skill,
-        ...(explicit ? { explicitVassals: request.vassals } : {}),
+        ...(explicit ? { explicitExecutors: request.executors } : {}),
         initialNames: names,
         ...(explicit ? {} : { candidatePool: faceAuto }),
         load: {
-          inFlightByVassal: v => this.options.metrics?.inFlightByVassalNow(v) ?? 0,
-          capOf: () => perVassalCap,
+          inFlightByExecutor: v => this.options.metrics?.inFlightByExecutorNow(v) ?? 0,
+          capOf: () => perExecutorCap,
         },
         metrics: {
           failureRate: v => this.options.metrics?.failureRateOf(v) ?? 0,
@@ -629,7 +637,7 @@ export class Orchestrator {
       this.options.onCandidatesSelected?.({
         intentId,
         skill: request.skill,
-        realm: request.realm,
+        dataDomain: request.dataDomain,
         pinned: explicit ?? false,
         namedCount: explicit ? names.length : 0,
         poolSize: autoPoolBefore.length,
@@ -676,19 +684,19 @@ export class Orchestrator {
     }
     if (names.length === 0) {
       result = {
-        intentId, runId, skill: request.skill, realm: request.realm,
-        ...(request.realmId ? { realmId: request.realmId } : {}),
+        intentId, runId, skill: request.skill, dataDomain: request.dataDomain,
+        ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
         branches: [], stream: [],
         positions: [], decision: aggregate([], request.aggregation), conflicts: [],
         status: 'failed', createdAt: this.now().toISOString(),
         ...(refused ? { refused } : costRefusal ? { refused: costRefusal } : {}),
       };
       if (refused) {
-        this.options.onRefusal?.({ skill: request.skill, realm: request.realm, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
+        this.options.onRefusal?.({ skill: request.skill, dataDomain: request.dataDomain, reason: refused.reason, detail: refused.detail, at: this.now().toISOString() });
       } else if (costRefusal) {
         this.costRefusals += 1;
         this.options.onCostRefused?.({
-          intentId, skill: request.skill, realm: request.realm,
+          intentId, skill: request.skill, dataDomain: request.dataDomain,
           reason: costRefusal.reason, detail: costRefusal.detail, at: this.now().toISOString(),
         });
       }
@@ -700,12 +708,12 @@ export class Orchestrator {
           ? `intent ${intentId} branch budget exhausted (used ${budget.used} / limit ${this.budgetLimits.maxBranchesPerIntent})`
           : `intent ${intentId} circuit open (${budget.failureStreak} consecutive failures / threshold ${this.budgetLimits.maxConsecutiveBranchFailures})`;
       this.options.onTerminationRefused?.({
-        intentId, skill: request.skill, realm: request.realm,
+        intentId, skill: request.skill, dataDomain: request.dataDomain,
         reason: gate.reason, detail, at: this.now().toISOString(),
       });
       result = {
-        intentId, runId, skill: request.skill, realm: request.realm,
-        ...(request.realmId ? { realmId: request.realmId } : {}),
+        intentId, runId, skill: request.skill, dataDomain: request.dataDomain,
+        ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
         branches: [], stream: [], positions: [],
         decision: aggregate([], request.aggregation), conflicts: [],
         status: 'failed', createdAt: this.now().toISOString(),
@@ -722,21 +730,21 @@ export class Orchestrator {
       // S1 context engineering V1 (design-context-engineering §10): assemble the
       // memory appendix once per intent at the dispatch boundary, shared
       // read-only across every branch. Query is the skill name plus the textual
-      // message parameter (lexical retrieval), scoped to the dispatch realm —
-      // `searchRecall(reader, reader, ...)` makes cross-realm reads impossible
-      // at the signature level. A store-level failure or a missing realmId
+      // message parameter (lexical retrieval), scoped to the dispatch dataDomain —
+      // `searchRecall(reader, reader, ...)` makes cross-dataDomain reads impossible
+      // at the signature level. A store-level failure or a missing dataDomainId
       // degrades exactly like an unconfigured store: zero appendix, zero audit.
       let contextAppendix: DispatchRequest['contextAppendix'] = [];
       let skillInputs: DispatchRequest['skillInputs'] = [];
       let contextEvents: ContextAssemblyEvent[] = [];
-      if (this.options.memoryStore && request.realmId !== undefined) {
+      if (this.options.memoryStore && request.dataDomainId !== undefined) {
         const maxEntries = this.options.contextOptions?.maxEntries ?? CONTEXT_APPENDIX_DEFAULT_MAX;
         const minScore = this.options.contextOptions?.minScore;
         let hits: RecallHit[] = [];
         try {
           hits = await this.options.memoryStore.searchRecall(
-            request.realmId,
-            request.realmId,
+            request.dataDomainId,
+            request.dataDomainId,
             buildRecallQuery(request.skill, request.params),
             { limit: maxEntries },
           );
@@ -780,32 +788,38 @@ export class Orchestrator {
       }
       // S1 context engineering V3 (design-context-engineering §5): allocate the
       // per-branch total context budget across the assembled sources — skill
-      // inputs > realm read-only hits > memory appendix; the caller's explicit
+      // inputs > dataDomain read-only hits > memory appendix; the caller's explicit
       // payload is never counted or trimmed. The lowest-priority source is
       // truncated first and every truncation is audited. The truncation acts on
-      // the outbound copy: the inbound FanOutRequest (and its realmHits) is
+      // the outbound copy: the inbound FanOutRequest (and its dataDomainHits) is
       // never mutated.
       const branchLimit = this.options.contextOptions?.maxContextEntriesPerBranch
         ?? DEFAULT_BRANCH_CONTEXT_LIMIT;
       const budgeted = allocateContextBudget({
         skillInputs,
-        realmHits: request.realmHits ?? [],
+        dataDomainHits: request.dataDomainHits ?? [],
         contextAppendix,
         limit: branchLimit,
       });
       skillInputs = budgeted.skillInputs;
       contextAppendix = budgeted.contextAppendix;
-      const budgetedRealmHits = request.realmHits && budgeted.realmHits.length > 0
-        ? budgeted.realmHits
+      const budgetedDataDomainHits = request.dataDomainHits && budgeted.dataDomainHits.length > 0
+        ? budgeted.dataDomainHits
         : undefined;
       contextEvents = contextEvents.concat(budgeted.events);
       if (contextEvents.length > 0) {
+        const contextChars = estimateContextChars({
+          appendixTexts: contextAppendix.map(entry => entry.text),
+          skillInputs,
+          dataDomainHits: budgetedDataDomainHits ?? [],
+        });
+        this.contextWatermarks.set(runId, accumulateWatermark(this.contextWatermarks.get(runId), contextEvents, contextChars));
         this.options.onContextAssembled?.(contextEvents, {
           intentId,
           runId,
           skill: request.skill,
-          realm: request.realm,
-          ...(request.realmId ? { realmId: request.realmId } : {}),
+          dataDomain: request.dataDomain,
+          ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
           at: this.now().toISOString(),
         });
       }
@@ -825,23 +839,23 @@ export class Orchestrator {
           intentId,
           runId,
           skill: request.skill,
-          realm: request.realm,
-          ...(request.realmId ? { realmId: request.realmId } : {}),
-          vassals: names,
+          dataDomain: request.dataDomain,
+          ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
+          executors: names,
           boundary: escalatedEvent.boundary,
           signals: escalatedEvent.signals,
           at: this.now().toISOString(),
         });
         this.options.onRefusal?.({
           skill: request.skill,
-          realm: request.realm,
+          dataDomain: request.dataDomain,
           reason: 'guardrail-escalated',
           detail,
           at: this.now().toISOString(),
         });
         return {
-          intentId, runId, skill: request.skill, realm: request.realm,
-          ...(request.realmId ? { realmId: request.realmId } : {}),
+          intentId, runId, skill: request.skill, dataDomain: request.dataDomain,
+          ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
           branches: [], stream: [], positions: [],
           decision: aggregate([], request.aggregation), conflicts: [],
           status: 'failed', createdAt: this.now().toISOString(),
@@ -855,10 +869,10 @@ export class Orchestrator {
       // The placeholder's status is never surfaced (replay/persistence read only
       // `intents`); it exists so cancelIntent has branches to act on.
       this.inFlight.set(intentId, {
-        intentId, runId, skill: request.skill, realm: request.realm,
-        ...(request.realmId ? { realmId: request.realmId } : {}),
+        intentId, runId, skill: request.skill, dataDomain: request.dataDomain,
+        ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
         branches: names.map(name => ({
-          vassal: name,
+          executor: name,
           runId: this.branchRunId(runId, name, 0),
           ok: false,
           events: [],
@@ -885,7 +899,7 @@ export class Orchestrator {
               signals.get(name)?.signal,
               contextAppendix,
               skillInputs,
-              budgetedRealmHits,
+              budgetedDataDomainHits,
             );
           })
         );
@@ -897,10 +911,10 @@ export class Orchestrator {
       // S11 V3 (design-tool-discovery §5): the recovery chain is wired onto the
       // failed-branch runtime. Every failed branch gets a fixed-order verdict
       // (retry -> switch -> degrade -> escalate) and the verdict is audited on
-      // the spine. In intent-level fan-out the kernel holds no idempotency
+      // the spine. In intent-level fan-out the runtime holds no idempotency
       // fact, no retry budget and no optional-step declaration, and the whole
       // candidate face is already dispatched — so the verdict is escalate (the
-      // existing needs-driver semantics; the failed branch settles failed
+      // existing needs-operator semantics; the failed branch settles failed
       // exactly as before). What changes here is the audit: `tool-failed` (the
       // failure) is now really emitted, and the chain verdict decides the
       // `chain-*` line. The retry/switch/degrade *actions* belong to the
@@ -924,12 +938,12 @@ export class Orchestrator {
           hasAlternateProvider: alternate !== undefined,
           requiredStep: true,
         });
-        tried.add(branch.vassal);
+        tried.add(branch.executor);
         this.options.onChainRecovered?.({
           intentId,
           skill: request.skill,
-          realm: request.realm,
-          vassal: branch.vassal,
+          dataDomain: request.dataDomain,
+          executor: branch.executor,
           reason: branch.reason ?? 'branch failed',
           action,
           ...(alternate ? { alternateProvider: alternate.provider } : {}),
@@ -949,8 +963,8 @@ export class Orchestrator {
         this.budgets.set(intentId, settleBranch(this.budgetOf(intentId), branch.ok));
       }
       result = {
-        intentId, runId, skill: request.skill, realm: request.realm,
-        ...(request.realmId ? { realmId: request.realmId } : {}),
+        intentId, runId, skill: request.skill, dataDomain: request.dataDomain,
+        ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
         branches: settled,
         stream: mergeBranches(branches), positions, decision, conflicts,
         status: statusFromBranches(branches, conflicts.length > 0),
@@ -959,18 +973,33 @@ export class Orchestrator {
     }
 
     // S2: give a configured decision backend one gated chance to arbitrate the
-    // split; only a still-unresolved result reaches the human driver.
+    // split; only a still-unresolved result reaches the human operator.
     result = await this.maybeArbitrate(result);
     // E1.3: when enabled, an independent backend adversarially reviews a
     // rule-concluded multi-stance decision; gated disagreement re-escalates.
     result = await this.maybeJudge(result);
 
     // Store every fan-out under its final intentId (client-supplied idempotency
-    // key or server-generated id) so the driver face can read/settle intents it
+    // key or server-generated id) so the operator face can read/settle intents it
     // did not name. Replay still triggers only when the client sends a known
     // intentId on the way in (the cache lookup above is gated on request.intentId).
     this.intents.set(intentId, result);
     this.requests.set(intentId, request);
+    // D3-2: the run-level context watermark is a fact on the same audit spine
+    // as the per-intent assembly rows, emitted once at settle (never per event).
+    const watermark = this.contextWatermarks.get(runId);
+    if (watermark !== undefined) {
+      this.options.audit?.({
+        ts: this.now().toISOString(),
+        executor: '(intent)',
+        runId,
+        skill: result.skill,
+        dataDomain: result.dataDomain,
+        decision: 'context-watermark',
+        detail: `intent ${intentId}: run context watermark — ${watermarkDetail(watermark, result.branches.length)}`,
+      });
+      this.contextWatermarks.delete(runId);
+    }
     // S9 V2: settle the admitted cost when the intent lands — the in-flight
     // estimate is released, spent stays. Refused intents never reach here
     // (they settle through the failed-result path above without a ledger
@@ -983,10 +1012,10 @@ export class Orchestrator {
         this.costLedgers.set(intentId, recordSettled(current, this.options.costLimit, estimate, now));
       }
     }
-    if (result.status === 'needs-driver') this.options.onConflict?.(result.conflicts, result);
+    if (result.status === 'needs-operator') this.options.onConflict?.(result.conflicts, result);
     this.emit({
       type: 'intent-finished', intentId, runId: result.runId, status: result.status,
-      ...(result.realmId ? { realmId: result.realmId } : {}),
+      ...(result.dataDomainId ? { dataDomainId: result.dataDomainId } : {}),
       at: this.now().toISOString(),
     });
     // S15 V2: the intent settled — the in-memory stream view (previews only)
@@ -1026,18 +1055,18 @@ export class Orchestrator {
    * S15 V3 (design-streaming §3.3): intents with no terminal result yet —
    * either a fan-out still running (in `pending`, including a branch parked on
    * a task-input escalation whose promise has not resolved) or a settled row
-   * parked on `needs-driver` (blocked, awaiting an operator decision). Used by
+   * parked on `needs-operator` (blocked, awaiting an operator decision). Used by
    * the operator faces' live thinking-state view; terminal rows are excluded.
    * No deep clones — id/skill/status are scalars.
    */
-  activeIntents(): Array<{ intentId: string; skill: string; status: 'running' | 'needs-driver' }> {
-    const out = new Map<string, { intentId: string; skill: string; status: 'running' | 'needs-driver' }>();
+  activeIntents(): Array<{ intentId: string; skill: string; status: 'running' | 'needs-operator' }> {
+    const out = new Map<string, { intentId: string; skill: string; status: 'running' | 'needs-operator' }>();
     for (const [intentId, entry] of this.pending) {
       out.set(intentId, { intentId, skill: entry.request.skill, status: 'running' });
     }
     for (const [intentId, result] of this.intents) {
-      if (result.status === 'needs-driver' && !out.has(intentId)) {
-        out.set(intentId, { intentId, skill: result.skill, status: 'needs-driver' });
+      if (result.status === 'needs-operator' && !out.has(intentId)) {
+        out.set(intentId, { intentId, skill: result.skill, status: 'needs-operator' });
       }
     }
     return [...out.values()];
@@ -1086,18 +1115,18 @@ export class Orchestrator {
   }
 
   /** E6.3: find the intent whose branch run matches a task-input escalation.
-   *  Branch runIds are `${parentRunId}:${vassal}`, so the escalation's runId
+   *  Branch runIds are `${parentRunId}:${executor}`, so the escalation's runId
    *  alone is enough to locate the stored intent. deferred #42: when the state
    *  table misses, the archive is searched too, so approve-resume keeps working
    *  after a settled intent left the window. */
-  async findIntentForBranchRun(branchRunId: string, vassal: string): Promise<string | undefined> {
+  async findIntentForBranchRun(branchRunId: string, executor: string): Promise<string | undefined> {
     for (const [intentId, result] of this.intents) {
-      if (result.branches.some(branch => branch.runId === branchRunId && branch.vassal === vassal)) {
+      if (result.branches.some(branch => branch.runId === branchRunId && branch.executor === executor)) {
         return intentId;
       }
     }
     if (this.options.archive) {
-      return this.options.archive.findByBranch(branchRunId, vassal);
+      return this.options.archive.findByBranch(branchRunId, executor);
     }
     return undefined;
   }
@@ -1131,11 +1160,11 @@ export class Orchestrator {
     this.budgets = snapshot.budgets ? new Map(Object.entries(snapshot.budgets)) : new Map();
   }
 
-  /** E6.2: write the driver's conflict settlement back into the stored intent. */
-  resolveIntent(intentId: string, driver: Omit<DriverResolution, 'decidedAt'>): FanOutResult {
+  /** E6.2: write the operator's conflict settlement back into the stored intent. */
+  resolveIntent(intentId: string, operator: Omit<OperatorResolution, 'decidedAt'>): FanOutResult {
     const current = this.intents.get(intentId);
     if (!current) throw new UnknownIntentError(`unknown intent: ${intentId}`);
-    const resolved = applyConflictResolution(current, { ...driver, decidedAt: this.now().toISOString() });
+    const resolved = applyConflictResolution(current, { ...operator, decidedAt: this.now().toISOString() });
     this.intents.set(intentId, resolved);
     return structuredClone(resolved);
   }
@@ -1155,7 +1184,7 @@ export class Orchestrator {
   }
 
   /**
-   * E6.3 re-dispatch: after a vassal task is approved with human-supplied
+   * E6.3 re-dispatch: after a executor task is approved with human-supplied
    * parameters, re-run that branch and recompute the whole intent. The other
    * branches are untouched; the new branch replaces the old one.
    *
@@ -1165,14 +1194,14 @@ export class Orchestrator {
    * instead of producing a refused branch the caller could mistake for a
    * completed approval.
    *
-   * Concurrency (M-03): same-turn resumes of different vassals merge into one
+   * Concurrency (M-03): same-turn resumes of different executors merge into one
    * generation that dispatches every member branch in parallel and commits a
    * single recompute, instead of two recomputes racing on the same pre-resume
    * snapshot and losing one branch.
    */
   async resumeBranch(
     intentId: string,
-    vassal: string,
+    executor: string,
     params: Record<string, unknown>,
     executionDelegation?: ExecutionDelegation,
   ): Promise<FanOutResult> {
@@ -1181,7 +1210,7 @@ export class Orchestrator {
       if (!generation) {
         const created: ResumeGeneration = {
           sealed: false,
-          members: new Map([[vassal, { vassal, params, executionDelegation }]]),
+          members: new Map([[executor, { executor, params, executionDelegation }]]),
           result: undefined as never,
         };
         this.resumeGenerations.set(intentId, created);
@@ -1197,10 +1226,10 @@ export class Orchestrator {
         await generation.result.catch(() => {});
         continue;
       }
-      if (generation.members.has(vassal)) {
+      if (generation.members.has(executor)) {
         return generation.result.then(result => structuredClone(result));
       }
-      generation.members.set(vassal, { vassal, params, executionDelegation });
+      generation.members.set(executor, { executor, params, executionDelegation });
       return generation.result.then(result => structuredClone(result));
     }
   }
@@ -1217,9 +1246,9 @@ export class Orchestrator {
     const original = this.requests.get(intentId);
     if (!previous || !original) throw new UnknownIntentError(`unknown intent: ${intentId}`);
     for (const member of members) {
-      if (!previous.branches.some(branch => branch.vassal === member.vassal)) {
+      if (!previous.branches.some(branch => branch.executor === member.executor)) {
         throw new DomainError(
-          `intent ${intentId} has no branch for vassal ${member.vassal}`,
+          `intent ${intentId} has no branch for executor ${member.executor}`,
           'conflict',
         );
       }
@@ -1240,7 +1269,7 @@ export class Orchestrator {
     if (budget.used + members.length > this.budgetLimits.maxBranchesPerIntent) {
       const detail = `intent ${intentId} branch budget exhausted (used ${budget.used} / limit ${this.budgetLimits.maxBranchesPerIntent})`;
       this.options.onTerminationRefused?.({
-        intentId, skill: original.skill, realm: original.realm,
+        intentId, skill: original.skill, dataDomain: original.dataDomain,
         reason: 'budget-exceeded', detail, at: this.now().toISOString(),
       });
       throw new IntentBudgetExceededError(detail);
@@ -1258,11 +1287,11 @@ export class Orchestrator {
     const outcomes = await Promise.all(
       resumeRequests.map(({ member, resumeRequest }) =>
         this.runTrackedBranch(
-          member.vassal,
+          member.executor,
           resumeRequest,
           previous.runId,
           intentId,
-          this.nextResumeNo(previous, member.vassal),
+          this.nextResumeNo(previous, member.executor),
         ),
       ),
     );
@@ -1270,17 +1299,17 @@ export class Orchestrator {
     for (const outcome of outcomes) settledBudget = settleBranch(settledBudget, outcome.ok);
     this.budgets.set(intentId, settledBudget);
 
-    const memberVassals = new Set(members.map(member => member.vassal));
-    const others = previous.branches.filter(existing => !memberVassals.has(existing.vassal));
+    const memberExecutors = new Set(members.map(member => member.executor));
+    const others = previous.branches.filter(existing => !memberExecutors.has(existing.executor));
     const branches = [...others, ...outcomes];
     const recomputed = recomputeResult(previous, branches, original.aggregation, this.now);
     const arbitrated = await this.maybeArbitrate(recomputed);
     const judged = await this.maybeJudge(arbitrated);
     this.intents.set(intentId, judged);
-    if (judged.status === 'needs-driver') this.options.onConflict?.(judged.conflicts, judged);
+    if (judged.status === 'needs-operator') this.options.onConflict?.(judged.conflicts, judged);
     this.emit({
       type: 'intent-finished', intentId, runId: judged.runId, status: judged.status,
-      ...(judged.realmId ? { realmId: judged.realmId } : {}),
+      ...(judged.dataDomainId ? { dataDomainId: judged.dataDomainId } : {}),
       at: this.now().toISOString(),
     });
     // S15 V2: drop the stream view with the settled resume result.
@@ -1312,7 +1341,7 @@ export class Orchestrator {
     const cancellable = source.branches.filter(
       branch =>
         !isTerminalState(branch.state) &&
-        ((branch.ok && branch.taskId) || (liveSignals?.has(branch.vassal) ?? false))
+        ((branch.ok && branch.taskId) || (liveSignals?.has(branch.executor) ?? false))
     );
     const results = await Promise.all(cancellable.map(branch => this.cancelBranch(intentId, branch)));
     if (settled) this.writeBackCancellations(intentId, settled, results);
@@ -1325,7 +1354,7 @@ export class Orchestrator {
    * cancel (either path) marks the branch cancelled.
    */
   private async cancelBranch(intentId: string, branch: BranchOutcome): Promise<CancelBranchResult> {
-    const controller = this.branchSignals.get(intentId)?.get(branch.vassal);
+    const controller = this.branchSignals.get(intentId)?.get(branch.executor);
     if (controller) controller.abort();
     // design-fan-out §7: a branch aborted mid-stream has no task id to name; the
     // result records it as cancelled with no task reference, which is the truth
@@ -1333,10 +1362,10 @@ export class Orchestrator {
     const taskId = branch.taskId!;
     if (taskId) {
       try {
-        await this.dispatcher.cancel(branch.vassal, taskId);
+        await this.dispatcher.cancel(branch.executor, taskId);
       } catch (error) {
         return {
-          vassal: branch.vassal,
+          executor: branch.executor,
           taskId,
           canceled: false,
           reason: error instanceof Error ? error.message : 'cancel failed',
@@ -1345,8 +1374,8 @@ export class Orchestrator {
     }
     branch.ok = false;
     branch.state = 'canceled';
-    branch.reason = 'canceled by the driver';
-    return { vassal: branch.vassal, taskId, canceled: true };
+    branch.reason = 'canceled by the operator';
+    return { executor: branch.executor, taskId, canceled: true };
   }
 
   /**
@@ -1374,23 +1403,23 @@ export class Orchestrator {
     if (index !== -1) live.branches[index] = branch;
   }
 
-  private branchRunId(parentRunId: string, vassal: string, resumeNo: number): string {
-    return resumeNo > 0 ? `${parentRunId}:${vassal}:resume${resumeNo}` : `${parentRunId}:${vassal}`;
+  private branchRunId(parentRunId: string, executor: string, resumeNo: number): string {
+    return resumeNo > 0 ? `${parentRunId}:${executor}:resume${resumeNo}` : `${parentRunId}:${executor}`;
   }
 
   /**
    * The next resume ordinal for a branch. The stored branch's runId carries the
-   * last one (`…:vassal:resumeN`), so counting replacements is not enough: the
+   * last one (`…:executor:resumeN`), so counting replacements is not enough: the
    * replaced branch is the only one kept, which is why the previous count always
    * returned 1 and a second resume reused the first one's run id — overwriting
    * the metric entry, colliding in the replay timeline and mis-targeting cancels.
    */
-  private nextResumeNo(previous: FanOutResult, vassal: string): number {
-    const base = `${previous.runId}:${vassal}`;
+  private nextResumeNo(previous: FanOutResult, executor: string): number {
+    const base = `${previous.runId}:${executor}`;
     const prefix = `${base}:resume`;
     let highest = 0;
     for (const branch of previous.branches) {
-      if (branch.vassal !== vassal || !branch.runId.startsWith(prefix)) continue;
+      if (branch.executor !== executor || !branch.runId.startsWith(prefix)) continue;
       const ordinal = Number(branch.runId.slice(prefix.length));
       if (Number.isInteger(ordinal)) highest = Math.max(highest, ordinal);
     }
@@ -1400,14 +1429,14 @@ export class Orchestrator {
   /**
    * F2: reject a reused idempotency key that names a different request, instead
    * of answering it with the first request's result. Compared on the fields that
-   * select which work runs and where it runs — `skill`, `params`, `realm`,
-   * `realmId`, `vassals`. Tuning knobs (`aggregation`, `branchTimeoutMs`,
-   * `realmHits`) do not change the dispatched work and a replay may omit them;
+   * select which work runs and where it runs — `skill`, `params`, `dataDomain`,
+   * `dataDomainId`, `executors`. Tuning knobs (`aggregation`, `branchTimeoutMs`,
+   * `dataDomainHits`) do not change the dispatched work and a replay may omit them;
    * `runId` and the key itself are transport bookkeeping.
    */
   private assertSameRequest(incoming: FanOutRequest, stored: FanOutRequest | undefined): void {
     if (!stored) return;
-    const fields: Array<keyof FanOutRequest> = ['skill', 'params', 'realm', 'realmId', 'vassals'];
+    const fields: Array<keyof FanOutRequest> = ['skill', 'params', 'dataDomain', 'dataDomainId', 'executors'];
     const differing = fields.filter(field => !sameValue(incoming[field], stored[field]));
     if (differing.length > 0) {
       throw new IntentRequestConflictError(
@@ -1431,7 +1460,7 @@ export class Orchestrator {
    */
   private awaitPushSettlement(
     taskId: string,
-    entry: { runId: string; vassal: string; skill: string; realm: FanOutRequest['realm'] },
+    entry: { runId: string; executor: string; skill: string; dataDomain: FanOutRequest['dataDomain'] },
   ): Promise<DispatchResult> {
     return new Promise<DispatchResult>(resolve => {
       this.pushWaiters.set(taskId, { resolve, ...entry });
@@ -1456,7 +1485,7 @@ export class Orchestrator {
         return { ok: true, idempotent: true, state: prior.state, at: prior.at };
       }
       this.options.audit?.({
-        ts: now, vassal: '(push)', taskId: task.id, state: task.status.state,
+        ts: now, executor: '(push)', taskId: task.id, state: task.status.state,
         decision: 'push-notification-refused',
         detail: 'no push-armed branch is waiting for this task id',
       });
@@ -1465,8 +1494,8 @@ export class Orchestrator {
     this.pushWaiters.delete(task.id);
     this.pushProcessed.set(task.id, { state: task.status.state, at: now });
     this.options.audit?.({
-      ts: now, runId: waiter.runId, vassal: waiter.vassal, skill: waiter.skill,
-      realm: waiter.realm, taskId: task.id, state: task.status.state,
+      ts: now, runId: waiter.runId, executor: waiter.executor, skill: waiter.skill,
+      dataDomain: waiter.dataDomain, taskId: task.id, state: task.status.state,
       decision: 'push-notification-received',
     });
     waiter.resolve({ ok: true, task, events: [], injectedHits: [] });
@@ -1474,7 +1503,7 @@ export class Orchestrator {
   }
 
   private async runTrackedBranch(
-    vassal: string,
+    executor: string,
     request: FanOutRequest,
     parentRunId: string,
     intentId: string,
@@ -1484,11 +1513,11 @@ export class Orchestrator {
     signal?: AbortSignal,
     contextAppendix?: DispatchRequest['contextAppendix'],
     skillInputs?: DispatchRequest['skillInputs'],
-    budgetedRealmHits?: DispatchRequest['realmHits'],
+    budgetedDataDomainHits?: DispatchRequest['dataDomainHits'],
   ): Promise<BranchOutcome> {
-    const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
+    const branchRunId = this.branchRunId(parentRunId, executor, resumeNo);
     const metrics = this.options.metrics;
-    const metricKey = { intentId, runId: branchRunId, vassal };
+    const metricKey = { intentId, runId: branchRunId, executor };
     metrics?.enqueue(metricKey);
 
     // E1.5: with a cap configured the branch waits here, which is what turns
@@ -1498,17 +1527,17 @@ export class Orchestrator {
       release = await this.acquireSlot(signal);
     } catch (error) {
       // design-fan-out §7: a branch cancelled while still queued never reached
-      // a vassal; settle it as `canceled` (same shape as an aborted stream),
+      // a executor; settle it as `canceled` (same shape as an aborted stream),
       // not as a generic gate refusal/failure.
       if (error instanceof QueueWaitCancelledError) {
         metrics?.dequeue(metricKey);
         return {
-          vassal,
+          executor,
           runId: branchRunId,
           ok: false,
           events: [],
           state: 'canceled',
-          reason: 'canceled by the driver',
+          reason: 'canceled by the operator',
         };
       }
       // Queue limit reached: record the refusal so saturation is observable
@@ -1518,7 +1547,7 @@ export class Orchestrator {
       // #9: when the target was kept (saturated, no alternate) and still refused
       // by the global gate, attach the tried-candidates audit (design §4.5).
       return {
-        vassal,
+        executor,
         runId: branchRunId,
         ok: false,
         events: [],
@@ -1533,30 +1562,30 @@ export class Orchestrator {
     // runBranch, one such throw stranded the slot for the process lifetime.
     let branch: BranchOutcome;
     try {
-      metrics?.branchStarted({ intentId, runId: branchRunId, vassal, skill: request.skill, startedAt: this.now().toISOString() });
-      this.emit({ type: 'branch-started', intentId, runId: branchRunId, vassal, skill: request.skill, at: this.now().toISOString() });
+      metrics?.branchStarted({ intentId, runId: branchRunId, executor, skill: request.skill, startedAt: this.now().toISOString() });
+      this.emit({ type: 'branch-started', intentId, runId: branchRunId, executor, skill: request.skill, at: this.now().toISOString() });
       // #9: record a diversion decision alongside the branch start so the operator
       // can trace from→to on the audit/event spine (design §4.5).
       if (divertedFrom) {
         metrics?.recordDiversion();
-        this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: vassal, skill: request.skill, at: this.now().toISOString() });
-        this.options.onDiverted?.({ skill: request.skill, realm: request.realm, from: divertedFrom, to: vassal, at: this.now().toISOString() });
+        this.emit({ type: 'branch-diverted', intentId, runId: branchRunId, from: divertedFrom, to: executor, skill: request.skill, at: this.now().toISOString() });
+        this.options.onDiverted?.({ skill: request.skill, dataDomain: request.dataDomain, from: divertedFrom, to: executor, at: this.now().toISOString() });
       }
-      branch = await this.runBranch(vassal, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs, budgetedRealmHits, intentId);
+      branch = await this.runBranch(executor, request, parentRunId, resumeNo, signal, contextAppendix, skillInputs, budgetedDataDomainHits, intentId);
     } finally {
       release();
     }
     // A-11: make the settled branch (now carrying its task id) visible to a
     // cancel that arrives before the sibling branches finish.
     this.publishBranch(intentId, branch);
-    metrics?.branchEnded(intentId, branchRunId, vassal, outcomeOf(branch));
+    metrics?.branchEnded(intentId, branchRunId, executor, outcomeOf(branch));
     const settledAt = this.now().toISOString();
     this.emit({
-      type: 'branch-ended', intentId, runId: branchRunId, vassal,
+      type: 'branch-ended', intentId, runId: branchRunId, executor,
       // `state` is the agent's own terminal verdict and `outcome` is the dispatch
       // category; they disagree exactly where the war-room needs them apart: a
-      // vassal that reports `failed` and a branch whose transport never completed
-      // both settle as outcome `failed`. Publishing state whenever the kernel
+      // executor that reports `failed` and a branch whose transport never completed
+      // both settle as outcome `failed`. Publishing state whenever the runtime
       // holds it - the !ok paths included - is what lets a subscriber tell those
       // two apart (same conflation class as audit C-28).
       outcome: outcomeOf(branch), ...(branch.state !== undefined ? { state: branch.state } : {}),
@@ -1599,7 +1628,7 @@ export class Orchestrator {
    * a resume continuation after the original settled) drops the increment —
    * previews are replaceable and never persisted, so losing one is harmless.
    */
-  private handleBranchDelta(intentId: string, delta: { vassal: string; runId: string; seq: number; preview: string; at: string }): void {
+  private handleBranchDelta(intentId: string, delta: { executor: string; runId: string; seq: number; preview: string; at: string }): void {
     const view = this.streamViews.get(intentId);
     if (view === undefined) return;
     this.streamViews.set(
@@ -1615,19 +1644,19 @@ export class Orchestrator {
     this.emit({ type: 'branch-delta', intentId, ...delta });
   }
 
-  private async runBranch(vassal: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs'], budgetedRealmHits?: DispatchRequest['realmHits'], intentId?: string): Promise<BranchOutcome> {
-    const branchRunId = this.branchRunId(parentRunId, vassal, resumeNo);
+  private async runBranch(executor: string, request: FanOutRequest, parentRunId: string, resumeNo = 0, signal?: AbortSignal, contextAppendix?: DispatchRequest['contextAppendix'], skillInputs?: DispatchRequest['skillInputs'], budgetedDataDomainHits?: DispatchRequest['dataDomainHits'], intentId?: string): Promise<BranchOutcome> {
+    const branchRunId = this.branchRunId(parentRunId, executor, resumeNo);
     // deferred #33: execute-mode gate. An execute is an irreversible external
     // write, so it must carry a verified, unconsumed execution delegation; the
     // check happens before dispatch and any failure here is a refusal that
-    // never leaves the kernel. Plan (the default) is unchanged.
+    // never leaves the runtime. Plan (the default) is unchanged.
     if (request.mode === 'execute') {
       const anchor = this.options.executionDelegation;
       const verdict = anchor
         ? await verifyAndConsumeExecutionDelegation(request.executionDelegation, {
             verifier: anchor.verifier,
             ledger: anchor.ledger,
-            vassal,
+            executor,
             skill: request.skill,
             capability: 'execute',
             ...(anchor.acceptedKeyIds ? { acceptedKeyIds: anchor.acceptedKeyIds } : {}),
@@ -1637,39 +1666,39 @@ export class Orchestrator {
       if (!verdict.ok) {
         this.options.onExecutionDelegationRefused?.({
           skill: request.skill,
-          realm: request.realm,
-          vassal,
+          dataDomain: request.dataDomain,
+          executor,
           reason: verdict.reason,
           at: this.now().toISOString(),
         });
-        return { vassal, runId: branchRunId, ok: false, events: [], reason: `execute refused: ${verdict.reason}` };
+        return { executor, runId: branchRunId, ok: false, events: [], reason: `execute refused: ${verdict.reason}` };
       }
     }
     // Named once so the E6.1 hook below hands the desk exactly the request the
-    // branch was dispatched with (runId/vassal/skill/realm), not a reconstruction.
+    // branch was dispatched with (runId/executor/skill/dataDomain), not a reconstruction.
     const dispatchRequest: DispatchRequest = {
-      vassal,
+      executor,
       skill: request.skill,
       params: request.params,
-      realm: request.realm,
+      dataDomain: request.dataDomain,
       runId: branchRunId,
       // S1 V3 (design-context-engineering §5): the budget allocation may have
-      // truncated realm hits for the outbound copy; on resume no budget ran and
+      // truncated dataDomain hits for the outbound copy; on resume no budget ran and
       // the original request hits are re-dispatched unchanged.
-      ...(budgetedRealmHits
-        ? { realmHits: budgetedRealmHits, ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}) }
-        : request.realmHits
-          ? { realmHits: request.realmHits, ...(request.realmHitsOrigin ? { realmHitsOrigin: request.realmHitsOrigin } : {}) }
+      ...(budgetedDataDomainHits
+        ? { dataDomainHits: budgetedDataDomainHits, ...(request.dataDomainHitsOrigin ? { dataDomainHitsOrigin: request.dataDomainHitsOrigin } : {}) }
+        : request.dataDomainHits
+          ? { dataDomainHits: request.dataDomainHits, ...(request.dataDomainHitsOrigin ? { dataDomainHitsOrigin: request.dataDomainHitsOrigin } : {}) }
           : {}),
       // S1 (design-context-engineering §10): the memory appendix assembled at
-      // the dispatch boundary rides the same layer as realmHits — read-only,
+      // the dispatch boundary rides the same layer as dataDomainHits — read-only,
       // assembled once per intent, shared by every branch of this fan-out.
       ...(contextAppendix !== undefined && contextAppendix.length > 0 ? { contextAppendix } : {}),
       // S1 V2 (design-context-engineering §10.3): skill-declared input
       // assembly rides the same layer — the branch sees which declared fields
       // were supplied and which were left unavailable.
       ...(skillInputs !== undefined && skillInputs.length > 0 ? { skillInputs } : {}),
-      // S6 V2 (design-observability §5): propagate the kernel's own trace
+      // S6 V2 (design-observability §5): propagate the runtime's own trace
       // lineage. traceId is the intent-level runId (the fan-out root), spanId
       // the branch runId — both from runId naming, so the trace tree and the
       // outbound header stay the same namespace.
@@ -1678,7 +1707,7 @@ export class Orchestrator {
         : {}),
       ...(signal !== undefined ? { signal } : {}),
       // S15 V2 (design-streaming §5): surface working-frame increments on the
-      // request's narrow callback; the dispatcher adds vassal/runId lineage,
+      // request's narrow callback; the dispatcher adds executor/runId lineage,
       // this layer adds the intent that owns the stream view.
       ...(intentId === undefined
         ? {}
@@ -1694,7 +1723,7 @@ export class Orchestrator {
     // the ack task id is known even though the branch is still waiting for the
     // push. The timeout handler below cancels by that id directly; without it,
     // `pending` would still be hanging on the push waiter and the late cancel
-    // could never name the vassal-side task.
+    // could never name the executor-side task.
     let ackTaskId: string | undefined;
     const pending = this.dispatcher
       .dispatch(dispatchRequest)
@@ -1709,9 +1738,9 @@ export class Orchestrator {
           // below stays identical to the streaming path.
           return this.awaitPushSettlement(result.task.id, {
             runId: branchRunId,
-            vassal,
+            executor,
             skill: request.skill,
-            realm: request.realm,
+            dataDomain: request.dataDomain,
           });
         }
         return result;
@@ -1735,29 +1764,29 @@ export class Orchestrator {
 
       if (settled.kind === 'timeout') {
         // Giving up on the wait does not cancel the outbound request, and the
-        // timed-out branch carries no task id — so nothing the driver can reach
-        // would ever cancel the vassal-side task. Settle the late result in the
+        // timed-out branch carries no task id — so nothing the operator can reach
+        // would ever cancel the executor-side task. Settle the late result in the
         // background and best-effort cancel it, instead of leaving an orphan
-        // running against a vassal the kernel has already stopped accounting for.
+        // running against a executor the runtime has already stopped accounting for.
         if (request.pushNotification === true && ackTaskId !== undefined) {
           // E4.11: the ack task id is known (plain tasks/send accepted), so the
-          // vassal-side task is cancelled by its real id right away, and the
+          // executor-side task is cancelled by its real id right away, and the
           // abandoned waiter is dropped — a late push then reads as refused
           // (audited) instead of resolving into nothing.
           this.pushWaiters.delete(ackTaskId);
-          void this.dispatcher.cancel(vassal, ackTaskId).catch(() => {});
+          void this.dispatcher.cancel(executor, ackTaskId).catch(() => {});
         } else {
           void pending.then(outcome => {
             if (!outcome.ok) return;
-            void this.dispatcher.cancel(vassal, outcome.task.id).catch(() => {});
+            void this.dispatcher.cancel(executor, outcome.task.id).catch(() => {});
           });
         }
-        return { vassal, runId: branchRunId, ok: false, events: [], timedOut: true, reason: `branch timed out after ${timeoutMs}ms` };
+        return { executor, runId: branchRunId, ok: false, events: [], timedOut: true, reason: `branch timed out after ${timeoutMs}ms` };
       }
       const outcome = settled.outcome;
       if (outcome.ok) {
-        // E6.1: the vassal stopped because it lacks input, which is a question
-        // for the driver. Hand the settled dispatch to the oversight desk before
+        // E6.1: the executor stopped because it lacks input, which is a question
+        // for the operator. Hand the settled dispatch to the oversight desk before
         // the branch is recorded, so the escalation carries the real task id.
         if (outcome.task.status.state === 'input-required') {
           this.options.onTaskInput?.(outcome, dispatchRequest);
@@ -1774,27 +1803,27 @@ export class Orchestrator {
         // and the intent fails.
         if (outcome.task.status.state === 'failed') {
           return {
-            vassal, runId: branchRunId, ok: false, state: 'failed',
+            executor, runId: branchRunId, ok: false, state: 'failed',
             taskId: outcome.task.id, task: outcome.task, events: outcome.events,
             reason: outcome.task.status.message?.message ?? 'branch task failed',
           };
         }
         return {
-          vassal, runId: branchRunId, ok: true, taskId: outcome.task.id,
+          executor, runId: branchRunId, ok: true, taskId: outcome.task.id,
           state: outcome.task.status.state, task: outcome.task, events: outcome.events,
         };
       }
-      // design-fan-out §7: an aborted stream is the driver cancelling, not the
-      // vassal failing — settle the branch as `canceled` so the aggregate and the
+      // design-fan-out §7: an aborted stream is the operator cancelling, not the
+      // executor failing — settle the branch as `canceled` so the aggregate and the
       // Web war-room show the truth instead of a generic dispatch failure.
       const aborted = signal?.aborted ?? false;
       return {
-        vassal, runId: branchRunId, ok: false, events: [],
+        executor, runId: branchRunId, ok: false, events: [],
         ...(aborted ? { state: 'canceled' as const } : {}),
-        reason: aborted ? 'canceled by the driver' : outcome.reason,
+        reason: aborted ? 'canceled by the operator' : outcome.reason,
       };
     } catch (error) {
-      return { vassal, runId: branchRunId, ok: false, events: [], reason: error instanceof Error ? error.message : 'branch failed' };
+      return { executor, runId: branchRunId, ok: false, events: [], reason: error instanceof Error ? error.message : 'branch failed' };
     } finally {
       // The losing branch of `Promise.race` is not cancelled by the race, so an
       // uncleared timer kept the event loop alive after the intent had settled.
@@ -1810,10 +1839,10 @@ export class Orchestrator {
     this.options.onProgress?.(event);
   }
 
-  /** S2: consult the decision backend on a needs-driver split, if configured. */
+  /** S2: consult the decision backend on a needs-operator split, if configured. */
   private async maybeArbitrate(result: FanOutResult): Promise<FanOutResult> {
     const backend = this.options.decisionBackend;
-    if (!backend || result.status !== 'needs-driver' || result.conflicts.length === 0) return result;
+    if (!backend || result.status !== 'needs-operator' || result.conflicts.length === 0) return result;
     return arbitrateConflict({
       result,
       backend,

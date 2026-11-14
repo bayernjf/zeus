@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { ProgressHub } from '../src/orchestrator/progress.js';
@@ -8,16 +8,16 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function statusEvent(taskId: string): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'completed' }, final: true };
 }
 
-function done(vassal: string, stance = 'approve'): DispatchResult {
+function done(executor: string, stance = 'approve'): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance } }] }],
   };
   return { ok: true, task, events: [statusEvent(task.id)], injectedHits: [] };
@@ -28,10 +28,10 @@ function lookupFor(names: string[]): TargetLookup {
 }
 
 function gatedPort() {
-  const waiting: Array<{ finish: (r: DispatchResult) => void; vassal: string }> = [];
+  const waiting: Array<{ finish: (r: DispatchResult) => void; executor: string }> = [];
   const port: DispatchPort = {
     async dispatch(req: DispatchRequest) {
-      return new Promise<DispatchResult>(resolve => waiting.push({ vassal: req.vassal!, finish: resolve }));
+      return new Promise<DispatchResult>(resolve => waiting.push({ executor: req.executor!, finish: resolve }));
     },
     async cancel() {},
   };
@@ -41,14 +41,14 @@ function gatedPort() {
       for (let i = 0; i < times; i += 1) await new Promise(r => setImmediate(r));
     },
     releaseAll() {
-      for (const entry of waiting.splice(0)) entry.finish(done(entry.vassal));
+      for (const entry of waiting.splice(0)) entry.finish(done(entry.executor));
     },
   };
 }
 
 async function server(orchestrator: Orchestrator, progressHub: ProgressHub) {
   return createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     orchestrator,
@@ -86,7 +86,7 @@ describe('GET /api/active-intents (S15 V3, design-streaming §3.3)', () => {
       onProgress: e => hub.publish(e),
     });
     app = await server(orch, hub);
-    const flying = orch.fanOut({ intentId: 'intent-live', skill: 'review', params: {}, realm: 'personal' });
+    const flying = orch.fanOut({ intentId: 'intent-live', skill: 'review', params: {}, dataDomain: 'personal' });
     await gated.flush();
 
     const res = await app.inject({ method: 'GET', url: '/api/active-intents', headers: AUTH });
@@ -103,11 +103,11 @@ describe('GET /api/active-intents (S15 V3, design-streaming §3.3)', () => {
     await flying;
   });
 
-  it('lists a needs-driver intent as blocked', async () => {
+  it('lists a needs-operator intent as blocked', async () => {
     const hub = new ProgressHub();
     const split: DispatchPort = {
       async dispatch(req) {
-        return done(req.vassal!, req.vassal === 'loom' ? 'approve' : 'reject');
+        return done(req.executor!, req.executor === 'loom' ? 'approve' : 'reject');
       },
       async cancel() {},
     };
@@ -117,12 +117,12 @@ describe('GET /api/active-intents (S15 V3, design-streaming §3.3)', () => {
       onProgress: e => hub.publish(e),
     });
     app = await server(orch, hub);
-    await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, realm: 'enterprise' });
+    await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     const res = await app.inject({ method: 'GET', url: '/api/active-intents', headers: AUTH });
     const body = await res.json();
     expect(body.intents).toHaveLength(1);
-    expect(body.intents[0]).toMatchObject({ intentId: 'intent-blocked', status: 'needs-driver' });
+    expect(body.intents[0]).toMatchObject({ intentId: 'intent-blocked', status: 'needs-operator' });
     expect(body.intents[0].settledCount).toBe(2);
   });
 });

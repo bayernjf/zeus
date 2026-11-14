@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
 /**
@@ -23,15 +23,15 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
 }
 
-function vassalFetch(): typeof fetch {
+function executorFetch(): typeof fetch {
   return (async (input: unknown) => {
     const url = String(input);
     const name = url.split('/')[3]!;
@@ -86,29 +86,29 @@ const seeds = ['http://127.0.0.1/loom/api/a2a/agent-card'];
 const NOW = new Date('2026-10-05T12:00:00.000Z');
 
 /** One injected transport for both surfaces, so the watch's connector call runs
- *  on exactly the transport the kernel was assembled with. */
+ *  on exactly the transport the runtime was assembled with. */
 function combinedFetch(mcp: typeof fetch): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).includes('mcp.example')) return mcp(input, init);
-    return vassalFetch()(input, init);
+    return executorFetch()(input, init);
   });
 }
 
 async function booted(options: { failCall?: boolean } = {}) {
   const audits: AuditEntry[] = [];
-  const kernel = await bootKernel({
+  const runtime = await bootRuntime({
     fetchImpl: combinedFetch(mcpFetch({ ...(options.failCall ? { failCall: true } : {}) })),
-    vassalSeeds: seeds,
+    executorSeeds: seeds,
     dispatchAudit: entry => audits.push(entry),
   });
-  return { kernel, audits };
+  return { runtime, audits };
 }
 
 function watchInput(tool: string, permissions: string[]) {
   return {
     id: 'wc',
     owner: 'operator@bayjf',
-    realm: 'personal' as const,
+    dataDomain: 'personal' as const,
     predicate: { source: 'connector' as const, op: 'above' as const, field: 'queue.depth', value: 2 },
     connector: { id: 'knowledge', tool },
     intent: { skill: 'review', subject: 'upstream queue is deep', mode: 'plan' as const, maxFanOut: 1 },
@@ -122,46 +122,46 @@ function watchInput(tool: string, permissions: string[]) {
 
 describe('a watch reading a connector (step 3)', () => {
   it('fires when the declared tool returns a matching reading', async () => {
-    const { kernel, audits } = await booted();
-    kernel.connectorRegistry!.declare({
+    const { runtime, audits } = await booted();
+    runtime.connectorRegistry!.declare({
       id: 'knowledge', name: 'KB', endpoint: 'https://mcp.example/mcp', permissions: ['mcp'],
     });
-    await kernel.connectorRegistry!.connect('knowledge', mcpFetch());
-    kernel.watches!.register(watchInput('search', ['mcp']));
+    await runtime.connectorRegistry!.connect('knowledge', mcpFetch());
+    runtime.watches!.register(watchInput('search', ['mcp']));
 
-    const report = await kernel.runWatchTick(NOW);
+    const report = await runtime.runWatchTick(NOW);
     expect(report.fired).toEqual(['wc']);
-    expect(kernel.orchestrator.getIntent('watch:wc:1')?.branches.map(branch => branch.vassal)).toEqual(['loom']);
+    expect(runtime.orchestrator.getIntent('watch:wc:1')?.branches.map(branch => branch.executor)).toEqual(['loom']);
     expect(audits.some(entry => entry.decision === 'watch-fired')).toBe(true);
   });
 
   it('is unreadable, and does not fire, for a tool the declaration never granted', async () => {
-    const { kernel, audits } = await booted();
-    kernel.connectorRegistry!.declare({
+    const { runtime, audits } = await booted();
+    runtime.connectorRegistry!.declare({
       id: 'knowledge', name: 'KB', endpoint: 'https://mcp.example/mcp', permissions: ['mcp:search'],
     });
-    await kernel.connectorRegistry!.connect('knowledge', mcpFetch());
+    await runtime.connectorRegistry!.connect('knowledge', mcpFetch());
     // 'danger' is advertised upstream but the boundary removed it.
-    kernel.watches!.register(watchInput('danger', ['mcp:search']));
+    runtime.watches!.register(watchInput('danger', ['mcp:search']));
 
-    const report = await kernel.runWatchTick(NOW);
+    const report = await runtime.runWatchTick(NOW);
     expect(report.unavailable).toEqual(['wc']);
     expect(report.fired).toEqual([]);
-    expect(kernel.orchestrator.getIntent('watch:wc:1')).toBeUndefined();
+    expect(runtime.orchestrator.getIntent('watch:wc:1')).toBeUndefined();
     expect(audits.some(entry => entry.decision === 'watch-eval-unavailable')).toBe(true);
   });
 
   it('reports a failing upstream as unavailable instead of a false condition', async () => {
     // Connected against a healthy server; the tool call itself then fails.
-    const { kernel } = await booted({ failCall: true });
-    kernel.connectorRegistry!.declare({
+    const { runtime } = await booted({ failCall: true });
+    runtime.connectorRegistry!.declare({
       id: 'knowledge', name: 'KB', endpoint: 'https://mcp.example/mcp', permissions: ['mcp'],
     });
     // Connected against a healthy server: only the tool call fails, at tick time.
-    await kernel.connectorRegistry!.connect('knowledge', mcpFetch());
-    kernel.watches!.register(watchInput('search', ['mcp']));
+    await runtime.connectorRegistry!.connect('knowledge', mcpFetch());
+    runtime.watches!.register(watchInput('search', ['mcp']));
 
-    const report = await kernel.runWatchTick(NOW);
+    const report = await runtime.runWatchTick(NOW);
     expect(report.unavailable).toEqual(['wc']);
     expect(report.fired).toEqual([]);
   });

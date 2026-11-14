@@ -55,9 +55,9 @@ export class MemoryEventConflictError extends Error {
 
 export interface MemoryAuditEntry {
   at: string;
-  reason: 'cross-realm-read' | 'cross-realm-append';
-  readerRealmId: string;
-  targetRealmId: string;
+  reason: 'cross-dataDomain-read' | 'cross-dataDomain-append';
+  readerDataDomainId: string;
+  targetDataDomainId: string;
 }
 
 export interface MemoryReplay {  events: MemoryEvent[];
@@ -65,17 +65,17 @@ export interface MemoryReplay {  events: MemoryEvent[];
 }
 
 /**
- * Owns the append-only event log and the fact store for all realms.
+ * Owns the append-only event log and the fact store for all dataDomains.
  * Facts have no public write surface: they change only through
- * consolidateRealm(). Reading another realm's memory is refused and audited.
+ * consolidateDataDomain(). Reading another dataDomain's memory is refused and audited.
  */
 export class MemoryStore {
   private readonly events: MemoryEvent[] = [];
-  private readonly factsByRealm = new Map<string, FactRecord[]>();
+  private readonly factsByDataDomain = new Map<string, FactRecord[]>();
   private readonly corrections: ReliabilityCorrection[] = [];
   private readonly retractions: RetractionRecord[] = [];
   private readonly writebacks: WritebackRecord[] = [];
-  private readonly indexesByRealm = new Map<string, RecallIndex>();
+  private readonly indexesByDataDomain = new Map<string, RecallIndex>();
   private readonly embedder: Embedder;
 
   constructor(private readonly audit: (entry: MemoryAuditEntry) => void = () => {},
@@ -95,114 +95,114 @@ export class MemoryStore {
     this.events.push(event);
   }
 
-  /** Append on behalf of a writer bound to a realm; a mismatch is refused. */
-  appendFromRealm(writerRealmId: string, event: MemoryEvent): void {
-    if (writerRealmId !== event.realmId) {
+  /** Append on behalf of a writer bound to a dataDomain; a mismatch is refused. */
+  appendFromDataDomain(writerDataDomainId: string, event: MemoryEvent): void {
+    if (writerDataDomainId !== event.dataDomainId) {
       this.audit({
         at: this.now().toISOString(),
-        reason: 'cross-realm-append',
-        readerRealmId: writerRealmId,
-        targetRealmId: event.realmId,
+        reason: 'cross-dataDomain-append',
+        readerDataDomainId: writerDataDomainId,
+        targetDataDomainId: event.dataDomainId,
       });
       throw new MemoryBoundaryError(
-        `realm ${writerRealmId} cannot append memory to realm ${event.realmId}`,
+        `dataDomain ${writerDataDomainId} cannot append memory to dataDomain ${event.dataDomainId}`,
       );
     }
     this.append(event);
   }
 
-  read(readerRealmId: string, targetRealmId: string, runId?: string): MemoryEvent[] {
-    if (readerRealmId !== targetRealmId) {
+  read(readerDataDomainId: string, targetDataDomainId: string, runId?: string): MemoryEvent[] {
+    if (readerDataDomainId !== targetDataDomainId) {
       this.audit({
         at: this.now().toISOString(),
-        reason: 'cross-realm-read',
-        readerRealmId,
-        targetRealmId,
+        reason: 'cross-dataDomain-read',
+        readerDataDomainId,
+        targetDataDomainId,
       });
       throw new MemoryBoundaryError(
-        `realm ${readerRealmId} cannot read memory of realm ${targetRealmId}`,
+        `dataDomain ${readerDataDomainId} cannot read memory of dataDomain ${targetDataDomainId}`,
       );
     }
     return this.events.filter(
-      e => e.realmId === targetRealmId && (runId === undefined || e.runId === runId),
+      e => e.dataDomainId === targetDataDomainId && (runId === undefined || e.runId === runId),
     );
   }
 
-  facts(readerRealmId: string, targetRealmId: string): FactRecord[] {
-    if (readerRealmId !== targetRealmId) {
+  facts(readerDataDomainId: string, targetDataDomainId: string): FactRecord[] {
+    if (readerDataDomainId !== targetDataDomainId) {
       this.audit({
         at: this.now().toISOString(),
-        reason: 'cross-realm-read',
-        readerRealmId,
-        targetRealmId,
+        reason: 'cross-dataDomain-read',
+        readerDataDomainId,
+        targetDataDomainId,
       });
       throw new MemoryBoundaryError(
-        `realm ${readerRealmId} cannot read facts of realm ${targetRealmId}`,
+        `dataDomain ${readerDataDomainId} cannot read facts of dataDomain ${targetDataDomainId}`,
       );
     }
-    return this.factsByRealm.get(targetRealmId) ?? [];
+    return this.factsByDataDomain.get(targetDataDomainId) ?? [];
   }
 
-  async consolidateRealm(realmId: string, options: ConsolidateOptions = {}): Promise<ConsolidationResult> {
-    const events = this.events.filter(e => e.realmId === realmId);
-    const facts = this.factsByRealm.get(realmId) ?? [];
+  async consolidateDataDomain(dataDomainId: string, options: ConsolidateOptions = {}): Promise<ConsolidationResult> {
+    const events = this.events.filter(e => e.dataDomainId === dataDomainId);
+    const facts = this.factsByDataDomain.get(dataDomainId) ?? [];
     const output = consolidate(events, facts, options);
-    this.factsByRealm.set(realmId, output.facts);
+    this.factsByDataDomain.set(dataDomainId, output.facts);
     // The index is derived; refresh only when one has been materialised.
-    const index = this.indexesByRealm.get(realmId);
+    const index = this.indexesByDataDomain.get(dataDomainId);
     if (index) {
       if (index.dimension !== this.embedder.dimension) {
         // The embedder switched vector space (hub ↔ local fallback): rebuild
         // instead of mixing dimensions in one index.
-        await this.buildRecall(realmId);
+        await this.buildRecall(dataDomainId);
       } else {
         await index.sync(output.facts);
       }
-      this.decayRealm(realmId);
+      this.decayDataDomain(dataDomainId);
     }
     return output.result;
   }
 
-  /** Materialise (or rebuild) the derived recall index for a realm. */
-  async buildRecall(realmId: string): Promise<RecallIndex> {
-    let index = this.indexesByRealm.get(realmId);
+  /** Materialise (or rebuild) the derived recall index for a dataDomain. */
+  async buildRecall(dataDomainId: string): Promise<RecallIndex> {
+    let index = this.indexesByDataDomain.get(dataDomainId);
     if (!index || index.dimension !== this.embedder.dimension) {
-      index = new RecallIndex(this.embedder, realmId);
-      this.indexesByRealm.set(realmId, index);
+      index = new RecallIndex(this.embedder, dataDomainId);
+      this.indexesByDataDomain.set(dataDomainId, index);
     }
-    await index.sync(this.factsByRealm.get(realmId) ?? []);
+    await index.sync(this.factsByDataDomain.get(dataDomainId) ?? []);
     // The sync replays the whole fact source, which would resurrect episodic
     // facts a previous decay pass evicted from the index; re-apply decay so
     // the eviction survives a rebuild (searchRecall rebuilds on every call).
-    this.decayRealm(realmId);
+    this.decayDataDomain(dataDomainId);
     return index;
   }
 
   /**
    * Hybrid keyword+semantic recall, importance-ranked; subject to the same
-   * realm boundary. Hits touch `lastAccessAt`, the decay clock for episodic
+   * dataDomain boundary. Hits touch `lastAccessAt`, the decay clock for episodic
    * entries.
    */
   async searchRecall(
-    readerRealmId: string,
-    targetRealmId: string,
+    readerDataDomainId: string,
+    targetDataDomainId: string,
     query: string,
     options?: RecallSearchOptions,
   ): Promise<RecallHit[]> {
-    if (readerRealmId !== targetRealmId) {
+    if (readerDataDomainId !== targetDataDomainId) {
       this.audit({
         at: this.now().toISOString(),
-        reason: 'cross-realm-read',
-        readerRealmId,
-        targetRealmId,
+        reason: 'cross-dataDomain-read',
+        readerDataDomainId,
+        targetDataDomainId,
       });
       throw new MemoryBoundaryError(
-        `realm ${readerRealmId} cannot search memory of realm ${targetRealmId}`,
+        `dataDomain ${readerDataDomainId} cannot search memory of dataDomain ${targetDataDomainId}`,
       );
     }
-    const index = await this.buildRecall(targetRealmId);
+    const index = await this.buildRecall(targetDataDomainId);
     const hits = await index.search(query, options);
-    const stored = this.factsByRealm.get(targetRealmId);
+    const stored = this.factsByDataDomain.get(targetDataDomainId);
     if (stored) {
       const now = this.now().toISOString();
       for (const hit of hits) {
@@ -222,12 +222,12 @@ export class MemoryStore {
    * decision entries never decay. `downWeighted` counts episodic entries
    * currently inside the discount window.
    */
-  decayRealm(realmId: string): DecayResult {
-    const index = this.indexesByRealm.get(realmId);
+  decayDataDomain(dataDomainId: string): DecayResult {
+    const index = this.indexesByDataDomain.get(dataDomainId);
     const nowMs = this.now().getTime();
     let downWeighted = 0;
     const evicted: string[] = [];
-    for (const fact of this.factsByRealm.get(realmId) ?? []) {
+    for (const fact of this.factsByDataDomain.get(dataDomainId) ?? []) {
       if (fact.kind !== 'episodic' || fact.status === 'retracted') continue;
       const last = Date.parse(fact.lastAccessAt ?? fact.updatedAt);
       const ageDays = Number.isFinite(last) ? Math.max(0, (nowMs - last) / 86_400_000) : 0;
@@ -247,11 +247,11 @@ export class MemoryStore {
    * downstream propagation. Retracting an already-retracted fact is a no-op.
    */
   retractFacts(
-    realmId: string,
+    dataDomainId: string,
     factIds: string[],
     context: { reason: string; requestedBy: string },
   ): RetractionRecord[] {
-    const facts = this.factsByRealm.get(realmId);
+    const facts = this.factsByDataDomain.get(dataDomainId);
     if (!facts) return [];
     const records: RetractionRecord[] = [];
     for (const factId of factIds) {
@@ -259,10 +259,10 @@ export class MemoryStore {
       if (!fact || fact.status === 'retracted') continue;
       fact.status = 'retracted';
       fact.updatedAt = this.now().toISOString();
-      this.indexesByRealm.get(realmId)?.remove(factId);
+      this.indexesByDataDomain.get(dataDomainId)?.remove(factId);
       const record: RetractionRecord = {
         factId,
-        realmId,
+        dataDomainId,
         subject: fact.subject,
         reason: context.reason,
         requestedBy: context.requestedBy,
@@ -276,15 +276,15 @@ export class MemoryStore {
 
   /** Forget every fact about a subject (identity match, case-insensitive). */
   forgetSubject(
-    realmId: string,
+    dataDomainId: string,
     subject: string,
     context: { reason: string; requestedBy: string },
   ): RetractionRecord[] {
     const normalized = subject.trim().toLowerCase();
-    const factIds = (this.factsByRealm.get(realmId) ?? [])
+    const factIds = (this.factsByDataDomain.get(dataDomainId) ?? [])
       .filter(f => f.subject.trim().toLowerCase() === normalized)
       .map(f => f.factId);
-    return this.retractFacts(realmId, factIds, context);
+    return this.retractFacts(dataDomainId, factIds, context);
   }
 
   listRetractions(): RetractionRecord[] {
@@ -305,11 +305,11 @@ export class MemoryStore {
     facts: number;
     retractions: number;
     corrections: number;
-    realms: number;
+    dataDomains: number;
     byKind: Record<string, number>;
   } {
     const byKind: Record<string, number> = {};
-    for (const facts of this.factsByRealm.values()) {
+    for (const facts of this.factsByDataDomain.values()) {
       for (const fact of facts) {
         const kind = fact.kind ?? 'fact';
         byKind[kind] = (byKind[kind] ?? 0) + 1;
@@ -317,16 +317,16 @@ export class MemoryStore {
     }
     return {
       events: this.events.length,
-      facts: [...this.factsByRealm.values()].reduce((sum, facts) => sum + facts.length, 0),
+      facts: [...this.factsByDataDomain.values()].reduce((sum, facts) => sum + facts.length, 0),
       retractions: this.retractions.length,
       corrections: this.corrections.length,
-      realms: this.factsByRealm.size,
+      dataDomains: this.factsByDataDomain.size,
       byKind,
     };
   }
 
   /**
-   * Record a driver correction: the named authors produced a claim the driver
+   * Record a operator correction: the named authors produced a claim the operator
    * rejected. Each correction permanently lowers the author's score; this is
    * the "被纠错" feedback the metrics failure rate cannot see.
    */
@@ -344,14 +344,14 @@ export class MemoryStore {
   }
 
   /**
-   * Distinct authors of the named facts in one realm, resolved via their
-   * provenance events. Scoped to a single realm on purpose: an optional realm
-   * used to scan every domain, which is exactly the cross-realm read the
+   * Distinct authors of the named facts in one dataDomain, resolved via their
+   * provenance events. Scoped to a single dataDomain on purpose: an optional dataDomain
+   * used to scan every domain, which is exactly the cross-dataDomain read the
    * boundary refuses everywhere else, and it left no audit trail.
    */
-  authorsOfFacts(realmId: string, factIds: string[]): string[] {
+  authorsOfFacts(dataDomainId: string, factIds: string[]): string[] {
     const wanted = new Set(factIds);
-    const facts = this.factsByRealm.get(realmId) ?? [];
+    const facts = this.factsByDataDomain.get(dataDomainId) ?? [];
     const eventIds = new Set(
       facts.filter(f => wanted.has(f.factId)).flatMap(f => f.provenance),
     );
@@ -379,7 +379,7 @@ export class MemoryStore {
     }
     const card: WritebackRecord = {
       id: input.id ?? crypto.randomUUID(),
-      realmId: input.realmId,
+      dataDomainId: input.dataDomainId,
       createdAt: this.now().toISOString(),
       source: input.source,
       param: input.param,
@@ -401,25 +401,25 @@ export class MemoryStore {
     return { ...card };
   }
 
-  listWritebacks(realmId?: string): WritebackRecord[] {
+  listWritebacks(dataDomainId?: string): WritebackRecord[] {
     return this.writebacks
-      .filter((c) => realmId === undefined || c.realmId === realmId)
+      .filter((c) => dataDomainId === undefined || c.dataDomainId === dataDomainId)
       .map((c) => ({ ...c }));
   }
 
-  /** Active `selection-weight` overrides for a realm; `{}` is the baseline. */
-  selectionWeights(realmId: string): Record<string, number> {
-    return selectionWeightsFromWritebacks(this.listWritebacks(realmId));
+  /** Active `selection-weight` overrides for a dataDomain; `{}` is the baseline. */
+  selectionWeights(dataDomainId: string): Record<string, number> {
+    return selectionWeightsFromWritebacks(this.listWritebacks(dataDomainId));
   }
 
   /**
    * Offline decision replay along a runId: the run's events plus every fact
    * whose provenance cites one of those events.
    */
-  replay(realmId: string, runId: string): MemoryReplay {
-    const events = this.read(realmId, realmId, runId);
+  replay(dataDomainId: string, runId: string): MemoryReplay {
+    const events = this.read(dataDomainId, dataDomainId, runId);
     const eventIds = new Set(events.map(e => e.eventId));
-    const facts = (this.factsByRealm.get(realmId) ?? []).filter(f =>
+    const facts = (this.factsByDataDomain.get(dataDomainId) ?? []).filter(f =>
       f.provenance.some(id => eventIds.has(id)),
     );
     return { events, facts };
@@ -433,8 +433,8 @@ export class MemoryStore {
   exportState(): MemoryState {
     return {
       events: this.events.map(e => ({ ...e })),
-      facts: [...this.factsByRealm.entries()].map(([realmId, facts]) => [
-        realmId,
+      facts: [...this.factsByDataDomain.entries()].map(([dataDomainId, facts]) => [
+        dataDomainId,
         facts.map(f => ({ ...f, provenance: [...f.provenance] })),
       ]),
       corrections: this.corrections.map(c => ({ ...c })),
@@ -445,15 +445,15 @@ export class MemoryStore {
 
   importState(state: MemoryState): void {
     this.events.length = 0;
-    this.factsByRealm.clear();
+    this.factsByDataDomain.clear();
     this.corrections.length = 0;
     this.retractions.length = 0;
     this.writebacks.length = 0;
     // Indexes are derived and never imported; they rebuild lazily.
-    this.indexesByRealm.clear();
+    this.indexesByDataDomain.clear();
     for (const event of state.events) this.append(event);
-    for (const [realmId, facts] of state.facts) {
-      this.factsByRealm.set(realmId, facts.map(f => ({ ...f, provenance: [...f.provenance] })));
+    for (const [dataDomainId, facts] of state.facts) {
+      this.factsByDataDomain.set(dataDomainId, facts.map(f => ({ ...f, provenance: [...f.provenance] })));
     }
     for (const correction of state.corrections ?? []) this.corrections.push({ ...correction });
     for (const retraction of state.retractions ?? []) this.retractions.push({ ...retraction });

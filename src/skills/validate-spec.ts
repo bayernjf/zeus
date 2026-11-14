@@ -12,7 +12,7 @@ import type { SkillSpecInput } from './types.js';
 /** Allowed permission scopes. A claim is `scope` or `scope:action`, where
  *  action is a lowercase identifier. Keep this vocabulary closed so a skill
  *  cannot invent rights the governance layer does not understand. */
-const PERMISSION_SCOPES = ['realm', 'execute', 'network', 'credential', 'mcp'] as const;
+const PERMISSION_SCOPES = ['data-domain', 'execute', 'network', 'credential', 'mcp'] as const;
 
 /** Non-mcp scopes keep the closed lowercase vocabulary: `scope` or `scope:action`. */
 const PERMISSION_RE = /^[a-z][a-z-]*(:[a-z][a-z-]*)?$/;

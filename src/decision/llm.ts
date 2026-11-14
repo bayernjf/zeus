@@ -296,7 +296,7 @@ function parseJsonObject(text: string): Record<string, unknown> | null {
   }
 }
 
-/** env wiring; returns null when not fully configured → kernel unchanged. */
+/** env wiring; returns null when not fully configured → runtime unchanged. */
 export function createLlmBackendFromEnv(env: NodeJS.ProcessEnv = process.env, options: BackendOptions = {}): DecisionBackend | null {
   const baseUrl = env.ZEUS_LLM_BASE_URL;
   const apiKey = env.ZEUS_LLM_API_KEY;

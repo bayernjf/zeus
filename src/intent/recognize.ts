@@ -53,7 +53,7 @@ export type IntentRecognitionOptions = {
   /** Catalogue rows to rank against (typically SkillRegistry.list()). */
   catalog: SkillCatalogEntry[];
   /** 'personal' is the sovereign default; only that or 'enterprise'. */
-  realm?: 'personal' | 'enterprise';
+  dataDomain?: 'personal' | 'enterprise';
   /** Explicit opt-in for consulting the external backend. Default false. */
   useModel?: boolean;
   /** Confidence below this never yields an intent (fail closed). Default 0.6. */
@@ -66,7 +66,7 @@ export type IntentRecognitionOptions = {
 
 export type RecognizedIntent = {
   skill: string;
-  /** Recognition suggests shape only; parameters stay empty for the driver. */
+  /** Recognition suggests shape only; parameters stay empty for the operator. */
   params: Record<string, unknown>;
   /** Recognition alone never authorizes execution (deferred #33). */
   mode: 'plan';
@@ -141,8 +141,8 @@ export function rankCandidates(catalog: SkillCatalogEntry[], text: string, limit
   return scored.slice(0, limit);
 }
 
-function isRealm(realm: unknown): realm is 'personal' | 'enterprise' {
-  return realm === 'personal' || realm === 'enterprise';
+function isDataDomain(dataDomain: unknown): dataDomain is 'personal' | 'enterprise' {
+  return dataDomain === 'personal' || dataDomain === 'enterprise';
 }
 
 /**
@@ -151,7 +151,7 @@ function isRealm(realm: unknown): realm is 'personal' | 'enterprise' {
  */
 export async function recognizeIntent(options: IntentRecognitionOptions): Promise<IntentRecognitionResult> {
   const now = options.now ?? (() => new Date());
-  const realm = options.realm ?? 'personal';
+  const dataDomain = options.dataDomain ?? 'personal';
   const threshold = options.confidenceThreshold ?? 0.6;
   const candidates = rankCandidates(options.catalog, options.text);
 
@@ -169,13 +169,13 @@ export async function recognizeIntent(options: IntentRecognitionOptions): Promis
       return { ok: false, reason: 'no-candidates', detail: 'the capability catalogue is empty; there is nothing to choose among' };
     }
     const request: ChoiceRequest = {
-      state: { instruction: options.text, realm },
-      stateKeys: ['instruction', 'realm'],
+      state: { instruction: options.text, dataDomain },
+      stateKeys: ['instruction', 'dataDomain'],
       instructions: 'Pick the single best-matching skill id for the operator instruction. Answer with exactly one of the given options.',
       question: `Which skill in ${JSON.stringify(ids)} fits this instruction best?`,
       options: ids,
       runId: `recognize-${now().getTime()}`,
-      realm,
+      dataDomain,
       ...(options.maxWaitMs !== undefined ? { maxWaitMs: options.maxWaitMs } : {}),
     };
     let result;
@@ -224,4 +224,4 @@ export async function recognizeIntent(options: IntentRecognitionOptions): Promis
   };
 }
 
-export { isRealm };
+export { isDataDomain };

@@ -12,7 +12,7 @@
  *   boot the HTTP process with a skill registry -> recognize a matching
  *   instruction resolves locally with zero model involvement (backend: null,
  *   mode: plan) -> a non-matching instruction fails closed (422 no-candidates) ->
- *   an invalid realm is rejected (400) -> asking for the model with no backend
+ *   an invalid dataDomain is rejected (400) -> asking for the model with no backend
  *   configured fails closed (422 no-backend) instead of guessing.
  *
  * The local rule path is the deterministic core of recognition and the default
@@ -45,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const KEEP = process.argv.includes('--keep');
 const startedAt = Date.now();
-const DRIVER_TOKEN = `verify-intent-${randomBytes(8).toString('hex')}`;
+const OPERATOR_TOKEN = `verify-intent-${randomBytes(8).toString('hex')}`;
 
 /** @type {{ name: string, ok: boolean, detail: string }[]} */
 const steps = [];
@@ -80,14 +80,14 @@ if (!existsSync(join(REPO, 'dist/http/serve.js'))) {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace: a temp directory with its own realm, state file, audit file and
+// Workspace: a temp directory with its own dataDomain, state file, audit file and
 // root signing key. Nothing here touches a real deployment.
 // ---------------------------------------------------------------------------
 const work = mkdtempSync(join(tmpdir(), 'zeus-verify-intent-'));
-const realmRoot = join(work, 'realm');
-mkdirSync(realmRoot, { recursive: true });
-writeFileSync(join(realmRoot, 'note.md'), '# verify\n\ncontext the recognition face runs against\n');
-const stateFile = join(work, 'kernel-state.json');
+const dataDomainRoot = join(work, 'dataDomain');
+mkdirSync(dataDomainRoot, { recursive: true });
+writeFileSync(join(dataDomainRoot, 'note.md'), '# verify\n\ncontext the recognition face runs against\n');
+const stateFile = join(work, 'runtime-state.json');
 const auditFile = join(work, 'audit.jsonl');
 const keyFile = join(work, 'verify-key.pem');
 execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), keyFile], { stdio: 'pipe' });
@@ -117,11 +117,11 @@ const agentServer = createServer((req, res) => {
           { id: 'code-review', name: 'Code Review', description: 'review a pull request for defects', tags: [] },
           { id: 'research', name: 'Deep Research', description: 'multi-source research across web and documents', tags: [] },
         ],
-        'x-zeus-fealty': {
+        'x-zeus-handshake': {
           version: '1',
           swornTo: 'zeus',
           domain: 'smoke',
-          dataRealms: ['personal'],
+          dataDomains: ['personal'],
           dataPolicy: 'read-task-scope',
           reportBack: true,
           escalationPolicy: 'on-failure',
@@ -166,9 +166,9 @@ const env = {
   ZEUS_STATE_FILE: stateFile,
   ZEUS_AUDIT_FILE: auditFile,
   ZEUS_RSK_KEY_FILE: keyFile,
-  ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
-  ZEUS_REALM_ROOTS: realmRoot,
-  ZEUS_VASSAL_SEEDS: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`,
+  ZEUS_INTERNAL_TOKEN: OPERATOR_TOKEN,
+  ZEUS_DATA_DOMAIN_ROOTS: dataDomainRoot,
+  ZEUS_EXECUTOR_SEEDS: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`,
 };
 // Never inherit a real deployment's seeds or decision/model keys: the model
 // path must fail closed on this process (422 no-backend), which is exactly
@@ -178,7 +178,7 @@ delete env.ZEUS_DECISION_API_KEY;
 delete env.ZEUS_LLM_BASE_URL;
 delete env.ZEUS_LLM_API_KEY;
 
-const bearer = { authorization: `Bearer ${DRIVER_TOKEN}`, 'content-type': 'application/json' };
+const bearer = { authorization: `Bearer ${OPERATOR_TOKEN}`, 'content-type': 'application/json' };
 /** @type {import('node:child_process').ChildProcess | undefined} */
 let proc;
 let lastErr = '';
@@ -245,9 +245,9 @@ try {
   const miss = await api('POST', '/api/intents/recognize', { text: 'unrelated gibberish topic' });
   record('non-matching instruction fails closed (422 no-candidates)', miss.status === 422 && miss.body?.ok === false && miss.body?.reason === 'no-candidates', `status=${miss.status} reason=${miss.body?.reason}`);
 
-  // 4. realm validation on the face.
-  const badRealm = await api('POST', '/api/intents/recognize', { text: 'review', realm: 'public' });
-  record('invalid realm rejected (400)', badRealm.status === 400, `status=${badRealm.status}`);
+  // 4. dataDomain validation on the face.
+  const badDataDomain = await api('POST', '/api/intents/recognize', { text: 'review', dataDomain: 'public' });
+  record('invalid dataDomain rejected (400)', badDataDomain.status === 400, `status=${badDataDomain.status}`);
 
   // 5. asking for the model with no backend configured fails closed instead
   //    of guessing (this process deleted all model keys on purpose).
@@ -256,7 +256,7 @@ try {
 
   // 6. the recognized intent is feedable into the plan fan-out face: skill id
   //    round-trips through POST /api/intents as a plan intent.
-  const roundTrip = await api('POST', '/api/intents', { skill: 'code-review', realm: 'personal' });
+  const roundTrip = await api('POST', '/api/intents', { skill: 'code-review', dataDomain: 'personal' });
   record('recognized skill id round-trips through the plan intent face', roundTrip.status === 200 && typeof roundTrip.body?.intentId === 'string' && roundTrip.body?.status === 'completed', `status=${roundTrip.status} intentId=${roundTrip.body?.intentId} status=${roundTrip.body?.status}`);
 } catch (error) {
   record('verification aborted', false, error instanceof Error ? error.message : String(error));

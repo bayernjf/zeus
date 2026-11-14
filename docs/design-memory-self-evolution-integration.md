@@ -13,7 +13,7 @@
 | 记忆更新 / 矛盾处理 | 合并 / 取代 / `disputed` 默认升级 + 可靠度加权（metrics failureRate + 操作者纠错 −0.15/次） | ✅ 已有 |
 | 记忆遗忘 | 遗忘权 `retractFacts` / `forgetSubject`：事实与派生索引删除、留 tombstone、事件日志保留供治理回放 | ✅ 已有（只有显式遗忘，没有"淡化"） |
 | 记忆可解释可编辑 | 六面只读端点 + 监督台**记忆视图**（v1.21）+ 日记（E8.3） | ✅ 已有（Active work 236 刚接上读者） |
-| 记忆备份与继承 | Vault 备份清单（含内核状态文件）、AES-GCM 密钥分离、跨位恢复；传承（继承协议 + 密钥托管） | ✅ 备份已有 / ⬜ 传承（deferred #2/#3） |
+| 记忆备份与继承 | Backup 备份清单（含内核状态文件）、AES-GCM 密钥分离、跨位恢复；传承（继承协议 + 密钥托管） | ✅ 备份已有 / ⬜ 传承（deferred #2/#3） |
 | 闭环第 4 步"下次执行前检索经验并注入" | S1 上下文工程 V1/V2：`contextAppendix` 记忆附录 + `skillInputs` 技能声明输入装配进分支上下文 | ✅ 已有 |
 | 闭环第 1 步"执行" | fan-out / DAG / 执行委托 / 一次委托 | ✅ 已有 |
 | 闭环第 2 步"生成反思报告" | **只读失败归因** `src/reflection/failure-attribution.ts`（分类 × 执行 Agent 聚合、`writebackCandidate` 标记） | 🟡 **半有**：确定性聚合，不是模型复盘 |
@@ -70,7 +70,7 @@
 | **① 模型驱动的复盘**（闭环第 2 步） | 归因是确定性聚合（分类计数），没有"用模型生成结构化复盘 + 经验卡" | 需先裁定**是否允许外部模型参与**（正文出域 vs `dataPolicy` 口径）；允许后才可开工 |
 | **② 写回面**（闭环第 3/5 步） | 未做；#40 只读归因已落地并标 `writebackCandidate` | 挂 deferred **#40** 触发条件：首个真实执行 Agent 长期运行、有可统计的失败样本分布（同 #9 的 ≥3 真实 Agent 口径）。mock 的失败模式是编的，会把猜测锁成猜测 |
 | **③ 记忆 producer 只产 claim** | `MemoryKind` 四类里 observation / action / decision 未接 | 需要真实负载里"哪些执行 Agent 的哪种回报值得入记忆"这一分布；与 ② 同触发条件 |
-| **④ 检索规模化** | P0 是文件系统扫描 | deferred **#10**：单 Realm > 2 万文件 / P50 > 500ms / 语义检索成为明确需求 |
+| **④ 检索规模化** | P0 是文件系统扫描 | deferred **#10**：单 DataDomain > 2 万文件 / P50 > 500ms / 语义检索成为明确需求 |
 
 另有两条**非缺口但可能被误当缺口**的：遗忘"淡化"（按重要性衰减）——本项目走的是显式遗忘 + 用户可擦除，刻意不做隐式衰减（记错比记不住更糟）；长期画像层——已以编制/席位/认证形态存在，不需要再建一层"Profile"。
 
@@ -149,7 +149,7 @@ research 文档给的是**行业通用参考技术**（含 Mem0 / Zep / Pinecone
 | 记忆更新 / 矛盾处理 | 合并/修正/遗忘 | 可靠度加权 + `disputed` 升级 + `retractFacts`/`forgetSubject` | ✅ 已有（显式遗忘，无隐式淡化，见 §三末） |
 | 记忆审计 / 可解释可编辑 | 用户可见可改 | 六面只读 + 监督台记忆视图 + 事实表 | ✅ 已有 |
 | Reflexion / 经验库 + RAG | 自进化 L1 闭环 | 只读失败归因 `failure-attribution.ts` + 写回面（§2.2） | 🟡 半有 / ❌ 缺（见 §三①②） |
-| PostgreSQL + pgvector + 对象存储 | 存储层 | 内核状态文件 + Vault 备份 | ✅ 自持；对象存储仅作备份目标，不托管正文 |
+| PostgreSQL + pgvector + 对象存储 | 存储层 | 内核状态文件 + Backup 备份 | ✅ 自持；对象存储仅作备份目标，不托管正文 |
 
 ### 8.4 三层关系（一图）
 
@@ -160,7 +160,7 @@ research 文档给的是**行业通用参考技术**（含 Mem0 / Zep / Pinecone
 记忆六面 (衍生层: 指针 + 事实 + 溯源)   ← events/facts/replay/recall/retractions/integrity
    │  语义召回由自持 pgvector 支撑 (recall 面)
    ▼
-存储/备份 (内核状态文件 + Vault)       ← 与目录一起备份恢复, 正文不出本机
+存储/备份 (内核状态文件 + Backup)       ← 与目录一起备份恢复, 正文不出本机
 ```
 
 一句话：**目录是记录源（正文归用户），六面是它的带溯源时间视图，文档里的 pgvector/RAG 等通用技术只是六面之上、且必须自持的衍生索引**——部署位置不能抄托管方案（§四）。
@@ -176,10 +176,10 @@ research 文档给的是**行业通用参考技术**（含 Mem0 / Zep / Pinecone
 ```ts
 export type WritebackParam = 'selection-weight';
 export interface WritebackRecord {
-  id: string; realmId: string; createdAt: string;
+  id: string; dataDomainId: string; createdAt: string;
   source: { kind: string; target: string; confidence: 'stable' | 'suggestive' };
   param: WritebackParam;     // 当前只有 selection-weight（D2：只改排序权重）
-  target: string;            // 被调整的实体（selection-weight 下是 vassal id）
+  target: string;            // 被调整的实体（selection-weight 下是 executor id）
   factor: number;            // 乘性权重，1=不变，<1 降低权重；下限 0.1（fail-soft）
   reason: string; status: 'active' | 'retracted'; retractedAt?: string;
 }
@@ -192,11 +192,11 @@ export interface WritebackRecord {
 机械层（`src/memory/writeback.ts`）只做**应用与吊销**，不决定写回什么——那是 §三① 复盘的职责。可逆性是结构性的，不是声明性的：active 卡片贡献一条覆盖，吊销/移除后 `selectionWeightsFromWritebacks` 回到基线（缺省权重 1），行为随之复原、无需额外动作。这正是可审计、可回滚（设计约束 2）的落点。
 
 - `selectionWeightsFromWritebacks(records)`：active 的 `selection-weight` 卡片按 target 取最新，得 `{target: factor}`；无卡片返回 `{}`（基线）。
-- `WritebackLedger`：管理 active 卡片，`record` 校验 `factor ∈ (0.1, 1]`（下限保证 fail-soft，被降权的 vassal 在他人饱和时仍可被选）、`retract` 保留行并翻转状态（全程可溯源）。
+- `WritebackLedger`：管理 active 卡片，`record` 校验 `factor ∈ (0.1, 1]`（下限保证 fail-soft，被降权的 executor 在他人饱和时仍可被选）、`retract` 保留行并翻转状态（全程可溯源）。
 
-真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/core/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(realm)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
+真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/core/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(dataDomain)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
 
 ### 9.3 已验证（合成样本）+ 仍挂 #40
 
-- 验证面（`tests/memory-writeback.test.ts`，合成样本，**6/6 绿**，2026-10-14 本机实测）：稳定 `vassal-concentrated` 模式 → 经验卡 → `selectCandidates` 把降权 vassal 沉到末尾但保持可达（fail-soft）；吊销经验卡 → 排序回到基线、无其他改动；因子越界（`>1` 或 `<0.1`）`record` 抛 `RangeError`；`MemoryStore` 经 `exportState`/`importState` 往返后经验卡与权重 intact。缺陷植入断言（吊销 → 基线 / 越界 → 抛错）已在用例内结构化承载；定向复跑 `orchestrator-discovery` 17/17、`failure-attribution` 10/10 无回归。
+- 验证面（`tests/memory-writeback.test.ts`，合成样本，**6/6 绿**，2026-10-14 本机实测）：稳定 `executor-concentrated` 模式 → 经验卡 → `selectCandidates` 把降权 executor 沉到末尾但保持可达（fail-soft）；吊销经验卡 → 排序回到基线、无其他改动；因子越界（`>1` 或 `<0.1`）`record` 抛 `RangeError`；`MemoryStore` 经 `exportState`/`importState` 往返后经验卡与权重 intact。缺陷植入断言（吊销 → 基线 / 越界 → 抛错）已在用例内结构化承载；定向复跑 `orchestrator-discovery` 17/17、`failure-attribution` 10/10 无回归。
 - **仍挂 #40**：① 运行时把权重接进编排器派发路径；② 真实失败样本下的阈值/权重调参（与 #9 同口径，≥3 真实 Agent）。这两条不到则停在「机制已建、合成已验」。

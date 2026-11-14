@@ -1,9 +1,9 @@
 /**
  * Skill as a first-class module (PRD E2).
  *
- * A SkillSpec is independent of any vassal's Agent Card: the same skill may be
- * provided by many vassals and exist in multiple co-registered versions. The
- * registry is the catalogue; vassal cards merely advertise which skills they
+ * A SkillSpec is independent of any executor's Agent Card: the same skill may be
+ * provided by many executors and exist in multiple co-registered versions. The
+ * registry is the catalogue; executor cards merely advertise which skills they
  * implement (importable via registerFromCard).
  */
 
@@ -39,12 +39,12 @@ export type SkillSpec = {
   inputs?: Record<string, unknown>;
   /** Declared output shape. */
   outputs?: Record<string, unknown>;
-  /** Permission claims the skill requires, e.g. ['realm:read', 'execute']. */
+  /** Permission claims the skill requires, e.g. ['data-domain:read', 'execute']. */
   permissions?: string[];
   /** Other skill ids this one depends on. */
   dependencies?: string[];
   status: SkillStatus;
-  /** Vassal names known to provide this skill version (populated on card import). */
+  /** Executor names known to provide this skill version (populated on card import). */
   providedBy: string[];
   registeredAt: string;
   deprecatedAt?: string;
@@ -62,7 +62,7 @@ export type TeamSlot = {
   skillId: string;
   /** Exactly one provider: safe to auto-assign. */
   providers: string[];
-  /** More than one active provider: the driver/strategy must disambiguate (never random). */
+  /** More than one active provider: the operator/strategy must disambiguate (never random). */
   ambiguous: boolean;
   /** No registered provider for this skill. */
   missing: boolean;

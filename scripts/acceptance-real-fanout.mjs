@@ -13,7 +13,7 @@
  * and only revokes again if you pass --revoke-test. Everything else is a read.
  *
  * Usage:
- *   KERNEL_URL=http://127.0.0.1:8799 \
+ *   RUNTIME_URL=http://127.0.0.1:8799 \
  *   ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" \
  *   CARD_URL=https://pr-helper-ten.vercel.app/api/a2a/agent-card \
  *   AGENT_TOKEN=<the bearer that agent expects, if any> \
@@ -26,10 +26,10 @@
  * …/agent-card → …/tasks) when the card declares nothing usable. Pass this when
  * a card declares the wrong endpoint or none at all: it wins over both.
  *
- * REALM (optional, default "personal"): the realm type the driven intent targets.
- * A vassal only serves the data realms its fealty declares, so an agent whose
- * card says dataRealms=["enterprise"] is refused a personal-realm intent — mount
- * the matching realm (ZEUS_REALM_ENTERPRISE) and pass REALM=enterprise.
+ * DATA_DOMAIN (optional, default "personal"): the dataDomain type the driven intent targets.
+ * A executor only serves the data dataDomains its handshake declares, so an agent whose
+ * card says dataDomains=["enterprise"] is refused a personal-dataDomain intent — mount
+ * the matching dataDomain (ZEUS_DATA_DOMAIN_ENTERPRISE) and pass DATA_DOMAIN=enterprise.
  *
  * PARAMS (optional, JSON object): the skill parameters to send. An execution
  * agent validates its own parameters, so the question-shaped default
@@ -85,19 +85,19 @@ function usageExit(reason) {
 }
 if (timeoutIndex >= 0 && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) usageExit(`--timeout must be a positive number of ms`);
 if (argv.includes('--help') || argv.includes('-h')) {
-  console.log(`usage: KERNEL_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [TASK_URL=…] [SKILL=…] [REALM=personal|enterprise] [PARAMS='{"k":"v"}'] [EXPECT_STANCE=0|1] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
+  console.log(`usage: RUNTIME_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [TASK_URL=…] [SKILL=…] [DATA_DOMAIN=personal|enterprise] [PARAMS='{"k":"v"}'] [EXPECT_STANCE=0|1] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
   process.exit(0);
 }
 
-const KERNEL_URL = (env.KERNEL_URL ?? '').replace(/\/+$/, '');
+const RUNTIME_URL = (env.RUNTIME_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_TOKEN = env.ZEUS_INTERNAL_TOKEN ?? '';
 const CARD_URL = env.CARD_URL ?? '';
 const AGENT_TOKEN = env.AGENT_TOKEN ?? '';
 const TASK_URL = env.TASK_URL ?? '';
 const SKILL = env.SKILL ?? 'research';
-const REALM = env.REALM ?? 'personal';
+const DATA_DOMAIN = env.DATA_DOMAIN ?? 'personal';
 const EXPECT_STANCE = env.EXPECT_STANCE ?? '0';
-if (REALM !== 'personal' && REALM !== 'enterprise') usageExit(`REALM must be "personal" or "enterprise", got ${REALM}`);
+if (DATA_DOMAIN !== 'personal' && DATA_DOMAIN !== 'enterprise') usageExit(`DATA_DOMAIN must be "personal" or "enterprise", got ${DATA_DOMAIN}`);
 if (EXPECT_STANCE !== '0' && EXPECT_STANCE !== '1') usageExit(`EXPECT_STANCE must be "0" (the agent reports) or "1" (the agent votes), got ${EXPECT_STANCE}`);
 // A skill's params are its own: the runner cannot guess them, so it takes the
 // object verbatim when given one and only falls back to the question-shaped
@@ -112,10 +112,10 @@ if (env.PARAMS) {
   }
   if (PARAMS === null || typeof PARAMS !== 'object' || Array.isArray(PARAMS)) usageExit(`PARAMS must be a JSON object of skill parameters, got ${Array.isArray(PARAMS) ? 'an array' : typeof PARAMS}`);
 }
-if (!KERNEL_URL) usageExit('KERNEL_URL is required (e.g. http://127.0.0.1:8799)');
-if (!INTERNAL_TOKEN) usageExit('ZEUS_INTERNAL_TOKEN is required: this acceptance drives the internal/driver face');
+if (!RUNTIME_URL) usageExit('RUNTIME_URL is required (e.g. http://127.0.0.1:8799)');
+if (!INTERNAL_TOKEN) usageExit('ZEUS_INTERNAL_TOKEN is required: this acceptance drives the internal/operator face');
 if (!CARD_URL) usageExit('CARD_URL is required: the agent-card URL of the real execution agent');
-for (const [name, value] of [['KERNEL_URL', KERNEL_URL], ['CARD_URL', CARD_URL], ...(TASK_URL ? [['TASK_URL', TASK_URL]] : [])]) {
+for (const [name, value] of [['RUNTIME_URL', RUNTIME_URL], ['CARD_URL', CARD_URL], ...(TASK_URL ? [['TASK_URL', TASK_URL]] : [])]) {
   try {
     new URL(value ?? '');
   } catch {
@@ -147,7 +147,7 @@ const bearer = { authorization: `Bearer ${INTERNAL_TOKEN}` };
  * @returns {Promise<{ status: number, text: string, json: any }>}
  */
 async function call(method, path, { auth = false, body } = {}) {
-  const url = `${KERNEL_URL}${path}`;
+  const url = `${RUNTIME_URL}${path}`;
   const response = await fetch(url, {
     method,
     headers: { ...(auth ? bearer : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
@@ -164,14 +164,14 @@ async function call(method, path, { auth = false, body } = {}) {
   return { status: response.status, text, json };
 }
 const clip = (/** @type {unknown} */ value) => String(value ?? '').replace(/\s+/g, ' ').slice(0, 160);
-// The snapshot exports facts as [realmId, FactRecord[]] pairs, so a count has to
+// The snapshot exports facts as [dataDomainId, FactRecord[]] pairs, so a count has to
 // walk the pairs; reading a scalar field that is not there would report 0 and
 // look like "the producer is broken" when it is the reader that is wrong.
 const factCount = (/** @type {any} */ state) => (Array.isArray(state?.facts) ? state.facts : [])
   .reduce((/** @type {number} */ total, /** @type {any} */ pair) => total + (Array.isArray(pair?.[1]) ? pair[1].length : 0), 0);
 
 async function main() {
-  console.log(`target ${KERNEL_URL.replace(/^https?:\/\//, '')}  skill=${SKILL}  card=${CARD_URL.replace(/^https?:\/\//, '')}  expectStance=${EXPECT_STANCE}`);
+  console.log(`target ${RUNTIME_URL.replace(/^https?:\/\//, '')}  skill=${SKILL}  card=${CARD_URL.replace(/^https?:\/\//, '')}  expectStance=${EXPECT_STANCE}`);
   console.log(`credentials: internal token ${INTERNAL_TOKEN ? 'present' : 'missing'} (length ${INTERNAL_TOKEN.length}), agent token ${AGENT_TOKEN ? 'present' : 'absent'}  — neither value is ever printed`);
   if (TASK_URL) console.log(`task endpoint: ${TASK_URL} (explicit override; without it dispatch uses the endpoint the card declares, else ${CARD_URL.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks')})`);
 
@@ -180,13 +180,13 @@ async function main() {
   try {
     health = await call('GET', '/healthz');
   } catch (error) {
-    record('the target Zeus answers /healthz', false, `cannot reach ${KERNEL_URL}: ${error instanceof Error ? error.message : String(error)} - is it running? (if the agent is external, the proxy belongs to the Zeus process, not here)`);
+    record('the target Zeus answers /healthz', false, `cannot reach ${RUNTIME_URL}: ${error instanceof Error ? error.message : String(error)} - is it running? (if the agent is external, the proxy belongs to the Zeus process, not here)`);
     return finish();
   }
   record('the target Zeus answers /healthz', health.status === 200 && health.json?.status === 'ok', `status=${health.status} ${clip(health.text)}`);
   if (!steps[0]?.ok) return finish();
 
-  // 2. The auth boundary is real: the driver face must refuse an anonymous call.
+  // 2. The auth boundary is real: the operator face must refuse an anonymous call.
   const anonymous = await call('GET', '/api/roster');
   record('the internal roster refuses an unauthenticated call', anonymous.status === 401, `status=${anonymous.status}`);
   const authorized = await call('GET', '/api/roster', { auth: true });
@@ -199,7 +199,7 @@ async function main() {
   record('the deployment publishes a root public key', keys.status === 200 && !!rootKey?.jwkThumbprint, `kid=${rootKey?.kid ?? '(none)'}`);
   if (rootKey) {
     console.log(`      announce/compare: jwkThumbprint=${rootKey.jwkThumbprint}`);
-    // The kernel reports whether its key survives a restart; only an older build
+    // The runtime reports whether its key survives a restart; only an older build
     // (no such field) leaves the runner to infer from the default kid, and then it
     // has to say so rather than reporting a guess as a fact.
     if (keys.json?.keySource === 'ephemeral') {
@@ -213,9 +213,9 @@ async function main() {
 
   // 4. Register the real agent (this is the write the test exists to perform).
   const beforeNames = (authorized.json?.snapshot?.entries ?? []).map((/** @type {any} */ entry) => entry.name);
-  const registered = await call('POST', '/api/vassals', { auth: true, body: { cardUrl: CARD_URL, ...(TASK_URL ? { taskUrl: TASK_URL } : {}), ...(AGENT_TOKEN ? { token: AGENT_TOKEN } : {}) } });
+  const registered = await call('POST', '/api/executors', { auth: true, body: { cardUrl: CARD_URL, ...(TASK_URL ? { taskUrl: TASK_URL } : {}), ...(AGENT_TOKEN ? { token: AGENT_TOKEN } : {}) } });
   const registerOk = registered.status === 201 || registered.status === 200 || (registered.status >= 400 && /already/i.test(registered.text));
-  record('the real agent registers (card fetched, fealty validated)', registerOk, `status=${registered.status} ${clip(registered.text)}`);
+  record('the real agent registers (card fetched, handshake validated)', registerOk, `status=${registered.status} ${clip(registered.text)}`);
   if (!registerOk) return finish();
 
   const agentName = registered.json?.card?.name ?? registered.json?.name ?? beforeNames.find((/** @type {string} */ name) => name !== undefined && CARD_URL.includes(name)) ?? '(from roster)';
@@ -233,11 +233,11 @@ async function main() {
   }
   record('no read view echoes the agent credential', AGENT_TOKEN ? echoes.length === 0 : true, AGENT_TOKEN ? (echoes.join(', ') || 'checked 3 views') : 'skipped: no AGENT_TOKEN supplied');
 
-  // 6. One fan-out through the real agent. The kernel requires body.realm, and a
-  //    memory claim only lands when the intent names the realm it worked in, so
-  //    the realmId is looked up rather than assumed.
+  // 6. One fan-out through the real agent. The runtime requires body.dataDomain, and a
+  //    memory claim only lands when the intent names the dataDomain it worked in, so
+  //    the dataDomainId is looked up rather than assumed.
   const domains = await call('GET', '/api/domains', { auth: true });
-  const target = (domains.json?.realms ?? []).find((/** @type {any} */ realm) => realm.type === REALM);
+  const target = (domains.json?.dataDomains ?? []).find((/** @type {any} */ dataDomain) => dataDomain.type === DATA_DOMAIN);
   const memoryBefore = await call('GET', '/api/memory/snapshot', { auth: true });
   const eventsBefore = memoryBefore.json?.state?.events?.length ?? -1;
   const factsBefore = factCount(memoryBefore.json?.state);
@@ -245,27 +245,27 @@ async function main() {
     auth: true,
     body: {
       skill: SKILL,
-      realm: REALM,
-      ...(target?.realmId ? { realmId: target.realmId } : {}),
-      vassals: [agentName],
+      dataDomain: DATA_DOMAIN,
+      ...(target?.dataDomainId ? { dataDomainId: target.dataDomainId } : {}),
+      executors: [agentName],
       params: PARAMS ?? { subject: marker, predicate: 'verdict', prompt: `Zeus acceptance ${marker}: report one short factual stance.` },
     },
   });
   const intentId = fanOut.json?.intentId;
   record('the intent is accepted', [200, 201, 202].includes(fanOut.status) && !!intentId, `status=${fanOut.status} ${clip(fanOut.text)}`);
   if (!intentId) return finish();
-  if (!target) console.log(`      NOTE  no ${REALM} realm on this deployment (memory claims are realm-scoped, so step "verdict became a claim" cannot pass; mount one with ZEUS_REALM_ROOTS / ZEUS_REALM_ENTERPRISE)`);
+  if (!target) console.log(`      NOTE  no ${DATA_DOMAIN} dataDomain on this deployment (memory claims are dataDomain-scoped, so step "verdict became a claim" cannot pass; mount one with ZEUS_DATA_DOMAIN_ROOTS / ZEUS_DATA_DOMAIN_ENTERPRISE)`);
   console.log(`      intentId=${intentId}${fanOut.json?.runId ? ` runId=${fanOut.json.runId}` : ''} target=${agentName}`);
 
   const deadline = Date.now() + timeoutMs;
   let result = fanOut.json;
-  while (Date.now() < deadline && !['completed', 'failed', 'canceled', 'needs-driver'].includes(result?.status)) {
+  while (Date.now() < deadline && !['completed', 'failed', 'canceled', 'needs-operator'].includes(result?.status)) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     const polled = await call('GET', `/api/intents/${intentId}`, { auth: true });
     if (polled.status === 200) result = polled.json;
   }
   const branches = Array.isArray(result?.branches) ? result.branches : [];
-  record('the fan-out reached a terminal state inside the timeout', ['completed', 'failed', 'canceled', 'needs-driver'].includes(result?.status), `status=${result?.status ?? '(unknown)'} after ${timeoutMs - (deadline - Date.now())}ms`);
+  record('the fan-out reached a terminal state inside the timeout', ['completed', 'failed', 'canceled', 'needs-operator'].includes(result?.status), `status=${result?.status ?? '(unknown)'} after ${timeoutMs - (deadline - Date.now())}ms`);
   record('at least one branch came back from the real agent', branches.length >= 1, `branches=${branches.length}`);
   // What proves the agent did the work is that it came back with content. A
   // stance is a different claim: it is what an agent returns when asked to
@@ -280,12 +280,12 @@ async function main() {
   const report = withContent.flatMap(contentOf).map((/** @type {any} */ artifact) => artifact['x-zeus-report']).find(Boolean);
   record('a branch succeeded and returned content (an artifact with parts)', withContent.length >= 1, `ok=${succeeded.length}/${branches.length} withContent=${withContent.length} report=${clip(report?.summary ?? '(none)')}`);
   if (EXPECT_STANCE === '1') {
-    record('a branch contributed a stance', succeeded.length >= 1 && positions.length >= 1, `ok=${succeeded.length}/${branches.length} positions=${positions.length} first=${clip(positions[0] ? `${positions[0].vassal}=${positions[0].stance}` : '(none)')}`);
+    record('a branch contributed a stance', succeeded.length >= 1 && positions.length >= 1, `ok=${succeeded.length}/${branches.length} positions=${positions.length} first=${clip(positions[0] ? `${positions[0].executor}=${positions[0].stance}` : '(none)')}`);
   } else {
     console.log(`SKIP  stance aggregation: EXPECT_STANCE=0, this agent is expected to report content, not to vote (positions=${positions.length}); the content check above is the assertion for it`);
   }
   const failedBranches = branches.filter((/** @type {any} */ branch) => branch?.ok !== true);
-  if (failedBranches.length) console.log(`      branch failures: ${failedBranches.map((/** @type {any} */ branch) => `${branch.vassal}=${clip(branch.reason)}`).join(' | ')}`);
+  if (failedBranches.length) console.log(`      branch failures: ${failedBranches.map((/** @type {any} */ branch) => `${branch.executor}=${clip(branch.reason)}`).join(' | ')}`);
   if (result?.refused) console.log(`      governance refusal before dispatch: ${clip(JSON.stringify(result.refused))}`);
 
   // 7. Governance facts written by that same run. The audit trail is filtered
@@ -294,7 +294,7 @@ async function main() {
   const branchRuns = new Set(branches.map((/** @type {any} */ branch) => branch.runId).filter(Boolean));
   const audit = await call('GET', '/api/audit?limit=50', { auth: true });
   const entries = audit.json?.entries ?? [];
-  const mine = entries.filter((/** @type {any} */ entry) => entry.decision === 'dispatched' && (branchRuns.has(entry.runId) || entry.vassal === agentName));
+  const mine = entries.filter((/** @type {any} */ entry) => entry.decision === 'dispatched' && (branchRuns.has(entry.runId) || entry.executor === agentName));
   record('the dispatch is on the audit trail, bound to this run', audit.status === 200 && mine.length >= 1, `status=${audit.status} entries=${entries.length} forThisRun=${mine.length} auditFile=${audit.json?.file ?? '(none configured)'} decisions=${[...new Set(entries.map((/** @type {any} */ entry) => entry.decision))].join(',') || '(none)'}`);
 
   const memoryAfter = await call('GET', '/api/memory/snapshot', { auth: true });
@@ -334,7 +334,7 @@ async function main() {
 
   // 9. Revocation force, only when asked for: it changes the deployment's roster.
   if (revokeTest) {
-    const removed = await call('DELETE', `/api/vassals/${encodeURIComponent(agentName)}`, { auth: true });
+    const removed = await call('DELETE', `/api/executors/${encodeURIComponent(agentName)}`, { auth: true });
     record('revocation is accepted', removed.status === 200, `status=${removed.status} ${clip(removed.text)}`);
     const dropped = await call('GET', '/api/roster/public');
     record('a revoked agent leaves the public roster immediately', !dropped.text.includes(`"${agentName}"`), `name=${agentName}`);
@@ -344,7 +344,7 @@ async function main() {
 
   console.log('');
   console.log('evidence bundle (paste into pre-launch checklist row A1):');
-  console.log(`  target=${KERNEL_URL} agent=${agentName} skill=${SKILL} marker=${marker}`);
+  console.log(`  target=${RUNTIME_URL} agent=${agentName} skill=${SKILL} marker=${marker}`);
   console.log(`  intentId=${intentId} status=${result?.status} branches=${branches.length} ok=${succeeded.length} withContent=${withContent.length} positions=${positions.length}`);
   console.log(`  expected stance=${EXPECT_STANCE} (${EXPECT_STANCE === '1' ? 'decision agent: stance + memory claim asserted' : 'execution agent: content asserted, stance/claim N/A'})  report=${clip(report?.summary ?? '(none)')}`);
   console.log(`  keyId=${rootKey?.kid ?? '?'} jwkThumbprint=${rootKey?.jwkThumbprint ?? '?'}`);

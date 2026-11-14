@@ -9,7 +9,7 @@ import type { FanOutResult } from './types.js';
 
 /** One observable stream event (design-streaming §2.1). */
 export type StreamFrame =
-  | { type: 'branch-started'; runId: string; vassal: string; skill: string; at: string }
+  | { type: 'branch-started'; runId: string; executor: string; skill: string; at: string }
   | { type: 'branch-delta'; runId: string; seq: number; preview: string; at: string }
   | { type: 'branch-settled'; runId: string; outcome: 'ok' | 'failed' | 'canceled' | 'timeout'; at: string };
 
@@ -17,7 +17,7 @@ export type StreamFrame =
  *  preview — replaceable by the next delta, never carried by reference. */
 export type StreamBranchState = {
   runId: string;
-  vassal?: string;
+  executor?: string;
   skill?: string;
   started: boolean;
   settled: boolean;
@@ -64,7 +64,7 @@ export function appendStreamFrame(view: StreamView, frame: StreamFrame): StreamV
     case 'branch-started': {
       const branch = branchesFor(frame.runId);
       branch.started = true;
-      branch.vassal = frame.vassal;
+      branch.executor = frame.executor;
       branch.skill = frame.skill;
       break;
     }

@@ -1,7 +1,7 @@
 // design-agent-testing (tech map S17): deterministic replay and chaos for the
 // dispatch port. Recordings capture the dispatch port's observable behaviour
 // (request/response pairs, outbound events); redaction strips a recording of
-// any realm data before it leaves the machine (a recording is test data, and
+// any dataDomain data before it leaves the machine (a recording is test data, and
 // test data obeys the data-sovereignty rule); chaos scripts inject failures
 // into an otherwise working port. V1 is the pure layer (design-agent-testing
 // §5): record framing + redaction + fetch assembly, and the chaos wrapper over
@@ -15,7 +15,7 @@ import type { DispatchPort } from '../orchestrator/types.js';
 export type RecordedFrame =
   | { type: 'request'; seq: number; request: DispatchRequest; at: string }
   | { type: 'response'; seq: number; ok: boolean; decision?: string; reason?: string; at: string }
-  | { type: 'cancel'; seq: number; vassal: string; taskId: string; at: string };
+  | { type: 'cancel'; seq: number; executor: string; taskId: string; at: string };
 
 export type Recording = {
   intent: string;
@@ -35,7 +35,7 @@ export function recordFrame(rec: Recording, frame: RecordedFrame): Recording {
   return { intent: rec.intent, frames: [...rec.frames, frame] };
 }
 
-/** Redact a recording: drop every request payload value (params are realm
+/** Redact a recording: drop every request payload value (params are dataDomain
  *  data) and every response reason, keeping the shape — decision names,
  *  ok flags, seq order — so the flow stays verifiable off-machine. */
 export function redactRecording(rec: Recording): Recording {
@@ -48,7 +48,7 @@ export function redactRecording(rec: Recording): Recording {
         case 'response':
           return { type: 'response', seq: f.seq, ok: f.ok, ...(f.decision === undefined ? {} : { decision: f.decision }), at: f.at };
         case 'cancel':
-          return { type: 'cancel', seq: f.seq, vassal: f.vassal, taskId: f.taskId, at: f.at };
+          return { type: 'cancel', seq: f.seq, executor: f.executor, taskId: f.taskId, at: f.at };
       }
     }),
   };
@@ -74,7 +74,7 @@ export function recordingToFetch(
       return {
         ok: false,
         reason: match.reason ?? 'replayed failure',
-        audit: { ts: match.at, vassal: req.vassal ?? 'replayed', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
+        audit: { ts: match.at, executor: req.executor ?? 'replayed', skill: req.skill, dataDomain: req.dataDomain, decision, ...(runId === undefined ? {} : { runId }) },
       };
     }
     const runId = req.runId ?? 'r1';
@@ -162,7 +162,7 @@ export function withChaos(inner: DispatchPort, script: ChaosScript): DispatchPor
 
   return {
     dispatch,
-    cancel: (vassal, taskId) => inner.cancel(vassal, taskId),
+    cancel: (executor, taskId) => inner.cancel(executor, taskId),
   };
 }
 
@@ -171,6 +171,6 @@ function chaosFailure(req: DispatchRequest, reason: string, decision: 'dispatch-
   return {
     ok: false,
     reason,
-    audit: { ts: new Date().toISOString(), vassal: req.vassal ?? 'chaos', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
+    audit: { ts: new Date().toISOString(), executor: req.executor ?? 'chaos', skill: req.skill, dataDomain: req.dataDomain, decision, ...(runId === undefined ? {} : { runId }) },
   };
 }

@@ -1,7 +1,7 @@
 /**
  * TUI token subset (design-ui-foundations §3.2). The terminal does not get the
  * Web px/rem/color scales: semantic tokens map onto ANSI styles the user's own
- * terminal theme interprets, so we never hard-code an RGB value. Every kernel/
+ * terminal theme interprets, so we never hard-code an RGB value. Every runtime/
  * API status maps to exactly one semantic status token here; unknown statuses
  * fall back to `unknown` and are shown with their raw enum (never invented).
  */
@@ -25,14 +25,14 @@ const SGR: Record<SemanticColor, number> = {
   success: 32, // completed / active
   warning: 33, // partial
   danger: 31, // failed / destructive
-  attention: 35, // needs-driver
+  attention: 35, // needs-operator
   info: 34, // input-required
   unknown: 90,
 };
 
 /**
  * One canonical status -> semantic token entry. Keep this as the single place a
- * kernel/API enum is given a visual meaning (CI asserts it is a 1:1 mapping).
+ * runtime/API enum is given a visual meaning (CI asserts it is a 1:1 mapping).
  */
 const STATUS_TOKEN: Record<string, SemanticColor> = {
   // intent / branch lifecycle
@@ -40,8 +40,8 @@ const STATUS_TOKEN: Record<string, SemanticColor> = {
   completed: 'success',
   partial: 'warning',
   failed: 'danger',
-  canceled: 'muted', // asked for by the driver, not a fault
-  'needs-driver': 'attention',
+  canceled: 'muted', // asked for by the operator, not a fault
+  'needs-operator': 'attention',
   'input-required': 'info',
   working: 'accent',
   // roster membership
@@ -59,21 +59,21 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // The lifecycle counterpart of `dispatched`: a branch ending on purpose.
   'cancel-requested': 'accent',
   'dispatch-failed': 'danger',
-  // design-fan-out §7: the driver aborted a live branch via AbortSignal before
+  // design-fan-out §7: the operator aborted a live branch via AbortSignal before
   // its A2A stream ended — a deliberate transport-level interrupt, like cancel.
   'branch-aborted': 'warning',
   'sla-ack-breached': 'warning',
-  'vassal-revoked': 'danger',
-  'vassal-reinstated': 'accent',
-  'refused-realm-policy': 'warning',
-  'refused-unknown-vassal': 'warning',
+  'executor-revoked': 'danger',
+  'executor-reinstated': 'accent',
+  'refused-dataDomain-policy': 'warning',
+  'refused-unknown-executor': 'warning',
   'refused-revoked': 'warning',
   'refused-skill-uninstalled': 'warning',
   'refused-no-active-provider': 'warning',
   'branch-diverted': 'info',
   'domain-read': 'info',
   'domain-refused': 'warning',
-  // design-realm §3.1: content admitted (info, like domain-read) and content
+  // design-dataDomain §3.1: content admitted (info, like domain-read) and content
   // refused by policy origin (warning, like the other policy-working refusals).
   'content-injected': 'info',
   'refused-data-policy': 'warning',
@@ -83,22 +83,25 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'context-assembled': 'info',
   'context-trimmed': 'warning',
   'context-budget-exceeded': 'warning',
+  // D3-2: the folded run-level watermark is an observation, not a failure —
+  // per-intent trims/budgets already carry the warning weight.
+  'context-watermark': 'info',
   'domain-grant-issued': 'info',
   'domain-grant-revoked': 'warning',
-  'driver-grant-issued': 'info',
+  'operator-grant-issued': 'info',
   'execution-delegation-issued': 'info',
   // deferred #33: the execute gate refused a branch — warning, like the other
   // policy-working refusals (the refusal is the gate doing its job).
   'execution-delegation-denied': 'warning',
-  'realm-write': 'info',
-  'realm-disconnected': 'warning',
-  'realm-tenant-retargeted': 'warning',
-  'commission-granted': 'info',
-  'commission-waived': 'info',
-  'commission-withdrawn': 'warning',
-  'commission-refused': 'warning',
+  'dataDomain-write': 'info',
+  'dataDomain-disconnected': 'warning',
+  'dataDomain-tenant-retargeted': 'warning',
+  'seatGrant-granted': 'info',
+  'seatGrant-waived': 'info',
+  'seatGrant-withdrawn': 'warning',
+  'seatGrant-refused': 'warning',
   'memory-claim-skipped': 'warning',
-  // MemoryPort v1 §6: the settled conclusion that had nowhere to land (realm
+  // MemoryPort v1 §6: the settled conclusion that had nowhere to land (dataDomain
   // unmounted at settle time) — same family as the dropped-claim skip.
   'memory-writeback-skipped': 'warning',
   // MemoryPort v1 §4: a routine authorised hub embed (audited by hash); an
@@ -130,7 +133,7 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'delegation-child-issued': 'attention',
   'delegation-limit-exceeded': 'danger',
   'delegation-contract-issued': 'attention',
-  // E6.1 / P0-5: the desk raising a question and the driver answering it.
+  // E6.1 / P0-5: the desk raising a question and the operator answering it.
   'escalation-escalated': 'attention',
   'escalation-approved': 'success',
   'escalation-rejected': 'muted',

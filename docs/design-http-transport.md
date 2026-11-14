@@ -1,23 +1,23 @@
 # HTTP 传输层选型设计（Zeus 服务端面）
 
 > 状态：**现行（设计稿 v0.4，2026-10-02 补 §2.1 的绑定默认值与起步入口；v0.3 2026-09-27 补根公钥发布端点与其 `keySource` 事实字段；选型 v0.1 2026-09-21）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
-> 边界：本文只覆盖 **Zeus 自己对外提供的 HTTP 服务端面**。Zeus 作为 A2A **客户端**调执行 Agent（`src/dispatch/client.ts`，JSON-RPC + SSE）已实现，不在此列；Realm 对外传输已另案决定为**唯一 MCP、不做 HTTP API**（[design-realm.md](design-realm.md) §6.1），本文不覆盖、不冲突。
+> 边界：本文只覆盖 **Zeus 自己对外提供的 HTTP 服务端面**。Zeus 作为 A2A **客户端**调执行 Agent（`src/dispatch/client.ts`，JSON-RPC + SSE）已实现，不在此列；DataDomain 对外传输已另案决定为**唯一 MCP、不做 HTTP API**（[design-dataDomain.md](design-dataDomain.md) §6.1），本文不覆盖、不冲突。
 
 ## 0. 一句话
 
-Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配**：只负责 HTTP ↔ 内核 API 的翻译，框架依赖锁在传输层，内核（registry/dispatch/oversight/realm/roster）保持零传输依赖；v1 只上健康检查与签名名册只读端点，操作者 API 与 SSE 服务端随后续切片。
+Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配**：只负责 HTTP ↔ 内核 API 的翻译，框架依赖锁在传输层，内核（registry/dispatch/oversight/dataDomain/roster）保持零传输依赖；v1 只上健康检查与签名名册只读端点，操作者 API 与 SSE 服务端随后续切片。
 
 ## 1. 先划清：Zeus 到底有哪些网络面
 
 | 网络面 | 方向 | 形态 | 现状/决策 |
 | --- | --- | --- | --- |
 | Zeus → 执行 Agent | 出站 | A2A JSON-RPC + SSE 客户端 | **已实现**（`src/dispatch/client.ts`），与服务端选型无关 |
-| Realm → 外部 Agent/执行 Agent | 对外 | **MCP server（唯一）** | 已决定（design-realm §6.1），P1 包壳，**不挂 HTTP 路由** |
+| DataDomain → 外部 Agent/执行 Agent | 对外 | **MCP server（唯一）** | 已决定（design-dataDomain §6.1），P1 包壳，**不挂 HTTP 路由** |
 | 名册 public 快照 → bayjf | 对外（只读） | HTTP 只读端点 / 静态产物 | R1（roster §8），**本选型的首要服务端用途** |
-| 名册 internal / 治理视图 | 对内 | 同进程库调用为主，远程只读为辅 | design-realm §6.1：内部组件同进程不经网络 |
+| 名册 internal / 治理视图 | 对内 | 同进程库调用为主，远程只读为辅 | design-dataDomain §6.1：内部组件同进程不经网络 |
 | 操作者面（派发/监督台/健康/审计） | 对内 | HTTP API（未来 UI） | H2，随持久化与 UI 切片 |
 | 执行 Agent → Zeus 回调（push notification） | 入站 | A2A push | v1 不做（探针与结果回传均 Zeus 主动拉/随任务流回） |
-| Zeus 自身作为 A2A server | 对外 | A2A 服务端 | **v1 不做**：星型拓扑中发起方永远是 Zeus/操作者（vassal-protocol §5），Zeus 是编排者不是执行者 |
+| Zeus 自身作为 A2A server | 对外 | A2A 服务端 | **v1 不做**：星型拓扑中发起方永远是 Zeus/操作者（executor-protocol §5），Zeus 是编排者不是执行者 |
 
 结论：服务端 HTTP 面很窄——**v1 只有健康检查 + 名册只读**，操作者面是后续增量；不存在「Zeus 实现一套 A2A server」的需求。
 
@@ -39,7 +39,7 @@ Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配
 
 ### 2.3 关键取舍
 
-- **public 名册是不可变签名快照**（见 [design-fealty-signing.md](design-fealty-signing.md)）：它本质是静态产物。H1 先用 Fastify 端点提供；若后续要走 CDN/对象存储/SSG 直拉文件，可**额外**产出静态 JSON，不动内核——这是端点的补充而非替代，列为开放问题。
+- **public 名册是不可变签名快照**（见 [design-handshake-signing.md](design-handshake-signing.md)）：它本质是静态产物。H1 先用 Fastify 端点提供；若后续要走 CDN/对象存储/SSG 直拉文件，可**额外**产出静态 JSON，不动内核——这是端点的补充而非替代，列为开放问题。
 - **Zeus 服务端 v1 不提供 SSE**：Zeus 是 SSE 的消费方（出站）。操作者面需要实时结果回传时，H2 先用轮询/同进程事件；SSE server 待任务持久化阶段再开（无持久化时进程重启即丢流，做了也是假的）。
 - **鉴权 v1 最小化**：internal 端点单 bearer token（env 注入，与 loom Q88 一 Agent 一 Key 的简单形态同构）；public 端点无鉴权，但**只可能返回签名后的 public 快照**（revoked/端点/探针 detail 在投影层已裁掉）。多用户/RBAC 随企业版切片，不提前建设。
 
@@ -50,10 +50,10 @@ Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配
         │  HTTP（Fastify 薄适配）
    src/http/        ← 唯一允许 import fastify 的目录；handler 无业务逻辑
         │  同进程调用
-   src 内核          ← registry / dispatch / oversight / realm / roster
+   src 内核          ← registry / dispatch / oversight / dataDomain / roster
                      零传输依赖，可独立 build/单测（src/index.ts）
-        │  MCP（Realm 唯一对外数据面，stdio 壳 → P1 streamable HTTP）
-      Realm / MCP 连接器
+        │  MCP（DataDomain 唯一对外数据面，stdio 壳 → P1 streamable HTTP）
+      DataDomain / MCP 连接器
         │  A2A JSON-RPC + SSE（出站客户端）
       执行 Agent：pr-helper / loom / …
 ```
@@ -61,19 +61,19 @@ Zeus 服务端 HTTP 面用 **Fastify 跑长驻 Node 进程**做一层**薄适配
 硬约束：
 
 1. `src/http/` 之外不得出现 fastify / Node http server 代码。
-2. `src/http/` 不得绕过内核直接读 registry/realm 内部数据结构；只用 `src/index.ts` 公共面。
-3. **HTTP 服务不挂任何 Realm *内容* 路由**（design-realm §6.1）；Realm 条目内容只经 MCP。E6.4 起的精确边界见 design-realm §6.4：bearer 操作者面可暴露 Realm 的**治理元数据与授权记录**（`/api/domains*`），并可用 `realmSource` 让**内核代取**内容送进派发链路——后者不向客户端返回内容，因此不构成第二个 Realm 传输面。
+2. `src/http/` 不得绕过内核直接读 registry/dataDomain 内部数据结构；只用 `src/index.ts` 公共面。
+3. **HTTP 服务不挂任何 DataDomain *内容* 路由**（design-dataDomain §6.1）；DataDomain 条目内容只经 MCP。E6.4 起的精确边界见 design-dataDomain §6.4：bearer 操作者面可暴露 DataDomain 的**治理元数据与授权记录**（`/api/domains*`），并可用 `dataDomainSource` 让**内核代取**内容送进派发链路——后者不向客户端返回内容，因此不构成第二个 DataDomain 传输面。
 4. 传输层不持有业务状态：状态归内核实例，server 只是宿主。
 
 ## 4. 端点规划
 
 | 阶段 | 端点 | 鉴权 | 说明 |
 | --- | --- | --- | --- |
-| H1 | `GET /healthz` | 无 | 存活探针，返回版本与时间，不含任何执行 Agent/Realm 信息 |
-| H1 | `GET /api/roster/public` | 无 | 返回 `SignedRosterSnapshot`（public 投影 + 签名信封，fealty-signing §4）；缓存头配合 TTL |
-| H1 | `GET /api/roster/keys` | 无 | 发布本进程签用的根公钥描述符（JWKS 形状 + SPKI PEM + RFC 7638 指纹，契约见 fealty-signing §5.1）。不鉴权的理由与它所签名的名册同源：需要凭证才能取到的公钥，第三方读者用不上。**它不建立信任**——信任由验签方的带外固定承担；后端导不出公钥时返回 501，不返回空 `keys[]`。**v0.2 追加两个事实字段**：`keySource`（`configured` / `ephemeral`）与 `survivesRestart`，由装载密钥的装配层传入（`HttpDeps.rosterKey`），装配方未告知时**省略而非给默认**——"每次重启都换钥"这件事此前只在 stderr 响一次 |
+| H1 | `GET /healthz` | 无 | 存活探针，返回版本与时间，不含任何执行 Agent/DataDomain 信息 |
+| H1 | `GET /api/roster/public` | 无 | 返回 `SignedRosterSnapshot`（public 投影 + 签名信封，handshake-signing §4）；缓存头配合 TTL |
+| H1 | `GET /api/roster/keys` | 无 | 发布本进程签用的根公钥描述符（JWKS 形状 + SPKI PEM + RFC 7638 指纹，契约见 handshake-signing §5.1）。不鉴权的理由与它所签名的名册同源：需要凭证才能取到的公钥，第三方读者用不上。**它不建立信任**——信任由验签方的带外固定承担；后端导不出公钥时返回 501，不返回空 `keys[]`。**v0.2 追加两个事实字段**：`keySource`（`configured` / `ephemeral`）与 `survivesRestart`，由装载密钥的装配层传入（`HttpDeps.rosterKey`），装配方未告知时**省略而非给默认**——"每次重启都换钥"这件事此前只在 stderr 响一次 |
 | H1 | `GET /api/roster` | bearer（internal） | internal 快照（含 revoked/端点/探针明细），仅供治理面 |
-| H2 | 操作者 API（dispatch / escalations approve·reject / registry 只读）——**实际交付面远大于此规划**：另含决策回放、按 kind 分流的升级队列、并发指标、Skills 与带教、Org 编制与责任链、Memory 与遗忘权、Diary、MCP 连接器、决策后端配置、审计回读、内核盘点、**Realm 治理面 `/api/domains*`** | bearer | 逐项验收标准与路由清单见 PRD E5.5 与 README"库 + 薄传输"节，本表只留**当年规划口径**不再逐条扩写（原口径：随持久化与 UI 切片逐项设计，不在本文展开） |
+| H2 | 操作者 API（dispatch / escalations approve·reject / registry 只读）——**实际交付面远大于此规划**：另含决策回放、按 kind 分流的升级队列、并发指标、Skills 与带教、Org 编制与责任链、Memory 与遗忘权、Diary、MCP 连接器、决策后端配置、审计回读、内核盘点、**DataDomain 治理面 `/api/domains*`** | bearer | 逐项验收标准与路由清单见 PRD E5.5 与 README"库 + 薄传输"节，本表只留**当年规划口径**不再逐条扩写（原口径：随持久化与 UI 切片逐项设计，不在本文展开） |
 | H3（可选） | SSE 结果回传流、静态快照产物分发 | — | 待持久化 / CDN 需求明确 |
 
 v1 不设任何写端点（注册是 Zeus 主动拉 card、吊销是治理动作经内核/未来操作者面，不经匿名 HTTP 写口）。
@@ -84,7 +84,7 @@ v1 不设任何写端点（注册是 Zeus 主动拉 card、吊销是治理动作
 - **H1（随 roster R1：HTTP 层就绪）**：
   1. 安装 fastify（传输层唯一运行时依赖）；新增 `src/http/server.ts` 与装配入口；
   2. 三个 H1 端点上线；内核零改动、40+ 既有测试全绿；
-  3. 验收：无鉴权取 internal → 401；public 响应可按 fealty-signing §8.1 离线验签且不含 revoked/内部端点；篡改快照验签失败；`/healthz` 不泄露内部信息；内核目录 grep 不到 fastify import。
+  3. 验收：无鉴权取 internal → 401；public 响应可按 handshake-signing §8.1 离线验签且不含 revoked/内部端点；篡改快照验签失败；`/healthz` 不泄露内部信息；内核目录 grep 不到 fastify import。
 - **H2**：操作者 API 切片（前置：任务/升级状态持久化方案）。
 - **H3**：SSE server / 多副本 / serverless 或静态快照分发，按需立项。
 
@@ -99,7 +99,7 @@ v1 不设任何写端点（注册是 Zeus 主动拉 card、吊销是治理动作
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
-| v0.1 | 2026-09-21 | 初稿：划清网络面；裁决 Fastify + 长驻 Node、不选 serverless；薄传输层与单向依赖约束；Realm 不挂 HTTP；H1 三端点与验收；H2/H3 阶段 |
+| v0.1 | 2026-09-21 | 初稿：划清网络面；裁决 Fastify + 长驻 Node、不选 serverless；薄传输层与单向依赖约束；DataDomain 不挂 HTTP；H1 三端点与验收；H2/H3 阶段 |
 | v0.2 | 2026-09-27 | H1 增第四端点 `GET /api/roster/keys`（根公钥发布，deferred #7 的"公钥发布"半边）：无鉴权、JWKS 形状、导不出公钥时 501 而非空数组，并写明"该端点不建立信任，信任来自验签方带外固定"。§4 表其余口径不动 |
 | v0.3 | 2026-09-27 | 同端点增 `keySource` / `survivesRestart` 两个事实字段（装配层经 `HttpDeps.rosterKey` 传入；未告知则省略，不给默认），`GET /api/state` 在有持久化盘点时同步出现 `rosterKey`。动机：非生产进程无密钥会降级为每次重启都换的临时内存钥，而这件事实此前只写一次 stderr |
 | v0.4 | 2026-10-02 | **§2.1 补"绑定默认值与起步入口"**：默认 `127.0.0.1:8787` 且**只有一份**（`DEFAULT_HTTP_HOST` / `DEFAULT_HTTP_PORT`，由 `startServer` 消费、`serve.ts` 调它），日志报 socket 实际绑定地址。动机是一次真实分叉：`startServer` 长期零调用方且默认 `port: 0`，与文档/`.env.example`/`deployment.md` 写的 8787 不一致（审计 §6、评审 v0.21；本批把该函数接成单一起步原语并加两条断言）。此前本文档完全不提进程入口与默认值，而默认值是对外可依赖的事实 |

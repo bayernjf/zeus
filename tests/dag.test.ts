@@ -18,16 +18,16 @@ import type { A2AEvent, Task } from '../src/a2a/types.js';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-function completed(vassal: string, skill: string): DispatchResult {
+function completed(executor: string, skill: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-${skill}`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-${skill}`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'result', parts: [{ kind: 'data', data: { producedBy: skill, stance: 'go' } }] }],
   };
   const event: A2AEvent = { kind: 'status-update', taskId: task.id, contextId: 'ctx', status: { state: 'completed' }, final: true };
   return { ok: true, task, events: [event], injectedHits: [] };
 }
 function failed(): DispatchResult {
-  return { ok: false, reason: 'boom', audit: { ts: 't', vassal: 'v', decision: 'dispatch-failed' } };
+  return { ok: false, reason: 'boom', audit: { ts: 't', executor: 'v', decision: 'dispatch-failed' } };
 }
 
 /** Dispatch keyed by skill, with a per-skill delay; records an ordered start/end log. */
@@ -36,7 +36,7 @@ function loggingPort(routes: Record<string, { result: DispatchResult; delayMs?: 
     async dispatch(req: DispatchRequest) {
       const skill = req.skill;
       log.push(`${skill}:start`);
-      const route = routes[skill] ?? { result: completed(req.vassal!, skill) };
+      const route = routes[skill] ?? { result: completed(req.executor!, skill) };
       if (route.delayMs) await delay(route.delayMs);
       log.push(`${skill}:end`);
       return route.result;
@@ -46,7 +46,7 @@ function loggingPort(routes: Record<string, { result: DispatchResult; delayMs?: 
 }
 
 const lookup = { findBySkill: () => [] };
-const baseSpec = (nodes: DagNode[], realm: 'personal' = 'personal'): DagSpec => ({ dagId: 'dag1', realm, nodes });
+const baseSpec = (nodes: DagNode[], dataDomain: 'personal' = 'personal'): DagSpec => ({ dagId: 'dag1', dataDomain, nodes });
 
 describe('DAG graph functions', () => {
   it('rejects duplicate ids, unknown dependencies and cycles', () => {
@@ -95,9 +95,9 @@ describe('DagRunner', () => {
     const port = loggingPort({ 'skill-A': { result: completed('v1', 'skill-A'), delayMs: 30 } }, log);
     const runner = new DagRunner(lookup, port, { newRunId: () => 'r1' });
     const nodes: DagNode[] = [
-      { id: 'A', skill: 'skill-A', vassals: ['v1'] },
-      { id: 'B', skill: 'skill-B', vassals: ['v2'], dependsOn: ['A'] },
-      { id: 'C', skill: 'skill-C', vassals: ['v3'], dependsOn: ['A'] },
+      { id: 'A', skill: 'skill-A', executors: ['v1'] },
+      { id: 'B', skill: 'skill-B', executors: ['v2'], dependsOn: ['A'] },
+      { id: 'C', skill: 'skill-C', executors: ['v3'], dependsOn: ['A'] },
     ];
     const result = await runner.run(baseSpec(nodes));
     expect(result.state).toBe('completed');
@@ -115,10 +115,10 @@ describe('DagRunner', () => {
     const port = loggingPort({ 'skill-B': { result: failed() } }, log);
     const runner = new DagRunner(lookup, port, { newRunId: () => 'r1' });
     const nodes: DagNode[] = [
-      { id: 'A', skill: 'skill-A', vassals: ['v1'] },
-      { id: 'B', skill: 'skill-B', vassals: ['v2'], dependsOn: ['A'] },
-      { id: 'C', skill: 'skill-C', vassals: ['v3'], dependsOn: ['B'] }, // blocked by B
-      { id: 'D', skill: 'skill-D', vassals: ['v4'], dependsOn: ['A'] }, // independent of B, still runs
+      { id: 'A', skill: 'skill-A', executors: ['v1'] },
+      { id: 'B', skill: 'skill-B', executors: ['v2'], dependsOn: ['A'] },
+      { id: 'C', skill: 'skill-C', executors: ['v3'], dependsOn: ['B'] }, // blocked by B
+      { id: 'D', skill: 'skill-D', executors: ['v4'], dependsOn: ['A'] }, // independent of B, still runs
     ];
     const result = await runner.run(baseSpec(nodes));
     expect(result.state).toBe('partial');
@@ -133,13 +133,13 @@ describe('DagRunner', () => {
     expect(log).toContain('skill-D:start');
   });
 
-  it('bubbles needs-driver to the DAG state', async () => {
-    // two vassals disagree on the same node -> needs-driver
+  it('bubbles needs-operator to the DAG state', async () => {
+    // two executors disagree on the same node -> needs-operator
     const port: DispatchPort = {
       async dispatch(req) {
-        const stance = req.vassal === 'v-yes' ? 'go' : 'stop';
+        const stance = req.executor === 'v-yes' ? 'go' : 'stop';
         const task: Task = {
-          kind: 'task', id: `${req.vassal}`, contextId: 'ctx', status: { state: 'completed' },
+          kind: 'task', id: `${req.executor}`, contextId: 'ctx', status: { state: 'completed' },
           artifacts: [{ artifactId: 'a', name: 'result', parts: [{ kind: 'data', data: { stance } }] }],
         };
         return { ok: true, task, events: [], injectedHits: [] };
@@ -147,9 +147,9 @@ describe('DagRunner', () => {
       async cancel() {},
     };
     const runner = new DagRunner(lookup, port, { newRunId: () => 'r1' });
-    const result = await runner.run(baseSpec([{ id: 'A', skill: 's', vassals: ['v-yes', 'v-no'] }]));
-    expect(result.state).toBe('needs-driver');
-    expect(result.nodes[0]!.state).toBe('needs-driver');
+    const result = await runner.run(baseSpec([{ id: 'A', skill: 's', executors: ['v-yes', 'v-no'] }]));
+    expect(result.state).toBe('needs-operator');
+    expect(result.nodes[0]!.state).toBe('needs-operator');
   });
 
   it('passes upstream results to downstream params via resolveParams', async () => {
@@ -157,18 +157,18 @@ describe('DagRunner', () => {
     const port: DispatchPort = {
       async dispatch(req) {
         seen.push(req.params);
-        return completed(req.vassal!, req.skill);
+        return completed(req.executor!, req.skill);
       },
       async cancel() {},
     };
     const runner = new DagRunner(lookup, port, {
       newRunId: () => 'r1',
       resolveParams: (node, upstream) =>
-        node.id === 'B' ? { fromA: upstream.get('A')?.branches?.[0]?.vassal ?? null } : {},
+        node.id === 'B' ? { fromA: upstream.get('A')?.branches?.[0]?.executor ?? null } : {},
     });
     const nodes: DagNode[] = [
-      { id: 'A', skill: 'a', vassals: ['v1'] },
-      { id: 'B', skill: 'b', vassals: ['v2'], dependsOn: ['A'] },
+      { id: 'A', skill: 'a', executors: ['v1'] },
+      { id: 'B', skill: 'b', executors: ['v2'], dependsOn: ['A'] },
     ];
     await runner.run(baseSpec(nodes));
     expect(seen[1]).toMatchObject({ fromA: 'v1' });
@@ -177,7 +177,7 @@ describe('DagRunner', () => {
 
 function fanOutFor(intentId: string): FanOutResult {
   return {
-    intentId, runId: 'r', skill: 's', realm: 'personal', branches: [], stream: [], positions: [],
+    intentId, runId: 'r', skill: 's', dataDomain: 'personal', branches: [], stream: [], positions: [],
     decision: { rule: 'unanimous', conclusion: 'go', positions: [], reason: 'ok' },
     conflicts: [], status: 'completed', createdAt: 't',
   };
@@ -206,7 +206,7 @@ describe('DagRunner lifecycle guards', () => {
       cancelIntent: async id => { cancelled.push(id); },
     });
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
-    const spec: DagSpec = { dagId: 'D-cancel', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+    const spec: DagSpec = { dagId: 'D-cancel', dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] };
 
     const running = runner.run(spec);
     await delay(0); // the node has started; its intent must already be registered
@@ -227,7 +227,7 @@ describe('DagRunner lifecycle guards', () => {
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
     const result = await runner.run({
       dagId: 'D-throw',
-      realm: 'personal',
+      dataDomain: 'personal',
       nodes: [
         { id: 'A', skill: 'a' },
         { id: 'B', skill: 'b' },
@@ -245,7 +245,7 @@ describe('DagRunner lifecycle guards', () => {
     let calls = 0;
     const orchestrator = stubOrchestrator({ fanOut: async req => { calls += 1; return fanOutFor(req.intentId!); } });
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
-    const spec: DagSpec = { dagId: 'D-reuse', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+    const spec: DagSpec = { dagId: 'D-reuse', dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] };
 
     await runner.run(spec);
     expect(calls).toBe(1);
@@ -259,7 +259,7 @@ describe('DagRunner lifecycle guards', () => {
     const gate = new Promise<void>(resolve => { release = resolve; });
     const orchestrator = stubOrchestrator({ fanOut: async req => { calls += 1; await gate; return fanOutFor(req.intentId!); } });
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
-    const spec: DagSpec = { dagId: 'D-concurrent', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+    const spec: DagSpec = { dagId: 'D-concurrent', dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] };
 
     const first = runner.run(spec);
     const second = runner.run(spec);
@@ -271,7 +271,7 @@ describe('DagRunner lifecycle guards', () => {
 
   it('mints reproducible-proof dag and run ids (uuid, not Math.random)', async () => {
     const runner = new DagRunner(lookup, noopPort, {});
-    const result = await runner.run({ realm: 'personal', nodes: [{ id: 'A', skill: 's' }] });
+    const result = await runner.run({ dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] });
     expect(result.dagId).toMatch(/^dag-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(result.runId).toMatch(/^run-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
@@ -290,8 +290,8 @@ describe('DagRunner lifecycle guards', () => {
       async cancel() {},
     };
     const nodes: DagNode[] = [
-      { id: 'A', skill: 'a', vassals: ['v1'] },
-      { id: 'B', skill: 'b', vassals: ['v2'] },
+      { id: 'A', skill: 'a', executors: ['v1'] },
+      { id: 'B', skill: 'b', executors: ['v2'] },
     ];
     const runner = new DagRunner(lookup, port, { newRunId: () => 'r1', maxConcurrentBranches: 1 });
     await runner.run(baseSpec(nodes));

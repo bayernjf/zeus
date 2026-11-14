@@ -1,0 +1,761 @@
+/**
+ * Minimal MCP (Model Context Protocol) JSON-RPC surface for a DataDomain.
+ *
+ * Scope (P1 scaffold, design-dataDomain.md §6.1):
+ *  - resources map to manifest/search/read.
+ *  - tools: dataDomain.search / dataDomain.read (read access through the same store) and
+ *    dataDomain.write, which is the E3.4 remaining write step. The dataDomainId whitelist
+ *    is still the domain boundary for all three.
+ *  - dataDomain.write carries no special authority of its own: an ENTERPRISE write is
+ *    refused unless the caller presents a signed, unexpired, single-use
+ *    OperatorWriteGrant for that exact dataDomainId (E3.5), and a personal dataDomain takes
+ *    no grant — the same contract every other write path in the runtime obeys.
+ *    The grant is verified by the store, never here.
+ *  - This is a transport-agnostic, dependency-free message handler: it speaks
+ *    newline-delimited JSON-RPC semantics but does no I/O. mcp-stdio.ts wires
+ *    it to stdin/stdout. No @modelcontextprotocol/sdk dependency by design;
+ *    compatibility with a specific SDK version is to be re-verified when the
+ *    real read-dataDomain executor triggers the formal P1 start.
+ *
+ * Path non-disclosure invariant (design-dataDomain.md §1.3, types.ts DataDomainManifest.root):
+ *  - connect is NOT exposed over MCP; dataDomains are pre-connected by the host.
+ *  - the absolute root is stripped from every manifest before serialization
+ *    and never appears in any response; only dataDomainId + root-relative itemIds.
+ *  - tools/call follows the same rule: it accepts dataDomainIds the host authorized
+ *    and root-relative itemIds, and error messages never carry absolute paths.
+ *
+ * Runtime read-only face (design P1-1):
+ *  - zeus.skills / zeus.plan / zeus.status read runtime-internal registries
+ *    through the injected PersonalRuntimeQueries port. They bypass the dataDomainId
+ *    whitelist on purpose - they never touch a connected dataDomain - and their
+ *    output is a designed subset that carries no absolute path.
+ *  - The port is optional. When the host did not mount it, calling a zeus.*
+ *    tool fails closed with a named error instead of returning an empty result
+ *    a client would read as "nothing exists".
+ *  - This face is read-only by contract: it offers no execute, no write, no
+ *    remote call. Execution stays on the signed-ticket + HTTP face.
+ */
+import type {
+  OperatorWriteGrant,
+  DataDomainItem,
+  DataDomainManifest,
+  DataDomainStore,
+  DataDomainWriteItem,
+  SearchQuery,
+} from './types.js';
+import {
+  InvalidItemIdError,
+  DataDomainNotConnectedError,
+  UnauthorizedDataDomainWriteError,
+  UnsupportedQueryError,
+  UnsupportedWriteError,
+} from './types.js';
+
+export const JSONRPC_VERSION = '2.0' as const;
+export const DATA_DOMAIN_URI_SCHEME = 'zeus-data-domain:';
+
+/** Newest first; the server negotiates down to the highest version the client sent. */
+export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
+const PREFERRED_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
+
+// JSON-RPC error codes (standard) + server-defined application range (-32000..-32099).
+const PARSE_ERROR = -32700;
+const INVALID_REQUEST = -32600;
+const METHOD_NOT_FOUND = -32601;
+const INVALID_PARAMS = -32602;
+const INTERNAL_ERROR = -32603;
+const DATA_DOMAIN_ERROR = -32000;
+const DATA_DOMAIN_NOT_CONNECTED = -32002;
+const INVALID_ITEM = -32003;
+/** A write the store refused: read-only dataDomain, or a grant that failed a named check. */
+const DATA_DOMAIN_UNAUTHORIZED = -32004;
+
+export type JsonRpcId = string | number | null;
+
+export type JsonRpcRequest = {
+  jsonrpc: typeof JSONRPC_VERSION;
+  id?: JsonRpcId;
+  method: string;
+  params?: unknown;
+};
+
+export type JsonRpcError = { code: number; message: string };
+
+export type JsonRpcResponse = {
+  jsonrpc: typeof JSONRPC_VERSION;
+  id: JsonRpcId;
+  result?: unknown;
+  error?: JsonRpcError;
+};
+
+export type McpHandlerDeps = {
+  store: DataDomainStore;
+  /** Pre-connected dataDomainIds the host authorizes this server to expose. */
+  dataDomainIds: string[];
+  serverName?: string;
+  serverVersion?: string;
+  /**
+   * Session-scoped actor (design-dataDomain §6.5, deferred #18 ruling #1): the host
+   * explicitly declares who is calling. When the actor also declares dataDomainIds,
+   * the effective whitelist is the intersection with deps.dataDomainIds — the actor
+   * can only ever narrow, never widen, the host's pre-connected boundary.
+   * Absent an actor, the call stays anonymous with the full host whitelist.
+   */
+  actor?: DataDomainMcpActor;
+  /**
+   * Sink for fault details whose JSON-RPC response must stay generic
+   * (store errors may carry the dataDomain-local absolute root). Absent = the
+   * detail is dropped after the fixed response is produced.
+   */
+  log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void;
+  /**
+   * Read-only runtime queries (design P1-1). When absent, the zeus.* tools are
+   * advertised by tools/list but fail closed on tools/call - never answered
+   * with fabricated empty data.
+   */
+  runtimeQueries?: PersonalRuntimeQueries;
+};
+
+/** Session-scoped caller identity (design-dataDomain §6.5). */
+export type DataDomainMcpActor = {
+  name: string;
+  /** Optional narrowing of the host whitelist for this session. */
+  dataDomainIds?: string[];
+};
+
+/**
+ * Dependency-inverted read-only runtime port for the zeus.* tools. The handler
+ * never reaches for a live runtime: the host (mcp-stdio.ts) implements this
+ * port over a booted, read-only runtime, so this file stays transport-agnostic
+ * and dependency-free. Every method is read-only; the shapes below deliberately
+ * omit absolute paths (dataDomains expose dataDomainId/type/readOnly, never root).
+ */
+export type PersonalRuntimeQueries = {
+  listSkills(filter?: {
+    domain?: string;
+    tag?: string;
+  }): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description?: string;
+      version: string;
+      domain?: string;
+      tags: string[];
+    }>
+  >;
+  getSkill(
+    id: string,
+    version?: string
+  ): Promise<
+    | {
+        id: string;
+        name: string;
+        description?: string;
+        version: string;
+        domain?: string;
+        tags: string[];
+      }
+    | undefined
+  >;
+  plan(input: {
+    text: string;
+    dataDomain?: 'personal' | 'enterprise';
+  }): Promise<{
+    ok: boolean;
+    chosenBy: string;
+    skill?: string;
+    confidence?: number;
+    candidates: Array<{ skill: string; score: number }>;
+    reason?: string;
+    detail?: string;
+  }>;
+  status(): Promise<{
+    ts: string;
+    dataDomains: Array<{ dataDomainId: string; type: string; readOnly: boolean }>;
+    agents: { activeCount: number; names: string[] };
+    pendingOversight: number;
+    watches: number;
+  }>;
+};
+
+export function createDataDomainMcpHandler(deps: McpHandlerDeps): (message: unknown) => Promise<JsonRpcResponse | null> {
+  const serverName = deps.serverName ?? 'zeus-dataDomain';
+  const serverVersion = deps.serverVersion ?? '0.1.0';
+  // §6.5: the actor can only narrow. The effective boundary is the host
+  // whitelist intersected with the actor's declared dataDomains (if any).
+  const effectiveDataDomainIds =
+    deps.actor?.dataDomainIds && deps.actor.dataDomainIds.length > 0
+      ? deps.dataDomainIds.filter(dataDomainId => deps.actor!.dataDomainIds!.includes(dataDomainId))
+      : deps.dataDomainIds;
+
+  function ok(id: JsonRpcId, result: unknown): JsonRpcResponse {
+    return { jsonrpc: JSONRPC_VERSION, id, result };
+  }
+  function fail(id: JsonRpcId, code: number, message: string): JsonRpcResponse {
+    return { jsonrpc: JSONRPC_VERSION, id, error: { code, message } };
+  }
+
+  return async function handle(message: unknown): Promise<JsonRpcResponse | null> {
+    if (typeof message !== 'object' || message === null) {
+      return fail(null, INVALID_REQUEST, 'invalid request: expected JSON object');
+    }
+    const req = message as Partial<JsonRpcRequest>;
+    if (typeof req.method !== 'string' || req.method.length === 0) {
+      return fail(coerceId(req.id) ?? null, INVALID_REQUEST, 'invalid request: missing method');
+    }
+    // Notifications carry no id and get no response (initialized, cancellations, ...).
+    if (req.id === undefined) return null;
+    const id = coerceId(req.id) ?? null;
+
+    try {
+      switch (req.method) {
+        case 'initialize':
+          return ok(id, initializeResult(req.params, serverName, serverVersion, deps.actor?.name));
+        case 'ping':
+          return ok(id, {});
+        case 'resources/list':
+          return ok(id, { resources: listResources(effectiveDataDomainIds) });
+        case 'resources/templates/list':
+          return ok(id, { resourceTemplates: RESOURCE_TEMPLATES });
+        case 'resources/read':
+          return ok(id, { contents: await readResource(deps.store, effectiveDataDomainIds, req.params) });
+        case 'tools/list':
+          return ok(id, { tools: [...DATA_DOMAIN_TOOLS, ...RUNTIME_TOOLS] });
+        case 'tools/call':
+          return ok(id, { content: await callTool(deps.store, effectiveDataDomainIds, deps.runtimeQueries, req.params) });
+        default:
+          return fail(id, METHOD_NOT_FOUND, `method not found: ${req.method}`);
+      }
+    } catch (error) {
+      return mapError(id, error, deps.log);
+    }
+  };
+}
+
+function coerceId(value: unknown): JsonRpcId | undefined {
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  return undefined;
+}
+
+function initializeResult(params: unknown, serverName: string, serverVersion: string, actorName?: string) {
+  const requested = (params as { protocolVersion?: string } | undefined)?.protocolVersion;
+  const negotiated =
+    requested && (SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(requested)
+      ? requested
+      : PREFERRED_PROTOCOL_VERSION;
+  return {
+    protocolVersion: negotiated,
+    // DataDomain face: resources plus the tools below. Two of them read; dataDomain.write
+    // exists and carries no extra authority — an enterprise write still needs a
+    // OperatorWriteGrant the store verifies. No prompts.
+    capabilities: {
+      resources: { listChanged: false, subscribe: false },
+      tools: { listChanged: false },
+    },
+    serverInfo: { name: serverName, version: serverVersion, ...(actorName ? { actor: actorName } : {}) },
+  };
+}
+
+// --- Tools (Active work 47 §E-4): read-only access through the whitelisted
+// dataDomainIds. The whitelist is the domain boundary: a caller cannot point a tool
+// at a dataDomain the host did not pre-connect. ---
+
+type ToolDescriptor = {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, { type: string; description?: string }>;
+    required: string[];
+  };
+};
+
+const DATA_DOMAIN_TOOLS: readonly ToolDescriptor[] = [
+  {
+    name: 'dataDomain.search',
+    description: 'Search one connected dataDomain by text; returns root-relative item metadata.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataDomainId: { type: 'string', description: 'A dataDomainId the host connected' },
+        text: { type: 'string', description: 'Substring filter over item content' },
+        since: { type: 'string', description: 'ISO timestamp; only items changed after it' },
+        tags: { type: 'string', description: 'Comma-separated tags; NOT supported by the P0 filesystem backend and returns an explicit error' },
+        limit: { type: 'number', description: 'Max hits, positive integer' },
+      },
+      required: ['dataDomainId'],
+    },
+  },
+  {
+    name: 'dataDomain.read',
+    description: 'Read one item by root-relative itemId from a connected dataDomain.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataDomainId: { type: 'string', description: 'A dataDomainId the host connected' },
+        itemId: { type: 'string', description: 'Root-relative item path' },
+      },
+      required: ['dataDomainId', 'itemId'],
+    },
+  },
+  {
+    name: 'dataDomain.write',
+    description:
+      'Write one text item into a connected dataDomain. An ENTERPRISE dataDomain requires a signed, unexpired, single-use OperatorWriteGrant for that exact dataDomainId; a personal dataDomain takes no grant. Grants are issued by the operator over POST /api/dataDomain/write-grants.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        dataDomainId: { type: 'string', description: 'A dataDomainId the host connected' },
+        data: { type: 'string', description: 'Text written verbatim; JSON-compatible values are serialized' },
+        itemId: { type: 'string', description: 'Root-relative POSIX path; omitted lets the store mint one under writes/' },
+        grant: { type: 'object', description: 'OperatorWriteGrant for an enterprise dataDomain; refused by name when absent, unsigned, expired, replayed or bound to another dataDomain' },
+      },
+      required: ['dataDomainId', 'data'],
+    },
+  },
+];
+
+const RUNTIME_TOOLS: readonly ToolDescriptor[] = [
+  {
+    name: 'zeus.skills',
+    description:
+      'Read the runtime skill catalogue. Without id, list (optionally filtered by domain/tag); with id, fetch one skill. No dataDomainId needed; read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'When present, return exactly this skill (latest version unless version is also given)' },
+        version: { type: 'string', description: 'Semver version; only meaningful with id' },
+        domain: { type: 'string', description: 'Catalogue filter by capability domain' },
+        tag: { type: 'string', description: 'Catalogue filter by tag' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'zeus.plan',
+    description:
+      'Recognize a natural-language instruction against the local skill catalogue (plan-only: returns chosenBy/skill/candidates or a named reason; local ranker, zero outbound; never executes).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'The operator instruction in natural language' },
+        dataDomain: { type: 'string', description: "'personal' (default) or 'enterprise'" },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'zeus.status',
+    description:
+      'Read-only runtime status: connected dataDomains (dataDomainId/type/readOnly, never absolute paths), active agents, pending oversight count, watches count.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+];
+
+async function callTool(
+  store: DataDomainStore,
+  dataDomainIds: string[],
+  runtimeQueries: PersonalRuntimeQueries | undefined,
+  params: unknown
+): Promise<Array<{ type: 'text'; text: string }>> {
+  const { name, arguments: args } = (params ?? {}) as { name?: unknown; arguments?: Record<string, unknown> };
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new McpParamError(`unknown tool: ${String(name)}`);
+  }
+  // The runtime face is its own boundary: it never goes through the dataDomainId
+  // whitelist (it does not address a dataDomain at all) and never writes.
+  if (name.startsWith('zeus.')) {
+    return callRuntimeTool(runtimeQueries, name, args);
+  }
+  if (!DATA_DOMAIN_TOOLS.some(tool => tool.name === name)) {
+    throw new McpParamError(`unknown tool: ${name}`);
+  }
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    throw new McpParamError('tools/call requires an arguments object');
+  }
+  const dataDomainId = args.dataDomainId;
+  if (typeof dataDomainId !== 'string' || !dataDomainIds.includes(dataDomainId)) {
+    throw new DataDomainNotConnectedMcpError(typeof dataDomainId === 'string' ? dataDomainId : '?');
+  }
+
+  if (name === 'dataDomain.search') {
+    const query = toolSearchQuery(args);
+    const hits = await store.search(dataDomainId, query);
+    return [{ type: 'text', text: JSON.stringify(hits) }];
+  }
+
+  if (name === 'dataDomain.write') {
+    // `DataDomainStore.write` is optional: a read-only deployment or a P0 backend
+    // may not implement it at all. Refuse by name instead of invoking undefined.
+    if (typeof store.write !== 'function') {
+      throw new McpParamError(
+        'dataDomain.write is unavailable: the connected dataDomain store does not implement writes',
+      );
+    }
+    const write = await store.write(dataDomainId, toolWriteItem(args), toolWriteGrant(args));
+    return [{ type: 'text', text: JSON.stringify(write) }];
+  }
+
+  const itemId = args.itemId;
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    throw new McpParamError('dataDomain.read requires a root-relative itemId string');
+  }
+  const item: DataDomainItem = await store.read(dataDomainId, itemId);
+  return [{ type: 'text', text: item.content }];
+}
+
+// --- Runtime face (design P1-1): zeus.skills / zeus.plan / zeus.status. ---
+
+/** Non-empty runtime-argument string; the schema never declares a free-form blob. */
+function asRuntimeString(value: unknown, key: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new McpParamError(`${key} must be a non-empty string, got: ${String(value)}`);
+  }
+  return value;
+}
+
+async function callRuntimeTool(
+  runtimeQueries: PersonalRuntimeQueries | undefined,
+  name: string,
+  args: unknown
+): Promise<Array<{ type: 'text'; text: string }>> {
+  if (!runtimeQueries) {
+    // Fail closed: the host advertised these tools (tools/list is static) but
+    // never mounted the read-only port. Say so by name - an empty catalogue or
+    // an empty status would be read as "the runtime has nothing", which is a lie
+    // the client would act on.
+    throw new RuntimeNotMountedError(name);
+  }
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    throw new McpParamError('tools/call requires an arguments object');
+  }
+  const runtimeArgs = args as Record<string, unknown>;
+
+  if (name === 'zeus.skills') {
+    const known = new Set(['id', 'version', 'domain', 'tag']);
+    for (const key of Object.keys(runtimeArgs)) {
+      if (!known.has(key)) {
+        throw new McpParamError(`unsupported skills parameter: ${key} (supported: id, version, domain, tag)`);
+      }
+    }
+    const id = runtimeArgs.id === undefined ? undefined : asRuntimeString(runtimeArgs.id, 'id');
+    const version = runtimeArgs.version === undefined ? undefined : asRuntimeString(runtimeArgs.version, 'version');
+    const domain = runtimeArgs.domain === undefined ? undefined : asRuntimeString(runtimeArgs.domain, 'domain');
+    const tag = runtimeArgs.tag === undefined ? undefined : asRuntimeString(runtimeArgs.tag, 'tag');
+    if (id !== undefined) {
+      const skill = await runtimeQueries.getSkill(id, version);
+      if (!skill) {
+        return [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              ok: false,
+              reason: 'not-found',
+              id,
+              ...(version !== undefined ? { version } : {}),
+            }),
+          },
+        ];
+      }
+      return [{ type: 'text', text: JSON.stringify(skill) }];
+    }
+    const skills = await runtimeQueries.listSkills({
+      ...(domain !== undefined ? { domain } : {}),
+      ...(tag !== undefined ? { tag } : {}),
+    });
+    return [{ type: 'text', text: JSON.stringify(skills) }];
+  }
+
+  if (name === 'zeus.plan') {
+    const known = new Set(['text', 'dataDomain']);
+    for (const key of Object.keys(runtimeArgs)) {
+      if (!known.has(key)) {
+        throw new McpParamError(`unsupported plan parameter: ${key} (supported: text, dataDomain)`);
+      }
+    }
+    const text = asRuntimeString(runtimeArgs.text, 'text');
+    let dataDomain: 'personal' | 'enterprise' | undefined;
+    if (runtimeArgs.dataDomain !== undefined) {
+      if (runtimeArgs.dataDomain !== 'personal' && runtimeArgs.dataDomain !== 'enterprise') {
+        throw new McpParamError(`dataDomain must be 'personal' or 'enterprise', got: ${String(runtimeArgs.dataDomain)}`);
+      }
+      dataDomain = runtimeArgs.dataDomain;
+    }
+    const result = await runtimeQueries.plan({ text, ...(dataDomain !== undefined ? { dataDomain } : {}) });
+    return [{ type: 'text', text: JSON.stringify(result) }];
+  }
+
+  if (name === 'zeus.status') {
+    const extra = Object.keys(runtimeArgs);
+    if (extra.length > 0) {
+      throw new McpParamError(`zeus.status takes no arguments (got: ${extra.join(', ')})`);
+    }
+    const status = await runtimeQueries.status();
+    return [{ type: 'text', text: JSON.stringify(status) }];
+  }
+
+  throw new McpParamError(`unknown tool: ${name}`);
+}
+
+/**
+ * E3.4 remaining item (1): the write step. Same fail-loud contract as the search
+ * arguments (deferred #31): an argument the schema never declared is rejected by
+ * name rather than ignored.
+ */
+function toolWriteItem(args: Record<string, unknown>): DataDomainWriteItem {
+  const known = new Set(['dataDomainId', 'data', 'itemId', 'grant']);
+  for (const name of Object.keys(args)) {
+    if (!known.has(name)) {
+      throw new McpParamError(`unsupported write parameter: ${name} (supported: data, itemId, grant)`);
+    }
+  }
+  if (!('data' in args)) {
+    throw new McpParamError('dataDomain.write requires a data payload');
+  }
+  const item: DataDomainWriteItem = { data: args.data };
+  if (args.itemId !== undefined) {
+    if (typeof args.itemId !== 'string' || args.itemId.trim() === '') {
+      throw new McpParamError(`itemId must be a non-empty root-relative string, got: ${String(args.itemId)}`);
+    }
+    item.itemId = args.itemId;
+  }
+  return item;
+}
+
+/**
+ * The grant is handed to the store untouched on purpose: shape, dataDomain binding,
+ * signature, expiry and single-use are verified by `verifyOperatorWriteGrant`,
+ * which every write path shares. A second verification here would be a second
+ * answer to the same question, and the day they disagree one of them is wrong.
+ */
+function toolWriteGrant(args: Record<string, unknown>): OperatorWriteGrant | undefined {
+  if (args.grant === undefined) return undefined;
+  const grant = args.grant;
+  if (typeof grant !== 'object' || grant === null || Array.isArray(grant)) {
+    throw new McpParamError('grant must be a OperatorWriteGrant object when present');
+  }
+  return grant as OperatorWriteGrant;
+}
+
+function toolSearchQuery(args: Record<string, unknown>): SearchQuery {
+  const query: SearchQuery = {};
+  // Same fail-loud contract as the resource URI (deferred #31): an argument the
+  // schema never declared is rejected, and tags is forwarded so the P0 backend
+  // returns its explicit "unsupported" error instead of unfiltered hits.
+  const known = new Set(['dataDomainId', 'text', 'since', 'limit', 'tags']);
+  for (const name of Object.keys(args)) {
+    if (!known.has(name)) {
+      throw new McpParamError(`unsupported search parameter: ${name} (supported: text, since, limit, tags)`);
+    }
+  }
+  if (typeof args.text === 'string' && args.text.trim()) query.text = args.text;
+  if (typeof args.since === 'string' && args.since.trim()) query.since = args.since;
+  if (args.tags !== undefined) {
+    if (typeof args.tags !== 'string' || !args.tags.trim()) {
+      throw new McpParamError(`tags must be a non-empty comma-separated string, got: ${String(args.tags)}`);
+    }
+    query.tags = args.tags.split(',').map(tag => tag.trim()).filter(Boolean);
+  }
+  if (args.limit !== undefined) {
+    if (typeof args.limit !== 'number' || !Number.isFinite(args.limit) || args.limit < 1) {
+      throw new McpParamError(`limit must be a positive number, got: ${String(args.limit)}`);
+    }
+    query.limit = Math.floor(args.limit);
+  }
+  return query;
+}
+
+// --- URI scheme: zeus-data-domain://<dataDomainId>/(manifest|search|item) ---
+
+export function manifestUri(dataDomainId: string): string {
+  return `${DATA_DOMAIN_URI_SCHEME}//${dataDomainId}/manifest`;
+}
+export function searchUri(dataDomainId: string): string {
+  return `${DATA_DOMAIN_URI_SCHEME}//${dataDomainId}/search`;
+}
+
+type ResourceDescriptor = { uri: string; name: string; mimeType?: string };
+type ResourceTemplateDescriptor = { name: string; uriTemplate: string; mimeType?: string };
+
+function listResources(dataDomainIds: string[]): ResourceDescriptor[] {
+  return dataDomainIds.flatMap(dataDomainId => [
+    { uri: manifestUri(dataDomainId), name: `DataDomain manifest (${dataDomainId})`, mimeType: 'application/json' },
+    { uri: searchUri(dataDomainId), name: `DataDomain search (${dataDomainId})`, mimeType: 'application/json' },
+  ]);
+}
+
+const RESOURCE_TEMPLATES: ResourceTemplateDescriptor[] = [
+  { name: 'DataDomain manifest', uriTemplate: 'zeus-data-domain://{dataDomainId}/manifest', mimeType: 'application/json' },
+  {
+    name: 'Search dataDomain items',
+    uriTemplate: 'zeus-data-domain://{dataDomainId}/search?text={text}&since={since}&limit={limit}&tags={tags}',
+    mimeType: 'application/json',
+  },
+  { name: 'Read one dataDomain item', uriTemplate: 'zeus-data-domain://{dataDomainId}/item?path={path}', mimeType: 'text/plain' },
+];
+
+type ParsedDataDomainUri = { dataDomainId: string; kind: 'manifest' | 'search' | 'item'; url: URL };
+
+function parseDataDomainUri(rawUri: unknown, dataDomainIds: string[]): ParsedDataDomainUri {
+  if (typeof rawUri !== 'string' || rawUri.length === 0) {
+    throw new McpParamError('resources/read requires a string uri');
+  }
+  let url: URL;
+  try {
+    url = new URL(rawUri);
+  } catch {
+    throw new McpParamError(`malformed uri: ${rawUri}`);
+  }
+  if (url.protocol !== DATA_DOMAIN_URI_SCHEME) {
+    throw new McpParamError(`unsupported uri scheme (expected ${DATA_DOMAIN_URI_SCHEME}//): ${rawUri}`);
+  }
+  const dataDomainId = url.hostname;
+  if (!dataDomainIds.includes(dataDomainId)) {
+    throw new DataDomainNotConnectedMcpError(dataDomainId);
+  }
+  const kind = url.pathname.replace(/^\//, '') as ParsedDataDomainUri['kind'];
+  if (kind !== 'manifest' && kind !== 'search' && kind !== 'item') {
+    throw new McpParamError(`unknown dataDomain resource: ${url.pathname}`);
+  }
+  return { dataDomainId, kind, url };
+}
+
+async function readResource(store: DataDomainStore, dataDomainIds: string[], params: unknown): Promise<unknown[]> {
+  const uri = (params as { uri?: unknown } | undefined)?.uri;
+  const parsed = parseDataDomainUri(uri, dataDomainIds);
+
+  if (parsed.kind === 'manifest') {
+    const manifest = await store.manifest(parsed.dataDomainId);
+    return [
+      {
+        uri: parsed.url.href,
+        mimeType: 'application/json',
+        text: JSON.stringify(publicManifest(manifest)),
+      },
+    ];
+  }
+
+  if (parsed.kind === 'search') {
+    const query = parseSearchQuery(parsed.url);
+    const hits = await store.search(parsed.dataDomainId, query);
+    return [{ uri: parsed.url.href, mimeType: 'application/json', text: JSON.stringify(hits) }];
+  }
+
+  const itemId = parsed.url.searchParams.get('path');
+  if (!itemId) throw new McpParamError('item resource requires a root-relative path query parameter');
+  const item: DataDomainItem = await store.read(parsed.dataDomainId, itemId);
+  return [{ uri: parsed.url.href, mimeType: 'text/plain', text: item.content }];
+}
+
+function parseSearchQuery(url: URL): SearchQuery {
+  const query: SearchQuery = {};
+  const text = url.searchParams.get('text');
+  if (text !== null && text.trim()) query.text = text;
+  const since = url.searchParams.get('since');
+  if (since !== null && since.trim()) query.since = since;
+  const limitRaw = url.searchParams.get('limit');
+  if (limitRaw !== null && limitRaw.trim()) {
+    const limit = Number(limitRaw);
+    if (!Number.isFinite(limit) || limit < 1) {
+      throw new McpParamError(`limit must be a positive integer, got: ${limitRaw}`);
+    }
+    query.limit = Math.floor(limit);
+  }
+  const tagsRaw = url.searchParams.get('tags');
+  if (tagsRaw !== null && tagsRaw.trim()) {
+    // Forwarded rather than dropped: the P0 filesystem backend rejects tag search
+    // explicitly (UnsupportedQueryError -> -32602), so a client asking for it
+    // sees the refusal instead of silently receiving unfiltered hits (deferred #31).
+    query.tags = tagsRaw.split(',').map(tag => tag.trim()).filter(Boolean);
+  }
+  // Fail loud on parameters the resource template never declared: a dropped name
+  // would otherwise read as "filter applied" while returning the full result set.
+  const known = new Set(['text', 'since', 'limit', 'tags']);
+  for (const name of url.searchParams.keys()) {
+    if (!known.has(name)) {
+      throw new McpParamError(`unsupported search parameter: ${name} (supported: text, since, limit, tags)`);
+    }
+  }
+  return query;
+}
+
+/** Strip the in-process-only absolute root before any client serialization. */
+export function publicManifest(manifest: DataDomainManifest): Omit<DataDomainManifest, 'root'> {
+  const { root: _root, ...publicPart } = manifest;
+  return publicPart;
+}
+
+class McpParamError extends Error {}
+class DataDomainNotConnectedMcpError extends Error {
+  constructor(readonly dataDomainId: string) {
+    super(`dataDomain not connected: ${dataDomainId}`);
+    this.name = 'DataDomainNotConnectedMcpError';
+  }
+}
+/** A zeus.* tool was called but the host did not mount the read-only runtime port. */
+class RuntimeNotMountedError extends Error {
+  constructor(readonly tool: string) {
+    super(`${tool} unavailable: runtime queries not mounted`);
+    this.name = 'RuntimeNotMountedError';
+  }
+}
+
+function mapError(
+  id: JsonRpcId,
+  error: unknown,
+  log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void,
+): JsonRpcResponse {
+  if (
+    error instanceof McpParamError ||
+    error instanceof UnsupportedQueryError ||
+    error instanceof RuntimeNotMountedError
+  ) {
+    return errorResponse(id, INVALID_PARAMS, error.message);
+  }
+  if (error instanceof DataDomainNotConnectedError || error instanceof DataDomainNotConnectedMcpError) {
+    return errorResponse(id, DATA_DOMAIN_NOT_CONNECTED, error.message);
+  }
+  if (error instanceof InvalidItemIdError) {
+    // InvalidItemIdError messages carry only the root-relative itemId, never the root.
+    return errorResponse(id, INVALID_ITEM, error.message);
+  }
+  if (error instanceof UnauthorizedDataDomainWriteError) {
+    // The refusal REASON crosses the boundary, not the prose: a client branches
+    // on "grant-expired" vs "grant-bad-signature", and neither message carries a
+    // path. The store is the only place that decides this, so the name is read
+    // off the error rather than re-derived here.
+    return errorResponse(id, DATA_DOMAIN_UNAUTHORIZED, `write refused: ${error.reason}`);
+  }
+  if (error instanceof UnsupportedWriteError) {
+    // Same contract as the P0 tag refusal on the read path (deferred #31): the
+    // backend states what it cannot do instead of silently accepting less.
+    return errorResponse(id, INVALID_PARAMS, error.message);
+  }
+  // Anything else is a store/transport fault: its message may carry the
+  // dataDomain-local absolute root (EACCES, ENOSPC, ...), which must never cross the
+  // JSON-RPC boundary. Answer with the fixed code+message instead; the raw
+  // detail goes only to the host-supplied log sink, if any.
+  log?.('dataDomain-mcp-error', error instanceof Error ? error.message : String(error));
+  return errorResponse(id, DATA_DOMAIN_ERROR, 'dataDomain error');
+}
+
+function errorResponse(id: JsonRpcId, code: number, message: string): JsonRpcResponse {
+  return { jsonrpc: JSONRPC_VERSION, id, error: { code, message } };
+}
+
+export const JSON_RPC_CODES = {
+  PARSE_ERROR,
+  INVALID_REQUEST,
+  METHOD_NOT_FOUND,
+  INVALID_PARAMS,
+  INTERNAL_ERROR,
+  DATA_DOMAIN_ERROR,
+  DATA_DOMAIN_NOT_CONNECTED,
+  INVALID_ITEM,
+  DATA_DOMAIN_UNAUTHORIZED,
+} as const;

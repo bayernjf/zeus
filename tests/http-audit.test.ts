@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { jsonlAuditSink } from '../src/dispatch/audit.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 let dir: string;
@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 async function mount(withFile = true): Promise<FastifyInstance> {
-  const registry = new VassalRegistry();
+  const registry = new ExecutorRegistry();
   app = await createHttpServer({
     registry,
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
@@ -37,7 +37,7 @@ async function mount(withFile = true): Promise<FastifyInstance> {
 }
 
 function entry(ts: string, overrides: Partial<AuditEntry> = {}): AuditEntry {
-  return { ts, vassal: 'loom', decision: 'dispatched', runId: 'run-1', ...overrides };
+  return { ts, executor: 'loom', decision: 'dispatched', runId: 'run-1', ...overrides };
 }
 
 async function seed(entries: AuditEntry[]): Promise<void> {
@@ -50,29 +50,29 @@ describe('E4.7 audit HTTP face', () => {
     const a = await mount();
     await seed([
       entry('t1'),
-      entry('t2', { vassal: 'atlas', decision: 'dispatch-failed' }),
-      entry('t3', { decision: 'vassal-revoked' }),
+      entry('t2', { executor: 'atlas', decision: 'dispatch-failed' }),
+      entry('t3', { decision: 'executor-revoked' }),
     ]);
     const res = await a.inject({ method: 'GET', url: '/api/audit', headers: AUTH });
     expect(res.statusCode).toBe(200);
     const body = await res.json();
     expect(body.file).toBe(auditFile);
     expect(body.entries.map((e: AuditEntry) => `${e.ts}:${e.decision}`))
-      .toEqual(['t1:dispatched', 't2:dispatch-failed', 't3:vassal-revoked']);
+      .toEqual(['t1:dispatched', 't2:dispatch-failed', 't3:executor-revoked']);
   });
 
-  it('filters by run, vassal and decision and trims to the newest with limit', async () => {
+  it('filters by run, executor and decision and trims to the newest with limit', async () => {
     const a = await mount();
     await seed([
       entry('t1', { runId: 'run-1' }),
-      entry('t2', { vassal: 'atlas', runId: 'run-2' }),
+      entry('t2', { executor: 'atlas', runId: 'run-2' }),
       entry('t3', { runId: 'run-2' }),
     ]);
     const byRun = await a.inject({ method: 'GET', url: '/api/audit?runId=run-2', headers: AUTH });
     expect((await byRun.json()).entries.map((e: AuditEntry) => e.ts)).toEqual(['t2', 't3']);
 
-    const byVassal = await a.inject({ method: 'GET', url: '/api/audit?vassal=atlas', headers: AUTH });
-    expect((await byVassal.json()).entries).toHaveLength(1);
+    const byExecutor = await a.inject({ method: 'GET', url: '/api/audit?executor=atlas', headers: AUTH });
+    expect((await byExecutor.json()).entries).toHaveLength(1);
 
     const byDecision = await a.inject({
       method: 'GET', url: '/api/audit?decision=sla-ack-breached', headers: AUTH,
@@ -92,12 +92,12 @@ describe('E4.7 audit HTTP face', () => {
 
   it('reports an unreadable trail as a 500 rather than a shortened one', async () => {
     const a = await mount();
-    await writeFile(auditFile, '{"ts":"t1","vassal":"loom","decision":"dispatched"}\n{ not json }\n');
+    await writeFile(auditFile, '{"ts":"t1","executor":"loom","decision":"dispatched"}\n{ not json }\n');
     const res = await a.inject({ method: 'GET', url: '/api/audit', headers: AUTH });
     expect(res.statusCode).toBe(500);
     const body = await res.json();
     expect(body).toMatchObject({ error: 'audit_unreadable' });
-    // m-15: error details must not echo the realm-local absolute audit path.
+    // m-15: error details must not echo the dataDomain-local absolute audit path.
     expect(JSON.stringify(body)).not.toContain(auditFile);
   });
 
@@ -109,7 +109,7 @@ describe('E4.7 audit HTTP face', () => {
       '/api/audit?limit=0',
       '/api/audit?limit=abc',
       '/api/audit?runId=',
-      '/api/audit?vassal=',
+      '/api/audit?executor=',
     ]) {
       const res = await a.inject({ method: 'GET', url, headers: AUTH });
       expect(res.statusCode, url).toBe(400);

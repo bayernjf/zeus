@@ -4,13 +4,13 @@ import { stableStringify } from './consolidate.js';
 import type { MemoryEvent } from './types.js';
 
 /**
- * The kernel's only producer of memory events (design-memory-consolidation §8,
+ * The runtime's only producer of memory events (design-memory-consolidation §8,
  * deferred #27). Before this, nothing outside `src/memory` ever appended an
  * event: the fact source, consolidation, disputes, recall, forgetting and the
  * diary were all built and tested, but a running process fed them nothing, so
  * they read as working features while returning empty results.
  *
- * Boundary rule from §8.1: a memory event is a claim that is true of a realm.
+ * Boundary rule from §8.1: a memory event is a claim that is true of a dataDomain.
  * Dispatch actions and refusals already live on the audit spine and are not
  * copied here - duplicating them would produce many events and still no facts,
  * and would widen the erasure surface of the right to be forgotten.
@@ -25,8 +25,8 @@ export const MAX_STANCE_CHARS = 512;
 const DEFAULT_CONFIDENCE = 0.5;
 
 export type BranchClaimOptions = {
-  /** The connected realm the intent operated on; claims are attributed to it. */
-  realmId: string;
+  /** The connected dataDomain the intent operated on; claims are attributed to it. */
+  dataDomainId: string;
   occurredAt: string;
 };
 
@@ -75,19 +75,19 @@ export function branchVerdictClaims(
     const stance = typeof position.stance === 'string' ? position.stance.trim() : '';
     if (!stance) continue;
     const object = claimObject(stance);
-    // The realm is part of the id: without it the same run operating on two
-    // realms derived the identical eventId, and the second realm's claim was
+    // The dataDomain is part of the id: without it the same run operating on two
+    // dataDomains derived the identical eventId, and the second dataDomain's claim was
     // dropped by dedupe as if it were a replay of the first.
-    const eventId = sha256Hex(`${options.realmId}␟${result.runId}␟${position.vassal}␟${object}`);
+    const eventId = sha256Hex(`${options.dataDomainId}␟${result.runId}␟${position.executor}␟${object}`);
     if (seen.has(eventId)) continue;
     seen.add(eventId);
-    const branch = result.branches.find(entry => entry.vassal === position.vassal);
+    const branch = result.branches.find(entry => entry.executor === position.executor);
     events.push({
       eventId,
-      realmId: options.realmId,
+      dataDomainId: options.dataDomainId,
       runId: result.runId,
       source: {
-        agentId: position.vassal,
+        agentId: position.executor,
         ...(branch?.taskId ? { taskId: branch.taskId } : {}),
       },
       kind: 'claim',

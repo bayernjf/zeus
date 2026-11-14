@@ -52,7 +52,7 @@ function runScript(args: string[], env: NodeJS.ProcessEnv = process.env): Promis
 }
 
 // Minimal faithful pr-helper shape (api/_lib/agent-card.ts + api/_lib/a2a/rpc.ts):
-// card carries x-zeus-fealty (the script must not need it), tasks/send accepts a
+// card carries x-zeus-handshake (the script must not need it), tasks/send accepts a
 // text part whose first token is the skill id, and tasks include a history array.
 // The JSON-RPC surface lives on the same path as card discovery (GET = card,
 // POST = RPC), matching pr-helper's routing.
@@ -73,7 +73,7 @@ function healthyHandler(req: any, body: any, res: any) {
       ],
       authentication: { schemes: ['bearer'] },
       preferredTransport: 'JSONRPC',
-      'x-zeus-fealty': { version: '1', swornTo: 'zeus', domain: 'pr-release-control' },
+      'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'pr-release-control' },
     });
   }
   if (req.url === '/api/a2a/agent-card' && req.method === 'POST') {
@@ -118,7 +118,7 @@ function separateTaskEndpointHandler(req: any, body: any, res: any) {
       ],
       authentication: { schemes: ['bearer'] },
       preferredTransport: 'JSONRPC',
-      'x-zeus-fealty': { version: '1', swornTo: 'zeus' },
+      'x-zeus-handshake': { version: '1', swornTo: 'zeus' },
     });
   }
   if (req.url === '/api/a2a/tasks' && req.method === 'POST') {

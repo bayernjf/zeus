@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { WatchRegistry } from '../src/watch/watch.js';
 import type { WatchAuditEntry } from '../src/watch/watch.js';
@@ -9,19 +9,19 @@ import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 /**
  * Self-host loop, operator face for the trigger primitive: watches are
  * registered, listed and revoked over the bearer face, and the tick is a
- * caller-driven POST. The kernel holds no timers, so this face is how an
+ * caller-driven POST. The runtime holds no timers, so this face is how an
  * operator's scheduler (cron curl) drives the rhythm - and every lifecycle
  * act lands on the audit spine via the registry's own hook.
  */
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = new Date('2026-10-03T00:00:00.000Z');
 
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
     owner: 'pilot-operator',
-    realm: 'personal',
+    dataDomain: 'personal',
     predicate: { source: 'metrics', op: 'below', field: 'inFlight', value: 1 },
     intent: { skill: 'research', subject: 'nightly summary', mode: 'plan', maxFanOut: 2 },
     intervalSeconds: 60,
@@ -39,7 +39,7 @@ async function harness() {
   });
   let ticked = 0;
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('k'),
     internalToken: TOKEN,
     now: () => NOW,
@@ -70,7 +70,7 @@ describe('HTTP watch operator face', () => {
     const body = res.json() as { watch: Record<string, unknown> };
     expect(body.watch).toMatchObject({
       owner: 'pilot-operator',
-      realm: 'personal',
+      dataDomain: 'personal',
       enabled: true,
       used: { fires: 0, executes: 0 },
     });
@@ -85,7 +85,7 @@ describe('HTTP watch operator face', () => {
     for (const body of [
       validBody({ predicate: undefined }),
       validBody({ intent: undefined }),
-      validBody({ realm: 'public' }),
+      validBody({ dataDomain: 'public' }),
       validBody({ intent: { skill: 'research', subject: 'x', mode: 'unattended', maxFanOut: 1 } }),
       validBody({ intervalSeconds: 0 }),
       validBody({ budget: { fires: 0, executes: 0 } }),
@@ -147,16 +147,16 @@ describe('HTTP watch operator face', () => {
     await register(h.app);
     const after = await h.app.inject({ method: 'POST', url: '/api/watch-tick', headers: AUTH });
     expect(after.statusCode).toBe(200);
-    // the trigger is the assembled kernel's own pass, not a canned answer:
+    // the trigger is the assembled runtime's own pass, not a canned answer:
     // a second registered watch raises the evaluated count
     expect((after.json() as { report: { evaluated: number } }).report.evaluated).toBe(2);
   });
 
   it('the tick face is assembled, not merely routed', async () => {
-    // serve.ts must actually hand kernel.runWatchTick across; a route that
+    // serve.ts must actually hand runtime.runWatchTick across; a route that
     // answers 503 "not assembled" would pass a route-presence grep.
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('k'),
       internalToken: TOKEN,
       watches: new WatchRegistry(),

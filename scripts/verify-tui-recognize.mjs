@@ -39,7 +39,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const KEEP = process.argv.includes('--keep');
 const startedAt = Date.now();
-const DRIVER_TOKEN = `verify-tui-${randomBytes(8).toString('hex')}`;
+const OPERATOR_TOKEN = `verify-tui-${randomBytes(8).toString('hex')}`;
 
 /** @type {{ name: string, ok: boolean, detail: string }[]} */
 const steps = [];
@@ -74,14 +74,14 @@ if (!existsSync(join(REPO, 'dist/http/serve.js')) || !existsSync(join(REPO, 'dis
 }
 
 // ---------------------------------------------------------------------------
-// Workspace: temp realm, state, audit and root signing key. Nothing touches a
+// Workspace: temp dataDomain, state, audit and root signing key. Nothing touches a
 // real deployment.
 // ---------------------------------------------------------------------------
 const work = mkdtempSync(join(tmpdir(), 'zeus-verify-tui-'));
-const realmRoot = join(work, 'realm');
-mkdirSync(realmRoot, { recursive: true });
-writeFileSync(join(realmRoot, 'note.md'), '# verify\n\ncontext the TUI recognition face runs against\n');
-const stateFile = join(work, 'kernel-state.json');
+const dataDomainRoot = join(work, 'dataDomain');
+mkdirSync(dataDomainRoot, { recursive: true });
+writeFileSync(join(dataDomainRoot, 'note.md'), '# verify\n\ncontext the TUI recognition face runs against\n');
+const stateFile = join(work, 'runtime-state.json');
 const auditFile = join(work, 'audit.jsonl');
 const keyFile = join(work, 'verify-key.pem');
 execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), keyFile], { stdio: 'pipe' });
@@ -110,11 +110,11 @@ const agentServer = createServer((req, res) => {
           { id: 'code-review', name: 'Code Review', description: 'review a pull request for defects', tags: [] },
           { id: 'research', name: 'Deep Research', description: 'multi-source research across web and documents', tags: [] },
         ],
-        'x-zeus-fealty': {
+        'x-zeus-handshake': {
           version: '1',
           swornTo: 'zeus',
           domain: 'smoke',
-          dataRealms: ['personal'],
+          dataDomains: ['personal'],
           dataPolicy: 'read-task-scope',
           reportBack: true,
           escalationPolicy: 'on-failure',
@@ -151,9 +151,9 @@ const env = {
   ZEUS_STATE_FILE: stateFile,
   ZEUS_AUDIT_FILE: auditFile,
   ZEUS_RSK_KEY_FILE: keyFile,
-  ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
-  ZEUS_REALM_ROOTS: realmRoot,
-  ZEUS_VASSAL_SEEDS: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`,
+  ZEUS_INTERNAL_TOKEN: OPERATOR_TOKEN,
+  ZEUS_DATA_DOMAIN_ROOTS: dataDomainRoot,
+  ZEUS_EXECUTOR_SEEDS: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`,
 };
 // Never inherit a real deployment's model keys: the model path must fail
 // closed on this process (422 no-backend), which step 3 asserts.
@@ -188,7 +188,7 @@ try {
   // Wait for the card import (onRegister -> skill catalogue).
   let registered = false;
   for (let i = 0; i < 40; i += 1) {
-    const res = await fetch(`http://127.0.0.1:${port}/api/skills`, { headers: { authorization: `Bearer ${DRIVER_TOKEN}` } });
+    const res = await fetch(`http://127.0.0.1:${port}/api/skills`, { headers: { authorization: `Bearer ${OPERATOR_TOKEN}` } });
     if (res.status === 200 && ((await res.json()).skills ?? []).length >= 2) {
       registered = true;
       break;
@@ -203,7 +203,7 @@ try {
   ({ createDeckClient: client } = await import(pathToFileURL(join(REPO, 'dist/tui/client.js')).href));
   ({ renderRecognize } = await import(pathToFileURL(join(REPO, 'dist/tui/render.js')).href));
   ({ parseCommand } = await import(pathToFileURL(join(REPO, 'dist/tui/commands.js')).href));
-  const deckClient = client(`http://127.0.0.1:${port}`, DRIVER_TOKEN);
+  const deckClient = client(`http://127.0.0.1:${port}`, OPERATOR_TOKEN);
   const translator = (await import(pathToFileURL(join(REPO, 'dist/tui/format.js')).href)).makeTranslator('zh-CN');
   const palette = (await import(pathToFileURL(join(REPO, 'dist/tui/tokens.js')).href)).makePalette(false);
 

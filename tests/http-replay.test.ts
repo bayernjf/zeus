@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { OversightDesk, conflictsToDesk } from '../src/oversight/oversight.js';
@@ -10,17 +10,17 @@ import type { DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 import type { ReplayStep } from '../src/orchestrator/replay.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
-function verdict(vassal: string, stance: string): DispatchResult {
+function verdict(executor: string, stance: string): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state: 'completed' },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance } }] }],
@@ -30,14 +30,14 @@ function verdict(vassal: string, stance: string): DispatchResult {
 
 const defaultPort: DispatchPort = {
   async dispatch(req) {
-    return verdict(req.vassal!, (req.params as { stance?: string }).stance ?? 'go');
+    return verdict(req.executor!, (req.params as { stance?: string }).stance ?? 'go');
   },
   async cancel() {},
 };
 
 const splitPort: DispatchPort = {
   async dispatch(req) {
-    return verdict(req.vassal!, req.vassal === 'loom' ? 'ship' : 'hold');
+    return verdict(req.executor!, req.executor === 'loom' ? 'ship' : 'hold');
   },
   async cancel() {},
 };
@@ -56,7 +56,7 @@ async function server(names: string[], dispatch: DispatchPort = defaultPort): Pr
     onConflict: conflictsToDesk(desk),
   });
   return createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     orchestrator,
@@ -80,7 +80,7 @@ describe('E1.6 decision replay HTTP', () => {
   it('replays a stored decision with its dispatch input and timeline', async () => {
     app = await server(['loom', 'atlas']);
     await fanOut(app, {
-      skill: 'review', realm: 'personal', params: { stance: 'go', pr: 42 },
+      skill: 'review', dataDomain: 'personal', params: { stance: 'go', pr: 42 },
       aggregation: { kind: 'unanimous' },
     });
 
@@ -90,7 +90,7 @@ describe('E1.6 decision replay HTTP', () => {
     expect(replay).toMatchObject({ intentId: 'intent-1', skill: 'review', status: 'completed' });
     expect(replay.input).toEqual({ stance: 'go', pr: 42 });
     expect(replay.aggregation).toEqual({ kind: 'unanimous' });
-    expect(replay.participants.map((p: { vassal: string }) => p.vassal).sort()).toEqual(['atlas', 'loom']);
+    expect(replay.participants.map((p: { executor: string }) => p.executor).sort()).toEqual(['atlas', 'loom']);
     const kinds = replay.timeline.map((s: ReplayStep) => s.kind);
     expect(kinds[0]).toBe('intent-started');
     expect(kinds).toContain('branch-dispatched');
@@ -104,7 +104,7 @@ describe('E1.6 decision replay HTTP', () => {
 
   it('renders a human-readable timeline with ?format=text', async () => {
     app = await server(['loom']);
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
 
     const res = await app.inject({
       method: 'GET', url: '/api/intents/intent-1/replay?format=text', headers: AUTH,
@@ -116,13 +116,13 @@ describe('E1.6 decision replay HTTP', () => {
     expect(res.body).toContain('intent-finished');
   });
 
-  it('shows the driver settlement in the replay after a conflict is resolved', async () => {
+  it('shows the operator settlement in the replay after a conflict is resolved', async () => {
     app = await server(['loom', 'atlas'], splitPort);
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
 
     const settled = await app.inject({
       method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH,
-      payload: { stance: 'ship', note: 'driver call' },
+      payload: { stance: 'ship', note: 'operator call' },
     });
     expect(settled.statusCode).toBe(200);
 
@@ -130,8 +130,8 @@ describe('E1.6 decision replay HTTP', () => {
       method: 'GET', url: '/api/intents/intent-1/replay', headers: AUTH,
     })).json();
     expect(replay.status).toBe('completed');
-    expect(replay.driverResolution).toMatchObject({ stance: 'ship', note: 'driver call' });
-    const step = replay.timeline.find((s: ReplayStep) => s.kind === 'driver-resolved');
+    expect(replay.operatorResolution).toMatchObject({ stance: 'ship', note: 'operator call' });
+    const step = replay.timeline.find((s: ReplayStep) => s.kind === 'operator-resolved');
     expect(step.detail).toMatchObject({ stance: 'ship', escalationId: 'esc-1' });
   });
 
@@ -140,7 +140,7 @@ describe('E1.6 decision replay HTTP', () => {
     const missing = await app.inject({ method: 'GET', url: '/api/intents/nope/replay', headers: AUTH });
     expect(missing.statusCode).toBe(404);
 
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
     const bad = await app.inject({
       method: 'GET', url: '/api/intents/intent-1/replay?format=html', headers: AUTH,
     });
@@ -149,7 +149,7 @@ describe('E1.6 decision replay HTTP', () => {
 
   it('fails loud (500) when the stored record cannot be replayed', async () => {
     app = await server(['loom']);
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
 
     const snapshot = orchestrator.exportState();
     snapshot.intents[0]!.stream[0]!.source.runId = 'run-bogus';

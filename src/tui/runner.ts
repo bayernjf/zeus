@@ -71,7 +71,7 @@ export function createDeck(options: RunnerOptions): DeckController {
       return;
     }
     if (cmd.kind === 'resume') {
-      // The kernel only resumes a branch that stopped for parameters; approving
+      // The runtime only resumes a branch that stopped for parameters; approving
       // some other kind through this path would record a decision and silently
       // leave the branch parked, so the deck refuses before any request goes out.
       if (esc.kind !== 'task-input') {
@@ -81,7 +81,7 @@ export function createDeck(options: RunnerOptions): DeckController {
       const action = t('escalation.resume');
       if (!(await confirm(t('escalation.resumeConfirm', { action, id: esc.id, params: JSON.stringify(cmd.params) })))) return;
       await client.resume(esc.id, cmd.params);
-      io.print(`${t('escalation.resumed', { id: esc.id, vassal: esc.vassal })}\n`);
+      io.print(`${t('escalation.resumed', { id: esc.id, executor: esc.executor })}\n`);
       return;
     }
     if (cmd.kind === 'approve' && esc.kind === 'delegation-limit') {
@@ -153,7 +153,7 @@ export function createDeck(options: RunnerOptions): DeckController {
         io.print(`${t('roster.reinstateFailed', { message: `#${parsed.index}` })}\n`);
         return true;
       }
-      // Only a revoked entry has a way back; the kernel answers 404 for an
+      // Only a revoked entry has a way back; the runtime answers 404 for an
       // active one, and the deck says which state it looked at instead.
       if (entry.status !== 'revoked') {
         io.print(`${t('roster.reinstateNeedsRevoked', { name: entry.name, status: statusLabel(t, entry.status) })}\n`);
@@ -171,27 +171,27 @@ export function createDeck(options: RunnerOptions): DeckController {
     }
 
     if (parsed.kind === 'grantIssue') {
-      const realms = snapshot.domains?.realms ?? [];
-      const realm = realms[parsed.realmIndex - 1];
-      if (!realm) {
-        io.print(`${t('domains.grantFailed', { message: `realm #${parsed.realmIndex}` })}\n`);
+      const dataDomains = snapshot.domains?.dataDomains ?? [];
+      const dataDomain = dataDomains[parsed.dataDomainIndex - 1];
+      if (!dataDomain) {
+        io.print(`${t('domains.grantFailed', { message: `dataDomain #${parsed.dataDomainIndex}` })}\n`);
         return true;
       }
-      if (realm.type !== 'enterprise') {
+      if (dataDomain.type !== 'enterprise') {
         io.print(`${t('domains.grantEnterpriseOnly')}\n`);
         return true;
       }
       const access = parsed.access === 'write' ? t('domains.access.write') : t('domains.access.read');
-      const promptLine = t('domains.confirmGrant', { subject: parsed.subject, realmId: realm.realmId, access });
+      const promptLine = t('domains.confirmGrant', { subject: parsed.subject, dataDomainId: dataDomain.dataDomainId, access });
       if (!(await confirm(promptLine))) return true;
       try {
         await client.issueGrant({
           subject: parsed.subject,
-          realmId: realm.realmId,
+          dataDomainId: dataDomain.dataDomainId,
           access: parsed.access,
           grantedBy: parsed.grantedBy,
         });
-        io.print(`${t('domains.granted', { subject: parsed.subject, realmId: realm.realmId })}\n`);
+        io.print(`${t('domains.granted', { subject: parsed.subject, dataDomainId: dataDomain.dataDomainId })}\n`);
       } catch (error) {
         io.print(`${t('domains.grantFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
       }

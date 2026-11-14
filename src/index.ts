@@ -1,26 +1,26 @@
 /**
  * Zeus public library surface.
  *
- * Kernel modules (pure TS, no transport):
- *  - a2a      standard A2A protocol types + x-zeus-* vassal extensions
- *  - registry A1 vassal registry (card registration / fealty / health / revoke)
+ * Runtime modules (pure TS, no transport):
+ *  - a2a      standard A2A protocol types + x-zeus-* executor extensions
+ *  - registry A1 executor registry (card registration / handshake / health / revoke)
  *  - roster   R0 roster projector (internal/public snapshots for bayjf)
  *  - dispatch A2 dispatcher (JSON-RPC + SSE, data diode, revocation gate, audit)
  *  - oversight A4 oversight desk (input-required escalation queue)
- *  - orchestrator E1 fan-out decision kernel (parallel dispatch, merge, aggregate, conflict)
+ *  - orchestrator E1 fan-out decision runtime (parallel dispatch, merge, aggregate, conflict)
  *  - memory   memory consolidation protocol (append-only event log, fact store via consolidator)
- *  - realm    D1 Realm P0 (read-only personal data domain, scan search)
+ *  - dataDomain    D1 DataDomain P0 (read-only personal data domain, scan search)
  *
  * Transport layers (MCP / HTTP) wrap this surface; they are not part of the
- * kernel and must not leak realm paths or registry internals.
+ * runtime and must not leak dataDomain paths or registry internals.
  */
 
 // --- A2A protocol: standard layer + x-zeus-* supersession extensions ---
-export { SUPPORTED_FEALTY_VERSIONS } from './a2a/types.js';
+export { SUPPORTED_HANDSHAKE_VERSIONS } from './a2a/types.js';
 export { isFilePart, artifactFileUris } from './a2a/parts.js';
 export type {
-  RealmType,
-  Fealty,
+  DataDomainType,
+  Handshake,
   AgentCardSkill,
   AgentCard,
   TaskState,
@@ -34,14 +34,14 @@ export type {
   A2AEvent,
 } from './a2a/types.js';
 
-// --- A1 vassal registry ---
-export { VassalRegistry, defaultTaskUrl, CardFetchError, VassalRevokedError, VassalConflictError } from './registry/registry.js';
+// --- A1 executor registry ---
+export { ExecutorRegistry, defaultTaskUrl, CardFetchError, ExecutorRevokedError, ExecutorConflictError } from './registry/registry.js';
 export type {
-  VassalEntry,
-  PublicVassalEntry,
-  VassalLike,
-  VassalLookup,
-  VassalStatus,
+  ExecutorEntry,
+  PublicExecutorEntry,
+  ExecutorLike,
+  ExecutorLookup,
+  ExecutorStatus,
   RegistryHooks,
 } from './registry/registry.js';
 
@@ -55,7 +55,7 @@ export type {
   RosterSnapshot,
 } from './registry/roster.js';
 
-// --- fealty signing chain v1 (R1 prerequisite; pure functions, Ed25519 + JCS subset) ---
+// --- handshake signing chain v1 (R1 prerequisite; pure functions, Ed25519 + JCS subset) ---
 export {
   canonicalJson,
   canonicalDigest,
@@ -115,7 +115,7 @@ export type {
   CancelTaskFn,
 } from './oversight/types.js';
 
-// --- E1 fan-out decision kernel (parallel dispatch / merge / aggregate / conflict) ---
+// --- E1 fan-out decision runtime (parallel dispatch / merge / aggregate / conflict) ---
 export { Orchestrator, UnknownIntentError, IntentRequestConflictError } from './core/orchestrator/orchestrator.js';
 export type { OrchestratorOptions } from './core/orchestrator/orchestrator.js';
 export type { PushReceiveResult } from './core/orchestrator/orchestrator.js';
@@ -156,7 +156,7 @@ export type {
   FailureAttribution,
   FailureCategory,
   FailurePattern,
-  VassalAttribution,
+  ExecutorAttribution,
   CategoryCounts,
 } from './reflection/failure-attribution.js';
 // --- Structured operator log (feature-inventory 结构化日志) ---
@@ -164,7 +164,7 @@ export { createLogger, redact, redactText, redactUrl } from './util/logger.js';
 export type { Logger, LogLevel, LogFields, LogSink, LoggerOptions } from './util/logger.js';
 export type {
   MetricsSnapshot,
-  VassalMetric,
+  ExecutorMetric,
   LatencyStats,
   BranchMetricEvent,
   BranchOutcomeKind,
@@ -184,16 +184,16 @@ export type { DagResult, DagNodeResult, DagRunnerOptions, ChainRecoveryOptions, 
 export { selectCandidates, recoverChain, planRecovery, buildChainPlan } from './core/orchestrator/discovery.js';
 export type { DispatchCandidate, DispatchMode, SelectionContext, ChainFailure, RecoveryAction, ChainStep, ChainPlan, RecoveryInstruction } from './core/orchestrator/discovery.js';
 export {
-  FileKernelStateStore,
-  collectKernelState,
-  applyKernelState,
-  KernelStateError,
-  KERNEL_STATE_VERSION,
-} from './state/kernel-state.js';
-export type { KernelSnapshot, KernelComponents } from './state/kernel-state.js';
-export { kernelStats, type KernelStats } from './state/stats.js';
-export { bootKernel, resolveDecisionConfig, resolveConcurrencyConfig, resolveAuditConfig, KernelBootError } from './state/boot.js';
-export type { KernelBootOptions, KernelBoot, ProcessDecisionConfig, ProcessConcurrencyConfig, ProcessAuditConfig } from './state/boot.js';
+  FileRuntimeStateStore,
+  collectRuntimeState,
+  applyRuntimeState,
+  RuntimeStateError,
+  RUNTIME_STATE_VERSION,
+} from './state/runtime-state.js';
+export type { RuntimeSnapshot, RuntimeComponents } from './state/runtime-state.js';
+export { runtimeStats, type RuntimeStats } from './state/stats.js';
+export { bootRuntime, resolveDecisionConfig, resolveConcurrencyConfig, resolveAuditConfig, RuntimeBootError } from './state/boot.js';
+export type { RuntimeBootOptions, RuntimeBoot, ProcessDecisionConfig, ProcessConcurrencyConfig, ProcessAuditConfig } from './state/boot.js';
 export type { OrchestratorSnapshot } from './core/orchestrator/orchestrator.js';
 export type {
   FanOutRequest,
@@ -208,7 +208,7 @@ export type {
   DispatchPort,
   TargetLookup,
   CancelBranchResult,
-  DriverResolution,
+  OperatorResolution,
   BackendArbitration,
   JudgeReview,
 } from './core/orchestrator/types.js';
@@ -259,7 +259,7 @@ export type {
   MentorshipStatus,
   CompetencyCheck,
   LessonEntry,
-  CommissionMentorshipInput,
+  SeatGrantMentorshipInput,
   AssessOptions,
 } from './skills/mentor.js';
 
@@ -323,120 +323,120 @@ export type {
   McpClientDeps,
 } from './mcp/types.js';
 
-// --- D1 Realm P0 ---
-export { FsRealmStore } from './realm/store.js';
-export { sha256Hex, digestManifest } from './realm/digest.js';
+// --- D1 DataDomain P0 ---
+export { FsDataDomainStore } from './dataDomain/store.js';
+export { sha256Hex, digestManifest } from './dataDomain/digest.js';
 export type {
-  RealmStore,
-  RealmManifest,
-  RealmBackupStrategy,
-  RealmBackupState,
-  RealmHit,
+  DataDomainStore,
+  DataDomainManifest,
+  DataDomainBackupStrategy,
+  DataDomainBackupState,
+  DataDomainHit,
   SearchQuery,
-  RealmItem,
-  RealmWriteItem,
-  RealmWriteResult,
-  DriverWriteGrant,
-  SignedDriverWriteGrant,
+  DataDomainItem,
+  DataDomainWriteItem,
+  DataDomainWriteResult,
+  OperatorWriteGrant,
+  SignedOperatorWriteGrant,
   GrantVerification,
-} from './realm/types.js';
+} from './dataDomain/types.js';
 export {
-  RealmError,
-  RealmNotConnectedError,
+  DataDomainError,
+  DataDomainNotConnectedError,
   InvalidItemIdError,
   UnsupportedQueryError,
-  UnauthorizedRealmWriteError,
+  UnauthorizedDataDomainWriteError,
   UnsupportedWriteError,
-} from './realm/types.js';
+} from './dataDomain/types.js';
 export {
-  verifyDriverWriteGrant,
-  issueDriverWriteGrant,
-  DriverGrantLedger,
-  DriverGrantError,
-  DRIVER_GRANT_DEFAULT_TTL_MS,
-  DRIVER_GRANT_MAX_TTL_MS,
+  verifyOperatorWriteGrant,
+  issueOperatorWriteGrant,
+  OperatorGrantLedger,
+  OperatorGrantError,
+  OPERATOR_GRANT_DEFAULT_TTL_MS,
+  OPERATOR_GRANT_MAX_TTL_MS,
   MAX_SPENT_GRANT_NONCES,
-} from './realm/grant.js';
+} from './dataDomain/grant.js';
 export type {
-  DriverGrantAuditEntry,
-  DriverGrantLedgerOptions,
+  OperatorGrantAuditEntry,
+  OperatorGrantLedgerOptions,
   GrantVerificationContext,
-  IssueDriverGrantInput,
-  IssueDriverGrantOptions,
-} from './realm/grant.js';
-export type { RealmWriteAuditEntry, FsRealmStoreOptions, DriverGrantAuthority } from './realm/store.js';
+  IssueOperatorGrantInput,
+  IssueOperatorGrantOptions,
+} from './dataDomain/grant.js';
+export type { DataDomainWriteAuditEntry, FsDataDomainStoreOptions, OperatorGrantAuthority } from './dataDomain/store.js';
 
 // --- E3.6 tenancy + E6.4 cross-domain authorization and retrieval ---
-export { parseTenant, formatTenant, normalizeTenant, tenantKey, tenantReaches, TenantError } from './realm/tenant.js';
+export { parseTenant, formatTenant, normalizeTenant, tenantKey, tenantReaches, TenantError } from './dataDomain/tenant.js';
 export {
-  decideRealmAccess,
+  decideDataDomainAccess,
   verifyDomainGrant,
   DomainGrantRegistry,
   DomainGrantError,
-} from './realm/authorization.js';
-export type { ScopedRealm, GrantAuditEntry, DomainGrantState, GrantVerification as DomainGrantVerification } from './realm/authorization.js';
-export { resolveRealmSource, RealmSourceError } from './realm/source.js';
-export type { RealmSource, RealmAuditEntry, ResolvedRealmSource } from './realm/source.js';
+} from './dataDomain/authorization.js';
+export type { ScopedDataDomain, GrantAuditEntry, DomainGrantState, GrantVerification as DomainGrantVerification } from './dataDomain/authorization.js';
+export { resolveDataDomainSource, DataDomainSourceError } from './dataDomain/source.js';
+export type { DataDomainSource, DataDomainAuditEntry, ResolvedDataDomainSource } from './dataDomain/source.js';
 export type {
   TenantScope,
-  RealmActor,
-  RealmAccess,
+  DataDomainActor,
+  DataDomainAccess,
   DomainGrant,
   DomainDecision,
-} from './realm/types.js';
+} from './dataDomain/types.js';
 
-// --- E9.1/E9.2 onboarding: the commission gate and the day-one briefing ---
-export { CommissionLedger, verifyCommission } from './onboarding/commission.js';
-export type { CommissionDeps, CommissionAuditEntry, OpenCommissionInput } from './onboarding/commission.js';
+// --- E9.1/E9.2 onboarding: the seatGrant gate and the day-one briefing ---
+export { SeatGrantLedger, verifySeatGrant } from './onboarding/seatGrant.js';
+export type { SeatGrantDeps, SeatGrantAuditEntry, OpenSeatGrantInput } from './onboarding/seatGrant.js';
 export { composeBriefing } from './onboarding/briefing.js';
 export type { BriefingDeps, RoleBriefing } from './onboarding/briefing.js';
 export {
-  CommissionError,
-  commissionId,
+  SeatGrantError,
+  seatGrantId,
 } from './onboarding/types.js';
 export type {
-  CommissionRecord,
-  CommissionStage,
-  CommissionCheck,
-  CommissionVerdict,
-  CommissionGate,
+  SeatGrantRecord,
+  SeatGrantStage,
+  SeatGrantCheck,
+  SeatGrantVerdict,
+  SeatGrantGate,
   EvidenceGate,
   MentorshipCheck,
 } from './onboarding/types.js';
 
-// --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
+// --- DataDomain MCP stdio scaffold (read-only; process entry is dataDomain/mcp-stdio.ts) ---
 export {
-  createRealmMcpHandler,
+  createDataDomainMcpHandler,
   publicManifest,
   manifestUri,
   searchUri,
-  REALM_URI_SCHEME,
+  DATA_DOMAIN_URI_SCHEME,
   JSONRPC_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
   JSON_RPC_CODES,
-} from './realm/mcp.js';
+} from './dataDomain/mcp.js';
 export type {
   JsonRpcId,
   JsonRpcRequest,
   JsonRpcResponse,
   JsonRpcError,
   McpHandlerDeps,
-} from './realm/mcp.js';
+} from './dataDomain/mcp.js';
 
-// --- G6: read-only kernel tool face over MCP (memory.recall / traces.query) ---
+// --- G6: read-only runtime tool face over MCP (memory.recall / traces.query) ---
 export {
-  createKernelToolsMcpHandler,
-  KERNEL_MCP_PROTOCOL_VERSION,
-  KERNEL_MCP_ERROR_CODES,
-} from './mcp/kernel-tools.js';
-export type { KernelMcpActor, KernelToolsMcpDeps } from './mcp/kernel-tools.js';
+  createRuntimeToolsMcpHandler,
+  RUNTIME_MCP_PROTOCOL_VERSION,
+  RUNTIME_MCP_ERROR_CODES,
+} from './mcp/runtime-tools.js';
+export type { RuntimeMcpActor, RuntimeToolsMcpDeps } from './mcp/runtime-tools.js';
 
-// --- Vault treasure map & recovery protocol (E8.1/E8.2; references only, sealed at rest) ---
-export { buildVault, parseMap, assertMap } from './vault/map.js';
-export { seal, open, validateEnvelopeShape } from './vault/cipher.js';
-export type { VaultKey } from './vault/cipher.js';
-export { inventoryFromRealm } from './vault/inventory.js';
-export { restoreDryRun, restorePlan } from './vault/restore.js';
+// --- Backup treasure map & recovery protocol (E8.1/E8.2; references only, sealed at rest) ---
+export { buildBackup, parseMap, assertMap } from './backup/map.js';
+export { seal, open, validateEnvelopeShape } from './backup/cipher.js';
+export type { BackupKey } from './backup/cipher.js';
+export { inventoryFromDataDomain } from './backup/inventory.js';
+export { restoreDryRun, restorePlan } from './backup/restore.js';
 export {
   packFull,
   openBundle,
@@ -444,17 +444,17 @@ export {
   openMap,
   restoreFromBundle,
   FsRestoreSink,
-} from './vault/bundle.js';
-export type { PackedFull } from './vault/bundle.js';
+} from './backup/bundle.js';
+export type { PackedFull } from './backup/bundle.js';
 export {
   MAP_FORMAT,
   BUNDLE_FORMAT,
-  VAULT_VERSION,
-  VaultError,
-  VaultDecryptError,
-  VaultFormatError,
-  VaultBundleMismatchError,
-} from './vault/types.js';
+  BACKUP_VERSION,
+  BackupError,
+  BackupDecryptError,
+  BackupFormatError,
+  BackupBundleMismatchError,
+} from './backup/types.js';
 export type {
   TreasureMap,
   MapMark,
@@ -463,9 +463,9 @@ export type {
   FullBundle,
   BundleItem,
   RestoreReport,
-  VaultInventory,
+  BackupInventory,
   RestoreSink,
-} from './vault/types.js';
+} from './backup/types.js';
 
 // --- Diary (E8.3 narrative memory) ---
 export { buildDiary } from './diary/build.js';
@@ -541,12 +541,12 @@ export type {
   DeriveResult,
 } from './delegation/delegation-contract.js';
 
-// --- Watch (design-self-host-loop §3): the trigger primitive, metrics + realm sources ---
+// --- Watch (design-self-host-loop §3): the trigger primitive, metrics + dataDomain sources ---
 export {
   WatchRegistry,
   WatchError,
   evaluatePredicate,
-  realmReading,
+  dataDomainReading,
   connectorReading,
   readPath,
   WATCH_SOURCES,

@@ -1,14 +1,14 @@
 /**
  * A-12: every outbound face (agent-card fetch, A2A dispatch, MCP connector
  * handshake and tool call) resolves a URL that an operator or an onboarding
- * caller supplied. Without a guard the kernel — which holds the internal bearer
+ * caller supplied. Without a guard the runtime — which holds the internal bearer
  * — will fetch whatever host that URL names, including the cloud metadata
  * endpoint and other addresses that are reachable from inside the deployment
  * but are not meant to be reachable from a request.
  *
  * The guard refuses any target that is not globally reachable, following the
  * RFC 6890 special-purpose registry. One deliberate deviation: 127.0.0.0/8 and
- * ::1 stay open. Zeus is local-first, so a loopback vassal / MCP server is the
+ * ::1 stay open. Zeus is local-first, so a loopback executor / MCP server is the
  * normal case, not the exception — and a loopback target cannot exfiltrate a
  * request to a third party. An operator who runs peers on a private network
  * re-opens those hosts explicitly through ZEUS_OUTBOUND_ALLOW_HOSTS.

@@ -149,7 +149,7 @@ interface DirtyFact {
   fact: FactRecord;
   text: string;
   hash: string;
-  realmId: string;
+  dataDomainId: string;
 }
 
 export class RecallIndex {
@@ -161,13 +161,13 @@ export class RecallIndex {
   readonly dimension: number;
 
   /**
-   * The index serves exactly one realm (the store keeps one index per realm),
-   * so every embed call carries the realm scope for the external-call audit
+   * The index serves exactly one dataDomain (the store keeps one index per dataDomain),
+   * so every embed call carries the dataDomain scope for the external-call audit
    * line (P2-5); absent only in bare constructed indexes (tests).
    */
   constructor(
     private readonly embedder: Embedder = new LocalHashingEmbedder(),
-    private readonly realmId?: string,
+    private readonly dataDomainId?: string,
   ) {
     this.dimension = embedder.dimension;
   }
@@ -198,7 +198,7 @@ export class RecallIndex {
         existing.fact = fact;
         continue;
       }
-      dirty.set(fact.factId, { fact, text, hash, realmId: fact.realmId ?? this.realmId });
+      dirty.set(fact.factId, { fact, text, hash, dataDomainId: fact.dataDomainId ?? this.dataDomainId });
     }
     for (const factId of [...this.docs.keys()]) {
       if (!keep.has(factId)) this.docs.delete(factId);
@@ -212,7 +212,7 @@ export class RecallIndex {
       return;
     }
     const text = factText(fact);
-    await this.embedEntry({ fact, text, hash: sha256Hex(text), realmId: fact.realmId ?? this.realmId });
+    await this.embedEntry({ fact, text, hash: sha256Hex(text), dataDomainId: fact.dataDomainId ?? this.dataDomainId });
   }
 
   /**
@@ -245,7 +245,7 @@ export class RecallIndex {
     const cached = this.vectorsByHash.get(entry.hash);
     const vector = cached && cached.length === this.dimension
       ? cached
-      : await this.embedder.embed(entry.text, { realmId: entry.realmId });
+      : await this.embedder.embed(entry.text, { dataDomainId: entry.dataDomainId });
     this.cacheVector(entry.hash, vector);
     this.docs.set(entry.fact.factId, {
       fact: entry.fact,
@@ -282,7 +282,7 @@ export class RecallIndex {
     const limit = options.limit ?? 10;
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
-    const queryVector = await this.embedder.embed(query, ...(this.realmId !== undefined ? [{ realmId: this.realmId }] : []));
+    const queryVector = await this.embedder.embed(query, ...(this.dataDomainId !== undefined ? [{ dataDomainId: this.dataDomainId }] : []));
 
     const docs = [...this.docs.values()];
     const lexicalById = this.bm25(queryTokens, docs);

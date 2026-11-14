@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 
 /**
  * E6.1 / audit C-28: `OversightDesk.ingest` had no caller anywhere in `src/`, so
- * a vassal that stopped at input-required never reached the desk in a booted
+ * a executor that stopped at input-required never reached the desk in a booted
  * process - only intent conflicts (conflictsToDesk) and memory disputes did.
- * These cases drive a real kernel so the gap is closed at the wiring, not at
+ * These cases drive a real runtime so the gap is closed at the wiring, not at
  * the unit level: a hook nobody calls still passes a unit test that calls it.
  */
 
@@ -21,16 +21,16 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
 }
 
-/** One vassal; its terminal state and the escalation payload it carries. */
-function vassalFetch(options: {
+/** One executor; its terminal state and the escalation payload it carries. */
+function executorFetch(options: {
   state: 'completed' | 'input-required';
   reason?: string;
   escalationOptions?: string[];
@@ -68,7 +68,7 @@ function vassalFetch(options: {
           ...(options.reason || options.escalationOptions
             ? {
                 'x-zeus-escalation': {
-                  level: 'driver',
+                  level: 'operator',
                   ...(options.reason ? { reason: options.reason } : {}),
                   ...(options.escalationOptions ? { options: options.escalationOptions } : {}),
                 },
@@ -84,26 +84,26 @@ function vassalFetch(options: {
 
 const seeds = ['http://127.0.0.1/loom/api/a2a/agent-card'];
 
-describe('E6.1 task-input escalations reach the oversight desk in a booted kernel', () => {
+describe('E6.1 task-input escalations reach the oversight desk in a booted runtime', () => {
   it('raises a pending escalation when a branch stops at input-required', async () => {
-    const kernel = await bootKernel({
-      fetchImpl: vassalFetch({
+    const runtime = await bootRuntime({
+      fetchImpl: executorFetch({
         state: 'input-required',
         reason: 'irreversible: merge',
         escalationOptions: ['approve', 'reject'],
       }),
-      vassalSeeds: seeds,
+      executorSeeds: seeds,
     });
 
-    const result = await kernel.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    const result = await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
     expect(result.branches[0]?.state).toBe('input-required');
 
-    const escalations = kernel.oversight.list();
+    const escalations = runtime.oversight.list();
     expect(escalations).toHaveLength(1);
     expect(escalations[0]).toMatchObject({
       kind: 'task-input',
       status: 'pending',
-      vassal: 'loom',
+      executor: 'loom',
       skill: 'review',
       taskId: 'loom-task',
       reason: 'irreversible: merge',
@@ -114,11 +114,11 @@ describe('E6.1 task-input escalations reach the oversight desk in a booted kerne
   it('raises nothing when the branch completes', async () => {
     // The negative control: without it, a hook that fires on every settled
     // branch would look identical to one that fires only on input-required.
-    const kernel = await bootKernel({
-      fetchImpl: vassalFetch({ state: 'completed' }),
-      vassalSeeds: seeds,
+    const runtime = await bootRuntime({
+      fetchImpl: executorFetch({ state: 'completed' }),
+      executorSeeds: seeds,
     });
-    await kernel.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
-    expect(kernel.oversight.list()).toEqual([]);
+    await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
+    expect(runtime.oversight.list()).toEqual([]);
   });
 });

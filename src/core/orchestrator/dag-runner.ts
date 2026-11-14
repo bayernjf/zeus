@@ -37,7 +37,7 @@ export type DagNodeResult = {
 export type DagResult = {
   dagId: string;
   runId: string;
-  realm: DagSpec['realm'];
+  dataDomain: DagSpec['dataDomain'];
   nodes: DagNodeResult[];
   state: DagState;
   /** Longest dependency chain (node ids), for span/depth observability. */
@@ -53,7 +53,7 @@ export type DagRunnerOptions = Omit<OrchestratorOptions, 'newIntentId' | 'newRun
   resolveParams?: (node: DagNode, upstream: Map<string, FanOutResult>) => Record<string, unknown>;
   /**
    * S11 V3 slice 2 (design-tool-discovery §5): the chain-recovery layer. When
-   * supplied, a node whose fan-out fails (failed / partial / needs-driver) is
+   * supplied, a node whose fan-out fails (failed / partial / needs-operator) is
    * resolved by the fixed chain — retry (idempotent only) -> switch -> degrade
    * -> escalate — and retry/switch are *executed* as a re-dispatch to the
    * instruction's candidate under a fresh intent id (`::r{N}`), degrade marks
@@ -83,8 +83,8 @@ export type ChainRecoveryAudit = {
   intentId: string;
   nodeId: string;
   skill: string;
-  realm: DagSpec['realm'];
-  vassal: string;
+  dataDomain: DagSpec['dataDomain'];
+  executor: string;
   action: 'retry' | 'switch' | 'degrade';
   detail: string;
   at: string;
@@ -109,7 +109,7 @@ export class DagRunner {
     dispatcher: DispatchPort,
     private options: DagRunnerOptions = {},
     /** When supplied, DAG nodes run through this shared orchestrator so their
-     *  intents share the kernel's idempotency table and persist with it. When
+     *  intents share the runtime's idempotency table and persist with it. When
      *  omitted, the runner owns an isolated orchestrator (used by the library
      *  tests, which only care about graph math, not persistence). */
     orchestratorArg?: Orchestrator
@@ -199,7 +199,7 @@ export class DagRunner {
     const result: DagResult = {
       dagId,
       runId,
-      realm: spec.realm,
+      dataDomain: spec.dataDomain,
       nodes: ordered.map(node => nodeResults.get(node.id)!),
       state: aggregateDagState(nodeStates),
       criticalPath: criticalPath(ordered),
@@ -236,7 +236,7 @@ export class DagRunner {
    * counts against the per-node budget; when the budget is spent, the node
    * settles exactly as before (escalate semantics). `degrade` marks the node
    * `degraded` — a deliberate scope reduction whose dependents still run.
-   * An unexpected kernel-side throw is not a branch failure, so it fails the
+   * An unexpected runtime-side throw is not a branch failure, so it fails the
    * node as before without recovery.
    */
   private async runNodeWithRecovery(
@@ -252,7 +252,7 @@ export class DagRunner {
     const maxRetries = recovery?.maxRetries ?? 1;
     const tried = new Set<string>();
     let attempts = 0;
-    let vassals: string[] | undefined = node.vassals;
+    let executors: string[] | undefined = node.executors;
 
     for (;;) {
       const intentId = `${dagId}::${node.id}${attempts === 0 ? '' : `:r${attempts}`}`;
@@ -263,9 +263,9 @@ export class DagRunner {
         fanOut = await this.orchestrator.fanOut({
           intentId,
           skill: node.skill,
-          ...(vassals !== undefined ? { vassals } : {}),
+          ...(executors !== undefined ? { executors } : {}),
           params,
-          realm: spec.realm,
+          dataDomain: spec.dataDomain,
           ...(node.aggregation ? { aggregation: node.aggregation } : {}),
           ...(spec.branchTimeoutMs !== undefined ? { branchTimeoutMs: spec.branchTimeoutMs } : {}),
         });
@@ -277,13 +277,13 @@ export class DagRunner {
       if (state === 'completed') return { state, fanOut };
       if (recovery === undefined || plan === undefined || attempts >= maxRetries) return { state, fanOut };
 
-      const failedVassal = fanOut.branches.find(branch => !branch.ok)?.vassal;
-      if (failedVassal === undefined) return { state, fanOut };
+      const failedExecutor = fanOut.branches.find(branch => !branch.ok)?.executor;
+      if (failedExecutor === undefined) return { state, fanOut };
 
       const instruction = planRecovery(
         plan,
         stepIndex,
-        failedVassal,
+        failedExecutor,
         {
           step: node.skill,
           idempotent: node.idempotent ?? false,
@@ -303,32 +303,32 @@ export class DagRunner {
           intentId,
           nodeId: node.id,
           skill: node.skill,
-          realm: spec.realm,
-          vassal: failedVassal,
+          dataDomain: spec.dataDomain,
+          executor: failedExecutor,
           action: 'degrade',
-          detail: `node '${node.id}' degraded (optional step failed on '${failedVassal}')`,
+          detail: `node '${node.id}' degraded (optional step failed on '${failedExecutor}')`,
           at: this.nowIso(),
         });
-        return { state: 'degraded', skippedReason: `degraded by recovery chain (optional step failed on '${failedVassal}')` };
+        return { state: 'degraded', skippedReason: `degraded by recovery chain (optional step failed on '${failedExecutor}')` };
       }
 
       // retry / switch: re-dispatch to the instruction's candidate, counting
       // against the per-node budget. The failed provider joins `tried` so a
       // later switch never returns to it.
-      tried.add(failedVassal);
+      tried.add(failedExecutor);
       attempts++;
-      vassals = [instruction.candidate.provider];
+      executors = [instruction.candidate.provider];
       recovery.audit?.({
         intentId,
         nodeId: node.id,
         skill: node.skill,
-        realm: spec.realm,
-        vassal: instruction.candidate.provider,
+        dataDomain: spec.dataDomain,
+        executor: instruction.candidate.provider,
         action: instruction.action,
         detail:
           instruction.action === 'retry'
             ? `node '${node.id}' retried on '${instruction.candidate.provider}' (attempt ${attempts}/${maxRetries})`
-            : `node '${node.id}' switched from '${failedVassal}' to '${instruction.candidate.provider}' (attempt ${attempts}/${maxRetries})`,
+            : `node '${node.id}' switched from '${failedExecutor}' to '${instruction.candidate.provider}' (attempt ${attempts}/${maxRetries})`,
         at: this.nowIso(),
       });
     }
@@ -343,8 +343,8 @@ function mapFanOutState(status: FanOutResult['status']): DagNodeState {
   switch (status) {
     case 'completed':
       return 'completed';
-    case 'needs-driver':
-      return 'needs-driver';
+    case 'needs-operator':
+      return 'needs-operator';
     // partial/failed both leave downstream dependencies unsatisfied.
     case 'partial':
     case 'failed':
@@ -355,7 +355,7 @@ function mapFanOutState(status: FanOutResult['status']): DagNodeState {
 
 function aggregateDagState(states: Map<string, DagNodeState>): DagState {
   const list = [...states.values()];
-  if (list.some(state => state === 'needs-driver')) return 'needs-driver';
+  if (list.some(state => state === 'needs-operator')) return 'needs-operator';
   if (list.some(state => state === 'completed')) {
     // Every node completed on original scope -> completed. Any other settled
     // state (a failed node, a skipped dependent, or a degraded node — S11 V3

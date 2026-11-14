@@ -152,7 +152,7 @@ function isErrorSpan(span: TraceSpan): boolean {
  * Span-name mapping (GenAI semconv shapes, kept literal about what zeus knows):
  *  - intent root / branch / dag-node → agent spans (`execute_task`); the root
  *    carries the intent id as `zeus.intent.id`, branches carry the invoked
- *    vassal as `gen_ai.agent.name` and the skill as `zeus.skill`;
+ *    executor as `gen_ai.agent.name` and the skill as `zeus.skill`;
  *  - model → `chat <model>` with gen_ai.system/request.model/usage.* tokens;
  *  - tool → `execute_tool` with `gen_ai.tool.name` (the branch's skill);
  *  - decide / decision-step → zeus decision spans (`zeus.decision_step.name`).
@@ -179,10 +179,10 @@ function spanAttributes(span: TraceSpan): OtlpAttribute[] {
     ['zeus.run_id', span.spanId],
     ['zeus.outcome', span.outcome],
     ['zeus.skill', span.skill],
-    ['zeus.realm', span.realm],
+    ['zeus.dataDomain', span.dataDomain],
   ];
   if (span.kind === 'intent') base.push(['zeus.intent.id', span.spanId]);
-  if (span.vassal !== undefined) base.push(['gen_ai.agent.name', span.vassal]);
+  if (span.executor !== undefined) base.push(['gen_ai.agent.name', span.executor]);
   if (span.summary !== undefined) base.push(['zeus.span.summary', span.summary]);
 
   const call = span.call;
@@ -203,12 +203,12 @@ function spanAttributes(span: TraceSpan): OtlpAttribute[] {
     );
   }
   if (span.kind === 'tool') {
-    base.push(['gen_ai.operation.name', 'execute_tool'], ['gen_ai.tool.name', span.skill ?? span.vassal]);
+    base.push(['gen_ai.operation.name', 'execute_tool'], ['gen_ai.tool.name', span.skill ?? span.executor]);
   }
   if (span.step !== undefined) {
     base.push(
       ['zeus.decision_step.name', span.step.name],
-      ['zeus.decision_step.vassals', span.step.vassals?.join(',')],
+      ['zeus.decision_step.executors', span.step.executors?.join(',')],
       ['zeus.decision_step.conclusion', span.step.conclusion],
     );
   }

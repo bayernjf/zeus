@@ -5,7 +5,7 @@ import type { ConnectorCapabilities } from './types.js';
 /**
  * Minimal MCP stdio client (no SDK): newline-delimited JSON-RPC 2.0 over a
  * spawned subprocess. Used for local-first MCP servers that expose no HTTP
- * face (work-learn stdio, Zeus's own dist/realm/mcp-stdio.js).
+ * face (work-learn stdio, Zeus's own dist/dataDomain/mcp-stdio.js).
  *
  * One process is spawned per client and terminated on close(); matching the
  * HTTP client, Zeus never stays bound to an open connector channel beyond the

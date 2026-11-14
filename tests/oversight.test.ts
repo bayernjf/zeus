@@ -5,10 +5,10 @@ import type { A2AEvent, Task } from '../src/a2a/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 
 const request: DispatchRequest = {
-  vassal: 'pr-helper',
+  executor: 'pr-helper',
   skill: 'merge-pr',
   params: { mode: 'execute' },
-  realm: 'enterprise',
+  dataDomain: 'enterprise',
   runId: 'zeus-run-1',
 };
 
@@ -33,12 +33,12 @@ function escalationEvent(reason = 'irreversible: merge to main', options = ['app
     contextId: 'ctx',
     status: { state: 'input-required' },
     final: true,
-    'x-zeus-escalation': { level: 'driver', reason, options },
+    'x-zeus-escalation': { level: 'operator', reason, options },
   };
 }
 
 function failedResult(): DispatchResult {
-  return { ok: false, reason: 'boom', audit: { ts: 't', runId: 'r', vassal: 'pr-helper', skill: 'merge-pr', realm: 'enterprise', decision: 'dispatch-failed' } };
+  return { ok: false, reason: 'boom', audit: { ts: 't', runId: 'r', executor: 'pr-helper', skill: 'merge-pr', dataDomain: 'enterprise', decision: 'dispatch-failed' } };
 }
 
 describe('OversightDesk.ingest', () => {
@@ -50,10 +50,10 @@ describe('OversightDesk.ingest', () => {
     expect(escalation).toMatchObject({
       id: 'esc-1',
       runId: 'zeus-run-1',
-      vassal: 'pr-helper',
+      executor: 'pr-helper',
       skill: 'merge-pr',
       taskId: 'task-1',
-      realm: 'enterprise',
+      dataDomain: 'enterprise',
       status: 'pending',
       reason: 'irreversible: merge to main',
       options: ['approve', 'reject'],
@@ -87,9 +87,9 @@ describe('OversightDesk.ingest', () => {
     };
     const deskInstance = desk();
     const escalation = deskInstance.ingest(taskResult('input-required', [bareEvent]), request);
-    expect(escalation?.reason).toBe('vassal requests human input');
+    expect(escalation?.reason).toBe('executor requests human input');
     expect(escalation?.options).toEqual([]);
-    expect(extractEscalation([bareEvent]).reason).toBe('vassal requests human input');
+    expect(extractEscalation([bareEvent]).reason).toBe('executor requests human input');
   });
 });
 
@@ -99,20 +99,20 @@ describe('OversightDesk decisions', () => {
     const deskInstance = desk({ now: () => new Date('2026-09-21T00:00:00Z'), audit: e => audit.push(e) });
     deskInstance.ingest(taskResult('input-required', [escalationEvent()]), request);
 
-    const approved = deskInstance.approve('esc-1', 'driver supplied merge sha');
+    const approved = deskInstance.approve('esc-1', 'operator supplied merge sha');
     expect(approved.status).toBe('approved');
     expect(approved.decidedAt).toBe('2026-09-21T00:00:00.000Z');
-    expect(approved.decisionNote).toBe('driver supplied merge sha');
+    expect(approved.decisionNote).toBe('operator supplied merge sha');
     expect(deskInstance.list('pending')).toHaveLength(0);
     expect(deskInstance.list('approved')).toHaveLength(1);
-    expect(audit.at(-1)).toMatchObject({ action: 'approved', note: 'driver supplied merge sha' });
+    expect(audit.at(-1)).toMatchObject({ action: 'approved', note: 'operator supplied merge sha' });
   });
 
-  it('rejects a pending escalation and cancels the vassal-side task', async () => {
+  it('rejects a pending escalation and cancels the executor-side task', async () => {
     const canceled: Array<[string, string]> = [];
     const deskInstance = desk({
-      cancelTask: async (vassal, taskId) => {
-        canceled.push([vassal, taskId]);
+      cancelTask: async (executor, taskId) => {
+        canceled.push([executor, taskId]);
       },
     });
     deskInstance.ingest(taskResult('input-required', [escalationEvent()]), request);
@@ -128,12 +128,12 @@ describe('OversightDesk decisions', () => {
     const deskInstance = desk({
       audit: e => auditEvents.push(e),
       cancelTask: async () => {
-        throw new Error('vassal unreachable');
+        throw new Error('executor unreachable');
       },
     });
     deskInstance.ingest(taskResult('input-required', [escalationEvent()]), request);
 
-    await expect(deskInstance.reject('esc-1')).rejects.toThrow(/vassal unreachable/);
+    await expect(deskInstance.reject('esc-1')).rejects.toThrow(/executor unreachable/);
     expect(deskInstance.list('pending')).toHaveLength(1);
     // C-audit 22: a failed downstream cancel is governance-relevant and must
     // reach the audit trail with the reason, even though the escalation stayed
@@ -141,7 +141,7 @@ describe('OversightDesk decisions', () => {
     expect(auditEvents.at(-1)).toMatchObject({
       escalationId: 'esc-1',
       action: 'rejected',
-      detail: 'task cancel failed: vassal unreachable',
+      detail: 'task cancel failed: executor unreachable',
     });
   });
 
@@ -165,8 +165,8 @@ describe('S10 V2 interruption levels on the escalation queue', () => {
       intentId: 'intent-1',
       runId: 'run-1',
       skill: 'decide',
-      realm: 'personal',
-      conflict: { reason: 'split', stances: [{ stance: 'approve', vassals: ['a'] }, { stance: 'reject', vassals: ['b'] }] },
+      dataDomain: 'personal',
+      conflict: { reason: 'split', stances: [{ stance: 'approve', executors: ['a'] }, { stance: 'reject', executors: ['b'] }] },
     });
     expect(esc.interruptLevel).toBe(1);
   });
@@ -175,8 +175,8 @@ describe('S10 V2 interruption levels on the escalation queue', () => {
     const esc = desk().ingestMemoryDispute({
       id: 'disp-1',
       runId: 'run-1',
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       factId: 'f1',
       conflictingFacts: ['f1', 'f2'],
       reason: 'contradictory reliability',
@@ -186,12 +186,12 @@ describe('S10 V2 interruption levels on the escalation queue', () => {
 
   it('levels a delegation-limit escalation L1 by default and accepts the tick classifier verdict', () => {
     const defaulted = desk().ingestDelegationLimit({
-      watchId: 'w1', delegationId: 'c1', skill: 'merge', realm: 'personal',
+      watchId: 'w1', delegationId: 'c1', skill: 'merge', dataDomain: 'personal',
       limitReason: 'revoked', tickSeq: 1,
     });
     expect(defaulted.interruptLevel).toBe(1);
     const blocking = desk().ingestDelegationLimit({
-      watchId: 'w2', delegationId: 'c2', skill: 'merge', realm: 'personal',
+      watchId: 'w2', delegationId: 'c2', skill: 'merge', dataDomain: 'personal',
       limitReason: 'no-contract', tickSeq: 1, interruptLevel: 2,
     });
     expect(blocking.interruptLevel).toBe(2);

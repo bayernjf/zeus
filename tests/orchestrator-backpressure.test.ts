@@ -9,9 +9,9 @@ function statusEvent(taskId: string): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'completed' }, final: true };
 }
 
-function done(vassal: string): DispatchResult {
+function done(executor: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
   return { ok: true, task, events: [statusEvent(task.id)], injectedHits: [] };
@@ -24,17 +24,17 @@ async function flush(): Promise<void> {
 
 /** Dispatches stay open until the test releases them, making concurrency observable. */
 function gatedPort() {
-  const waiting: Array<{ vassal: string; finish: (result: DispatchResult) => void }> = [];
+  const waiting: Array<{ executor: string; finish: (result: DispatchResult) => void }> = [];
   const started: string[] = [];
   let active = 0;
   let maxActive = 0;
   const port: DispatchPort = {
     async dispatch(req: DispatchRequest) {
-      started.push(req.vassal!);
+      started.push(req.executor!);
       active += 1;
       maxActive = Math.max(maxActive, active);
       return new Promise<DispatchResult>(resolve => {
-        waiting.push({ vassal: req.vassal!, finish: result => { active -= 1; resolve(result); } });
+        waiting.push({ executor: req.executor!, finish: result => { active -= 1; resolve(result); } });
       });
     },
     async cancel() {},
@@ -48,7 +48,7 @@ function gatedPort() {
     releaseOne(result?: DispatchResult) {
       const next = waiting.shift();
       if (!next) throw new Error(`nothing in flight to release (started: ${started.join(',')})`);
-      next.finish(result ?? done(next.vassal));
+      next.finish(result ?? done(next.executor));
     },
     /** Finish whatever is in flight, letting queued branches take the freed slots. */
     async drain() {
@@ -76,7 +76,7 @@ function build(names: string[], options: OrchestratorOptions = {}) {
   return { gated, metrics, orchestrator };
 }
 
-const request = { skill: 'review', realm: 'personal' as const, params: {} };
+const request = { skill: 'review', dataDomain: 'personal' as const, params: {} };
 const SIX = ['a', 'b', 'c', 'd', 'e', 'f'];
 
 describe('E1.5 bounded fan-out', () => {
@@ -117,7 +117,7 @@ describe('E1.5 bounded fan-out', () => {
     const running = orchestrator.fanOut(request);
     await flush();
 
-    // 1 in flight, 2 queued; the other 3 refused before ever reaching a vassal
+    // 1 in flight, 2 queued; the other 3 refused before ever reaching a executor
     expect(gated.started).toEqual(['a']);
     expect(metrics.snapshot()).toMatchObject({ inFlight: 1, queueDepth: 2 });
 
@@ -144,7 +144,7 @@ describe('E1.5 bounded fan-out', () => {
     expect(result.branches.filter(b => !b.ok)).toHaveLength(2);
   });
 
-  it('returns the slot when a branch fails, so the kernel cannot wedge', async () => {
+  it('returns the slot when a branch fails, so the runtime cannot wedge', async () => {
     const { gated, orchestrator } = build(['a', 'b', 'c'], { maxConcurrentBranches: 1 });
     const running = orchestrator.fanOut(request);
     await flush();
@@ -153,14 +153,14 @@ describe('E1.5 bounded fan-out', () => {
     gated.releaseOne({
       ok: false,
       reason: 'upstream exploded',
-      audit: { ts: 't', vassal: 'a', decision: 'dispatch-failed' },
+      audit: { ts: 't', executor: 'a', decision: 'dispatch-failed' },
     });
     await flush();
     expect(gated.started).toEqual(['a', 'b']);
 
     await gated.drain();
     const result = await running;
-    expect(result.branches.map(b => b.vassal)).toEqual(['a', 'b', 'c']);
+    expect(result.branches.map(b => b.executor)).toEqual(['a', 'b', 'c']);
     expect(result.branches.map(b => b.ok)).toEqual([false, true, true]);
   });
 
@@ -178,7 +178,7 @@ describe('E1.5 bounded fan-out', () => {
     expect(gated.active).toBe(1);
     expect(gated.started.filter(name => name === 'a')).toHaveLength(2);
     await gated.drain();
-    expect((await resumed).branches.find(b => b.vassal === 'a')?.ok).toBe(true);
+    expect((await resumed).branches.find(b => b.executor === 'a')?.ok).toBe(true);
   });
 
   it('cancels branches waiting in the queue without ever dispatching them', async () => {
@@ -188,7 +188,7 @@ describe('E1.5 bounded fan-out', () => {
     expect(gated.started).toEqual(['a']);
 
     const cancelResult = await orchestrator.cancelIntent('intent-1');
-    expect(cancelResult.results.map(r => r.vassal).sort()).toEqual(['a', 'b', 'c']);
+    expect(cancelResult.results.map(r => r.executor).sort()).toEqual(['a', 'b', 'c']);
     await flush();
     // b and c were still queued: the abort must reject their wait, not reserve
     // them a slot for a dispatch after a finishes.
@@ -197,9 +197,9 @@ describe('E1.5 bounded fan-out', () => {
 
     gated.releaseOne();
     const result = await running;
-    const byName = new Map(result.branches.map(b => [b.vassal, b]));
-    expect(byName.get('b')).toMatchObject({ ok: false, state: 'canceled', reason: 'canceled by the driver' });
-    expect(byName.get('c')).toMatchObject({ ok: false, state: 'canceled', reason: 'canceled by the driver' });
+    const byName = new Map(result.branches.map(b => [b.executor, b]));
+    expect(byName.get('b')).toMatchObject({ ok: false, state: 'canceled', reason: 'canceled by the operator' });
+    expect(byName.get('c')).toMatchObject({ ok: false, state: 'canceled', reason: 'canceled by the operator' });
     expect(gated.started).toEqual(['a']);
   });
 
@@ -207,7 +207,7 @@ describe('E1.5 bounded fan-out', () => {
   // a throw from the start-of-branch bookkeeping (metrics, event emit, or the
   // onDiverted hook — boot wires onProgress to SSE broadcast + audit write +
   // memory consolidation) stranded the slot. One slot plus a zero-length queue
-  // turns that leak into a kernel that refuses every later intent.
+  // turns that leak into a runtime that refuses every later intent.
   it('returns the slot when the branch start bookkeeping throws (A-10)', async () => {
     const gated = gatedPort();
     const metrics = new ConcurrencyMetrics();
@@ -225,7 +225,7 @@ describe('E1.5 bounded fan-out', () => {
     await expect(orchestrator.fanOut(request)).rejects.toThrow(/observer blew up/);
 
     // The slot has to come back: with a leak the next intent would be refused
-    // outright (queue limit 0) and never reach a vassal at all.
+    // outright (queue limit 0) and never reach a executor at all.
     observer.mockRestore();
     const running = orchestrator.fanOut(request);
     await flush();

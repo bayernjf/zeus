@@ -5,13 +5,13 @@ import type { ProgressEvent } from '../src/orchestrator/progress.js';
 const at = '2026-10-12T00:00:00.000Z';
 
 function started(runId = 'r1:pr-helper'): ProgressEvent {
-  return { type: 'branch-started', intentId: 'i1', runId, vassal: 'pr-helper', skill: 'review', at };
+  return { type: 'branch-started', intentId: 'i1', runId, executor: 'pr-helper', skill: 'review', at };
 }
 function delta(seq: number, preview: string, runId = 'r1:pr-helper'): ProgressEvent {
-  return { type: 'branch-delta', intentId: 'i1', runId, vassal: 'pr-helper', seq, preview, at };
+  return { type: 'branch-delta', intentId: 'i1', runId, executor: 'pr-helper', seq, preview, at };
 }
 function ended(outcome: 'completed' | 'failed' | 'timeout' | 'canceled', runId = 'r1:pr-helper'): ProgressEvent {
-  return { type: 'branch-ended', intentId: 'i1', runId, vassal: 'pr-helper', outcome, at };
+  return { type: 'branch-ended', intentId: 'i1', runId, executor: 'pr-helper', outcome, at };
 }
 
 describe('streamViewFromProgress (design-streaming §3.3, S15 V3)', () => {
@@ -22,7 +22,7 @@ describe('streamViewFromProgress (design-streaming §3.3, S15 V3)', () => {
     expect(branch.started).toBe(true);
     expect(branch.settled).toBe(true);
     expect(branch.outcome?.outcome).toBe('ok');
-    expect(branch.vassal).toBe('pr-helper');
+    expect(branch.executor).toBe('pr-helper');
     expect(branch.skill).toBe('review');
   });
 

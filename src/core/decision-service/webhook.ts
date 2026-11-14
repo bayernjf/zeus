@@ -20,7 +20,7 @@
  *    exponential backoff; a 4xx other than 429 is a business rejection and
  *    is not retried.
  *  - Fail-soft by construction: emit() never throws into the decision path,
- *    and never writes back into the kernel. Real external channels stay
+ *    and never writes back into the runtime. Real external channels stay
  *    external — this module only ships the local delivery mechanism.
  */
 import { createHmac, randomBytes } from 'node:crypto';

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 /**
  * The environment surface is a contract with the operator, and both directions of
  * it drift: a variable can be read by the process and appear in no document (the
- * operator cannot reach a feature that exists - ZEUS_MAX_CONCURRENT_PER_VASSAL
+ * operator cannot reach a feature that exists - ZEUS_MAX_CONCURRENT_PER_EXECUTOR
  * shipped that way in the #9 batch), or it can be documented while nothing reads
  * it (worse, because it teaches someone to set a knob with no effect).
  *
@@ -41,9 +41,9 @@ function readInCode(): Map<string, string> {
  * is being widened instead of answered.
  */
 const DYNAMIC_READS: Record<string, string> = {
-  // src/vault/cli.ts:118 `env[envName]` - the name itself is operator-chosen via
-  // --passphrase-env, defaulting to this one (src/vault/cli.ts:56).
-  ZEUS_VAULT_PASSPHRASE: 'src/vault/cli.ts',
+  // src/backup/cli.ts:118 `env[envName]` - the name itself is operator-chosen via
+  // --passphrase-env, defaulting to this one (src/backup/cli.ts:56).
+  ZEUS_BACKUP_PASSPHRASE: 'src/backup/cli.ts',
   // src/core/org/execution/credentials.ts:232 `vars[fileEnv]` - the local
   // secret backend reads the optional secret-file path under this literal name.
   ZEUS_SECRET_FILE: 'src/core/org/execution/credentials.ts',

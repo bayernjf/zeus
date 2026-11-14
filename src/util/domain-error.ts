@@ -16,7 +16,7 @@ export type DomainErrorKind =
   | 'not-found'   // the referenced thing does not exist
   | 'conflict'    // the request contradicts current state
   | 'invalid'     // the request itself is malformed
-  | 'gate';       // a precondition gate refused (onboarding commission)
+  | 'gate';       // a precondition gate refused (onboarding seatGrant)
 
 export class DomainError extends Error {
   readonly kind: DomainErrorKind;

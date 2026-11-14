@@ -36,7 +36,7 @@ const store = new MemoryStore({ embedder });
 const events = [
   {
     eventId: 'e1',
-    realmId: 'personal',
+    dataDomainId: 'personal',
     runId: 'run-pilot',
     source: { agentId: 'verify-script' },
     kind: 'claim',
@@ -47,7 +47,7 @@ const events = [
   },
   {
     eventId: 'e2',
-    realmId: 'personal',
+    dataDomainId: 'personal',
     runId: 'run-pilot',
     source: { agentId: 'verify-script' },
     kind: 'claim',
@@ -64,7 +64,7 @@ for (const event of events) {
 }
 
 // Consolidate events into facts
-await store.consolidateRealm('personal');
+await store.consolidateDataDomain('personal');
 console.log('# consolidated:', events.length, 'events -> facts');
 
 // Recall

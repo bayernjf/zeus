@@ -6,7 +6,7 @@
  * for real execution-agent failure samples (deferred #40 trigger).
  *
  * The unit of analysis is the audit decision (E4.7). "Failure" means a branch
- * that did not complete as a healthy execution: transport failure, driver
+ * that did not complete as a healthy execution: transport failure, operator
  * abort, a refusal (skill/policy/unknown/revoked), an execution-delegation
  * denial, or an ack breach. Governance/state events (revocations, grants,
  * watch lifecycle, escalation outcomes) are neither success nor failure — they
@@ -30,11 +30,11 @@ export type FailureCategory =
 
 export type CategoryCounts = Partial<Record<FailureCategory, number>>;
 
-export type VassalAttribution = {
-  vassal: string;
-  /** Failure entries for this vassal. */
+export type ExecutorAttribution = {
+  executor: string;
+  /** Failure entries for this executor. */
   failures: number;
-  /** Entries carrying this vassal (success + failure; governance events excluded). */
+  /** Entries carrying this executor (success + failure; governance events excluded). */
   total: number;
   /** failures / total; 0 when total is 0. */
   rate: number;
@@ -44,7 +44,7 @@ export type VassalAttribution = {
 };
 
 export type FailurePattern = {
-  kind: 'vassal-concentrated' | 'category-concentrated' | 'reason-repeated';
+  kind: 'executor-concentrated' | 'category-concentrated' | 'reason-repeated';
   target: string;
   confidence: 'stable' | 'suggestive';
   evidence: string[];
@@ -62,7 +62,7 @@ export type FailureAttribution = {
     failureRate: number;
   };
   byCategory: CategoryCounts;
-  byVassal: VassalAttribution[];
+  byExecutor: ExecutorAttribution[];
   patterns: FailurePattern[];
 };
 
@@ -71,10 +71,10 @@ const FAILURE_CATEGORY: Partial<Record<AuditDecision, FailureCategory>> = {
   'branch-aborted': 'abort',
   'refused-skill-uninstalled': 'refused-skill',
   'refused-no-active-provider': 'refused-skill',
-  'refused-realm-policy': 'refused-policy',
+  'refused-dataDomain-policy': 'refused-policy',
   'refused-data-policy': 'refused-policy',
   'domain-refused': 'refused-policy',
-  'refused-unknown-vassal': 'refused-unknown',
+  'refused-unknown-executor': 'refused-unknown',
   'refused-revoked': 'refused-revoked',
   'execution-delegation-denied': 'delegation',
   'delegation-limit-exceeded': 'delegation',
@@ -85,7 +85,7 @@ const FAILURE_CATEGORY: Partial<Record<AuditDecision, FailureCategory>> = {
 const SUCCESS_DECISIONS: ReadonlySet<AuditDecision> = new Set([
   'dispatched',
   'domain-read',
-  'realm-write',
+  'dataDomain-write',
 ]);
 
 function classify(decision: AuditDecision): { kind: 'ok' | 'fail' | 'skip'; category?: FailureCategory } {
@@ -97,7 +97,7 @@ function classify(decision: AuditDecision): { kind: 'ok' | 'fail' | 'skip'; cate
 
 export function attributeFailures(entries: AuditEntry[]): FailureAttribution {
   const byCategory: CategoryCounts = {};
-  const perVassal = new Map<string, { failures: number; total: number; byCategory: CategoryCounts; reasons: string[] }>();
+  const perExecutor = new Map<string, { failures: number; total: number; byCategory: CategoryCounts; reasons: string[] }>();
   let failures = 0;
   let from: string | null = null;
   let to: string | null = null;
@@ -111,7 +111,7 @@ export function attributeFailures(entries: AuditEntry[]): FailureAttribution {
     touchWindow(entry.ts);
     const { kind, category } = classify(entry.decision);
     if (kind === 'skip') continue;
-    const bucket = perVassal.get(entry.vassal) ?? {
+    const bucket = perExecutor.get(entry.executor) ?? {
       failures: 0,
       total: 0,
       byCategory: {},
@@ -125,48 +125,48 @@ export function attributeFailures(entries: AuditEntry[]): FailureAttribution {
       byCategory[category] = (byCategory[category] ?? 0) + 1;
       if (entry.detail && !bucket.reasons.includes(entry.detail)) bucket.reasons.push(entry.detail);
     }
-    perVassal.set(entry.vassal, bucket);
+    perExecutor.set(entry.executor, bucket);
   }
 
-  const byVassal: VassalAttribution[] = [...perVassal.entries()]
-    .map(([vassal, b]) => ({
-      vassal,
+  const byExecutor: ExecutorAttribution[] = [...perExecutor.entries()]
+    .map(([executor, b]) => ({
+      executor,
       failures: b.failures,
       total: b.total,
       rate: b.total === 0 ? 0 : b.failures / b.total,
       byCategory: b.byCategory,
       sampleReasons: b.reasons.slice(0, 5),
     }))
-    .sort((a, b) => b.failures - a.failures || a.vassal.localeCompare(b.vassal));
+    .sort((a, b) => b.failures - a.failures || a.executor.localeCompare(b.executor));
 
   const patterns: FailurePattern[] = [];
-  for (const v of byVassal) {
+  for (const v of byExecutor) {
     if (v.failures < 2) continue;
     // reason-repeated: two or more failures with at most one distinct detail.
     if (v.sampleReasons.length <= 1 && v.failures >= 2 && v.sampleReasons.length >= 1) {
       patterns.push({
         kind: 'reason-repeated',
-        target: v.vassal,
+        target: v.executor,
         confidence: 'stable',
         evidence: [`${v.failures} failures share reason "${v.sampleReasons[0]}"`],
         writebackCandidate: true,
       });
     }
-    // vassal-concentrated: failures dominate this vassal's own entries.
+    // executor-concentrated: failures dominate this executor's own entries.
     // stable needs both mass (>= 3) and share (>= 60%); suggestive also fires
     // on fewer failures when they already form a large share (>= 2 and 40%).
     if (v.failures >= 3 && v.rate >= 0.6) {
       patterns.push({
-        kind: 'vassal-concentrated',
-        target: v.vassal,
+        kind: 'executor-concentrated',
+        target: v.executor,
         confidence: 'stable',
         evidence: [`${v.failures}/${v.total} entries failed (${Math.round(v.rate * 100)}%)`],
         writebackCandidate: true,
       });
     } else if (v.failures >= 2 && v.rate >= 0.4) {
       patterns.push({
-        kind: 'vassal-concentrated',
-        target: v.vassal,
+        kind: 'executor-concentrated',
+        target: v.executor,
         confidence: 'suggestive',
         evidence: [`${v.failures}/${v.total} entries failed (${Math.round(v.rate * 100)}%)`],
         writebackCandidate: false,
@@ -198,21 +198,21 @@ export function attributeFailures(entries: AuditEntry[]): FailureAttribution {
       failureRate: entries.length === 0 ? 0 : failures / entries.length,
     },
     byCategory,
-    byVassal,
+    byExecutor,
     patterns,
   };
 }
 
 /** Convenience over a single replayed decision: derive its participants' failure
  *  entries so a caller can feed replayed branches into the same summarizer.
- *  Read-only; does not touch the kernel. */
+ *  Read-only; does not touch the runtime. */
 export function participantsToEntries(
-  participants: ReadonlyArray<{ vassal: string; ok: boolean; reason?: string; timedOut?: boolean }>,
+  participants: ReadonlyArray<{ executor: string; ok: boolean; reason?: string; timedOut?: boolean }>,
   base: { ts: string; runId?: string; skill?: string },
 ): AuditEntry[] {
   return participants.map((p) => ({
     ts: base.ts,
-    vassal: p.vassal,
+    executor: p.executor,
     ...(base.runId !== undefined ? { runId: base.runId } : {}),
     ...(base.skill !== undefined ? { skill: base.skill } : {}),
     decision: p.ok ? 'dispatched' : p.timedOut ? 'sla-ack-breached' : 'dispatch-failed',

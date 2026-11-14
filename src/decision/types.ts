@@ -1,9 +1,9 @@
-import type { RealmType } from '../a2a/types.js';
+import type { DataDomainType } from '../a2a/types.js';
 
 /** Decision backend family (audit + selection policy use it; the port semantics are identical). */
 export type DecisionBackendKind = 'decision-model' | 'llm' | 'hub';
 
-/** Narrow, model-agnostic decision port. Kernel and wiring depend only on this. */
+/** Narrow, model-agnostic decision port. Runtime and wiring depend only on this. */
 export type DecisionBackend = {
   readonly kind: DecisionBackendKind;
   /** Audit identifier, e.g. 'jev-latest' / 'gpt-5.6-luna' / 'local:apus'. */
@@ -30,7 +30,7 @@ export type QuestionBase = {
   /** Human-readable decision criteria. */
   instructions: string;
   runId: string;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   /** Per-call timeout; defaults: decision model 1500ms / LLM 15000ms. */
   maxWaitMs?: number;
 };
@@ -111,7 +111,7 @@ export type DecisionTrace = {
 export type BackendOptions = {
   /** Whitelist of state keys allowed to leave the device. Default empty = send {}. */
   stateKeys?: string[];
-  /** enterprise realm state is never sent externally unless explicitly opted in (default false). */
+  /** enterprise dataDomain state is never sent externally unless explicitly opted in (default false). */
   allowEnterpriseExfiltration?: boolean;
   /** Sanitization hook applied after whitelist filtering (name/id/token replacement). */
   redact?: (state: Record<string, unknown>) => Record<string, unknown>;

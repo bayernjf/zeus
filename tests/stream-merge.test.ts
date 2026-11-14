@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { appendStreamFrame, emptyStreamView, settledViewMatchesMerge } from '../src/orchestrator/stream-merge.js';
 import type { FanOutResult } from '../src/orchestrator/types.js';
 
-const start = (runId: string, vassal = 'a1', skill = 'research') =>
-  ({ type: 'branch-started', runId, vassal, skill, at: 't0' }) as const;
+const start = (runId: string, executor = 'a1', skill = 'research') =>
+  ({ type: 'branch-started', runId, executor, skill, at: 't0' }) as const;
 const delta = (runId: string, seq: number, preview: string) =>
   ({ type: 'branch-delta', runId, seq, preview, at: 't1' }) as const;
 const settled = (runId: string, outcome: 'ok' | 'failed' | 'canceled' | 'timeout') =>
@@ -84,7 +84,7 @@ describe('appendStreamFrame (S15 V1)', () => {
 describe('settledViewMatchesMerge (S15 V1)', () => {
   function merge(branches: FanOutResult['branches']): FanOutResult {
     return {
-      intentId: 'intent-1', runId: 'r0', skill: 'research', realm: 'personal', branches, stream: [], positions: [],
+      intentId: 'intent-1', runId: 'r0', skill: 'research', dataDomain: 'personal', branches, stream: [], positions: [],
       decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0',
     };
   }
@@ -96,8 +96,8 @@ describe('settledViewMatchesMerge (S15 V1)', () => {
     v = appendStreamFrame(v, start('r2'));
     v = appendStreamFrame(v, settled('r2', 'failed'));
     const m = merge([
-      { vassal: 'a1', runId: 'r1', ok: true, events: [] },
-      { vassal: 'a2', runId: 'r2', ok: false, events: [] },
+      { executor: 'a1', runId: 'r1', ok: true, events: [] },
+      { executor: 'a2', runId: 'r2', ok: false, events: [] },
     ]);
     expect(settledViewMatchesMerge(v, m)).toBe(true);
   });
@@ -107,8 +107,8 @@ describe('settledViewMatchesMerge (S15 V1)', () => {
     v = appendStreamFrame(v, start('r1'));
     v = appendStreamFrame(v, settled('r1', 'ok'));
     const m = merge([
-      { vassal: 'a1', runId: 'r1', ok: true, events: [] },
-      { vassal: 'a2', runId: 'r2', ok: true, events: [] },
+      { executor: 'a1', runId: 'r1', ok: true, events: [] },
+      { executor: 'a2', runId: 'r2', ok: true, events: [] },
     ]);
     expect(settledViewMatchesMerge(v, m)).toBe(false);
   });
@@ -117,7 +117,7 @@ describe('settledViewMatchesMerge (S15 V1)', () => {
     let v = emptyStreamView();
     v = appendStreamFrame(v, start('r1'));
     v = appendStreamFrame(v, settled('r1', 'ok'));
-    const m = merge([{ vassal: 'a1', runId: 'r1', ok: false, events: [] }]);
+    const m = merge([{ executor: 'a1', runId: 'r1', ok: false, events: [] }]);
     expect(settledViewMatchesMerge(v, m)).toBe(false);
   });
 
@@ -128,8 +128,8 @@ describe('settledViewMatchesMerge (S15 V1)', () => {
     v = appendStreamFrame(v, start('r2'));
     v = appendStreamFrame(v, settled('r2', 'failed'));
     const m = merge([
-      { vassal: 'a1', runId: 'r1', ok: false, state: 'canceled', events: [] },
-      { vassal: 'a2', runId: 'r2', ok: false, state: 'failed', events: [] },
+      { executor: 'a1', runId: 'r1', ok: false, state: 'canceled', events: [] },
+      { executor: 'a2', runId: 'r2', ok: false, state: 'failed', events: [] },
     ]);
     expect(settledViewMatchesMerge(v, m)).toBe(true);
   });
@@ -138,7 +138,7 @@ describe('settledViewMatchesMerge (S15 V1)', () => {
     let v = emptyStreamView();
     v = appendStreamFrame(v, start('r9'));
     v = appendStreamFrame(v, settled('r9', 'ok'));
-    const m = merge([{ vassal: 'a1', runId: 'r1', ok: true, events: [] }]);
+    const m = merge([{ executor: 'a1', runId: 'r1', ok: true, events: [] }]);
     expect(settledViewMatchesMerge(v, m)).toBe(false);
   });
 });

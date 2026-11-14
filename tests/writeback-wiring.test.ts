@@ -7,15 +7,15 @@ import type { A2AEvent, Task } from '../src/a2a/types.js';
 
 /**
  * deferred #44 (design-memory-self-evolution §2.2 / §九, D2): the runtime
- * write-back wiring. Active selection-weight cards for a realm feed
+ * write-back wiring. Active selection-weight cards for a dataDomain feed
  * `selectCandidates` (weights), and the auto dispatch list follows the
- * selected face order — so a down-weighted vassal is dispatched later, and a
+ * selected face order — so a down-weighted executor is dispatched later, and a
  * retracted card restores the baseline order (reversibility is structural).
  */
 
-function done(vassal: string): DispatchResult {
+function done(executor: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
   const event: A2AEvent = { kind: 'status-update', taskId: task.id, contextId: 'ctx', status: { state: 'completed' }, final: true };
@@ -25,8 +25,8 @@ function done(vassal: string): DispatchResult {
 function immediatePort(started: string[] = []) {
   const port: DispatchPort = {
     async dispatch(req: DispatchRequest) {
-      started.push(req.vassal!);
-      return done(req.vassal!);
+      started.push(req.executor!);
+      return done(req.executor!);
     },
     async cancel() {},
   };
@@ -51,27 +51,27 @@ function build(names: string[], options: ConstructorParameters<typeof Orchestrat
 describe('deferred #44 — runtime write-back wiring at fanOut', () => {
   it('baseline: no provider → auto dispatch follows the lookup order', async () => {
     const { orchestrator, started } = build(['a', 'b']);
-    const result = await orchestrator.fanOut({ skill: 'review', realm: 'personal', realmId: 'r1', params: {} });
+    const result = await orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', dataDomainId: 'r1', params: {} });
     expect(started).toEqual(['a', 'b']);
-    expect(result.branches.map(b => b.vassal)).toEqual(['a', 'b']);
+    expect(result.branches.map(b => b.executor)).toEqual(['a', 'b']);
   });
 
-  it('baseline: provider present but no realmId → no weights applied (realm-scoped cards)', async () => {
+  it('baseline: provider present but no dataDomainId → no weights applied (dataDomain-scoped cards)', async () => {
     const { orchestrator, started } = build(['a', 'b'], {
       selectionWeightsProvider: () => ({ a: 0.5, b: 1 }),
     });
-    const result = await orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    const result = await orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
     expect(started).toEqual(['a', 'b']);
-    expect(result.branches.map(b => b.vassal)).toEqual(['a', 'b']);
+    expect(result.branches.map(b => b.executor)).toEqual(['a', 'b']);
   });
 
   it('active cards re-order the auto pool by factor (higher weight dispatches first)', async () => {
     const { orchestrator, started } = build(['a', 'b'], {
-      selectionWeightsProvider: realmId => (realmId === 'r1' ? { a: 0.5, b: 1 } : {}),
+      selectionWeightsProvider: dataDomainId => (dataDomainId === 'r1' ? { a: 0.5, b: 1 } : {}),
     });
-    const result = await orchestrator.fanOut({ skill: 'review', realm: 'personal', realmId: 'r1', params: {} });
+    const result = await orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', dataDomainId: 'r1', params: {} });
     expect(started).toEqual(['b', 'a']);
-    expect(result.branches.map(b => b.vassal)).toEqual(['b', 'a']);
+    expect(result.branches.map(b => b.executor)).toEqual(['b', 'a']);
   });
 
   it('named pins stay first regardless of weights (D2: sorting applies to the auto pool only)', async () => {
@@ -79,38 +79,38 @@ describe('deferred #44 — runtime write-back wiring at fanOut', () => {
       selectionWeightsProvider: () => ({ a: 0.5, b: 1 }),
     });
     const result = await orchestrator.fanOut({
-      skill: 'review', realm: 'personal', realmId: 'r1', params: {}, vassals: ['a'],
+      skill: 'review', dataDomain: 'personal', dataDomainId: 'r1', params: {}, executors: ['a'],
     });
     expect(started).toEqual(['a']);
-    expect(result.branches.map(b => b.vassal)).toEqual(['a']);
+    expect(result.branches.map(b => b.executor)).toEqual(['a']);
   });
 
-  it('boot contract: MemoryStore.selectionWeights(realmId) feeds the provider', async () => {
+  it('boot contract: MemoryStore.selectionWeights(dataDomainId) feeds the provider', async () => {
     const memory = new MemoryStore(() => {});
     memory.recordWriteback({
-      realmId: 'r1', source: { kind: 'reflection', target: 'a', confidence: 'stable' },
+      dataDomainId: 'r1', source: { kind: 'reflection', target: 'a', confidence: 'stable' },
       param: 'selection-weight', target: 'a', factor: 0.5, reason: 'test card',
     });
     const { orchestrator, started } = build(['a', 'b'], {
-      selectionWeightsProvider: realmId => memory.selectionWeights(realmId),
+      selectionWeightsProvider: dataDomainId => memory.selectionWeights(dataDomainId),
     });
-    const result = await orchestrator.fanOut({ skill: 'review', realm: 'personal', realmId: 'r1', params: {} });
+    const result = await orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', dataDomainId: 'r1', params: {} });
     expect(started).toEqual(['b', 'a']);
-    expect(result.branches.map(b => b.vassal)).toEqual(['b', 'a']);
+    expect(result.branches.map(b => b.executor)).toEqual(['b', 'a']);
   });
 
   it('retracting the card restores the baseline order (reversibility is structural)', async () => {
     const memory = new MemoryStore(() => {});
     const card = memory.recordWriteback({
-      realmId: 'r1', source: { kind: 'reflection', target: 'a', confidence: 'stable' },
+      dataDomainId: 'r1', source: { kind: 'reflection', target: 'a', confidence: 'stable' },
       param: 'selection-weight', target: 'a', factor: 0.5, reason: 'test card',
     });
     memory.retractWriteback(card.id);
     const { orchestrator, started } = build(['a', 'b'], {
-      selectionWeightsProvider: realmId => memory.selectionWeights(realmId),
+      selectionWeightsProvider: dataDomainId => memory.selectionWeights(dataDomainId),
     });
-    const result = await orchestrator.fanOut({ skill: 'review', realm: 'personal', realmId: 'r1', params: {} });
+    const result = await orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', dataDomainId: 'r1', params: {} });
     expect(started).toEqual(['a', 'b']);
-    expect(result.branches.map(b => b.vassal)).toEqual(['a', 'b']);
+    expect(result.branches.map(b => b.executor)).toEqual(['a', 'b']);
   });
 });

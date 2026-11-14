@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import { factId } from '../src/memory/consolidate.js';
@@ -11,8 +11,8 @@ import type { ClaimContent, MemoryEvent } from '../src/memory/types.js';
 // MemoryPort v1 §7 (D-6): the cross-agent consumer face. Mounted only behind
 // ZEUS_MEMORY_SERVICE_TOKENS ("namespace:token,..."), and each token binds to
 // exactly one namespace: the binding overrides whatever namespace the caller
-// claims in the body, so a consumer can never touch another realm's memory.
-const INTERNAL_TOKEN = 'driver-secret';
+// claims in the body, so a consumer can never touch another dataDomain's memory.
+const INTERNAL_TOKEN = 'operator-secret';
 const NS_A = 'job-agent';
 const NS_B = 'loom';
 const TOKEN_A = 'tok-a';
@@ -29,11 +29,11 @@ function claim(
   subject: string,
   predicate: string,
   object: unknown,
-  options: { agentId?: string; category?: ClaimContent['category']; realm?: string } = {},
+  options: { agentId?: string; category?: ClaimContent['category']; dataDomain?: string } = {},
 ): MemoryEvent {
   return {
     eventId,
-    realmId: options.realm ?? NS_A,
+    dataDomainId: options.dataDomain ?? NS_A,
     runId: `run-${eventId}`,
     source: { agentId: options.agentId ?? 'agent-a' },
     kind: 'claim',
@@ -58,15 +58,15 @@ async function setup(options: { persistState?: () => Promise<void> } = {}): Prom
   const store = new MemoryStore();
   store.append(claim('evt-1', 'pr-helper', 'language', 'typescript'));
   store.append(claim('evt-2', 'reviewer', 'language', 'python'));
-  store.append(claim('evt-3', 'driver', 'prefers', 'dark-mode', { category: 'preference' }));
+  store.append(claim('evt-3', 'operator', 'prefers', 'dark-mode', { category: 'preference' }));
   // A second bound namespace with its own fact, for the isolation assertions.
-  store.append(claim('evt-4', 'loom-agent', 'language', 'python', { agentId: 'agent-b', realm: NS_B }));
-  await store.consolidateRealm(NS_A);
-  await store.consolidateRealm(NS_B);
+  store.append(claim('evt-4', 'loom-agent', 'language', 'python', { agentId: 'agent-b', dataDomain: NS_B }));
+  await store.consolidateDataDomain(NS_A);
+  await store.consolidateDataDomain(NS_B);
   const audit: AuditLine[] = [];
   const persist = { calls: 0 };
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: INTERNAL_TOKEN,
     memoryStore: store,
@@ -93,9 +93,9 @@ async function recall(
 describe('v1 memory face mounting and auth', () => {
   it('is not mounted at all when no memory-service tokens are configured', async () => {
     // Fail-closed: without the tokens the four consumer routes must not exist,
-    // not even behind the driver's internal token.
+    // not even behind the operator's internal token.
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: INTERNAL_TOKEN,
       memoryStore: new MemoryStore(),
@@ -125,7 +125,7 @@ describe('v1 memory face mounting and auth', () => {
     expect(wrong.statusCode).toBe(401);
     expect(await wrong.json()).toEqual({ error: 'unauthorized' });
 
-    // The internal driver token does not cross over onto the service face.
+    // The internal operator token does not cross over onto the service face.
     const internal = await app.inject({ method: 'POST', url: '/api/v1/memory/recall', headers: INTERNAL_AUTH, payload: body });
     expect(internal.statusCode).toBe(401);
   });
@@ -406,8 +406,8 @@ describe('v1 memory counts', () => {
   it('breaks facts down by kind under the token-bound namespace', async () => {
     const { app, store } = await setup();
     store.append(claim('evt-5', 'deploy', 'target', 'staging'));
-    store.append(claim('evt-6', 'deploy', 'settled-decision', 'ship', { agentId: 'zeus-kernel', category: 'decision' }));
-    await store.consolidateRealm(NS_A);
+    store.append(claim('evt-6', 'deploy', 'settled-decision', 'ship', { agentId: 'zeus-runtime', category: 'decision' }));
+    await store.consolidateDataDomain(NS_A);
 
     const res = await app.inject({ method: 'GET', url: '/api/v1/memory/counts', headers: AUTH_A });
     expect(res.statusCode).toBe(200);

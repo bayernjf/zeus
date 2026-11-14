@@ -13,17 +13,17 @@ import { MetricsHistory } from '../src/observability/metrics-history.js';
  * counted.
  */
 
-function started(metrics: ConcurrencyMetrics, vassal: string, index: number) {
-  const runId = `r-${vassal}-${index}`;
-  metrics.branchStarted({ intentId: `i-${index}`, runId, vassal, skill: 'research', startedAt: '2026-10-06T00:00:00.000Z' });
+function started(metrics: ConcurrencyMetrics, executor: string, index: number) {
+  const runId = `r-${executor}-${index}`;
+  metrics.branchStarted({ intentId: `i-${index}`, runId, executor, skill: 'research', startedAt: '2026-10-06T00:00:00.000Z' });
   return { intentId: `i-${index}`, runId };
 }
 
 /** `count` branches, each started and then ended immediately. */
-function recordBranches(metrics: ConcurrencyMetrics, vassal: string, count: number, outcome: 'completed' | 'failed' = 'completed') {
+function recordBranches(metrics: ConcurrencyMetrics, executor: string, count: number, outcome: 'completed' | 'failed' = 'completed') {
   for (let index = 0; index < count; index++) {
-    const { intentId, runId } = started(metrics, vassal, index);
-    metrics.branchEnded(intentId, runId, vassal, outcome);
+    const { intentId, runId } = started(metrics, executor, index);
+    metrics.branchEnded(intentId, runId, executor, outcome);
   }
 }
 
@@ -31,7 +31,7 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
   it('defaults to a window and reports that window on the snapshot', () => {
     const metrics = new ConcurrencyMetrics();
     const snapshot = metrics.snapshot();
-    expect(snapshot.historyWindow.branchesPerVassal).toBe(DEFAULT_METRICS_HISTORY_WINDOW);
+    expect(snapshot.historyWindow.branchesPerExecutor).toBe(DEFAULT_METRICS_HISTORY_WINDOW);
     expect(snapshot.historyWindow.trimmedBranches).toBe(0);
   });
 
@@ -39,14 +39,14 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
     const metrics = new ConcurrencyMetrics({ historyWindowBranches: 4 });
     recordBranches(metrics, 'a1', 7);
 
-    const per = metrics.snapshot().perVassal.a1!;
+    const per = metrics.snapshot().perExecutor.a1!;
     expect(per.calls).toBe(7);
     expect(per.completed).toBe(7);
     // Trim happens once the list passes 2x the window, so 7 samples are all kept.
     expect(per.latency?.count).toBe(7);
 
     recordBranches(metrics, 'a1', 5);
-    const trimmed = metrics.snapshot().perVassal.a1!;
+    const trimmed = metrics.snapshot().perExecutor.a1!;
     expect(trimmed.calls, 'the count must not shrink when the window trims').toBe(12);
     // The bound is amortised: history is dropped in one slice once it passes 2x
     // the window, so the kept count is bounded by 2x, not by the window exactly.
@@ -68,8 +68,8 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
       metrics.branchEnded(intentId, runId, 'a1', 'canceled');
     }
     const snapshot = metrics.snapshot();
-    expect(snapshot.perVassal.a1!.failureRate).toBeCloseTo(0.5);
-    expect(snapshot.perVassal.a1!.canceled).toBe(6);
+    expect(snapshot.perExecutor.a1!.failureRate).toBeCloseTo(0.5);
+    expect(snapshot.perExecutor.a1!.canceled).toBe(6);
     expect(snapshot.finished).toBe(10);
     expect(snapshot.completed).toBe(2);
     expect(snapshot.failed).toBe(2);
@@ -88,7 +88,7 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
     const metrics = new ConcurrencyMetrics({ elapsed: () => { step += 100; next += step; return next; } });
     const first = started(metrics, 'a1', 0);
     metrics.branchEnded(first.intentId, first.runId, 'a1', 'completed');
-    const one = metrics.snapshot().perVassal.a1!;
+    const one = metrics.snapshot().perExecutor.a1!;
     expect(one.latency!.count).toBe(1);
     expect(one.latency!.p50Ms).toBeGreaterThan(0);
 
@@ -96,7 +96,7 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
       const branch = started(metrics, 'a1', i);
       metrics.branchEnded(branch.intentId, branch.runId, 'a1', 'completed');
     }
-    const after = metrics.snapshot().perVassal.a1!;
+    const after = metrics.snapshot().perExecutor.a1!;
     expect(after.calls).toBe(6);
     expect(after.latency!.count, 'the cached percentile must follow new samples').toBe(6);
     expect(after.latency!.maxMs).toBeGreaterThan(after.latency!.minMs);
@@ -107,7 +107,7 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
     metrics.branchEnded('i-x', 'r-x', 'ghost', 'completed');
     const snapshot = metrics.snapshot();
     expect(snapshot.finished).toBe(0);
-    expect(snapshot.perVassal.ghost).toBeUndefined();
+    expect(snapshot.perExecutor.ghost).toBeUndefined();
     expect(metrics.failureRateOf('ghost')).toBe(0);
     expect(metrics.p50MsOf('ghost')).toBeNull();
   });
@@ -137,7 +137,7 @@ describe('concurrency metrics history is bounded and says so (audit B-44)', () =
     // magnitude slower, which is what the pre-fix behaviour measured (12x the
     // marginal cost of the first batch by 1,600 intents).
     expect(warmMs, `cold=${coldMs.toFixed(1)}ms warm=${warmMs.toFixed(1)}ms`).toBeLessThan(Math.max(coldMs * 6, 250));
-    expect(warm.snapshot().perVassal.a1!.calls).toBe(4_500);
+    expect(warm.snapshot().perExecutor.a1!.calls).toBe(4_500);
   });
 });
 

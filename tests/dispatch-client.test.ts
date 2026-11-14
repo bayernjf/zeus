@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { A2AClientError, cancelTask, sendTask, sendTaskSubscribe } from '../src/dispatch/client.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 
-const TASK_URL = 'http://vassal.internal/api/a2a/tasks';
+const TASK_URL = 'http://executor.internal/api/a2a/tasks';
 
 const input = { taskUrl: TASK_URL, skill: 'report', params: {}, runId: 'r1' };
 

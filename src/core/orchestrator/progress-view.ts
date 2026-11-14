@@ -23,7 +23,7 @@ export function streamViewFromProgress(events: readonly ProgressEvent[]): Stream
       view = appendStreamFrame(view, {
         type: 'branch-started',
         runId: event.runId,
-        vassal: event.vassal,
+        executor: event.executor,
         skill: event.skill,
         at: event.at,
       });

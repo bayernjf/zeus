@@ -12,7 +12,7 @@ import { FACT_CATEGORY_BASELINE } from './types.js';
 /**
  * Pure, deterministic consolidation (design-memory-consolidation.md §4).
  *
- * Input: the full event history of one realm plus its current facts.
+ * Input: the full event history of one dataDomain plus its current facts.
  * Output: the next fact set and a manifest of what happened. Conflicting
  * claims are either resolved by a strict later-and-more-reliable rule, or
  * both sides are marked disputed and escalated — never silently overwritten.
@@ -52,12 +52,12 @@ function sortJson(value: unknown): unknown {
   return value;
 }
 
-function factKey(realmId: string, subject: string, predicate: string): string {
-  return `${realmId}␟${subject.trim().toLowerCase()}␟${predicate.trim().toLowerCase()}`;
+function factKey(dataDomainId: string, subject: string, predicate: string): string {
+  return `${dataDomainId}␟${subject.trim().toLowerCase()}␟${predicate.trim().toLowerCase()}`;
 }
 
-export function factId(realmId: string, subject: string, predicate: string, object: unknown): string {
-  return sha256Hex(`${factKey(realmId, subject, predicate)}␟${stableStringify(object)}`).slice(0, 24);
+export function factId(dataDomainId: string, subject: string, predicate: string, object: unknown): string {
+  return sha256Hex(`${factKey(dataDomainId, subject, predicate)}␟${stableStringify(object)}`).slice(0, 24);
 }
 
 function reliabilityOf(opts: ConsolidateOptions, agentId: string): number {
@@ -119,7 +119,7 @@ function groupClaims(events: MemoryEvent[]): ClaimGroup[] {
   for (const event of events) {
     if (event.kind !== 'claim' || !isClaimContent(event.content)) continue;
     const { subject, predicate, object } = event.content;
-    const key = factKey(event.realmId, subject, predicate);
+    const key = factKey(event.dataDomainId, subject, predicate);
     const objectJson = stableStringify(object);
     const groupKey = `${key}␟${objectJson}`;
     const existing = groups.get(groupKey);
@@ -158,12 +158,12 @@ export function consolidate(
   options: ConsolidateOptions = {},
 ): ConsolidateOutput {
   if (events.length > 0) {
-    const realmId = events[0]!.realmId; // guarded by the length check above
-    if (events.some(e => e.realmId !== realmId)) {
-      throw new MemoryConsolidationError('consolidation cannot mix events from multiple realms');
+    const dataDomainId = events[0]!.dataDomainId; // guarded by the length check above
+    if (events.some(e => e.dataDomainId !== dataDomainId)) {
+      throw new MemoryConsolidationError('consolidation cannot mix events from multiple dataDomains');
     }
-    if (facts.some(f => f.realmId !== realmId)) {
-      throw new MemoryConsolidationError('facts must belong to the same realm as the events');
+    if (facts.some(f => f.dataDomainId !== dataDomainId)) {
+      throw new MemoryConsolidationError('facts must belong to the same dataDomain as the events');
     }
   }
 
@@ -193,7 +193,7 @@ export function consolidate(
 
   for (const group of groupClaims(events)) {
     const { subject, predicate, object, events: claimEvents } = group;
-    const id = factId(events[0]?.realmId ?? '', subject, predicate, object);
+    const id = factId(events[0]?.dataDomainId ?? '', subject, predicate, object);
     if (seen.has(id)) continue;
     seen.add(id);
     if (tombstoned.has(id)) continue;
@@ -201,7 +201,7 @@ export function consolidate(
     const candidateTime = latestOccurredAt(claimEvents);
     const candidateReliability = meanReliability(claimEvents, options);
     const sameKey = nextFacts.filter(
-      f => factKey(f.realmId, f.subject, f.predicate) === group.key &&
+      f => factKey(f.dataDomainId, f.subject, f.predicate) === group.key &&
         f.status !== 'superseded' && f.status !== 'retracted',
     );
     const matching = sameKey.find(f => stableStringify(f.object) === group.objectJson);
@@ -223,7 +223,7 @@ export function consolidate(
     }
 
     // Strict rule: strictly later observation AND strictly more reliable
-    // authors supersede; anything else stays a dispute for the driver.
+    // authors supersede; anything else stays a dispute for the operator.
     const resolvable = clashing.filter(
       f =>
         latestOccurredAt(provenanceEvents(f.provenance, events)) < candidateTime &&
@@ -243,7 +243,7 @@ export function consolidate(
 
     const newFact: FactRecord = {
       factId: id,
-      realmId: claimEvents[0]!.realmId, // a claim group always contains ≥1 event
+      dataDomainId: claimEvents[0]!.dataDomainId, // a claim group always contains ≥1 event
       subject,
       predicate,
       object,
@@ -253,7 +253,7 @@ export function consolidate(
       // output — data, never an operator instruction — so the fact is
       // classified agent-produced at consolidation, and the label travels
       // with the fact into later recall (old facts without the field fall
-      // back to kernel-resolved-realm at assembly time).
+      // back to runtime-resolved-dataDomain at assembly time).
       origin: 'agent-produced',
       ...(category !== undefined ? { kind: category } : {}),
       ...(explicitImportance !== undefined

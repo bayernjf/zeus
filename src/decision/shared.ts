@@ -3,7 +3,7 @@ import { DecisionBackendFailure } from './types.js';
 
 /**
  * Apply the data-sovereignty hard lines (design §8) before any state leaves the
- * device: enterprise realm is refused by default; object state is reduced to the
+ * device: enterprise dataDomain is refused by default; object state is reduced to the
  * explicit stateKeys whitelist (default empty); an optional redact hook runs last.
  * String state is treated as already-minimized instruction text (no fields to filter).
  */
@@ -11,10 +11,10 @@ export function prepareState(
   request: QuestionBase,
   options: BackendOptions
 ): { state: Record<string, unknown> | string; stateKeys: string[] } {
-  if (request.realm === 'enterprise' && !options.allowEnterpriseExfiltration) {
+  if (request.dataDomain === 'enterprise' && !options.allowEnterpriseExfiltration) {
     throw new DecisionBackendFailure(
       'invalid',
-      'enterprise realm state is not sent to external decision backends by default (set allowEnterpriseExfiltration per skill)'
+      'enterprise dataDomain state is not sent to external decision backends by default (set allowEnterpriseExfiltration per skill)'
     );
   }
   if (typeof request.state === 'string') {

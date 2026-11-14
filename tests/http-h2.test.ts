@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { OversightDesk, conflictsToDesk } from '../src/oversight/oversight.js';
@@ -14,17 +14,17 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
-function okResult(vassal: string, state: TaskState = 'completed', stance?: string): DispatchResult {
+function okResult(executor: string, state: TaskState = 'completed', stance?: string): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state },
     artifacts: stance
@@ -35,7 +35,7 @@ function okResult(vassal: string, state: TaskState = 'completed', stance?: strin
 }
 
 function failResult(reason: string): DispatchResult {
-  return { ok: false, reason, audit: { ts: 't', vassal: 'v', decision: 'dispatched' as const } };
+  return { ok: false, reason, audit: { ts: 't', executor: 'v', decision: 'dispatched' as const } };
 }
 
 type Route = DispatchResult | ((req: DispatchRequest) => Promise<DispatchResult> | DispatchResult);
@@ -45,11 +45,11 @@ function makePort(routes: Record<string, Route>) {
   const port: DispatchPort & { cancelCalls: typeof cancelCalls } = {
     cancelCalls,
     async dispatch(req) {
-      const route = routes[req.vassal!];
+      const route = routes[req.executor!];
       return typeof route === 'function' ? route(req) : route!;
     },
-    async cancel(vassal, taskId) {
-      cancelCalls.push([vassal, taskId]);
+    async cancel(executor, taskId) {
+      cancelCalls.push([executor, taskId]);
     },
   };
   return port;
@@ -59,14 +59,14 @@ function lookupFor(names: string[]): TargetLookup {
   return { findBySkill: () => names.map(name => ({ name })) };
 }
 
-type DriverHarness = {
+type OperatorHarness = {
   app: FastifyInstance;
   port: ReturnType<typeof makePort>;
   desk: OversightDesk;
 };
 
-async function driverServer(routes: Record<string, Route>, names: string[]): Promise<DriverHarness> {
-  const registry = new VassalRegistry();
+async function operatorServer(routes: Record<string, Route>, names: string[]): Promise<OperatorHarness> {
+  const registry = new ExecutorRegistry();
   const signer = new Ed25519MemorySigner('zeus-rsk-test');
   const port = makePort(routes);
   const desk = new OversightDesk({ newId: () => 'esc-1' });
@@ -89,7 +89,7 @@ async function driverServer(routes: Record<string, Route>, names: string[]): Pro
   return { app, port, desk };
 }
 
-describe('HTTP H2 driver API — auth', () => {
+describe('HTTP H2 operator API — auth', () => {
   let app: FastifyInstance | undefined;
   afterEach(async () => {
     await app?.close();
@@ -98,19 +98,19 @@ describe('HTTP H2 driver API — auth', () => {
 
   it('does not mount H2 routes when no internal token is configured', async () => {
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('k'),
     });
-    const reply = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', realm: 'personal', params: {} } });
+    const reply = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     expect(reply.statusCode).toBe(404);
     expect(await app.inject({ method: 'GET', url: '/api/escalations' })).toMatchObject({ statusCode: 404 });
     expect(await app.inject({ method: 'GET', url: '/api/metrics' })).toMatchObject({ statusCode: 404 });
   });
 
   it('rejects H2 requests without or with a wrong bearer token', async () => {
-    const harness = await driverServer({ loom: okResult('loom') }, ['loom']);
+    const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    const noAuth = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', realm: 'personal', params: {} } });
+    const noAuth = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     expect(noAuth.statusCode).toBe(401);
     const wrong = await app.inject({
       method: 'GET',
@@ -123,7 +123,7 @@ describe('HTTP H2 driver API — auth', () => {
   });
 });
 
-describe('HTTP H2 driver API — intent lifecycle', () => {
+describe('HTTP H2 operator API — intent lifecycle', () => {
   let app: FastifyInstance | undefined;
   afterEach(async () => {
     await app?.close();
@@ -131,7 +131,7 @@ describe('HTTP H2 driver API — intent lifecycle', () => {
   });
 
   it('fans out an intent and returns the aggregated decision', async () => {
-    const harness = await driverServer(
+    const harness = await operatorServer(
       { loom: okResult('loom', 'completed', 'approve'), atlas: okResult('atlas', 'completed', 'approve') },
       ['loom', 'atlas']
     );
@@ -140,41 +140,41 @@ describe('HTTP H2 driver API — intent lifecycle', () => {
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'review', realm: 'enterprise', params: {} },
+      payload: { skill: 'review', dataDomain: 'enterprise', params: {} },
     });
     expect(reply.statusCode).toBe(200);
     const body = JSON.parse(reply.body);
     expect(body.status).toBe('completed');
     expect(body.intentId).toBe('intent-1');
     expect(body.decision.conclusion).toBe('approve');
-    expect(body.branches.map((b: { vassal: string }) => b.vassal)).toEqual(['loom', 'atlas']);
+    expect(body.branches.map((b: { executor: string }) => b.executor)).toEqual(['loom', 'atlas']);
   });
 
   it('rejects malformed intent requests with 400', async () => {
-    const harness = await driverServer({ loom: okResult('loom') }, ['loom']);
+    const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    const noSkill = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { realm: 'personal', params: {} } });
+    const noSkill = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { dataDomain: 'personal', params: {} } });
     expect(noSkill.statusCode).toBe(400);
-    const badRealm = await app.inject({
+    const badDataDomain = await app.inject({
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'x', realm: 'cloud', params: {} },
+      payload: { skill: 'x', dataDomain: 'cloud', params: {} },
     });
-    expect(badRealm.statusCode).toBe(400);
-    const badVassals = await app.inject({
+    expect(badDataDomain.statusCode).toBe(400);
+    const badExecutors = await app.inject({
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'x', realm: 'personal', params: {}, vassals: ['loom', 7] },
+      payload: { skill: 'x', dataDomain: 'personal', params: {}, executors: ['loom', 7] },
     });
-    expect(badVassals.statusCode).toBe(400);
+    expect(badExecutors.statusCode).toBe(400);
   });
 
   it('reads a stored intent and 404s on an unknown one', async () => {
-    const harness = await driverServer({ loom: okResult('loom') }, ['loom']);
+    const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', realm: 'personal', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     const ok = await app.inject({ method: 'GET', url: '/api/intents/intent-1', headers: AUTH });
     expect(ok.statusCode).toBe(200);
     expect(JSON.parse(ok.body).intentId).toBe('intent-1');
@@ -183,9 +183,9 @@ describe('HTTP H2 driver API — intent lifecycle', () => {
   });
 
   it('replays an idempotent intent without re-dispatching', async () => {
-    const harness = await driverServer({ loom: okResult('loom') }, ['loom']);
+    const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    const payload = { intentId: 'fixed', skill: 'x', realm: 'personal', params: {} };
+    const payload = { intentId: 'fixed', skill: 'x', dataDomain: 'personal', params: {} };
     const first = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
     expect(first.statusCode).toBe(200);
     const second = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
@@ -194,7 +194,7 @@ describe('HTTP H2 driver API — intent lifecycle', () => {
   });
 
   it('cancels non-terminal branches of an intent', async () => {
-    const harness = await driverServer(
+    const harness = await operatorServer(
       { loom: okResult('loom', 'input-required'), atlas: okResult('atlas', 'completed') },
       ['loom', 'atlas']
     );
@@ -203,27 +203,27 @@ describe('HTTP H2 driver API — intent lifecycle', () => {
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { intentId: 'cancel-me', skill: 'x', realm: 'enterprise', params: {} },
+      payload: { intentId: 'cancel-me', skill: 'x', dataDomain: 'enterprise', params: {} },
     });
     const reply = await app.inject({ method: 'POST', url: '/api/intents/cancel-me/cancel', headers: AUTH });
     expect(reply.statusCode).toBe(200);
     const body = JSON.parse(reply.body);
-    expect(body.results).toEqual([{ vassal: 'loom', taskId: 'loom-task', canceled: true }]);
+    expect(body.results).toEqual([{ executor: 'loom', taskId: 'loom-task', canceled: true }]);
     expect(harness.port.cancelCalls).toEqual([['loom', 'loom-task']]);
     const missing = await app.inject({ method: 'POST', url: '/api/intents/nope/cancel', headers: AUTH });
     expect(missing.statusCode).toBe(404);
   });
 });
 
-describe('HTTP H2 driver API — conflict escalation and resolution', () => {
+describe('HTTP H2 operator API — conflict escalation and resolution', () => {
   let app: FastifyInstance | undefined;
   afterEach(async () => {
     await app?.close();
     app = undefined;
   });
 
-  it('runs the full loop: split → escalate → driver settles → decision written back', async () => {
-    const harness = await driverServer(
+  it('runs the full loop: split → escalate → operator settles → decision written back', async () => {
+    const harness = await operatorServer(
       { loom: okResult('loom', 'completed', 'approve'), atlas: okResult('atlas', 'completed', 'reject') },
       ['loom', 'atlas']
     );
@@ -234,10 +234,10 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'review', realm: 'enterprise', params: {} },
+      payload: { skill: 'review', dataDomain: 'enterprise', params: {} },
     });
     expect(fan.statusCode).toBe(200);
-    expect(JSON.parse(fan.body).status).toBe('needs-driver');
+    expect(JSON.parse(fan.body).status).toBe('needs-operator');
 
     // 2. the conflict entered the oversight queue
     const list = await app.inject({ method: 'GET', url: '/api/escalations?status=pending', headers: AUTH });
@@ -252,7 +252,7 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
       options: ['approve', 'reject'],
     });
 
-    // 3. the driver settles it by accepting "approve"
+    // 3. the operator settles it by accepting "approve"
     const resolve = await app.inject({
       method: 'POST',
       url: '/api/escalations/esc-1/resolve',
@@ -265,7 +265,7 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
     expect(resolved.escalation.decidedStance).toBe('approve');
     expect(resolved.intent.decision.conclusion).toBe('approve');
     expect(resolved.intent.conflicts).toEqual([]);
-    expect(resolved.intent.driverResolution).toMatchObject({ escalationId: 'esc-1', stance: 'approve' });
+    expect(resolved.intent.operatorResolution).toMatchObject({ escalationId: 'esc-1', stance: 'approve' });
 
     // 4. the written-back decision is readable on the intent
     const intent = await app.inject({ method: 'GET', url: '/api/intents/intent-1', headers: AUTH });
@@ -273,12 +273,12 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
   });
 
   it('404s an unknown escalation and 400s a stance that is not an option', async () => {
-    const harness = await driverServer(
+    const harness = await operatorServer(
       { loom: okResult('loom', 'completed', 'approve'), atlas: okResult('atlas', 'completed', 'reject') },
       ['loom', 'atlas']
     );
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', realm: 'enterprise', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', dataDomain: 'enterprise', params: {} } });
 
     const missing = await app.inject({
       method: 'POST',
@@ -298,12 +298,12 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
   });
 
   it('409s when settling an already-decided conflict', async () => {
-    const harness = await driverServer(
+    const harness = await operatorServer(
       { loom: okResult('loom', 'completed', 'approve'), atlas: okResult('atlas', 'completed', 'reject') },
       ['loom', 'atlas']
     );
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', realm: 'enterprise', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', dataDomain: 'enterprise', params: {} } });
     const first = await app.inject({ method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH, payload: { stance: 'approve' } });
     expect(first.statusCode).toBe(200);
     const again = await app.inject({ method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH, payload: { stance: 'reject' } });
@@ -311,11 +311,11 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
   });
 
   it('reads one escalation by id without refetching the queue', async () => {
-    const harness = await driverServer({}, []);
+    const harness = await operatorServer({}, []);
     app = harness.app;
     const created = harness.desk.ingest(
       okResult('loom', 'input-required'),
-      { vassal: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+      { executor: 'loom', skill: 'review', dataDomain: 'enterprise', runId: 'run-1' } as DispatchRequest
     );
     const hit = await app.inject({ method: 'GET', url: `/api/escalations/${created!.id}`, headers: AUTH });
     expect(hit.statusCode).toBe(200);
@@ -325,12 +325,12 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
     expect((await app.inject({ method: 'GET', url: '/api/escalations/nope' })).statusCode).toBe(401);
   });
 
-  it('approves a task-input escalation through the same driver face', async () => {
-    const harness = await driverServer({}, []);
+  it('approves a task-input escalation through the same operator face', async () => {
+    const harness = await operatorServer({}, []);
     app = harness.app;
     const created = harness.desk.ingest(
       okResult('loom', 'input-required'),
-      { vassal: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+      { executor: 'loom', skill: 'review', dataDomain: 'enterprise', runId: 'run-1' } as DispatchRequest
     );
     expect(created).not.toBeNull();
     const reply = await app.inject({
@@ -344,14 +344,14 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
   });
 
   it('narrows the queue by kind, so a missing parameter and a memory dispute are not mixed', async () => {
-    const harness = await driverServer({}, []);
+    const harness = await operatorServer({}, []);
     app = harness.app;
     harness.desk.ingest(
       okResult('loom', 'input-required'),
-      { vassal: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+      { executor: 'loom', skill: 'review', dataDomain: 'enterprise', runId: 'run-1' } as DispatchRequest
     );
     harness.desk.ingestMemoryDispute({
-      id: 'mem-1', runId: 'run-2', realm: 'personal', factId: 'fact-a',
+      id: 'mem-1', runId: 'run-2', dataDomain: 'personal', factId: 'fact-a',
       conflictingFacts: ['fact-b'], reason: 'two agents disagree about the release date',
     });
 
@@ -382,7 +382,7 @@ describe('HTTP H2 driver API — conflict escalation and resolution', () => {
   });
 });
 
-describe('HTTP H2 driver API — metrics', () => {
+describe('HTTP H2 operator API — metrics', () => {
   let app: FastifyInstance | undefined;
   afterEach(async () => {
     await app?.close();
@@ -390,12 +390,12 @@ describe('HTTP H2 driver API — metrics', () => {
   });
 
   it('exposes a concurrency snapshot after fan-out', async () => {
-    const harness = await driverServer(
+    const harness = await operatorServer(
       { loom: okResult('loom', 'completed', 'approve'), atlas: failResult('down') },
       ['loom', 'atlas']
     );
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', realm: 'personal', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     const reply = await app.inject({ method: 'GET', url: '/api/metrics', headers: AUTH });
     expect(reply.statusCode).toBe(200);
     const snap = JSON.parse(reply.body);
@@ -403,19 +403,19 @@ describe('HTTP H2 driver API — metrics', () => {
     expect(snap.completed).toBe(1);
     expect(snap.failed).toBe(1);
     expect(snap.inFlight).toBe(0);
-    expect(snap.perVassal.loom.calls).toBe(1);
-    expect(snap.perVassal.atlas.failureRate).toBe(1);
+    expect(snap.perExecutor.loom.calls).toBe(1);
+    expect(snap.perExecutor.atlas.failureRate).toBe(1);
   });
 
   it('answers an unreadable history file with a generic 500 and never echoes its path (m-15)', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'zeus-metrics-history-'));
     try {
       // A directory at the file path makes readFile reject with EISDIR, whose
-      // raw message carries the realm-local absolute path.
+      // raw message carries the dataDomain-local absolute path.
       const filePath = join(dir, 'history.jsonl');
       await mkdir(filePath);
       app = await createHttpServer({
-        registry: new VassalRegistry(),
+        registry: new ExecutorRegistry(),
         signer: new Ed25519MemorySigner('zeus-rsk-test'),
         internalToken: TOKEN,
         metrics: new ConcurrencyMetrics(),
@@ -442,20 +442,20 @@ describe('HTTP H2 POST /api/intents — idempotency error classification (audit 
   });
 
   it('reports a reused idempotency key with different fields as 409 conflict, not 500', async () => {
-    const harness = await driverServer({ loom: okResult('loom') }, ['loom']);
+    const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
     const first = await app.inject({
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { intentId: 'dup-key-1', skill: 'research', realm: 'personal', params: { q: 'A' }, vassals: ['loom'] },
+      payload: { intentId: 'dup-key-1', skill: 'research', dataDomain: 'personal', params: { q: 'A' }, executors: ['loom'] },
     });
     expect(first.statusCode).toBe(200);
     const again = await app.inject({
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { intentId: 'dup-key-1', skill: 'research', realm: 'personal', params: { q: 'B' }, vassals: ['loom'] },
+      payload: { intentId: 'dup-key-1', skill: 'research', dataDomain: 'personal', params: { q: 'B' }, executors: ['loom'] },
     });
     expect(again.statusCode).toBe(409);
     expect(again.json()).toMatchObject({ error: 'conflict' });
@@ -464,7 +464,7 @@ describe('HTTP H2 POST /api/intents — idempotency error classification (audit 
 
   it('replays the stored result for the same key and payload without dispatching again', async () => {
     let calls = 0;
-    const harness = await driverServer(
+    const harness = await operatorServer(
       {
         loom: async () => {
           calls += 1;
@@ -474,7 +474,7 @@ describe('HTTP H2 POST /api/intents — idempotency error classification (audit 
       ['loom'],
     );
     app = harness.app;
-    const payload = { intentId: 'replay-1', skill: 'research', realm: 'personal', params: { q: 'A' }, vassals: ['loom'] };
+    const payload = { intentId: 'replay-1', skill: 'research', dataDomain: 'personal', params: { q: 'A' }, executors: ['loom'] };
     const first = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
     const again = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
     expect(first.statusCode).toBe(200);

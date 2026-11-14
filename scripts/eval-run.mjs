@@ -3,7 +3,7 @@
 /**
  * design-evals (tech map S7) V2 — offline eval runner (design-evals §5 V2).
  *
- * Reads the eval case set (evals/cases/index.mjs), boots one kernel per case
+ * Reads the eval case set (evals/cases/index.mjs), boots one runtime per case
  * with scripted execution agents (fetchImpl), runs the intent, collects the
  * settled {outcome, audit, events} trace and feeds the V1 pure scorer
  * (src/evals/score.ts). Output is a machine-readable JSON report plus a
@@ -12,7 +12,7 @@
  *
  * Rules it obeys so it can run unattended: loopback-only scripted agents
  * (no real network), no state written outside the repo's evals/reports
- * directory, only the kernels it starts, and a wall-clock budget.
+ * directory, only the runtimes it starts, and a wall-clock budget.
  *
  * Usage (requires `npm run build` first — it exercises the shipped artifact):
  *   node scripts/eval-run.mjs                     # run all cases, print summary
@@ -44,7 +44,7 @@
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { bootKernel } from '../dist/state/boot.js';
+import { bootRuntime } from '../dist/state/boot.js';
 import { scoreEvalRun, summarizeEvalRun, diffAgainstBaseline } from '../dist/evals/score.js';
 import { createEvalJudgeFromEnv } from '../dist/evals/judge.js';
 import { JsonlEvalRunsStore } from '../dist/evals/runs-store.js';
@@ -178,7 +178,7 @@ function renderPrComment(report, regressions, caseFailures) {
  * Build a scripted-agent fetch implementation for one case. Each agent answers
  * its agent-card and settles tasks with the declared stance/rationale from the
  * task data part (`stance` / `rationale` keys — the shapes src/orchestrator/
- * aggregate.ts extractStance reads). `dataPolicy` rides the card's fealty so
+ * aggregate.ts extractStance reads). `dataPolicy` rides the card's handshake so
  * the data-policy family can exercise the origin gate. `fail` drives the
  * S10/S11 adversarial cases: the branch's task settles failed, so the recovery
  * chain (branch-failed -> escalate) is what the scorer observes. S12 planner
@@ -270,9 +270,9 @@ function cardFor(name, dataPolicy, isPlanner) {
       : [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'eval-domain',
-      dataRealms: ['personal'], dataPolicy,
+      dataDomains: ['personal'], dataPolicy,
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -292,7 +292,7 @@ function makeOversightBridge(audits) {
     if (entry.action === 'escalated' && entry.interruptLevel !== undefined) {
       audits.push({
         ts: entry.ts,
-        vassal: entry.vassal,
+        executor: entry.executor,
         runId: entry.runId,
         decision: /** @type {import('../dist/dispatch/dispatcher.js').AuditEntry['decision']} */ (`interrupt-level-${entry.interruptLevel}`),
         detail: entry.escalationId,
@@ -313,11 +313,11 @@ function makeOversightBridge(audits) {
  *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
  *   planFlow?: { goal: string; plannerSkills?: string[] };
  *   recovery?: { intents: Array<{ intentId: string, status: string, branch: Record<string, unknown> }>; maxAutoResumeMs?: number };
- *   isolation?: { transport: 'stdio' | 'http'; tier: string; manifest: Record<string, unknown>; authorizedRealms: string[]; containerRuntimeAvailable: boolean };
+ *   isolation?: { transport: 'stdio' | 'http'; tier: string; manifest: Record<string, unknown>; authorizedDataDomains: string[]; containerRuntimeAvailable: boolean };
  * }} RunnerCase
  */
 
-/** Build a personal-realm claim event for the guardrails family (S8): the
+/** Build a personal-dataDomain claim event for the guardrails family (S8): the
  *  memory assembly path scans recalled fact text through the content-risk
  *  chain, so a case seeds facts whose rendered text carries (or deliberately
  *  lacks) the adversarial signals.
@@ -327,7 +327,7 @@ function makeOversightBridge(audits) {
 function memoryClaim(m) {
   return {
     eventId: m.id,
-    realmId: 'personal',
+    dataDomainId: 'personal',
     runId: 'eval-memory-seed',
     source: { agentId: 'eval-seed' },
     kind: 'claim',
@@ -360,33 +360,33 @@ async function runCase(c) {
         onTrace: t => decisionTraces.push(t),
       })
     : undefined;
-  const kernel = await bootKernel({
+  const runtime = await bootRuntime({
     fetchImpl: makeFetch(c.agents),
-    vassalSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
+    executorSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
     dispatchAudit: e => audits.push(e),
     oversightAudit: makeOversightBridge(audits),
     ...(c.costLimit !== undefined ? { costLimit: c.costLimit } : {}),
     ...(scriptedBackend !== undefined ? { decisionBackend: scriptedBackend } : {}),
   });
   if (c.memory !== undefined) {
-    for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
-    kernel.memoryStore?.consolidateRealm('personal');
+    for (const m of c.memory) runtime.memoryStore?.append(memoryClaim(m));
+    runtime.memoryStore?.consolidateDataDomain('personal');
   }
 
   // S12 planning family: drive PlanFlow instead of a single fan-out. The
   // planner fan-outs land on the same dispatch-audit collection; require
   // confirmation so the case observes the verdict without executing the DAG.
   if (c.planFlow !== undefined) {
-    const planFlow = kernel.planFlow;
-    if (planFlow === undefined) throw new Error(`case ${c.id}: kernel has no planFlow component`);
+    const planFlow = runtime.planFlow;
+    if (planFlow === undefined) throw new Error(`case ${c.id}: runtime has no planFlow component`);
     const planResult = await planFlow.run({
       goal: { description: c.planFlow.goal },
-      realm: 'personal',
+      dataDomain: 'personal',
       ...(c.planFlow.plannerSkills !== undefined ? { plannerSkills: c.planFlow.plannerSkills } : {}),
       requireConfirmation: true,
     });
     /** @type {import('../src/evals/score.js').EvalTrace} */
-    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(planning)', runId: '(planning)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [], planFlow: planResult };
+    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(planning)', runId: '(planning)', skill: c.skill, dataDomain: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [], planFlow: planResult };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
       trace,
@@ -414,7 +414,7 @@ async function runCase(c) {
       ...(c.recovery.maxAutoResumeMs !== undefined ? { maxAutoResumeMs: c.recovery.maxAutoResumeMs } : {}),
     });
     /** @type {import('../src/evals/score.js').EvalTrace} */
-    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(recovery)', runId: '(recovery)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [] };
+    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(recovery)', runId: '(recovery)', skill: c.skill, dataDomain: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [] };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
       trace,
@@ -426,10 +426,10 @@ async function runCase(c) {
     const { classifyIsolation, validateIsolation } = await import('../dist/mcp/isolation.js');
     const manifest = /** @type {import('../dist/mcp/isolation.js').IsolationManifest} */ (c.isolation.manifest);
     const level = classifyIsolation({ transport: c.isolation.transport, tier: /** @type {import('../dist/trust/tier.js').TrustTier} */ (c.isolation.tier), manifest });
-    const verdict = validateIsolation({ level, manifest, authorizedRealms: c.isolation.authorizedRealms, containerRuntimeAvailable: c.isolation.containerRuntimeAvailable });
+    const verdict = validateIsolation({ level, manifest, authorizedDataDomains: c.isolation.authorizedDataDomains, containerRuntimeAvailable: c.isolation.containerRuntimeAvailable });
     /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = {
-      outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(isolation)', runId: '(isolation)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }),
+      outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(isolation)', runId: '(isolation)', skill: c.skill, dataDomain: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }),
       audit: audits,
       events: [],
       isolation: { level, valid: verdict.ok, reasons: verdict.ok ? [] : verdict.reasons },
@@ -445,9 +445,9 @@ async function runCase(c) {
   // intent-partial) through the booted hub before the fan-out dispatches.
   /** @type {import('../dist/orchestrator/progress.js').ProgressEvent[]} */
   const events = [];
-  const unsubscribe = kernel.progressHub?.subscribe(intentId, e => events.push(e));
+  const unsubscribe = runtime.progressHub?.subscribe(intentId, e => events.push(e));
   try {
-    const outcome = await kernel.orchestrator.fanOut(
+    const outcome = await runtime.orchestrator.fanOut(
       /** @type {import('../dist/orchestrator/types.js').FanOutRequest} */ ({
         intentId,
         skill: c.skill,
@@ -500,10 +500,44 @@ const results = [];
 // W4-1: the LLM-as-judge is opt-in (ZEUS_EVAL_JUDGE_ENABLED + a resolvable hub
 // alias). One judge per process, created lazily on the first case that needs
 // it; without it, judge checks degrade to observe (fail-soft) in the scorer.
+// D9-2: this runner boots a scripted decision backend, which never registers
+// the process-wide hub resolver (only serve.ts does). When the judge is opted
+// in, bootstrap a hub wiring here purely for endpoint resolution; every
+// failure stays fail-soft and a run without the flag is byte-for-byte
+// unchanged.
 /** @type {import('../dist/evals/judge.js').EvalJudge | null | undefined} */
 let evalJudge;
-function judgeFor() {
-  if (evalJudge === undefined) evalJudge = createEvalJudgeFromEnv(process.env);
+let judgeHubBootstrapped = false;
+const JUDGE_ENV_TRUE = new Set(['1', 'true', 'yes', 'on']);
+async function judgeFor() {
+  if (evalJudge !== undefined) return evalJudge;
+  const judgeEnabled =
+    JUDGE_ENV_TRUE.has((process.env.ZEUS_EVAL_JUDGE_ENABLED ?? '').trim().toLowerCase());
+  if (judgeEnabled && !judgeHubBootstrapped) {
+    judgeHubBootstrapped = true;
+    const hubUrl = process.env.MODEL_HUB_URL?.trim();
+    const token = process.env.MODEL_HUB_TOKEN?.trim();
+    if (!hubUrl || !token) {
+      console.warn(
+        'eval judge: ZEUS_EVAL_JUDGE_ENABLED set but MODELHUB_URL/TOKEN missing — judge checks stay fail-soft',
+      );
+    } else {
+      try {
+        const { createHubDecisionBackend } = await import('../dist/decision/hub-backend.js');
+        await createHubDecisionBackend({
+          hubUrl,
+          token,
+          cachePath: process.env.MODEL_HUB_CACHE_PATH?.trim() || './data/model-cache.json',
+        });
+        console.log('eval judge: process hub resolver bootstrapped');
+      } catch (error) {
+        console.warn(
+          `eval judge: hub bootstrap failed — judge checks stay fail-soft: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  evalJudge = createEvalJudgeFromEnv(process.env);
   return evalJudge;
 }
 for (const c of evalCases) {
@@ -519,7 +553,7 @@ for (const c of evalCases) {
     // hub outage slows the run but cannot flip its outcome.
     const judgeExpectations = c.expect.filter(ex => ex.judge !== undefined);
     if (judgeExpectations.length > 0) {
-      const judge = judgeFor();
+      const judge = await judgeFor();
       if (judge !== null) {
         /** @type {import('../dist/evals/judge.js').JudgeVerdict[]} */
         const verdicts = [];

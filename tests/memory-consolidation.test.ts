@@ -7,8 +7,8 @@ import {
 } from '../src/memory/consolidate.js';
 import type { MemoryEvent } from '../src/memory/types.js';
 
-const REALM = 'realm-personal-1';
-const OTHER = 'realm-personal-2';
+const DATA_DOMAIN = 'dataDomain-personal-1';
+const OTHER = 'dataDomain-personal-2';
 
 let counter = 0;
 beforeEach(() => {
@@ -18,7 +18,7 @@ function event(partial: Partial<MemoryEvent> & Pick<MemoryEvent, 'content' | 'ki
   counter += 1;
   return {
     eventId: `evt-${counter}`,
-    realmId: REALM,
+    dataDomainId: DATA_DOMAIN,
     runId: 'run-1',
     source: { agentId: 'agent-a' },
     refs: [],
@@ -35,10 +35,10 @@ describe('memory consolidation P0', () => {
   it('acceptance 1/2: facts are produced only by consolidation and carry provenance', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', { confidence: 0.9 }));
-    expect(store.facts(REALM, REALM)).toEqual([]);
+    expect(store.facts(DATA_DOMAIN, DATA_DOMAIN)).toEqual([]);
 
-    const result = await store.consolidateRealm(REALM, { now: () => new Date('2026-09-22T10:05:00Z') });
-    const facts = store.facts(REALM, REALM);
+    const result = await store.consolidateDataDomain(DATA_DOMAIN, { now: () => new Date('2026-09-22T10:05:00Z') });
+    const facts = store.facts(DATA_DOMAIN, DATA_DOMAIN);
     expect(facts).toHaveLength(1);
     expect(facts[0]!.provenance).toEqual(['evt-1']);
     expect(facts[0]!.status).toBe('active');
@@ -52,23 +52,23 @@ describe('memory consolidation P0', () => {
     const store = new MemoryStore();
     store.append(event({ kind: 'observation', content: { note: 'saw something' } }));
     store.append(event({ kind: 'action', content: { did: 'thing' } }));
-    const result = await store.consolidateRealm(REALM);
+    const result = await store.consolidateDataDomain(DATA_DOMAIN);
     expect(result.ingested).toHaveLength(2);
-    expect(store.facts(REALM, REALM)).toEqual([]);
+    expect(store.facts(DATA_DOMAIN, DATA_DOMAIN)).toEqual([]);
   });
 
   it('acceptance 3: repeated observations of the same fact yield one fact with accumulated provenance', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node', { source: { agentId: 'agent-a' }, confidence: 0.8 }));
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
 
     store.append(claim('Zeus', 'runs-on', 'node', {
       eventId: 'evt-x', source: { agentId: 'agent-b' }, confidence: 0.6,
       occurredAt: '2026-09-22T10:10:00Z',
     }));
-    const result = await store.consolidateRealm(REALM, { now: () => new Date('2026-09-22T10:15:00Z') });
+    const result = await store.consolidateDataDomain(DATA_DOMAIN, { now: () => new Date('2026-09-22T10:15:00Z') });
 
-    const facts = store.facts(REALM, REALM);
+    const facts = store.facts(DATA_DOMAIN, DATA_DOMAIN);
     expect(facts).toHaveLength(1);
     expect(facts[0]!.provenance).toEqual(['evt-1', 'evt-x']);
     expect(facts[0]!.version).toBe(2);
@@ -82,9 +82,9 @@ describe('memory consolidation P0', () => {
       eventId: 'evt-2', source: { agentId: 'agent-b' },
       occurredAt: '2026-09-22T10:10:00Z',
     }));
-    const result = await store.consolidateRealm(REALM);
+    const result = await store.consolidateDataDomain(DATA_DOMAIN);
 
-    const facts = store.facts(REALM, REALM);
+    const facts = store.facts(DATA_DOMAIN, DATA_DOMAIN);
     expect(facts).toHaveLength(2);
     expect(facts.every(f => f.status === 'disputed')).toBe(true);
     expect(result.disputes).toHaveLength(1);
@@ -101,12 +101,12 @@ describe('memory consolidation P0', () => {
       eventId: 'evt-2', source: { agentId: 'expert' }, confidence: 0.7,
       occurredAt: '2026-09-22T11:00:00Z',
     }));
-    const result = await store.consolidateRealm(REALM, {
+    const result = await store.consolidateDataDomain(DATA_DOMAIN, {
       reliability: { rookie: 0.4, expert: 0.95 },
     });
 
-    const active = store.facts(REALM, REALM).filter(f => f.status === 'active');
-    const superseded = store.facts(REALM, REALM).filter(f => f.status === 'superseded');
+    const active = store.facts(DATA_DOMAIN, DATA_DOMAIN).filter(f => f.status === 'active');
+    const superseded = store.facts(DATA_DOMAIN, DATA_DOMAIN).filter(f => f.status === 'superseded');
     expect(active).toHaveLength(1);
     expect(active[0]!.object).toBe('bun');
     expect(superseded).toHaveLength(1);
@@ -116,11 +116,11 @@ describe('memory consolidation P0', () => {
   it('acceptance 5: a store rebuilt from exported state exposes identical facts and replays', async () => {
     const store = new MemoryStore();
     store.append(claim('Zeus', 'runs-on', 'node'));
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
 
     const rebuilt = MemoryStore.fromState(store.exportState());
-    expect(rebuilt.facts(REALM, REALM)).toEqual(store.facts(REALM, REALM));
-    expect(rebuilt.replay(REALM, 'run-1').events).toHaveLength(1);
+    expect(rebuilt.facts(DATA_DOMAIN, DATA_DOMAIN)).toEqual(store.facts(DATA_DOMAIN, DATA_DOMAIN));
+    expect(rebuilt.replay(DATA_DOMAIN, 'run-1').events).toHaveLength(1);
   });
 
   it('acceptance 6: confidence is weighted by historical reliability, not self-report alone', () => {
@@ -149,17 +149,17 @@ describe('memory consolidation P0', () => {
     expect(repeatedSameAgent).toBeCloseTo(weighted, 10);
   });
 
-  it('acceptance 7: cross-realm reads and appends are refused and audited', () => {
+  it('acceptance 7: cross-dataDomain reads and appends are refused and audited', () => {
     const audits: MemoryAuditEntry[] = [];
     const store = new MemoryStore(entry => audits.push(entry));
     store.append(claim('Zeus', 'runs-on', 'node'));
 
-    expect(() => store.read(OTHER, REALM)).toThrowError(MemoryBoundaryMessage(OTHER, REALM));
-    expect(() => store.facts(OTHER, REALM)).toThrow();
+    expect(() => store.read(OTHER, DATA_DOMAIN)).toThrowError(MemoryBoundaryMessage(OTHER, DATA_DOMAIN));
+    expect(() => store.facts(OTHER, DATA_DOMAIN)).toThrow();
     expect(() =>
-      store.appendFromRealm(OTHER, claim('Zeus', 'runs-on', 'node')),
+      store.appendFromDataDomain(OTHER, claim('Zeus', 'runs-on', 'node')),
     ).toThrow();
-    expect(audits.map(a => a.reason)).toEqual(['cross-realm-read', 'cross-realm-read', 'cross-realm-append']);
+    expect(audits.map(a => a.reason)).toEqual(['cross-dataDomain-read', 'cross-dataDomain-read', 'cross-dataDomain-append']);
   });
 
   it('acceptance 8: replay along a runId returns events and the facts they produced', async () => {
@@ -168,18 +168,18 @@ describe('memory consolidation P0', () => {
     store.append(claim('Zeus', 'owned-by', 'user', {
       eventId: 'evt-2', runId: 'run-B', occurredAt: '2026-09-22T10:05:00Z',
     }));
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
 
-    const replay = store.replay(REALM, 'run-A');
+    const replay = store.replay(DATA_DOMAIN, 'run-A');
     expect(replay.events.map(e => e.runId)).toEqual(['run-A']);
     expect(replay.facts).toHaveLength(1);
     expect(replay.facts[0]!.provenance).toEqual(['evt-1']);
   });
 
-  it('refuses consolidation mixing multiple realms', () => {
+  it('refuses consolidation mixing multiple dataDomains', () => {
     const events = [
       claim('a', 'p', 'v'),
-      claim('b', 'p', 'v', { eventId: 'evt-2', realmId: OTHER }),
+      claim('b', 'p', 'v', { eventId: 'evt-2', dataDomainId: OTHER }),
     ];
     expect(() => consolidate(events)).toThrowError(MemoryConsolidationError);
   });
@@ -210,26 +210,26 @@ describe('memory consolidation P0', () => {
     const frozen = new Date('2026-01-02T03:04:05.000Z');
     const store = new MemoryStore(entry => audits.push(entry), () => frozen);
 
-    expect(() => store.read(OTHER, REALM)).toThrowError(MemoryBoundaryMessage(OTHER, REALM));
+    expect(() => store.read(OTHER, DATA_DOMAIN)).toThrowError(MemoryBoundaryMessage(OTHER, DATA_DOMAIN));
     expect(audits).toHaveLength(1);
     expect(audits[0]!.at).toBe(frozen.toISOString());
   });
 
-  it('#14 resolves fact authors only within the named realm, never by scanning every domain', async () => {
+  it('#14 resolves fact authors only within the named dataDomain, never by scanning every domain', async () => {
     const store = new MemoryStore();
-    store.append(claim('Zeus', 'runs-on', 'node', { realmId: REALM, source: { agentId: 'author-a' } }));
+    store.append(claim('Zeus', 'runs-on', 'node', { dataDomainId: DATA_DOMAIN, source: { agentId: 'author-a' } }));
     store.append(claim('Zeus', 'runs-on', 'node', {
-      eventId: 'evt-b', realmId: OTHER, source: { agentId: 'author-b' },
+      eventId: 'evt-b', dataDomainId: OTHER, source: { agentId: 'author-b' },
     }));
-    await store.consolidateRealm(REALM);
-    await store.consolidateRealm(OTHER);
+    await store.consolidateDataDomain(DATA_DOMAIN);
+    await store.consolidateDataDomain(OTHER);
 
-    const [inRealm] = store.facts(REALM, REALM);
+    const [inDataDomain] = store.facts(DATA_DOMAIN, DATA_DOMAIN);
     const [elsewhere] = store.facts(OTHER, OTHER);
-    expect(store.authorsOfFacts(REALM, [inRealm!.factId])).toEqual(['author-a']);
-    // A fact that lives only in the other realm is invisible here: no cross-domain
-    // scan to attribute it (the old realm-optional form searched every realm).
-    expect(store.authorsOfFacts(REALM, [elsewhere!.factId])).toEqual([]);
+    expect(store.authorsOfFacts(DATA_DOMAIN, [inDataDomain!.factId])).toEqual(['author-a']);
+    // A fact that lives only in the other dataDomain is invisible here: no cross-domain
+    // scan to attribute it (the old dataDomain-optional form searched every dataDomain).
+    expect(store.authorsOfFacts(DATA_DOMAIN, [elsewhere!.factId])).toEqual([]);
   });
 
   it('#15 refuses a self-reported confidence outside 0..1 instead of letting it skew the mean', () => {
@@ -242,5 +242,5 @@ describe('memory consolidation P0', () => {
 });
 
 function MemoryBoundaryMessage(reader: string, target: string): string {
-  return `realm ${reader} cannot read memory of realm ${target}`;
+  return `dataDomain ${reader} cannot read memory of dataDomain ${target}`;
 }

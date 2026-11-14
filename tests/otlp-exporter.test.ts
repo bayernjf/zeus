@@ -5,7 +5,7 @@
 // contract (transport failure resolves, logs, never blocks the settle path).
 
 import { describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import { OtlpTraceExporter, toOtlpPayload } from '../src/observability/exporter.js';
 import { buildTraceTree, type TraceTree } from '../src/observability/trace.js';
 import type { DecisionTrace } from '../src/decision/types.js';
@@ -24,9 +24,9 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -75,8 +75,8 @@ function treeWithModelError(): TraceTree {
     traceId: 'trace-g2',
     audit: [],
     progress: [
-      { type: 'branch-started', intentId: 'intent-g2', runId: 'run-g2', vassal: 'alpha', skill: 'review', at: '2026-10-31T00:00:00.000Z' },
-      { type: 'branch-ended', intentId: 'intent-g2', runId: 'run-g2', vassal: 'alpha', outcome: 'completed', at: '2026-10-31T00:00:05.000Z' },
+      { type: 'branch-started', intentId: 'intent-g2', runId: 'run-g2', executor: 'alpha', skill: 'review', at: '2026-10-31T00:00:00.000Z' },
+      { type: 'branch-ended', intentId: 'intent-g2', runId: 'run-g2', executor: 'alpha', outcome: 'completed', at: '2026-10-31T00:00:05.000Z' },
     ],
     traces: [decisionTrace('run-g2')],
   });
@@ -165,8 +165,8 @@ describe('G2 OtlpTraceExporter payload shape', () => {
       traceId: 'trace-err',
       audit: [],
       progress: [
-        { type: 'branch-started', intentId: 'i', runId: 'r', vassal: 'alpha', skill: 'review', at: '2026-10-31T00:00:00.000Z' },
-        { type: 'branch-ended', intentId: 'i', runId: 'r', vassal: 'alpha', outcome: 'failed', at: '2026-10-31T00:00:01.000Z' },
+        { type: 'branch-started', intentId: 'i', runId: 'r', executor: 'alpha', skill: 'review', at: '2026-10-31T00:00:00.000Z' },
+        { type: 'branch-ended', intentId: 'i', runId: 'r', executor: 'alpha', outcome: 'failed', at: '2026-10-31T00:00:01.000Z' },
       ],
       traces: [{ ...decisionTrace('r'), error: { code: 'timeout', message: 'backend timed out' } }],
     });
@@ -225,8 +225,8 @@ describe('G2 boot wiring (opt-in, unconfigured = silent)', () => {
   }
 
   it('attaches no OTLP exporter by default', async () => {
-    const kernel = await bootKernel({ fetchImpl: settlingFetch() });
-    expect(kernel.otlpTraceExporter).toBeUndefined();
+    const runtime = await bootRuntime({ fetchImpl: settlingFetch() });
+    expect(runtime.otlpTraceExporter).toBeUndefined();
   });
 
   it('exports a settled intent to the injected transport alongside the JSONL file', async () => {
@@ -235,9 +235,9 @@ describe('G2 boot wiring (opt-in, unconfigured = silent)', () => {
     const { join } = await import('node:path');
     const dir = await mkdtemp(join(tmpdir(), 'zeus-otlp-'));
     const fetchLog: Array<{ url: string; init: RequestInit | undefined }> = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: settlingFetch(),
-      vassalSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
+      executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
       auditFile: join(dir, 'audit.jsonl'),
       stateFile: join(dir, 'state.json'),
       otlpTraceExporter: new OtlpTraceExporter({
@@ -248,12 +248,12 @@ describe('G2 boot wiring (opt-in, unconfigured = silent)', () => {
         }),
       }),
     });
-    const result = await kernel.orchestrator.fanOut({
+    const result = await runtime.orchestrator.fanOut({
       intentId: 'intent-g2-boot',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
-      vassals: ['alpha'],
+      dataDomain: 'personal',
+      executors: ['alpha'],
     });
     expect(result.status).toBe('completed');
     await pollUntil(() => fetchLog.length, n => n >= 1);
@@ -261,6 +261,6 @@ describe('G2 boot wiring (opt-in, unconfigured = silent)', () => {
     const spans = body.resourceSpans[0].scopeSpans[0].spans;
     expect(spans.length).toBeGreaterThan(0);
     expect(spans.some((s: any) => attrOfSpan(s, 'zeus.intent.id') === 'intent-g2-boot')).toBe(true);
-    await kernel.releaseLock();
+    await runtime.releaseLock();
   });
 });

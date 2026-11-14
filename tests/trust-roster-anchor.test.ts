@@ -1,21 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry, type FetchLike } from '../src/registry/registry.js';
+import { ExecutorRegistry, type FetchLike } from '../src/registry/registry.js';
 import { Ed25519MemorySigner, type RosterSigner } from '../src/registry/signing.js';
 import { buildRosterAnchor } from '../src/trust/rosterAnchor.js';
-import type { AgentCard, Fealty } from '../src/a2a/types.js';
+import type { AgentCard, Handshake } from '../src/a2a/types.js';
 
-const VALID_FEALTY: Fealty = {
+const VALID_HANDSHAKE: Handshake = {
   version: '1',
   swornTo: 'zeus',
   domain: 'test-domain',
-  dataRealms: ['personal'],
+  dataDomains: ['personal'],
   dataPolicy: 'read-task-scope',
   reportBack: true,
   escalationPolicy: 'on-failure',
 };
 
 function makeCard(name: string): AgentCard {
-  return { name, url: `https://${name}.example/`, skills: [], 'x-zeus-fealty': VALID_FEALTY };
+  return { name, url: `https://${name}.example/`, skills: [], 'x-zeus-handshake': VALID_HANDSHAKE };
 }
 
 function fetchStub(card: AgentCard): FetchLike {
@@ -26,7 +26,7 @@ describe('buildRosterAnchor (design-external-trust §4, V3)', () => {
   it('returns undefined when the signer cannot export its public key (KMS backend)', async () => {
     const kmsLike: RosterSigner = { keyId: 'kms-key', sign: async () => 'unreachable' };
     const anchor = await buildRosterAnchor({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: kmsLike,
       maxAgeSeconds: 3600,
       attestationTtlSeconds: 3600,
@@ -34,8 +34,8 @@ describe('buildRosterAnchor (design-external-trust §4, V3)', () => {
     expect(anchor).toBeUndefined();
   });
 
-  it('anchors registered active vassals and no one else', async () => {
-    const registry = new VassalRegistry(fetchStub(makeCard('helper')));
+  it('anchors registered active executors and no one else', async () => {
+    const registry = new ExecutorRegistry(fetchStub(makeCard('helper')));
     await registry.register('http://127.0.0.1:9/agent-card');
     const anchor = await buildRosterAnchor({
       registry,
@@ -48,8 +48,8 @@ describe('buildRosterAnchor (design-external-trust §4, V3)', () => {
     expect(anchor?.attestationFor('stranger')).toBeUndefined();
   });
 
-  it('drops the attestation once the vassal is revoked (revoked rows leave the public roster)', async () => {
-    const registry = new VassalRegistry(fetchStub(makeCard('helper')));
+  it('drops the attestation once the executor is revoked (revoked rows leave the public roster)', async () => {
+    const registry = new ExecutorRegistry(fetchStub(makeCard('helper')));
     await registry.register('http://127.0.0.1:9/agent-card');
     expect(registry.revoke('helper')).toBe(true);
     const anchor = await buildRosterAnchor({
@@ -63,7 +63,7 @@ describe('buildRosterAnchor (design-external-trust §4, V3)', () => {
 
   it('fails closed at lookup, not at build, for an empty registry', async () => {
     const anchor = await buildRosterAnchor({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('test-rsk'),
       maxAgeSeconds: 3600,
       attestationTtlSeconds: 3600,
@@ -72,7 +72,7 @@ describe('buildRosterAnchor (design-external-trust §4, V3)', () => {
   });
 
   it('returns undefined instead of throwing when sealing blows up (fail-closed)', async () => {
-    const registry = new VassalRegistry(fetchStub(makeCard('helper')));
+    const registry = new ExecutorRegistry(fetchStub(makeCard('helper')));
     await registry.register('http://127.0.0.1:9/agent-card');
     const anchor = await buildRosterAnchor({
       registry,

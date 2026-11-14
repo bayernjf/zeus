@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import type { FactRecord, MemoryEvent } from '../src/memory/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
-const REALM = 'realm-personal';
+const DATA_DOMAIN = 'dataDomain-personal';
 
 function claim(
   eventId: string,
@@ -19,7 +19,7 @@ function claim(
 ): MemoryEvent {
   return {
     eventId,
-    realmId: REALM,
+    dataDomainId: DATA_DOMAIN,
     runId: `run-${eventId}`,
     source: { agentId },
     kind: 'claim',
@@ -34,20 +34,20 @@ async function setup(): Promise<{ app: FastifyInstance; store: MemoryStore; fact
   const store = new MemoryStore();
   store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
   store.append(claim('evt-2', 'loom', 'language', 'python', 'agent-b'));
-  await store.consolidateRealm(REALM);
+  await store.consolidateDataDomain(DATA_DOMAIN);
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     memoryStore: store,
   });
-  return { app, store, facts: store.facts(REALM, REALM) };
+  return { app, store, facts: store.facts(DATA_DOMAIN, DATA_DOMAIN) };
 }
 
 describe('memory HTTP read face', () => {
-  it('lists the realm events and requires a realmId', async () => {
+  it('lists the dataDomain events and requires a dataDomainId', async () => {
     const { app } = await setup();
-    const res = await app.inject({ method: 'GET', url: `/api/memory/events?realmId=${REALM}`, headers: AUTH });
+    const res = await app.inject({ method: 'GET', url: `/api/memory/events?dataDomainId=${DATA_DOMAIN}`, headers: AUTH });
     expect(res.statusCode).toBe(200);
     expect((await res.json()).events.map((e: MemoryEvent) => e.eventId)).toEqual(['evt-1', 'evt-2']);
 
@@ -55,35 +55,35 @@ describe('memory HTTP read face', () => {
     expect(missing.statusCode).toBe(400);
   });
 
-  it('lists consolidated facts and returns none for an unknown realm', async () => {
+  it('lists consolidated facts and returns none for an unknown dataDomain', async () => {
     const { app } = await setup();
-    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?realmId=${REALM}`, headers: AUTH });
+    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?dataDomainId=${DATA_DOMAIN}`, headers: AUTH });
     const { facts } = await res.json();
     expect(facts).toHaveLength(2);
     expect(facts.every((f: FactRecord) => f.status === 'active')).toBe(true);
 
-    const empty = await app.inject({ method: 'GET', url: '/api/memory/facts?realmId=realm-other', headers: AUTH });
+    const empty = await app.inject({ method: 'GET', url: '/api/memory/facts?dataDomainId=dataDomain-other', headers: AUTH });
     expect((await empty.json()).facts).toEqual([]);
   });
 
   it('recalls facts by hybrid search with limit and rejects bad options', async () => {
     const { app } = await setup();
     const res = await app.inject({
-      method: 'GET', url: `/api/memory/recall?realmId=${REALM}&q=typescript&limit=1`, headers: AUTH,
+      method: 'GET', url: `/api/memory/recall?dataDomainId=${DATA_DOMAIN}&q=typescript&limit=1`, headers: AUTH,
     });
     const { hits } = await res.json();
     expect(hits).toHaveLength(1);
     expect(hits[0].fact.subject).toBe('pr-helper');
     expect(hits[0].score).toBeGreaterThan(0);
 
-    const noQuery = await app.inject({ method: 'GET', url: `/api/memory/recall?realmId=${REALM}`, headers: AUTH });
+    const noQuery = await app.inject({ method: 'GET', url: `/api/memory/recall?dataDomainId=${DATA_DOMAIN}`, headers: AUTH });
     expect(noQuery.statusCode).toBe(400);
     const badLimit = await app.inject({
-      method: 'GET', url: `/api/memory/recall?realmId=${REALM}&q=x&limit=0`, headers: AUTH,
+      method: 'GET', url: `/api/memory/recall?dataDomainId=${DATA_DOMAIN}&q=x&limit=0`, headers: AUTH,
     });
     expect(badLimit.statusCode).toBe(400);
     const badAlpha = await app.inject({
-      method: 'GET', url: `/api/memory/recall?realmId=${REALM}&q=x&alpha=1.5`, headers: AUTH,
+      method: 'GET', url: `/api/memory/recall?dataDomainId=${DATA_DOMAIN}&q=x&alpha=1.5`, headers: AUTH,
     });
     expect(badAlpha.statusCode).toBe(400);
   });
@@ -97,7 +97,7 @@ describe('memory HTTP read face', () => {
   it('replays one run: its events plus the facts whose provenance cites them', async () => {
     const { app } = await setup();
     const res = await app.inject({
-      method: 'GET', url: `/api/memory/replay?realmId=${REALM}&runId=run-evt-1`, headers: AUTH,
+      method: 'GET', url: `/api/memory/replay?dataDomainId=${DATA_DOMAIN}&runId=run-evt-1`, headers: AUTH,
     });
     expect(res.statusCode).toBe(200);
     const body = await res.json();
@@ -106,11 +106,11 @@ describe('memory HTTP read face', () => {
     expect(body.facts.map((f: FactRecord) => f.subject)).toEqual(['pr-helper']);
 
     const missingRun = await app.inject({
-      method: 'GET', url: `/api/memory/replay?realmId=${REALM}&runId=run-zzz`, headers: AUTH,
+      method: 'GET', url: `/api/memory/replay?dataDomainId=${DATA_DOMAIN}&runId=run-zzz`, headers: AUTH,
     });
     expect(await missingRun.json()).toEqual({ events: [], facts: [] });
 
-    const noRun = await app.inject({ method: 'GET', url: `/api/memory/replay?realmId=${REALM}`, headers: AUTH });
+    const noRun = await app.inject({ method: 'GET', url: `/api/memory/replay?dataDomainId=${DATA_DOMAIN}`, headers: AUTH });
     expect(noRun.statusCode).toBe(400);
   });
 });
@@ -122,20 +122,20 @@ describe('memory HTTP right to be forgotten', () => {
 
     const res = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver' },
+      payload: { dataDomainId: DATA_DOMAIN, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'operator' },
     });
     expect(res.statusCode).toBe(200);
     const { retractions } = await res.json();
     expect(retractions).toEqual([
-      expect.objectContaining({ factId: target.factId, reason: 'gdpr request', requestedBy: 'driver' }),
+      expect.objectContaining({ factId: target.factId, reason: 'gdpr request', requestedBy: 'operator' }),
     ]);
 
-    const after = await app.inject({ method: 'GET', url: `/api/memory/facts?realmId=${REALM}`, headers: AUTH });
+    const after = await app.inject({ method: 'GET', url: `/api/memory/facts?dataDomainId=${DATA_DOMAIN}`, headers: AUTH });
     const retracted = (await after.json()).facts.find((f: FactRecord) => f.factId === target.factId);
     expect(retracted.status).toBe('retracted');
 
     const recall = await app.inject({
-      method: 'GET', url: `/api/memory/recall?realmId=${REALM}&q=typescript`, headers: AUTH,
+      method: 'GET', url: `/api/memory/recall?dataDomainId=${DATA_DOMAIN}&q=typescript`, headers: AUTH,
     });
     expect((await recall.json()).hits.map((h: { fact: FactRecord }) => h.fact.factId)).not.toContain(target.factId);
 
@@ -147,7 +147,7 @@ describe('memory HTTP right to be forgotten', () => {
     const { app, facts } = await setup();
     const target = facts[0]!;
     const payload = {
-      realmId: REALM, factIds: [target.factId], reason: 'once', requestedBy: 'driver',
+      dataDomainId: DATA_DOMAIN, factIds: [target.factId], reason: 'once', requestedBy: 'operator',
     };
     await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
     const again = await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
@@ -161,13 +161,13 @@ describe('memory HTTP right to be forgotten', () => {
     const { app } = await setup();
     const res = await app.inject({
       method: 'POST', url: '/api/memory/forget-subject', headers: AUTH,
-      payload: { realmId: REALM, subject: 'LOOM', reason: 'erasure', requestedBy: 'driver' },
+      payload: { dataDomainId: DATA_DOMAIN, subject: 'LOOM', reason: 'erasure', requestedBy: 'operator' },
     });
     const { retractions } = await res.json();
     expect(retractions).toHaveLength(1);
     expect(retractions[0].subject).toBe('loom');
 
-    const facts = await app.inject({ method: 'GET', url: `/api/memory/facts?realmId=${REALM}`, headers: AUTH });
+    const facts = await app.inject({ method: 'GET', url: `/api/memory/facts?dataDomainId=${DATA_DOMAIN}`, headers: AUTH });
     const bySubject = new Map(
       (await facts.json()).facts.map((f: FactRecord) => [f.subject, f.status]),
     );
@@ -182,17 +182,17 @@ describe('memory HTTP right to be forgotten', () => {
     let flushes = 0;
     const store = new MemoryStore();
     store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
-    await store.consolidateRealm(REALM);
-    const target = store.facts(REALM, REALM)[0]!;
+    await store.consolidateDataDomain(DATA_DOMAIN);
+    const target = store.facts(DATA_DOMAIN, DATA_DOMAIN)[0]!;
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: store,
       persistState: async () => { flushes += 1; },
     });
     const payload = {
-      realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver',
+      dataDomainId: DATA_DOMAIN, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'operator',
     };
     const first = await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
     expect(first.statusCode).toBe(200);
@@ -208,9 +208,9 @@ describe('memory HTTP right to be forgotten', () => {
     let flushes = 0;
     const store = new MemoryStore();
     store.append(claim('evt-2', 'loom', 'language', 'python', 'agent-b'));
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
     const hooked = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: store,
@@ -218,7 +218,7 @@ describe('memory HTTP right to be forgotten', () => {
     });
     const res = await hooked.inject({
       method: 'POST', url: '/api/memory/forget-subject', headers: AUTH,
-      payload: { realmId: REALM, subject: 'LOOM', reason: 'erasure', requestedBy: 'driver' },
+      payload: { dataDomainId: DATA_DOMAIN, subject: 'LOOM', reason: 'erasure', requestedBy: 'operator' },
     });
     expect(res.statusCode).toBe(200);
     expect(flushes).toBe(1);
@@ -227,10 +227,10 @@ describe('memory HTTP right to be forgotten', () => {
   it('reports 500 when the retraction is in memory but the durability flush failed', async () => {
     const store = new MemoryStore();
     store.append(claim('evt-1', 'pr-helper', 'language', 'typescript', 'agent-a'));
-    await store.consolidateRealm(REALM);
-    const target = store.facts(REALM, REALM)[0]!;
+    await store.consolidateDataDomain(DATA_DOMAIN);
+    const target = store.facts(DATA_DOMAIN, DATA_DOMAIN)[0]!;
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: store,
@@ -238,31 +238,31 @@ describe('memory HTTP right to be forgotten', () => {
     });
     const res = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver' },
+      payload: { dataDomainId: DATA_DOMAIN, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'operator' },
     });
     expect(res.statusCode).toBe(500);
     expect((await res.json()).error).toBe('state_not_persisted');
     // The mutation itself landed in memory; the failure is about durability.
-    expect(store.facts(REALM, REALM)[0]!.status).toBe('retracted');
+    expect(store.facts(DATA_DOMAIN, DATA_DOMAIN)[0]!.status).toBe('retracted');
   });
 
   it('rejects a retraction without fact ids, reason or requester', async () => {
     const { app } = await setup();
     const noFacts = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: [], reason: 'x', requestedBy: 'driver' },
+      payload: { dataDomainId: DATA_DOMAIN, factIds: [], reason: 'x', requestedBy: 'operator' },
     });
     expect(noFacts.statusCode).toBe(400);
 
     const noReason = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: ['f1'], requestedBy: 'driver' },
+      payload: { dataDomainId: DATA_DOMAIN, factIds: ['f1'], requestedBy: 'operator' },
     });
     expect(noReason.statusCode).toBe(400);
 
     const noSubject = await app.inject({
       method: 'POST', url: '/api/memory/forget-subject', headers: AUTH,
-      payload: { realmId: REALM, reason: 'x', requestedBy: 'driver' },
+      payload: { dataDomainId: DATA_DOMAIN, reason: 'x', requestedBy: 'operator' },
     });
     expect(noSubject.statusCode).toBe(400);
   });
@@ -271,27 +271,27 @@ describe('memory HTTP right to be forgotten', () => {
 describe('memory HTTP mounting and auth', () => {
   it('requires a bearer token', async () => {
     const { app } = await setup();
-    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?realmId=${REALM}` });
+    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?dataDomainId=${DATA_DOMAIN}` });
     expect(res.statusCode).toBe(401);
   });
 
   it('is not mounted at all without an internal token', async () => {
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       memoryStore: new MemoryStore(),
     });
-    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?realmId=${REALM}` });
+    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?dataDomainId=${DATA_DOMAIN}` });
     expect(res.statusCode).toBe(404);
   });
 
   it('is not mounted when no memory store is wired', async () => {
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
     });
-    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?realmId=${REALM}`, headers: AUTH });
+    const res = await app.inject({ method: 'GET', url: `/api/memory/facts?dataDomainId=${DATA_DOMAIN}`, headers: AUTH });
     expect(res.statusCode).toBe(404);
   });
 });
@@ -313,7 +313,7 @@ describe('E8.5 memory drift reconciliation HTTP', () => {
     const previous = (await snap.json()).state;
 
     store.append(claim('evt-3', 'atlas', 'language', 'golang', 'agent-c'));
-    await store.consolidateRealm(REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
 
     const res = await app.inject({ method: 'POST', url: '/api/memory/reconcile', headers: AUTH, payload: { previous } });
     expect(res.statusCode).toBe(200);
@@ -345,7 +345,7 @@ describe('E8.5 memory drift reconciliation HTTP', () => {
 
     const badPair = await app.inject({
       method: 'POST', url: '/api/memory/reconcile', headers: AUTH,
-      payload: { previous: { events: [], facts: [['realm-personal', null]] } },
+      payload: { previous: { events: [], facts: [['dataDomain-personal', null]] } },
     });
     expect(badPair.statusCode).toBe(400);
     expect((await badPair.json()).detail).toMatch(/facts\[0\]/);
@@ -367,7 +367,7 @@ describe('E8.5 memory drift reconciliation HTTP', () => {
     const { app } = await setup();
     expect((await app.inject({ method: 'GET', url: '/api/memory/snapshot' })).statusCode).toBe(401);
     const bare = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
     });

@@ -9,7 +9,7 @@
  *
  * T-M7-01 ships the port plus local backends for development/self-hosting
  * (environment variables, an optional gitignored JSON secret file) and a
- * chain that tries them in order. A cloud secret-manager backend (KMS/Vault)
+ * chain that tries them in order. A cloud secret-manager backend (KMS/Backup)
  * is injected by the production assembly; until any backend can resolve a
  * reference the UnconfiguredSecretBackend fails closed, so an unconfigured
  * deployment cannot silently execute unauthenticated.
@@ -29,7 +29,7 @@ export interface ResolvedCredential {
 
 /**
  * Backend port for resolving credentials. Implementations own the storage
- * (env, file, KMS/Vault). Resolution is server-side only.
+ * (env, file, KMS/Backup). Resolution is server-side only.
  */
 export interface SecretBackend {
   /** True when the backend can resolve the given reference. */

@@ -1,0 +1,466 @@
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { FsDataDomainStore } from '../src/dataDomain/store.js';
+import { verifyOperatorWriteGrant, issueOperatorWriteGrant, OperatorGrantLedger } from '../src/dataDomain/grant.js';
+import { Ed25519MemorySigner } from '../src/registry/signing.js';
+import {
+  InvalidItemIdError,
+  DataDomainNotConnectedError,
+  UnauthorizedDataDomainWriteError,
+  UnsupportedWriteError,
+} from '../src/dataDomain/types.js';
+import type { OperatorWriteGrant, DataDomainWriteAuditEntry } from '../src/index.js';
+
+describe('E3.5 FsDataDomainStore.write (personal dataDomain)', () => {
+  let sandbox: string;
+  let root: string;
+  let symlinksSupported = true;
+
+  beforeEach(() => {
+    symlinksSupported = true;
+    sandbox = mkdtempSync(join(tmpdir(), 'zeus-dataDomain-write-'));
+    root = join(sandbox, 'dataDomain');
+    mkdirSync(join(root, 'notes'), { recursive: true });
+    writeFileSync(join(root, 'notes', 'existing.md'), 'original\n');
+    writeFileSync(join(sandbox, 'outside.md'), 'outside\n');
+    try {
+      symlinkSync('../outside.md', join(root, 'notes', 'link.md'));
+    } catch {
+      symlinksSupported = false;
+    }
+  });
+
+  afterEach(() => {
+    rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  async function connected(store: FsDataDomainStore, opts: { readOnly?: boolean } = {}) {
+    const manifest = await store.connect(root, 'personal', opts);
+    return manifest;
+  }
+
+  it('writes a string to a minted itemId under writes/ and reads it back verbatim', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    const { itemId } = await store.write(manifest.dataDomainId, { data: 'hello write\n' });
+    expect(itemId).toMatch(/^writes\/.*\.md$/);
+    const back = await store.read(manifest.dataDomainId, itemId);
+    expect(back.content).toBe('hello write\n');
+  });
+
+  it('creates written files and minted directories owner-only (0600 / 0700)', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    await store.write(manifest.dataDomainId, { itemId: 'minted/deep/new.md', data: 'secret\n' });
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'minted', 'deep', 'new.md')).mode & 0o777).toBe(0o600);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'minted')).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'minted', 'deep')).mode & 0o777).toBe(0o700);
+    // The atomic publish also tightens a file an older build left at 0644.
+    writeFileSync(join(root, 'notes', 'loose.md'), 'old\n', { mode: 0o644 });
+    await store.write(manifest.dataDomainId, { itemId: 'notes/loose.md', data: 'new\n' });
+    // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
+    if (process.platform !== 'win32') expect(statSync(join(root, 'notes', 'loose.md')).mode & 0o777).toBe(0o600);
+  });
+
+  it('writes to an explicit itemId and overwrites it on a second write', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    const r1 = await store.write(manifest.dataDomainId, { itemId: 'notes/new.md', data: 'v1\n' });
+    expect(r1.itemId).toBe('notes/new.md');
+    await store.write(manifest.dataDomainId, { itemId: 'notes/new.md', data: 'v2\n' });
+    const back = await store.read(manifest.dataDomainId, 'notes/new.md');
+    expect(back.content).toBe('v2\n');
+  });
+
+  it('serializes an object payload as pretty JSON and round-trips it', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    const { itemId } = await store.write(manifest.dataDomainId, { data: { ok: true, n: 3 } });
+    expect(itemId.endsWith('.json')).toBe(true);
+    const back = await store.read(manifest.dataDomainId, itemId);
+    expect(JSON.parse(back.content)).toEqual({ ok: true, n: 3 });
+  });
+
+  it('refuses writes when the dataDomain was connected read-only', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store, { readOnly: true });
+    await expect(store.write(manifest.dataDomainId, { itemId: 'x.md', data: 'd' })).rejects.toBeInstanceOf(
+      UnauthorizedDataDomainWriteError,
+    );
+  });
+
+  it.each(['../escape.md', '/abs/x.md', 'a/../b.md', 'a//b.md', 'a\\b.md'])(
+    'rejects path-traversal / unsafe itemId %j',
+    async (itemId) => {
+      const store = new FsDataDomainStore();
+      const manifest = await connected(store);
+      await expect(store.write(manifest.dataDomainId, { itemId, data: 'd' })).rejects.toBeInstanceOf(InvalidItemIdError);
+    },
+  );
+
+  it('rejects non-text extension and oversized payloads', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    await expect(store.write(manifest.dataDomainId, { itemId: 'bin.dat', data: 'd' })).rejects.toBeInstanceOf(
+      UnsupportedWriteError,
+    );
+    const big = 'a'.repeat(1024 * 1024 + 1);
+    await expect(store.write(manifest.dataDomainId, { itemId: 'big.md', data: big })).rejects.toBeInstanceOf(
+      UnsupportedWriteError,
+    );
+  });
+
+  it('rejects non-serializable payload kinds and tag persistence requests', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    await expect(store.write(manifest.dataDomainId, { itemId: 'f.md', data: undefined })).rejects.toBeInstanceOf(
+      UnsupportedWriteError,
+    );
+    await expect(
+      store.write(manifest.dataDomainId, { itemId: 't.md', data: 'd', tags: ['x'] }),
+    ).rejects.toBeInstanceOf(UnsupportedWriteError);
+  });
+
+  it('refuses to write through a symlink that escapes the root', async () => {
+    if (!symlinksSupported) return;
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    await expect(
+      store.write(manifest.dataDomainId, { itemId: 'notes/link.md', data: 'pwn\n' }),
+    ).rejects.toBeInstanceOf(InvalidItemIdError);
+    expect(readdirSync(join(root, '..')).includes('outside.md')).toBe(true);
+  });
+
+  it('does not build a directory tree through a symlinked parent that escapes the root', async () => {
+    if (!symlinksSupported) return;
+    const outsideDir = join(sandbox, 'outside-dir');
+    mkdirSync(outsideDir);
+    symlinkSync(outsideDir, join(root, 'linked'));
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    // The parent does not exist yet, so a naive mkdir-first path would create
+    // 'deep/' outside the root before any containment check could refuse it.
+    await expect(
+      store.write(manifest.dataDomainId, { itemId: 'linked/deep/new.md', data: 'escaped\n' }),
+    ).rejects.toBeInstanceOf(InvalidItemIdError);
+    expect(existsSync(join(outsideDir, 'deep'))).toBe(false);
+  });
+
+  it('refreshes manifest digest/itemCount, search and entries after write', async () => {
+    const store = new FsDataDomainStore();
+    const before = await connected(store);
+    const beforeDigest = before.contentDigest;
+    const beforeCount = before.itemCount;
+    await store.write(before.dataDomainId, { itemId: 'notes/fresh.md', data: 'uniquemarker zeus\n' });
+
+    const after = await store.manifest(before.dataDomainId);
+    expect(after.itemCount).toBe(beforeCount + 1);
+    expect(after.contentDigest).not.toBe(beforeDigest);
+
+    const hits = await store.search(before.dataDomainId, { text: 'uniquemarker' });
+    expect(hits.some(h => h.itemId === 'notes/fresh.md')).toBe(true);
+    const entries = await store.entries(before.dataDomainId);
+    expect(entries.some(e => e.itemId === 'notes/fresh.md')).toBe(true);
+  });
+
+  it('emits one audit entry per accepted write (none on rejection)', async () => {
+    const audit: DataDomainWriteAuditEntry[] = [];
+    const store = new FsDataDomainStore({ audit: e => audit.push(e) });
+    const manifest = await connected(store);
+    await store.write(manifest.dataDomainId, { itemId: 'notes/a.md', data: 'x' });
+    await expect(
+      store.write(manifest.dataDomainId, { itemId: 'bin.dat', data: 'x' }),
+    ).rejects.toBeInstanceOf(UnsupportedWriteError);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]!).toMatchObject({ dataDomainId: manifest.dataDomainId, itemId: 'notes/a.md' });
+    expect(audit[0]!.bytes).toBeGreaterThan(0);
+  });
+
+  it('leaves no temp files behind after an atomic write', async () => {
+    const store = new FsDataDomainStore();
+    const manifest = await connected(store);
+    await store.write(manifest.dataDomainId, { itemId: 'notes/atomic.md', data: 'ok\n' });
+    const notes = readdirSync(join(root, 'notes'));
+    expect(notes.some(n => n.includes('.zeus-tmp-'))).toBe(false);
+    expect(existsSync(join(root, 'notes', 'atomic.md'))).toBe(true);
+  });
+
+  it('requires connect before write', async () => {
+    const store = new FsDataDomainStore();
+    await expect(store.write('dataDomain-unknown', { itemId: 'x.md', data: 'd' })).rejects.toBeInstanceOf(
+      DataDomainNotConnectedError,
+    );
+  });
+});
+
+
+describe('E3.5 operator write grant gate (verifyOperatorWriteGrant)', () => {
+  const base = (over: Partial<OperatorWriteGrant> = {}): OperatorWriteGrant => ({
+    kind: 'operator-write',
+    dataDomainId: 'dataDomain-1',
+    grantedBy: 'operator-alice',
+    grantedAt: '2026-09-24T00:00:00.000Z',
+    expiresAt: '2026-09-24T18:00:00.000Z',
+    nonce: 'nonce-1',
+    ...over,
+  });
+  const fixedNow = () => new Date('2026-09-24T12:00:00.000Z');
+
+  it('rejects a missing grant', async () => {
+    expect(await verifyOperatorWriteGrant(undefined, 'dataDomain-1', { now: fixedNow })).toEqual({ ok: false, reason: 'missing' });
+  });
+
+  it('accepts a well-formed grant bound to the dataDomain', async () => {
+    expect(await verifyOperatorWriteGrant(base(), 'dataDomain-1', { now: fixedNow })).toEqual({ ok: true });
+  });
+
+  it('rejects malformed grants (wrong kind, empty identity, bad dates, empty nonce)', async () => {
+    expect(await verifyOperatorWriteGrant(base({ kind: 'other' as OperatorWriteGrant['kind'] }), 'dataDomain-1', { now: fixedNow })).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
+    expect(await verifyOperatorWriteGrant(base({ grantedBy: '' }), 'dataDomain-1', { now: fixedNow })).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
+    expect(await verifyOperatorWriteGrant(base({ grantedAt: 'not-a-date' }), 'dataDomain-1', { now: fixedNow })).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
+    expect(await verifyOperatorWriteGrant(base({ nonce: '' }), 'dataDomain-1', { now: fixedNow })).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
+  });
+
+  it('rejects a grant minted for another dataDomain', async () => {
+    expect(await verifyOperatorWriteGrant(base({ dataDomainId: 'dataDomain-other' }), 'dataDomain-1', { now: fixedNow })).toEqual({
+      ok: false,
+      reason: 'wrong-dataDomain',
+    });
+  });
+
+  it('rejects an expired grant but accepts one still inside its window', async () => {
+    const expired = base({ expiresAt: '2026-09-24T09:00:00.000Z' });
+    expect(await verifyOperatorWriteGrant(expired, 'dataDomain-1', { now: fixedNow })).toEqual({ ok: false, reason: 'expired' });
+    expect(await verifyOperatorWriteGrant(base(), 'dataDomain-1', { now: fixedNow })).toEqual({ ok: true });
+  });
+
+  it('refuses an open-ended grant even when nothing else is wrong', async () => {
+    // A write credential with no expiry is a standing permission, and standing
+    // permissions are E6.4's DomainGrant - a different, revocable object.
+    const { expiresAt: _expiresAt, ...forever } = base();
+    expect(await verifyOperatorWriteGrant(forever, 'dataDomain-1', { now: fixedNow })).toEqual({ ok: false, reason: 'no-expiry' });
+  });
+
+  it('checks expiry against the injected clock, not the wall clock', async () => {
+    const grant = base({ expiresAt: '2026-09-24T13:00:00.000Z' });
+    // Inside the window at the fixture's noon, expired by the real wall clock
+    // (2026-09-25) - which is the difference between a testable gate and one that
+    // can only be satisfied by a date in 2099.
+    expect(await verifyOperatorWriteGrant(grant, 'dataDomain-1', { now: fixedNow })).toEqual({ ok: true });
+    expect(await verifyOperatorWriteGrant(grant, 'dataDomain-1')).toEqual({ ok: false, reason: 'expired' });
+  });
+
+  describe('with a operator trust anchor', () => {
+    const signer = new Ed25519MemorySigner('operator-key-1');
+    const verifier = signer.verifier();
+
+    it('accepts a grant the operator key signed', async () => {
+      const grant = await issueOperatorWriteGrant(
+        { dataDomainId: 'dataDomain-1', grantedBy: 'operator-alice' },
+        { signer, now: fixedNow }
+      );
+      expect(await verifyOperatorWriteGrant(grant, 'dataDomain-1', { now: fixedNow, verifier, acceptedKeyIds: ['operator-key-1'] })).toEqual({ ok: true });
+    });
+
+    it('rejects a hand-authored grant that merely has the right shape', async () => {
+      const decision = await verifyOperatorWriteGrant(base(), 'dataDomain-1', { now: fixedNow, verifier });
+      expect(decision).toEqual({ ok: false, reason: 'unsigned' });
+    });
+
+    it('rejects a grant signed by a key this runtime does not accept', async () => {
+      const stranger = new Ed25519MemorySigner('rogue-key');
+      const grant = await issueOperatorWriteGrant({ dataDomainId: 'dataDomain-1', grantedBy: 'operator-alice' }, { signer: stranger, now: fixedNow });
+      expect(await verifyOperatorWriteGrant(grant, 'dataDomain-1', { now: fixedNow, verifier, acceptedKeyIds: ['operator-key-1'] })).toEqual({
+        ok: false,
+        reason: 'unknown-key',
+      });
+    });
+
+    it('rejects a signed grant whose fields were edited afterwards', async () => {
+      const grant = await issueOperatorWriteGrant({ dataDomainId: 'dataDomain-1', grantedBy: 'operator-alice' }, { signer, now: fixedNow });
+      // The classic escalation: take a one-dataDomain grant and point it at another.
+      const edited = { ...grant, dataDomainId: 'dataDomain-2' };
+      expect(await verifyOperatorWriteGrant(edited, 'dataDomain-2', { now: fixedNow, verifier })).toEqual({ ok: false, reason: 'bad-signature' });
+    });
+
+    it('consumes a nonce once and refuses the second attempt', async () => {
+      const ledger = new OperatorGrantLedger();
+      const grant = await issueOperatorWriteGrant({ dataDomainId: 'dataDomain-1', grantedBy: 'operator-alice' }, { signer, now: fixedNow });
+      expect(await verifyOperatorWriteGrant(grant, 'dataDomain-1', { now: fixedNow, verifier, ledger })).toEqual({ ok: true });
+      expect(await verifyOperatorWriteGrant(grant, 'dataDomain-1', { now: fixedNow, verifier, ledger })).toEqual({
+        ok: false,
+        reason: 'replayed',
+      });
+    });
+  });
+});
+
+describe('E3.5 enterprise dataDomain writes through a real store', () => {
+  let sandbox: string;
+  let root: string;
+
+  beforeEach(() => {
+    sandbox = mkdtempSync(join(tmpdir(), 'zeus-dataDomain-ent-'));
+    root = join(sandbox, 'dataDomain');
+    mkdirSync(root, { recursive: true });
+  });
+  afterEach(() => {
+    rmSync(sandbox, { recursive: true, force: true });
+  });
+
+  // The store now runs on an injected clock, so a "still valid" fixture grant is
+  // expressed relative to THAT clock instead of a date in 2099.
+  const clock = () => new Date('2026-09-24T10:00:00.000Z');
+
+  function grant(dataDomainId: string, overrides: Partial<OperatorWriteGrant> = {}): OperatorWriteGrant {
+    return {
+      kind: 'operator-write',
+      dataDomainId,
+      grantedBy: 'operator@bayjf',
+      grantedAt: '2026-09-24T10:00:00.000Z',
+      expiresAt: '2026-09-24T10:05:00.000Z',
+      nonce: 'nonce-1',
+      ...overrides,
+    };
+  }
+
+  it('refuses an enterprise write with no grant at all', async () => {
+    const store = new FsDataDomainStore({ now: clock });
+    const manifest = await store.connect(root, 'enterprise');
+    await expect(store.write(manifest.dataDomainId, { data: 'from the personal side\n' }))
+      .rejects.toThrow(/enterprise write requires a valid operator grant \(missing\)/);
+  });
+
+  it('accepts a valid operator grant, writes, and records who authorized it', async () => {
+    const written: DataDomainWriteAuditEntry[] = [];
+    const store = new FsDataDomainStore({ now: clock, audit: entry => written.push(entry) });
+    const manifest = await store.connect(root, 'enterprise');
+    const { itemId } = await store.write(manifest.dataDomainId, { data: 'escalation brief\n' }, grant(manifest.dataDomainId));
+
+    expect(await store.read(manifest.dataDomainId, itemId)).toMatchObject({ content: 'escalation brief\n' });
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({ dataDomainId: manifest.dataDomainId, itemId, grantedBy: 'operator@bayjf', dataDomainType: 'enterprise' });
+    // the write is visible to the snapshot the Backup map and search read from
+    expect((await store.manifest(manifest.dataDomainId)).itemCount).toBe(1);
+  });
+
+  it('refuses a grant bound to another dataDomain, an expired grant and a malformed one', async () => {
+    const store = new FsDataDomainStore({ now: clock });
+    const manifest = await store.connect(root, 'enterprise');
+    await expect(store.write(manifest.dataDomainId, { data: 'x\n' }, grant('dataDomain-someone-else')))
+      .rejects.toThrow(/wrong-dataDomain/);
+    await expect(store.write(manifest.dataDomainId, { data: 'x\n' }, grant(manifest.dataDomainId, { expiresAt: '2026-09-24T09:00:00.000Z' })))
+      .rejects.toThrow(/expired/);
+    await expect(store.write(manifest.dataDomainId, { data: 'x\n' }, { ...grant(manifest.dataDomainId), grantedBy: '' }))
+      .rejects.toThrow(/malformed/);
+  });
+
+  it('mints the write timestamp from the injected clock, not the wall clock', async () => {
+    const store = new FsDataDomainStore({ now: clock });
+    const manifest = await store.connect(root, 'personal');
+    const { itemId } = await store.write(manifest.dataDomainId, { data: 'stamped\n' });
+    // itemId is derived from the clock, which is what makes a deterministic
+    // fixture possible at all.
+    expect(itemId).toMatch(/^writes\/2026-09-24T10-00-00/);
+  });
+
+  it('does not burn the grant on a write it cannot honour', async () => {
+    const ledger = new OperatorGrantLedger();
+    const store = new FsDataDomainStore({ now: clock, operatorGrants: { ledger } });
+    const manifest = await store.connect(root, 'enterprise');
+    const g = grant(manifest.dataDomainId);
+    // Rejected by shape validation, before any write: the single-use
+    // authorization must survive, or a typo in the path would cost the operator a
+    // fresh grant and, with a real ledger, look like a replay.
+    await expect(store.write(manifest.dataDomainId, { itemId: 'bin.dat', data: 'x' }, g))
+      .rejects.toBeInstanceOf(UnsupportedWriteError);
+    expect(ledger.isSpent(g.nonce)).toBe(false);
+    await expect(store.write(manifest.dataDomainId, { itemId: 'brief.md', data: 'ok\n' }, g))
+      .resolves.toMatchObject({ itemId: 'brief.md' });
+    expect(ledger.isSpent(g.nonce)).toBe(true);
+  });
+
+  it('a read-only enterprise connection stays read-only even with a grant', async () => {
+    const store = new FsDataDomainStore({ now: clock });
+    const manifest = await store.connect(root, 'enterprise', { readOnly: true });
+    await expect(store.write(manifest.dataDomainId, { data: 'x\n' }, grant(manifest.dataDomainId)))
+      .rejects.toBeInstanceOf(UnauthorizedDataDomainWriteError);
+  });
+
+  it('personal dataDomains still need no grant, so the two domains do not blur', async () => {
+    const personalRoot = join(sandbox, 'personal');
+    mkdirSync(personalRoot, { recursive: true });
+    const store = new FsDataDomainStore({ now: clock });
+    const personal = await store.connect(personalRoot, 'personal');
+    await expect(store.write(personal.dataDomainId, { data: 'fine\n' })).resolves.toMatchObject({ itemId: /^writes\// });
+  });
+
+  describe('when the store has a operator trust anchor', () => {
+    const signer = new Ed25519MemorySigner('operator-key-1');
+
+    function anchored(ledger: OperatorGrantLedger = new OperatorGrantLedger()) {
+      return new FsDataDomainStore({
+        now: clock,
+        operatorGrants: { verifier: signer.verifier(), acceptedKeyIds: ['operator-key-1'], ledger },
+      });
+    }
+
+    it('refuses the shape-correct blob that used to be enough', async () => {
+      const store = anchored();
+      const manifest = await store.connect(root, 'enterprise');
+      await expect(store.write(manifest.dataDomainId, { data: 'x\n' }, grant(manifest.dataDomainId)))
+        .rejects.toThrow(/operator grant \(unsigned\)/);
+    });
+
+    it('accepts a signed grant and refuses the same nonce on the next write', async () => {
+      const store = anchored();
+      const manifest = await store.connect(root, 'enterprise');
+      const once = await issueOperatorWriteGrant(
+        { dataDomainId: manifest.dataDomainId, grantedBy: 'operator@bayjf', ttlMs: 60_000 },
+        { signer, now: clock }
+      );
+      await expect(store.write(manifest.dataDomainId, { data: 'first\n' }, once)).resolves.toMatchObject({ itemId: /^writes\// });
+      await expect(store.write(manifest.dataDomainId, { data: 'second\n' }, once))
+        .rejects.toThrow(/operator grant \(replayed\)/);
+    });
+
+    it('refuses a grant signed for a different dataDomain even when the signature is valid', async () => {
+      const store = anchored();
+      const manifest = await store.connect(root, 'enterprise');
+      const forged = await issueOperatorWriteGrant({ dataDomainId: 'dataDomain-elsewhere', grantedBy: 'operator@bayjf' }, { signer, now: clock });
+      await expect(store.write(manifest.dataDomainId, { data: 'x\n' }, forged)).rejects.toThrow(/wrong-dataDomain/);
+    });
+
+    it('a consumed nonce survives a restart, so the replayed write is still refused', async () => {
+      const ledger = new OperatorGrantLedger();
+      const store = anchored(ledger);
+      const manifest = await store.connect(root, 'enterprise');
+      const grant = await issueOperatorWriteGrant({ dataDomainId: manifest.dataDomainId, grantedBy: 'operator@bayjf' }, { signer, now: clock });
+      await store.write(manifest.dataDomainId, { data: 'x\n' }, grant);
+
+      // What the runtime state file carries is exactly this list.
+      const afterRestart = new OperatorGrantLedger();
+      afterRestart.importState(ledger.exportState());
+      const restarted = anchored(afterRestart);
+      await restarted.connect(root, 'enterprise');
+      await expect(restarted.write(manifest.dataDomainId, { data: 'again\n' }, grant)).rejects.toThrow(/replayed/);
+    });
+  });
+});

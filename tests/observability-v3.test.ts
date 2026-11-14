@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdtemp, readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import { JsonlTraceExporter } from '../src/observability/exporter.js';
 import { MetricsHistory } from '../src/observability/metrics-history.js';
 import { buildTraceTree, type TraceTree } from '../src/observability/trace.js';
@@ -29,9 +29,9 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -66,11 +66,11 @@ function sampleTree(): TraceTree {
   return buildTraceTree({
     traceId: 'trace-1',
     audit: [
-      { ts: '2026-10-10T00:00:00.000Z', vassal: 'alpha', skill: 'review', realm: 'personal', runId: 'r1', decision: 'chain-switched', detail: 'alpha -> beta' },
+      { ts: '2026-10-10T00:00:00.000Z', executor: 'alpha', skill: 'review', dataDomain: 'personal', runId: 'r1', decision: 'chain-switched', detail: 'alpha -> beta' },
     ],
     progress: [
-      { type: 'branch-started', intentId: 'intent-1', runId: 'r1', vassal: 'alpha', skill: 'review', at: '2026-10-10T00:00:00.000Z' },
-      { type: 'branch-ended', intentId: 'intent-1', runId: 'r1', vassal: 'alpha', outcome: 'completed', at: '2026-10-10T00:00:01.000Z' },
+      { type: 'branch-started', intentId: 'intent-1', runId: 'r1', executor: 'alpha', skill: 'review', at: '2026-10-10T00:00:00.000Z' },
+      { type: 'branch-ended', intentId: 'intent-1', runId: 'r1', executor: 'alpha', outcome: 'completed', at: '2026-10-10T00:00:01.000Z' },
     ],
   });
 }
@@ -79,9 +79,9 @@ function sampleSnapshot(capturedAt: string): MetricsSnapshot {
   return {
     inFlight: 0, maxInFlight: 1, queueDepth: 0, queuedPeak: 1, refused: 0, diverted: 0,
     finished: 1, completed: 1,
-    failed: 0, timedOut: 0, canceled: 0, perVassal: {}, inFlightByVassal: {},
+    failed: 0, timedOut: 0, canceled: 0, perExecutor: {}, inFlightByExecutor: {},
     queueWait: null,
-    historyWindow: { branchesPerVassal: 1000, trimmedBranches: 0, trimmedQueueWaits: 0 }, capturedAt,
+    historyWindow: { branchesPerExecutor: 1000, trimmedBranches: 0, trimmedQueueWaits: 0 }, capturedAt,
   };
 }
 
@@ -152,26 +152,26 @@ describe('S6 V3 MetricsHistory', () => {
 describe('S6 V3 boot wiring', () => {
   it('exports a settled intent trace tree and captures a metrics snapshot on save', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'zeus-v3-'));
-    const stateFile = join(dir, 'kernel-state.json');
+    const stateFile = join(dir, 'runtime-state.json');
     const auditFile = join(dir, 'audit.jsonl');
     const traceFile = join(dir, 'trace-exporter.jsonl');
     const historyFile = join(dir, 'metrics-history.jsonl');
 
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: settlingFetch(),
-      vassalSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
+      executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
       stateFile,
       auditFile,
       traceExportFile: traceFile,
       metricsHistoryFile: historyFile,
     });
 
-    const result = await kernel.orchestrator.fanOut({
+    const result = await runtime.orchestrator.fanOut({
       intentId: 'intent-1',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
-      vassals: ['alpha'],
+      dataDomain: 'personal',
+      executors: ['alpha'],
     });
     expect(result.status).toBe('completed');
 
@@ -182,18 +182,18 @@ describe('S6 V3 boot wiring', () => {
     expect(trees[0]!.traceId).toBe(result.runId);
     expect(trees[0]!.root.kind).toBe('intent');
     expect(trees[0]!.root.spanId).toBe('intent-1');
-    expect(trees[0]!.spans.some(s => s.kind === 'branch' && s.vassal === 'alpha')).toBe(true);
+    expect(trees[0]!.spans.some(s => s.kind === 'branch' && s.executor === 'alpha')).toBe(true);
 
     // One metrics snapshot lands on each state save.
-    await kernel.saveState();
+    await runtime.saveState();
     const history = new MetricsHistory(historyFile);
     const read = await pollUntil(async () => history.read(), list => list.length >= 1);
     expect(read[0]!.finished).toBe(1);
   });
 
   it('keeps the narrow port unattached by default (V1/V2 behaviour)', async () => {
-    const kernel = await bootKernel({ fetchImpl: settlingFetch() });
-    expect(kernel.traceExporter).toBeUndefined();
-    expect(kernel.metricsHistory).toBeUndefined();
+    const runtime = await bootRuntime({ fetchImpl: settlingFetch() });
+    expect(runtime.traceExporter).toBeUndefined();
+    expect(runtime.metricsHistory).toBeUndefined();
   });
 });

@@ -59,7 +59,7 @@ const FACTS = argNumber('--facts', 200);
 const REPS = argNumber('--reps', 20);
 const EMBED_DELAY_MS = argNumber('--embed-delay-ms', 5);
 const REPORT_PATH = argString('--report', '');
-const REALM = 'personal';
+const DATA_DOMAIN = 'personal';
 const FIXED_NOW = () => new Date('2026-10-30T00:00:00.000Z');
 /** The store's searchRecall derives queries from branch params; queries here
  *  are single distinctive tokens so hits identify their fact unambiguously. */
@@ -142,7 +142,7 @@ function buildEvents(n) {
   const moods = ['prefers', 'dislikes', 'is-learning', 'teaches', 'evaluating'];
   return Array.from({ length: n }, (_, i) => ({
     eventId: `bench-e${i}`,
-    realmId: REALM,
+    dataDomainId: DATA_DOMAIN,
     runId: 'bench-run',
     source: { agentId: 'bench-agent' },
     kind: 'claim',
@@ -167,7 +167,7 @@ function buildEvents(n) {
 function freshStore(embedder, events) {
   const store = new MemoryStore(undefined, FIXED_NOW, { embedder });
   for (const event of events) store.append(event);
-  store.consolidateRealm(REALM);
+  store.consolidateDataDomain(DATA_DOMAIN);
   return store;
 }
 
@@ -180,7 +180,7 @@ async function measureColdBuild(embedder, events) {
   const store = freshStore(embedder, events);
   const before = embedder.calls.length;
   const t0 = performance.now();
-  await store.buildRecall(REALM);
+  await store.buildRecall(DATA_DOMAIN);
   const ms = performance.now() - t0;
   return { ms, embeds: embedder.calls.length - before, store };
 }
@@ -211,7 +211,7 @@ async function runScenario(delayMs) {
   // --- hot sync: the same corpus again must embed nothing ---
   const beforeHotSync = embedder.calls.length;
   const tHot = performance.now();
-  await store.buildRecall(REALM);
+  await store.buildRecall(DATA_DOMAIN);
   const hotSyncMs = performance.now() - tHot;
   const hotSyncEmbeds = embedder.calls.length - beforeHotSync;
   if (hotSyncEmbeds !== 0) {
@@ -221,7 +221,7 @@ async function runScenario(delayMs) {
   // --- hot query: incremental sync + one query embed per call ---
   const queries = Array.from({ length: 10 }, (_, i) => `variant-${i * QUERY_STEP}`);
   // warm-up (untimed): JIT paths and any lazy init
-  const warmHits = await store.searchRecall(REALM, REALM, queries[0]);
+  const warmHits = await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, queries[0]);
   if (warmHits.length === 0) throw new Error(`warm-up query '${queries[0]}' recalled nothing`);
   if (!warmHits.some(h => h.fact.object.includes(queries[0]))) {
     throw new Error(`warm-up query '${queries[0]}' did not recall its fact first-match`);
@@ -232,7 +232,7 @@ async function runScenario(delayMs) {
     for (const query of queries) {
       const before = embedder.calls.length;
       const t0 = performance.now();
-      await store.searchRecall(REALM, REALM, query);
+      await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, query);
       querySamples.push(performance.now() - t0);
       const added = embedder.calls.length - before;
       if (added !== 1) {
@@ -245,14 +245,14 @@ async function runScenario(delayMs) {
   embedder.dimension = 512;
   const beforeFlip = embedder.calls.length;
   const tFlip = performance.now();
-  const flipped = await store.buildRecall(REALM);
+  const flipped = await store.buildRecall(DATA_DOMAIN);
   const flipMs = performance.now() - tFlip;
   const flipEmbeds = embedder.calls.length - beforeFlip;
   if (flipped.dimension !== 512) throw new Error(`rebuilt index dimension ${flipped.dimension}, expected 512`);
   if (flipEmbeds !== FACTS) {
     throw new Error(`dimension rebuild embedded ${flipEmbeds} facts, expected ${FACTS}`);
   }
-  const afterFlip = await store.searchRecall(REALM, REALM, queries[0]);
+  const afterFlip = await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, queries[0]);
   if (!afterFlip.some(h => h.fact.object.includes(queries[0]))) {
     throw new Error('post-rebuild recall lost its fact');
   }

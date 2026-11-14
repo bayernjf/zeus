@@ -1,0 +1,73 @@
+{
+  "pinnedAt": "2026-11-14T09:20:21.659Z",
+  "suite": "org-roles",
+  "report": {
+    "caseCount": 6,
+    "passed": 21,
+    "failed": 0,
+    "blocked": 0,
+    "warned": 0,
+    "byFamily": {
+      "decision": {
+        "total": 6,
+        "passed": 6,
+        "blocked": 0
+      },
+      "escalation": {
+        "total": 5,
+        "passed": 5,
+        "blocked": 0
+      },
+      "selection": {
+        "total": 1,
+        "passed": 1,
+        "blocked": 0
+      },
+      "evidence": {
+        "total": 2,
+        "passed": 2,
+        "blocked": 0
+      },
+      "artifacts": {
+        "total": 4,
+        "passed": 4,
+        "blocked": 0
+      },
+      "guardrails": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "budget": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "planning": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "recovery": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "streaming": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "isolation": {
+        "total": 0,
+        "passed": 0,
+        "blocked": 0
+      },
+      "judge": {
+        "total": 3,
+        "passed": 3,
+        "blocked": 0
+      }
+    }
+  }
+}

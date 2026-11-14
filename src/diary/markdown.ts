@@ -10,7 +10,7 @@ export function renderDiaryMarkdown(entry: DiaryEntry, timeZone: string = 'UTC')
   const out: string[] = [];
   out.push(`# Diary · ${entry.date}`, '');
   out.push(
-    `> realm: ${entry.realmId} · ${entry.lines.length} event${entry.lines.length === 1 ? '' : 's'} · ` +
+    `> data-domain: ${entry.dataDomainId} · ${entry.lines.length} event${entry.lines.length === 1 ? '' : 's'} · ` +
       `window ${formatTime(entry.windowStart, timeZone)}–${formatTime(entry.windowEnd, timeZone)}`,
     '',
   );

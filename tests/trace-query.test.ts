@@ -22,12 +22,12 @@ function decisionTrace(input: { runId: string; latencyMs?: number; cents?: numbe
   };
 }
 
-function treeFor(traceId: string, vassal: string, traces: DecisionTrace[], at = '2026-10-30T00:00:00.000Z'): TraceTree {
+function treeFor(traceId: string, executor: string, traces: DecisionTrace[], at = '2026-10-30T00:00:00.000Z'): TraceTree {
   return buildTraceTree({
     audit: [],
     progress: [
-      { type: 'branch-started', intentId: `intent-${traceId}`, runId: traceId, vassal, skill: 'research', at },
-      { type: 'branch-ended', intentId: `intent-${traceId}`, runId: traceId, vassal, outcome: 'completed', at: '2026-10-30T00:00:05.000Z' },
+      { type: 'branch-started', intentId: `intent-${traceId}`, runId: traceId, executor, skill: 'research', at },
+      { type: 'branch-ended', intentId: `intent-${traceId}`, runId: traceId, executor, outcome: 'completed', at: '2026-10-30T00:00:05.000Z' },
     ],
     traces,
   });
@@ -97,10 +97,10 @@ describe('queryTraceTrees (D-5 query)', () => {
     const long = 'x'.repeat(3000);
     const tree = buildTraceTree({
       audit: [
-        { ts: '2026-10-30T00:00:01.000Z', vassal: '(kernel)', decision: 'tool-selected', detail: `Bearer sk-live-secret tool=x ${long}` },
+        { ts: '2026-10-30T00:00:01.000Z', executor: '(runtime)', decision: 'tool-selected', detail: `Bearer sk-live-secret tool=x ${long}` },
       ],
       progress: [
-        { type: 'branch-started', intentId: 'intent-1', runId: 't9', vassal: 'a1', skill: 'research', at: '2026-10-30T00:00:00.000Z' },
+        { type: 'branch-started', intentId: 'intent-1', runId: 't9', executor: 'a1', skill: 'research', at: '2026-10-30T00:00:00.000Z' },
       ],
       traces: [decisionTrace({ runId: 't9', error: { code: 'auth', message: 'Bearer sk-live-secret rejected' } })],
     });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { attributeFailures, participantsToEntries } from '../src/reflection/failure-attribution.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
-function entry(partial: Partial<AuditEntry> & { decision: AuditEntry['decision']; vassal: string }): AuditEntry {
+function entry(partial: Partial<AuditEntry> & { decision: AuditEntry['decision']; executor: string }): AuditEntry {
   return { ts: '2026-10-07T00:00:00.000Z', ...partial };
 }
 
@@ -11,18 +11,18 @@ describe('failure attribution (deferred #40 read-only half)', () => {
     const out = attributeFailures([]);
     expect(out.window).toBeNull();
     expect(out.totals).toEqual({ entries: 0, failures: 0, failureRate: 0 });
-    expect(out.byVassal).toEqual([]);
+    expect(out.byExecutor).toEqual([]);
     expect(out.patterns).toEqual([]);
   });
 
   it('aggregates totals and categories across decisions', () => {
     const entries: AuditEntry[] = [
-      entry({ vassal: 'a1', decision: 'dispatched' }),
-      entry({ vassal: 'a1', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
-      entry({ vassal: 'a1', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
-      entry({ vassal: 'b1', decision: 'refused-data-policy', detail: 'origin unverifiable' }),
-      entry({ vassal: 'b1', decision: 'domain-refused', detail: 'tenant mismatch' }),
-      entry({ vassal: 'a1', decision: 'vassal-revoked' }), // governance: excluded
+      entry({ executor: 'a1', decision: 'dispatched' }),
+      entry({ executor: 'a1', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
+      entry({ executor: 'a1', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
+      entry({ executor: 'b1', decision: 'refused-data-policy', detail: 'origin unverifiable' }),
+      entry({ executor: 'b1', decision: 'domain-refused', detail: 'tenant mismatch' }),
+      entry({ executor: 'a1', decision: 'executor-revoked' }), // governance: excluded
     ];
     const out = attributeFailures(entries);
     expect(out.totals.entries).toBe(6);
@@ -30,7 +30,7 @@ describe('failure attribution (deferred #40 read-only half)', () => {
     expect(out.totals.failureRate).toBeCloseTo(4 / 6);
     expect(out.byCategory).toEqual({ dispatch: 2, 'refused-policy': 2 });
     // a1: dispatched + 2 failures (revoked excluded) = 3 total
-    const a1 = out.byVassal.find((v) => v.vassal === 'a1')!;
+    const a1 = out.byExecutor.find((v) => v.executor === 'a1')!;
     expect(a1.total).toBe(3);
     expect(a1.failures).toBe(2);
     expect(a1.rate).toBeCloseTo(2 / 3);
@@ -39,8 +39,8 @@ describe('failure attribution (deferred #40 read-only half)', () => {
 
   it('derives window from entry timestamps', () => {
     const entries: AuditEntry[] = [
-      entry({ ts: '2026-10-01T00:00:00.000Z', vassal: 'a', decision: 'dispatch-failed' }),
-      entry({ ts: '2026-10-03T12:00:00.000Z', vassal: 'a', decision: 'dispatched' }),
+      entry({ ts: '2026-10-01T00:00:00.000Z', executor: 'a', decision: 'dispatch-failed' }),
+      entry({ ts: '2026-10-03T12:00:00.000Z', executor: 'a', decision: 'dispatched' }),
     ];
     expect(attributeFailures(entries).window).toEqual({
       from: '2026-10-01T00:00:00.000Z',
@@ -48,15 +48,15 @@ describe('failure attribution (deferred #40 read-only half)', () => {
     });
   });
 
-  it('marks a stable vassal-concentrated pattern and a writeback candidate', () => {
+  it('marks a stable executor-concentrated pattern and a writeback candidate', () => {
     const entries: AuditEntry[] = [
-      entry({ vassal: 'flaky', decision: 'dispatched' }),
-      entry({ vassal: 'flaky', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
-      entry({ vassal: 'flaky', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
-      entry({ vassal: 'flaky', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
+      entry({ executor: 'flaky', decision: 'dispatched' }),
+      entry({ executor: 'flaky', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
+      entry({ executor: 'flaky', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
+      entry({ executor: 'flaky', decision: 'dispatch-failed', detail: 'ECONNREFUSED' }),
     ];
     const out = attributeFailures(entries);
-    const pattern = out.patterns.find((p) => p.kind === 'vassal-concentrated')!;
+    const pattern = out.patterns.find((p) => p.kind === 'executor-concentrated')!;
     expect(pattern.target).toBe('flaky');
     expect(pattern.confidence).toBe('stable');
     expect(pattern.writebackCandidate).toBe(true);
@@ -65,25 +65,25 @@ describe('failure attribution (deferred #40 read-only half)', () => {
 
   it('labels a weaker concentration as suggestive, not writeback-candidate', () => {
     const entries: AuditEntry[] = [
-      entry({ vassal: 'mid', decision: 'dispatched' }),
-      entry({ vassal: 'mid', decision: 'dispatched' }),
-      entry({ vassal: 'mid', decision: 'dispatched' }),
-      entry({ vassal: 'mid', decision: 'dispatch-failed' }),
-      entry({ vassal: 'mid', decision: 'dispatch-failed' }),
+      entry({ executor: 'mid', decision: 'dispatched' }),
+      entry({ executor: 'mid', decision: 'dispatched' }),
+      entry({ executor: 'mid', decision: 'dispatched' }),
+      entry({ executor: 'mid', decision: 'dispatch-failed' }),
+      entry({ executor: 'mid', decision: 'dispatch-failed' }),
     ];
     const out = attributeFailures(entries);
-    const pattern = out.patterns.find((p) => p.kind === 'vassal-concentrated')!;
+    const pattern = out.patterns.find((p) => p.kind === 'executor-concentrated')!;
     expect(pattern.confidence).toBe('suggestive');
     expect(pattern.writebackCandidate).toBe(false);
   });
 
   it('flags a category-concentrated pattern at >= 50% of failures', () => {
     const entries: AuditEntry[] = [
-      entry({ vassal: 'a', decision: 'refused-data-policy' }),
-      entry({ vassal: 'b', decision: 'refused-data-policy' }),
-      entry({ vassal: 'c', decision: 'refused-data-policy' }),
-      entry({ vassal: 'd', decision: 'dispatch-failed' }),
-      entry({ vassal: 'e', decision: 'dispatch-failed' }),
+      entry({ executor: 'a', decision: 'refused-data-policy' }),
+      entry({ executor: 'b', decision: 'refused-data-policy' }),
+      entry({ executor: 'c', decision: 'refused-data-policy' }),
+      entry({ executor: 'd', decision: 'dispatch-failed' }),
+      entry({ executor: 'e', decision: 'dispatch-failed' }),
     ];
     const out = attributeFailures(entries);
     const pattern = out.patterns.find((p) => p.kind === 'category-concentrated')!;
@@ -94,34 +94,34 @@ describe('failure attribution (deferred #40 read-only half)', () => {
 
   it('does not emit patterns for pure governance traffic', () => {
     const entries: AuditEntry[] = [
-      entry({ vassal: 'a', decision: 'vassal-revoked' }),
-      entry({ vassal: 'b', decision: 'domain-grant-issued' }),
-      entry({ vassal: 'c', decision: 'watch-registered' }),
+      entry({ executor: 'a', decision: 'executor-revoked' }),
+      entry({ executor: 'b', decision: 'domain-grant-issued' }),
+      entry({ executor: 'c', decision: 'watch-registered' }),
     ];
     const out = attributeFailures(entries);
     expect(out.totals.failures).toBe(0);
     expect(out.patterns).toEqual([]);
-    expect(out.byVassal).toEqual([]);
+    expect(out.byExecutor).toEqual([]);
   });
 
   it('treats success decisions as ok and content-injected as tracking', () => {
     const entries: AuditEntry[] = [
-      entry({ vassal: 'a', decision: 'dispatched' }),
-      entry({ vassal: 'a', decision: 'domain-read' }),
-      entry({ vassal: 'a', decision: 'realm-write' }),
-      entry({ vassal: 'a', decision: 'content-injected', detail: 'policy recorded' }),
+      entry({ executor: 'a', decision: 'dispatched' }),
+      entry({ executor: 'a', decision: 'domain-read' }),
+      entry({ executor: 'a', decision: 'dataDomain-write' }),
+      entry({ executor: 'a', decision: 'content-injected', detail: 'policy recorded' }),
     ];
     const out = attributeFailures(entries);
     expect(out.totals.failures).toBe(0);
-    expect(out.byVassal[0]!.total).toBe(3); // content-injected excluded
+    expect(out.byExecutor[0]!.total).toBe(3); // content-injected excluded
   });
 
   it('participantsToEntries maps replayed branch outcomes into audit entries', () => {
     const entries = participantsToEntries(
       [
-        { vassal: 'a', ok: true },
-        { vassal: 'b', ok: false, timedOut: true, reason: 'no ack within window' },
-        { vassal: 'c', ok: false, reason: 'ECONNREFUSED' },
+        { executor: 'a', ok: true },
+        { executor: 'b', ok: false, timedOut: true, reason: 'no ack within window' },
+        { executor: 'c', ok: false, reason: 'ECONNREFUSED' },
       ],
       { ts: '2026-10-07T01:00:00.000Z', runId: 'r1', skill: 'research' },
     );
@@ -132,12 +132,12 @@ describe('failure attribution (deferred #40 read-only half)', () => {
     expect(entries[2]!.detail).toBe('ECONNREFUSED');
   });
 
-  it('sorts vassals deterministically by failures desc then name', () => {
+  it('sorts executors deterministically by failures desc then name', () => {
     const entries: AuditEntry[] = [
-      entry({ vassal: 'z', decision: 'dispatch-failed' }),
-      entry({ vassal: 'a', decision: 'dispatch-failed' }),
-      entry({ vassal: 'a', decision: 'dispatch-failed' }),
+      entry({ executor: 'z', decision: 'dispatch-failed' }),
+      entry({ executor: 'a', decision: 'dispatch-failed' }),
+      entry({ executor: 'a', decision: 'dispatch-failed' }),
     ];
-    expect(attributeFailures(entries).byVassal.map((v) => v.vassal)).toEqual(['a', 'z']);
+    expect(attributeFailures(entries).byExecutor.map((v) => v.executor)).toEqual(['a', 'z']);
   });
 });

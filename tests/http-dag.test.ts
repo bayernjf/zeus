@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { DagRunner } from '../src/orchestrator/dag-runner.js';
@@ -11,17 +11,17 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const NOW = () => new Date('2026-09-22T00:00:00.000Z');
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
-function okResult(vassal: string, state: TaskState = 'completed'): DispatchResult {
+function okResult(executor: string, state: TaskState = 'completed'): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state },
     artifacts: [],
@@ -34,7 +34,7 @@ type Route = DispatchResult | ((req: DispatchRequest) => Promise<DispatchResult>
 function makePort(routes: Record<string, Route>): DispatchPort {
   return {
     async dispatch(req) {
-      const route = routes[req.vassal!];
+      const route = routes[req.executor!];
       return typeof route === 'function' ? route(req) : route!;
     },
     async cancel() {},
@@ -46,7 +46,7 @@ function lookupFor(names: string[]): TargetLookup {
 }
 
 async function dagServer(routes: Record<string, Route>, names: string[]) {
-  const registry = new VassalRegistry();
+  const registry = new ExecutorRegistry();
   const signer = new Ed25519MemorySigner('zeus-rsk-test');
   const port = makePort(routes);
   const desk = new OversightDesk({ newId: () => 'esc-1' });
@@ -72,7 +72,7 @@ async function dagServer(routes: Record<string, Route>, names: string[]) {
   return { app, desk, orchestrator };
 }
 
-describe('HTTP S3 DAG driver API', () => {
+describe('HTTP S3 DAG operator API', () => {
   let app: FastifyInstance | undefined;
   afterEach(async () => {
     await app?.close();
@@ -87,7 +87,7 @@ describe('HTTP S3 DAG driver API', () => {
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
       payload: {
-        realm: 'personal',
+        dataDomain: 'personal',
         dag: {
           nodes: [
             { id: 'A', skill: 's' },
@@ -122,7 +122,7 @@ describe('HTTP S3 DAG driver API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', dag: { nodes: [{ id: 'A', skill: 's' }, { id: 'B', skill: 't', dependsOn: ['A'] }] } },
+      payload: { dataDomain: 'personal', dag: { nodes: [{ id: 'A', skill: 's' }, { id: 'B', skill: 't', dependsOn: ['A'] }] } },
     });
     const dagId = run.json().dagId;
     const reply = await app.inject({
@@ -146,7 +146,7 @@ describe('HTTP S3 DAG driver API', () => {
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
       payload: {
-        realm: 'personal',
+        dataDomain: 'personal',
         dag: { nodes: [{ id: 'A', skill: 's', dependsOn: ['B'] }, { id: 'B', skill: 't', dependsOn: ['A'] }] },
       },
     });
@@ -162,7 +162,7 @@ describe('HTTP S3 DAG driver API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', dag: { nodes: [{ id: 'A', skill: 's', dependsOn: ['ghost'] }] } },
+      payload: { dataDomain: 'personal', dag: { nodes: [{ id: 'A', skill: 's', dependsOn: ['ghost'] }] } },
     });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error).toBe('invalid_dag');
@@ -176,7 +176,7 @@ describe('HTTP S3 DAG driver API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', dag: { nodes: [{ id: '', skill: 's' }] } },
+      payload: { dataDomain: 'personal', dag: { nodes: [{ id: '', skill: 's' }] } },
     });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error).toBe('invalid_request');
@@ -189,7 +189,7 @@ describe('HTTP S3 DAG driver API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', skill: 's', dag: { nodes: [{ id: 'A', skill: 's' }] } },
+      payload: { dataDomain: 'personal', skill: 's', dag: { nodes: [{ id: 'A', skill: 's' }] } },
     });
     expect(reply.statusCode).toBe(400);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { digestManifest, sha256Hex } from '../src/realm/digest.js';
+import { digestManifest, sha256Hex } from '../src/dataDomain/digest.js';
 
 describe('digestManifest', () => {
   it('is order-independent over entries (backup baseline must not depend on scan order)', () => {

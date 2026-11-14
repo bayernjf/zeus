@@ -5,8 +5,8 @@ import { detectConflicts } from '../src/orchestrator/conflict.js';
 import type { BranchOutcome } from '../src/orchestrator/types.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 
-function statusEvent(vassal: string, state: TaskState): A2AEvent {
-  return { kind: 'status-update', taskId: `${vassal}-task`, contextId: 'ctx', status: { state }, final: state === 'completed' };
+function statusEvent(executor: string, state: TaskState): A2AEvent {
+  return { kind: 'status-update', taskId: `${executor}-task`, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
 function taskWithStance(id: string, stance: unknown, extra: Record<string, unknown> = {}): Task {
@@ -19,14 +19,14 @@ function taskWithStance(id: string, stance: unknown, extra: Record<string, unkno
   };
 }
 
-function branch(vassal: string, overrides: Partial<BranchOutcome> = {}): BranchOutcome {
+function branch(executor: string, overrides: Partial<BranchOutcome> = {}): BranchOutcome {
   return {
-    vassal,
-    runId: `run:${vassal}`,
+    executor,
+    runId: `run:${executor}`,
     ok: true,
-    taskId: `${vassal}-task`,
+    taskId: `${executor}-task`,
     state: 'completed',
-    events: [statusEvent(vassal, 'working'), statusEvent(vassal, 'completed')],
+    events: [statusEvent(executor, 'working'), statusEvent(executor, 'completed')],
     ...overrides,
   };
 }
@@ -34,9 +34,9 @@ function branch(vassal: string, overrides: Partial<BranchOutcome> = {}): BranchO
 describe('mergeBranches', () => {
   it('concatenates branches in selection order, keeping in-branch order and source tags', () => {
     const merged = mergeBranches([branch('loom'), branch('atlas')]);
-    expect(merged.map(e => e.source.vassal)).toEqual(['loom', 'loom', 'atlas', 'atlas']);
+    expect(merged.map(e => e.source.executor)).toEqual(['loom', 'loom', 'atlas', 'atlas']);
     expect(merged.map(e => e.event.kind)).toEqual(['status-update', 'status-update', 'status-update', 'status-update']);
-    expect(merged[0]!.source).toEqual({ vassal: 'loom', taskId: 'loom-task', runId: 'run:loom' });
+    expect(merged[0]!.source).toEqual({ executor: 'loom', taskId: 'loom-task', runId: 'run:loom' });
     expect(merged[2]!.source.taskId).toBe('atlas-task');
   });
 
@@ -49,7 +49,7 @@ describe('mergeBranches', () => {
       branch('loom', { ok: false, reason: 'boom', events: [statusEvent('loom', 'working')] }),
     ]);
     expect(merged).toHaveLength(1);
-    expect(merged[0]!.source.vassal).toBe('loom');
+    expect(merged[0]!.source.executor).toBe('loom');
   });
 });
 
@@ -61,15 +61,15 @@ describe('extractStance / extractPositions', () => {
     expect(rich).toEqual({ stance: 'approve', rationale: 'tests pass' });
   });
 
-  it('never ingests a vassal-reported weight (the artifact contract is stance + rationale)', () => {
+  it('never ingests a executor-reported weight (the artifact contract is stance + rationale)', () => {
     // deep review 2026-11-02 P1-2: Position.weight is a platform/caller-side
-    // voting weight; a vassal self-reporting one — benign or adversarial — is
+    // voting weight; a executor self-reporting one — benign or adversarial — is
     // ignored at the trust boundary instead of validated after the fact.
     for (const weight of [2, 0, 1e9, -5, NaN, Infinity, -Infinity]) {
       expect(extractStance(taskWithStance('t', 'approve', { weight }))).toEqual({ stance: 'approve' });
     }
     const positions = extractPositions([branch('loom', { task: taskWithStance('loom-task', 'approve', { weight: 1e9 }) })]);
-    expect(positions).toEqual([{ vassal: 'loom', stance: 'approve' }]);
+    expect(positions).toEqual([{ executor: 'loom', stance: 'approve' }]);
   });
 
   it('returns null for tasks without a stance', () => {
@@ -83,17 +83,17 @@ describe('extractStance / extractPositions', () => {
       branch('atlas', { ok: false, reason: 'down' }),
       branch('job-agent', { task: { kind: 'task', id: 'j', contextId: 'ctx', status: { state: 'completed' }, artifacts: [] } }),
     ]);
-    expect(positions.map(p => p.vassal)).toEqual(['loom']);
+    expect(positions.map(p => p.executor)).toEqual(['loom']);
   });
 });
 
 describe('aggregate', () => {
-  const pos = (vassal: string, stance: string, weight?: number) => ({ vassal, stance, ...(weight ? { weight } : {}) });
+  const pos = (executor: string, stance: string, weight?: number) => ({ executor, stance, ...(weight ? { weight } : {}) });
 
   it('reports no stance when nobody voted', () => {
     const decision = aggregate([]);
     expect(decision.conclusion).toBeNull();
-    expect(decision.reason).toMatch(/no vassal returned a stance/);
+    expect(decision.reason).toMatch(/no executor returned a stance/);
   });
 
   it('unanimous: concludes only when all agree', () => {
@@ -132,7 +132,7 @@ describe('aggregate', () => {
   });
 
   it('weighted: reports the margin in voters, like the majority rule', () => {
-    // "go" carries 1.0 of 1.1 weight -> concludes, but only 2 of 3 vassals voted go
+    // "go" carries 1.0 of 1.1 weight -> concludes, but only 2 of 3 executors voted go
     const decided = aggregate([pos('a', 'go', 0.8), pos('b', 'go', 0.2), pos('c', 'stop', 0.1)], { kind: 'weighted' });
     expect(decided.conclusion).toBe('go');
     expect(decided.margin).toEqual({ winner: 'go', winnerCount: 2, total: 3 });
@@ -147,7 +147,7 @@ describe('aggregate', () => {
 
   describe('weighted: adversarial weights (deep review 2026-11-02 P1-2)', () => {
     // `pos` drops falsy weights by design; `raw` keeps NaN/0 for attack cases.
-    const raw = (vassal: string, stance: string, weight: number) => ({ vassal, stance, weight });
+    const raw = (executor: string, stance: string, weight: number) => ({ executor, stance, weight });
 
     it('isolates NaN / ±Infinity / negative weights and still aggregates the rest', () => {
       const decision = aggregate(
@@ -208,7 +208,7 @@ describe('aggregate', () => {
 });
 
 describe('detectConflicts', () => {
-  const pos = (vassal: string, stance: string) => ({ vassal, stance });
+  const pos = (executor: string, stance: string) => ({ executor, stance });
 
   it('flags an unresolved split grouped by stance', () => {
     const positions = [pos('a', 'go'), pos('b', 'stop'), pos('c', 'go')];
@@ -219,8 +219,8 @@ describe('detectConflicts', () => {
     const conflicts = detectConflicts([pos('a', 'go'), pos('b', 'stop')], split);
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]!.stances).toEqual([
-      { stance: 'go', vassals: ['a'] },
-      { stance: 'stop', vassals: ['b'] },
+      { stance: 'go', executors: ['a'] },
+      { stance: 'stop', executors: ['b'] },
     ]);
   });
 

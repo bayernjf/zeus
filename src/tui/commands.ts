@@ -14,7 +14,7 @@ export type DeckCommand =
   | { kind: 'resume'; index: number; params: Record<string, unknown> }
   | { kind: 'reinstate'; index: number }
   | { kind: 'revoke'; index: number }
-  | { kind: 'grantIssue'; realmIndex: number; subject: string; access: 'read' | 'write'; grantedBy: string }
+  | { kind: 'grantIssue'; dataDomainIndex: number; subject: string; access: 'read' | 'write'; grantedBy: string }
   | { kind: 'grantRevoke'; grantIndex: number }
   | { kind: 'recognize'; text: string; useModel: boolean }
   | { kind: 'contractIssue'; skill: string; maxChildTickets: number; maxConcurrent: number; grantedBy: string }
@@ -37,18 +37,18 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
   if (lower === 'q' || lower === 'quit') return { kind: 'quit' };
   if (lower === 'h' || lower === 'help' || line === '?') return { kind: 'help' };
 
-  // Cross-domain grant issuance: `g <enterpriseRealm#> <subject> <r|w> [grantedBy]`.
+  // Cross-domain grant issuance: `g <enterpriseDataDomain#> <subject> <r|w> [grantedBy]`.
   if (verb === 'g') {
     const grantMatch = /^g\s*(\d+)\s+(\S+)\s+(\S+)(?:\s+(.+))?$/i.exec(line);
     if (!grantMatch) return { error: 'grant-needs-args' };
     const [, indexStr, subject, accessTokenRaw, issuerRaw] = grantMatch;
-    const realmIndex = Number(indexStr);
+    const dataDomainIndex = Number(indexStr);
     const accessToken = accessTokenRaw!.toLowerCase(); // regex guarantees \S+
-    if (!Number.isInteger(realmIndex) || realmIndex < 1) return { error: 'bad-index' };
+    if (!Number.isInteger(dataDomainIndex) || dataDomainIndex < 1) return { error: 'bad-index' };
     const access = accessToken === 'r' || accessToken === 'read' ? 'read' : accessToken === 'w' || accessToken === 'write' ? 'write' : null;
     if (access === null) return { error: 'grant-bad-access' };
     // Both \S+ groups are guaranteed by the regex; only the trailing issuer is optional.
-    return { kind: 'grantIssue', realmIndex, subject: subject!, access, grantedBy: issuerRaw ?? 'operator' };
+    return { kind: 'grantIssue', dataDomainIndex, subject: subject!, access, grantedBy: issuerRaw ?? 'operator' };
   }
 
   // Cross-domain grant revocation: `k <grant#>` (distinct from `d`, roster revoke).
@@ -102,7 +102,7 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
   if (lower === 'c' || /^c\s+\S+$/i.test(line)) return { error: 'contract-needs-args' };
 
   // Self-host watches (P1 operator face). `wt` drives one caller-owned tick
-  // (the kernel holds no timer); `w3` / `w 3` revokes (settles) watch #n.
+  // (the runtime holds no timer); `w3` / `w 3` revokes (settles) watch #n.
   // Watch registration stays on the HTTP/Web face: its predicate/intent shape
   // is too wide for a one-line command, the same split contracts already use.
   if (lower === 'wt' || lower === 'watch-tick') return { kind: 'watchTick' };
@@ -166,7 +166,7 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
 
   // Answering an agent that stopped for missing parameters (E6.3). `approve`
   // alone only records the decision, so the deck needs the re-dispatch path the
-  // kernel already exposes: `r<n> {json}` carries the parameters the agent asked
+  // runtime already exposes: `r<n> {json}` carries the parameters the agent asked
   // for. Parsing happens here, not in the runner, so a malformed payload is
   // caught before any request goes out.
   const resumeMatch = /^r\s*(\d+)(?:\s+(.+))?$/is.exec(line);
@@ -215,9 +215,9 @@ export const COMMAND_HELP = [
   '  x<n>       reject escalation #n',
   '  s<n>.<m>   resolve escalation #n accepting stance #m',
   '  r<n> {json}  answer escalation #n with these parameters and re-dispatch that branch',
-  '  d<n>       revoke roster vassal #n (asks y/N)',
-  '  b<n>       reinstate revoked roster vassal #n (asks y/N)',
-  '  g<n> <subject> <r|w> [by]  issue a personal->enterprise grant on realm #n',
+  '  d<n>       revoke roster executor #n (asks y/N)',
+  '  b<n>       reinstate revoked roster executor #n (asks y/N)',
+  '  g<n> <subject> <r|w> [by]  issue a personal->enterprise grant on dataDomain #n',
   '  k<n>       revoke cross-domain grant #n (asks y/N)',
   '  c <skill> <tickets> <concurrent> [by]  issue a delegation contract (execute, 24h)',
   '  c<n>       revoke delegation contract #n (asks y/N)',

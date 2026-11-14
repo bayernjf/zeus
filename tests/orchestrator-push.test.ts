@@ -17,17 +17,17 @@ function statusEvent(taskId: string, state: Task['status']['state'] = 'completed
 }
 
 /** The ack a plain tasks/send returns — not a final task, just acceptance. */
-function ack(vassal: string, state: Task['status']['state'] = 'working'): DispatchResult {
+function ack(executor: string, state: Task['status']['state'] = 'working'): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state },
     artifacts: [],
   };
   return { ok: true, task, events: [statusEvent(task.id, state)], injectedHits: [] };
 }
 
-function pushTask(vassal: string, state: Task['status']['state'], message?: string): Task {
+function pushTask(executor: string, state: Task['status']['state'], message?: string): Task {
   return {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx',
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx',
     status: { state, ...(message ? { message: { code: 'E', message } } : {}) },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
@@ -38,14 +38,14 @@ async function flush(times = 5): Promise<void> {
 }
 
 function immediatePort(started: string[] = []) {
-  const cancelled: Array<{ vassal: string; taskId: string }> = [];
+  const cancelled: Array<{ executor: string; taskId: string }> = [];
   const port: DispatchPort = {
     async dispatch(req: DispatchRequest) {
-      started.push(req.vassal!);
-      return ack(req.vassal!);
+      started.push(req.executor!);
+      return ack(req.executor!);
     },
-    async cancel(vassal: string, taskId: string) {
-      cancelled.push({ vassal, taskId });
+    async cancel(executor: string, taskId: string) {
+      cancelled.push({ executor, taskId });
     },
   };
   return { port, started, cancelled };
@@ -77,7 +77,7 @@ describe('E4.11 A2A push notification — arming and refusal', () => {
   it('refuses an armed intent when no receiver is configured (push-unconfigured, zero dispatch)', async () => {
     const { orchestrator, started } = build(['a']);
     const result = await orchestrator.fanOut({
-      skill: 'review', realm: 'personal', params: {}, pushNotification: true,
+      skill: 'review', dataDomain: 'personal', params: {}, pushNotification: true,
     });
     expect(result.status).toBe('failed');
     expect(result.refused?.reason).toBe('push-unconfigured');
@@ -86,7 +86,7 @@ describe('E4.11 A2A push notification — arming and refusal', () => {
 
   it('keeps unarmed intents on the streaming path (no push config attached, settles immediately)', async () => {
     const { orchestrator } = build(['a'], { pushReceiver: PUSH_RECEIVER });
-    const result = await orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    const result = await orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
     expect(result.status).toBe('completed');
     expect(result.branches[0]?.ok).toBe(true);
   });
@@ -97,7 +97,7 @@ describe('E4.11 A2A push notification — branch settlement via the callback', (
     const { orchestrator, audits } = build(['a'], { pushReceiver: PUSH_RECEIVER });
     let settled = false;
     const fanOut = orchestrator
-      .fanOut({ skill: 'review', realm: 'personal', params: {}, pushNotification: true })
+      .fanOut({ skill: 'review', dataDomain: 'personal', params: {}, pushNotification: true })
       .then(result => { settled = true; return result; });
     await flush();
     expect(settled).toBe(false);
@@ -109,11 +109,11 @@ describe('E4.11 A2A push notification — branch settlement via the callback', (
 
     const result = await fanOut;
     expect(result.status).toBe('completed');
-    expect(result.branches[0]).toMatchObject({ vassal: 'a', ok: true, state: 'completed', taskId: 'a-t' });
+    expect(result.branches[0]).toMatchObject({ executor: 'a', ok: true, state: 'completed', taskId: 'a-t' });
     expect(audits).toContainEqual(
       expect.objectContaining({
         decision: 'push-notification-received', taskId: 'a-t', state: 'completed',
-        runId: expect.stringMatching(/run-1:a$/), vassal: 'a',
+        runId: expect.stringMatching(/run-1:a$/), executor: 'a',
       }),
     );
   });
@@ -121,7 +121,7 @@ describe('E4.11 A2A push notification — branch settlement via the callback', (
   it('an input-required push reaches the E6.1 desk exactly once (onTaskInput), mirroring the stream path', async () => {
     const { orchestrator, onTaskInput } = build(['a'], { pushReceiver: PUSH_RECEIVER });
     const fanOut = orchestrator.fanOut({
-      skill: 'review', realm: 'personal', params: {}, pushNotification: true,
+      skill: 'review', dataDomain: 'personal', params: {}, pushNotification: true,
       aggregation: { kind: 'unanimous' },
     });
     await flush();
@@ -146,12 +146,12 @@ describe('E4.11 A2A push notification — branch settlement via the callback', (
 
   it('a failed push settles the branch as a failure with the agent own reason', async () => {
     const { orchestrator } = build(['a'], { pushReceiver: PUSH_RECEIVER });
-    const fanOut = orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {}, pushNotification: true });
+    const fanOut = orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {}, pushNotification: true });
     await flush();
-    await orchestrator.receivePushNotification(pushTask('a', 'failed', 'vassal-side failure'));
+    await orchestrator.receivePushNotification(pushTask('a', 'failed', 'executor-side failure'));
     const result = await fanOut;
     expect(result.status).toBe('failed');
-    expect(result.branches[0]).toMatchObject({ ok: false, state: 'failed', reason: 'vassal-side failure' });
+    expect(result.branches[0]).toMatchObject({ ok: false, state: 'failed', reason: 'executor-side failure' });
   });
 
   it('an unknown task is refused and audited (bearer-valid anomaly, not transport noise)', async () => {
@@ -167,12 +167,12 @@ describe('E4.11 A2A push notification — branch settlement via the callback', (
   it('a branch whose push never arrives times out, and the ack task id is cancellable', async () => {
     const { orchestrator, cancelled } = build(['a'], { pushReceiver: PUSH_RECEIVER });
     const result = await orchestrator.fanOut({
-      skill: 'review', realm: 'personal', params: {}, pushNotification: true, branchTimeoutMs: 30,
+      skill: 'review', dataDomain: 'personal', params: {}, pushNotification: true, branchTimeoutMs: 30,
     });
     expect(result.branches[0]).toMatchObject({ ok: false, timedOut: true });
     // Unlike the stream case (which has no task id at timeout), the ack task id
     // is known — so the timed-out branch is cancelled by its real id.
     await flush();
-    expect(cancelled).toContainEqual({ vassal: 'a', taskId: 'a-t' });
+    expect(cancelled).toContainEqual({ executor: 'a', taskId: 'a-t' });
   });
 });

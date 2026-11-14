@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bootKernel, resolveDecisionConfig } from '../src/state/boot.js';
+import { bootRuntime, resolveDecisionConfig } from '../src/state/boot.js';
 import { createScriptedDecisionBackend } from '../src/testing/decision-backend.js';
 
 // ---------------------------------------------------------------------------
@@ -110,7 +110,7 @@ describe('T-C resolveDecisionConfig (process env wiring)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// bootKernel end-to-end: the injected backend must actually reach the
+// bootRuntime end-to-end: the injected backend must actually reach the
 // orchestrator (proved by behaviour, not by poking private fields).
 // ---------------------------------------------------------------------------
 
@@ -126,17 +126,17 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
 }
 
-// One fetch mock serving N vassals; each vassal always returns a fixed stance
+// One fetch mock serving N executors; each executor always returns a fixed stance
 // over a faithful SSE frame sequence (status working -> completed task).
-function vassalFetch(stances: Record<string, 'approve' | 'reject'>): typeof fetch {
+function executorFetch(stances: Record<string, 'approve' | 'reject'>): typeof fetch {
   return (async (input: any) => {
     const url = String(input);
     const name = url.split('/')[3]!;
@@ -177,17 +177,17 @@ function mockBackend(choice: 'approve' | 'reject', confidence = 0.92) {
 
 const seeds = (names: string[]) => names.map(n => `http://127.0.0.1/${n}/api/a2a/agent-card`);
 
-describe('T-C bootKernel decision backend wiring (end-to-end via SSE vassals)', () => {
+describe('T-C bootRuntime decision backend wiring (end-to-end via SSE executors)', () => {
   it('consults the injected backend to arbitrate a rule-inconclusive split (arbitration live)', async () => {
     const { backend, choiceCalls } = mockBackend('approve');
-    const kernel = await bootKernel({
-      fetchImpl: vassalFetch({ loom: 'approve', atlas: 'reject' }),
-      vassalSeeds: seeds(['loom', 'atlas']),
+    const runtime = await bootRuntime({
+      fetchImpl: executorFetch({ loom: 'approve', atlas: 'reject' }),
+      executorSeeds: seeds(['loom', 'atlas']),
       decisionBackend: backend,
     });
-    const result = await kernel.orchestrator.fanOut({
+    const result = await runtime.orchestrator.fanOut({
       skill: 'review',
-      realm: 'personal',
+      dataDomain: 'personal',
       params: { question: 'ship?' },
     });
     expect(choiceCalls.length).toBeGreaterThan(0);
@@ -198,36 +198,36 @@ describe('T-C bootKernel decision backend wiring (end-to-end via SSE vassals)', 
 
   it('runs the adversarial judge for a rule-decided split when judgeEnabled, escalating on disagreement', async () => {
     const { backend, choiceCalls } = mockBackend('reject', 0.91);
-    const kernel = await bootKernel({
-      fetchImpl: vassalFetch({ loom: 'approve', craft: 'approve', atlas: 'reject' }),
-      vassalSeeds: seeds(['loom', 'craft', 'atlas']),
+    const runtime = await bootRuntime({
+      fetchImpl: executorFetch({ loom: 'approve', craft: 'approve', atlas: 'reject' }),
+      executorSeeds: seeds(['loom', 'craft', 'atlas']),
       decisionBackend: backend,
       judgeEnabled: true,
     });
-    const result = await kernel.orchestrator.fanOut({
+    const result = await runtime.orchestrator.fanOut({
       skill: 'review',
-      realm: 'personal',
+      dataDomain: 'personal',
       params: { question: 'ship?' },
     });
     expect(choiceCalls.length).toBeGreaterThan(0);
-    expect(result.status).toBe('needs-driver');
+    expect(result.status).toBe('needs-operator');
     expect(result.judgeReview?.agreesWithRule).toBe(false);
     expect(result.conflicts.some(c => c.kind === 'judge-review')).toBe(true);
   });
 
   it('stays rules-only (no backend call) when no decisionBackend is injected', async () => {
     const { backend, choiceCalls } = mockBackend('approve');
-    const kernel = await bootKernel({
-      fetchImpl: vassalFetch({ loom: 'approve', atlas: 'reject' }),
-      vassalSeeds: seeds(['loom', 'atlas']),
+    const runtime = await bootRuntime({
+      fetchImpl: executorFetch({ loom: 'approve', atlas: 'reject' }),
+      executorSeeds: seeds(['loom', 'atlas']),
     });
-    const result = await kernel.orchestrator.fanOut({
+    const result = await runtime.orchestrator.fanOut({
       skill: 'review',
-      realm: 'personal',
+      dataDomain: 'personal',
       params: { question: 'ship?' },
     });
     expect(choiceCalls).toHaveLength(0);
-    expect(result.status).toBe('needs-driver'); // split with no arbitration path
+    expect(result.status).toBe('needs-operator'); // split with no arbitration path
     expect(backend).toBeDefined(); // sanity: the unused backend object exists
   });
 });

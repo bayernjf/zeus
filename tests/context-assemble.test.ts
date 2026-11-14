@@ -6,7 +6,7 @@ import type { RecallHit } from '../src/memory/types.js';
  * S1 context engineering V1+V2 (design-context-engineering §10.2/§10.4): the
  * pure assembler's contract — deduplicate by fact (newest copy wins), drop
  * credential-shaped text, gate by relevance, cap by score, and never trim
- * silently. The kernel's retrieval and domain isolation are exercised in
+ * silently. The runtime's retrieval and domain isolation are exercised in
  * boot-context-assembly.test.ts; here the assembler is tested over hand-built
  * hits.
  */
@@ -17,14 +17,14 @@ function hit(
   subject: string,
   predicate: string,
   object: unknown,
-  realmId = 'personal',
+  dataDomainId = 'personal',
   updatedAt = '2026-10-09T00:00:00.000Z',
-  origin?: 'agent-produced' | 'kernel-resolved-realm',
+  origin?: 'agent-produced' | 'runtime-resolved-dataDomain',
 ): RecallHit {
   return {
     fact: {
       factId,
-      realmId,
+      dataDomainId,
       subject,
       predicate,
       object,
@@ -174,7 +174,7 @@ describe('assembleBranchContext', () => {
     expect(events).toContainEqual({ kind: 'context-budget-exceeded', kept: 0, limit: 0 });
   });
 
-  it('writes the memory-recall source and the fact realm onto every entry', () => {
+  it('writes the memory-recall source and the fact dataDomain onto every entry', () => {
     const { appendix } = assembleBranchContext({
       memoryHits: [hit('f1', 0.9, 'user', 'prefers', 'typescript', 'enterprise')],
       maxEntries: 20,
@@ -182,7 +182,7 @@ describe('assembleBranchContext', () => {
     expect(appendix[0]).toMatchObject({
       ...common,
       claimId: 'f1',
-      realmId: 'enterprise',
+      dataDomainId: 'enterprise',
       score: 0.9,
     });
   });
@@ -196,7 +196,7 @@ describe('assembleBranchContext', () => {
       maxEntries: 20,
     });
     for (const entry of appendix) {
-      expect(Object.keys(entry).sort()).toEqual(['claimId', 'provenance', 'realmId', 'score', 'source', 'text']);
+      expect(Object.keys(entry).sort()).toEqual(['claimId', 'dataDomainId', 'provenance', 'score', 'source', 'text']);
     }
     expect(events.at(-1)).toEqual({ kind: 'context-assembled', appendixEntries: 1 });
   });
@@ -208,20 +208,20 @@ describe('assembleBranchContext', () => {
     const { appendix } = assembleBranchContext({
       memoryHits: [
         hit('f1', 0.9, 'alpha', 'reported', 'the build is green', 'personal', '2026-10-09T00:00:00.000Z', 'agent-produced'),
-        hit('f2', 0.8, 'user', 'prefers', 'typescript', 'personal', '2026-10-09T00:00:00.000Z', 'kernel-resolved-realm'),
+        hit('f2', 0.8, 'user', 'prefers', 'typescript', 'personal', '2026-10-09T00:00:00.000Z', 'runtime-resolved-dataDomain'),
       ],
       maxEntries: 20,
     });
     expect(appendix.find(e => e.claimId === 'f1')!.provenance).toBe('agent-produced');
-    expect(appendix.find(e => e.claimId === 'f2')!.provenance).toBe('kernel-resolved-realm');
+    expect(appendix.find(e => e.claimId === 'f2')!.provenance).toBe('runtime-resolved-dataDomain');
   });
 
-  it('falls back to kernel-resolved-realm for facts written before origin existed', () => {
+  it('falls back to runtime-resolved-dataDomain for facts written before origin existed', () => {
     const { appendix } = assembleBranchContext({
       memoryHits: [hit('f1', 0.9, 'user', 'prefers', 'typescript')],
       maxEntries: 20,
     });
-    expect(appendix[0]!.provenance).toBe('kernel-resolved-realm');
+    expect(appendix[0]!.provenance).toBe('runtime-resolved-dataDomain');
   });
 
   it('carries the agent-produced boundary on an annotated recall (S8 V2)', () => {
@@ -247,7 +247,7 @@ describe('renderFactText', () => {
   });
 
   it('serialises a non-scalar object', () => {
-    const text = renderFactText(hit('f1', 0.9, 'user', 'holds', { role: 'driver' }).fact);
-    expect(text).toBe('user holds {"role":"driver"}');
+    const text = renderFactText(hit('f1', 0.9, 'user', 'holds', { role: 'operator' }).fact);
+    expect(text).toBe('user holds {"role":"operator"}');
   });
 });

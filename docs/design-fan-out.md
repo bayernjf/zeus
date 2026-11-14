@@ -1,6 +1,6 @@
 # 并发决策内核设计（Fan-out / Aggregation / Conflict）
 
-> 状态：**现行（设计稿 v0.2，2026-09-22，M2 第一批；2026-10-02 按 [design-realm](design-realm.md) §3.1 的 `dataPolicy` 收缩契约对齐 §2 的 `realmHits` 类型与来源标记）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
+> 状态：**现行（设计稿 v0.2，2026-09-22，M2 第一批；2026-10-02 按 [design-dataDomain](design-dataDomain.md) §3.1 的 `dataPolicy` 收缩契约对齐 §2 的 `dataDomainHits` 类型与来源标记）**。实施进度记 [handoff.md](../handoff.md)，本文只写设计。
 > 上游需求：[prd.md](prd.md) E1（并发协同与决策内核）、E2.4（按技能组队）；技术议题 S3/S4/S5 见 [tech-exploration-map.md](tech-exploration-map.md)；控制关系见 [design-supervision.md](design-supervision.md)。
 > 边界：v0.1 只做**库内、确定性、不调 LLM** 的最小闭环；持久化、服务端 SSE、完整 DAG 当时不在内（见 §7）。**LLM-as-judge 对抗复核已于 v0.18 落地（见 §5.1，`src/core/orchestrator/judge.ts`），与 S2 决策后端端口对接见 [design-decision-backend.md](design-decision-backend.md)。**
 
@@ -33,20 +33,20 @@
 type FanOutRequest = {
   intentId?: string;            // 幂等键；不传则每次新扇出、不去重
   skill: string;                // 按技能选执行 Agent
-  vassals?: string[];           // 显式名单；缺省 = 所有提供该技能的活跃执行 Agent
+  executors?: string[];           // 显式名单；缺省 = 所有提供该技能的活跃执行 Agent
   params: Record<string, unknown>;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   runId?: string;               // 父 runId；缺省生成
-  realmHits?: Array<{ itemId: string; tags: string[]; modifiedAt: string; snippet: string }>;
-  /** 内容来源：数据二极管按档位判定的输入，缺省即判不出来，见 design-realm §3.1 */
-  realmHitsOrigin?: 'kernel-resolved' | 'caller-asserted';
+  dataDomainHits?: Array<{ itemId: string; tags: string[]; modifiedAt: string; snippet: string }>;
+  /** 内容来源：数据二极管按档位判定的输入，缺省即判不出来，见 design-dataDomain §3.1 */
+  dataDomainHitsOrigin?: 'runtime-resolved' | 'caller-asserted';
   aggregation?: AggregationRule; // 见 §5，默认 majority
   branchTimeoutMs?: number;      // 单路超时；缺省不超时
 };
 
 type BranchOutcome = {
-  vassal: string;
-  runId: string;                // 分支 runId = `${parentRunId}:${vassal}`
+  executor: string;
+  runId: string;                // 分支 runId = `${parentRunId}:${executor}`
   ok: boolean;
   state?: TaskState;
   taskId?: string;
@@ -56,13 +56,13 @@ type BranchOutcome = {
   timedOut?: boolean;
 };
 
-type FanOutStatus = 'completed' | 'partial' | 'failed' | 'needs-driver';
+type FanOutStatus = 'completed' | 'partial' | 'failed' | 'needs-operator';
 
 type FanOutResult = {
   intentId: string;
   runId: string;
   skill: string;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   branches: BranchOutcome[];
   stream: SourcedEvent[];       // §4
   positions: Position[];        // §5
@@ -79,16 +79,16 @@ type FanOutResult = {
 ```ts
 type DispatchPort = {
   dispatch(req: DispatchRequest): Promise<DispatchResult>;
-  cancel(vassal: string, taskId: string): Promise<unknown>;
+  cancel(executor: string, taskId: string): Promise<unknown>;
 };
-// 选目标复用 registry 的 VassalLookup（findBySkill / statusOf）
+// 选目标复用 registry 的 ExecutorLookup（findBySkill / statusOf）
 ```
 
 ## 3. F1 扇出 + F2 幂等
 
-**选目标**：显式 `vassals` 优先；否则 `lookup.findBySkill(skill)` 全选（fan-out 语义本就是多投，**不触发**单派发器的"多执行 Agent 歧义"错误）。目标为空 → `failed`。
+**选目标**：显式 `executors` 优先；否则 `lookup.findBySkill(skill)` 全选（fan-out 语义本就是多投，**不触发**单派发器的"多执行 Agent 歧义"错误）。目标为空 → `failed`。
 
-**并行**：`Promise.allSettled` 并发逐路 `Dispatcher.dispatch`，每路传分支 runId 与同一份 params/realmHits（**同一条内容要按每个执行 Agent 各自的 `fealty.dataPolicy` 分别判档**，判定规则与"来源标记"见 [design-realm](design-realm.md) §3.1）。单路异常/拒绝/超时不拖垮其它路。
+**并行**：`Promise.allSettled` 并发逐路 `Dispatcher.dispatch`，每路传分支 runId 与同一份 params/dataDomainHits（**同一条内容要按每个执行 Agent 各自的 `handshake.dataPolicy` 分别判档**，判定规则与"来源标记"见 [design-dataDomain](design-dataDomain.md) §3.1）。单路异常/拒绝/超时不拖垮其它路。
 
 **单路超时（S4 最小步）**：`branchTimeoutMs` 到时未决，该路记 `timedOut:true`、`ok:false`，其余继续。v0.1 不 abort 在途请求（Dispatcher 尚未透传 AbortSignal），只不再等待——进行中硬取消列入 §7。
 
@@ -96,7 +96,7 @@ type DispatchPort = {
 
 **状态判定**（优先级从高到低）：
 1. 无成功分支 → `failed`；
-2. 存在规则无法消解的立场冲突 → `needs-driver`；
+2. 存在规则无法消解的立场冲突 → `needs-operator`；
 3. 部分分支失败/超时 → `partial`；
 4. 其余 → `completed`。
 纯执行类任务（执行 Agent 不回立场）不构成冲突，成功即 `completed`。
@@ -104,7 +104,7 @@ type DispatchPort = {
 ## 4. F4 多流合并（`merge.ts`，纯函数）
 
 ```ts
-type SourcedEvent = { source: { vassal: string; taskId?: string; runId: string }; event: A2AEvent };
+type SourcedEvent = { source: { executor: string; taskId?: string; runId: string }; event: A2AEvent };
 ```
 
 `mergeBranches(branches)`：分支内保持 SSE 原序，分支间按选目标顺序拼接，每个事件可反查 `source`。不做跨执行 Agent 全局时间戳排序（执行 Agent 时钟不可信、时间戳不保证）；需要时间序的呈现层可在拿到可信时钟后另排。
@@ -114,7 +114,7 @@ type SourcedEvent = { source: { vassal: string; taskId?: string; runId: string }
 执行 Agent 立场从终态 `task.artifacts` 的 data part 中提取 `stance`（或同义 `verdict`）字符串；提不到的分支记为"无立场"，不参与投票、不构成冲突。artifact 契约仅 stance + rationale：执行 Agent 自报的 `weight` 一律不采信——`Position.weight` 是平台/调用方侧的投票权重，不是作者侧声明（深度评审 2026-11-02 P1-2）。
 
 ```ts
-type Position = { vassal: string; stance: string; weight?: number; rationale?: string };
+type Position = { executor: string; stance: string; weight?: number; rationale?: string };
 type AggregationRule = { kind: 'unanimous' } | { kind: 'majority' } | { kind: 'weighted'; threshold?: number };
 type AggregatedDecision = {
   rule: AggregationRule['kind'];
@@ -135,7 +135,7 @@ type AggregatedDecision = {
 
 规则聚合得出结论**之后**，若配置了决策后端且显式开启（`judgeEnabled`，默认关），再请一个独立后端对多立场决策做对抗复核。它与 S2 仲裁（`arbitration.ts`）职责互斥、前后衔接：
 
-- **仲裁**：规则**无结论**（`conclusion === null`，needs-driver）时，请后端替代操作者裁决分裂。
+- **仲裁**：规则**无结论**（`conclusion === null`，needs-operator）时，请后端替代操作者裁决分裂。
 - **judge**：规则**有结论且 ≥2 立场**时，请后端独立复核该结论。
 
 判定与处置（`judgeDecision`，与仲裁同一套置信闸门：阈值默认 0.8、未校准 LLM 默认不采纳、后端故障不阻塞）：
@@ -143,16 +143,16 @@ type AggregatedDecision = {
 | 复核结果 | 处置 |
 | --- | --- |
 | 过门且同意规则结论 | 记录背书 `agreesWithRule:true`，状态不变 |
-| 过门、高置信**分歧** | **不静默覆盖规则，也不放行弱多数**：状态转 needs-driver，追加一个 `kind:'judge-review'` 的 `Conflict`（两方 stance 按字母排序，summary 分别标注规则结论与 judge 推荐及置信度），复用 F6/E6.2 监督台→操作者 resolve 闭环 |
+| 过门、高置信**分歧** | **不静默覆盖规则，也不放行弱多数**：状态转 needs-operator，追加一个 `kind:'judge-review'` 的 `Conflict`（两方 stance 按字母排序，summary 分别标注规则结论与 judge 推荐及置信度），复用 F6/E6.2 监督台→操作者 resolve 闭环 |
 | 低置信 / 未校准（未显式放行）/ 后端故障 / 单立场 / 规则无结论 / 结论本由后端仲裁给出 | 只记录 `judged:false` 与 `reason`，状态不动（同一后端不自评其仲裁结论） |
 
 judge 记录（`FanOutResult.judgeReview`）随意图持久化，并进入 E1.6 离线回放时间线（`judge-reviewed` 节点）。judge 只产生第二意见与升级，不直接改写结论——最终裁决权在规则或操作者。
 
 ## 6. F6 冲突检测与升级（`conflict.ts` 纯函数 + 编排回调）
 
-`detectConflicts(positions, decision)`：存在 ≥2 种 stance **且** `decision.conclusion === null` 时产出 `Conflict`（列各方 vassal/stance/权重）。一致或规则已得出结论则无冲突。
+`detectConflicts(positions, decision)`：存在 ≥2 种 stance **且** `decision.conclusion === null` 时产出 `Conflict`（列各方 executor/stance/权重）。一致或规则已得出结论则无冲突。
 
-编排器发现未消解冲突时：置 `status='needs-driver'`，并调用构造时注入的 `onConflict?(conflicts, result)`；**绝不静默选边**。装配层把该回调接到 `OversightDesk`（复用升级队列 approve/reject；补参重派 E6.3 后续）。
+编排器发现未消解冲突时：置 `status='needs-operator'`，并调用构造时注入的 `onConflict?(conflicts, result)`；**绝不静默选边**。装配层把该回调接到 `OversightDesk`（复用升级队列 approve/reject；补参重派 E6.3 后续）。
 
 ## 7. 明确不做（本批边界）
 
@@ -169,7 +169,7 @@ judge 记录（`FanOutResult.judgeReview`）随意图持久化，并进入 E1.6 
 - **E1.5**：同 `intentId` 重放零出站；`cancelIntent` 传播到全部非终态分支、终态分支不重复取消、runId 全链贯穿。
 - **E1.2**：合并流每个事件可反查来源执行 Agent/taskId/runId。
 - **E1.3**：三种规则聚合结论正确，输出含各方立场与权重，无结论时 `conclusion:null`。
-- **E1.4/E6.2**：相反立场必被标记；规则无解 → `needs-driver` 且触发 `onConflict`，不静默选边。
+- **E1.4/E6.2**：相反立场必被标记；规则无解 → `needs-operator` 且触发 `onConflict`，不静默选边。
 - 全量既有测试不回归，`tsc --noEmit` / `build` 通过。
 
 ## 9. 演进日志

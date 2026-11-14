@@ -4,7 +4,7 @@
 - 演进：v0.3（2026-10-12，Active work 227）逐项盘点 V2「手写夹具迁移」后勘误：三类点名夹具（boot-oversight-audit/watch/diversion）均无同层迁移目标——fetchImpl 是传输层（V3 范畴）、DispatchPort 手写失败端口的 audit decision 用例专有、Recording/withChaos 全库零消费；结论改为「不做硬迁，消费面随 V3 录制器自然到达」，基线不变 1778/159。
 - 演进：v0.2（2026-10-12，Active work 226）V2 脚本化 DecisionBackend 落地（`src/testing/decision-backend.ts`，8 例，四处手抄桩迁入），并修正 tech map「V2 已落地」的过度声明（V2 实为三件，手写夹具迁移仍留后）；基线 1770/158 → 1778/159。
 - 演进：v0.1（2026-10-09）首版——现状盘点（注入缝与脚本化夹具已广泛存在、缺录制重放标准格式与混沌注入器）+ 测试金字塔 + Recording 格式与 `withChaos` 纯函数草案 + 分期。
-- 关联：tech map S17（契约测试、录制重放、mock LLM、混沌测试；契约测试已有实践）；design-vassal-protocol.md / design-http-transport.md（A2A 契约是兼容性测试对象）；design-evals.md（S7，录制重放为 eval 供给世界夹具）；design-long-running.md（S13，崩溃/断连恢复测试需要混沌注入）；design-backpressure.md（慢响应/饱和场景）；design-observability.md（S6，录制帧可同时生成 trace 期望）；`src/dispatch/client.ts`（SSE 消费，故障注入主战场）、`src/mcp/stdio-client.ts`（spawnImpl 注入缝先例）、`scripts/smoke-core.mjs`、`scripts/acceptance-*.mjs`、`tests/boot-oversight-audit.test.ts`（vassalFetch 脚本化夹具先例）。
+- 关联：tech map S17（契约测试、录制重放、mock LLM、混沌测试；契约测试已有实践）；design-executor-protocol.md / design-http-transport.md（A2A 契约是兼容性测试对象）；design-evals.md（S7，录制重放为 eval 供给世界夹具）；design-long-running.md（S13，崩溃/断连恢复测试需要混沌注入）；design-backpressure.md（慢响应/饱和场景）；design-observability.md（S6，录制帧可同时生成 trace 期望）；`src/dispatch/client.ts`（SSE 消费，故障注入主战场）、`src/mcp/stdio-client.ts`（spawnImpl 注入缝先例）、`scripts/smoke-core.mjs`、`scripts/acceptance-*.mjs`、`tests/boot-oversight-audit.test.ts`（executorFetch 脚本化夹具先例）。
 - 本文是 Agent 测试策略的单一事实源；handoff 与 PRD 只索引。
 
 ## 1. 背景与现状
@@ -12,7 +12,7 @@
 | 设施 | 现状 | 形状 |
 | --- | --- | --- |
 | 端口注入缝 | DispatchPort（dispatch/cancel）可替换；stdio client 有 spawnImpl 注入缝；boot 接受 fetchImpl | 测试用 makeDispatcher / mock fetch 直接驱动内核 |
-| 脚本化 Agent | 测试内手写 vassalFetch：脚本化 agent-card + SSE 帧序列（working→final）、可控制挂起 gate（deferred） | 每个测试文件各写一份，**无统一格式、不可跨文件复用** |
+| 脚本化 Agent | 测试内手写 executorFetch：脚本化 agent-card + SSE 帧序列（working→final）、可控制挂起 gate（deferred） | 每个测试文件各写一份，**无统一格式、不可跨文件复用** |
 | 真实进程冒烟 | smoke-core 47 步：编译产物 + 临时目录 + 脚本 Agent，验证真实装配 | 黄金路径，故障场景覆盖靠各单测 |
 | 协议契约测试 | a2a-parts、http-delegation-contracts、acceptance-standard-a2a / loom-interop | 校验协议形状与互操作 |
 | 决策重放 | decision-replay 可回放单次决策输入输出 | 面向追溯，不是通用录制重放 |
@@ -23,7 +23,7 @@
 1. **无录制→重放标准格式**。脚本化 Agent 是手写的，无法把一次真机/冒烟中与 Agent 的真实往来（agent-card、请求、SSE 帧、时序）录下来、脱敏、沉淀成可重放夹具；真机暴露的 bug 无法低成本变成回归用例。
 2. **无标准化 mock LLM**。DecisionBackend 有模型无关抽象，但测试侧没有统一的"脚本化决策后端"（固定 Choice/Score、延迟、错误、价格），各测各的。
 3. **混沌注入不成体系**。延迟、连接重置、半开 SSE（连上不发帧/发到一半断）、重复帧、畸形 JSON、乱序帧、慢响应触发饱和/背压——这些多 Agent 系统最容易出问题的场景，没有统一的确定性注入器；S13 崩溃恢复、S6 调用链、S15 流式都依赖这类故障夹具。
-4. **契约演进无兼容门禁**。A2A/fealty/协议字段改动后，"旧 Agent 的响应新版内核还能不能读、旧内核对新 Agent 会不会误拒"没有成集的兼容性用例（字段可选化、未知字段忽略、版本协商）。
+4. **契约演进无兼容门禁**。A2A/handshake/协议字段改动后，"旧 Agent 的响应新版内核还能不能读、旧内核对新 Agent 会不会误拒"没有成集的兼容性用例（字段可选化、未知字段忽略、版本协商）。
 
 ## 2. 目标与边界
 
@@ -83,13 +83,13 @@ export function withChaos(inner: DispatchPort, script: ChaosScript[]): DispatchP
 ```
 
 - mock 决策后端（V2）：实现 DecisionBackend 接口的脚本后端（固定返回、可配延迟/错误/cost），与 decision-model/llm 同端口，供 S9 成本、S4 熔断、S7 eval 使用。
-- 契约兼容矩阵（V2）：以协议类型为基线生成/手工维护"最小合法卡片""缺可选字段""含未知扩展字段""旧版本号""fealty 缺省"等用例，断言内核的接受/拒绝策略与 design-vassal-protocol 的版本规则一致。
+- 契约兼容矩阵（V2）：以协议类型为基线生成/手工维护"最小合法卡片""缺可选字段""含未知扩展字段""旧版本号""handshake 缺省"等用例，断言内核的接受/拒绝策略与 design-executor-protocol 的版本规则一致。
 - 录制器（V3，仓库内脚本）：在自托管测试模式下挂 fetchImpl/DispatchPort 旁路录制，产出 Recording JSON，经 redactRecording 后入 `tests/fixtures/recordings/`。
 
 ## 5. 分期
 
-- **V1（混沌注入器 + Recording 类型/转换纯函数）**：chaos.ts（七类脚本各有确定性测试：包装后正常 port 行为可断言、故障可复现、脚本可组合）+ recording.ts 类型/redact/recordingToFetch（用现有手写 vassalFetch 场景反向验证转换等价）；不改 src 运行时代码。
-- **V2（迁移与标准化）**：把 boot-oversight-audit、diversion、watch 等手写夹具迁到 Recording/withChaos（**仍留后**，纯整理性迁移）；补脚本化 DecisionBackend（**已落地**，Active work 226：`src/testing/decision-backend.ts` 固定值/队列/函数三态 + 延迟 + 折叠错误码 + 调用记录，8 例，四处手写桩迁入）；建协议兼容矩阵首版（**已落地**，Active work 186：agent-card/fealty/A2A task 三组，8 例）。
+- **V1（混沌注入器 + Recording 类型/转换纯函数）**：chaos.ts（七类脚本各有确定性测试：包装后正常 port 行为可断言、故障可复现、脚本可组合）+ recording.ts 类型/redact/recordingToFetch（用现有手写 executorFetch 场景反向验证转换等价）；不改 src 运行时代码。
+- **V2（迁移与标准化）**：把 boot-oversight-audit、diversion、watch 等手写夹具迁到 Recording/withChaos（**仍留后**，纯整理性迁移）；补脚本化 DecisionBackend（**已落地**，Active work 226：`src/testing/decision-backend.ts` 固定值/队列/函数三态 + 延迟 + 折叠错误码 + 调用记录，8 例，四处手写桩迁入）；建协议兼容矩阵首版（**已落地**，Active work 186：agent-card/handshake/A2A task 三组，8 例）。
 - **V3（录制器 + 回流）**：自托管测试模式录制脚本 + 脱敏落盘；真机验收发现的问题录成回归夹具；Recording 作为 S7 eval 世界的标准输入。
 - **V4（可选）**：时序分布回放、混沌场景库（按 S13/S6/S15 测试需求沉淀成套故障剧本）。
 

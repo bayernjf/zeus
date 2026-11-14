@@ -32,11 +32,11 @@ describe('skillSpecInputFrom (shared whitelist)', () => {
       version: '1.0.0',
       registeredAt: '2020-01-01T00:00:00.000Z',
       status: 'deprecated',
-      kernelStateStore: '/etc/passwd',
+      runtimeStateStore: '/etc/passwd',
       constructor: { prototype: { smuggled: true } },
     }) as unknown as Record<string, unknown>;
     expect(input.registeredAt).toBeUndefined();
-    expect(input.kernelStateStore).toBeUndefined();
+    expect(input.runtimeStateStore).toBeUndefined();
     // `status` is deliberately allowed (an operator may register a non-active
     // version); what must never survive is an unknown key reaching storage.
     const registry = new SkillRegistry();
@@ -45,9 +45,9 @@ describe('skillSpecInputFrom (shared whitelist)', () => {
       name: 'Deep Research',
       description: 'd',
       version: '1.0.0',
-      kernelStateStore: '/etc/passwd',
+      runtimeStateStore: '/etc/passwd',
     }));
-    expect(Object.keys(stored)).not.toContain('kernelStateStore');
+    expect(Object.keys(stored)).not.toContain('runtimeStateStore');
   });
 
   it('leaves the validator to refuse a bad shape rather than guessing here', () => {

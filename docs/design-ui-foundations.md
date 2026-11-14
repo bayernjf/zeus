@@ -11,7 +11,7 @@
 - **单一事实源**：token 与文案资源各只有一份机器可读源文件，CSS、TS、TUI 主题和测试快照均由它生成或引用。
 - **三层 token**：primitive token 只存原始值，semantic token 表达用途，component token 表达组件级决策；页面不得直接使用 primitive token 或裸值。
 - **内核零改动**：token 与 i18n 只属于客户端，不新增 HTTP 端点、不要求内核返回展示文案。
-- **审计等价**：API 状态码、intent/escalation/vassal/runId 等标识符在任何语言下保持原值，界面只负责展示标签。
+- **审计等价**：API 状态码、intent/escalation/executor/runId 等标识符在任何语言下保持原值，界面只负责展示标签。
 - **先窄后宽**：第一版只覆盖 #34 规定的监控、裁决、授权吊销三类页面；不为未开工的组织、技能、备份管理页预置组件 token。
 
 ## 2. Token 分层
@@ -52,7 +52,7 @@ zeus.color.surface.default
 zeus.color.surface.subtle
 zeus.color.border.default
 zeus.color.status.running
-zeus.color.status.needs-driver
+zeus.color.status.needs-operator
 zeus.color.status.completed
 zeus.color.status.failed
 zeus.color.action.primary.default
@@ -68,7 +68,7 @@ zeus.space.panel.gap
 | `completed` | `color.status.completed` | 成功完成 |
 | `partial` | `color.status.partial` | 部分完成 |
 | `failed` | `color.status.failed` | 失败、拒绝、吊销 |
-| `needs-driver` | `color.status.needs-driver` | 需要操作者裁决 |
+| `needs-operator` | `color.status.needs-operator` | 需要操作者裁决 |
 | `input-required` | `color.status.input-required` | 缺参等待补参 |
 | `revoked` | `color.status.revoked` | 名册吊销 |
 
@@ -141,7 +141,7 @@ ui/src/generated/tokens.ts      # 生成：TS 类型安全引用
 
 格式约定：
 
-- CSS 变量输出为 `--zeus-color-status-needs-driver` 这类 kebab-case。
+- CSS 变量输出为 `--zeus-color-status-needs-operator` 这类 kebab-case。
 - TS 导出使用扁平 key 或类型安全对象，不允许组件声明 `as string` 绕过 key 校验。
 - token 文件内保存作者意图与可选描述；生成物不手改。
 - 新增 token 必须在 PR 中说明使用组件；无消费者的 token 不合并。
@@ -168,7 +168,7 @@ ui/src/generated/tokens.ts      # 生成：TS 类型安全引用
 
 ```text
 intent.status.completed
-intent.status.needsDriver
+intent.status.needsOperator
 escalation.action.approve
 escalation.action.reject
 roster.status.revoked
@@ -183,7 +183,7 @@ common.error.network
 - 域：`intent`、`escalation`、`roster`、`audit`、`memory`、`common`。
 - 动作：`approve`、`reject`、`resolve`、`cancel`、`revoke`，与 API 动作词保持一致。
 - 不在 key 中使用版本号、页面序号或开发者姓名。
-- API 枚举值保持 `needs-driver`、`input-required` 原值；展示层映射到 `intent.status.needsDriver`。
+- API 枚举值保持 `needs-operator`、`input-required` 原值；展示层映射到 `intent.status.needsOperator`。
 
 ### 5.3 参数、复数与格式
 
@@ -193,7 +193,7 @@ common.error.network
 {
   "intent.progress.partial": "{completed, number} / {total, number} {total, plural, one {branch} other {branches}} completed",
   "intent.elapsed": "Elapsed {duration}",
-  "audit.entry.dispatched": "Dispatched to {vassal} at {time, time, short}"
+  "audit.entry.dispatched": "Dispatched to {executor} at {time, time, short}"
 }
 ```
 
@@ -207,7 +207,7 @@ common.error.network
 以下内容必须保持机器值原样：
 
 - API 路径、HTTP 方法、环境变量、配置键、token key、日志字段。
-- `intentId`、`runId`、`eventId`、`vassal`、`skill`、`realmId`、keyId、commit SHA。
+- `intentId`、`runId`、`eventId`、`executor`、`skill`、`dataDomainId`、keyId、commit SHA。
 - 审计动作的机器名称与权限词法（如 `mcp:tool-name`）。
 - API 返回的错误码；错误码可以有解释文案，但错误码本身不替换。
 

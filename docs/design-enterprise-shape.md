@@ -1,7 +1,7 @@
 # 企业形态裁定稿：隔离实例 vs 同实例多租户（deferred #41）
 
 > 状态：**方向已固化（v0.2，2026-10-08，用户裁定：A 隔离实例）**。本稿记录决策依据与开工面；实施进度记 [handoff.md](../handoff.md)，本文只写设计与裁定。
-> 上游：[deferred-items.md](deferred-items.md) #41（议题与 A/B 代价原文，**已销项**）、#18（MCP 暴露侧 actor 判定，已销项）、[design-realm.md](design-realm.md)（数据域与租户模型）、[design-execution-delegation.md](design-execution-delegation.md)（跨域一次性授权）。
+> 上游：[deferred-items.md](deferred-items.md) #41（议题与 A/B 代价原文，**已销项**）、#18（MCP 暴露侧 actor 判定，已销项）、[design-dataDomain.md](design-dataDomain.md)（数据域与租户模型）、[design-execution-delegation.md](design-execution-delegation.md)（跨域一次性授权）。
 
 ## 1. 决策问题
 
@@ -11,9 +11,9 @@
 
 | 事实 | 位置 | 含义 |
 |---|---|---|
-| 租户**模型**已在库内 | `src/realm/authorization.ts` `#decideRealmAccess`（三级范围 org/部门/成员） | 授权判定是纯函数，与部署形态解耦 |
+| 租户**模型**已在库内 | `src/dataDomain/authorization.ts` `#decideDataDomainAccess`（三级范围 org/部门/成员） | 授权判定是纯函数，与部署形态解耦 |
 | 进程**只有一套身份** | `src/http/server.ts` H2 全操作面挂载条件为单个 `ZEUS_INTERNAL_TOKEN` | 无 per-tenant principal |
-| **MCP 面已有会话级 actor 原语** | `src/http/server.ts`：`x-zeus-realm-actor` header，effectiveRealmIds = 宿主白名单 ∩ actor.realmIds，仅可收窄（Active work 144 实现，deferred #18 已于 2026-10-08 销项） | 内核"主体"概念已有雏形，但只覆盖 MCP 暴露侧 |
+| **MCP 面已有会话级 actor 原语** | `src/http/server.ts`：`x-zeus-dataDomain-actor` header，effectiveDataDomainIds = 宿主白名单 ∩ actor.dataDomainIds，仅可收窄（Active work 144 实现，deferred #18 已于 2026-10-08 销项） | 内核"主体"概念已有雏形，但只覆盖 MCP 暴露侧 |
 | 路由规模 | feature-inventory §2.1：**92 条 HTTP 路由（3 公开 + 89 bearer）** | B 形态需逐条决定租户可见性 |
 
 **关键新事实（相对 #41 登记时）**：#41 的翻转条件问"#18 在 A 形态下能否廉价收口"。2026-10-08 的答案是——**已在 MCP 面廉价收口**（会话级 actor 仅可收窄宿主白名单，零 SDK 依赖、11 例测试全绿）。这说明"主体"原语可做且不贵，但当前只落地在 MCP 暴露侧；H1/H2/H3 三面仍是单一 bearer。
@@ -41,7 +41,7 @@
 推荐依据（2026-10-08 用户裁定 **A 隔离实例**，本稿状态升 v0.2 方向已固化）：
 1. 触发条件未到，B 的全部代价在触发前是沉没成本；
 2. A 下现有配置面、路由面、状态形状零改动（现状即 A）；
-3. **MCP 面会话级 actor 原语已就位**——若未来触发 B，它是 per-tenant principal 的地基（把 `x-zeus-realm-actor` 的收窄语义从 MCP 面推广到 H1/H2/H3 面，是 B 的认证面重做的起点），升级路径平缓；
+3. **MCP 面会话级 actor 原语已就位**——若未来触发 B，它是 per-tenant principal 的地基（把 `x-zeus-dataDomain-actor` 的收窄语义从 MCP 面推广到 H1/H2/H3 面，是 B 的认证面重做的起点），升级路径平缓；
 4. 设计约束 4（个人域与企业域不互通）在 A 下由进程边界保证，符合"先保边界、再谈集约"的次序。
 
 ## 6. 开工面（裁定后按选择执行）

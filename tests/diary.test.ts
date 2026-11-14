@@ -10,16 +10,16 @@ import {
   NO_CONTENT,
   DiaryBoundaryError,
   DiaryUnsupportedError,
-  FsRealmStore,
+  FsDataDomainStore,
 } from '../src/index.js';
-import type { MemoryEvent, FactRecord, RealmStore, DriverWriteGrant } from '../src/index.js';
+import type { MemoryEvent, FactRecord, DataDomainStore, OperatorWriteGrant } from '../src/index.js';
 
 let seq = 0;
 function event(partial: Partial<MemoryEvent> & { occurredAt: string }): MemoryEvent {
   seq += 1;
   return {
     eventId: `evt-${String(seq).padStart(3, '0')}`,
-    realmId: 'realm-test',
+    dataDomainId: 'dataDomain-test',
     runId: `run-${seq}`,
     source: { agentId: `agent-${seq}` },
     kind: 'observation',
@@ -32,7 +32,7 @@ function event(partial: Partial<MemoryEvent> & { occurredAt: string }): MemoryEv
 
 function fact(partial: Partial<FactRecord> & { factId: string; updatedAt: string }): FactRecord {
   return {
-    realmId: 'realm-test',
+    dataDomainId: 'dataDomain-test',
     subject: 'X',
     predicate: 'is',
     object: 'Y',
@@ -75,11 +75,11 @@ describe('buildDiary', () => {
     expect(entries[0]!.provenance).toEqual(['evt-1', 'evt-2']);
   });
 
-  it('rejects mixed-realm input', () => {
+  it('rejects mixed-dataDomain input', () => {
     expect(() =>
       buildDiary([
-        event({ realmId: 'r1', occurredAt: '2026-09-23T09:00:00.000Z' }),
-        event({ realmId: 'r2', occurredAt: '2026-09-23T10:00:00.000Z' }),
+        event({ dataDomainId: 'r1', occurredAt: '2026-09-23T09:00:00.000Z' }),
+        event({ dataDomainId: 'r2', occurredAt: '2026-09-23T10:00:00.000Z' }),
       ]),
     ).toThrow(DiaryBoundaryError);
   });
@@ -95,7 +95,7 @@ describe('buildDiary', () => {
   it('changes digest when any content changes', () => {
     const base = {
       eventId: 'evt-same',
-      realmId: 'r',
+      dataDomainId: 'r',
       runId: 'run',
       source: { agentId: 'a' },
       kind: 'observation' as const,
@@ -124,7 +124,7 @@ describe('buildDiary', () => {
     expect(entries[0]!.markdown).toContain('## Facts');
   });
 
-  // A-07: the diary is written back into the realm directory, so a retracted
+  // A-07: the diary is written back into the dataDomain directory, so a retracted
   // fact rendered here becomes a second retention of content the memory store
   // has already withdrawn.
   it('omits a retracted fact even when its provenance hits the day (A-07)', () => {
@@ -188,7 +188,7 @@ describe('markdown', () => {
     ]);
     const md = entries[0]!.markdown;
     expect(md).toContain('# Diary · 2026-09-23');
-    expect(md).toContain('realm: realm-test · 1 event');
+    expect(md).toContain('data-domain: dataDomain-test · 1 event');
     expect(md).toContain('**decision**');
     expect(md).toContain('approve');
     expect(md).toContain('event:evt-9');
@@ -197,14 +197,14 @@ describe('markdown', () => {
 });
 
 describe('persistDiary', () => {
-  it('writes through Realm.write with a deterministic itemId', async () => {
+  it('writes through DataDomain.write with a deterministic itemId', async () => {
     const write = vi.fn(async () => ({ itemId: 'diary/2026-09-23.md' }));
-    const store = { write } as unknown as RealmStore;
+    const store = { write } as unknown as DataDomainStore;
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z', content: 'A' })]);
     const result = await persistDiary(store, entries[0]!);
     expect(result.itemId).toBe('diary/2026-09-23.md');
     expect(write).toHaveBeenCalledWith(
-      'realm-test',
+      'dataDomain-test',
       { itemId: 'diary/2026-09-23.md', data: expect.stringContaining('# Diary') },
       undefined,
     );
@@ -212,18 +212,18 @@ describe('persistDiary', () => {
 
   it('supports a custom dir and passes a grant through', async () => {
     const write = vi.fn(async () => ({ itemId: 'journal/2026-09-23.md' }));
-    const store = { write } as unknown as RealmStore;
-    const grant: DriverWriteGrant = {
-      kind: 'driver-write',
-      realmId: 'realm-test',
-      grantedBy: 'driver',
+    const store = { write } as unknown as DataDomainStore;
+    const grant: OperatorWriteGrant = {
+      kind: 'operator-write',
+      dataDomainId: 'dataDomain-test',
+      grantedBy: 'operator',
       grantedAt: '2026-09-23T00:00:00.000Z',
       nonce: 'n1',
     };
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z' })]);
     await persistDiary(store, entries[0]!, { dir: 'journal', grant });
     expect(write).toHaveBeenCalledWith(
-      'realm-test',
+      'dataDomain-test',
       { itemId: 'journal/2026-09-23.md', data: expect.any(String) },
       grant,
     );
@@ -231,19 +231,19 @@ describe('persistDiary', () => {
 
   it('throws when the store has no write capability', async () => {
     const entries = buildDiary([event({ occurredAt: '2026-09-23T09:00:00.000Z' })]);
-    await expect(persistDiary({} as RealmStore, entries[0]!)).rejects.toBeInstanceOf(
+    await expect(persistDiary({} as DataDomainStore, entries[0]!)).rejects.toBeInstanceOf(
       DiaryUnsupportedError,
     );
   });
 
-  it('end-to-end: persists into a real realm and reads the markdown back', async () => {
+  it('end-to-end: persists into a real dataDomain and reads the markdown back', async () => {
     const root = await mkdtemp(join(tmpdir(), 'diary-e2e-'));
     try {
-      const store = new FsRealmStore();
+      const store = new FsDataDomainStore();
       const manifest = await store.connect(root, 'personal');
       const entries = buildDiary([
         event({
-          realmId: manifest.realmId,
+          dataDomainId: manifest.dataDomainId,
           eventId: 'evt-e2e',
           occurredAt: '2026-09-23T09:12:00.000Z',
           content: 'found 3 docs',
@@ -251,7 +251,7 @@ describe('persistDiary', () => {
       ]);
       const result = await persistDiary(store, entries[0]!);
       expect(result.itemId).toBe('diary/2026-09-23.md');
-      const back = await store.read(manifest.realmId, result.itemId);
+      const back = await store.read(manifest.dataDomainId, result.itemId);
       expect(back.content).toContain('# Diary · 2026-09-23');
       expect(back.content).toContain('found 3 docs');
       expect(back.content).toContain('event:evt-e2e');

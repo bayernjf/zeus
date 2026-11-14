@@ -1,7 +1,7 @@
 // design-agent-testing (tech map S17) V1: recording (frame log, immutable
 // append, redaction, fetch assembly) and chaos (scripted failure modes over a
 // working port). Acceptance (design-agent-testing §5): a redacted recording
-// carries no realm data (params are emptied, reasons dropped) while the flow
+// carries no dataDomain data (params are emptied, reasons dropped) while the flow
 // shape survives; replay honours frame order; chaos entries fire once, at the
 // scripted call index; failure modes fail loudly and deterministically; the
 // input recording is never mutated; zero runtime behaviour change (V1 is the
@@ -20,7 +20,7 @@ const okResult = (req: DispatchRequest) => ({
 });
 
 const request = (overrides: Partial<DispatchRequest> = {}): DispatchRequest => ({
-  skill: 'research', params: { query: 'sensitive payload' }, realm: 'personal', runId: 'r1', ...overrides,
+  skill: 'research', params: { query: 'sensitive payload' }, dataDomain: 'personal', runId: 'r1', ...overrides,
 });
 
 describe('recording (S17 V1)', () => {
@@ -45,14 +45,14 @@ describe('recording (S17 V1)', () => {
     const rec = emptyRecording('intent-1');
     const full = recordFrame(
       recordFrame(rec, { type: 'request', seq: 1, request: request({ params: { query: 'secret' } }), at: 't0' }),
-      { type: 'response', seq: 2, ok: false, decision: 'refused-realm-policy', reason: 'domain mismatch for secret', at: 't1' },
+      { type: 'response', seq: 2, ok: false, decision: 'refused-dataDomain-policy', reason: 'domain mismatch for secret', at: 't1' },
     );
     const redacted = redactRecording(full);
     const req = redacted.frames.find((f): f is Extract<typeof f, { type: 'request' }> => f.type === 'request');
     const res = redacted.frames.find((f): f is Extract<typeof f, { type: 'response' }> => f.type === 'response');
     expect(req!.request.params).toEqual({});
     expect(JSON.stringify(redacted)).not.toContain('secret');
-    expect(res).toMatchObject({ ok: false, decision: 'refused-realm-policy' });
+    expect(res).toMatchObject({ ok: false, decision: 'refused-dataDomain-policy' });
     expect(res!.reason).toBeUndefined();
     expect(redacted.frames.map((f) => f.seq)).toEqual([1, 2]);
   });
@@ -74,12 +74,12 @@ describe('recording (S17 V1)', () => {
     const rec = emptyRecording('intent-1');
     const full = recordFrame(
       recordFrame(rec, { type: 'request', seq: 1, request: request(), at: 't0' }),
-      { type: 'response', seq: 2, ok: false, decision: 'refused-realm-policy', reason: 'policy', at: 't1' },
+      { type: 'response', seq: 2, ok: false, decision: 'refused-dataDomain-policy', reason: 'policy', at: 't1' },
     );
     const fetch = recordingToFetch(full);
     const result = await fetch(request());
     expect(result).toMatchObject({ ok: false, reason: 'policy' });
-    if (result !== undefined && !result.ok) expect(result.audit.decision).toBe('refused-realm-policy');
+    if (result !== undefined && !result.ok) expect(result.audit.decision).toBe('refused-dataDomain-policy');
   });
 });
 

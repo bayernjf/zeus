@@ -6,7 +6,7 @@ import { buildNotification, notify, selectChannel } from '../src/watch/notify.js
 
 /**
  * The notification layer is the shell the user's daemon pops when a watch fires.
- * It has no kernel timer and no side effects on import, so the tests drive it
+ * It has no runtime timer and no side effects on import, so the tests drive it
  * through injected execFile/which fakes — never a real osascript.
  */
 
@@ -135,7 +135,7 @@ describe('run-watch-tick daemon (controlled e2e)', () => {
       {
         env: {
           ...process.env,
-          KERNEL_URL: `http://127.0.0.1:${stubPort}`,
+          RUNTIME_URL: `http://127.0.0.1:${stubPort}`,
           ZEUS_INTERNAL_TOKEN: 'test-token',
           ZEUS_NOTIFY: '0', // never pop a real notification in the test
         },

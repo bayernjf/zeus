@@ -17,14 +17,14 @@
 
 **缺口**：
 
-1. **没有计费/配额维度的预算**。一个意图可以无限扇出+resume+DAG 分层，步数预算管"次数"，但单次分支喂给决策模型/外发 Agent 的 token 量没有上限；一个企业租户（realm）一天能烧多少也没有边界。
+1. **没有计费/配额维度的预算**。一个意图可以无限扇出+resume+DAG 分层，步数预算管"次数"，但单次分支喂给决策模型/外发 Agent 的 token 量没有上限；一个企业租户（dataDomain）一天能烧多少也没有边界。
 2. **执行中无闸门**。预算超限时没有动作原语——现状只有"新分支派不出去"（步数预算在派发边界 mayDispatch 判定），缺乏"已在途的分支如何收"（cancel 传播 F3 已具备能力，但没有成本触发器去调它）。
 3. **无异常消耗熔断**。失败熔断管连续失败，不管"连续高消耗但都成功"（失控循环、prompt injection 诱导的反复外呼，见 design-guardrails）。
 4. **自报成本未对账**。Agent 自报 llmTokens 与内核观测的 wallSeconds/任务规模可能矛盾，现在不标记。
 
 ## 2. 目标与边界
 
-**目标**：建立与 S4 同构的**纯函数成本账本**——在派发边界与分支落定两个点记账，给出三类判定（能否再派 / 是否触发在途收敛 / 是否异常熔断），并把判定动作接到既有原语（拒绝派发、cancel 剩余、降级决策后端、升级人工）。预算分两级：**意图级**（一次任务）与**域级**（personal/enterprise realm，配额周期）。
+**目标**：建立与 S4 同构的**纯函数成本账本**——在派发边界与分支落定两个点记账，给出三类判定（能否再派 / 是否触发在途收敛 / 是否异常熔断），并把判定动作接到既有原语（拒绝派发、cancel 剩余、降级决策后端、升级人工）。预算分两级：**意图级**（一次任务）与**域级**（personal/enterprise dataDomain，配额周期）。
 
 **边界（明确不做）**：
 
@@ -40,7 +40,7 @@
 | 账本项 | 来源 | 计入 |
 | --- | --- | --- |
 | 决策 token | DecisionBackendResult.cost | 实际 input/output tokens 与 cents（可信） |
-| 出站载荷规模 | 内核装配的 contextAppendix/skillInputs/realmHits | 内核可估算（~4 chars/token 已有口径，decision/shared.ts），记为出站估算 |
+| 出站载荷规模 | 内核装配的 contextAppendix/skillInputs/dataDomainHits | 内核可估算（~4 chars/token 已有口径，decision/shared.ts），记为出站估算 |
 | 墙钟 | metrics 分支起止 | wallSeconds（可信） |
 | Agent 自报 | ZeusReport.cost | 进**对账列**不进闸门；与墙钟/规模显著矛盾发 `cost-self-report-mismatch` 审计（只标记） |
 
@@ -71,7 +71,7 @@ export type CostBudget = {
 };
 export type CostLimit = {
   intentTokenCap?: number;                  // 意图级硬上限
-  realmPeriodTokenCap?: number;             // 域级周期配额
+  dataDomainPeriodTokenCap?: number;             // 域级周期配额
   softRatio?: number;                       // 软阈值比例，缺省 0.8
   rateMaxTokensPerSecond?: number;          // 异常速率；基线倍数标定等 #9
 };
@@ -85,7 +85,7 @@ export function costRateCircuitOpen(b: CostBudget, limit: CostLimit, now: string
 
 - 接线点（V2，设计级）：boot 装配时经配置注入 CostLimit（env 形状沿用 resolveConcurrencyConfig，不合法即 boot 失败，不静默忽略）；fanOutNew 派发边界在 mayDispatch 后串 costAdmit；分支落定（publishBranch/branchEnded 处）recordSettled；watch tick 兼查速率窗。
 - 审计新值：`cost-budget-exceeded` / `cost-rate-circuit-open` / `cost-self-report-mismatch` / `cost-backend-degraded` 入 AUDIT_DECISIONS。
-- 域级账本随 KernelSnapshot 持久化（周期重置时间戳入快照），意图级账本随意图归档。
+- 域级账本随 RuntimeSnapshot 持久化（周期重置时间戳入快照），意图级账本随意图归档。
 
 ## 5. 分期
 

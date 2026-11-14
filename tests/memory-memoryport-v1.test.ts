@@ -13,7 +13,7 @@ import type { Embedder, MemoryEvent } from '../src/memory/types.js';
  * through consolidation (§2), and the dimension-rebuild guarantee (§4).
  */
 
-const REALM = 'personal';
+const DATA_DOMAIN = 'personal';
 
 function hubResponse(dim: number) {
   return {
@@ -26,7 +26,7 @@ function hubResponse(dim: number) {
 function claimEvent(overrides: Partial<MemoryEvent> = {}): MemoryEvent {
   return {
     eventId: `evt-${Math.random().toString(36).slice(2, 10)}`,
-    realmId: REALM,
+    dataDomainId: DATA_DOMAIN,
     runId: 'run-1',
     source: { agentId: 'tester' },
     kind: 'claim',
@@ -72,8 +72,8 @@ describe('HubEmbeddingEmbedder', () => {
     expect(audits[0]!.hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('carries the realm scope into the external-call audit line (P2-5)', async () => {
-    const audits: Array<{ hash: string; ok: boolean; realmId?: string; reason?: string }> = [];
+  it('carries the dataDomain scope into the external-call audit line (P2-5)', async () => {
+    const audits: Array<{ hash: string; ok: boolean; dataDomainId?: string; reason?: string }> = [];
     let healthy = false;
     let clock = 1_000_000;
     const embedder = new HubEmbeddingEmbedder({
@@ -87,14 +87,14 @@ describe('HubEmbeddingEmbedder', () => {
       onExternalCall: entry => audits.push(entry),
     });
 
-    // Both the failed and the successful external call carry the realm.
-    await embedder.embed('realm text', { realmId: 'tenant-a' });
+    // Both the failed and the successful external call carry the dataDomain.
+    await embedder.embed('dataDomain text', { dataDomainId: 'tenant-a' });
     healthy = true;
     clock += 10 * 60_000; // past the retry cooldown, so the hub is retried
-    await embedder.embed('realm text', { realmId: 'tenant-a' });
+    await embedder.embed('dataDomain text', { dataDomainId: 'tenant-a' });
     expect(audits).toHaveLength(2);
-    expect(audits[0]).toMatchObject({ ok: false, realmId: 'tenant-a', reason: 'connection refused' });
-    expect(audits[1]).toMatchObject({ ok: true, realmId: 'tenant-a' });
+    expect(audits[0]).toMatchObject({ ok: false, dataDomainId: 'tenant-a', reason: 'connection refused' });
+    expect(audits[1]).toMatchObject({ ok: true, dataDomainId: 'tenant-a' });
   });
 
   it('degrades to the local space on hub failure and retries after the cooldown', async () => {
@@ -157,8 +157,8 @@ describe('MemoryPort v1 importance / category / decay', () => {
     const store = new MemoryStore(undefined, () => new Date('2026-10-30T00:00:00.000Z'));
     store.append(claimEvent({ eventId: 'e1', content: { subject: 'S', predicate: 'p', object: 'o', category: 'decision' } }));
     store.append(claimEvent({ eventId: 'e2', content: { subject: 'S2', predicate: 'p', object: 'o2', category: 'episodic' } }));
-    await store.consolidateRealm(REALM);
-    const facts = store.facts(REALM, REALM);
+    await store.consolidateDataDomain(DATA_DOMAIN);
+    const facts = store.facts(DATA_DOMAIN, DATA_DOMAIN);
     const decision = facts.find(f => f.subject === 'S');
     const episodic = facts.find(f => f.subject === 'S2');
     expect(decision?.kind).toBe('decision');
@@ -171,8 +171,8 @@ describe('MemoryPort v1 importance / category / decay', () => {
     const store = new MemoryStore(undefined, () => new Date('2026-10-30T00:00:00.000Z'));
     store.append(claimEvent({ eventId: 'd1', content: { subject: '定价', predicate: 'policy', object: '订阅制优先', category: 'decision' } }));
     store.append(claimEvent({ eventId: 'p1', content: { subject: '定价', predicate: 'note', object: '有人问过订阅制', category: 'episodic' } }));
-    await store.consolidateRealm(REALM);
-    const hits = await store.searchRecall(REALM, REALM, '定价 订阅制');
+    await store.consolidateDataDomain(DATA_DOMAIN);
+    const hits = await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '定价 订阅制');
     expect(hits.length).toBeGreaterThanOrEqual(2);
     expect(hits[0]!.fact.kind).toBe('decision');
   });
@@ -185,12 +185,12 @@ describe('MemoryPort v1 importance / category / decay', () => {
     // Consolidation must stamp fact timestamps from the same injected clock as
     // the decay pass below; the default (global Date.now) silently desyncs
     // them under the wall-clock gate.
-    await store.consolidateRealm(REALM, { now: () => now });
+    await store.consolidateDataDomain(DATA_DOMAIN, { now: () => now });
 
     now = new Date('2027-01-15T00:00:00.000Z'); // ~77 days later
-    const decay = store.decayRealm(REALM);
+    const decay = store.decayDataDomain(DATA_DOMAIN);
     expect(decay.evicted).toHaveLength(1);
-    const index = await store.buildRecall(REALM);
+    const index = await store.buildRecall(DATA_DOMAIN);
     const hits = await index.search('很老的一次操作');
     expect(hits.find(h => h.fact.subject === '流水')).toBeUndefined();
     // preference facts never decay
@@ -201,10 +201,10 @@ describe('MemoryPort v1 importance / category / decay', () => {
     now = new Date('2026-10-30T01:00:00.000Z');
     const fresh = new MemoryStore(undefined, () => now);
     fresh.append(claimEvent({ eventId: 't1', content: { subject: '口味', predicate: 'pref', object: '清淡', category: 'preference' } }));
-    await fresh.consolidateRealm(REALM, { now: () => now });
+    await fresh.consolidateDataDomain(DATA_DOMAIN, { now: () => now });
     now = new Date('2026-10-30T02:00:00.000Z');
-    await fresh.searchRecall(REALM, REALM, '清淡');
-    const fact = fresh.facts(REALM, REALM)[0]!;
+    await fresh.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '清淡');
+    const fact = fresh.facts(DATA_DOMAIN, DATA_DOMAIN)[0]!;
     expect(fact.lastAccessAt).toBe('2026-10-30T02:00:00.000Z');
   });
 });
@@ -221,15 +221,15 @@ describe('MemoryStore dimension rebuild', () => {
     };
     const store = new MemoryStore(undefined, () => new Date(), { embedder });
     store.append(claimEvent({ eventId: 'r1' }));
-    await store.consolidateRealm(REALM);
-    await store.searchRecall(REALM, REALM, '退款');
+    await store.consolidateDataDomain(DATA_DOMAIN);
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '退款');
     const afterFirst = calls.embed;
 
     (embedder as { dimension: number }).dimension = 8;
-    await store.searchRecall(REALM, REALM, '退款');
+    await store.searchRecall(DATA_DOMAIN, DATA_DOMAIN, '退款');
     // Rebuild re-embeds the fact corpus in the new space.
     expect(calls.embed).toBeGreaterThan(afterFirst);
-    const index = await store.buildRecall(REALM);
+    const index = await store.buildRecall(DATA_DOMAIN);
     expect(index.dimension).toBe(8);
   });
 });

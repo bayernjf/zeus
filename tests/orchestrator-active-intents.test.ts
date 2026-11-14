@@ -8,9 +8,9 @@ function statusEvent(taskId: string): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'completed' }, final: true };
 }
 
-function done(vassal: string, stance: string): DispatchResult {
+function done(executor: string, stance: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance } }] }],
   };
   return { ok: true, task, events: [statusEvent(task.id)], injectedHits: [] };
@@ -22,11 +22,11 @@ function lookupFor(names: string[]): TargetLookup {
 
 /** Dispatches stay open until released, so a fan-out is observable mid-flight. */
 function gatedPort() {
-  const waiting: Array<{ finish: (r: DispatchResult) => void; vassal: string }> = [];
+  const waiting: Array<{ finish: (r: DispatchResult) => void; executor: string }> = [];
   const port: DispatchPort = {
     async dispatch(req: DispatchRequest) {
       return new Promise<DispatchResult>(resolve => {
-        waiting.push({ vassal: req.vassal!, finish: resolve });
+        waiting.push({ executor: req.executor!, finish: resolve });
       });
     },
     async cancel() {},
@@ -37,7 +37,7 @@ function gatedPort() {
       for (let i = 0; i < times; i += 1) await new Promise(r => setImmediate(r));
     },
     releaseAll() {
-      for (const entry of waiting.splice(0)) entry.finish(done(entry.vassal, 'approve'));
+      for (const entry of waiting.splice(0)) entry.finish(done(entry.executor, 'approve'));
     },
   };
 }
@@ -49,7 +49,7 @@ describe('Orchestrator.activeIntents (S15 V3, design-streaming §3.3)', () => {
       newIntentId: () => 'intent-running',
       newRunId: () => 'run-1',
     });
-    const flying = orch.fanOut({ intentId: 'intent-running', skill: 'review', params: {}, realm: 'personal' });
+    const flying = orch.fanOut({ intentId: 'intent-running', skill: 'review', params: {}, dataDomain: 'personal' });
     await gated.flush();
 
     expect(orch.activeIntents()).toEqual([{ intentId: 'intent-running', skill: 'review', status: 'running' }]);
@@ -64,7 +64,7 @@ describe('Orchestrator.activeIntents (S15 V3, design-streaming §3.3)', () => {
       newIntentId: () => 'intent-done',
       newRunId: () => 'run-1',
     });
-    const flying = orch.fanOut({ intentId: 'intent-done', skill: 'review', params: {}, realm: 'personal' });
+    const flying = orch.fanOut({ intentId: 'intent-done', skill: 'review', params: {}, dataDomain: 'personal' });
     await gated.flush();
     gated.releaseAll();
     await flying;
@@ -72,10 +72,10 @@ describe('Orchestrator.activeIntents (S15 V3, design-streaming §3.3)', () => {
     expect(orch.activeIntents()).toEqual([]);
   });
 
-  it('keeps a needs-driver row listed as blocked until the operator settles it', async () => {
+  it('keeps a needs-operator row listed as blocked until the operator settles it', async () => {
     const split: DispatchPort = {
       async dispatch(req) {
-        return done(req.vassal!, req.vassal === 'loom' ? 'approve' : 'reject');
+        return done(req.executor!, req.executor === 'loom' ? 'approve' : 'reject');
       },
       async cancel() {},
     };
@@ -83,9 +83,9 @@ describe('Orchestrator.activeIntents (S15 V3, design-streaming §3.3)', () => {
       newIntentId: () => 'intent-blocked',
       newRunId: () => 'run-1',
     });
-    const result = await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
-    expect(result.status).toBe('needs-driver');
-    expect(orch.activeIntents()).toEqual([{ intentId: 'intent-blocked', skill: 'review', status: 'needs-driver' }]);
+    expect(result.status).toBe('needs-operator');
+    expect(orch.activeIntents()).toEqual([{ intentId: 'intent-blocked', skill: 'review', status: 'needs-operator' }]);
   });
 });

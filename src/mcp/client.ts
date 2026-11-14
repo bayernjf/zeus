@@ -12,7 +12,7 @@ const JSONRPC = '2.0' as const;
 const PROTOCOL_VERSION = '2025-03-26';
 
 // M-07: a peer that accepts a request but never answers must not hang the
-// kernel forever; a peer must not be able to exhaust memory with one body.
+// runtime forever; a peer must not be able to exhaust memory with one body.
 const DEFAULT_CALL_TIMEOUT_SECONDS = 30;
 const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
 

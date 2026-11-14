@@ -51,7 +51,7 @@ export type EvalRegression = {
   severity: 'block' | 'warn';
 };
 
-const FAMILIES = ['decision', 'escalation', 'selection', 'evidence', 'guardrails', 'budget', 'planning', 'recovery', 'streaming', 'isolation', 'judge'] as const;
+const FAMILIES = ['decision', 'escalation', 'selection', 'evidence', 'artifacts', 'guardrails', 'budget', 'planning', 'recovery', 'streaming', 'isolation', 'judge'] as const;
 
 /** The settled artefacts one scored run exposes to the scorer (design-evals
  *  §4). Every field is runner-collected; the scorer never runs the world. */
@@ -100,13 +100,13 @@ export function scoreEvalRun(c: EvalCase, trace: EvalTrace): EvalResult {
       checks.push(check(`escalation.expected=${ex.escalation.expected}`, 'escalation', ex, passed, detailOf(found)));
     }
     if (ex.selection !== undefined) {
-      const vassals = new Set(trace.outcome.branches.map((b) => b.vassal));
+      const executors = new Set(trace.outcome.branches.map((b) => b.executor));
       const reasons: string[] = [];
       for (const must of ex.selection.mustInclude ?? []) {
-        if (!vassals.has(must)) reasons.push(`missing ${must}`);
+        if (!executors.has(must)) reasons.push(`missing ${must}`);
       }
       for (const mustNot of ex.selection.mustExclude ?? []) {
-        if (vassals.has(mustNot)) reasons.push(`unexpected ${mustNot}`);
+        if (executors.has(mustNot)) reasons.push(`unexpected ${mustNot}`);
       }
       const diverted = trace.audit.some((a) => a.decision === 'chain-switched' || a.decision === 'branch-diverted');
       if (ex.selection.diversionAllowed === false && diverted) reasons.push('unexpected diversion');
@@ -123,6 +123,33 @@ export function scoreEvalRun(c: EvalCase, trace: EvalTrace): EvalResult {
         if (bare.length > 0) reasons.push(`${bare.length} bare assertion(s) without rationale`);
       }
       checks.push(check('evidence.chain', 'evidence', ex, reasons.length === 0, reasons.join('; ')));
+    }
+    if (ex.artifacts !== undefined) {
+      // D9-1: the artifact contract at branch level. `positions` is the stance
+      // artifact each settled branch contributes; a settled branch that never
+      // produced one is a bare assertion, and an unsettled branch that still
+      // carries one is a stale artifact — both are facts on the settled trace.
+      const positioned = new Map<string, number>();
+      for (const p of trace.outcome.positions) {
+        positioned.set(p.executor, (positioned.get(p.executor) ?? 0) + 1);
+      }
+      const reasons: string[] = [];
+      if (ex.artifacts.everySettledBranchPositioned === true) {
+        for (const b of trace.outcome.branches) {
+          if (b.ok && !positioned.has(b.executor)) reasons.push(`settled ${b.executor} carries no stance artifact`);
+        }
+      }
+      if (ex.artifacts.noPositionForUnsettled === true) {
+        for (const b of trace.outcome.branches) {
+          if (!b.ok && positioned.has(b.executor)) reasons.push(`unsettled ${b.executor} still carries a stance artifact`);
+        }
+      }
+      if (ex.artifacts.uniquePositions === true) {
+        for (const [executor, count] of positioned) {
+          if (count > 1) reasons.push(`${executor} carries ${count} stance artifacts`);
+        }
+      }
+      checks.push(check('artifacts.contract', 'artifacts', ex, reasons.length === 0, reasons.join('; ')));
     }
     if (ex.guardrails !== undefined) {
       const action = ex.guardrails.expectedHandling;

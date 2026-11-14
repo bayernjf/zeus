@@ -11,7 +11,7 @@ function claim(
 ): MemoryEvent {
   return {
     eventId: id,
-    realmId: 'personal',
+    dataDomainId: 'personal',
     runId: 'run-1',
     source: { agentId: agent },
     kind: 'claim',
@@ -25,7 +25,7 @@ function claim(
 async function settledStore(events: MemoryEvent[]): Promise<MemoryStore> {
   const store = new MemoryStore();
   for (const event of events) store.append(event);
-  await store.consolidateRealm('personal');
+  await store.consolidateDataDomain('personal');
   return store;
 }
 
@@ -75,15 +75,15 @@ describe('Memory P2 hybrid recall', () => {
     const store = await settledStore([claim('e1', 'user', 'language', 'rust')]);
     await store.buildRecall('personal');
     store.append(claim('e2', 'user', 'editor', 'zed'));
-    await store.consolidateRealm('personal');
+    await store.consolidateDataDomain('personal');
     expect(await store.searchRecall('personal', 'personal', 'zed')).toHaveLength(1);
   });
 
-  it('rejects cross-realm recall and audits it', async () => {
+  it('rejects cross-dataDomain recall and audits it', async () => {
     const audits: MemoryAuditEntry[] = [];
     const store = new MemoryStore(entry => audits.push(entry));
     await expect(store.searchRecall('work', 'personal', 'rust')).rejects.toThrowError();
-    expect(audits[0]!.reason).toBe('cross-realm-read');
+    expect(audits[0]!.reason).toBe('cross-dataDomain-read');
   });
 
   it('accepts an injected embedder through the port', async () => {
@@ -94,7 +94,7 @@ describe('Memory P2 hybrid recall', () => {
     const store = new MemoryStore(() => {}, () => new Date(), { embedder });
     store.append(claim('e1', 'a', 'tag', 'zzz'));
     store.append(claim('e2', 'a', 'tag', 'qqq'));
-    await store.consolidateRealm('personal');
+    await store.consolidateDataDomain('personal');
     const hits = await store.searchRecall('personal', 'personal', 'zzz', { alpha: 1 });
     expect(hits[0]!.fact.object).toBe('zzz');
     expect(hits[0]!.semantic).toBe(1);
@@ -113,7 +113,7 @@ describe('Memory P2 right to be forgotten', () => {
 
     const records = store.retractFacts('personal', [factId!], {
       reason: 'user request',
-      requestedBy: 'driver',
+      requestedBy: 'operator',
     });
     expect(records).toHaveLength(1);
     expect(records[0]!.subject).toBe('user');
@@ -132,7 +132,7 @@ describe('Memory P2 right to be forgotten', () => {
     ]);
     const records = store.forgetSubject('personal', 'Alice', {
       reason: 'right to erasure',
-      requestedBy: 'driver',
+      requestedBy: 'operator',
     });
     expect(records).toHaveLength(2);
     expect(store.listRetractions().map(r => r.factId).sort()).toEqual(
@@ -159,9 +159,9 @@ describe('Memory P2 right to be forgotten', () => {
   it('keeps a retracted fact retracted across a later consolidation (A-06)', async () => {
     const store = await settledStore([claim('e1', 'user', 'language', 'typescript')]);
     const [factId] = store.facts('personal', 'personal').map(f => f.factId);
-    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'driver' });
+    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'operator' });
 
-    await store.consolidateRealm('personal');
+    await store.consolidateDataDomain('personal');
 
     const facts = store.facts('personal', 'personal').filter(f => f.factId === factId);
     expect(facts).toHaveLength(1);
@@ -177,7 +177,7 @@ describe('Memory P2 right to be forgotten', () => {
     const [factId] = store.facts('personal', 'personal')
       .filter(f => f.subject === 'alice')
       .map(f => f.factId);
-    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'driver' });
+    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'operator' });
 
     const restored = MemoryStore.fromState(store.exportState());
     expect(restored.listRetractions()[0]).toMatchObject({ factId, reason: 'gdpr' });

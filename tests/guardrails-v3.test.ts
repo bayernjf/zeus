@@ -12,9 +12,9 @@ import { memoryAuditSink } from '../src/dispatch/audit.js';
 import { OversightDesk } from '../src/oversight/oversight.js';
 import type { RecallHit } from '../src/memory/types.js';
 import type { DispatchPort, FanOutRequest, TargetLookup } from '../src/orchestrator/types.js';
-import type { A2AEvent, Fealty, Task } from '../src/a2a/types.js';
-import type { VassalLike } from '../src/dispatch/types.js';
-import type { RealmHit } from '../src/realm/types.js';
+import type { A2AEvent, Handshake, Task } from '../src/a2a/types.js';
+import type { ExecutorLike } from '../src/dispatch/types.js';
+import type { DataDomainHit } from '../src/dataDomain/types.js';
 
 const T0 = new Date('2026-10-19T00:00:00.000Z');
 
@@ -33,7 +33,7 @@ function hit(factId: string, subject: string, object: string, score = 0.9): Reca
   return {
     fact: {
       factId,
-      realmId: 'personal',
+      dataDomainId: 'personal',
       subject,
       predicate: 'asserts',
       object,
@@ -63,7 +63,7 @@ describe('S8 V3 assembly: execute keeps the escalate verdict', () => {
     const escalated = out.events.find(e => e.kind === 'guardrail-escalated');
     expect(escalated?.kind).toBe('guardrail-escalated');
     if (escalated?.kind === 'guardrail-escalated') {
-      expect(escalated.boundary).toBe('data-boundary:kernel-resolved-realm');
+      expect(escalated.boundary).toBe('data-boundary:runtime-resolved-dataDomain');
       expect(escalated.signals).toContain('external-url');
     }
   });
@@ -87,7 +87,7 @@ describe('S8 V3 assembly: execute keeps the escalate verdict', () => {
     expect(out.events.some(e => e.kind === 'guardrail-escalated')).toBe(false);
   });
 
-  it('execute-mode skill-input assembly escalates a driver-supplied external URL', () => {
+  it('execute-mode skill-input assembly escalates a operator-supplied external URL', () => {
     const out = assembleSkillInputs({
       declared: { target: {} },
       params: { target: 'https://evil.test/api' },
@@ -97,7 +97,7 @@ describe('S8 V3 assembly: execute keeps the escalate verdict', () => {
     expect(escalated?.kind).toBe('guardrail-escalated');
     if (escalated?.kind === 'guardrail-escalated') {
       expect(escalated.entry).toBe('target');
-      expect(escalated.boundary).toBe('data-boundary:driver-supplied');
+      expect(escalated.boundary).toBe('data-boundary:operator-supplied');
       expect(escalated.signals).toContain('external-url');
     }
   });
@@ -118,20 +118,20 @@ function lookupFor(names: string[]): TargetLookup {
   return { findBySkill: () => names.map(name => ({ name })) };
 }
 
-function done(vassal: string): DispatchResult {
+function done(executor: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
   return { ok: true, task, events: [] as A2AEvent[], injectedHits: [] };
 }
 
 function recordingPort() {
-  const dispatchCalls: Array<{ vassal: string; skill: string }> = [];
+  const dispatchCalls: Array<{ executor: string; skill: string }> = [];
   const port: DispatchPort = {
     async dispatch(req) {
-      dispatchCalls.push({ vassal: req.vassal!, skill: req.skill });
-      return done(req.vassal!);
+      dispatchCalls.push({ executor: req.executor!, skill: req.skill });
+      return done(req.executor!);
     },
     async cancel() {},
   };
@@ -164,7 +164,7 @@ function harness() {
 function executeRequest(delegation: FanOutRequest['executionDelegation'], params: Record<string, unknown>): FanOutRequest {
   return {
     skill: 'deployment-health',
-    realm: 'personal',
+    dataDomain: 'personal',
     params,
     mode: 'execute',
     ...(delegation ? { executionDelegation: delegation } : {}),
@@ -184,7 +184,7 @@ describe('S8 V3 orchestrator: execute escalate raises to the oversight queue', (
     expect(dispatchCalls).toHaveLength(0);
     expect(escalated).toHaveLength(1);
     expect(escalated[0]?.signals).toContain('external-url');
-    expect(escalated[0]?.boundary).toBe('data-boundary:driver-supplied');
+    expect(escalated[0]?.boundary).toBe('data-boundary:operator-supplied');
     expect(result.status).toBe('failed');
     expect(result.branches).toHaveLength(0);
     expect(result.refused?.reason).toBe('guardrail-escalated');
@@ -206,7 +206,7 @@ describe('S8 V3 orchestrator: execute escalate raises to the oversight queue', (
     const { orchestrator, dispatchCalls, escalated } = harness();
     const result = await orchestrator.fanOut({
       skill: 'deployment-health',
-      realm: 'personal',
+      dataDomain: 'personal',
       params: { target: 'https://evil.test/api' },
     });
     expect(escalated).toHaveLength(0);
@@ -240,15 +240,15 @@ describe('S8 V3 oversight: ingestGuardrail', () => {
       intentId: 'intent-g1',
       runId: 'run-g1',
       skill: 'deployment-health',
-      realm: 'personal',
-      vassals: ['pr-helper'],
-      boundary: 'data-boundary:driver-supplied',
+      dataDomain: 'personal',
+      executors: ['pr-helper'],
+      boundary: 'data-boundary:operator-supplied',
       signals: ['external-url'],
     });
     expect(row.kind).toBe('guardrail-content');
     expect(row.interruptLevel).toBe(1);
     expect(row.status).toBe('pending');
-    expect(row.boundary).toBe('data-boundary:driver-supplied');
+    expect(row.boundary).toBe('data-boundary:operator-supplied');
     expect(row.signals).toEqual(['external-url']);
     expect(d.list(undefined, 'guardrail-content')).toHaveLength(1);
     // The escalated action rides the level on the audit trail.
@@ -261,18 +261,18 @@ describe('S8 V3 oversight: ingestGuardrail', () => {
       intentId: 'intent-g2',
       runId: 'run-g2',
       skill: 'deployment-health',
-      realm: 'personal',
-      vassals: ['pr-helper'],
-      boundary: 'data-boundary:driver-supplied',
+      dataDomain: 'personal',
+      executors: ['pr-helper'],
+      boundary: 'data-boundary:operator-supplied',
       signals: ['external-url'],
     });
     const second = d.ingestGuardrail({
       intentId: 'intent-g2',
       runId: 'run-g2',
       skill: 'deployment-health',
-      realm: 'personal',
-      vassals: ['pr-helper'],
-      boundary: 'data-boundary:driver-supplied',
+      dataDomain: 'personal',
+      executors: ['pr-helper'],
+      boundary: 'data-boundary:operator-supplied',
       signals: ['external-url'],
     });
     expect(second.id).toBe(first.id);
@@ -285,9 +285,9 @@ describe('S8 V3 oversight: ingestGuardrail', () => {
       intentId: 'intent-g3',
       runId: 'run-g3',
       skill: 'deployment-health',
-      realm: 'personal',
-      vassals: ['pr-helper'],
-      boundary: 'data-boundary:driver-supplied',
+      dataDomain: 'personal',
+      executors: ['pr-helper'],
+      boundary: 'data-boundary:operator-supplied',
       signals: ['external-url'],
     });
     const restored = new OversightDesk({ now: () => T0 });
@@ -297,9 +297,9 @@ describe('S8 V3 oversight: ingestGuardrail', () => {
       intentId: 'intent-g3',
       runId: 'run-g3',
       skill: 'deployment-health',
-      realm: 'personal',
-      vassals: ['pr-helper'],
-      boundary: 'data-boundary:driver-supplied',
+      dataDomain: 'personal',
+      executors: ['pr-helper'],
+      boundary: 'data-boundary:operator-supplied',
       signals: ['external-url'],
     });
     expect(replayed.id).toBe(first.id);
@@ -308,24 +308,24 @@ describe('S8 V3 oversight: ingestGuardrail', () => {
 
 // --------------------------------------------------------------- dispatcher
 
-function realmHit(itemId: string, snippet: string, realmId?: string): RealmHit {
-  return { itemId, tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet, ...(realmId ? { realmId } : {}) };
+function dataDomainHit(itemId: string, snippet: string, dataDomainId?: string): DataDomainHit {
+  return { itemId, tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet, ...(dataDomainId ? { dataDomainId } : {}) };
 }
 
-function fealty(overrides: Partial<Fealty> = {}): Fealty {
+function handshake(overrides: Partial<Handshake> = {}): Handshake {
   return {
     version: '1', swornTo: 'zeus', domain: 'pr-release-control',
-    dataRealms: ['enterprise'], dataPolicy: 'read-task-scope',
+    dataDomains: ['enterprise'], dataPolicy: 'read-task-scope',
     reportBack: true, escalationPolicy: 'auto', ...overrides,
   };
 }
 
-function vassal(overrides: Partial<VassalLike> = {}): VassalLike {
+function executor(overrides: Partial<ExecutorLike> = {}): ExecutorLike {
   return {
     name: 'pr-helper',
     taskUrl: 'http://pr-helper.internal/api/a2a/tasks',
     card: { name: 'pr-helper', url: '', skills: [{ id: 'create-pr', name: '', description: '', tags: [] }] },
-    fealty: fealty(),
+    handshake: handshake(),
     ...overrides,
   };
 }
@@ -344,7 +344,7 @@ function sseResponse(finalTask: Task): Response {
   }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
-function dispatcherHarness(options: { contentGrant?: (name: string, realmId: string) => boolean; dataRealms?: Array<'personal' | 'enterprise'>; dataPolicy?: Fealty['dataPolicy'] } = {}) {
+function dispatcherHarness(options: { contentGrant?: (name: string, dataDomainId: string) => boolean; dataDomains?: Array<'personal' | 'enterprise'>; dataPolicy?: Handshake['dataPolicy'] } = {}) {
   const { log, sink } = memoryAuditSink();
   const seenBodies: unknown[] = [];
   const fetchImpl = async (_url: string, init?: RequestInit): Promise<Response> => {
@@ -352,7 +352,7 @@ function dispatcherHarness(options: { contentGrant?: (name: string, realmId: str
     return sseResponse({ kind: 'task', id: 'task-1', contextId: 'ctx', status: { state: 'completed' }, artifacts: [] });
   };
   const instance = new Dispatcher(
-    new Map([['pr-helper', vassal({ fealty: fealty({ dataRealms: options.dataRealms ?? ['enterprise'], ...(options.dataPolicy ? { dataPolicy: options.dataPolicy } : {}) }) })]]),
+    new Map([['pr-helper', executor({ handshake: handshake({ dataDomains: options.dataDomains ?? ['enterprise'], ...(options.dataPolicy ? { dataPolicy: options.dataPolicy } : {}) }) })]]),
     {
       audit: sink,
       now: () => T0,
@@ -364,25 +364,25 @@ function dispatcherHarness(options: { contentGrant?: (name: string, realmId: str
   return { instance: instance, audit: log, seenBodies };
 }
 
-/** The outbound A2A payload nests realm hits under params.message.parts[0].data. */
-function outboundHits(body: unknown): RealmHit[] {
-  const params = (body as { params?: { message?: { parts?: Array<{ data?: { realmHits?: RealmHit[] } }> } } })?.params;
-  return params?.message?.parts?.[0]?.data?.realmHits ?? [];
+/** The outbound A2A payload nests dataDomain hits under params.message.parts[0].data. */
+function outboundHits(body: unknown): DataDomainHit[] {
+  const params = (body as { params?: { message?: { parts?: Array<{ data?: { dataDomainHits?: DataDomainHit[] } }> } } })?.params;
+  return params?.message?.parts?.[0]?.data?.dataDomainHits ?? [];
 }
 
 describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content grant', () => {
-  it('redacts PII-bearing enterprise hits from the outbound copy when the vassal holds a grant for that realm', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, realmId) => realmId === 'enterprise-a' });
+  it('redacts PII-bearing enterprise hits from the outbound copy when the executor holds a grant for that dataDomain', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, dataDomainId) => dataDomainId === 'enterprise-a' });
     const hits = [
-      realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a'),
-      realmHit('doc-2', 'release notes v0.1', 'enterprise-a'),
+      dataDomainHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a'),
+      dataDomainHit('doc-2', 'release notes v0.1', 'enterprise-a'),
     ];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'enterprise',
-      realmHits: hits,
-      realmHitsOrigin: 'kernel-resolved',
+      dataDomain: 'enterprise',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     expect(result.ok).toBe(true);
     const outbound = outboundHits(seenBodies[0]);
@@ -391,66 +391,66 @@ describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content gra
     expect(redacted?.decision).toBe('guardrail-redacted');
   });
 
-  it('refuses the dispatch when the vassal holds no grant for the hit realm (fail-closed)', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, _realmId) => false });
-    const hits = [realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a')];
+  it('refuses the dispatch when the executor holds no grant for the hit dataDomain (fail-closed)', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, _dataDomainId) => false });
+    const hits = [dataDomainHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a')];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'enterprise',
-      realmHits: hits,
-      realmHitsOrigin: 'kernel-resolved',
+      dataDomain: 'enterprise',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     expect(result.ok).toBe(false);
     expect(seenBodies).toHaveLength(0);
     const refused = audit.find(entry => entry.decision === 'guardrail-refused');
     expect(refused?.decision).toBe('guardrail-refused');
-    if (!result.ok) expect(result.reason).toContain('realm-scoped content grant');
+    if (!result.ok) expect(result.reason).toContain('dataDomain-scoped content grant');
   });
 
-  it('refuses PII hits from a realm the grant does not cover even when the vassal holds a grant for another realm', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, realmId) => realmId === 'enterprise-a' });
-    const hits = [realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-b')];
+  it('refuses PII hits from a dataDomain the grant does not cover even when the executor holds a grant for another dataDomain', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, dataDomainId) => dataDomainId === 'enterprise-a' });
+    const hits = [dataDomainHit('doc-1', 'contact ops@acme.example for access', 'enterprise-b')];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'enterprise',
-      realmHits: hits,
-      realmHitsOrigin: 'kernel-resolved',
+      dataDomain: 'enterprise',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     expect(result.ok).toBe(false);
     expect(seenBodies).toHaveLength(0);
     expect(audit.some(entry => entry.decision === 'guardrail-refused')).toBe(true);
   });
 
-  it('refuses caller-asserted PII hits that carry no realmId (unverifiable, fail-closed)', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => true, dataPolicy: 'read-realm' });
-    const hits = [realmHit('doc-1', 'contact ops@acme.example for access')];
+  it('refuses caller-asserted PII hits that carry no dataDomainId (unverifiable, fail-closed)', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => true, dataPolicy: 'read-dataDomain' });
+    const hits = [dataDomainHit('doc-1', 'contact ops@acme.example for access')];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'enterprise',
-      realmHits: hits,
-      realmHitsOrigin: 'caller-asserted',
+      dataDomain: 'enterprise',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'caller-asserted',
     });
     expect(result.ok).toBe(false);
     expect(seenBodies).toHaveLength(0);
     const refused = audit.find(entry => entry.decision === 'guardrail-refused');
-    expect(String(refused?.detail)).toContain('no realmId');
+    expect(String(refused?.detail)).toContain('no dataDomainId');
   });
 
   it('refuses a mixed batch when any PII hit is uncovered or unverifiable', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, realmId) => realmId === 'enterprise-a' });
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: (_name, dataDomainId) => dataDomainId === 'enterprise-a' });
     const hits = [
-      realmHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a'),
-      realmHit('doc-2', 'call 13800138000 now', 'enterprise-b'),
+      dataDomainHit('doc-1', 'contact ops@acme.example for access', 'enterprise-a'),
+      dataDomainHit('doc-2', 'call 13800138000 now', 'enterprise-b'),
     ];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'enterprise',
-      realmHits: hits,
-      realmHitsOrigin: 'kernel-resolved',
+      dataDomain: 'enterprise',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     expect(result.ok).toBe(false);
     expect(seenBodies).toHaveLength(0);
@@ -459,27 +459,27 @@ describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content gra
 
   it('passes enterprise hits through unchanged when no PII signal fires', async () => {
     const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => false });
-    const hits = [realmHit('doc-1', 'release notes v0.1', 'enterprise-a')];
+    const hits = [dataDomainHit('doc-1', 'release notes v0.1', 'enterprise-a')];
     await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'enterprise',
-      realmHits: hits,
-      realmHitsOrigin: 'kernel-resolved',
+      dataDomain: 'enterprise',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     expect(outboundHits(seenBodies[0])).toEqual(hits);
     expect(audit.some(entry => entry.decision === 'guardrail-redacted' || entry.decision === 'guardrail-refused')).toBe(false);
   });
 
-  it('leaves personal-realm content alone even when it carries PII (zero regression)', async () => {
-    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => false, dataRealms: ['personal'] });
-    const hits = [realmHit('diary-1', 'call 13800138000 tonight')];
+  it('leaves personal-dataDomain content alone even when it carries PII (zero regression)', async () => {
+    const { instance, audit, seenBodies } = dispatcherHarness({ contentGrant: () => false, dataDomains: ['personal'] });
+    const hits = [dataDomainHit('diary-1', 'call 13800138000 tonight')];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'personal',
-      realmHits: hits,
-      realmHitsOrigin: 'kernel-resolved',
+      dataDomain: 'personal',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     expect(result.ok).toBe(true);
     expect(outboundHits(seenBodies[0])).toEqual(hits);
@@ -488,13 +488,13 @@ describe('S8 V3 dispatcher: enterprise-content PII gate wired to the content gra
 
   it('stays off (V2 behaviour) when boot wires no contentGrant port', async () => {
     const { instance, audit, seenBodies } = dispatcherHarness();
-    const hits = [realmHit('doc-1', 'contact ops@acme.example for access')];
+    const hits = [dataDomainHit('doc-1', 'contact ops@acme.example for access')];
     const result = await instance.dispatch({
       skill: 'create-pr',
       params: {},
-      realm: 'enterprise',
-      realmHits: hits,
-      realmHitsOrigin: 'kernel-resolved',
+      dataDomain: 'enterprise',
+      dataDomainHits: hits,
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     expect(result.ok).toBe(true);
     expect(outboundHits(seenBodies[0])).toEqual(hits);

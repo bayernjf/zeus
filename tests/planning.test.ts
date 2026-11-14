@@ -36,7 +36,7 @@ function node(id: string, skill: string, params: Record<string, unknown> = {}, d
 }
 
 function candidate(planner: string, nodes: DagNode[], malformed?: string): PlanCandidate {
-  return { planner, spec: { realm: 'personal', nodes }, ...(malformed === undefined ? {} : { malformed }) };
+  return { planner, spec: { dataDomain: 'personal', nodes }, ...(malformed === undefined ? {} : { malformed }) };
 }
 
 describe('validatePlan (S12 V1)', () => {
@@ -131,7 +131,7 @@ describe('replanDelta (S12 V1)', () => {
     const current = ['n1', 'n2', 'n3'];
     const statusOf = (id: string) => (id === 'n1' ? 'completed' : id === 'n2' ? 'pending' : 'pending');
     const delta = replanDelta(current, (id) => (id === 'n1' ? ['n0'] : id === 'n2' ? ['n1'] : []), {
-      realm: 'personal',
+      dataDomain: 'personal',
       nodes: [node('n1', 'research', { query: 'x' }), node('n2', 'writeup', { draft: 'ok' }, ['n1']), node('n4', 'research', { query: 'z' })],
     }, statusOf);
     expect(delta.kept).toEqual(['n1']);
@@ -141,14 +141,14 @@ describe('replanDelta (S12 V1)', () => {
 
   it('never removes a running node from the revised graph', () => {
     const current = ['n1', 'n2'];
-    const delta = replanDelta(current, () => [], { realm: 'personal', nodes: [node('n1', 'research', { query: 'x' })] },
+    const delta = replanDelta(current, () => [], { dataDomain: 'personal', nodes: [node('n1', 'research', { query: 'x' })] },
       (id) => (id === 'n2' ? 'running' : undefined));
     expect(delta.removed).toEqual([]);
   });
 
   it('never re-runs a completed node: kept nodes are exactly the completed ones', () => {
     const current = ['n1', 'n2'];
-    const revised = { realm: 'personal' as const, nodes: [node('n1', 'research', { query: 'x' }), node('n2', 'writeup', { draft: 'ok' }, ['n1'])] };
+    const revised = { dataDomain: 'personal' as const, nodes: [node('n1', 'research', { query: 'x' }), node('n2', 'writeup', { draft: 'ok' }, ['n1'])] };
     const delta = replanDelta(current, () => [], revised, (id) => (id === 'n1' ? 'completed' : 'pending'));
     expect(delta.kept).toEqual(['n1']);
     expect(delta.removed).toEqual([]);
@@ -159,7 +159,7 @@ describe('replanDelta (S12 V1)', () => {
   it('reports dependency rewiring for non-completed nodes whose edges changed', () => {
     const current = ['n1', 'n2'];
     const delta = replanDelta(current, (id) => (id === 'n2' ? ['n0'] : []), {
-      realm: 'personal',
+      dataDomain: 'personal',
       nodes: [node('n1', 'research', { query: 'x' }), node('n2', 'writeup', { draft: 'ok' }, ['n1'])],
     }, (id) => (id === 'n1' ? 'completed' : 'pending'));
     expect(delta.rewired).toEqual([{ id: 'n2', deps: ['n1'] }]);

@@ -5,8 +5,8 @@ describe('TUI contract commands (self-host step 5 face)', () => {
   it('parses contract revoke as a bare index and issue with ceilings', () => {
     expect(parseCommand('c3')).toEqual({ kind: 'contractRevoke', index: 3 });
     expect(parseCommand('c 3')).toEqual({ kind: 'contractRevoke', index: 3 });
-    expect(parseCommand('c research 4 2 driver')).toEqual({
-      kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'driver',
+    expect(parseCommand('c research 4 2 operator')).toEqual({
+      kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'operator',
     });
     expect(parseCommand('c research 4 2')).toEqual({
       kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'operator',
@@ -66,12 +66,12 @@ describe('TUI command parser', () => {
     expect(COMMAND_HELP).toContain('revoke');
   });
 
-  it('parses grant issuance with realm#, subject, access token and optional issuer', () => {
+  it('parses grant issuance with dataDomain#, subject, access token and optional issuer', () => {
     expect(parseCommand('g2 loom r')).toEqual({
-      kind: 'grantIssue', realmIndex: 2, subject: 'loom', access: 'read', grantedBy: 'operator',
+      kind: 'grantIssue', dataDomainIndex: 2, subject: 'loom', access: 'read', grantedBy: 'operator',
     });
     expect(parseCommand('G 1 Agent-X W alice')).toEqual({
-      kind: 'grantIssue', realmIndex: 1, subject: 'Agent-X', access: 'write', grantedBy: 'alice',
+      kind: 'grantIssue', dataDomainIndex: 1, subject: 'Agent-X', access: 'write', grantedBy: 'alice',
     });
     // Machine identifiers keep their case even though the verb is case-folded.
     expect(parseCommand('g1 Pr-Helper read ops bot')).toMatchObject({ subject: 'Pr-Helper', grantedBy: 'ops bot' });
@@ -134,7 +134,7 @@ describe('TUI resume command (E6.3 parameters-and-redispatch)', () => {
     expect(COMMAND_HELP).toContain('r<n> {json}');
   });
 
-  it('refuses the forms that would send a payload the kernel rejects', () => {
+  it('refuses the forms that would send a payload the runtime rejects', () => {
     // `r` alone stays refresh - the deck redraws, it never resumes nothing.
     expect(parseCommand('r')).toEqual({ kind: 'refresh' });
     expect(parseCommand('r1')).toEqual({ error: 'resume-needs-params' });
@@ -165,7 +165,7 @@ describe('TUI connector commands (E7 MCP face)', () => {
     expect(COMMAND_HELP).toContain('mt<n>');
   });
 
-  it('rejects the forms that would reach the kernel malformed', () => {
+  it('rejects the forms that would reach the runtime malformed', () => {
     expect(parseCommand('m0')).toEqual({ error: 'bad-index' });
     expect(parseCommand('mx0')).toEqual({ error: 'bad-index' });
     expect(parseCommand('mt0 post')).toEqual({ error: 'bad-index' });

@@ -11,7 +11,7 @@ function mockClient(route: (url: string) => ResponseLike | Promise<ResponseLike>
     calls.push({ url, ...(init !== undefined ? { init } : {}) });
     return route(url);
   });
-  return { calls, client: createDeckClient('http://kernel', 'tok', fetchImpl) };
+  return { calls, client: createDeckClient('http://runtime', 'tok', fetchImpl) };
 }
 
 const okJson = (body: unknown): ResponseLike => ({ ok: true, status: 200, json: async () => body });
@@ -19,8 +19,8 @@ const fail503: ResponseLike = { ok: false, status: 503, json: async () => null }
 
 function snapshotRoute(overrides: { audit?: ResponseLike } = {}) {
   return (url: string): ResponseLike => {
-    if (url === 'http://kernel/api/audit?limit=12') {
-      return overrides.audit ?? okJson({ entries: [{ ts: 't', vassal: 'p', decision: 'dispatched' }] });
+    if (url === 'http://runtime/api/audit?limit=12') {
+      return overrides.audit ?? okJson({ entries: [{ ts: 't', executor: 'p', decision: 'dispatched' }] });
     }
     if (url.endsWith('/api/roster')) return okJson({ snapshot: { generatedAt: '', entries: [] } });
     if (url.includes('/api/escalations')) return okJson({ escalations: [] });
@@ -44,7 +44,7 @@ describe('TUI reinstate face (A-02)', () => {
   it('posts to the reinstate route with a JSON body', async () => {
     const { calls, client } = mockClient(() => okJson({ name: 'p1', revoked: false }));
     await client.reinstate('p 1');
-    const call = calls.find(c => c.url.includes('/api/vassals/p%201/reinstate'));
+    const call = calls.find(c => c.url.includes('/api/executors/p%201/reinstate'));
     expect(call?.init?.method).toBe('POST');
     // The route reads no body, but a JSON-labelled empty one is a 400 on Fastify.
     expect(call?.init?.body).toBe('{}');
@@ -66,7 +66,7 @@ describe('TUI resume face (E6.3)', () => {
 describe('TUI contract face (self-host step 5)', () => {
   it('includes the contract ledger in the snapshot and degrades to null when unmounted', async () => {
     const withContracts = mockClient(url => {
-      if (url === 'http://kernel/api/delegation-contracts') {
+      if (url === 'http://runtime/api/delegation-contracts') {
         return okJson({ contracts: [{ id: 'dc-1', grantedBy: 'op', skill: 'research', capabilities: ['execute'], limits: { maxChildTickets: 1, maxConcurrent: 1, windowEndsAt: 'w' }, used: { childTickets: 0, inFlight: 0 }, issuedAt: 't' }] });
       }
       return snapshotRoute()(url);
@@ -74,14 +74,14 @@ describe('TUI contract face (self-host step 5)', () => {
     const snap = await withContracts.client.snapshot();
     expect(snap.contracts?.contracts).toHaveLength(1);
 
-    const without = mockClient(url => (url === 'http://kernel/api/delegation-contracts' ? fail503 : snapshotRoute()(url)));
+    const without = mockClient(url => (url === 'http://runtime/api/delegation-contracts' ? fail503 : snapshotRoute()(url)));
     const degraded = await without.client.snapshot();
     expect(degraded.contracts).toBeNull();
   });
 
   it('issues a contract via POST and unwraps the envelope', async () => {
     const { calls, client } = mockClient(url => {
-      if (url === 'http://kernel/api/delegation-contracts') {
+      if (url === 'http://runtime/api/delegation-contracts') {
         return okJson({ contract: { id: 'dc-9', grantedBy: 'op', skill: 'research', capabilities: ['execute'], limits: {}, used: { childTickets: 0, inFlight: 0 }, issuedAt: 't' } });
       }
       return fail503;
@@ -128,7 +128,7 @@ describe('TUI HTTP client', () => {
   it('includes the latest audit entries in the snapshot', async () => {
     const { client } = mockClient(snapshotRoute());
     const snap = await client.snapshot();
-    expect(snap.audit).toEqual([{ ts: 't', vassal: 'p', decision: 'dispatched' }]);
+    expect(snap.audit).toEqual([{ ts: 't', executor: 'p', decision: 'dispatched' }]);
   });
 
   it('degrades the timeline to null when the audit face is unavailable (roster/escalations stay authoritative)', async () => {
@@ -142,23 +142,23 @@ describe('TUI HTTP client', () => {
     const { calls, client } = mockClient(() => okJson({ entries: [] }));
     await client.timeline(25);
     const call = calls.find(c => c.url.includes('/api/audit'));
-    expect(call?.url).toBe('http://kernel/api/audit?limit=25');
+    expect(call?.url).toBe('http://runtime/api/audit?limit=25');
     expect(call?.init?.headers?.authorization).toBe('Bearer tok');
   });
 
-  it('fetches mounted realms and the grant ledger from /api/domains', async () => {
+  it('fetches mounted dataDomains and the grant ledger from /api/domains', async () => {
     const payload = {
-      realms: [{ realmId: 'acme', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 3, contentDigest: 'sha256:x' }],
-      grants: [{ grantId: 'g-1', subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' }],
+      dataDomains: [{ dataDomainId: 'acme', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 3, contentDigest: 'sha256:x' }],
+      grants: [{ grantId: 'g-1', subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' }],
     };
     const { calls, client } = mockClient(url =>
-      url === 'http://kernel/api/domains'
+      url === 'http://runtime/api/domains'
         ? okJson(payload)
         : okJson({}),
     );
     const domains = await client.domains();
     expect(domains).toEqual(payload);
-    expect(calls.some(c => c.url === 'http://kernel/api/domains')).toBe(true);
+    expect(calls.some(c => c.url === 'http://runtime/api/domains')).toBe(true);
   });
 
   it('degrades domains to null in the snapshot when the face is not mounted', async () => {
@@ -182,19 +182,19 @@ describe('TUI HTTP client', () => {
     const calls: Call[] = [];
     const fetchImpl = vi.fn(async (url: string, init?: Init) => {
       calls.push({ url, ...(init !== undefined ? { init } : {}) });
-      return okJson({ grantId: 'g-9', subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' });
+      return okJson({ grantId: 'g-9', subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' });
     });
-    const client = createDeckClient('http://kernel', 'tok', fetchImpl);
-    const grant = await client.issueGrant({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
+    const client = createDeckClient('http://runtime', 'tok', fetchImpl);
+    const grant = await client.issueGrant({ subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op' });
     expect(grant.grantId).toBe('g-9');
-    expect(calls[0]!.url).toBe('http://kernel/api/domains/grants');
+    expect(calls[0]!.url).toBe('http://runtime/api/domains/grants');
     expect(calls[0]!.init?.method).toBe('POST');
-    expect(JSON.parse(calls[0]!.init?.body ?? '{}')).toEqual({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
+    expect(JSON.parse(calls[0]!.init?.body ?? '{}')).toEqual({ subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op' });
 
-    const bad = createDeckClient('http://kernel', 'tok', vi.fn(async () => ({
-      ok: false, status: 400, json: async () => ({ error: { message: 'grants authorize enterprise realms' } }),
+    const bad = createDeckClient('http://runtime', 'tok', vi.fn(async () => ({
+      ok: false, status: 400, json: async () => ({ error: { message: 'grants authorize enterprise dataDomains' } }),
     })));
-    await expect(bad.issueGrant({ subject: 'x', realmId: 'p', access: 'read', grantedBy: 'op' })).rejects.toBeInstanceOf(ApiError);
+    await expect(bad.issueGrant({ subject: 'x', dataDomainId: 'p', access: 'read', grantedBy: 'op' })).rejects.toBeInstanceOf(ApiError);
   });
 
   it('revokes a grant by encoded grantId on DELETE', async () => {
@@ -203,15 +203,15 @@ describe('TUI HTTP client', () => {
       calls.push({ url, ...(init !== undefined ? { init } : {}) });
       return okJson({});
     });
-    const client = createDeckClient('http://kernel', 'tok', fetchImpl);
+    const client = createDeckClient('http://runtime', 'tok', fetchImpl);
     await client.revokeGrant('grant x/1');
-    expect(calls[0]!.url).toBe('http://kernel/api/domains/grants/grant%20x%2F1');
+    expect(calls[0]!.url).toBe('http://runtime/api/domains/grants/grant%20x%2F1');
     expect(calls[0]!.init?.method).toBe('DELETE');
   });
 
   it('recognizes an instruction via POST /api/intents/recognize (local path omits useModel)', async () => {
     const { calls, client } = mockClient(url => {
-      expect(url).toBe('http://kernel/api/intents/recognize');
+      expect(url).toBe('http://runtime/api/intents/recognize');
       return okJson({ ok: true, intent: { skill: 'deployment-health' }, confidence: 0.5, backend: null, decisionAt: 'd' });
     });
     const result = await client.recognize('review the pr');
@@ -223,11 +223,11 @@ describe('TUI HTTP client', () => {
     expect(calls[0]!.init!.headers!['content-type']).toBe('application/json');
   });
 
-  it('sends realm + useModel only when opted in', async () => {
+  it('sends dataDomain + useModel only when opted in', async () => {
     const { calls, client } = mockClient(() => okJson({ ok: true, intent: { skill: 'research' }, confidence: 0.8, backend: { kind: 'llm', model: 'm' }, decisionAt: 'd' }));
-    await client.recognize('research postgres vs sqlite', { realm: 'enterprise', useModel: true });
+    await client.recognize('research postgres vs sqlite', { dataDomain: 'enterprise', useModel: true });
     const body = JSON.parse(calls[0]!.init!.body!);
-    expect(body).toEqual({ text: 'research postgres vs sqlite', realm: 'enterprise', useModel: true });
+    expect(body).toEqual({ text: 'research postgres vs sqlite', dataDomain: 'enterprise', useModel: true });
   });
 
   it('surfaces a fail-closed response as-is (never turns it into a guessed intent)', async () => {
@@ -255,38 +255,38 @@ describe('TUI connector face (E7 MCP)', () => {
 
   it('includes the connector ledger in the snapshot and degrades to null when unmounted', async () => {
     const withConn = mockClient(url =>
-      url === 'http://kernel/api/connectors' ? okJson(connectorPayload) : snapshotRoute()(url),
+      url === 'http://runtime/api/connectors' ? okJson(connectorPayload) : snapshotRoute()(url),
     );
     const snap = await withConn.client.snapshot();
     expect(snap.connectors?.connectors).toHaveLength(1);
 
-    const without = mockClient(url => (url === 'http://kernel/api/connectors' ? fail503 : snapshotRoute()(url)));
+    const without = mockClient(url => (url === 'http://runtime/api/connectors' ? fail503 : snapshotRoute()(url)));
     const degraded = await without.client.snapshot();
     expect(degraded.connectors).toBeNull();
   });
 
   it('declares a connector via POST and sends the token without echoing it back', async () => {
     const { calls, client } = mockClient(url =>
-      url === 'http://kernel/api/connectors'
+      url === 'http://runtime/api/connectors'
         ? okJson({ id: 'c1', name: 'GitHub', status: 'declared', permissions: ['repo:read'], hasToken: true })
         : fail503,
     );
     const declared = await client.declareConnector({ id: 'c1', name: 'GitHub', permissions: ['repo:read'], token: 'secret' });
     expect(declared.hasToken).toBe(true);
-    const call = calls.find(c => c.url === 'http://kernel/api/connectors');
+    const call = calls.find(c => c.url === 'http://runtime/api/connectors');
     expect(call?.init?.method).toBe('POST');
     expect(JSON.parse(call?.init?.body ?? '{}')).toEqual({ id: 'c1', name: 'GitHub', permissions: ['repo:read'], token: 'secret' });
   });
 
   it('runs the handshake via POST /api/connectors/:id/connect', async () => {
     const { calls, client } = mockClient(url =>
-      url === 'http://kernel/api/connectors/c1/connect'
+      url === 'http://runtime/api/connectors/c1/connect'
         ? okJson({ id: 'c1', name: 'GitHub', status: 'connected', permissions: [], hasToken: true, capabilities: { tools: ['search'], resources: [], prompts: [] } })
         : fail503,
     );
     const bound = await client.connectConnector('c1');
     expect(bound.status).toBe('connected');
-    expect(calls[0]!.url).toBe('http://kernel/api/connectors/c1/connect');
+    expect(calls[0]!.url).toBe('http://runtime/api/connectors/c1/connect');
     expect(calls[0]!.init?.method).toBe('POST');
   });
 
@@ -303,14 +303,14 @@ describe('TUI connector face (E7 MCP)', () => {
 
   it('calls a tool with the arguments envelope and returns the raw result', async () => {
     const { calls, client } = mockClient(url =>
-      url === 'http://kernel/api/connectors/c1/tools/search/call'
+      url === 'http://runtime/api/connectors/c1/tools/search/call'
         ? okJson({ result: { hits: 3 } })
         : fail503,
     );
     const result = await client.callConnectorTool('c1', 'search', { q: 'zeus' });
     expect(result).toEqual({ hits: 3 });
     const call = calls[0]!;
-    expect(call.url).toBe('http://kernel/api/connectors/c1/tools/search/call');
+    expect(call.url).toBe('http://runtime/api/connectors/c1/tools/search/call');
     expect(call.init?.method).toBe('POST');
     expect(JSON.parse(call.init?.body ?? '{}')).toEqual({ arguments: { q: 'zeus' } });
   });
@@ -332,13 +332,13 @@ describe('TUI active-intents face (S15 V3)', () => {
 
   it('includes active intents in the snapshot and degrades to null when the face is absent', async () => {
     const withFace = mockClient(url =>
-      url === 'http://kernel/api/active-intents' ? okJson(activePayload) : snapshotRoute()(url),
+      url === 'http://runtime/api/active-intents' ? okJson(activePayload) : snapshotRoute()(url),
     );
     const snap = await withFace.client.snapshot();
     expect(snap.active?.intents).toHaveLength(1);
     expect(snap.active?.intents[0]?.intentId).toBe('intent-live');
 
-    const without = mockClient(url => (url === 'http://kernel/api/active-intents' ? fail503 : snapshotRoute()(url)));
+    const without = mockClient(url => (url === 'http://runtime/api/active-intents' ? fail503 : snapshotRoute()(url)));
     const degraded = await without.client.snapshot();
     expect(degraded.active).toBeNull();
   });
@@ -355,14 +355,14 @@ describe('TUI cost face (E6.5)', () => {
   };
 
   it('reads /api/cost as the eleventh aggregate route', async () => {
-    const { calls, client } = mockClient(url => (url === 'http://kernel/api/cost' ? okJson(account) : snapshotRoute()(url)));
+    const { calls, client } = mockClient(url => (url === 'http://runtime/api/cost' ? okJson(account) : snapshotRoute()(url)));
     const snap = await client.snapshot();
     expect(snap.cost).toEqual(account);
-    expect(calls.some(call => call.url === 'http://kernel/api/cost')).toBe(true);
+    expect(calls.some(call => call.url === 'http://runtime/api/cost')).toBe(true);
   });
 
   it('degrades to null when the endpoint is not mounted, leaving the core faces authoritative', async () => {
-    const { client } = mockClient(url => (url === 'http://kernel/api/cost' ? fail503 : snapshotRoute()(url)));
+    const { client } = mockClient(url => (url === 'http://runtime/api/cost' ? fail503 : snapshotRoute()(url)));
     const snap = await client.snapshot();
     expect(snap.cost).toBeNull();
     expect(snap.roster.entries).toBeDefined();

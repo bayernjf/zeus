@@ -17,7 +17,7 @@
 //    with a reason that names the planning face (design-planning §3.3).
 
 import type { AuditEntry } from '../../dispatch/dispatcher.js';
-import type { RealmType } from '../../a2a/types.js';
+import type { DataDomainType } from '../../a2a/types.js';
 import type { Artifact, Part } from '../../a2a/types.js';
 import type { SkillSpec } from '../../skills/types.js';
 import type { Conflict } from './types.js';
@@ -55,8 +55,8 @@ export type PlanFlowOptions = {
 
 export type PlanFlowRequest = {
   goal: PlanGoal;
-  realm: RealmType;
-  realmId?: string;
+  dataDomain: DataDomainType;
+  dataDomainId?: string;
   /** Planner skills to fan out to; defaults to every active skill tagged
    *  `planning` (design-planning §3.1). */
   plannerSkills?: string[];
@@ -111,8 +111,8 @@ export class PlanFlow {
           goal: request.goal,
           catalogue: this.catalogueSnapshot(),
         },
-        realm: request.realm,
-        ...(request.realmId ? { realmId: request.realmId } : {}),
+        dataDomain: request.dataDomain,
+        ...(request.dataDomainId ? { dataDomainId: request.dataDomainId } : {}),
         ...(request.branchTimeoutMs !== undefined ? { branchTimeoutMs: request.branchTimeoutMs } : {}),
       });
       for (const branch of fanOut.branches) {
@@ -121,32 +121,32 @@ export class PlanFlow {
         if (draft === undefined) {
           this.audit({
             ts: this.now().toISOString(),
-            vassal: branch.vassal,
+            executor: branch.executor,
             runId: branch.runId,
             skill,
-            realm: request.realm,
+            dataDomain: request.dataDomain,
             decision: 'plan-malformed',
-            detail: `planner ${branch.vassal} returned no structured plan draft (data part key '${PLAN_DATA_KEY}' expected)`,
+            detail: `planner ${branch.executor} returned no structured plan draft (data part key '${PLAN_DATA_KEY}' expected)`,
           });
           continue;
         }
-        // The draft is planner-produced data, so its self-declared realm can
-        // never promote execution into another realm (design constraint: the
+        // The draft is planner-produced data, so its self-declared dataDomain can
+        // never promote execution into another dataDomain (design constraint: the
         // personal and enterprise data domains stay isolated). A mismatched
         // draft is dropped like any malformed candidate instead of scored.
-        if (draft.realm !== request.realm) {
+        if (draft.dataDomain !== request.dataDomain) {
           this.audit({
             ts: this.now().toISOString(),
-            vassal: branch.vassal,
+            executor: branch.executor,
             runId: branch.runId,
             skill,
-            realm: request.realm,
+            dataDomain: request.dataDomain,
             decision: 'plan-malformed',
-            detail: `planner ${branch.vassal} draft realm '${draft.realm}' does not match request realm '${request.realm}'; draft dropped`,
+            detail: `planner ${branch.executor} draft dataDomain '${draft.dataDomain}' does not match request dataDomain '${request.dataDomain}'; draft dropped`,
           });
           continue;
         }
-        drafts.push({ planner: branch.vassal, spec: draft });
+        drafts.push({ planner: branch.executor, spec: draft });
       }
     }
 
@@ -157,10 +157,10 @@ export class PlanFlow {
           : 'every planner draft was malformed or missing';
       this.audit({
         ts: this.now().toISOString(),
-        vassal: '(planning)',
+        executor: '(planning)',
         runId: intentId,
         skill: plannerSkills.join(',') || '(none)',
-        realm: request.realm,
+        dataDomain: request.dataDomain,
         decision: 'plan-rejected-unplannable',
         detail: reason,
       });
@@ -182,10 +182,10 @@ export class PlanFlow {
       const reasons = ranking.scores.flatMap((score) => score.rejects);
       this.audit({
         ts: this.now().toISOString(),
-        vassal: '(planning)',
+        executor: '(planning)',
         runId: intentId,
         skill: plannerSkills.join(',') || '(none)',
-        realm: request.realm,
+        dataDomain: request.dataDomain,
         decision: 'plan-rejected-unplannable',
         detail: reasons.length > 0 ? reasons.join('; ') : 'no feasible plan candidate',
       });
@@ -202,26 +202,26 @@ export class PlanFlow {
     if (verdict.kind === 'conflict') {
       this.audit({
         ts: this.now().toISOString(),
-        vassal: '(planning)',
+        executor: '(planning)',
         runId: intentId,
         skill: plannerSkills.join(',') || '(none)',
-        realm: request.realm,
+        dataDomain: request.dataDomain,
         decision: 'plan-conflict',
         detail: `feasible plans within tie threshold: ${verdict.planners.join(', ')}`,
       });
       const escalated = this.oversight
         ? this.escalateConflict(intentId, request, verdict.planners, ranking)
-        : { id: `esc-plan-${intentId}`, kind: 'intent-conflict' as const, runId: intentId, vassal: '(planning)', skill: request.goal.description.slice(0, 40), realm: request.realm, reason: 'plan-conflict', options: verdict.planners, status: 'pending' as const, createdAt: this.now().toISOString() };
+        : { id: `esc-plan-${intentId}`, kind: 'intent-conflict' as const, runId: intentId, executor: '(planning)', skill: request.goal.description.slice(0, 40), dataDomain: request.dataDomain, reason: 'plan-conflict', options: verdict.planners, status: 'pending' as const, createdAt: this.now().toISOString() };
       return { kind: 'conflict', escalated, planners: verdict.planners, scores: ranking.scores };
     }
 
     const selected = drafts.find((d) => d.planner === verdict.planner)!;
     this.audit({
       ts: this.now().toISOString(),
-      vassal: '(planning)',
+      executor: '(planning)',
       runId: intentId,
       skill: plannerSkills.join(',') || '(none)',
-      realm: request.realm,
+      dataDomain: request.dataDomain,
       decision: 'plan-selected',
       detail: `planner ${verdict.planner}: ${selected.spec.nodes.length} nodes, coverage ${scoreOf(ranking, verdict.planner)?.coverage ?? '?'}`,
     });
@@ -259,7 +259,7 @@ export class PlanFlow {
           ...(score === undefined
             ? {}
             : { summary: `coverage ${score.coverage}, cost ${score.estimatedCost}, critical path ${score.criticalPathLength}` }),
-          vassals: [planner],
+          executors: [planner],
         };
       }),
       reason: `plan-conflict: feasible plans within tie threshold ${this.tieThreshold} (${planners.join(', ')})`,
@@ -268,7 +268,7 @@ export class PlanFlow {
       intentId,
       runId: intentId,
       skill: request.goal.description.slice(0, 60) || '(planning)',
-      realm: request.realm,
+      dataDomain: request.dataDomain,
       conflict,
     });
   }
@@ -281,14 +281,14 @@ export class PlanFlow {
     reasons: string[],
   ): Escalation {
     const conflict: Conflict = {
-      stances: reasons.map((reason) => ({ stance: `rejected: ${reason}`, vassals: ['(planning)'] })),
+      stances: reasons.map((reason) => ({ stance: `rejected: ${reason}`, executors: ['(planning)'] })),
       reason: `plan-rejected-unplannable: no feasible plan (${reasons.length} rejection(s))`,
     };
     return this.oversight!.ingestConflict({
       intentId,
       runId: intentId,
       skill: request.goal.description.slice(0, 60) || '(planning)',
-      realm: request.realm,
+      dataDomain: request.dataDomain,
       conflict,
     });
   }
@@ -315,12 +315,12 @@ function planFromPart(part: Part): DagSpec | undefined {
   if (raw === undefined || typeof raw !== 'object' || raw === null) return undefined;
   const spec = raw as Record<string, unknown>;
   if (!Array.isArray(spec.nodes)) return undefined;
-  if (typeof spec.realm !== 'string' || (spec.realm !== 'personal' && spec.realm !== 'enterprise')) return undefined;
+  if (typeof spec.dataDomain !== 'string' || (spec.dataDomain !== 'personal' && spec.dataDomain !== 'enterprise')) return undefined;
   const nodes = spec.nodes.filter(isDagNodeShape);
   if (nodes.length !== spec.nodes.length) return undefined;
   return {
     nodes,
-    realm: spec.realm,
+    dataDomain: spec.dataDomain,
     ...(typeof spec.dagId === 'string' ? { dagId: spec.dagId } : {}),
     ...(typeof spec.branchTimeoutMs === 'number' ? { branchTimeoutMs: spec.branchTimeoutMs } : {}),
   };

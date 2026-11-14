@@ -1,5 +1,5 @@
-// Local acceptance probe for the personal read-only realm stdio MCP host.
-// Spawns dist/realm/mcp-stdio.js against a temp realm and runs a real JSON-RPC
+// Local acceptance probe for the personal read-only dataDomain stdio MCP host.
+// Spawns dist/dataDomain/mcp-stdio.js against a temp dataDomain and runs a real JSON-RPC
 // handshake over stdio. Prints a human-readable acceptance table.
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -8,9 +8,9 @@ import { join } from 'node:path';
 
 const root = mkdtempSync(join(tmpdir(), 'zeus-personal-mcp-'));
 mkdirSync(join(root, 'notes'), { recursive: true });
-writeFileSync(join(root, 'notes', 'hello.txt'), 'Personal realm marker: recall meeting notes.\n', 'utf8');
+writeFileSync(join(root, 'notes', 'hello.txt'), 'Personal dataDomain marker: recall meeting notes.\n', 'utf8');
 
-const child = spawn('node', ['dist/realm/mcp-stdio.js', root], { stdio: ['pipe', 'pipe', 'pipe'] });
+const child = spawn('node', ['dist/dataDomain/mcp-stdio.js', root], { stdio: ['pipe', 'pipe', 'pipe'] });
 let buf = '';
 const pending = new Map();
 function send(method, params) {
@@ -51,14 +51,14 @@ try {
     clientInfo: { name: 'personal-mcp-probe', version: '1.0' },
   });
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
-  check('initialize -> serverInfo.name=zeus-realm', init.result?.serverInfo?.name === 'zeus-realm', JSON.stringify(init.result?.serverInfo));
+  check('initialize -> serverInfo.name=zeus-dataDomain', init.result?.serverInfo?.name === 'zeus-dataDomain', JSON.stringify(init.result?.serverInfo));
   check('initialize -> protocolVersion', /2025-03-26/.test(init.result?.protocolVersion), init.result?.protocolVersion);
 
   const tools = await send('tools/list', {});
   const names = (tools.result?.tools || []).map(t => t.name);
-  check('tools/list contains realm.search/read', names.includes('realm.search') && names.includes('realm.read'), names.join(','));
+  check('tools/list contains dataDomain.search/read', names.includes('dataDomain.search') && names.includes('dataDomain.read'), names.join(','));
   check(
-    'tools/list exposes the read-only kernel face (zeus.skills/plan/status)',
+    'tools/list exposes the read-only runtime face (zeus.skills/plan/status)',
     ['zeus.skills', 'zeus.plan', 'zeus.status'].every(n => names.includes(n)),
     names.join(',')
   );
@@ -66,53 +66,53 @@ try {
   const resources = await send('resources/list', {});
   const uris = (resources.result?.resources || []).map(r => r.uri);
   const resList = JSON.stringify((resources.result?.resources || []).map(r => ({ uri: r.uri, name: r.name })));
-  check('resources/list exposes manifest (realmId discovery)', /zeus-realm:\/\/[^/]+\/manifest/.test(uris.join(',')), resList.slice(0, 200));
+  check('resources/list exposes manifest (dataDomainId discovery)', /zeus-dataDomain:\/\/[^/]+\/manifest/.test(uris.join(',')), resList.slice(0, 200));
 
-  // realmId is derived from the connected root; read it from stderr connect line.
+  // dataDomainId is derived from the connected root; read it from stderr connect line.
   const m = stderrTail.match(/connected\s+(\S+)\s+\((\d+)\s+items\)/);
-  const realmId = m ? m[1] : null;
-  check('realm connected read-only at launch', !!realmId, realmId || stderrTail.trim());
+  const dataDomainId = m ? m[1] : null;
+  check('dataDomain connected read-only at launch', !!dataDomainId, dataDomainId || stderrTail.trim());
 
   const search = await send('tools/call', {
-    name: 'realm.search',
-    arguments: { realmId, text: 'meeting' },
+    name: 'dataDomain.search',
+    arguments: { dataDomainId, text: 'meeting' },
   });
   const searchText = search.result?.content?.[0]?.text || '';
-  check('realm.search finds hello.txt', /hello\.txt/.test(searchText), searchText.slice(0, 200));
+  check('dataDomain.search finds hello.txt', /hello\.txt/.test(searchText), searchText.slice(0, 200));
 
   const read = await send('tools/call', {
-    name: 'realm.read',
-    arguments: { realmId, itemId: 'notes/hello.txt' },
+    name: 'dataDomain.read',
+    arguments: { dataDomainId, itemId: 'notes/hello.txt' },
   });
   const readText = read.result?.content?.[0]?.text || '';
-  check('realm.read returns content', /Personal realm marker/.test(readText), readText.slice(0, 120));
+  check('dataDomain.read returns content', /Personal dataDomain marker/.test(readText), readText.slice(0, 120));
 
   // Security: stdio host connects read-only; write must be refused.
   const write = await send('tools/call', {
-    name: 'realm.write',
-    arguments: { realmId, data: 'should not land' },
+    name: 'dataDomain.write',
+    arguments: { dataDomainId, data: 'should not land' },
   });
   const writeBlocked = !!write.error || /read|refus|unavailable|denied|grant/i.test(write.result?.content?.[0]?.text || '');
-  check('realm.write refused on read-only stdio host', writeBlocked, JSON.stringify(write.error || write.result?.content?.[0]?.text).slice(0, 160));
+  check('dataDomain.write refused on read-only stdio host', writeBlocked, JSON.stringify(write.error || write.result?.content?.[0]?.text).slice(0, 160));
 
-  // Security: pointing at a realm the host did not connect is refused.
+  // Security: pointing at a dataDomain the host did not connect is refused.
   const rogue = await send('tools/call', {
-    name: 'realm.read',
-    arguments: { realmId: 'not-connected', itemId: 'x' },
+    name: 'dataDomain.read',
+    arguments: { dataDomainId: 'not-connected', itemId: 'x' },
   });
-  check('unknown realm read refused', !!rogue.error, JSON.stringify(rogue.error?.message || rogue).slice(0, 160));
+  check('unknown dataDomain read refused', !!rogue.error, JSON.stringify(rogue.error?.message || rogue).slice(0, 160));
 
-  // --- Read-only kernel face (design P1-1): zeus.skills / zeus.plan / zeus.status.
+  // --- Read-only runtime face (design P1-1): zeus.skills / zeus.plan / zeus.status.
 
   const status = await send('tools/call', { name: 'zeus.status', arguments: {} });
   const statusText = status.result?.content?.[0]?.text || '';
   let statusJson = null;
   try { statusJson = JSON.parse(statusText); } catch { /* handled below */ }
   check(
-    'zeus.status returns realms (realmId/type/readOnly) and counts, never the absolute root',
+    'zeus.status returns dataDomains (dataDomainId/type/readOnly) and counts, never the absolute root',
     !!statusJson &&
-      Array.isArray(statusJson.realms) &&
-      statusJson.realms.some(r => r.realmId === realmId && r.type === 'personal' && r.readOnly === true) &&
+      Array.isArray(statusJson.dataDomains) &&
+      statusJson.dataDomains.some(r => r.dataDomainId === dataDomainId && r.type === 'personal' && r.readOnly === true) &&
       typeof statusJson.agents?.activeCount === 'number' &&
       typeof statusJson.pendingOversight === 'number' &&
       typeof statusJson.watches === 'number' &&
@@ -151,5 +151,5 @@ for (const r of results) {
   console.log(`${r.pass ? 'PASS' : 'FAIL'}  ${r.name}${r.detail ? `\n        ${r.detail}` : ''}`);
   if (r.pass) pass++;
 }
-console.log(`\n${pass}/${results.length} checks passed; realm root=${root}`);
+console.log(`\n${pass}/${results.length} checks passed; dataDomain root=${root}`);
 process.exit(pass === results.length ? 0 : 1);

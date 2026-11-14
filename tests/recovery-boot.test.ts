@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import { executeRecovery, type RecoveryCheckpoint } from '../src/orchestrator/recovery.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
@@ -10,7 +10,7 @@ import type { AuditEntry } from '../src/dispatch/dispatcher.js';
  * keeps the restored escalation desk authoritative, settle-failed/canceled
  * overwrite the stored status. The crash window is "since the last graceful
  * save", so the integration tests model a crash as: saveState, drop the old
- * kernel without graceful shutdown, boot the same state file again.
+ * runtime without graceful shutdown, boot the same state file again.
  */
 
 function cardFor(name: string) {
@@ -25,9 +25,9 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -69,30 +69,30 @@ function auditsOf(entries: AuditEntry[]): string[] {
   return entries.filter(e => e.decision.startsWith('recovery-')).map(e => `${e.decision}:${e.detail}`);
 }
 
-describe('S13 V2 crash recovery in a booted kernel', () => {
-  it('keeps a restored needs-driver intent awaiting the operator', async () => {
-    const stateFile = `${process.cwd()}/.tmp-recovery-needs-driver-${Date.now()}.json`;
+describe('S13 V2 crash recovery in a booted runtime', () => {
+  it('keeps a restored needs-operator intent awaiting the operator', async () => {
+    const stateFile = `${process.cwd()}/.tmp-recovery-needs-operator-${Date.now()}.json`;
     try {
       const { fetchImpl } = stanceFetch({ alpha: 'approve', beta: 'reject' });
-      const first = await bootKernel({ fetchImpl, stateFile, vassalSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card', 'http://127.0.0.1/beta/api/a2a/agent-card'] });
+      const first = await bootRuntime({ fetchImpl, stateFile, executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card', 'http://127.0.0.1/beta/api/a2a/agent-card'] });
       const result = await first.orchestrator.fanOut({
-        intentId: 'intent-needs-driver', skill: 'review', params: { message: 'x' }, realm: 'personal',
-        vassals: ['alpha', 'beta'],
+        intentId: 'intent-needs-operator', skill: 'review', params: { message: 'x' }, dataDomain: 'personal',
+        executors: ['alpha', 'beta'],
       });
-      expect(result.status).toBe('needs-driver');
+      expect(result.status).toBe('needs-operator');
       await first.saveState();
 
-      // Crash: drop the kernel without graceful shutdown, boot the same file.
+      // Crash: drop the runtime without graceful shutdown, boot the same file.
       const secondAudits: AuditEntry[] = [];
-      const second = await bootKernel({
+      const second = await bootRuntime({
         fetchImpl,
         stateFile,
-        vassalSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card', 'http://127.0.0.1/beta/api/a2a/agent-card'],
+        executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card', 'http://127.0.0.1/beta/api/a2a/agent-card'],
         dispatchAudit: e => secondAudits.push(e),
       });
-      expect(auditsOf(secondAudits).some(a => a.startsWith('recovery-awaiting-operator:awaiting operator:') && a.includes('intent-needs-driver'))).toBe(true);
-      // State stays needs-driver; no branch was re-dispatched.
-      expect(second.orchestrator.getIntent('intent-needs-driver')?.status).toBe('needs-driver');
+      expect(auditsOf(secondAudits).some(a => a.startsWith('recovery-awaiting-operator:awaiting operator:') && a.includes('intent-needs-operator'))).toBe(true);
+      // State stays needs-operator; no branch was re-dispatched.
+      expect(second.orchestrator.getIntent('intent-needs-operator')?.status).toBe('needs-operator');
     } finally {
       await import('node:fs/promises').then(fs =>
         Promise.all([
@@ -106,19 +106,19 @@ describe('S13 V2 crash recovery in a booted kernel', () => {
     const stateFile = `${process.cwd()}/.tmp-recovery-failed-${Date.now()}.json`;
     try {
       const { fetchImpl } = stanceFetch({ alpha: 'fail' });
-      const first = await bootKernel({ fetchImpl, stateFile, vassalSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'] });
+      const first = await bootRuntime({ fetchImpl, stateFile, executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'] });
       const result = await first.orchestrator.fanOut({
-        intentId: 'intent-failed', skill: 'review', params: { message: 'x' }, realm: 'personal',
-        vassals: ['alpha'],
+        intentId: 'intent-failed', skill: 'review', params: { message: 'x' }, dataDomain: 'personal',
+        executors: ['alpha'],
       });
       expect(result.status).toBe('failed');
       await first.saveState();
 
       const secondAudits: AuditEntry[] = [];
-      const second = await bootKernel({
+      const second = await bootRuntime({
         fetchImpl,
         stateFile,
-        vassalSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
+        executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
         dispatchAudit: e => secondAudits.push(e),
       });
       expect(auditsOf(secondAudits)).toContain('recovery-settled-failed:settled failed: no-fallback-provider (intent-failed)');
@@ -138,16 +138,16 @@ describe('S13 V2 crash recovery in a booted kernel', () => {
     // must drive an auto-resume through the idempotency gate exactly once.
     const { fetchImpl, dispatched } = stanceFetch({ alpha: 'approve' });
     const audits: AuditEntry[] = [];
-    const first = await bootKernel({
+    const first = await bootRuntime({
       fetchImpl,
-      vassalSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
+      executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'],
       dispatchAudit: e => audits.push(e),
     });
     // Settle once (populates the F2 cache), then execute an auto-resume row
     // twice with the same intentId: the fan-out cache answers the second call.
     const original = await first.orchestrator.fanOut({
-      intentId: 'intent-resume', skill: 'review', params: { message: 'x' }, realm: 'personal',
-      vassals: ['alpha'],
+      intentId: 'intent-resume', skill: 'review', params: { message: 'x' }, dataDomain: 'personal',
+      executors: ['alpha'],
     });
     expect(original.replayed).toBeUndefined();
     const checkpoint: RecoveryCheckpoint = {
@@ -155,7 +155,7 @@ describe('S13 V2 crash recovery in a booted kernel', () => {
       intents: [
         {
           intentId: 'intent-resume',
-          status: 'needs-driver',
+          status: 'needs-operator',
           branch: {
             mode: 'plan',
             skillDeclaresIdempotent: true,
@@ -176,7 +176,7 @@ describe('S13 V2 crash recovery in a booted kernel', () => {
         awaitOperator: () => {},
         autoResume: async intentId => {
           const resumed = await first.orchestrator.fanOut({
-            intentId, skill: 'review', params: { message: 'x' }, realm: 'personal', vassals: ['alpha'],
+            intentId, skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
           });
           expect(resumed.replayed).toBe(true);
         },
@@ -198,7 +198,7 @@ describe('S13 V2 crash recovery in a booted kernel', () => {
       intents: [
         { intentId: 'c', status: 'canceled', branch: { mode: 'execute', skillDeclaresIdempotent: false, idempotencyKeyReusable: false, unconsumedDelegationNonce: false, cancelIssued: true, hasFallbackProvider: false, circuitOpen: false, budgetExhausted: false } },
         { intentId: 'o', status: 'failed', branch: { mode: 'execute', skillDeclaresIdempotent: false, idempotencyKeyReusable: false, unconsumedDelegationNonce: false, lastOutcome: 'failed', hasFallbackProvider: false, circuitOpen: false, budgetExhausted: false } },
-        { intentId: 'a', status: 'needs-driver', branch: { mode: 'plan', skillDeclaresIdempotent: true, idempotencyKeyReusable: true, unconsumedDelegationNonce: false, lastOutcome: 'running', hasFallbackProvider: true, circuitOpen: false, budgetExhausted: false } },
+        { intentId: 'a', status: 'needs-operator', branch: { mode: 'plan', skillDeclaresIdempotent: true, idempotencyKeyReusable: true, unconsumedDelegationNonce: false, lastOutcome: 'running', hasFallbackProvider: true, circuitOpen: false, budgetExhausted: false } },
         { intentId: 'x', status: 'failed', branch: { mode: 'execute', skillDeclaresIdempotent: false, idempotencyKeyReusable: false, unconsumedDelegationNonce: false, circuitOpen: true, budgetExhausted: false, hasFallbackProvider: false } },
       ],
     };

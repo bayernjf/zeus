@@ -6,7 +6,7 @@
  * The library tests cover the arbitration gate with mock backends, so they can
  * never answer the question the design doc still flags as open: does a real
  * OpenAI-compatible endpoint actually complete the path — reachable, JSON
- * parseable, gated — when the kernel asks it to break a tie? This script is the
+ * parseable, gated — when the runtime asks it to break a tie? This script is the
  * operator-facing entry point for that answer, and it is deliberately end to
  * end: a real Orchestrator fan-out over two mock branches that disagree, so the
  * S2 hook (`maybeArbitrate`) is the thing under test, not a direct backend call.
@@ -24,7 +24,7 @@
  * Usage (requires `npm run build` first — it runs the shipped implementation):
  *   node scripts/verify-decision-backend.mjs
  *   node scripts/verify-decision-backend.mjs --allow-uncalibrated
- *   node scripts/verify-decision-backend.mjs --threshold 0.5 --realm personal
+ *   node scripts/verify-decision-backend.mjs --threshold 0.5 --dataDomain personal
  *
  * Env (see .env.example): ZEUS_LLM_BASE_URL / ZEUS_LLM_API_KEY / ZEUS_LLM_MODEL,
  * or the dedicated ZEUS_DECISION_* trio, which takes precedence.
@@ -42,7 +42,7 @@ function usage(message) {
   if (message) console.error(`error: ${message}`);
   console.error(
     [
-      'usage: node scripts/verify-decision-backend.mjs [--allow-uncalibrated] [--threshold N] [--realm personal|enterprise]',
+      'usage: node scripts/verify-decision-backend.mjs [--allow-uncalibrated] [--threshold N] [--dataDomain personal|enterprise]',
       '',
       'Runs a real fan-out that ends in an unresolved split and reports what the',
       'configured decision backend did with it.',
@@ -53,8 +53,8 @@ function usage(message) {
 
 /** @param {string[]} argv */
 function parseFlags(argv) {
-  /** @type {{allowUncalibrated: boolean, threshold?: number, realm: 'personal'|'enterprise'}} */
-  const flags = { allowUncalibrated: false, realm: 'personal' };
+  /** @type {{allowUncalibrated: boolean, threshold?: number, dataDomain: 'personal'|'enterprise'}} */
+  const flags = { allowUncalibrated: false, dataDomain: 'personal' };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--allow-uncalibrated') flags.allowUncalibrated = true;
@@ -63,10 +63,10 @@ function parseFlags(argv) {
       const value = raw === undefined ? Number.NaN : Number(raw);
       if (!Number.isFinite(value) || value < 0 || value > 1) usage(`--threshold expects a number in 0..1, got ${String(raw)}`);
       flags.threshold = value;
-    } else if (arg === '--realm') {
+    } else if (arg === '--dataDomain') {
       const raw = argv[++i];
-      if (raw !== 'personal' && raw !== 'enterprise') usage(`--realm expects personal or enterprise, got ${String(raw)}`);
-      flags.realm = raw;
+      if (raw !== 'personal' && raw !== 'enterprise') usage(`--dataDomain expects personal or enterprise, got ${String(raw)}`);
+      flags.dataDomain = raw;
     } else usage(`unknown argument: ${String(arg)}`);
   }
   return flags;
@@ -74,12 +74,12 @@ function parseFlags(argv) {
 
 /**
  * A completed A2A task carrying one stance, which is what the aggregator reads.
- * @param {string} vassal
+ * @param {string} executor
  * @param {string} stance
  * @returns {import('../dist/index.js').DispatchResult}
  */
-function branchResult(vassal, stance) {
-  const id = `${vassal}-task`;
+function branchResult(executor, stance) {
+  const id = `${executor}-task`;
   return {
     ok: true,
     task: {
@@ -146,7 +146,7 @@ const orchestrator = new Orchestrator(
   { findBySkill: () => [{ name: 'loom' }, { name: 'atlas' }] },
   {
     async dispatch(req) {
-      return req.vassal === 'loom' ? branchResult('loom', 'approve') : branchResult('atlas', 'reject');
+      return req.executor === 'loom' ? branchResult('loom', 'approve') : branchResult('atlas', 'reject');
     },
     async cancel() {},
   },
@@ -161,7 +161,7 @@ const orchestrator = new Orchestrator(
 );
 
 const started = Date.now();
-const result = await orchestrator.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: flags.realm });
+const result = await orchestrator.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: flags.dataDomain });
 const elapsedMs = Date.now() - started;
 const arbitration = result.backendArbitration;
 
@@ -212,11 +212,11 @@ if (arbitration.concluded) {
   console.error('\nFAIL: an uncalibrated backend concluded without --allow-uncalibrated; the gate is not holding');
   process.exit(1);
 }
-if (result.status !== 'needs-driver' || escalated.length !== 1) {
-  console.error('\nFAIL: the unresolved split did not escalate to the driver as designed');
+if (result.status !== 'needs-operator' || escalated.length !== 1) {
+  console.error('\nFAIL: the unresolved split did not escalate to the operator as designed');
   process.exit(1);
 }
 console.log(
-  `\nPASS: ${backend.kind}/${backend.model} was consulted (confidence ${arbitration.confidence}, calibrated false) and the gate refused to conclude; the split escalated to the driver`
+  `\nPASS: ${backend.kind}/${backend.model} was consulted (confidence ${arbitration.confidence}, calibrated false) and the gate refused to conclude; the split escalated to the operator`
 );
 process.exit(0);

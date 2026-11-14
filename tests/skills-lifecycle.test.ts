@@ -12,8 +12,8 @@ function spec(overrides: Partial<SkillSpecInput> = {}): SkillSpecInput {
     version: '1.0.0',
     description: 'reviews code',
     tags: ['code'],
-    permissions: ['realm', 'network', 'execute:deploy'],
-    providedBy: ['vassal-1'],
+    permissions: ['data-domain', 'network', 'execute:deploy'],
+    providedBy: ['executor-1'],
     ...overrides,
   };
 }
@@ -54,26 +54,26 @@ describe('E2.3 skill install / harden / uninstall', () => {
     registry.register(spec());
 
     const hardened = registry.harden('code-review', {
-      permissions: ['realm:read', 'execute:deploy'],
+      permissions: ['data-domain:read', 'execute:deploy'],
       constraints: { readOnly: true },
     });
-    expect(hardened.hardening!.permissions).toEqual(['realm:read', 'execute:deploy']);
+    expect(hardened.hardening!.permissions).toEqual(['data-domain:read', 'execute:deploy']);
     expect(hardened.hardening!.constraints).toEqual({ readOnly: true });
 
     // A second hardening can only shrink within the prior effective claims.
-    registry.harden('code-review', { permissions: ['realm:read'], constraints: { maxRuntimeMs: 1000 } });
+    registry.harden('code-review', { permissions: ['data-domain:read'], constraints: { maxRuntimeMs: 1000 } });
     const again = registry.get('code-review')!;
-    expect(again.hardening!.permissions).toEqual(['realm:read']);
+    expect(again.hardening!.permissions).toEqual(['data-domain:read']);
     expect(again.hardening!.constraints).toEqual({ readOnly: true, maxRuntimeMs: 1000 });
   });
 
   it('keeps the effective claims when a hardening states only constraints', () => {
     const registry = new SkillRegistry(now);
     registry.register(spec());
-    registry.harden('code-review', { permissions: ['realm:read'], constraints: { readOnly: true } });
+    registry.harden('code-review', { permissions: ['data-domain:read'], constraints: { readOnly: true } });
 
     const boundsOnly = registry.harden('code-review', { constraints: { maxRuntimeMs: 1000 } });
-    expect(boundsOnly.hardening!.permissions).toEqual(['realm:read']);
+    expect(boundsOnly.hardening!.permissions).toEqual(['data-domain:read']);
     expect(boundsOnly.hardening!.constraints).toEqual({ readOnly: true, maxRuntimeMs: 1000 });
   });
 
@@ -88,7 +88,7 @@ describe('E2.3 skill install / harden / uninstall', () => {
     const registry = new SkillRegistry(now);
     registry.register(spec());
     registry.uninstall('code-review');
-    expect(() => registry.harden('code-review', { permissions: ['realm'] })).toThrowError(/uninstalled/);
+    expect(() => registry.harden('code-review', { permissions: ['data-domain'] })).toThrowError(/uninstalled/);
   });
 
   it('cannot reinstall a deprecated version and surfaces unknown skills', () => {
@@ -102,10 +102,10 @@ describe('E2.3 skill install / harden / uninstall', () => {
   it('hardened bounds survive export/import', () => {
     const registry = new SkillRegistry(now);
     registry.register(spec());
-    registry.harden('code-review', { permissions: ['realm:read'], constraints: { x: 1 } });
+    registry.harden('code-review', { permissions: ['data-domain:read'], constraints: { x: 1 } });
     const restored = new SkillRegistry(now);
     restored.importState(registry.exportState());
-    expect(restored.get('code-review')!.hardening!.permissions).toEqual(['realm:read']);
+    expect(restored.get('code-review')!.hardening!.permissions).toEqual(['data-domain:read']);
     void DuplicateSkillError;
   });
 });

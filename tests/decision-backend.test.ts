@@ -34,14 +34,14 @@ describe('Jev decision-model adapter', () => {
       onTrace: trace => traces.push(trace),
     });
 
-    const noul = await backend.noul({ question: 'risky?', instructions: 'i', state: {}, runId: 'r1', realm: 'personal' });
+    const noul = await backend.noul({ question: 'risky?', instructions: 'i', state: {}, runId: 'r1', dataDomain: 'personal' });
     expect(noul).toMatchObject({ probability: 0.82, confidence: 0.91, calibrated: true });
 
-    const choice = await backend.choice({ question: 'decide', instructions: 'i', state: {}, runId: 'r1', realm: 'personal', options: ['go', 'hold'] });
+    const choice = await backend.choice({ question: 'decide', instructions: 'i', state: {}, runId: 'r1', dataDomain: 'personal', options: ['go', 'hold'] });
     expect(choice.choice).toBe('go');
     expect(choice.calibrated).toBe(true);
 
-    const score = await backend.score({ question: 'rate', instructions: 'i', state: {}, runId: 'r1', realm: 'personal', levels: ['low', 'mid', 'high'] });
+    const score = await backend.score({ question: 'rate', instructions: 'i', state: {}, runId: 'r1', dataDomain: 'personal', levels: ['low', 'mid', 'high'] });
     expect(score.score).toBe(72);
     expect(score.level).toBe('high');
 
@@ -60,12 +60,12 @@ describe('Jev decision-model adapter', () => {
     const backend = createJevBackend({
       baseUrl: 'https://jev.example', apiKey: 'k', fetchImpl: fetchImpl, now: fixedNow,
     });
-    await expect(backend.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' }))
+    await expect(backend.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal' }))
       .rejects.toMatchObject({ code: 'auth' });
 
     const fetch500 = vi.fn(async () => jsonResponse(500, {}));
     const backend500 = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: fetch500, now: fixedNow });
-    await expect(backend500.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' }))
+    await expect(backend500.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal' }))
       .rejects.toMatchObject({ code: 'unavailable' });
 
     const slow = vi.fn(
@@ -75,12 +75,12 @@ describe('Jev decision-model adapter', () => {
         })
     );
     const backendSlow = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: slow, now: fixedNow });
-    await expect(backendSlow.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', maxWaitMs: 10 }))
+    await expect(backendSlow.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal', maxWaitMs: 10 }))
       .rejects.toMatchObject({ code: 'timeout' });
 
     const oob = vi.fn(async () => jsonResponse(200, { answers: { q_choice: { choice: 'not-an-option', confidence: 0.9 } } }));
     const backendOob = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: oob, now: fixedNow });
-    await expect(backendOob.choice({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', options: ['a', 'b'] }))
+    await expect(backendOob.choice({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal', options: ['a', 'b'] }))
       .rejects.toMatchObject({ code: 'invalid' });
   });
 });
@@ -99,7 +99,7 @@ describe('LLM adapter (slow layer)', () => {
       inputUsdPerMillion: 2, outputUsdPerMillion: 8,
       fetchImpl: fetchImpl, now: fixedNow, onTrace: t => traces.push(t),
     });
-    const result = await backend.choice({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', options: ['go', 'hold'] });
+    const result = await backend.choice({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal', options: ['go', 'hold'] });
     expect(result.choice).toBe('go');
     expect(result.calibrated).toBe(false);
     expect(traces[0]!.backend).toBe('llm');
@@ -119,7 +119,7 @@ describe('LLM adapter (slow layer)', () => {
       })
     );
     const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: offBand, now: fixedNow });
-    await expect(backend.score({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal', levels: ['low', 'high'] }))
+    await expect(backend.score({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal', levels: ['low', 'high'] }))
       .rejects.toMatchObject({ code: 'invalid' });
   });
 
@@ -128,18 +128,18 @@ describe('LLM adapter (slow layer)', () => {
       jsonResponse(200, { choices: [{ message: { content: '```json\n{"probability":0.3,"confidence":0.6}\n```' } }] })
     );
     const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fenced, now: fixedNow });
-    const noul = await backend.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' });
+    const noul = await backend.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal' });
     expect(noul.probability).toBe(0.3);
 
     const garbage = vi.fn(async () => jsonResponse(200, { choices: [{ message: { content: 'I think maybe yes.' } }] }) );
     const backendBad = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: garbage, now: fixedNow });
-    await expect(backendBad.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', realm: 'personal' }))
+    await expect(backendBad.noul({ question: 'q', instructions: 'i', state: {}, runId: 'r', dataDomain: 'personal' }))
       .rejects.toMatchObject({ code: 'invalid' });
   });
 });
 
 describe('data sovereignty (design §8)', () => {
-  it('refuses enterprise realm by default and only sends whitelisted state keys', async () => {
+  it('refuses enterprise dataDomain by default and only sends whitelisted state keys', async () => {
     const seenBodies: unknown[] = [];
     const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
       seenBodies.push(JSON.parse(String(init?.body)));
@@ -149,12 +149,12 @@ describe('data sovereignty (design §8)', () => {
       baseUrl: 'u', apiKey: 'k', stateKeys: ['public'],
       fetchImpl: fetchImpl, now: fixedNow,
     });
-    await expect(backend.noul({ question: 'q', instructions: 'i', state: { secret: 'x' }, runId: 'r', realm: 'enterprise' }))
+    await expect(backend.noul({ question: 'q', instructions: 'i', state: { secret: 'x' }, runId: 'r', dataDomain: 'enterprise' }))
       .rejects.toMatchObject({ code: 'invalid' });
     expect(fetchImpl).not.toHaveBeenCalled();
 
     await backend.noul({
-      question: 'q', instructions: 'i', runId: 'r', realm: 'personal',
+      question: 'q', instructions: 'i', runId: 'r', dataDomain: 'personal',
       state: { public: 'ok', secret: 'leak' },
     });
     expect(seenBodies[0]).toMatchObject({ state: { public: 'ok' } });
@@ -169,7 +169,7 @@ describe('data sovereignty (design §8)', () => {
     });
     // no configured whitelist: the call's own declaration is the only one
     const backend = createJevBackend({ baseUrl: 'u', apiKey: 'k', fetchImpl: fetchImpl, now: fixedNow });
-    await backend.noul({ question: 'q', instructions: 'i', runId: 'r', realm: 'personal', state: { a: 1, secret: 2 }, stateKeys: ['a'] });
+    await backend.noul({ question: 'q', instructions: 'i', runId: 'r', dataDomain: 'personal', state: { a: 1, secret: 2 }, stateKeys: ['a'] });
     expect(seenBodies[0]).toMatchObject({ state: { a: 1 } });
     expect(JSON.stringify(seenBodies[0])).not.toContain('secret');
   });
@@ -185,7 +185,7 @@ describe('data sovereignty (design §8)', () => {
       redact: state => ({ name: String(state.name ?? '').replace(/./g, '*') }),
       fetchImpl: fetchImpl, now: fixedNow,
     });
-    await backend.noul({ question: 'q', instructions: 'i', runId: 'r', realm: 'personal', state: { name: 'alice' } });
+    await backend.noul({ question: 'q', instructions: 'i', runId: 'r', dataDomain: 'personal', state: { name: 'alice' } });
     expect(sent.state).toEqual({ name: '*****' });
   });
 });
@@ -204,36 +204,36 @@ describe('arbitrateSplit (design §3.1 gating)', () => {
   }
 
   const stances = [
-    { stance: 'go', vassals: ['a'], summary: 'green' },
-    { stance: 'hold', vassals: ['b'], summary: 'red' },
+    { stance: 'go', executors: ['a'], summary: 'green' },
+    { stance: 'hold', executors: ['b'], summary: 'red' },
   ];
 
   it('adopts a high-confidence calibrated arbitration', async () => {
     const spy = spyBackend({ choice: 'go', probabilities: { go: 0.9, hold: 0.1 }, confidence: 0.9, calibrated: true, decisionAt: 't' });
-    const outcome = await arbitrateSplit({ backend: spy.backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie' });
+    const outcome = await arbitrateSplit({ backend: spy.backend, stances, runId: 'r', dataDomain: 'personal', ruleReason: 'tie' });
     expect(spy.calls).toBe(1);
     expect(outcome).toMatchObject({ concluded: true, conclusion: 'go', confidence: 0.9 });
   });
 
   it('does not conclude on low confidence, uncalibrated LLM confidence, or backend failure', async () => {
     const low = spyBackend({ choice: 'go', probabilities: {}, confidence: 0.5, calibrated: true, decisionAt: 't' });
-    expect((await arbitrateSplit({ backend: low.backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie' })).concluded).toBe(false);
+    expect((await arbitrateSplit({ backend: low.backend, stances, runId: 'r', dataDomain: 'personal', ruleReason: 'tie' })).concluded).toBe(false);
 
     const llm = spyBackend({ choice: 'go', probabilities: {}, confidence: 0.99, calibrated: false, decisionAt: 't' }, 'llm');
-    const llmOutcome = await arbitrateSplit({ backend: llm.backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie' });
+    const llmOutcome = await arbitrateSplit({ backend: llm.backend, stances, runId: 'r', dataDomain: 'personal', ruleReason: 'tie' });
     expect(llmOutcome.concluded).toBe(false);
     // explicit opt-in for low-stakes lets the LLM conclude
     const llmAllowed = spyBackend({ choice: 'go', probabilities: {}, confidence: 0.99, calibrated: false, decisionAt: 't' }, 'llm');
-    expect((await arbitrateSplit({ backend: llmAllowed.backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie', allowUncalibrated: true })).concluded).toBe(true);
+    expect((await arbitrateSplit({ backend: llmAllowed.backend, stances, runId: 'r', dataDomain: 'personal', ruleReason: 'tie', allowUncalibrated: true })).concluded).toBe(true);
 
     const failing = spyBackend(Promise.reject(new DecisionBackendFailure('timeout', 'slow')));
-    const failedOutcome = await arbitrateSplit({ backend: failing.backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie' });
+    const failedOutcome = await arbitrateSplit({ backend: failing.backend, stances, runId: 'r', dataDomain: 'personal', ruleReason: 'tie' });
     expect(failedOutcome).toMatchObject({ concluded: false, error: { code: 'timeout' } });
   });
 
   it('never calls the backend when fewer than two stances remain', async () => {
     const spy = spyBackend({ choice: 'go', probabilities: {}, confidence: 0.99, calibrated: true, decisionAt: 't' });
-    const outcome = await arbitrateSplit({ backend: spy.backend, stances: [{ stance: 'go', vassals: ['a'] }], runId: 'r', realm: 'personal', ruleReason: '' });
+    const outcome = await arbitrateSplit({ backend: spy.backend, stances: [{ stance: 'go', executors: ['a'] }], runId: 'r', dataDomain: 'personal', ruleReason: '' });
     expect(spy.calls).toBe(0);
     expect(outcome.concluded).toBe(false);
   });
@@ -247,7 +247,7 @@ describe('arbitrateSplit (design §3.1 gating)', () => {
       });
     });
     const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl, now: fixedNow });
-    await arbitrateSplit({ backend, stances, runId: 'r', realm: 'personal', ruleReason: 'tie on the review' });
+    await arbitrateSplit({ backend, stances, runId: 'r', dataDomain: 'personal', ruleReason: 'tie on the review' });
     // the arbitration state is what the backend decides over; an empty {} would
     // mean the model is choosing with no evidence
     expect(prompt).toContain('ruleReason');
@@ -267,9 +267,9 @@ describe('judgeDecision evidence', () => {
     });
     const backend = createLlmBackend({ baseUrl: 'u', apiKey: 'k', model: 'm', fetchImpl: fetchImpl, now: fixedNow });
     const result: FanOutResult = {
-      intentId: 'i', runId: 'r', skill: 's', realm: 'personal',
+      intentId: 'i', runId: 'r', skill: 's', dataDomain: 'personal',
       branches: [], stream: [],
-      positions: [{ vassal: 'a', stance: 'approve' }, { vassal: 'b', stance: 'reject' }],
+      positions: [{ executor: 'a', stance: 'approve' }, { executor: 'b', stance: 'reject' }],
       decision: { rule: 'majority', conclusion: 'approve', positions: [], reason: '2 approve vs 1 reject' },
       conflicts: [], status: 'completed', createdAt: 't',
     };

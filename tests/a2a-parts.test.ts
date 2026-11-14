@@ -66,7 +66,7 @@ describe('A2A file/URI parts and task history', () => {
       );
 
     const task = await sendTaskSubscribe(
-      { taskUrl: 'http://vassal.internal/api/a2a/tasks', skill: 'report', params: {}, runId: 'r1' },
+      { taskUrl: 'http://executor.internal/api/a2a/tasks', skill: 'report', params: {}, runId: 'r1' },
       { onEvent: event => streamed.push(event) },
       fetchImpl
     );

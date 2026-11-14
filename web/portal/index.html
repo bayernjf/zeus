@@ -183,7 +183,7 @@
       "roster.colDomain": "数据域",
       "roster.colSkills": "技能",
       "roster.colHealth": "健康",
-      "roster.colRealms": "数据域承诺",
+      "roster.colDataDomains": "数据域承诺",
       "roster.colSince": "注册时间",
       "roster.colAttestation": "attestation",
       "att.active": "active · 有效期至 {exp}",
@@ -227,7 +227,7 @@
     },
     "en": {
       "app.title": "Zeus Public Roster Portal",
-      "app.lede": "This page shows the signed roster snapshot and root public key published by a Zeus kernel. Anyone can verify the seals offline and check revocation status; the page is read-only with no write paths.",
+      "app.lede": "This page shows the signed roster snapshot and root public key published by a Zeus runtime. Anyone can verify the seals offline and check revocation status; the page is read-only with no write paths.",
       "app.foot1": "Revoked agents never appear in the public snapshot; see scripts/verify-roster.mjs for the verification steps.",
       "app.apiOnly": "UI consumes public HTTP APIs only — zero write paths",
       "conn.idle": "idle",
@@ -235,7 +235,7 @@
       "conn.bad": "unreachable",
       "top.refresh": "Refresh",
       "setup.title": "Data source",
-      "setup.hint": "kernel HTTP base URL only — no token needed",
+      "setup.hint": "runtime HTTP base URL only — no token needed",
       "setup.basePh": "http://127.0.0.1:8799",
       "setup.connect": "Connect",
       "roster.title": "Registered agents (signed snapshot)",
@@ -245,7 +245,7 @@
       "roster.colDomain": "Domain",
       "roster.colSkills": "Skills",
       "roster.colHealth": "Health",
-      "roster.colRealms": "Data realm commitments",
+      "roster.colDataDomains": "Data dataDomain commitments",
       "roster.colSince": "Registered at",
       "roster.colAttestation": "attestation",
       "att.active": "active · expires {exp}",
@@ -347,7 +347,7 @@
       state.roster = null;
       badge.className = "conn bad";
       text.textContent = t("conn.bad");
-      // The same-origin guess did not front a kernel; surface the setup panel
+      // The same-origin guess did not front a runtime; surface the setup panel
       // so the user can point at a real base URL instead of being stuck.
       document.getElementById("panelSetup").hidden = false;
       renderError(error instanceof Error ? error.message : String(error));
@@ -375,7 +375,7 @@
     }
     const rows = entries.map(e => {
       const skills = (e.skills || []).map(s => s.id || s.name || "").filter(Boolean).join(", ");
-      const realms = (e.commitments && e.commitments.dataRealms || []).join(", ");
+      const dataDomains = (e.commitments && e.commitments.dataDomains || []).join(", ");
       const att = attestations[e.name];
       const attText = !att
         ? t("att.none")
@@ -387,14 +387,14 @@
         <td>${esc(e.domain)}</td>
         <td class="skills">${esc(skills)}</td>
         <td>${healthBadge(e.health)}</td>
-        <td>${esc(realms)}</td>
+        <td>${esc(dataDomains)}</td>
         <td class="skills">${esc(e.registeredAt || "")}</td>
         <td class="skills">${esc(attText)}</td>
       </tr>`;
     }).join("");
     body.innerHTML = `<table><thead><tr>
       <th>${esc(t("roster.colName"))}</th><th>${esc(t("roster.colDomain"))}</th><th>${esc(t("roster.colSkills"))}</th>
-      <th>${esc(t("roster.colHealth"))}</th><th>${esc(t("roster.colRealms"))}</th><th>${esc(t("roster.colSince"))}</th><th>${esc(t("roster.colAttestation"))}</th>
+      <th>${esc(t("roster.colHealth"))}</th><th>${esc(t("roster.colDataDomains"))}</th><th>${esc(t("roster.colSince"))}</th><th>${esc(t("roster.colAttestation"))}</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
   }
 
@@ -534,7 +534,7 @@
       load();
     } else {
       // Same-origin default: when the portal is served by the same host that
-      // fronts the kernel, no setup step is needed at all.
+      // fronts the runtime, no setup step is needed at all.
       state.base = location.origin;
       if (location.protocol.startsWith("http")) {
         load();

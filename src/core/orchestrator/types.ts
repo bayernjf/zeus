@@ -1,14 +1,14 @@
-import type { A2AEvent, RealmType, Task, TaskState } from '../../a2a/types.js';
+import type { A2AEvent, DataDomainType, Task, TaskState } from '../../a2a/types.js';
 import type { ExecutionDelegation } from '../../delegation/execution-delegation.js';
-import type { VassalStatus } from '../../registry/registry.js';
+import type { ExecutorStatus } from '../../registry/registry.js';
 import type { DispatchRequest, DispatchResult } from '../../dispatch/dispatcher.js';
 import type { DecisionBackendError, DecisionBackendKind } from '../../decision/types.js';
 import type { BranchOutcomeKind } from './metrics.js';
 import type { CostAmount } from './cost-ledger.js';
 
-/** One vassal's participation in a fan-out intent. */
+/** One executor's participation in a fan-out intent. */
 export type BranchOutcome = {
-  vassal: string;
+  executor: string;
   runId: string;
   ok: boolean;
   state?: TaskState;
@@ -27,24 +27,24 @@ export type BranchOutcome = {
 };
 
 /**
- * `canceled` is distinct from `failed` on purpose: the driver asked for it, so
+ * `canceled` is distinct from `failed` on purpose: the operator asked for it, so
  * reading it as a failure made the two indistinguishable and sent the operator
- * looking for a vassal fault that never happened (audit C-28).
+ * looking for a executor fault that never happened (audit C-28).
  */
-export type FanOutStatus = 'completed' | 'partial' | 'failed' | 'canceled' | 'needs-driver';
+export type FanOutStatus = 'completed' | 'partial' | 'failed' | 'canceled' | 'needs-operator';
 
 /** An event tagged with the branch it came from, so a merged view stays traceable. */
 export type SourcedEvent = {
-  source: { vassal: string; taskId?: string; runId: string };
+  source: { executor: string; taskId?: string; runId: string };
   event: A2AEvent;
 };
 
-/** A vassal's stance on the decision, extracted from its terminal task artifacts. */
+/** A executor's stance on the decision, extracted from its terminal task artifacts. */
 export type Position = {
-  vassal: string;
+  executor: string;
   stance: string;
   /**
-   * Voting weight for the weighted rule — platform/caller-side only. Vassal
+   * Voting weight for the weighted rule — platform/caller-side only. Executor
    * artifacts never carry it: `extractStance` ignores `data.weight` because the
    * artifact contract is stance + rationale (deep review 2026-11-02 P1-2).
    * Must be finite and >= 0; the weighted rule isolates a position whose
@@ -69,11 +69,11 @@ export type AggregatedDecision = {
 };
 
 export type Conflict = {
-  /** Default 'split': vassals disagree and the rule could not conclude.
+  /** Default 'split': executors disagree and the rule could not conclude.
    *  'judge-review': a gated high-confidence judge recommendation disagrees
    *  with a rule that had already concluded (E1.3 adversarial review). */
   kind?: 'split' | 'judge-review';
-  stances: Array<{ stance: string; vassals: string[]; summary?: string }>;
+  stances: Array<{ stance: string; executors: string[]; summary?: string }>;
   reason: string;
 };
 
@@ -85,24 +85,24 @@ export type FanOutRequest = {
    * deferred #33: explicit dispatch mode. Default 'plan' (read-only analysis);
    * 'execute' requires a verified, unconsumed execution delegation before any
    * outbound dispatch — missing/invalid credentials fail closed inside the
-   * kernel and no outbound request is made. The credential is consumed here;
+   * runtime and no outbound request is made. The credential is consumed here;
    * how a peer learns the mode is the peer-facing protocol (not yet defined).
    */
   mode?: 'plan' | 'execute';
   /** deferred #33: the one-time execution delegation backing an execute-mode
    *  intent. Verified and consumed by the orchestrator gate before dispatch. */
   executionDelegation?: ExecutionDelegation;
-  /** Explicit targets; defaults to every active vassal providing the skill. */
-  vassals?: string[];
+  /** Explicit targets; defaults to every active executor providing the skill. */
+  executors?: string[];
   params: Record<string, unknown>;
-  realm: RealmType;
-  /** Connected realm this intent operates on, when one was named. Required
+  dataDomain: DataDomainType;
+  /** Connected dataDomain this intent operates on, when one was named. Required
    *  for memory consolidation to land in the right memory domain. */
-  realmId?: string;
+  dataDomainId?: string;
   runId?: string;
-  realmHits?: DispatchRequest['realmHits'];
-  /** Provenance of realmHits; required when they are non-empty (design-realm §3.1). */
-  realmHitsOrigin?: DispatchRequest['realmHitsOrigin'];
+  dataDomainHits?: DispatchRequest['dataDomainHits'];
+  /** Provenance of dataDomainHits; required when they are non-empty (design-dataDomain §3.1). */
+  dataDomainHitsOrigin?: DispatchRequest['dataDomainHitsOrigin'];
   aggregation?: AggregationRule;
   /** Per-branch timeout; a branch still pending at the limit is recorded as timed out. */
   branchTimeoutMs?: number;
@@ -126,8 +126,8 @@ export type FanOutResult = {
   intentId: string;
   runId: string;
   skill: string;
-  realm: RealmType;
-  realmId?: string;
+  dataDomain: DataDomainType;
+  dataDomainId?: string;
   branches: BranchOutcome[];
   stream: SourcedEvent[];
   positions: Position[];
@@ -136,9 +136,9 @@ export type FanOutResult = {
   status: FanOutStatus;
   replayed?: boolean;
   createdAt: string;
-  /** Set once a driver settles an unresolved conflict (E6.2 write-back). */
-  driverResolution?: DriverResolution;
-  /** Set when a decision backend was consulted after the rule ended in needs-driver (S2). */
+  /** Set once a operator settles an unresolved conflict (E6.2 write-back). */
+  operatorResolution?: OperatorResolution;
+  /** Set when a decision backend was consulted after the rule ended in needs-operator (S2). */
   backendArbitration?: BackendArbitration;
   /** Set when an LLM-as-judge adversarially reviewed a rule-concluded multi-stance decision (E1.3). */
   judgeReview?: JudgeReview;
@@ -170,7 +170,7 @@ export type JudgeReview = {
   calibrated?: boolean;
   /** A gated recommendation equals the rule conclusion (judicial endorsement). */
   agreesWithRule?: boolean;
-  /** A gated, high-confidence disagreement flipped the intent to needs-driver. */
+  /** A gated, high-confidence disagreement flipped the intent to needs-operator. */
   escalated?: boolean;
   backend?: DecisionBackendKind;
   model?: string;
@@ -182,8 +182,8 @@ export type JudgeReview = {
   decidedAt: string;
 };
 
-/** A human driver's settlement of an intent-conflict, written back into the decision. */
-export type DriverResolution = {
+/** A human operator's settlement of an intent-conflict, written back into the decision. */
+export type OperatorResolution = {
   escalationId: string;
   stance: string;
   note?: string;
@@ -193,15 +193,15 @@ export type DriverResolution = {
 /** Narrow port the orchestrator drives; Dispatcher satisfies it. */
 export type DispatchPort = {
   dispatch(req: DispatchRequest): Promise<DispatchResult>;
-  cancel(vassal: string, taskId: string): Promise<unknown>;
+  cancel(executor: string, taskId: string): Promise<unknown>;
 };
 
-/** Target selection port; VassalRegistry.asVassalLookup() satisfies it. */
+/** Target selection port; ExecutorRegistry.asExecutorLookup() satisfies it. */
 export type TargetLookup = {
   findBySkill(skillId: string): Array<{ name: string }>;
   /** Optional status snapshot for #9 diversion (revoked/unknown excluded); the
-   *  registry's `VassalLookup` supplies this, but the port tolerates its absence. */
-  statusOf?: (name: string) => VassalStatus;
+   *  registry's `ExecutorLookup` supplies this, but the port tolerates its absence. */
+  statusOf?: (name: string) => ExecutorStatus;
 };
 
 /**
@@ -223,7 +223,7 @@ export type GovernanceRefusal = {
 };
 
 export type CancelBranchResult = {
-  vassal: string;
+  executor: string;
   taskId: string;
   canceled: boolean;
   reason?: string;

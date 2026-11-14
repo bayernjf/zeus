@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry, type FetchLike } from '../src/registry/registry.js';
+import { ExecutorRegistry, type FetchLike } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { SkillRegistry } from '../src/skills/registry.js';
 import type { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { FanOutRequest, FanOutResult } from '../src/orchestrator/types.js';
-import type { AgentCard, Fealty } from '../src/a2a/types.js';
+import type { AgentCard, Handshake } from '../src/a2a/types.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
 let app: FastifyInstance | undefined;
@@ -22,22 +22,22 @@ afterEach(async () => {
   lastFanOutRequest = undefined;
 });
 
-const TOKEN = { authorization: 'Bearer driver-secret' };
+const TOKEN = { authorization: 'Bearer operator-secret' };
 
-function makeCard(name: string, fealty: Fealty | undefined): AgentCard {
+function makeCard(name: string, handshake: Handshake | undefined): AgentCard {
   return {
     name,
     url: `https://${name}.example/`,
     skills: [],
-    ...(fealty ? { 'x-zeus-fealty': fealty } : {}),
+    ...(handshake ? { 'x-zeus-handshake': handshake } : {}),
   };
 }
 
-const VALID_FEALTY: Fealty = {
+const VALID_HANDSHAKE: Handshake = {
   version: '1',
   swornTo: 'zeus',
   domain: 'test-domain',
-  dataRealms: ['personal'],
+  dataDomains: ['personal'],
   dataPolicy: 'read-task-scope',
   reportBack: true,
   escalationPolicy: 'on-failure',
@@ -52,7 +52,7 @@ function makeOrchestrator(status: FanOutResult['status']): Orchestrator {
         intentId: request.intentId ?? 'intent-1',
         runId: 'run-1',
         skill: request.skill,
-        realm: request.realm,
+        dataDomain: request.dataDomain,
         branches: [],
         stream: [],
         positions: [],
@@ -75,11 +75,11 @@ function makeSkillRegistry(): SkillRegistry {
   return skills;
 }
 
-async function mount(status: FanOutResult['status'] = 'completed', registry?: VassalRegistry, skillRegistry?: SkillRegistry): Promise<FastifyInstance> {
+async function mount(status: FanOutResult['status'] = 'completed', registry?: ExecutorRegistry, skillRegistry?: SkillRegistry): Promise<FastifyInstance> {
   app = await createHttpServer({
-    registry: registry ?? new VassalRegistry(),
+    registry: registry ?? new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
-    internalToken: 'driver-secret',
+    internalToken: 'operator-secret',
     orchestrator: makeOrchestrator(status),
     agentCard: makeCard('zeus', undefined),
     inboundAudit: entry => auditEntries.push(entry),
@@ -95,23 +95,23 @@ function rpc(id: number | string, method: string, params?: unknown) {
 describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
   it('does not mount the inbound face when agentCard is not configured (default unchanged)', async () => {
     const server = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
-      internalToken: 'driver-secret',
+      internalToken: 'operator-secret',
     });
     app = server;
     const get = await server.inject({ method: 'GET', url: '/.well-known/agent-card.json' });
     expect(get.statusCode).toBe(404);
   });
 
-  it('serves the Zeus agent card publicly with no fealty of its own', async () => {
+  it('serves the Zeus agent card publicly with no handshake of its own', async () => {
     const server = await mount();
     const res = await server.inject({ method: 'GET', url: '/.well-known/agent-card.json' });
     expect(res.statusCode).toBe(200);
     const card = res.json();
     expect(card.name).toBe('zeus');
     expect(card.skills).toEqual([]);
-    expect(card['x-zeus-fealty']).toBeUndefined();
+    expect(card['x-zeus-handshake']).toBeUndefined();
     expect(res.headers['cache-control']).toContain('public');
   });
 
@@ -137,32 +137,32 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(res.json().error).toBe('invalid_request');
   });
 
-  it('refuses a caller card without a valid zeus fealty (fail-closed, audited)', async () => {
+  it('refuses a caller card without a valid zeus handshake (fail-closed, audited)', async () => {
     const server = await mount();
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('rogue', { version: '1', swornTo: 'other', domain: 'x', dataRealms: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'on-failure' })) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('rogue', { version: '1', swornTo: 'other', domain: 'x', dataDomains: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'on-failure' })) },
       payload: rpc(1, 'tasks/send', { skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('caller_refused');
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'rogue')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.executor === 'rogue')).toBe(true);
     // The trust face records the same refusal at tier-0.
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-refused' && entry.vassal === 'rogue' && entry.tier === 'tier-0')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-refused' && entry.executor === 'rogue' && entry.tier === 'tier-0')).toBe(true);
   });
 
-  it('refuses a caller card whose fealty fails the oath shape gate', async () => {
+  it('refuses a caller card whose handshake fails the oath shape gate', async () => {
     const server = await mount();
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('sloppy', { ...VALID_FEALTY, domain: '   ' })) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('sloppy', { ...VALID_HANDSHAKE, domain: '   ' })) },
       payload: rpc(1, 'tasks/send', { skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('caller_refused');
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-refused' && entry.vassal === 'sloppy')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-refused' && entry.executor === 'sloppy')).toBe(true);
   });
 
   it('rejects an unparsable caller card header as malformed input', async () => {
@@ -194,7 +194,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-7', message: 'summarize the diary', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
@@ -204,11 +204,11 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(task.status.state).toBe('completed');
     // The caller's correlation id rides along; its identity is recorded but
     // marked untrusted because no roster anchors an unregistered tier-1 card.
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.vassal === 'unverified:helper' && entry.taskId === 'caller-task-7')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.executor === 'unverified:helper' && entry.taskId === 'caller-task-7')).toBe(true);
   });
 
-  it('defaults realm to personal and maps needs-driver to input-required', async () => {
-    const server = await mount('needs-driver');
+  it('defaults dataDomain to personal and maps needs-operator to input-required', async () => {
+    const server = await mount('needs-operator');
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
@@ -219,7 +219,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const task = res.json();
     expect(task.status.state).toBe('input-required');
     const accepted = auditEntries.find(entry => entry.decision === 'inbound-task-accepted');
-    expect(accepted?.realm).toBe('personal');
+    expect(accepted?.dataDomain).toBe('personal');
   });
 
   it('admits an unregistered caller card on tier-1 and pins its dispatch to plan and read-only skills (PRD E9.4 V2)', async () => {
@@ -227,11 +227,11 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-11', message: 'summarize the diary', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.executor === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     // The shape-trust narrowing is visible on the outbound shape: plan only,
     // and the skill survived the read-only capability whitelist.
     expect(lastFanOutRequest?.mode).toBe('plan');
@@ -243,14 +243,14 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-13', message: 'run analysis', skills: ['arbitrate'] }),
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('skill_unavailable');
     expect(res.json().detail).toContain('read-only');
     // Refused on the task face at tier-1; the trust admission still happened.
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.executor === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     // Capability-face refusal means zero outbound dispatch.
     expect(lastFanOutRequest).toBeUndefined();
   });
@@ -260,13 +260,13 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-14', message: 'do it', skills: ['mystery-skill'] }),
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('skill_unavailable');
     expect(res.json().detail).toContain('not registered');
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.executor === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     expect(lastFanOutRequest).toBeUndefined();
   });
 
@@ -275,21 +275,21 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-15', message: 'summarize', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(403);
     expect(res.json().error).toBe('skill_unavailable');
     expect(res.json().detail).toContain('requires a skill registry');
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.vassal === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-refused' && entry.executor === 'unverified:helper' && entry.tier === 'tier-1')).toBe(true);
     expect(lastFanOutRequest).toBeUndefined();
   });
 
   it('lets a tier-2 caller dispatch a non-read-only skill (capability face applies to tier-1 only)', async () => {
-    const registry = new VassalRegistry(
+    const registry = new ExecutorRegistry(
       (async () => ({
         ok: true,
-        json: async () => makeCard('helper', VALID_FEALTY),
+        json: async () => makeCard('helper', VALID_HANDSHAKE),
       })) as unknown as FetchLike,
     );
     await registry.register('http://127.0.0.1:9/agent-card');
@@ -297,7 +297,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     // V3: presenting the exact registered card is tier-3 now. A tier-2 caller
     // is one whose card names a registered agent but does not content-match
     // the anchored card — here the description differs.
-    const unanchored: AgentCard = { ...makeCard('helper', VALID_FEALTY), description: 'not the anchored card' };
+    const unanchored: AgentCard = { ...makeCard('helper', VALID_HANDSHAKE), description: 'not the anchored card' };
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
@@ -305,23 +305,23 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-16', message: 'run analysis', skills: ['arbitrate'] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-2')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.executor === 'helper' && entry.tier === 'tier-2')).toBe(true);
     expect(lastFanOutRequest?.mode).toBeUndefined();
     expect(lastFanOutRequest?.skill).toBe('arbitrate');
   });
 
   it('admits a caller naming a registered agent on tier-2 when its card is not the anchored one, and leaves its request untouched (PRD E9.4)', async () => {
-    const registry = new VassalRegistry(
+    const registry = new ExecutorRegistry(
       (async () => ({
         ok: true,
-        json: async () => makeCard('helper', VALID_FEALTY),
+        json: async () => makeCard('helper', VALID_HANDSHAKE),
       })) as unknown as FetchLike,
     );
     await registry.register('http://127.0.0.1:9/agent-card');
     const server = await mount('completed', registry);
     // V3: the exact registered card would be tier-3; a content difference
     // (description here) keeps the caller on the registry-row tier.
-    const unanchored: AgentCard = { ...makeCard('helper', VALID_FEALTY), description: 'not the anchored card' };
+    const unanchored: AgentCard = { ...makeCard('helper', VALID_HANDSHAKE), description: 'not the anchored card' };
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
@@ -329,15 +329,15 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-12', message: 'summarize the diary', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-2')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.executor === 'helper' && entry.tier === 'tier-2')).toBe(true);
     expect(lastFanOutRequest?.mode).toBeUndefined();
   });
 
   it('admits a caller presenting its exact registered card on tier-3 (V3 roster anchor, PRD E9.4)', async () => {
-    const registry = new VassalRegistry(
+    const registry = new ExecutorRegistry(
       (async () => ({
         ok: true,
-        json: async () => makeCard('helper', VALID_FEALTY),
+        json: async () => makeCard('helper', VALID_HANDSHAKE),
       })) as unknown as FetchLike,
     );
     await registry.register('http://127.0.0.1:9/agent-card');
@@ -345,24 +345,24 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-18', message: 'summarize the diary', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-3')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.executor === 'helper' && entry.tier === 'tier-3')).toBe(true);
     expect(lastFanOutRequest?.mode).toBeUndefined();
   });
 
   it('falls back to tier-2 when the presented card no longer matches the roster anchor (tampered content)', async () => {
-    const registry = new VassalRegistry(
+    const registry = new ExecutorRegistry(
       (async () => ({
         ok: true,
-        json: async () => makeCard('helper', VALID_FEALTY),
+        json: async () => makeCard('helper', VALID_HANDSHAKE),
       })) as unknown as FetchLike,
     );
     await registry.register('http://127.0.0.1:9/agent-card');
     const server = await mount('completed', registry);
-    const tampered: AgentCard = { ...makeCard('helper', VALID_FEALTY), url: 'https://evil.example/' };
+    const tampered: AgentCard = { ...makeCard('helper', VALID_HANDSHAKE), url: 'https://evil.example/' };
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
@@ -370,7 +370,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-19', message: 'summarize the diary', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.vassal === 'helper' && entry.tier === 'tier-2')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.executor === 'helper' && entry.tier === 'tier-2')).toBe(true);
   });
 
   // P3-1: a tier-1 caller picks its own name. Nothing anchors it, so the audit
@@ -381,12 +381,12 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-20', message: 'summarize', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
     const accepted = auditEntries.find(entry => entry.decision === 'inbound-task-accepted');
-    expect(accepted?.vassal).toBe('unverified:helper');
+    expect(accepted?.executor).toBe('unverified:helper');
     expect(lastFanOutRequest?.params.a2aCaller).toBe('unverified:helper');
     // The forged name is not silently flattened into the roster's namespace.
     expect(auditEntries.some(entry => entry.decision === 'external-agent-admitted' && entry.tier === 'tier-3')).toBe(false);
@@ -395,10 +395,10 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
   // The legitimate path is untouched: a caller whose card the signed roster
   // anchors (tier-3) keeps its registry name in audit and memory.
   it('keeps a roster-anchored caller name unchanged in audit and fan-out params (P3-1)', async () => {
-    const registry = new VassalRegistry(
+    const registry = new ExecutorRegistry(
       (async () => ({
         ok: true,
-        json: async () => makeCard('helper', VALID_FEALTY),
+        json: async () => makeCard('helper', VALID_HANDSHAKE),
       })) as unknown as FetchLike,
     );
     await registry.register('http://127.0.0.1:9/agent-card');
@@ -406,11 +406,11 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_FEALTY)) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('helper', VALID_HANDSHAKE)) },
       payload: rpc(1, 'tasks/send', { taskId: 'caller-task-21', message: 'summarize', skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(200);
-    expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.vassal === 'helper')).toBe(true);
+    expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.executor === 'helper')).toBe(true);
     expect(lastFanOutRequest?.params.a2aCaller).toBe('helper');
   });
 });

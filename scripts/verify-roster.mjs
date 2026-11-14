@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * Offline roster verification (design-fealty-signing.md §4/§4.1, PRD E4.9/E5.4).
+ * Offline roster verification (design-handshake-signing.md §4/§4.1, PRD E4.9/E5.4).
  *
  * The signing chain's whole promise is "a published roster can be verified
  * without trusting the server that published it" — but until now the only way to

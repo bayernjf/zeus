@@ -1,6 +1,6 @@
 # Zeus 容量基线（E10.4，本机 mock 回环）
 
-> 状态：**现行 v0.7（2026-11-08）**。**v0.7 变更**：新增 §11——背压阈值标定（等待线有限值与拒绝率、队列等待时间、指标补齐）。**只记录数据与建议，不改任何业务默认值**：`maxConcurrentBranches` / `branchQueueLimit` / `maxConcurrentPerVassal` 仍未在代码、`boot` 或 compose 中设置默认。v0.6 及以前的历史口径见下。
+> 状态：**现行 v0.7（2026-11-08）**。**v0.7 变更**：新增 §11——背压阈值标定（等待线有限值与拒绝率、队列等待时间、指标补齐）。**只记录数据与建议，不改任何业务默认值**：`maxConcurrentBranches` / `branchQueueLimit` / `maxConcurrentPerExecutor` 仍未在代码、`boot` 或 compose 中设置默认。v0.6 及以前的历史口径见下。
 > 复跑：`npm run build && npm run bench:capacity`（脚本 `scripts/bench-capacity.mjs`，零依赖；`--json` 出机器可读结果，`--delay-ms` / `--reps` / `--farm` 可调）；门禁：`npm run bench:gate`（内部重跑 bench 并按指纹对比 `capacity-baseline.json`；`--report out.json` 归档原始结果）。
 >
 > **v0.5 变更（2026-10-19，Apple M4 / 10 核 / Node v22.23.2 / darwin arm64）**：HEAD（A1 批 `ff4d61b`）同机**三连跑**（`--json`，7 reps，64 台 mock farm，50ms think）与 v0.4 区间对照：A 场景 p50 各宽度 53.5–68.9ms（v0.4 区间 55–76ms，一致或略好）；B 场景吞吐 @8=135 / @16=239 / @32=387 intents/s（v0.4 区间 125–127 / 195–222 / 351–404，略好或持平），全部 `finishedBranches === total`（4/16/32/64/128）零丢失；C 场景 @32=329 intents/s（v0.2 后区间内，@32 档 222–337 方差大，与既往一致）；D 场景 4/8/16/32 档取消精确 16/32/64/128、mock farm 实收 **240** 个 `tasks/cancel` 零丢失零重复（cancels/s 2,100–5,400，v0.4 已记录的高方差带）。**结论：无容量回归**。门禁阈值口径：bench 自身方差约 ±15%（v0.4 对照实测），**硬红取 ±30%**（延迟 +30% / 吞吐 −30%）、**告警取 ±15%**；吞吐提升、延迟下降为改善不告警。三连跑中位数已钉入 `capacity-baseline.json`（指纹 `darwin-arm64-10-v22.23.2`）。门禁本地实测一次：43 项对比 42 项绿、1 项告警（A@32 p95 88.1 vs 70.9，退化 24.3%，落在已知尾延迟方差带，未到硬红——告警不拦截行为正确）。
@@ -95,7 +95,7 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
 - **128 个挂起分支的取消信号在 ~14–18ms 内全部传播完成**，取消是即时的——不等待执行 Agent「思考」，墙钟随取消分支数近似线性、亚毫秒/分支级。
 - 脚本断言每档每个非终态分支**恰好取消一次**（`canceled: true`），且 mock farm 跨四档**实收 240 个 `tasks/cancel`（=16+32+64+128），零丢失、零重复**；终态分支（completed/failed/canceled）按 F3 语义跳过。
 - 取消吞吐在最高并发点略降（连接复用/事件循环竞争），但无超时、无失败；真实执行 Agent 的 cancel 处理速度与网络决定真机绝对值。
-- 口径说明：此处取消的是**已 settle 的挂起（input-required）分支**，即 F3 `cancelIntent` 的设计场景。**对仍在 `working`、fanOut 尚未返回的运行中分支，v0.4 起已由 fan-out §7（Active work 115，commit `496d16b`）补上一等中断原语**：`DispatchRequest.signal?: AbortSignal` 透传到出站 A2A 流、orchestrator 以 `branchSignals` 持有每分支 `AbortController`、运行中分支 abort 后结算 `state:'canceled'` + `reason:'canceled by the driver'`、审计记 `branch-aborted`（不再误标 dispatch-failed）。场景 D 的取消吞吐在 §7 后同机对照无系统性变化（见状态行 v0.4 对照）。
+- 口径说明：此处取消的是**已 settle 的挂起（input-required）分支**，即 F3 `cancelIntent` 的设计场景。**对仍在 `working`、fanOut 尚未返回的运行中分支，v0.4 起已由 fan-out §7（Active work 115，commit `496d16b`）补上一等中断原语**：`DispatchRequest.signal?: AbortSignal` 透传到出站 A2A 流、orchestrator 以 `branchSignals` 持有每分支 `AbortController`、运行中分支 abort 后结算 `state:'canceled'` + `reason:'canceled by the operator'`、审计记 `branch-aborted`（不再误标 dispatch-failed）。场景 D 的取消吞吐在 §7 后同机对照无系统性变化（见状态行 v0.4 对照）。
 
 ## 7. 场景 E：并发闸门的代价（v0.3 新增）
 
@@ -121,7 +121,7 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
 
 ### 附带修正：看门狗从 20×think 提到 40×think
 
-`branchTimeoutMs` 原本是 `delayMs * 20`（50ms think → 1s）。加入 E 的满载跑法后，场景 A 在 width 64 出现**连续尾段 19 个分支同时超时**（`vassal-45…63`），场景 B 在 128 分支档偶发单支超时——这是**单进程 farm 的事件循环停顿**撞上一个偏紧的看门狗，不是内核派发问题（实测 p95 只有 ~200ms，离 1s 很远，但停顿发生在同一时刻的一批分支上）。
+`branchTimeoutMs` 原本是 `delayMs * 20`（50ms think → 1s）。加入 E 的满载跑法后，场景 A 在 width 64 出现**连续尾段 19 个分支同时超时**（`executor-45…63`），场景 B 在 128 分支档偶发单支超时——这是**单进程 farm 的事件循环停顿**撞上一个偏紧的看门狗，不是内核派发问题（实测 p95 只有 ~200ms，离 1s 很远，但停顿发生在同一时刻的一批分支上）。
 
 处理：把该值收敛成显式常量 `BRANCH_WATCHDOG_MS = delayMs * 40` 并注释写明"它是防止分支永远挂着的看门狗，不是被测量的 SLO"——墙钟与百分位都来自采样，不来自这个数。**没有降低任何测量标准**：若真出现卡死，40× 一样会抓到；若是停顿误报，就不该由它决定成败。原始脚本 3/3、新脚本默认路径 5/5 + 2/2 均通过，无法把该抖动归因到本次改动，故按"看门狗过紧"记录而非"已修复的回归"。
 
@@ -140,7 +140,7 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
 ## 9. 限制与后续
 
 - mock 执行 Agent 不代表 LLM/网络；本文是**内核/门面/取消的开销下界 + 并发正确性证据**，不是容量承诺。
-- 已测：扇出宽度（A）、并发意图（B）、H2 门面全链路吞吐（C）、高并发取消传播（D）、**并发闸门代价与不变量（E，v0.3）**、**等待线有限值下的拒绝率与等待时间（F，v0.7，见 §11）**。**仍未测**：SSE 长连接占用与连接数上限、内存占用随分支数曲线、**运行中（working）分支 AbortSignal 中断的专项容量场景**（§7 已落地该能力，但场景 D 压的是 input-required 挂起态的 `tasks/cancel`，尚未为"fanOut 未返回即 abort"单开一档）、**真实执行 Agent 的 per-vassal 饱和曲线**（§11 只给出公式与触发条件）。
+- 已测：扇出宽度（A）、并发意图（B）、H2 门面全链路吞吐（C）、高并发取消传播（D）、**并发闸门代价与不变量（E，v0.3）**、**等待线有限值下的拒绝率与等待时间（F，v0.7，见 §11）**。**仍未测**：SSE 长连接占用与连接数上限、内存占用随分支数曲线、**运行中（working）分支 AbortSignal 中断的专项容量场景**（§7 已落地该能力，但场景 D 压的是 input-required 挂起态的 `tasks/cancel`，尚未为"fanOut 未返回即 abort"单开一档）、**真实执行 Agent 的 per-executor 饱和曲线**（§11 只给出公式与触发条件）。
 - **v0.3 复跑发现的散布要如实算作限制**：无限制档墙钟在 86–198ms 之间摆（±2×），cap=8 档 857–1380ms。同进程 farm 与本机背景负载所致。因此 v0.3 只用**比值 + 不变量**下结论，绝对吞吐/延迟一律标注为散布区间而非单点。
 - **v0.4 补一条跨版本对照方法论**：墙钟绝对值**跨机器不可直接比较**（v0.3 与 v0.4 不同机，B@32 从 351–404 到 263–332 intents/秒的差异主要来自机器/负载，不是回归）。判断某次内核改动是否引入容量回归，必须用 `git worktree` 在**同一台机器、相邻时间窗、空闲状态**下对改动前后 commit 各跑 ≥2 次交替对照；与 `docker build` 等 CPU/IO 重活并发的跑次作废（v0.4 实测污染跑 B@16 掉到干净值的 ~64%）。结论只取**比值趋势 + 正确性不变量（零分支丢失、240 取消零丢失零重复）**，不根据单次绝对数下判断。
 - 场景 D 的取消吞吐以 mock farm「立即 ack cancel」为前提；真实执行 Agent 可能异步取消，需在真机测量 cancel ack 延迟与最终一致性。
@@ -165,7 +165,7 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
 |---|---|---|
 | `maxConcurrentBranches` | **未设置**（`state/boot.ts` 只在 env 显式给出时写入；`semaphore` 在无 cap 时不创建） | 无实测依据。§7 E 只证明"设了 cap 后语义正确、代价是等待与吞吐线性下降"，没有回答"应该设多少" |
 | `branchQueueLimit` | **未设置**（`Semaphore` 默认 `Infinity`） | 同上。§9 明确把"有限等待线下的拒绝率与恢复"列为未测 |
-| `maxConcurrentPerVassal` | **未设置**（`resolveConcurrencyConfig` 只读取显式 env） | #9 的 per-vassal 饱和与自动改派只在单测覆盖，没有真实 Agent 的饱和曲线；`design-backpressure.md` 把阈值调参条件写成"≥3 真实执行 Agent" |
+| `maxConcurrentPerExecutor` | **未设置**（`resolveConcurrencyConfig` 只读取显式 env） | #9 的 per-executor 饱和与自动改派只在单测覆盖，没有真实 Agent 的饱和曲线；`design-backpressure.md` 把阈值调参条件写成"≥3 真实执行 Agent" |
 
 结论：当前三个阈值都不是"根据数据定出来的默认值"，而是**保持关闭**。本节的建议同样不写入默认值，只作为启用时的取值依据。
 
@@ -177,7 +177,7 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
   - `refused`：E 的等待线无限制，永远不会拒绝，`failed` 也恒为 0，因此"cap 满了以后是延迟还是拒绝"在原指标里不可见；F 需要它做正确性硬闸。
   - `queueWait`（p50/p95/max）：原指标只有 `finished` 延迟，无法把"排队等闸"与"执行本身"分开；标定 cap 时必须区分这两者。
   - `queuedPeak`：突发负载下"提交未启动"的峰值（含立即拿到槽位的分支），是突发规模信号，不等于等待线长度；等待线的效果看 `refused` 与 `queueWait`。
-  - `diverted`：per-vassal 自动改派的次数。本节 mock farm 没有 governor，所以该值为 0；补它是为了 #9 真机标定时能直接看到改派频率，而不是只从审计事件里数。
+  - `diverted`：per-executor 自动改派的次数。本节 mock farm 没有 governor，所以该值为 0；补它是为了 #9 真机标定时能直接看到改派频率，而不是只从审计事件里数。
 - 环境：Apple M4 / 10 CPU / darwin 27.2.0 arm64 / Node v22.23.4，mock farm 64 槽、单分支 think 50ms，同机单跑一轮（F 每档一轮）。与 §7 一样，**绝对值只作比值参考**，mock farm 与内核同进程抢事件循环。
 
 ### 11.3 实测数据（2026-11-08）
@@ -208,5 +208,5 @@ C 个意图**同时**发起，每个意图扇出 4 个执行 Agent（50ms），�
    - 建议（启用时）：`maxConcurrentBranches ≈` 已知的下游并发槽位数，或按 `目标 QPS × 最慢分支占用` 反推；不要显著低于槽位数，否则等于人为把突发串行化。mock 的 64 槽不能直接搬到真机——真机的"槽位"是最慢 Agent 的并发能力。
 2. **queueLimit 是"延迟预算"而不是"容量参数"**。cap=16 下，queueLimit=0 时拒绝 87.5%，等待几乎为 0；queueLimit=16（1×cap）时等待 p95 ≈ 63ms（约 1.3× 单分支占用），仍拒绝 75%；queueLimit=64（4×cap）时等待 p95 226ms，拒绝降到 37.5%；无限制时等待 p95 390ms、零拒绝。等待随 `(cap+queue)/cap` 线性增长，与 Little 定律一致。
    - 建议（启用时）：先定可接受尾延迟，再取 `queueLimit ≈ cap × (可接受等待 / 单分支占用 − 1)`。以"等待不超过一个执行周期"为目标，`queueLimit = 1×cap`；能接受两个周期则 `2×cap`。**不要用无限制等待线做默认**：它在 8× 突发下会把 p95 从 60ms 拉到 390ms。
-3. **`maxConcurrentPerVassal` 本节给不出数值**。mock farm 是无状态并发处理器，不存在"单 Agent 越忙越慢"的饱和曲线；在这里测出的 per-vassal 数字只会是内核开销，不是 Agent 容量。建议保留公式 `cap(v) ≈ 可接受单 Agent 排队延迟 / 单 Agent 服务时间`，并在 ≥3 真实 Agent（`design-backpressure.md` 的触发条件）在线后，用同一脚本的 F 形状按 per-vassal 重测。`diverted` 指标已就绪，可直接观测改派频率。
+3. **`maxConcurrentPerExecutor` 本节给不出数值**。mock farm 是无状态并发处理器，不存在"单 Agent 越忙越慢"的饱和曲线；在这里测出的 per-executor 数字只会是内核开销，不是 Agent 容量。建议保留公式 `cap(v) ≈ 可接受单 Agent 排队延迟 / 单 Agent 服务时间`，并在 ≥3 真实 Agent（`design-backpressure.md` 的触发条件）在线后，用同一脚本的 F 形状按 per-executor 重测。`diverted` 指标已就绪，可直接观测改派频率。
 4. **默认值保持关闭是本节的结论，不是遗漏**：没有真实 Agent 的饱和数据前，把 cap/queueLimit/cap(v) 写死会用一个 mock 数字替代真实容量判断。本次只补指标与数据，没有修改 `src` 业务默认、`boot` 默认或 compose/env 默认。

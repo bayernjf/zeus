@@ -16,13 +16,13 @@ describe('audit sinks', () => {
     const path = join(dir, 'audit.jsonl');
     try {
       const sink = jsonlAuditSink(path);
-      sink({ ts: '2026-09-21T10:00:00.000Z', runId: 'run-1', vassal: 'pr-helper', skill: 'create-pr', realm: 'enterprise', decision: 'dispatched' });
+      sink({ ts: '2026-09-21T10:00:00.000Z', runId: 'run-1', executor: 'pr-helper', skill: 'create-pr', dataDomain: 'enterprise', decision: 'dispatched' });
       revokeAuditBridge(sink)('pr-helper', '2026-09-21T11:00:00.000Z');
 
       const lines = readFileSync(path, 'utf8').trim().split('\n');
       expect(lines).toHaveLength(2);
       expect(JSON.parse(lines[0]!)).toMatchObject({ decision: 'dispatched', runId: 'run-1' });
-      expect(JSON.parse(lines[1]!)).toMatchObject({ decision: 'vassal-revoked', vassal: 'pr-helper', ts: '2026-09-21T11:00:00.000Z' });
+      expect(JSON.parse(lines[1]!)).toMatchObject({ decision: 'executor-revoked', executor: 'pr-helper', ts: '2026-09-21T11:00:00.000Z' });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -36,16 +36,16 @@ describe('audit sinks', () => {
       sink({
         ts: '2026-10-13T10:00:00.000Z',
         runId: 'run-1',
-        vassal: 'loom',
+        executor: 'loom',
         skill: 'research',
-        realm: 'personal',
+        dataDomain: 'personal',
         decision: 'dispatch-failed',
         detail: 'POST http://ops:hunter2@10.0.0.9/card?token=abc123 failed: Bearer xyz789',
       });
       sink({
         ts: '2026-10-13T10:01:00.000Z',
         runId: 'run-2',
-        vassal: 'atlas',
+        executor: 'atlas',
         decision: 'dispatched',
         detail: 'pilot note: skill research approved',
       });
@@ -58,9 +58,9 @@ describe('audit sinks', () => {
       expect(JSON.parse(first)).toMatchObject({
         ts: '2026-10-13T10:00:00.000Z',
         runId: 'run-1',
-        vassal: 'loom',
+        executor: 'loom',
         skill: 'research',
-        realm: 'personal',
+        dataDomain: 'personal',
         decision: 'dispatch-failed',
       });
       const second = JSON.parse(lines[1]!) as Record<string, unknown>;
@@ -78,7 +78,7 @@ describe('audit sinks', () => {
     const path = join(dir, 'data', 'nested', 'audit.jsonl');
     try {
       const sink = jsonlAuditSink(path);
-      sink({ ts: '2026-09-25T10:00:00.000Z', vassal: 'loom', decision: 'dispatched' });
+      sink({ ts: '2026-09-25T10:00:00.000Z', executor: 'loom', decision: 'dispatched' });
       expect(existsSync(path)).toBe(true);
       expect(readFileSync(path, 'utf8').trim().split('\n')).toHaveLength(1);
     } finally {
@@ -92,14 +92,14 @@ describe('audit sinks', () => {
     try {
       writeFileSync(path, '', { mode: 0o644 });
       jsonlAuditSink(path);
-      // Audit lines name realms, vassals and decisions; the state file already
+      // Audit lines name dataDomains, executors and decisions; the state file already
       // learned this lesson, and a fresh create would otherwise inherit the umask.
       // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
       if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
 
       rmSync(path);
       const sink = jsonlAuditSink(path);
-      sink({ ts: 't', vassal: 'loom', decision: 'dispatched' });
+      sink({ ts: 't', executor: 'loom', decision: 'dispatched' });
       // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
       if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);
     } finally {
@@ -113,7 +113,7 @@ describe('audit sinks', () => {
     try {
       const sink = jsonlAuditSink(path, { maxBytes: 200, keep: 2 });
       for (let i = 0; i < 12; i++) {
-        sink({ ts: `2026-09-25T10:00:${String(i).padStart(2, '0')}.000Z`, vassal: 'loom', decision: 'dispatched', detail: 'x'.repeat(60) });
+        sink({ ts: `2026-09-25T10:00:${String(i).padStart(2, '0')}.000Z`, executor: 'loom', decision: 'dispatched', detail: 'x'.repeat(60) });
       }
       expect(readdirSync(dir).filter(name => name.startsWith('audit.jsonl'))).toEqual(
         expect.arrayContaining(['audit.jsonl', 'audit.jsonl.1'])
@@ -136,7 +136,7 @@ describe('audit sinks', () => {
       writeFileSync(`${path}.1`, 'legacy\n', { mode: 0o644 });
       writeFileSync(path, 'active\n', { mode: 0o600 });
       const sink = jsonlAuditSink(path, { maxBytes: 1, keep: 3 });
-      sink({ ts: 't', vassal: 'loom', decision: 'dispatched' });
+      sink({ ts: 't', executor: 'loom', decision: 'dispatched' });
 
       // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
       if (process.platform !== 'win32') expect(statSync(`${path}.2`).mode & 0o777).toBe(0o600);
@@ -160,15 +160,15 @@ describe('audit sinks', () => {
 
   it('memoryAuditSink collects entries in order', () => {
     const { log, sink } = memoryAuditSink();
-    sink({ ts: 't1', vassal: 'a', decision: 'dispatched' });
+    sink({ ts: 't1', executor: 'a', decision: 'dispatched' });
     revokeAuditBridge(sink)('a', 't2');
-    expect(log.map(entry => entry.decision)).toEqual(['dispatched', 'vassal-revoked']);
+    expect(log.map(entry => entry.decision)).toEqual(['dispatched', 'executor-revoked']);
   });
 });
 
 describe('jsonlAuditSink disk ceiling', () => {
   const entry = (ts: string): Parameters<ReturnType<typeof jsonlAuditSink>>[0] => ({
-    ts, vassal: 'loom', decision: 'dispatched',
+    ts, executor: 'loom', decision: 'dispatched',
   });
   const sizes = (path: string) => {
     const active = statSync(path).size;
@@ -253,28 +253,28 @@ describe('readAuditLog', () => {
     const path = join(dir, 'audit.jsonl');
     try {
       const sink = jsonlAuditSink(path);
-      sink({ ts: 't1', vassal: 'loom', runId: 'run-1', decision: 'dispatched' });
-      sink({ ts: 't2', vassal: 'atlas', runId: 'run-2', decision: 'dispatch-failed' });
+      sink({ ts: 't1', executor: 'loom', runId: 'run-1', decision: 'dispatched' });
+      sink({ ts: 't2', executor: 'atlas', runId: 'run-2', decision: 'dispatch-failed' });
       revokeAuditBridge(sink)('loom', 't3');
 
       expect(readAuditLog(path).map(e => e.decision))
-        .toEqual(['dispatched', 'dispatch-failed', 'vassal-revoked']);
+        .toEqual(['dispatched', 'dispatch-failed', 'executor-revoked']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('filters by run, vassal and decision, and a limit keeps the newest entries', () => {
+  it('filters by run, executor and decision, and a limit keeps the newest entries', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-filter-'));
     const path = join(dir, 'audit.jsonl');
     try {
       const sink = jsonlAuditSink(path);
       for (let i = 0; i < 5; i++) {
-        sink({ ts: `t${i}`, vassal: i % 2 ? 'loom' : 'atlas', runId: `run-${i % 2}`, decision: 'dispatched' });
+        sink({ ts: `t${i}`, executor: i % 2 ? 'loom' : 'atlas', runId: `run-${i % 2}`, decision: 'dispatched' });
       }
       expect(readAuditLog(path, { runId: 'run-1' })).toHaveLength(2);
-      expect(readAuditLog(path, { vassal: 'atlas' }).map(e => e.ts)).toEqual(['t0', 't2', 't4']);
-      expect(readAuditLog(path, { decision: 'vassal-revoked' })).toEqual([]);
+      expect(readAuditLog(path, { executor: 'atlas' }).map(e => e.ts)).toEqual(['t0', 't2', 't4']);
+      expect(readAuditLog(path, { decision: 'executor-revoked' })).toEqual([]);
       expect(readAuditLog(path, { limit: 2 }).map(e => e.ts)).toEqual(['t3', 't4']);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -285,7 +285,7 @@ describe('readAuditLog', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-tail-'));
     const path = join(dir, 'audit.jsonl');
     try {
-      const line = (ts: string) => JSON.stringify({ ts, vassal: ts, decision: 'dispatched' });
+      const line = (ts: string) => JSON.stringify({ ts, executor: ts, decision: 'dispatched' });
       const lines = [line('old'), line('mid'), line('new')];
       const content = `${lines.join('\n')}\n`;
       writeFileSync(path, content);
@@ -306,7 +306,7 @@ describe('readAuditLog', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-partial-'));
     const path = join(dir, 'audit.jsonl');
     try {
-      const line = (ts: string) => JSON.stringify({ ts, vassal: ts, decision: 'dispatched' });
+      const line = (ts: string) => JSON.stringify({ ts, executor: ts, decision: 'dispatched' });
       const first = line('first');
       const second = line('second');
       writeFileSync(path, `${first}\n${second}`);
@@ -325,7 +325,7 @@ describe('readAuditLog', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-boundary-'));
     const path = join(dir, 'audit.jsonl');
     try {
-      const line = (ts: string) => JSON.stringify({ ts, vassal: ts, decision: 'dispatched' });
+      const line = (ts: string) => JSON.stringify({ ts, executor: ts, decision: 'dispatched' });
       const first = line('first');
       const second = line('second');
       const third = line('third');
@@ -343,11 +343,11 @@ describe('readAuditLog', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-bad-'));
     const path = join(dir, 'audit.jsonl');
     try {
-      write(path, `${JSON.stringify({ ts: 'ok', vassal: 'a', decision: 'dispatched' })}\n{ not json }\n`);
+      write(path, `${JSON.stringify({ ts: 'ok', executor: 'a', decision: 'dispatched' })}\n{ not json }\n`);
       expect(() => readAuditLog(path)).toThrow(AuditLogError);
 
       write(path, `${JSON.stringify({ ts: 'ok', decision: 'dispatched' })}\n`);
-      expect(() => readAuditLog(path)).toThrow(/missing ts\/vassal\/decision/);
+      expect(() => readAuditLog(path)).toThrow(/missing ts\/executor\/decision/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -360,7 +360,7 @@ describe('readAuditLog', () => {
     const dir = mkdtempSync(join(tmpdir(), 'zeus-audit-offset-'));
     const path = join(dir, 'audit.jsonl');
     try {
-      const good = JSON.stringify({ ts: 'ok', vassal: 'loom', decision: 'dispatched' });
+      const good = JSON.stringify({ ts: 'ok', executor: 'loom', decision: 'dispatched' });
       const bad = '{ not json }';
       writeFileSync(path, `${good}\n${bad}\n`);
       const firstBadByte = Buffer.byteLength(good) + 1; // the '\n' after line 1
