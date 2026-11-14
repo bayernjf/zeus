@@ -83,6 +83,9 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'context-assembled': 'info',
   'context-trimmed': 'warning',
   'context-budget-exceeded': 'warning',
+  // D3-2: the folded run-level watermark is an observation, not a failure —
+  // per-intent trims/budgets already carry the warning weight.
+  'context-watermark': 'info',
   'domain-grant-issued': 'info',
   'domain-grant-revoked': 'warning',
   'operator-grant-issued': 'info',

@@ -30,6 +30,7 @@ import type { ProgressEvent } from './progress.js';
 import { appendStreamFrame, emptyStreamView, type StreamView } from './stream-merge.js';
 import type { DispatchRequest, DispatchResult, AuditEntry } from '../../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../../context/assemble.js';
+import { accumulateWatermark, watermarkDetail, type ContextWatermark } from './context-watermark.js';
 import { assembleSkillInputs } from '../../context/skill-inputs.js';
 import { allocateContextBudget, DEFAULT_BRANCH_CONTEXT_LIMIT } from '../../context/budget.js';
 import type { MemoryStore } from '../../memory/memory-store.js';
@@ -389,6 +390,13 @@ export class Orchestrator {
   /** Admissions the cost gate refused since boot. The per-intent window is
    *  transient state; this counter is what the operator face reports. */
   private costRefusals = 0;
+  /**
+   * D3-2: per-run folded context watermark (entries assembled / trimmed /
+   * over-budget). Folded from the intent's assembly events and emitted once as
+   * the `context-watermark` audit row when the fan-out settles, so context
+   * growth is observable per run instead of per intent only.
+   */
+  private contextWatermarks = new Map<string, ContextWatermark>();
   /** S4: resolved guard limits (options ?? structural defaults). */
   private budgetLimits: { maxBranchesPerIntent: number; maxConsecutiveBranchFailures: number };
   /**
@@ -800,6 +808,7 @@ export class Orchestrator {
         : undefined;
       contextEvents = contextEvents.concat(budgeted.events);
       if (contextEvents.length > 0) {
+        this.contextWatermarks.set(runId, accumulateWatermark(this.contextWatermarks.get(runId), contextEvents));
         this.options.onContextAssembled?.(contextEvents, {
           intentId,
           runId,
@@ -971,6 +980,21 @@ export class Orchestrator {
     // intentId on the way in (the cache lookup above is gated on request.intentId).
     this.intents.set(intentId, result);
     this.requests.set(intentId, request);
+    // D3-2: the run-level context watermark is a fact on the same audit spine
+    // as the per-intent assembly rows, emitted once at settle (never per event).
+    const watermark = this.contextWatermarks.get(runId);
+    if (watermark !== undefined) {
+      this.options.audit?.({
+        ts: this.now().toISOString(),
+        executor: '(intent)',
+        runId,
+        skill: result.skill,
+        dataDomain: result.dataDomain,
+        decision: 'context-watermark',
+        detail: `intent ${intentId}: run context watermark — ${watermarkDetail(watermark, result.branches.length)}`,
+      });
+      this.contextWatermarks.delete(runId);
+    }
     // S9 V2: settle the admitted cost when the intent lands — the in-flight
     // estimate is released, spent stays. Refused intents never reach here
     // (they settle through the failed-result path above without a ledger

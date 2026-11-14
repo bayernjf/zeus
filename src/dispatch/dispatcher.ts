@@ -87,6 +87,10 @@ export const AUDIT_DECISIONS = [
   'context-assembled',
   'context-trimmed',
   'context-budget-exceeded',
+  // D3-2: one folded run-level watermark per settled fan-out (entries
+  // assembled / trimmed / over-budget). Per-intent rows say what one intent
+  // got; this row says how much context the run as a whole consumed.
+  'context-watermark',
   // deferred #33: an operator issued a one-time, bounded approval for an
   // executing agent to perform an external write.
   'execution-delegation-issued',
