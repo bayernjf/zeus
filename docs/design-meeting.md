@@ -132,7 +132,7 @@ open → proposing → challenging ⇄ (下一轮) → converging → decided �
 **S5 画像与沉淀（决策写回已完成 2026-11-15）**
 - `decisionEvents()` 把每条决策转成 `MemoryEvent{kind:'claim', content:{subject: topic, predicate:'meeting-decision', object:{chosen, rejected, rationale, decidedBy, decidedAt}}}`，`settleMeeting()` 追加后 `consolidateDataDomain()` 产出 fact（`refs` 指向 `meeting:<id>` 与 `claim:<id>`），`recallDecisions()` 只回 decision 类 fact；
 - CLI `settle <id> --events <file.jsonl>` 幂等追加（同 eventId 不重复写）；
-- 待做：round/token/采纳率等会议指标；
+- 会议指标已落库：`src/meeting/stats.ts`（轮数 / 发言 / claim / 反驳 / 证据覆盖率 / 采纳率 / 悬置 / token 估算）+ CLI `stats <id>`；采纳率在未决策时返回 null，不把「还没决定」显示成「一条都没采纳」；
 - 决策写回 memory（decision facts），下次同类议题自动带入；
 - 会议指标：轮数、token、反驳数、采纳率、人类改写率。
 验收：第二场同类会议能引用上一场结论。
