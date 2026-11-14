@@ -31,6 +31,7 @@
     "start": "node dist/http/serve.js",
     "daily": "node dist/daily/cli.js",
     "chat": "node dist/chat/cli.js",
+    "meeting": "node dist/meeting/cli.js",
     "agent:example": "node dist/a2a/example-agent.js",
     "agent:llm": "node dist/a2a/llm-agent.js",
     "mcp:dataDomain": "node dist/dataDomain/mcp-stdio.js",
