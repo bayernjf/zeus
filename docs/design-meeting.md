@@ -1,6 +1,6 @@
 # 会议（Meeting）设计：主张图上的多轮决策
 
-> 状态：**现行（v0.1，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI），10 条单测，zeus 全量 2587 通过。S2–S5 为待迭代阶段。本地单人自用，不做多租户与公网暴露。
+> 状态：**现行（v0.2，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI）。S2 已落库：`src/meeting/convene.ts`（ProposalSource、`convene`、fan-out 结果映射、orchestrator 源）+ CLI `convene --drafts`。meeting 单测 15 条。S3–S5 为待迭代阶段。本地单人自用，不做多租户与公网暴露。
 
 ## 0. 一句话
 
@@ -106,10 +106,10 @@ open → proposing → challenging ⇄ (下一轮) → converging → decided �
 **S1（已完成 2026-11-15）** 领域模型 + 协议状态机 + JSON store + CLI + 单测。
 验收：非法流转全部报错；存储往返一致；`show --graph` 能显示反驳关系与悬置项。
 
-**S2（下一步）自动提案**
+**S2（已完成 2026-11-15）自动提案**
 - Round 1 接 `FanOutRequest`：N 个提案者并行，各自只带 L0/L1/L3；
 - 产物解析成 claims 写回 meeting（解析失败 → `failed` 分支，不阻塞会议）；
-- 一条命令 `convene` 产出 N 条提案。
+- 一条命令 `convene` 产出 N 条提案；`--drafts` 可直接导入离线草稿（当前无模型凭据时的主路径）。
 验收：离线 fake 场景可测；同一 topic 两次运行 claim 结构稳定；失败分支不污染会议。
 
 **S3 自动交叉质疑**
