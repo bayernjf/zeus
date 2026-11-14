@@ -125,13 +125,27 @@ export async function sayRoute(store: MeetingStore, request: FastifyRequest, rep
     if (typeof body.speakerId !== 'string' || body.speakerId.length === 0) return badRequest(reply, 'speakerId is required');
     const meeting = await loadOr404(store, id, reply);
     if (!meeting) return reply;
+    // Claims are addressed by id in rebuts, so the API allocates the next
+    // `cN` for any claim posted without one; the protocol still rejects an
+    // empty or malformed id, so a caller cannot smuggle claim holes in.
+    const used = meeting.utterances.flatMap(event => event.claims).reduce((max, claim) => {
+      const match = /^c(\d+)$/.exec(claim.id ?? '');
+      return match ? Math.max(max, Number(match[1])) : max;
+    }, 0);
+    const claims: Claim[] = Array.isArray(body.claims)
+      ? body.claims.map((claim, index) => ({
+        ...claim,
+        id: typeof claim.id === 'string' && claim.id.length > 0 ? claim.id : `c${used + index + 1}`,
+        evidence: Array.isArray(claim.evidence) ? claim.evidence : [],
+      }))
+      : [];
     const utterance: Utterance = {
       id: body.id ?? `u-${meeting.utterances.length + 1}`,
       speakerId: body.speakerId,
       kind: body.kind ?? 'agent',
       round: meeting.round,
       stance: body.stance ?? 'propose',
-      claims: Array.isArray(body.claims) ? body.claims : [],
+      claims,
       rebuts: Array.isArray(body.rebuts) ? body.rebuts : [],
       at: body.now ?? new Date().toISOString(),
     };

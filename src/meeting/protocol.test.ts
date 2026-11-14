@@ -124,4 +124,20 @@ describe('meeting protocol', () => {
     expect(graph.nodes[0]!.rebuttedBy).toEqual(['u2']);
     expect(graph.undecided).toEqual(['c1']);
   });
+
+  it('rejects a claim whose id is not a string instead of reading it as "undefined"', () => {
+    const meeting = createMeeting({ id: 'm-bad-id', topic: 't', createdAt: new Date().toISOString(), maxRounds: 2 });
+    const utterance = {
+      id: 'u-1',
+      speakerId: 'a',
+      kind: 'agent' as const,
+      round: 1,
+      stance: 'propose' as const,
+      claims: [{ text: '缺 id', evidence: [] }],
+      rebuts: [],
+      at: new Date().toISOString(),
+    };
+    expect(() => recordUtterance(meeting, utterance as never)).toThrow(MeetingProtocolError);
+    expect(() => recordUtterance(meeting, utterance as never)).toThrow(/claim id must match/);
+  });
 });

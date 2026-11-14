@@ -35,7 +35,9 @@ export class MeetingProtocolError extends Error {
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function assertId(id: string, what: string): void {
-  if (!ID_RE.test(id)) {
+  // RegExp.test coerces its argument, so `undefined` would match as the
+  // literal string "undefined". Require a real string first.
+  if (typeof id !== 'string' || !ID_RE.test(id)) {
     throw new MeetingProtocolError('invalid-id', `${what} must match ${ID_RE.source}: ${id}`);
   }
 }
