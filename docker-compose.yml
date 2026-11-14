@@ -38,7 +38,7 @@ services:
       # protection), which would 502 every executor registration against a
       # sibling container on the private network. This hostname allowlist is
       # the sanctioned escape hatch and must name each local executor.
-      ZEUS_OUTBOUND_ALLOW_HOSTS: zeus-example-agent,zeus-llm-agent,model-hub
+      ZEUS_OUTBOUND_ALLOW_HOSTS: zeus-example-agent,zeus-llm-agent,model-hub,otel-collector
       # Registration is restored from runtime-state on restart, but a fresh
       # data volume starts with an empty roster - and an empty roster makes
       # fan-out produce zero branches, so every intent settles as "failed"
@@ -57,6 +57,9 @@ services:
       # Personal dataDomain root connected on boot, so the memory producer has a
       # mounted dataDomain to attribute claims to (W1-4 memory pilot e2e).
       ZEUS_DATA_DOMAIN_ROOTS: /data/dataDomain-personal
+      # OTLP/HTTP JSON trace export (G2): opt-in endpoint, unset = not constructed.
+      # Locally targets the observability compose stack (collector on tier0-net).
+      ZEUS_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
     ports:
       - "127.0.0.1:18787:8787"
     networks:
@@ -66,7 +69,7 @@ services:
       - zeus-data:/data
     restart: unless-stopped
     logging:
-      operator: json-file
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
@@ -96,7 +99,7 @@ services:
     healthcheck:
       disable: true
     logging:
-      operator: json-file
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
@@ -123,7 +126,7 @@ services:
     healthcheck:
       disable: true
     logging:
-      operator: json-file
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
