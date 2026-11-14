@@ -114,6 +114,14 @@ const PROTOCOL_FACES = new Set(['POST /mcp', 'POST /.well-known/agent-card.json'
 // Every entry must cite the PRD line that settled the shape; an endpoint that
 // later gains a TUI/Web/script operator must leave this table.
 const HTTP_ONLY: Record<string, string> = {
+  'POST /api/v1/meetings':
+    'PRD F1 / design-meeting S4: the console opens meetings over the bearer API; the CLI `npm run meeting` is the offline operator face',
+  'POST /api/v1/meetings/:id/utterances':
+    'PRD F1 / design-meeting S4: speaking into a meeting is the same protocol call the CLI makes; console drives it over the bearer API',
+  'POST /api/v1/meetings/:id/advance':
+    'PRD F1 / design-meeting S4: round advancement is an operator action (the console button and the CLI `advance`)',
+  'POST /api/v1/meetings/:id/decision':
+    'PRD F1 / design-meeting S4: the decision is the one action only a human can take; console posts it, CLI `decide` is the offline twin',
   'POST /api/org/departments/:id/first-task':
     'PRD E9.2 / v0.29: onboarding flow-internal dispatch after the seatGrant gate; driven by the seatGranting flow over the bearer API',
   'POST /api/memory/retract':
@@ -284,6 +292,11 @@ const READ_PROTOCOL_FACES = new Set([
  *  so the table cannot be used to bury one. If a future batch adds a read
  *  route nobody can drive, it belongs here the day it ships, not later. */
 const READ_API_ONLY: Record<string, string> = {
+  // design-meeting S4: the ops-console /app/meetings page is the reader of the
+  // meeting list and detail (it reads the local store today; this API face is
+  // mounted for the console's write path and for distant readers).
+  'GET /api/v1/meetings': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting replay page)',
+  'GET /api/v1/meetings/:id': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting replay page)',
   // TracePort v1 §5 (D-5, W2-4): the cross-intent trace query face ships
   // API-only; the ops-console /app/traces BFF page (W2-5) is its reader.
   'GET /api/v1/traces': 'tracked: PRD F2 / D-5 (TracePort v1 section 5; ops-console reader lands with W2-5)',
