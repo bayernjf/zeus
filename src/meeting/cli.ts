@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { MeetingStore } from './store.js';
 import { advanceRound, claimGraph, createMeeting, decide, recordUtterance } from './protocol.js';
 import { convene, type DraftClaim } from './convene.js';
+import { challenge, nextStep, projectClaims, selectTargets } from './challenge.js';
 import type { Evidence, EvidenceKind, SpeakerKind, Stance, Utterance } from './types.js';
 
 const DEFAULT_DIR = process.env.ZEUS_MEETING_DIR ?? '.zeus-meetings';
@@ -109,6 +110,57 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'targets') {
+    const meeting = await store.load(meetingId);
+    print({
+      status: meeting.status,
+      round: meeting.round,
+      next: nextStep(meeting),
+      targets: selectTargets(meeting, Number(one(flags, 'limit') ?? 2)),
+      claims: projectClaims(meeting),
+    });
+    return;
+  }
+
+  if (command === 'challenge') {
+    const criticsPath = one(flags, 'critics');
+    if (!criticsPath) throw new Error('challenge requires --critics <file.json>');
+    const meeting = await store.load(meetingId);
+    const raw = JSON.parse(await readFile(criticsPath, 'utf8')) as { critics?: unknown };
+    const critics = Array.isArray(raw.critics) ? raw.critics : [];
+    const drafts = critics.map((entry, index) => {
+      const record = (entry ?? {}) as { speakerId?: unknown; rebuts?: unknown; claims?: unknown };
+      const claims: DraftClaim[] = Array.isArray(record.claims)
+        ? record.claims.map((claim) => {
+            const item = (claim ?? {}) as { text?: unknown; evidence?: unknown };
+            const evidence = Array.isArray(item.evidence) ? (item.evidence as Evidence[]) : [];
+            return { text: typeof item.text === 'string' ? item.text : '', evidence };
+          })
+        : [];
+      return {
+        speakerId: typeof record.speakerId === 'string' ? record.speakerId : `critic-${index + 1}`,
+        rebuts: Array.isArray(record.rebuts) ? record.rebuts.filter((id): id is string => typeof id === 'string') : [],
+        claims,
+      };
+    });
+    const targetFlags = many(flags, 'target');
+    const limit = Number(one(flags, 'limit') ?? 2);
+    const options = targetFlags.length > 0 ? { limit, targets: targetFlags } : { limit };
+    const result = await challenge(meeting, async () => ({ drafts }), options);
+    await store.save(result.meeting);
+    print({
+      id: result.meeting.id,
+      status: result.meeting.status,
+      round: result.meeting.round,
+      targets: result.targets,
+      recorded: result.recorded,
+      skipped: result.skipped,
+      stable: result.stable,
+      next: nextStep(result.meeting),
+    });
+    return;
+  }
+
   if (command === 'show') {
     const meeting = await store.load(meetingId);
     print(one(flags, 'graph') === 'true' ? claimGraph(meeting) : meeting);
@@ -182,7 +234,7 @@ async function main(): Promise<void> {
   }
 
   process.stderr.write(
-    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | show <id> [--graph] | list\n',
+    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | targets <id> [--limit] | challenge <id> --critics <file.json> [--target id] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | show <id> [--graph] | list\n',
   );
   process.exitCode = 1;
 }
