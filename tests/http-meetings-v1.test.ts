@@ -136,4 +136,16 @@ describe('Meeting API v1', () => {
     expect(decided.statusCode).toBe(201);
     expect(decided.json<Meeting>().status).toBe('decided');
   });
+
+  it('allocates claim ids when the caller omits them', async () => {
+    const app = await server(await dir());
+    await app.inject({ method: 'POST', url: '/api/v1/meetings', headers: AUTH, payload: { topic: 'id 分配', maxRounds: 2, id: 'm-ids' } });
+    const posted = JSON.parse((await app.inject({
+      method: 'POST',
+      url: '/api/v1/meetings/m-ids/utterances',
+      headers: AUTH,
+      payload: { speakerId: 'a', stance: 'propose', claims: [{ text: '第一条' }, { text: '第二条' }] },
+    })).body) as { utterances: Array<{ claims: Array<{ id: string }> }> };
+    expect(posted.utterances[0]?.claims.map(claim => claim.id)).toEqual(['c1', 'c2']);
+  });
 });
