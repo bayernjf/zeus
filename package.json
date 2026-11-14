@@ -33,7 +33,7 @@
     "chat": "node dist/chat/cli.js",
     "agent:example": "node dist/a2a/example-agent.js",
     "agent:llm": "node dist/a2a/llm-agent.js",
-    "mcp:realm": "node dist/realm/mcp-stdio.js",
+    "mcp:dataDomain": "node dist/dataDomain/mcp-stdio.js",
     "mcp-config": "node scripts/mcp-config.mjs",
     "backup": "node dist/backup/cli.js",
     "tui": "node dist/tui/cli.js",

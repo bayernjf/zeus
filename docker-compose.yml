@@ -54,9 +54,9 @@ services:
       # ZEUS_AUDIT_FILE above (the tree is rebuilt from the audit spine);
       # without it no trace is written. Local JSONL, opt-in by path.
       ZEUS_TRACE_EXPORT_FILE: /data/trace-export.jsonl
-      # Personal realm root connected on boot, so the memory producer has a
-      # mounted realm to attribute claims to (W1-4 memory pilot e2e).
-      ZEUS_REALM_ROOTS: /data/realm-personal
+      # Personal dataDomain root connected on boot, so the memory producer has a
+      # mounted dataDomain to attribute claims to (W1-4 memory pilot e2e).
+      ZEUS_DATA_DOMAIN_ROOTS: /data/dataDomain-personal
     ports:
       - "127.0.0.1:18787:8787"
     networks:
