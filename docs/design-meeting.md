@@ -1,6 +1,6 @@
 # 会议（Meeting）设计：主张图上的多轮决策
 
-> 状态：**现行（v0.3，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI）。S2 已落库：`src/meeting/convene.ts`（ProposalSource、`convene`、fan-out 结果映射、orchestrator 源）+ CLI `convene --drafts`。S3 已落库：`src/meeting/challenge.ts`（目标选择、claim 投影、`challenge`、`nextStep`）+ CLI `targets` / `challenge --critics`。meeting 单测 21 条。S4–S5 为待迭代阶段。本地单人自用，不做多租户与公网暴露。
+> 状态：**现行（v0.4，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI）。S2 已落库：`src/meeting/convene.ts`（ProposalSource、`convene`、fan-out 结果映射、orchestrator 源）+ CLI `convene --drafts`。S3 已落库：`src/meeting/challenge.ts`（目标选择、claim 投影、`challenge`、`nextStep`）+ CLI `targets` / `challenge --critics`。meeting 单测 21 条。S4 只读回放已落库（ops-console `/app/meetings`，读 `OPS_MEETING_DIR`）；S5 决策写回已落库（`src/meeting/settle.ts` + CLI `settle`）。meeting 单测 24 条，ops-console 侧 4 条。S4 写入侧待做。本地单人自用，不做多租户与公网暴露。
 
 ## 0. 一句话
 
@@ -120,13 +120,19 @@ open → proposing → challenging ⇄ (下一轮) → converging → decided �
 - 收敛：纯反驳轮（无新 claim）判 `stable`，`nextStep` 返回 `converge`；仍分裂则继续或上交。
 验收：两轮内收敛或明确分裂；每条反驳都有证据 ref。
 
-**S4 对话框 UI**
+**S4 对话框 UI（只读回放已完成 2026-11-15）**
+- 载体（ops-console `src/pages/app/meetings/index.astro` + `src/server/meetings-service.ts`）：列表 + `?id=` 详情，决策 rationale、按轮时间线、每条 claim 的证据与采纳/否决徽标、悬置主张；
+- 只读：决策仍只在 zeus 侧发生，页面不给写入口；
+- 待做：写入侧（发起会议、插入发言、点决策）、导出 Markdown 纪要。
 - 载体：ops-console 新增一页（先只读回放：时间线 + 主张图 + 决策记录）；
 - 再做写入：发起会议、插入你的发言、点决策；
 - 导出 Markdown 会议纪要。
 验收：一场会议可从头回放到决策；导出纪要含被否方案与理由。
 
-**S5 画像与沉淀**
+**S5 画像与沉淀（决策写回已完成 2026-11-15）**
+- `decisionEvents()` 把每条决策转成 `MemoryEvent{kind:'claim', content:{subject: topic, predicate:'meeting-decision', object:{chosen, rejected, rationale, decidedBy, decidedAt}}}`，`settleMeeting()` 追加后 `consolidateDataDomain()` 产出 fact（`refs` 指向 `meeting:<id>` 与 `claim:<id>`），`recallDecisions()` 只回 decision 类 fact；
+- CLI `settle <id> --events <file.jsonl>` 幂等追加（同 eventId 不重复写）；
+- 会议指标已落库：`src/meeting/stats.ts`（轮数 / 发言 / claim / 反驳 / 证据覆盖率 / 采纳率 / 悬置 / token 估算）+ CLI `stats <id>`；采纳率在未决策时返回 null，不把「还没决定」显示成「一条都没采纳」；
 - 决策写回 memory（decision facts），下次同类议题自动带入；
 - 会议指标：轮数、token、反驳数、采纳率、人类改写率。
 验收：第二场同类会议能引用上一场结论。

@@ -1,11 +1,13 @@
 // Minimal CLI for the local meeting flow. It prints JSON so an agent (or the
 // owner in a shell) can drive a meeting without a UI; the web dialog comes later.
 
-import { readFile } from 'node:fs/promises';
+import { appendFile, readFile } from 'node:fs/promises';
 import { MeetingStore } from './store.js';
 import { advanceRound, claimGraph, createMeeting, decide, recordUtterance } from './protocol.js';
 import { convene, type DraftClaim } from './convene.js';
 import { challenge, nextStep, projectClaims, selectTargets } from './challenge.js';
+import { decisionEvents } from './settle.js';
+import { meetingStats } from './stats.js';
 import type { Evidence, EvidenceKind, SpeakerKind, Stance, Utterance } from './types.js';
 
 const DEFAULT_DIR = process.env.ZEUS_MEETING_DIR ?? '.zeus-meetings';
@@ -233,8 +235,41 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'settle') {
+    const eventsPath = one(flags, 'events');
+    if (!eventsPath) throw new Error('settle requires --events <file.jsonl>');
+    const meeting = await store.load(meetingId);
+    const events = decisionEvents(meeting, { dataDomainId: one(flags, 'data-domain') ?? 'personal' });
+    const seen = new Set<string>();
+    try {
+      for (const line of (await readFile(eventsPath, 'utf8')).split('\n')) {
+        if (line.trim().length === 0) continue;
+        try {
+          const parsed = JSON.parse(line) as { eventId?: unknown };
+          if (typeof parsed.eventId === 'string') seen.add(parsed.eventId);
+        } catch {
+          // A malformed line must not block appending the valid ones.
+        }
+      }
+    } catch {
+      // No file yet: the first settle creates it.
+    }
+    const fresh = events.filter(event => !seen.has(event.eventId));
+    if (fresh.length > 0) {
+      await appendFile(eventsPath, fresh.map(event => JSON.stringify(event)).join('\n') + '\n', 'utf8');
+    }
+    print({ id: meeting.id, decisions: events.length, appended: fresh.length });
+    return;
+  }
+
+  if (command === 'stats') {
+    const meeting = await store.load(meetingId);
+    print(meetingStats(meeting));
+    return;
+  }
+
   process.stderr.write(
-    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | targets <id> [--limit] | challenge <id> --critics <file.json> [--target id] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | show <id> [--graph] | list\n',
+    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | targets <id> [--limit] | challenge <id> --critics <file.json> [--target id] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | settle <id> --events <file.jsonl> | stats <id> | show <id> [--graph] | list\n',
   );
   process.exitCode = 1;
 }
