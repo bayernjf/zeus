@@ -1,6 +1,6 @@
 # 会议（Meeting）设计：主张图上的多轮决策
 
-> 状态：**现行（v0.2，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI）。S2 已落库：`src/meeting/convene.ts`（ProposalSource、`convene`、fan-out 结果映射、orchestrator 源）+ CLI `convene --drafts`。meeting 单测 15 条。S3–S5 为待迭代阶段。本地单人自用，不做多租户与公网暴露。
+> 状态：**现行（v0.3，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI）。S2 已落库：`src/meeting/convene.ts`（ProposalSource、`convene`、fan-out 结果映射、orchestrator 源）+ CLI `convene --drafts`。S3 已落库：`src/meeting/challenge.ts`（目标选择、claim 投影、`challenge`、`nextStep`）+ CLI `targets` / `challenge --critics`。meeting 单测 21 条。S4–S5 为待迭代阶段。本地单人自用，不做多租户与公网暴露。
 
 ## 0. 一句话
 
@@ -112,10 +112,12 @@ open → proposing → challenging ⇄ (下一轮) → converging → decided �
 - 一条命令 `convene` 产出 N 条提案；`--drafts` 可直接导入离线草稿（当前无模型凭据时的主路径）。
 验收：离线 fake 场景可测；同一 topic 两次运行 claim 结构稳定；失败分支不污染会议。
 
-**S3 自动交叉质疑**
+**S3（已完成 2026-11-15）自动交叉质疑**
 - Round 2 给每个 challenge 分配具名目标（默认：票数最高或分歧最大的 claim）；
 - Critic 只拿 claim 摘要 + 证据要求；
-- 收敛规则：本轮无新 claim 且无新反驳 → `converging`；仍分裂 → `needs-operator`。
+- 目标选择：未被反驳过的主张优先（`rebutCount` 升序、claim id 定序），已裁决主张排除；
+- 投影：critic 只拿 `claim id / text / evidence(kind,ref)` 与 `rebutCount`，不带提案者 note；
+- 收敛：纯反驳轮（无新 claim）判 `stable`，`nextStep` 返回 `converge`；仍分裂则继续或上交。
 验收：两轮内收敛或明确分裂；每条反驳都有证据 ref。
 
 **S4 对话框 UI**
