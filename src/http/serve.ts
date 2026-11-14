@@ -56,6 +56,7 @@ import {
   type OrgTaskExecutor,
 } from '../core/index.js';
 import { MemoryPolicyStore } from '../core/grading/policy-loader.js';
+import { MeetingStore } from '../meeting/store.js';
 import { DEFAULT_POLICY_V1 } from '../core/grading/default-policy.js';
 import {
   openSqlite,
@@ -531,6 +532,9 @@ async function main(): Promise<void> {
     ...(runtime.mentorshipLedger ? { mentorshipLedger: runtime.mentorshipLedger } : {}),
     ...(runtime.orgRegistry ? { orgRegistry: runtime.orgRegistry } : {}),
     ...(runtime.memoryStore ? { memoryStore: runtime.memoryStore } : {}),
+    // Meeting API v1 (S4 write path). Local store, same directory the CLI uses;
+    // the console decides through this face instead of writing JSON itself.
+    meetingsStore: new MeetingStore(process.env.ZEUS_MEETING_DIR?.trim() || './data/meetings'),
     // MemoryPort v1 §7: cross-agent consumer face; unset env = face not mounted.
     // MemoryPort v1 §7: namespace-bound consumer tokens ("data-domain:token,..."
     // comma-separated); unset env = face not mounted at all (fail-closed).

@@ -47,6 +47,15 @@ import {
   putPolicyRoute,
   replayRoute,
 } from './decision-v1.js';
+import {
+  advanceRoute as advanceMeetingRoute,
+  decideRoute as decideMeetingRoute,
+  getMeetingRoute,
+  listMeetingsRoute,
+  openMeetingRoute,
+  sayRoute as sayMeetingRoute,
+} from './meetings-v1.js';
+import type { MeetingStore } from '../meeting/store.js';
 import type { DecisionWebhookStore } from '../core/decision-service/webhook.js';
 import {
   applyThresholdsRoute,
@@ -216,6 +225,8 @@ export type HttpDeps = {
    *  approvals, SLA timeouts and idempotency. Absent, the /api/v1 face is not
    *  mounted. */
   decisionService?: DecisionService;
+  /** Local meeting store; when absent the Meeting API v1 is not mounted. */
+  meetingsStore?: MeetingStore;
   /** Decision webhook subscription registry (push lifecycle events). Mounts
    *  GET/POST /api/v1/decision-webhooks only when provided alongside
    *  decisionService. */
@@ -3257,6 +3268,25 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         app.delete('/api/v1/decision-webhooks/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
           deleteWebhookRoute(webhookStore, request, reply));
       }
+    }
+
+    // Meeting API v1 (S4 write path): the console opens a meeting, speaks into
+    // it, advances rounds, and records the operator's decision. Rules stay in
+    // src/meeting/protocol.ts; mounted only when a store was assembled.
+    if (deps.meetingsStore) {
+      const meetings = deps.meetingsStore;
+      app.get('/api/v1/meetings', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listMeetingsRoute(meetings, request, reply));
+      app.post('/api/v1/meetings', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        openMeetingRoute(meetings, request, reply));
+      app.get('/api/v1/meetings/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        getMeetingRoute(meetings, request, reply));
+      app.post('/api/v1/meetings/:id/utterances', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        sayMeetingRoute(meetings, request, reply));
+      app.post('/api/v1/meetings/:id/advance', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        advanceMeetingRoute(meetings, request, reply));
+      app.post('/api/v1/meetings/:id/decision', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        decideMeetingRoute(meetings, request, reply));
     }
 
     // Org API v1 (Tier0 M2, design §4.4): organizations, departments,
