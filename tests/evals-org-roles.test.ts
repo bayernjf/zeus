@@ -57,7 +57,7 @@ describe('org-roles scenario suite (D9-1)', () => {
     expect(report.failed).toBe(0);
     expect(report.blocked).toBe(0);
     // The suite must actually exercise all four governance families it claims.
-    for (const family of ['decision', 'escalation', 'selection', 'evidence']) {
+    for (const family of ['decision', 'escalation', 'selection', 'evidence', 'artifacts']) {
       expect(report.byFamily[family], family).toBeDefined();
     }
   });

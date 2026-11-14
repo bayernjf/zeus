@@ -1,9 +1,9 @@
 {
-  "pinnedAt": "2026-11-14T05:23:26.249Z",
+  "pinnedAt": "2026-11-14T05:27:36.831Z",
   "suite": "org-roles",
   "report": {
     "caseCount": 6,
-    "passed": 14,
+    "passed": 18,
     "failed": 0,
     "blocked": 0,
     "warned": 0,
@@ -26,6 +26,11 @@
       "evidence": {
         "total": 2,
         "passed": 2,
+        "blocked": 0
+      },
+      "artifacts": {
+        "total": 4,
+        "passed": 4,
         "blocked": 0
       },
       "guardrails": {

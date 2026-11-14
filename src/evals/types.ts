@@ -25,6 +25,14 @@ export type EvalExpectation = {
    *  `forbidBareAssertions` is set, every position must carry a rationale
    *  (verify-before-asserting machine check). */
   evidence?: { mustCite?: string[]; forbidBareAssertions?: boolean };
+  /** Artifact contract (D9-1): a settled branch must contribute exactly one
+   *  stance artifact (position) and an unsettled branch must contribute none —
+   *  a settlement without an artifact is a bare assertion at branch level. */
+  artifacts?: {
+    everySettledBranchPositioned?: boolean;
+    noPositionForUnsettled?: boolean;
+    uniquePositions?: boolean;
+  };
   /** Guardrail handling expected for the case (S8): the audit row action must
    *  match. `signals` additionally requires the matched audit row's detail to
    *  carry every listed signal — without it, an annotate assertion cannot tell

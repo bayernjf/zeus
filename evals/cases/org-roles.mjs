@@ -35,6 +35,7 @@ export const evalCases = [
     expect: [
       { decision: o => o.status === 'completed' && o.decision.conclusion === 'approve', severity: 'block' },
       { evidence: { forbidBareAssertions: true }, severity: 'block' },
+      { artifacts: { everySettledBranchPositioned: true, uniquePositions: true }, severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
     ],
   },
@@ -53,6 +54,7 @@ export const evalCases = [
     request: { dataDomain: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'listing-task', predicate: 'd3-contested' } },
     expect: [
       { decision: o => o.status === 'needs-operator' && o.conflicts.length >= 1, severity: 'block' },
+      { artifacts: { everySettledBranchPositioned: true, uniquePositions: true }, severity: 'block' },
       { escalation: { expected: true, level: 1 }, severity: 'block' },
     ],
   },
@@ -89,6 +91,7 @@ export const evalCases = [
       { decision: o => o.status === 'completed' && o.decision.conclusion === 'approve', severity: 'block' },
       { selection: { mustInclude: ['intake', 'policy'], mustExclude: ['refund'] }, severity: 'block' },
       { evidence: { forbidBareAssertions: true }, severity: 'block' },
+      { artifacts: { everySettledBranchPositioned: true, uniquePositions: true }, severity: 'block' },
     ],
   },
 
@@ -104,6 +107,7 @@ export const evalCases = [
     request: { dataDomain: 'personal', executors: ['intake'], aggregation: { kind: 'unanimous' }, params: { subject: 'after-sales-task', predicate: 'd2-fails' } },
     expect: [
       { decision: o => o.status === 'failed' && o.branches.some(b => b.state === 'failed'), severity: 'block' },
+      { artifacts: { noPositionForUnsettled: true }, severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
     ],
   },
