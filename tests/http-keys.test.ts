@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createHash, createPublicKey, generateKeyPairSync } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner, Ed25519Verifier, verifySignedSnapshot } from '../src/registry/signing.js';
 import type { RosterSigner } from '../src/index.js';
 
@@ -19,7 +19,7 @@ async function mount(signer: RosterSigner, options: string | MountOptions = {}):
   // A bare string is still accepted because most cases here only care about the token.
   const { internalToken, rosterKey }: MountOptions = typeof options === 'string' ? { internalToken: options } : options;
   app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer,
     ...(internalToken ? { internalToken } : {}),
     ...(rosterKey ? { rosterKey } : {}),
@@ -50,11 +50,11 @@ async function keys(instance: FastifyInstance): Promise<{ status: number; body: 
   return { status: res.statusCode, body: res.json() as unknown as KeyDocument };
 }
 
-describe('root public key publication (design-fealty-signing §5.1)', () => {
+describe('root public key publication (design-handshake-signing §5.1)', () => {
   it('answers on the public face with a JWKS-shaped descriptor', async () => {
-    const { status, body } = await keys(await mount(new Ed25519MemorySigner('zeus-rsk-2026-09'), 'driver-secret'));
+    const { status, body } = await keys(await mount(new Ed25519MemorySigner('zeus-rsk-2026-09'), 'operator-secret'));
     // No authorization header was sent: the key that verifies a public roster
-    // cannot itself sit behind the driver token, or a third party could not use it.
+    // cannot itself sit behind the operator token, or a third party could not use it.
     expect(status).toBe(200);
     expect(body.issuer).toBe('zeus');
     expect(body.keys).toHaveLength(1);

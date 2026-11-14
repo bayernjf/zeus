@@ -71,7 +71,7 @@ export function createDeck(options: RunnerOptions): DeckController {
       return;
     }
     if (cmd.kind === 'resume') {
-      // The kernel only resumes a branch that stopped for parameters; approving
+      // The runtime only resumes a branch that stopped for parameters; approving
       // some other kind through this path would record a decision and silently
       // leave the branch parked, so the deck refuses before any request goes out.
       if (esc.kind !== 'task-input') {
@@ -81,7 +81,7 @@ export function createDeck(options: RunnerOptions): DeckController {
       const action = t('escalation.resume');
       if (!(await confirm(t('escalation.resumeConfirm', { action, id: esc.id, params: JSON.stringify(cmd.params) })))) return;
       await client.resume(esc.id, cmd.params);
-      io.print(`${t('escalation.resumed', { id: esc.id, vassal: esc.vassal })}\n`);
+      io.print(`${t('escalation.resumed', { id: esc.id, executor: esc.executor })}\n`);
       return;
     }
     if (cmd.kind === 'approve' && esc.kind === 'delegation-limit') {
@@ -153,7 +153,7 @@ export function createDeck(options: RunnerOptions): DeckController {
         io.print(`${t('roster.reinstateFailed', { message: `#${parsed.index}` })}\n`);
         return true;
       }
-      // Only a revoked entry has a way back; the kernel answers 404 for an
+      // Only a revoked entry has a way back; the runtime answers 404 for an
       // active one, and the deck says which state it looked at instead.
       if (entry.status !== 'revoked') {
         io.print(`${t('roster.reinstateNeedsRevoked', { name: entry.name, status: statusLabel(t, entry.status) })}\n`);

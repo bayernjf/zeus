@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // @ts-check
 /**
- * Acceptance #6 guard script (design-vassal-protocol.md §7, item 6):
+ * Acceptance #6 guard script (design-executor-protocol.md §7, item 6):
  * "A standards-only A2A client that knows nothing about x-zeus-* must still be
  *  able to call pr-helper successfully — the guard test for 'superset, not walled
  *  garden'. If this fails, the protocol design fails."
  *
  * This script deliberately:
  *   - reads only standard Agent Card fields (name / skills / url); it never reads
- *     card['x-zeus-fealty'] or any other x-zeus-* extension;
+ *     card['x-zeus-handshake'] or any other x-zeus-* extension;
  *   - sends a standard `tasks/send` JSON-RPC call with a plain text part (the
  *     skill id is the first whitespace token, the standard fallback pr-helper's
  *     rpc.parseSkillAndParams implements);
@@ -63,7 +63,7 @@ async function main() {
   const card = await cardRes.json();
   if (typeof card.name !== 'string' || !card.name) fail('agent card has no string "name"');
   if (!Array.isArray(card.skills) || card.skills.length === 0) fail('agent card has no skills[]');
-  // NOTE: card['x-zeus-fealty'] is intentionally never read — a standards-only
+  // NOTE: card['x-zeus-handshake'] is intentionally never read — a standards-only
   // client has no knowledge of Zeus extensions.
   pass(`agent card discovered: "${card.name}" with ${card.skills.length} skill(s)`);
 

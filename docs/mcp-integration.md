@@ -1,6 +1,6 @@
 # Zeus MCP 集成说明（v0.3）
 
-> 状态：**现行（v0.3，2026-10-31）**。**v0.3 相对 v0.2 的改动**：新增 §1.10——内核只读工具 MCP 面 `POST /api/mcp`（G6，design-observability §5）：`memory.recall`（memory service token 绑定 namespace，跨 realm 拒绝沿用 MemoryBoundaryError）与 `traces.query`（仅 driver token，透传 `GET /api/v1/traces` 同一查询投影）；该面无写工具，remember/forget 仍走 HTTP 消费面（契约 v1 §7）。原有正文与锚点口径未变。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:61-61 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
+> 状态：**现行（v0.3，2026-10-31）**。**v0.3 相对 v0.2 的改动**：新增 §1.10——内核只读工具 MCP 面 `POST /api/mcp`（G6，design-observability §5）：`memory.recall`（memory service token 绑定 namespace，跨 realm 拒绝沿用 MemoryBoundaryError）与 `traces.query`（仅 operator token，透传 `GET /api/v1/traces` 同一查询投影）；该面无写工具，remember/forget 仍走 HTTP 消费面（契约 v1 §7）。原有正文与锚点口径未变。面向"要把别的系统接进 Zeus，或把 Zeus 接进别的系统"的读者。设计理由（为什么 Realm 只有 MCP 一条对外通道）见 [design-realm.md](design-realm.md) §6.1；实施进度见 [handoff.md](../handoff.md)。本文只写契约与用法。**v0.2 相对 v0.1（2026-09-28）的改动**：§2 补回 stdio transport 说明、2026-10-01 两次真机实连记录与 work-learn 的 21 工具最小权限分组样板（这三块在 v0.1 之后的一次整文件写入中被挤出正文，登记为审计 **B-39**，本轮按配方合并并升版）；§0 的客户端传输一行随之改为 HTTP / stdio 二选一（`src/mcp/connectors.ts:61-61 #command`）；篇首的取证声明按实际的两批捕获如实写明；**全文 37 处 `file:line` 锚点逐条对照代码复钉（其中 19 处原本指向无关实现、另约 7 处偏移数行），并统一改写成带校验词的可机检形状 `path:起-止 #校验词`，由 `tests/doc-consistency.test.ts` 断言**（登记与销项见审计 B-41）。
 >
 > **本文不含未取证的说法。** 标 **实测** 的条目来自**两批**真进程捕获：**§1 服务端面**出自 2026-09-28（`dist/realm/mcp-stdio.js`，HEAD `44b100b`，Node 22.23.1 与 20.20.2 各跑一遍，归一化 `realmId` / 时间戳 / `contentDigest` 后两份输出逐字节相同）；**§2 客户端面**出自 2026-10-01（真实 stdio 上游 `dist/realm/mcp-stdio.js` 与第三方 work-learn stdio server 各完成一次实连，见该节两条记录）。标 **代码级** 的只读了实现，没有跑；标 **未验证** 的明确待验。复跑方法见 §4。
 >
@@ -14,7 +14,7 @@ MCP 在 Zeus 里同时出现在两个方向，且**不是**第三个（跨 Agent
 |---|---|---|---|
 | **Zeus 作 MCP 服务端** | 把用户自己的目录（数据域 Realm）以资源 + 三个工具（检索/读取/**凭证受控的写入**）暴露给宿主 | **stdio**，换行分隔 JSON-RPC 2.0 | §1 |
 | **Zeus 作 MCP 客户端** | 连接器（connector）：接入外部系统已实现的 MCP 服务，发现能力并按声明裁剪 | streamable **HTTP**（`POST`，接受 JSON 或 SSE 帧）**或本地 stdio**（拉起子进程，换行分隔 JSON-RPC）；二选一，见 §2 | §2 |
-| 外部执行 Agent 接 Zeus 干活 | 任务派发与结果回传 | **A2A**（不是 MCP） | [design-vassal-protocol.md](design-vassal-protocol.md) |
+| 外部执行 Agent 接 Zeus 干活 | 任务派发与结果回传 | **A2A**（不是 MCP） | [design-executor-protocol.md](design-executor-protocol.md) |
 
 术语提醒：本文的 **Realm / 数据域** 指"一个用户目录即一个数据边界"，与 Kerberos / LDAP 的 security realm 无关（见 [terminology.md](terminology.md) 的 C 类同名异义）。对外沟通建议直说"Zeus 的数据域 MCP 服务"。
 
@@ -37,7 +37,7 @@ ZEUS_REALM_ROOTS=/path/to/notes,/path/to/code \
 #   header x-zeus-realm-actor：宿主声明的调用方身份，仅可收窄到宿主白名单子集，缺省 anonymous
 ```
 
-规则只有一条：**授权集合只能在启动时定死，协议本身没有 connect。** stdio 入口 = 宿主启动进程时给的根目录，运行时无法增删（`src/realm/mcp-stdio.ts:11-11 #connect`、`src/realm/mcp-stdio.ts:123-123 #collectRoots`）；HTTP 入口 = 内核启动时的 Realm 连接列表（`src/http/serve.ts` 从 `kernel.realmStore.connections()` 装配），同样运行时不可增删。
+规则只有一条：**授权集合只能在启动时定死，协议本身没有 connect。** stdio 入口 = 宿主启动进程时给的根目录，运行时无法增删（`src/realm/mcp-stdio.ts:11-11 #connect`、`src/realm/mcp-stdio.ts:123-123 #collectRoots`）；HTTP 入口 = 内核启动时的 Realm 连接列表（`src/http/serve.ts` 从 `runtime.realmStore.connections()` 装配），同样运行时不可增删。
 
 两条入口的关系（实测）：
 
@@ -142,7 +142,7 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 **`realm.write` 的边界（2026-10-14 落地，E3.4 剩余项①）**：它没有比读更强的权限，只是把内核既有的写入契约暴露到这条通道上——
 
-- **企业域**必须带 `grant`：`DriverWriteGrant`（由操作者经 `POST /api/realm/write-grants` 签发，Ed25519 签名、绑定 `realmId`、默认 5 分钟过期、单 nonce）。缺凭证、签名不符、陌生 keyId、过期、错域、重放一律拒绝并**点名原因**（`write refused: grant-missing` 等，见 §1.8）。
+- **企业域**必须带 `grant`：`OperatorWriteGrant`（由操作者经 `POST /api/realm/write-grants` 签发，Ed25519 签名、绑定 `realmId`、默认 5 分钟过期、单 nonce）。缺凭证、签名不符、陌生 keyId、过期、错域、重放一律拒绝并**点名原因**（`write refused: grant-missing` 等，见 §1.8）。
 - **个人域**不需要凭证——用户在写自己的目录，与内核其他写入路径同一口径。
 - 写入**立刻可被 `realm.search` / `realm.read` 读到**（落盘实时，与 §1.7 的检索索引口径不同：检索索引在连接时快照）。
 - 凭证的验签由存储层完成，MCP 面原样透传——同一套判定只有一份实现，换一条通道不会得到不同的答案。
@@ -214,18 +214,18 @@ initialize {protocolVersion:"1999-01-01"}  ->  "2025-06-18"
 
 ### 1.10 内核只读工具面：`POST /api/mcp`（v0.3 新增，G6）
 
-数据域之外，内核把两份只读事实也开成了 MCP 工具（memory service token 或 driver bearer token 双身份；`GET /api/mcp` 公开元信息，零状态）：
+数据域之外，内核把两份只读事实也开成了 MCP 工具（memory service token 或 operator bearer token 双身份；`GET /api/mcp` 公开元信息，零状态）：
 
 | 工具 | 身份 | 语义 |
 |---|---|---|
-| `memory.recall` | 任意 memory service token（`ZEUS_MEMORY_SERVICE_TOKENS` 绑定一个 namespace）或 driver token | 与 `POST /api/v1/memory/recall` 同一命中形状（factId/kind/subject/predicate/object/confidence/score/provenance）；token 绑定的 namespace 覆盖任何入参声明，跨 realm 声明以 `MemoryBoundaryError` 拒绝（JSON-RPC -32004）；driver 必须显式给 namespace |
-| `traces.query` | 仅 driver token | 透传 `GET /api/v1/traces`（TracePort §5）的同一 `queryTraceTrees` 投影：agent/时间窗/成本区间/trace_id/limit 过滤 + 汇总，D-4 脱敏与 2048 字节截断随投影生效；memory service token 调用直接拒绝 |
+| `memory.recall` | 任意 memory service token（`ZEUS_MEMORY_SERVICE_TOKENS` 绑定一个 namespace）或 operator token | 与 `POST /api/v1/memory/recall` 同一命中形状（factId/kind/subject/predicate/object/confidence/score/provenance）；token 绑定的 namespace 覆盖任何入参声明，跨 realm 声明以 `MemoryBoundaryError` 拒绝（JSON-RPC -32004）；operator 必须显式给 namespace |
+| `traces.query` | 仅 operator token | 透传 `GET /api/v1/traces`（TracePort §5）的同一 `queryTraceTrees` 投影：agent/时间窗/成本区间/trace_id/limit 过滤 + 汇总，D-4 脱敏与 2048 字节截断随投影生效；memory service token 调用直接拒绝 |
 
 边界（与 §1.9 同一口径）：
 
 - **只读**。工具描述明示 read-only；`tools/list` 里不存在 `memory.remember`/`memory.forget`——写面留在 HTTP 消费面，因为"擦除先落盘再应答（M-12）+ 全调用审计"只在那一处背书，第二条写路径要重新背书一次而不是白拿。
 - 未挂载 backing store（无 memory store / 无 trace exporter）时对应工具按名失败（-32005），绝不回空结果冒充"不存在"。
-- 鉴权失败 401（driver token 或任一 memory service token 之外的身份不产生 actor）；未配 `ZEUS_INTERNAL_TOKEN` 整组不挂载。
+- 鉴权失败 401（operator token 或任一 memory service token 之外的身份不产生 actor）；未配 `ZEUS_INTERNAL_TOKEN` 整组不挂载。
 
 ---
 

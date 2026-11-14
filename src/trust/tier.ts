@@ -1,12 +1,12 @@
 // design-external-trust (PRD E9.4, deferred #5): trust tiers and per-tier
 // sandbox limits for caller cards on the inbound A2A face. The protocol
 // statement that unregistered callers get the lowest trust
-// (design-vassal-protocol §5) becomes an enforceable, audited tier decision.
+// (design-executor-protocol §5) becomes an enforceable, audited tier decision.
 
 import type { AgentCard } from '../a2a/types.js';
 import { attestationMatchesCard, type Attestation } from '../registry/signing.js';
 
-/** Verification strength of a caller card whose fealty shape already passed
+/** Verification strength of a caller card whose handshake shape already passed
  *  the registration gate. `tier-0` is decided by the gate itself (fail-closed)
  *  and never reaches this module. */
 export type TrustTier = 'tier-0' | 'tier-1' | 'tier-2' | 'tier-3';
@@ -23,7 +23,7 @@ export type TierConstraints = {
   /** tier-1 pins realm-content entry into the outbound load to the strictest
    *  policy (none); null = leave the caller's request untouched. */
   dataPolicy: 'none' | null;
-  /** Scale on the global resource defaults; 1/3 for tier-1. The kernel default
+  /** Scale on the global resource defaults; 1/3 for tier-1. The runtime default
    *  is no branch timeout, so the scale only bites when a limit is actually set
    *  — numbers are tuned with real load (deferred #9), never fabricated here. */
   resourceScale: number;
@@ -64,8 +64,8 @@ export type RosterAnchor = {
   attestationFor(name: string): Attestation | undefined;
 };
 
-/** Decides the trust tier of a caller card whose fealty shape already passed
- *  the registration gate (version gate + fealtyOathProblem). Survivors map to
+/** Decides the trust tier of a caller card whose handshake shape already passed
+ *  the registration gate (version gate + handshakeOathProblem). Survivors map to
  *  tiers by verification strength:
  *  - tier-3: the signed roster anchors the exact card presented — the name is
  *    on the roster AND the card content-matches its attestation (V3, reachable

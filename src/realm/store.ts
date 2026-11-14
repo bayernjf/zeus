@@ -2,10 +2,10 @@ import { lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile 
 import { basename, dirname, extname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { digestManifest, sha256Hex } from './digest.js';
-import { verifyDriverWriteGrant, type DriverGrantLedger } from './grant.js';
+import { verifyOperatorWriteGrant, type OperatorGrantLedger } from './grant.js';
 import { formatTenant, normalizeTenant, tenantKey } from './tenant.js';
 import type { RosterVerifier } from '../registry/signing.js';
-import type { DriverWriteGrant, RealmConnection, RealmEntrySnapshot, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, TenantScope, RealmWriteItem, RealmWriteResult, SearchQuery } from './types.js';
+import type { OperatorWriteGrant, RealmConnection, RealmEntrySnapshot, RealmHit, RealmItem, RealmManifest, RealmStore, RealmType, TenantScope, RealmWriteItem, RealmWriteResult, SearchQuery } from './types.js';
 import {
   InvalidItemIdError,
   RealmError,
@@ -23,7 +23,7 @@ export type RealmWriteAuditEntry = {
   itemId: string;
   bytes: number;
   at: string;
-  /** Set when an enterprise write was authorized by a driver grant. */
+  /** Set when an enterprise write was authorized by a operator grant. */
   grantedBy?: string;
 };
 
@@ -37,26 +37,26 @@ export type FsRealmStoreOptions = {
    */
   now?: () => Date;
   /**
-   * Driver authority for enterprise writes (deferred #14). With a verifier, a
-   * grant must carry a signature by an accepted driver key and its nonce is
+   * Operator authority for enterprise writes (deferred #14). With a verifier, a
+   * grant must carry a signature by an accepted operator key and its nonce is
    * consumed; without one, only shape/binding/expiry are checked - which is why
-   * the kernel warns when it boots a writable enterprise realm with no verifier.
+   * the runtime warns when it boots a writable enterprise realm with no verifier.
    */
-  driverGrants?: DriverGrantAuthority;
+  operatorGrants?: OperatorGrantAuthority;
   /**
    * Upper bounds on the connect-time snapshot. The scan holds every managed
    * item's full text in memory for the lifetime of the mount, so an unbounded
-   * walk lets one large directory tree decide the kernel's memory footprint.
+   * walk lets one large directory tree decide the runtime's memory footprint.
    * Truncation is recorded in `manifest.skipped` rather than passed off as a
    * complete snapshot.
    */
   scanLimits?: { maxItems?: number; maxTotalBytes?: number };
 };
 
-export type DriverGrantAuthority = {
+export type OperatorGrantAuthority = {
   verifier?: RosterVerifier;
   acceptedKeyIds?: string[];
-  ledger?: DriverGrantLedger;
+  ledger?: OperatorGrantLedger;
 };
 
 const TEXT_EXTENSIONS = new Set([
@@ -89,7 +89,7 @@ type StoredRealm = {
  * enterprise realms. Search runs over the connect-time snapshot (index
  * semantics, consistent with contentDigest); read() reads disk live (the
  * recovery protocol must return current bytes). Writes are E3.5: personal by
- * default, enterprise only behind a driver grant. No transport — the MCP face
+ * default, enterprise only behind a operator grant. No transport — the MCP face
  * wraps this (design-realm §6.1).
  */
 export class FsRealmStore implements RealmStore {
@@ -129,7 +129,7 @@ export class FsRealmStore implements RealmStore {
     const previous = existingId ? this.realms.get(existingId) : undefined;
     if (previous && previous.type !== type) {
       // The type is a boundary: a personal realm is writable by default, while
-      // the enterprise domain is gated by a driver grant. Letting a reconnect
+      // the enterprise domain is gated by a operator grant. Letting a reconnect
       // switch the label would silently drop the gate (realm §8.1).
       throw new RealmError(
         `reconnecting ${absRoot} would change its realm type (${previous.type} -> ${type}); disconnect is not offered in this build`,
@@ -156,7 +156,7 @@ export class FsRealmStore implements RealmStore {
     };
 
     // readOnly only tightens: a realm mounted read-only stays read-only across
-    // every reconnect. Otherwise a later caller that omits the flag (the vault
+    // every reconnect. Otherwise a later caller that omits the flag (the backup
     // live-source path, or a boot restore) would silently upgrade a snapshot's
     // read-only mount to writable.
     const readOnly = (previous?.readOnly ?? false) || (opts.readOnly ?? false);
@@ -271,13 +271,13 @@ export class FsRealmStore implements RealmStore {
 
   /**
    * E3.5 write (design-realm.md §2/§3). Personal realms allow writes by
-   * default; readOnly realms refuse; enterprise realms require a valid driver
+   * default; readOnly realms refuse; enterprise realms require a valid operator
    * grant. Payload is text or JSON-serializable, lands at a whitelisted
    * text-extension path inside the root, is written atomically (tmp+rename),
    * and the connect snapshot + contentDigest are refreshed so search and the
-   * Vault map see the new content immediately.
+   * Backup map see the new content immediately.
    */
-  async write(realmId: string, item: RealmWriteItem, grant?: DriverWriteGrant): Promise<RealmWriteResult> {
+  async write(realmId: string, item: RealmWriteItem, grant?: OperatorWriteGrant): Promise<RealmWriteResult> {
     const stored = this.requireRealm(realmId);
     if (stored.readOnly) {
       throw new UnauthorizedRealmWriteError(
@@ -320,15 +320,15 @@ export class FsRealmStore implements RealmStore {
 
     // Everything above this line is shape/size/path validation, and it runs
     // BEFORE the enterprise grant is consumed: a write that cannot be honored
-    // must not burn the single-use driver authorization it arrived with.
+    // must not burn the single-use operator authorization it arrived with.
     if (stored.type === 'enterprise') {
-      const verification = await verifyDriverWriteGrant(grant, realmId, {
+      const verification = await verifyOperatorWriteGrant(grant, realmId, {
         ...(this.options.now ? { now: this.options.now } : {}),
-        ...(this.options.driverGrants ?? {}),
+        ...(this.options.operatorGrants ?? {}),
       });
       if (!verification.ok) {
         throw new UnauthorizedRealmWriteError(
-          `enterprise write requires a valid driver grant (${verification.reason}): ${realmId}`,
+          `enterprise write requires a valid operator grant (${verification.reason}): ${realmId}`,
           `grant-${verification.reason}`,
         );
       }

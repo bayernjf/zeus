@@ -23,11 +23,11 @@
 - **决策与编排**：单意图 fan-out、DAG、多方案聚合/冲突/LLM judge、回放、可观测（E1，全 ✅）。
 - **成长**：Skill 声明/注册/安装/加固/传授、自然语言意图识别（本地规则默认零出域、plan-only fail-closed）（E2，全 ✅）。
 - **数据主权**：「给一个目录即插即用」、search/read、签名一次性写授权、备份恢复、个人/企业双域（E3，大部分 ✅；E3.8 检索升级 ⬜）。
-- **协作**：A2A vassal 协议、参考执行体、已对线上 pr-helper 真机联调 PASS（E4，✅；E4.9 生产 RSK 托管属仓库外动作）。
+- **协作**：A2A executor 协议、参考执行体、已对线上 pr-helper 真机联调 PASS（E4，✅；E4.9 生产 RSK 托管属仓库外动作）。
 - **门面/名册**：公开 + 内部双投影、签名验签、bayjf 公开名册页（E5，✅）。
 - **常驻委托**：watch 触发器 + 有界委托契约（DelegationContract），「条件成立替我办一次、越限回人」六步全完成（[design-self-host-loop.md](design-self-host-loop.md)）。
 - **个人情感层**：加密备份清单、恢复协议、日记、记忆整理与遗忘权（E8，✅；传承 E8.4 为 P3 ⬜）。
-- **入站面**：`GET /.well-known/agent-card.json` + 入站 `tasks/send`（落 H2 意图面，bearer/fealty 验签）、`POST /mcp`（Realm HTTP MCP）、`src/realm/mcp-stdio.ts`（个人 Realm 的 stdio MCP，只读）。
+- **入站面**：`GET /.well-known/agent-card.json` + 入站 `tasks/send`（落 H2 意图面，bearer/handshake 验签）、`POST /mcp`（Realm HTTP MCP）、`src/realm/mcp-stdio.ts`（个人 Realm 的 stdio MCP，只读）。
 
 **关键缺口（zeus 文档里自己点名的边界）**：[design-self-host-loop.md](design-self-host-loop.md) §2 明确「**不做常驻人格、对话入口、通知渠道（那是宿主层，不是内核）**」；PRD §2.2 也把产品边界画在内核。换言之——**大脑齐了，身体和「别人怎么叫它」的门面没做**。这正是 Personal Agent 该补的位置，也解释了为什么不应另起炉灶。
 
@@ -63,7 +63,7 @@
                     │  决策编排 · 记忆 · 数据主权 · 备份恢复 · 监督     │
                     │  watch 常驻委托 · 签名授权 · 审计回放            │
                     └───────┬───────────────┬───────────────┬───────┘
-                            │ MCP（工具）    │ A2A（vassal）  │ MCP（本机）
+                            │ MCP（工具）    │ A2A（executor）  │ MCP（本机）
               ┌─────────────▼────┐  ┌───────▼────────┐  ┌────▼──────────┐
               │ atlas / commerce │  │ loom（远程下属）│  │ agent-world / │
               │ 等（人类/平台面） │  │                │  │ job-agent /   │
@@ -76,9 +76,9 @@
 1. **门面（Face）**：把内核能力用标准协议暴露给「用户已有的助手」——本机 stdio MCP（零配置、离线）、远程 Streamable HTTP MCP（部署后跨网）、入站 A2A（被别的 agent 编排）。
 2. **对话入口（Chat shell）**：可选的自然人话面（P1 起做本地 CLI chat；不做新模型，调用户配置的决策后端）。
 3. **常驻与通知（Daemon + Notify）**：把内核已有的 `watch` 用一个宿主进程跑起来（内核不持定时器，由宿主驱动 tick）；触发结果/升级经用户选择的渠道（系统通知、邮件、IM）送达。内核只产出结论，通知是壳。
-4. **多设备/恢复（Sync + Recover）**：基于已有的 Vault 备份恢复协议，让数据目录在设备间可同步、可恢复（个人域不依赖任何云端账号；远程只是可选的传输）。
+4. **多设备/恢复（Sync + Recover）**：基于已有的 Backup 备份恢复协议，让数据目录在设备间可同步、可恢复（个人域不依赖任何云端账号；远程只是可选的传输）。
 
-> 形状对照：Moryn 做的「user-owned、auditable context store + handoff、multi-device」在 zeus 里对应 Realm + Vault + 记忆审计；OpenJarvis 的本地 MCP+A2A 对应 zeus 已有的 stdio/HTTP 面。zeus 比它们多的是**确定性闸门与可回放的多 agent 决策**，少的只是上面这层壳。
+> 形状对照：Moryn 做的「user-owned、auditable context store + handoff、multi-device」在 zeus 里对应 Realm + Backup + 记忆审计；OpenJarvis 的本地 MCP+A2A 对应 zeus 已有的 stdio/HTTP 面。zeus 比它们多的是**确定性闸门与可回放的多 agent 决策**，少的只是上面这层壳。
 
 ## 4. 与 Tier0 八个产品的接入拓扑（唯一编排者：zeus）
 
@@ -90,8 +90,8 @@
 | **agent-world** | stdio（默认）+ Streamable HTTP MCP（OAuth 2.1，默认绑 127.0.0.1:3100）；可消费外部 MCP | 世界/沙箱**工具**，由 zeus 或个人助手经 MCP 调用 | 已就绪，写入手册即可 |
 | **job-agent** | stdio MCP（仅本机，v0 明确不做远程 HTTP/SSE；MCP_API_KEY 门控） | 求职**工具**，本机 stdio 接 zeus/个人助手 | 补落地页发现层（本轮）；远程是 v0 非目标，不擅改 |
 | **agent-dev** | stdio MCP（CLI 子命令，桥本机 daemon，Bearer） | 开发**工具**，本机 stdio 接入 | 已就绪，写入手册 |
-| **loom** | A2A（card/rpc，tasks 鉴权用 zeus 专用 key）+ MCP（默认关，仅 plan 只读） | zeus 的**远程下属（vassal）**，由 zeus 编排，不直接对个人助手开放 | 保持；开 MCP/公网需产品侧决策 + 部署 |
-| **atlas** | **A2A 执行 Agent 面（W2 已接入 zeus，vassal，域 `ops-orchestration`，ADR T32，router 已挂 `api/main.py:522`）+ MCP 只读 stdio 面（`python -m atlas.mcp`，7 个只读工具，ADR T33）+ 平台 REST**；内部另有 Harness/Graph/Loop 编排内核 | **运营域执行 Agent（嵌套编排者）**：zeus 委派运营类任务，atlas 在自己域内自治 | 已接入，无需「加面」；重点是厘清嵌套边界（见 `bayjf/docs/tier0/zeus-vs-atlas-关系厘清.md`） |
+| **loom** | A2A（card/rpc，tasks 鉴权用 zeus 专用 key）+ MCP（默认关，仅 plan 只读） | zeus 的**远程下属（executor）**，由 zeus 编排，不直接对个人助手开放 | 保持；开 MCP/公网需产品侧决策 + 部署 |
+| **atlas** | **A2A 执行 Agent 面（W2 已接入 zeus，executor，域 `ops-orchestration`，ADR T32，router 已挂 `api/main.py:522`）+ MCP 只读 stdio 面（`python -m atlas.mcp`，7 个只读工具，ADR T33）+ 平台 REST**；内部另有 Harness/Graph/Loop 编排内核 | **运营域执行 Agent（嵌套编排者）**：zeus 委派运营类任务，atlas 在自己域内自治 | 已接入，无需「加面」；重点是厘清嵌套边界（见 `bayjf/docs/tier0/zeus-vs-atlas-关系厘清.md`） |
 | **commerce-os** | Bearer REST `/api/v1` | 电商业务后端（平台面） | 保持 REST；需要时由 zeus 以连接器方式包一层，不重写 |
 | **ops-console** | Cookie 登录的人类 SSR 工作台；服务端 Bearer 调 zeus/commerce | 运营**人类工作台**（代码注释明确不直接给 agent） | 保持人类面 |
 
@@ -126,7 +126,7 @@
 
 - **P2-1** zeus 门面真机部署（PRD E10.2，当前 ⬜）：公网域名/TLS、远程 Streamable HTTP MCP（Bearer/OAuth）、入站 A2A，使云端个人助手跨网可达。**依赖：服务器、域名/TLS、密钥托管、现网观察期。**
 - **P2-2** 生产 RSK 托管 + 根公钥指纹带外公告（E4.9，仓库外动作），闭环 bayjf 公开名册的信任链。
-- **P2-3** 多设备：基于 Vault 的加密同步/恢复（可走用户自带存储，不绑定账号）；通知渠道（邮件/IM）。
+- **P2-3** 多设备：基于 Backup 的加密同步/恢复（可走用户自带存储，不绑定账号）；通知渠道（邮件/IM）。
 - **P2-4** 跨设备记忆/上下文 handoff（对齐 Moryn），数据归属仍在用户、设备间可审计。
 
 ### P3 — 长期/非目标，默认不做
@@ -179,5 +179,5 @@ P1 及以后均按本文 §6 单独立项，不在本轮扩范围。
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
-| v0.2 | 2026-10-25 | **修正 atlas 归属**：v0.1 误记 atlas「无协议面、不建议加」；实地核查确认其已有 A2A 执行 Agent 面（W2 接入 zeus，vassal，域 ops-orchestration，ADR T32）与 MCP 只读 stdio 面（7 工具，ADR T33），关系为「嵌套编排」（atlas 域内自治、跨域收敛回 zeus）。同步改 §4 表格、纪律（两条→三条）、P3；专项证据见 `bayjf/docs/tier0/zeus-vs-atlas-关系厘清.md`。 |
+| v0.2 | 2026-10-25 | **修正 atlas 归属**：v0.1 误记 atlas「无协议面、不建议加」；实地核查确认其已有 A2A 执行 Agent 面（W2 接入 zeus，executor，域 ops-orchestration，ADR T32）与 MCP 只读 stdio 面（7 工具，ADR T33），关系为「嵌套编排」（atlas 域内自治、跨域收敛回 zeus）。同步改 §4 表格、纪律（两条→三条）、P3；专项证据见 `bayjf/docs/tier0/zeus-vs-atlas-关系厘清.md`。 |
 | v0.1 | 2026-10-25 | 首版：基于 8 个 Tier0 仓库源码核查与外部调研，确定「不新建内核、补 zeus 宿主层」判断；给出四层宿主职责、Tier0 接入拓扑、P0–P3 路线图；本轮落地 P0 三项。 |

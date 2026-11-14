@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
@@ -13,21 +13,21 @@ import type { A2AEvent, Task } from '../src/a2a/types.js';
  * internal token is set and an orchestrator is present, idempotent per taskId.
  */
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const PUSH_URL = 'http://127.0.0.1:8787/api/a2a/push-notifications';
 
-function ack(vassal: string): DispatchResult {
+function ack(executor: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state: 'working' }, artifacts: [],
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state: 'working' }, artifacts: [],
   };
   const event: A2AEvent = { kind: 'status-update', taskId: task.id, contextId: 'ctx', status: { state: 'working' }, final: false };
   return { ok: true, task, events: [event], injectedHits: [] };
 }
 
-function finalTask(vassal: string, state: Task['status']['state'] = 'completed'): Task {
+function finalTask(executor: string, state: Task['status']['state'] = 'completed'): Task {
   return {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
 }
@@ -39,7 +39,7 @@ function lookupFor(names: string[]): TargetLookup {
 function immediatePort() {
   const port: DispatchPort = {
     async dispatch(req: DispatchRequest) {
-      return ack(req.vassal!);
+      return ack(req.executor!);
     },
     async cancel() {},
   };
@@ -52,7 +52,7 @@ async function flush(times = 5): Promise<void> {
 
 async function server(options: Omit<Parameters<typeof createHttpServer>[0], 'registry' | 'signer'>) {
   return createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     ...options,
   });
@@ -144,6 +144,6 @@ describe('POST /api/a2a/push-notifications (E4.11)', () => {
 
     const result = await fanOut;
     expect(result.status).toBe('completed');
-    expect(result.branches[0]).toMatchObject({ vassal: 'a', ok: true, state: 'completed' });
+    expect(result.branches[0]).toMatchObject({ executor: 'a', ok: true, state: 'completed' });
   });
 });

@@ -4,7 +4,7 @@
  * Zeus already guards the identity / authorization / network sides; the content
  * side (Realm text and agent output that carry instructional content) had no
  * primitive. This module is the content-side chain: for every piece of content
- * crossing the kernel, decide handling from (provenance × destination ×
+ * crossing the runtime, decide handling from (provenance × destination ×
  * deterministic signals), and make "agent-produced content is always data —
  * never an authorization, never an instruction" an executable invariant.
  *
@@ -19,8 +19,8 @@
  */
 
 export type ContentProvenance =
-  | 'kernel-resolved-realm'
-  | 'driver-supplied'
+  | 'runtime-resolved-realm'
+  | 'operator-supplied'
   | 'agent-produced'
   | 'caller-asserted'
   | 'mcp-fetched';

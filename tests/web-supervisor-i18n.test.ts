@@ -213,8 +213,8 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       'revoke-contract', // DELETE /api/delegation-contracts/:id
       'revoke-watch', // DELETE /api/watches/:id
       'approve-contract', // POST /api/escalations/:id/approve-contract
-      'revoke-vassal', // DELETE /api/vassals/:name
-      'reinstate-vassal', // POST /api/vassals/:name/reinstate
+      'revoke-executor', // DELETE /api/executors/:name
+      'reinstate-executor', // POST /api/executors/:name/reinstate
       'org-set-lead', // POST /api/org/departments/:id/lead
       'org-remove-member', // DELETE /api/org/departments/:id/members/:agentId
       'cm-waive', // POST /api/org/departments/:id/commissions/:agentId/waive
@@ -333,7 +333,7 @@ describe('supervisor copy describes the actions the page actually has', () => {
     // The endpoint is mounted only when the process was given a history file, so
     // the panel has to distinguish "404, nothing configured" from "read failed".
     // Drop either branch and this check goes red; a page that only ever prints the
-    // array would show an empty box and read as a broken kernel.
+    // array would show an empty box and read as a broken runtime.
     expect(HTML.includes("id=\"histBody\""), 'the history block markup disappeared').toBe(true);
     expect(HTML.includes("api('GET', '/api/metrics/history')"), 'the page stopped reading the endpoint').toBe(true);
     expect(HTML.includes('error.status === 404'), 'the 404 branch was removed').toBe(true);
@@ -360,7 +360,7 @@ describe('supervisor copy describes the actions the page actually has', () => {
 });
 
 /**
- * M7 slice 4 (2026-10-14): four GET routes the kernel computes had no reader on
+ * M7 slice 4 (2026-10-14): four GET routes the runtime computes had no reader on
  * any shipped face - the trace tree, the skill version history, the first-day
  * briefing and the realm access probe. Supervisor v1.20 wired them and left
  * READ_API_ONLY in operator-surface-coverage.test.ts. These gates pin the

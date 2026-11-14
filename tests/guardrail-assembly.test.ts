@@ -5,7 +5,7 @@ import type { RecallHit } from '../src/memory/types.js';
 /**
  * S8 V2 (design-guardrails §4/§5): the context assembler attaches provenance
  * to every forwarded memory entry and runs it through the content-risk chain.
- * Plan-mode assembly annotates (kernel-resolved Realm text is data, never an
+ * Plan-mode assembly annotates (runtime-resolved Realm text is data, never an
  * operator instruction) — the classifier's refuse/escalate paths belong to
  * cross-domain and execute destinations, which this assembly point never sees.
  */
@@ -31,9 +31,9 @@ function hit(factId: string, subject: string, object: string, score = 0.9): Reca
 }
 
 describe('S8 V2 guardrails at assembly', () => {
-  it('attaches kernel-resolved-realm provenance to every forwarded entry', () => {
+  it('attaches runtime-resolved-realm provenance to every forwarded entry', () => {
     const out = assembleBranchContext({ memoryHits: [hit('f1', 'project', 'zeus')], maxEntries: 8 });
-    expect(out.appendix[0]?.provenance).toBe('kernel-resolved-realm');
+    expect(out.appendix[0]?.provenance).toBe('runtime-resolved-realm');
     expect(out.appendix[0]?.text).toBe('project asserts zeus');
   });
 
@@ -44,7 +44,7 @@ describe('S8 V2 guardrails at assembly', () => {
     const guardrail = out.events.find(e => e.kind === 'guardrail-annotated');
     expect(guardrail?.kind).toBe('guardrail-annotated');
     if (guardrail?.kind === 'guardrail-annotated') {
-      expect(guardrail.boundary).toBe('data-boundary:kernel-resolved-realm');
+      expect(guardrail.boundary).toBe('data-boundary:runtime-resolved-realm');
       expect(guardrail.signals).toContain('instruction-phrase');
       expect(guardrail.signals).toContain('external-url');
     }
@@ -56,7 +56,7 @@ describe('S8 V2 guardrails at assembly', () => {
     expect(guardrail?.kind).toBe('guardrail-annotated');
     if (guardrail?.kind === 'guardrail-annotated') {
       expect(guardrail.signals).toEqual([]);
-      expect(guardrail.boundary).toBe('data-boundary:kernel-resolved-realm');
+      expect(guardrail.boundary).toBe('data-boundary:runtime-resolved-realm');
     }
     expect(out.appendix).toHaveLength(1);
   });

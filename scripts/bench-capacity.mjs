@@ -3,17 +3,17 @@
 /**
  * E10.4 local capacity baseline harness (PRD E10.4).
  *
- * Drives the *real* kernel stack — Orchestrator -> Dispatcher -> global fetch
- * (undici) -> loopback HTTP — against a farm of mock A2A vassals served by one
- * node:http server. Every vassal answers tasks/sendSubscribe with an SSE stream
+ * Drives the *real* runtime stack — Orchestrator -> Dispatcher -> global fetch
+ * (undici) -> loopback HTTP — against a farm of mock A2A executors served by one
+ * node:http server. Every executor answers tasks/sendSubscribe with an SSE stream
  * and a fixed, configurable think delay, so fan-out width, concurrent intents
  * and latency percentiles are measured end to end without any external deploy.
  *
- * Honest scope: these are mock-vassal loopback numbers. They bound the kernel's
+ * Honest scope: these are mock-executor loopback numbers. They bound the runtime's
  * fan-out/merge/aggregation overhead and Node's client concurrency, not real
- * vassal capacity (LLM latency, network RTT, auth). Scenario E measures the
- * E1.5 concurrency gate itself; which vassal an overflow branch should be
- * re-routed to remains deferred (#9, gated on >=3 real vassals).
+ * executor capacity (LLM latency, network RTT, auth). Scenario E measures the
+ * E1.5 concurrency gate itself; which executor an overflow branch should be
+ * re-routed to remains deferred (#9, gated on >=3 real executors).
  *
  * Usage:
  *   npm run build && node scripts/bench-capacity.mjs           # human table
@@ -25,7 +25,7 @@
 import http from 'node:http';
 import os from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { VassalRegistry } from '../dist/registry/registry.js';
+import { ExecutorRegistry } from '../dist/registry/registry.js';
 import { Dispatcher } from '../dist/dispatch/dispatcher.js';
 import { Orchestrator } from '../dist/orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../dist/orchestrator/metrics.js';
@@ -51,7 +51,7 @@ const concurrencyLevels = [1, 4, 8, 16, 32];
 const cancelLevels = [4, 8, 16, 32];
 // Scenario E measures the E1.5 concurrency gate. It is opt-in with --cap
 // because it adds 4 x 128 branches of load inside the same process as the mock
-// farm, and that farm shares one event loop with the kernel: at default reps it
+// farm, and that farm shares one event loop with the runtime: at default reps it
 // pushes tail branches past the 20x think-delay timeout. Run `--cap` (or
 // `--cap 16`) when you specifically want the gate numbers.
 const capRequested = args.includes('--cap');
@@ -76,7 +76,7 @@ const queueLimits = [0, 8, 16, 32, 64, Number.POSITIVE_INFINITY];
  * forever, so each one is abandoned after this long. It must stay far above any
  * latency the table reports, otherwise the watchdog becomes the measurement -
  * at 20x a 50ms think delay it tripped on a contiguous tail of branches while
- * the mock farm and the kernel shared one process under load. Reported wall
+ * the mock farm and the runtime shared one process under load. Reported wall
  * clock and percentiles come from the samples, never from this number.
  */
 const BRANCH_WATCHDOG_MS = delayMs * 40;
@@ -120,7 +120,7 @@ function stats(samples) {
 }
 
 /**
- * One node:http server impersonates the whole vassal farm under /vN/tasks.
+ * One node:http server impersonates the whole executor farm under /vN/tasks.
  * options.terminalState:
  *   - 'completed' (default): sendSubscribe ends in a completed task with a verdict.
  *   - 'input-required':      the task settles into a non-terminal suspended state,
@@ -231,17 +231,17 @@ function startMockFarm(_count, thinkDelayMs, options = {}) {
  * @param {number} count
  */
 function farmEntries(port, count) {
-  const fealty = {
+  const handshake = {
     version: '1',
     swornTo: 'zeus',
     domain: 'bench',
-    dataRealms: ['personal'],
+    realms: ['personal'],
     dataPolicy: 'none',
     reportBack: true,
     escalationPolicy: 'auto',
   };
   return Array.from({ length: count }, (_, i) => {
-    const name = `vassal-${i}`;
+    const name = `executor-${i}`;
     const cardUrl = `http://127.0.0.1:${port}/v${i}/card`;
     const taskUrl = `http://127.0.0.1:${port}/v${i}/tasks`;
     return {
@@ -253,9 +253,9 @@ function farmEntries(port, count) {
         name,
         url: cardUrl,
         skills: [{ id: 'bench', name: 'Bench', description: '', tags: [] }],
-        'x-zeus-fealty': fealty,
+        'x-zeus-handshake': handshake,
       },
-      fealty,
+      handshake,
     };
   });
 }
@@ -264,14 +264,14 @@ function farmEntries(port, count) {
  * @param {any[]} entries
  * @param {any} [options]
  */
-function buildKernel(entries, options = {}) {
-  const registry = new VassalRegistry();
+function buildRuntime(entries, options = {}) {
+  const registry = new ExecutorRegistry();
   registry.importState(entries);
   const metrics = new ConcurrencyMetrics();
-  const dispatcher = new Dispatcher(registry.asVassalLookup(), { audit() {} });
+  const dispatcher = new Dispatcher(registry.asExecutorLookup(), { audit() {} });
   let intentSeq = 0;
   let runSeq = 0;
-  const orchestrator = new Orchestrator(registry.asVassalLookup(), dispatcher, {
+  const orchestrator = new Orchestrator(registry.asExecutorLookup(), dispatcher, {
     metrics,
     newIntentId: () => `intent-${++intentSeq}`,
     newRunId: () => `run-${++runSeq}`,
@@ -280,12 +280,12 @@ function buildKernel(entries, options = {}) {
   return { orchestrator, metrics, registry };
 }
 
-/** A real H2 driver face (Fastify + bearer auth + JSON) wired to the kernel. */
+/** A real H2 operator face (Fastify + bearer auth + JSON) wired to the runtime. */
 /**
  * @param {any[]} entries
  */
-async function buildFaceKernel(entries) {
-  const { orchestrator, metrics, registry } = buildKernel(entries);
+async function buildFaceRuntime(entries) {
+  const { orchestrator, metrics, registry } = buildRuntime(entries);
   const signer = new Ed25519MemorySigner('zeus-rsk-bench');
   const app = await createHttpServer({ registry, signer, internalToken: FACE_TOKEN, orchestrator, metrics });
   return { app, orchestrator, metrics };
@@ -314,7 +314,7 @@ async function postIntent(base, names) {
     body: JSON.stringify({
       skill: 'bench',
       realm: 'personal',
-      vassals: names,
+      executors: names,
       aggregation: { kind: 'unanimous' },
       branchTimeoutMs: BRANCH_WATCHDOG_MS,
     }),
@@ -330,15 +330,15 @@ async function benchFanoutWidth(port) {
   /** @type {any[]} */
   const rows = [];
   for (const width of widths) {
-    const { orchestrator } = buildKernel(farmEntries(port, FARM_SIZE));
-    const names = Array.from({ length: width }, (_, i) => `vassal-${i}`);
+    const { orchestrator } = buildRuntime(farmEntries(port, FARM_SIZE));
+    const names = Array.from({ length: width }, (_, i) => `executor-${i}`);
     /** @type {number[]} */
     const samples = [];
     for (let r = 0; r < reps; r++) {
       const t0 = performance.now();
       const result = await orchestrator.fanOut({
         skill: 'bench',
-        vassals: names,
+        executors: names,
         params: {},
         realm: 'personal',
         aggregation: { kind: 'unanimous' },
@@ -347,7 +347,7 @@ async function benchFanoutWidth(port) {
       samples.push(performance.now() - t0);
       if (result.status !== 'completed') {
         const bad = result.branches.filter((/** @type {any} */ b) => !b.ok)
-          .map((/** @type {any} */ b) => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
+          .map((/** @type {any} */ b) => `${b.executor}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
         throw new Error(`width ${width}: expected completed, got ${result.status}; branches: ${bad.join(', ') || 'none'}`);
       }
     }
@@ -355,7 +355,7 @@ async function benchFanoutWidth(port) {
     rows.push({
       width,
       ...s,
-      parallelEfficiency: round(delayMs / s.p50, 2), // 1.0 = perfectly parallel (wall ~= one vassal)
+      parallelEfficiency: round(delayMs / s.p50, 2), // 1.0 = perfectly parallel (wall ~= one executor)
     });
   }
   return rows;
@@ -387,12 +387,12 @@ async function runConcurrentIntents(orchestrator, metrics, intents, options = {}
   try {
     await Promise.all(
       Array.from({ length: intents }, async (_, c) => {
-        // Spread intents across the farm; vassals may be reused, like real life.
-        const names = Array.from({ length: PER_INTENT }, (_, k) => `vassal-${(c * PER_INTENT + k) % FARM_SIZE}`);
+        // Spread intents across the farm; executors may be reused, like real life.
+        const names = Array.from({ length: PER_INTENT }, (_, k) => `executor-${(c * PER_INTENT + k) % FARM_SIZE}`);
         const start = performance.now();
         const result = await orchestrator.fanOut({
           skill: 'bench',
-          vassals: names,
+          executors: names,
           params: {},
           realm: 'personal',
           aggregation: { kind: 'unanimous' },
@@ -404,7 +404,7 @@ async function runConcurrentIntents(orchestrator, metrics, intents, options = {}
         if (result.status !== 'completed' && !options.allowRefusals) {
           const label = options.label ?? `concurrency ${intents}`;
           const bad = result.branches.filter((/** @type {any} */ b) => !b.ok)
-            .map((/** @type {any} */ b) => `${b.vassal}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
+            .map((/** @type {any} */ b) => `${b.executor}:${b.timedOut ? 'timeout' : (b.reason ?? 'failed')}`);
           throw new Error(`${label}: expected completed, got ${result.status}; ${bad.length} bad branch(es): ${bad.slice(0, 6).join(', ') || 'none'}`);
         }
       }),
@@ -422,7 +422,7 @@ async function benchConcurrentIntents(port) {
   /** @type {any[]} */
   const rows = [];
   for (const concurrency of concurrencyLevels) {
-    const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE));
+    const { orchestrator, metrics } = buildRuntime(farmEntries(port, FARM_SIZE));
     const { latencies, wallMs, snapshot } = await runConcurrentIntents(orchestrator, metrics, concurrency);
     rows.push({
       concurrentIntents: concurrency,
@@ -455,7 +455,7 @@ async function benchConcurrencyCap(port) {
   /** @type {any[]} */
   const rows = [];
   for (const cap of capLevels) {
-    const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE), {
+    const { orchestrator, metrics } = buildRuntime(farmEntries(port, FARM_SIZE), {
       ...(Number.isFinite(cap) ? { maxConcurrentBranches: cap } : {}),
     });
     const { latencies, wallMs, peakQueueDepth, snapshot } = await runConcurrentIntents(
@@ -503,7 +503,7 @@ async function benchQueueLimit(port) {
   /** @type {any[]} */
   const rows = [];
   for (const queueLimit of queueLimits) {
-    const { orchestrator, metrics } = buildKernel(farmEntries(port, FARM_SIZE), {
+    const { orchestrator, metrics } = buildRuntime(farmEntries(port, FARM_SIZE), {
       maxConcurrentBranches: queueCap,
       ...(Number.isFinite(queueLimit) ? { branchQueueLimit: queueLimit } : {}),
     });
@@ -551,7 +551,7 @@ async function benchQueueLimit(port) {
 }
 
 /**
- * Scenario C: throughput through the real H2 driver face. Each intent goes over
+ * Scenario C: throughput through the real H2 operator face. Each intent goes over
  * loopback TCP — bearer auth, Fastify routing, JSON parse/serialize — then into
  * the same Orchestrator -> Dispatcher -> mock farm stack as scenario B. The gap
  * between B and C is the HTTP face overhead. A fresh face (and listener) is used
@@ -564,19 +564,19 @@ async function benchHttpFace(port) {
   /** @type {any[]} */
   const rows = [];
   for (const concurrency of concurrencyLevels) {
-    const { app } = await buildFaceKernel(farmEntries(port, FARM_SIZE));
+    const { app } = await buildFaceRuntime(farmEntries(port, FARM_SIZE));
     const server = await listenOnLoopback(app);
     const base = `http://127.0.0.1:${/** @type {import('node:net').AddressInfo} */ (server.address()).port}`;
     try {
       // warm up the listener, undici pool and JSON paths (not measured)
-      await postIntent(base, ['vassal-0', 'vassal-1', 'vassal-2', 'vassal-3']);
+      await postIntent(base, ['executor-0', 'executor-1', 'executor-2', 'executor-3']);
 
       /** @type {number[]} */
       const latencies = [];
       const t0 = performance.now();
       await Promise.all(
         Array.from({ length: concurrency }, async (_, c) => {
-          const names = Array.from({ length: PER_INTENT }, (_, k) => `vassal-${(c * PER_INTENT + k) % FARM_SIZE}`);
+          const names = Array.from({ length: PER_INTENT }, (_, k) => `executor-${(c * PER_INTENT + k) % FARM_SIZE}`);
           const start = performance.now();
           const result = await postIntent(base, names);
           latencies.push(performance.now() - start);
@@ -603,7 +603,7 @@ async function benchHttpFace(port) {
 }
 
 /**
- * Scenario D: high-concurrency cancellation propagation. Vassals settle tasks
+ * Scenario D: high-concurrency cancellation propagation. Executors settle tasks
  * into the non-terminal input-required state (a task parked waiting on input).
  * After many intents are suspended, cancelIntent fans JSON-RPC tasks/cancel out
  * to every non-terminal branch. We assert every branch is canceled exactly once
@@ -618,17 +618,17 @@ async function benchCancellation() {
   const rows = [];
   try {
     for (const intents of cancelLevels) {
-      const { orchestrator } = buildKernel(farmEntries(port, FARM_SIZE));
+      const { orchestrator } = buildRuntime(farmEntries(port, FARM_SIZE));
       /** @type {string[]} */
       const intentIds = [];
       await Promise.all(
         Array.from({ length: intents }, async (_, c) => {
           const id = `cancel-intent-${intents}-${c}`;
-          const names = Array.from({ length: PER_INTENT }, (_, k) => `vassal-${(c * PER_INTENT + k) % FARM_SIZE}`);
+          const names = Array.from({ length: PER_INTENT }, (_, k) => `executor-${(c * PER_INTENT + k) % FARM_SIZE}`);
           const result = await orchestrator.fanOut({
             intentId: id,
             skill: 'bench',
-            vassals: names,
+            executors: names,
             params: {},
             realm: 'personal',
             aggregation: { kind: 'unanimous' },
@@ -708,10 +708,10 @@ async function main() {
 
     // Warm up undici connection pool and V8 JIT paths; not measured.
     {
-      const { orchestrator } = buildKernel(farmEntries(port, FARM_SIZE));
+      const { orchestrator } = buildRuntime(farmEntries(port, FARM_SIZE));
       const warm = await orchestrator.fanOut({
         skill: 'bench',
-        vassals: ['vassal-0', 'vassal-1', 'vassal-2', 'vassal-3'],
+        executors: ['executor-0', 'executor-1', 'executor-2', 'executor-3'],
         params: {},
         realm: 'personal',
         aggregation: { kind: 'unanimous' },
@@ -741,10 +741,10 @@ async function main() {
       console.log(JSON.stringify(report, null, 2));
       return;
     }
-    console.log('Zeus E10.4 local capacity baseline (mock vassals, loopback HTTP)');
+    console.log('Zeus E10.4 local capacity baseline (mock executors, loopback HTTP)');
     console.log(`node ${environment.node} | ${environment.platform} | ${environment.cpus} CPUs | think delay ${delayMs}ms | ${reps} reps | farm ${FARM_SIZE}`);
     printTable(
-      'A. Single-intent fan-out width (wall should stay ~= one vassal think delay)',
+      'A. Single-intent fan-out width (wall should stay ~= one executor think delay)',
       fanoutWidth,
       [
         { label: 'width', width: 8, get: r => r.width },
@@ -800,7 +800,7 @@ async function main() {
       );
     }
     printTable(
-      `C. H2 driver-face throughput (real loopback HTTP + bearer + JSON, ${PER_INTENT} branches/intent, ${delayMs}ms think)`,
+      `C. H2 operator-face throughput (real loopback HTTP + bearer + JSON, ${PER_INTENT} branches/intent, ${delayMs}ms think)`,
       httpFace,
       [
         { label: 'intents', width: 9, get: r => r.concurrentIntents },
@@ -822,7 +822,7 @@ async function main() {
       ],
     );
     console.log(`\nCancel requests observed at mock farm: ${cancellation.cancelRequestsObserved}`);
-    console.log('\nNote: mock loopback baseline bounds kernel overhead, not real-vassal (LLM/network) capacity.');
+    console.log('\nNote: mock loopback baseline bounds runtime overhead, not real-executor (LLM/network) capacity.');
   } finally {
     await new Promise(resolve => server.close(resolve));
   }

@@ -12,7 +12,7 @@ import {
   DiaryUnsupportedError,
   FsRealmStore,
 } from '../src/index.js';
-import type { MemoryEvent, FactRecord, RealmStore, DriverWriteGrant } from '../src/index.js';
+import type { MemoryEvent, FactRecord, RealmStore, OperatorWriteGrant } from '../src/index.js';
 
 let seq = 0;
 function event(partial: Partial<MemoryEvent> & { occurredAt: string }): MemoryEvent {
@@ -213,10 +213,10 @@ describe('persistDiary', () => {
   it('supports a custom dir and passes a grant through', async () => {
     const write = vi.fn(async () => ({ itemId: 'journal/2026-09-23.md' }));
     const store = { write } as unknown as RealmStore;
-    const grant: DriverWriteGrant = {
-      kind: 'driver-write',
+    const grant: OperatorWriteGrant = {
+      kind: 'operator-write',
       realmId: 'realm-test',
-      grantedBy: 'driver',
+      grantedBy: 'operator',
       grantedAt: '2026-09-23T00:00:00.000Z',
       nonce: 'n1',
     };

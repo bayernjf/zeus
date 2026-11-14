@@ -11,12 +11,12 @@ import { DecisionBackendFailure } from './types.js';
  *  - an LLM's self-reported confidence (calibrated:false) does NOT conclude
  *    unless allowUncalibrated is explicitly set (low-stakes contexts only);
  *  - any backend error/timeout/low confidence returns concluded:false so the
- *    caller escalates to the human driver — the model is never a hard dependency.
+ *    caller escalates to the human operator — the model is never a hard dependency.
  */
 
 export type SplitStance = {
   stance: string;
-  vassals: string[];
+  executors: string[];
   summary?: string;
 };
 
@@ -56,7 +56,7 @@ export async function arbitrateSplit(input: ArbitrateInput): Promise<ArbitrateOu
     ruleReason: input.ruleReason,
     stances: input.stances.map(stance => ({
       stance: stance.stance,
-      vassals: stance.vassals,
+      executors: stance.executors,
       ...(stance.summary ? { summary: stance.summary } : {}),
     })),
   };
@@ -64,7 +64,7 @@ export async function arbitrateSplit(input: ArbitrateInput): Promise<ArbitrateOu
     const result = await input.backend.choice({
       question: 'The aggregation rule could not conclude. Which stance should be accepted as the decision?',
       instructions:
-        input.ruleReason || 'Choose the stance best supported by the vassal positions; express calibrated uncertainty.',
+        input.ruleReason || 'Choose the stance best supported by the executor positions; express calibrated uncertainty.',
       state,
       // This call builds its own state; name the fields so the backend's
       // data-sovereignty whitelist (default empty) does not strip every field

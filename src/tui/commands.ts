@@ -102,7 +102,7 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
   if (lower === 'c' || /^c\s+\S+$/i.test(line)) return { error: 'contract-needs-args' };
 
   // Self-host watches (P1 operator face). `wt` drives one caller-owned tick
-  // (the kernel holds no timer); `w3` / `w 3` revokes (settles) watch #n.
+  // (the runtime holds no timer); `w3` / `w 3` revokes (settles) watch #n.
   // Watch registration stays on the HTTP/Web face: its predicate/intent shape
   // is too wide for a one-line command, the same split contracts already use.
   if (lower === 'wt' || lower === 'watch-tick') return { kind: 'watchTick' };
@@ -166,7 +166,7 @@ export function parseCommand(raw: string): DeckCommand | CommandError {
 
   // Answering an agent that stopped for missing parameters (E6.3). `approve`
   // alone only records the decision, so the deck needs the re-dispatch path the
-  // kernel already exposes: `r<n> {json}` carries the parameters the agent asked
+  // runtime already exposes: `r<n> {json}` carries the parameters the agent asked
   // for. Parsing happens here, not in the runner, so a malformed payload is
   // caught before any request goes out.
   const resumeMatch = /^r\s*(\d+)(?:\s+(.+))?$/is.exec(line);
@@ -215,8 +215,8 @@ export const COMMAND_HELP = [
   '  x<n>       reject escalation #n',
   '  s<n>.<m>   resolve escalation #n accepting stance #m',
   '  r<n> {json}  answer escalation #n with these parameters and re-dispatch that branch',
-  '  d<n>       revoke roster vassal #n (asks y/N)',
-  '  b<n>       reinstate revoked roster vassal #n (asks y/N)',
+  '  d<n>       revoke roster executor #n (asks y/N)',
+  '  b<n>       reinstate revoked roster executor #n (asks y/N)',
   '  g<n> <subject> <r|w> [by]  issue a personal->enterprise grant on realm #n',
   '  k<n>       revoke cross-domain grant #n (asks y/N)',
   '  c <skill> <tickets> <concurrent> [by]  issue a delegation contract (execute, 24h)',

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { projectInternalRoster, projectPublicRoster, type RosterEntry } from '../src/registry/roster.js';
 import { canonicalDigest } from '../src/registry/signing.js';
 import type { AgentCard } from '../src/a2a/types.js';
-import type { VassalEntry } from '../src/registry/registry.js';
+import type { ExecutorEntry } from '../src/registry/registry.js';
 
-function entry(overrides: Partial<VassalEntry> & Pick<VassalEntry, 'card' | 'fealty'>): VassalEntry & { status: 'active' | 'revoked' } {
+function entry(overrides: Partial<ExecutorEntry> & Pick<ExecutorEntry, 'card' | 'handshake'>): ExecutorEntry & { status: 'active' | 'revoked' } {
   return {
     cardUrl: 'http://x/api/a2a/agent-card',
     taskUrl: 'http://x/api/a2a/tasks',
@@ -22,11 +22,11 @@ function card(name: string, description?: string): AgentCard {
     ...(description ? { description } : {}),
     url: `http://${name}.internal/api/a2a/agent-card`,
     skills: [{ id: `${name}-skill`, name: `${name} skill`, description: '', tags: [] }],
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: `${name}-domain`,
-      dataRealms: ['enterprise'],
+      realms: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -40,26 +40,26 @@ describe('RosterProjector', () => {
     cardUrl: 'http://a/api/a2a/agent-card',
     taskUrl: 'http://a/api/a2a/tasks',
     card: card('atlas', 'maps things'),
-    fealty: card('atlas')['x-zeus-fealty']!,
+    handshake: card('atlas')['x-zeus-handshake']!,
     lastHealthCheck: { at: '2026-09-21T09:30:00.000Z', ok: true },
   });
   const activeUnknown = entry({
     cardUrl: 'http://l/api/a2a/agent-card',
     taskUrl: 'http://l/api/a2a/tasks',
     card: card('loom'),
-    fealty: card('loom')['x-zeus-fealty']!,
+    handshake: card('loom')['x-zeus-handshake']!,
   });
   const revokedUnhealthy = entry({
     cardUrl: 'http://p/api/a2a/agent-card',
     taskUrl: 'http://p/api/a2a/tasks',
     card: card('pr-helper', 'reviews prs'),
-    fealty: card('pr-helper')['x-zeus-fealty']!,
+    handshake: card('pr-helper')['x-zeus-handshake']!,
     revoked: true,
     lastHealthCheck: { at: '2026-09-21T09:31:00.000Z', ok: false, detail: 'HTTP 503' },
   });
   const all = [revokedUnhealthy, activeUnknown, activeHealthy];
 
-  it('projects the internal roster with every vassal, endpoints, probe detail and deterministic order', () => {
+  it('projects the internal roster with every executor, endpoints, probe detail and deterministic order', () => {
     const snapshot = projectInternalRoster(all, () => new Date('2026-09-21T10:00:00.000Z'));
     expect(snapshot.generatedAt).toBe('2026-09-21T10:00:00.000Z');
     expect(snapshot.scope).toBe('internal');
@@ -75,7 +75,7 @@ describe('RosterProjector', () => {
       cardUrl: 'http://a/api/a2a/agent-card',
       taskUrl: 'http://a/api/a2a/tasks',
     });
-    expect(atlas.commitments).toEqual({ dataRealms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' });
+    expect(atlas.commitments).toEqual({ realms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' });
     expect(atlas.sla).toEqual({ ackSeconds: 5 });
     expect(atlas.skills[0]!.id).toBe('atlas-skill');
 
@@ -96,14 +96,14 @@ describe('RosterProjector', () => {
       expect(e).not.toHaveProperty('healthDetail');
       expect(e.status).toBe('active');
     }
-    // fealty commitments remain verbatim
+    // handshake commitments remain verbatim
     expect(snapshot.entries[0]!.commitments.escalationPolicy).toBe('auto');
     // snapshot is JSON-serializable
     expect(() => JSON.stringify(snapshot)).not.toThrow();
   });
 
   it('projects straight from a live registry listAll view', async () => {
-    const registry = new VassalRegistry(async url =>
+    const registry = new ExecutorRegistry(async url =>
       url.includes('loom')
         ? new Response(JSON.stringify(card('loom')), { status: 200, headers: { 'Content-Type': 'application/json' } })
         : new Response(JSON.stringify(card('pr-helper', 'reviews prs')), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -127,18 +127,18 @@ describe('RosterProjector', () => {
   it('hands out copies, so a consumer cannot mutate registry state or a sealed digest', () => {
     const source = card('atlas');
     source.skills[0]!.tags.push('original');
-    const all = [entry({ card: source, fealty: source['x-zeus-fealty']!, revoked: false })];
+    const all = [entry({ card: source, handshake: source['x-zeus-handshake']!, revoked: false })];
     const now = () => new Date('2026-09-21T10:00:00.000Z');
     const before = canonicalDigest(projectInternalRoster(all, now));
 
     const internal = projectInternalRoster(all, now);
     internal.entries[0]!.skills[0]!.tags.push('mutated');
-    internal.entries[0]!.commitments.dataRealms.push('personal');
+    internal.entries[0]!.commitments.realms.push('personal');
     const pub = projectPublicRoster(all, now);
     pub.entries[0]!.skills[0]!.tags.push('via-public');
 
     expect(source.skills[0]!.tags).toEqual(['original']);
-    expect(source['x-zeus-fealty']!.dataRealms).toEqual(['enterprise']);
+    expect(source['x-zeus-handshake']!.realms).toEqual(['enterprise']);
     // Re-projecting the same registry state reproduces the sealed digest.
     expect(canonicalDigest(projectInternalRoster(all, now))).toBe(before);
   });

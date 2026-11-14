@@ -14,7 +14,7 @@
 //   置 NULL。
 //
 // 现状边界（如实，2026-11-13）：SQLite 持久化（T-M6-01）尚未接线生产 ——
-// zeus 容器当前用 kernel-state.json + trace 审计。本脚本面向 schema.ts 的业务
+// zeus 容器当前用 runtime-state.json + trace 审计。本脚本面向 schema.ts 的业务
 // 表，待 SQLite 上线后才作用于真实数据；当前在无 DB 文件的机器上跑会
 // fail-closed 报「数据库不存在」，而不是空跑成功。
 

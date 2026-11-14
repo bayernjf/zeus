@@ -11,8 +11,8 @@ import type { Conflict, FanOutResult, JudgeReview, Position } from './types.js';
  * independent backend to review them:
  *  - a gated recommendation agreeing with the rule is recorded as endorsement;
  *  - a calibrated, high-confidence recommendation that DISAGREES flips the
- *    intent back to needs-driver and opens a 'judge-review' conflict so the
- *    driver settles it through the existing E6.2 loop (the judge never silently
+ *    intent back to needs-operator and opens a 'judge-review' conflict so the
+ *    operator settles it through the existing E6.2 loop (the judge never silently
  *    overrides the rule, and a weak majority is never silently accepted);
  *  - low confidence / uncalibrated (LLM self-report) without explicit
  *    permission / backend failure only records the attempt — the model is never
@@ -27,7 +27,7 @@ export type JudgeDecisionInput = {
   threshold?: number;
   /** Permit uncalibrated (LLM) confidence to count (default false). */
   allowUncalibrated?: boolean;
-  /** A gated disagreement escalates to the driver (default true). */
+  /** A gated disagreement escalates to the operator (default true). */
   escalateOnDisagreement?: boolean;
   maxWaitMs?: number;
   now: () => Date;
@@ -40,7 +40,7 @@ function distinctStances(positions: Position[]): string[] {
 }
 
 function supporters(result: FanOutResult, stance: string): string[] {
-  return result.positions.filter(position => position.stance === stance).map(position => position.vassal);
+  return result.positions.filter(position => position.stance === stance).map(position => position.executor);
 }
 
 function withReview(result: FanOutResult, judgeReview: JudgeReview): FanOutResult {
@@ -72,7 +72,7 @@ export async function judgeDecision(input: JudgeDecisionInput): Promise<FanOutRe
     ruleConclusion: result.decision.conclusion,
     ruleReason: result.decision.reason,
     positions: result.positions.map(position => ({
-      vassal: position.vassal,
+      executor: position.executor,
       stance: position.stance,
       ...(position.rationale ? { rationale: position.rationale } : {}),
       ...(position.weight !== undefined ? { weight: position.weight } : {}),
@@ -85,9 +85,9 @@ export async function judgeDecision(input: JudgeDecisionInput): Promise<FanOutRe
   try {
     review = await backend.choice({
       question:
-        'The aggregation rule already produced a conclusion. Independently review the competing vassal stances as an adversarial judge, and choose the stance that should be accepted; disagree with the rule when the evidence warrants.',
+        'The aggregation rule already produced a conclusion. Independently review the competing executor stances as an adversarial judge, and choose the stance that should be accepted; disagree with the rule when the evidence warrants.',
       instructions:
-        'Weigh every vassal rationale against the rule conclusion; pick the best-supported stance; express calibrated uncertainty.',
+        'Weigh every executor rationale against the rule conclusion; pick the best-supported stance; express calibrated uncertainty.',
       state,
       // The judge builds its own review state; name its fields so the backend's
       // data-sovereignty whitelist (default empty) does not strip every field
@@ -150,12 +150,12 @@ export async function judgeDecision(input: JudgeDecisionInput): Promise<FanOutRe
   const conflictStances = [
     {
       stance: ruleConclusion,
-      vassals: supporters(result, ruleConclusion),
+      executors: supporters(result, ruleConclusion),
       summary: `rule ${result.decision.rule} conclusion (${result.decision.reason})`,
     },
     {
       stance: review.choice,
-      vassals: supporters(result, review.choice),
+      executors: supporters(result, review.choice),
       summary: `judge ${backend.kind}/${backend.model} recommendation (confidence ${review.confidence})`,
     },
   ].sort((a, b) => a.stance.localeCompare(b.stance));

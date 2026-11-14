@@ -15,7 +15,7 @@ import type { DispatchPort } from '../orchestrator/types.js';
 export type RecordedFrame =
   | { type: 'request'; seq: number; request: DispatchRequest; at: string }
   | { type: 'response'; seq: number; ok: boolean; decision?: string; reason?: string; at: string }
-  | { type: 'cancel'; seq: number; vassal: string; taskId: string; at: string };
+  | { type: 'cancel'; seq: number; executor: string; taskId: string; at: string };
 
 export type Recording = {
   intent: string;
@@ -48,7 +48,7 @@ export function redactRecording(rec: Recording): Recording {
         case 'response':
           return { type: 'response', seq: f.seq, ok: f.ok, ...(f.decision === undefined ? {} : { decision: f.decision }), at: f.at };
         case 'cancel':
-          return { type: 'cancel', seq: f.seq, vassal: f.vassal, taskId: f.taskId, at: f.at };
+          return { type: 'cancel', seq: f.seq, executor: f.executor, taskId: f.taskId, at: f.at };
       }
     }),
   };
@@ -74,7 +74,7 @@ export function recordingToFetch(
       return {
         ok: false,
         reason: match.reason ?? 'replayed failure',
-        audit: { ts: match.at, vassal: req.vassal ?? 'replayed', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
+        audit: { ts: match.at, executor: req.executor ?? 'replayed', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
       };
     }
     const runId = req.runId ?? 'r1';
@@ -162,7 +162,7 @@ export function withChaos(inner: DispatchPort, script: ChaosScript): DispatchPor
 
   return {
     dispatch,
-    cancel: (vassal, taskId) => inner.cancel(vassal, taskId),
+    cancel: (executor, taskId) => inner.cancel(executor, taskId),
   };
 }
 
@@ -171,6 +171,6 @@ function chaosFailure(req: DispatchRequest, reason: string, decision: 'dispatch-
   return {
     ok: false,
     reason,
-    audit: { ts: new Date().toISOString(), vassal: req.vassal ?? 'chaos', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
+    audit: { ts: new Date().toISOString(), executor: req.executor ?? 'chaos', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
   };
 }

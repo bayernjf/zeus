@@ -9,7 +9,7 @@ import {
   type HubTestPort,
 } from '../src/decision/hub-backend.js';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import type { CatalogResponse, ProjectedModel } from '@model-hub/model-kit';
 
@@ -378,7 +378,7 @@ describe('resolveDecisionConfigWithHub', () => {
 });
 
 describe('hub L3/L4 test endpoints', () => {
-  const TOKEN = 'driver-secret';
+  const TOKEN = 'operator-secret';
   const AUTH = { authorization: `Bearer ${TOKEN}` };
 
   const hubTest: HubTestPort = {
@@ -392,7 +392,7 @@ describe('hub L3/L4 test endpoints', () => {
 
   async function serverWith(testPort?: HubTestPort): Promise<FastifyInstance> {
     return createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       ...(testPort ? { hubTest: testPort } : {}),

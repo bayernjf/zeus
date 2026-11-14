@@ -9,7 +9,7 @@
  * The signing key and the state files beside the db are restored too — a
  * database without its audit key cannot prove any past decision. Existing
  * state files are left alone unless `--force` is given, because overwriting a
- * newer kernel state with an older one is a silent regression.
+ * newer runtime state with an older one is a silent regression.
  *
  * CLI:
  *   node scripts/restore.mjs --snapshot ./data/backups/snapshot-... \

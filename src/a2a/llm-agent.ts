@@ -6,7 +6,7 @@
  * is wired" and "an intent produces billable work".
  *
  * Credentials come from model-hub, never from this repo: the hub answers
- * /pub/v1/models with the assignment's upstream base URL and key, so a vassal
+ * /pub/v1/models with the assignment's upstream base URL and key, so a executor
  * never holds a model key of its own. Every call reports usage back to the
  * hub with the assignment id, which is what makes the hub's cost figures
  * reflect real traffic instead of a placeholder.
@@ -81,11 +81,11 @@ function cardFor(options: Required<Pick<LlmAgentOptions, 'skill' | 'name'>>, por
     ],
     authentication: { schemes: ['none'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: 'model',
-      dataRealms: ['personal'],
+      realms: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',
@@ -285,7 +285,7 @@ export async function startLlmAgent(options: LlmAgentOptions = {}): Promise<LlmA
         if (assignmentId) {
           await reportUsage(hubUrl, hubToken, {
             project: 'zeus',
-            feature: 'vassal-chat',
+            feature: 'executor-chat',
             provider: 'ark',
             model: alias,
             assignmentId,
@@ -305,7 +305,7 @@ export async function startLlmAgent(options: LlmAgentOptions = {}): Promise<LlmA
               {
                 kind: 'data',
                 data: {
-                  // Stance contract (aggregate.ts extractStance): a vassal's
+                  // Stance contract (aggregate.ts extractStance): a executor's
                   // vote travels in data.stance; the memory producer folds it
                   // into claims. Omitted on failure so a failed branch carries
                   // no stance and never feeds the memory producer.

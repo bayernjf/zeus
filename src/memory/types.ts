@@ -50,11 +50,11 @@ export const DEFAULT_FACT_IMPORTANCE = 0.5;
  * data, never an operator instruction — so every fact the consolidator
  * produces carries `agent-produced`. The label travels with the fact into
  * later recall, where the assembler forwards it as the entry's provenance
- * (the consumer sees "another agent said this", not "the kernel/user
+ * (the consumer sees "another agent said this", not "the runtime/user
  * requires this"). Absent on facts written before this field existed
- * (old snapshots), where the assembler falls back to `kernel-resolved-realm`.
+ * (old snapshots), where the assembler falls back to `runtime-resolved-realm`.
  */
-export type FactOrigin = 'agent-produced' | 'kernel-resolved-realm';
+export type FactOrigin = 'agent-produced' | 'runtime-resolved-realm';
 
 export interface FactRecord {
   factId: string;
@@ -115,7 +115,7 @@ export interface ConsolidateOptions {
   escalationId?: (dispute: DisputeRecord) => string;
 }
 
-/** A recorded driver correction against an author; lowers future reliability. */
+/** A recorded operator correction against an author; lowers future reliability. */
 export interface ReliabilityCorrection {
   agentId: string;
   runId: string;
@@ -189,7 +189,7 @@ export interface WritebackRecord {
   /** The stable pattern that produced this recommendation (read-only attribution). */
   source: { kind: string; target: string; confidence: 'stable' | 'suggestive' };
   param: WritebackParam;
-  /** Entity the parameter applies to (a vassal id for `selection-weight`). */
+  /** Entity the parameter applies to (a executor id for `selection-weight`). */
   target: string;
   /** Multiplicative weight; 1 = no change, <1 down-weights a failure-concentrated target. */
   factor: number;
@@ -215,7 +215,7 @@ export interface RecallSearchOptions {
   alpha?: number;
 }
 
-/** Serializable memory state; the snapshot persisted with the kernel. */
+/** Serializable memory state; the snapshot persisted with the runtime. */
 export type MemoryState = {
   events: MemoryEvent[];
   facts: Array<[string, FactRecord[]]>;

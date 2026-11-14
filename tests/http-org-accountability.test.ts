@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { OversightDesk, conflictsToDesk } from '../src/oversight/oversight.js';
@@ -10,17 +10,17 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function statusEvent(taskId: string): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'completed' }, final: true };
 }
 
-function verdict(vassal: string, stance: string): DispatchResult {
+function verdict(executor: string, stance: string): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state: 'completed' },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance } }] }],
@@ -28,11 +28,11 @@ function verdict(vassal: string, stance: string): DispatchResult {
   return { ok: true, task, events: [statusEvent(task.id)], injectedHits: [] };
 }
 
-// loom ships, atlas holds: the split needs a driver, so the accountability chain
+// loom ships, atlas holds: the split needs a operator, so the accountability chain
 // can be checked both before and after the settlement.
 const splitPort: DispatchPort = {
   async dispatch(req) {
-    return verdict(req.vassal!, req.vassal === 'loom' ? 'ship' : 'hold');
+    return verdict(req.executor!, req.executor === 'loom' ? 'ship' : 'hold');
   },
   async cancel() {},
 };
@@ -57,7 +57,7 @@ async function server(orgRegistry: OrgRegistry, withOrchestrator = true): Promis
     onConflict: conflictsToDesk(desk),
   });
   return createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     orgRegistry,
@@ -85,7 +85,7 @@ describe('E9.3 accountability HTTP', () => {
     });
     expect(res.statusCode).toBe(200);
     const chain = await res.json();
-    expect(chain).toMatchObject({ intentId: 'intent-1', skill: 'review', status: 'needs-driver' });
+    expect(chain).toMatchObject({ intentId: 'intent-1', skill: 'review', status: 'needs-operator' });
     expect(chain.executing).toEqual([
       expect.objectContaining({ agentId: 'loom', role: 'member', departmentId: 'dept:engineering' }),
       expect.objectContaining({ agentId: 'atlas', departmentId: 'unassigned' }),
@@ -97,10 +97,10 @@ describe('E9.3 accountability HTTP', () => {
       }),
     ]);
     expect(chain.unassigned).toEqual(['atlas']);
-    expect(chain.driver).toBeUndefined();
+    expect(chain.operator).toBeUndefined();
   });
 
-  it('names the driver who settled the intent', async () => {
+  it('names the operator who settled the intent', async () => {
     app = await server(establishment());
     await app.inject({
       method: 'POST', url: '/api/intents', headers: AUTH,
@@ -108,7 +108,7 @@ describe('E9.3 accountability HTTP', () => {
     });
     const settled = await app.inject({
       method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH,
-      payload: { stance: 'ship', note: 'driver call' },
+      payload: { stance: 'ship', note: 'operator call' },
     });
     expect(settled.statusCode).toBe(200);
 
@@ -116,7 +116,7 @@ describe('E9.3 accountability HTTP', () => {
       method: 'GET', url: '/api/org/accountability/intent-1', headers: AUTH,
     })).json();
     expect(chain.status).toBe('completed');
-    expect(chain.driver).toMatchObject({ escalationId: 'esc-1', stance: 'ship' });
+    expect(chain.operator).toMatchObject({ escalationId: 'esc-1', stance: 'ship' });
   });
 
   it('404s an unknown intent', async () => {

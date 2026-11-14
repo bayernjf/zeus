@@ -3,7 +3,7 @@
  *
  * The commission record stores only *decisions* (who opened it, who commissioned
  * it, who waived what). Whether the commission is still valid is always
- * recomputed from live evidence - a roster seat that got struck, a vassal that
+ * recomputed from live evidence - a roster seat that got struck, a executor that
  * got revoked, a grant that expired or a mentorship that was dismissed must be
  * able to take the commission away without anyone remembering to edit a cache.
  */

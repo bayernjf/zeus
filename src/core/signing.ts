@@ -4,10 +4,10 @@ import { ROSTER_SCHEMA_VERSION, type RosterSnapshot } from '../registry/roster.j
 import { sha256Labeled } from '../util/crypto.js';
 
 /**
- * fealty signing chain v1 — pure functions per docs/design-fealty-signing.md.
+ * handshake signing chain v1 — pure functions per docs/design-handshake-signing.md.
  *
  * Two-layer envelope:
- *   - per-entry Attestation (cardDigest + fealtyDigest + status + TTL),
+ *   - per-entry Attestation (cardDigest + handshakeDigest + status + TTL),
  *   - snapshot Seal (snapshotDigest + maxAge) wrapping the existing RosterSnapshot.
  *
  * Canonicalization is a self-contained RFC 8785 (JCS) subset: UTF-8, object keys
@@ -55,11 +55,11 @@ export function canonicalDigest(value: unknown): string {
   return sha256Labeled(canonicalJson(value));
 }
 
-export function digestCard(card: AgentCard): { cardDigest: string; fealtyDigest?: string } {
-  const fealty = card['x-zeus-fealty'];
+export function digestCard(card: AgentCard): { cardDigest: string; handshakeDigest?: string } {
+  const handshake = card['x-zeus-handshake'];
   return {
     cardDigest: canonicalDigest(card),
-    ...(fealty ? { fealtyDigest: canonicalDigest(fealty) } : {}),
+    ...(handshake ? { handshakeDigest: canonicalDigest(handshake) } : {}),
   };
 }
 
@@ -68,7 +68,7 @@ export function digestCard(card: AgentCard): { cardDigest: string; fealtyDigest?
 export interface RosterSigner {
   readonly keyId: string;
   /** Public half of the signing key, when the backend can export it. Only the
-   *  publication endpoint reads this (design-fealty-signing §5.1); signing and
+   *  publication endpoint reads this (design-handshake-signing §5.1); signing and
    *  verification never need it, so a KMS/HSM signer may leave it undefined and
    *  simply answer 500 there. */
   readonly publicKey?: KeyObject;
@@ -136,7 +136,7 @@ export class Ed25519Verifier implements RosterVerifier {
 
 /**
  * What a verifier needs to check a seal without taking the publisher's word for
- * it (design-fealty-signing §5.1/§9.3). JWKS-shaped so a standard library can
+ * it (design-handshake-signing §5.1/§9.3). JWKS-shaped so a standard library can
  * read `keys[]`; the two encodings after that are for the humans and the CLIs:
  * `spkiPem` is what `scripts/verify-roster.mjs --key` takes, and a fingerprint is
  * what gets announced out of band, because nobody reads 43 base64 characters off
@@ -197,18 +197,18 @@ export type Attestation = {
   alg: 'Ed25519';
   keyId: string;
   issuer: 'zeus';
-  vassal: { name: string; cardUrl: string };
+  executor: { name: string; cardUrl: string };
   cardDigest: string;
-  fealtyDigest?: string;
+  handshakeDigest?: string;
   status: AttestationStatus;
   issuedAt: string;
   /**
    * Hard-expiry window, present only on active attestations. Revocation is a
    * permanent, non-replayable state (replaying a revoked attestation still
-   * correctly denies the vassal), so revoked attestations carry no per-entry
+   * correctly denies the executor), so revoked attestations carry no per-entry
    * expiry; freshness of an internal snapshot containing them is bound by the
    * seal maxAge. This is the v1.1 addition that lets the internal roster (which
-   * keeps revoked rows for the governance trail) be sealed, per design-fealty-signing §4.
+   * keeps revoked rows for the governance trail) be sealed, per design-handshake-signing §4.
    */
   expiresAt?: string;
   sig: string;
@@ -258,7 +258,7 @@ export async function createAttestation(
   if (options.ttlSeconds !== undefined && !isPositiveSeconds(options.ttlSeconds)) {
     throw new Error(`createAttestation: ttlSeconds must be a positive number of seconds, got ${String(options.ttlSeconds)}`);
   }
-  const { cardDigest, fealtyDigest } = digestCard(source.card);
+  const { cardDigest, handshakeDigest } = digestCard(source.card);
   const status: AttestationStatus = source.status ?? 'active';
   const issuedAt = iso(options.now);
   const unsigned = {
@@ -266,9 +266,9 @@ export async function createAttestation(
     alg: ALG,
     keyId: signer.keyId,
     issuer: ISSUER,
-    vassal: { name: source.name, cardUrl: source.cardUrl },
+    executor: { name: source.name, cardUrl: source.cardUrl },
     cardDigest,
-    ...(fealtyDigest ? { fealtyDigest } : {}),
+    ...(handshakeDigest ? { handshakeDigest } : {}),
     status,
     issuedAt,
     // Only active attestations carry a hard-expiry window. A revoked attestation
@@ -438,7 +438,7 @@ export async function verifySignedSnapshot(
   //    maxAge for snapshot freshness.
   for (const entry of snapshot.entries) {
     const attestation = attestations[entry.name];
-    if (!attestation) return { ok: false, reason: `missing attestation for vassal "${entry.name}"` };
+    if (!attestation) return { ok: false, reason: `missing attestation for executor "${entry.name}"` };
     if (attestation.v !== ENVELOPE_VERSION) {
       return {
         ok: false,
@@ -461,7 +461,7 @@ export async function verifySignedSnapshot(
         reason: `attestation for "${entry.name}" is signed by keyId "${String(attestation.keyId)}", not the seal keyId "${String(seal.keyId)}"`,
       };
     }
-    if (attestation.vassal?.name !== entry.name) {
+    if (attestation.executor?.name !== entry.name) {
       return { ok: false, reason: `attestation name binding failed for "${entry.name}"` };
     }
     if (attestation.status !== entry.status) {
@@ -509,14 +509,14 @@ export async function verifySignedSnapshot(
 }
 
 /** Deep content check for a party that holds the (re-fetched) card: recompute
- *  digests and compare with the attestation. Detects T2 tampering with fealty,
+ *  digests and compare with the attestation. Detects T2 tampering with handshake,
  *  skills, description or name. */
 export function attestationMatchesCard(attestation: Attestation, card: AgentCard): boolean {
   const digests = digestCard(card);
   if (attestation.cardDigest !== digests.cardDigest) return false;
-  if (attestation.vassal.name !== card.name) return false;
-  if (attestation.fealtyDigest || digests.fealtyDigest) {
-    if (attestation.fealtyDigest !== digests.fealtyDigest) return false;
+  if (attestation.executor.name !== card.name) return false;
+  if (attestation.handshakeDigest || digests.handshakeDigest) {
+    if (attestation.handshakeDigest !== digests.handshakeDigest) return false;
   }
   return true;
 }

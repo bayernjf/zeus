@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { ProgressHub, type ProgressEvent } from '../src/orchestrator/progress.js';
@@ -14,17 +14,17 @@ import type { DispatchRequest, DispatchResult, AuditEntry } from '../src/dispatc
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 import type { FanOutRequest, FanOutResult } from '../src/orchestrator/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
-function verdict(vassal: string): DispatchResult {
+function verdict(executor: string): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state: 'completed' },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
@@ -38,13 +38,13 @@ function lookupFor(names: string[]): TargetLookup {
 
 let orchestrator: Orchestrator | undefined;
 
-/** Captures every DispatchRequest the kernel sent, so tests can assert the
+/** Captures every DispatchRequest the runtime sent, so tests can assert the
  *  outbound trace context on the wire. */
 function capturingPort(captured: DispatchRequest[]): DispatchPort {
   return {
     async dispatch(req) {
       captured.push(req);
-      return verdict(req.vassal!);
+      return verdict(req.executor!);
     },
     async cancel() {},
   };
@@ -55,7 +55,7 @@ describe('S6 V2 trace propagation (design-observability §5)', () => {
     orchestrator = undefined;
   });
 
-  it('outbound A2A requests carry the kernel-derived traceparent', async () => {
+  it('outbound A2A requests carry the runtime-derived traceparent', async () => {
     const captured: DispatchRequest[] = [];
     const hub = new ProgressHub();
     orchestrator = new Orchestrator(lookupFor(['loom']), capturingPort(captured), {
@@ -68,7 +68,7 @@ describe('S6 V2 trace propagation (design-observability §5)', () => {
     expect(captured.length).toBe(1);
     const req = captured[0]!;
     // traceId = intent-level runId, spanId = branch runId (`run-1:loom`),
-    // flags = 01 (sampled): the W3C shape over the kernel's own namespace.
+    // flags = 01 (sampled): the W3C shape over the runtime's own namespace.
     expect(req.traceparent).toBe('00-run-1-run-1:loom-01');
   });
 
@@ -83,7 +83,7 @@ describe('S6 V2 trace propagation (design-observability §5)', () => {
       skill: 'summarize',
       params: {},
       realm: 'personal',
-      vassal: 'loom',
+      executor: 'loom',
       runId: 'run-9',
     };
     await dispatcherPort.dispatch(req);
@@ -112,7 +112,7 @@ describe('S6 V2 trace endpoint', () => {
       onProgress: e => hub.publish(e),
     });
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       orchestrator,
@@ -133,7 +133,7 @@ describe('S6 V2 trace endpoint', () => {
     const branch = tree.spans.find((s: { spanId: string }) => s.spanId === 'run-1:loom');
     expect(branch).toBeDefined();
     expect(branch.kind).toBe('branch');
-    expect(branch.vassal).toBe('loom');
+    expect(branch.executor).toBe('loom');
     expect(branch.outcome).toBe('completed');
   });
 
@@ -158,7 +158,7 @@ describe('S6 V2 trace endpoint', () => {
       decidedAt: '2026-10-10T00:00:05.800Z',
     });
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       orchestrator,
@@ -192,7 +192,7 @@ describe('S6 V2 trace endpoint', () => {
       onProgress: e => hub.publish(e),
     });
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       orchestrator,
@@ -207,7 +207,7 @@ describe('S6 V2 trace endpoint', () => {
   it('unknown or retention-evicted intents 404', async () => {
     dir = mkdtempSync(join(tmpdir(), 'zeus-trace-'));
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       progressHub: new ProgressHub(),
@@ -249,7 +249,7 @@ describe('S6 V2 external-link recording', () => {
     } as unknown as Orchestrator;
 
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       orchestrator: stubOrchestrator,
@@ -281,7 +281,7 @@ describe('S6 V2 external-link recording', () => {
     const tree = buildTraceTree({
       audit: auditEntries,
       progress: [
-        { type: 'branch-started', intentId: 'intent-in', runId: 'run-in', vassal: 'caller-a', skill: 'summarize', at: '2026-10-10T00:00:00.000Z' },
+        { type: 'branch-started', intentId: 'intent-in', runId: 'run-in', executor: 'caller-a', skill: 'summarize', at: '2026-10-10T00:00:00.000Z' },
         { type: 'intent-finished', intentId: 'intent-in', runId: 'run-in', status: 'completed', at: '2026-10-10T00:00:00.001Z' },
       ] satisfies ProgressEvent[],
     });
@@ -296,7 +296,7 @@ describe('ProgressHub bounded retention (S6 V2 / S15 V2 shared buffer)', () => {
     const hub = new ProgressHub();
     const heard: string[] = [];
     hub.subscribe('i1', e => heard.push(e.type));
-    const ev: ProgressEvent = { type: 'branch-started', intentId: 'i1', runId: 'r1', vassal: 'v', skill: 's', at: 't1' };
+    const ev: ProgressEvent = { type: 'branch-started', intentId: 'i1', runId: 'r1', executor: 'v', skill: 's', at: 't1' };
     hub.publish(ev);
     expect(heard).toEqual(['branch-started']);
     expect(hub.eventsOf('i1')).toEqual([ev]);
@@ -306,7 +306,7 @@ describe('ProgressHub bounded retention (S6 V2 / S15 V2 shared buffer)', () => {
     const hub = new ProgressHub();
     const cap = ProgressHub.MAX_EVENTS_PER_INTENT;
     for (let i = 0; i < cap + 5; i++) {
-      hub.publish({ type: 'branch-started', intentId: 'i1', runId: `r${i}`, vassal: 'v', skill: 's', at: `t${i}` });
+      hub.publish({ type: 'branch-started', intentId: 'i1', runId: `r${i}`, executor: 'v', skill: 's', at: `t${i}` });
     }
     const events = hub.eventsOf('i1');
     expect(events.length).toBe(cap);
@@ -318,9 +318,9 @@ describe('ProgressHub bounded retention (S6 V2 / S15 V2 shared buffer)', () => {
     const hub = new ProgressHub();
     const cap = ProgressHub.MAX_RETAINED_INTENTS;
     for (let i = 0; i < cap; i++) {
-      hub.publish({ type: 'branch-started', intentId: `i${i}`, runId: `r${i}`, vassal: 'v', skill: 's', at: `t${i}` });
+      hub.publish({ type: 'branch-started', intentId: `i${i}`, runId: `r${i}`, executor: 'v', skill: 's', at: `t${i}` });
     }
-    hub.publish({ type: 'branch-started', intentId: 'i-new', runId: 'r-new', vassal: 'v', skill: 's', at: 't-new' });
+    hub.publish({ type: 'branch-started', intentId: 'i-new', runId: 'r-new', executor: 'v', skill: 's', at: 't-new' });
     expect(hub.eventsOf('i0')).toEqual([]);
     expect(hub.eventsOf('i-new').length).toBe(1);
   });
@@ -329,11 +329,11 @@ describe('ProgressHub bounded retention (S6 V2 / S15 V2 shared buffer)', () => {
     const hub = new ProgressHub();
     const heard: string[] = [];
     hub.subscribe('i1', e => heard.push(e.type));
-    hub.publish({ type: 'branch-started', intentId: 'i1', runId: 'r1', vassal: 'v', skill: 's', at: 't1' });
+    hub.publish({ type: 'branch-started', intentId: 'i1', runId: 'r1', executor: 'v', skill: 's', at: 't1' });
     hub.release('i1');
     expect(hub.eventsOf('i1')).toEqual([]);
-    hub.publish({ type: 'branch-ended', intentId: 'i1', runId: 'r1', vassal: 'v', outcome: 'completed', at: 't2' });
+    hub.publish({ type: 'branch-ended', intentId: 'i1', runId: 'r1', executor: 'v', outcome: 'completed', at: 't2' });
     expect(heard).toEqual(['branch-started', 'branch-ended']);
-    expect(hub.eventsOf('i1')).toEqual([{ type: 'branch-ended', intentId: 'i1', runId: 'r1', vassal: 'v', outcome: 'completed', at: 't2' }]);
+    expect(hub.eventsOf('i1')).toEqual([{ type: 'branch-ended', intentId: 'i1', runId: 'r1', executor: 'v', outcome: 'completed', at: 't2' }]);
   });
 });

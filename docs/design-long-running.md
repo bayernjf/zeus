@@ -1,17 +1,17 @@
 # 设计稿：长流程持久化执行——checkpoint、崩溃恢复、断点续跑（tech map S13）
 
 - 状态：**现行 v0.2（2026-10-10）**：V1 崩溃恢复四分类纯函数与 V2 启动恢复接线均已落地（设计原稿 §4/§5 分期）。本文区分"优雅退出快照（已有）"与"崩溃恢复（缺口）"，定义恢复分级纯函数。
-- 演进：v0.2（2026-10-10）——V1 已落码（Active work 178：`src/core/orchestrator/recovery.ts` `classifyRecoverable` 四分类 + `computeCheckpoint` 最小集，`tests/recovery.test.ts` 18 例全布尔面穷举 + 审计 4 值 recovery-* 登记）+ **V2 启动恢复接线已落地并核验（Active work 209 之后批次，`src/state/boot.ts` 静态状态恢复后逐在途意图执行恢复裁决 + `tests/recovery-boot.test.ts`）**；V3 周期 checkpoint 触发条件不变（首个连续运行 ≥2 周真实实例，或实测崩溃丢失窗口不可接受，与 design-intent-retention §5 同口径）；V4 分支内断点随真机阶段。v0.1（2026-10-09）首版——现状盘点（KernelSnapshot 优雅落盘 + 显式 resume 已有，崩溃后在途意图无恢复策略）+ 恢复三分类 + `classifyRecoverable`/`computeCheckpoint` 草案 + 分期。
-- 关联：tech map S13（checkpoint、崩溃恢复、断点续跑，随 H2）；design-intent-retention.md（状态窗口/归档，是**体积治理**；本设计是**执行连续性**，两者正交）；design-fan-out.md（幂等键与零出站重放，自动恢复的安全前提）；design-hil.md（恢复需人时落 L1/L2）；design-supervision.md §7.1（熔断随快照恢复）；design-cost-governance.md（S9，恢复重跑受预算约束）；design-sandbox.md（S16，外部写的不可逆性影响恢复分类）；`src/state/kernel-state.ts`（KernelSnapshot）、`src/state/archive.ts`、`src/core/orchestrator/orchestrator.ts`（resume/resumeNo）。
+- 演进：v0.2（2026-10-10）——V1 已落码（Active work 178：`src/core/orchestrator/recovery.ts` `classifyRecoverable` 四分类 + `computeCheckpoint` 最小集，`tests/recovery.test.ts` 18 例全布尔面穷举 + 审计 4 值 recovery-* 登记）+ **V2 启动恢复接线已落地并核验（Active work 209 之后批次，`src/state/boot.ts` 静态状态恢复后逐在途意图执行恢复裁决 + `tests/recovery-boot.test.ts`）**；V3 周期 checkpoint 触发条件不变（首个连续运行 ≥2 周真实实例，或实测崩溃丢失窗口不可接受，与 design-intent-retention §5 同口径）；V4 分支内断点随真机阶段。v0.1（2026-10-09）首版——现状盘点（RuntimeSnapshot 优雅落盘 + 显式 resume 已有，崩溃后在途意图无恢复策略）+ 恢复三分类 + `classifyRecoverable`/`computeCheckpoint` 草案 + 分期。
+- 关联：tech map S13（checkpoint、崩溃恢复、断点续跑，随 H2）；design-intent-retention.md（状态窗口/归档，是**体积治理**；本设计是**执行连续性**，两者正交）；design-fan-out.md（幂等键与零出站重放，自动恢复的安全前提）；design-hil.md（恢复需人时落 L1/L2）；design-supervision.md §7.1（熔断随快照恢复）；design-cost-governance.md（S9，恢复重跑受预算约束）；design-sandbox.md（S16，外部写的不可逆性影响恢复分类）；`src/state/runtime-state.ts`（RuntimeSnapshot）、`src/state/archive.ts`、`src/core/orchestrator/orchestrator.ts`（resume/resumeNo）。
 - 本文是长流程持久化执行的单一事实源；handoff 与 PRD 只索引。
 
 ## 1. 背景与现状
 
 | 能力 | 现状 | 边界 |
 | --- | --- | --- |
-| 状态快照 | KernelSnapshot 在优雅退出（SIGTERM）时全量落盘 0600：registry/oversight/orchestrator/realms/skills/memory/connectors/mentorships/org/grants | **只覆盖优雅退出**；kill -9、断电、OOM 时最后一次落盘之后的状态丢失 |
+| 状态快照 | RuntimeSnapshot 在优雅退出（SIGTERM）时全量落盘 0600：registry/oversight/orchestrator/realms/skills/memory/connectors/mentorships/org/grants | **只覆盖优雅退出**；kill -9、断电、OOM 时最后一次落盘之后的状态丢失 |
 | 启动恢复 | 重启从快照恢复名册、治理状态、Realm、记忆等（smoke 45 步含 restart 系列验证） | 恢复的是**静态治理状态**；在途意图的执行不自动续 |
-| 显式 resume | 操作者驱动：input-required 补参后 resume、失败分支 resumeNo 续跑，runId 谱系 `parent:vassal:resumeN` | 需要人显式触发；没有崩溃后的自动判定 |
+| 显式 resume | 操作者驱动：input-required 补参后 resume、失败分支 resumeNo 续跑，runId 谱系 `parent:executor:resumeN` | 需要人显式触发；没有崩溃后的自动判定 |
 | 幂等重放 | intentId 幂等，重放零出站（F2） | 是自动恢复**安全性**的前提，但本身不触发恢复 |
 | 归档 | out-window 意图进 archive，replay 可追溯 | 面向历史查询，不面向续跑 |
 | 分支事件 | dispatcher 落定时带全量 event list（progress.ts 注释明示分支内不增量流式） | 分支执行中途崩溃，其未落定事件全部丢失 |
@@ -30,9 +30,9 @@
 **边界（明确不做）**：
 
 - 不做分支内部的逐帧 checkpoint（外部 Agent 的中间态内核拿不到、也不该替它存；分支粒度是 A2A 协议决定的边界）。
-- 不做跨主机迁移/热漂移：恢复在同一数据目录、同一内核身份下进行（数据主权与签名链约束）；换机恢复走 vault 备份恢复协议，另案。
-- 不替外部 Agent 保证其侧幂等：自动续跑只在内核**幂等键 + 零出站重放**能保证安全的范围内发生；Agent 侧是否幂等由协议契约声明（design-vassal-protocol），未声明幂等的分支一律不自动重跑。
-- checkpoint 不引入新存储引擎：复用 KernelSnapshot/archive 的文件形状与 0600/备份纳入策略。
+- 不做跨主机迁移/热漂移：恢复在同一数据目录、同一内核身份下进行（数据主权与签名链约束）；换机恢复走 backup 备份恢复协议，另案。
+- 不替外部 Agent 保证其侧幂等：自动续跑只在内核**幂等键 + 零出站重放**能保证安全的范围内发生；Agent 侧是否幂等由协议契约声明（design-executor-protocol），未声明幂等的分支一律不自动重跑。
+- checkpoint 不引入新存储引擎：复用 RuntimeSnapshot/archive 的文件形状与 0600/备份纳入策略。
 
 ## 3. 恢复分类设计
 
@@ -53,7 +53,7 @@
 
 ### 3.1 checkpoint 内容（最小集）
 
-在既有 KernelSnapshot 之上，周期性 checkpoint 增补：意图/分支当前状态与 runId 谱系、每分支的派发模式（plan/execute）与技能幂等声明、已消费/未消费授权票据 nonce、在途幂等键集合、熔断与预算账本当前值。分支中间产物**不纳入**（§2 边界）。checkpoint 是"可恢复点"不是"完整执行镜像"。
+在既有 RuntimeSnapshot 之上，周期性 checkpoint 增补：意图/分支当前状态与 runId 谱系、每分支的派发模式（plan/execute）与技能幂等声明、已消费/未消费授权票据 nonce、在途幂等键集合、熔断与预算账本当前值。分支中间产物**不纳入**（§2 边界）。checkpoint 是"可恢复点"不是"完整执行镜像"。
 
 ## 4. 落地接口草案（设计级，未落码）
 

@@ -1,0 +1,192 @@
+import { constants } from 'node:fs';
+import { lstat, open, readFile, realpath } from 'node:fs/promises';
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
+import type { RealmStore } from '../realm/types.js';
+import {
+  BackupError,
+  BackupUnreadableError,
+  type LiveSource,
+  type MapSource,
+  type BackupInventory,
+} from './types.js';
+
+/** Default ceiling for one whitelisted file (the runtime state file is small;
+ *  an unbounded read into a backup would be its own incident). */
+export const DEFAULT_FILE_MAX_BYTES = 64 * 1024 * 1024;
+
+/** Adapt a connected Realm into the inventory port the map drawer consumes. */
+export function inventoryFromRealm(store: RealmStore, realmId: string): BackupInventory {
+  return {
+    async describe(): Promise<MapSource> {
+      const manifest = await store.manifest(realmId);
+      return {
+        kind: 'realm',
+        realmId: manifest.realmId,
+        type: manifest.type,
+        root: manifest.root,
+        ...(manifest.tenant ? { tenant: manifest.tenant } : {}),
+      };
+    },
+    async entries() {
+      return store.entries(realmId);
+    },
+  };
+}
+
+export type FilesInventoryOptions = {
+  /** Directory the whitelisted files are resolved under. */
+  root: string;
+  /** Root-relative POSIX paths. Named one by one - never a directory walk. */
+  files: string[];
+  label?: string;
+  maxBytes?: number;
+};
+
+type FilesSource = Extract<MapSource, { kind: 'files' }>;
+
+/**
+ * Inventory over an explicit file whitelist - the shape needed to back up
+ * `runtime.json`, which lives outside every connected Realm.
+ *
+ * A named file that is missing, escapes the root, is a symlink or is binary
+ * throws instead of being skipped: a backup that quietly drops the one file you
+ * asked for is worse than no backup, because it reports success.
+ */
+export function inventoryFromFiles(options: FilesInventoryOptions): BackupInventory {
+  const root = resolve(options.root);
+  const files = options.files.map(name => name.trim()).filter(Boolean);
+  if (files.length === 0) throw new BackupError('a files inventory needs at least one whitelisted file');
+  const maxBytes = options.maxBytes ?? DEFAULT_FILE_MAX_BYTES;
+  const source: FilesSource = {
+    kind: 'files',
+    label: options.label?.trim() || basename(root),
+    root,
+    files,
+  };
+
+  return {
+    async describe() {
+      return structuredClone(source);
+    },
+    async entries() {
+      return readWhitelist(source, maxBytes, false);
+    },
+  };
+}
+
+/**
+ * Read every whitelisted file. A named file that cannot be read faithfully
+ * throws `BackupUnreadableError`, and an unsafe whitelist entry (absolute,
+ * escaping) throws a plain `BackupError` - the latter is never tolerable, because
+ * a map that names `/etc/passwd` is a hostile map, not a drifted one.
+ */
+async function readWhitelist(source: FilesSource, maxBytes: number, tolerateUnreadable: boolean) {
+  const absRoot = resolve(source.root);
+  // Containment must be judged against the RESOLVED root: a directory reached
+  // through a symlink (/var -> /private/var on macOS, a mounted data dir on a
+  // server) realpaths to a different prefix than its own files, so comparing
+  // resolved files to an unresolved root made every file look like an escape.
+  //
+  // A root that cannot even be resolved is a fault, not a naming detail: falling
+  // back to the unresolved path would turn "the mount is gone" into "every
+  // whitelisted file escaped the root", which reads as a hostile map.
+  const realRoot = await realpath(absRoot);
+  const listed: Array<{ itemId: string; content: string; modifiedAt: string; bytes: number }> = [];
+  for (const name of source.files) {
+    try {
+      listed.push(await readWhitelistedFile(realRoot, name, maxBytes));
+    } catch (error) {
+      if (!tolerateUnreadable || !(error instanceof BackupUnreadableError)) throw error;
+    }
+  }
+  return listed;
+}
+
+async function readWhitelistedFile(realRoot: string, name: string, maxBytes: number) {
+  assertSafeRelativePath(name);
+  const abs = resolve(realRoot, name);
+  if (!isInsideRoot(realRoot, abs)) throw new BackupError(`whitelisted file escapes the root: ${name}`);
+  let link;
+  try {
+    link = await lstat(abs);
+  } catch {
+    throw new BackupUnreadableError(`whitelisted file is missing: ${name}`);
+  }
+  if (link.isSymbolicLink()) throw new BackupUnreadableError(`symlinked file is not backed up: ${name}`);
+  if (!link.isFile()) throw new BackupUnreadableError(`not a regular file: ${name}`);
+  if (link.size > maxBytes) {
+    throw new BackupUnreadableError(`file exceeds the ${maxBytes}-byte backup limit: ${name}`);
+  }
+  const real = await realpath(abs);
+  if (!isInsideRoot(realRoot, real)) throw new BackupError(`file resolves outside the root: ${name}`);
+  // Open by fd with O_NOFOLLOW so a trailing component swapped to a symlink in
+  // the realpath-to-read window is rejected, and the read is pinned to the
+  // inode that passed containment instead of re-resolving the path.
+  const handle = await open(real, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let buffer: Buffer;
+  try {
+    buffer = await readFile(handle);
+  } finally {
+    await handle.close();
+  }
+  // Binary content would be mangled by utf-8 round-tripping, so refuse it
+  // instead of producing a backup that cannot be restored faithfully.
+  if (buffer.includes(0)) throw new BackupUnreadableError(`binary file is outside the scope of a text backup: ${name}`);
+  return {
+    itemId: toPosix(relative(realRoot, real)),
+    content: buffer.toString('utf8'),
+    modifiedAt: link.mtime.toISOString(),
+    bytes: buffer.byteLength,
+  };
+}
+
+/** Live-source resolver for a realm map: reconnect with the map's own scope. */
+export function realmLiveSource(store: RealmStore): LiveSource {
+  return async source => {
+    if (source.kind !== 'realm') throw new BackupError(`this map needs a file source, not a realm: ${source.kind}`);
+    // Verification only reads. Reconnecting read-only means a recovery check
+    // cannot create directories, write an index or otherwise touch a realm the
+    // operator mounted for inspection.
+    const manifest = await store.connect(source.root, source.type, {
+      ...(source.tenant ? { tenant: source.tenant } : {}),
+      readOnly: true,
+    });
+    return store.entries(manifest.realmId);
+  };
+}
+
+/**
+ * Live-source resolver for a files map: re-read the same whitelist, but treat a
+ * file that has vanished or become unreadable as absent from the live view so
+ * L0 reports it as `missing` drift. Reporting the whole source as unreachable
+ * would send the operator to the wrong command - exit 3 ("go mount something")
+ * when the truth is "your state file is gone, restore it from the bundle".
+ */
+export function fileLiveSource(): LiveSource {
+  return async source => {
+    if (source.kind !== 'files') throw new BackupError(`this map needs a realm source, not files: ${source.kind}`);
+    return readWhitelist(source, DEFAULT_FILE_MAX_BYTES, true);
+  };
+}
+
+/** Pick the resolver that matches the map's own source kind. */
+export function liveSourceFor(store: RealmStore): LiveSource {
+  const realm = realmLiveSource(store);
+  const files = fileLiveSource();
+  return source => (source.kind === 'realm' ? realm(source) : files(source));
+}
+
+function assertSafeRelativePath(name: string): void {
+  if (!name || isAbsolute(name) || name.startsWith('/') || name.includes('\\') || name.split('/').includes('..')) {
+    throw new BackupError(`whitelisted file must be a root-relative POSIX path: ${name}`);
+  }
+}
+
+function isInsideRoot(root: string, abs: string): boolean {
+  const rel = relative(root, abs);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function toPosix(pathName: string): string {
+  return pathName.split(sep).join('/');
+}

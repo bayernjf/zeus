@@ -30,17 +30,17 @@ async function rpc(method: string, params: unknown, accept?: string) {
 }
 
 describe('reference execution agent (E4.12)', () => {
-  it('serves a card the registry can validate: fealty complete, one skill declared', async () => {
+  it('serves a card the registry can validate: handshake complete, one skill declared', async () => {
     const card = await (await fetch(handle.cardUrl)).json();
     expect(card.name).toBe('example-agent');
     expect(card.skills).toEqual([expect.objectContaining({ id: 'research', name: 'Reference Report' })]);
     // Every field the registration boundary requires; a missing one is refused at
     // registration and used to crash at dispatch (Active work 44).
-    expect(card['x-zeus-fealty']).toEqual({
+    expect(card['x-zeus-handshake']).toEqual({
       version: '1',
       swornTo: 'zeus',
       domain: 'reference',
-      dataRealms: ['personal'],
+      realms: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',

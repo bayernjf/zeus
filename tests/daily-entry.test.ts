@@ -11,7 +11,7 @@ import { parseCommand } from '../src/tui/commands.js';
 /**
  * The product entry (`npm run daily`) is assembly: recognize → fan out → write
  * back into the user's directory. Its defects are not in any one primitive, they
- * are in the wiring, so the cases below drive the real thing — a kernel booted by
+ * are in the wiring, so the cases below drive the real thing — a runtime booted by
  * the CLI itself, an execution agent behind a real socket, and a real directory
  * the record must land in.
  *
@@ -57,7 +57,7 @@ describe('recordItemId', () => {
 describe('resolveStateFile (--state none really means none)', () => {
   it('applies the default only when the operator said nothing', () => {
     expect(resolveStateFile(undefined, undefined)).toBe('./data/daily-state.json');
-    expect(resolveStateFile(undefined, '/tmp/kernel.json')).toBe('/tmp/kernel.json');
+    expect(resolveStateFile(undefined, '/tmp/runtime.json')).toBe('/tmp/runtime.json');
   });
 
   it('honours an explicit none instead of silently writing the default file', () => {
@@ -65,12 +65,12 @@ describe('resolveStateFile (--state none really means none)', () => {
     // made the run persist to the repo's own state file and then re-mount a realm
     // root from a temp directory that no longer exists.
     expect(resolveStateFile(null, undefined)).toBeNull();
-    expect(resolveStateFile(null, '/tmp/kernel.json')).toBeNull();
+    expect(resolveStateFile(null, '/tmp/runtime.json')).toBeNull();
     expect(resolveStateFile(undefined, 'none')).toBeNull();
   });
 
   it('keeps a named state file wins over the environment', () => {
-    expect(resolveStateFile('/tmp/mine.json', '/tmp/kernel.json')).toBe('/tmp/mine.json');
+    expect(resolveStateFile('/tmp/mine.json', '/tmp/runtime.json')).toBe('/tmp/mine.json');
   });
 });
 
@@ -114,10 +114,10 @@ describe('daily report rendering', () => {
       baseModel({
         status: 'completed',
         decision: { rule: 'majority', conclusion: 'healthy', reason: 'majority: "healthy" 1/1' },
-        positions: [{ vassal: 'demo-a', stance: 'healthy', rationale: 'no failed checks' }],
+        positions: [{ executor: 'demo-a', stance: 'healthy', rationale: 'no failed checks' }],
         branches: [
           {
-            vassal: 'demo-a',
+            executor: 'demo-a',
             ok: true,
             outcome: 'completed',
             state: 'completed',
@@ -139,13 +139,13 @@ describe('daily report rendering', () => {
   });
 
   it('keeps a dispatch that succeeded apart from work that failed', () => {
-    // The kernel counts a round trip that returned state 'failed' as a completed
+    // The runtime counts a round trip that returned state 'failed' as a completed
     // branch, so a reader who saw only "ok" would call a failed run a success.
     const text = renderDailyReport(
       baseModel({
         status: 'completed',
-        decision: { rule: 'majority', conclusion: null, reason: 'no vassal returned a stance; nothing to aggregate' },
-        branches: [{ vassal: 'demo-a', ok: true, outcome: 'completed', state: 'failed', evidence: [] }],
+        decision: { rule: 'majority', conclusion: null, reason: 'no executor returned a stance; nothing to aggregate' },
+        branches: [{ executor: 'demo-a', ok: true, outcome: 'completed', state: 'failed', evidence: [] }],
       }),
     );
     expect(text).toContain('dispatch ok · agent state `failed` · counted `completed`');
@@ -157,7 +157,7 @@ describe('daily report rendering', () => {
       baseModel({
         status: 'completed',
         decision: { rule: 'majority', conclusion: 'healthy', reason: 'unanimous' },
-        branches: [{ vassal: 'demo-a', ok: true, outcome: 'completed', state: 'completed', evidence: [] }],
+        branches: [{ executor: 'demo-a', ok: true, outcome: 'completed', state: 'completed', evidence: [] }],
       }),
     );
     expect(text).toContain('dispatch ok · agent state `completed`');
@@ -240,7 +240,7 @@ describe('daily previous-record parsing', () => {
     const stored = renderDailyReport(
       baseModel({
         status: 'completed',
-        decision: { rule: 'majority', conclusion: null, reason: 'no vassal returned a stance' },
+        decision: { rule: 'majority', conclusion: null, reason: 'no executor returned a stance' },
       }),
     );
     const parsed = parsePreviousRecord(stored, 'zeus-daily/2026-10-08T09-00-00Z-deployment-health.md');
@@ -261,13 +261,13 @@ describe('daily previous-record parsing', () => {
 // ---------------------------------------------------------------------------
 
 const { privateKey } = generateKeyPairSync('ed25519');
-const DRIVER_KEY_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+const OPERATOR_KEY_PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
 
-const FEALTY = {
+const HANDSHAKE = {
   version: '1',
   swornTo: 'zeus',
   domain: 'test-domain',
-  dataRealms: ['personal', 'enterprise'],
+  realms: ['personal', 'enterprise'],
   dataPolicy: 'read-task-scope',
   reportBack: true,
   escalationPolicy: 'on-failure',
@@ -283,7 +283,7 @@ function cardFor(name: string, port: number) {
       { id: 'deployment-health', name: 'Deployment Health', description: 'check a deployment for health', tags: [] },
       { id: 'research', name: 'Deep Research', description: 'multi-source research', tags: [] },
     ],
-    'x-zeus-fealty': FEALTY,
+    'x-zeus-handshake': HANDSHAKE,
   };
 }
 
@@ -546,7 +546,7 @@ describe('npm run daily', () => {
       ['--root', personal, '--agent', agentUrl('demo-agent'), '--state', join(personal, 'state.json'), '--realm', 'enterprise', '--record', 'run.md', 'check the deployment health'],
       cleanEnv({
         ZEUS_REALM_ENTERPRISE: `${enterprise}::acme`,
-        ZEUS_RSK_KEY: DRIVER_KEY_PEM,
+        ZEUS_RSK_KEY: OPERATOR_KEY_PEM,
         ZEUS_RSK_KEY_ID: 'zeus-rsk-test',
       }),
     );

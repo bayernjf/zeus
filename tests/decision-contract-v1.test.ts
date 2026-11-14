@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   DecisionAuditChain,
@@ -39,7 +39,7 @@ async function startStack(
   policy: DecisionPolicy = DEFAULT_POLICY_V1,
   options: { lateGraceHours?: number } = {},
 ): Promise<Stack> {
-  const registry = new VassalRegistry();
+  const registry = new ExecutorRegistry();
   const rskSigner = new Ed25519MemorySigner('zeus-rsk-contract');
   const auditSigner = new Ed25519MemorySigner('audit-seal-contract');
   const policyStore = new MemoryPolicyStore();
@@ -65,7 +65,7 @@ async function startStack(
 
 async function startStackWithoutPolicy(): Promise<{ app: FastifyInstance; port: number }> {
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-contract'),
     internalToken: TOKEN,
     decisionService: new DecisionService({

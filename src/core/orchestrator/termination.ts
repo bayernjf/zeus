@@ -20,7 +20,7 @@ export type IntentBudget = {
 
 /** Structural defaults (design-supervision §7.1): fail-closed guard defaults, not
  *  calibrated limits — real-load calibration rides the #9 trigger (≥3 live
- *  vassals). 256 branches per intent and 8 consecutive failures are wide enough
+ *  executors). 256 branches per intent and 8 consecutive failures are wide enough
  *  that ordinary fan-outs / partial-failure flows never brush them. */
 export const DEFAULT_MAX_BRANCHES_PER_INTENT = 256;
 export const DEFAULT_MAX_CONSECUTIVE_FAILURES = 8;
@@ -68,7 +68,7 @@ export type DispatchGate =
 
 /** Guarded entry: true when the intent may spawn another auto-selected branch
  *  under the configured limits (budget and, for auto-selection, the breaker).
- *  `explicit` means the driver named the target — a deliberate override that
+ *  `explicit` means the operator named the target — a deliberate override that
  *  the breaker (unlike the budget) does not govern, matching the skillGovernor /
  *  backpressure override precedent. */
 export function mayDispatch(

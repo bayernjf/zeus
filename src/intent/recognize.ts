@@ -66,7 +66,7 @@ export type IntentRecognitionOptions = {
 
 export type RecognizedIntent = {
   skill: string;
-  /** Recognition suggests shape only; parameters stay empty for the driver. */
+  /** Recognition suggests shape only; parameters stay empty for the operator. */
   params: Record<string, unknown>;
   /** Recognition alone never authorizes execution (deferred #33). */
   mode: 'plan';

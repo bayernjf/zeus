@@ -4,7 +4,7 @@
 
 **运行时要求**：Node.js **≥ 22**（`package.json` 的 `engines.node`；仓库 `.npmrc` 开了 `engine-strict`，装依赖时越界即失败）。Docker 镜像为 `node:22-slim`，CI 在 22.x 与 24.x 双档验证；Node 20 自 2026-03-24 起不再有任何发布，**不要**把它用于生产部署。
 
-> 当前边界：执行 Agent 可经 `POST /api/vassals`（H2 内部面，bearer 保护）注册，或经 `ZEUS_VASSAL_SEEDS` 启动自动注册；Realm 不挂 HTTP。
+> 当前边界：执行 Agent 可经 `POST /api/executors`（H2 内部面，bearer 保护）注册，或经 `ZEUS_EXECUTOR_SEEDS` 启动自动注册；Realm 不挂 HTTP。
 
 ## 1. 端点
 
@@ -22,8 +22,8 @@
 | `ZEUS_PORT` | `8787` | 监听端口 |
 | `ZEUS_PUBLIC_URL` | 由 `ZEUS_HOST`/`ZEUS_PORT` 推导 | 入站 A2A agent card（`GET /.well-known/agent-card.json`）广告的公网基址；进程被反向代理时须显式设置 |
 | `ZEUS_AGENT_ALIAS` | `choice` | 本进程在 A2A roster 里的 agent 别名；影响 agent card 的 name 字段 |
-| `ZEUS_VASSAL_SEEDS` | 未设置 | G1：启动时自动注册的执行 Agent Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。运行时上线走 `POST /api/vassals`，body 同样可带 `token`（存下后任何读视图都不回显，只有派发路径读取），因此**需要凭证的执行 Agent 不必为了上线而重启进程**。**某个 seed 拉不到或卡片没发誓 fealty → 整个进程拒启**（一行 `[zeus-http] refused to start: vassal seed failed for <url>: …`），不会静默少一个执行 Agent |
-| `ZEUS_OUTBOUND_ALLOW_HOSTS` | 未设置 | A-12：出站 URL 守卫的显式放行名单，逗号分隔（命中即跳过非公网地址检查）。守卫默认拒绝所有非全球可达地址（RFC 6890 专用地址段：RFC1918、`169.254/16`、CGNAT、多播/保留段，含 IPv6 ULA、link-local 与 IPv4 映射/兼容/NAT64 编码），**唯一例外是环回 `127.0.0.0/8` 与 `::1`**——本地优先，环回上的 vassal/MCP 服务是常态。要在私网里接入对端（如 `10.0.0.5`、容器里的 `host.docker.internal`）就把它写进这里；`.suffix` 前缀匹配整段后缀。**两层守卫**：同步 URL 检查只看得到 IP 字面量（主机名在该层放行），出站 fetch 还会经 DNS-rebinding 守卫（`src/util/outbound-dns.ts`，已实现并默认装配）解析主机名并校验全部结果地址，解析到私有/保留段仍拒绝；本名单对两层同时生效 |
+| `ZEUS_EXECUTOR_SEEDS` | 未设置 | G1：启动时自动注册的执行 Agent Agent Card URL，**逗号分隔**；状态快照里已有的 URL 跳过不重复拉取。运行时上线走 `POST /api/executors`，body 同样可带 `token`（存下后任何读视图都不回显，只有派发路径读取），因此**需要凭证的执行 Agent 不必为了上线而重启进程**。**某个 seed 拉不到或卡片没发誓 handshake → 整个进程拒启**（一行 `[zeus-http] refused to start: executor seed failed for <url>: …`），不会静默少一个执行 Agent |
+| `ZEUS_OUTBOUND_ALLOW_HOSTS` | 未设置 | A-12：出站 URL 守卫的显式放行名单，逗号分隔（命中即跳过非公网地址检查）。守卫默认拒绝所有非全球可达地址（RFC 6890 专用地址段：RFC1918、`169.254/16`、CGNAT、多播/保留段，含 IPv6 ULA、link-local 与 IPv4 映射/兼容/NAT64 编码），**唯一例外是环回 `127.0.0.0/8` 与 `::1`**——本地优先，环回上的 executor/MCP 服务是常态。要在私网里接入对端（如 `10.0.0.5`、容器里的 `host.docker.internal`）就把它写进这里；`.suffix` 前缀匹配整段后缀。**两层守卫**：同步 URL 检查只看得到 IP 字面量（主机名在该层放行），出站 fetch 还会经 DNS-rebinding 守卫（`src/util/outbound-dns.ts`，已实现并默认装配）解析主机名并校验全部结果地址，解析到私有/保留段仍拒绝；本名单对两层同时生效 |
 | `ZEUS_INTERNAL_TOKEN` | 未设置 | 内部名册 bearer；不设则内部路由不挂载 |
 | `ZEUS_STATE_FILE` | 未设置 | 内核状态 JSON 路径；不设则纯内存（重启全丢）。**写出固定 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值在持久化边界剥离、不进任何备份束，恢复后需重新声明；且以 uid 1000 落卷） |
 | `ZEUS_DB_FILE` | 未设置 | T-M6-01 决策/组织持久化 SQLite 路径（decision_policy/records/approvals + organizations/departments/positions/org_tasks 七表）。设置后启动幂等迁移并 hydrate，重启保留全部决策/审批/组织/任务；不设则内存演示模式。文件须放持久卷、0600、不入镜像（.dockerignore） |
@@ -31,7 +31,7 @@
 | `ZEUS_SECRET_FILE` | 未设置 | T-M7-02：本地 SecretBackend 的密钥文件路径（env 优先，文件兜底）。装配 agent-world 适配器时生效；密钥以行解析，`ref=value`（如 `agent-world:login={"email":"...","password":"..."}`）。文件须 0600、不入镜像 |
 | `ZEUS_SECRET_AGENT_WORLD_LOGIN` | 未设置 | T-M7-02：`agent-world:login` 凭据引用的默认环境变量名（由 `defaultEnvName('agent-world:login')` 推导；值为 JSON `{"email":"...","password":"..."}`，用于在 agent-world 登录换取会话 JWT）。只有 position 的 `credential_refs` 显式授予 `agent-world:login` 时才可被对应任务解析——最小权限；未授予或后端解析不到一律 fail-closed（业务失败），绝不匿名调用 |
 | `ZEUS_AUDIT_FILE` | 未设置 | E4.7 派发+治理审计 JSONL 落盘路径；不设则只写 stderr、`GET /api/audit` 不挂载 |
-| `ZEUS_TRACE_EXPORT_FILE` | 未设置 | S6 V3：每个落定意图的 trace 树追加到此 JSONL。**必须同时设 `ZEUS_AUDIT_FILE`**——树是从审计脊重建的，只设这一条会一直是空文件（启动日志会点明）。端点侧无读回面：文件是给人直接看的 |
+| `ZEUS_TRACE_EXPORT_FILE` | 未设置 | S6 V3：每个落定意图的 trace 树追加到此 JSONL。**必须同时设 `ZEUS_AUDIT_FILE`**——树是从审计日志重建的，只设这一条会一直是空文件（启动日志会点明）。端点侧无读回面：文件是给人直接看的 |
 | `ZEUS_METRICS_HISTORY_FILE` | 未设置 | S6 V3：每次保存内核状态时追加一条指标快照（按 capturedAt 去重）。**设了才挂载 `GET /api/metrics/history`**——不设该路由不存在（404），趋势读数只有活窗口 |
 | `ZEUS_AUDIT_MAX_BYTES` | `67108864`（64MiB） | 活动审计文件的轮转阈值；`0`/`off`/`unlimited` = 不轮转（**需自行接 logrotate，否则迟早写满盘**） |
 | `ZEUS_AUDIT_KEEP` | `5` | 轮转后保留的旧代数（`<file>.1` … `<file>.<keep>`）；磁盘总上界 = `maxBytes × (keep+1)` |
@@ -40,7 +40,7 @@
 | `ZEUS_INTENT_RETENTION_WINDOW_MS` | `2592000000`（30 天） | 出窗时间条件：创建早于该窗口的已了结意图出窗 |
 | `ZEUS_MAX_CONCURRENT_BRANCHES` | 未设置（=无界） | E1.5 进程内在途分支上界（跨意图；一个进程一个 orchestrator）。设了就限流，溢出分支按 `branchQueueLimit` 排队或被拒；**值非法直接拒启**（被悄悄忽略的上限看起来像保护存在） |
 | `ZEUS_BRANCH_QUEUE_LIMIT` | 未设置（=等待无限） | 允许排队等槽的分支数；`0` = 不排队，槽满即拒（泄压优先于排队） |
-| `ZEUS_MAX_CONCURRENT_PER_VASSAL` | 未设置（=不分流） | #9 背压分流的**每 Agent 饱和线**（≥1）。设了才启用分流：自动选路时把已在途数达到该线的执行 Agent **改派给同技能的其他提供者**；它**不是**每 Agent 并发硬上限（限流是 `ZEUS_MAX_CONCURRENT_BRANCHES` 的职责），且必须低于全局上界才有空闲可派，否则分流永不触发。显式点名的 `vassals` 是硬绑定，永不被改派。非数字或 `<1` 拒启 |
+| `ZEUS_MAX_CONCURRENT_PER_EXECUTOR` | 未设置（=不分流） | #9 背压分流的**每 Agent 饱和线**（≥1）。设了才启用分流：自动选路时把已在途数达到该线的执行 Agent **改派给同技能的其他提供者**；它**不是**每 Agent 并发硬上限（限流是 `ZEUS_MAX_CONCURRENT_BRANCHES` 的职责），且必须低于全局上界才有空闲可派，否则分流永不触发。显式点名的 `executors` 是硬绑定，永不被改派。非数字或 `<1` 拒启 |
 | `ZEUS_CLOCK_SKEW_DAYS` | `730`（+2 年） | **仅 CI 的 `clock-skew` 作业用**（deferred #24，`scripts/clock-skew-setup.mjs` 以 vitest setup 拨快 JS 时钟），**不是进程配置**（`.env.example` 里仍保留脚本专用条目）。它让"悄悄依赖墙上时钟"的用例当场变红而不是某天突然变红/变绿；本地复跑：`npx vitest run --config vitest.clock-skew.config.ts` |
 | `ZEUS_EVAL_BUDGET_MS` | `120000`（120 秒） | **仅 `scripts/eval-run.mjs` 用**（测试以 1ms 强制触发预算看门狗；CI 无人值守跑保留默认）。单次跑的墙钟预算，超时 exit 2（cannot start / stalled），与缺构建同一类。**不是进程配置**（`.env.example` 里仍保留脚本专用条目） |
 | `ZEUS_REALM_ROOTS` | 未设置 | G4：启动时连接的个人域根目录，逗号分隔；连接参数写进状态文件，重启自动重连 |
@@ -96,7 +96,7 @@ curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].spkiPem' > zeus-
 curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].jwkThumbprint'   # 带外公告这一串
 ```
 
-`spkiPem` 就是上面 `--key` 的输入，`jwkThumbprint`（RFC 7638）是**要带外固定的值**。这条通道不建立信任：应答方就是产出封签的那个进程，它能说明名册由哪个 `keyId` 签的，不能说明这把钥属于谁——所以验签方必须把手里的公钥指纹与带外公告比对过（契约见 design-fealty-signing.md §5.1）。若后端是导不出公钥的 KMS/HSM，该端点返回 501，公钥改由部署记录发布；`keys: []` 这种"看起来没有钥要固定"的形状是设计明确禁止的。未配密钥的非生产进程每次重启换一把临时钥，其发布值不可固定。
+`spkiPem` 就是上面 `--key` 的输入，`jwkThumbprint`（RFC 7638）是**要带外固定的值**。这条通道不建立信任：应答方就是产出封签的那个进程，它能说明名册由哪个 `keyId` 签的，不能说明这把钥属于谁——所以验签方必须把手里的公钥指纹与带外公告比对过（契约见 design-handshake-signing.md §5.1）。若后端是导不出公钥的 KMS/HSM，该端点返回 501，公钥改由部署记录发布；`keys: []` 这种"看起来没有钥要固定"的形状是设计明确禁止的。未配密钥的非生产进程每次重启换一把临时钥，其发布值不可固定。
 
 **传入方式**：
 
@@ -105,9 +105,9 @@ curl -s http://127.0.0.1:8787/api/roster/keys | jq -r '.keys[0].jwkThumbprint'  
 
 **生产守卫**：`NODE_ENV=production` 且两种方式都未提供时，进程启动即失败（exit 1，`RskConfigError`）——避免"重启后所有封签因临时钥而失效"。
 
-**本项目选型（2026-09-27 决策）**：**容器 / systemd 的 secret 挂载 + 私钥文件 0600**——`ZEUS_RSK_KEY_FILE` 指向只读挂载点（如 `-v <私钥文件>:/run/secrets/rsk.pem:ro`），私钥不进环境变量、不进镜像层。三条理由：① 当前部署形态就是本文件 §4 的 Docker 镜像，该路径已在 B1 实构实跑中验证过（含一条实测教训：**`docker cp` 会把宿主 uid 带进去，`USER node` 读不到 0600 密钥 → EACCES 拒启**，故秘钥必须走挂载）；② 个人版本机 0600 文件与之同构，只是宿主不同，无需维护第二条路径；③ 企业 KMS/HSM 留到出现**受治理的第二信任方**（需要"私钥不可导出 + 签名动作留审计"）时再上——届时 §5.1 的公钥发布端点返回 501、公钥改由部署记录发布，本选型不构成阻碍。轮换次序仍按 design-fealty-signing.md §5.4 七步。
+**本项目选型（2026-09-27 决策）**：**容器 / systemd 的 secret 挂载 + 私钥文件 0600**——`ZEUS_RSK_KEY_FILE` 指向只读挂载点（如 `-v <私钥文件>:/run/secrets/rsk.pem:ro`），私钥不进环境变量、不进镜像层。三条理由：① 当前部署形态就是本文件 §4 的 Docker 镜像，该路径已在 B1 实构实跑中验证过（含一条实测教训：**`docker cp` 会把宿主 uid 带进去，`USER node` 读不到 0600 密钥 → EACCES 拒启**，故秘钥必须走挂载）；② 个人版本机 0600 文件与之同构，只是宿主不同，无需维护第二条路径；③ 企业 KMS/HSM 留到出现**受治理的第二信任方**（需要"私钥不可导出 + 签名动作留审计"）时再上——届时 §5.1 的公钥发布端点返回 501、公钥改由部署记录发布，本选型不构成阻碍。轮换次序仍按 design-handshake-signing.md §5.4 七步。
 
-**轮换**：**人工执行，库里没有自动轮换**（理由与完整步骤见 design-fealty-signing.md §5.4 运行手册）。口径：换钥即换新 `ZEUS_RSK_KEY_ID`；**先带外公告新指纹、对方固定之后才切流**——反过来做会在验签方一侧留下一个与"名册被替换"无法区分的窗口；轮换窗口内验签方需同时持有新旧公钥（`--key 旧keyId=旧.pem --key 新keyId=新.pem`，按封签内 keyId 选择）。旧私钥停用后旧快照在 attestation TTL（24h）内仍可用旧公钥验，故旧私钥保留到那之后再销毁。切流后自检：`GET /api/roster/keys` 的 `kid` 已是新值、`jwkThumbprint` 与公告那串逐字符相同。
+**轮换**：**人工执行，库里没有自动轮换**（理由与完整步骤见 design-handshake-signing.md §5.4 运行手册）。口径：换钥即换新 `ZEUS_RSK_KEY_ID`；**先带外公告新指纹、对方固定之后才切流**——反过来做会在验签方一侧留下一个与"名册被替换"无法区分的窗口；轮换窗口内验签方需同时持有新旧公钥（`--key 旧keyId=旧.pem --key 新keyId=新.pem`，按封签内 keyId 选择）。旧私钥停用后旧快照在 attestation TTL（24h）内仍可用旧公钥验，故旧私钥保留到那之后再销毁。切流后自检：`GET /api/roster/keys` 的 `kid` 已是新值、`jwkThumbprint` 与公告那串逐字符相同。
 
 ## 4. Docker（推荐）
 
@@ -138,7 +138,7 @@ docker run -d --name zeus \
   zeus:0.1.0
 ```
 
-镜像内已固定 `NODE_ENV=production`、`ZEUS_HOST=0.0.0.0`、`ZEUS_PORT=8787`、`ZEUS_STATE_FILE=/data/kernel-state.json`，因此 `.env` 至少需要：
+镜像内已固定 `NODE_ENV=production`、`ZEUS_HOST=0.0.0.0`、`ZEUS_PORT=8787`、`ZEUS_STATE_FILE=/data/runtime-state.json`，因此 `.env` 至少需要：
 
 ```dotenv
 ZEUS_RSK_KEY_FILE=/secrets/rsk-private.pem
@@ -148,7 +148,7 @@ ZEUS_INTERNAL_TOKEN=<长随机串>
 
 只对本机暴露时端口绑 `127.0.0.1`；前置反向代理（TLS 终止）再对外。
 
-**容器内连接宿主或私网对端必须配出站放行名单**：出站 DNS-rebinding 守卫默认拒绝解析到 RFC1918/保留段的主机名。容器里经 `host.docker.internal` 连宿主上的执行 Agent/MCP 服务时，该名解析到 Docker 网关（如 `192.168.65.254`，私有段），不配名单会在启动 seed 阶段直接拒启（`vassal seed failed ... card fetch failed`）；连接任何内网 IP/主机名同理。按需显式放行：
+**容器内连接宿主或私网对端必须配出站放行名单**：出站 DNS-rebinding 守卫默认拒绝解析到 RFC1918/保留段的主机名。容器里经 `host.docker.internal` 连宿主上的执行 Agent/MCP 服务时，该名解析到 Docker 网关（如 `192.168.65.254`，私有段），不配名单会在启动 seed 阶段直接拒启（`executor seed failed ... card fetch failed`）；连接任何内网 IP/主机名同理。按需显式放行：
 
 ```dotenv
 # 放行宿主网关名，或具体内网主机/后缀（逗号分隔，.suffix 匹配整段后缀）
@@ -174,10 +174,10 @@ docker logs -f zeus                      # 启动应见 listening，无 ephemera
 curl -s http://127.0.0.1:8787/healthz
 docker inspect --format '{{.State.Health.Status}}' zeus   # healthy
 docker stop zeus                         # SIGTERM 直达 PID 1 的 node → drain → state saved
-docker start zeus                        # 启动日志应见 restored N vassals ...
+docker start zeus                        # 启动日志应见 restored N executors ...
 ```
 
-`docker stop` 的 SIGTERM 直接送达 PID 1 的 node 进程，先保存内核状态再退出；下次启动从 `/data/kernel-state.json` 恢复（registry 含已吊销执行 Agent、监督台队列、意图幂等表）。
+`docker stop` 的 SIGTERM 直接送达 PID 1 的 node 进程，先保存内核状态再退出；下次启动从 `/data/runtime-state.json` 恢复（registry 含已吊销执行 Agent、监督台队列、意图幂等表）。
 
 ### 4.5 docker compose（可选）
 
@@ -225,7 +225,7 @@ docker rm -f zeus && docker run -d --name zeus ... zeus:0.0.9
 ```ini
 # /etc/systemd/system/zeus.service
 [Unit]
-Description=Zeus HTTP kernel
+Description=Zeus HTTP runtime
 After=network.target
 
 [Service]
@@ -251,22 +251,22 @@ WantedBy=multi-user.target
 - [ ] `GET /api/roster/keys` 有答且 `kid` 等于 `ZEUS_RSK_KEY_ID`，其 `jwkThumbprint` 已带外公告给每个验签方（该端点自身不构成信任，见 §3；KMS 后端返回 501 时改为在部署记录里发布公钥）
 - [ ] `NODE_ENV=production`，启动日志无 ephemeral 告警；**并读 `GET /api/roster/keys` 的 `keySource=configured` / `survivesRestart=true` 为准**（日志会被轮转掉，这个字段不会；配置了持久化时 `GET /api/state` 的 `rosterKey` 给同一个事实）
 - [ ] `ZEUS_INTERNAL_TOKEN` 为长随机串（或明确不挂载内部路由）
-- [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值不入库）：`ls -l /data/kernel-state.json`
+- [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值不入库）：`ls -l /data/runtime-state.json`
 - [ ] `ZEUS_AUDIT_FILE` 已配置（否则审计只活在 stderr 里，重启即丢）；若把 `ZEUS_AUDIT_MAX_BYTES` 设成不轮转，确认已接外部 logrotate
 - [ ] **E3.6 边界自查**：每个企业域挂载都带 tenant；`GET /api/state` 里 `enterpriseRealms == tenantScopedRealms`（不等 = 有企业域没标边界，它只对操作者可达，但迟早被人当成"已经隔离了"）
 - [ ] **E6.4 授权自查**：`GET /api/domains` 的 `grants` 逐条读过——无 `expiresAt` 的长期授权必须是有意的；再用 `GET /api/domains/access` 抽查两类必答组合：企业主体读个人域（**必拒**）、未授权的个人侧主体读企业域（必拒）；`GET /api/audit?decision=domain-refused` 看有没有人正在撞边界
 - [ ] 端口默认只绑 loopback，TLS 在反向代理终止
 - [ ] `/healthz` 与 `/api/roster/public` 封签经独立通道验签通过（`npm run verify:roster -- --url <host>/api/roster/public --key <公钥>`；只看 HTTP 200 不算过——200 只说明服务活着，不说明名册是真的）
 - [ ] 真机验收 #6（标准 A2A 客户端打执行 Agent）与 Zeus↔loom 联调已过（见 handoff Active work）
-- [ ] Vault 备份已配置外部调度（cron/systemd timer），并完成一次 restore 演练（见 §7）
+- [ ] Backup 备份已配置外部调度（cron/systemd timer），并完成一次 restore 演练（见 §7）
 
-## 7. 备份与恢复（Vault CLI，E3.7）
+## 7. 备份与恢复（Backup CLI，E3.7）
 
-备份清单与恢复协议经零依赖 CLI 执行（`dist/vault/cli.js`，或 `npm run vault -- ...`）。**内核不内置定时器**：备份动作由用户或系统调度器（cron/systemd timer）触发，这是 design-vault.md 的明确边界（自动/云端备份为非目标）。
+备份清单与恢复协议经零依赖 CLI 执行（`dist/backup/cli.js`，或 `npm run backup -- ...`）。**内核不内置定时器**：备份动作由用户或系统调度器（cron/systemd timer）触发，这是 design-backup.md 的明确边界（自动/云端备份为非目标）。
 
 密钥（二选一，绝不作为位置参数出现在进程列表里）：
 
-- 口令：环境变量 `ZEUS_VAULT_PASSPHRASE`（scrypt 派生；可用 `--passphrase-env` 改变量名）
+- 口令：环境变量 `ZEUS_BACKUP_PASSPHRASE`（scrypt 派生；可用 `--passphrase-env` 改变量名）
 - raw key：`--key-file` 指向 32 字节原始密钥或 64 位 hex 文本
 
 | 子命令 | 作用 | 产物 |
@@ -281,50 +281,50 @@ WantedBy=multi-user.target
 每日备份 + 漂移校验（cron 示例，口令经受限权限的 env 文件注入）：
 
 ```cron
-# /etc/cron.d/zeus-vault：每日 03:17 全包备份，03:30 原地校验
-17 3 * * * zeus set -a; . /opt/zeus/.vault-env; set +a; cd /opt/zeus && node dist/vault/cli.js backup --root /data/realm --out-dir /var/backups/zeus
-30 3 * * * zeus set -a; . /opt/zeus/.vault-env; set +a; cd /opt/zeus && node dist/vault/cli.js check --map /var/backups/zeus/latest.map.json || logger -t zeus-vault "drift detected"
+# /etc/cron.d/zeus-backup：每日 03:17 全包备份，03:30 原地校验
+17 3 * * * zeus set -a; . /opt/zeus/.backup-env; set +a; cd /opt/zeus && node dist/backup/cli.js backup --root /data/realm --out-dir /var/backups/zeus
+30 3 * * * zeus set -a; . /opt/zeus/.backup-env; set +a; cd /opt/zeus && node dist/backup/cli.js check --map /var/backups/zeus/latest.map.json || logger -t zeus-backup "drift detected"
 ```
 
 恢复演练（灾备流程）：
 
 ```bash
 # 1. 用最近一次全包恢复到新位置（包与图 digest 不符会被拒绝）
-node dist/vault/cli.js restore --map backups/vault-xxxx.map.json \
-  --bundle backups/vault-xxxx.bundle.json --target /data/realm-restored
+node dist/backup/cli.js restore --map backups/backup-xxxx.map.json \
+  --bundle backups/backup-xxxx.bundle.json --target /data/realm-restored
 # 2. 退出码 0 且报告 recoverable: true 后，再切换挂载
 ```
 
-备份**内核状态文件**（`ZEUS_STATE_FILE` 指的那个文件：容器内是 `/data/kernel-state.json`，内容是名册、记忆事实、连接器声明（bearer token 与 stdio env 值在持久化边界剥离，恢复后需重新声明）、部门编制、授权台账）走文件白名单——它在每个已连接 Realm 之外：
+备份**内核状态文件**（`ZEUS_STATE_FILE` 指的那个文件：容器内是 `/data/runtime-state.json`，内容是名册、记忆事实、连接器声明（bearer token 与 stdio env 值在持久化边界剥离，恢复后需重新声明）、部门编制、授权台账）走文件白名单——它在每个已连接 Realm 之外：
 
 ```bash
 # 宿主机上（把 $STATE_DIR 换成 ZEUS_STATE_FILE 所在目录，文件名以 basename 为准）
 STATE_DIR=$(dirname "$ZEUS_STATE_FILE"); STATE_NAME=$(basename "$ZEUS_STATE_FILE")
-node dist/vault/cli.js backup \
+node dist/backup/cli.js backup \
   --files-root "$STATE_DIR" --files "$STATE_NAME" \
   --out-dir backups --name state
-node dist/vault/cli.js check --map backups/state.map.json   # 文件没了 → 退出码 2（漂移，可用包恢复）
-node dist/vault/cli.js restore --map backups/state.map.json \
+node dist/backup/cli.js check --map backups/state.map.json   # 文件没了 → 退出码 2（漂移，可用包恢复）
+node dist/backup/cli.js restore --map backups/state.map.json \
   --bundle backups/state.bundle.json --target /恢复目录
 ```
 
-容器内同理，只是路径换成 `/data/kernel-state.json`（`docker exec` 进去跑，或把 `/data` 卷挂出来再跑）。
+容器内同理，只是路径换成 `/data/runtime-state.json`（`docker exec` 进去跑，或把 `/data` 卷挂出来再跑）。
 
-白名单**逐个点名**、绝不目录遍历：指向整个数据目录会把无界增长的 `audit.jsonl` 与 `.tmp` 一起卷进备份。点名的文件缺失/是软链/是二进制 → 出图即拒（静默漏掉你要的那个文件比没有备份更坏）。**所以别把文件名写死在脚本里猜**——照上面用 `basename "$ZEUS_STATE_FILE"`，它由 `ZEUS_STATE_FILE` 决定，`.env.example` 与镜像里默认都是 `kernel-state.json`。
+白名单**逐个点名**、绝不目录遍历：指向整个数据目录会把无界增长的 `audit.jsonl` 与 `.tmp` 一起卷进备份。点名的文件缺失/是软链/是二进制 → 出图即拒（静默漏掉你要的那个文件比没有备份更坏）。**所以别把文件名写死在脚本里猜**——照上面用 `basename "$ZEUS_STATE_FILE"`，它由 `ZEUS_STATE_FILE` 决定，`.env.example` 与镜像里默认都是 `runtime-state.json`。
 
 `ZEUS_INTENT_RETENTION=archive` 时，出窗记录落在状态文件旁的 `intent-archive.jsonl`（追加式、可恢复、**无界增长**）：把它也加进白名单，与状态文件同目录同卷：
 
 ```bash
-node dist/vault/cli.js backup \
+node dist/backup/cli.js backup \
   --files-root "$STATE_DIR" --files "$STATE_NAME,intent-archive.jsonl" \
   --out-dir backups --name state
 ```
 
-注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 数据永久丢失，无托管后门**（见 design-vault.md §9 非目标）。
+注意：map 内 root 为绝对 realpath（仅密封态保存，打开后重连用）；内容包与 map 均为 AES-256-GCM 加密，错误口令或任何篡改都解密失败。**密钥丢失 = 数据永久丢失，无托管后门**（见 design-backup.md §9 非目标）。
 
 ## 8. watch 评估调度（调用方驱动，E3.11）
 
-watch 按自己的 `intervalSeconds` 判断是否到期，但**内核进程刻意不持定时器**——与 Vault 备份同一道边界（见 §7 与 design-self-host-loop §3.2）：到点"评估一次"必须由进程外的调度器调用 `POST /api/watch-tick`。仓库自带这个调度器 `scripts/run-watch-tick.mjs`（`npm run watch:tick`），它是 HTTP 面的薄客户端，不是第二条触发路径（Web 监督台的"立即评估一次"与 TUI `wt` 调的是同一个端点）。
+watch 按自己的 `intervalSeconds` 判断是否到期，但**内核进程刻意不持定时器**——与 Backup 备份同一道边界（见 §7 与 design-self-host-loop §3.2）：到点"评估一次"必须由进程外的调度器调用 `POST /api/watch-tick`。仓库自带这个调度器 `scripts/run-watch-tick.mjs`（`npm run watch:tick`），它是 HTTP 面的薄客户端，不是第二条触发路径（Web 监督台的"立即评估一次"与 TUI `wt` 调的是同一个端点）。
 
 两种形态，都适合无人值守：
 
@@ -333,7 +333,7 @@ watch 按自己的 `intervalSeconds` 判断是否到期，但**内核进程刻�
 | 单次（默认） | `npm run watch:tick` | cron 每 N 分钟打一次，打完即退 |
 | 常驻 | `npm run watch:tick -- --watch --interval 60` | systemd 长驻服务，按秒级节奏循环 |
 
-环境变量：`KERNEL_URL`（必填，**只接受 loopback**：`127.0.0.1` / `localhost` / `[::1]`，指向非环回地址直接退出 2——内部 token 不许离开本机）、`ZEUS_INTERNAL_TOKEN`（必填，bearer；缺失即退出 2）、`WATCH_INTERVAL_SECONDS`（默认 60，也可 `--interval` 覆盖）、`WATCH_HTTP_TIMEOUT_MS`（默认 10000，或 `--timeout`）、`WATCH_MAX_BACKOFF_MS`（默认 30000，常驻模式内核不可达时的退避上限）、`ZEUS_NOTIFY`（默认 `1`：常驻 `--watch` 模式里有 watch 真实 fired 时弹系统通知——macOS 用自带 `osascript display notification`，有 `terminal-notifier` 则用它，都没有则降级为日志；置 `0` 或传 `--no-notify` 关闭。单次模式默认不弹。unavailable / autoDisabled 的 watch 只打日志、不弹通知）。一键常驻带通知的入口为 `npm run daemon`（= `node scripts/run-watch-tick.mjs --watch --notify`）。
+环境变量：`RUNTIME_URL`（必填，**只接受 loopback**：`127.0.0.1` / `localhost` / `[::1]`，指向非环回地址直接退出 2——内部 token 不许离开本机）、`ZEUS_INTERNAL_TOKEN`（必填，bearer；缺失即退出 2）、`WATCH_INTERVAL_SECONDS`（默认 60，也可 `--interval` 覆盖）、`WATCH_HTTP_TIMEOUT_MS`（默认 10000，或 `--timeout`）、`WATCH_MAX_BACKOFF_MS`（默认 30000，常驻模式内核不可达时的退避上限）、`ZEUS_NOTIFY`（默认 `1`：常驻 `--watch` 模式里有 watch 真实 fired 时弹系统通知——macOS 用自带 `osascript display notification`，有 `terminal-notifier` 则用它，都没有则降级为日志；置 `0` 或传 `--no-notify` 关闭。单次模式默认不弹。unavailable / autoDisabled 的 watch 只打日志、不弹通知）。一键常驻带通知的入口为 `npm run daemon`（= `node scripts/run-watch-tick.mjs --watch --notify`）。
 
 退出码（供调度器判健康）：`0` 本次评估跑完（一个 watch 都没触发仍是成功）；`1` 内核拒绝（非 2xx，如 token 错 401）或报告里存在读数不可得 / 自动停用的 watch；`2` 起不来（配置缺失、参数非法、URL 非 loopback）或单次模式下内核不可达。常驻模式收到 SIGTERM/SIGINT 在当前一轮后干净退出（退出 0），内核重启窗口内按有界指数退避重试，不打死调度器。
 
@@ -357,7 +357,7 @@ Wants=zeus.service
 Type=simple
 WorkingDirectory=/opt/zeus
 EnvironmentFile=/opt/zeus/.env
-Environment=KERNEL_URL=http://127.0.0.1:8787
+Environment=RUNTIME_URL=http://127.0.0.1:8787
 Environment=WATCH_INTERVAL_SECONDS=60
 ExecStart=/usr/bin/node scripts/run-watch-tick.mjs --watch
 Restart=on-failure

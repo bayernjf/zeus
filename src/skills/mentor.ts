@@ -75,7 +75,7 @@ const DEFAULT_PASS_SCORE = 0.8;
 /**
  * Mentorship ledger. Pure aside from the one side effect that certification
  * grants the learner as a provider in the skill registry. Records persist with
- * the kernel snapshot and rebuild on restart.
+ * the runtime snapshot and rebuild on restart.
  */
 export class MentorshipLedger {
   private records = new Map<string, MentorshipRecord>();

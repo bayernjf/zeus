@@ -8,21 +8,21 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { JsonlTraceExporter } from '../src/observability/exporter.js';
 import { buildTraceTree } from '../src/observability/trace.js';
 import type { TraceTree } from '../src/observability/trace.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
-function tree(traceId: string, vassal: string, cents = 0.1): TraceTree {
+function tree(traceId: string, executor: string, cents = 0.1): TraceTree {
   return buildTraceTree({
     audit: [],
     progress: [
-      { type: 'branch-started', intentId: `intent-${traceId}`, runId: traceId, vassal, skill: 'research', at: '2026-10-30T00:00:00.000Z' },
-      { type: 'branch-ended', intentId: `intent-${traceId}`, runId: traceId, vassal, outcome: 'completed', at: '2026-10-30T00:00:05.000Z' },
+      { type: 'branch-started', intentId: `intent-${traceId}`, runId: traceId, executor, skill: 'research', at: '2026-10-30T00:00:00.000Z' },
+      { type: 'branch-ended', intentId: `intent-${traceId}`, runId: traceId, executor, outcome: 'completed', at: '2026-10-30T00:00:05.000Z' },
     ],
     traces: [{
       runId: traceId,
@@ -49,7 +49,7 @@ describe('D-5 trace query endpoint', () => {
 
   async function serverWith(exporter: JsonlTraceExporter): Promise<FastifyInstance> {
     return createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       traceExporter: exporter,
@@ -122,7 +122,7 @@ describe('D-5 trace query endpoint', () => {
 
   it('is not mounted without a trace exporter', async () => {
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
     });

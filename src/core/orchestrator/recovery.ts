@@ -195,7 +195,7 @@ export async function executeRecovery(
     const auditBase = {
       ts: at,
       runId: row.intentId,
-      vassal: '(recovery)',
+      executor: '(recovery)',
       skill: '(restored)',
       realm: 'personal' as const,
     };

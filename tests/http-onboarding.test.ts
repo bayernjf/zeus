@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import { createHttpServer } from '../src/http/server.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
-import { kernelStats } from '../src/state/stats.js';
-import type { KernelBoot } from '../src/state/boot.js';
+import { runtimeStats } from '../src/state/stats.js';
+import type { RuntimeBoot } from '../src/state/boot.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = new Date('2026-09-25T10:00:00.000Z');
 
@@ -32,7 +32,7 @@ function cardFor(name: string) {
     skills: (CARDS[name] ?? []).map(id => ({ id, name: id, description: `${id} work`, tags: [id] })),
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': { version: '1', swornTo: 'zeus', domain: 'acme', dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
+    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'acme', realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 
@@ -50,7 +50,7 @@ const routingFetch = async (input: string | URL | Request) => {
 
 type Face = {
   app: FastifyInstance;
-  kernel: KernelBoot;
+  runtime: RuntimeBoot;
   sandbox: string;
   deptId: string;
   realmId: string;
@@ -66,43 +66,43 @@ async function bootFace(): Promise<Face> {
   await mkdir(realmRoot, { recursive: true });
   await writeFile(join(realmRoot, 'charter.md'), 'how we ship the compiler safely\n');
   const auditFile = join(sandbox, 'audit.jsonl');
-  const stateFile = join(sandbox, 'kernel.json');
+  const stateFile = join(sandbox, 'runtime.json');
 
-  const kernel = await bootKernel({
+  const runtime = await bootRuntime({
     fetchImpl: routingFetch,
     now: () => NOW,
     auditFile,
     stateFile,
     realmRoots: [{ root: realmRoot, type: 'enterprise', tenant: 'acme/eng' }],
   });
-  const realmId = kernel.realmStore!.connections()[0]!.realmId;
-  const dept = kernel.orgRegistry!.createDepartment({ name: 'Engineering', mission: 'ship the compiler safely' });
-  kernel.orgRegistry!.assignMember(dept.departmentId, { agentId: 'pr-helper', role: 'lead', title: 'EM', skills: ['release-review'] });
-  kernel.orgRegistry!.assignMember(dept.departmentId, { agentId: 'new-hire', role: 'member', title: 'Junior reviewer' });
+  const realmId = runtime.realmStore!.connections()[0]!.realmId;
+  const dept = runtime.orgRegistry!.createDepartment({ name: 'Engineering', mission: 'ship the compiler safely' });
+  runtime.orgRegistry!.assignMember(dept.departmentId, { agentId: 'pr-helper', role: 'lead', title: 'EM', skills: ['release-review'] });
+  runtime.orgRegistry!.assignMember(dept.departmentId, { agentId: 'new-hire', role: 'member', title: 'Junior reviewer' });
 
   const app = await createHttpServer({
-    registry: kernel.registry,
+    registry: runtime.registry,
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     now: () => NOW,
-    orchestrator: kernel.orchestrator,
-    oversight: kernel.oversight,
-    metrics: kernel.metrics,
-    ...(kernel.skillRegistry ? { skillRegistry: kernel.skillRegistry } : {}),
-    ...(kernel.mentorshipLedger ? { mentorshipLedger: kernel.mentorshipLedger } : {}),
-    ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
-    ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
-    ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
-    ...(kernel.domainGrants ? { domainGrants: kernel.domainGrants } : {}),
-    realmAudit: kernel.realmAudit,
-    ...(kernel.commissionLedger ? { commissions: kernel.commissionLedger } : {}),
+    orchestrator: runtime.orchestrator,
+    oversight: runtime.oversight,
+    metrics: runtime.metrics,
+    ...(runtime.skillRegistry ? { skillRegistry: runtime.skillRegistry } : {}),
+    ...(runtime.mentorshipLedger ? { mentorshipLedger: runtime.mentorshipLedger } : {}),
+    ...(runtime.orgRegistry ? { orgRegistry: runtime.orgRegistry } : {}),
+    ...(runtime.memoryStore ? { memoryStore: runtime.memoryStore } : {}),
+    ...(runtime.realmStore ? { realmStore: runtime.realmStore } : {}),
+    ...(runtime.domainGrants ? { domainGrants: runtime.domainGrants } : {}),
+    realmAudit: runtime.realmAudit,
+    ...(runtime.commissionLedger ? { commissions: runtime.commissionLedger } : {}),
     auditFile,
-    kernelStats: () => kernelStats(kernel),
+    runtimeStats: () => runtimeStats(runtime),
   });
 
   return {
     app,
-    kernel,
+    runtime,
     sandbox,
     deptId: dept.departmentId,
     realmId,
@@ -127,7 +127,7 @@ async function openSeat(over: Record<string, unknown> = {}) {
     method: 'POST',
     url: `/api/org/departments/${face.deptId}/commissions`,
     headers: AUTH,
-    payload: { agentId: 'new-hire', realmId: face.realmId, openedBy: 'driver', ...over },
+    payload: { agentId: 'new-hire', realmId: face.realmId, openedBy: 'operator', ...over },
   });
 }
 
@@ -135,7 +135,7 @@ async function openSeat(over: Record<string, unknown> = {}) {
 async function commissionThroughHttp() {
   await face.app.inject({
     method: 'POST',
-    url: '/api/vassals',
+    url: '/api/executors',
     headers: AUTH,
     payload: { cardUrl: 'http://127.0.0.1/new-hire/api/a2a/card' },
   });
@@ -146,14 +146,14 @@ async function commissionThroughHttp() {
     method: 'POST',
     url: `/api/org/departments/${face.deptId}/commissions/new-hire/waive`,
     headers: AUTH,
-    payload: { reason: 'supervised internship', by: 'driver' },
+    payload: { reason: 'supervised internship', by: 'operator' },
   });
   expect(waived.statusCode).toBe(200);
   return face.app.inject({
     method: 'POST',
     url: `/api/org/departments/${face.deptId}/commissions/new-hire/commission`,
     headers: AUTH,
-    payload: { by: 'driver', note: 'day one' },
+    payload: { by: 'operator', note: 'day one' },
   });
 }
 
@@ -187,11 +187,11 @@ describe('HTTP E9.2 - the commission face', () => {
       method: 'POST',
       url: `/api/org/departments/${face.deptId}/commissions/new-hire/commission`,
       headers: AUTH,
-      payload: { by: 'driver' },
+      payload: { by: 'operator' },
     });
     expect(refused.statusCode).toBe(409);
     expect(refused.json()).toMatchObject({ error: 'commission_gate', blockedOn: 'account' });
-    expect(refused.json().reason).toMatch(/no vassal named new-hire/);
+    expect(refused.json().reason).toMatch(/no executor named new-hire/);
 
     // A refusal is part of the trail, not just a response code.
     const refusedEntry = await face.app.inject({ method: 'GET', url: '/api/audit?decision=commission-refused', headers: AUTH });
@@ -202,7 +202,7 @@ describe('HTTP E9.2 - the commission face', () => {
       method: 'POST',
       url: `/api/org/departments/${face.deptId}/commissions/ghost/commission`,
       headers: AUTH,
-      payload: { by: 'driver' },
+      payload: { by: 'operator' },
     });
     expect(missing.statusCode).toBe(404);
     const badPath = await face.app.inject({
@@ -216,7 +216,7 @@ describe('HTTP E9.2 - the commission face', () => {
   it('walks account -> authorization -> mentorship -> sign-off and reports it in the audit trail', async () => {
     const commissioned = await commissionThroughHttp();
     expect(commissioned.statusCode).toBe(200);
-    expect(commissioned.json()).toMatchObject({ commissioned: { by: 'driver' } });
+    expect(commissioned.json()).toMatchObject({ commissioned: { by: 'operator' } });
 
     expect(existsSync(face.auditFile)).toBe(true);
     const granted = await face.app.inject({
@@ -224,9 +224,9 @@ describe('HTTP E9.2 - the commission face', () => {
       url: '/api/audit?decision=commission-granted',
       headers: AUTH,
     });
-    const entries = granted.json().entries as Array<{ vassal: string; detail: string }>;
+    const entries = granted.json().entries as Array<{ executor: string; detail: string }>;
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ vassal: 'new-hire' });
+    expect(entries[0]).toMatchObject({ executor: 'new-hire' });
     expect(entries[0]!.detail).toContain('acme/eng');
 
     const waivedEntry = await face.app.inject({ method: 'GET', url: '/api/audit?decision=commission-waived', headers: AUTH });
@@ -240,13 +240,13 @@ describe('HTTP E9.2 - the commission face', () => {
 
   it('carries a seat through a restart with its sign-off intact', async () => {
     await commissionThroughHttp();
-    await face.kernel.saveState();
-    const before = face.kernel.commissionLedger!.exportState();
+    await face.runtime.saveState();
+    const before = face.runtime.commissionLedger!.exportState();
 
-    const second = await bootKernel({
+    const second = await bootRuntime({
       fetchImpl: routingFetch,
       now: () => NOW,
-      stateFile: join(face.sandbox, 'kernel.json'),
+      stateFile: join(face.sandbox, 'runtime.json'),
     });
     expect(second.commissionLedger!.exportState()).toEqual(before);
     expect(() => second.commissionLedger!.assertCommissioned(before[0]!.id)).not.toThrow();
@@ -297,12 +297,12 @@ describe('HTTP E9.2 - the first task', () => {
       intentId: string;
       realm: string;
       realmId: string;
-      branches: Array<{ vassal: string }>;
+      branches: Array<{ executor: string }>;
       briefing: { digest: string; gaps: string[] };
     };
     expect(body.realm).toBe('enterprise');
     expect(body.realmId).toBe(face.realmId);
-    expect(body.branches.map(branch => branch.vassal)).toEqual(['new-hire']);
+    expect(body.branches.map(branch => branch.executor)).toEqual(['new-hire']);
     expect(body.briefing.digest).toMatch(/^[0-9a-f]{64}$/);
     expect(body.intentId).toBeTruthy();
   });
@@ -331,7 +331,7 @@ describe('HTTP E9.2 - the first task', () => {
       method: 'POST',
       url: `/api/org/departments/${face.deptId}/commissions/new-hire/withdraw`,
       headers: AUTH,
-      payload: { by: 'driver', reason: 'reorg' },
+      payload: { by: 'operator', reason: 'reorg' },
     });
     expect(withdrawn.statusCode).toBe(200);
 

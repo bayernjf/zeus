@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { OrgRegistry, OrgError } from '../src/index.js';
 import type { FanOutResult, BranchOutcome } from '../src/orchestrator/types.js';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 
 function fanOut(partial: Partial<FanOutResult> & { branches: BranchOutcome[] }): FanOutResult {
   return {
@@ -21,8 +21,8 @@ function fanOut(partial: Partial<FanOutResult> & { branches: BranchOutcome[] }):
     ...partial,
   };
 }
-function branch(vassal: string): BranchOutcome {
-  return { vassal, runId: `run-${vassal}`, ok: true, events: [] };
+function branch(executor: string): BranchOutcome {
+  return { executor, runId: `run-${executor}`, ok: true, events: [] };
 }
 
 describe('OrgRegistry establishment operations', () => {
@@ -121,18 +121,18 @@ afterEach(async () => {
   if (dir) await rm(dir, { recursive: true, force: true });
 });
 
-describe('E9.3 org kernel persistence', () => {
+describe('E9.3 org runtime persistence', () => {
   it('restores the department establishment across restart', async () => {
     dir = await mkdtemp(join(tmpdir(), 'zeus-org-'));
-    const stateFile = join(dir, 'kernel.json');
+    const stateFile = join(dir, 'runtime.json');
 
-    const first = await bootKernel({ stateFile });
+    const first = await bootRuntime({ stateFile });
     first.orgRegistry!.createDepartment({ name: 'Engineering', mission: 'build' });
     first.orgRegistry!.assignMember('dept:engineering', { agentId: 'agent-b', role: 'lead' });
     first.orgRegistry!.assignMember('dept:engineering', { agentId: 'agent-a', title: 'Reviewer' });
     await first.saveState();
 
-    const second = await bootKernel({ stateFile });
+    const second = await bootRuntime({ stateFile });
     expect(second.restoredFromSnapshot).toBe(true);
     const dept = second.orgRegistry!.getDepartment('dept:engineering');
     expect(dept.lead).toBe('agent-b');

@@ -584,7 +584,7 @@ describe('documentation consistency', () => {
   it('keeps the inventory route and export census equal to the code', () => {
     // The inventory's headline sizes drifted with nothing to notice it: it said
     // "75 routes (3 public + 72 bearer)" while 76 registrations existed (the
-    // revocation-stickiness fix added POST /api/vassals/:name/reinstate after the
+    // revocation-stickiness fix added POST /api/executors/:name/reinstate after the
     // census was written), its own per-group table summed to 70, and "116 exports"
     // matched neither the export statements in src/index.ts nor the runtime
     // surface. Every review round re-counted this by hand; counting is mechanical,
@@ -912,11 +912,11 @@ describe('documentation consistency', () => {
     // Template lists it -> code must read it, unless it is a claimed dynamic-name read.
     const DYNAMIC_NAME_VARS: Array<{ name: string; file: string; evidence: RegExp }> = [
       {
-        // src/vault/cli.ts resolves the key via env[envName]; envName comes from
+        // src/backup/cli.ts resolves the key via env[envName]; envName comes from
         // --passphrase-env and defaults to the constant the evidence pins.
-        name: 'ZEUS_VAULT_PASSPHRASE',
-        file: 'src/vault/cli.ts',
-        evidence: /DEFAULT_PASSPHRASE_ENV = 'ZEUS_VAULT_PASSPHRASE'[\s\S]*env\[envName\]/,
+        name: 'ZEUS_BACKUP_PASSPHRASE',
+        file: 'src/backup/cli.ts',
+        evidence: /DEFAULT_PASSPHRASE_ENV = 'ZEUS_BACKUP_PASSPHRASE'[\s\S]*env\[envName\]/,
       },
       {
         // createLocalSecretBackend reads the optional secret-file path via

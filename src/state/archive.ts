@@ -2,7 +2,7 @@
  * deferred #42 decision-record retention: out-window archival (design
  * docs/design-intent-retention.md, plan C).
  *
- * The kernel state file rewrites and re-parses the full intent/request tables
+ * The runtime state file rewrites and re-parses the full intent/request tables
  * on every save and boot, so a long-running instance grows linearly. Deleting
  * old intents would silently break three promises (idempotent replay of a
  * submitted intentId, `GET /api/intents/:id/replay` traceability, and
@@ -18,7 +18,7 @@
  *             documented as window-scoped, and replays of evicted intents 404.
  *
  * Reads are injected into the Orchestrator and the HTTP face through
- * IntentArchiveLookup, so the kernel never performs file I/O itself; the
+ * IntentArchiveLookup, so the runtime never performs file I/O itself; the
  * booted process supplies the real JSONL-backed implementation.
  */
 import { mkdir, open, readFile, stat, type FileHandle } from 'node:fs/promises';
@@ -49,7 +49,7 @@ export type ArchivedIntentRecord = {
 /** Read-only archive port the Orchestrator / HTTP face depend on. */
 export type IntentArchiveLookup = {
   find(intentId: string): Promise<ArchivedIntentRecord | undefined>;
-  findByBranch(runId: string, vassal: string): Promise<string | undefined>;
+  findByBranch(runId: string, executor: string): Promise<string | undefined>;
 };
 
 export type RetentionOptions = {
@@ -68,9 +68,9 @@ export const DEFAULT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  *
  * Never out-window:
  *  - an intent referenced by a still-pending escalation (open question the
- *    driver has not answered yet);
+ *    operator has not answered yet);
  *  - an intent a human has already ruled on (an escalation that reached a
- *    decision, or a driver resolution written back into the result);
+ *    decision, or a operator resolution written back into the result);
  *  - any intent still in flight (not settled — the caller only feeds settled
  *    intents, and in-flight keys live in a separate table anyway).
  *
@@ -93,7 +93,7 @@ export function selectArchivable(
       referenced.add(escalation.intentId);
     } else {
       for (const intent of intents) {
-        if (intent.branches.some(branch => branch.runId === escalation.runId && branch.vassal === escalation.vassal)) {
+        if (intent.branches.some(branch => branch.runId === escalation.runId && branch.executor === escalation.executor)) {
           referenced.add(intent.intentId);
         }
       }
@@ -103,7 +103,7 @@ export function selectArchivable(
   const retained = new Set<string>();
   for (const intent of intents) {
     if (referenced.has(intent.intentId)) retained.add(intent.intentId);
-    if (intent.driverResolution) retained.add(intent.intentId);
+    if (intent.operatorResolution) retained.add(intent.intentId);
   }
 
   const candidates = intents
@@ -233,9 +233,9 @@ export class IntentArchive implements IntentArchiveLookup {
     return Promise.resolve(this.index.get(intentId));
   }
 
-  findByBranch(runId: string, vassal: string): Promise<string | undefined> {
+  findByBranch(runId: string, executor: string): Promise<string | undefined> {
     for (const record of this.index.values()) {
-      if (record.result.branches.some(branch => branch.runId === runId && branch.vassal === vassal)) {
+      if (record.result.branches.some(branch => branch.runId === runId && branch.executor === executor)) {
         return Promise.resolve(record.intentId);
       }
     }

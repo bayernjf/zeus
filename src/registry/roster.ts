@@ -1,20 +1,20 @@
-import type { AgentCardSkill, Fealty, RealmType } from '../a2a/types.js';
-import type { VassalEntry } from './registry.js';
+import type { AgentCardSkill, Handshake, RealmType } from '../a2a/types.js';
+import type { ExecutorEntry } from './registry.js';
 
 /**
  * Roster projector (bayjf 公开签名名册, design-bayjf-roster.md R0):
  * a pure projection from registry state to immutable, JSON-serializable roster
- * snapshots. The vassal's Agent Card + fealty is the single source of truth;
+ * snapshots. The executor's Agent Card + handshake is the single source of truth;
  * the projector only reshapes and trims, it never invents fields.
  */
 
 export type RosterHealth = 'healthy' | 'unhealthy' | 'unknown';
 
 export type RosterCommitments = {
-  dataRealms: RealmType[];
-  dataPolicy: Fealty['dataPolicy'];
+  realms: RealmType[];
+  dataPolicy: Handshake['dataPolicy'];
   reportBack: boolean;
-  escalationPolicy: Fealty['escalationPolicy'];
+  escalationPolicy: Handshake['escalationPolicy'];
 };
 
 export type RosterEntry = {
@@ -34,7 +34,7 @@ export type RosterEntry = {
   taskUrl?: string;
 };
 
-/** Public view: revoked vassals removed, endpoints and probe details trimmed. */
+/** Public view: revoked executors removed, endpoints and probe details trimmed. */
 export type PublicRosterEntry = Omit<RosterEntry, 'cardUrl' | 'taskUrl' | 'healthDetail'>;
 
 /**
@@ -58,9 +58,9 @@ export type RosterSnapshot<T extends RosterEntry = RosterEntry> = {
   entries: T[];
 };
 
-type ListAllEntry = VassalEntry & { status: 'active' | 'revoked' };
+type ListAllEntry = ExecutorEntry & { status: 'active' | 'revoked' };
 
-/** Full governance view: every vassal including revoked, with endpoints and probe detail. */
+/** Full governance view: every executor including revoked, with endpoints and probe detail. */
 export function projectInternalRoster(entries: ListAllEntry[], now: () => Date = () => new Date()): RosterSnapshot<RosterEntry> {
   return {
     schemaVersion: ROSTER_SCHEMA_VERSION,
@@ -70,7 +70,7 @@ export function projectInternalRoster(entries: ListAllEntry[], now: () => Date =
   };
 }
 
-/** bayjf-facing view: active vassals only, internal fields stripped. */
+/** bayjf-facing view: active executors only, internal fields stripped. */
 export function projectPublicRoster(entries: ListAllEntry[], now: () => Date = () => new Date()): RosterSnapshot<PublicRosterEntry> {
   return {
     schemaVersion: ROSTER_SCHEMA_VERSION,
@@ -84,7 +84,7 @@ export function projectPublicRoster(entries: ListAllEntry[], now: () => Date = (
 }
 
 function toInternalEntry(entry: ListAllEntry): RosterEntry {
-  const { card, fealty } = entry;
+  const { card, handshake } = entry;
   const health: RosterHealth = entry.lastHealthCheck
     ? entry.lastHealthCheck.ok
       ? 'healthy'
@@ -93,19 +93,19 @@ function toInternalEntry(entry: ListAllEntry): RosterEntry {
   return {
     name: card.name,
     ...(card.description ? { description: card.description } : {}),
-    domain: fealty.domain,
+    domain: handshake.domain,
     // C-audit: deep-copy every mutable field. A projection that shared an array
     // with the registry (nested skill tags especially) let a consumer mutate
     // registry state through what looks like an immutable snapshot — and every
     // later snapshotDigest then differed from the one that was sealed.
     skills: structuredClone(card.skills),
     commitments: {
-      dataRealms: [...fealty.dataRealms],
-      dataPolicy: fealty.dataPolicy,
-      reportBack: fealty.reportBack,
-      escalationPolicy: fealty.escalationPolicy,
+      realms: [...handshake.realms],
+      dataPolicy: handshake.dataPolicy,
+      reportBack: handshake.reportBack,
+      escalationPolicy: handshake.escalationPolicy,
     },
-    ...(fealty.sla ? { sla: { ...fealty.sla } } : {}),
+    ...(handshake.sla ? { sla: { ...handshake.sla } } : {}),
     status: entry.status,
     health,
     ...(entry.lastHealthCheck?.detail ? { healthDetail: entry.lastHealthCheck.detail } : {}),

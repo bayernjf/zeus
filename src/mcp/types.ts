@@ -64,7 +64,7 @@ export interface ConnectorRecord extends ConnectorDeclaration {
 
 /**
  * The persistable form of a connector record: everything except the bearer
- * token and a stdio connector's env map. The kernel state file is a plaintext
+ * token and a stdio connector's env map. The runtime state file is a plaintext
  * document, and every backup bundle is built from it, so a credential must not
  * cross that boundary. A stdio env map may carry upstream API keys, so it is
  * held to the same rule as the HTTP token. Both live in memory for the life of

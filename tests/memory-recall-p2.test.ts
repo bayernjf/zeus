@@ -113,7 +113,7 @@ describe('Memory P2 right to be forgotten', () => {
 
     const records = store.retractFacts('personal', [factId!], {
       reason: 'user request',
-      requestedBy: 'driver',
+      requestedBy: 'operator',
     });
     expect(records).toHaveLength(1);
     expect(records[0]!.subject).toBe('user');
@@ -132,7 +132,7 @@ describe('Memory P2 right to be forgotten', () => {
     ]);
     const records = store.forgetSubject('personal', 'Alice', {
       reason: 'right to erasure',
-      requestedBy: 'driver',
+      requestedBy: 'operator',
     });
     expect(records).toHaveLength(2);
     expect(store.listRetractions().map(r => r.factId).sort()).toEqual(
@@ -159,7 +159,7 @@ describe('Memory P2 right to be forgotten', () => {
   it('keeps a retracted fact retracted across a later consolidation (A-06)', async () => {
     const store = await settledStore([claim('e1', 'user', 'language', 'typescript')]);
     const [factId] = store.facts('personal', 'personal').map(f => f.factId);
-    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'driver' });
+    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'operator' });
 
     await store.consolidateRealm('personal');
 
@@ -177,7 +177,7 @@ describe('Memory P2 right to be forgotten', () => {
     const [factId] = store.facts('personal', 'personal')
       .filter(f => f.subject === 'alice')
       .map(f => f.factId);
-    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'driver' });
+    store.retractFacts('personal', [factId!], { reason: 'gdpr', requestedBy: 'operator' });
 
     const restored = MemoryStore.fromState(store.exportState());
     expect(restored.listRetractions()[0]).toMatchObject({ factId, reason: 'gdpr' });

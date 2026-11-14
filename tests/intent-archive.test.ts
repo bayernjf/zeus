@@ -16,9 +16,9 @@ import {
   type ArchivedIntentRecord,
   type RetentionMode,
 } from '../src/state/archive.js';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import type { FastifyInstance } from 'fastify';
 
@@ -34,10 +34,10 @@ function statusEvent(taskId: string, state: TaskState, timestamp?: string): A2AE
   };
 }
 
-function stanceResult(vassal: string, stance: string, state: TaskState = 'completed'): DispatchResult {
+function stanceResult(executor: string, stance: string, state: TaskState = 'completed'): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance } }] }],
@@ -53,7 +53,7 @@ function makePort(routes: Record<string, DispatchResult | ((req: DispatchRequest
     },
     async dispatch(req) {
       calls += 1;
-      const route = routes[req.vassal!];
+      const route = routes[req.executor!];
       return typeof route === 'function' ? route(req) : route!;
     },
     async cancel() {},
@@ -72,12 +72,12 @@ function makeIntent(id: string, createdAt: string, overrides: Partial<FanOutResu
     realm: 'personal',
     createdAt,
     status: 'completed',
-    branches: [{ vassal: 'loom', runId: `run-${id}:loom`, ok: true, events: [statusEvent('t', 'completed', createdAt)] }],
+    branches: [{ executor: 'loom', runId: `run-${id}:loom`, ok: true, events: [statusEvent('t', 'completed', createdAt)] }],
     stream: [
-      { source: { vassal: 'loom', runId: `run-${id}:loom`, taskId: 't' }, event: statusEvent('t', 'completed', createdAt) },
+      { source: { executor: 'loom', runId: `run-${id}:loom`, taskId: 't' }, event: statusEvent('t', 'completed', createdAt) },
     ],
-    positions: [{ vassal: 'loom', stance: 'go', weight: 1 }],
-    decision: { rule: 'unanimous', conclusion: 'go', reason: 'all agree', positions: [{ vassal: 'loom', stance: 'go', weight: 1 }] },
+    positions: [{ executor: 'loom', stance: 'go', weight: 1 }],
+    decision: { rule: 'unanimous', conclusion: 'go', reason: 'all agree', positions: [{ executor: 'loom', stance: 'go', weight: 1 }] },
     conflicts: [],
     ...overrides,
   };
@@ -92,7 +92,7 @@ function pendingIntentConflict(escalationId: string, intentId: string): Escalati
     id: escalationId,
     kind: 'intent-conflict',
     runId: `run-${intentId}`,
-    vassal: '(intent)',
+    executor: '(intent)',
     skill: 'decide',
     realm: 'personal',
     reason: 'split',
@@ -103,12 +103,12 @@ function pendingIntentConflict(escalationId: string, intentId: string): Escalati
   };
 }
 
-function pendingTaskInput(escalationId: string, runId: string, vassal: string): Escalation {
+function pendingTaskInput(escalationId: string, runId: string, executor: string): Escalation {
   return {
     id: escalationId,
     kind: 'task-input',
     runId,
-    vassal,
+    executor,
     skill: 'decide',
     realm: 'personal',
     reason: 'input needed',
@@ -180,11 +180,11 @@ describe('selectArchivable (deferred #42 out-window selection)', () => {
     expect(selectArchivable([intent], [pendingTaskInput('e1', 'run-a:loom', 'loom')], opts)).toEqual([]);
   });
 
-  it('keeps an intent a human already ruled on (decided escalation or driver resolution)', () => {
+  it('keeps an intent a human already ruled on (decided escalation or operator resolution)', () => {
     const decided = makeIntent('a', '2026-01-10T00:00:00.000Z');
     expect(selectArchivable([decided], [decidedEscalation('e1', 'a')], opts)).toEqual([]);
     const resolved = makeIntent('b', '2026-01-10T00:00:00.000Z', {
-      driverResolution: { escalationId: 'e1', stance: 'go', decidedAt: '2026-02-01T00:00:00.000Z' },
+      operatorResolution: { escalationId: 'e1', stance: 'go', decidedAt: '2026-02-01T00:00:00.000Z' },
     });
     expect(selectArchivable([resolved], [], opts)).toEqual([]);
   });
@@ -320,7 +320,7 @@ describe('retention config', () => {
   });
 
   it('places the archive beside the state file', () => {
-    expect(archiveFilePath('/srv/zeus/data/kernel.json')).toBe('/srv/zeus/data/intent-archive.jsonl');
+    expect(archiveFilePath('/srv/zeus/data/runtime.json')).toBe('/srv/zeus/data/intent-archive.jsonl');
   });
 });
 
@@ -365,8 +365,8 @@ describe('Orchestrator archive wiring (deferred #42)', () => {
       async find() {
         return undefined;
       },
-      async findByBranch(runId: string, vassal: string) {
-        return runId === 'run-ghost:loom' && vassal === 'loom' ? 'ghost' : undefined;
+      async findByBranch(runId: string, executor: string) {
+        return runId === 'run-ghost:loom' && executor === 'loom' ? 'ghost' : undefined;
       },
     };
     const orch = new Orchestrator(lookupFor([]), makePort({}), { archive });
@@ -388,7 +388,7 @@ describe('Orchestrator archive wiring (deferred #42)', () => {
 
 // ---- boot integration ------------------------------------------------------------
 
-describe('bootKernel retention (deferred #42)', () => {
+describe('bootRuntime retention (deferred #42)', () => {
   let dir: string;
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -396,25 +396,25 @@ describe('bootKernel retention (deferred #42)', () => {
 
   async function bootWith(retention: RetentionMode, maxEntries: number) {
     dir = await mkdtemp(join(tmpdir(), 'zeus-retention-'));
-    const stateFile = join(dir, 'kernel.json');
-    const kernel = await bootKernel({
+    const stateFile = join(dir, 'runtime.json');
+    const runtime = await bootRuntime({
       stateFile,
       intentRetention: retention,
       intentRetentionMaxEntries: maxEntries,
       now: NOW,
-      vassalSeeds: [],
+      executorSeeds: [],
       dispatchAudit: () => {},
       oversightAudit: () => {},
     });
-    return { kernel, stateFile };
+    return { runtime, stateFile };
   }
 
   it('archive mode: saveState out-windows settled intents into the JSONL; a re-fanOut replays with zero dispatch', async () => {
-    const { kernel, stateFile } = await bootWith('archive', 2);
+    const { runtime, stateFile } = await bootWith('archive', 2);
     const requestA = requestFor('a');
-    // Seed the state table with three settled intents (no live vassals in a
-    // bare kernel; retention operates on the table, not on who produced it).
-    kernel.orchestrator.importState({
+    // Seed the state table with three settled intents (no live executors in a
+    // bare runtime; retention operates on the table, not on who produced it).
+    runtime.orchestrator.importState({
       intents: [
         // All within the 30-day window, so only the count cap applies.
         makeIntent('a', '2026-02-10T00:00:00.000Z'),
@@ -427,37 +427,37 @@ describe('bootKernel retention (deferred #42)', () => {
         { intentId: 'c', request: requestFor('c') },
       ],
     });
-    expect(kernel.orchestrator.exportState().intents.length).toBe(3);
+    expect(runtime.orchestrator.exportState().intents.length).toBe(3);
 
-    await kernel.saveState();
+    await runtime.saveState();
     // Cap is 2 → 'a' (oldest) left the table for the archive.
-    expect(kernel.orchestrator.exportState().intents.length).toBe(2);
+    expect(runtime.orchestrator.exportState().intents.length).toBe(2);
     const archive = new IntentArchive(archiveFilePath(stateFile));
     await archive.loadIndex();
     await expect(archive.find('a')).resolves.toMatchObject({ intentId: 'a', status: 'completed' });
 
     // F2 promise: the archived intent replays, and a real dispatcher would not fire.
-    const replays = await kernel.orchestrator.fanOut(requestA);
+    const replays = await runtime.orchestrator.fanOut(requestA);
     expect(replays.replayed).toBe(true);
   });
 
   it('evict mode: out-window intents are dropped outright and nothing is archived', async () => {
-    const { kernel, stateFile } = await bootWith('evict', 1);
+    const { runtime, stateFile } = await bootWith('evict', 1);
     for (const id of ['a', 'b']) {
-      await kernel.orchestrator.fanOut(requestFor(id));
+      await runtime.orchestrator.fanOut(requestFor(id));
     }
-    await kernel.saveState();
-    expect(kernel.orchestrator.exportState().intents.length).toBe(1);
+    await runtime.saveState();
+    expect(runtime.orchestrator.exportState().intents.length).toBe(1);
     await expect(readFile(archiveFilePath(stateFile), 'utf8')).rejects.toThrow(/ENOENT/);
   });
 
   it('retain mode (default) keeps everything', async () => {
-    const { kernel } = await bootWith('retain', 1);
+    const { runtime } = await bootWith('retain', 1);
     for (const id of ['a', 'b']) {
-      await kernel.orchestrator.fanOut(requestFor(id));
+      await runtime.orchestrator.fanOut(requestFor(id));
     }
-    await kernel.saveState();
-    expect(kernel.orchestrator.exportState().intents.length).toBe(2);
+    await runtime.saveState();
+    expect(runtime.orchestrator.exportState().intents.length).toBe(2);
   });
 });
 
@@ -481,7 +481,7 @@ describe('replay HTTP face (deferred #42)', () => {
     const orch = new Orchestrator(lookupFor(['loom']), port, { archive: intentArchive });
     const oversight = new OversightDesk({ newId: () => 'esc-1' });
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('k'),
       internalToken: 't',
       orchestrator: orch,

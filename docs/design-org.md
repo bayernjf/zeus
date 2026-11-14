@@ -64,7 +64,7 @@ export interface AccountabilityChain {
   executing: AccountabilityNode[];
   leads: AccountabilityNode[];   // 去重的部门主管
   unassigned: string[];          // 无编制的执行 Agent
-  driver?: {                     // 作出裁决的操作者（若有 driverResolution）
+  operator?: {                     // 作出裁决的操作者（若有 operatorResolution）
     escalationId: string;
     stance: string;
     decidedAt: string;
@@ -93,7 +93,7 @@ export interface AccountabilityChain {
 # Org chart
 
 ## Engineering · dept:engineering
-> Mission: build and ship the kernel
+> Mission: build and ship the runtime
 - **Lead:** agent-b
 - agent-a — Reviewer (code-review) [member]
 ```
@@ -102,9 +102,9 @@ export interface AccountabilityChain {
 
 `traceAccountability(departments, result)` 是纯函数，从真实 `FanOutResult` 追责任：
 
-1. 为 `result.branches` 每个 vassal 定位其部门节点（一个 Agent 只在一个部门，出现在多个部门 → 取首个并在内部不报错，但测试约束编制不重复安置；无编制 → `unassigned` 节点 + 记入 `unassigned`）；
+1. 为 `result.branches` 每个 executor 定位其部门节点（一个 Agent 只在一个部门，出现在多个部门 → 取首个并在内部不报错，但测试约束编制不重复安置；无编制 → `unassigned` 节点 + 记入 `unassigned`）；
 2. `leads`：执行节点所属部门的 lead（去重，排除已在 executing 的 lead 自身）；
-3. `driver`：`result.driverResolution` 存在则取 escalationId/stance/decidedAt；
+3. `operator`：`result.operatorResolution` 存在则取 escalationId/stance/decidedAt；
 4. 返回 `AccountabilityChain`（intentId/skill/status 透传）。
 
 这样一个结果可读到：**谁执行 → 谁的部门主管负责 → 哪位操作者裁决**。
@@ -115,13 +115,13 @@ export interface AccountabilityChain {
 2. 一个部门只有一个 lead；第二个 lead 拒绝。
 3. 编制变更是不可变的（原对象不被修改）。
 4. `traceAccountability` 覆盖全部执行分支；无编制 Agent 进 `unassigned`，不被静默丢弃。
-5. 责任链 leads 取部门主管、去重；driver 仅在有 driverResolution 时出现且字段正确。
+5. 责任链 leads 取部门主管、去重；operator 仅在有 operatorResolution 时出现且字段正确。
 6. departmentId 对同名稳定、对非法名（空/全符号）报错。
 7. removeMember/setLead 语义正确（移 lead 清空 lead；换岗原 lead 转 member）。
 
 ## 8. 非目标 / 边界
 
-- 本批不把部门编制接进 `KernelSnapshot`/boot（持久化接入随 E5 批次；Department 已 JSON 可序列化，提供 export/import 便利）。
+- 本批不把部门编制接进 `RuntimeSnapshot`/boot（持久化接入随 E5 批次；Department 已 JSON 可序列化，提供 export/import 便利）。
 - 不做跨部门汇报线/矩阵式多头管理（v1 为单部门单 lead）。
 - ~~不做 E9.1 Mentor 带教、E9.2 上岗流程（独立条目）~~ **已做，但不在本模块**：上岗门与首日简报住在新组合层 `src/onboarding/`，设计见 [design-onboarding.md](design-onboarding.md)；本模块只被它当作"seat 门"的证据来源（编制 + 责任链）。
 - 不做编制的 UI（产出 markdown/结构化投影，界面随产品面）。

@@ -21,11 +21,11 @@ RUN npm run build
 # ---- runner: production dependencies only, non-root ----
 # node:22-slim (Debian): no extra OS packages needed.
 # The server never spawns child processes, so node running as PID 1 receives
-# SIGTERM directly and its graceful-shutdown handler (kernel state save) runs;
+# SIGTERM directly and its graceful-shutdown handler (runtime state save) runs;
 # add `docker run --init` (or init: true in compose) only if that changes.
 #
-# Required on first run: a roster signing key, or the kernel refuses to start
-# (by design - an unsigned kernel would publish a roster nothing can pin).
+# Required on first run: a roster signing key, or the runtime refuses to start
+# (by design - an unsigned runtime would publish a roster nothing can pin).
 # Provide either ZEUS_RSK_KEY (inline PEM) or ZEUS_RSK_KEY_FILE (path to a
 # mounted PEM), plus ZEUS_RSK_KEY_ID to label it. Generate one with the
 # zero-dependency script baked into this image:
@@ -37,7 +37,7 @@ ENV npm_config_registry=https://registry.npmmirror.com
 ENV NODE_ENV=production \
     ZEUS_HOST=0.0.0.0 \
     ZEUS_PORT=8787 \
-    ZEUS_STATE_FILE=/data/kernel-state.json
+    ZEUS_STATE_FILE=/data/runtime-state.json
 RUN mkdir /data && chown node:node /data
 WORKDIR /app
 # The runtime install resolves the same file: sibling; reuse the builder's clone.

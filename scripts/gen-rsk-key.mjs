@@ -10,7 +10,7 @@
 // server via ZEUS_RSK_KEY (PEM contents) or ZEUS_RSK_KEY_FILE (path), see
 // docs/deployment.md. Keep the private key 0600 and out of git.
 //
-// It also prints the value to announce out of band (design-fealty-signing §5.1:
+// It also prints the value to announce out of band (design-handshake-signing §5.1:
 // verifiers pin the RFC 7638 thumbprint). That number is computed by the same
 // shipped function the publication endpoint uses, on purpose: if this script
 // hashed the key its own way, a divergence between the two would corrupt every

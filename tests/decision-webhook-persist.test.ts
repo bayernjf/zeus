@@ -18,7 +18,7 @@ import {
 import { MIGRATION_0005_DECISION_WEBHOOKS } from '../src/core/persistence/schema.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   DecisionAuditChain,
@@ -30,7 +30,7 @@ import { DEFAULT_POLICY_V1 } from '../src/core/grading/default-policy.js';
 import { DecisionWebhookDispatcher } from '../src/core/decision-service/webhook.js';
 import type { DecisionEvent } from '../src/core/decision-service/events.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const SECRET = 'persisted-webhook-secret-16chars';
 
@@ -165,7 +165,7 @@ describe('DELETE /api/v1/decision-webhooks/:id routes', () => {
       audit,
     });
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer,
       internalToken: TOKEN,
       decisionService,
@@ -245,7 +245,7 @@ describe('DELETE /api/v1/decision-webhooks/:id routes', () => {
     let db: DatabaseSync = openSqlite(dbFile);
     migrate(db);
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       decisionService: new DecisionService({

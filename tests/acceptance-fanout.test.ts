@@ -14,7 +14,7 @@ function run(env: Record<string, string>, args: string[] = []) {
 }
 
 // The end-to-end path is proven by scripts/acceptance-real-fanout.mjs against a
-// local kernel and a stub agent (see handoff Active work 64); what must not rot
+// local runtime and a stub agent (see handoff Active work 64); what must not rot
 // in CI is the contract around it: which problems are configuration (exit 2, and
 // named) versus a failed acceptance (exit 1), and that no credential leaks.
 // Each case spawns a cold Node process (measured here: 4-10s per case, and this
@@ -23,21 +23,21 @@ function run(env: Record<string, string>, args: string[] = []) {
 // Raised for this file only, same treatment as tests/verify-roster.test.ts.
 describe('scripts/acceptance-real-fanout.mjs', { timeout: 90_000 }, () => {
   it('treats missing configuration as a usage error and names the variable', () => {
-    const missing = run({ KERNEL_URL: '', ZEUS_INTERNAL_TOKEN: 'x', CARD_URL: 'https://a/b' });
+    const missing = run({ RUNTIME_URL: '', ZEUS_INTERNAL_TOKEN: 'x', CARD_URL: 'https://a/b' });
     expect(missing.status).toBe(2);
-    expect(missing.out).toMatch(/KERNEL_URL is required/);
+    expect(missing.out).toMatch(/RUNTIME_URL is required/);
 
-    const badUrl = run({ KERNEL_URL: 'not-a-url', ZEUS_INTERNAL_TOKEN: 'x', CARD_URL: 'https://a/b' });
+    const badUrl = run({ RUNTIME_URL: 'not-a-url', ZEUS_INTERNAL_TOKEN: 'x', CARD_URL: 'https://a/b' });
     expect(badUrl.status).toBe(2);
     expect(badUrl.out).toMatch(/not a valid URL/);
 
-    const noCard = run({ KERNEL_URL: 'http://127.0.0.1:9', ZEUS_INTERNAL_TOKEN: 'x', CARD_URL: '' });
+    const noCard = run({ RUNTIME_URL: 'http://127.0.0.1:9', ZEUS_INTERNAL_TOKEN: 'x', CARD_URL: '' });
     expect(noCard.status).toBe(2);
     expect(noCard.out).toMatch(/CARD_URL is required/);
   });
 
   it('prints usage on request without touching the network', () => {
-    const help = run({ KERNEL_URL: 'http://127.0.0.1:1', ZEUS_INTERNAL_TOKEN: 'secret-value', CARD_URL: 'https://a/b' }, ['--help']);
+    const help = run({ RUNTIME_URL: 'http://127.0.0.1:1', ZEUS_INTERNAL_TOKEN: 'secret-value', CARD_URL: 'https://a/b' }, ['--help']);
     expect(help.status).toBe(0);
     expect(help.out).toMatch(/usage:/i);
     expect(help.out).not.toContain('secret-value');
@@ -55,7 +55,7 @@ describe('scripts/acceptance-real-fanout.mjs', { timeout: 90_000 }, () => {
 
   it('reports an unreachable target as a failed step, not a crash', () => {
     const result = run({
-      KERNEL_URL: 'http://127.0.0.1:9',
+      RUNTIME_URL: 'http://127.0.0.1:9',
       ZEUS_INTERNAL_TOKEN: 'never-sent-value',
       CARD_URL: 'http://127.0.0.1:9/api/a2a/agent-card',
     });

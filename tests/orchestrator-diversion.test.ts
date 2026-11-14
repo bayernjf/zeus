@@ -12,7 +12,7 @@ function input(overrides: Partial<DiversionInput> & Pick<DiversionInput, 'initia
   return {
     skill: 'code',
     load: {
-      inFlightByVassal: () => 0,
+      inFlightByExecutor: () => 0,
       capOf: () => 1,
     },
     metrics: {
@@ -30,7 +30,7 @@ describe('selectTargets (#9 backpressure diversion)', () => {
       initialNames: ['A'],
       candidatePool: ['A', 'B'],
       load: {
-        inFlightByVassal: v => (v === 'A' ? 1 : 0),
+        inFlightByExecutor: v => (v === 'A' ? 1 : 0),
         capOf: () => 1,
       },
     }));
@@ -43,7 +43,7 @@ describe('selectTargets (#9 backpressure diversion)', () => {
       initialNames: ['A'],
       candidatePool: ['A', 'B', 'C'],
       load: {
-        inFlightByVassal: v => (v === 'A' ? 1 : 0),
+        inFlightByExecutor: v => (v === 'A' ? 1 : 0),
         capOf: () => 1,
       },
       metrics: {
@@ -57,11 +57,11 @@ describe('selectTargets (#9 backpressure diversion)', () => {
 
   it('does not divert an explicit hard-pinned target even when saturated', () => {
     const result = selectTargets(input({
-      explicitVassals: ['A'],
+      explicitExecutors: ['A'],
       initialNames: ['A'],
       candidatePool: ['A', 'B'],
       load: {
-        inFlightByVassal: v => (v === 'A' ? 1 : 0),
+        inFlightByExecutor: v => (v === 'A' ? 1 : 0),
         capOf: () => 1,
       },
     }));
@@ -74,7 +74,7 @@ describe('selectTargets (#9 backpressure diversion)', () => {
       initialNames: ['A'],
       candidatePool: ['A', 'B'],
       load: {
-        inFlightByVassal: () => 1,
+        inFlightByExecutor: () => 1,
         capOf: () => 1,
       },
     }));
@@ -83,8 +83,8 @@ describe('selectTargets (#9 backpressure diversion)', () => {
     expect(result.exhausted).not.toBeNull();
     expect(result.exhausted!.skill).toBe('code');
     expect(result.exhausted!.tried).toEqual([
-      { vassal: 'A', state: 'saturated' },
-      { vassal: 'B', state: 'saturated' },
+      { executor: 'A', state: 'saturated' },
+      { executor: 'B', state: 'saturated' },
     ]);
   });
 
@@ -93,7 +93,7 @@ describe('selectTargets (#9 backpressure diversion)', () => {
       initialNames: ['A'],
       candidatePool: ['A', 'B', 'C'],
       load: {
-        inFlightByVassal: v => (v === 'A' ? 1 : 0),
+        inFlightByExecutor: v => (v === 'A' ? 1 : 0),
         capOf: () => 1,
       },
       health: {
@@ -103,7 +103,7 @@ describe('selectTargets (#9 backpressure diversion)', () => {
     // A saturated, B revoked, C unhealthy → no eligible alternate.
     expect(result.plan).toEqual([{ target: 'A', divertedFrom: null }]);
     expect(result.exhausted).not.toBeNull();
-    const states = Object.fromEntries(result.exhausted!.tried.map(t => [t.vassal, t.state]));
+    const states = Object.fromEntries(result.exhausted!.tried.map(t => [t.executor, t.state]));
     expect(states).toEqual({ A: 'saturated', B: 'revoked', C: 'unhealthy' });
   });
 
@@ -111,8 +111,8 @@ describe('selectTargets (#9 backpressure diversion)', () => {
     const text = formatExhausted({
       skill: 'code',
       tried: [
-        { vassal: 'A', state: 'saturated' },
-        { vassal: 'B', state: 'revoked' },
+        { executor: 'A', state: 'saturated' },
+        { executor: 'B', state: 'revoked' },
       ],
     });
     expect(text).toContain("no alternate provider for skill 'code'");
@@ -121,24 +121,24 @@ describe('selectTargets (#9 backpressure diversion)', () => {
   });
 });
 
-describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
+describe('orchestrator wiring (#9 diversion event + per-executor load)', () => {
   function makeDispatcher() {
     const aGate = deferred<void>();
     const port: DispatchPort = {
       dispatch: req =>
-        req.vassal === 'A'
+        req.executor === 'A'
           ? new Promise(resolve => {
               void aGate.promise.then(() =>
                 resolve({ ok: true, task: okTask(req.runId ?? 'A'), events: [], injectedHits: [] })
               );
             })
-          : Promise.resolve({ ok: true, task: okTask(req.runId ?? req.vassal ?? 'B'), events: [], injectedHits: [] }),
+          : Promise.resolve({ ok: true, task: okTask(req.runId ?? req.executor ?? 'B'), events: [], injectedHits: [] }),
       cancel: async () => undefined,
     };
     return { port, releaseA: () => aGate.resolve() };
   }
 
-  it('emits branch-diverted and keeps the per-vassal in-flight count when a target saturates', async () => {
+  it('emits branch-diverted and keeps the per-executor in-flight count when a target saturates', async () => {
     const { port, releaseA } = makeDispatcher();
     const metrics = new ConcurrencyMetrics();
     const diverted: Array<{ from: string; to: string }> = [];
@@ -151,7 +151,7 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
         newRunId: () => `run-${Math.random()}`,
         metrics,
         maxConcurrentBranches: 4,
-        maxConcurrentPerVassal: 1,
+        maxConcurrentPerExecutor: 1,
         skillGovernor: { activeProviders: () => ['A', 'B'] },
         onDiverted: e => diverted.push({ from: e.from, to: e.to }),
       }
@@ -174,11 +174,11 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
 
     expect(diverted).toContainEqual({ from: 'A', to: 'B' });
     // The diversion is also counted on the metrics surface, so a calibration
-    // run can see how often the per-vassal cap actually fired.
+    // run can see how often the per-executor cap actually fired.
     expect(metrics.snapshot().diverted).toBeGreaterThanOrEqual(1);
     // A stayed in flight (saturated) across the second dispatch.
-    expect(metrics.inFlightByVassalNow('A')).toBeGreaterThanOrEqual(1);
-    expect(second.branches.some(b => b.vassal === 'B')).toBe(true);
+    expect(metrics.inFlightByExecutorNow('A')).toBeGreaterThanOrEqual(1);
+    expect(second.branches.some(b => b.executor === 'B')).toBe(true);
 
     releaseA();
     await first;
@@ -197,7 +197,7 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
         newRunId: () => `run-${Math.random()}`,
         metrics,
         maxConcurrentBranches: 4,
-        maxConcurrentPerVassal: 1,
+        maxConcurrentPerExecutor: 1,
         skillGovernor: { activeProviders: () => ['A', 'B'] },
         onCandidatesSelected: e =>
           faces.push({
@@ -225,7 +225,7 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
     await first;
   });
 
-  it('S11 V2: a driver-pinned fan-out reports the pin and never consults the pool', async () => {
+  it('S11 V2: a operator-pinned fan-out reports the pin and never consults the pool', async () => {
     const { port, releaseA } = makeDispatcher();
     const faces: Array<{ pinned: boolean; namedCount: number; poolSize: number; saturatedDropped: number }> = [];
     const orchestrator = new Orchestrator(
@@ -237,14 +237,14 @@ describe('orchestrator wiring (#9 diversion event + per-vassal load)', () => {
         newRunId: () => 'run-pin',
         metrics: new ConcurrencyMetrics(),
         maxConcurrentBranches: 4,
-        maxConcurrentPerVassal: 1,
+        maxConcurrentPerExecutor: 1,
         skillGovernor: { activeProviders: () => ['A', 'B'] },
         onCandidatesSelected: e =>
           faces.push({ pinned: e.pinned, namedCount: e.namedCount, poolSize: e.poolSize, saturatedDropped: e.saturatedDropped }),
       }
     );
 
-    const pending = orchestrator.fanOut({ intentId: 'i-pin', skill: 'code', params: {}, realm: REALM, vassals: ['A'] });
+    const pending = orchestrator.fanOut({ intentId: 'i-pin', skill: 'code', params: {}, realm: REALM, executors: ['A'] });
     await new Promise(r => setTimeout(r, 0));
     expect(faces[0]).toMatchObject({ pinned: true, namedCount: 1, poolSize: 0, saturatedDropped: 0 });
     releaseA();

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FsRealmStore } from '../src/realm/store.js';
-import { verifyDriverWriteGrant, issueDriverWriteGrant, DriverGrantLedger } from '../src/realm/grant.js';
+import { verifyOperatorWriteGrant, issueOperatorWriteGrant, OperatorGrantLedger } from '../src/realm/grant.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   InvalidItemIdError,
@@ -11,7 +11,7 @@ import {
   UnauthorizedRealmWriteError,
   UnsupportedWriteError,
 } from '../src/realm/types.js';
-import type { DriverWriteGrant, RealmWriteAuditEntry } from '../src/index.js';
+import type { OperatorWriteGrant, RealmWriteAuditEntry } from '../src/index.js';
 
 describe('E3.5 FsRealmStore.write (personal realm)', () => {
   let sandbox: string;
@@ -199,11 +199,11 @@ describe('E3.5 FsRealmStore.write (personal realm)', () => {
 });
 
 
-describe('E3.5 driver write grant gate (verifyDriverWriteGrant)', () => {
-  const base = (over: Partial<DriverWriteGrant> = {}): DriverWriteGrant => ({
-    kind: 'driver-write',
+describe('E3.5 operator write grant gate (verifyOperatorWriteGrant)', () => {
+  const base = (over: Partial<OperatorWriteGrant> = {}): OperatorWriteGrant => ({
+    kind: 'operator-write',
     realmId: 'realm-1',
-    grantedBy: 'driver-alice',
+    grantedBy: 'operator-alice',
     grantedAt: '2026-09-24T00:00:00.000Z',
     expiresAt: '2026-09-24T18:00:00.000Z',
     nonce: 'nonce-1',
@@ -212,34 +212,34 @@ describe('E3.5 driver write grant gate (verifyDriverWriteGrant)', () => {
   const fixedNow = () => new Date('2026-09-24T12:00:00.000Z');
 
   it('rejects a missing grant', async () => {
-    expect(await verifyDriverWriteGrant(undefined, 'realm-1', { now: fixedNow })).toEqual({ ok: false, reason: 'missing' });
+    expect(await verifyOperatorWriteGrant(undefined, 'realm-1', { now: fixedNow })).toEqual({ ok: false, reason: 'missing' });
   });
 
   it('accepts a well-formed grant bound to the realm', async () => {
-    expect(await verifyDriverWriteGrant(base(), 'realm-1', { now: fixedNow })).toEqual({ ok: true });
+    expect(await verifyOperatorWriteGrant(base(), 'realm-1', { now: fixedNow })).toEqual({ ok: true });
   });
 
   it('rejects malformed grants (wrong kind, empty identity, bad dates, empty nonce)', async () => {
-    expect(await verifyDriverWriteGrant(base({ kind: 'other' as DriverWriteGrant['kind'] }), 'realm-1', { now: fixedNow })).toEqual({
+    expect(await verifyOperatorWriteGrant(base({ kind: 'other' as OperatorWriteGrant['kind'] }), 'realm-1', { now: fixedNow })).toEqual({
       ok: false,
       reason: 'malformed',
     });
-    expect(await verifyDriverWriteGrant(base({ grantedBy: '' }), 'realm-1', { now: fixedNow })).toEqual({
+    expect(await verifyOperatorWriteGrant(base({ grantedBy: '' }), 'realm-1', { now: fixedNow })).toEqual({
       ok: false,
       reason: 'malformed',
     });
-    expect(await verifyDriverWriteGrant(base({ grantedAt: 'not-a-date' }), 'realm-1', { now: fixedNow })).toEqual({
+    expect(await verifyOperatorWriteGrant(base({ grantedAt: 'not-a-date' }), 'realm-1', { now: fixedNow })).toEqual({
       ok: false,
       reason: 'malformed',
     });
-    expect(await verifyDriverWriteGrant(base({ nonce: '' }), 'realm-1', { now: fixedNow })).toEqual({
+    expect(await verifyOperatorWriteGrant(base({ nonce: '' }), 'realm-1', { now: fixedNow })).toEqual({
       ok: false,
       reason: 'malformed',
     });
   });
 
   it('rejects a grant minted for another realm', async () => {
-    expect(await verifyDriverWriteGrant(base({ realmId: 'realm-other' }), 'realm-1', { now: fixedNow })).toEqual({
+    expect(await verifyOperatorWriteGrant(base({ realmId: 'realm-other' }), 'realm-1', { now: fixedNow })).toEqual({
       ok: false,
       reason: 'wrong-realm',
     });
@@ -247,15 +247,15 @@ describe('E3.5 driver write grant gate (verifyDriverWriteGrant)', () => {
 
   it('rejects an expired grant but accepts one still inside its window', async () => {
     const expired = base({ expiresAt: '2026-09-24T09:00:00.000Z' });
-    expect(await verifyDriverWriteGrant(expired, 'realm-1', { now: fixedNow })).toEqual({ ok: false, reason: 'expired' });
-    expect(await verifyDriverWriteGrant(base(), 'realm-1', { now: fixedNow })).toEqual({ ok: true });
+    expect(await verifyOperatorWriteGrant(expired, 'realm-1', { now: fixedNow })).toEqual({ ok: false, reason: 'expired' });
+    expect(await verifyOperatorWriteGrant(base(), 'realm-1', { now: fixedNow })).toEqual({ ok: true });
   });
 
   it('refuses an open-ended grant even when nothing else is wrong', async () => {
     // A write credential with no expiry is a standing permission, and standing
     // permissions are E6.4's DomainGrant - a different, revocable object.
     const { expiresAt: _expiresAt, ...forever } = base();
-    expect(await verifyDriverWriteGrant(forever, 'realm-1', { now: fixedNow })).toEqual({ ok: false, reason: 'no-expiry' });
+    expect(await verifyOperatorWriteGrant(forever, 'realm-1', { now: fixedNow })).toEqual({ ok: false, reason: 'no-expiry' });
   });
 
   it('checks expiry against the injected clock, not the wall clock', async () => {
@@ -263,48 +263,48 @@ describe('E3.5 driver write grant gate (verifyDriverWriteGrant)', () => {
     // Inside the window at the fixture's noon, expired by the real wall clock
     // (2026-09-25) - which is the difference between a testable gate and one that
     // can only be satisfied by a date in 2099.
-    expect(await verifyDriverWriteGrant(grant, 'realm-1', { now: fixedNow })).toEqual({ ok: true });
-    expect(await verifyDriverWriteGrant(grant, 'realm-1')).toEqual({ ok: false, reason: 'expired' });
+    expect(await verifyOperatorWriteGrant(grant, 'realm-1', { now: fixedNow })).toEqual({ ok: true });
+    expect(await verifyOperatorWriteGrant(grant, 'realm-1')).toEqual({ ok: false, reason: 'expired' });
   });
 
-  describe('with a driver trust anchor', () => {
-    const signer = new Ed25519MemorySigner('driver-key-1');
+  describe('with a operator trust anchor', () => {
+    const signer = new Ed25519MemorySigner('operator-key-1');
     const verifier = signer.verifier();
 
-    it('accepts a grant the driver key signed', async () => {
-      const grant = await issueDriverWriteGrant(
-        { realmId: 'realm-1', grantedBy: 'driver-alice' },
+    it('accepts a grant the operator key signed', async () => {
+      const grant = await issueOperatorWriteGrant(
+        { realmId: 'realm-1', grantedBy: 'operator-alice' },
         { signer, now: fixedNow }
       );
-      expect(await verifyDriverWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, acceptedKeyIds: ['driver-key-1'] })).toEqual({ ok: true });
+      expect(await verifyOperatorWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, acceptedKeyIds: ['operator-key-1'] })).toEqual({ ok: true });
     });
 
     it('rejects a hand-authored grant that merely has the right shape', async () => {
-      const decision = await verifyDriverWriteGrant(base(), 'realm-1', { now: fixedNow, verifier });
+      const decision = await verifyOperatorWriteGrant(base(), 'realm-1', { now: fixedNow, verifier });
       expect(decision).toEqual({ ok: false, reason: 'unsigned' });
     });
 
-    it('rejects a grant signed by a key this kernel does not accept', async () => {
+    it('rejects a grant signed by a key this runtime does not accept', async () => {
       const stranger = new Ed25519MemorySigner('rogue-key');
-      const grant = await issueDriverWriteGrant({ realmId: 'realm-1', grantedBy: 'driver-alice' }, { signer: stranger, now: fixedNow });
-      expect(await verifyDriverWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, acceptedKeyIds: ['driver-key-1'] })).toEqual({
+      const grant = await issueOperatorWriteGrant({ realmId: 'realm-1', grantedBy: 'operator-alice' }, { signer: stranger, now: fixedNow });
+      expect(await verifyOperatorWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, acceptedKeyIds: ['operator-key-1'] })).toEqual({
         ok: false,
         reason: 'unknown-key',
       });
     });
 
     it('rejects a signed grant whose fields were edited afterwards', async () => {
-      const grant = await issueDriverWriteGrant({ realmId: 'realm-1', grantedBy: 'driver-alice' }, { signer, now: fixedNow });
+      const grant = await issueOperatorWriteGrant({ realmId: 'realm-1', grantedBy: 'operator-alice' }, { signer, now: fixedNow });
       // The classic escalation: take a one-realm grant and point it at another.
       const edited = { ...grant, realmId: 'realm-2' };
-      expect(await verifyDriverWriteGrant(edited, 'realm-2', { now: fixedNow, verifier })).toEqual({ ok: false, reason: 'bad-signature' });
+      expect(await verifyOperatorWriteGrant(edited, 'realm-2', { now: fixedNow, verifier })).toEqual({ ok: false, reason: 'bad-signature' });
     });
 
     it('consumes a nonce once and refuses the second attempt', async () => {
-      const ledger = new DriverGrantLedger();
-      const grant = await issueDriverWriteGrant({ realmId: 'realm-1', grantedBy: 'driver-alice' }, { signer, now: fixedNow });
-      expect(await verifyDriverWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, ledger })).toEqual({ ok: true });
-      expect(await verifyDriverWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, ledger })).toEqual({
+      const ledger = new OperatorGrantLedger();
+      const grant = await issueOperatorWriteGrant({ realmId: 'realm-1', grantedBy: 'operator-alice' }, { signer, now: fixedNow });
+      expect(await verifyOperatorWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, ledger })).toEqual({ ok: true });
+      expect(await verifyOperatorWriteGrant(grant, 'realm-1', { now: fixedNow, verifier, ledger })).toEqual({
         ok: false,
         reason: 'replayed',
       });
@@ -329,11 +329,11 @@ describe('E3.5 enterprise realm writes through a real store', () => {
   // expressed relative to THAT clock instead of a date in 2099.
   const clock = () => new Date('2026-09-24T10:00:00.000Z');
 
-  function grant(realmId: string, overrides: Partial<DriverWriteGrant> = {}): DriverWriteGrant {
+  function grant(realmId: string, overrides: Partial<OperatorWriteGrant> = {}): OperatorWriteGrant {
     return {
-      kind: 'driver-write',
+      kind: 'operator-write',
       realmId,
-      grantedBy: 'driver@bayjf',
+      grantedBy: 'operator@bayjf',
       grantedAt: '2026-09-24T10:00:00.000Z',
       expiresAt: '2026-09-24T10:05:00.000Z',
       nonce: 'nonce-1',
@@ -345,10 +345,10 @@ describe('E3.5 enterprise realm writes through a real store', () => {
     const store = new FsRealmStore({ now: clock });
     const manifest = await store.connect(root, 'enterprise');
     await expect(store.write(manifest.realmId, { data: 'from the personal side\n' }))
-      .rejects.toThrow(/enterprise write requires a valid driver grant \(missing\)/);
+      .rejects.toThrow(/enterprise write requires a valid operator grant \(missing\)/);
   });
 
-  it('accepts a valid driver grant, writes, and records who authorized it', async () => {
+  it('accepts a valid operator grant, writes, and records who authorized it', async () => {
     const written: RealmWriteAuditEntry[] = [];
     const store = new FsRealmStore({ now: clock, audit: entry => written.push(entry) });
     const manifest = await store.connect(root, 'enterprise');
@@ -356,8 +356,8 @@ describe('E3.5 enterprise realm writes through a real store', () => {
 
     expect(await store.read(manifest.realmId, itemId)).toMatchObject({ content: 'escalation brief\n' });
     expect(written).toHaveLength(1);
-    expect(written[0]).toMatchObject({ realmId: manifest.realmId, itemId, grantedBy: 'driver@bayjf', realmType: 'enterprise' });
-    // the write is visible to the snapshot the Vault map and search read from
+    expect(written[0]).toMatchObject({ realmId: manifest.realmId, itemId, grantedBy: 'operator@bayjf', realmType: 'enterprise' });
+    // the write is visible to the snapshot the Backup map and search read from
     expect((await store.manifest(manifest.realmId)).itemCount).toBe(1);
   });
 
@@ -382,12 +382,12 @@ describe('E3.5 enterprise realm writes through a real store', () => {
   });
 
   it('does not burn the grant on a write it cannot honour', async () => {
-    const ledger = new DriverGrantLedger();
-    const store = new FsRealmStore({ now: clock, driverGrants: { ledger } });
+    const ledger = new OperatorGrantLedger();
+    const store = new FsRealmStore({ now: clock, operatorGrants: { ledger } });
     const manifest = await store.connect(root, 'enterprise');
     const g = grant(manifest.realmId);
     // Rejected by shape validation, before any write: the single-use
-    // authorization must survive, or a typo in the path would cost the driver a
+    // authorization must survive, or a typo in the path would cost the operator a
     // fresh grant and, with a real ledger, look like a replay.
     await expect(store.write(manifest.realmId, { itemId: 'bin.dat', data: 'x' }, g))
       .rejects.toBeInstanceOf(UnsupportedWriteError);
@@ -412,13 +412,13 @@ describe('E3.5 enterprise realm writes through a real store', () => {
     await expect(store.write(personal.realmId, { data: 'fine\n' })).resolves.toMatchObject({ itemId: /^writes\// });
   });
 
-  describe('when the store has a driver trust anchor', () => {
-    const signer = new Ed25519MemorySigner('driver-key-1');
+  describe('when the store has a operator trust anchor', () => {
+    const signer = new Ed25519MemorySigner('operator-key-1');
 
-    function anchored(ledger: DriverGrantLedger = new DriverGrantLedger()) {
+    function anchored(ledger: OperatorGrantLedger = new OperatorGrantLedger()) {
       return new FsRealmStore({
         now: clock,
-        driverGrants: { verifier: signer.verifier(), acceptedKeyIds: ['driver-key-1'], ledger },
+        operatorGrants: { verifier: signer.verifier(), acceptedKeyIds: ['operator-key-1'], ledger },
       });
     }
 
@@ -426,37 +426,37 @@ describe('E3.5 enterprise realm writes through a real store', () => {
       const store = anchored();
       const manifest = await store.connect(root, 'enterprise');
       await expect(store.write(manifest.realmId, { data: 'x\n' }, grant(manifest.realmId)))
-        .rejects.toThrow(/driver grant \(unsigned\)/);
+        .rejects.toThrow(/operator grant \(unsigned\)/);
     });
 
     it('accepts a signed grant and refuses the same nonce on the next write', async () => {
       const store = anchored();
       const manifest = await store.connect(root, 'enterprise');
-      const once = await issueDriverWriteGrant(
-        { realmId: manifest.realmId, grantedBy: 'driver@bayjf', ttlMs: 60_000 },
+      const once = await issueOperatorWriteGrant(
+        { realmId: manifest.realmId, grantedBy: 'operator@bayjf', ttlMs: 60_000 },
         { signer, now: clock }
       );
       await expect(store.write(manifest.realmId, { data: 'first\n' }, once)).resolves.toMatchObject({ itemId: /^writes\// });
       await expect(store.write(manifest.realmId, { data: 'second\n' }, once))
-        .rejects.toThrow(/driver grant \(replayed\)/);
+        .rejects.toThrow(/operator grant \(replayed\)/);
     });
 
     it('refuses a grant signed for a different realm even when the signature is valid', async () => {
       const store = anchored();
       const manifest = await store.connect(root, 'enterprise');
-      const forged = await issueDriverWriteGrant({ realmId: 'realm-elsewhere', grantedBy: 'driver@bayjf' }, { signer, now: clock });
+      const forged = await issueOperatorWriteGrant({ realmId: 'realm-elsewhere', grantedBy: 'operator@bayjf' }, { signer, now: clock });
       await expect(store.write(manifest.realmId, { data: 'x\n' }, forged)).rejects.toThrow(/wrong-realm/);
     });
 
     it('a consumed nonce survives a restart, so the replayed write is still refused', async () => {
-      const ledger = new DriverGrantLedger();
+      const ledger = new OperatorGrantLedger();
       const store = anchored(ledger);
       const manifest = await store.connect(root, 'enterprise');
-      const grant = await issueDriverWriteGrant({ realmId: manifest.realmId, grantedBy: 'driver@bayjf' }, { signer, now: clock });
+      const grant = await issueOperatorWriteGrant({ realmId: manifest.realmId, grantedBy: 'operator@bayjf' }, { signer, now: clock });
       await store.write(manifest.realmId, { data: 'x\n' }, grant);
 
-      // What the kernel state file carries is exactly this list.
-      const afterRestart = new DriverGrantLedger();
+      // What the runtime state file carries is exactly this list.
+      const afterRestart = new OperatorGrantLedger();
       afterRestart.importState(ledger.exportState());
       const restarted = anchored(afterRestart);
       await restarted.connect(root, 'enterprise');

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import type { FactRecord, MemoryEvent } from '../src/memory/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const REALM = 'realm-personal';
 
@@ -36,7 +36,7 @@ async function setup(): Promise<{ app: FastifyInstance; store: MemoryStore; fact
   store.append(claim('evt-2', 'loom', 'language', 'python', 'agent-b'));
   await store.consolidateRealm(REALM);
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     memoryStore: store,
@@ -122,12 +122,12 @@ describe('memory HTTP right to be forgotten', () => {
 
     const res = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver' },
+      payload: { realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'operator' },
     });
     expect(res.statusCode).toBe(200);
     const { retractions } = await res.json();
     expect(retractions).toEqual([
-      expect.objectContaining({ factId: target.factId, reason: 'gdpr request', requestedBy: 'driver' }),
+      expect.objectContaining({ factId: target.factId, reason: 'gdpr request', requestedBy: 'operator' }),
     ]);
 
     const after = await app.inject({ method: 'GET', url: `/api/memory/facts?realmId=${REALM}`, headers: AUTH });
@@ -147,7 +147,7 @@ describe('memory HTTP right to be forgotten', () => {
     const { app, facts } = await setup();
     const target = facts[0]!;
     const payload = {
-      realmId: REALM, factIds: [target.factId], reason: 'once', requestedBy: 'driver',
+      realmId: REALM, factIds: [target.factId], reason: 'once', requestedBy: 'operator',
     };
     await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
     const again = await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
@@ -161,7 +161,7 @@ describe('memory HTTP right to be forgotten', () => {
     const { app } = await setup();
     const res = await app.inject({
       method: 'POST', url: '/api/memory/forget-subject', headers: AUTH,
-      payload: { realmId: REALM, subject: 'LOOM', reason: 'erasure', requestedBy: 'driver' },
+      payload: { realmId: REALM, subject: 'LOOM', reason: 'erasure', requestedBy: 'operator' },
     });
     const { retractions } = await res.json();
     expect(retractions).toHaveLength(1);
@@ -185,14 +185,14 @@ describe('memory HTTP right to be forgotten', () => {
     await store.consolidateRealm(REALM);
     const target = store.facts(REALM, REALM)[0]!;
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: store,
       persistState: async () => { flushes += 1; },
     });
     const payload = {
-      realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver',
+      realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'operator',
     };
     const first = await app.inject({ method: 'POST', url: '/api/memory/retract', headers: AUTH, payload });
     expect(first.statusCode).toBe(200);
@@ -210,7 +210,7 @@ describe('memory HTTP right to be forgotten', () => {
     store.append(claim('evt-2', 'loom', 'language', 'python', 'agent-b'));
     await store.consolidateRealm(REALM);
     const hooked = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: store,
@@ -218,7 +218,7 @@ describe('memory HTTP right to be forgotten', () => {
     });
     const res = await hooked.inject({
       method: 'POST', url: '/api/memory/forget-subject', headers: AUTH,
-      payload: { realmId: REALM, subject: 'LOOM', reason: 'erasure', requestedBy: 'driver' },
+      payload: { realmId: REALM, subject: 'LOOM', reason: 'erasure', requestedBy: 'operator' },
     });
     expect(res.statusCode).toBe(200);
     expect(flushes).toBe(1);
@@ -230,7 +230,7 @@ describe('memory HTTP right to be forgotten', () => {
     await store.consolidateRealm(REALM);
     const target = store.facts(REALM, REALM)[0]!;
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: store,
@@ -238,7 +238,7 @@ describe('memory HTTP right to be forgotten', () => {
     });
     const res = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'driver' },
+      payload: { realmId: REALM, factIds: [target.factId], reason: 'gdpr request', requestedBy: 'operator' },
     });
     expect(res.statusCode).toBe(500);
     expect((await res.json()).error).toBe('state_not_persisted');
@@ -250,19 +250,19 @@ describe('memory HTTP right to be forgotten', () => {
     const { app } = await setup();
     const noFacts = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: [], reason: 'x', requestedBy: 'driver' },
+      payload: { realmId: REALM, factIds: [], reason: 'x', requestedBy: 'operator' },
     });
     expect(noFacts.statusCode).toBe(400);
 
     const noReason = await app.inject({
       method: 'POST', url: '/api/memory/retract', headers: AUTH,
-      payload: { realmId: REALM, factIds: ['f1'], requestedBy: 'driver' },
+      payload: { realmId: REALM, factIds: ['f1'], requestedBy: 'operator' },
     });
     expect(noReason.statusCode).toBe(400);
 
     const noSubject = await app.inject({
       method: 'POST', url: '/api/memory/forget-subject', headers: AUTH,
-      payload: { realmId: REALM, reason: 'x', requestedBy: 'driver' },
+      payload: { realmId: REALM, reason: 'x', requestedBy: 'operator' },
     });
     expect(noSubject.statusCode).toBe(400);
   });
@@ -277,7 +277,7 @@ describe('memory HTTP mounting and auth', () => {
 
   it('is not mounted at all without an internal token', async () => {
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       memoryStore: new MemoryStore(),
     });
@@ -287,7 +287,7 @@ describe('memory HTTP mounting and auth', () => {
 
   it('is not mounted when no memory store is wired', async () => {
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
     });
@@ -367,7 +367,7 @@ describe('E8.5 memory drift reconciliation HTTP', () => {
     const { app } = await setup();
     expect((await app.inject({ method: 'GET', url: '/api/memory/snapshot' })).statusCode).toBe(401);
     const bare = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
     });

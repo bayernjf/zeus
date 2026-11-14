@@ -6,9 +6,9 @@
  * never invents content and never crosses a realm boundary.
  */
 import type { MemoryKind, MemoryEvent, FactRecord, FactStatus } from '../memory/types.js';
-import type { DriverWriteGrant } from '../realm/types.js';
+import type { OperatorWriteGrant } from '../realm/types.js';
 
-export type { MemoryKind, MemoryEvent, FactRecord, FactStatus, DriverWriteGrant };
+export type { MemoryKind, MemoryEvent, FactRecord, FactStatus, OperatorWriteGrant };
 
 /** Deterministic diary id: `diary:{realmId}:{date}`. */
 export type DiaryId = string;
@@ -71,8 +71,8 @@ export interface BuildDiaryOptions {
 }
 
 export interface PersistDiaryOptions {
-  /** Required driver write grant for enterprise realms; omitted on personal. */
-  grant?: DriverWriteGrant;
+  /** Required operator write grant for enterprise realms; omitted on personal. */
+  grant?: OperatorWriteGrant;
   /** Directory prefix; defaults to 'diary', yielding diary/YYYY-MM-DD.md. */
   dir?: string;
 }

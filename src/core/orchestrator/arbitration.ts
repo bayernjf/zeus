@@ -5,11 +5,11 @@ import type { BackendArbitration, FanOutResult } from './types.js';
 
 /**
  * S2 critic wiring: after the deterministic aggregation rule ends in
- * needs-driver, optionally consult a model-agnostic decision backend. A
+ * needs-operator, optionally consult a model-agnostic decision backend. A
  * calibrated, high-confidence arbitration concludes the intent (the conflict is
  * cleared, original positions stay auditable). Anything else (low confidence,
  * uncalibrated LLM without explicit permission, backend failure) leaves the
- * split unresolved for the human driver and only records the attempt.
+ * split unresolved for the human operator and only records the attempt.
  *
  * Pure function — the Orchestrator stores what it returns; unit-testable without
  * the dispatch stack.
@@ -25,7 +25,7 @@ export type ArbitrateConflictInput = {
 
 export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<FanOutResult> {
   const { result, backend, now } = input;
-  if (result.status !== 'needs-driver' || result.conflicts.length === 0) return result;
+  if (result.status !== 'needs-operator' || result.conflicts.length === 0) return result;
 
   // Non-empty conflicts is guaranteed by the guard above.
   const conflict = result.conflicts[0]!;
@@ -58,7 +58,7 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
     return { ...result, backendArbitration: record };
   }
 
-  const supporters = conflict.stances.find(stance => stance.stance === outcome.conclusion)?.vassals ?? [];
+  const supporters = conflict.stances.find(stance => stance.stance === outcome.conclusion)?.executors ?? [];
   const record: BackendArbitration = {
     concluded: true,
     conclusion: outcome.conclusion,

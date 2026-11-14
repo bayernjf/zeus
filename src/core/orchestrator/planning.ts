@@ -1,5 +1,5 @@
 // design-planning (tech map S12): planning as a pure increment over the
-// existing DAG kernel — validate, score and select plan candidates, and
+// existing DAG runtime — validate, score and select plan candidates, and
 // produce re-plan deltas that never touch completed or running nodes. V1 is
 // the pure-function layer only (design-planning §5): no fan-out to planners,
 // no planner prompt, no execution wiring — every input is caller-supplied.
@@ -131,7 +131,7 @@ export function selectPlan(
 /** The re-plan delta (design-planning §3.4): frozen completed nodes stay put,
  *  new nodes are added, dropped nodes are removed (unless they are completed
  *  or running — those are never touched), and dependency rewiring is reported
- *  for the execution driver to apply on pending nodes. */
+ *  for the execution operator to apply on pending nodes. */
 export type ReplanDelta = {
   kept: string[];
   added: DagNode[];

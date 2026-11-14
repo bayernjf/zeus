@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 
 let app: FastifyInstance | undefined;
@@ -13,9 +13,9 @@ afterEach(async () => {
 
 async function mount(corsOrigins?: string[]): Promise<FastifyInstance> {
   app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
-    internalToken: 'driver-secret',
+    internalToken: 'operator-secret',
     ...(corsOrigins ? { corsOrigins } : {}),
   });
   return app;

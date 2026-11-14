@@ -25,7 +25,7 @@ import type { SkillInputEntry } from './skill-inputs.js';
  * guard, not a performance calibration — numeric tuning is deferred to #9
  * once real-load distributions exist.
  *
- * Pure function over injected inputs: no kernel state, no IO, no write-back.
+ * Pure function over injected inputs: no runtime state, no IO, no write-back.
  */
 
 /**

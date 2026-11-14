@@ -13,7 +13,7 @@ import type { RealmHit } from '../src/realm/types.js';
  */
 
 function skillInput(name: string, source: 'explicit' | 'unavailable' = 'explicit'): SkillInputEntry {
-  return source === 'explicit' ? { name, source, value: name, provenance: 'driver-supplied' } : { name, source };
+  return source === 'explicit' ? { name, source, value: name, provenance: 'operator-supplied' } : { name, source };
 }
 
 function realmHit(itemId: string): RealmHit {
@@ -21,7 +21,7 @@ function realmHit(itemId: string): RealmHit {
 }
 
 function memoryEntry(claimId: string): ContextAppendixEntry {
-  return { claimId, text: `fact ${claimId}`, source: 'memory-recall', realmId: 'personal', score: 0.5, provenance: 'kernel-resolved-realm' };
+  return { claimId, text: `fact ${claimId}`, source: 'memory-recall', realmId: 'personal', score: 0.5, provenance: 'runtime-resolved-realm' };
 }
 
 describe('allocateContextBudget', () => {

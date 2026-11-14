@@ -21,7 +21,7 @@ export const DEFAULT_AUDIT_KEEP = 5;
 /**
  * Append one JSON object per line, bounded on disk.
  *
- * An audit trail that fills the volume takes the whole kernel down with it, and
+ * An audit trail that fills the volume takes the whole runtime down with it, and
  * "set up logrotate yourself" is the kind of instruction that gets written in a
  * deployment doc and never executed - so the sink bounds itself by default. Total
  * on-disk ceiling is maxBytes * (keep + 1). Set `maxBytes: Infinity` to opt out.
@@ -87,8 +87,8 @@ export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}
  * The directory is created because the sink used to assume it: with the
  * documented default (`./data/audit.jsonl` in a fresh data dir) the very first
  * audit write threw ENOENT, and the dispatcher's branch `catch` re-labelled that
- * filesystem error as the reason the *vassal* failed. The mode matters for the
- * same reason the kernel state file's does - audit lines carry realm ids, vassal
+ * filesystem error as the reason the *executor* failed. The mode matters for the
+ * same reason the runtime state file's does - audit lines carry realm ids, executor
  * names and decision detail - and `appendFileSync` alone would leave the file
  * 0644 on a default umask.
  */
@@ -132,7 +132,7 @@ export type AuditQuery = {
   /** Maximum entries returned, counting from the newest. Default 200. */
   limit?: number;
   runId?: string;
-  vassal?: string;
+  executor?: string;
   decision?: AuditDecision;
 };
 
@@ -210,14 +210,14 @@ export function readAuditLog(
         );
       }
       if (!isAuditEntry(parsed)) {
-        throw new AuditLogError(`audit record at byte ${at + 1} of ${path} is missing ts/vassal/decision`);
+        throw new AuditLogError(`audit record at byte ${at + 1} of ${path} is missing ts/executor/decision`);
       }
       entries.push(parsed);
     }
 
     const matching = entries.filter(entry =>
       (query.runId === undefined || entry.runId === query.runId) &&
-      (query.vassal === undefined || entry.vassal === query.vassal) &&
+      (query.executor === undefined || entry.executor === query.executor) &&
       (query.decision === undefined || entry.decision === query.decision));
     return matching.slice(-limit);
   } finally {
@@ -236,7 +236,7 @@ function isAuditEntry(value: unknown): value is AuditEntry {
   const entry = value as Partial<AuditEntry> | null;
   return !!entry &&
     typeof entry.ts === 'string' &&
-    typeof entry.vassal === 'string' &&
+    typeof entry.executor === 'string' &&
     typeof entry.decision === 'string';
 }
 
@@ -247,26 +247,26 @@ export function memoryAuditSink(): { log: AuditEntry[]; sink: AuditSink } {
 
 /** Bridge registry revocation events into the same dispatch audit trail,
  *  so governance actions (token revocation / demotion to guest) are recorded
- *  alongside dispatch decisions. Wire as VassalRegistry's onRevoke hook. */
+ *  alongside dispatch decisions. Wire as ExecutorRegistry's onRevoke hook. */
 export function revokeAuditBridge(audit: AuditSink): (name: string, at: string) => void {
   return (name, at) =>
     audit({
       ts: at,
-      vassal: name,
-      decision: 'vassal-revoked',
-      detail: 'vassal access revoked; demoted to guest/blocked, no further tokens issued',
+      executor: name,
+      decision: 'executor-revoked',
+      detail: 'executor access revoked; demoted to guest/blocked, no further tokens issued',
     });
 }
 
-/** A-02: bridge the explicit restore of a revoked vassal into the same trail.
+/** A-02: bridge the explicit restore of a revoked executor into the same trail.
  *  Re-registration no longer clears a revocation, so this is the only event
- *  that can show a revocation was undone. Wire as VassalRegistry's onReinstate. */
+ *  that can show a revocation was undone. Wire as ExecutorRegistry's onReinstate. */
 export function reinstateAuditBridge(audit: AuditSink): (name: string, at: string) => void {
   return (name, at) =>
     audit({
       ts: at,
-      vassal: name,
-      decision: 'vassal-reinstated',
-      detail: 'vassal access restored by an explicit reinstate; not a side effect of re-registration',
+      executor: name,
+      decision: 'executor-reinstated',
+      detail: 'executor access restored by an explicit reinstate; not a side effect of re-registration',
     });
 }

@@ -35,7 +35,7 @@
     "agent:llm": "node dist/a2a/llm-agent.js",
     "mcp:realm": "node dist/realm/mcp-stdio.js",
     "mcp-config": "node scripts/mcp-config.mjs",
-    "vault": "node dist/vault/cli.js",
+    "backup": "node dist/backup/cli.js",
     "tui": "node dist/tui/cli.js",
     "verify:roster": "node scripts/verify-roster.mjs",
     "verify:decision-backend": "node scripts/verify-decision-backend.mjs",

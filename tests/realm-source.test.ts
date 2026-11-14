@@ -10,9 +10,9 @@ import type { RealmActor, RealmStore } from '../src/realm/types.js';
 const NOW = new Date('2026-09-25T00:00:00.000Z');
 const now = () => NOW;
 
-const driver: RealmActor = { kind: 'driver', id: 'driver' };
+const operator: RealmActor = { kind: 'operator', id: 'operator' };
 
-describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)', () => {
+describe('E6.4 resolveRealmSource (runtime-side retrieval over real directories)', () => {
   let sandbox: string;
   let store: FsRealmStore;
   let grants: DomainGrantRegistry;
@@ -69,7 +69,7 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
   }) =>
     resolveRealmSource({
       store,
-      actor: input.actor ?? driver,
+      actor: input.actor ?? operator,
       access: input.access ?? 'read',
       source: { realmId: input.realmId, ...(input.text ? { text: input.text } : {}), ...(input.limit ? { limit: input.limit } : {}) },
       ...(input.declaredRealm ? { declaredRealm: input.declaredRealm } : {}),
@@ -95,7 +95,7 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
   });
 
   it('lets an org-scoped subject read down into a department, by hierarchy alone', async () => {
-    const resolved = await ask({ actor: { kind: 'vassal', id: 'pr-helper', tenant: { org: 'acme' } }, realmId: deptRealmId });
+    const resolved = await ask({ actor: { kind: 'executor', id: 'pr-helper', tenant: { org: 'acme' } }, realmId: deptRealmId });
     expect(resolved.via).toBe('tenant-hierarchy');
     expect(resolved.hits.length).toBeGreaterThan(0);
   });
@@ -103,31 +103,31 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
   it('refuses a sibling department and leaks no content while doing so', async () => {
     const before = audit.length;
     await expect(
-      ask({ actor: { kind: 'vassal', id: 'loom', tenant: { org: 'acme', department: 'mkt' } }, realmId: deptRealmId, text: 'compiler' }),
+      ask({ actor: { kind: 'executor', id: 'loom', tenant: { org: 'acme', department: 'mkt' } }, realmId: deptRealmId, text: 'compiler' }),
     ).rejects.toMatchObject({ decision: { reason: 'tenant-out-of-scope' } });
     const refusal = audit[before];
     expect(refusal?.decision).toBe('domain-refused');
     expect(JSON.stringify(refusal)).not.toMatch(/design\.md|compiler design/);
   });
 
-  it('refuses a personal-side vassal until the driver grants it, then admits it by grant id', async () => {
-    await expect(ask({ actor: { kind: 'vassal', id: 'jev' }, realmId: deptRealmId }))
+  it('refuses a personal-side executor until the operator grants it, then admits it by grant id', async () => {
+    await expect(ask({ actor: { kind: 'executor', id: 'jev' }, realmId: deptRealmId }))
       .rejects.toMatchObject({ decision: { reason: 'no-grant' } });
 
-    const issued = grants.issue({ subject: 'jev', realmId: deptRealmId, access: 'read', grantedBy: 'driver', nonce: 'n1' });
-    const resolved = await ask({ actor: { kind: 'vassal', id: 'jev' }, realmId: deptRealmId });
+    const issued = grants.issue({ subject: 'jev', realmId: deptRealmId, access: 'read', grantedBy: 'operator', nonce: 'n1' });
+    const resolved = await ask({ actor: { kind: 'executor', id: 'jev' }, realmId: deptRealmId });
     expect(resolved.via).toBe('grant');
     expect(resolved.grantId).toBe(issued.grantId);
 
     // Revoking puts the boundary back; nothing about the realm changed.
     grants.revoke(issued.grantId);
-    await expect(ask({ actor: { kind: 'vassal', id: 'jev' }, realmId: deptRealmId }))
+    await expect(ask({ actor: { kind: 'executor', id: 'jev' }, realmId: deptRealmId }))
       .rejects.toMatchObject({ decision: { reason: 'no-grant' } });
   });
 
   it('never lets an enterprise subject read the personal domain', async () => {
     await expect(
-      ask({ actor: { kind: 'vassal', id: 'loom', tenant: { org: 'acme' } }, realmId: personalRealmId }),
+      ask({ actor: { kind: 'executor', id: 'loom', tenant: { org: 'acme' } }, realmId: personalRealmId }),
     ).rejects.toMatchObject({ decision: { reason: 'enterprise-to-personal' } });
   });
 
@@ -155,7 +155,7 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
     await expect(
       resolveRealmSource({
         store: broken,
-        actor: driver,
+        actor: operator,
         source: { realmId: deptRealmId },
         audit: entry => faults.push(entry),
         now,
@@ -172,7 +172,7 @@ describe('E6.4 resolveRealmSource (kernel-side retrieval over real directories)'
 
   it('audits the subject, not the absolute path', async () => {
     await ask({ realmId: deptRealmId, text: 'compiler' });
-    expect(audit[0]).toMatchObject({ vassal: 'driver', realm: 'enterprise' });
+    expect(audit[0]).toMatchObject({ executor: 'operator', realm: 'enterprise' });
     expect(audit[0]!.detail).toContain('acme/eng');
     expect(JSON.stringify(audit)).not.toContain(sandbox);
   });

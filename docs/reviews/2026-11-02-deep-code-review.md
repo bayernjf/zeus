@@ -19,7 +19,7 @@ Zeus 是一个多 Agent 编排与决策运行时：并行派发意图给外部 A
 | HTTP 面 | server.ts 实测注册 132 条路由，与 README 声明一致 |
 | CI | .github/workflows/ci.yml：build → typecheck → test → smoke:core → lint → npm audit → secret scan，另有 +2 年时钟偏移门；Node 22/24 双矩阵 |
 
-架构分层清晰：`core/`（纯领域逻辑：orchestrator、decision-service、grading、audit、persistence）→ `http/`（传输映射层）→ `state/`、`realm/`、`vault/`（持久化与数据域）→ `dispatch/`、`mcp/`、`a2a/`（协议面）。设计文档 60+ 份与代码互相引用，且近期修复（如 PR #178 diary 错误映射）同步更新了文档与测试。
+架构分层清晰：`core/`（纯领域逻辑：orchestrator、decision-service、grading、audit、persistence）→ `http/`（传输映射层）→ `state/`、`realm/`、`backup/`（持久化与数据域）→ `dispatch/`、`mcp/`、`a2a/`（协议面）。设计文档 60+ 份与代码互相引用，且近期修复（如 PR #178 diary 错误映射）同步更新了文档与测试。
 
 ## 2. 结论摘要
 
@@ -30,7 +30,7 @@ Zeus 是一个多 Agent 编排与决策运行时：并行派发意图给外部 A
 最关键的三条：
 
 1. **【P1】SQLite 库文件权限与代码注释承诺不符**：`schema.ts:146` 声称 "the DB file is opened 0600"，实测 `openSqlite` 不做任何 chmod，umask 022 下建库为 0644——`decision_webhooks.secret`（HMAC 密钥）对同机其他本地用户可读。
-2. **【P1】加权聚合的 weight 由执行 Agent 自报且无界**：`aggregate.ts:17` 直接采信 vassal 返回的 `data.weight`，恶意/被攻破的 vassal 自报 `1e9` 或负权重即可强制收敛到自己立场，击穿 "规则不收敛就升级、不臆断" 的核心承诺。
+2. **【P1】加权聚合的 weight 由执行 Agent 自报且无界**：`aggregate.ts:17` 直接采信 executor 返回的 `data.weight`，恶意/被攻破的 executor 自报 `1e9` 或负权重即可强制收敛到自己立场，击穿 "规则不收敛就升级、不臆断" 的核心承诺。
 3. **【P2】2026-09 之后新增的出局面未接入 DNS 重绑定守卫**：`hub-embedder.ts`、`agent-world/client.ts`、`webhook.ts`、`exporter.ts`、`evals/judge.ts` 仍用裸 `fetch`，其中两个面携带 Bearer 凭证，端点主机被重绑定时凭证会落到私网地址。
 
 ## 3. 验证门实际执行结果
@@ -60,15 +60,15 @@ Zeus 是一个多 Agent 编排与决策运行时：并行派发意图给外部 A
 
 - **位置**：`src/core/persistence/sqlite-db.ts:15-23`（openSqlite 无 chmod）；承诺出处 `src/core/persistence/schema.ts:146`（"stored like the rest of the local secrets: plaintext on the operator's own disk (the DB file is opened 0600)"）
 - **证据**：openSqlite 全文仅 `mkdirSync(dirname, {recursive:true})` + `new DatabaseSync(location)`，无任何 chmod；全仓 grep 确认无其他位置对 DB 文件补 chmod。实测（Node 22.23.4，umask 022）：`new DatabaseSync('/tmp/zeus-probe.db')` 产出 `-rw-r--r--`（0644），WAL/SHM 同默认。
-- **影响**：`ZEUS_DB_FILE` 持久化模式下，`decision_webhooks.secret`（决策事件推送的 HMAC 签名密钥）及全部决策/组织记录对同机任意本地用户可读；schema 注释给其他面（kernel-state 0600+fsync、audit 0600、evals 0600、vault 0700/0600）建立的安全预期在这里不成立，属于文档化控制未实现。利用前提是需要同机本地访问，故不定 P0。
+- **影响**：`ZEUS_DB_FILE` 持久化模式下，`decision_webhooks.secret`（决策事件推送的 HMAC 签名密钥）及全部决策/组织记录对同机任意本地用户可读；schema 注释给其他面（runtime-state 0600+fsync、audit 0600、evals 0600、backup 0700/0600）建立的安全预期在这里不成立，属于文档化控制未实现。利用前提是需要同机本地访问，故不定 P0。
 - **修复建议**：openSqlite 打开后立即 `chmodSync(location, 0o600)`（并处理 WAL/SHM），父目录 `mkdirSync(..., {mode:0o700})`；在 persistence.test.ts 增加文件权限断言用例；同步修正 schema.ts 注释或使其为真。
 
-### P1-2 加权聚合采信 vassal 自报 weight 且无界
+### P1-2 加权聚合采信 executor 自报 weight 且无界
 
 - **位置**：`src/core/orchestrator/aggregate.ts:17`（`typeof data.weight === 'number' ? { weight: data.weight }`，无有限性/符号/上界校验）、`aggregate.ts:86-94`（聚合直接累加）
 - **证据**：`extractStance` 从执行 Agent 返回 Task 的 data part 读取 weight；设计文档 `docs/design-fan-out.md:117,130` 只写 "按 weight（缺省 1）累加"，未规定来源与边界；测试 `tests/orchestrator-primitives.test.ts:106-132` 仅覆盖正权重正常路径，无对抗用例。
-- **影响**：`weighted` 规则下，任一参与派发的 vassal 自报 `weight: 1e9` 即可独占结论；负权重使 totalWeight 失真（如 [100, -99] → 总权 1 → 占比 100 倍 ≥ 阈值）；`Infinity`/`NaN` 虽恰好 fail-closed（NaN 比较全 false），但有限大数与负数完全可用。这直接违反产品核心承诺 "无法收敛时结论为空并升级，不臆断"（README §1.2）——对抗性 vassal 能强制"收敛"。
-- **修复建议**：首选——weight 改为名册侧配置（operator 信任的权重），忽略 vassal 自报值；次选——clamp 到有限非负区间（如 0 < w ≤ 100）并在 reason 中记录被裁剪的事实；为负权重/巨大权重/NaN 增加聚合测试。
+- **影响**：`weighted` 规则下，任一参与派发的 executor 自报 `weight: 1e9` 即可独占结论；负权重使 totalWeight 失真（如 [100, -99] → 总权 1 → 占比 100 倍 ≥ 阈值）；`Infinity`/`NaN` 虽恰好 fail-closed（NaN 比较全 false），但有限大数与负数完全可用。这直接违反产品核心承诺 "无法收敛时结论为空并升级，不臆断"（README §1.2）——对抗性 executor 能强制"收敛"。
+- **修复建议**：首选——weight 改为名册侧配置（operator 信任的权重），忽略 executor 自报值；次选——clamp 到有限非负区间（如 0 < w ≤ 100）并在 reason 中记录被裁剪的事实；为负权重/巨大权重/NaN 增加聚合测试。
 
 ### P2-1 新增出局面未接入 DNS 重绑定守卫
 
@@ -83,7 +83,7 @@ Zeus 是一个多 Agent 编排与决策运行时：并行派发意图给外部 A
 - **影响**：tier-1（形状信任）调用方的 name 未经验证即落入审计行与下游记忆；持 bearer 的调用者可冒名污染问责链。因路由本身有 bearer 门槛，威胁场景限于 token 共享/泄露后的归因混淆。
 - **修复建议**：tier-1 时 callerName 标注未验证（如 `unverified:<name>`），或审计 detail 显式记录 "name not roster-anchored"。
 
-### P3-2 同名 active vassal 重注册静默覆盖
+### P3-2 同名 active executor 重注册静默覆盖
 
 - **位置**：`src/registry/registry.ts:190-196`
 - **影响**：revoked 条目有显式保护（A-02 注释），但同名 active 条目被 `entries.set` 直接覆盖，taskUrl/token 一并替换；operator 误操作无告警。
@@ -122,13 +122,13 @@ Zeus 是一个多 Agent 编排与决策运行时：并行派发意图给外部 A
 - **认证**：bearer 全部 `timingSafeEqual`（server.ts:3718）；401 带 RFC 6750 challenge；4 条常驻公开路由仅暴露聚合计数，审计原文不出公开面（server.ts:446-483）。
 - **路径穿越/符号链接**：realm store 双重防护——`assertSafeItemId` 拒绝 `..`/空段（store.ts:482），realpath 回检父目录符号链接（store.ts:218-222），写路径 tmp+rename 且 0600（store.ts:345,511）。
 - **SSRF**：注册面 cardUrl 与 taskUrl 均先过 `assertOutboundUrlAllowed`（registry.ts:117,177）；guardedFetch 在 connect 期钉住过检地址、每跳重检（outbound-dns.ts:140-158），混合解析结果整域名 fail-closed。
-- **授权凭证**：driver write grant 全链路（签发 TTL 上限 24h、验签、nonce 单次消费、账本持久化防崩溃重放）`realm/grant.ts:199-243`；nonce 账本满窗淘汰仍落盘的设计注释（grant.ts:150-154）显示对崩溃窗口有正确推理。
+- **授权凭证**：operator write grant 全链路（签发 TTL 上限 24h、验签、nonce 单次消费、账本持久化防崩溃重放）`realm/grant.ts:199-243`；nonce 账本满窗淘汰仍落盘的设计注释（grant.ts:150-154）显示对崩溃窗口有正确推理。
 - **审计链**：JSONL 决策审计开库即全量验签，失败拒绝打开（jsonl-chain-store.ts:44-53）；签名链 Ed25519，seal maxAge/attestation TTL/keyId 绑定/issuer 绑定逐项校验（core/signing.ts:368-509）。
-- **Vault**：AES-256-GCM + scrypt(N=2^17)，kdfParams 随信封记录且有 2^20 上限与 2 的幂校验（cipher.ts:51-72）；错误区分 VaultFormatError/VaultDecryptError。
+- **Backup**：AES-256-GCM + scrypt(N=2^17)，kdfParams 随信封记录且有 2^20 上限与 2 的幂校验（cipher.ts:51-72）；错误区分 BackupFormatError/BackupDecryptError。
 - **失败模式**：聚合不可收敛 → conclusion=null 升级（aggregate.ts:49-54）；judge 后端失败 → judged:false + 错误记录（judge.ts:101-112）；webhook 推送 fail-soft 不阻塞决策路径（webhook.ts:113-115）；org 无执行器 → 503 fail-closed（serve.ts:431-434）。
 - **错误边界**：未分类异常统一 RFC 9457 500，不回显内部消息（server.ts:3437-3465）；DomainError 消息只含用户输入级细节。
 - **XSS**：supervisor 面板 esc() 使用一致（抽查 10+ 处 innerHTML 注入点全部转义）。
-- **机密卫生**：.env 与 *.pem 均被 gitignore 且未入历史（git ls-files 确认）；lint:secrets 通过；内核状态落盘前剥离 connector token（kernel-state.ts:210-215 注释 + 0600）。
+- **机密卫生**：.env 与 *.pem 均被 gitignore 且未入历史（git ls-files 确认）；lint:secrets 通过；内核状态落盘前剥离 connector token（runtime-state.ts:210-215 注释 + 0600）。
 - **并发治理**：Semaphore 队列有界、构造期拒绝非法 queueLimit（semaphore.ts:80-82）；分支预算/熔断/成本闸门齐备（orchestrator.ts:458-466）。
 - **迁移**：baseline 全 IF NOT EXISTS + 增量幂等 + 成功才记录（schema.ts:246-265）。
 

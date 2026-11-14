@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { canonicalJson, type RosterSigner, type RosterVerifier } from '../registry/signing.js';
 
 /**
- * One-time, short-lived authorization for an executing vassal to perform an
+ * One-time, short-lived authorization for an executing executor to perform an
  * external write. It is not a stored credential: the operator signs approval
- * for a bounded purpose, the vassal uses its own downstream credential, and the
+ * for a bounded purpose, the executor uses its own downstream credential, and the
  * nonce makes a captured authorization unreplayable.
  */
 export type ExecutionDelegation = {
@@ -15,10 +15,10 @@ export type ExecutionDelegation = {
   /** Skill the approval is bound to; a different skill cannot consume it. */
   skill: string;
   /**
-   * Optional vassal binding. When omitted, the first eligible branch consumes
+   * Optional executor binding. When omitted, the first eligible branch consumes
    * the single nonce; a second branch in the same fan-out cannot.
    */
-  vassal?: string;
+  executor?: string;
   /** Explicit external capabilities, e.g. ['github:pull-request:merge']. */
   capabilities: string[];
   /** Optional operator-supplied reason for audit display. */
@@ -40,7 +40,7 @@ export type IssueExecutionDelegationInput = {
   grantedBy: string;
   skill: string;
   capabilities: string[];
-  vassal?: string;
+  executor?: string;
   reason?: string;
   ttlMs?: number;
   nonce?: string;
@@ -54,7 +54,7 @@ export type ExecutionDelegationAuditEntry = {
   decision: 'execution-delegation-issued';
   grantedBy: string;
   skill: string;
-  vassal?: string;
+  executor?: string;
   capabilities: string[];
   keyId: string;
   nonce: string;
@@ -69,7 +69,7 @@ export type ExecutionDelegationVerification =
       reason:
         | 'missing'
         | 'malformed'
-        | 'wrong-vassal'
+        | 'wrong-executor'
         | 'wrong-skill'
         | 'capability-not-covered'
         | 'unsigned'
@@ -84,7 +84,7 @@ export type ExecutionDelegationVerification =
 export type VerifyExecutionDelegationContext = {
   verifier: RosterVerifier;
   ledger: ExecutionDelegationNonceLedger;
-  vassal: string;
+  executor: string;
   skill: string;
   capability: string;
   acceptedKeyIds?: string[];
@@ -111,8 +111,8 @@ export async function issueExecutionDelegation(
   if (!grantedBy) throw new ExecutionDelegationError('execution delegation needs grantedBy');
   if (!skill) throw new ExecutionDelegationError('execution delegation needs skill');
   if (capabilities.length === 0) throw new ExecutionDelegationError('execution delegation needs at least one capability');
-  if (input.vassal !== undefined && !input.vassal.trim()) {
-    throw new ExecutionDelegationError('execution delegation vassal must be a non-empty string when provided');
+  if (input.executor !== undefined && !input.executor.trim()) {
+    throw new ExecutionDelegationError('execution delegation executor must be a non-empty string when provided');
   }
 
   const ttlMs = input.ttlMs ?? EXECUTION_DELEGATION_DEFAULT_TTL_MS;
@@ -129,7 +129,7 @@ export async function issueExecutionDelegation(
     version: 1 as const,
     grantedBy,
     skill,
-    ...(input.vassal?.trim() ? { vassal: input.vassal.trim() } : {}),
+    ...(input.executor?.trim() ? { executor: input.executor.trim() } : {}),
     capabilities,
     ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
     issuedAt: now.toISOString(),
@@ -232,11 +232,11 @@ export async function verifyAndConsumeExecutionDelegation(
     Number.isNaN(Date.parse(delegation.issuedAt)) ||
     typeof delegation.nonce !== 'string' ||
     !delegation.nonce.trim() ||
-    (delegation.vassal !== undefined && typeof delegation.vassal !== 'string');
+    (delegation.executor !== undefined && typeof delegation.executor !== 'string');
   if (malformed) return { ok: false, reason: 'malformed' };
 
-  if (delegation.vassal && delegation.vassal !== context.vassal) {
-    return { ok: false, reason: 'wrong-vassal' };
+  if (delegation.executor && delegation.executor !== context.executor) {
+    return { ok: false, reason: 'wrong-executor' };
   }
   if (delegation.skill !== context.skill) return { ok: false, reason: 'wrong-skill' };
   if (!delegation.capabilities.includes(context.capability)) {

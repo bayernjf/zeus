@@ -12,7 +12,7 @@ import { classifyInterruption, type InterruptLevel } from '../oversight/interrup
  *  - no expression language. `op` is a closed enum and `field` is a per-source
  *    whitelist, so the boundary stays in the type instead of in an evaluator
  *    that would have to remember every prohibition.
- *  - no outbound surface. A tick reads what the kernel already holds (metrics)
+ *  - no outbound surface. A tick reads what the runtime already holds (metrics)
  *    or what the user already authorized (a mounted realm); `connector` is
  *    step 3 and is absent here, so an unreadable source is reported as unknown
  *    rather than guessed at.
@@ -70,7 +70,7 @@ export type Watch = {
   expiresAt: string;
   /** Ceilings, set once by the human who registered the watch. */
   budget: { fires: number; executes: number };
-  /** Kernel's ledger of what those ceilings have been spent on. Persisted: a
+  /** Runtime's ledger of what those ceilings have been spent on. Persisted: a
    *  restart must not hand out a fresh budget. */
   used: { fires: number; executes: number };
   enabled: boolean;
@@ -125,7 +125,7 @@ export async function connectorReading(
   ref: { id: string; tool: string; args?: Record<string, unknown> },
   fetchImpl?: typeof fetch,
 ): Promise<unknown> {
-  // The same injected transport the rest of the kernel was assembled with, so a
+  // The same injected transport the rest of the runtime was assembled with, so a
   // watch never opens a second, differently-guarded outbound path.
   return registry.callTool(ref.id, ref.tool, ref.args ?? {}, fetchImpl);
 }
@@ -521,7 +521,7 @@ export class WatchRegistry {
 
         // Step 4: an unattended execute fire may only run inside a pre-signed,
         // bounded contract. The watch never carries its own ticket (invariant 4);
-        // it asks the kernel to derive one for this fire. No derive hook, no
+        // it asks the runtime to derive one for this fire. No derive hook, no
         // contract, revoked/window-ended, or a spent ceiling all read the same
         // way: zero outbound and a desk escalation naming the exact limit hit.
         let childTicket: unknown;

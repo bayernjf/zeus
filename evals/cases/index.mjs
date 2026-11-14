@@ -11,14 +11,14 @@
 //   skill         the skill the intent names (agents advertise it on their card)
 //   agents        [{ name, stance?, rationale?, dataPolicy? }] — stance from
 //                 the task data part (`stance` key), rationale from `rationale`
-//   request       fields merged into the fan-out request (vassals, aggregation,
+//   request       fields merged into the fan-out request (executors, aggregation,
 //                 realmHits, realmHitsOrigin, params …)
 //   memory        optional personal-realm claims seeded before dispatch; the
 //                 request must carry realmId:'personal' for recall (the
 //                 guardrails family exercises the S8 assembly content scan)
 //   expect        EvalExpectation[] — predicates are plain JS functions
 //
-// Terminology follows the project's professional-language rule: "vassal" is
+// Terminology follows the project's professional-language rule: "executor" is
 // the wire-level interface identifier and stays as-is in code; prose uses
 // "execution agent / branch / escalation".
 
@@ -26,7 +26,7 @@ const APPROVE = { stance: 'approve', rationale: 'verified against brief.md: the 
 const REJECT = { stance: 'reject', rationale: 'brief.md contains no supporting evidence for the claim' };
 
 /** The case list, in declaration order. Runner executes each case on its own
- *  booted kernel so scripted behaviours never bleed across cases.
+ *  booted runtime so scripted behaviours never bleed across cases.
  *  @type {Array<import('../../scripts/eval-run.mjs').RunnerCase>} */
 export const evalCases = [
   // --- decision: verdict correctness and conflict detection ---
@@ -69,8 +69,8 @@ export const evalCases = [
     request: { realm: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-disputed', predicate: 'contested' } },
     expect: [
       // A unanimous rule over a split vote must not conclude — the conflict is
-      // surfaced to the driver instead of a silent majority guess.
-      { decision: o => o.status === 'needs-driver' && o.conflicts.length >= 1, severity: 'block' },
+      // surfaced to the operator instead of a silent majority guess.
+      { decision: o => o.status === 'needs-operator' && o.conflicts.length >= 1, severity: 'block' },
       { escalation: { expected: true, level: 1 }, severity: 'block' },
     ],
   },
@@ -101,7 +101,7 @@ export const evalCases = [
     ],
     request: { realm: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-tie', predicate: 'contested' } },
     expect: [
-      { decision: o => o.status === 'needs-driver', severity: 'block' },
+      { decision: o => o.status === 'needs-operator', severity: 'block' },
       // classifyInterruption({kind:'intent-conflict', autoResolvable:false})
       // is L1 (async operator entry, never blocks other intents).
       { escalation: { expected: true, level: 1 }, severity: 'block' },
@@ -133,7 +133,7 @@ export const evalCases = [
     agents: [
       { name: 'alpha', fail: true },
     ],
-    request: { realm: 'personal', vassals: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-failing', predicate: 'contested' } },
+    request: { realm: 'personal', executors: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-failing', predicate: 'contested' } },
     expect: [
       { decision: o => o.status === 'failed' && o.branches.length === 1 && o.branches[0].state === 'failed' && o.branches[0].outcome === 'failed', severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
@@ -149,7 +149,7 @@ export const evalCases = [
       { name: 'beta', ...APPROVE },
       { name: 'gamma', ...APPROVE },
     ],
-    request: { realm: 'personal', vassals: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-targets', predicate: 'explicit' } },
+    request: { realm: 'personal', executors: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-targets', predicate: 'explicit' } },
     expect: [
       { decision: o => o.status === 'completed', severity: 'block' },
       { selection: { mustInclude: ['alpha', 'beta'], mustExclude: ['gamma'] }, severity: 'block' },
@@ -162,7 +162,7 @@ export const evalCases = [
       { name: 'alpha', ...APPROVE },
       { name: 'beta', ...APPROVE },
     ],
-    request: { realm: 'personal', vassals: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-stable', predicate: 'exists' } },
+    request: { realm: 'personal', executors: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-stable', predicate: 'exists' } },
     expect: [
       { decision: o => o.status === 'completed', severity: 'block' },
       // A clean run must not re-point providers: no chain-switched /
@@ -196,7 +196,7 @@ export const evalCases = [
       { name: 'alpha', fail: true },
       { name: 'beta', ...APPROVE },
     ],
-    request: { realm: 'personal', vassals: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-pinned', predicate: 'fails' } },
+    request: { realm: 'personal', executors: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-pinned', predicate: 'fails' } },
     expect: [
       { decision: o => o.status === 'failed' && o.branches.length === 1 && o.branches[0].state === 'failed', severity: 'block' },
       // Explicitly pinned selection is never diverted around the failure.
@@ -210,7 +210,7 @@ export const evalCases = [
     id: 'data-policy/self-asserted-hits-refused',
     skill: 'research',
     agents: [
-      // read-task-scope: only kernel-resolved realm hits are admitted; a
+      // read-task-scope: only runtime-resolved realm hits are admitted; a
       // caller-asserted hit cannot be verified as task-scoped and must be
       // refused before any outbound dispatch (the refusal is the policy
       // working, so it is visible on the audit spine).
@@ -219,7 +219,7 @@ export const evalCases = [
     ],
     request: {
       realm: 'personal',
-      vassals: ['alpha', 'beta'],
+      executors: ['alpha', 'beta'],
       aggregation: { kind: 'unanimous' },
       realmHits: [{ itemId: 'claim-1', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'claimed context' }],
       realmHitsOrigin: 'caller-asserted',
@@ -227,30 +227,30 @@ export const evalCases = [
     },
     expect: [
       // Every branch is refused with the policy reason and the intent fails;
-      // nothing concludes from content the kernel never resolved.
+      // nothing concludes from content the runtime never resolved.
       { decision: o => o.status === 'failed' && o.branches.length === 2 && o.branches.every(b => (b.reason ?? '').includes('dataPolicy')), severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
     ],
   },
   {
-    id: 'data-policy/kernel-resolved-hits-injected',
+    id: 'data-policy/runtime-resolved-hits-injected',
     skill: 'research',
     agents: [
-      { name: 'alpha', stance: 'approve', rationale: 'verified against brief.md: kernel-resolved content matches the resolved hit', dataPolicy: 'read-task-scope' },
+      { name: 'alpha', stance: 'approve', rationale: 'verified against brief.md: runtime-resolved content matches the resolved hit', dataPolicy: 'read-task-scope' },
     ],
     request: {
       realm: 'personal',
-      vassals: ['alpha'],
+      executors: ['alpha'],
       aggregation: { kind: 'unanimous' },
-      realmHits: [{ itemId: 'resolved-1', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'kernel-resolved content' }],
-      realmHitsOrigin: 'kernel-resolved',
+      realmHits: [{ itemId: 'resolved-1', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'runtime-resolved content' }],
+      realmHitsOrigin: 'runtime-resolved',
       params: { subject: 'smoke-resolved', predicate: 'injected' },
     },
     expect: [
       { decision: o => o.status === 'completed', severity: 'block' },
-      // Kernel-resolved content reaches the branch, and the branch's rationale
+      // Runtime-resolved content reaches the branch, and the branch's rationale
       // reflects the resolved hit (the content path stays replayable).
-      { evidence: { mustCite: ['kernel-resolved content'] }, severity: 'block' },
+      { evidence: { mustCite: ['runtime-resolved content'] }, severity: 'block' },
     ],
   },
 
@@ -261,7 +261,7 @@ export const evalCases = [
     agents: [
       { name: 'alpha', stance: 'approve', rationale: 'verified against brief.md: the marker needle is present in the user directory' },
     ],
-    request: { realm: 'personal', vassals: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-cite', predicate: 'sourced' } },
+    request: { realm: 'personal', executors: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-cite', predicate: 'sourced' } },
     expect: [
       { decision: o => o.status === 'completed', severity: 'block' },
       { evidence: { mustCite: ['brief.md'] }, severity: 'block' },
@@ -274,7 +274,7 @@ export const evalCases = [
       { name: 'alpha', stance: 'approve', rationale: 'verified against brief.md: the requested fact is present' },
       { name: 'beta', stance: 'approve', rationale: 'verified against brief.md: corroborated by the same source' },
     ],
-    request: { realm: 'personal', vassals: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-bare', predicate: 'forbidden' } },
+    request: { realm: 'personal', executors: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-bare', predicate: 'forbidden' } },
     expect: [
       { decision: o => o.status === 'completed', severity: 'block' },
       // Every position carries a rationale — a bare stance without one would
@@ -302,7 +302,7 @@ export const evalCases = [
     request: {
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['alpha'],
+      executors: ['alpha'],
       aggregation: { kind: 'unanimous' },
       params: { message: 'please review the note' },
     },
@@ -326,7 +326,7 @@ export const evalCases = [
     request: {
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['alpha'],
+      executors: ['alpha'],
       aggregation: { kind: 'unanimous' },
       params: { message: 'please check the instruction' },
     },
@@ -347,7 +347,7 @@ export const evalCases = [
     ],
     request: {
       realm: 'personal',
-      vassals: ['alpha'],
+      executors: ['alpha'],
       aggregation: { kind: 'unanimous' },
       params: { message: 'plain research question with no recalled content' },
     },
@@ -385,7 +385,7 @@ export const evalCases = [
     costLimit: { maxWindowCost: 3, circuitWindowMs: 60_000 },
     request: {
       realm: 'personal',
-      vassals: ['alpha'],
+      executors: ['alpha'],
       aggregation: { kind: 'unanimous' },
       costEstimate: { tokens: 5 },
       params: { subject: 'smoke-cost', predicate: 'refused' },
@@ -407,7 +407,7 @@ export const evalCases = [
     ],
     request: {
       realm: 'personal',
-      vassals: ['alpha'],
+      executors: ['alpha'],
       aggregation: { kind: 'unanimous' },
       costEstimate: { tokens: 50 },
       params: { subject: 'smoke-cost-off', predicate: 'passes' },
@@ -549,7 +549,7 @@ export const evalCases = [
       // must never leak into the settled conclusion or any rationale.
       { name: 'alpha', ...APPROVE, deltas: ['PREVIEW-MARKER-ONE'] },
     ],
-    request: { realm: 'personal', vassals: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-stream', predicate: 'surfaced' } },
+    request: { realm: 'personal', executors: ['alpha'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-stream', predicate: 'surfaced' } },
     expect: [
       { decision: o => o.status === 'completed', severity: 'block' },
       { streaming: { deltaCountAtLeast: 1, previewNotInDecision: true }, severity: 'block' },
@@ -562,7 +562,7 @@ export const evalCases = [
       { name: 'alpha', ...APPROVE },
       { name: 'beta', ...APPROVE },
     ],
-    request: { realm: 'personal', vassals: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-partial', predicate: 'counted' } },
+    request: { realm: 'personal', executors: ['alpha', 'beta'], aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-partial', predicate: 'counted' } },
     expect: [
       { decision: o => o.status === 'completed', severity: 'block' },
       // Each settled branch reports the partially-ready count as a count fact

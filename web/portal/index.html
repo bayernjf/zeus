@@ -227,7 +227,7 @@
     },
     "en": {
       "app.title": "Zeus Public Roster Portal",
-      "app.lede": "This page shows the signed roster snapshot and root public key published by a Zeus kernel. Anyone can verify the seals offline and check revocation status; the page is read-only with no write paths.",
+      "app.lede": "This page shows the signed roster snapshot and root public key published by a Zeus runtime. Anyone can verify the seals offline and check revocation status; the page is read-only with no write paths.",
       "app.foot1": "Revoked agents never appear in the public snapshot; see scripts/verify-roster.mjs for the verification steps.",
       "app.apiOnly": "UI consumes public HTTP APIs only — zero write paths",
       "conn.idle": "idle",
@@ -235,7 +235,7 @@
       "conn.bad": "unreachable",
       "top.refresh": "Refresh",
       "setup.title": "Data source",
-      "setup.hint": "kernel HTTP base URL only — no token needed",
+      "setup.hint": "runtime HTTP base URL only — no token needed",
       "setup.basePh": "http://127.0.0.1:8799",
       "setup.connect": "Connect",
       "roster.title": "Registered agents (signed snapshot)",
@@ -347,7 +347,7 @@
       state.roster = null;
       badge.className = "conn bad";
       text.textContent = t("conn.bad");
-      // The same-origin guess did not front a kernel; surface the setup panel
+      // The same-origin guess did not front a runtime; surface the setup panel
       // so the user can point at a real base URL instead of being stuck.
       document.getElementById("panelSetup").hidden = false;
       renderError(error instanceof Error ? error.message : String(error));
@@ -375,7 +375,7 @@
     }
     const rows = entries.map(e => {
       const skills = (e.skills || []).map(s => s.id || s.name || "").filter(Boolean).join(", ");
-      const realms = (e.commitments && e.commitments.dataRealms || []).join(", ");
+      const realms = (e.commitments && e.commitments.realms || []).join(", ");
       const att = attestations[e.name];
       const attText = !att
         ? t("att.none")
@@ -534,7 +534,7 @@
       load();
     } else {
       // Same-origin default: when the portal is served by the same host that
-      // fronts the kernel, no setup step is needed at all.
+      // fronts the runtime, no setup step is needed at all.
       state.base = location.origin;
       if (location.protocol.startsWith("http")) {
         load();

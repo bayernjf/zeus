@@ -8,7 +8,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { projectPublicRoster } from '../src/registry/roster.js';
 import { Ed25519MemorySigner, sealSnapshot, canonicalDigest, publishRootKey, type AttestationSource } from '../src/registry/signing.js';
 import type { AgentCard } from '../src/a2a/types.js';
-import type { VassalEntry as RegistryEntry } from '../src/registry/registry.js';
+import type { ExecutorEntry as RegistryEntry } from '../src/registry/registry.js';
 
 const SCRIPT = fileURLToPath(new URL('../scripts/verify-roster.mjs', import.meta.url));
 const T0 = new Date('2026-09-26T09:00:00.000Z');
@@ -18,16 +18,16 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function fealtyCard(name: string): AgentCard {
+function handshakeCard(name: string): AgentCard {
   return {
     name,
     url: `http://${name}.internal`,
     skills: [{ id: `${name}-skill`, name: `${name} skill`, description: '', tags: [] }],
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: `${name}-domain`,
-      dataRealms: ['personal'],
+      realms: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -40,7 +40,7 @@ function registryEntry(card: AgentCard): RegistryEntry & { status: 'active' | 'r
     cardUrl: `${String(card.url)}/api/a2a/agent-card`,
     taskUrl: `${String(card.url)}/api/a2a/tasks`,
     card,
-    fealty: card['x-zeus-fealty'] as never,
+    handshake: card['x-zeus-handshake'] as never,
     registeredAt: T0.toISOString(),
     revoked: false,
     status: 'active',
@@ -50,7 +50,7 @@ function registryEntry(card: AgentCard): RegistryEntry & { status: 'active' | 'r
 /** Build a genuinely signed envelope and drop it on disk, exactly like a publication. */
 async function publish(name = 'roster') {
   const signer = new Ed25519MemorySigner('zeus-rsk-test');
-  const card = fealtyCard('pr-helper');
+  const card = handshakeCard('pr-helper');
   const snapshot = projectPublicRoster([registryEntry(card)], () => T0);
   const sources: AttestationSource[] = [{ name: 'pr-helper', card, cardUrl: `${String(card.url)}/api/a2a/agent-card` }];
   const envelope = await sealSnapshot(snapshot, signer, { now: T0, maxAgeSeconds: 3600, attestationTtlSeconds: 3600, sources });
@@ -94,7 +94,7 @@ function run(args: string[]): Promise<{ status: number | null; stdout: string; s
 
 // Every case spawns a cold Node process. Measured here on an idle machine:
 // 3-8s per case. Contention measured elsewhere in this repo slows these ~10x
-// (a 2.5s vault case took 25s with two suites racing), which would put them
+// (a 2.5s backup case took 25s with two suites racing), which would put them
 // straight through the global 20s ceiling. The ceiling is a hang detector, not a
 // claim about how fast a process spawn must be, so it is raised for this file
 // only - the rest of the suite keeps 20s.
@@ -197,7 +197,7 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
     expect(match.stdout).toMatch(/deep check pr-helper  card digests match/);
 
     const mismatch = structuredClone(JSON.parse(readFileSync(cardPath, 'utf8')));
-    mismatch['x-zeus-fealty'].dataPolicy = 'write';
+    mismatch['x-zeus-handshake'].dataPolicy = 'write';
     const badPath = join(dir, 'deep.card.bad.json');
     writeFileSync(badPath, JSON.stringify(mismatch));
     const bad = await run(['--file', envelopePath, '--key', keyPath, '--card', `pr-helper=${badPath}`]);
@@ -212,7 +212,7 @@ describe('scripts/verify-roster.mjs', { timeout: 90_000 }, () => {
   it('keeps verifying when --quiet suppresses the report', async () => {
     const { envelopePath, keyPath, cardPath } = await publish('quiet');
     const bad = structuredClone(JSON.parse(readFileSync(cardPath, 'utf8')));
-    bad['x-zeus-fealty'].dataPolicy = 'write';
+    bad['x-zeus-handshake'].dataPolicy = 'write';
     const badPath = join(dir, 'quiet.card.bad.json');
     writeFileSync(badPath, JSON.stringify(bad));
     // --quiet hides the report only. It used to hide the deep checks too, so a

@@ -22,7 +22,7 @@ import {
  * - undeclared payload keys are untouched (explicit content is preserved as
  *   delivered; the assembler only constrains what the skill declared).
  *
- * The module is a pure function over injected inputs: no kernel state, no
+ * The module is a pure function over injected inputs: no runtime state, no
  * retrieval, no write-back. Type-level validation of descriptor values is out
  * of scope for V2 — the free-form descriptor has no unified type syntax, so
  * fabricating one would invent a mechanism; presence is the only contract.
@@ -38,7 +38,7 @@ export type SkillInputEntry =
       value: unknown;
       /**
        * S8 V2 (design-guardrails §3.1/§4): the operator's explicit payload is
-       * driver-supplied content — trusted with the operator, never trimmed,
+       * operator-supplied content — trusted with the operator, never trimmed,
        * but still data with a visible boundary. The label rides the entry so
        * the branch consumer reads the boundary, not the prose.
        */
@@ -71,9 +71,9 @@ export type SkillInputAssembly = {
  * or `undefined` field is `unavailable`, never fabricated.
  *
  * S8 V2 (design-guardrails §4): each explicit field is additionally run
- * through the content-risk decision chain as driver-supplied content bound
+ * through the content-risk decision chain as operator-supplied content bound
  * for an outbound plan. The disposition is annotation-only at this assembly
- * point (driver-supplied payload is never trimmed or refused here — an
+ * point (operator-supplied payload is never trimmed or refused here — an
  * escalate verdict from an external-url / credential hit degrades to an
  * audited boundary annotation, matching the memory-assembly point), and only
  * fields carrying a deterministic signal emit a `guardrail-annotated` event.
@@ -97,14 +97,14 @@ export function assembleSkillInputs(args: {
   for (const name of Object.keys(declared)) {
     const value = params[name];
     if (value !== undefined) {
-      inputs.push({ name, source: 'explicit', value, provenance: 'driver-supplied' });
+      inputs.push({ name, source: 'explicit', value, provenance: 'operator-supplied' });
       const signals = scanContentSignals(renderInputText(value));
       const handling = classifyContentRisk({
-        provenance: 'driver-supplied',
+        provenance: 'operator-supplied',
         destination: { kind: 'outbound', mode: destinationMode },
         signals,
       });
-      // Driver-supplied payload is never trimmed or refused at this assembly
+      // Operator-supplied payload is never trimmed or refused at this assembly
       // point (design-guardrails §3.2); plan mode degrades an escalate verdict
       // to an audited boundary annotation, execute mode keeps it so the caller
       // can raise the intent to the oversight queue before dispatch.
@@ -112,14 +112,14 @@ export function assembleSkillInputs(args: {
         events.push({
           kind: 'guardrail-escalated',
           entry: name,
-          boundary: 'data-boundary:driver-supplied',
+          boundary: 'data-boundary:operator-supplied',
           signals,
         });
       } else if (signals.length > 0 && (handling.action === 'annotate' || handling.action === 'escalate')) {
         events.push({
           kind: 'guardrail-annotated',
           entry: name,
-          boundary: 'data-boundary:driver-supplied',
+          boundary: 'data-boundary:operator-supplied',
           signals,
         });
       }

@@ -37,20 +37,20 @@ function renderState(palette: Palette, t: Translator, snapshot: DeckSnapshot): s
       : t('state.audit.ok', { file: state.audit.file ?? '' });
     lines.push(`  ${t('state.audit')}: ${value}`);
   }
-  if (state?.driverGrants) {
+  if (state?.operatorGrants) {
     const value =
-      state.driverGrants.authority === 'signed'
-        ? t('state.driverGrant.signed', { keyId: state.driverGrants.keyId ?? '' })
-        : t('state.driverGrant.shapeOnly');
-    lines.push(`  ${t('state.driverGrant')}: ${value}`);
+      state.operatorGrants.authority === 'signed'
+        ? t('state.operatorGrant.signed', { keyId: state.operatorGrants.keyId ?? '' })
+        : t('state.operatorGrant.shapeOnly');
+    lines.push(`  ${t('state.operatorGrant')}: ${value}`);
   }
   if (state?.counts) {
     const c = state.counts;
     lines.push(
       '  ' +
         t('state.counts', {
-          vassals: c.vassals,
-          revoked: c.vassalsRevoked,
+          executors: c.executors,
+          revoked: c.executorsRevoked,
           intents: c.intents,
           escalations: c.escalations,
           skills: c.skills,
@@ -87,7 +87,7 @@ function renderCost(palette: Palette, t: Translator, cost: DeckSnapshot['cost'])
   const lines: string[] = [heading(palette, t('cost.title'))];
   if (!cost.configured) {
     // "no gate configured" and "gate configured, nothing spent" are different
-    // facts; collapsing them would let an unmeasured kernel look accounted for.
+    // facts; collapsing them would let an unmeasured runtime look accounted for.
     lines.push(`  ${t('cost.unconfigured')}`);
     return lines;
   }
@@ -158,7 +158,7 @@ function renderEscalations(palette: Palette, t: Translator, snapshot: DeckSnapsh
   }
   items.forEach((esc, index) => {
     const badge = interruptionBadge(palette, t, esc.interruptLevel);
-    lines.push(`  ${palette.paint('attention', `#${index + 1}`)} ${palette.bold(safeText(esc.id))} ${palette.paint('info', escalationKindLabel(t, esc.kind))}${badge ? ` ${badge}` : ''} · ${safeText(esc.skill)} · ${safeText(esc.vassal)}`);
+    lines.push(`  ${palette.paint('attention', `#${index + 1}`)} ${palette.bold(safeText(esc.id))} ${palette.paint('info', escalationKindLabel(t, esc.kind))}${badge ? ` ${badge}` : ''} · ${safeText(esc.skill)} · ${safeText(esc.executor)}`);
     lines.push(`      ${safeText(esc.reason)}`);
     const options = escalationOptions(esc);
     if (options.length > 0) {
@@ -193,7 +193,7 @@ function renderTimeline(palette: Palette, t: Translator, snapshot: DeckSnapshot)
       ? palette.paint(token, label)
       : palette.paint(token, `${label} (${safeText(entry.decision)})`);
     const stamp = entry.ts ? `[${safeText(entry.ts)}] ` : '';
-    const context = [entry.vassal, entry.skill, entry.state].filter((s): s is string => Boolean(s)).map(safeText).join(' · ');
+    const context = [entry.executor, entry.skill, entry.state].filter((s): s is string => Boolean(s)).map(safeText).join(' · ');
     lines.push(`  ${stamp}${badge}  ${context}`.trimEnd());
   }
   return lines;
@@ -244,7 +244,7 @@ function renderContract(palette: Palette, t: Translator, contract: ContractView)
     concurrent: contract.limits.maxConcurrent,
     window,
   });
-  const scope = contract.vassal ? ` · ${safeText(contract.vassal)}` : '';
+  const scope = contract.executor ? ` · ${safeText(contract.executor)}` : '';
   return `  ${badge}  ${palette.bold(body)}${scope}  [${t('contracts.caps', { caps: contract.capabilities.join(',') })}]`;
 }
 
@@ -353,8 +353,8 @@ function activeOutcomeLabel(t: Translator, branch: ActiveIntentBranchView): stri
 }
 
 function renderActiveIntent(palette: Palette, t: Translator, intent: ActiveIntentView, index: number): string[] {
-  const statusKey = intent.status === 'needs-driver' ? 'active.status.needsDriver' : 'active.status.running';
-  const statusToken = intent.status === 'needs-driver' ? 'warning' : 'info';
+  const statusKey = intent.status === 'needs-operator' ? 'active.status.needsOperator' : 'active.status.running';
+  const statusToken = intent.status === 'needs-operator' ? 'warning' : 'info';
   const lines: string[] = [
     `  ${palette.paint('muted', `#${index + 1}`)} ${palette.bold(safeText(intent.intentId))}  [${safeText(intent.skill)}]  ${palette.paint(
       statusToken,
@@ -364,7 +364,7 @@ function renderActiveIntent(palette: Palette, t: Translator, intent: ActiveInten
   for (const runId of intent.view.order) {
     const branch = intent.view.branches[runId];
     if (!branch) continue;
-    const name = safeText(branch.vassal ?? runId);
+    const name = safeText(branch.executor ?? runId);
     if (!branch.started) {
       lines.push(`      ${palette.paint('muted', `└ ${name}  ${t('active.branch.waiting')}`)}`);
       continue;

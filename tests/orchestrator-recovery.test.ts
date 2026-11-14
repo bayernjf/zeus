@@ -3,7 +3,7 @@ import { Orchestrator, type OrchestratorOptions } from '../src/orchestrator/orch
 import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent } from '../src/a2a/types.js';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
 /**
@@ -11,7 +11,7 @@ import type { AuditEntry } from '../src/dispatch/dispatcher.js';
  * failed-branch runtime. V1 covered the pure classifier (16 cases in
  * orchestrator-discovery.test.ts). These cases drive the *runtime*: a failed
  * branch must emit the tool-failed audit and the fixed-order verdict through
- * the hook, escalate keeping the existing needs-driver semantics (no chain-*
+ * the hook, escalate keeping the existing needs-operator semantics (no chain-*
  * line), high-stakes execute branches never retry, and an open circuit still
  * falls through to escalate. The executable retry/switch/degrade actions
  * belong to the ChainPlan/DAG step face (V3 slice 2), where a step has an
@@ -23,16 +23,16 @@ function statusEvent(taskId: string): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state: 'completed' }, final: true };
 }
 
-function taskResult(vassal: string, ok: boolean): DispatchResult {
+function taskResult(executor: string, ok: boolean): DispatchResult {
   if (!ok) {
     return {
       ok: false,
-      reason: `vassal ${vassal} failed`,
-      audit: { ts: new Date().toISOString(), vassal, decision: 'branch-aborted', detail: 'test failure' },
+      reason: `executor ${executor} failed`,
+      audit: { ts: new Date().toISOString(), executor, decision: 'branch-aborted', detail: 'test failure' },
     };
   }
   const task = {
-    kind: 'task' as const, id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' as const },
+    kind: 'task' as const, id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' as const },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data' as const, data: { stance: 'go' } }] }],
   };
   return { ok: true, task, events: [statusEvent(task.id)], injectedHits: [] };
@@ -47,8 +47,8 @@ function settlingPort(ok: boolean): DispatchPort & { started: string[] } {
   const started: string[] = [];
   return {
     async dispatch(req: DispatchRequest) {
-      started.push(req.vassal!);
-      return taskResult(req.vassal!, ok);
+      started.push(req.executor!);
+      return taskResult(req.executor!, ok);
     },
     async cancel() {},
     started,
@@ -79,7 +79,7 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
     expect(recovered).toHaveBeenCalledTimes(1);
     const entry = recovered.mock.calls[0]![0];
     expect(entry.action).toBe('escalate');
-    expect(entry.vassal).toBe('a');
+    expect(entry.executor).toBe('a');
     expect(entry.skill).toBe('review');
     expect(entry.reason).toContain('failed');
     expect(entry.alternateProvider).toBeUndefined();
@@ -94,8 +94,8 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
 
     expect(result.status).toBe('failed');
     expect(recovered).toHaveBeenCalledTimes(2);
-    const vassals = recovered.mock.calls.map(call => call[0]!.vassal).sort();
-    expect(vassals).toEqual(['a', 'b']);
+    const executors = recovered.mock.calls.map(call => call[0]!.executor).sort();
+    expect(executors).toEqual(['a', 'b']);
   });
 
   it('an execute-mode failure never retries: high-stakes escalates with zero outbound', async () => {
@@ -127,7 +127,7 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
       budgets: { 'intent-1': { used: 1, failureStreak: 2 } },
     });
 
-    const result = await orchestrator.fanOut({ ...request, intentId: 'intent-1', vassals: ['a'] });
+    const result = await orchestrator.fanOut({ ...request, intentId: 'intent-1', executors: ['a'] });
 
     expect(result.status).toBe('failed');
     expect(recovered).toHaveBeenCalledTimes(1);
@@ -153,9 +153,9 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
             skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
             authentication: { schemes: ['bearer'] },
             preferredTransport: 'JSONRPC',
-            'x-zeus-fealty': {
+            'x-zeus-handshake': {
               version: '1', swornTo: 'zeus', domain: 'test-domain',
-              dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+              realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
               reportBack: true, escalationPolicy: 'auto',
             },
           }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -164,20 +164,20 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
       });
     }
 
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: failingFetch(),
-      vassalSeeds: ['http://127.0.0.1/loom/api/a2a/agent-card'],
+      executorSeeds: ['http://127.0.0.1/loom/api/a2a/agent-card'],
       dispatchAudit: entry => audits.push(entry),
     });
 
-    const result = await kernel.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    const result = await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
 
     expect(result.status).toBe('failed');
     const failed = audits.find(entry => entry.decision === 'tool-failed');
     expect(failed).toBeDefined();
-    expect(failed?.vassal).toBe('loom');
+    expect(failed?.executor).toBe('loom');
     expect(failed?.detail).toContain('transport failed');
-    // escalate keeps the existing needs-driver semantics: no chain line
+    // escalate keeps the existing needs-operator semantics: no chain line
     expect(audits.some(entry => entry.decision === 'chain-retried')).toBe(false);
     expect(audits.some(entry => entry.decision === 'chain-switched')).toBe(false);
     expect(audits.some(entry => entry.decision === 'chain-degraded')).toBe(false);

@@ -7,7 +7,7 @@ import { join } from 'node:path';
  * Active work 223). The Web gate in web-supervisor-i18n.test.ts only proves the
  * forward direction: every data-act the page renders is backed by a real route.
  * It cannot see a write route the HTTP surface exposes that no operator surface
- * can actually drive - the gap shape found in the connector batch (kernel and
+ * can actually drive - the gap shape found in the connector batch (runtime and
  * HTTP both existed, neither TUI nor Web could reach them, while the docs sent
  * operators looking for them). This test collects every write route from
  * server.ts and requires each one to be either:
@@ -59,7 +59,7 @@ const NORMALIZED = CORPORA.map(([name, text]) => [name, normalize(text)] as cons
 
 /** True when `needle` occurs in `text` as a whole path, never as the prefix of
  *  a longer one. Without this, the read route `/api/memory/retractions` that
- *  the memory view legitimately shows would count as a driver of the write
+ *  the memory view legitimately shows would count as a operator of the write
  *  route `POST /api/memory/retract` (2026-10-14: it did, and the gate went red
  *  on a face that writes nothing). A trailing `?query` or string terminator is
  *  a boundary; a path character is not. */
@@ -112,7 +112,7 @@ const PROTOCOL_FACES = new Set(['POST /mcp', 'POST /.well-known/agent-card.json'
 // Deliberately HTTP-only operator actions: low-frequency, high-blast-radius or
 // flow-internal endpoints whose documented operator face IS the bearer API.
 // Every entry must cite the PRD line that settled the shape; an endpoint that
-// later gains a TUI/Web/script driver must leave this table.
+// later gains a TUI/Web/script operator must leave this table.
 const HTTP_ONLY: Record<string, string> = {
   'POST /api/org/departments/:id/first-task':
     'PRD E9.2 / v0.29: onboarding flow-internal dispatch after the commission gate; driven by the commissioning flow over the bearer API',
@@ -121,7 +121,7 @@ const HTTP_ONLY: Record<string, string> = {
   'POST /api/memory/forget-subject':
     'PRD E8.5 / v0.23: right-to-erasure face, documented as HTTP operator API (read + retract only, no fact write entry)',
   'POST /api/diary/generate':
-    'PRD E8.3: diary generation over the bearer API; the daily CLI path assembles the kernel in-process',
+    'PRD E8.3: diary generation over the bearer API; the daily CLI path assembles the runtime in-process',
   'POST /api/skills/team':
     'PRD E2.4 / v0.23: skill-to-team resolution for integrations; ambiguous slots are returned for the caller to resolve',
   'POST /api/realms/:id/disconnect':
@@ -131,7 +131,7 @@ const HTTP_ONLY: Record<string, string> = {
   'POST /api/realm/write-grants':
     'PRD E3.5 / v0.30: one-shot signed enterprise write-grant minting, an operations action over the bearer API',
   'POST /api/a2a/push-notifications':
-    'PRD E4.11 / v0.86: peer callback receiver for push-delivered outbound tasks; the operator face is the peer A2A client sending the callback, not a local driver',
+    'PRD E4.11 / v0.86: peer callback receiver for push-delivered outbound tasks; the operator face is the peer A2A client sending the callback, not a local operator',
   'POST /api/v1/decisions/:id/approval':
     'Tier0 PRD §6.2 / T-M1-06: approval verdicts over the cross-system decision API; the calling system surfaces the human verdict, zeus only records it',
   'PUT /api/v1/policy':
@@ -143,13 +143,13 @@ const HTTP_ONLY: Record<string, string> = {
   'POST /api/v1/org/policy/thresholds':
     'Tier0 PRD §11 / T-M2-04: per-organization D0-D3 threshold configuration; low-frequency high-blast-radius config action',
   'POST /api/v1/memory/recall':
-    'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent is the driver over the bearer API, namespace is its realm',
+    'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent is the operator over the bearer API, namespace is its realm',
   'POST /api/v1/memory/remember':
     'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent writes its own namespace over the bearer API',
   'POST /api/v1/memory/forget':
-    'MemoryPort v1 §7 (ruling D-6): cross-agent erasure face behind ZEUS_MEMORY_SERVICE_TOKEN; requestedBy is pinned to memory-service, the calling agent is the driver',
+    'MemoryPort v1 §7 (ruling D-6): cross-agent erasure face behind ZEUS_MEMORY_SERVICE_TOKEN; requestedBy is pinned to memory-service, the calling agent is the operator',
   'POST /api/mcp':
-    'G6 (design-observability §5): read-only kernel tool face over MCP JSON-RPC; the calling MCP client is the driver, memory.recall is token-namespace-bound and traces.query is driver-token only, no write tool exists on this face',
+    'G6 (design-observability §5): read-only runtime tool face over MCP JSON-RPC; the calling MCP client is the operator, memory.recall is token-namespace-bound and traces.query is operator-token only, no write tool exists on this face',
 };
 
 describe('operator surface coverage (every write route is drivable or explicitly API-only)', () => {
@@ -162,7 +162,7 @@ describe('operator surface coverage (every write route is drivable or explicitly
   });
 
   it('drives known TUI and Web write routes (normalization positive control)', () => {
-    expect(drivenIn('/api/vassals/:name')).toContain('tui'); // d<n> revoke
+    expect(drivenIn('/api/executors/:name')).toContain('tui'); // d<n> revoke
     expect(drivenIn('/api/skills/:id/install')).toContain('web');
     expect(drivenIn('/api/org/departments/:id/commissions/:agentId/waive')).toContain('web'); // dynamic + verb
     expect(drivenIn('/api/org/departments/:id/members/:agentId')).toContain('web'); // member removal
@@ -182,19 +182,19 @@ describe('operator surface coverage (every write route is drivable or explicitly
     for (const key of Object.keys(HTTP_ONLY)) {
       const route = writeRoutes.find(r => r.key === key);
       expect(route, `${key} is registered HTTP-only but no longer exists - remove the stale entry`).toBeTruthy();
-      const drivers = drivenIn(route!.path);
-      expect(drivers, `${key} now has a ${drivers.join(',')} driver - move it out of the HTTP-only table`).toEqual([]);
+      const operators = drivenIn(route!.path);
+      expect(operators, `${key} now has a ${operators.join(',')} operator - move it out of the HTTP-only table`).toEqual([]);
     }
   });
 
-  it('leaves no write route without a driver, a protocol face, or a documented API-only registration', () => {
+  it('leaves no write route without a operator, a protocol face, or a documented API-only registration', () => {
     const missing: string[] = [];
     for (const route of writeRoutes) {
       if (PROTOCOL_FACES.has(route.key)) continue;
       if (Object.hasOwn(HTTP_ONLY, route.key)) continue;
-      const drivers = drivenIn(route.path);
-      if (drivers.length === 0) {
-        missing.push(`${route.key} - add a Web/TUI/script driver or register it in HTTP_ONLY with a PRD reference`);
+      const operators = drivenIn(route.path);
+      if (operators.length === 0) {
+        missing.push(`${route.key} - add a Web/TUI/script operator or register it in HTTP_ONLY with a PRD reference`);
       }
     }
     expect(missing, `undrivable write routes:\n${missing.join('\n')}`).toEqual([]);
@@ -203,7 +203,7 @@ describe('operator surface coverage (every write route is drivable or explicitly
 
 /**
  * The read half of the same audit (M7 slice 1c, E6.5). The write half cannot see
- * a capability the kernel computes but nobody can read: `GET /api/cost` would
+ * a capability the runtime computes but nobody can read: `GET /api/cost` would
  * have shipped as an auditable-only fact with no face, which is exactly how the
  * cost gate stayed invisible after it was wired. A GET route must be either a
  * protocol/public face an external party consumes, read by a shipped surface
@@ -243,7 +243,7 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/audit/summary',
   'GET /.well-known/agent-card.json',
   'GET /mcp',
-  // G6 (design-observability §5): public MCP server metadata for the kernel
+  // G6 (design-observability §5): public MCP server metadata for the runtime
   // tool face; deliberately carries no state about which backing stores are
   // mounted, so there is nothing for an operator deck to read either.
   'GET /api/mcp',
@@ -356,7 +356,7 @@ describe('operator surface coverage - read routes', () => {
   });
 
   it('caps the registered read gaps so a new one cannot be added without a decision', () => {
-    // 2026-10-13 baseline: ten routes the kernel computes that no face reads.
+    // 2026-10-13 baseline: ten routes the runtime computes that no face reads.
     // 2026-10-14: four closed by supervisor v1.20 (M7 slice 4 first batch),
     // the memory six closed by v1.21 (second batch) - the table is empty.
     // Raising this number is the moment a new unread capability is being
@@ -373,6 +373,6 @@ describe('operator surface coverage - read routes', () => {
         unread.push(`${route.key} - read it on a surface or register it in READ_API_ONLY with a reason`);
       }
     }
-    expect(unread, `unread read routes (the kernel computes them, no operator can see them):\n${unread.join('\n')}`).toEqual([]);
+    expect(unread, `unread read routes (the runtime computes them, no operator can see them):\n${unread.join('\n')}`).toEqual([]);
   });
 });

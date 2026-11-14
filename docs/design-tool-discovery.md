@@ -1,7 +1,7 @@
 # 设计稿：工具/Skill 发现与组合（tech map S11）
 
-- 状态：**现行 v0.5（2026-10-17）**：设计稿 + **V1/V2/V3 已落码**——V1（Active work 168）`src/core/orchestrator/discovery.ts` 纯函数 `selectCandidates`/`recoverChain`（选择次序：点名钉选 > 自动选靶饱和过滤 > tier-1 只读收窄 fail-closed > 能力面 execute/plan；恢复四步序：重试→换将→降级→升级，高利害跳过重试、熔断跳过自动路径）+ 审计 5 值 `tool-selected`/`tool-failed`/`chain-retried`/`chain-switched`/`chain-degraded` 登记 + TUI token；**V2（2026-10-09）已落码**：`fanOutNew` 选靶段无条件调 `selectCandidates` 构造统一候选面（喂实时 `inFlightByVassalNow`/`maxConcurrentPerVassal`，内部路径给 tier-0/只读/能力安全默认），新增 `onCandidatesSelected` hook 并在 boot 落 `tool-selected` 审计；**V3 slice 1（2026-10-09）已落码**：`recoverChain` 接失败分支运行时——新增 `OrchestratorOptions.onChainRecovered`，`fanOutNew` 对每个失败分支构造 `ChainFailure`（idempotent:false / retriesLeft:0 / highStakes=execute mode / circuitOpen=预算熔断现态 / hasAlternateProvider=候选面未派发者 / requiredStep:true）裁决并上报，boot 将 `tool-failed`（失败本身，真正 emit）与按裁决分流的 `chain-*` 行接入审计脊；意图级 fan-out 派发整个候选面、内核不持幂等事实/重试预算/可选步声明，故裁决恒为 `escalate`（既有 needs-driver 语义，分支照旧落 failed）；**V3 slice 2（2026-10-17，Active work 249）已落码**：ChainPlan/DAG 步面拼接——`buildChainPlan(spec, resolveCandidates)` 纯函数把 DagSpec 映射为每节点一步的链计划（`required` 默认 true）；`DagNode` 新增 `required`/`idempotent`/`highStakes` 声明；`DagRunnerOptions.chainRecovery` 可选恢复层（默认关闭，零行为变化）：节点 fan-out 失败时 `planRecovery` 解析指令，retry/switch **真正执行**为以新意图 id（`::r{N}`）钉候选 provider 重派、degrade 标新状态 `degraded`（其依赖者照常运行）、escalate 保持既有 failed 语义；`planRecovery` 新增 `excludeProviders` 防止换将回到已试 provider；`DagNodeState` 新增 `degraded`，`firstUnsatisfiedDependency` 将其视为满足、`aggregateDagState` 计入 partial（从不静默 completed）。
-- 演进：v0.1（2026-10-09）设计探索先行（技能族/工具族合一候选面 + 选择次序 + 恢复四步序 + 接口草案）；v0.2（2026-10-09，Active work 168）V1 落码（`src/core/orchestrator/discovery.ts` + `tests/orchestrator-discovery.test.ts` 16 例 + 审计/TUI 接线，基线 1379/125 → 1410/126、冒烟 45/45、doc-consistency 18/18）；v0.3（2026-10-09）V2 落码（候选面接实况选靶 + hook + tool-selected 审计实发，新增 orchestrator-diversion 2 例 / boot-oversight-audit 1 例，冒烟 audit 窗口 limit 5→50，A 档三批合批收尾基线 1410/126 → 1430/128、冒烟 45/45、doc-consistency 18/18）；v0.4（2026-10-09）V3 slice 1 落码（recoverChain 接失败分支运行时：`onChainRecovered` hook + `fanOutNew` 恢复循环 + boot 审计脊接线 `tool-failed` 实发 / `chain-*` 按裁决分流，新增 `tests/orchestrator-recovery.test.ts` 5 例，锚点漂移修复 11 处，基线 1430/128 → 1435/129、冒烟 45/45、doc-consistency 18/18）。**事实更正**：`selectTargets`（diversion.ts）的实况接线于 2026-09-27 已完成，早期 v0.1/v0.2 稿中"未落码"表述滞后，本版更正；v0.5（2026-10-17，Active work 249）V3 slice 2 落码（ChainPlan/DAG 步面：`buildChainPlan` + `DagNode` 声明字段 + `DagRunnerOptions.chainRecovery` 可选恢复层 + `planRecovery` excludeProviders + `degraded` 状态贯通，新增 `tests/dag-chain-recovery.test.ts` 14 例，doc-consistency 18/18，全量 2034/2034 全绿）。
+- 状态：**现行 v0.5（2026-10-17）**：设计稿 + **V1/V2/V3 已落码**——V1（Active work 168）`src/core/orchestrator/discovery.ts` 纯函数 `selectCandidates`/`recoverChain`（选择次序：点名钉选 > 自动选靶饱和过滤 > tier-1 只读收窄 fail-closed > 能力面 execute/plan；恢复四步序：重试→换将→降级→升级，高利害跳过重试、熔断跳过自动路径）+ 审计 5 值 `tool-selected`/`tool-failed`/`chain-retried`/`chain-switched`/`chain-degraded` 登记 + TUI token；**V2（2026-10-09）已落码**：`fanOutNew` 选靶段无条件调 `selectCandidates` 构造统一候选面（喂实时 `inFlightByExecutorNow`/`maxConcurrentPerExecutor`，内部路径给 tier-0/只读/能力安全默认），新增 `onCandidatesSelected` hook 并在 boot 落 `tool-selected` 审计；**V3 slice 1（2026-10-09）已落码**：`recoverChain` 接失败分支运行时——新增 `OrchestratorOptions.onChainRecovered`，`fanOutNew` 对每个失败分支构造 `ChainFailure`（idempotent:false / retriesLeft:0 / highStakes=execute mode / circuitOpen=预算熔断现态 / hasAlternateProvider=候选面未派发者 / requiredStep:true）裁决并上报，boot 将 `tool-failed`（失败本身，真正 emit）与按裁决分流的 `chain-*` 行接入审计日志；意图级 fan-out 派发整个候选面、内核不持幂等事实/重试预算/可选步声明，故裁决恒为 `escalate`（既有 needs-operator 语义，分支照旧落 failed）；**V3 slice 2（2026-10-17，Active work 249）已落码**：ChainPlan/DAG 步面拼接——`buildChainPlan(spec, resolveCandidates)` 纯函数把 DagSpec 映射为每节点一步的链计划（`required` 默认 true）；`DagNode` 新增 `required`/`idempotent`/`highStakes` 声明；`DagRunnerOptions.chainRecovery` 可选恢复层（默认关闭，零行为变化）：节点 fan-out 失败时 `planRecovery` 解析指令，retry/switch **真正执行**为以新意图 id（`::r{N}`）钉候选 provider 重派、degrade 标新状态 `degraded`（其依赖者照常运行）、escalate 保持既有 failed 语义；`planRecovery` 新增 `excludeProviders` 防止换将回到已试 provider；`DagNodeState` 新增 `degraded`，`firstUnsatisfiedDependency` 将其视为满足、`aggregateDagState` 计入 partial（从不静默 completed）。
+- 演进：v0.1（2026-10-09）设计探索先行（技能族/工具族合一候选面 + 选择次序 + 恢复四步序 + 接口草案）；v0.2（2026-10-09，Active work 168）V1 落码（`src/core/orchestrator/discovery.ts` + `tests/orchestrator-discovery.test.ts` 16 例 + 审计/TUI 接线，基线 1379/125 → 1410/126、冒烟 45/45、doc-consistency 18/18）；v0.3（2026-10-09）V2 落码（候选面接实况选靶 + hook + tool-selected 审计实发，新增 orchestrator-diversion 2 例 / boot-oversight-audit 1 例，冒烟 audit 窗口 limit 5→50，A 档三批合批收尾基线 1410/126 → 1430/128、冒烟 45/45、doc-consistency 18/18）；v0.4（2026-10-09）V3 slice 1 落码（recoverChain 接失败分支运行时：`onChainRecovered` hook + `fanOutNew` 恢复循环 + boot 审计日志接线 `tool-failed` 实发 / `chain-*` 按裁决分流，新增 `tests/orchestrator-recovery.test.ts` 5 例，锚点漂移修复 11 处，基线 1430/128 → 1435/129、冒烟 45/45、doc-consistency 18/18）。**事实更正**：`selectTargets`（diversion.ts）的实况接线于 2026-09-27 已完成，早期 v0.1/v0.2 稿中"未落码"表述滞后，本版更正；v0.5（2026-10-17，Active work 249）V3 slice 2 落码（ChainPlan/DAG 步面：`buildChainPlan` + `DagNode` 声明字段 + `DagRunnerOptions.chainRecovery` 可选恢复层 + `planRecovery` excludeProviders + `degraded` 状态贯通，新增 `tests/dag-chain-recovery.test.ts` 14 例，doc-consistency 18/18，全量 2034/2034 全绿）。
 - 关联：tech map S11（自动选工具、工具链拼装、工具失败恢复）；S3 DAG 编排（design-supervision §4）；S4 终止与收敛（design-supervision §7.1）；design-backpressure.md（分流候选集 selectTargets，**2026-09-27 已接线**）；design-external-trust.md（E9.4 V2 只读 tag）；design-context-engineering.md（S1 V2 技能声明输入装配）；`src/skills/registry.ts`（SkillRegistry / resolveTeam / activeProviders）；`src/realm/mcp.ts` 与 `src/http/server.ts`（MCP 工具白名单）。
 - 本文是发现与组合策略的单一事实源；handoff 与 PRD 只索引，不复制全文。
 
@@ -14,7 +14,7 @@
 | 技能注册与检索 | 多版本 / 废弃标记 / 按名域标签检索 / `registerFromCard`（A2A 卡） | `src/skills/registry.ts` |
 | 组队解析 | `resolveTeam(requiredSkillIds)`——多 provider 时歧义处理（见 §3.2） | `src/skills/registry.ts:269` |
 | 信任分级 | `activeProviders` 三态；E9.4 V2 tier-1 能力面收窄为只读技能白名单（fail-closed 403） | `src/skills/registry.ts:310`、`src/trust/tier.ts` |
-| 背压分流 | `selectTargets` 分流候选集（per-vassal 饱和独立可配，显式点名旁路）——**2026-09-27 已接线落码** | design-backpressure §4 |
+| 背压分流 | `selectTargets` 分流候选集（per-executor 饱和独立可配，显式点名旁路）——**2026-09-27 已接线落码** | design-backpressure §4 |
 | MCP 工具 | 工具经握手发现；调用方只能**收窄**宿主白名单（`realmIds` 从 boot 连接列表装配，跨域拒） | `src/realm/mcp.ts`、`src/http/server.ts` |
 | 终止守卫 | 意图级步数预算 256 + 连续失败熔断 8 | `src/core/orchestrator/termination.ts` |
 
@@ -42,8 +42,8 @@
 
 ### 3.2 选择规则（确定次序）
 
-1. **显式点名优先**：`request.vassals` 或 `resolveTeam` 歧义时操作者点名 > 自动选靶（延续"歧义不静默选边"先例——`resolveTeam` 报歧义，不自动挑一个）。
-2. **自动选靶**：复用 `selectTargets` 分流语义（per-vassal 饱和独立可配、全局闸门之上、显式点名旁路背压）。
+1. **显式点名优先**：`request.executors` 或 `resolveTeam` 歧义时操作者点名 > 自动选靶（延续"歧义不静默选边"先例——`resolveTeam` 报歧义，不自动挑一个）。
+2. **自动选靶**：复用 `selectTargets` 分流语义（per-executor 饱和独立可配、全局闸门之上、显式点名旁路背压）。
 3. **信任面**：tier-1 只读收窄先于一切选择（E9.4 V2 白名单判定，零出站 fail-closed）。
 4. **能力面**：委托契约 capability（execute）覆盖才可执行模式派发；否则 plan-only。
 
@@ -72,7 +72,7 @@ type ChainPlan = { steps: ChainStep[]; policy: 'sequential' | 'dag' };
 
 function selectCandidates(
   skillId: string,
-  ctx: { tier: number; named?: string[]; perVassalSaturation: Map<string, number> },
+  ctx: { tier: number; named?: string[]; perExecutorSaturation: Map<string, number> },
 ): DispatchCandidate[]; // 3.2 次序：点名 > 自动选靶 > 信任/能力面过滤
 
 function recoverChain(step: ChainStep, failure: ChainFailure): 'retry' | 'switch' | 'degrade' | 'escalate';

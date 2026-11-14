@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator, IntentBudgetExceededError } from '../src/orchestrator/orchestrator.js';
 import { OversightDesk, conflictsToDesk } from '../src/oversight/oversight.js';
@@ -11,11 +11,11 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
-function resultFor(vassal: string, state: TaskState, stance?: string): DispatchResult {
-  const taskId = `${vassal}-task`;
+function resultFor(executor: string, state: TaskState, stance?: string): DispatchResult {
+  const taskId = `${executor}-task`;
   const event: A2AEvent = { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state !== 'input-required' };
   const task: Task = {
     kind: 'task', id: taskId, contextId: 'ctx', status: { state },
@@ -32,7 +32,7 @@ type Harness = {
 };
 
 async function setup(options: { mode?: 'plan' | 'execute' } = {}): Promise<Harness> {
-  const registry = new VassalRegistry();
+  const registry = new ExecutorRegistry();
   const signer = new Ed25519MemorySigner('zeus-rsk-test');
   const desk = new OversightDesk({ newId: () => 'esc-1' });
   const metrics = new ConcurrencyMetrics();
@@ -68,7 +68,7 @@ async function setup(options: { mode?: 'plan' | 'execute' } = {}): Promise<Harne
     ...(seedDelegation ? { mode: 'execute' as const, executionDelegation: seedDelegation } : {}),
   });
   // The paused branch surfaces as a task-input escalation at the desk.
-  desk.ingest(seen[0]!, { vassal: 'v1', skill: 'research', realm: 'personal', runId: 'run-1:v1', params: {} });
+  desk.ingest(seen[0]!, { executor: 'v1', skill: 'research', realm: 'personal', runId: 'run-1:v1', params: {} });
 
   const app = await createHttpServer({
     registry, signer, internalToken: TOKEN, orchestrator, oversight: desk, metrics,
@@ -81,7 +81,7 @@ describe('E6.3 one-click approve-resume', () => {
     const { app, desk } = await setup();
     const res = await app.inject({
       method: 'POST', url: '/api/escalations/esc-1/approve-resume', headers: AUTH,
-      payload: { params: { answer: '42' }, note: 'driver answered' },
+      payload: { params: { answer: '42' }, note: 'operator answered' },
     });
     expect(res.statusCode).toBe(200);
     const body = await res.json();
@@ -110,18 +110,18 @@ describe('E6.3 one-click approve-resume', () => {
 
   it('leaves the escalation pending when re-dispatch fails, so the approval can be retried (M-02)', async () => {
     const { app, desk, orchestrator } = await setup();
-    // Simulated kernel rejection (e.g. branch budget exhausted). The approval
+    // Simulated runtime rejection (e.g. branch budget exhausted). The approval
     // record must only be written once resumeBranch settles — otherwise the
     // escalation is pinned to "approved" while the branch never re-ran and no
     // retry is possible.
     const original = orchestrator.resumeBranch.bind(orchestrator);
     let failNext = true;
-    orchestrator.resumeBranch = ((intentId: string, vassal: string, params: Record<string, unknown>) => {
+    orchestrator.resumeBranch = ((intentId: string, executor: string, params: Record<string, unknown>) => {
       if (failNext) {
         failNext = false;
         return Promise.reject(new IntentBudgetExceededError('simulated budget exhaustion'));
       }
-      return original(intentId, vassal, params);
+      return original(intentId, executor, params);
     });
 
     const failed = await app.inject({

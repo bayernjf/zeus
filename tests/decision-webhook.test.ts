@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   DecisionAuditChain,
@@ -26,7 +26,7 @@ import {
 import type { DecisionEvent } from '../src/core/decision-service/events.js';
 import type { DecisionPolicy } from '../src/core/grading/policy.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function event(overrides: Partial<DecisionEvent> = {}): DecisionEvent {
@@ -137,9 +137,9 @@ describe('Decision webhook dispatcher', () => {
 
   it('reverse gate: a receiver rejecting the signature (401) is not retried', async () => {
     // Receiver recomputes the HMAC with the real secret; a mismatched secret
-    // means the kernel signed with the wrong one — retrying cannot fix that.
+    // means the runtime signed with the wrong one — retrying cannot fix that.
     const store = new MemoryDecisionWebhookStore();
-    store.add({ id: 'wh-1', url: 'http://127.0.0.1:9/hook', secret: 'kernel-secret-1234567', active: true });
+    store.add({ id: 'wh-1', url: 'http://127.0.0.1:9/hook', secret: 'runtime-secret-1234567', active: true });
     const calls: Array<{ signature: string; body: string }> = [];
     const dispatcher = new DecisionWebhookDispatcher({
       store,
@@ -269,7 +269,7 @@ describe('Decision webhook subscription routes', () => {
     });
     const store = withStore ? new MemoryDecisionWebhookStore() : undefined;
     return createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       decisionService,

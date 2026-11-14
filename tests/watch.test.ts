@@ -10,9 +10,9 @@ import {
   type WatchSubmitResult,
   type WatchTickOptions,
 } from '../src/watch/watch.js';
-import { FileKernelStateStore, collectKernelState, applyKernelState } from '../src/state/kernel-state.js';
+import { FileRuntimeStateStore, collectRuntimeState, applyRuntimeState } from '../src/state/runtime-state.js';
 import type { MetricsSnapshot } from '../src/orchestrator/metrics.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { OversightDesk } from '../src/oversight/oversight.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DagRunner } from '../src/orchestrator/dag-runner.js';
@@ -36,8 +36,8 @@ function metrics(overrides: Partial<Record<string, number>> = {}): MetricsSnapsh
     failed: 0,
     timedOut: 0,
     canceled: 0,
-    perVassal: {},
-    inFlightByVassal: {},
+    perExecutor: {},
+    inFlightByExecutor: {},
     capturedAt: NOW.toISOString(),
     ...overrides,
   } as MetricsSnapshot;
@@ -59,7 +59,7 @@ function baseInput(overrides: Partial<Parameters<WatchRegistry['register']>[0]> 
 
 /** Minimal real components: collect/apply walk every component, so the round
  *  trip has to be driven by the same shape boot persists. */
-function kernelComponents(watches: WatchRegistry): Parameters<typeof collectKernelState>[0] {
+function runtimeComponents(watches: WatchRegistry): Parameters<typeof collectRuntimeState>[0] {
   const lookup = { findBySkill: () => [] };
   const port = {
     async dispatch() {
@@ -68,7 +68,7 @@ function kernelComponents(watches: WatchRegistry): Parameters<typeof collectKern
     async cancel() {},
   };
   return {
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     oversight: new OversightDesk(),
     orchestrator: new Orchestrator(lookup, port),
     dagRunner: {} as DagRunner,
@@ -399,9 +399,9 @@ describe('watches survive a restart', () => {
       expect(registry.get('w1')!.used.fires).toBe(1);
 
       const file = join(sandbox, 'state.json');
-      const store = new FileKernelStateStore(file);
-      const components = kernelComponents(registry);
-      await store.save(collectKernelState(components));
+      const store = new FileRuntimeStateStore(file);
+      const components = runtimeComponents(registry);
+      await store.save(collectRuntimeState(components));
 
       // The field must reach the file, not only the in-memory collector.
       const persisted = JSON.parse(await readFile(file, 'utf8')) as { watches?: Watch[] };
@@ -409,7 +409,7 @@ describe('watches survive a restart', () => {
       expect(persisted.watches?.[0]?.lastFiredAt).toBe(NOW.toISOString());
 
       const restored = new WatchRegistry();
-      applyKernelState(kernelComponents(restored), (await store.load())!);
+      applyRuntimeState(runtimeComponents(restored), (await store.load())!);
       expect(restored.get('w1')!.used.fires).toBe(1);
       expect(restored.get('w1')!.lastFiredAt).toBe(NOW.toISOString());
     } finally {
@@ -455,7 +455,7 @@ describe('realm source', () => {
 /**
  * design-self-host-loop §7 step 4: an unattended execute fire derives a
  * one-time child ticket from its named contract. The derive hook is the
- * kernel's job; here it is injected so the watch's own guarantees are tested
+ * runtime's job; here it is injected so the watch's own guarantees are tested
  * directly: ticket handed to submit, ceilings escalate with zero outbound,
  * and the watch-local execute budget refuses before a contract slot is spent.
  */

@@ -44,7 +44,7 @@
 | 终端监督台 | `npm run tui` | 监视、裁决、名册治理、意图识别、连接器驱动，复用既有 bearer HTTP 面 |
 | Web 监督台 | `web/supervisor/index.html` | 多视图工作台：监控 / 名册 / 裁决 / 技能目录 / 审计 / 数据域与授权 / 组织 / 连接器 |
 | 操作者 HTTP API | `npm start` | 132 条路由（4 条公开、128 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
-| 协议面 | `/.well-known/agent-card.json`、`/mcp`、`/api/mcp` | 入站 A2A（外部 Agent 派单进来）、数据域 MCP（外部宿主读你的目录）与内核只读工具 MCP（G6：`memory.recall` 按绑定 namespace、`traces.query` 仅 driver token） |
+| 协议面 | `/.well-known/agent-card.json`、`/mcp`、`/api/mcp` | 入站 A2A（外部 Agent 派单进来）、数据域 MCP（外部宿主读你的目录）与内核只读工具 MCP（G6：`memory.recall` 按绑定 namespace、`traces.query` 仅 operator token） |
 
 端点逐条清单与操作者可驱动面见 [docs/feature-inventory.md](docs/feature-inventory.md)。
 
@@ -78,7 +78,7 @@ npm run daily -- "summarize the note" \
 | 旋钮 | 作用 |
 | --- | --- |
 | `--root DIR` | 挂载的目录，可重复；上一次运行挂过的域默认重新挂载 |
-| `--agent CARD` 或 `CARD｜TOKEN` | 派发前注册一个执行 Agent，可与 `ZEUS_VASSAL_SEEDS` 合并 |
+| `--agent CARD` 或 `CARD｜TOKEN` | 派发前注册一个执行 Agent，可与 `ZEUS_EXECUTOR_SEEDS` 合并 |
 | `--spec FILE` | 派发前登记显式技能规格（JSON 对象或数组，字段与 `POST /api/skills` 同一条白名单）；这是入口侧唯一能声明 `aliases` 的途径 |
 | `--skill ID` / `--params JSON` | 跳过识别直接派发；技能参数 |
 | `--realm personal` 或 `enterprise` | 意图操作的数据域；企业域记录只写企业域 |
@@ -93,7 +93,7 @@ npm run daily -- "summarize the note" \
 
 ```bash
 ZEUS_INTERNAL_TOKEN="$(openssl rand -hex 24)" \
-ZEUS_STATE_FILE=./data/kernel-state.json \
+ZEUS_STATE_FILE=./data/runtime-state.json \
 ZEUS_AUDIT_FILE=./data/audit.jsonl \
 ZEUS_REALM_ROOTS=/path/to/your/dir \
 npm start
@@ -125,21 +125,21 @@ docker run --rm -p 8787:8787 -v zeus-data:/data \
 
 多阶段构建、非 root 运行、健康检查、`/data` 内状态与审计文件权限 0600、SIGTERM 走保存链。完整部署手册（含 systemd 备选与备份 cron 示例）在 [docs/deployment.md](docs/deployment.md)。
 
-作为库嵌入时，一次装配（编排器、注册表、人工队列、指标）由 `bootKernel()` 负责，生产进程入口 `src/http/serve.ts` 已按环境变量装配齐全；自定义装配只需把组件传给 `createHttpServer()`——**传入哪个组件就挂载哪组端点**：
+作为库嵌入时，一次装配（编排器、注册表、人工队列、指标）由 `bootRuntime()` 负责，生产进程入口 `src/http/serve.ts` 已按环境变量装配齐全；自定义装配只需把组件传给 `createHttpServer()`——**传入哪个组件就挂载哪组端点**：
 
 ```ts
-import { bootKernel } from 'zeus';
+import { bootRuntime } from 'zeus';
 import { createHttpServer } from 'zeus/http';
 
-const kernel = await bootKernel({
-  vassalSeeds: ['https://agent.example/api/a2a/agent-card'],
+const runtime = await bootRuntime({
+  executorSeeds: ['https://agent.example/api/a2a/agent-card'],
   realmRoots: ['/data/notes'],
 });
 const app = await createHttpServer({
-  registry: kernel.registry,
-  orchestrator: kernel.orchestrator,   // 传入即挂载任务端点
-  oversight: kernel.oversight,         // 传入即挂载人工处理队列端点
-  metrics: kernel.metrics,             // 传入即挂载 /api/metrics
+  registry: runtime.registry,
+  orchestrator: runtime.orchestrator,   // 传入即挂载任务端点
+  oversight: runtime.oversight,         // 传入即挂载人工处理队列端点
+  metrics: runtime.metrics,             // 传入即挂载 /api/metrics
   internalToken: process.env.ZEUS_INTERNAL_TOKEN,
 });
 await app.listen({ host: '127.0.0.1', port: 8787 });
@@ -150,11 +150,11 @@ await app.listen({ host: '127.0.0.1', port: 8787 });
 ### 2.5 数据保全与对外验签
 
 ```bash
-export ZEUS_VAULT_PASSPHRASE='…'
-npm run vault -- build   --root /path/to/dir --out backups/map.json   # 出清单：只存引用与逐条指纹
-npm run vault -- check   --map backups/map.json                       # 原地漂移校验（只读；退出码 2=漂移，3=目录不可达）
-npm run vault -- backup  --root /path/to/dir --out-dir backups        # 加密内容包
-npm run vault -- restore --map backups/x.map.json --bundle backups/x.bundle.json --target /restore/dir
+export ZEUS_BACKUP_PASSPHRASE='…'
+npm run backup -- build   --root /path/to/dir --out backups/map.json   # 出清单：只存引用与逐条指纹
+npm run backup -- check   --map backups/map.json                       # 原地漂移校验（只读；退出码 2=漂移，3=目录不可达）
+npm run backup -- backup  --root /path/to/dir --out-dir backups        # 加密内容包
+npm run backup -- restore --map backups/x.map.json --bundle backups/x.bundle.json --target /restore/dir
 ```
 
 第三方只持公钥即可判一份已发布名册的真伪——但**先与带外公告的指纹逐字符比对**再用，因为发钥的那个进程说不出"这把钥属于谁"：
@@ -164,7 +164,7 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk
 # 退出码 0=验签通过 / 1=被拒（附原因：版本不认识、摘要不绑定、签名不符、过期…）/ 2=参数或 I/O 错
 ```
 
-数据域经 MCP 对外暴露时有两条传输形态：stdio（宿主预连接并授权，协议不暴露 connect）与 streamable HTTP（`GET /mcp` 只出元信息、`POST /mcp` 需 bearer，会话级身份只能收窄宿主白名单）。内核另有只读工具面 `POST /api/mcp`（G6）：`memory.recall`（memory service token 绑定一个 namespace，跨 realm 拒绝）与 `traces.query`（仅 driver token），只读、无写工具——remember/forget 仍走 HTTP 消费面。对接细节见 [docs/mcp-integration.md](docs/mcp-integration.md)。
+数据域经 MCP 对外暴露时有两条传输形态：stdio（宿主预连接并授权，协议不暴露 connect）与 streamable HTTP（`GET /mcp` 只出元信息、`POST /mcp` 需 bearer，会话级身份只能收窄宿主白名单）。内核另有只读工具面 `POST /api/mcp`（G6）：`memory.recall`（memory service token 绑定一个 namespace，跨 realm 拒绝）与 `traces.query`（仅 operator token），只读、无写工具——remember/forget 仍走 HTTP 消费面。对接细节见 [docs/mcp-integration.md](docs/mcp-integration.md)。
 
 ### 2.6 验证你的安装
 
@@ -201,7 +201,7 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 2. 治理闸门在派发**之前**：并发上界与队列、步数预算与熔断、成本准入、执行授权票据（execute 模式）——拒绝即终止出站，并写进审计。
 3. 并行出站：每个分支一次 A2A 任务，出站前按数据策略脱敏、检查该 Agent 是否已被吊销（吊销即断流，不发请求也不发凭证）。
 4. 多路事件流合并回一条视图，事件保持来源可辨；分支超时或失败如实计入分支结果，不被重标成别的原因。
-5. 立场按确定性规则聚合；收敛则出结论，不收敛则 `needs-driver` 并进人工队列；可选再经决策后端做一次置信闸门内的仲裁或对抗复核。
+5. 立场按确定性规则聚合；收敛则出结论，不收敛则 `needs-operator` 并进人工队列；可选再经决策后端做一次置信闸门内的仲裁或对抗复核。
 6. 操作者批准 / 拒绝 / 裁决；批准可带参数只重派那一条分支；拒绝联动取消对端任务。
 7. 结果与决策进状态快照与审计链；记忆层按事件追加、纯函数派生事实，矛盾进队列。
 
@@ -222,7 +222,7 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 | 组织与自动触发 | `src/org/`、`src/onboarding/`、`src/watch/` | 部门与问责链；上岗四道门每次现算不缓存（签字后吊销 Agent 或撤出编制即自动失格）；watch 由调用方驱动计时，命中即派生意图 |
 | 护栏与观测 | `src/guardrails/`、`src/observability/`、`src/reflection/` | 内容风险判定与来源标注；trace 树、并发指标与指标史、日志结构化与凭证打码；失败归因 |
 | 状态与装配 | `src/state/`、`src/http/serve.ts` | 快照原子落盘与启动恢复、跨进程文件锁、优雅退出；按环境变量装配生产进程 |
-| 备份与恢复 | `src/vault/` | 清单来源可为数据域或文件白名单、只存引用与指纹、密钥与图分离的 AES-256-GCM 包、原地漂移校验、跨位置恢复；零依赖 CLI |
+| 备份与恢复 | `src/backup/` | 清单来源可为数据域或文件白名单、只存引用与指纹、密钥与图分离的 AES-256-GCM 包、原地漂移校验、跨位置恢复；零依赖 CLI |
 
 ### 3.4 持久化、审计与信任链
 
@@ -236,7 +236,7 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 | 术语 | 含义 |
 | --- | --- |
 | 执行 Agent | 已注册、可被派发任务的外部 Agent，经标准 A2A 协议交互 |
-| 归属声明 | 卡片上的 `x-zeus-fealty`：服务哪些数据域、数据策略、回传与升级口径；不合法即拒绝注册 |
+| 归属声明 | 卡片上的 `x-zeus-handshake`：服务哪些数据域、数据策略、回传与升级口径；不合法即拒绝注册 |
 | 并行派发（fan-out） | 一个意图同时下发给多个执行 Agent，多路事件流合并回一条 |
 | 立场与规则聚合 | 分支回传的结构化意见（立场 + 依据 + 权重）按一致 / 多数 / 加权合为一个决策 |
 | 冲突升级 / 人工裁决 | 规则无法收敛或 Agent 索要缺失输入时进队列；操作者给出立场后回写重算 |
@@ -246,7 +246,7 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 | 决策回放 | 从持久化事实重建一次决策的参与方·输入·立场·聚合·裁决 |
 | 操作者 | 人类角色：监督、介入、给出最终裁决——不是被替代的手工执行者 |
 
-代码、环境变量与 HTTP 路径里保留了一批早期命名（`vassal` / `fealty` / `roster` / `realm` / `kernel` / `driver` / `commission` / `mentorship` / `noul`）。它们是接口的一部分，含义与"为什么不能顺手改名"逐条记在 [docs/terminology.md](docs/terminology.md)；**这些名字不代表任何第三方系统或集成**（例如 `src/vault/` 与 HashiCorp Vault 无关），本文档不使用它们做叙述词。
+代码、环境变量与 HTTP 路径里保留了一批早期命名（`executor` / `handshake` / `roster` / `realm` / `runtime` / `operator` / `commission` / `mentorship` / `noul`）。它们是接口的一部分，含义与"为什么不能顺手改名"逐条记在 [docs/terminology.md](docs/terminology.md)；**这些名字不代表任何第三方系统或集成**（例如 `src/backup/` 与 HashiCorp Backup 无关），本文档不使用它们做叙述词。
 
 ### 3.6 现行判定与仍缺的外部条件
 
@@ -267,11 +267,11 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 | MVP 判定与可上线判定的单一事实源 | [docs/review-mvp-2026-09.md](docs/review-mvp-2026-09.md) |
 | 部署、密钥、备份调度、上线检查清单 | [docs/deployment.md](docs/deployment.md)、[docs/pre-launch-checklist.md](docs/pre-launch-checklist.md) |
 | 对接 MCP（数据域服务端与连接器客户端） | [docs/mcp-integration.md](docs/mcp-integration.md) |
-| 执行 Agent 协议（卡片、握手、回传、升级、验收） | [docs/design-vassal-protocol.md](docs/design-vassal-protocol.md) |
+| 执行 Agent 协议（卡片、握手、回传、升级、验收） | [docs/design-executor-protocol.md](docs/design-executor-protocol.md) |
 | 数据域契约（connect / search / read / write、租户、跨域授权） | [docs/design-realm.md](docs/design-realm.md) |
 | 并发编排契约（派发与汇聚、合并流、幂等、取消、聚合、升级） | [docs/design-fan-out.md](docs/design-fan-out.md) |
-| 目录签名链与公钥发布、人工轮换手册 | [docs/design-fealty-signing.md](docs/design-fealty-signing.md) |
-| 备份与恢复协议 | [docs/design-vault.md](docs/design-vault.md) |
+| 目录签名链与公钥发布、人工轮换手册 | [docs/design-handshake-signing.md](docs/design-handshake-signing.md) |
+| 备份与恢复协议 | [docs/design-backup.md](docs/design-backup.md) |
 | 模型无关决策后端 | [docs/design-decision-backend.md](docs/design-decision-backend.md) |
 | HTTP 传输层选型与端点规划 | [docs/design-http-transport.md](docs/design-http-transport.md) |
 | 组织结构与问责、上岗校验与首日简报、叙事日志 | [docs/design-org.md](docs/design-org.md)、[docs/design-onboarding.md](docs/design-onboarding.md)、[docs/design-diary.md](docs/design-diary.md) |

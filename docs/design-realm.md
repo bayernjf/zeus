@@ -11,7 +11,7 @@ Realm 是用户指定的**一个目录**及其纳管数据：先连接、后使�
 1. **目录是唯一数据来源**：Zeus 对 Realm 之外的用户文件零访问；绝不扫描父目录或兄弟目录。
 2. **先连接后使用**：未完成 connect（含 manifest 建立）的 Realm，任何读写一律拒绝。
 3. **暴露接口而非文件**：Agent/执行 Agent 只见本契约的 API，不见路径、不见原始文件布局。
-4. **Realm 有类型**：`personal` / `enterprise`，一经 connect 固定；派发任务时由 Dispatcher 对照 fealty.dataRealms 做数据二极管。企业域再按 **§7 的租户分级**（组织/部门/成员）细分，个人域不是租户。
+4. **Realm 有类型**：`personal` / `enterprise`，一经 connect 固定；派发任务时由 Dispatcher 对照 handshake.realms 做数据二极管。企业域再按 **§7 的租户分级**（组织/部门/成员）细分，个人域不是租户。
 5. **备份是第一公民**：connect 即生成 manifest 备份基线；没有备份能力的 Realm 可以降级为只读。
 
 ## 2. 接口契约（TypeScript 形态）
@@ -43,8 +43,8 @@ interface RealmStore {
   read(realmId: RealmId, itemId: string): Promise<unknown>;
 
   // 写：个人域默认允许；企业域写必须带操作者授权凭证
-  // v0.19 库内已落地：第三参 grant?: DriverWriteGrant。v0.5 起它是签名的一次性凭证（§7.7）；MCP 暴露时由鉴权层注入
-  write?(realmId: RealmId, item: { itemId?: string; data: unknown; tags?: string[] }, grant?: DriverWriteGrant): Promise<{ itemId: string }>;
+  // v0.19 库内已落地：第三参 grant?: OperatorWriteGrant。v0.5 起它是签名的一次性凭证（§7.7）；MCP 暴露时由鉴权层注入
+  write?(realmId: RealmId, item: { itemId?: string; data: unknown; tags?: string[] }, grant?: OperatorWriteGrant): Promise<{ itemId: string }>;
 }
 
 interface RealmHit { itemId: string; tags: string[]; snippet: string; modifiedAt: string; }
@@ -56,7 +56,7 @@ interface RealmHit { itemId: string; tags: string[]; snippet: string; modifiedAt
 
 | 场景 | 规则 |
 | --- | --- |
-| Zeus 派发任务给执行 Agent | Dispatcher 对照 `fealty.dataRealms` 与任务 Realm 类型，不符即拒绝并记审计 |
+| Zeus 派发任务给执行 Agent | Dispatcher 对照 `handshake.realms` 与任务 Realm 类型，不符即拒绝并记审计 |
 | Realm 内容注入任务参数 | 检索结果按执行 Agent `dataPolicy` 裁剪——**允许的来源与越界行为见 §3.1**（`none` 不注入、不可核对的请求拒派发；`read-task-scope` 仅接受内核解析的来源；`read-realm` / `write` 亦允许操作者自报） |
 | 个人域 → 企业域 | 未经操作者显式授权，禁止（企业合规） |
 | 企业域 → 个人域 | 禁止，无例外 |
@@ -67,20 +67,20 @@ interface RealmHit { itemId: string; tags: string[]; snippet: string; modifiedAt
 
 **先立判据**：
 
-1. 二极管的作业面是**内容面**：问"这个域的内容能出去多少、由谁决定"。**写授权面**（能不能改企业域）由 §7.7 的 `DriverWriteGrant` 单独把关，两者不合并——`dataPolicy: write` 不是第三种内容裁剪档。
+1. 二极管的作业面是**内容面**：问"这个域的内容能出去多少、由谁决定"。**写授权面**（能不能改企业域）由 §7.7 的 `OperatorWriteGrant` 单独把关，两者不合并——`dataPolicy: write` 不是第三种内容裁剪档。
 2. 执行 Agent 拿到正文的**正当路径目前只有"随任务注入"**：MCP 面正式暴露给执行 Agent 属 P1（E3.4），其主体判定仍登记在 deferred #18。因此把 `read-task-scope` 定义成"一律剥掉正文"会让它变成"给了指针却取不到内容"——**那是功能回退，不是边界**，本条不这么做。
 3. 那么两者真正可核对的差别在**来源**：`read-task-scope` 承诺的是"只按**本次任务**的范围取数"，而"本次任务的范围"只有内核自己解析得出来；调用方自报的命中（§7.4 的 `realmHits`）**没有任何东西能核对**它是否属于本任务。于是档位管的是**允许的来源**与**能否被调用方加宽**，字段集不因档位而异。
 
 **契约（唯一执行点 = `Dispatcher.dispatch` 的注入点；Orchestrator 与 HTTP 层不各判一次）**：
 
-| `fealty.dataPolicy` | 允许的内容来源 | 外送字段 | 越界时 |
+| `handshake.dataPolicy` | 允许的内容来源 | 外送字段 | 越界时 |
 | --- | --- | --- | --- |
 | `none` | 无 | 不注入 `realmHits` | 请求带非空命中 → **拒绝派发**并审计 `refused-data-policy`（现状是静默丢弃；本契约按 §3 第一行"越域即拒"同构收紧，与 #20/#31 的"静默降级是失效形状"同源） |
 | `read-task-scope` | **仅内核按本任务解析的命中**（`resolveRealmSource`，`onBehalfOf` = 该执行 Agent；见 §7.4） | `{ itemId, tags, modifiedAt, snippet }` | 调用方自报命中 → **拒绝派发**并审计 `refused-data-policy`，detail 点名 policy 与 `self-asserted`（"属于本任务"无法核对，所以不给"少给一点"的余地） |
 | `read-realm` | 内核解析 **或** 操作者自报（操作者是数据主权者，§7.4） | 同上 | — |
 | `write` | 同 `read-realm` | 同上 | 写权限由 §7.7 的凭证授予，与本档无关 |
 
-**实现必须补的一处装配（否则契约无法判定）**：`DispatchRequest.realmHits` 现在不带来源，内核解析路径（`src/http/server.ts` 的 `realmSource` 分支）与调用方自报路径在进入 Dispatcher 前都汇成同一个数组，**来源信息已丢失**。契约要求新增来源标记（`realmHitsOrigin: 'kernel-resolved' | 'caller-asserted'`），由装配层在两条路径上分别设置；HTTP 层两条路径本就互斥（`send either realmSource or realmHits, not both`），所以来源是确定的。**命中非空而来源缺失时按拒绝处理**——判不出来就不猜。
+**实现必须补的一处装配（否则契约无法判定）**：`DispatchRequest.realmHits` 现在不带来源，内核解析路径（`src/http/server.ts` 的 `realmSource` 分支）与调用方自报路径在进入 Dispatcher 前都汇成同一个数组，**来源信息已丢失**。契约要求新增来源标记（`realmHitsOrigin: 'runtime-resolved' | 'caller-asserted'`），由装配层在两条路径上分别设置；HTTP 层两条路径本就互斥（`send either realmSource or realmHits, not both`），所以来源是确定的。**命中非空而来源缺失时按拒绝处理**——判不出来就不猜。
 
 **审计**：新增两个决策值 `refused-data-policy`（矛盾请求被拒）与 `content-injected`（放行时记 policy 与来源，供"这次任务到底给了谁多少内容"回查）。`AuditDecision` 由 `AUDIT_DECISIONS` 单一来源派生，加值时 `/api/audit?decision=` 的查询白名单自动跟上（deferred #27 已把那条漂移修掉，不得再手工维护第二份）。
 
@@ -92,7 +92,7 @@ interface RealmHit { itemId: string; tags: string[]; snippet: string; modifiedAt
 
 1. 三态单测：`none` + 命中 → 拒绝且审计 `refused-data-policy`；`read-task-scope` + **自报**命中 → 拒绝；`read-task-scope` + **内核解析**命中 → 注入 `{itemId, tags, modifiedAt, snippet}`；`read-realm` + 自报命中 → 注入。
 2. 来源缺失：命中非空但 `realmHitsOrigin` 未设 → 拒绝（fail-closed 的正向对照，防"新路径忘了标来源"退化成放行）。
-3. 审计两条：拒绝写 `refused-data-policy`（含 policy、vassal、来源）；放行写 `content-injected`（含 policy、来源、条数）。
+3. 审计两条：拒绝写 `refused-data-policy`（含 policy、executor、来源）；放行写 `content-injected`（含 policy、来源、条数）。
 4. 真进程一条：起 serve 注册一张 `read-task-scope` 卡，走 `realmSource` 派发一次并断言对端实收体带 `snippet`；再自报一次并断言**拒绝且没有出网请求**（`inject` 测试看不见"是否真的发了请求"，本仓库已有先例）。
 5. 缺陷植入：把注入点改回"`none` 之外一律放行"，第 1、4 条必须变红。
 
@@ -106,8 +106,8 @@ Map 不在本契约内，但依赖它：Map 的 manifest 条目引用 `realmId +
 
 - P0（已落，后续批次扩到写与企业域）：库内 `RealmStore`：`connect / manifest / search / read`；检索为纯文件系统扫描（可替换后端）。**不启传输**，Zeus 内核同进程调用（dispatcher 的 realmHits 注入即由本层检索供给）。
 - P1：**第一件事是把 RealmStore 包成 MCP server 暴露**（streamable HTTP + 鉴权，传输形态立项时定），让 read-realm 执行 Agent 与任意 MCP 客户端经授权读取；随后做 `write` 与授权凭证、enterprise Realm。
-  - **落地进展（v0.19）**：`write` 的库内部分与授权凭证门已先行落地（不依赖 MCP 触发条件）——`FsRealmStore.write` 与 `src/realm/grant.ts` `verifyDriverWriteGrant`：personal 默认可写、readOnly 拒写、enterprise 写须绑定本域且未过期的操作者凭证（形状/域/有效期纯函数校验；**签名、签发与一次性自 v0.5 起在库内**，见 §7.7）；原子写、路径/symlink/扩展名/尺寸防护、写后快照与 contentDigest 一致性、审计回调齐备。
-  - **落地进展（2026-09-25，E3.5 收口）**：`connect` 不再拒 enterprise，且**存储的类型如实记录**（此前 `realms.set` 把 type 硬编码成 `personal`，于是企业域写闸门在真实 store 上永远走不到、凭证门只在纯函数测试里被 mock 打过桩——是死代码）。现在企业域 connect→写授权→写后读回→审计记 `grantedBy` 全链路有测试；`readOnly` 连接即使持有效凭证仍拒写。二极管制仍然只在写侧与派发/决策/记忆层落地：本层不存在跨 realm 写入路径（每次读写都以单一 realmId 定址），所以"企业域→个人域禁止"在 RealmStore 层无执行点，其真实约束在 Dispatcher `dataRealms` / decision `prepareState` / MemoryStore 边界。**仍未做**：MCP `tools/write` 暴露（签发/验签/防重放已于同日补上，见 §7.7 与 deferred #14 销项）。
+  - **落地进展（v0.19）**：`write` 的库内部分与授权凭证门已先行落地（不依赖 MCP 触发条件）——`FsRealmStore.write` 与 `src/realm/grant.ts` `verifyOperatorWriteGrant`：personal 默认可写、readOnly 拒写、enterprise 写须绑定本域且未过期的操作者凭证（形状/域/有效期纯函数校验；**签名、签发与一次性自 v0.5 起在库内**，见 §7.7）；原子写、路径/symlink/扩展名/尺寸防护、写后快照与 contentDigest 一致性、审计回调齐备。
+  - **落地进展（2026-09-25，E3.5 收口）**：`connect` 不再拒 enterprise，且**存储的类型如实记录**（此前 `realms.set` 把 type 硬编码成 `personal`，于是企业域写闸门在真实 store 上永远走不到、凭证门只在纯函数测试里被 mock 打过桩——是死代码）。现在企业域 connect→写授权→写后读回→审计记 `grantedBy` 全链路有测试；`readOnly` 连接即使持有效凭证仍拒写。二极管制仍然只在写侧与派发/决策/记忆层落地：本层不存在跨 realm 写入路径（每次读写都以单一 realmId 定址），所以"企业域→个人域禁止"在 RealmStore 层无执行点，其真实约束在 Dispatcher `realms` / decision `prepareState` / MemoryStore 边界。**仍未做**：MCP `tools/write` 暴露（签发/验签/防重放已于同日补上，见 §7.7 与 deferred #14 销项）。
   - **E3.6 多租户分级（2026-09-25 落地，见 §7）**：本层原有的 personal/enterprise 两型标记只是"域"，不是"租户"；`connect(root, 'enterprise')` 打开的是"企业域可挂载 + 写须授权"，不等于多租户隔离。§7 补上组织/部门/成员三级、边界判定与授权生命周期。
 - P2：备份策略执行器（full / manifest-only）与漂移检测（contentDigest 对账）；检索后端按需升级（见 §6 决策与 deferred #10）。
 
@@ -156,7 +156,7 @@ deferred #18 的四个待定问题裁定如下（方向固化；实现随 E3.4 �
 
 1. **主体身份形态 = 会话级 actor**：`createRealmMcpHandler` 在既有 `realmIds` 白名单之上增加可选 `actor`（宿主显式声明的调用方身份：`{ name, realmIds? }`）。stdio 环境无 OAuth subject；**HTTP header 形态已按 E3.4 streamable HTTP 落地（2026-10-07）＝ `x-zeus-realm-actor`**，OAuth subject 形态仍留待跨机真实执行 Agent 出现时定。未声明 actor 的调用保持现状：anonymous，只能访问宿主预连接白名单内的 realm。
 2. **`zeus-realm:` URI 不编码租户**：资源寻址面只承载 realmId；租户（TenantScope，§7.1）由宿主连接时声明。理由：租户进 URI 会把企业分级信息暴露进寻址面，并使 URI 与挂载状态耦合（同一 realm 改租户后 URI 语义漂移）。
-3. **不与签发凭证合并**：读取路径的边界 = 宿主白名单（进程内信任）；写路径已有签名且一次性的 DriverWriteGrant（§7.7）。MCP 读取面不引入验签——那需要把公钥/信任锚搬进 MCP 会话，扩大暴露面；当前无真实读取方，若 E3.4 立项出现跨宿主身份需求再复议。
+3. **不与签发凭证合并**：读取路径的边界 = 宿主白名单（进程内信任）；写路径已有签名且一次性的 OperatorWriteGrant（§7.7）。MCP 读取面不引入验签——那需要把公钥/信任锚搬进 MCP 会话，扩大暴露面；当前无真实读取方，若 E3.4 立项出现跨宿主身份需求再复议。
 4. **`tools/call` 与 `resources/read` 共用同一份 realmId 白名单**：现状已如此（同一 handler 实例只有一个隔离单位，`src/realm/mcp.ts` 的 `callTool`/`readResource`/`parseRealmUri` 均消费同一 `realmIds`），本裁定固化——避免两套边界各自漂移。
 
 ## 7. 企业域分级与双域授权（E3.6 / E6.4，2026-09-25 落地）
@@ -179,13 +179,13 @@ deferred #18 的四个待定问题裁定如下（方向固化；实现随 E3.4 �
 | 个人域 → 企业域 | 默认拒 | **是**：`DomainGrant(subject × realmId × access)` |
 | 企业域 → 个人域 | **永远拒** | **否**——连能表达它的凭证形状都不存在 |
 
-与 E3.5 的分工（两层不合并，否则一个凭证要回答两个问题）：`DriverWriteGrant` 管"**这一次**企业写被操作者授权了"（绑定 realmId + 有效期，写在 store 里）；`DomainGrant` 管"**这个主体**能不能碰那个域"（读与写分别授）。
+与 E3.5 的分工（两层不合并，否则一个凭证要回答两个问题）：`OperatorWriteGrant` 管"**这一次**企业写被操作者授权了"（绑定 realmId + 有效期，写在 store 里）；`DomainGrant` 管"**这个主体**能不能碰那个域"（读与写分别授）。
 
 ### 7.3 判定与凭证生命周期
 
 - `decideRealmAccess()` 是**唯一**判定函数：派发取数、操作者探针都走它，物理上不可能出现两处答案不一致。返回 `{ok, via:'same-domain'|'tenant-hierarchy'|'grant'}` 或 `{ok:false, reason}`。
 - reason 精确到 `grant-expired` / `access-not-granted` / `no-grant`：**"从来没授权过"和"授权过期了"要求操作员做两件不同的事**，合并成一个 `no-grant` 会逼人去翻记录，而记录其实就在眼前。
-- `DomainGrantRegistry` 另管两件事：**nonce 一次性**（吊销后原 nonce 仍算已用——否则"撤销"会变相成为重放入口）、**随 KernelSnapshot 持久化**（重启既不静默放宽、也不静默丢失授权）。
+- `DomainGrantRegistry` 另管两件事：**nonce 一次性**（吊销后原 nonce 仍算已用——否则"撤销"会变相成为重放入口）、**随 RuntimeSnapshot 持久化**（重启既不静默放宽、也不静默丢失授权）。
 
 ### 7.4 取数路径：内核自己进 Realm（本轮真正的安全增量）
 
@@ -197,7 +197,7 @@ deferred #18 的四个待定问题裁定如下（方向固化；实现随 E3.4 �
 4. 才执行 search，命中连同 realmId 一起写进派发请求（provenance 由此可查）；
 5. 放行与拒绝**都落审计**（`domain-read` / `domain-refused`，reason 作为前缀，走同一根 audit spine）。
 
-`onBehalfOf` 让"替执行 Agent 取数"按**被执行 Agent 的边界**判定，而不是持 token 者的边界；且只接受 `vassal|agent`——**不接受再声称一次 `driver`**，因为 driver 恰是不受域门约束的身份，允许冒充等于给自己开后门。
+`onBehalfOf` 让"替执行 Agent 取数"按**被执行 Agent 的边界**判定，而不是持 token 者的边界；且只接受 `executor|agent`——**不接受再声称一次 `operator`**，因为 operator 恰是不受域门约束的身份，允许冒充等于给自己开后门。
 
 操作者仍可自报 `realmHits`（用户是自己数据的主权者，这是产品底座不是漏洞），但两者**互斥**：一份意图只能有一个内容来源，否则 provenance 说不清。
 
@@ -218,31 +218,31 @@ deferred #18 的四个待定问题裁定如下（方向固化；实现随 E3.4 �
 
 ### 7.7 企业写凭证：签发、验签与一次性（E3.5 / deferred #14，2026-09-25）
 
-**修掉的洞**：`verifyDriverWriteGrant` 此前只做形状/绑定/有效期校验，也就是说它**相信"拿到的这坨 JSON 就是操作者给的"**。而任何能摸到 `store.write()` 的代码（执行 Agent 适配器、连接器、未来的 MCP handler）都能自己拼一坨——那不是凭证检查，是装饰。
+**修掉的洞**：`verifyOperatorWriteGrant` 此前只做形状/绑定/有效期校验，也就是说它**相信"拿到的这坨 JSON 就是操作者给的"**。而任何能摸到 `store.write()` 的代码（执行 Agent 适配器、连接器、未来的 MCP handler）都能自己拼一坨——那不是凭证检查，是装饰。
 
 **凭证是什么**：一张**签名过的一次性写授权**——"密钥 K 授权向 realm R 写一次，T 时刻前有效"。
 
 | 组成 | 落点 | 为什么在那儿 |
 |---|---|---|
-| 签发 `issueDriverWriteGrant` | `src/realm/grant.ts` | nonce 由内核铸造（调用方不能预授权一批写）；`grantedAt/expiresAt` 由注入时钟盖章；签名走 `canonicalJson`（RFC 8785 子集）+ Ed25519，**复用 `src/core/signing.ts` 的 `RosterSigner`，不另造一套信封** |
-| 验签 `verifyDriverWriteGrant`（改为 async） | 同上 | 判定顺序：形状 → realm 绑定 → **签名**（`unsigned` / `unknown-key` / `bad-signature`）→ 有效期（`expired` / `no-expiry`）。失败**不消费** nonce，否则一次被拒的尝试能烧掉别人的凭证 |
-| 一次性 | `DriverGrantLedger`（有界窗口，默认 10 000） | store 在真正落盘前 `consume(nonce)`；已被消费的 → `replayed` |
-| 持久化 | `KernelSnapshot.writeGrantNonces` | 内存里的账本等于没有账本：崩溃重启后那张 grant 还能用一次。消费即触发状态落盘（`onChange`），不等优雅退出 |
+| 签发 `issueOperatorWriteGrant` | `src/realm/grant.ts` | nonce 由内核铸造（调用方不能预授权一批写）；`grantedAt/expiresAt` 由注入时钟盖章；签名走 `canonicalJson`（RFC 8785 子集）+ Ed25519，**复用 `src/core/signing.ts` 的 `RosterSigner`，不另造一套信封** |
+| 验签 `verifyOperatorWriteGrant`（改为 async） | 同上 | 判定顺序：形状 → realm 绑定 → **签名**（`unsigned` / `unknown-key` / `bad-signature`）→ 有效期（`expired` / `no-expiry`）。失败**不消费** nonce，否则一次被拒的尝试能烧掉别人的凭证 |
+| 一次性 | `OperatorGrantLedger`（有界窗口，默认 10 000） | store 在真正落盘前 `consume(nonce)`；已被消费的 → `replayed` |
+| 持久化 | `RuntimeSnapshot.writeGrantNonces` | 内存里的账本等于没有账本：崩溃重启后那张 grant 还能用一次。消费即触发状态落盘（`onChange`），不等优雅退出 |
 | 时钟 | `FsRealmStoreOptions.now` | 此前 `write` 用墙上时钟判过期，测试里"仍然有效"的凭证只能写成 `expiresAt: 2099-…`——那条注释本身就是"这个门从没被真正测过"的自白 |
 
 **两种权威模式，必须可观测**：
 
 - `signed`：内核持有操作者密钥（serve 进程 = RSK，`ZEUS_RSK_KEY*`）。未签名 / 别的密钥签的 / 改过一个字段的凭证一律拒。
 - `shape-only`：没配密钥（纯库内调用、开发态）。凭证仍受形状/绑定/**一次性**约束，但签名无从校验。
-- 模式不是秘密：`GET /api/state` 出 `driverGrants: { authority, keyId }`，启动日志明说当前是哪种。**"我们验签了"永远不需要靠猜。**
+- 模式不是秘密：`GET /api/state` 出 `operatorGrants: { authority, keyId }`，启动日志明说当前是哪种。**"我们验签了"永远不需要靠猜。**
 - 有 verifier 时**强制要求有效期**（`no-expiry` 直接拒）：没有到期时间的写凭证是常驻权限，而常驻权限是 `DomainGrant`（§7.2）的语义，不是这一层的。
-- nonce 账本是**窗口**不是全量历史：只要窗口 ≥ 最长存活凭证被重复提交的窗口即可，而签发侧已经把 ttl 钉死在 ≤ 24h（`DRIVER_GRANT_MAX_TTL_MS`），10 000 条远远够。
+- nonce 账本是**窗口**不是全量历史：只要窗口 ≥ 最长存活凭证被重复提交的窗口即可，而签发侧已经把 ttl 钉死在 ≤ 24h（`OPERATOR_GRANT_MAX_TTL_MS`），10 000 条远远够。
 
 **运维面**：
 
 - `POST /api/realm/write-grants`（bearer）：`{realmId, grantedBy, reason?, ttlSeconds?}` → 201 返回签名凭证。对 personal 域要凭证 → 400（personal 域本来就可写，说明你指错了 realm）；realm 不存在 → 404；只读连接 → 409（任何凭证都救不了它）；ttl 越界 → 400。
 - `POST /api/diary/generate` 增 `body.grant`：企业域的日记落盘必须带凭证；缺/错 → **403**（不是 400、不是 500——请求没问题，缺的是授权）。
-- 审计事件流新增两个 decision：`driver-grant-issued`（签发，含 realmId/grantedBy/keyId/到期/reason）与 `realm-write`（**被凭证放行**的写）。personal 域的日常写不进审计事件流：那是用户在自己目录里写文件，把它们记下来只会把真正关于授权的事件埋掉。
+- 审计事件流新增两个 decision：`operator-grant-issued`（签发，含 realmId/grantedBy/keyId/到期/reason）与 `realm-write`（**被凭证放行**的写）。personal 域的日常写不进审计事件流：那是用户在自己目录里写文件，把它们记下来只会把真正关于授权的事件埋掉。
 
 **诚实边界**：单 owner 部署里签发方与验签方是同一把密钥，因此这条链证明的是**"这张凭证出自内核的签发路径（受 bearer 保护、留审计），不是调用方自己拼的"**，而不是"某个第三方操作者签的字"。真出现独立操作者时，改动只是把对方的公钥加进 `acceptedKeyIds` 与 verifier——判定与账本都不用动。MCP `tools/write` 暴露时由鉴权层注入凭证，见 deferred **#18**（actor 判定）。
 
@@ -255,7 +255,7 @@ deferred #18 的四个待定问题裁定如下（方向固化；实现随 E3.4 �
 | v0.2 | 2026-09-21 | 决定传输层（MCP server 为唯一对外传输，P0 库内先行、P1 包 MCP，不做 HTTP API）与检索实现（P0 文件系统扫描 + 可替换后端，阈值触发升级 → deferred #10） |
 | v0.3 | 2026-09-25 | §5 交付节奏补写实现进展：write + 凭证门（v0.19）；**enterprise connect 放开且存储类型如实记录**（修掉 `realms.set` 硬编码 personal 导致 E3.5 写闸门成死代码的问题），E3.5 收口、MCP write 暴露与签发凭证仍待 E3.4 触发；明确 §3 "企业域→个人域禁止" 在 RealmStore 层无执行点（本层无跨 realm 写路径），约束落在 Dispatcher / decision / MemoryStore；E3.6 多租户分级显式区别于"企业域可挂载"，仍未立项 |
 | v0.4 | 2026-09-25 | **E3.6 + E6.4 落地**：新增 §7（企业域三级 `TenantScope`、"层级是结构边界 / 域边界才是授权对象"的分工、`decideRealmAccess` 单一判定与精确 reason、nonce 一次性 + 快照持久化、`resolveRealmSource` 让内核自己进 Realm 从而能核对"声明的域 vs 内容真实的域"、操作者面与 `ZEUS_REALM_ENTERPRISE`）；§6.4 把 §6.1 的"Realm 对外只有 MCP"精确化为**内容 vs 治理元数据**；§1 不变量 4 补租户一层；§2 契约加 `tenant` 与新原语的位置说明。仍未做（§7.6，登记 deferred #17/#18）：MCP 侧 actor 判定、显式改边界（disconnect）。 |
-| v0.5 | 2026-09-25 | **deferred #14 销项（新增 §7.7）**：`DriverWriteGrant` 从"形状校验"升级为**签名且一次性的凭证**——`issueDriverWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `core/signing.ts` 的 `RosterSigner`）、`verifyDriverWriteGrant` 改 async 且按 形状→realm 绑定→**验签**→有效期 判定（`unsigned` / `unknown-key` / `bad-signature` / `no-expiry`）、`DriverGrantLedger` 在落盘前消费 nonce 且**随内核快照持久化**（`writeGrantNonces`，否则重启即重放）、`FsRealmStoreOptions.now` 注入时钟（此前"仍然有效"的测试凭证只能写成 `expiresAt: 2099-…`）。运维面：`POST /api/realm/write-grants`、日记写凭证透传（缺授权 → **403**，不是 400/500）、审计事件流 `driver-grant-issued` + `realm-write`、`GET /api/state` 报 `driverGrants.authority`（`signed` / `shape-only` 不靠猜）。§5 两处"签发仍未做"与 §2 契约注释同步收口。三个守卫各做过缺陷植入验证（见 handoff Active work 45）。 |
+| v0.5 | 2026-09-25 | **deferred #14 销项（新增 §7.7）**：`OperatorWriteGrant` 从"形状校验"升级为**签名且一次性的凭证**——`issueOperatorWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `core/signing.ts` 的 `RosterSigner`）、`verifyOperatorWriteGrant` 改 async 且按 形状→realm 绑定→**验签**→有效期 判定（`unsigned` / `unknown-key` / `bad-signature` / `no-expiry`）、`OperatorGrantLedger` 在落盘前消费 nonce 且**随内核快照持久化**（`writeGrantNonces`，否则重启即重放）、`FsRealmStoreOptions.now` 注入时钟（此前"仍然有效"的测试凭证只能写成 `expiresAt: 2099-…`）。运维面：`POST /api/realm/write-grants`、日记写凭证透传（缺授权 → **403**，不是 400/500）、审计事件流 `operator-grant-issued` + `realm-write`、`GET /api/state` 报 `operatorGrants.authority`（`signed` / `shape-only` 不靠猜）。§5 两处"签发仍未做"与 §2 契约注释同步收口。三个守卫各做过缺陷植入验证（见 handoff Active work 45）。 |
 | v0.6 | 2026-10-02 | **新增 §3.1 `dataPolicy` 收缩契约（审计 §4.2 row3 的口径定案）**：四个取值的语义此前只有一句意图描述，实现只判 `none`，`read-task-scope` 与 `read-realm` 产物逐字节相同。本节先立三条判据（内容面 ≠ 写授权面；执行 Agent 取正文的正当路径目前只有随任务注入，故不做"一律剥正文"的伪收紧；可核对的差别在**来源**），再给四档的**允许来源 / 外送字段 / 越界行为**表：`none` 与 `read-task-scope` 收到不可核对的请求一律**拒绝派发**（不再是静默丢弃），`read-realm` / `write` 允许操作者自报。要求实现补 **`realmHitsOrigin`**（内核解析 vs 调用方自报——现在两条路径在进入 Dispatcher 前已汇成一个数组，来源丢失，契约无法判定）、新增审计值 `refused-data-policy` / `content-injected`、并列五条验收（含"命中非空而来源缺失即拒"的正向对照与真进程实收体断言）。**兼容后果如实写明**：内核解析 + `read-task-scope` 的存量 Agent（pr-helper、loom）不受影响，变化的是调用方自报路径。**仍在实现前**：条目长度上限是否设（数值不凭空拍），实现落在 feature-inventory §4 那一行。 |
-| v0.8 | 2026-10-03 | **新增 §6.5 MCP 暴露侧主体判定（deferred #18 裁定）**：四问定案——主体 = 会话级 actor（宿主显式声明，缺省 anonymous）；`zeus-realm:` URI 不编码租户；不与签发凭证合并（读取路径边界 = 宿主白名单，写路径已有 §7.7 DriverWriteGrant）；`tools/call` 与 `resources/read` 共用同一份 realmId 白名单（现状固化）。方向固化，实现随 E3.4 正式暴露立项。 |
-| v0.7 | 2026-10-03 | **§3.1 实现落地（审计 §4.2 row3 闭合，Active work 103）**：Dispatcher 按 policy×origin 判四档（命中非空且无 origin → fail-closed 拒派发；`none` 一律拒；`read-task-scope` 仅收内核解析；`read-realm`/`write` 允许操作者自报），注入点从"`none` 之外一律放行"改为契约判定，放行/拒绝都写审计（`refused-data-policy` / `content-injected`，detail 点名 policy、来源与条数）；HTTP 装配层补 `realmHitsOrigin` 标记（caller-asserted / kernel-resolved）并把内核解析的命中**全字段**透传（不再丢 tags/modifiedAt）；`FanOutRequest` 与 Dispatcher 间来源透传。五条验收全过（三态单测、来源缺失正控、两条审计、真进程实收 + 自报拒绝无出网请求、缺陷植入 4 红）。兼容红线满足：内核解析 + `read-task-scope` 的存量 Agent 行为不变。条目长度上限仍未设（数值不凭空拍）。 |
+| v0.8 | 2026-10-03 | **新增 §6.5 MCP 暴露侧主体判定（deferred #18 裁定）**：四问定案——主体 = 会话级 actor（宿主显式声明，缺省 anonymous）；`zeus-realm:` URI 不编码租户；不与签发凭证合并（读取路径边界 = 宿主白名单，写路径已有 §7.7 OperatorWriteGrant）；`tools/call` 与 `resources/read` 共用同一份 realmId 白名单（现状固化）。方向固化，实现随 E3.4 正式暴露立项。 |
+| v0.7 | 2026-10-03 | **§3.1 实现落地（审计 §4.2 row3 闭合，Active work 103）**：Dispatcher 按 policy×origin 判四档（命中非空且无 origin → fail-closed 拒派发；`none` 一律拒；`read-task-scope` 仅收内核解析；`read-realm`/`write` 允许操作者自报），注入点从"`none` 之外一律放行"改为契约判定，放行/拒绝都写审计（`refused-data-policy` / `content-injected`，detail 点名 policy、来源与条数）；HTTP 装配层补 `realmHitsOrigin` 标记（caller-asserted / runtime-resolved）并把内核解析的命中**全字段**透传（不再丢 tags/modifiedAt）；`FanOutRequest` 与 Dispatcher 间来源透传。五条验收全过（三态单测、来源缺失正控、两条审计、真进程实收 + 自报拒绝无出网请求、缺陷植入 4 红）。兼容红线满足：内核解析 + `read-task-scope` 的存量 Agent 行为不变。条目长度上限仍未设（数值不凭空拍）。 |

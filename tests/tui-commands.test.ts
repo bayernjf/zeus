@@ -5,8 +5,8 @@ describe('TUI contract commands (self-host step 5 face)', () => {
   it('parses contract revoke as a bare index and issue with ceilings', () => {
     expect(parseCommand('c3')).toEqual({ kind: 'contractRevoke', index: 3 });
     expect(parseCommand('c 3')).toEqual({ kind: 'contractRevoke', index: 3 });
-    expect(parseCommand('c research 4 2 driver')).toEqual({
-      kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'driver',
+    expect(parseCommand('c research 4 2 operator')).toEqual({
+      kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'operator',
     });
     expect(parseCommand('c research 4 2')).toEqual({
       kind: 'contractIssue', skill: 'research', maxChildTickets: 4, maxConcurrent: 2, grantedBy: 'operator',
@@ -134,7 +134,7 @@ describe('TUI resume command (E6.3 parameters-and-redispatch)', () => {
     expect(COMMAND_HELP).toContain('r<n> {json}');
   });
 
-  it('refuses the forms that would send a payload the kernel rejects', () => {
+  it('refuses the forms that would send a payload the runtime rejects', () => {
     // `r` alone stays refresh - the deck redraws, it never resumes nothing.
     expect(parseCommand('r')).toEqual({ kind: 'refresh' });
     expect(parseCommand('r1')).toEqual({ error: 'resume-needs-params' });
@@ -165,7 +165,7 @@ describe('TUI connector commands (E7 MCP face)', () => {
     expect(COMMAND_HELP).toContain('mt<n>');
   });
 
-  it('rejects the forms that would reach the kernel malformed', () => {
+  it('rejects the forms that would reach the runtime malformed', () => {
     expect(parseCommand('m0')).toEqual({ error: 'bad-index' });
     expect(parseCommand('mx0')).toEqual({ error: 'bad-index' });
     expect(parseCommand('mt0 post')).toEqual({ error: 'bad-index' });

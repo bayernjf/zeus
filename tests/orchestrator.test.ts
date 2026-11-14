@@ -7,17 +7,17 @@ import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 function audit() {
-  return { ts: 't', vassal: 'v', decision: 'dispatched' as const };
+  return { ts: 't', executor: 'v', decision: 'dispatched' as const };
 }
 
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
-function okResult(vassal: string, state: TaskState = 'completed', stance?: string): DispatchResult {
+function okResult(executor: string, state: TaskState = 'completed', stance?: string): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state },
     artifacts: stance
@@ -38,7 +38,7 @@ function makePort(routes: Record<string, Route>, cancelFor?: Record<string, () =
   // That is the property "fan-out is parallel" actually claims, and unlike a
   // millisecond bound it cannot be broken by a slow scheduler: the previous check
   // ("both dispatches start within 8ms") failed at 12ms while the code was right.
-  const calls: Array<{ vassal: string; runId: string }> = [];
+  const calls: Array<{ executor: string; runId: string }> = [];
   const cancelCalls: Array<[string, string]> = [];
   let inFlight = 0;
   const port: DispatchPort & { calls: typeof calls; cancelCalls: typeof cancelCalls; maxInFlight: number } = {
@@ -46,11 +46,11 @@ function makePort(routes: Record<string, Route>, cancelFor?: Record<string, () =
     cancelCalls,
     maxInFlight: 0,
     async dispatch(req) {
-      calls.push({ vassal: req.vassal!, runId: req.runId! });
+      calls.push({ executor: req.executor!, runId: req.runId! });
       inFlight += 1;
       port.maxInFlight = Math.max(port.maxInFlight, inFlight);
       try {
-        const route = routes[req.vassal!]!; // test routes cover every dispatched vassal
+        const route = routes[req.executor!]!; // test routes cover every dispatched executor
         const result = await (typeof route === 'function' ? route(req) : route);
         // §7: a real fetch body reader rejects when its signal fires; the stub
         // mirrors that so an aborted stream settles as a rejected dispatch.
@@ -63,9 +63,9 @@ function makePort(routes: Record<string, Route>, cancelFor?: Record<string, () =
         inFlight -= 1;
       }
     },
-    async cancel(vassal, taskId) {
-      cancelCalls.push([vassal, taskId]);
-      cancelFor?.[vassal]?.();
+    async cancel(executor, taskId) {
+      cancelCalls.push([executor, taskId]);
+      cancelFor?.[executor]?.();
     },
   };
   return port;
@@ -90,7 +90,7 @@ describe('Orchestrator.fanOut', () => {
     const result = await orch.fanOut({ skill: 'generate-content', params: {}, realm: 'personal' });
 
     expect(result.status).toBe('completed');
-    expect(result.branches.map(b => b.vassal)).toEqual(['loom', 'atlas']);
+    expect(result.branches.map(b => b.executor)).toEqual(['loom', 'atlas']);
     // Parallelism is proven structurally: the second dispatch enters the port
     // while the first is still inside it. A serial run cannot produce that shape
     // at any machine speed, and a saturated runner cannot fake it away — the
@@ -110,7 +110,7 @@ describe('Orchestrator.fanOut', () => {
     await second.fanOut({ skill: 'generate-content', params: {}, realm: 'personal' });
     expect(serialPort.maxInFlight).toBe(1);
     expect(port.calls.map(c => c.runId)).toEqual(['run-1:loom', 'run-1:atlas']);
-    expect(result.stream.map(e => e.source.vassal)).toEqual(['loom', 'atlas']);
+    expect(result.stream.map(e => e.source.executor)).toEqual(['loom', 'atlas']);
     expect(result.stream[0]!.source.taskId).toBe('loom-task');
   });
 
@@ -125,22 +125,22 @@ describe('Orchestrator.fanOut', () => {
     // The fan-out reply and getIntent() share nested arrays if the reply is the
     // stored reference; a caller that mutates what it was handed would then
     // corrupt later replays. Both reads must stay isolated.
-    result.branches.push({ vassal: 'tampered', runId: 'x', ok: false, events: [] });
-    result.positions.push({ vassal: 'tampered', stance: 'go' });
+    result.branches.push({ executor: 'tampered', runId: 'x', ok: false, events: [] });
+    result.positions.push({ executor: 'tampered', stance: 'go' });
 
     const stored = orch.getIntent('intent-1');
-    expect(stored!.branches.map(b => b.vassal)).toEqual(['loom', 'atlas']);
+    expect(stored!.branches.map(b => b.executor)).toEqual(['loom', 'atlas']);
     expect(stored!.positions).toEqual([]);
   });
 
-  it('honours an explicit vassal list and ignores other skill providers', async () => {
+  it('honours an explicit executor list and ignores other skill providers', async () => {
     const port = makePort({ loom: okResult('loom'), atlas: okResult('atlas') });
     const orch = newOrchestrator(port, ['loom', 'atlas']);
-    const result = await orch.fanOut({ skill: 'x', vassals: ['atlas'], params: {}, realm: 'personal' });
-    expect(result.branches.map(b => b.vassal)).toEqual(['atlas']);
+    const result = await orch.fanOut({ skill: 'x', executors: ['atlas'], params: {}, realm: 'personal' });
+    expect(result.branches.map(b => b.executor)).toEqual(['atlas']);
   });
 
-  it('fails when no vassal provides the skill', async () => {
+  it('fails when no executor provides the skill', async () => {
     const port = makePort({});
     const orch = new Orchestrator(lookupFor([]), port, { newIntentId: () => 'i' });
     const result = await orch.fanOut({ skill: 'ghost', params: {}, realm: 'personal' });
@@ -154,8 +154,8 @@ describe('Orchestrator.fanOut', () => {
     const orch = newOrchestrator(port, ['loom', 'atlas']);
     const result = await orch.fanOut({ skill: 'x', params: {}, realm: 'personal' });
     expect(result.status).toBe('partial');
-    expect(result.branches.find(b => b.vassal === 'atlas')?.reason).toMatch(/connection refused/);
-    expect(result.branches.find(b => b.vassal === 'loom')?.ok).toBe(true);
+    expect(result.branches.find(b => b.executor === 'atlas')?.reason).toMatch(/connection refused/);
+    expect(result.branches.find(b => b.executor === 'loom')?.ok).toBe(true);
   });
 
   it('fails when every branch fails', async () => {
@@ -178,7 +178,7 @@ describe('Orchestrator.fanOut', () => {
       const pending = orch.fanOut({ skill: 'x', params: {}, realm: 'personal', branchTimeoutMs: 8 });
       await vi.advanceTimersByTimeAsync(8);
       const result = await pending;
-      const atlas = result.branches.find(b => b.vassal === 'atlas')!;
+      const atlas = result.branches.find(b => b.executor === 'atlas')!;
       expect(atlas.timedOut).toBe(true);
       expect(atlas.ok).toBe(false);
       expect(result.status).toBe('partial');
@@ -220,12 +220,12 @@ describe('Orchestrator.fanOut', () => {
     expect(result.positions).toHaveLength(2);
   });
 
-  it('escalates an unresolved split as needs-driver and fires onConflict, never picking a side', async () => {
+  it('escalates an unresolved split as needs-operator and fires onConflict, never picking a side', async () => {
     const port = makePort({ loom: okResult('loom', 'completed', 'approve'), atlas: okResult('atlas', 'completed', 'reject') });
     const escalated: FanOutResult[] = [];
     const orch = newOrchestrator(port, ['loom', 'atlas'], { onConflict: (_c, r) => escalated.push(r) });
     const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
-    expect(result.status).toBe('needs-driver');
+    expect(result.status).toBe('needs-operator');
     expect(result.decision.conclusion).toBeNull();
     expect(result.conflicts[0]!.stances.map(s => s.stance).sort()).toEqual(['approve', 'reject']);
     expect(escalated).toHaveLength(1);
@@ -321,7 +321,7 @@ describe('Orchestrator.resumeBranch', () => {
 
     // Each resume recomputes the WHOLE intent. When two resumes race from the
     // same pre-resume snapshot, last-write-wins lets each reply drop the other
-    // vassal's fresh branch (and one re-dispatch vanishes from stored state).
+    // executor's fresh branch (and one re-dispatch vanishes from stored state).
     const resumeRunIds = (result: FanOutResult) =>
       result.branches.filter(branch => branch.runId.includes(':resume')).map(branch => branch.runId).sort();
     expect(resumeRunIds(fromLoom)).toEqual(['run-1:atlas:resume1', 'run-1:loom:resume1']);
@@ -343,10 +343,10 @@ describe('Orchestrator.cancelIntent', () => {
     });
     const orch = newOrchestrator(port, ['loom', 'atlas']);
     const result = await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
-    expect(result.branches.find(b => b.vassal === 'loom')?.state).toBe('input-required');
+    expect(result.branches.find(b => b.executor === 'loom')?.state).toBe('input-required');
 
     const cancellation = await orch.cancelIntent('X');
-    expect(cancellation.results).toEqual([{ vassal: 'loom', taskId: 'loom-task', canceled: true }]);
+    expect(cancellation.results).toEqual([{ executor: 'loom', taskId: 'loom-task', canceled: true }]);
     expect(port.cancelCalls).toEqual([['loom', 'loom-task']]);
   });
 
@@ -362,12 +362,12 @@ describe('Orchestrator.cancelIntent', () => {
   it('throws on an unknown intent and records per-branch cancel failures', async () => {
     const failing: DispatchPort = {
       dispatch: async () => okResult('loom', 'input-required'),
-      cancel: async () => { throw new Error('vassal unreachable'); },
+      cancel: async () => { throw new Error('executor unreachable'); },
     };
     const orch = new Orchestrator(lookupFor(['loom']), failing, { newIntentId: () => 'intent-1', newRunId: () => 'run-1' });
     await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
     const cancellation = await orch.cancelIntent('X');
-    expect(cancellation.results[0]).toMatchObject({ vassal: 'loom', canceled: false, reason: 'vassal unreachable' });
+    expect(cancellation.results[0]).toMatchObject({ executor: 'loom', canceled: false, reason: 'executor unreachable' });
     await expect(orch.cancelIntent('nope')).rejects.toBeInstanceOf(UnknownIntentError);
   });
 
@@ -381,15 +381,15 @@ describe('Orchestrator.cancelIntent', () => {
     // The branch is still streaming. Before §7 there was nothing to cancel and
     // the cancel returned an empty result; now the live stream is aborted.
     const cancellation = await orch.cancelIntent('X');
-    expect(cancellation.results).toEqual([{ vassal: 'loom', canceled: true }]);
+    expect(cancellation.results).toEqual([{ executor: 'loom', canceled: true }]);
     expect(port.cancelCalls).toHaveLength(0); // no task id yet: transport-level abort only
 
     release!();
     const result = await running;
-    const branch = result.branches.find(b => b.vassal === 'loom')!;
+    const branch = result.branches.find(b => b.executor === 'loom')!;
     expect(branch.state).toBe('canceled');
-    expect(branch.reason).toBe('canceled by the driver');
-    // C-28: the driver asked for this, so it must not read as a vassal failure.
+    expect(branch.reason).toBe('canceled by the operator');
+    // C-28: the operator asked for this, so it must not read as a executor failure.
     expect(result.status).toBe('canceled');
   });
 
@@ -408,33 +408,33 @@ describe('Orchestrator.cancelIntent', () => {
     // loom is cancelled through tasks/cancel (it has a task id); atlas has none
     // yet, so it is aborted at the transport edge (§7) — both report cancelled.
     expect(cancellation.results).toEqual([
-      { vassal: 'loom', taskId: 'loom-task', canceled: true },
-      { vassal: 'atlas', canceled: true },
+      { executor: 'loom', taskId: 'loom-task', canceled: true },
+      { executor: 'atlas', canceled: true },
     ]);
     expect(port.cancelCalls).toEqual([['loom', 'loom-task']]);
 
     release!();
     const result = await running;
     // Both branches are cancelled and neither stance survives into the aggregate.
-    expect(result.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
-    expect(result.branches.find(branch => branch.vassal === 'atlas')?.state).toBe('canceled');
+    expect(result.branches.find(branch => branch.executor === 'loom')?.state).toBe('canceled');
+    expect(result.branches.find(branch => branch.executor === 'atlas')?.state).toBe('canceled');
     expect(result.positions).toEqual([]);
     expect(result.status).toBe('canceled');
   });
 
   it('keeps failed when a cancellation is mixed with a genuine branch failure', async () => {
-    // C-28, the boundary of the new status: one branch the driver cancelled and
+    // C-28, the boundary of the new status: one branch the operator cancelled and
     // one that actually failed is a failure - 'canceled' would hide the fault.
     const port = makePort({
       loom: okResult('loom', 'input-required', 'approve'),
-      atlas: failResult('vassal unreachable'),
+      atlas: failResult('executor unreachable'),
     });
     const orch = newOrchestrator(port, ['loom', 'atlas']);
     await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
     await orch.cancelIntent('X');
 
     const after = orch.getIntent('X')!;
-    expect(after.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
+    expect(after.branches.find(branch => branch.executor === 'loom')?.state).toBe('canceled');
     expect(after.status).toBe('failed');
   });
 
@@ -445,13 +445,13 @@ describe('Orchestrator.cancelIntent', () => {
     });
     const orch = newOrchestrator(port, ['loom', 'atlas']);
     await orch.fanOut({ intentId: 'X', skill: 'x', params: {}, realm: 'enterprise' });
-    expect(orch.getIntent('X')!.positions.map(position => position.vassal).sort()).toEqual(['atlas', 'loom']);
+    expect(orch.getIntent('X')!.positions.map(position => position.executor).sort()).toEqual(['atlas', 'loom']);
 
     await orch.cancelIntent('X');
 
     const after = orch.getIntent('X')!;
-    expect(after.branches.find(branch => branch.vassal === 'loom')?.state).toBe('canceled');
-    expect(after.positions.map(position => position.vassal)).toEqual(['atlas']);
+    expect(after.branches.find(branch => branch.executor === 'loom')?.state).toBe('canceled');
+    expect(after.positions.map(position => position.executor)).toEqual(['atlas']);
     expect(after.status).toBe('partial');
   });
 });

@@ -1,27 +1,27 @@
 import { randomUUID } from 'node:crypto';
 import { canonicalJson, type RosterSigner, type RosterVerifier } from '../registry/signing.js';
-import type { DriverWriteGrant, GrantVerification, SignedDriverWriteGrant } from './types.js';
+import type { OperatorWriteGrant, GrantVerification, SignedOperatorWriteGrant } from './types.js';
 
 /**
- * E3.5 driver write grants (design-realm §7.5, deferred #14).
+ * E3.5 operator write grants (design-realm §7.5, deferred #14).
  *
  * A grant is a signed statement: "key K authorized a write into realm R until
- * time T, once". Before this module the kernel could only check a grant's
- * *shape*, which meant `verifyDriverWriteGrant` trusted that the JSON it was
- * handed came from the driver - anyone able to reach `write()` could author an
+ * time T, once". Before this module the runtime could only check a grant's
+ * *shape*, which meant `verifyOperatorWriteGrant` trusted that the JSON it was
+ * handed came from the operator - anyone able to reach `write()` could author an
  * authorization. Issuance, signature verification and nonce consumption are
  * what turn it into a credential.
  */
 
 /** Default lifetime of an issued grant: enough to do one write, short enough
  *  that a leaked grant expires before anyone notices. */
-export const DRIVER_GRANT_DEFAULT_TTL_MS = 5 * 60_000;
+export const OPERATOR_GRANT_DEFAULT_TTL_MS = 5 * 60_000;
 /** A grant that asks to live longer than this is refused rather than clamped:
  *  a long-lived write credential is a different object, and pretending
- *  otherwise would silently downgrade what the driver signed. */
-export const DRIVER_GRANT_MAX_TTL_MS = 24 * 3600_000;
+ *  otherwise would silently downgrade what the operator signed. */
+export const OPERATOR_GRANT_MAX_TTL_MS = 24 * 3600_000;
 
-export type IssueDriverGrantInput = {
+export type IssueOperatorGrantInput = {
   realmId: string;
   /** Who authorized it, as a human-readable identity (not a key id: `keyId` carries that). */
   grantedBy: string;
@@ -31,22 +31,22 @@ export type IssueDriverGrantInput = {
   nonce?: string;
 };
 
-export type IssueDriverGrantOptions = {
+export type IssueOperatorGrantOptions = {
   signer: RosterSigner;
   now?: () => Date;
   maxTtlMs?: number;
 };
 
-export class DriverGrantError extends Error {}
+export class OperatorGrantError extends Error {}
 
 /**
  * One record per issued write grant. Issuance is the moment a human said "yes,
  * write this", so it belongs on the audit spine even when the write that follows
  * never happens.
  */
-export type DriverGrantAuditEntry = {
+export type OperatorGrantAuditEntry = {
   at: string;
-  decision: 'driver-grant-issued';
+  decision: 'operator-grant-issued';
   realmId: string;
   grantedBy: string;
   keyId: string;
@@ -55,7 +55,7 @@ export type DriverGrantAuditEntry = {
 };
 
 /** The fields the signature covers: everything except the signature itself. */
-function grantClaim(grant: DriverWriteGrant): Record<string, unknown> {
+function grantClaim(grant: OperatorWriteGrant): Record<string, unknown> {
   const { sig: _sig, ...claim } = grant;
   return claim;
 }
@@ -67,22 +67,22 @@ function grantClaim(grant: DriverWriteGrant): Record<string, unknown> {
  * this refuses malformed inputs and an unbounded lifetime, because those are the
  * two ways a "grant" stops meaning "one write".
  */
-export async function issueDriverWriteGrant(
-  input: IssueDriverGrantInput,
-  options: IssueDriverGrantOptions
-): Promise<SignedDriverWriteGrant> {
+export async function issueOperatorWriteGrant(
+  input: IssueOperatorGrantInput,
+  options: IssueOperatorGrantOptions
+): Promise<SignedOperatorWriteGrant> {
   const now = (options.now ?? (() => new Date()))();
-  if (!input.realmId?.trim()) throw new DriverGrantError('grant needs a realmId');
-  if (!input.grantedBy?.trim()) throw new DriverGrantError('grant needs a grantedBy identity');
-  const ttlMs = input.ttlMs ?? DRIVER_GRANT_DEFAULT_TTL_MS;
-  const maxTtlMs = options.maxTtlMs ?? DRIVER_GRANT_MAX_TTL_MS;
-  if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new DriverGrantError(`grant ttl must be a positive number of ms: ${String(input.ttlMs)}`);
-  if (ttlMs > maxTtlMs) throw new DriverGrantError(`grant ttl ${ttlMs}ms exceeds the ${maxTtlMs}ms ceiling`);
+  if (!input.realmId?.trim()) throw new OperatorGrantError('grant needs a realmId');
+  if (!input.grantedBy?.trim()) throw new OperatorGrantError('grant needs a grantedBy identity');
+  const ttlMs = input.ttlMs ?? OPERATOR_GRANT_DEFAULT_TTL_MS;
+  const maxTtlMs = options.maxTtlMs ?? OPERATOR_GRANT_MAX_TTL_MS;
+  if (!Number.isFinite(ttlMs) || ttlMs <= 0) throw new OperatorGrantError(`grant ttl must be a positive number of ms: ${String(input.ttlMs)}`);
+  if (ttlMs > maxTtlMs) throw new OperatorGrantError(`grant ttl ${ttlMs}ms exceeds the ${maxTtlMs}ms ceiling`);
   const nonce = input.nonce?.trim() || randomUUID();
-  if (!nonce) throw new DriverGrantError('grant needs a nonce');
+  if (!nonce) throw new OperatorGrantError('grant needs a nonce');
 
-  const grant: SignedDriverWriteGrant = {
-    kind: 'driver-write',
+  const grant: SignedOperatorWriteGrant = {
+    kind: 'operator-write',
     realmId: input.realmId.trim(),
     grantedBy: input.grantedBy.trim(),
     ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
@@ -102,30 +102,30 @@ export async function issueDriverWriteGrant(
  * so the window has to be at least as long as the longest ttl in force.
  *
  * Bounded on purpose: an unbounded ledger is a memory leak in a long-running
- * kernel, and `MAX_SPENT` entries at grant-issue rates far past anything this
+ * runtime, and `MAX_SPENT` entries at grant-issue rates far past anything this
  * project sees still covers hours. Evicting the oldest is logged through
  * `onEvict` so a deployment that wants the audit trail can keep it.
  */
 export const MAX_SPENT_GRANT_NONCES = 10_000;
 
-export type DriverGrantLedgerOptions = {
+export type OperatorGrantLedgerOptions = {
   limit?: number;
   /** Fired when a nonce is newly consumed. The ledger is only worth having if it
-   *  survives a restart, so the kernel persists state from here rather than
+   *  survives a restart, so the runtime persists state from here rather than
    *  waiting for shutdown - a nonce lost to a crash is a grant that replays. */
   onChange?: () => void;
   /** Fired when the bounded window evicts an old nonce. */
   onEvict?: (nonce: string) => void;
 };
 
-export class DriverGrantLedger {
+export class OperatorGrantLedger {
   private spent = new Set<string>();
   private order: string[] = [];
   private readonly limit: number;
   private readonly onChange: (() => void) | undefined;
   private readonly onEvict: (nonce: string) => void;
 
-  constructor(options: DriverGrantLedgerOptions = {}) {
+  constructor(options: OperatorGrantLedgerOptions = {}) {
     this.limit = options.limit ?? MAX_SPENT_GRANT_NONCES;
     this.onChange = options.onChange;
     this.onEvict = options.onEvict ?? (() => {});
@@ -182,29 +182,29 @@ export type GrantVerificationContext = {
   now?: () => Date;
   /** When present, the grant must carry a signature this verifier accepts. */
   verifier?: RosterVerifier;
-  /** Key ids treated as driver keys. Empty/absent accepts any key the verifier knows. */
+  /** Key ids treated as operator keys. Empty/absent accepts any key the verifier knows. */
   acceptedKeyIds?: string[];
   /** When present, nonces are compared and consumed (single-use enforcement). */
-  ledger?: DriverGrantLedger;
+  ledger?: OperatorGrantLedger;
 };
 
 /**
- * Verify a driver write grant against the realm about to be written.
+ * Verify a operator write grant against the realm about to be written.
  *
  * Order matters: shape and binding first (cheap, and they say what is wrong),
  * then the signature (the expensive check that proves provenance), then expiry,
  * then consumption. A grant that fails any check never reaches the ledger, so a
  * rejected attempt cannot burn someone else's nonce.
  */
-export async function verifyDriverWriteGrant(
-  grant: DriverWriteGrant | undefined,
+export async function verifyOperatorWriteGrant(
+  grant: OperatorWriteGrant | undefined,
   realmId: string,
   context: GrantVerificationContext = {}
 ): Promise<GrantVerification> {
   if (!grant) return { ok: false, reason: 'missing' };
 
   const malformed =
-    grant.kind !== 'driver-write' ||
+    grant.kind !== 'operator-write' ||
     typeof grant.realmId !== 'string' ||
     grant.realmId.length === 0 ||
     typeof grant.grantedBy !== 'string' ||

@@ -37,7 +37,7 @@ interface WorkOrder {              // supervisor → subagent
   subGoal: string;
   inputs: unknown;                // 最小必要上下文
   expectedOutput: { schema: string };
-  constraints: { dataRealms: string[]; dataPolicy: string; budget?: Tokens; deadline?: string };
+  constraints: { realms: string[]; dataPolicy: string; budget?: Tokens; deadline?: string };
   credentials?: { kind: string; ref: string };
 }
 
@@ -114,7 +114,7 @@ subagent 失败时按固定次序判定：**重试（幂等前提下）→ 换�
 
 - **守卫默认开启**（fail-closed）：与 #35 DNS 重绑定先例同族——安全守卫不等触发条件先做。默认值（256/8）是**结构守卫默认**不是性能标定，真实负载下的校准挂 #9 同一触发条件（≥3 真实执行 Agent 压测），不凭空拍数。
 - **状态随快照恢复**：预算/熔断计数纳入 `OrchestratorSnapshot`（可选字段，向后兼容），重启不因计数清零而绕过守卫。
-- **审计**：拒绝各记一条 `intent-branch-budget-exceeded` / `intent-circuit-opened`（含 intentId/used/limit 与 detail），经 onRefusal 桥进审计脊。
+- **审计**：拒绝各记一条 `intent-branch-budget-exceeded` / `intent-circuit-opened`（含 intentId/used/limit 与 detail），经 onRefusal 桥进审计日志。
 - **边界**：意图级、进程内守卫；跨实例协调不做（同 #9 口径）。E1.5 的 `maxConcurrentBranches`/`branchQueueLimit` 不变。
 
 **纯函数**：`src/core/orchestrator/termination.ts`（`budgetExceeded` / `circuitOpen` / `advanceBudget`（spawn 时预记在途分支）/ `settleBranch`（分支结算折叠连续失败计数）/ `mayDispatch`（判别联合 `DispatchGate`，fan-out 派发边界的预算与熔断闸））。

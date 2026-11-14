@@ -17,7 +17,7 @@ import { JsonlDecisionWebhookStore } from '../src/core/decision-service/webhook-
 import { DecisionWebhookDispatcher } from '../src/core/decision-service/webhook.js';
 import type { DecisionEvent } from '../src/core/decision-service/events.js';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   DecisionAuditChain,
@@ -26,7 +26,7 @@ import {
 } from '../src/core/index.js';
 import { MemoryPolicyStore } from '../src/core/grading/policy-loader.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const SECRET = 'jsonl-webhook-secret-16ch';
 
@@ -171,7 +171,7 @@ describe('JsonlDecisionWebhookStore', () => {
 describe('DELETE /api/v1/decision-webhooks/:id over a JSONL-backed registry', () => {
   async function server(file: string): Promise<FastifyInstance> {
     return createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       decisionService: new DecisionService({

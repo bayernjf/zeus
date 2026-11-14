@@ -1,14 +1,14 @@
 export type RealmType = 'personal' | 'enterprise';
 
-/** fealty contract versions Zeus accepts at registration.
- *  A mismatched version is refused, never silently accepted (design-vassal-protocol §4.5). */
-export const SUPPORTED_FEALTY_VERSIONS = ['1'] as const;
+/** handshake contract versions Zeus accepts at registration.
+ *  A mismatched version is refused, never silently accepted (design-executor-protocol §4.5). */
+export const SUPPORTED_HANDSHAKE_VERSIONS = ['1'] as const;
 
-export type Fealty = {
+export type Handshake = {
   version: string;
   swornTo: string;
   domain: string;
-  dataRealms: RealmType[];
+  realms: RealmType[];
   dataPolicy: 'none' | 'read-task-scope' | 'read-realm' | 'write';
   reportBack: boolean;
   escalationPolicy: 'none' | 'on-failure' | 'auto';
@@ -37,7 +37,7 @@ export type AgentCard = {
   skills: AgentCardSkill[];
   authentication?: { schemes?: string[] };
   preferredTransport?: string;
-  'x-zeus-fealty'?: Fealty;
+  'x-zeus-handshake'?: Handshake;
 };
 
 export type TaskState =
@@ -71,7 +71,7 @@ export type TextPart = { kind: 'text'; text: string };
 export type DataPart = { kind: 'data'; data: Record<string, unknown> };
 /**
  * Standard A2A FilePart (reference form). Zeus v1 only passes file URIs through
- * to the driver — it never fetches them itself (SSRF / local-file boundary) and
+ * to the operator — it never fetches them itself (SSRF / local-file boundary) and
  * never inlines bytes. `bytes` (base64) is kept on the type for wire
  * compatibility but is not emitted by Zeus v1.
  */
@@ -99,7 +99,7 @@ export type Task = {
      * Standard A2A task-status message (code + human-readable text). Zeus
      * never fabricates one — it is read verbatim when a branch settles
      * failed, so the failure reason that lands on the audit spine and the
-     * intent result is the vassal's own, not a reconstruction.
+     * intent result is the executor's own, not a reconstruction.
      */
     message?: { code?: string; message?: string };
   };

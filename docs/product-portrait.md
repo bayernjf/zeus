@@ -64,7 +64,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 | 概念 | 含义 |
 |---|---|
 | **Realm 数据域** | 用户指定的一个目录及其接口，分 Personal Realm / Enterprise Realm |
-| **Vault 备份域** | 数据域内被纳管、有备份策略的数据集合 |
+| **Backup 备份域** | 数据域内被纳管、有备份策略的数据集合 |
 | **Map 备份清单** | 加密的数据清单 + 恢复指引；只存条目引用与指纹，不存数据正文 |
 | **Diary 叙事日志** | 记忆事件的按天可读记录，用于回溯与对外呈现 |
 | **Agent 执行单元** | 可注册、可派发的执行方，有角色、能力边界与任职资格状态 |
@@ -76,7 +76,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 | **Inheritance 移交与继承** | 数据域/备份清单按预设授权移交给指定对象（后期功能，含法律与密钥托管设计） |
 | **Operator 操作者** | 人类员工的角色：监督、介入、给出最终裁决，而非手工执行 |
 
-> 代码、环境变量、HTTP 路径与协议字段里保留了一批历史标识符（`vassal` / `fealty` / `roster` / `vault` / `realm` / `kernel` / `commission` / `mentor` / `diary` / `noul` 等）。它们是接口的一部分，逐个含义见 [terminology.md](terminology.md)。
+> 代码、环境变量、HTTP 路径与协议字段里保留了一批历史标识符（`executor` / `handshake` / `roster` / `backup` / `realm` / `runtime` / `commission` / `mentor` / `diary` / `noul` 等）。它们是接口的一部分，逐个含义见 [terminology.md](terminology.md)。
 
 ## 4. 用户画像
 
@@ -118,7 +118,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 ├──────────────────────────────────────────────────┤
 │  连接层  MCP 连接器 · 外部 Agent(A2A) · 矩阵产品    │  外部系统集成
 ├──────────────────────────────────────────────────┤
-│  数据层  Realm 目录 · Vault 备份域 · Map 清单 · 备份│  数据主权
+│  数据层  Realm 目录 · Backup 备份域 · Map 清单 · 备份│  数据主权
 └──────────────────────────────────────────────────┘
 ```
 
@@ -134,7 +134,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 
 ## 7. 矩阵产品生态：协议级接入，不合并代码库
 
-现有矩阵——**agent-world、job-agent、agent-dev、pr-helper、atlas、loom**，以及展示站 **bayjf**——各自保持独立仓库、独立部署与独立定位，通过统一的**执行 Agent 协议（Vassal Protocol）**向 Zeus 负责：
+现有矩阵——**agent-world、job-agent、agent-dev、pr-helper、atlas、loom**，以及展示站 **bayjf**——各自保持独立仓库、独立部署与独立定位，通过统一的**执行 Agent 协议（Executor Protocol）**向 Zeus 负责：
 
 1. **注册**：产品暴露 Agent Card，登记能力域与端点。
 2. **受理**：Zeus 通过 A2A / MCP 向其派发任务，产品成为无头（headless）能力。
@@ -203,8 +203,8 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 | v0.6 | 2026-09-25 | 对外表述去隐喻（用户口径：只用专业术语） | 全文改用工程术语：执行 Agent、备份清单、叙事日志、移交与继承、人工处理队列、操作者、人工裁决、目录快照、对外签名目录、运行时核心、数据基础层、能力认证、组织结构、三条接入通道（原隐喻词→专业词映射明细见 docs/terminology.md）。**定位、约束与波次计划本身未变**；§2.2/§8 把"面向用户可用易懂说法"重述为一条有约束的表述原则（必须 1:1 对应可执行原语）。历史日志行保留原文 |
 | v0.7 | 2026-09-29 | W1 波次出口达成 | §7.1 W1（pr-helper）出口标准标注为已达成：2026-09-29 真机扇出 15/15 exit 0、内容回传 / 审计 / 吊销均演示（A1 销项；plan 模式，不含不可逆写，证据见 review v0.20 与 handoff Active work 75）。**定位、波次计划与跨波规则未变**：W1 关闭后 W2（loom/atlas）前置条件成立，但仓库外联调仍须负责人点工 |
 | v0.8 | 2026-10-01 | 全产品矩阵盘点后扩列 | 对 `000mycodes/` 下全部产品按三条接入通道分类：§7.1 新增 W4（know-collect，矩阵外执行 Agent）与一条非执行 Agent 配套行（work-learn，首个 MCP + Skill 参考接入样板，与 W2 并行、不占波次）；明确 MCP/Skill 接入与执行 Agent 接入是两条独立通道。其余产品分类（one-code/termana 为传感器或操作者入口，word-base/word-picker/splity 等语料类连接器待真实场景，one-world/vfx-todo/soft-desk/toclick 不纳入）见本次盘点记录，不进波次表 |
-| v0.9 | 2026-10-01 | W2 loom 协议级真机联调 | loom 后端 `app/core/a2a/`（Q150 第一阶段）与 Zeus 真实客户端在本机完成端到端：well-known 卡片经 Zeus 注册闸（fealty version `1`/enterprise/read-task-scope/auto 全在受控词表内）、卡片声明的 `url` 直接解析为任务端点、sendSubscribe SSE 四事件（submitted/working/artifact/completed）+ `x-zeus-report`（summary/evidence/cost）、缺参 input-required、非流式 send 对照全部成立，loom 零改动。范围诚实标注：本机用最小 uvicorn 服务挂真实 router、override 了鉴权与审计两个 DB 依赖，**不是** loom 生产栈（PG/Agent Key/审计）验收；atlas 未接、标准客户端超集守护未复验，W2 不关账 |
-| v0.10 | 2026-10-01 | W2 atlas 同波协议级真机联调 | atlas（此前零 A2A 代码）新增 `src/atlas/a2a/`（card/skills/rpc/router）从零按 §7A 已定型形状接入，Zeus 侧零协议改动：三卡片发现端点经注册闸，fealty 仅 `domain=ops-orchestration` 区别于 loom（验证按域路由、不为产品预设职责），SSE 四帧＋收尾帧、`x-zeus-report`（plan `llmTokens=0`）、缺参 input-required、send 等价全部成立；两个 skill 全 plan-only（不起 run/不改图/不调 LLM/不裁决审批），任务端点独立 `ATLAS_A2A_TASK_TOKEN` Bearer（prod fail-closed）。atlas 侧 11 项单测＋后端全量回归 2159 passed/136 skipped、Zeus 真实注册器/派发客户端真机联调过，证据见协议设计 §7B 与 atlas 仓 docs/90（ADR T32）。至此 loom（对账已有独立实现）与 atlas（复制到新仓库）两个可复制性方向均验证；**W2 仍不关账**：两仓生产栈验收与纯标准 A2A 客户端超集守护复验未做 |
+| v0.9 | 2026-10-01 | W2 loom 协议级真机联调 | loom 后端 `app/core/a2a/`（Q150 第一阶段）与 Zeus 真实客户端在本机完成端到端：well-known 卡片经 Zeus 注册闸（handshake version `1`/enterprise/read-task-scope/auto 全在受控词表内）、卡片声明的 `url` 直接解析为任务端点、sendSubscribe SSE 四事件（submitted/working/artifact/completed）+ `x-zeus-report`（summary/evidence/cost）、缺参 input-required、非流式 send 对照全部成立，loom 零改动。范围诚实标注：本机用最小 uvicorn 服务挂真实 router、override 了鉴权与审计两个 DB 依赖，**不是** loom 生产栈（PG/Agent Key/审计）验收；atlas 未接、标准客户端超集守护未复验，W2 不关账 |
+| v0.10 | 2026-10-01 | W2 atlas 同波协议级真机联调 | atlas（此前零 A2A 代码）新增 `src/atlas/a2a/`（card/skills/rpc/router）从零按 §7A 已定型形状接入，Zeus 侧零协议改动：三卡片发现端点经注册闸，handshake 仅 `domain=ops-orchestration` 区别于 loom（验证按域路由、不为产品预设职责），SSE 四帧＋收尾帧、`x-zeus-report`（plan `llmTokens=0`）、缺参 input-required、send 等价全部成立；两个 skill 全 plan-only（不起 run/不改图/不调 LLM/不裁决审批），任务端点独立 `ATLAS_A2A_TASK_TOKEN` Bearer（prod fail-closed）。atlas 侧 11 项单测＋后端全量回归 2159 passed/136 skipped、Zeus 真实注册器/派发客户端真机联调过，证据见协议设计 §7B 与 atlas 仓 docs/90（ADR T32）。至此 loom（对账已有独立实现）与 atlas（复制到新仓库）两个可复制性方向均验证；**W2 仍不关账**：两仓生产栈验收与纯标准 A2A 客户端超集守护复验未做 |
 
 ---
 

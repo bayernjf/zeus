@@ -3,7 +3,7 @@ import type { RealmType } from '../a2a/types.js';
 /** Decision backend family (audit + selection policy use it; the port semantics are identical). */
 export type DecisionBackendKind = 'decision-model' | 'llm' | 'hub';
 
-/** Narrow, model-agnostic decision port. Kernel and wiring depend only on this. */
+/** Narrow, model-agnostic decision port. Runtime and wiring depend only on this. */
 export type DecisionBackend = {
   readonly kind: DecisionBackendKind;
   /** Audit identifier, e.g. 'jev-latest' / 'gpt-5.6-luna' / 'local:apus'. */

@@ -45,7 +45,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const KEEP = process.argv.includes('--keep');
 const startedAt = Date.now();
-const DRIVER_TOKEN = `verify-intent-${randomBytes(8).toString('hex')}`;
+const OPERATOR_TOKEN = `verify-intent-${randomBytes(8).toString('hex')}`;
 
 /** @type {{ name: string, ok: boolean, detail: string }[]} */
 const steps = [];
@@ -87,7 +87,7 @@ const work = mkdtempSync(join(tmpdir(), 'zeus-verify-intent-'));
 const realmRoot = join(work, 'realm');
 mkdirSync(realmRoot, { recursive: true });
 writeFileSync(join(realmRoot, 'note.md'), '# verify\n\ncontext the recognition face runs against\n');
-const stateFile = join(work, 'kernel-state.json');
+const stateFile = join(work, 'runtime-state.json');
 const auditFile = join(work, 'audit.jsonl');
 const keyFile = join(work, 'verify-key.pem');
 execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), keyFile], { stdio: 'pipe' });
@@ -117,11 +117,11 @@ const agentServer = createServer((req, res) => {
           { id: 'code-review', name: 'Code Review', description: 'review a pull request for defects', tags: [] },
           { id: 'research', name: 'Deep Research', description: 'multi-source research across web and documents', tags: [] },
         ],
-        'x-zeus-fealty': {
+        'x-zeus-handshake': {
           version: '1',
           swornTo: 'zeus',
           domain: 'smoke',
-          dataRealms: ['personal'],
+          realms: ['personal'],
           dataPolicy: 'read-task-scope',
           reportBack: true,
           escalationPolicy: 'on-failure',
@@ -166,9 +166,9 @@ const env = {
   ZEUS_STATE_FILE: stateFile,
   ZEUS_AUDIT_FILE: auditFile,
   ZEUS_RSK_KEY_FILE: keyFile,
-  ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
+  ZEUS_INTERNAL_TOKEN: OPERATOR_TOKEN,
   ZEUS_REALM_ROOTS: realmRoot,
-  ZEUS_VASSAL_SEEDS: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`,
+  ZEUS_EXECUTOR_SEEDS: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`,
 };
 // Never inherit a real deployment's seeds or decision/model keys: the model
 // path must fail closed on this process (422 no-backend), which is exactly
@@ -178,7 +178,7 @@ delete env.ZEUS_DECISION_API_KEY;
 delete env.ZEUS_LLM_BASE_URL;
 delete env.ZEUS_LLM_API_KEY;
 
-const bearer = { authorization: `Bearer ${DRIVER_TOKEN}`, 'content-type': 'application/json' };
+const bearer = { authorization: `Bearer ${OPERATOR_TOKEN}`, 'content-type': 'application/json' };
 /** @type {import('node:child_process').ChildProcess | undefined} */
 let proc;
 let lastErr = '';

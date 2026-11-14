@@ -100,13 +100,13 @@ export function scoreEvalRun(c: EvalCase, trace: EvalTrace): EvalResult {
       checks.push(check(`escalation.expected=${ex.escalation.expected}`, 'escalation', ex, passed, detailOf(found)));
     }
     if (ex.selection !== undefined) {
-      const vassals = new Set(trace.outcome.branches.map((b) => b.vassal));
+      const executors = new Set(trace.outcome.branches.map((b) => b.executor));
       const reasons: string[] = [];
       for (const must of ex.selection.mustInclude ?? []) {
-        if (!vassals.has(must)) reasons.push(`missing ${must}`);
+        if (!executors.has(must)) reasons.push(`missing ${must}`);
       }
       for (const mustNot of ex.selection.mustExclude ?? []) {
-        if (vassals.has(mustNot)) reasons.push(`unexpected ${mustNot}`);
+        if (executors.has(mustNot)) reasons.push(`unexpected ${mustNot}`);
       }
       const diverted = trace.audit.some((a) => a.decision === 'chain-switched' || a.decision === 'branch-diverted');
       if (ex.selection.diversionAllowed === false && diverted) reasons.push('unexpected diversion');

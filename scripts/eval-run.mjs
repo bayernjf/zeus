@@ -3,7 +3,7 @@
 /**
  * design-evals (tech map S7) V2 — offline eval runner (design-evals §5 V2).
  *
- * Reads the eval case set (evals/cases/index.mjs), boots one kernel per case
+ * Reads the eval case set (evals/cases/index.mjs), boots one runtime per case
  * with scripted execution agents (fetchImpl), runs the intent, collects the
  * settled {outcome, audit, events} trace and feeds the V1 pure scorer
  * (src/evals/score.ts). Output is a machine-readable JSON report plus a
@@ -12,7 +12,7 @@
  *
  * Rules it obeys so it can run unattended: loopback-only scripted agents
  * (no real network), no state written outside the repo's evals/reports
- * directory, only the kernels it starts, and a wall-clock budget.
+ * directory, only the runtimes it starts, and a wall-clock budget.
  *
  * Usage (requires `npm run build` first — it exercises the shipped artifact):
  *   node scripts/eval-run.mjs                     # run all cases, print summary
@@ -44,7 +44,7 @@
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { bootKernel } from '../dist/state/boot.js';
+import { bootRuntime } from '../dist/state/boot.js';
 import { scoreEvalRun, summarizeEvalRun, diffAgainstBaseline } from '../dist/evals/score.js';
 import { createEvalJudgeFromEnv } from '../dist/evals/judge.js';
 import { JsonlEvalRunsStore } from '../dist/evals/runs-store.js';
@@ -178,7 +178,7 @@ function renderPrComment(report, regressions, caseFailures) {
  * Build a scripted-agent fetch implementation for one case. Each agent answers
  * its agent-card and settles tasks with the declared stance/rationale from the
  * task data part (`stance` / `rationale` keys — the shapes src/orchestrator/
- * aggregate.ts extractStance reads). `dataPolicy` rides the card's fealty so
+ * aggregate.ts extractStance reads). `dataPolicy` rides the card's handshake so
  * the data-policy family can exercise the origin gate. `fail` drives the
  * S10/S11 adversarial cases: the branch's task settles failed, so the recovery
  * chain (branch-failed -> escalate) is what the scorer observes. S12 planner
@@ -270,9 +270,9 @@ function cardFor(name, dataPolicy, isPlanner) {
       : [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'eval-domain',
-      dataRealms: ['personal'], dataPolicy,
+      realms: ['personal'], dataPolicy,
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -292,7 +292,7 @@ function makeOversightBridge(audits) {
     if (entry.action === 'escalated' && entry.interruptLevel !== undefined) {
       audits.push({
         ts: entry.ts,
-        vassal: entry.vassal,
+        executor: entry.executor,
         runId: entry.runId,
         decision: /** @type {import('../dist/dispatch/dispatcher.js').AuditEntry['decision']} */ (`interrupt-level-${entry.interruptLevel}`),
         detail: entry.escalationId,
@@ -360,25 +360,25 @@ async function runCase(c) {
         onTrace: t => decisionTraces.push(t),
       })
     : undefined;
-  const kernel = await bootKernel({
+  const runtime = await bootRuntime({
     fetchImpl: makeFetch(c.agents),
-    vassalSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
+    executorSeeds: c.agents.map(a => `http://127.0.0.1/${a.name}/api/a2a/agent-card`),
     dispatchAudit: e => audits.push(e),
     oversightAudit: makeOversightBridge(audits),
     ...(c.costLimit !== undefined ? { costLimit: c.costLimit } : {}),
     ...(scriptedBackend !== undefined ? { decisionBackend: scriptedBackend } : {}),
   });
   if (c.memory !== undefined) {
-    for (const m of c.memory) kernel.memoryStore?.append(memoryClaim(m));
-    kernel.memoryStore?.consolidateRealm('personal');
+    for (const m of c.memory) runtime.memoryStore?.append(memoryClaim(m));
+    runtime.memoryStore?.consolidateRealm('personal');
   }
 
   // S12 planning family: drive PlanFlow instead of a single fan-out. The
   // planner fan-outs land on the same dispatch-audit collection; require
   // confirmation so the case observes the verdict without executing the DAG.
   if (c.planFlow !== undefined) {
-    const planFlow = kernel.planFlow;
-    if (planFlow === undefined) throw new Error(`case ${c.id}: kernel has no planFlow component`);
+    const planFlow = runtime.planFlow;
+    if (planFlow === undefined) throw new Error(`case ${c.id}: runtime has no planFlow component`);
     const planResult = await planFlow.run({
       goal: { description: c.planFlow.goal },
       realm: 'personal',
@@ -445,9 +445,9 @@ async function runCase(c) {
   // intent-partial) through the booted hub before the fan-out dispatches.
   /** @type {import('../dist/orchestrator/progress.js').ProgressEvent[]} */
   const events = [];
-  const unsubscribe = kernel.progressHub?.subscribe(intentId, e => events.push(e));
+  const unsubscribe = runtime.progressHub?.subscribe(intentId, e => events.push(e));
   try {
-    const outcome = await kernel.orchestrator.fanOut(
+    const outcome = await runtime.orchestrator.fanOut(
       /** @type {import('../dist/orchestrator/types.js').FanOutRequest} */ ({
         intentId,
         skill: c.skill,

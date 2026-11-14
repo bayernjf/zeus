@@ -138,7 +138,7 @@ describe('backup and restore (T-M6-02)', () => {
     expect(readdirSync(layout.backups).filter((d) => d.startsWith('snapshot-'))).toHaveLength(2);
   });
 
-  it('carries the audit signing key and kernel state, not just the db', async () => {
+  it('carries the audit signing key and runtime state, not just the db', async () => {
     const layout = await freshLayout();
     await seed(layout.dbFile);
     const dataDir = join(layout.root, 'data');
@@ -153,7 +153,7 @@ describe('backup and restore (T-M6-02)', () => {
     for (const name of [
       'zeus.db',
       'rsk-ed25519.pem',
-      'kernel-state.json',
+      'runtime-state.json',
       'daily-state.json',
       'internal-token',
       'decision-audit.jsonl',
@@ -197,27 +197,27 @@ describe('backup and restore (T-M6-02)', () => {
 
     await rm(layout.dbFile, { force: true });
     // Simulate the real loss case: the db and its key are gone, while the
-    // kernel state file survived and is newer than the snapshot.
+    // runtime state file survived and is newer than the snapshot.
     for (const lost of ['rsk-ed25519.pem', 'daily-state.json', 'internal-token']) {
       await rm(join(dataDir, lost), { force: true });
     }
-    writeFileSync(join(dataDir, 'kernel-state.json'), '{"newer":true}');
+    writeFileSync(join(dataDir, 'runtime-state.json'), '{"newer":true}');
 
     const first = restoreSnapshot({ snapshotDir: backup.dir, targetDb: layout.dbFile });
     expect(first.stateFiles).toEqual(
       expect.arrayContaining(['rsk-ed25519.pem', 'daily-state.json', 'internal-token']),
     );
-    expect(first.skipped).toContain('kernel-state.json');
-    expect(readFileSync(join(dataDir, 'kernel-state.json'), 'utf8')).toBe('{"newer":true}');
+    expect(first.skipped).toContain('runtime-state.json');
+    expect(readFileSync(join(dataDir, 'runtime-state.json'), 'utf8')).toBe('{"newer":true}');
 
     const forced = restoreSnapshot({
       snapshotDir: backup.dir,
       targetDb: layout.dbFile,
       force: true,
     });
-    expect(forced.stateFiles).toContain('kernel-state.json');
-    expect(JSON.parse(readFileSync(join(dataDir, 'kernel-state.json'), 'utf8'))).toEqual({});
-    const kept = readdirSync(dataDir).filter((f) => f.startsWith('kernel-state.json.pre-restore-'));
+    expect(forced.stateFiles).toContain('runtime-state.json');
+    expect(JSON.parse(readFileSync(join(dataDir, 'runtime-state.json'), 'utf8'))).toEqual({});
+    const kept = readdirSync(dataDir).filter((f) => f.startsWith('runtime-state.json.pre-restore-'));
     expect(kept).toHaveLength(1);
     expect(checkMode0600(join(dataDir, kept[0] ?? '')).ok).toBe(true);
   });
@@ -226,7 +226,7 @@ describe('backup and restore (T-M6-02)', () => {
 function writeStateFiles(dataDir: string, auditName = 'audit.jsonl'): void {
   mkdirSync(dataDir, { recursive: true });
   writeFileSync(join(dataDir, 'rsk-ed25519.pem'), 'pem');
-  writeFileSync(join(dataDir, 'kernel-state.json'), '{}');
+  writeFileSync(join(dataDir, 'runtime-state.json'), '{}');
   writeFileSync(join(dataDir, 'daily-state.json'), '{}');
   writeFileSync(join(dataDir, 'internal-token'), 'token');
   writeFileSync(join(dataDir, auditName), '{"seq":1}\n');

@@ -67,7 +67,7 @@ describe('structured logger', () => {
   it('redacts bearer-shaped values inside nested structures', () => {
     const { logger, lines } = capture();
     logger.warn('seed-failed', 'card fetch failed', {
-      detail: 'GET https://vassal.example/api/a2a/agent-card with Authorization: Bearer xyz123',
+      detail: 'GET https://executor.example/api/a2a/agent-card with Authorization: Bearer xyz123',
       nested: { headers: { authorization: 'Bearer abc' } },
     });
     const entry = parseAll(lines)[0]!;
@@ -79,10 +79,10 @@ describe('structured logger', () => {
   it('does not redact ordinary long strings (run ids, urls)', () => {
     const { logger, lines } = capture();
     const runId = 'a'.repeat(48);
-    logger.info('dispatched', undefined, { runId, url: 'https://vassal.example/a1/api' });
+    logger.info('dispatched', undefined, { runId, url: 'https://executor.example/a1/api' });
     const entry = parseAll(lines)[0]!;
     expect(entry.runId).toBe(runId);
-    expect(entry.url).toBe('https://vassal.example/a1/api');
+    expect(entry.url).toBe('https://executor.example/a1/api');
   });
 
   it('never throws on unserializable fields and falls back to a minimal line', () => {
@@ -134,7 +134,7 @@ describe('redactText / redactUrl value-form redaction', () => {
   it('strips URL userinfo and credential query parameters but keeps the URL body', () => {
     expect(redactUrl('http://ops:hunter2@host.example:8080/card?token=abc&page=2'))
       .toBe('http://host.example:8080/card?token=REDACTED&page=2');
-    expect(redactUrl('https://vassal.example/a1/api')).toBe('https://vassal.example/a1/api');
+    expect(redactUrl('https://executor.example/a1/api')).toBe('https://executor.example/a1/api');
     expect(redactText('fetch http://ops:pw@host/x?access_token=t1&q=1 done'))
       .toBe('fetch http://host/x?access_token=REDACTED&q=1 done');
   });
@@ -157,7 +157,7 @@ describe('redactText / redactUrl value-form redaction', () => {
   });
 
   it('leaves ordinary prose, run ids and credential-free URLs untouched', () => {
-    const text = 'fetched https://vassal.example/a1/api over plain http with no credentials';
+    const text = 'fetched https://executor.example/a1/api over plain http with no credentials';
     expect(redactText(text)).toBe(text);
     expect(redactText('pilot note: research skill completed in 42ms')).toBe(
       'pilot note: research skill completed in 42ms',

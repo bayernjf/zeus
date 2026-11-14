@@ -2,7 +2,7 @@
 
 - 状态：**现行 v0.1**（2026-09-24）；**实现已落地（2026-10-08 核对）**——`src/diary/`（types/markdown/from-memory/persist/render/build 六模块 + `src/memory/` 事件源），PRD E8.3 状态列 ✅「已落地」；本篇为设计主文，实施进度记 [handoff.md](../handoff.md)
 - 对应 PRD：**E8.3 Diary 日记：记忆叙事化备份（P2）**
-- 关联：[design-memory-consolidation.md](design-memory-consolidation.md)（事件/事实）、[design-realm.md](design-realm.md)（Realm 数据域与 write）、[design-vault.md](design-vault.md)（备份清单/备份）、[product-portrait.md](product-portrait.md) §2.2 备份清单与记忆
+- 关联：[design-memory-consolidation.md](design-memory-consolidation.md)（事件/事实）、[design-realm.md](design-realm.md)（Realm 数据域与 write）、[design-backup.md](design-backup.md)（备份清单/备份）、[product-portrait.md](product-portrait.md) §2.2 备份清单与记忆
 - 一句话：**把已经记录下来的事件，按天叙事成一篇人能读、句句能回溯到源事件、并能经 Realm 写回用户目录的日记；不编造、不跨域、不另建存储。**
 
 ---
@@ -14,14 +14,14 @@
 - 事件散在日志里，没有按时间组织成一段叙事；
 - 想把"某天发生了什么"留存、回看、导出，没有工程原语。
 
-Diary 补这一层。它是**叙事化的人类可读记忆**，与 Vault 分工明确：
+Diary 补这一层。它是**叙事化的人类可读记忆**，与 Backup 分工明确：
 
 | | 关心什么 | 形态 | 能恢复数据吗 |
 |---|---|---|---|
-| **Vault** | 全量数据在哪、指纹、可恢复 | 加密图 + 备份包 | 能（恢复协议） |
+| **Backup** | 全量数据在哪、指纹、可恢复 | 加密图 + 备份包 | 能（恢复协议） |
 | **Diary** | 某天经历了什么、人能读 | 按天 markdown | 否（叙事层，不是备份） |
 
-Diary 不替代 Vault，也不做全量备份；它让记忆"可读、可回溯、可导出"。
+Diary 不替代 Backup，也不做全量备份；它让记忆"可读、可回溯、可导出"。
 
 ## 2. 设计原则（不可违反）
 
@@ -157,7 +157,7 @@ export declare function buildDiary(events: MemoryEvent[], options?: BuildDiaryOp
 ```ts
 export interface PersistDiaryOptions {
   /** enterprise realm 必填的操作者写授权；personal 省略。 */
-  grant?: DriverWriteGrant;
+  grant?: OperatorWriteGrant;
   /** 目录前缀，默认 'diary'；最终 itemId = `${dir}/${date}.md`。 */
   dir?: string;
 }
@@ -175,7 +175,7 @@ export declare function persistDiary(
 
 ### 6.2 结构化导出 `exportDiary`
 
-`exportDiary(entries)` → 稳定序列化的 JSON 字符串（键排序、含 provenance/digest），供用户另存或迁移；不内置 zip/云上传（与 Vault §9 边界一致）。
+`exportDiary(entries)` → 稳定序列化的 JSON 字符串（键排序、含 provenance/digest），供用户另存或迁移；不内置 zip/云上传（与 Backup §9 边界一致）。
   - **操作者面（2026-09-27）**：`GET /api/diary/export?realmId=&date=&timeZone=`，与读视图 `GET /api/diary` 共用同一个选择器解析（两条路由不会各自漂移），返回这份稳定 JSON；不经 Realm 写路径。
 
 ## 7. 安全红线（测试必须逐条断言）
@@ -192,9 +192,9 @@ export declare function persistDiary(
 ## 8. 非目标 / 边界（登记，不在本批次）
 
 - 不做情绪分析、总结性感想或 LLM 自动润色（默认渲染是确定性呈现；LLM 改写须显式注入并自担可回溯责任）。
-- 不做自动调度（何时生成日记由调用方或外部 cron 触发，与 Vault 一致）。
-- 不把 Diary 纳入 `KernelSnapshot`：产物落进用户 Realm、由用户持有，且可随时从事件重建（派生物）。
-- 不替代 Vault、不保证全量恢复；不跨 realm 汇编、不做多语言/富媒体/图片。
+- 不做自动调度（何时生成日记由调用方或外部 cron 触发，与 Backup 一致）。
+- 不把 Diary 纳入 `RuntimeSnapshot`：产物落进用户 Realm、由用户持有，且可随时从事件重建（派生物）。
+- 不替代 Backup、不保证全量恢复；不跨 realm 汇编、不做多语言/富媒体/图片。
 - E8.4 传承（dead-man switch、法律框架）仍为 P3，见 deferred #3。
 
 ## 9. 验收清单

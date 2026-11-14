@@ -1,10 +1,10 @@
 /**
- * Kernel-side realm retrieval (design-realm.md §8.4, E6.4).
+ * Runtime-side realm retrieval (design-realm.md §8.4, E6.4).
  *
  * Before this, `realmHits` were whatever the caller asserted: an intent could
  * declare `realm:"personal"` while pasting content mined from an enterprise
- * corpus, and nothing downstream could tell, because the kernel never looked in
- * a realm itself. Here the kernel does the search, so three things become
+ * corpus, and nothing downstream could tell, because the runtime never looked in
+ * a realm itself. Here the runtime does the search, so three things become
  * checkable: which realm the content actually came from, that its real type
  * matches what the intent declared, and that the asking subject was allowed
  * across whatever boundary that move required.
@@ -27,8 +27,8 @@ export type RealmSource = {
 
 export type RealmAuditEntry = {
   ts: string;
-  /** The asking subject (vassal name, agent id, or driver id). */
-  vassal: string;
+  /** The asking subject (executor name, agent id, or operator id). */
+  executor: string;
   decision: 'domain-read' | 'domain-refused' | 'realm-disconnected' | 'realm-tenant-retargeted';
   realm?: RealmType;
   detail: string;
@@ -72,7 +72,7 @@ export async function resolveRealmSource(input: ResolveRealmSourceInput): Promis
   const access = input.access ?? 'read';
   const { source, actor } = input;
   const emit = (decision: RealmAuditEntry['decision'], detail: string, realm?: RealmType) => {
-    input.audit?.({ ts: now().toISOString(), vassal: actor.id, decision, detail, ...(realm ? { realm } : {}) });
+    input.audit?.({ ts: now().toISOString(), executor: actor.id, decision, detail, ...(realm ? { realm } : {}) });
   };
 
   /** One format for a refusal: the reason leads in both the audit line and the
@@ -103,7 +103,7 @@ export async function resolveRealmSource(input: ResolveRealmSourceInput): Promis
     return refuse({ ok: false, reason: 'unknown-realm', detail: `realm not connected: ${source.realmId}` });
   }
 
-  // The declared type is what the fealty diode would have checked, so a mismatch
+  // The declared type is what the handshake diode would have checked, so a mismatch
   // means the gate was pointed at a different domain than the data.
   if (input.declaredRealm && input.declaredRealm !== scoped.type) {
     return refuse(

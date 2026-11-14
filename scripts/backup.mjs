@@ -4,7 +4,7 @@
  * Durable-state backup (T-M6-02). Produces a consistent SQLite snapshot via
  * VACUUM INTO (no need to stop the process), copies the signed JSONL audit
  * trail, copies the files beside the database that cannot be rebuilt (RSK
- * audit signing key, kernel/daily state, internal token), locks every artifact
+ * audit signing key, runtime/daily state, internal token), locks every artifact
  * to 0600, and prunes to a configurable retention count.
  *
  * The audit trail and the signing key are not optional extras: without the
@@ -36,11 +36,11 @@ const sqlite = nodeRequire('node:sqlite');
  * Files that live beside the db and cannot be derived from it.
  * `rsk-ed25519.pem` is the audit-chain signing key: lose it and every earlier
  * signature becomes unverifiable. The two state files and the internal token
- * are the live kernel's own state, not a cache.
+ * are the live runtime's own state, not a cache.
  */
 export const STATE_FILES = [
   'rsk-ed25519.pem',
-  'kernel-state.json',
+  'runtime-state.json',
   'daily-state.json',
   'internal-token',
 ];

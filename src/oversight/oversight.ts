@@ -5,7 +5,7 @@ import { DomainError } from '../util/domain-error.js';
 import type { CancelTaskFn, Escalation, EscalationKind, EscalationStatus, OversightAuditEntry } from './types.js';
 import { classifyInterruption, type InterruptLevel } from './interrupt.js';
 
-const FALLBACK_REASON = 'vassal requests human input';
+const FALLBACK_REASON = 'executor requests human input';
 
 /**
  * S10 V2 default level for queue rows. Every escalation reaching the desk is by
@@ -23,14 +23,14 @@ export type OversightOptions = {
   newId?: () => string;
   cancelTask?: CancelTaskFn;
   audit?: (entry: OversightAuditEntry) => void;
-  /** Fired after a driver decision is recorded (memory reliability write-back). */
+  /** Fired after a operator decision is recorded (memory reliability write-back). */
   onDecided?: (escalation: Escalation) => void;
 };
 
 /**
- * Minimal oversight deck (A4): collects input-required escalations from vassal
- * dispatches and lets the human driver approve or reject. Reject cancels the
- * vassal-side task; approve records the decision so the caller can re-dispatch
+ * Minimal oversight deck (A4): collects input-required escalations from executor
+ * dispatches and lets the human operator approve or reject. Reject cancels the
+ * executor-side task; approve records the decision so the caller can re-dispatch
  * with the human-supplied parameters (re-dispatch itself is the caller's job).
  */
 export class OversightDesk {
@@ -62,7 +62,7 @@ export class OversightDesk {
       id: this.newId(),
       kind: 'task-input',
       runId: request.runId ?? result.task.metadata?.['x-zeus-runId']?.toString() ?? 'unknown',
-      vassal: request.vassal ?? result.task.metadata?.['vassal']?.toString() ?? '(auto)',
+      executor: request.executor ?? result.task.metadata?.['executor']?.toString() ?? '(auto)',
       skill: request.skill,
       taskId: result.task.id,
       realm: request.realm,
@@ -100,7 +100,7 @@ export class OversightDesk {
       id: this.newId(),
       kind: 'intent-conflict',
       runId: input.runId,
-      vassal: '(intent)',
+      executor: '(intent)',
       skill: input.skill,
       realm: input.realm,
       reason: input.conflict.reason,
@@ -140,7 +140,7 @@ export class OversightDesk {
       id: input.id,
       kind: 'memory-dispute',
       runId: input.runId,
-      vassal: '(memory)',
+      executor: '(memory)',
       skill: '(memory)',
       realm: input.realm,
       reason: input.reason,
@@ -187,7 +187,7 @@ export class OversightDesk {
       id: this.newId(),
       kind: 'delegation-limit',
       runId: `watch:${input.watchId}:${input.tickSeq}`,
-      vassal: '(watch)',
+      executor: '(watch)',
       skill: input.skill,
       realm: input.realm,
       reason:
@@ -224,7 +224,7 @@ export class OversightDesk {
     skill: string;
     realm: Escalation['realm'];
     realmId?: string;
-    vassals: string[];
+    executors: string[];
     boundary: string;
     signals: readonly string[];
   }): Escalation {
@@ -232,12 +232,12 @@ export class OversightDesk {
     const existingId = this.conflictIndex.get(key);
     if (existingId) return this.get(existingId)!;
 
-    const vassalList = input.vassals.length > 0 ? input.vassals.join(',') : '(intent)';
+    const executorList = input.executors.length > 0 ? input.executors.join(',') : '(intent)';
     const escalation: Escalation = {
       id: this.newId(),
       kind: 'guardrail-content',
       runId: input.runId,
-      vassal: vassalList,
+      executor: executorList,
       skill: input.skill,
       realm: input.realm,
       reason:
@@ -264,7 +264,7 @@ export class OversightDesk {
 
   /**
    * Queue view, optionally narrowed by status and/or kind. The kind filter
-   * matters to the driver because a missing-parameter request and a memory
+   * matters to the operator because a missing-parameter request and a memory
    * dispute arrive in one queue but demand completely different answers.
    */
   list(status?: EscalationStatus, kind?: EscalationKind): Escalation[] {
@@ -313,13 +313,13 @@ export class OversightDesk {
     return entry ? structuredClone(entry) : undefined;
   }
 
-  /** Driver approves continuing. note may carry the human-supplied parameters;
+  /** Operator approves continuing. note may carry the human-supplied parameters;
    *  the caller is responsible for the follow-up dispatch. */
   approve(id: string, note?: string): Escalation {
     return this.decide(id, 'approved', note);
   }
 
-  /** E6.2: driver settles an intent-conflict by accepting one of the stances.
+  /** E6.2: operator settles an intent-conflict by accepting one of the stances.
    *  The accepted stance is returned for the orchestrator to write back into the
    *  aggregated decision (applyConflictResolution). */
   decideConflict(id: string, stance: string, note?: string): Escalation {
@@ -343,18 +343,18 @@ export class OversightDesk {
     return structuredClone(decided);
   }
 
-  /** Driver rejects: record the decision. For a task-input escalation the
-   *  vassal-side task is cancelled; an intent-conflict has no single task to
+  /** Operator rejects: record the decision. For a task-input escalation the
+   *  executor-side task is cancelled; an intent-conflict has no single task to
    *  cancel (cancelling the whole intent is the orchestrator's job), so only the
    *  decision is recorded. If the cancel call fails the escalation stays pending. */
   async reject(id: string, note?: string): Promise<Escalation> {
     const current = this.requirePending(id);
     if (current.kind === 'task-input' && this.options.cancelTask && current.taskId) {
       try {
-        await this.options.cancelTask(current.vassal, current.taskId);
+        await this.options.cancelTask(current.executor, current.taskId);
       } catch (error) {
         // C-audit 22: a failed downstream cancel is governance-relevant (the
-        // vassal-side task is still alive), so it must reach the audit trail
+        // executor-side task is still alive), so it must reach the audit trail
         // instead of dying with the thrown error. The escalation stays pending:
         // the caller can retry the rejection.
         const reason = error instanceof Error ? error.message : String(error);
@@ -405,7 +405,7 @@ export class OversightDesk {
       ts: this.now().toISOString(),
       escalationId: escalation.id,
       runId: escalation.runId,
-      vassal: escalation.vassal,
+      executor: escalation.executor,
       action,
       ...(note ? { note } : {}),
       ...(detail ? { detail } : {}),

@@ -7,7 +7,7 @@
 
 - 决策/组织持久化 SQLite：`ZEUS_DB_FILE`（七表：decision_policy/records/approvals + organizations/departments/positions/org_tasks）。
 - 签名审计 JSONL：`ZEUS_DECISION_AUDIT_FILE`，未显式指定时按 `decision-audit.jsonl` → `audit.jsonl` 的顺序自动探测（服务侧发布的默认名是 `audit.jsonl`）。
-- 数据库同目录下**不可重建**的四个文件：`rsk-ed25519.pem`（审计链签名私钥）、`kernel-state.json`、`daily-state.json`、`internal-token`。
+- 数据库同目录下**不可重建**的四个文件：`rsk-ed25519.pem`（审计链签名私钥）、`runtime-state.json`、`daily-state.json`、`internal-token`。
 
 四个状态文件的缺失后果必须说清：**私钥丢失**意味着快照里的历史审计再也无法验签，所以私钥不在快照内时备份**直接失败**（守卫生效），只有明确声明"本部署还没生成密钥"时才能用 `--allow-missing-key` 放行；审计文件缺失退化为显式警告，不静默跳过。
 

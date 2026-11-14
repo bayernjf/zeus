@@ -10,7 +10,7 @@ import {
  * S1 context engineering V1+V2 (design-context-engineering §10): memory assembly
  * and shared-context trimming for the branch dispatch context.
  *
- * This module is a pure function over injected inputs — it holds no kernel
+ * This module is a pure function over injected inputs — it holds no runtime
  * state, performs no retrieval, and never writes back. The caller has already
  * searched the memory store against the dispatch realm (domain isolation is
  * enforced by `MemoryStore.searchRecall`'s reader !== target rejection; this
@@ -34,7 +34,7 @@ export type ContextAppendixEntry = {
    * (agent-produced for every claim the consolidator produces), so the
    * branch consumer sees "another agent said this", never an operator
    * instruction. Facts written before the field existed fall back to
-   * kernel-resolved-realm.
+   * runtime-resolved-realm.
    */
   provenance: ContentProvenance;
 };
@@ -69,7 +69,7 @@ export type ContextAssemblyEvent =
        * S8 V2 (design-guardrails §4/§5): a kept appendix entry ran through the
        * content-risk decision chain and was annotated with its data boundary.
        * Outbound plan-mode assembly annotates (the classifier never refuses a
-       * kernel-resolved-realm memory entry); `pass` entries emit nothing. The
+       * runtime-resolved-realm memory entry); `pass` entries emit nothing. The
        * event kind is the audit decision (`guardrail-annotated`).
        */
       kind: 'guardrail-annotated';
@@ -177,14 +177,14 @@ export function assembleBranchContext(args: {
     // S8 V2 (design-guardrails §3.3/§4): every forwarded entry carries its
     // provenance and has run through the content-risk decision chain. The
     // entry's provenance is the origin classification fixed on the fact at
-    // consolidation (agent-produced for claims; kernel-resolved-realm for
+    // consolidation (agent-produced for claims; runtime-resolved-realm for
     // facts written before the field existed). Plan-mode assembly annotates
     // rather than refusing; an escalate verdict (external-url / credential
     // hit) also degrades to annotation here — this assembly point never
     // executes, so the L1 escalation belongs to the execute-destination
     // wiring (V3). A `pass` verdict emits nothing.
     const signals = scanContentSignals(text);
-    const provenance: ContentProvenance = hit.fact.origin ?? 'kernel-resolved-realm';
+    const provenance: ContentProvenance = hit.fact.origin ?? 'runtime-resolved-realm';
     const handling = classifyContentRisk({
       provenance,
       destination: { kind: 'outbound', mode: destinationMode },

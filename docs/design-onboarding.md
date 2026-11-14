@@ -1,6 +1,6 @@
 # E9.1 / E9.2 上岗：Commission 门与首日简报
 
-> 状态：**现行 v0.1（2026-09-25 落地）**。产品定位依据见 [product-portrait.md](product-portrait.md) §4.3（企业列：多租户 + 编制 + 上岗即用）；编制本体见 [design-org.md](design-org.md)；边界判定见 [design-realm.md](design-realm.md) §7；执行 Agent oath 见 [design-vassal-protocol.md](design-vassal-protocol.md)；技能传授（E2.5）目前只有 PRD 条目 + `src/skills/mentor.ts`，无独立设计稿。
+> 状态：**现行 v0.1（2026-09-25 落地）**。产品定位依据见 [product-portrait.md](product-portrait.md) §4.3（企业列：多租户 + 编制 + 上岗即用）；编制本体见 [design-org.md](design-org.md)；边界判定见 [design-realm.md](design-realm.md) §7；执行 Agent oath 见 [design-executor-protocol.md](design-executor-protocol.md)；技能传授（E2.5）目前只有 PRD 条目 + `src/skills/mentor.ts`，无独立设计稿。
 
 ## 0. 一句话
 
@@ -17,7 +17,7 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 | 门 | 证据来自 | 拒绝条件 |
 | --- | --- | --- |
 | seat 编制位置 | `OrgRegistry`（E9.3） | Agent 不在该部门名册上；部门不存在 |
-| account 执行 Agent 身份 | `VassalRegistry.asVassalLookup().statusOf` | 查无此执行 Agent（**有编制没卡片的 Agent 不能派活**），或已吊销 |
+| account 执行 Agent 身份 | `ExecutorRegistry.asExecutorLookup().statusOf` | 查无此执行 Agent（**有编制没卡片的 Agent 不能派活**），或已吊销 |
 | authorization 数据域 | `decideRealmAccess`（E3.6 + E6.4） | 该 Agent 的租户级读不到那个 realm（个人侧主体须 `DomainGrant`） |
 | mentorship 能力 | `MentorshipLedger`（E2.5，status=certified） | 岗位要求的技能没有**通过考核**的记录 |
 
@@ -55,7 +55,7 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 两个刻意保留的"难看"事实：
 
 - `culture.totalFacts` 与命中数分开报：**"组织没写过惯例"和"写了但跟这个岗位无关"是两件事**，混成一条会让新人以为公司没有文化。
-- `boundaries.canWrite` 只表示**域边界**允许写；企业域还要 E3.5 的一次性 `DriverWriteGrant`。这一点单列成 `writeNeedsGrant`，避免简报读起来像"你可以写"。
+- `boundaries.canWrite` 只表示**域边界**允许写；企业域还要 E3.5 的一次性 `OperatorWriteGrant`。这一点单列成 `writeNeedsGrant`，避免简报读起来像"你可以写"。
 
 简报带一个 `digest`：对内容（去掉时间戳）做稳定序列化后 sha256。同一份组织状态必须给同一个指纹——首日任务因此可以证明"当时是照哪一版简报派的活"。
 
@@ -63,12 +63,12 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 
 `POST /api/org/departments/:id/first-task` 真的走一次 `orchestrator.fanOut`：
 
-- 目标限定为该座位上的 Agent（`vassals: [agentId]`）；
+- 目标限定为该座位上的 Agent（`executors: [agentId]`）；
 - `realm` 取该 realm **当前真实类型**，不是请求里写的；
 - `params.onboarding` 带 `commissionId` / `briefingDigest` / `openGaps` 数量，于是回放与审计都能看见这次派发背后的门；
 - 门没过就 409 `commission_gate` + `blockedOn`，不派发。
 
-链路因此是**跑通的**而不是画出来的：账号（`POST /api/vassals`）→ 授权（E6.4 判定）→ Mentor（E2.5 认证）→ 上岗（签字）→ 首日任务（真实派发，走派发二极管与结果回传回写）。
+链路因此是**跑通的**而不是画出来的：账号（`POST /api/executors`）→ 授权（E6.4 判定）→ Mentor（E2.5 认证）→ 上岗（签字）→ 首日任务（真实派发，走派发二极管与结果回传回写）。
 
 ## 6. 运维面
 
@@ -77,7 +77,7 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 - `GET …/briefing/:agentId`：E9.1 的产物；**响应不含任何绝对路径**。
 - `GET /api/audit?decision=commission-refused|commission-granted|commission-waived|commission-withdrawn`。
 - `GET /api/state`：`commissions` / `commissioned` 两个计数（后者只数"已签字且未撤回"）。
-- 上岗记录进 `KernelSnapshot`（`commissions` 段），重启不丢签字，也不"顺手补一个签字"。
+- 上岗记录进 `RuntimeSnapshot`（`commissions` 段），重启不丢签字，也不"顺手补一个签字"。
 
 ## 7. 安全红线（测试逐条断言）
 
@@ -86,7 +86,7 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 3. 空 `requiredSkills` 且无豁免 → 拒；豁免不能覆盖已声明要求。
 4. 出勤不等于能力：`failed` 的带教记录不是证据。
 5. 简报与所有响应都不含绝对路径（Realm 不变量 3）。
-6. `canWrite` 只声明域边界；企业写入仍需 `DriverWriteGrant`（`writeNeedsGrant` 单列）。
+6. `canWrite` 只声明域边界；企业写入仍需 `OperatorWriteGrant`（`writeNeedsGrant` 单列）。
 7. 座位租户不得比其 realm 更宽。
 8. 每道门都做过缺陷植入：门常真 → 2 例红；只信记录不重算 → 3 例红；能力门常过 → 2 例红。
 
@@ -110,4 +110,4 @@ E9.1/E9.2 不新增任何原语：编制在 `src/org`、身份在 `src/registry`
 
 | 版本 | 日期 | 变更 |
 | --- | --- | --- |
-| v0.1 | 2026-09-25 | 初稿即落地：四道门（编制/执行 Agent/数据域/能力）现算不缓存、显式豁免、首日任务真派发、简报 `gaps`/`totalFacts`/`writeNeedsGrant`/稳定 digest、审计与盘点、快照持久化。顺带修一个只在真实进程里暴露的洞：**fealty 缺字段（如无 `dataRealms`）的卡片能注册成功、到派发时才抛 TypeError**，现由名册在边界拒收并点名缺哪个字段 |
+| v0.1 | 2026-09-25 | 初稿即落地：四道门（编制/执行 Agent/数据域/能力）现算不缓存、显式豁免、首日任务真派发、简报 `gaps`/`totalFacts`/`writeNeedsGrant`/稳定 digest、审计与盘点、快照持久化。顺带修一个只在真实进程里暴露的洞：**handshake 缺字段（如无 `realms`）的卡片能注册成功、到派发时才抛 TypeError**，现由名册在边界拒收并点名缺哪个字段 |

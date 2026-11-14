@@ -2,13 +2,13 @@
  * Day-one role briefing (E9.1: 新员工首日无人工介入获得岗位上下文).
  *
  * Everything here is *read* from a layer that already owns the fact - the
- * department establishment, the skill catalogue, the mentorship ledger, the vassal
+ * department establishment, the skill catalogue, the mentorship ledger, the executor
  * directory, the realm boundary decisions, and the department's own memory. No
  * prompt template, no invented culture: when the org has written nothing down,
  * the briefing says so in `gaps` instead of dressing an empty room up as context.
  */
 import { sha256Hex } from '../util/crypto.js';
-import type { VassalLookup } from '../registry/registry.js';
+import type { ExecutorLookup } from '../registry/registry.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
 import type { SkillRegistry } from '../skills/registry.js';
@@ -20,7 +20,7 @@ import type { CommissionRecord } from './types.js';
 
 export type BriefingDeps = {
   org: Pick<OrgRegistry, 'listDepartments'>;
-  vassals: VassalLookup;
+  executors: ExecutorLookup;
   realms: Pick<RealmStore, 'manifest' | 'connections'>;
   grants: Pick<DomainGrantRegistry, 'list'>;
   mentorships: Pick<MentorshipLedger, 'list'>;
@@ -51,7 +51,7 @@ export type RoleBriefing = {
   business: {
     skills: Array<{ id: string; name: string; domain?: string; description: string }>;
     teammates: Array<{ agentId: string; role: string; title?: string; skills: string[] }>;
-    /** Who can teach each missing competency right now, among active vassals. */
+    /** Who can teach each missing competency right now, among active executors. */
     mentorsForMissing: Array<{ skillId: string; mentors: string[] }>;
   };
   culture: {
@@ -70,13 +70,13 @@ export type RoleBriefing = {
     itemCount: number;
     canRead: boolean;
     /** The domain edge only. An enterprise write additionally needs a
-     *  per-write DriverWriteGrant at the store (E3.5) - `writeNeedsGrant` says
+     *  per-write OperatorWriteGrant at the store (E3.5) - `writeNeedsGrant` says
      *  which of the two layers still stands between this seat and a write. */
     canWrite: boolean;
     writeNeedsGrant: boolean;
     rules: string[];
   };
-  /** What the kernel could NOT tell the newcomer - honest, not decorative. */
+  /** What the runtime could NOT tell the newcomer - honest, not decorative. */
   gaps: string[];
 };
 
@@ -130,14 +130,14 @@ export async function composeBriefing(
 
   const mentorsForMissing = missing.map(skillId => ({
     skillId,
-    mentors: deps.vassals
+    mentors: deps.executors
       .findBySkill(skillId)
-      .map(vassal => vassal.name)
+      .map(executor => executor.name)
       .filter(name => name !== record.agentId)
       .sort(),
   }));
   for (const entry of mentorsForMissing) {
-    if (entry.mentors.length === 0) gaps.push(`no active vassal provides '${entry.skillId}' - nobody can teach it`);
+    if (entry.mentors.length === 0) gaps.push(`no active executor provides '${entry.skillId}' - nobody can teach it`);
   }
 
   // The org's culture and business facts are what its memory actually holds for
@@ -175,7 +175,7 @@ export async function composeBriefing(
 
   const verdict = verifyCommission(record, {
     org: deps.org,
-    vassals: deps.vassals,
+    executors: deps.executors,
     realms: deps.realms,
     grants: deps.grants,
     mentorships: deps.mentorships,
@@ -200,7 +200,7 @@ export async function composeBriefing(
       ...(department.lead ? { lead: department.lead } : {}),
       ...(lead?.title ? { leadTitle: lead.title } : {}),
       note: department.lead
-        ? `result accountability lands on ${department.lead} (department lead); conflicts the rules cannot settle escalate to the driver - you do not pick a side`
+        ? `result accountability lands on ${department.lead} (department lead); conflicts the rules cannot settle escalate to the operator - you do not pick a side`
         : 'this department has no lead - result accountability has nowhere to land',
     },
     competencies: {
@@ -226,9 +226,9 @@ export async function composeBriefing(
       writeNeedsGrant: realm.type === 'enterprise',
       rules: [
         'enterprise -> personal is never allowed; no credential can authorize it',
-        'personal -> enterprise requires an explicit DomainGrant from the driver',
+        'personal -> enterprise requires an explicit DomainGrant from the operator',
         realm.type === 'enterprise'
-          ? 'writing into this enterprise realm additionally needs a per-write DriverWriteGrant'
+          ? 'writing into this enterprise realm additionally needs a per-write OperatorWriteGrant'
           : 'this personal realm is writable by default',
         'the tenant hierarchy (org / department / member) is structural - no grant loosens it',
       ].concat(realm.readOnly ? ['this realm is mounted read-only: writes refuse even when authorized'] : []),

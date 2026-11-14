@@ -13,9 +13,9 @@ function lookupFor(names: string[]): TargetLookup {
   return { findBySkill: () => names.map(name => ({ name })) };
 }
 
-function done(vassal: string): DispatchResult {
+function done(executor: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a', name: 'r', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
   return { ok: true, task, events: [] as A2AEvent[], injectedHits: [] };
@@ -23,11 +23,11 @@ function done(vassal: string): DispatchResult {
 
 /** Recording port: asserts on how many outbound dispatches actually happened. */
 function recordingPort() {
-  const dispatchCalls: Array<{ vassal: string; skill: string }> = [];
+  const dispatchCalls: Array<{ executor: string; skill: string }> = [];
   const port: DispatchPort = {
     async dispatch(req) {
-      dispatchCalls.push({ vassal: req.vassal!, skill: req.skill });
-      return done(req.vassal!);
+      dispatchCalls.push({ executor: req.executor!, skill: req.skill });
+      return done(req.executor!);
     },
     async cancel() {},
   };
@@ -38,7 +38,7 @@ function harness(withAnchor = true) {
   const signer = new Ed25519MemorySigner('zeus-rsk-dev');
   const ledger = new ExecutionDelegationNonceLedger();
   const { port, dispatchCalls } = recordingPort();
-  const refused: Array<{ vassal: string; reason: string }> = [];
+  const refused: Array<{ executor: string; reason: string }> = [];
   const orchestrator = new Orchestrator(lookupFor(['pr-helper']), port, {
     now: () => T0,
     ...(withAnchor
@@ -52,7 +52,7 @@ function harness(withAnchor = true) {
         }
       : {}),
     onExecutionDelegationRefused: entry => {
-      refused.push({ vassal: entry.vassal, reason: entry.reason });
+      refused.push({ executor: entry.executor, reason: entry.reason });
     },
   });
   return { signer, ledger, orchestrator, dispatchCalls, refused };
@@ -91,7 +91,7 @@ describe('deferred #33 execute-mode dispatch gate', () => {
     const result = await orchestrator.fanOut(executeRequest(d));
     expect(refused).toHaveLength(0);
     expect(dispatchCalls).toHaveLength(1);
-    expect(dispatchCalls[0]).toEqual({ vassal: expect.any(String), skill: 'deployment-health' });
+    expect(dispatchCalls[0]).toEqual({ executor: expect.any(String), skill: 'deployment-health' });
     expect(result.branches[0]?.ok).toBe(true);
     // Same field on the healthy path: one name for readers instead of state-or-reason.
     expect(result.branches[0]?.outcome).toBe('completed');
@@ -163,13 +163,13 @@ describe('deferred #33 execute-mode dispatch gate', () => {
     // The seed delegation is spent. A resume that carries no new credential must
     // fail as an invalid request BEFORE dispatch — it must not silently replay
     // the consumed nonce into a refused branch while the desk records "approved".
-    const vassal = seeded.branches[0]!.vassal;
-    await expect(orchestrator.resumeBranch(seeded.intentId, vassal, { answer: '42' }))
+    const executor = seeded.branches[0]!.executor;
+    await expect(orchestrator.resumeBranch(seeded.intentId, executor, { answer: '42' }))
       .rejects.toMatchObject({ kind: 'invalid' });
-    await expect(orchestrator.resumeBranch(seeded.intentId, vassal, { answer: '42' }))
+    await expect(orchestrator.resumeBranch(seeded.intentId, executor, { answer: '42' }))
       .rejects.toBeInstanceOf(DomainError);
     expect(dispatchCalls).toHaveLength(1);
-    expect(refused.filter(entry => entry.vassal === vassal && entry.reason === 'replayed')).toHaveLength(0);
+    expect(refused.filter(entry => entry.executor === executor && entry.reason === 'replayed')).toHaveLength(0);
   });
 
   it('resumes an execute branch when the operator supplies a fresh, unconsumed delegation (M-02)', async () => {
@@ -179,17 +179,17 @@ describe('deferred #33 execute-mode dispatch gate', () => {
       { signer, now: () => T0 },
     );
     const seeded = await orchestrator.fanOut(executeRequest(first));
-    const vassal = seeded.branches[0]!.vassal;
+    const executor = seeded.branches[0]!.executor;
 
     const second = await issueExecutionDelegation(
       { grantedBy: 'op', skill: 'deployment-health', capabilities: ['execute'] },
       { signer, now: () => T0 },
     );
-    const resumed = await orchestrator.resumeBranch(seeded.intentId, vassal, { answer: '42' }, second);
+    const resumed = await orchestrator.resumeBranch(seeded.intentId, executor, { answer: '42' }, second);
 
     expect(refused).toHaveLength(0);
     expect(dispatchCalls).toHaveLength(2);
-    expect(resumed.branches.find(branch => branch.vassal === vassal)?.ok).toBe(true);
+    expect(resumed.branches.find(branch => branch.executor === executor)?.ok).toBe(true);
     // The resume credential is single-use: the resumed write consumed its nonce.
     expect(ledger.consume(second.nonce)).toBe(false);
   });

@@ -1,22 +1,22 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry, type FetchLike } from '../src/registry/registry.js';
-import { fealtyOathProblem } from '../src/registry/registry.js';
+import { ExecutorRegistry, type FetchLike } from '../src/registry/registry.js';
+import { handshakeOathProblem } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { SkillRegistry } from '../src/skills/registry.js';
 import type { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { FanOutRequest, FanOutResult } from '../src/orchestrator/types.js';
-import type { AgentCard, Fealty } from '../src/a2a/types.js';
+import type { AgentCard, Handshake } from '../src/a2a/types.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
 /**
  * S17 V2 (design-agent-testing §5): protocol compatibility matrix, first
- * edition. The kernel's accept/refuse policy is pinned against the version
- * rules of design-vassal-protocol §4.5 — a minimal legal card registers, a
+ * edition. The runtime's accept/refuse policy is pinned against the version
+ * rules of design-executor-protocol §4.5 — a minimal legal card registers, a
  * card missing optional fields and a card carrying unknown extension fields
  * still register (the design is a superset, not a wall), while an unsupported
- * fealty version and a missing oath are refused at the boundary.
+ * handshake version and a missing oath are refused at the boundary.
  */
 
 let app: FastifyInstance | undefined;
@@ -28,23 +28,23 @@ afterEach(async () => {
   auditEntries = [];
 });
 
-const TOKEN = { authorization: 'Bearer driver-secret' };
+const TOKEN = { authorization: 'Bearer operator-secret' };
 
-function makeCard(name: string, fealty: Fealty | undefined, extra: Record<string, unknown> = {}): AgentCard {
+function makeCard(name: string, handshake: Handshake | undefined, extra: Record<string, unknown> = {}): AgentCard {
   return {
     name,
     url: `https://${name}.example/`,
     skills: [],
-    ...(fealty ? { 'x-zeus-fealty': fealty } : {}),
+    ...(handshake ? { 'x-zeus-handshake': handshake } : {}),
     ...extra,
   };
 }
 
-const VALID_FEALTY: Fealty = {
+const VALID_HANDSHAKE: Handshake = {
   version: '1',
   swornTo: 'zeus',
   domain: 'test-domain',
-  dataRealms: ['personal'],
+  realms: ['personal'],
   dataPolicy: 'read-task-scope',
   reportBack: true,
   escalationPolicy: 'on-failure',
@@ -70,10 +70,10 @@ function makeOrchestrator(): Orchestrator {
 
 async function makeApp(): Promise<FastifyInstance> {
   const server = await createHttpServer({
-    internalToken: 'driver-secret',
-    agentCard: makeCard('zeus-self', VALID_FEALTY),
+    internalToken: 'operator-secret',
+    agentCard: makeCard('zeus-self', VALID_HANDSHAKE),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
-    registry: new VassalRegistry(() => Promise.reject(new Error('no fetch needed'))),
+    registry: new ExecutorRegistry(() => Promise.reject(new Error('no fetch needed'))),
     skillRegistry: new SkillRegistry(),
     orchestrator: makeOrchestrator(),
     inboundAudit: (entry: AuditEntry) => auditEntries.push(entry),
@@ -92,53 +92,53 @@ describe('S17 V2 protocol compatibility matrix', () => {
     }
 
     it('accepts a minimal legal card (name + skills + full oath)', async () => {
-      const registry = new VassalRegistry(localCardFetch(makeCard('alpha', VALID_FEALTY)));
+      const registry = new ExecutorRegistry(localCardFetch(makeCard('alpha', VALID_HANDSHAKE)));
       const entry = await registry.register('https://alpha.example/card', { taskUrl: 'https://alpha.example/tasks' });
       expect(entry.card.name).toBe('alpha');
     });
 
     it('accepts a card that omits optional fields (capabilities/authentication)', async () => {
-      // The AgentCard shape in the kernel keeps these optional; a peer that
-      // serves the minimum contract is a valid vassal, not a guest.
-      const minimal = makeCard('beta', VALID_FEALTY);
+      // The AgentCard shape in the runtime keeps these optional; a peer that
+      // serves the minimum contract is a valid executor, not a guest.
+      const minimal = makeCard('beta', VALID_HANDSHAKE);
       delete (minimal as Partial<AgentCard>).capabilities;
       delete (minimal as Partial<AgentCard>).authentication;
-      const registry = new VassalRegistry(localCardFetch(minimal));
+      const registry = new ExecutorRegistry(localCardFetch(minimal));
       const entry = await registry.register('https://beta.example/card', { taskUrl: 'https://beta.example/tasks' });
       expect(entry.card.name).toBe('beta');
     });
 
     it('accepts unknown extension fields (superset, not a wall)', async () => {
-      const extended = makeCard('gamma', VALID_FEALTY, {
+      const extended = makeCard('gamma', VALID_HANDSHAKE, {
         'x-vendor-extra': { anything: true },
         customField: 'ignored',
       });
-      const registry = new VassalRegistry(localCardFetch(extended));
+      const registry = new ExecutorRegistry(localCardFetch(extended));
       const entry = await registry.register('https://gamma.example/card', { taskUrl: 'https://gamma.example/tasks' });
       expect(entry.card.name).toBe('gamma');
     });
 
-    it('refuses an unsupported fealty version rather than silently negotiating', async () => {
-      const oldCard = makeCard('delta', { ...VALID_FEALTY, version: '0' });
-      const registry = new VassalRegistry(localCardFetch(oldCard));
+    it('refuses an unsupported handshake version rather than silently negotiating', async () => {
+      const oldCard = makeCard('delta', { ...VALID_HANDSHAKE, version: '0' });
+      const registry = new ExecutorRegistry(localCardFetch(oldCard));
       await expect(registry.register('https://delta.example/card', { taskUrl: 'https://delta.example/tasks' }))
-        .rejects.toThrow(/unsupported fealty\.version '0'/);
+        .rejects.toThrow(/unsupported handshake\.version '0'/);
     });
 
-    it('refuses a card with no fealty oath (a guest is not a vassal)', async () => {
+    it('refuses a card with no handshake oath (a guest is not a executor)', async () => {
       const guest = makeCard('epsilon', undefined);
-      const registry = new VassalRegistry(localCardFetch(guest));
+      const registry = new ExecutorRegistry(localCardFetch(guest));
       await expect(registry.register('https://epsilon.example/card', { taskUrl: 'https://epsilon.example/tasks' }))
-        .rejects.toThrow(/no vassal fealty on card/);
+        .rejects.toThrow(/no executor handshake on card/);
     });
   });
 
-  describe('fealty oath shape face', () => {
+  describe('handshake oath shape face', () => {
     it('flags each missing oath field dispatch would otherwise read', () => {
-      expect(fealtyOathProblem({ ...VALID_FEALTY, dataRealms: undefined as unknown as never[] })).toMatch(/dataRealms/);
-      expect(fealtyOathProblem({ ...VALID_FEALTY, dataPolicy: undefined as unknown as never })).toMatch(/dataPolicy/);
-      expect(fealtyOathProblem({ ...VALID_FEALTY, escalationPolicy: undefined as unknown as never })).toMatch(/escalationPolicy/);
-      expect(fealtyOathProblem(VALID_FEALTY)).toBeNull();
+      expect(handshakeOathProblem({ ...VALID_HANDSHAKE, realms: undefined as unknown as never[] })).toMatch(/realms/);
+      expect(handshakeOathProblem({ ...VALID_HANDSHAKE, dataPolicy: undefined as unknown as never })).toMatch(/dataPolicy/);
+      expect(handshakeOathProblem({ ...VALID_HANDSHAKE, escalationPolicy: undefined as unknown as never })).toMatch(/escalationPolicy/);
+      expect(handshakeOathProblem(VALID_HANDSHAKE)).toBeNull();
     });
   });
 
@@ -150,9 +150,9 @@ describe('S17 V2 protocol compatibility matrix', () => {
       expect(res.json().error).toBe('invalid_request');
     });
 
-    it('refuses a caller card with an unsupported fealty version (403 + dual audit)', async () => {
+    it('refuses a caller card with an unsupported handshake version (403 + dual audit)', async () => {
       app = await makeApp();
-      const oldCaller = makeCard('caller-old', { ...VALID_FEALTY, version: '0' });
+      const oldCaller = makeCard('caller-old', { ...VALID_HANDSHAKE, version: '0' });
       const res = await app.inject({
         method: 'POST',
         url: '/.well-known/agent-card.json',

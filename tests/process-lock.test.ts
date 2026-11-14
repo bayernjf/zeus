@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProcessLock, ProcessLockHeldError } from '../src/state/process-lock.js';
 
-// M-10: two Zeus processes pointed at one kernel state file both load, mutate
+// M-10: two Zeus processes pointed at one runtime state file both load, mutate
 // and snapshot it; without a cross-process lock the last rename wins and the
 // other process's roster/idempotency/nonce changes vanish. The lock is a
 // directory holding one owner.json; acquire is fail-fast (a second boot must
@@ -71,7 +71,7 @@ function exitOf(child: ChildProcess): Promise<void> {
   });
 }
 
-describe('ProcessLock cross-process kernel state lock', () => {
+describe('ProcessLock cross-process runtime state lock', () => {
   let dir: string;
   const children: ChildProcess[] = [];
 
@@ -89,7 +89,7 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('publishes an owner record on acquire and removes it on release', async () => {
-    const lockPath = join(dir, 'data', 'kernel-state.json.lock');
+    const lockPath = join(dir, 'data', 'runtime-state.json.lock');
     const lock = await ProcessLock.acquire(lockPath, { now: () => new Date('2026-10-13T08:00:00Z') });
     const owner = JSON.parse(readFileSync(join(lockPath, 'owner.json'), 'utf8'));
     expect(owner.pid).toBe(process.pid);
@@ -103,7 +103,7 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('refuses while a live foreign process holds the lock, naming its pid', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     const holder = spawnHolder(lockPath);
     children.push(holder);
     await waitForReady(holder);
@@ -116,7 +116,7 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('reclaims a lock whose holder was killed without releasing (crash / SIGKILL)', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     const holder = spawnHolder(lockPath);
     children.push(holder);
     await waitForReady(holder);
@@ -130,7 +130,7 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('reclaims a leftover directory naming a pid that already exited', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     const exited = spawn(process.execPath, ['-e', 'process.exit(0)']);
     const deadPid = exited.pid!;
     await exitOf(exited);
@@ -144,14 +144,14 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('reclaims a leftover lock owned by this same process (a previous boot did not release)', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     writeOwner(lockPath, { pid: process.pid, host: 'irrelevant' });
     const lock = await ProcessLock.acquire(lockPath);
     await lock.release();
   });
 
   it('fails closed on a corrupt owner record instead of guessing', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     mkdirSync(lockPath, { mode: 0o700 });
     writeFileSync(join(lockPath, 'owner.json'), '{ not json', 'utf8');
     await expect(ProcessLock.acquire(lockPath)).rejects.toBeInstanceOf(ProcessLockHeldError);
@@ -159,7 +159,7 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('reclaims a directory with no owner record (holder died between mkdir and publish)', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     mkdirSync(lockPath, { mode: 0o700 });
     const lock = await ProcessLock.acquire(lockPath);
     expect(existsSync(join(lockPath, 'owner.json'))).toBe(true);
@@ -167,14 +167,14 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('refuses an owner record published on another host (liveness cannot be probed)', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     writeOwner(lockPath, { pid: process.ppid, host: 'some-other-host.example' });
     await expect(ProcessLock.acquire(lockPath)).rejects.toBeInstanceOf(ProcessLockHeldError);
     await expect(ProcessLock.acquire(lockPath)).rejects.toThrow(/different host/i);
   });
 
   it('release does not remove a lock a newer instance already took over', async () => {
-    const lockPath = join(dir, 'kernel-state.json.lock');
+    const lockPath = join(dir, 'runtime-state.json.lock');
     const first = await ProcessLock.acquire(lockPath);
     // Simulate a stale reclaim while the old handle is still around: the
     // directory now names a newer owner.
@@ -184,7 +184,7 @@ describe('ProcessLock cross-process kernel state lock', () => {
   });
 
   it('creates the parent data directory owner-only', async () => {
-    const lockPath = join(dir, 'nested', 'data', 'kernel-state.json.lock');
+    const lockPath = join(dir, 'nested', 'data', 'runtime-state.json.lock');
     const lock = await ProcessLock.acquire(lockPath);
     expect(existsSync(dirname(lockPath))).toBe(true);
     await lock.release();

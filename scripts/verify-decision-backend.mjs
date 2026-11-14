@@ -6,7 +6,7 @@
  * The library tests cover the arbitration gate with mock backends, so they can
  * never answer the question the design doc still flags as open: does a real
  * OpenAI-compatible endpoint actually complete the path — reachable, JSON
- * parseable, gated — when the kernel asks it to break a tie? This script is the
+ * parseable, gated — when the runtime asks it to break a tie? This script is the
  * operator-facing entry point for that answer, and it is deliberately end to
  * end: a real Orchestrator fan-out over two mock branches that disagree, so the
  * S2 hook (`maybeArbitrate`) is the thing under test, not a direct backend call.
@@ -74,12 +74,12 @@ function parseFlags(argv) {
 
 /**
  * A completed A2A task carrying one stance, which is what the aggregator reads.
- * @param {string} vassal
+ * @param {string} executor
  * @param {string} stance
  * @returns {import('../dist/index.js').DispatchResult}
  */
-function branchResult(vassal, stance) {
-  const id = `${vassal}-task`;
+function branchResult(executor, stance) {
+  const id = `${executor}-task`;
   return {
     ok: true,
     task: {
@@ -146,7 +146,7 @@ const orchestrator = new Orchestrator(
   { findBySkill: () => [{ name: 'loom' }, { name: 'atlas' }] },
   {
     async dispatch(req) {
-      return req.vassal === 'loom' ? branchResult('loom', 'approve') : branchResult('atlas', 'reject');
+      return req.executor === 'loom' ? branchResult('loom', 'approve') : branchResult('atlas', 'reject');
     },
     async cancel() {},
   },
@@ -212,11 +212,11 @@ if (arbitration.concluded) {
   console.error('\nFAIL: an uncalibrated backend concluded without --allow-uncalibrated; the gate is not holding');
   process.exit(1);
 }
-if (result.status !== 'needs-driver' || escalated.length !== 1) {
-  console.error('\nFAIL: the unresolved split did not escalate to the driver as designed');
+if (result.status !== 'needs-operator' || escalated.length !== 1) {
+  console.error('\nFAIL: the unresolved split did not escalate to the operator as designed');
   process.exit(1);
 }
 console.log(
-  `\nPASS: ${backend.kind}/${backend.model} was consulted (confidence ${arbitration.confidence}, calibrated false) and the gate refused to conclude; the split escalated to the driver`
+  `\nPASS: ${backend.kind}/${backend.model} was consulted (confidence ${arbitration.confidence}, calibrated false) and the gate refused to conclude; the split escalated to the operator`
 );
 process.exit(0);

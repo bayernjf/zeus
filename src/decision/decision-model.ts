@@ -192,7 +192,7 @@ export function isJevExplicitlyDisabled(env: NodeJS.ProcessEnv = process.env): b
   return raw !== undefined && JEV_DISABLED_VALUES.has(raw.trim().toLowerCase());
 }
 
-/** env wiring (serve.ts style). Returns null when not configured → kernel unchanged. */
+/** env wiring (serve.ts style). Returns null when not configured → runtime unchanged. */
 export function createJevBackendFromEnv(env: NodeJS.ProcessEnv = process.env, options: BackendOptions = {}): DecisionBackend | null {
   if (isJevExplicitlyDisabled(env)) return null;
   const apiKey = env.ZEUS_DECISION_API_KEY;

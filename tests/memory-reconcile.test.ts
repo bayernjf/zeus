@@ -76,7 +76,7 @@ describe('Memory drift reconciliation', () => {
     const before = store.exportState();
 
     const factId = before.facts[0]![1][0]!.factId;
-    store.retractFacts('personal', [factId], { reason: 'gdpr', requestedBy: 'driver' });
+    store.retractFacts('personal', [factId], { reason: 'gdpr', requestedBy: 'operator' });
     const after = store.exportState();
     const report = reconcileMemoryStates(before, after);
     expect(report.retractionsAdded).toBe(1);
@@ -133,8 +133,8 @@ describe('Memory invariant verification', () => {
     expect(verifyMemoryState(state).some(v => v.code === 'retracted-without-tombstone')).toBe(true);
 
     state.retractions = [
-      { factId: alice.factId, realmId: 'personal', subject: 'alice', reason: 'gdpr', requestedBy: 'driver', at: '2026-09-22T09:00:00.000Z' },
-      { factId: bob.factId, realmId: 'personal', subject: 'bob', reason: 'gdpr', requestedBy: 'driver', at: '2026-09-22T09:00:00.000Z' },
+      { factId: alice.factId, realmId: 'personal', subject: 'alice', reason: 'gdpr', requestedBy: 'operator', at: '2026-09-22T09:00:00.000Z' },
+      { factId: bob.factId, realmId: 'personal', subject: 'bob', reason: 'gdpr', requestedBy: 'operator', at: '2026-09-22T09:00:00.000Z' },
     ];
     // alice now paired; bob has a tombstone but is not retracted.
     expect(verifyMemoryState(state).some(v => v.code === 'tombstone-without-retraction')).toBe(true);

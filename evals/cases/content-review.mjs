@@ -3,7 +3,7 @@
 // A publishable content candidate passes a panel of independent checks
 // (factual corroboration, evidence citation, compliance). Each check is a
 // scripted execution agent returning approve/reject with a rationale; the
-// intent settles through the same kernel governance primitives the first
+// intent settles through the same runtime governance primitives the first
 // benchmark covers (decision/escalation/evidence/data-policy/selection/budget),
 // but the cases are chained into one product narrative — loom never publishes
 // on a bare assertion, a failed check, or an unresolvable split.
@@ -49,7 +49,7 @@ export const evalCases = [
     ],
     request: { realm: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'contested' } },
     expect: [
-      { decision: o => o.status === 'needs-driver' && o.conflicts.length >= 1, severity: 'block' },
+      { decision: o => o.status === 'needs-operator' && o.conflicts.length >= 1, severity: 'block' },
       { escalation: { expected: true, level: 1 }, severity: 'block' },
     ],
   },
@@ -83,7 +83,7 @@ export const evalCases = [
       { name: 'compliance', ...APPROVE },
       { name: 'scope', ...APPROVE },
     ],
-    request: { realm: 'personal', vassals: ['fact', 'compliance'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'scoped-panel' } },
+    request: { realm: 'personal', executors: ['fact', 'compliance'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'scoped-panel' } },
     expect: [
       { decision: o => o.status === 'completed' && o.decision.conclusion === 'approve', severity: 'block' },
       { selection: { mustInclude: ['fact', 'compliance'], mustExclude: ['scope'] }, severity: 'block' },
@@ -100,14 +100,14 @@ export const evalCases = [
       { name: 'fact', fail: true },
       { name: 'compliance', ...APPROVE },
     ],
-    request: { realm: 'personal', vassals: ['fact'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'fails' } },
+    request: { realm: 'personal', executors: ['fact'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'fails' } },
     expect: [
       { decision: o => o.status === 'failed' && o.branches.some(b => b.state === 'failed'), severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
     ],
   },
 
-  // 6. Product facts may only reach a check when the kernel resolved them:
+  // 6. Product facts may only reach a check when the runtime resolved them:
   // caller-asserted realm hits are refused before dispatch (no phantom evidence).
   {
     id: 'content-review/self-asserted-product-facts-refused',
@@ -118,7 +118,7 @@ export const evalCases = [
     ],
     request: {
       realm: 'personal',
-      vassals: ['fact', 'compliance'],
+      executors: ['fact', 'compliance'],
       aggregation: { kind: 'unanimous' },
       realmHits: [{ itemId: 'product-fact-1', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'caller claimed spec' }],
       realmHitsOrigin: 'caller-asserted',
@@ -130,20 +130,20 @@ export const evalCases = [
     ],
   },
 
-  // 7. Kernel-resolved product facts are injected and cited — the evidence
+  // 7. Runtime-resolved product facts are injected and cited — the evidence
   // path the content panel is actually allowed to rely on.
   {
-    id: 'content-review/kernel-resolved-facts-cited',
+    id: 'content-review/runtime-resolved-facts-cited',
     skill: 'research',
     agents: [
-      { name: 'fact', stance: 'approve', rationale: 'verified against brief.md: kernel-resolved product spec matches', dataPolicy: 'read-task-scope' },
+      { name: 'fact', stance: 'approve', rationale: 'verified against brief.md: runtime-resolved product spec matches', dataPolicy: 'read-task-scope' },
     ],
     request: {
       realm: 'personal',
-      vassals: ['fact'],
+      executors: ['fact'],
       aggregation: { kind: 'unanimous' },
-      realmHits: [{ itemId: 'resolved-spec', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'kernel-resolved product spec' }],
-      realmHitsOrigin: 'kernel-resolved',
+      realmHits: [{ itemId: 'resolved-spec', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'runtime-resolved product spec' }],
+      realmHitsOrigin: 'runtime-resolved',
       params: { subject: 'content-candidate', predicate: 'injected' },
     },
     expect: [
@@ -163,7 +163,7 @@ export const evalCases = [
     costLimit: { maxWindowCost: 3, circuitWindowMs: 60_000 },
     request: {
       realm: 'personal',
-      vassals: ['fact'],
+      executors: ['fact'],
       aggregation: { kind: 'unanimous' },
       costEstimate: { tokens: 5 },
       params: { subject: 'content-candidate', predicate: 'refused' },

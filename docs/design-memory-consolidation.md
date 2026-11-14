@@ -97,7 +97,7 @@ Agent ──append──▶ Event Log（实时，人人可写）
 3. **事实合并**：一致信息并入既有 fact，version 递增，旧版本保留可回放。
 4. **矛盾检测**：与既有 fact 冲突时——
    - 可按规则消解（如更新时间更晚且来源可靠度更高）→ 旧 fact 标 `superseded`；
-   - 无法自动判定 → 双方标 `disputed`，生成 escalation 进 [监督台](design-vassal-protocol.md)，**不静默选边**。
+   - 无法自动判定 → 双方标 `disputed`，生成 escalation 进 [监督台](design-executor-protocol.md)，**不静默选边**。
 5. **索引更新**：写 Fact 后异步重建/更新召回索引（P0 无索引，扫描即可）。
 
 ### 4.3 置信度聚合（要点）
@@ -162,7 +162,7 @@ Agent ──append──▶ Event Log（实时，人人可写）
 | | 进记忆事件 | 只进审计链 |
 |---|---|---|
 | 语义 | 有人对某对象作了某个可反驳的陈述 | 内核做了一次判断/放行/拒绝/超时 |
-| 形状要求 | `kind:'claim'` 且 `content = {subject, predicate, object}`（`consolidate.ts:31-35` `isClaimContent`，**别的形状不会被折叠成事实**：`consolidate.ts:109` 只吃 claim） | 已有 `AuditDecision` 枚举（`dispatch/dispatcher.ts:6-20`：`dispatched`/`refused-*`/`dispatch-failed`/`sla-ack-breached`/`domain-*`/`driver-grant-*`/`realm-write`/`commission-*`） |
+| 形状要求 | `kind:'claim'` 且 `content = {subject, predicate, object}`（`consolidate.ts:31-35` `isClaimContent`，**别的形状不会被折叠成事实**：`consolidate.ts:109` 只吃 claim） | 已有 `AuditDecision` 枚举（`dispatch/dispatcher.ts:6-20`：`dispatched`/`refused-*`/`dispatch-failed`/`sla-ack-breached`/`domain-*`/`operator-grant-*`/`realm-write`/`commission-*`） |
 | 需要分歧 | 需要（同一 `(realm, subject, predicate)` 出现不同 `object` 才产生 dispute，`consolidate.ts:111-115` factKey 分组） | 不需要 |
 | 可擦除 | 是（`retractFacts`/`forgetSubject`，§6.2） | 否（治理留痕优先，轮转由 `ZEUS_AUDIT_*` 管） |
 
@@ -173,10 +173,10 @@ Agent ──append──▶ Event Log（实时，人人可写）
 **P1 分支结论 → claim（建议只做这条）**
 
 - **触点**：`orchestrator` 收齐 `FanOutResult.branches[]` 之后、发 `intent-finished` 之前（同一处即 `boot.ts:388-392` 已监听的 seam 上游一步）。**消费端已经接好**：`intent-finished` 且带 `realmId` → `consolidateFinishedMemory()`（`boot.ts:422-437`）→ `consolidateRealm(realmId, {now, reliability})` → disputes → `oversight.ingestMemoryDispute()`。所以这条一改，事件→事实→分歧→监督台整条链立刻有输入。
-- **事件形状**：`kind:'claim'`；`source.agentId = 分支的 vassal 名`（可靠度加权与 `reliabilityScore` 正是按 agentId 索引，`boot.ts:425-429`）；`source.taskId = task.id`；`runId`/`realmId` 沿用请求；`refs = [runId, intentId]`（+ 若带 `realmSource` 则加命中 itemId）；`occurredAt` 用分支结束时刻；`confidence` = 分支自带或 0.5 默认（注释已声明"作者自报置信度不是唯一权重"）。
-- **幂等**：`eventId = sha256(`${runId}:${vassal}:${stableStringify(object)}`)`；`memory-store.ts:56-59` 按 `eventId` 去重，因此**重放同一 run 不会产生第二份事实**。
+- **事件形状**：`kind:'claim'`；`source.agentId = 分支的 executor 名`（可靠度加权与 `reliabilityScore` 正是按 agentId 索引，`boot.ts:425-429`）；`source.taskId = task.id`；`runId`/`realmId` 沿用请求；`refs = [runId, intentId]`（+ 若带 `realmSource` 则加命中 itemId）；`occurredAt` 用分支结束时刻；`confidence` = 分支自带或 0.5 默认（注释已声明"作者自报置信度不是唯一权重"）。
+- **幂等**：`eventId = sha256(`${runId}:${executor}:${stableStringify(object)}`)`；`memory-store.ts:56-59` 按 `eventId` 去重，因此**重放同一 run 不会产生第二份事实**。
 - **写入方式**：走 `appendFromRealm(writerRealmId, event)`（`memory-store.ts:62-75`），跨域一律 `MemoryBoundaryError` 并审计——**不能直接 `append`**，否则 §6.3/§6.2 的域边界不变量在这条新路径上形同虚设。
-- **风险（必须决策）**：这是第一次让**第三方产出的文本常驻** `kernel-state.json`；自 deferred #13 起该文件已进备份清单（`docs/design-vault.md`），所以第三方文本会进用户的加密备份包。约束：只存结论与短 snippet（建议 ≤512 字符，超出截断并标注，沿用 diary 的截断先例），不存原始 artifact 全文。
+- **风险（必须决策）**：这是第一次让**第三方产出的文本常驻** `runtime-state.json`；自 deferred #13 起该文件已进备份清单（`docs/design-backup.md`），所以第三方文本会进用户的加密备份包。约束：只存结论与短 snippet（建议 ≤512 字符，超出截断并标注，沿用 diary 的截断先例），不存原始 artifact 全文。
 
 **P2 内核聚合决定 → decision 事件**：`decision` 不是 claim，**不会被折叠成事实**（§8.1），只增加可回放条目；而裁决语义在审计链与决议回写（E6.2）里已完整存在。收益低、重叠高 → **建议不做**。
 

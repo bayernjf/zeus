@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Dispatcher } from '../src/dispatch/dispatcher.js';
 import { cancelTask, sendTask, sendTaskSubscribe } from '../src/dispatch/client.js';
 import { memoryAuditSink } from '../src/dispatch/audit.js';
@@ -32,7 +32,7 @@ function loomCard(): AgentCard {
   return {
     name: 'loom',
     description:
-      'Private-domain content production whitelist platform (CHAIN_13). Vassal skills are plan-only: candidates and plans, human gates decide.',
+      'Private-domain content production whitelist platform (CHAIN_13). Executor skills are plan-only: candidates and plans, human gates decide.',
     url: TASK_URL,
     version: '0.1.0',
     capabilities: { streaming: true, pushNotifications: false, stateTransitionHistory: true },
@@ -63,17 +63,17 @@ function loomCard(): AgentCard {
     ],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: 'content-production',
-      dataRealms: ['enterprise'],
+      realms: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
       sla: { ackSeconds: 10 },
       notes:
-        'Plan-mode vassal: every skill returns an advisory plan artifact and never touches the 13-segment chain, spends tokens, or bypasses a human gate.',
+        'Plan-mode executor: every skill returns an advisory plan artifact and never touches the 13-segment chain, spends tokens, or bypasses a human gate.',
     },
   };
 }
@@ -230,28 +230,28 @@ function hashish(input: string): number {
 // --- tests -------------------------------------------------------------------
 
 describe('Zeus ↔ loom A2A contract compatibility', () => {
-  it('registers the loom card: fealty v1 accepted, three plan skills routable, task endpoint derived', async () => {
+  it('registers the loom card: handshake v1 accepted, three plan skills routable, task endpoint derived', async () => {
     const seen: SeenRequest[] = [];
-    const registry = new VassalRegistry(loomFetch(seen, { requireAuth: false }));
+    const registry = new ExecutorRegistry(loomFetch(seen, { requireAuth: false }));
     const entry = await registry.register(CARD_URL);
 
     expect(entry.card.name).toBe('loom');
     expect(entry.taskUrl).toBe(TASK_URL);
-    expect(entry.fealty).toMatchObject({ version: '1', domain: 'content-production', dataPolicy: 'read-task-scope', sla: { ackSeconds: 10 } });
+    expect(entry.handshake).toMatchObject({ version: '1', domain: 'content-production', dataPolicy: 'read-task-scope', sla: { ackSeconds: 10 } });
     expect(entry.card.defaultInputModes).toEqual(['application/json']);
     for (const skillId of ['generate-content', 'compliance-check', 'effect-backfill']) {
-      expect(registry.findVassalsForSkill(skillId).map(v => v.card.name)).toEqual(['loom']);
+      expect(registry.findExecutorsForSkill(skillId).map(v => v.card.name)).toEqual(['loom']);
     }
-    expect(registry.findVassalsForDomain('content-production')).toHaveLength(1);
+    expect(registry.findExecutorsForDomain('content-production')).toHaveLength(1);
   });
 
   it('dispatches generate-content over sendSubscribe with the exact loom wire shape and consumes the plan report', async () => {
     const seen: SeenRequest[] = [];
     const fetchImpl = loomFetch(seen);
-    const registry = new VassalRegistry(fetchImpl);
+    const registry = new ExecutorRegistry(fetchImpl);
     await registry.register(CARD_URL);
     const { sink } = memoryAuditSink();
-    const dispatcher = new Dispatcher(registry.asVassalLookup(), { audit: sink, fetchImpl, tokenFor: () => TOKEN });
+    const dispatcher = new Dispatcher(registry.asExecutorLookup(), { audit: sink, fetchImpl, tokenFor: () => TOKEN });
 
     const result = await dispatcher.dispatch({
       skill: 'generate-content',
@@ -296,10 +296,10 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
   it('turns a loom missing-params input-required (no escalation payload) into a neutral oversight escalation', async () => {
     const seen: SeenRequest[] = [];
     const fetchImpl = loomFetch(seen);
-    const registry = new VassalRegistry(fetchImpl);
+    const registry = new ExecutorRegistry(fetchImpl);
     await registry.register(CARD_URL);
     const { sink } = memoryAuditSink();
-    const dispatcher = new Dispatcher(registry.asVassalLookup(), { audit: sink, fetchImpl, tokenFor: () => TOKEN });
+    const dispatcher = new Dispatcher(registry.asExecutorLookup(), { audit: sink, fetchImpl, tokenFor: () => TOKEN });
 
     const result = await dispatcher.dispatch({
       skill: 'compliance-check',
@@ -315,14 +315,14 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
     // loom does not emit x-zeus-escalation; Zeus must still open a neutral escalation
     const desk = new OversightDesk({ newId: () => 'esc-loom-1' });
     const escalation = desk.ingest(result, {
-      vassal: 'loom',
+      executor: 'loom',
       skill: 'compliance-check',
       params: { tenant_id: 't-7' },
       realm: 'enterprise',
       runId: 'zeus-run-loom-2',
     });
     expect(escalation?.status).toBe('pending');
-    expect(escalation?.reason).toBe('vassal requests human input');
+    expect(escalation?.reason).toBe('executor requests human input');
   });
 
   it('consumes a synchronous tasks/send JSON response (non-streaming path)', async () => {

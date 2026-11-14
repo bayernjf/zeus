@@ -20,7 +20,7 @@
 import type { WritebackRecord } from './types.js';
 
 /** Lowest allowed factor; a target can be deprioritised but never zeroed
- *  (fail-soft: a down-weighted vassal stays reachable when others saturate). */
+ *  (fail-soft: a down-weighted executor stays reachable when others saturate). */
 export const MIN_WRITEWEIGHT_FACTOR = 0.1;
 
 export type RecordWritebackInput = {

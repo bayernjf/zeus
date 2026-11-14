@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { CardFetchError, VassalConflictError, VassalRegistry, VassalRevokedError } from '../registry/registry.js';
+import { CardFetchError, ExecutorConflictError, ExecutorRegistry, ExecutorRevokedError } from '../registry/registry.js';
 import { projectInternalRoster, projectPublicRoster } from '../registry/roster.js';
 import { publishRootKey, sealSnapshot, type RosterSigner, type SignedRosterSnapshot } from '../registry/signing.js';
 import type { Orchestrator } from '../orchestrator/orchestrator.js';
@@ -64,15 +64,15 @@ import {
   listTasksRoute,
   resumeTaskRoute,
 } from './org-v1.js';
-import type { KernelStats } from '../state/stats.js';
+import type { RuntimeStats } from '../state/stats.js';
 import type { IntentArchiveLookup, RetentionMode } from '../state/archive.js';
 import type { MemoryStore } from '../memory/memory-store.js';
-import type { DriverWriteGrant, RealmActor, RealmStore } from '../realm/types.js';
+import type { OperatorWriteGrant, RealmActor, RealmStore } from '../realm/types.js';
 import { RealmError, RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../realm/types.js';
 import { createRealmMcpHandler, JSONRPC_VERSION, type RealmMcpActor } from '../realm/mcp.js';
-import { createKernelToolsMcpHandler, KERNEL_MCP_PROTOCOL_VERSION, type KernelMcpActor } from '../mcp/kernel-tools.js';
-import { SUPPORTED_FEALTY_VERSIONS, type AgentCard, type Task, type TaskState } from '../a2a/types.js';
-import { fealtyOathProblem } from '../registry/registry.js';
+import { createRuntimeToolsMcpHandler, RUNTIME_MCP_PROTOCOL_VERSION, type RuntimeMcpActor } from '../mcp/runtime-tools.js';
+import { SUPPORTED_HANDSHAKE_VERSIONS, type AgentCard, type Task, type TaskState } from '../a2a/types.js';
+import { handshakeOathProblem } from '../registry/registry.js';
 import { isReadOnlyTagged, trustTierOf } from '../trust/tier.js';
 import { buildRosterAnchor } from '../trust/rosterAnchor.js';
 import {
@@ -82,10 +82,10 @@ import {
 } from '../realm/authorization.js';
 import { RealmSourceError, resolveRealmSource, type RealmAuditEntry, type RealmSource } from '../realm/source.js';
 import {
-  DriverGrantError,
-  issueDriverWriteGrant,
-  type DriverGrantAuditEntry,
-  type DriverGrantLedger,
+  OperatorGrantError,
+  issueOperatorWriteGrant,
+  type OperatorGrantAuditEntry,
+  type OperatorGrantLedger,
 } from '../realm/grant.js';
 import {
   ExecutionDelegationError,
@@ -116,14 +116,14 @@ import type { MemoryEvent, MemoryState } from '../memory/types.js';
  * HTTP service face (docs/design-http-transport.md): a thin Fastify adapter.
  * The ONLY directory allowed to import fastify; handlers do
  * parameter/auth/serialization only — zero business logic, all state lives in
- * the kernel. No Realm **content** routes: item bodies are reachable only over
+ * the runtime. No Realm **content** routes: item bodies are reachable only over
  * the MCP stdio face (design-realm §6.1). What HTTP does carry is Realm
  * governance — `/api/realms/:id/disconnect`, `/api/realms/:id/retarget-tenant`,
  * `/api/realm/write-grants` and the mount view `/api/domains` (no bodies, no
  * absolute roots).
  *
  * H1 (public, no auth): /healthz, /api/roster/public, /api/roster/keys.
- * H2 (internal, bearer): /api/roster plus the driver API — fan out intents,
+ * H2 (internal, bearer): /api/roster plus the operator API — fan out intents,
  * read decisions, cancel, list/settle escalations, read metrics. The whole
  * internal group (and the H2 routes) is mounted only when an internal token is
  * configured, so a misconfigured process never exposes a write face.
@@ -148,7 +148,7 @@ const SKILL_STATUSES: SkillStatus[] = ['active', 'deprecated', 'uninstalled'];
 const MENTORSHIP_STATUSES: MentorshipStatus[] = ['teaching', 'certified', 'failed', 'dismissed'];
 const CONNECTOR_STATUSES: ConnectorStatus[] = ['declared', 'connected', 'revoked'];
 export type HttpDeps = {
-  registry: VassalRegistry;
+  registry: ExecutorRegistry;
   signer: RosterSigner;
   /**
    * Optional browser-origin allow-list for CORS headers. Off by default so the
@@ -164,7 +164,7 @@ export type HttpDeps = {
    * because then this face genuinely does not know.
    */
   rosterKey?: { keyId: string; source: 'configured' | 'ephemeral' };
-  /** Bearer token for the whole internal/driver face. When unset, H2 routes and GET /api/roster are not mounted. */
+  /** Bearer token for the whole internal/operator face. When unset, H2 routes and GET /api/roster are not mounted. */
   internalToken?: string;
   now?: () => Date;
   version?: string;
@@ -246,8 +246,8 @@ export type HttpDeps = {
    * serve process only reads).
    */
   evalRunsStore?: JsonlEvalRunsStore;
-  /** H2: live inventory of what the kernel holds and whether it persists. */
-  kernelStats?: () => KernelStats;
+  /** H2: live inventory of what the runtime holds and whether it persists. */
+  runtimeStats?: () => RuntimeStats;
   /** H2 (E9.3): department establishment chart, staffing and accountability. */
   orgRegistry?: OrgRegistry;
   /** H2: memory source — the memory face (recall/facts/retract) and diary read/generate. */
@@ -258,7 +258,7 @@ export type HttpDeps = {
   memoryServiceAudit?: (decision: 'memory-service-call', detail: string) => void;
   /**
    * Durability hook for compliance mutations: retract / forget-subject await
-   * a kernel snapshot flush before answering, so a crash cannot resurrect a
+   * a runtime snapshot flush before answering, so a crash cannot resurrect a
    * retracted fact in the window before the next periodic save.
    */
   persistState?: () => Promise<void>;
@@ -273,14 +273,14 @@ export type HttpDeps = {
    */
   realmMcp?: { realmIds: string[]; actorHeader?: string };
   /**
-   * G6 (design-observability §5): read-only kernel tool face over MCP
+   * G6 (design-observability §5): read-only runtime tool face over MCP
    * (memory.recall / traces.query). Mounted at /api/mcp when an internal token
    * exists and at least one backing store (memoryStore / traceExporter) is
-   * wired; authn accepts the driver bearer token or a memory service token,
+   * wired; authn accepts the operator bearer token or a memory service token,
    * authz is per tool (memory.recall is namespace-bound, traces.query is
-   * driver-only). Unmounted backing stores fail closed by name.
+   * operator-only). Unmounted backing stores fail closed by name.
    */
-  kernelToolsMcp?: boolean;
+  runtimeToolsMcp?: boolean;
   /**
    * Inbound A2A face (design-inbound-a2a, deferred #19): when set, mounts
    * GET /.well-known/agent-card.json (public Zeus agent card, no secrets) and
@@ -292,13 +292,13 @@ export type HttpDeps = {
   inboundAudit?: (entry: AuditEntry) => void;
   /** E6.4: cross-domain grant registry (the /api/domains face and realmSource). */
   domainGrants?: DomainGrantRegistry;
-  /** E3.5 / deferred #14: consumed driver-write grant nonces (the replay ledger). */
-  driverGrantLedger?: DriverGrantLedger;
+  /** E3.5 / deferred #14: consumed operator-write grant nonces (the replay ledger). */
+  operatorGrantLedger?: OperatorGrantLedger;
   /** How this process authorizes enterprise writes; reported so an operator
    *  never has to guess whether a grant was checked or merely shaped. */
-  driverGrantAuthority?: 'signed' | 'shape-only';
+  operatorGrantAuthority?: 'signed' | 'shape-only';
   /** E3.5 / deferred #14: audit sink for issued write grants (spine-mapped by boot). */
-  driverGrantAudit?: (entry: DriverGrantAuditEntry) => void;
+  operatorGrantAudit?: (entry: OperatorGrantAuditEntry) => void;
   /** deferred #33: audit sink for issued execution delegations (spine-mapped by boot). */
   executionDelegationAudit?: (entry: ExecutionDelegationAuditEntry) => void;
   /** Self-host loop step 5: bounded delegation contracts an unattended watch
@@ -308,12 +308,12 @@ export type HttpDeps = {
    *  watch to a freshly issued contract. */
   watches?: WatchRegistry;
   /** Operator face for the trigger primitive: one caller-driven evaluation pass
-   *  over every registered watch. The kernel holds no timers - the rhythm stays
+   *  over every registered watch. The runtime holds no timers - the rhythm stays
    *  with whoever calls this (cron / systemd / an operator's curl). */
   runWatchTick?: () => Promise<WatchTickReport>;
   /** Step 5: audit sink for contract issuance/revocation (spine-mapped by boot). */
   delegationContractAudit?: (entry: DelegationContractAuditEntry) => void;
-  /** E6.4: audit sink for domain crossings, fed by the kernel's audit spine. */
+  /** E6.4: audit sink for domain crossings, fed by the runtime's audit spine. */
   realmAudit?: (entry: RealmAuditEntry) => void;
   /** E9.1/E9.2: the commission gate and day-one briefing for department seats. */
   commissions?: CommissionLedger;
@@ -333,7 +333,7 @@ export type StartOptions = {
 
 /**
  * How the process resolved its decision layer at boot. Reported as
- * configuration, not measurement: it says which backend the kernel will ask and
+ * configuration, not measurement: it says which backend the runtime will ask and
  * which gates apply, which until now was only visible as one stderr line.
  */
 export type DecisionStatus = {
@@ -385,14 +385,14 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
   const maxAge = deps.sealMaxAgeSeconds ?? DEFAULT_SEAL_MAX_AGE_SECONDS;
   const attestationTtl = deps.attestationTtlSeconds ?? DEFAULT_ATTESTATION_TTL_SECONDS;
 
-  // Liveness: version + time only, never vassal/Realm information.
+  // Liveness: version + time only, never executor/Realm information.
   app.get('/healthz', async () => ({
     status: 'ok',
     ...(deps.version ? { version: deps.version } : {}),
     ts: now().toISOString(),
   }));
 
-  // Public immutable signed snapshot (fealty-signing §4); revoked vassals and
+  // Public immutable signed snapshot (handshake-signing §4); revoked executors and
   // internal endpoints/probe details are already removed at the projector.
   app.get('/api/roster/public', async (_request, reply) => {
     const at = now();
@@ -412,7 +412,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     return signed;
   });
 
-  // Root public key (design-fealty-signing §5.1): the material a verifier needs
+  // Root public key (design-handshake-signing §5.1): the material a verifier needs
   // to check the seals above. Unauthenticated like the roster it signs — a key
   // that required a token could not be used by a third party reading the roster.
   app.get('/api/roster/keys', async (_request, reply) => {
@@ -455,12 +455,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     };
   });
 
-  // ---- Internal / driver face (H2): mounted only with a bearer token ----
+  // ---- Internal / operator face (H2): mounted only with a bearer token ----
   // Public audit summary: aggregate counts only. The internal /api/audit face
-  // returns raw entries (vassal, runId, detail); this projection strips every
+  // returns raw entries (executor, runId, detail); this projection strips every
   // per-event field and answers the only question a third party can ask without
   // a token - "how much governance activity happened, of which kinds, over what
-  // window". Counts alone cannot name a vassal, a run, or a realm.
+  // window". Counts alone cannot name a executor, a run, or a realm.
   app.get('/api/audit/summary', async (_request, reply) => {
     const generatedAt = now().toISOString();
     let entries: AuditEntry[] = [];
@@ -564,33 +564,33 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       });
     }
 
-    // G6 (design-observability §5): read-only kernel tool face over MCP —
-    // memory.recall (namespace-bound) and traces.query (driver-only), both
+    // G6 (design-observability §5): read-only runtime tool face over MCP —
+    // memory.recall (namespace-bound) and traces.query (operator-only), both
     // mapped onto the same transport-agnostic handler. Mounted only when an
     // internal token exists (auth material) and something backs the tools;
     // otherwise a 404, exactly like every other conditional observability face.
-    if (deps.kernelToolsMcp && deps.internalToken && (deps.memoryStore || deps.traceExporter)) {
-      const driverToken = deps.internalToken;
+    if (deps.runtimeToolsMcp && deps.internalToken && (deps.memoryStore || deps.traceExporter)) {
+      const operatorToken = deps.internalToken;
       const memoryServiceTokens = deps.memoryServiceTokens;
       // Public server metadata for client discovery; carries no state about
       // which backing stores are mounted (mount state would leak to
       // unauthenticated callers — same rule as the realm face's GET /mcp).
       app.get('/api/mcp', async () => ({
         jsonrpc: JSONRPC_VERSION,
-        protocolVersion: KERNEL_MCP_PROTOCOL_VERSION,
+        protocolVersion: RUNTIME_MCP_PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: 'zeus-kernel', version: deps.version ?? '0.1.0' },
+        serverInfo: { name: 'zeus-runtime', version: deps.version ?? '0.1.0' },
       }));
       app.post('/api/mcp', async (request: FastifyRequest, reply: FastifyReply) => {
-        // Authn: driver bearer token or a memory service token, both compared
+        // Authn: operator bearer token or a memory service token, both compared
         // constant-time; anything else is a 401 challenge. Authz is per tool
         // inside the handler (actor kind), not per route: one endpoint serves
         // both identities, and the tools say which identity they accept.
         const header = request.headers.authorization ?? '';
         const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
-        let actor: KernelMcpActor | undefined;
-        if (presented && constantTimeEqual(presented, driverToken)) {
-          actor = { kind: 'driver' };
+        let actor: RuntimeMcpActor | undefined;
+        if (presented && constantTimeEqual(presented, operatorToken)) {
+          actor = { kind: 'operator' };
         } else if (presented && memoryServiceTokens) {
           for (const [namespace, token] of Object.entries(memoryServiceTokens)) {
             if (constantTimeEqual(presented, token)) {
@@ -614,7 +614,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         } else {
           message = raw;
         }
-        const handle = createKernelToolsMcpHandler({
+        const handle = createRuntimeToolsMcpHandler({
           actor,
           ...(deps.memoryStore ? { memoryStore: deps.memoryStore } : {}),
           ...(deps.traceExporter ? { traceExporter: deps.traceExporter } : {}),
@@ -629,11 +629,11 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
     // Inbound A2A face (design-inbound-a2a v0.1, deferred #19): Zeus publishes
     // its own agent card and accepts tasks/send from upstream agents. GET is the
-    // card (public, same shape the outbound client fetches from a vassal); POST
+    // card (public, same shape the outbound client fetches from a executor); POST
     // on the same path is JSON-RPC landing on the H2 intent surface. Caller
     // identity: an optional x-zeus-caller-card header is shape-checked against
-    // the same fealty oath gate the registry runs at registration; absent a
-    // card, the bearer token alone stands as the driver's own call.
+    // the same handshake oath gate the registry runs at registration; absent a
+    // card, the bearer token alone stands as the operator's own call.
     if (deps.agentCard) {
       app.get('/.well-known/agent-card.json', async (_request, reply) => {
         reply.header('Cache-Control', 'public, max-age=300');
@@ -649,13 +649,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         }
         const params = (body.params ?? {}) as Record<string, unknown>;
 
-        // Caller identity gate: a declared caller card must carry a fealty oath
+        // Caller identity gate: a declared caller card must carry a handshake oath
         // that would survive the registration gate; anything else is refused
         // (fail-closed) and audited on both faces — the task face (inbound-task-*)
         // and the trust face (external-agent-*, PRD E9.4). No card header =
-        // bearer-authenticated driver calling itself, which the token already
+        // bearer-authenticated operator calling itself, which the token already
         // stands for.
-        let callerName = 'driver';
+        let callerName = 'operator';
         let callerTier: 'tier-1' | 'tier-2' | 'tier-3' | undefined;
         const callerCard = request.headers['x-zeus-caller-card'];
         if (typeof callerCard === 'string' && callerCard.trim() !== '') {
@@ -665,17 +665,17 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           } catch {
             return error(reply, 400, 'invalid_request', 'x-zeus-caller-card must be valid JSON');
           }
-          const fealty = card['x-zeus-fealty'];
-          if (!fealty || fealty.swornTo !== 'zeus' || !(SUPPORTED_FEALTY_VERSIONS as readonly string[]).includes(fealty.version)) {
-            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'external-agent-refused', tier: 'tier-0', detail: 'caller card carries no valid zeus fealty' });
-            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: 'caller card carries no valid zeus fealty' });
-            return error(reply, 403, 'caller_refused', 'caller card has no valid zeus fealty');
+          const handshake = card['x-zeus-handshake'];
+          if (!handshake || handshake.swornTo !== 'zeus' || !(SUPPORTED_HANDSHAKE_VERSIONS as readonly string[]).includes(handshake.version)) {
+            audit?.({ ts: at, executor: card.name ?? 'unknown', decision: 'external-agent-refused', tier: 'tier-0', detail: 'caller card carries no valid zeus handshake' });
+            audit?.({ ts: at, executor: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: 'caller card carries no valid zeus handshake' });
+            return error(reply, 403, 'caller_refused', 'caller card has no valid zeus handshake');
           }
-          const oathProblem = fealtyOathProblem(fealty);
+          const oathProblem = handshakeOathProblem(handshake);
           if (oathProblem) {
-            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'external-agent-refused', tier: 'tier-0', detail: `caller fealty shape: ${oathProblem}` });
-            audit?.({ ts: at, vassal: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: `caller fealty shape: ${oathProblem}` });
-            return error(reply, 403, 'caller_refused', `invalid caller fealty: ${oathProblem}`);
+            audit?.({ ts: at, executor: card.name ?? 'unknown', decision: 'external-agent-refused', tier: 'tier-0', detail: `caller handshake shape: ${oathProblem}` });
+            audit?.({ ts: at, executor: card.name ?? 'unknown', decision: 'inbound-task-refused', detail: `caller handshake shape: ${oathProblem}` });
+            return error(reply, 403, 'caller_refused', `invalid caller handshake: ${oathProblem}`);
           }
           // design-external-trust (PRD E9.4): the shape survived, so the caller
           // is admitted on a tier — tier-3 when the signed roster anchors the
@@ -705,7 +705,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           }
           audit?.({
             ts: at,
-            vassal: callerName,
+            executor: callerName,
             decision: 'external-agent-admitted',
             tier: callerTier,
             detail: callerTier === 'tier-1'
@@ -714,12 +714,12 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           });
         }
 
-        // Task mapping: skills[0] selects the kernel skill; message and the
+        // Task mapping: skills[0] selects the runtime skill; message and the
         // caller's taskId ride along in params so the H2 intent carries the
         // caller's own correlation id; realm defaults to personal (§2.3).
         const skills = params.skills;
         if (!Array.isArray(skills) || skills.length === 0 || typeof skills[0] !== 'string') {
-          audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', detail: 'params.skills must be a non-empty array of skill ids' });
+          audit?.({ ts: at, executor: callerName, decision: 'inbound-task-refused', detail: 'params.skills must be a non-empty array of skill ids' });
           return error(reply, 400, 'invalid_request', 'params.skills must be a non-empty array of skill ids');
         }
         const skill = skills[0];
@@ -731,16 +731,16 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         // no outbound dispatch; tier-2/3 keep the current rules.
         if (callerTier === 'tier-1') {
           if (!deps.skillRegistry) {
-            audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: 'skill registry unavailable; tier-1 dispatch fails closed' });
+            audit?.({ ts: at, executor: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: 'skill registry unavailable; tier-1 dispatch fails closed' });
             return error(reply, 403, 'skill_unavailable', 'tier-1 dispatch requires a skill registry');
           }
           const spec = deps.skillRegistry.get(skill);
           if (!spec) {
-            audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: `skill ${skill} not registered; tier-1 may only dispatch read-only skills` });
+            audit?.({ ts: at, executor: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: `skill ${skill} not registered; tier-1 may only dispatch read-only skills` });
             return error(reply, 403, 'skill_unavailable', `tier-1 may only dispatch read-only skills (${skill} not registered)`);
           }
           if (!isReadOnlyTagged(spec)) {
-            audit?.({ ts: at, vassal: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: `skill ${skill} is not read-only; tier-1 capability face narrowed` });
+            audit?.({ ts: at, executor: callerName, decision: 'inbound-task-refused', tier: 'tier-1', detail: `skill ${skill} is not read-only; tier-1 capability face narrowed` });
             return error(reply, 403, 'skill_unavailable', `tier-1 may only dispatch read-only skills (${skill} is not tagged read-only)`);
           }
         }
@@ -775,7 +775,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         try {
           result = await deps.orchestrator!.fanOut(fanOutRequest);
         } catch (thrown) {
-          if (thrown instanceof DomainError) return mapKernelError(reply, thrown);
+          if (thrown instanceof DomainError) return mapRuntimeError(reply, thrown);
           throw thrown;
         }
         // S6 V2: an inbound caller may carry its own trace context (W3C
@@ -791,7 +791,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
               : undefined;
         audit?.({
           ts: at,
-          vassal: callerName,
+          executor: callerName,
           decision: 'inbound-task-accepted',
           runId: result.runId,
           skill,
@@ -811,7 +811,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       });
     }
 
-    // Internal governance roster: sealed like the public view (design-fealty-signing
+    // Internal governance roster: sealed like the public view (design-handshake-signing
     // §4 "internal/public each sealed"), but it keeps revoked rows — those carry
     // permanent (non-expiring) revocation attestations — plus internal endpoints
     // and probe details. Bearer-protected and never cached by intermediaries.
@@ -836,13 +836,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       return signed;
     });
 
-    // G1: onboard a vassal at runtime — fetch its agent card, validate fealty
-    // and register it. A card without fealty / with an unsupported version is
+    // G1: onboard a executor at runtime — fetch its agent card, validate handshake
+    // and register it. A card without handshake / with an unsupported version is
     // rejected by the registry; an unreachable card is a bad-gateway, not a
     // malformed request.
-    app.post('/api/vassals', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+    app.post('/api/executors', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
       const body = (request.body ?? {}) as { cardUrl?: unknown; taskUrl?: unknown; token?: unknown };
-      // A-03: replacing an already-active same-name vassal re-points dispatch
+      // A-03: replacing an already-active same-name executor re-points dispatch
       // and swaps its bearer; that overwrite must be asked for explicitly.
       const force = (request.query as { force?: unknown } | undefined)?.force === 'true';
       if (typeof body.cardUrl !== 'string' || body.cardUrl.trim() === '') {
@@ -852,7 +852,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         return error(reply, 400, 'invalid_request', 'body.taskUrl must be a string');
       }
       // A credentialed agent onboards over this route too, not only through
-      // ZEUS_VASSAL_SEEDS: without a token here the dispatcher would call the
+      // ZEUS_EXECUTOR_SEEDS: without a token here the dispatcher would call the
       // peer with no Authorization at all and the branch would fail in a way
       // that reads like the peer's fault. An empty string is refused rather
       // than silently meaning "no credential".
@@ -873,34 +873,34 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         // Classified by error identity, not by message shape: a transport failure
         // is the peer's fault (502) — including a 200 whose body is not JSON,
         // which is the peer failing to serve a card — while a card that was
-        // fetched and parsed but refused on content (bad fealty, unsupported
+        // fetched and parsed but refused on content (bad handshake, unsupported
         // version, a body that is not a card) is something the caller or the
-        // vassal can actually fix (400).
+        // executor can actually fix (400).
         if (e instanceof CardFetchError) return error(reply, 502, 'bad_gateway', detail);
         // A-02: a revoked name cannot be brought back by re-registering, so this
         // is a state conflict (409), not a malformed request (400). A-03: an
         // active duplicate is refused the same way until `?force=true` asks
         // for the replacement.
-        if (e instanceof VassalRevokedError || e instanceof VassalConflictError) return error(reply, 409, 'conflict', detail);
+        if (e instanceof ExecutorRevokedError || e instanceof ExecutorConflictError) return error(reply, 409, 'conflict', detail);
         return error(reply, 400, 'invalid_request', detail);
       }
     });
 
-    // G1: revoke a vassal. Revocation takes effect for dispatch immediately;
+    // G1: revoke a executor. Revocation takes effect for dispatch immediately;
     // an unknown / already-revoked name is 404.
-    app.delete('/api/vassals/:name', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+    app.delete('/api/executors/:name', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
       const { name } = request.params as { name: string };
-      if (!deps.registry.revoke(name)) return error(reply, 404, 'not_found', `unknown vassal: ${name}`);
+      if (!deps.registry.revoke(name)) return error(reply, 404, 'not_found', `unknown executor: ${name}`);
       return { name, revoked: true };
     });
 
     // A-02: the one explicit way back. A revocation is sticky against
-    // re-registration; restoring the vassal is a separate, audited act. Unknown
-    // names and already-active vassals are 404 (nothing to restore).
-    app.post('/api/vassals/:name/reinstate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
+    // re-registration; restoring the executor is a separate, audited act. Unknown
+    // names and already-active executors are 404 (nothing to restore).
+    app.post('/api/executors/:name/reinstate', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
       const { name } = request.params as { name: string };
       if (!deps.registry.reinstate(name)) {
-        return error(reply, 404, 'not_found', `no revoked vassal named '${name}'`);
+        return error(reply, 404, 'not_found', `no revoked executor named '${name}'`);
       }
       return { name, revoked: false };
     });
@@ -911,7 +911,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       // back; the orchestrator lands it idempotently (first settlement wins)
       // into the intent result / audit spine / E6.1 queue. This block only
       // exists when the internal token is set, so an unconfigured key leaves
-      // the endpoint unmounted (same convention as the rest of the driver face).
+      // the endpoint unmounted (same convention as the rest of the operator face).
       app.post('/api/a2a/push-notifications', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const raw = request.body;
         const candidate = raw as { id?: unknown; status?: { state?: unknown } };
@@ -931,7 +931,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         reply.code(200);
         return { ok: true, idempotent: result.idempotent, state: result.state, at: result.at };
       });
-      // H2: fan one intent out to the vassals providing a skill.
+      // H2: fan one intent out to the executors providing a skill.
       app.post('/api/intents', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const body = (request.body ?? {}) as Partial<FanOutRequest>;
         // S3: a multi-stage dependency intent. Runs as one DAG (wave by wave)
@@ -957,7 +957,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             return { ...result, layers: topologicalLayers(spec.nodes) };
           } catch (thrown) {
             if (thrown instanceof DagValidationError) return error(reply, 400, 'invalid_dag', thrown.message);
-            if (thrown instanceof DomainError) return mapKernelError(reply, thrown);
+            if (thrown instanceof DomainError) return mapRuntimeError(reply, thrown);
             throw thrown;
           }
         }
@@ -967,8 +967,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (body.realm !== 'personal' && body.realm !== 'enterprise') {
           return error(reply, 400, 'invalid_request', 'body.realm must be "personal" or "enterprise"');
         }
-        if (body.vassals !== undefined && !(Array.isArray(body.vassals) && body.vassals.every(v => typeof v === 'string'))) {
-          return error(reply, 400, 'invalid_request', 'body.vassals must be an array of vassal names');
+        if (body.executors !== undefined && !(Array.isArray(body.executors) && body.executors.every(v => typeof v === 'string'))) {
+          return error(reply, 400, 'invalid_request', 'body.executors must be an array of executor names');
         }
         // Caller-asserted realm content must at least be shaped like a list; the
         // per-item fields are the operator's to assert (they are the data
@@ -984,7 +984,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'body.branchTimeoutMs must be a positive number');
         }
         // deferred #33: execute mode needs a mode value we understand; the
-        // delegation itself is shape-checked inside the kernel gate (fail-closed,
+        // delegation itself is shape-checked inside the runtime gate (fail-closed,
         // consumed once) rather than re-implemented here.
         if (body.mode !== undefined && body.mode !== 'plan' && body.mode !== 'execute') {
           return error(reply, 400, 'invalid_request', 'body.mode must be "plan" or "execute"');
@@ -993,8 +993,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 400, 'invalid_request', 'body.executionDelegation must be an execution delegation object');
         }
         const params = body.params && typeof body.params === 'object' && !Array.isArray(body.params) ? body.params : {};
-        // E6.4: kernel-resolved realm content. Preferred over pasted realmHits,
-        // because then the kernel knows which realm the content came from and can
+        // E6.4: runtime-resolved realm content. Preferred over pasted realmHits,
+        // because then the runtime knows which realm the content came from and can
         // gate the crossing, instead of trusting a caller's provenance claim.
         const sourceSpec = (request.body as { realmSource?: unknown } | undefined)?.realmSource;
         let resolved: Awaited<ReturnType<typeof resolveRealmSource>> | undefined;
@@ -1010,7 +1010,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           try {
             resolved = await resolveRealmSource({
               store: deps.realmStore,
-              actor: parsed.onBehalfOf ?? { kind: 'driver', id: 'driver' },
+              actor: parsed.onBehalfOf ?? { kind: 'operator', id: 'operator' },
               source: parsed,
               declaredRealm: body.realm,
               ...(deps.domainGrants ? { grants: deps.domainGrants.list() } : {}),
@@ -1028,7 +1028,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           realm: body.realm,
           params,
           ...(typeof body.intentId === 'string' ? { intentId: body.intentId } : {}),
-          ...(body.vassals ? { vassals: body.vassals } : {}),
+          ...(body.executors ? { executors: body.executors } : {}),
           ...(body.aggregation ? { aggregation: body.aggregation } : {}),
           ...(typeof body.branchTimeoutMs === 'number' ? { branchTimeoutMs: body.branchTimeoutMs } : {}),
           ...(body.realmHits ? { realmHits: body.realmHits, realmHitsOrigin: 'caller-asserted' as const } : {}),
@@ -1040,7 +1040,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             ? {
                 realmId: resolved.realmId,
                 realmHits: resolved.hits,
-                realmHitsOrigin: 'kernel-resolved' as const,
+                realmHitsOrigin: 'runtime-resolved' as const,
               }
             : {}),
         };
@@ -1051,7 +1051,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           // A domain error is the caller's problem, not ours: an idempotency key
           // reused with different fields is a conflict (409), never a 500.
           // Anything else keeps propagating so a real bug still surfaces as one.
-          if (thrown instanceof DomainError) return mapKernelError(reply, thrown);
+          if (thrown instanceof DomainError) return mapRuntimeError(reply, thrown);
           throw thrown;
         }
         reply.code(200);
@@ -1071,7 +1071,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         try {
           return await deps.orchestrator!.cancelIntent(id);
         } catch (e) {
-          return mapKernelError(reply, e);
+          return mapRuntimeError(reply, e);
         }
       });
 
@@ -1151,7 +1151,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
       // S15 V3 (design-streaming §3.3): polling-shaped thinking-state snapshot
       // for operator faces without an SSE client (the terminal deck). Each
-      // active intent (fan-out running, or parked needs-driver) carries the
+      // active intent (fan-out running, or parked needs-operator) carries the
       // StreamView projected from retained progress events plus N/M settled
       // counts. Previews are projections only and never enter a decision path.
       app.get('/api/active-intents', { preHandler: requireBearer }, async () => {
@@ -1171,7 +1171,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       app.get('/api/cost', { preHandler: requireBearer }, async () => deps.orchestrator!.costReadout());
 
       // E1.6: offline replay of one stored decision — participants, dispatch
-      // input, stances, aggregation, arbitration/judge and the driver's
+      // input, stances, aggregation, arbitration/judge and the operator's
       // settlement, rebuilt read-only from the persisted records. Nothing is
       // re-dispatched and no conclusion is re-derived. ?format=text renders the
       // human-readable timeline instead of JSON.
@@ -1392,18 +1392,18 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         try {
           return deps.oversight!.approve(id, note);
         } catch (e) {
-          return mapKernelError(reply, e);
+          return mapRuntimeError(reply, e);
         }
       });
 
-      // H2: reject a task-input escalation (cancels the vassal-side task).
+      // H2: reject a task-input escalation (cancels the executor-side task).
       app.post('/api/escalations/:id/reject', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const { id } = request.params as { id: string };
         const note = optionalNote(request.body);
         try {
           return await deps.oversight!.reject(id, note);
         } catch (e) {
-          return mapKernelError(reply, e);
+          return mapRuntimeError(reply, e);
         }
       });
 
@@ -1427,20 +1427,20 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (escalation.kind !== 'task-input') {
           return error(reply, 400, 'invalid_request', `escalation ${id} is ${escalation.kind}; only task-input can resume`);
         }
-        const intentId = await deps.orchestrator!.findIntentForBranchRun(escalation.runId, escalation.vassal);
+        const intentId = await deps.orchestrator!.findIntentForBranchRun(escalation.runId, escalation.executor);
         if (!intentId) return error(reply, 409, 'conflict', `no stored intent branch matches escalation ${id}`);
         const note = typeof body.note === 'string' ? body.note : undefined;
         try {
           const intent = await deps.orchestrator!.resumeBranch(
             intentId,
-            escalation.vassal,
+            escalation.executor,
             body.params as Record<string, unknown>,
             body.executionDelegation as FanOutRequest['executionDelegation'],
           );
           const approved = deps.oversight!.approve(id, note);
           return { escalation: approved, intent };
         } catch (e) {
-          return mapKernelError(reply, e);
+          return mapRuntimeError(reply, e);
         }
       });
 
@@ -1452,7 +1452,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       if (deps.delegationContracts && deps.watches) {
         app.post('/api/escalations/:id/approve-contract', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
           const { id } = request.params as { id: string };
-          const body = (request.body ?? {}) as { grantedBy?: unknown; limits?: unknown; reason?: unknown; vassal?: unknown };
+          const body = (request.body ?? {}) as { grantedBy?: unknown; limits?: unknown; reason?: unknown; executor?: unknown };
           const escalation = deps.oversight!.get(id);
           if (!escalation) return error(reply, 404, 'not_found', `unknown escalation: ${id}`);
           if (escalation.kind !== 'delegation-limit') {
@@ -1480,8 +1480,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           if (!isNonEmptyString(limits.windowEndsAt) || Number.isNaN(Date.parse(limits.windowEndsAt))) {
             return error(reply, 400, 'invalid_request', 'body.limits.windowEndsAt must be a parseable future date');
           }
-          if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
-            return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
+          if (body.executor !== undefined && !isNonEmptyString(body.executor)) {
+            return error(reply, 400, 'invalid_request', 'body.executor must be a non-empty string');
           }
           try {
             const contract = await issueDelegationContract(
@@ -1491,7 +1491,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
                 // An execute contract must cover the execute gate's capability;
                 // the caller cannot widen past what this escalation needs.
                 capabilities: ['execute'],
-                ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal } : {}),
+                ...(isNonEmptyString(body.executor) ? { executor: body.executor } : {}),
                 limits: {
                   maxChildTickets: limits.maxChildTickets as number,
                   maxConcurrent: limits.maxConcurrent as number,
@@ -1508,7 +1508,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
               contractId: contract.id,
               grantedBy: contract.grantedBy,
               skill: contract.skill,
-              ...(contract.vassal ? { vassal: contract.vassal } : {}),
+              ...(contract.executor ? { executor: contract.executor } : {}),
               capabilities: contract.capabilities,
               keyId: contract.keyId,
               windowEndsAt: contract.limits.windowEndsAt,
@@ -1526,13 +1526,13 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             return { escalation: approved, contract, watch: deps.watches!.get(watch.id) };
           } catch (thrown) {
             if (thrown instanceof DelegationContractError) return error(reply, 400, 'invalid_request', thrown.message);
-            return mapKernelError(reply, thrown);
+            return mapRuntimeError(reply, thrown);
           }
         });
       }
 
       // H2 (E6.2): settle an intent-conflict by accepting a stance; writes the
-      // driver's decision back into the aggregated result.
+      // operator's decision back into the aggregated result.
       if (deps.orchestrator) {
         app.post('/api/escalations/:id/resolve', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
           const { id } = request.params as { id: string };
@@ -1556,7 +1556,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             });
             return { escalation: decided, intent };
           } catch (e) {
-            return mapKernelError(reply, e);
+            return mapRuntimeError(reply, e);
           }
         });
       }
@@ -1588,7 +1588,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       }));
 
       // E9.3: who answers for one intent's outcome — the executing agents, their
-      // department leads and the driver who settled it. Agents holding no post
+      // department leads and the operator who settled it. Agents holding no post
       // are reported as unassigned rather than dropped.
       if (deps.orchestrator) {
         app.get('/api/org/accountability/:intentId', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -1685,7 +1685,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const commissions = deps.commissions;
         const briefDeps = () => ({
           org: deps.orgRegistry!,
-          vassals: deps.registry.asVassalLookup(),
+          executors: deps.registry.asExecutorLookup(),
           realms: deps.realmStore!,
           grants: deps.domainGrants!,
           mentorships: deps.mentorshipLedger!,
@@ -1790,7 +1790,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           }
         });
 
-        // E9.1 acceptance: the seat's context is assembled from what the kernel
+        // E9.1 acceptance: the seat's context is assembled from what the runtime
         // already knows. Anything it cannot answer shows up in `gaps`.
         app.get('/api/org/departments/:id/briefing/:agentId', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
           const { id, agentId } = request.params as { id: string; agentId: string };
@@ -1836,7 +1836,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
                 openGaps: briefing.gaps.length,
               },
             },
-            vassals: [record.agentId],
+            executors: [record.agentId],
             realmId: record.realmId,
           });
           reply.code(200);
@@ -1846,7 +1846,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     }
 
     if (deps.memoryStore) {
-      // Memory face (design-memory-consolidation): the driver reads one realm's
+      // Memory face (design-memory-consolidation): the operator reads one realm's
       // events, facts and hybrid recall, exercises the right to be forgotten and
       // checks the fact source's integrity. There is no fact write route — facts
       // change only through consolidation, so this face is read + retract.
@@ -1999,7 +1999,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           if (problem) return error(reply, 400, 'invalid_request', problem);
         }
         // Read-only on both sides: this never imports a state into the running
-        // kernel, so a stale snapshot cannot overwrite live facts.
+        // runtime, so a stale snapshot cannot overwrite live facts.
         return reconcileMemoryStates(
           body.previous as MemoryState,
           (body.current ?? deps.memoryStore!.exportState()) as MemoryState
@@ -2259,9 +2259,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 409, 'conflict', 'no writable realm connected; cannot persist diary');
         }
         if (body.grant !== undefined && (typeof body.grant !== 'object' || body.grant === null)) {
-          return error(reply, 400, 'invalid_request', 'body.grant must be a driver write grant object');
+          return error(reply, 400, 'invalid_request', 'body.grant must be a operator write grant object');
         }
-        const grant = body.grant as DriverWriteGrant | undefined;
+        const grant = body.grant as OperatorWriteGrant | undefined;
         try {
           const entries = buildDiariesFromState(deps.memoryStore!.exportState(), {
             ...(typeof body.realmId === 'string' ? { realmId: body.realmId } : {}),
@@ -2275,7 +2275,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           for (const entry of entries) {
             const { itemId } = await persistDiary(deps.realmStore, entry, {
               ...(typeof body.dir === 'string' ? { dir: body.dir } : {}),
-              // An enterprise realm only accepts a diary write carrying a driver
+              // An enterprise realm only accepts a diary write carrying a operator
               // grant (POST /api/realm/write-grants); the store is what refuses or
               // accepts it, so nothing here second-guesses the credential.
               ...(grant !== undefined ? { grant } : {}),
@@ -2440,7 +2440,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       });
 
       // E2.4: map required skills onto providers. An ambiguous slot is reported
-      // for the driver to choose; it is never resolved by picking at random.
+      // for the operator to choose; it is never resolved by picking at random.
       app.post('/api/skills/team', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const body = (request.body ?? {}) as { skills?: unknown };
         if (!(Array.isArray(body.skills) && body.skills.length > 0 && body.skills.every(isNonEmptyString))) {
@@ -2545,7 +2545,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
     if (deps.connectorRegistry) {
       // E7: the connector face. Declarations are the minimum-privilege boundary,
-      // so the driver can see what was declared, attempt the handshake and revoke
+      // so the operator can see what was declared, attempt the handshake and revoke
       // — but never read back the token a connector presents upstream.
       app.get('/api/connectors', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const query = request.query as { status?: unknown };
@@ -2699,11 +2699,11 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       });
     }
 
-    if (deps.kernelStats) {
+    if (deps.runtimeStats) {
       // "Will a restart lose anything, and what is in there?" - answered with
       // counts and paths, never with the snapshot payload.
       app.get('/api/state', { preHandler: requireBearer }, async () => ({
-        ...deps.kernelStats!(),
+        ...deps.runtimeStats!(),
         ...(deps.rosterKey ? { rosterKey: deps.rosterKey } : {}),
       }));
     }
@@ -2713,7 +2713,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       // process appends to. Oldest first, newest kept when a limit trims.
       app.get('/api/audit', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const query = request.query as {
-          runId?: unknown; vassal?: unknown; decision?: unknown; limit?: unknown;
+          runId?: unknown; executor?: unknown; decision?: unknown; limit?: unknown;
         };
         if (query.decision !== undefined && !AUDIT_DECISIONS.includes(query.decision as AuditDecision)) {
           return error(reply, 400, 'invalid_request', `query.decision must be one of ${AUDIT_DECISIONS.join(', ')}`);
@@ -2721,8 +2721,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (query.runId !== undefined && !isNonEmptyString(query.runId)) {
           return error(reply, 400, 'invalid_request', 'query.runId must be a string');
         }
-        if (query.vassal !== undefined && !isNonEmptyString(query.vassal)) {
-          return error(reply, 400, 'invalid_request', 'query.vassal must be a string');
+        if (query.executor !== undefined && !isNonEmptyString(query.executor)) {
+          return error(reply, 400, 'invalid_request', 'query.executor must be a string');
         }
         const limit = query.limit === undefined ? undefined : parsePositiveInt(query.limit);
         if (query.limit !== undefined && limit === undefined) {
@@ -2731,7 +2731,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         try {
           const entries = readAuditLog(deps.auditFile!, {
             ...(isNonEmptyString(query.runId) ? { runId: query.runId } : {}),
-            ...(isNonEmptyString(query.vassal) ? { vassal: query.vassal } : {}),
+            ...(isNonEmptyString(query.executor) ? { executor: query.executor } : {}),
             ...(query.decision !== undefined ? { decision: query.decision as AuditDecision } : {}),
             ...(limit !== undefined ? { limit } : {}),
           });
@@ -2773,8 +2773,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const query = request.query as { realmId?: unknown; subject?: unknown; kind?: unknown; tenant?: unknown; access?: unknown };
         if (!isNonEmptyString(query.realmId)) return error(reply, 400, 'invalid_request', 'query.realmId is required');
         if (!isNonEmptyString(query.subject)) return error(reply, 400, 'invalid_request', 'query.subject is required');
-        if (query.kind !== 'vassal' && query.kind !== 'agent' && query.kind !== 'driver') {
-          return error(reply, 400, 'invalid_request', 'query.kind must be driver | vassal | agent');
+        if (query.kind !== 'executor' && query.kind !== 'agent' && query.kind !== 'operator') {
+          return error(reply, 400, 'invalid_request', 'query.kind must be operator | executor | agent');
         }
         if (query.access !== undefined && query.access !== 'read' && query.access !== 'write') {
           return error(reply, 400, 'invalid_request', 'query.access must be read | write');
@@ -2844,7 +2844,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
       // deferred #17: explicit realm boundary mutations. Before these, re-scoping
       // a tenant or tearing down a realm had no executable path short of editing
-      // kernel.json. disconnect removes a mount; retargetTenant re-scopes an
+      // runtime.json. disconnect removes a mount; retargetTenant re-scopes an
       // enterprise realm's tenant with a compare-swap guard against stale "from".
       app.post('/api/realms/:id/disconnect', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
         const { id } = request.params as { id: string };
@@ -2853,7 +2853,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         await deps.realmStore!.disconnect(id);
         deps.realmAudit?.({
           ts: new Date().toISOString(),
-          vassal: 'operator',
+          executor: 'operator',
           decision: 'realm-disconnected',
           realm: realm.type,
           detail: `disconnected realm ${id} (${realm.type}${realm.tenant ? ` tenant=${formatTenant(realm.tenant)}` : ''})`,
@@ -2880,7 +2880,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         const updated = realmScopeOf(id);
         deps.realmAudit?.({
           ts: new Date().toISOString(),
-          vassal: 'operator',
+          executor: 'operator',
           decision: 'realm-tenant-retargeted',
           realm: realm.type,
           detail: `retargeted ${id} tenant ${body.from} -> ${body.to}`,
@@ -2889,9 +2889,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       });
     }
 
-    if (deps.realmStore && deps.driverGrantLedger) {
+    if (deps.realmStore && deps.operatorGrantLedger) {
       // E3.5 / deferred #14: mint a single-use write credential for ONE enterprise
-      // realm. The kernel signs it and owns the nonce ledger, so a caller can
+      // realm. The runtime signs it and owns the nonce ledger, so a caller can
       // neither author its own authorization nor replay one it already spent -
       // which is what the shape-only check before this endpoint allowed.
       app.post('/api/realm/write-grants', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -2915,7 +2915,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           return error(reply, 409, 'conflict', `realm is connected read-only; no grant can authorize a write into it: ${realm.realmId}`);
         }
         try {
-          const grant = await issueDriverWriteGrant(
+          const grant = await issueOperatorWriteGrant(
             {
               realmId: realm.realmId,
               grantedBy: body.grantedBy,
@@ -2924,9 +2924,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             },
             { signer: deps.signer, ...(deps.now ? { now: deps.now } : {}) },
           );
-          deps.driverGrantAudit?.({
+          deps.operatorGrantAudit?.({
             at: grant.grantedAt,
-            decision: 'driver-grant-issued',
+            decision: 'operator-grant-issued',
             realmId: grant.realmId,
             grantedBy: grant.grantedBy,
             keyId: grant.keyId,
@@ -2934,9 +2934,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             ...(grant.reason ? { reason: grant.reason } : {}),
           });
           reply.code(201);
-          return { grant, authority: deps.driverGrantAuthority ?? 'signed', spentNonces: deps.driverGrantLedger!.size };
+          return { grant, authority: deps.operatorGrantAuthority ?? 'signed', spentNonces: deps.operatorGrantLedger!.size };
         } catch (thrown) {
-          if (thrown instanceof DriverGrantError) return error(reply, 400, 'invalid_request', thrown.message);
+          if (thrown instanceof OperatorGrantError) return error(reply, 400, 'invalid_request', thrown.message);
           throw thrown;
         }
       });
@@ -2954,8 +2954,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       if (!Array.isArray(body.capabilities) || body.capabilities.some(c => !isNonEmptyString(c))) {
         return error(reply, 400, 'invalid_request', 'body.capabilities must be a non-empty array of strings');
       }
-      if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
-        return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
+      if (body.executor !== undefined && !isNonEmptyString(body.executor)) {
+        return error(reply, 400, 'invalid_request', 'body.executor must be a non-empty string');
       }
       if (body.reason !== undefined && !isNonEmptyString(body.reason)) {
         return error(reply, 400, 'invalid_request', 'body.reason must be a string');
@@ -2969,7 +2969,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             grantedBy: body.grantedBy,
             skill: body.skill,
             capabilities: body.capabilities as string[],
-            ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal } : {}),
+            ...(isNonEmptyString(body.executor) ? { executor: body.executor } : {}),
             ...(isNonEmptyString(body.reason) ? { reason: body.reason } : {}),
             ...(typeof body.ttlSeconds === 'number' ? { ttlMs: body.ttlSeconds * 1000 } : {}),
           },
@@ -2980,7 +2980,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           decision: 'execution-delegation-issued',
           grantedBy: delegation.grantedBy,
           skill: delegation.skill,
-          ...(delegation.vassal ? { vassal: delegation.vassal } : {}),
+          ...(delegation.executor ? { executor: delegation.executor } : {}),
           capabilities: delegation.capabilities,
           keyId: delegation.keyId,
           nonce: delegation.nonce,
@@ -3007,8 +3007,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         if (!Array.isArray(body.capabilities) || body.capabilities.length === 0 || body.capabilities.some(c => !isNonEmptyString(c))) {
           return error(reply, 400, 'invalid_request', 'body.capabilities must be a non-empty array of strings');
         }
-        if (body.vassal !== undefined && !isNonEmptyString(body.vassal)) {
-          return error(reply, 400, 'invalid_request', 'body.vassal must be a non-empty string');
+        if (body.executor !== undefined && !isNonEmptyString(body.executor)) {
+          return error(reply, 400, 'invalid_request', 'body.executor must be a non-empty string');
         }
         if (body.reason !== undefined && !isNonEmptyString(body.reason)) {
           return error(reply, 400, 'invalid_request', 'body.reason must be a string');
@@ -3035,7 +3035,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
               grantedBy: body.grantedBy,
               skill: body.skill,
               capabilities: body.capabilities as string[],
-              ...(isNonEmptyString(body.vassal) ? { vassal: body.vassal } : {}),
+              ...(isNonEmptyString(body.executor) ? { executor: body.executor } : {}),
               limits: {
                 maxChildTickets: limits.maxChildTickets as number,
                 maxConcurrent: limits.maxConcurrent as number,
@@ -3051,7 +3051,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
             contractId: contract.id,
             grantedBy: contract.grantedBy,
             skill: contract.skill,
-            ...(contract.vassal ? { vassal: contract.vassal } : {}),
+            ...(contract.executor ? { executor: contract.executor } : {}),
             capabilities: contract.capabilities,
             keyId: contract.keyId,
             windowEndsAt: contract.limits.windowEndsAt,
@@ -3092,7 +3092,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
           contractId: existing.id,
           grantedBy: existing.grantedBy,
           skill: existing.skill,
-          ...(existing.vassal ? { vassal: existing.vassal } : {}),
+          ...(existing.executor ? { executor: existing.executor } : {}),
           capabilities: existing.capabilities,
           keyId: existing.keyId,
           windowEndsAt: existing.limits.windowEndsAt,
@@ -3105,7 +3105,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
 
     // Self-host loop, operator face for the trigger primitive: watches are
     // registered, listed and revoked over the bearer face, and the tick is a
-    // caller-driven POST - the kernel holds no timers, so the cadence stays
+    // caller-driven POST - the runtime holds no timers, so the cadence stays
     // with the operator's scheduler (design-self-host-loop §3.2).
     if (deps.watches) {
       app.post('/api/watches', { preHandler: requireBearer }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -3213,7 +3213,7 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     }
 
     // The operator's scheduler calls this - cron curling it every interval is
-    // the intended production rhythm, exactly like vault's external scheduler.
+    // the intended production rhythm, exactly like backup's external scheduler.
     // The route stays mounted whenever the registry exists and answers 503 when
     // the trigger was not assembled, so "routed" and "assembled" are
     // distinguishable from outside (the same probe the DAG face uses).
@@ -3383,9 +3383,9 @@ function parseDagSpec(input: unknown): Omit<DagSpec, 'realm'> | string {
     if (dependsOn !== undefined && (!Array.isArray(dependsOn) || !dependsOn.every(d => typeof d === 'string'))) {
       return `dag node ${node.id} dependsOn must be an array of strings`;
     }
-    const vassals = node.vassals;
-    if (vassals !== undefined && (!Array.isArray(vassals) || !vassals.every(v => typeof v === 'string'))) {
-      return `dag node ${node.id} vassals must be an array of strings`;
+    const executors = node.executors;
+    if (executors !== undefined && (!Array.isArray(executors) || !executors.every(v => typeof v === 'string'))) {
+      return `dag node ${node.id} executors must be an array of strings`;
     }
     if (node.params !== undefined && (typeof node.params !== 'object' || node.params === null || Array.isArray(node.params))) {
       return `dag node ${node.id} params must be an object`;
@@ -3397,7 +3397,7 @@ function parseDagSpec(input: unknown): Omit<DagSpec, 'realm'> | string {
       id: node.id,
       skill: node.skill,
       ...(dependsOn ? { dependsOn: dependsOn } : {}),
-      ...(vassals ? { vassals: vassals } : {}),
+      ...(executors ? { executors: executors } : {}),
       ...(node.params ? { params: node.params as Record<string, unknown> } : {}),
       ...(node.aggregation ? { aggregation: node.aggregation } : {}),
     });
@@ -3439,8 +3439,8 @@ function messageOf(thrown: unknown): string {
  *  never from its message: rewriting "unknown intent" as "no such intent" must
  *  not silently turn a 404 into a 400. */
 /** Inbound A2A (design-inbound-a2a §2.3): FanOutStatus → standard A2A TaskState.
- *  'partial' completes from the caller's perspective (some vassals answered);
- *  'needs-driver' becomes input-required (a human must settle the conflict). */
+ *  'partial' completes from the caller's perspective (some executors answered);
+ *  'needs-operator' becomes input-required (a human must settle the conflict). */
 export function mapInboundFanOutState(status: FanOutResult['status']): TaskState {
   switch (status) {
     case 'completed':
@@ -3450,12 +3450,12 @@ export function mapInboundFanOutState(status: FanOutResult['status']): TaskState
       return 'failed';
     case 'canceled':
       return 'canceled';
-    case 'needs-driver':
+    case 'needs-operator':
       return 'input-required';
   }
 }
 
-export function classifyKernelError(thrown: unknown): { status: number; code: string } {
+export function classifyRuntimeError(thrown: unknown): { status: number; code: string } {
   return thrown instanceof DomainError ? statusForKind(thrown.kind) : INTERNAL_ERROR_CLASSIFICATION;
 }
 
@@ -3465,7 +3465,7 @@ export function classifyOrgError(thrown: unknown): { status: number; code: strin
 
 // An untyped throw is a server bug: classifying it as 400 would tell the
 // client to change a request that cannot succeed, and echoing its message
-// leaks internals (driver text, file paths). Surface a fixed 500 instead;
+// leaks internals (operator text, file paths). Surface a fixed 500 instead;
 // the original error is logged server-side by the mappers below. The body
 // follows the batch-wide unified error contract: a minimal RFC 9457
 // ProblemDetails object, while DomainError bodies keep their
@@ -3486,10 +3486,10 @@ function problemDetails(reply: FastifyReply, detail: string): FastifyReply {
   });
 }
 
-export function mapKernelError(reply: FastifyReply, thrown: unknown): FastifyReply {
-  const { status, code } = classifyKernelError(thrown);
+export function mapRuntimeError(reply: FastifyReply, thrown: unknown): FastifyReply {
+  const { status, code } = classifyRuntimeError(thrown);
   if (thrown instanceof DomainError) return error(reply, status, code, messageOf(thrown));
-  reply.log.error({ err: thrown }, 'unhandled kernel error');
+  reply.log.error({ err: thrown }, 'unhandled runtime error');
   return problemDetails(reply, INTERNAL_ERROR_DETAIL);
 }
 
@@ -3592,10 +3592,10 @@ function parseRealmSource(
     const raw2 = source.onBehalfOf as Record<string, unknown>;
     if (typeof raw2 !== 'object' || raw2 === null) return 'body.realmSource.onBehalfOf must be an object';
     // Deliberately narrower than the access probe: a caller may ask on behalf of
-    // a vassal or agent, never as a second 'driver' — that identity is exactly
+    // a executor or agent, never as a second 'operator' — that identity is exactly
     // the one the domain gate does not apply to.
-    if (raw2.kind !== 'vassal' && raw2.kind !== 'agent') {
-      return 'body.realmSource.onBehalfOf.kind must be "vassal" or "agent"';
+    if (raw2.kind !== 'executor' && raw2.kind !== 'agent') {
+      return 'body.realmSource.onBehalfOf.kind must be "executor" or "agent"';
     }
     if (!isNonEmptyString(raw2.id)) return 'body.realmSource.onBehalfOf.id is required';
     try {
@@ -3608,8 +3608,8 @@ function parseRealmSource(
 }
 
 function buildActor(kind: string, id: string, tenant: unknown): RealmActor {
-  if (kind !== 'driver' && kind !== 'vassal' && kind !== 'agent') {
-    throw new RealmError(`actor kind must be driver | vassal | agent, got ${String(kind)}`);
+  if (kind !== 'operator' && kind !== 'executor' && kind !== 'agent') {
+    throw new RealmError(`actor kind must be operator | executor | agent, got ${String(kind)}`);
   }
   if (tenant === undefined) return { kind, id };
   if (typeof tenant !== 'string') throw new RealmError('actor tenant must be "org[/department[/member]]"');
@@ -3630,7 +3630,7 @@ function mapGrantError(reply: FastifyReply, thrown: unknown): FastifyReply {
 }
 
 /** A commission failure keeps its reason machine-readable: which gate refused is
- *  the answer the driver needs, not an implementation detail of one. */
+ *  the answer the operator needs, not an implementation detail of one. */
 function mapCommissionError(reply: FastifyReply, thrown: unknown): FastifyReply {
   if (thrown instanceof CommissionError) {
     if (thrown.kind === 'gate') {
@@ -3678,7 +3678,7 @@ function mapConnectorError(reply: FastifyReply, thrown: unknown, unreachable: 40
   return error(reply, status, code, messageOf(thrown));
 }
 
-/** A connector record carries the bearer token it presents upstream. The driver
+/** A connector record carries the bearer token it presents upstream. The operator
  *  face reports that a token exists, never the token. */
 function redactConnector(
   record: ConnectorRecord,

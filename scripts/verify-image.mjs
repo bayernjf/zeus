@@ -7,9 +7,9 @@
  * 跑完并逐项判定：
  *   1. HEALTHCHECK：容器 healthy（轮询 docker inspect，默认 90s 超时）
  *   2. 密钥权限：/data/rsk.key 0600 且属主 node（容器内 stat）
- *   3. SIGTERM 落盘：docker stop（SIGTERM 直达 PID 1）后 /data/kernel-state.json
+ *   3. SIGTERM 落盘：docker stop（SIGTERM 直达 PID 1）后 /data/runtime-state.json
  *      存在、0600、非空
- *   4. 重启恢复：docker start 后恢复日志（kernel-state-restored / restored N vassals）
+ *   4. 重启恢复：docker start 后恢复日志（runtime-state-restored / restored N executors）
  *   5. 名册验签：GET /api/roster/keys 拿 spkiPem，宿主 verify-roster.mjs 对
  *      /api/roster 信封验真（签名链可独立复核，无需信任发布端）——重启后再验一次
  *
@@ -189,13 +189,13 @@ async function main() {
   // 6. SIGTERM 落盘
   const stop = run(['docker', 'stop', '--time', '10', container], { timeout: 60_000 });
   check('SIGTERM stops the container', stop.status === 0);
-  const stateFile = path.join(dataDir, 'kernel-state.json');
+  const stateFile = path.join(dataDir, 'runtime-state.json');
   const stateExists = existsSync(stateFile);
-  check('kernel-state.json written on shutdown', stateExists);
+  check('runtime-state.json written on shutdown', stateExists);
   if (stateExists) {
     const mode = statSync(stateFile).mode & 0o777;
-    check('kernel-state.json 0600', mode === 0o600, `mode ${mode.toString(8)}`);
-    check('kernel-state.json non-empty', statSync(stateFile).size > 0);
+    check('runtime-state.json 0600', mode === 0o600, `mode ${mode.toString(8)}`);
+    check('runtime-state.json non-empty', statSync(stateFile).size > 0);
   }
 
   // 7. 重启恢复
@@ -205,7 +205,7 @@ async function main() {
     check('healthy after restart', waitHealthy(90_000));
     const logs = run(['docker', 'logs', container], { timeout: 30_000 });
     const logText = logs.stdout || logs.stderr || '';
-    check('kernel state restored on boot', /kernel-state-restored/.test(logText), logText.slice(-400));
+    check('runtime state restored on boot', /runtime-state-restored/.test(logText), logText.slice(-400));
     await verifyRoster('roster verifies (post-restart)');
   }
 

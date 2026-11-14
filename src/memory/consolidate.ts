@@ -223,7 +223,7 @@ export function consolidate(
     }
 
     // Strict rule: strictly later observation AND strictly more reliable
-    // authors supersede; anything else stays a dispute for the driver.
+    // authors supersede; anything else stays a dispute for the operator.
     const resolvable = clashing.filter(
       f =>
         latestOccurredAt(provenanceEvents(f.provenance, events)) < candidateTime &&
@@ -253,7 +253,7 @@ export function consolidate(
       // output — data, never an operator instruction — so the fact is
       // classified agent-produced at consolidation, and the label travels
       // with the fact into later recall (old facts without the field fall
-      // back to kernel-resolved-realm at assembly time).
+      // back to runtime-resolved-realm at assembly time).
       origin: 'agent-produced',
       ...(category !== undefined ? { kind: category } : {}),
       ...(explicitImportance !== undefined

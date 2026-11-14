@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import type { ExecutionDelegationAuditEntry } from '../src/delegation/execution-delegation.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = new Date('2026-10-03T00:00:00.000Z');
 
 async function harness() {
   const audit: ExecutionDelegationAuditEntry[] = [];
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('k'),
     internalToken: TOKEN,
     now: () => NOW,
@@ -31,7 +31,7 @@ describe('HTTP deferred #33 — the execution-delegation issue endpoint', () => 
         grantedBy: 'operator@example',
         skill: 'release',
         capabilities: ['github:pull-request:merge'],
-        vassal: 'pr-helper',
+        executor: 'pr-helper',
         reason: 'release 1.0',
       },
     });
@@ -42,7 +42,7 @@ describe('HTTP deferred #33 — the execution-delegation issue endpoint', () => 
       version: 1,
       grantedBy: 'operator@example',
       skill: 'release',
-      vassal: 'pr-helper',
+      executor: 'pr-helper',
       capabilities: ['github:pull-request:merge'],
       reason: 'release 1.0',
       keyId: 'k',
@@ -56,7 +56,7 @@ describe('HTTP deferred #33 — the execution-delegation issue endpoint', () => 
       decision: 'execution-delegation-issued',
       grantedBy: 'operator@example',
       skill: 'release',
-      vassal: 'pr-helper',
+      executor: 'pr-helper',
       capabilities: ['github:pull-request:merge'],
       keyId: 'k',
     });
@@ -156,7 +156,7 @@ describe('HTTP deferred #33 — the execution-delegation issue endpoint', () => 
     // condition is the internal token: without it the whole internal group is
     // absent and the endpoint does not exist.
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('k'),
     });
     const res = await app.inject({

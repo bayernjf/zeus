@@ -225,7 +225,7 @@
 .stream-row.s-settled .stream-dot { background: var(--ok); }
 .stream-row.s-blocked .stream-dot { background: var(--warn); }
 .stream-row.s-failed .stream-dot { background: var(--bad); }
-.stream-vassal { font-family: var(--mono); font-size: 12.5px; }
+.stream-executor { font-family: var(--mono); font-size: 12.5px; }
 .stream-state { font-size: 11px; color: var(--text-2); }
 .stream-body { flex: 1; min-width: 0; }
 .stream-preview { font-size: 11.5px; color: var(--text-2); font-style: italic; border-left: 2px solid var(--warn); padding-left: 8px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -327,8 +327,8 @@
             </div>
             <div class="row inline">
               <div class="row">
-                <label for="dVassals" data-i18n="dispatch.vassals">主体（逗号分隔，可选，缺省自动选靶）</label>
-                <input id="dVassals" autocomplete="off" data-i18n-ph="dispatch.vassalsPh" placeholder="如 a1, a2">
+                <label for="dExecutors" data-i18n="dispatch.executors">主体（逗号分隔，可选，缺省自动选靶）</label>
+                <input id="dExecutors" autocomplete="off" data-i18n-ph="dispatch.executorsPh" placeholder="如 a1, a2">
               </div>
               <div class="row">
                 <label for="dMode" data-i18n="common.mode">模式</label>
@@ -371,8 +371,8 @@
           <div class="body">
             <div class="audit-filter">
               <select id="apRealm"></select>
-              <input id="apSubject" autocomplete="off" data-i18n-ph="access.subjectPh" placeholder="主体（vassal 名 / 身份）" style="width:150px">
-              <select id="apKind"><option value="driver">driver</option><option value="vassal">vassal</option><option value="agent">agent</option></select>
+              <input id="apSubject" autocomplete="off" data-i18n-ph="access.subjectPh" placeholder="主体（executor 名 / 身份）" style="width:150px">
+              <select id="apKind"><option value="operator">operator</option><option value="executor">executor</option><option value="agent">agent</option></select>
               <select id="apAccess"><option value="read">read</option><option value="write">write</option></select>
               <input id="apTenant" autocomplete="off" data-i18n-ph="access.tenantPh" placeholder="租户（可选）" style="width:130px">
               <button class="btn small" id="btnAccessProbe" data-i18n="access.run">判定</button>
@@ -394,7 +394,7 @@
         <div class="body" id="rosterBody"></div>
       </div>
       <div class="panel" style="margin-top:14px">
-        <h2><span data-i18n="roster.regTitle">注册执行 Agent</span> <span class="hint">POST /api/vassals · <span data-i18n="roster.regHint">拉取卡片 + fealty 校验通过才入册</span></span></h2>
+        <h2><span data-i18n="roster.regTitle">注册执行 Agent</span> <span class="hint">POST /api/executors · <span data-i18n="roster.regHint">拉取卡片 + handshake 校验通过才入册</span></span></h2>
         <div class="body">
           <div class="row">
             <label for="vrCardUrl" data-i18n="roster.regCardUrl">Agent Card URL（必填）</label>
@@ -409,7 +409,7 @@
             <input id="vrToken" type="password" autocomplete="off">
           </div>
           <div class="actions">
-            <button class="btn primary" id="btnVassalRegister" data-i18n="roster.regRun">注册</button>
+            <button class="btn primary" id="btnExecutorRegister" data-i18n="roster.regRun">注册</button>
           </div>
         </div>
       </div>
@@ -442,7 +442,7 @@
           <div class="body">
             <div class="form" id="grantForm">
               <div class="row">
-                <label for="gSubject" data-i18n="grant.subject">主体（vassal 名 / 身份）</label>
+                <label for="gSubject" data-i18n="grant.subject">主体（executor 名 / 身份）</label>
                 <input id="gSubject" autocomplete="off" data-i18n-ph="grant.subjectPh" placeholder="如 jev">
               </div>
               <div class="row">
@@ -456,7 +456,7 @@
                 </div>
                 <div class="row">
                   <label for="gGrantedBy" data-i18n="common.grantedBy">签发者</label>
-                  <input id="gGrantedBy" autocomplete="off" placeholder="driver">
+                  <input id="gGrantedBy" autocomplete="off" placeholder="operator">
                 </div>
               </div>
               <div class="row">
@@ -495,7 +495,7 @@
               </div>
               <div class="row">
                 <label for="cBy" data-i18n="common.grantedBy">签发者</label>
-                <input id="cBy" autocomplete="off" placeholder="driver">
+                <input id="cBy" autocomplete="off" placeholder="operator">
               </div>
               <div class="hint" style="margin-top:6px" data-i18n="contract.hint">能力固定 execute，窗口 24 小时；越界自动停用并升级人工。撤销即刻阻断派生。</div>
               <div class="actions">
@@ -807,11 +807,11 @@
     <!-- ===== 视图：审计（方案 B 独立视图） ===== -->
     <section id="view-audit" hidden>
       <div class="panel">
-          <h2><span data-i18n="audit.title">扇出 / 决策时间线</span> <span class="hint">/api/audit · <span data-i18n="audit.hint">服务端过滤 decision/vassal · 关键字前端过滤</span></span></h2>
+          <h2><span data-i18n="audit.title">扇出 / 决策时间线</span> <span class="hint">/api/audit · <span data-i18n="audit.hint">服务端过滤 decision/executor · 关键字前端过滤</span></span></h2>
           <div class="body">
             <div class="audit-filter">
               <select id="afDecision"><option value="" data-i18n="audit.allDecisions">全部决策</option></select>
-              <input id="afVassal" autocomplete="off" data-i18n-ph="audit.vassalPh" placeholder="主体过滤（服务端）" style="width:150px">
+              <input id="afExecutor" autocomplete="off" data-i18n-ph="audit.executorPh" placeholder="主体过滤（服务端）" style="width:150px">
               <input id="afKeyword" autocomplete="off" data-i18n-ph="audit.keywordPh" placeholder="关键字过滤（前端）" style="width:150px">
               <button class="btn small" id="afApply" data-i18n="audit.apply">应用</button>
               <span class="af-count" id="afCount"></span>
@@ -867,7 +867,7 @@
         <div class="body" id="replayBody"></div>
       </div>
       <div class="panel" style="margin-top:14px" id="tracePanel" hidden>
-        <h2><span data-i18n="intent.trace">Trace 树</span> <span class="hint">GET /api/intents/:id/trace · <span data-i18n="intent.traceHint">S6 只读投影 · 审计脊 + 进度事件</span></span></h2>
+        <h2><span data-i18n="intent.trace">Trace 树</span> <span class="hint">GET /api/intents/:id/trace · <span data-i18n="intent.traceHint">S6 只读投影 · 审计日志 + 进度事件</span></span></h2>
         <div class="body" id="traceBody"></div>
       </div>
     </section>
@@ -945,7 +945,7 @@
       "recog.run": "识别",
       "dispatch.title": "派发意图",
       "common.skill": "技能",
-      "dispatch.vassals": "主体（逗号分隔，可选，缺省自动选靶）",
+      "dispatch.executors": "主体（逗号分隔，可选，缺省自动选靶）",
       "common.mode": "模式",
       "dispatch.modePlan": "plan（默认）",
       "dispatch.modeExecute": "execute（需执行授权票据）",
@@ -959,7 +959,7 @@
       "roster.title": "名册",
       "roster.hint": "吊销即刻断流 · 恢复为显式审计动作",
       "audit.title": "扇出 / 决策时间线",
-      "audit.hint": "服务端过滤 decision/vassal · 关键字前端过滤",
+      "audit.hint": "服务端过滤 decision/executor · 关键字前端过滤",
       "audit.allDecisions": "全部决策",
       "audit.apply": "应用",
       "domains.title": "数据域与跨域授权",
@@ -967,7 +967,7 @@
       "recent.hint": "本浏览器记录",
       "esc.title": "待裁决队列",
       "grant.title": "签发跨域授权",
-      "grant.subject": "主体（vassal 名 / 身份）",
+      "grant.subject": "主体（executor 名 / 身份）",
       "grant.realm": "企业数据域",
       "grant.access": "访问级别",
       "grant.accessRead": "read（读）",
@@ -1139,8 +1139,8 @@
       "conn.cors2": "（你的页面地址）启动",
       "conn.cors3": "，或使用 ",
       "recog.textPh": "如：帮我审一下 zeus 的 PR 并给合并建议",
-      "dispatch.vassalsPh": "如 a1, a2",
-      "audit.vassalPh": "主体过滤（服务端）",
+      "dispatch.executorsPh": "如 a1, a2",
+      "audit.executorPh": "主体过滤（服务端）",
       "audit.keywordPh": "关键字过滤（前端）",
       "grant.subjectPh": "如 jev",
       "grant.reasonPh": "如 review",
@@ -1212,7 +1212,7 @@
       "skill.listLoadFailed": "技能列表加载失败：{msg}",
       "dispatch.needSkill": "请先选择技能",
       "dispatch.badJson": "参数不是合法 JSON",
-      "dispatch.confirm": "派发意图：{skill} @ {realm}{vassals} ？",
+      "dispatch.confirm": "派发意图：{skill} @ {realm}{executors} ？",
       "dispatch.dispatching": "派发中（同步等结算）…",
       "dispatch.ok": "已派发：{id}",
       "dispatch.failed": "派发失败：{msg}",
@@ -1319,8 +1319,8 @@
       "dec.judgeAgree": " · 同意规则结论",
       "dec.judgeError": "后端错误",
       "branch.none": "尚无分支",
-      "sse.branchStart": "分支开始 · {vassal} · {skill}",
-      "sse.branchEnd": "分支结束 · {vassal} · {outcome}",
+      "sse.branchStart": "分支开始 · {executor} · {skill}",
+      "sse.branchEnd": "分支结束 · {executor} · {outcome}",
       "sse.branchReroute": "分支改道 · {from} → {to} · {skill}",
       "sse.intentEnd": "意图结束 · {status}",
       "sse.connecting": "连接实时事件流…",
@@ -1368,7 +1368,7 @@
       "roster.restore": "恢复",
       "roster.stickyNote": "吊销对重新注册保持粘性；恢复是独立审计动作。",
       "roster.regTitle": "注册执行 Agent",
-      "roster.regHint": "拉取卡片 + fealty 校验通过才入册",
+      "roster.regHint": "拉取卡片 + handshake 校验通过才入册",
       "roster.regCardUrl": "Agent Card URL（必填）",
       "roster.regCardUrlPh": "http://127.0.0.1:9000/api/a2a/agent-card",
       "roster.regTaskUrl": "任务端点 URL（可选，缺省用卡片 url）",
@@ -1514,7 +1514,7 @@
       "access.title": "访问判定探针",
       "access.hint": "GET /api/domains/access · 干跑，不触域内容",
       "access.run": "判定",
-      "access.subjectPh": "主体（vassal 名 / 身份）",
+      "access.subjectPh": "主体（executor 名 / 身份）",
       "access.tenantPh": "租户（可选）",
       "access.needRealm": "没有已挂载的数据域——先连接一个数据域",
       "access.needSubject": "必须给出主体（执行 Agent 名或身份）",
@@ -1523,7 +1523,7 @@
       "access.grant": "凭授权 {grantId}",
       "access.failed": "探针失败：{msg}",
       "intent.trace": "Trace 树",
-      "intent.traceHint": "S6 只读投影 · 审计脊 + 进度事件",
+      "intent.traceHint": "S6 只读投影 · 审计日志 + 进度事件",
       "trace.span": "Span",
       "trace.root": "根",
       "trace.time": "起止",
@@ -1594,7 +1594,7 @@
       "mem.content": "内容",
       "mem.loadFailed": "读取失败：{msg}",
       "mem.origin.agent-produced": "执行 Agent 产出",
-      "mem.origin.kernel-resolved-realm": "内核解析（旧快照回退）",
+      "mem.origin.runtime-resolved-realm": "内核解析（旧快照回退）",
       "mem.recallTitle": "混合检索",
       "mem.query": "检索词",
       "mem.queryPh": "如 typescript",
@@ -1674,7 +1674,7 @@
       "trend.peakInflight": "Peak in-flight",
       "trend.samples": "Samples",
       "hist.title": "Durable metrics history",
-      "hist.hint": "/api/metrics/history · kernel-side sample on state save, survives restarts",
+      "hist.hint": "/api/metrics/history · runtime-side sample on state save, survives restarts",
       "hist.waiting": "Waiting for the read…",
       "hist.unconfigured": "This process has no ZEUS_METRICS_HISTORY_FILE - the endpoint is not mounted, so there is no history to read",
       "cost.title": "Cost gate",
@@ -1735,15 +1735,15 @@
       "recog.miss": "No recognition hit",
       "recog.failed": "Recognition failed: {msg}",
       "dispatch.title": "Dispatch intent",
-      "dispatch.vassals": "Subjects (comma-separated, optional; auto-target by default)",
-      "dispatch.vassalsPh": "e.g. a1, a2",
+      "dispatch.executors": "Subjects (comma-separated, optional; auto-target by default)",
+      "dispatch.executorsPh": "e.g. a1, a2",
       "dispatch.modePlan": "plan (default)",
       "dispatch.modeExecute": "execute (requires execution grant ticket)",
       "dispatch.params": "Params (JSON, optional)",
       "dispatch.run": "Dispatch",
       "dispatch.needSkill": "Select a skill first",
       "dispatch.badJson": "Params are not valid JSON",
-      "dispatch.confirm": "Dispatch intent: {skill} @ {realm}{vassals}?",
+      "dispatch.confirm": "Dispatch intent: {skill} @ {realm}{executors}?",
       "dispatch.dispatching": "Dispatching (sync settle)…",
       "dispatch.ok": "Dispatched: {id}",
       "dispatch.failed": "Dispatch failed: {msg}",
@@ -1752,7 +1752,7 @@
       "skill.deprecated": "(deprecated)",
       "skill.loadFailed": "(failed to load skills)",
       "skill.listLoadFailed": "Failed to load skills: {msg}",
-      "state.title": "Kernel state",
+      "state.title": "Runtime state",
       "state.persistOn": "persistence on",
       "state.persistOff": "persistence off",
       "state.auditDegraded": "audit degraded",
@@ -1786,7 +1786,7 @@
       "roster.restore": "Reinstate",
       "roster.stickyNote": "Revocation sticks across re-registration; reinstate is a separate audited action.",
       "roster.regTitle": "Register execution agent",
-      "roster.regHint": "card fetch + fealty validation must pass before enlistment",
+      "roster.regHint": "card fetch + handshake validation must pass before enlistment",
       "roster.regCardUrl": "Agent Card URL (required)",
       "roster.regCardUrlPh": "http://127.0.0.1:9000/api/a2a/agent-card",
       "roster.regTaskUrl": "Task endpoint URL (optional, defaults to card url)",
@@ -1801,10 +1801,10 @@
       "roster.actionDone": "{action} done: {name}",
       "roster.actionFailed": "{action} failed: {msg}",
       "audit.title": "Fan-out / decision timeline",
-      "audit.hint": "Server-side decision/vassal filters · keyword filtered client-side",
+      "audit.hint": "Server-side decision/executor filters · keyword filtered client-side",
       "audit.allDecisions": "All decisions",
       "audit.apply": "Apply",
-      "audit.vassalPh": "Subject filter (server-side)",
+      "audit.executorPh": "Subject filter (server-side)",
       "audit.keywordPh": "Keyword filter (client-side)",
       "audit.noMatch": "No audit entries match the keyword",
       "audit.empty": "Audit empty (no fan-out / decision events yet)",
@@ -1846,7 +1846,7 @@
       "esc.needStance": "Select a stance first",
       "esc.confirmStance": "Resolve {id} with stance \"{stance}\"?",
       "grant.title": "Issue cross-realm grant",
-      "grant.subject": "Subject (vassal name / identity)",
+      "grant.subject": "Subject (executor name / identity)",
       "grant.subjectPh": "e.g. jev",
       "grant.realm": "Enterprise realm",
       "grant.access": "Access level",
@@ -1856,7 +1856,7 @@
       "grant.reasonPh": "e.g. review",
       "grant.run": "Issue grant",
       "grant.active": "Active grants",
-      "grant.needSubject": "A subject (vassal name or identity) is required",
+      "grant.needSubject": "A subject (executor name or identity) is required",
       "grant.needRealm": "No enterprise realm available to authorize - mount one first",
       "grant.confirm": "Grant {access} access to {subject} on enterprise realm {realm}? This opens a cross-domain path and is audited.",
       "grant.issued": "Grant issued: {id}",
@@ -1893,7 +1893,7 @@
       "watch.fires": "Fire budget",
       "watch.delegation": "execute delegation contract ID (required in execute mode)",
       "watch.delegationPh": "delegation contract id",
-      "watch.hint": "The kernel holds no timers: after registration an external scheduler drives periodic POST /api/watch-tick.",
+      "watch.hint": "The runtime holds no timers: after registration an external scheduler drives periodic POST /api/watch-tick.",
       "watch.run": "Register trigger",
       "watch.list": "Unattended triggers",
       "watch.tick": "Evaluate once now (POST /api/watch-tick)",
@@ -1964,7 +1964,7 @@
       "cm.waiveTitle": "Waive the mentorship stage",
       "cm.waiveBody": "Commission {id}: enter the waiver reason. Waiving is an explicit audited act — the only way through when certification is short.",
       "cm.byTitle": "Sign off the commission",
-      "cm.byBody": "Commission {id}: enter who signs (by). The kernel re-verifies all four gates before signing; any failure refuses.",
+      "cm.byBody": "Commission {id}: enter who signs (by). The runtime re-verifies all four gates before signing; any failure refuses.",
       "cm.withdrawTitle": "Withdraw the commission",
       "cm.withdrawBody": "Commission {id}: enter the withdrawal reason. Withdrawal takes effect immediately; the seat can no longer take work.",
       "cm.byPrompt": "Operator (by)",
@@ -2127,8 +2127,8 @@
       "dec.judgeAgree": " · agrees with rule conclusion",
       "dec.judgeError": "backend error",
       "branch.none": "No branches yet",
-      "sse.branchStart": "branch started · {vassal} · {skill}",
-      "sse.branchEnd": "branch ended · {vassal} · {outcome}",
+      "sse.branchStart": "branch started · {executor} · {skill}",
+      "sse.branchEnd": "branch ended · {executor} · {outcome}",
       "sse.branchReroute": "branch rerouted · {from} → {to} · {skill}",
       "sse.intentEnd": "intent finished · {status}",
       "sse.connecting": "Connecting live event stream…",
@@ -2220,7 +2220,7 @@
       "access.title": "Access verdict probe",
       "access.hint": "GET /api/domains/access · dry run, realm content untouched",
       "access.run": "Probe",
-      "access.subjectPh": "subject (vassal name / identity)",
+      "access.subjectPh": "subject (executor name / identity)",
       "access.tenantPh": "tenant (optional)",
       "access.needRealm": "no realm is connected - connect one first",
       "access.needSubject": "a subject (execution agent name or identity) is required",
@@ -2261,7 +2261,7 @@
       "brief.canRead": "can read",
       "brief.canWrite": "can write",
       "brief.needsGrant": "write also needs a signed grant",
-      "brief.gaps": "What the kernel could NOT answer",
+      "brief.gaps": "What the runtime could NOT answer",
       "brief.noGaps": "no gaps - the seat context is complete",
       "brief.digest": "Digest",
       "col.predicate": "Predicate",
@@ -2300,7 +2300,7 @@
       "mem.content": "Content",
       "mem.loadFailed": "load failed: {msg}",
       "mem.origin.agent-produced": "agent-produced",
-      "mem.origin.kernel-resolved-realm": "kernel-resolved (legacy snapshot fallback)",
+      "mem.origin.runtime-resolved-realm": "runtime-resolved (legacy snapshot fallback)",
       "mem.recallTitle": "Hybrid recall",
       "mem.query": "Query",
       "mem.queryPh": "e.g. typescript",
@@ -2453,7 +2453,7 @@
     sseAbort: null,
     sseRetries: 0,
     sseReconnect: null,
-    auditFilter: { decision: '', vassal: '', keyword: '' },
+    auditFilter: { decision: '', executor: '', keyword: '' },
     auditLast: null,
     escList: null,
     escKindFilter: '',
@@ -2593,14 +2593,14 @@
     const skill = $('dSkill').value;
     if (!skill) { toast(t('dispatch.needSkill'), 'bad'); return; }
     const realm = $('dRealm').value;
-    const vassals = $('dVassals').value.split(',').map(v => v.trim()).filter(Boolean);
+    const executors = $('dExecutors').value.split(',').map(v => v.trim()).filter(Boolean);
     const mode = $('dMode').value;
     let params = {};
     const raw = $('dParams').value.trim();
     if (raw) {
       try { params = JSON.parse(raw); } catch { toast(t('dispatch.badJson'), 'bad'); return; }
     }
-    if (!(await confirmDialog({ body: t('dispatch.confirm', { skill, realm, vassals: vassals.length ? ' → ' + vassals.join(', ') : '' }) }))) return;
+    if (!(await confirmDialog({ body: t('dispatch.confirm', { skill, realm, executors: executors.length ? ' → ' + executors.join(', ') : '' }) }))) return;
     const btn = $('btnDispatch');
     btn.disabled = true;
     const prevLabel = btn.textContent;
@@ -2612,7 +2612,7 @@
       // (design-streaming §1 gap 1). GET /api/intents/:id answers 404 until it
       // settles, which loadIntent already follows over SSE.
       const intentId = 'web-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
-      const body = { intentId, skill, realm, params, ...(vassals.length ? { vassals } : {}), ...(mode === 'execute' ? { mode } : {}) };
+      const body = { intentId, skill, realm, params, ...(executors.length ? { executors } : {}), ...(mode === 'execute' ? { mode } : {}) };
       location.hash = '#/intent/' + encodeURIComponent(intentId);
       const r = await api('POST', '/api/intents', body);
       const settledId = (r && r.intentId) || intentId;
@@ -2818,7 +2818,7 @@
   // ===== 带教台账（E2.5：委任第四闸的证据面） =====
   // The ledger refuses teach/assess/dismiss once a record leaves 'teaching'
   // (requireOpen in src/skills/mentor.ts), so those controls are only rendered
-  // while it is open - a button the kernel would reject is not offered.
+  // while it is open - a button the runtime would reject is not offered.
   async function loadMentorships() {
     const status = $('mtStatus') ? $('mtStatus').value : '';
     const path = '/api/mentorships' + (status ? '?status=' + encodeURIComponent(status) : '');
@@ -3016,8 +3016,8 @@
       html += '<div style="font-size:12px;margin:8px 0 2px;color:var(--warn)">' + esc(t('intent.unassigned')) + '</div>';
       html += '<div class="mono" style="font-size:12px">' + unassigned.map(esc).join('、') + '</div>';
     }
-    if (chain.driver) {
-      const dr = chain.driver;
+    if (chain.operator) {
+      const dr = chain.operator;
       html += '<div style="font-size:12px;margin-top:8px">' + badge(t('intent.decider'), 'ok') + ' <span class="mono">' + esc(dr.escalationId || '—') + '</span> · ' + esc(t('dec.stanceLine', { stance: dr.stance || '—' })) + ' · ' + fmtTime(dr.decidedAt) + '</div>';
     }
     body.innerHTML = html;
@@ -3062,7 +3062,7 @@
       return `<tr>
         <td class="mono" style="font-size:11.5px">${esc(s.spanId)}${s.spanId === tree.root.spanId ? ' ' + badge(t('trace.root'), 'ok') : ''}</td>
         <td>${badge(s.kind, kindCls[s.kind] || '')}</td>
-        <td class="mono">${esc(s.vassal || '—')}</td>
+        <td class="mono">${esc(s.executor || '—')}</td>
         <td class="mono">${esc(s.skill || '—')}</td>
         <td class="mono">${esc(s.realm || '—')}</td>
         <td class="mono" style="font-size:11px">${fmtTime(s.startedAt)} → ${s.endedAt ? fmtTime(s.endedAt) : t('trace.open')}</td>
@@ -3096,7 +3096,7 @@
     if (!state.recent.length) { el.innerHTML = emptyRow(t('recent.empty')); return; }
     let rows = '<table><colgroup><col style="width:26%"><col style="width:20%"><col style="width:16%"><col style="width:22%"><col style="width:16%"></colgroup><tr><th>' + esc(t('col.intentId')) + '</th><th>' + esc(t('col.skill')) + '</th><th>' + esc(t('col.status')) + '</th><th>' + esc(t('col.time')) + '</th><th>' + esc(t('col.actions')) + '</th></tr>';
     for (const r of state.recent) {
-      const cls = /fail/.test(r.status) ? 'bad' : /complet/.test(r.status) ? 'ok' : /needs-driver/.test(r.status) ? 'warn' : '';
+      const cls = /fail/.test(r.status) ? 'bad' : /complet/.test(r.status) ? 'ok' : /needs-operator/.test(r.status) ? 'warn' : '';
       rows += `<tr>
         <td class="mono" style="font-size:11.5px">${esc(r.id)}</td>
         <td>${esc(r.skill)}</td>
@@ -3112,7 +3112,7 @@
   function statusClass(st) {
     if (/failed/.test(st)) return 'bad';
     if (/completed|approved/.test(st)) return 'ok';
-    if (/needs-driver|partial|pending/.test(st)) return 'warn';
+    if (/needs-operator|partial|pending/.test(st)) return 'warn';
     return 'info';
   }
 
@@ -3164,7 +3164,7 @@
       if (ps.length) {
         dec += '<table style="margin-top:8px"><colgroup><col style="width:22%"><col style="width:20%"><col style="width:16%"><col style="width:42%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.stance')) + '</th><th>' + esc(t('col.weight')) + '</th><th>' + esc(t('col.reason')) + '</th></tr>';
         for (const p of ps) {
-          dec += `<tr><td class="mono">${esc(p.vassal)}</td><td>${esc(p.stance)}</td><td class="num">${p.weight != null ? p.weight : '—'}</td><td style="font-size:12px">${esc(p.rationale || '—')}</td></tr>`;
+          dec += `<tr><td class="mono">${esc(p.executor)}</td><td>${esc(p.stance)}</td><td class="num">${p.weight != null ? p.weight : '—'}</td><td style="font-size:12px">${esc(p.rationale || '—')}</td></tr>`;
         }
         dec += '</table>';
       }
@@ -3176,12 +3176,12 @@
     if (cs.length) {
       dec += '<div style="margin-top:10px;font-size:12px;color:var(--warn)">' + esc(t('dec.conflicts', { n: cs.length })) + '</div>';
       for (const c of cs) {
-        const parties = (c.stances || []).map(s => `${esc(s.stance)}(${esc((s.vassals || []).join('+') || '?')})`).join(' vs ');
+        const parties = (c.stances || []).map(s => `${esc(s.stance)}(${esc((s.executors || []).join('+') || '?')})`).join(' vs ');
         dec += `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${esc(c.kind || 'split')} · ${parties || '—'}${c.summary ? ' · ' + esc(c.summary) : ''}<div style="font-size:11.5px;color:var(--text-3)">${esc(c.reason || '')}</div></div>`;
       }
     }
-    if (r.driverResolution) {
-      const dr = r.driverResolution;
+    if (r.operatorResolution) {
+      const dr = r.operatorResolution;
       dec += `<div style="margin-top:10px;font-size:12px">${badge(t('dec.operatorDecided'), 'ok')} ${esc(t('dec.stanceLine', { stance: dr.stance }))}${dr.note ? ' · ' + esc(dr.note) : ''} · ${fmtTime(dr.decidedAt)}${dr.escalationId ? ' · ' + esc(dr.escalationId) : ''}</div>`;
     }
     if (r.backendArbitration) {
@@ -3206,7 +3206,7 @@
         const stateName = b.state || (b.ok ? 'completed' : 'failed');
         const rowCls = b.ok ? 'branch-ok' : (stateName === 'running' || stateName === 'queued' || stateName === 'dispatched') ? 'branch-pending' : 'branch-bad';
         rows += `<tr class="${rowCls}">
-          <td class="mono">${esc(b.vassal)}</td>
+          <td class="mono">${esc(b.executor)}</td>
           <td>${esc(taskStateLabel(stateName))}</td>
           <td>${b.ok ? badge('ok', 'ok') : badge('✗', 'bad')}</td>
           <td class="mono" style="font-size:11px">${esc(b.taskId || '—')}</td>
@@ -3297,8 +3297,8 @@
     if (!el) return;
     const now = fmtTime(new Date().toISOString());
     let mark = 'finished', head = esc(evt), detail = '';
-    if (evt === 'branch-started') { mark = 'started'; head = esc(t('sse.branchStart', { vassal: payload.vassal || '?', skill: payload.skill || '' })); detail = 'runId ' + esc(payload.runId || '—'); }
-    else if (evt === 'branch-ended') { mark = 'ended'; head = esc(t('sse.branchEnd', { vassal: payload.vassal || '?', outcome: payload.outcome || '' })); detail = payload.state ? 'state ' + esc(payload.state) : ''; }
+    if (evt === 'branch-started') { mark = 'started'; head = esc(t('sse.branchStart', { executor: payload.executor || '?', skill: payload.skill || '' })); detail = 'runId ' + esc(payload.runId || '—'); }
+    else if (evt === 'branch-ended') { mark = 'ended'; head = esc(t('sse.branchEnd', { executor: payload.executor || '?', outcome: payload.outcome || '' })); detail = payload.state ? 'state ' + esc(payload.state) : ''; }
     else if (evt === 'branch-diverted') { mark = 'diverted'; head = esc(t('sse.branchReroute', { from: payload.from || '?', to: payload.to || '?', skill: payload.skill || '' })); }
     else if (evt === 'intent-finished') { mark = 'finished'; head = esc(t('sse.intentEnd', { status: payload.status || '' })); }
     const li = document.createElement('li');
@@ -3310,7 +3310,7 @@
   /**
    * S15 V3 (design-streaming §3.3): the thinking-state view, folded from the
    * progress events the SSE channel already carries - no new endpoint, no new
-   * kernel state. Branches are keyed by their branch runId (the spine's own
+   * runtime state. Branches are keyed by their branch runId (the spine's own
    * identity) and shown in first-sight order, which is the fan-out selection
    * order. A delta only ever updates a preview: the settled rows come from
    * branch-ended, so a preview can never be read as a conclusion.
@@ -3322,7 +3322,7 @@
   function touchBranch(st, run, patch) {
     let b = st.byRun[run];
     if (b === undefined) {
-      b = { run, vassal: '?', skill: '', state: 'waiting', deltas: 0, preview: '' };
+      b = { run, executor: '?', skill: '', state: 'waiting', deltas: 0, preview: '' };
       st.byRun[run] = b;
       st.order.push(run);
     }
@@ -3344,14 +3344,14 @@
 
   function foldStreamEvent(st, evt, p) {
     if (evt === 'branch-started') {
-      touchBranch(st, p.runId, { vassal: p.vassal || '?', skill: p.skill || '', state: 'thinking' });
+      touchBranch(st, p.runId, { executor: p.executor || '?', skill: p.skill || '', state: 'thinking' });
     } else if (evt === 'branch-delta') {
-      const b = touchBranch(st, p.runId, { vassal: p.vassal || '?' });
+      const b = touchBranch(st, p.runId, { executor: p.executor || '?' });
       b.state = 'thinking';
       b.deltas += 1;
       b.preview = p.preview == null ? '' : String(p.preview);
     } else if (evt === 'branch-ended') {
-      const b = touchBranch(st, p.runId, { vassal: p.vassal || '?' });
+      const b = touchBranch(st, p.runId, { executor: p.executor || '?' });
       b.state = endedStreamState(p);
       // The preview is superseded by the settled outcome; keeping it on screen
       // next to a conclusion is how a preview starts being read as one.
@@ -3372,7 +3372,7 @@
       const branches = Array.isArray(p.branches) ? p.branches : [];
       for (const b of branches) {
         touchBranch(st, b.runId, {
-          vassal: b.vassal || '?',
+          executor: b.executor || '?',
           state: b.ok ? 'settled' : endedStreamState({ state: b.state, outcome: b.outcome }),
         });
       }
@@ -3425,7 +3425,7 @@
         ? '<div class="stream-preview"><span class="stream-tag">' + esc(t('stream.previewTag')) + '</span>' + esc(b.preview.slice(0, 200)) + '</div>'
         : '';
       return '<div class="stream-row ' + streamRowClass(b.state) + '"><span class="stream-dot"></span><div class="stream-body">' +
-        '<div><span class="stream-vassal">' + esc(b.vassal) + '</span> <span class="stream-state">' + esc(streamStateLabel(b)) + '</span>' +
+        '<div><span class="stream-executor">' + esc(b.executor) + '</span> <span class="stream-state">' + esc(streamStateLabel(b)) + '</span>' +
         (b.skill ? ' <span class="stream-state">' + esc(b.skill) + '</span>' : '') + '</div>' + preview + '</div></div>';
     }).join('');
     el.innerHTML = head + '<div class="stream-list">' + rows + '</div>';
@@ -3558,8 +3558,8 @@
     const bits = [];
     bits.push(badge(s.persistence && s.persistence.enabled ? t('state.persistOn') : t('state.persistOff'), s.persistence && s.persistence.enabled ? 'ok' : 'warn'));
     bits.push(badge(s.audit && s.audit.degraded ? t('state.auditDegraded') : t('state.auditOk'), s.audit && s.audit.degraded ? 'bad' : 'ok'));
-    bits.push(badge(t('state.signature') + (s.driverGrants ? s.driverGrants.authority : '?'), 'info'));
-    bits.push(badge('Agent ' + (c.vassals || 0), c.vassals ? 'ok' : ''));
+    bits.push(badge(t('state.signature') + (s.operatorGrants ? s.operatorGrants.authority : '?'), 'info'));
+    bits.push(badge('Agent ' + (c.executors || 0), c.executors ? 'ok' : ''));
     bits.push(badge(t('state.intents') + (c.intents || 0)));
     bits.push(badge(t('state.escalations') + (c.escalations || 0), c.escalations ? 'warn' : ''));
     bits.push(badge(t('state.skills') + (c.skills || 0)));
@@ -3645,7 +3645,7 @@
       ${cell(t('metrics.timeout'), m.timedOut, m.timedOut ? 'warn' : '')}
       ${cell(t('metrics.canceled'), m.canceled)}
     </div>`;
-    const pv = m.perVassal || {};
+    const pv = m.perExecutor || {};
     const names = Object.keys(pv);
     if (names.length) {
       let rows = '<table><colgroup><col style="width:18%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:14%"><col style="width:26%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.calls')) + '</th><th>' + esc(t('col.done')) + '</th><th>' + esc(t('col.failed')) + '</th><th>' + esc(t('col.failRate')) + '</th><th>' + esc(t('col.latency')) + '</th></tr>';
@@ -3669,8 +3669,8 @@
       const health = (e.health && e.health.status) || 'unknown';
       const hb = health === 'healthy' ? badge('healthy', 'ok') : health === 'sick' ? badge('sick', 'bad') : badge(health, 'warn');
       const gov = revoked
-        ? `<button class="btn small" data-act="reinstate-vassal" data-name="${esc(e.name)}">${esc(t('roster.restore'))}</button>`
-        : `<button class="btn small danger" data-act="revoke-vassal" data-name="${esc(e.name)}">${esc(t('roster.revoke'))}</button>`;
+        ? `<button class="btn small" data-act="reinstate-executor" data-name="${esc(e.name)}">${esc(t('roster.restore'))}</button>`
+        : `<button class="btn small danger" data-act="revoke-executor" data-name="${esc(e.name)}">${esc(t('roster.revoke'))}</button>`;
       rows += `<tr><td class="mono">${esc(e.name)}</td><td>${esc(e.domain)}</td><td>${esc((e.skills || []).map(s => s.id).join(', ') || '—')}</td><td>${status}</td><td>${hb}</td><td class="mono">${fmtTime(e.registeredAt)}</td><td>${gov}</td></tr>`;
     }
     el.innerHTML = rows + '</table>';
@@ -3689,7 +3689,7 @@
     if (!a) { el.innerHTML = emptyRow(); return; }
     const entries = a.entries || [];
     const kw = (state.auditFilter.keyword || '').trim().toLowerCase();
-    const shown = kw ? entries.filter(e => [e.decision, e.vassal, e.skill, e.detail, e.runId, e.realm].some(v => String(v || '').toLowerCase().includes(kw))) : entries;
+    const shown = kw ? entries.filter(e => [e.decision, e.executor, e.skill, e.detail, e.runId, e.realm].some(v => String(v || '').toLowerCase().includes(kw))) : entries;
     const countEl = $('afCount');
     if (countEl) countEl.textContent = kw ? t('audit.countShown', { shown: shown.length, total: entries.length }) : t('audit.count', { n: entries.length });
     if (!shown.length) { el.innerHTML = emptyRow(kw ? t('audit.noMatch') : t('audit.empty')); return; }
@@ -3700,7 +3700,7 @@
         <span class="tl-time">${fmtTime(e.ts)}</span>
         <span class="tl-mark ${cls}"></span>
         <span class="tl-body">
-          <div class="tl-head">${esc(e.decision || 'event')} · ${esc(e.vassal || '?')} · ${esc(e.skill || '')}</div>
+          <div class="tl-head">${esc(e.decision || 'event')} · ${esc(e.executor || '?')} · ${esc(e.skill || '')}</div>
           ${e.detail ? `<div class="tl-detail">${esc(e.detail)}</div>` : ''}
           <div class="tl-detail">runId=${esc(e.runId || '—')} · realm=${esc(e.realm || '—')}</div>
         </span>
@@ -3709,7 +3709,7 @@
     el.innerHTML = html + '</ul>';
   }
 
-  // ===== 审计过滤（服务端 decision/vassal + 前端关键字） =====
+  // ===== 审计过滤（服务端 decision/executor + 前端关键字） =====
   function fillDecisionOptions(entries) {
     const sel = $('afDecision');
     if (!sel) return;
@@ -3726,7 +3726,7 @@
     const q = new URLSearchParams();
     q.set('limit', '50');
     if (f.decision) q.set('decision', f.decision);
-    if (f.vassal) q.set('vassal', f.vassal);
+    if (f.executor) q.set('executor', f.executor);
     const a = await api('GET', '/api/audit?' + q.toString());
     state.auditLast = a;
     fillDecisionOptions(a && a.entries || []);
@@ -3735,7 +3735,7 @@
 
   function applyAuditFilter() {
     state.auditFilter.decision = $('afDecision') ? $('afDecision').value : '';
-    state.auditFilter.vassal = ($('afVassal') ? $('afVassal').value : '').trim();
+    state.auditFilter.executor = ($('afExecutor') ? $('afExecutor').value : '').trim();
     const kw = ($('afKeyword') ? $('afKeyword').value : '').trim();
     state.auditFilter.keyword = kw;
     loadAudit().catch(e => { $('auditBody').innerHTML = emptyRow(t('audit.loadFailed', { msg: e.message })); });
@@ -3920,12 +3920,12 @@
       html += `<tr>
         <td class="mono" style="font-size:11.5px">${esc(e.id)}</td>
         <td>${esc(escKindLabel(e.kind))}</td>
-        <td class="mono">${esc(e.vassal)}</td>
+        <td class="mono">${esc(e.executor)}</td>
         <td>${esc(e.skill)}</td>
         <td>
           <div style="font-size:12px">${esc(e.reason || '—')}</div>
           ${(e.options && e.options.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">${esc(t('esc.optionsLine'))}${esc(e.options.join(' / '))}</div>` : ''}
-          ${(e.stances && e.stances.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">${esc(t('esc.stancesLine'))}${esc(e.stances.map(s => s.vassal + ':' + s.stance).join(' / '))}</div>` : ''}
+          ${(e.stances && e.stances.length) ? `<div style="font-size:11.5px;color:var(--text-3);margin-top:2px">${esc(t('esc.stancesLine'))}${esc(e.stances.map(s => s.executor + ':' + s.stance).join(' / '))}</div>` : ''}
         </td>
         <td>${st}</td>
         <td>${escActionButtons(e)}</td>
@@ -4022,7 +4022,7 @@
     const skill = $('cSkill').value.trim();
     const tickets = parseInt($('cTickets').value, 10);
     const concurrent = parseInt($('cConcurrent').value, 10);
-    const by = $('cBy').value.trim() || 'driver';
+    const by = $('cBy').value.trim() || 'operator';
     if (!skill) { toast(t('contract.needSkill'), 'bad'); return; }
     if (!(tickets > 0) || !(concurrent > 0) || concurrent > tickets) { toast(t('contract.badLimits'), 'bad'); return; }
     if (!(await confirmDialog({ body: t('contract.confirm', { skill, tickets, concurrent }) }))) return;
@@ -4138,7 +4138,7 @@
     const subject = $('gSubject').value.trim();
     const realmId = $('gRealm').value;
     const access = $('gAccess').value;
-    const by = $('gGrantedBy').value.trim() || 'driver';
+    const by = $('gGrantedBy').value.trim() || 'operator';
     const reason = $('gReason').value.trim();
     if (!subject) { toast(t('grant.needSubject'), 'bad'); return; }
     if (!realmId) { toast(t('grant.needRealm'), 'bad'); return; }
@@ -4809,16 +4809,16 @@
           updated.status === 'certified' ? 'ok' : 'bad');
         await loadMentorships();
       } catch (e) { fail(t('mt.assess'))(e); }
-    } else if (act === 'revoke-vassal' || act === 'reinstate-vassal') {
+    } else if (act === 'revoke-executor' || act === 'reinstate-executor') {
       const name = btn.getAttribute('data-name') || '';
-      const revoking = act === 'revoke-vassal';
+      const revoking = act === 'revoke-executor';
       const verb = revoking ? t('roster.revoke') : t('roster.restore');
       const warn = revoking ? '\n' + t('roster.stickyNote') : '';
       if (!(await confirmDialog({ body: t('roster.confirmAction', { action: verb, name, warn }), danger: revoking }))) return;
       (async () => {
         try {
-          if (revoking) await api('DELETE', '/api/vassals/' + encodeURIComponent(name));
-          else await api('POST', '/api/vassals/' + encodeURIComponent(name) + '/reinstate');
+          if (revoking) await api('DELETE', '/api/executors/' + encodeURIComponent(name));
+          else await api('POST', '/api/executors/' + encodeURIComponent(name) + '/reinstate');
           toast(t('roster.actionDone', { action: verb, name }), 'ok');
           const r = await api('GET', '/api/roster');
           renderRoster(r);
@@ -4907,7 +4907,7 @@
     } catch (e) { toast(t('org.actionFailed', { action: t('org.assignRun'), msg: e.message }), 'bad'); }
   });
 
-  $('btnVassalRegister').addEventListener('click', async function () {
+  $('btnExecutorRegister').addEventListener('click', async function () {
     const cardUrl = $('vrCardUrl').value.trim();
     const taskUrl = $('vrTaskUrl').value.trim();
     const token = $('vrToken').value;
@@ -4917,7 +4917,7 @@
       const body = { cardUrl };
       if (taskUrl) body.taskUrl = taskUrl;
       if (token.trim()) body.token = token;
-      const entry = await api('POST', '/api/vassals', body);
+      const entry = await api('POST', '/api/executors', body);
       toast(t('roster.regDone', { name: (entry && entry.card && entry.card.name) || cardUrl }), 'ok');
       $('vrCardUrl').value = ''; $('vrTaskUrl').value = ''; $('vrToken').value = '';
       await loadRoster();
@@ -5003,7 +5003,7 @@
   // ===== 审计过滤控件 =====
   $('afApply').addEventListener('click', applyAuditFilter);
   $('afDecision').addEventListener('change', applyAuditFilter);
-  $('afVassal').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') applyAuditFilter(); });
+  $('afExecutor').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') applyAuditFilter(); });
   $('afKeyword').addEventListener('input', function () {
     state.auditFilter.keyword = this.value.trim();
     if (state.auditLast) renderAudit(state.auditLast);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   DelegationContractRegistry,
@@ -12,13 +12,13 @@ import type { DelegationContractAuditEntry } from '../src/delegation/delegation-
 
 /**
  * design-self-host-loop §7 step 5: the operator face for bounded delegation
- * contracts. The kernel can already derive tickets while nobody is present
+ * contracts. The runtime can already derive tickets while nobody is present
  * (step 4); this proves the human side that authorizes it — issue, read,
  * revoke — and that approving a delegation-limit escalation issues a fresh
  * contract and rebinds the named watch without re-dispatching anything.
  */
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = new Date('2026-10-03T00:00:00.000Z');
 const WINDOW = new Date(NOW.getTime() + 3_600_000).toISOString();
@@ -32,7 +32,7 @@ async function harness() {
   const delegationContracts = new DelegationContractRegistry();
   const signer = new Ed25519MemorySigner('k');
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer,
     internalToken: TOKEN,
     now: () => NOW,
@@ -54,7 +54,7 @@ describe('HTTP self-host step 5 — delegation contract issuance', () => {
         grantedBy: 'operator@example',
         skill: 'merge',
         capabilities: ['execute'],
-        vassal: 'loom',
+        executor: 'loom',
         reason: 'nightly merge watch',
         limits: validLimits(),
       },
@@ -65,7 +65,7 @@ describe('HTTP self-host step 5 — delegation contract issuance', () => {
       kind: 'zeus-delegation-contract',
       grantedBy: 'operator@example',
       skill: 'merge',
-      vassal: 'loom',
+      executor: 'loom',
       capabilities: ['execute'],
       keyId: 'k',
     });
@@ -77,7 +77,7 @@ describe('HTTP self-host step 5 — delegation contract issuance', () => {
     expect(listed).toHaveLength(1);
     const derived = await deriveExecutionDelegation(
       listed[0]!.id,
-      { capabilities: ['execute'], vassal: 'loom' },
+      { capabilities: ['execute'], executor: 'loom' },
       { registry: h.delegationContracts, signer: h.signer, verifier: h.signer.verifier(), now: () => NOW },
     );
     expect(derived.ok).toBe(true);
@@ -87,7 +87,7 @@ describe('HTTP self-host step 5 — delegation contract issuance', () => {
       decision: 'delegation-contract-issued',
       grantedBy: 'operator@example',
       skill: 'merge',
-      vassal: 'loom',
+      executor: 'loom',
       maxChildTickets: 3,
       maxConcurrent: 2,
     });
@@ -181,9 +181,9 @@ describe('HTTP self-host step 5 — delegation contract issuance', () => {
     expect(again.statusCode).toBe(409);
   });
 
-  it('is not mounted when the kernel assembled no contract registry', async () => {
+  it('is not mounted when the runtime assembled no contract registry', async () => {
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('k'),
       internalToken: TOKEN,
     });
@@ -228,7 +228,7 @@ describe('HTTP self-host step 5 — approving a delegation-limit escalation', ()
     expect(escalation.interruptLevel).toBe(1);
 
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer,
       internalToken: TOKEN,
       now: () => NOW,
@@ -281,7 +281,7 @@ describe('HTTP self-host step 5 — approving a delegation-limit escalation', ()
     });
     const id = oversight.list('pending', 'memory-dispute')[0]!.id;
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer,
       internalToken: TOKEN,
       now: () => NOW,

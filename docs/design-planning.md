@@ -2,15 +2,15 @@
 
 - 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文把规划定义为"产出 DagSpec 的一种特殊扇出"，最大化复用既有 fan-out/聚合/DAG 内核，不新造规划运行时。
 - 演进：v0.1（2026-10-09）首版——现状盘点（DAG 执行内核已齐、缺从目标到 DagSpec 的生成与重规划）+ 规划即扇出的切法 + `scorePlan`/`replanDelta` 纯函数草案 + 分期。
-- 关联：tech map S12（单/多 planner、计划竞争、计划与执行交错、replan）；design-supervision.md §4（DAG 编排：拓扑分层/关键路径/上游失败跳过/产物下传）；design-fan-out.md（扇出/聚合/冲突，多 planner 竞争直接复用）；design-tool-discovery.md（S11，节点技能/Agent 选靶与失败恢复）；design-context-engineering.md（S1 V2 技能 inputs 声明，计划可满足性的依据）；design-hil.md（计划分歧/重规划升级）；design-long-running.md（S13 checkpoint 为 replan 提供状态基线）；`src/core/orchestrator/dag.ts`（validateDag/topologicalLayers/criticalPath）、`src/core/orchestrator/dag-runner.ts`（DAG driver face）、`src/skills/registry.ts`（技能目录）。
+- 关联：tech map S12（单/多 planner、计划竞争、计划与执行交错、replan）；design-supervision.md §4（DAG 编排：拓扑分层/关键路径/上游失败跳过/产物下传）；design-fan-out.md（扇出/聚合/冲突，多 planner 竞争直接复用）；design-tool-discovery.md（S11，节点技能/Agent 选靶与失败恢复）；design-context-engineering.md（S1 V2 技能 inputs 声明，计划可满足性的依据）；design-hil.md（计划分歧/重规划升级）；design-long-running.md（S13 checkpoint 为 replan 提供状态基线）；`src/core/orchestrator/dag.ts`（validateDag/topologicalLayers/criticalPath）、`src/core/orchestrator/dag-runner.ts`（DAG operator face）、`src/skills/registry.ts`（技能目录）。
 - 本文是规划能力的单一事实源；handoff 与 PRD 只索引。
 
 ## 1. 背景与现状
 
 | 能力 | 现状 | 位置 |
 | --- | --- | --- |
-| DAG 执行 | 给定 **DagSpec（静态声明的节点+依赖）**，可做校验、拓扑分层、关键路径、依赖满足判定、上游失败跳过下游、产物下传、needs-driver 挂起 | `src/core/orchestrator/dag.ts`、`dag-runner.ts` |
-| DAG 驱动面 | HTTP 暴露、真实进程装配（smoke 有 unknown-dag 404 与匿名 401 验证） | server.ts DAG driver face |
+| DAG 执行 | 给定 **DagSpec（静态声明的节点+依赖）**，可做校验、拓扑分层、关键路径、依赖满足判定、上游失败跳过下游、产物下传、needs-operator 挂起 | `src/core/orchestrator/dag.ts`、`dag-runner.ts` |
+| DAG 驱动面 | HTTP 暴露、真实进程装配（smoke 有 unknown-dag 404 与匿名 401 验证） | server.ts DAG operator face |
 | 扇出/聚合/冲突 | 多 Agent 并发 + 多策略聚合 + 冲突检出升级 | orchestrator/aggregate/conflict/arbitration |
 | 技能目录 | 技能声明、providedBy、inputs 字段、只读 tag | registry.ts、S1 V2 |
 | 失败恢复 | 节点失败后的重试/换将/降级/升级固定链 | discovery.ts recoverChain、S11 |
@@ -51,8 +51,8 @@
 | --- | --- |
 | 图结构：validateDag（无环、依赖闭合、ID 唯一） | 淘汰 |
 | 技能存在：每节点 skill 在目录中 | 淘汰 |
-| inputs 可满足：节点 inputs 由上游产物（产物下传字段）或显式载荷提供，否则标 unavailable（S1 V2 同规则，不臆造） | 淘汰或挂 needs-driver |
-| 权限可行：execute 节点存在可达的授权路径（不代表已授权） | 标 needs-driver |
+| inputs 可满足：节点 inputs 由上游产物（产物下传字段）或显式载荷提供，否则标 unavailable（S1 V2 同规则，不臆造） | 淘汰或挂 needs-operator |
+| 权限可行：execute 节点存在可达的授权路径（不代表已授权） | 标 needs-operator |
 | 评分维度：目标覆盖度、关键路径长度（criticalPath）、预估成本（节点数×技能历史成本，S9）、单点依赖数、可恢复性（失败链替代面，S11） | 通过校验的候选按分排序 |
 
 ### 3.3 选择与分歧
@@ -94,7 +94,7 @@ export function replanDelta(current: DagState, revised: DagSpec): { kept: string
 
 - 协议（V2，设计级）：规划技能在技能声明中以 tag（如 `planning`）标记；planner 产出经 A2A task 的结构化 data part 承载（非 ZeusReport 自由文本）。
 - 审计新值：`plan-malformed` / `plan-selected` / `plan-conflict` / `plan-rejected-unplannable` / `plan-replanned` 入 AUDIT_DECISIONS。
-- H2/TUI：plan-conflict 复用升级队列视图；选定计划与 DAG 进度在既有 DAG driver 面可见。
+- H2/TUI：plan-conflict 复用升级队列视图；选定计划与 DAG 进度在既有 DAG operator 面可见。
 
 ## 5. 分期
 

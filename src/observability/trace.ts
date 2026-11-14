@@ -7,7 +7,7 @@
 // Principles (design-observability §2/§3):
 //  - trace is a read-only projection: it produces no authorization and affects
 //    no scheduling;
-//  - clocks are kernel clocks: span start/end come from event `at` fields;
+//  - clocks are runtime clocks: span start/end come from event `at` fields;
 //    external timestamps are never introduced in V1;
 //  - missing events mean "did not happen": nothing is guessed or fabricated;
 //  - output is deterministic: the same input assembles the same tree.
@@ -41,7 +41,7 @@ export type TraceModelCall = {
 /** Decision-step facts carried by a decision-step span (TracePort v1 §2). */
 export type TraceDecisionStep = {
   name: 'fanout' | 'aggregate' | 'arbitration' | 'judge';
-  vassals?: string[];
+  executors?: string[];
   conclusion?: string;
   latencyMs?: number;
 };
@@ -52,7 +52,7 @@ export type TraceSpan = {
   spanId: string;
   parentSpanId?: string;
   kind: TraceSpanKind;
-  vassal?: string;
+  executor?: string;
   skill?: string;
   realm?: string;
   startedAt: string;
@@ -108,7 +108,7 @@ export function createDecisionTraceBuffer(maxRuns = 512): DecisionTraceBuffer {
 
 /**
  * S6 V3 (design-observability §5): exporter narrow port. Export happens after
- * assembly; the default build attaches no exporter, so a kernel without one
+ * assembly; the default build attaches no exporter, so a runtime without one
  * behaves exactly as V1/V2 did. Implementations are responsible for their own
  * retention and data-sovereignty boundaries (a JSONL local-file exporter and
  * an opt-in OTLP/HTTP JSON exporter live in exporter.ts; both are attached
@@ -176,7 +176,7 @@ export function buildTraceTree(input: {
   };
 
   const byRunId = new Map<string, { index: number; intentId: string }>();
-  // Kernel-level tool audit lines (no runId); assembled into tool spans below.
+  // Runtime-level tool audit lines (no runId); assembled into tool spans below.
   const toolFacts: AuditEntry[] = [];
   const mark = (spanId: string, intentId: string): number => {
     const existing = byRunId.get(spanId);
@@ -199,13 +199,13 @@ export function buildTraceTree(input: {
     if (e.type === 'branch-started') {
       const i = mark(e.runId, e.intentId);
       const s = spans[i]!;
-      if (s.vassal === undefined) s.vassal = e.vassal;
+      if (s.executor === undefined) s.executor = e.executor;
       if (s.skill === undefined) s.skill = e.skill;
       if (!s.startedAt) s.startedAt = e.at;
     } else if (e.type === 'branch-ended') {
       const i = mark(e.runId, e.intentId);
       const s = spans[i]!;
-      if (s.vassal === undefined) s.vassal = e.vassal;
+      if (s.executor === undefined) s.executor = e.executor;
       s.endedAt = e.at;
       s.outcome = e.outcome;
     }
@@ -222,7 +222,7 @@ export function buildTraceTree(input: {
   }
 
   for (const a of audit) {
-    // Kernel-level tool lines carry no runId; they are the only facts that
+    // Runtime-level tool lines carry no runId; they are the only facts that
     // assemble spans without one (tool spans below). Everything else keys on
     // the branch runId.
     if (a.runId === undefined) {
@@ -238,7 +238,7 @@ export function buildTraceTree(input: {
       case 'tool-selected':
       case 'tool-failed': {
         // TracePort v1 §2: a runId-bearing tool line stays a branch event (the
-        // branch that caused it); kernel-level lines are collected above.
+        // branch that caused it); runtime-level lines are collected above.
         const i = mark(a.runId, a.skill ?? root.spanId);
         spans[i]!.events.push({ kind: 'target-switch', at: a.ts, ...(a.detail === undefined ? {} : { detail: a.detail }) });
         break;
@@ -273,7 +273,7 @@ export function buildTraceTree(input: {
         spans[i]!.events.push({ kind: 'context-budget', at: a.ts, ...(a.detail === undefined ? {} : { detail: a.detail }) });
         break;
       }
-      case 'driver-grant-issued': {
+      case 'operator-grant-issued': {
         // The operator wrote back a decision — the closest observable
         // arbitration fact; a decide span hangs under the intent root.
         const spanId = `decide:${a.runId}`;
@@ -282,7 +282,7 @@ export function buildTraceTree(input: {
           spanId,
           parentSpanId: root.spanId,
           kind: 'decide',
-          vassal: a.vassal,
+          executor: a.executor,
           ...(a.skill === undefined ? {} : { skill: a.skill }),
           startedAt: a.ts,
           events: [],
@@ -323,7 +323,7 @@ export function buildTraceTree(input: {
       endedAt: lastStart,
       step: {
         name: 'fanout',
-        vassals: [...new Set(branchStarts.map(e => e.vassal))].sort(),
+        executors: [...new Set(branchStarts.map(e => e.executor))].sort(),
       },
     });
   }
@@ -335,7 +335,7 @@ export function buildTraceTree(input: {
       endedAt: intentFinished.at,
       step: {
         name: 'aggregate',
-        vassals: [...new Set(branchEnds.map(e => e.vassal))].sort(),
+        executors: [...new Set(branchEnds.map(e => e.executor))].sort(),
         ...(input.steps?.conclusion !== undefined ? { conclusion: input.steps.conclusion } : {}),
       },
     });
@@ -380,7 +380,7 @@ export function buildTraceTree(input: {
     });
   }
 
-  // Tool spans from the kernel-level audit facts, deterministically numbered
+  // Tool spans from the runtime-level audit facts, deterministically numbered
   // by (ts, decision, detail) order.
   toolFacts
     .sort((x, y) =>
@@ -391,7 +391,7 @@ export function buildTraceTree(input: {
     .forEach((a, index) => {
       step(`tool:${index}`, {
         kind: 'tool',
-        vassal: a.vassal,
+        executor: a.executor,
         ...(a.skill !== undefined ? { skill: a.skill } : {}),
         ...(a.realm !== undefined ? { realm: a.realm } : {}),
         startedAt: a.ts,
@@ -423,7 +423,7 @@ export function buildTraceTree(input: {
         spanId: `model:${index}`,
         parentSpanId: parentSpan?.spanId ?? root.spanId,
         kind: 'model',
-        ...(parentSpan?.vassal !== undefined ? { vassal: parentSpan.vassal } : {}),
+        ...(parentSpan?.executor !== undefined ? { executor: parentSpan.executor } : {}),
         startedAt: started,
         endedAt: traceRecord.decidedAt,
         call: {

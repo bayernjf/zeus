@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
@@ -27,7 +27,7 @@ function auditFileWith(entries: AuditEntry[]): string {
 
 async function mount(auditFile?: string): Promise<FastifyInstance> {
   app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
     ...(auditFile ? { auditFile } : {}),
   });
@@ -44,9 +44,9 @@ type Summary = {
 describe('public audit summary', () => {
   it('answers on the public face without a token and aggregates by decision', async () => {
     const file = auditFileWith([
-      { ts: '2026-10-10T01:00:00.000Z', vassal: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', realm: 'personal', taskId: 't1', detail: 'secret detail' },
-      { ts: '2026-10-10T02:00:00.000Z', vassal: 'agent-7', decision: 'dispatch-failed', runId: 'run-1', taskId: 't1' },
-      { ts: '2026-10-10T03:00:00.000Z', vassal: 'agent-8', decision: 'dispatch-failed', runId: 'run-2', taskId: 't2' },
+      { ts: '2026-10-10T01:00:00.000Z', executor: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', realm: 'personal', taskId: 't1', detail: 'secret detail' },
+      { ts: '2026-10-10T02:00:00.000Z', executor: 'agent-7', decision: 'dispatch-failed', runId: 'run-1', taskId: 't1' },
+      { ts: '2026-10-10T03:00:00.000Z', executor: 'agent-8', decision: 'dispatch-failed', runId: 'run-2', taskId: 't2' },
     ]);
     const res = await (await mount(file)).inject({ method: 'GET', url: '/api/audit/summary' });
     expect(res.statusCode).toBe(200);
@@ -59,9 +59,9 @@ describe('public audit summary', () => {
     expect(body.byDecision).toEqual({ dispatched: 1, 'dispatch-failed': 2 });
   });
 
-  it('never leaks per-event fields (vassal/runId/taskId/detail/realm)', async () => {
+  it('never leaks per-event fields (executor/runId/taskId/detail/realm)', async () => {
     const file = auditFileWith([
-      { ts: '2026-10-10T01:00:00.000Z', vassal: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', realm: 'personal', taskId: 't1', detail: 'secret detail' },
+      { ts: '2026-10-10T01:00:00.000Z', executor: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', realm: 'personal', taskId: 't1', detail: 'secret detail' },
     ]);
     const res = await (await mount(file)).inject({ method: 'GET', url: '/api/audit/summary' });
     const raw = res.body;

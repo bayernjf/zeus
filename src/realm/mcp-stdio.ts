@@ -8,20 +8,20 @@
  *
  * Security model:
  *  - Roots are authorized at launch (argv/env) and pre-connected read-only by
- *    the booted kernel. There is deliberately NO MCP method to connect an
+ *    the booted runtime. There is deliberately NO MCP method to connect an
  *    arbitrary path - the protocol can never point the scanner at a directory
  *    the host did not grant.
- *  - The kernel boots in-memory by default (zero side effects): no state file
+ *  - The runtime boots in-memory by default (zero side effects): no state file
  *    is written unless ZEUS_STATE_FILE is explicitly set, and no decision
  *    backend is mounted - zeus.plan runs the local ranker only.
- *  - The face is read-only: realm.search/realm.read plus the kernel face
+ *  - The face is read-only: realm.search/realm.read plus the runtime face
  *    zeus.skills/zeus.plan/zeus.status. realm.write is refused on a read-only
  *    mount; execute stays on the signed-ticket + HTTP face, never here.
  *  - stdout carries only newline-delimited JSON-RPC; all diagnostics go to stderr.
  */
 import { createInterface } from 'node:readline';
-import { bootKernel } from '../state/boot.js';
-import { createPersonalKernelQueries } from './kernel-queries.js';
+import { bootRuntime } from '../state/boot.js';
+import { createPersonalRuntimeQueries } from './runtime-queries.js';
 import {
   createRealmMcpHandler,
   JSON_RPC_CODES,
@@ -39,14 +39,14 @@ async function main(): Promise<void> {
   // In-memory unless the host explicitly asks for a state file; either way the
   // mounts are personal + readOnly, and no decision backend is wired.
   const stateFile = process.env.ZEUS_STATE_FILE?.trim() || undefined;
-  const kernel = await bootKernel({
+  const runtime = await bootRuntime({
     realmRoots: roots.map(root => ({ root, type: 'personal' as const, readOnly: true })),
     ...(stateFile ? { stateFile } : {}),
   });
 
-  const store = kernel.realmStore;
+  const store = runtime.realmStore;
   if (!store) {
-    process.stderr.write('[zeus-realm-mcp] fatal: kernel booted without a realm store\n');
+    process.stderr.write('[zeus-realm-mcp] fatal: runtime booted without a realm store\n');
     process.exit(1);
   }
 
@@ -62,7 +62,7 @@ async function main(): Promise<void> {
   const handle = createRealmMcpHandler({
     store,
     realmIds,
-    kernelQueries: createPersonalKernelQueries(kernel),
+    runtimeQueries: createPersonalRuntimeQueries(runtime),
   });
   const rl = createInterface({ input: process.stdin });
 
@@ -105,7 +105,7 @@ async function main(): Promise<void> {
   // No state file means no lock was acquired (releaseLock is a no-op then);
   // when the host did set one, release it on signal so we never leave a lock.
   const shutdown = async () => {
-    await kernel.releaseLock().catch(() => undefined);
+    await runtime.releaseLock().catch(() => undefined);
     process.exit(0);
   };
   process.on('SIGTERM', () => {
@@ -122,10 +122,10 @@ function writeResponse(response: JsonRpcResponse): void {
 
 function collectRoots(): string[] {
   const fromArgv = process.argv.slice(2).filter(arg => !arg.startsWith('--'));
-  // Comma-separated, exactly like the kernel reads the same variable. A colon
+  // Comma-separated, exactly like the runtime reads the same variable. A colon
   // list would shred a Windows drive path (C:\Users\...) into two bogus roots,
   // and as long as the two doors disagree about one variable, a host can end up
-  // serving a different set of directories than the kernel was pointed at.
+  // serving a different set of directories than the runtime was pointed at.
   const fromEnv = (process.env.ZEUS_REALM_ROOTS ?? '')
     .split(',')
     .map(value => value.trim())

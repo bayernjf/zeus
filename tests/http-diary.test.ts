@@ -4,13 +4,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { FsRealmStore } from '../src/realm/store.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import type { MemoryEvent } from '../src/memory/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 let seq = 0;
@@ -49,7 +49,7 @@ async function setup(): Promise<{
     realmId: manifest.realmId, eventId: 'evt-2', kind: 'decision',
     occurredAt: '2026-09-23T10:00:00.000Z', content: 'approve the report', confidence: 0.9,
   }));
-  const registry = new VassalRegistry();
+  const registry = new ExecutorRegistry();
   const signer = new Ed25519MemorySigner('zeus-rsk-test');
   const app = await createHttpServer({
     registry, signer, internalToken: TOKEN, memoryStore, realmStore: realm,
@@ -106,7 +106,7 @@ describe('E8.3 diary HTTP generate', () => {
     const memoryStore = new MemoryStore();
     memoryStore.append(event({ occurredAt: '2026-09-23T09:00:00.000Z', content: 'x' }));
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore,
@@ -120,7 +120,7 @@ describe('E8.3 diary HTTP generate', () => {
     const realm = new FsRealmStore();
     await realm.connect(root, 'personal');
     const app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: new MemoryStore(),

@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Dispatcher, type AuditEntry } from '../src/dispatch/dispatcher.js';
 import { memoryAuditSink, revokeAuditBridge } from '../src/dispatch/audit.js';
 import type { AgentCard, Task } from '../src/a2a/types.js';
 
 /**
- * Acceptance #5 demonstrable governance loop (design-vassal-protocol.md §7):
+ * Acceptance #5 demonstrable governance loop (design-executor-protocol.md §7):
  * redaction (dataPolicy), token revocation, and audit logging in one end-to-end
- * run against the real VassalRegistry + Dispatcher wiring.
+ * run against the real ExecutorRegistry + Dispatcher wiring.
  */
-const CARD_URL = 'http://vassal.internal/api/a2a/agent-card';
-const TASK_URL = 'http://vassal.internal/api/a2a/tasks';
+const CARD_URL = 'http://executor.internal/api/a2a/agent-card';
+const TASK_URL = 'http://executor.internal/api/a2a/tasks';
 const TOKEN = 'zeus-secret';
 
 function prHelperCard(): AgentCard {
@@ -18,11 +18,11 @@ function prHelperCard(): AgentCard {
     name: 'pr-helper',
     url: TASK_URL,
     skills: [{ id: 'create-pr', name: 'Create pull request', description: '', tags: [] }],
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: 'pr-release-control',
-      dataRealms: ['enterprise'],
+      realms: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -73,11 +73,11 @@ describe('Acceptance #5 governance loop', () => {
     const { log, sink } = memoryAuditSink();
 
     // registry revocation events flow into the SAME audit trail as dispatch decisions
-    const registry = new VassalRegistry(fetchImpl, undefined, { onRevoke: revokeAuditBridge(sink) });
+    const registry = new ExecutorRegistry(fetchImpl, undefined, { onRevoke: revokeAuditBridge(sink) });
     await registry.register(CARD_URL);
 
     let tokenRequests = 0;
-    const dispatcher = new Dispatcher(registry.asVassalLookup(), {
+    const dispatcher = new Dispatcher(registry.asExecutorLookup(), {
       audit: sink,
       fetchImpl,
       tokenFor: name => {
@@ -87,15 +87,15 @@ describe('Acceptance #5 governance loop', () => {
     });
 
     // 1) healthy dispatch: bearer token presented, dispatched + final state audited
-    const first = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: { repo: 'app' }, realm: 'enterprise', runId: 'run-1' });
+    const first = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: { repo: 'app' }, realm: 'enterprise', runId: 'run-1' });
     expect(first.ok).toBe(true);
     expect(seen).toHaveLength(1);
     expect(seen[0]!.auth).toBe(`Bearer ${TOKEN}`);
 
-    // 2) dataPolicy origin gate: a read-task-scope vassal refuses self-asserted
+    // 2) dataPolicy origin gate: a read-task-scope executor refuses self-asserted
     // realm hits outright — "belongs to this task" is only verifiable when the
-    // kernel itself resolved them (design-realm §3.1). No request, no token.
-    const second = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-2', realmHits: [{ itemId: 'hit-9', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'pr context' }], realmHitsOrigin: 'caller-asserted' });
+    // runtime itself resolved them (design-realm §3.1). No request, no token.
+    const second = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-2', realmHits: [{ itemId: 'hit-9', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'pr context' }], realmHitsOrigin: 'caller-asserted' });
     expect(second.ok).toBe(false);
     if (second.ok) return;
     expect(second.audit.decision).toBe('refused-data-policy');
@@ -104,46 +104,46 @@ describe('Acceptance #5 governance loop', () => {
 
     // 3) revocation: governance event lands on the audit trail
     expect(registry.revoke('pr-helper')).toBe(true);
-    const revokeEntry = log.find(entry => entry.decision === 'vassal-revoked');
-    expect(revokeEntry).toMatchObject({ vassal: 'pr-helper' });
+    const revokeEntry = log.find(entry => entry.decision === 'executor-revoked');
+    expect(revokeEntry).toMatchObject({ executor: 'pr-helper' });
 
     // 4) named dispatch after revocation: blocked BEFORE any HTTP request or token issuance
-    const blocked = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-3' });
+    const blocked = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-3' });
     expect(blocked.ok).toBe(false);
     if (blocked.ok) return;
     expect(blocked.audit.decision).toBe('refused-revoked');
-    expect(seen).toHaveLength(1); // no new request reached the vassal
-    expect(tokenRequests).toBe(1); // tokenFor never consulted for a revoked vassal
+    expect(seen).toHaveLength(1); // no new request reached the executor
+    expect(tokenRequests).toBe(1); // tokenFor never consulted for a revoked executor
 
-    // 5) skill-based auto-selection skips the revoked vassal as well
+    // 5) skill-based auto-selection skips the revoked executor as well
     const auto = await dispatcher.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-4' });
     expect(auto.ok).toBe(false);
     if (auto.ok) return;
-    expect(auto.audit.decision).toBe('refused-unknown-vassal');
+    expect(auto.audit.decision).toBe('refused-unknown-executor');
     expect(seen).toHaveLength(1);
 
     // complete audit trail, in order — one 'dispatched' per successful dispatch
     expect(log.map((entry: AuditEntry) => entry.decision)).toEqual([
       'dispatched', // run-1
       'refused-data-policy', // run-2 refused by the dataPolicy origin gate
-      'vassal-revoked',
+      'executor-revoked',
       'refused-revoked', // run-3 named
-      'refused-unknown-vassal', // run-4 auto-selected
+      'refused-unknown-executor', // run-4 auto-selected
     ]);
   });
 
-  it('refuses to dispatch realm content the fealty does not allow (data diode)', async () => {
+  it('refuses to dispatch realm content the handshake does not allow (data diode)', async () => {
     const { fetchImpl, seen } = buildServer();
     const { log, sink } = memoryAuditSink();
-    const registry = new VassalRegistry(fetchImpl);
+    const registry = new ExecutorRegistry(fetchImpl);
     await registry.register(CARD_URL);
-    const dispatcher = new Dispatcher(registry.asVassalLookup(), { audit: sink, fetchImpl, tokenFor: () => TOKEN });
+    const dispatcher = new Dispatcher(registry.asExecutorLookup(), { audit: sink, fetchImpl, tokenFor: () => TOKEN });
 
-    const result = await dispatcher.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'personal', runId: 'run-x' });
+    const result = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'personal', runId: 'run-x' });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.audit.decision).toBe('refused-realm-policy');
     expect(seen).toHaveLength(0); // blocked before the network
-    expect(log[0]).toMatchObject({ decision: 'refused-realm-policy', vassal: 'pr-helper', realm: 'personal' });
+    expect(log[0]).toMatchObject({ decision: 'refused-realm-policy', executor: 'pr-helper', realm: 'personal' });
   });
 });

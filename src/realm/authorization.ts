@@ -2,7 +2,7 @@
  * Cross-domain authorization (design-realm.md §8.3, E6.4).
  *
  * One decision function, so every face that touches a realm (dispatch-time
- * retrieval, the MCP resource handler, the driver API) answers the same
+ * retrieval, the MCP resource handler, the operator API) answers the same
  * question the same way:
  *
  *   personal -> enterprise   needs a DomainGrant, one subject at one realm
@@ -18,7 +18,7 @@
  * consumption ledger - these grants stay valid until they expire or are
  * revoked, because they mean "this subject may touch that domain" and not "this
  * one crossing is authorized". The single-use credential is E3.5's
- * DriverWriteGrant, not this one.
+ * OperatorWriteGrant, not this one.
  */
 import { randomUUID } from 'node:crypto';
 import type { DomainDecision, DomainGrant, RealmAccess, RealmActor, TenantScope } from './types.js';
@@ -91,9 +91,9 @@ export function decideRealmAccess(input: {
     return refuse('read-only', `realm was connected read-only: ${realm.realmId}`);
   }
 
-  // The driver IS the data sovereign: asking is the authorization. Enterprise
-  // writes still need the per-write DriverWriteGrant at the store (E3.5).
-  if (actor.kind === 'driver') return { ok: true, via: 'same-domain' };
+  // The operator IS the data sovereign: asking is the authorization. Enterprise
+  // writes still need the per-write OperatorWriteGrant at the store (E3.5).
+  if (actor.kind === 'operator') return { ok: true, via: 'same-domain' };
 
   const subjectTenant = actor.tenant;
 
@@ -163,14 +163,14 @@ export type GrantAuditEntry = {
   grantedBy: string;
 };
 
-/** What the kernel persists: the live grants plus every nonce ever issued, so a
+/** What the runtime persists: the live grants plus every nonce ever issued, so a
  *  restart neither widens access (a revoked grant stays revoked) nor re-admits
  *  a nonce for a new grant. */
 export type DomainGrantState = { grants: DomainGrant[]; spentNonces: string[] };
 
 /**
  * Live set of cross-domain grants. In-memory with an exportable snapshot (the
- * kernel persists it on every issue/revoke, so a restart neither silently
+ * runtime persists it on every issue/revoke, so a restart neither silently
  * widens nor silently drops an authorization).
  *
  * `seenNonces` holds every nonce this registry ever minted, live or revoked

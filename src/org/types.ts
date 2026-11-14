@@ -2,7 +2,7 @@
  * Org (E9.3): virtual department establishment and result accountability.
  * Departments hold a single lead and uniquely-identified members; an
  * accountability chain traces each task result to executing agents, their
- * department leads and the deciding driver.
+ * department leads and the deciding operator.
  */
 
 import { DomainError, type DomainErrorKind } from '../util/domain-error.js';
@@ -43,7 +43,7 @@ export interface AccountabilityChain {
   executing: AccountabilityNode[];
   leads: AccountabilityNode[];
   unassigned: string[];
-  driver?: { escalationId: string; stance: string; decidedAt: string };
+  operator?: { escalationId: string; stance: string; decidedAt: string };
 }
 
 export interface CreateDepartmentInput {

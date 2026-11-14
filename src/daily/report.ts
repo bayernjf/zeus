@@ -1,28 +1,28 @@
 /**
  * Markdown rendering for the `npm run daily` entry.
  *
- * This module has no imports on purpose: the CLI gathers facts from the kernel,
+ * This module has no imports on purpose: the CLI gathers facts from the runtime,
  * and this turns them into the text the operator reads and the file that goes
  * back into their directory. Keeping the two apart is what makes the product
- * surface testable without a kernel, a socket or a filesystem, and it is the
+ * surface testable without a runtime, a socket or a filesystem, and it is the
  * same text in both places — what you read is what was stored.
  */
 
 export type DailyBranchView = {
-  vassal: string;
+  executor: string;
   /** Whether the dispatch round trip succeeded — not whether the work did. */
   ok: boolean;
-  /** The kernel's metric category ('completed' | 'failed' | 'timeout' | 'canceled'). */
+  /** The runtime's metric category ('completed' | 'failed' | 'timeout' | 'canceled'). */
   outcome?: string;
   /** The agent's own A2A task state, when a task was reached. */
   state?: string;
-  /** The vassal's own report summary (x-zeus-report.summary), when it sent one. */
+  /** The executor's own report summary (x-zeus-report.summary), when it sent one. */
   summary?: string;
   /** Evidence lines from that report. */
   evidence: string[];
   /** Text the agent returned, clipped. */
   text?: string;
-  /** Failure / refusal reason as the kernel recorded it. */
+  /** Failure / refusal reason as the runtime recorded it. */
   reason?: string;
 };
 
@@ -49,7 +49,7 @@ export type DailyReportModel = {
   agents: string[];
   status?: string;
   decision?: { rule: string; conclusion: string | null; reason: string };
-  positions: Array<{ vassal: string; stance: string; rationale?: string }>;
+  positions: Array<{ executor: string; stance: string; rationale?: string }>;
   branches: DailyBranchView[];
   /** Governance refusal that stopped dispatch before any request was sent. */
   refused?: { reason: string; detail: string };
@@ -180,7 +180,7 @@ export function renderDailyReport(model: DailyReportModel): string {
   if (model.status !== undefined) {
     lines.push('');
     lines.push('## Decision');
-    // The kernel's status means "every branch settled", not "the work succeeded":
+    // The runtime's status means "every branch settled", not "the work succeeded":
     // an agent that reports a failed task still settles its branch. Saying which
     // field this is keeps a settled-but-failed run from reading as a success.
     lines.push(`- intent status \`${model.status}\` (every branch settled; read the agents below for what they reported)`);
@@ -190,13 +190,13 @@ export function renderDailyReport(model: DailyReportModel): string {
       lines.push(`- rule \`${model.decision.rule}\` → ${conclusion}`);
       lines.push(`- ${clip(model.decision.reason, 400)}`);
     } else {
-      lines.push('- the kernel returned no aggregated decision');
+      lines.push('- the runtime returned no aggregated decision');
     }
     if (model.positions.length > 0) {
       lines.push('- positions:');
       for (const position of model.positions) {
         const rationale = position.rationale ? ` — ${clip(position.rationale, 200)}` : '';
-        lines.push(`  - \`${position.vassal}\` = \`${clip(position.stance, 120)}\`${rationale}`);
+        lines.push(`  - \`${position.executor}\` = \`${clip(position.stance, 120)}\`${rationale}`);
       }
     }
   }
@@ -211,7 +211,7 @@ export function renderDailyReport(model: DailyReportModel): string {
       // agent reported: 'completed' next to 'completed' is noise, 'completed'
       // next to a failed task state is the whole story.
       if (branch.outcome && branch.outcome !== branch.state) facts.push(`counted \`${branch.outcome}\``);
-      lines.push(`- **${branch.vassal}** — ${facts.join(' · ')}`);
+      lines.push(`- **${branch.executor}** — ${facts.join(' · ')}`);
       if (branch.summary) lines.push(`  - report: ${clip(branch.summary, 300)}`);
       for (const fact of branch.evidence) lines.push(`  - evidence: ${clip(fact, 300)}`);
       if (branch.text) lines.push(`  - text: ${clip(branch.text, 500)}`);

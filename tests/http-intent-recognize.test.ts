@@ -5,7 +5,7 @@ import { SkillRegistry } from '../src/skills/registry.js';
 import type { ChoiceResult, DecisionBackend, NoulResult, ScoreResult } from '../src/decision/types.js';
 import { createScriptedDecisionBackend, type ScriptedOptions } from '../src/testing/decision-backend.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function registryWithSkills() {

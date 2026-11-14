@@ -58,7 +58,7 @@ try {
   const names = (tools.result?.tools || []).map(t => t.name);
   check('tools/list contains realm.search/read', names.includes('realm.search') && names.includes('realm.read'), names.join(','));
   check(
-    'tools/list exposes the read-only kernel face (zeus.skills/plan/status)',
+    'tools/list exposes the read-only runtime face (zeus.skills/plan/status)',
     ['zeus.skills', 'zeus.plan', 'zeus.status'].every(n => names.includes(n)),
     names.join(',')
   );
@@ -102,7 +102,7 @@ try {
   });
   check('unknown realm read refused', !!rogue.error, JSON.stringify(rogue.error?.message || rogue).slice(0, 160));
 
-  // --- Read-only kernel face (design P1-1): zeus.skills / zeus.plan / zeus.status.
+  // --- Read-only runtime face (design P1-1): zeus.skills / zeus.plan / zeus.status.
 
   const status = await send('tools/call', { name: 'zeus.status', arguments: {} });
   const statusText = status.result?.content?.[0]?.text || '';

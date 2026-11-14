@@ -96,11 +96,11 @@ const agentServer = createServer((req, res) => {
       name,
       url: `http://127.0.0.1:${port}/${name}/api/a2a/tasks`,
       skills: [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
-      'x-zeus-fealty': {
+      'x-zeus-handshake': {
         version: '1',
         swornTo: 'zeus',
         domain: 'reliability',
-        dataRealms: ['personal'],
+        realms: ['personal'],
         dataPolicy: 'read-task-scope',
         reportBack: true,
         escalationPolicy: 'on-failure',
@@ -175,7 +175,7 @@ async function boot(opts) {
   const dir = join(work, opts.label);
   mkdirSync(dir, { recursive: true });
   const port = await freePort();
-  const stateFile = join(dir, 'kernel-state.json');
+  const stateFile = join(dir, 'runtime-state.json');
   const env = {
     ...process.env,
     NODE_ENV: 'development',
@@ -191,7 +191,7 @@ async function boot(opts) {
     NO_PROXY: '127.0.0.1,localhost',
     no_proxy: '127.0.0.1,localhost',
   };
-  delete env.ZEUS_VASSAL_SEEDS;
+  delete env.ZEUS_EXECUTOR_SEEDS;
   delete env.ZEUS_AUDIT_FILE;
   const child = spawn(process.execPath, [join(REPO, 'dist/http/serve.js')], { env, cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'] });
   children.push(child);
@@ -270,14 +270,14 @@ async function measureGate() {
   const run = async opts => {
     const proc = await boot({ ...opts, persist: false });
     for (const cardUrl of cards) {
-      const registered = await proc.api('POST', '/api/vassals', { cardUrl });
+      const registered = await proc.api('POST', '/api/executors', { cardUrl });
       if (registered.status >= 400) throw new Error(`[${opts.label}] register refused: ${registered.status} ${registered.text.slice(0, 160)}`);
     }
     scenario.requests = 0;
     const submitted = await proc.api('POST', '/api/intents', {
       skill: 'research',
       realm: 'personal',
-      vassals: names('g', width),
+      executors: names('g', width),
       aggregation: { kind: 'unanimous' },
       params: { subject: 'gate', predicate: 'verdict' },
     });
@@ -360,11 +360,11 @@ async function measureEscalations() {
   /** @param {{ persist: boolean, label: string }} opts */
   const cycle = async opts => {
     const proc = await boot({ ...opts, persist: opts.persist });
-    for (const cardUrl of conflictCards) await proc.api('POST', '/api/vassals', { cardUrl });
+    for (const cardUrl of conflictCards) await proc.api('POST', '/api/executors', { cardUrl });
     const submitted = await proc.api('POST', '/api/intents', {
       skill: 'research',
       realm: 'personal',
-      vassals: names('c', 2),
+      executors: names('c', 2),
       aggregation: { kind: 'unanimous' },
       params: { subject: 'conflict', predicate: 'verdict' },
     });
@@ -417,7 +417,7 @@ async function measureEscalations() {
 // ---------------------------------------------------------------------------
 async function measureStream() {
   const proc = await boot({ label: 'stream', persist: false });
-  for (const cardUrl of cardUrls('s', 2)) await proc.api('POST', '/api/vassals', { cardUrl });
+  for (const cardUrl of cardUrls('s', 2)) await proc.api('POST', '/api/executors', { cardUrl });
 
   /**
    * POST /api/intents awaits the whole fan-out, so an id only arrives at
@@ -434,7 +434,7 @@ async function measureStream() {
       intentId,
       skill: 'research',
       realm: 'personal',
-      vassals: names('s', 2),
+      executors: names('s', 2),
       aggregation: { kind: 'unanimous' },
       params: { subject: 'stream', predicate: 'verdict' },
       branchTimeoutMs: thinkMs * 6 + 10_000,
@@ -560,14 +560,14 @@ async function rssOf(child) {
 }
 async function measureGrowth() {
   const proc = await boot({ label: 'growth' });
-  for (const cardUrl of cardUrls('w', 1)) await proc.api('POST', '/api/vassals', { cardUrl });
+  for (const cardUrl of cardUrls('w', 1)) await proc.api('POST', '/api/executors', { cardUrl });
   /** @type {{ intents: number, rss: number, state: Record<string, unknown> }[]} */
   const samples = [];
   const submitOne = async () => {
     const submitted = await proc.api('POST', '/api/intents', {
       skill: 'research',
       realm: 'personal',
-      vassals: ['w1'],
+      executors: ['w1'],
       aggregation: { kind: 'unanimous' },
       params: { subject: 'growth', predicate: 'verdict' },
     });
@@ -603,12 +603,12 @@ async function measureGrowth() {
   const bigBytes = existsSync(bigFile) ? statSync(bigFile).size : 0;
 
   const small = await boot({ label: 'growth-small' });
-  for (const cardUrl of cardUrls('w', 1)) await small.api('POST', '/api/vassals', { cardUrl });
+  for (const cardUrl of cardUrls('w', 1)) await small.api('POST', '/api/executors', { cardUrl });
   for (let i = 0; i < 10; i++) {
     const submitted = await small.api('POST', '/api/intents', {
       skill: 'research',
       realm: 'personal',
-      vassals: ['w1'],
+      executors: ['w1'],
       aggregation: { kind: 'unanimous' },
       params: { subject: 'growth', predicate: 'verdict' },
     });

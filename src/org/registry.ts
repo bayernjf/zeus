@@ -1,7 +1,7 @@
 /**
  * OrgRegistry (E9.3): stateful holder for the department establishment. It
  * wraps the immutable department primitives and exposes the chart projection,
- * accountability tracing and export/import for kernel persistence. Departments
+ * accountability tracing and export/import for runtime persistence. Departments
  * are unique by id; members stay unique within a department (enforced by the
  * primitives).
  */

@@ -2,10 +2,10 @@ import type { RealmType } from '../a2a/types.js';
 import type { Conflict } from '../orchestrator/types.js';
 import type { InterruptLevel } from './interrupt.js';
 
-/** A vassal task stopped at input-required and is asking the human driver to decide. */
+/** A executor task stopped at input-required and is asking the human operator to decide. */
 export type EscalationStatus = 'pending' | 'approved' | 'rejected';
 
-/** task-input: one vassal task paused at input-required (E6.1).
+/** task-input: one executor task paused at input-required (E6.1).
  *  intent-conflict: the fan-out split across stances and the rule could not conclude (E6.2).
  *  memory-dispute: consolidation found contradictory facts it could not rule on.
  *  delegation-limit: an unattended watch fire hit a delegation-contract ceiling
@@ -20,16 +20,16 @@ export type Escalation = {
   id: string;
   kind: EscalationKind;
   runId: string;
-  /** task-input: the pausing vassal; intent-conflict: '(intent)' (no single vassal). */
-  vassal: string;
+  /** task-input: the pausing executor; intent-conflict: '(intent)' (no single executor). */
+  executor: string;
   skill: string;
-  /** task-input only: the vassal-side task to cancel on rejection. */
+  /** task-input only: the executor-side task to cancel on rejection. */
   taskId?: string;
   realm: RealmType;
-  /** Why the vassal escalated: taken from the terminal input-required event's
+  /** Why the executor escalated: taken from the terminal input-required event's
    *  x-zeus-escalation payload, with a neutral fallback. */
   reason: string;
-  /** task-input: vassal-offered options; intent-conflict: the competing stances. */
+  /** task-input: executor-offered options; intent-conflict: the competing stances. */
   options: string[];
   status: EscalationStatus;
   createdAt: string;
@@ -46,7 +46,7 @@ export type Escalation = {
   /** intent-conflict only. */
   intentId?: string;
   stances?: Conflict['stances'];
-  /** Set when an intent-conflict is approved: the stance the driver accepted. */
+  /** Set when an intent-conflict is approved: the stance the operator accepted. */
   decidedStance?: string;
   /** memory-dispute only. */
   factId?: string;
@@ -70,7 +70,7 @@ export type OversightAuditEntry = {
   ts: string;
   escalationId: string;
   runId: string;
-  vassal: string;
+  executor: string;
   action: 'escalated' | 'approved' | 'rejected';
   note?: string;
   /** Set when a rejection's downstream task cancel failed. */
@@ -81,5 +81,5 @@ export type OversightAuditEntry = {
   interruptLevel?: InterruptLevel;
 };
 
-/** Rejection cancels the vassal-side task; wired to Dispatcher.cancel in production. */
-export type CancelTaskFn = (vassal: string, taskId: string) => Promise<unknown>;
+/** Rejection cancels the executor-side task; wired to Dispatcher.cancel in production. */
+export type CancelTaskFn = (executor: string, taskId: string) => Promise<unknown>;

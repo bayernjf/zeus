@@ -1,5 +1,5 @@
 /**
- * Thin read/write client over the existing H2 HTTP face. It adds no kernel
+ * Thin read/write client over the existing H2 HTTP face. It adds no runtime
  * route and no UI-private logic: every write is the same API call a curl user
  * would make, so it reads back identically in GET /api/audit.
  */
@@ -40,7 +40,7 @@ export type DeckSnapshot = {
  *  `preview` is an in-progress frame payload — never a formal conclusion. */
 export type ActiveIntentBranchView = {
   runId: string;
-  vassal?: string;
+  executor?: string;
   skill?: string;
   started: boolean;
   settled: boolean;
@@ -52,7 +52,7 @@ export type ActiveIntentBranchView = {
 export type ActiveIntentView = {
   intentId: string;
   skill: string;
-  status: 'running' | 'needs-driver';
+  status: 'running' | 'needs-operator';
   settledCount: number;
   totalCount: number;
   view: {
@@ -92,7 +92,7 @@ export type RosterView = {
 export type EscalationView = {
   id: string;
   kind: 'task-input' | 'intent-conflict' | 'memory-dispute' | 'delegation-limit';
-  vassal: string;
+  executor: string;
   skill: string;
   realm: string;
   reason: string;
@@ -103,7 +103,7 @@ export type EscalationView = {
    *  entry, 2 = blocking stall); absent on pre-V2 rows. */
   interruptLevel?: 0 | 1 | 2;
   intentId?: string;
-  stances?: Array<{ stance: string; vassals: string[]; summary?: string }>;
+  stances?: Array<{ stance: string; executors: string[]; summary?: string }>;
   factId?: string;
   conflictingFacts?: string[];
 };
@@ -122,15 +122,15 @@ export type StateView = {
   persistence?: { enabled: boolean; stateFile: string | null; restoredFromSnapshot: boolean };
   audit?: { file: string | null; failures: number; degraded: boolean };
   counts?: {
-    vassals: number; vassalsRevoked: number; escalations: number; intents: number; skills: number;
+    executors: number; executorsRevoked: number; escalations: number; intents: number; skills: number;
   };
-  driverGrants?: { authority: 'signed' | 'shape-only'; keyId: string | null };
+  operatorGrants?: { authority: 'signed' | 'shape-only'; keyId: string | null };
 };
 
 /** One audit-log row as returned by GET /api/audit (the fan-out timeline). */
 export type AuditView = {
   ts: string;
-  vassal: string;
+  executor: string;
   decision: string;
   runId?: string;
   skill?: string;
@@ -169,7 +169,7 @@ export type ContractView = {
   id: string;
   grantedBy: string;
   skill: string;
-  vassal?: string;
+  executor?: string;
   capabilities: string[];
   limits: { maxChildTickets: number; maxConcurrent: number; windowEndsAt: string };
   used: { childTickets: number; inFlight: number };
@@ -225,7 +225,7 @@ export type DeckClient = {
   timeline(limit?: number): Promise<AuditView[]>;
   /** Read-only mounted realms and cross-domain grant ledger. */
   domains(): Promise<DomainsView>;
-  /** Issue a personal -> enterprise cross-domain grant (audited by the kernel). */
+  /** Issue a personal -> enterprise cross-domain grant (audited by the runtime). */
   issueGrant(input: {
     subject: string;
     realmId: string;
@@ -248,7 +248,7 @@ export type DeckClient = {
   /** Revoke a delegation contract; derivations block immediately. */
   revokeContract(id: string): Promise<void>;
   /** One-click answer to a delegation-limit escalation: issue an execute-only
-   *  contract, rebind the watch, approve the row - all kernel-side. The endpoint
+   *  contract, rebind the watch, approve the row - all runtime-side. The endpoint
    *  requires grantedBy and limits, so the deck states the shape it approves. */
   approveContract(
     id: string,
@@ -256,7 +256,7 @@ export type DeckClient = {
   ): Promise<{ contractId: string; watchId: string }>;
   /** Read-only watch ledger (P1 self-host trigger face). */
   watches(): Promise<WatchesView>;
-  /** Drive one caller-owned evaluation tick; the kernel holds no timer. */
+  /** Drive one caller-owned evaluation tick; the runtime holds no timer. */
   watchTick(): Promise<WatchTickView['report']>;
   /** Revoke (settle) a watch; it fires no more. */
   revokeWatch(id: string): Promise<void>;
@@ -286,7 +286,7 @@ export type DeckClient = {
   reject(id: string, note?: string): Promise<void>;
   resolve(id: string, stance: string, note?: string): Promise<void>;
   /** E6.3: answer a task-input escalation with the parameters the agent asked
-   *  for. The kernel approves the row and re-dispatches that one branch; plain
+   *  for. The runtime approves the row and re-dispatches that one branch; plain
    *  `approve` records the decision and leaves the branch parked. */
   resume(id: string, params: Record<string, unknown>): Promise<void>;
   /** E2.6: recognize an operator instruction as a plan-only intent. */
@@ -449,11 +449,11 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
       return body.result;
     },
     revoke: async name => {
-      const res = await fetchImpl(`${baseUrl}/api/vassals/${encodeURIComponent(name)}`, { method: 'DELETE', headers });
+      const res = await fetchImpl(`${baseUrl}/api/executors/${encodeURIComponent(name)}`, { method: 'DELETE', headers });
       if (!res.ok) throw new ApiError(res.status, await res.json().catch(() => null));
     },
     approve: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/approve`, note !== undefined ? { note } : undefined),
-    reinstate: name => post(`/api/vassals/${encodeURIComponent(name)}/reinstate`),
+    reinstate: name => post(`/api/executors/${encodeURIComponent(name)}/reinstate`),
     reject: (id, note) => post(`/api/escalations/${encodeURIComponent(id)}/reject`, note !== undefined ? { note } : undefined),
     resolve: (id, stance, note) =>
       post(`/api/escalations/${encodeURIComponent(id)}/resolve`, { stance, ...(note !== undefined ? { note } : {}) }),
@@ -473,7 +473,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         | { ok: false; reason: string; detail?: string }
         | null;
       // A structured fail-closed response is a product outcome, not a
-      // transport error: the kernel answers 422 with {ok:false, reason} and
+      // transport error: the runtime answers 422 with {ok:false, reason} and
       // the deck surfaces that reason verbatim instead of throwing.
       if (raw !== null && typeof raw === 'object' && typeof raw.ok === 'boolean') {
         if (raw.ok) {

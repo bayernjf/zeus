@@ -5,17 +5,17 @@
  * the four stages reads its evidence from the layer that owns it:
  *
  *   seat          - the department establishment (OrgRegistry, E9.3)
- *   account       - the live vassal directory (revoked or unknown both refuse)
+ *   account       - the live executor directory (revoked or unknown both refuse)
  *   authorization - decideRealmAccess (E3.6 tenancy + E6.4 grants)
  *   mentorship    - certified MentorshipLedger records (E2.5: certification came
  *                   from competency checks, not attendance)
  *
  * Nothing here caches those facts. `commission()` checks them at the moment of
  * decision, and first-task eligibility re-checks them again, so revoking a
- * vassal or dismissing its mentorship retires the commission without anyone
+ * executor or dismissing its mentorship retires the commission without anyone
  * having to remember to edit a record.
  */
-import type { VassalLookup } from '../registry/registry.js';
+import type { ExecutorLookup } from '../registry/registry.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
 import { decideRealmAccess, type DomainGrantRegistry } from '../realm/authorization.js';
@@ -34,7 +34,7 @@ import {
 
 export type CommissionDeps = {
   org: Pick<OrgRegistry, 'listDepartments'>;
-  vassals: VassalLookup;
+  executors: ExecutorLookup;
   realms: Pick<RealmStore, 'connections'>;
   grants: Pick<DomainGrantRegistry, 'list'>;
   mentorships: Pick<MentorshipLedger, 'list'>;
@@ -77,13 +77,13 @@ export function verifyCommission(
       ? pass(`${record.agentId} holds the ${seatMember.role} seat${seatMember.title ? ` "${seatMember.title}"` : ''} of ${department.name}`)
       : fail(`${record.agentId} is not on the ${department.name} roster (assign it first)`);
 
-  const status = deps.vassals.statusOf(record.agentId);
+  const status = deps.executors.statusOf(record.agentId);
   const account: CommissionCheck =
     status === 'active'
-      ? pass('vassal registered and active')
+      ? pass('executor registered and active')
       : status === 'revoked'
-        ? fail(`vassal ${record.agentId} has been revoked`)
-        : fail(`no vassal named ${record.agentId} is registered (an org member with no card cannot be dispatched)`);
+        ? fail(`executor ${record.agentId} has been revoked`)
+        : fail(`no executor named ${record.agentId} is registered (an org member with no card cannot be dispatched)`);
 
   const realm = deps.realms.connections().find(entry => entry.realmId === record.realmId);
   let authorization: CommissionCheck;
@@ -180,7 +180,7 @@ export class CommissionLedger {
   ) {}
 
   /** Open a commissioning file. Fails early on a seat or realm that cannot hold
-   *  one, so a driver never discovers at commission time that the paperwork was
+   *  one, so a operator never discovers at commission time that the paperwork was
    *  for a department that does not exist. */
   open(input: OpenCommissionInput): CommissionRecord {
     const agentId = input.agentId?.trim();
@@ -323,7 +323,7 @@ export class CommissionLedger {
 
   /**
    * The gate a first task must pass: commissioned, and every evidence gate
-   * still holding *now*. A vassal revoked or a mentorship dismissed after the
+   * still holding *now*. A executor revoked or a mentorship dismissed after the
    * sign-off takes the eligibility away by itself.
    */
   assertCommissioned(id: string): CommissionRecord {

@@ -18,7 +18,7 @@ function harness() {
   const ctx = (overrides: Partial<Parameters<typeof verifyAndConsumeExecutionDelegation>[1]> = {}) => ({
     verifier,
     ledger,
-    vassal: 'pr-helper',
+    executor: 'pr-helper',
     skill: 'deployment-health',
     capability: 'github:pull-request:merge',
     now: () => T0,
@@ -31,7 +31,7 @@ describe('deferred #33 one-time execution delegation primitive', () => {
   it('issues a signed, capability-bound delegation that verifies once', async () => {
     const { signer, ctx } = harness();
     const d = await issueExecutionDelegation(
-      { grantedBy: 'operator@zeus', skill: 'deployment-health', vassal: 'pr-helper', capabilities: ['github:pull-request:merge'] },
+      { grantedBy: 'operator@zeus', skill: 'deployment-health', executor: 'pr-helper', capabilities: ['github:pull-request:merge'] },
       { signer, now: () => T0 },
     );
     expect(d.kind).toBe('zeus-execution-delegation');
@@ -51,13 +51,13 @@ describe('deferred #33 one-time execution delegation primitive', () => {
     expect(await verifyAndConsumeExecutionDelegation(undefined, ctx())).toEqual({ ok: false, reason: 'missing' });
   });
 
-  it('binds vassal, skill and capability; a mismatch is refused before consuming the nonce', async () => {
+  it('binds executor, skill and capability; a mismatch is refused before consuming the nonce', async () => {
     const { signer, ctx, ledger } = harness();
     const d = await issueExecutionDelegation(
-      { grantedBy: 'op', skill: 'deployment-health', vassal: 'pr-helper', capabilities: ['github:pull-request:merge'] },
+      { grantedBy: 'op', skill: 'deployment-health', executor: 'pr-helper', capabilities: ['github:pull-request:merge'] },
       { signer, now: () => T0 },
     );
-    expect(await verifyAndConsumeExecutionDelegation(d, ctx({ vassal: 'loom' }))).toEqual({ ok: false, reason: 'wrong-vassal' });
+    expect(await verifyAndConsumeExecutionDelegation(d, ctx({ executor: 'loom' }))).toEqual({ ok: false, reason: 'wrong-executor' });
     expect(await verifyAndConsumeExecutionDelegation(d, ctx({ skill: 'other-skill' }))).toEqual({ ok: false, reason: 'wrong-skill' });
     expect(await verifyAndConsumeExecutionDelegation(d, ctx({ capability: 'github:repo:delete' }))).toEqual({
       ok: false,
@@ -132,17 +132,17 @@ describe('deferred #33 one-time execution delegation primitive', () => {
     expect(await verifyAndConsumeExecutionDelegation(bad, ctx({ skill: 's', capability: 'x' }))).toEqual({ ok: false, reason: 'malformed' });
   });
 
-  it('deduplicates capabilities and a vassal-less delegation is consumed by the first eligible branch only', async () => {
+  it('deduplicates capabilities and a executor-less delegation is consumed by the first eligible branch only', async () => {
     const { signer, ctx } = harness();
     const d = await issueExecutionDelegation(
       { grantedBy: 'op', skill: 'deployment-health', capabilities: ['github:pull-request:merge'], nonce: 'fixed-nonce' },
       { signer, now: () => T0 },
     );
-    expect(d.vassal).toBeUndefined();
+    expect(d.executor).toBeUndefined();
     expect(d.nonce).toBe('fixed-nonce');
     expect((await verifyAndConsumeExecutionDelegation(d, ctx())).ok).toBe(true);
-    // A second vassal in the same fan-out cannot reuse it even without vassal binding.
-    expect(await verifyAndConsumeExecutionDelegation(d, ctx({ vassal: 'loom' }))).toEqual({ ok: false, reason: 'replayed' });
+    // A second executor in the same fan-out cannot reuse it even without executor binding.
+    expect(await verifyAndConsumeExecutionDelegation(d, ctx({ executor: 'loom' }))).toEqual({ ok: false, reason: 'replayed' });
   });
 
   it('retires an expired nonce before a live one, so a valid delegation is never evicted early', () => {

@@ -15,14 +15,14 @@
  * only revokes again with --revoke-test. Everything else is a read.
  *
  * Usage:
- *   KERNEL_URL=http://127.0.0.1:8799 \
+ *   RUNTIME_URL=http://127.0.0.1:8799 \
  *   ZEUS_INTERNAL_TOKEN="$(cat data/internal-token)" \
  *   CARD_URL=http://127.0.0.1:8000/.well-known/agent-card.json \
  *   AGENT_TOKEN=<loom Agent Key, Q88> \
  *   node scripts/acceptance-loom-interop.mjs [--revoke-test] [--sse-test] [--timeout 60000]
  *
  * Env:
- *   KERNEL_URL          — the running Zeus to drive (default none, required).
+ *   RUNTIME_URL          — the running Zeus to drive (default none, required).
  *   ZEUS_INTERNAL_TOKEN — Zeus bearer for the H2 surface.
  *   CARD_URL            — loom's agent card URL. Defaults to LOOM_URL +
  *                         "/.well-known/agent-card.json" when LOOM_URL is set.
@@ -58,7 +58,7 @@ const sseTest = argv.includes('--sse-test');
 const timeoutIndex = argv.indexOf('--timeout');
 const timeoutMs = timeoutIndex >= 0 ? Number(argv[timeoutIndex + 1]) : 60_000;
 
-const KERNEL_URL = (env.KERNEL_URL ?? '').replace(/\/+$/, '');
+const RUNTIME_URL = (env.RUNTIME_URL ?? '').replace(/\/+$/, '');
 const INTERNAL_TOKEN = env.ZEUS_INTERNAL_TOKEN ?? '';
 const LOOM_URL = (env.LOOM_URL ?? '').replace(/\/+$/, '');
 const CARD_URL = (env.CARD_URL ?? (LOOM_URL ? `${LOOM_URL}/.well-known/agent-card.json` : '')).replace(/\/+$/, '');
@@ -72,7 +72,7 @@ const PARAMS = env.PARAMS ? JSON.parse(env.PARAMS) : undefined;
 // the display name is the card's public label, the id is what tasks/send runs.
 // Default params match generate-content's required fields (tenant_id/product_id).
 
-if (!KERNEL_URL) { console.error('KERNEL_URL is required'); process.exit(2); }
+if (!RUNTIME_URL) { console.error('RUNTIME_URL is required'); process.exit(2); }
 if (!INTERNAL_TOKEN) { console.error('ZEUS_INTERNAL_TOKEN is required'); process.exit(2); }
 if (!CARD_URL) { console.error('CARD_URL (or LOOM_URL) is required'); process.exit(2); }
 if (!AGENT_TOKEN) { console.error('AGENT_TOKEN is required (loom Agent Key, Q88)'); process.exit(2); }
@@ -91,7 +91,7 @@ async function call(method, path, { auth = false, body } = {}) {
   const headers = { accept: 'application/json' };
   if (auth) headers.authorization = `Bearer ${INTERNAL_TOKEN}`;
   if (body !== undefined) headers['content-type'] = 'application/json';
-  const response = await fetch(`${KERNEL_URL}${path}`, {
+  const response = await fetch(`${RUNTIME_URL}${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -103,13 +103,13 @@ async function call(method, path, { auth = false, body } = {}) {
 }
 
 async function main() {
-  console.log(`kernel: ${KERNEL_URL}`);
+  console.log(`runtime: ${RUNTIME_URL}`);
   console.log(`card:   ${CARD_URL}`);
   console.log(`skill:  ${SKILL}  realm: ${REALM}  marker: ${marker}`);
 
-  // 1. Kernel is up.
+  // 1. Runtime is up.
   const health = await call('GET', '/healthz');
-  record('the kernel is reachable', health.status === 200, `status=${health.status}`);
+  record('the runtime is reachable', health.status === 200, `status=${health.status}`);
   if (!steps[0]?.ok) return finish();
 
   // 2. Fetch loom's card and assert the loom-specific contract.
@@ -167,9 +167,9 @@ async function main() {
   }
 
   // 4. Register loom into Zeus and assert roster state.
-  const registered = await call('POST', '/api/vassals', { auth: true, body: { cardUrl: CARD_URL, token: AGENT_TOKEN } });
+  const registered = await call('POST', '/api/executors', { auth: true, body: { cardUrl: CARD_URL, token: AGENT_TOKEN } });
   const registerOk = registered.status === 201 || registered.status === 200 || (registered.status >= 400 && /already/i.test(registered.text));
-  record('loom registers (card fetched, fealty validated)', registerOk, `status=${registered.status} ${clip(registered.text)}`);
+  record('loom registers (card fetched, handshake validated)', registerOk, `status=${registered.status} ${clip(registered.text)}`);
   if (!registerOk) return finish();
 
   const afterRoster = await call('GET', '/api/roster', { auth: true });
@@ -189,7 +189,7 @@ async function main() {
     record('no read view echoes the loom credential', true, 'skipped (no token)');
   }
 
-  // 6. One fan-out through loom (plan mode). Kernel reads the card-declared url.
+  // 6. One fan-out through loom (plan mode). Runtime reads the card-declared url.
   const domains = await call('GET', '/api/domains', { auth: true });
   const target = (domains.json?.realms ?? []).find((/** @type {any} */ realm) => realm.type === REALM);
   const fanOut = await call('POST', '/api/intents', {
@@ -198,7 +198,7 @@ async function main() {
       skill: SKILL,
       realm: REALM,
       ...(target?.realmId ? { realmId: target.realmId } : {}),
-      vassals: ['loom'],
+      executors: ['loom'],
       params: PARAMS ?? { tenant_id: marker, product_id: marker },
     },
   });
@@ -209,13 +209,13 @@ async function main() {
 
   const deadline = Date.now() + timeoutMs;
   let result = fanOut.json;
-  while (Date.now() < deadline && !['completed', 'failed', 'canceled', 'needs-driver'].includes(result?.status)) {
+  while (Date.now() < deadline && !['completed', 'failed', 'canceled', 'needs-operator'].includes(result?.status)) {
     await new Promise(resolve => setTimeout(resolve, 1000));
     const polled = await call('GET', `/api/intents/${intentId}`, { auth: true });
     if (polled.status === 200) result = polled.json;
   }
   const branches = Array.isArray(result?.branches) ? result.branches : [];
-  record('the fan-out reached a terminal state inside the timeout', ['completed', 'failed', 'canceled', 'needs-driver'].includes(result?.status), `status=${result?.status}`);
+  record('the fan-out reached a terminal state inside the timeout', ['completed', 'failed', 'canceled', 'needs-operator'].includes(result?.status), `status=${result?.status}`);
   record('at least one branch came back from loom', branches.length >= 1, `branches=${branches.length}`);
 
   const succeeded = branches.filter((/** @type {any} */ branch) => branch?.ok === true);
@@ -232,7 +232,7 @@ async function main() {
   const branchRuns = new Set(branches.map((/** @type {any} */ branch) => branch.runId).filter(Boolean));
   const audit = await call('GET', `/api/audit?limit=50`, { auth: true });
   const entries = Array.isArray(audit.json?.entries) ? audit.json.entries : [];
-  const mine = entries.filter((/** @type {any} */ entry) => entry.decision === 'dispatched' && (branchRuns.has(entry.runId) || entry.vassal === 'loom'));
+  const mine = entries.filter((/** @type {any} */ entry) => entry.decision === 'dispatched' && (branchRuns.has(entry.runId) || entry.executor === 'loom'));
   // Zeus models the terminal state inside the dispatch entry (entry.state), not
   // as a separate decision row; a completed/failed state on the matching entry
   // is the terminal signal.
@@ -241,7 +241,7 @@ async function main() {
 
   // 8. Optional teardown: revoke loom again (--revoke-test).
   if (revokeTest) {
-    const revoked = await call('DELETE', `/api/vassals/${encodeURIComponent('loom')}`, { auth: true });
+    const revoked = await call('DELETE', `/api/executors/${encodeURIComponent('loom')}`, { auth: true });
     record('loom is revoked again', [200, 204].includes(revoked.status), `status=${revoked.status}`);
   } else {
     console.log('SKIP  teardown revoke (--revoke-test not passed; loom stays registered for the next run)');

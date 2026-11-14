@@ -4,7 +4,7 @@ import type { AggregationRule } from './types.js';
 /**
  * S3 DAG dependency orchestration (pure spec + graph functions).
  *
- * A DAG node is one fan-out: a skill dispatched (possibly to several vassals),
+ * A DAG node is one fan-out: a skill dispatched (possibly to several executors),
  * aggregated with the existing pure rules. Nodes declare dependencies on earlier
  * node ids; the runner starts a node only after every dependency completed.
  * Graph math (validation / topological layers / critical path) lives here as
@@ -14,8 +14,8 @@ import type { AggregationRule } from './types.js';
 export type DagNode = {
   id: string;
   skill: string;
-  /** Explicit vassals; defaults to skill providers via lookup. */
-  vassals?: string[];
+  /** Explicit executors; defaults to skill providers via lookup. */
+  executors?: string[];
   params?: Record<string, unknown>;
   /** Node ids that must complete before this node starts. */
   dependsOn?: string[];
@@ -180,5 +180,5 @@ export function dependenciesSatisfied(node: DagNode, statusOf: (id: string) => D
   return firstUnsatisfiedDependency(node, statusOf) === undefined;
 }
 
-export type DagNodeState = 'pending' | 'running' | 'completed' | 'failed' | 'needs-driver' | 'skipped' | 'degraded';
-export type DagState = 'completed' | 'partial' | 'failed' | 'needs-driver';
+export type DagNodeState = 'pending' | 'running' | 'completed' | 'failed' | 'needs-operator' | 'skipped' | 'degraded';
+export type DagState = 'completed' | 'partial' | 'failed' | 'needs-operator';

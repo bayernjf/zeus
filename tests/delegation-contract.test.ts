@@ -82,7 +82,7 @@ describe('delegation contract - issuance and verification (design-self-host-loop
   it('keeps spent counters and revocation outside the signed claim', async () => {
     const h = harness();
     const contract = await issuedInto(h.registry, h.signer);
-    // The signature covers what the operator approved; the kernel writes the
+    // The signature covers what the operator approved; the runtime writes the
     // bookkeeping. If used were inside the claim, the first derivation would
     // break the seal, so this is the assertion that keeps the split deliberate.
     const spent: DelegationContract = { ...contract, used: { childTickets: 2, inFlight: 1 } };
@@ -116,13 +116,13 @@ describe('invariant 1 - derivation shortens, never widens', () => {
   it('derives a child inside the contract boundary, bound to the same skill', async () => {
     const h = harness();
     const contract = await issuedInto(h.registry, h.signer);
-    const result = await derive(h, contract.id, { capabilities: ['execute'], vassal: 'pr-helper', reason: 'nightly triage' });
+    const result = await derive(h, contract.id, { capabilities: ['execute'], executor: 'pr-helper', reason: 'nightly triage' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.delegation.skill).toBe(contract.skill);
     expect(result.delegation.grantedBy).toBe(contract.grantedBy);
     expect(result.delegation.capabilities).toEqual(['execute']);
-    expect(result.delegation.vassal).toBe('pr-helper');
+    expect(result.delegation.executor).toBe('pr-helper');
     expect(result.delegation.reason).toContain('nightly triage');
     expect(result.delegation.reason).toContain(contract.id);
   });
@@ -143,12 +143,12 @@ describe('invariant 1 - derivation shortens, never widens', () => {
     expect(ok.ok).toBe(true);
   });
 
-  it('honours a vassal-bound contract and refuses another vassal', async () => {
+  it('honours a executor-bound contract and refuses another executor', async () => {
     const h = harness();
-    const contract = await issuedInto(h.registry, h.signer, { vassal: 'pr-helper' });
-    expect(await derive(h, contract.id, { capabilities: ['execute'], vassal: 'other-agent' })).toEqual({ ok: false, reason: 'child-vassal-mismatch' });
+    const contract = await issuedInto(h.registry, h.signer, { executor: 'pr-helper' });
+    expect(await derive(h, contract.id, { capabilities: ['execute'], executor: 'other-agent' })).toEqual({ ok: false, reason: 'child-executor-mismatch' });
     const inherited = await derive(h, contract.id, { capabilities: ['execute'] });
-    expect(inherited.ok && 'vassal' in inherited.delegation ? inherited.delegation.vassal : undefined).toBe('pr-helper');
+    expect(inherited.ok && 'executor' in inherited.delegation ? inherited.delegation.executor : undefined).toBe('pr-helper');
   });
 
   it('cannot outlive the window it came from', async () => {
@@ -202,11 +202,11 @@ describe('invariant 2 - every spend counts, and a refusal spends nothing', () =>
   it('the derived child is consumable once and refused as replayed the second time', async () => {
     const h = harness();
     const contract = await issuedInto(h.registry, h.signer);
-    const result = await derive(h, contract.id, { capabilities: ['execute'], vassal: 'pr-helper' });
+    const result = await derive(h, contract.id, { capabilities: ['execute'], executor: 'pr-helper' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const ledger = new ExecutionDelegationNonceLedger();
-    const context = { verifier: h.verifier, ledger, vassal: 'pr-helper', skill: 'research', capability: DELEGATION_CONTRACT_REQUIRED_CAPABILITY, now: () => T0 };
+    const context = { verifier: h.verifier, ledger, executor: 'pr-helper', skill: 'research', capability: DELEGATION_CONTRACT_REQUIRED_CAPABILITY, now: () => T0 };
     expect(await verifyAndConsumeExecutionDelegation(result.delegation, context)).toMatchObject({ ok: true });
     expect(await verifyAndConsumeExecutionDelegation(result.delegation, context)).toEqual({ ok: false, reason: 'replayed' });
   });

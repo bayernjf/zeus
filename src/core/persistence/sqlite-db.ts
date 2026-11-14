@@ -2,12 +2,12 @@
  * SQLite connection wrapper for durable zeus state (T-M6-01). Uses the
  * built-in experimental node:sqlite module (Node 22+), loaded via
  * createRequire so the runtime — not the TS resolver — owns the `node:`
- * module. The PG driver is a later slice (same port contract).
+ * module. The PG operator is a later slice (same port contract).
  *
  * File hygiene: the database holds plaintext local secrets (e.g.
  * decision_webhooks.secret), so every open tightens the DB file and its
  * WAL/SHM sidecars to 0600 and creates the parent directory 0700 — the same
- * discipline as the kernel-state/vault/audit writers. Tightening runs on
+ * discipline as the runtime-state/backup/audit writers. Tightening runs on
  * every open, which also corrects databases created by older builds or
  * manually loosened by the operator. Pre-existing parent directories are
  * left untouched: the operator may share them deliberately.

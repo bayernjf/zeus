@@ -2,9 +2,9 @@
  * E3.4 remaining item (1): the write step over MCP.
  *
  * The MCP face is the only externally drivable write channel, so its boundary is
- * the DriverWriteGrant (E3.5): an enterprise write is refused unless the caller
+ * the OperatorWriteGrant (E3.5): an enterprise write is refused unless the caller
  * presents a signed, unexpired, single-use grant bound to that realm. The grant
- * is verified by the store - the same code path the kernel's own writers use -
+ * is verified by the store - the same code path the runtime's own writers use -
  * so this suite pins the *channel*, not a second implementation of the check:
  *
  *  - tools/list declares realm.write with the grant in the schema (a capability
@@ -23,9 +23,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FsRealmStore } from '../src/realm/store.js';
 import { createRealmMcpHandler, JSON_RPC_CODES, type JsonRpcResponse } from '../src/realm/mcp.js';
-import { DriverGrantLedger, issueDriverWriteGrant } from '../src/realm/grant.js';
+import { OperatorGrantLedger, issueOperatorWriteGrant } from '../src/realm/grant.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
-import type { DriverWriteGrant } from '../src/realm/types.js';
+import type { OperatorWriteGrant } from '../src/realm/types.js';
 
 type Handle = (message: unknown) => Promise<JsonRpcResponse | null>;
 type AuditEntry = {
@@ -53,12 +53,12 @@ function resultText(res: JsonRpcResponse | null): unknown {
   return JSON.parse(content[0]!.text);
 }
 
-describe('Realm MCP write step (E3.4 remaining 1: writes need a DriverWriteGrant)', () => {
+describe('Realm MCP write step (E3.4 remaining 1: writes need a OperatorWriteGrant)', () => {
   let sandbox: string;
   let store: FsRealmStore;
   let handle: Handle;
   let signer: Ed25519MemorySigner;
-  let ledger: DriverGrantLedger;
+  let ledger: OperatorGrantLedger;
   let audit: AuditEntry[];
   let personalId: string;
   let enterpriseId: string;
@@ -72,11 +72,11 @@ describe('Realm MCP write step (E3.4 remaining 1: writes need a DriverWriteGrant
     writeFileSync(join(personalRoot, 'notes', 'todo.txt'), 'buy milk\n');
 
     signer = new Ed25519MemorySigner('zeus-rsk-mcp-write');
-    ledger = new DriverGrantLedger();
+    ledger = new OperatorGrantLedger();
     audit = [];
     store = new FsRealmStore({
       now: () => NOW,
-      driverGrants: { ledger, verifier: signer.verifier(), acceptedKeyIds: [signer.keyId] },
+      operatorGrants: { ledger, verifier: signer.verifier(), acceptedKeyIds: [signer.keyId] },
       audit: (entry: AuditEntry) => audit.push(entry),
     });
     personalId = (await store.connect(personalRoot, 'personal')).realmId;
@@ -92,9 +92,9 @@ describe('Realm MCP write step (E3.4 remaining 1: writes need a DriverWriteGrant
     rmSync(sandbox, { recursive: true, force: true });
   });
 
-  async function grantFor(realmId: string): Promise<DriverWriteGrant> {
-    return issueDriverWriteGrant(
-      { realmId, grantedBy: 'driver', reason: 'mcp write test', ttlMs: 60_000 },
+  async function grantFor(realmId: string): Promise<OperatorWriteGrant> {
+    return issueOperatorWriteGrant(
+      { realmId, grantedBy: 'operator', reason: 'mcp write test', ttlMs: 60_000 },
       { signer, now: () => NOW },
     );
   }
@@ -130,7 +130,7 @@ describe('Realm MCP write step (E3.4 remaining 1: writes need a DriverWriteGrant
   it('refuses an unsigned or tampered grant', async () => {
     const valid = await grantFor(enterpriseId);
     const tampered = { ...valid, sig: `${valid.sig!.startsWith('a') ? 'b' : 'a'}${valid.sig!.slice(1)}` };
-    const unsigned = { ...valid } as Partial<DriverWriteGrant>;
+    const unsigned = { ...valid } as Partial<OperatorWriteGrant>;
     delete unsigned.sig;
     delete unsigned.keyId;
 
@@ -153,8 +153,8 @@ describe('Realm MCP write step (E3.4 remaining 1: writes need a DriverWriteGrant
     expect(wrongRealm?.error?.code).toBe(UNAUTHORIZED);
     expect(wrongRealm!.error!.message).toContain('wrong-realm');
 
-    const expired = await issueDriverWriteGrant(
-      { realmId: enterpriseId, grantedBy: 'driver', ttlMs: 1_000 },
+    const expired = await issueOperatorWriteGrant(
+      { realmId: enterpriseId, grantedBy: 'operator', ttlMs: 1_000 },
       { signer, now: () => new Date(NOW.getTime() - 60_000) },
     );
     const stale = await callWrite(handle, 6, {
@@ -185,9 +185,9 @@ describe('Realm MCP write step (E3.4 remaining 1: writes need a DriverWriteGrant
     expect(JSON.stringify(resultText(found))).toContain('notes/report.md');
 
     // The write is authorizable after the fact: grantedBy rides the audit entry,
-    // which is what the kernel turns into a realm-write row on the audit spine.
+    // which is what the runtime turns into a realm-write row on the audit spine.
     expect(audit).toHaveLength(1);
-    expect(audit[0]).toMatchObject({ realmId: enterpriseId, itemId: 'notes/report.md', grantedBy: 'driver' });
+    expect(audit[0]).toMatchObject({ realmId: enterpriseId, itemId: 'notes/report.md', grantedBy: 'operator' });
   });
 
   it('refuses a replayed grant, and a rejected attempt never burns the nonce', async () => {

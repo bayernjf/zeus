@@ -24,7 +24,7 @@ const baseSnapshot: DeckSnapshot = {
     {
       id: 'esc-1',
       kind: 'task-input',
-      vassal: 'pr-helper',
+      executor: 'pr-helper',
       skill: 'deployment-health',
       realm: 'personal',
       reason: 'missing owner, repo',
@@ -35,7 +35,7 @@ const baseSnapshot: DeckSnapshot = {
     {
       id: 'esc-2',
       kind: 'intent-conflict',
-      vassal: '(intent)',
+      executor: '(intent)',
       skill: 'pick-db',
       realm: 'personal',
       reason: 'split',
@@ -43,8 +43,8 @@ const baseSnapshot: DeckSnapshot = {
       options: [],
       createdAt: '',
       stances: [
-        { stance: 'postgres', vassals: ['a'] },
-        { stance: 'sqlite', vassals: ['b'] },
+        { stance: 'postgres', executors: ['a'] },
+        { stance: 'sqlite', executors: ['b'] },
       ],
     },
   ],
@@ -89,7 +89,7 @@ const delegationLimitSnapshot: DeckSnapshot = {
     {
       id: 'esc-dl',
       kind: 'delegation-limit',
-      vassal: '(watch)',
+      executor: '(watch)',
       skill: 'research',
       realm: 'personal',
       reason: 'execute fire refused (revoked); no outbound dispatch',
@@ -192,7 +192,7 @@ describe('TUI reinstate writes (A-02 way back)', () => {
     await deck.handle('b1');
     expect(reinstate).not.toHaveBeenCalled();
     expect(io.question).not.toHaveBeenCalled();
-    expect(printed.join('')).toContain('only a revoked vassal can be reinstated');
+    expect(printed.join('')).toContain('only a revoked executor can be reinstated');
   });
 });
 
@@ -200,10 +200,10 @@ describe('TUI contract writes go through the API with a confirm gate', () => {
   it('issues a contract with capabilities pinned to execute and a 24h window', async () => {
     const { client, deck } = makeHarness(['y']);
     await deck.refresh();
-    await deck.handle('c research 4 2 driver');
+    await deck.handle('c research 4 2 operator');
     expect(client.issueContract).toHaveBeenCalledWith(
       expect.objectContaining({
-        grantedBy: 'driver',
+        grantedBy: 'operator',
         skill: 'research',
         capabilities: ['execute'],
         limits: expect.objectContaining({ maxChildTickets: 4, maxConcurrent: 2 }),

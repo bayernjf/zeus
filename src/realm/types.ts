@@ -15,10 +15,10 @@ export type TenantScope = {
   member?: string;
 };
 
-/** Who is asking. `driver` is the human data sovereign and is never tenant-gated. */
+/** Who is asking. `operator` is the human data sovereign and is never tenant-gated. */
 export type RealmActor =
-  | { kind: 'driver'; id: string }
-  | { kind: 'vassal'; id: string; tenant?: TenantScope }
+  | { kind: 'operator'; id: string }
+  | { kind: 'executor'; id: string; tenant?: TenantScope }
   | { kind: 'agent'; id: string; tenant?: TenantScope };
 
 export type RealmAccess = 'read' | 'write';
@@ -51,7 +51,7 @@ export type RealmHit = {
   snippet: string;
   modifiedAt: string;
   /**
-   * Realm the hit was read from. Set on kernel-resolved hits (the search
+   * Realm the hit was read from. Set on runtime-resolved hits (the search
    * backend knows the realmId it searched); absent on caller-asserted hits,
    * which arrive without a realm binding. The realm-scoped content gate
    * (design-guardrails §5) treats a missing realmId as unverifiable and
@@ -76,7 +76,7 @@ export type RealmItem = {
 };
 
 /** Read-only enumeration row for every managed entry at connect time.
- *  Carries full content; used by the Vault to draw maps / build full bundles. */
+ *  Carries full content; used by the Backup to draw maps / build full bundles. */
 export type RealmEntrySnapshot = {
   itemId: string;
   content: string;
@@ -99,20 +99,20 @@ export type RealmWriteResult = {
 };
 
 /**
- * Driver authorization credential required for writes into an ENTERPRISE realm
- * (design-realm.md §3: personal→enterprise needs explicit driver authorization).
+ * Operator authorization credential required for writes into an ENTERPRISE realm
+ * (design-realm.md §3: personal→enterprise needs explicit operator authorization).
  * The library verifies shape/realm/expiry; the MCP/HTTP layer injects a signed
- * grant after authenticating the driver (signature/transport are a P1 concern).
+ * grant after authenticating the operator (signature/transport are a P1 concern).
  */
 /**
- * E3.5 write credential. Issued and signed by `issueDriverWriteGrant`
- * (`src/realm/grant.ts`): the kernel mints the nonce, stamps the times and
+ * E3.5 write credential. Issued and signed by `issueOperatorWriteGrant`
+ * (`src/realm/grant.ts`): the runtime mints the nonce, stamps the times and
  * signs, so a caller can neither replay an old grant nor invent one.
  */
-export type DriverWriteGrant = {
-  kind: 'driver-write';
+export type OperatorWriteGrant = {
+  kind: 'operator-write';
   realmId: string;
-  /** Driver identity authorizing the write. */
+  /** Operator identity authorizing the write. */
   grantedBy: string;
   reason?: string;
   grantedAt: string;
@@ -125,8 +125,8 @@ export type DriverWriteGrant = {
   sig?: string;
 };
 
-/** A grant as produced by `issueDriverWriteGrant`: signed and time-boxed. */
-export type SignedDriverWriteGrant = DriverWriteGrant & { keyId: string; sig: string; expiresAt: string };
+/** A grant as produced by `issueOperatorWriteGrant`: signed and time-boxed. */
+export type SignedOperatorWriteGrant = OperatorWriteGrant & { keyId: string; sig: string; expiresAt: string };
 
 export type GrantVerification =
   | { ok: true }
@@ -141,7 +141,7 @@ export type GrantVerification =
         | 'no-expiry'
         /** No signature at all: an unsigned blob is a claim, not an authorization. */
         | 'unsigned'
-        /** Signed by a key this kernel does not accept as a driver key. */
+        /** Signed by a key this runtime does not accept as a operator key. */
         | 'unknown-key'
         | 'bad-signature'
         /** Already consumed by an earlier write. */
@@ -152,8 +152,8 @@ export type GrantVerification =
  * E6.4: an explicit, revocable authorization to cross a DATA DOMAIN boundary
  * (design-realm §8.3). Two things it is NOT:
  *  - it never loosens the enterprise tenant hierarchy (that is structural);
- *  - it is not the E3.5 write credential — a driver still signs a
- *    DriverWriteGrant for a specific enterprise write. This one says "this
+ *  - it is not the E3.5 write credential — a operator still signs a
+ *    OperatorWriteGrant for a specific enterprise write. This one says "this
  *    subject may touch that domain at all", the other says "this write is
  *    authorized".
  * Direction is one-way: personal -> enterprise only. Enterprise -> personal has
@@ -162,7 +162,7 @@ export type GrantVerification =
 export type DomainGrant = {
   kind: 'domain-access';
   grantId: string;
-  /** Subject identifier: a vassal name, an agent id, or a department id. */
+  /** Subject identifier: a executor name, an agent id, or a department id. */
   subject: string;
   /** Realm the subject wants to reach; must be an enterprise realm. */
   realmId: string;
@@ -205,7 +205,7 @@ export interface RealmStore {
    * deferred #17: tear down a mounted realm at runtime. Removes it from the
    * in-memory mount tables so the next snapshot no longer persists it. This is
    * the explicit path that previously forced an operator to hand-edit
-   * kernel.json (or drop state) to remove a realm.
+   * runtime.json (or drop state) to remove a realm.
    */
   disconnect(realmId: string): Promise<void>;
   /**
@@ -216,18 +216,18 @@ export interface RealmStore {
    */
   retargetTenant(realmId: string, from: string | TenantScope, to: string | TenantScope): Promise<void>;
   /** Read-only enumeration of every managed entry from the connect snapshot
-   *  (with full content), powering Vault map drawing and full bundles. */
+   *  (with full content), powering Backup map drawing and full bundles. */
   entries(realmId: string): Promise<RealmEntrySnapshot[]>;
   /**
    * E3.5 write path. Personal realms allow writes by default; a realm
    * connected readOnly refuses them. Enterprise writes require a valid
-   * DriverWriteGrant (third argument). Writes stay inside the same path /
+   * OperatorWriteGrant (third argument). Writes stay inside the same path /
    * text-extension / size guards as reads and are applied atomically.
    */
   write?(
     realmId: string,
     item: RealmWriteItem,
-    grant?: DriverWriteGrant,
+    grant?: OperatorWriteGrant,
   ): Promise<RealmWriteResult>;
 }
 
@@ -273,7 +273,7 @@ export class UnsupportedQueryError extends RealmError {
   }
 }
 
-/** E3.5: an enterprise-realm write lacks a valid driver grant, or a read-only
+/** E3.5: an enterprise-realm write lacks a valid operator grant, or a read-only
  *  realm was asked to write. */
 export class UnauthorizedRealmWriteError extends RealmError {
   /**

@@ -36,11 +36,11 @@ export type DispatchCandidate = {
 /** Caller-supplied snapshot for selection (design-tool-discovery §3.2). */
 export type SelectionContext = {
   /** Explicitly named targets. Presence = hard pin; saturation never re-points
-   *  them (same rule as `selectTargets` on `request.vassals`). */
+   *  them (same rule as `selectTargets` on `request.executors`). */
   named?: string[];
   /** Same-skill candidate pool; `undefined` = pass-through, no filtering. */
   candidatePool?: string[];
-  /** Saturation per provider (per-vassal in-flight vs cap); `Infinity` cap
+  /** Saturation per provider (per-executor in-flight vs cap); `Infinity` cap
    *  means no bound. */
   load: {
     inFlightOf: (provider: string) => number;
@@ -168,7 +168,7 @@ export type ChainStep = {
 };
 
 /** V3 slice 2: an ordered recovery plan over steps. `dag` steps run under the
- *  S3 DAG driver (topological layers); `sequential` steps run one after the
+ *  S3 DAG operator (topological layers); `sequential` steps run one after the
  *  other. Recovery decisions are per-step and never cross step boundaries. */
 export type ChainPlan = {
   steps: ChainStep[];

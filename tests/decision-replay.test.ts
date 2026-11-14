@@ -38,10 +38,10 @@ function artifactEvent(taskId: string, artifactId: string): A2AEvent {
   };
 }
 
-function stanceResult(vassal: string, stance: string, state: TaskState = 'completed'): DispatchResult {
+function stanceResult(executor: string, stance: string, state: TaskState = 'completed'): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance } }] }],
@@ -52,7 +52,7 @@ function stanceResult(vassal: string, stance: string, state: TaskState = 'comple
 function makePort(routes: Record<string, DispatchResult | ((req: DispatchRequest) => DispatchResult)>): DispatchPort {
   return {
     async dispatch(req) {
-      const route = routes[req.vassal!];
+      const route = routes[req.executor!];
       return typeof route === 'function' ? route(req) : route!;
     },
     async cancel() {},
@@ -93,7 +93,7 @@ describe('E1.6 offline decision replay', () => {
       status: 'completed',
       input: { ticket: 'OPS-1' },
     });
-    expect(replay.participants.map(p => p.vassal)).toEqual(['loom', 'atlas']);
+    expect(replay.participants.map(p => p.executor)).toEqual(['loom', 'atlas']);
     expect(replay.participants.every(p => p.ok && p.state === 'completed' && p.eventCount === 1)).toBe(true);
     expect(replay.positions).toHaveLength(2);
     expect(replay.decision.conclusion).toBe('go');
@@ -102,10 +102,10 @@ describe('E1.6 offline decision replay', () => {
     expect(kinds[0]).toBe('intent-started');
     expect(kinds[kinds.length - 1]).toBe('intent-finished');
     // every branch is dispatched before its events and finished after them
-    for (const vassal of ['loom', 'atlas']) {
+    for (const executor of ['loom', 'atlas']) {
       const dispatched = kinds.indexOf('branch-dispatched');
-      const events = replay.timeline.filter(s => s.kind === 'branch-event' && s.vassal === vassal);
-      const finished = replay.timeline.find(s => s.kind === 'branch-finished' && s.vassal === vassal)!;
+      const events = replay.timeline.filter(s => s.kind === 'branch-event' && s.executor === executor);
+      const finished = replay.timeline.find(s => s.kind === 'branch-finished' && s.executor === executor)!;
       expect(events.length).toBe(1);
       expect(events[0]!.index).toBeGreaterThan(dispatched);
       expect(finished.index).toBeGreaterThan(events[0]!.index);
@@ -116,7 +116,7 @@ describe('E1.6 offline decision replay', () => {
     expect(positionsIdx).toBeLessThan(aggregatedIdx);
     expect(aggregatedIdx).toBeLessThan(kinds.length - 1);
     expect(kinds).not.toContain('conflict-detected');
-    expect(kinds).not.toContain('driver-resolved');
+    expect(kinds).not.toContain('operator-resolved');
   });
 
   it('omits the original input when no request is supplied (result alone carries no params)', async () => {
@@ -132,7 +132,7 @@ describe('E1.6 offline decision replay', () => {
     expect(replay.status).toBe('completed');
   });
 
-  it('replays conflict, backend arbitration and driver resolution in lifecycle order', () => {
+  it('replays conflict, backend arbitration and operator resolution in lifecycle order', () => {
     const result: FanOutResult = {
       intentId: 'i',
       runId: 'r',
@@ -141,9 +141,9 @@ describe('E1.6 offline decision replay', () => {
       branches: [],
       stream: [],
       positions: [],
-      decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'driver settled' },
+      decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'operator settled' },
       conflicts: [
-        { stances: [{ stance: 'go', vassals: ['a'] }, { stance: 'hold', vassals: ['b'] }], reason: 'split' },
+        { stances: [{ stance: 'go', executors: ['a'] }, { stance: 'hold', executors: ['b'] }], reason: 'split' },
       ],
       status: 'completed',
       createdAt: 't0',
@@ -155,24 +155,24 @@ describe('E1.6 offline decision replay', () => {
         model: 'jev',
         decidedAt: 't1',
       },
-      driverResolution: { escalationId: 'esc-1', stance: 'go', decidedAt: 't2' },
+      operatorResolution: { escalationId: 'esc-1', stance: 'go', decidedAt: 't2' },
     };
 
     const replay = replayDecision(result);
     const kinds = kindsOf(replay);
     const conflictIdx = kinds.indexOf('conflict-detected');
     const backendIdx = kinds.indexOf('backend-arbitrated');
-    const driverIdx = kinds.indexOf('driver-resolved');
+    const operatorIdx = kinds.indexOf('operator-resolved');
     expect(conflictIdx).toBeGreaterThanOrEqual(0);
     expect(backendIdx).toBeGreaterThan(conflictIdx);
-    expect(driverIdx).toBeGreaterThan(backendIdx);
+    expect(operatorIdx).toBeGreaterThan(backendIdx);
 
     const backendStep = replay.timeline[backendIdx]!;
     expect(backendStep.detail).toMatchObject({ concluded: false, backend: 'decision-model', model: 'jev', confidence: 0.5 });
-    const driverStep = replay.timeline[driverIdx]!;
-    expect(driverStep.detail).toMatchObject({ escalationId: 'esc-1', stance: 'go' });
+    const operatorStep = replay.timeline[operatorIdx]!;
+    expect(operatorStep.detail).toMatchObject({ escalationId: 'esc-1', stance: 'go' });
     expect(replay.backendArbitration?.model).toBe('jev');
-    expect(replay.driverResolution?.escalationId).toBe('esc-1');
+    expect(replay.operatorResolution?.escalationId).toBe('esc-1');
   });
 
   it('appends dispatched/finished steps for branches with no stream events (failure/timeout)', () => {
@@ -182,8 +182,8 @@ describe('E1.6 offline decision replay', () => {
       skill: 's',
       realm: 'personal',
       branches: [
-        { vassal: 'dead', runId: 'run-dead', ok: false, events: [], reason: 'dispatch refused' },
-        { vassal: 'slow', runId: 'run-slow', ok: false, events: [], timedOut: true, reason: 'branch timeout' },
+        { executor: 'dead', runId: 'run-dead', ok: false, events: [], reason: 'dispatch refused' },
+        { executor: 'slow', runId: 'run-slow', ok: false, events: [], timedOut: true, reason: 'branch timeout' },
       ],
       stream: [],
       positions: [],
@@ -195,12 +195,12 @@ describe('E1.6 offline decision replay', () => {
 
     const replay = replayDecision(result);
     expect(replay.participants).toMatchObject([
-      { vassal: 'dead', ok: false, eventCount: 0, reason: 'dispatch refused' },
-      { vassal: 'slow', ok: false, eventCount: 0, timedOut: true },
+      { executor: 'dead', ok: false, eventCount: 0, reason: 'dispatch refused' },
+      { executor: 'slow', ok: false, eventCount: 0, timedOut: true },
     ]);
     expect(kindsOf(replay).filter(k => k === 'branch-dispatched')).toHaveLength(2);
     expect(kindsOf(replay).filter(k => k === 'branch-finished')).toHaveLength(2);
-    const slowFinish = replay.timeline.find(s => s.kind === 'branch-finished' && s.vassal === 'slow')!;
+    const slowFinish = replay.timeline.find(s => s.kind === 'branch-finished' && s.executor === 'slow')!;
     expect(slowFinish.detail).toMatchObject({ ok: false, timedOut: true, reason: 'branch timeout' });
   });
 
@@ -213,7 +213,7 @@ describe('E1.6 offline decision replay', () => {
       branches: [],
       stream: [
         {
-          source: { vassal: 'ghost', runId: 'run-ghost', taskId: 't' },
+          source: { executor: 'ghost', runId: 'run-ghost', taskId: 't' },
           event: statusEvent('t', 'working'),
         },
       ],
@@ -225,7 +225,7 @@ describe('E1.6 offline decision replay', () => {
     };
     expect(() => replayDecision(corrupt)).toThrowError(ReplayError);
 
-    const clean: FanOutResult = { ...corrupt, branches: [{ vassal: 'ghost', runId: 'run-ghost', ok: true, events: [] }], stream: [] };
+    const clean: FanOutResult = { ...corrupt, branches: [{ executor: 'ghost', runId: 'run-ghost', ok: true, events: [] }], stream: [] };
     const mismatchedRequest: FanOutRequest = { intentId: 'other', skill: 's', params: {}, realm: 'personal' };
     expect(() => replayDecision(clean, mismatchedRequest)).toThrowError(ReplayError);
   });
@@ -241,7 +241,7 @@ describe('E1.6 offline decision replay', () => {
         {
           intentId: 'i-2', runId: 'r-2', skill: 's', realm: 'personal', branches: [], stream: [],
           positions: [], decision: { rule: 'majority', conclusion: null, positions: [], reason: 'split' },
-          conflicts: [], status: 'needs-driver', createdAt: 't1',
+          conflicts: [], status: 'needs-operator', createdAt: 't1',
         },
       ],
       requests: [
@@ -254,7 +254,7 @@ describe('E1.6 offline decision replay', () => {
     expect(replays.map(r => r.intentId)).toEqual(['i-1', 'i-2']);
     expect(replays[0]!.input).toEqual({ n: 1 });
     expect(replays[1]!.input).toEqual({ n: 2 });
-    expect(replays[1]!.status).toBe('needs-driver');
+    expect(replays[1]!.status).toBe('needs-operator');
 
     // replayDecisions without requests still works but carries no inputs
     const noInputs = replayDecisions(snapshot.intents);
@@ -263,7 +263,7 @@ describe('E1.6 offline decision replay', () => {
 
   it('renders a deterministic human-readable transcript containing the key facts', () => {
     const conflict: Conflict = {
-      stances: [{ stance: 'go', vassals: ['loom'] }, { stance: 'hold', vassals: ['atlas'] }],
+      stances: [{ stance: 'go', executors: ['loom'] }, { stance: 'hold', executors: ['atlas'] }],
       reason: 'split',
     };
     const result: FanOutResult = {
@@ -272,10 +272,10 @@ describe('E1.6 offline decision replay', () => {
       skill: 'decide',
       realm: 'personal',
       branches: [
-        { vassal: 'loom', runId: 'run-loom', taskId: 't-loom', ok: true, state: 'completed', events: [] },
+        { executor: 'loom', runId: 'run-loom', taskId: 't-loom', ok: true, state: 'completed', events: [] },
       ],
       stream: [],
-      positions: [{ vassal: 'loom', stance: 'go', weight: 1, rationale: 'checks pass' }],
+      positions: [{ executor: 'loom', stance: 'go', weight: 1, rationale: 'checks pass' }],
       decision: {
         rule: 'majority',
         conclusion: 'go',
@@ -284,7 +284,7 @@ describe('E1.6 offline decision replay', () => {
         reason: '1/1',
       },
       conflicts: [conflict],
-      status: 'needs-driver',
+      status: 'needs-operator',
       createdAt: 't0',
     };
 
@@ -293,13 +293,13 @@ describe('E1.6 offline decision replay', () => {
     expect(text).toContain('loom');
     expect(text).toContain('checks pass');
     expect(text).toContain('"go"');
-    expect(text).toContain('needs-driver');
+    expect(text).toContain('needs-operator');
     expect(text).toContain('conflicts (1)');
     // deterministic across renders
     expect(renderReplay(replayDecision(result))).toBe(text);
   });
 
-  it('replay is purely offline: rebuilding after a driver settlement shows the recorded outcome', async () => {
+  it('replay is purely offline: rebuilding after a operator settlement shows the recorded outcome', async () => {
     const port = makePort({ loom: stanceResult('loom', 'go'), atlas: stanceResult('atlas', 'hold') });
     const orch = new Orchestrator(lookupFor(['loom', 'atlas']), port, {
       newIntentId: () => 'intent-1',
@@ -308,13 +308,13 @@ describe('E1.6 offline decision replay', () => {
     const split = await orch.fanOut({
       intentId: 'intent-1', skill: 'decide', params: {}, realm: 'personal', aggregation: { kind: 'majority' },
     });
-    expect(split.status).toBe('needs-driver');
+    expect(split.status).toBe('needs-operator');
     const resolved = orch.resolveIntent('intent-1', {
       escalationId: 'esc-1', stance: 'go',
     });
 
     const replay = replayDecision(resolved);
-    expect(kindsOf(replay)).toContain('driver-resolved');
+    expect(kindsOf(replay)).toContain('operator-resolved');
     expect(replay.status).toBe('completed');
     expect(replay.decision.conclusion).toBe('go');
     // replaying the same immutable record twice yields identical timelines
@@ -327,14 +327,14 @@ describe('E1.6 offline decision replay', () => {
       runId: 'r',
       skill: 's',
       realm: 'personal',
-      branches: [{ vassal: 'loom', runId: 'run-loom', taskId: 't-loom', ok: true, state: 'working', events: [] }],
+      branches: [{ executor: 'loom', runId: 'run-loom', taskId: 't-loom', ok: true, state: 'working', events: [] }],
       stream: [
         {
-          source: { vassal: 'loom', runId: 'run-loom', taskId: 't-loom' },
+          source: { executor: 'loom', runId: 'run-loom', taskId: 't-loom' },
           event: statusEvent('t-loom', 'working', '2026-01-01T00:00:00.000Z'),
         },
         {
-          source: { vassal: 'loom', runId: 'run-loom', taskId: 't-loom' },
+          source: { executor: 'loom', runId: 'run-loom', taskId: 't-loom' },
           event: artifactEvent('t-loom', 'a1'),
         },
       ],

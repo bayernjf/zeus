@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { assertOutboundUrlAllowed, OutboundUrlError } from '../src/util/outbound-url.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { ConnectorRegistry } from '../src/mcp/connectors.js';
 import { createHttpServer } from '../src/http/server.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 
-const AUTH = { authorization: 'Bearer driver-secret' };
+const AUTH = { authorization: 'Bearer operator-secret' };
 const NO_ALLOW: readonly string[] = [];
 
 function messageOf(fn: () => unknown): string {
@@ -42,7 +42,7 @@ describe('A-12 outbound URL guard', () => {
     });
   });
 
-  describe('allows targets the local-first kernel must still reach', () => {
+  describe('allows targets the local-first runtime must still reach', () => {
     const allowed: Array<[string, string]> = [
       ['loopback IPv4', 'http://127.0.0.1:8787/api/a2a/card.json'],
       ['loopback IPv6', 'http://[::1]:8787/api/a2a/card.json'],
@@ -107,11 +107,11 @@ const card = {
   skills: [],
   authentication: { schemes: ['bearer'] },
   preferredTransport: 'JSONRPC',
-  'x-zeus-fealty': {
+  'x-zeus-handshake': {
     version: '1',
     swornTo: 'zeus',
     domain: 'acme',
-    dataRealms: ['personal'],
+    realms: ['personal'],
     dataPolicy: 'none',
     reportBack: true,
     escalationPolicy: 'auto',
@@ -129,12 +129,12 @@ describe('A-12 the guard covers every outbound face', () => {
   });
 
   it('refuses a private agent-card URL at the registry boundary', async () => {
-    const registry = new VassalRegistry();
+    const registry = new ExecutorRegistry();
     await expect(registry.register('http://169.254.169.254/agent-card')).rejects.toThrow(OutboundUrlError);
   });
 
   it('refuses a taskUrl override that points at a private host', async () => {
-    const registry = new VassalRegistry(cardFetch);
+    const registry = new ExecutorRegistry(cardFetch);
     await expect(
       registry.register('https://loom.example/card.json', { taskUrl: 'http://10.0.0.5/api/a2a/tasks' }),
     ).rejects.toThrow(OutboundUrlError);
@@ -162,11 +162,11 @@ describe('A-12 the guard covers every outbound face', () => {
     await expect(connectors.connect('meta')).rejects.toThrow(OutboundUrlError);
   });
 
-  it('answers POST /api/vassals with 400 for a private cardUrl', async () => {
+  it('answers POST /api/executors with 400 for a private cardUrl', async () => {
     ({ app } = await face());
     const res = await app.inject({
       method: 'POST',
-      url: '/api/vassals',
+      url: '/api/executors',
       headers: AUTH,
       payload: { cardUrl: 'http://169.254.169.254/agent-card' },
     });
@@ -189,9 +189,9 @@ describe('A-12 the guard covers every outbound face', () => {
 
 async function face(): Promise<{ app: FastifyInstance }> {
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
-    internalToken: 'driver-secret',
+    internalToken: 'operator-secret',
     connectorRegistry: new ConnectorRegistry(() => new Date('2026-09-25T00:00:00.000Z')),
     decisionStatus: {
       configured: true,

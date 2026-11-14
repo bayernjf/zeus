@@ -63,7 +63,7 @@
 |---|---|---|---|
 | `ZEUS_MAX_CONCURRENT_BRANCHES` | 生产建议 | 无上限扇出，共享下游 Agent 可能被打满；非数字拒启 | ☐ 已核对：________ |
 | `ZEUS_BRANCH_QUEUE_LIMIT` | 可选 | 溢出分支无限等待（`0` = 不排队，直接失败） | ☐ 已核对：________ |
-| `ZEUS_MAX_CONCURRENT_PER_VASSAL` | 可选 | 不启用背压分流；须小于全局上限，否则无空闲候选可切 | ☐ 已核对：________ |
+| `ZEUS_MAX_CONCURRENT_PER_EXECUTOR` | 可选 | 不启用背压分流；须小于全局上限，否则无空闲候选可切 | ☐ 已核对：________ |
 | `ZEUS_COST_WINDOW_MS` | 可选 | 成本窗口维度不限 | ☐ 已核对：________ |
 | `ZEUS_COST_MAX_WINDOW_COST` | 可选 | 单窗口成本闸门关闭，超支扇出不会被拒 | ☐ 已核对：________ |
 | `ZEUS_COST_MAX_RATE_PER_WINDOW` | 可选 | 速率熔断关闭 | ☐ 已核对：________ |
@@ -72,7 +72,7 @@
 
 | 变量 | 必需性 | 缺失后果 | 实际值确认栏 |
 |---|---|---|---|
-| `ZEUS_VASSAL_SEEDS` | 可选（首次引导） | 启动不自动注册执行 Agent；可改用 `POST /api/vassals` | ☐ 已核对：________ |
+| `ZEUS_EXECUTOR_SEEDS` | 可选（首次引导） | 启动不自动注册执行 Agent；可改用 `POST /api/executors` | ☐ 已核对：________ |
 | `ZEUS_OUTBOUND_ALLOW_HOSTS` | 内网 peer 时必需 | 出站守卫拒绝私网目标（RFC1918/ULA 等），联调表现为不可达 | ☐ 已核对：________ |
 | `ZEUS_REALM_ROOTS` | 可选 | 不连接个人域；首连后可留空，状态文件会重连 | ☐ 已核对：________ |
 | `ZEUS_REALM_ENTERPRISE` | 企业域时必需 | 不挂企业域；条目缺 tenant 或非法会**直接拒启**（防止无边界域） | ☐ 已核对：________ |
@@ -96,7 +96,7 @@
 |---|---|---|---|
 | `ZEUS_BASE_URL` | TUI 必需（默认 `http://127.0.0.1:8787`） | TUI 连错实例；不影响 serve | ☐ 已核对：________ |
 | `ZEUS_TUI_INTERVAL_MS` | 可选（默认 3000） | 用默认刷新间隔（`0` = 仅手动刷新） | ☐ 已核对：________ |
-| `ZEUS_VAULT_PASSPHRASE` | 备份/恢复时必需 | 无法构建或恢复加密备份包；**只能放在调度器环境，不得进 `.env` 或镜像** | ☐ 已核对：________ |
+| `ZEUS_BACKUP_PASSPHRASE` | 备份/恢复时必需 | 无法构建或恢复加密备份包；**只能放在调度器环境，不得进 `.env` 或镜像** | ☐ 已核对：________ |
 | `ZEUS_EVAL_JUDGE_ENABLED` | 评测可选 | 开放题评测不启用 LLM judge，降级为 observe | ☐ 已核对：________ |
 | `ZEUS_EVAL_JUDGE_ALIAS` | 可选（默认 `choice`） | 用默认 alias；hub 未分配该 alias 时 judge 失败但 fail-soft | ☐ 已核对：________ |
 | `ZEUS_EVAL_JUDGE_TIMEOUT_MS` | 可选 | 用脚本默认超时；调小会让慢模型恒判失败 | ☐ 已核对：________ |
@@ -111,7 +111,7 @@
 | B2 反代 / TLS | 反代终止 TLS；upstream 指向 `ZEUS_HOST:ZEUS_PORT`；SSE 路径关闭缓冲（`proxy_buffering off` / `X-Accel-Buffering: no`）；HSTS 与证书链按域名策略 | ☐ 已核对：________ |
 | B2 进程管理 | systemd 或 k8s 起停、异常自动重启；`EnvironmentFile`/Secret 注入与本文变量一致 | ☐ 已核对：________ |
 | B2 健康检查 | `GET /healthz` 返回 200（只证存活，不证名册真实性） | ☐ 已核对：________ |
-| B3 生产卷权限 | `/data` 目录 0700、`kernel-state.json` / 审计文件 0600、属主与容器 `node`(uid 1000) 匹配；轮转后仍 0600 | ☐ 已核对：________ |
+| B3 生产卷权限 | `/data` 目录 0700、`runtime-state.json` / 审计文件 0600、属主与容器 `node`(uid 1000) 匹配；轮转后仍 0600 | ☐ 已核对：________ |
 | B3 挂载差异 | 宿主路径与容器内路径一致；密钥/状态卷不落镜像层；`docker cp` 不被用于密钥 | ☐ 已核对：________ |
 | B4 结论 | 「读到但未用」与「静默降级」逐条列出并归档；本表 65 行全部打勾 | ☐ 已完成：________ |
 

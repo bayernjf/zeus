@@ -1,7 +1,7 @@
 /**
  * traceAccountability (design-org §6): map a real FanOutResult onto the
  * establishment, yielding executing agents, their department leads and the
- * deciding driver. Agents with no post are marked unassigned, never dropped.
+ * deciding operator. Agents with no post are marked unassigned, never dropped.
  */
 import type { Department, AccountabilityChain, AccountabilityNode } from './types.js';
 import type { FanOutResult } from '../orchestrator/types.js';
@@ -29,11 +29,11 @@ export function traceAccountability(
   const unassigned: string[] = [];
 
   for (const branch of result.branches) {
-    const found = index.get(branch.vassal);
+    const found = index.get(branch.executor);
     if (!found) {
-      unassigned.push(branch.vassal);
+      unassigned.push(branch.executor);
       executing.push({
-        agentId: branch.vassal,
+        agentId: branch.executor,
         role: 'member',
         departmentId: 'unassigned',
         departmentName: 'Unassigned',
@@ -41,7 +41,7 @@ export function traceAccountability(
       continue;
     }
     executing.push({
-      agentId: branch.vassal,
+      agentId: branch.executor,
       role: found.role,
       ...(found.title ? { title: found.title } : {}),
       departmentId: found.dept.departmentId,
@@ -77,11 +77,11 @@ export function traceAccountability(
     leads,
     unassigned: [...new Set(unassigned)].sort(),
   };
-  if (result.driverResolution) {
-    chain.driver = {
-      escalationId: result.driverResolution.escalationId,
-      stance: result.driverResolution.stance,
-      decidedAt: result.driverResolution.decidedAt,
+  if (result.operatorResolution) {
+    chain.operator = {
+      escalationId: result.operatorResolution.escalationId,
+      stance: result.operatorResolution.stance,
+      decidedAt: result.operatorResolution.decidedAt,
     };
   }
   return chain;

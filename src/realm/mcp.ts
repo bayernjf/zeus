@@ -8,14 +8,14 @@
  *    is still the domain boundary for all three.
  *  - realm.write carries no special authority of its own: an ENTERPRISE write is
  *    refused unless the caller presents a signed, unexpired, single-use
- *    DriverWriteGrant for that exact realmId (E3.5), and a personal realm takes
- *    no grant — the same contract every other write path in the kernel obeys.
+ *    OperatorWriteGrant for that exact realmId (E3.5), and a personal realm takes
+ *    no grant — the same contract every other write path in the runtime obeys.
  *    The grant is verified by the store, never here.
  *  - This is a transport-agnostic, dependency-free message handler: it speaks
  *    newline-delimited JSON-RPC semantics but does no I/O. mcp-stdio.ts wires
  *    it to stdin/stdout. No @modelcontextprotocol/sdk dependency by design;
  *    compatibility with a specific SDK version is to be re-verified when the
- *    real read-realm vassal triggers the formal P1 start.
+ *    real read-realm executor triggers the formal P1 start.
  *
  * Path non-disclosure invariant (design-realm.md §1.3, types.ts RealmManifest.root):
  *  - connect is NOT exposed over MCP; realms are pre-connected by the host.
@@ -24,9 +24,9 @@
  *  - tools/call follows the same rule: it accepts realmIds the host authorized
  *    and root-relative itemIds, and error messages never carry absolute paths.
  *
- * Kernel read-only face (design P1-1):
- *  - zeus.skills / zeus.plan / zeus.status read kernel-internal registries
- *    through the injected PersonalKernelQueries port. They bypass the realmId
+ * Runtime read-only face (design P1-1):
+ *  - zeus.skills / zeus.plan / zeus.status read runtime-internal registries
+ *    through the injected PersonalRuntimeQueries port. They bypass the realmId
  *    whitelist on purpose - they never touch a connected realm - and their
  *    output is a designed subset that carries no absolute path.
  *  - The port is optional. When the host did not mount it, calling a zeus.*
@@ -36,7 +36,7 @@
  *    remote call. Execution stays on the signed-ticket + HTTP face.
  */
 import type {
-  DriverWriteGrant,
+  OperatorWriteGrant,
   RealmItem,
   RealmManifest,
   RealmStore,
@@ -109,11 +109,11 @@ export type McpHandlerDeps = {
    */
   log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void;
   /**
-   * Read-only kernel queries (design P1-1). When absent, the zeus.* tools are
+   * Read-only runtime queries (design P1-1). When absent, the zeus.* tools are
    * advertised by tools/list but fail closed on tools/call - never answered
    * with fabricated empty data.
    */
-  kernelQueries?: PersonalKernelQueries;
+  runtimeQueries?: PersonalRuntimeQueries;
 };
 
 /** Session-scoped caller identity (design-realm §6.5). */
@@ -124,13 +124,13 @@ export type RealmMcpActor = {
 };
 
 /**
- * Dependency-inverted read-only kernel port for the zeus.* tools. The handler
- * never reaches for a live kernel: the host (mcp-stdio.ts) implements this
- * port over a booted, read-only kernel, so this file stays transport-agnostic
+ * Dependency-inverted read-only runtime port for the zeus.* tools. The handler
+ * never reaches for a live runtime: the host (mcp-stdio.ts) implements this
+ * port over a booted, read-only runtime, so this file stays transport-agnostic
  * and dependency-free. Every method is read-only; the shapes below deliberately
  * omit absolute paths (realms expose realmId/type/readOnly, never root).
  */
-export type PersonalKernelQueries = {
+export type PersonalRuntimeQueries = {
   listSkills(filter?: {
     domain?: string;
     tag?: string;
@@ -221,9 +221,9 @@ export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) 
         case 'resources/read':
           return ok(id, { contents: await readResource(deps.store, effectiveRealmIds, req.params) });
         case 'tools/list':
-          return ok(id, { tools: [...REALM_TOOLS, ...KERNEL_TOOLS] });
+          return ok(id, { tools: [...REALM_TOOLS, ...RUNTIME_TOOLS] });
         case 'tools/call':
-          return ok(id, { content: await callTool(deps.store, effectiveRealmIds, deps.kernelQueries, req.params) });
+          return ok(id, { content: await callTool(deps.store, effectiveRealmIds, deps.runtimeQueries, req.params) });
         default:
           return fail(id, METHOD_NOT_FOUND, `method not found: ${req.method}`);
       }
@@ -248,7 +248,7 @@ function initializeResult(params: unknown, serverName: string, serverVersion: st
     protocolVersion: negotiated,
     // Realm face: resources plus the tools below. Two of them read; realm.write
     // exists and carries no extra authority — an enterprise write still needs a
-    // DriverWriteGrant the store verifies. No prompts.
+    // OperatorWriteGrant the store verifies. No prompts.
     capabilities: {
       resources: { listChanged: false, subscribe: false },
       tools: { listChanged: false },
@@ -302,25 +302,25 @@ const REALM_TOOLS: readonly ToolDescriptor[] = [
   {
     name: 'realm.write',
     description:
-      'Write one text item into a connected realm. An ENTERPRISE realm requires a signed, unexpired, single-use DriverWriteGrant for that exact realmId; a personal realm takes no grant. Grants are issued by the driver over POST /api/realm/write-grants.',
+      'Write one text item into a connected realm. An ENTERPRISE realm requires a signed, unexpired, single-use OperatorWriteGrant for that exact realmId; a personal realm takes no grant. Grants are issued by the operator over POST /api/realm/write-grants.',
     inputSchema: {
       type: 'object',
       properties: {
         realmId: { type: 'string', description: 'A realmId the host connected' },
         data: { type: 'string', description: 'Text written verbatim; JSON-compatible values are serialized' },
         itemId: { type: 'string', description: 'Root-relative POSIX path; omitted lets the store mint one under writes/' },
-        grant: { type: 'object', description: 'DriverWriteGrant for an enterprise realm; refused by name when absent, unsigned, expired, replayed or bound to another realm' },
+        grant: { type: 'object', description: 'OperatorWriteGrant for an enterprise realm; refused by name when absent, unsigned, expired, replayed or bound to another realm' },
       },
       required: ['realmId', 'data'],
     },
   },
 ];
 
-const KERNEL_TOOLS: readonly ToolDescriptor[] = [
+const RUNTIME_TOOLS: readonly ToolDescriptor[] = [
   {
     name: 'zeus.skills',
     description:
-      'Read the kernel skill catalogue. Without id, list (optionally filtered by domain/tag); with id, fetch one skill. No realmId needed; read-only.',
+      'Read the runtime skill catalogue. Without id, list (optionally filtered by domain/tag); with id, fetch one skill. No realmId needed; read-only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -348,7 +348,7 @@ const KERNEL_TOOLS: readonly ToolDescriptor[] = [
   {
     name: 'zeus.status',
     description:
-      'Read-only kernel status: connected realms (realmId/type/readOnly, never absolute paths), active agents, pending oversight count, watches count.',
+      'Read-only runtime status: connected realms (realmId/type/readOnly, never absolute paths), active agents, pending oversight count, watches count.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -360,17 +360,17 @@ const KERNEL_TOOLS: readonly ToolDescriptor[] = [
 async function callTool(
   store: RealmStore,
   realmIds: string[],
-  kernelQueries: PersonalKernelQueries | undefined,
+  runtimeQueries: PersonalRuntimeQueries | undefined,
   params: unknown
 ): Promise<Array<{ type: 'text'; text: string }>> {
   const { name, arguments: args } = (params ?? {}) as { name?: unknown; arguments?: Record<string, unknown> };
   if (typeof name !== 'string' || name.length === 0) {
     throw new McpParamError(`unknown tool: ${String(name)}`);
   }
-  // The kernel face is its own boundary: it never goes through the realmId
+  // The runtime face is its own boundary: it never goes through the realmId
   // whitelist (it does not address a realm at all) and never writes.
   if (name.startsWith('zeus.')) {
-    return callKernelTool(kernelQueries, name, args);
+    return callRuntimeTool(runtimeQueries, name, args);
   }
   if (!REALM_TOOLS.some(tool => tool.name === name)) {
     throw new McpParamError(`unknown tool: ${name}`);
@@ -409,46 +409,46 @@ async function callTool(
   return [{ type: 'text', text: item.content }];
 }
 
-// --- Kernel face (design P1-1): zeus.skills / zeus.plan / zeus.status. ---
+// --- Runtime face (design P1-1): zeus.skills / zeus.plan / zeus.status. ---
 
-/** Non-empty kernel-argument string; the schema never declares a free-form blob. */
-function asKernelString(value: unknown, key: string): string {
+/** Non-empty runtime-argument string; the schema never declares a free-form blob. */
+function asRuntimeString(value: unknown, key: string): string {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new McpParamError(`${key} must be a non-empty string, got: ${String(value)}`);
   }
   return value;
 }
 
-async function callKernelTool(
-  kernelQueries: PersonalKernelQueries | undefined,
+async function callRuntimeTool(
+  runtimeQueries: PersonalRuntimeQueries | undefined,
   name: string,
   args: unknown
 ): Promise<Array<{ type: 'text'; text: string }>> {
-  if (!kernelQueries) {
+  if (!runtimeQueries) {
     // Fail closed: the host advertised these tools (tools/list is static) but
     // never mounted the read-only port. Say so by name - an empty catalogue or
-    // an empty status would be read as "the kernel has nothing", which is a lie
+    // an empty status would be read as "the runtime has nothing", which is a lie
     // the client would act on.
-    throw new KernelNotMountedError(name);
+    throw new RuntimeNotMountedError(name);
   }
   if (typeof args !== 'object' || args === null || Array.isArray(args)) {
     throw new McpParamError('tools/call requires an arguments object');
   }
-  const kernelArgs = args as Record<string, unknown>;
+  const runtimeArgs = args as Record<string, unknown>;
 
   if (name === 'zeus.skills') {
     const known = new Set(['id', 'version', 'domain', 'tag']);
-    for (const key of Object.keys(kernelArgs)) {
+    for (const key of Object.keys(runtimeArgs)) {
       if (!known.has(key)) {
         throw new McpParamError(`unsupported skills parameter: ${key} (supported: id, version, domain, tag)`);
       }
     }
-    const id = kernelArgs.id === undefined ? undefined : asKernelString(kernelArgs.id, 'id');
-    const version = kernelArgs.version === undefined ? undefined : asKernelString(kernelArgs.version, 'version');
-    const domain = kernelArgs.domain === undefined ? undefined : asKernelString(kernelArgs.domain, 'domain');
-    const tag = kernelArgs.tag === undefined ? undefined : asKernelString(kernelArgs.tag, 'tag');
+    const id = runtimeArgs.id === undefined ? undefined : asRuntimeString(runtimeArgs.id, 'id');
+    const version = runtimeArgs.version === undefined ? undefined : asRuntimeString(runtimeArgs.version, 'version');
+    const domain = runtimeArgs.domain === undefined ? undefined : asRuntimeString(runtimeArgs.domain, 'domain');
+    const tag = runtimeArgs.tag === undefined ? undefined : asRuntimeString(runtimeArgs.tag, 'tag');
     if (id !== undefined) {
-      const skill = await kernelQueries.getSkill(id, version);
+      const skill = await runtimeQueries.getSkill(id, version);
       if (!skill) {
         return [
           {
@@ -464,7 +464,7 @@ async function callKernelTool(
       }
       return [{ type: 'text', text: JSON.stringify(skill) }];
     }
-    const skills = await kernelQueries.listSkills({
+    const skills = await runtimeQueries.listSkills({
       ...(domain !== undefined ? { domain } : {}),
       ...(tag !== undefined ? { tag } : {}),
     });
@@ -473,29 +473,29 @@ async function callKernelTool(
 
   if (name === 'zeus.plan') {
     const known = new Set(['text', 'realm']);
-    for (const key of Object.keys(kernelArgs)) {
+    for (const key of Object.keys(runtimeArgs)) {
       if (!known.has(key)) {
         throw new McpParamError(`unsupported plan parameter: ${key} (supported: text, realm)`);
       }
     }
-    const text = asKernelString(kernelArgs.text, 'text');
+    const text = asRuntimeString(runtimeArgs.text, 'text');
     let realm: 'personal' | 'enterprise' | undefined;
-    if (kernelArgs.realm !== undefined) {
-      if (kernelArgs.realm !== 'personal' && kernelArgs.realm !== 'enterprise') {
-        throw new McpParamError(`realm must be 'personal' or 'enterprise', got: ${String(kernelArgs.realm)}`);
+    if (runtimeArgs.realm !== undefined) {
+      if (runtimeArgs.realm !== 'personal' && runtimeArgs.realm !== 'enterprise') {
+        throw new McpParamError(`realm must be 'personal' or 'enterprise', got: ${String(runtimeArgs.realm)}`);
       }
-      realm = kernelArgs.realm;
+      realm = runtimeArgs.realm;
     }
-    const result = await kernelQueries.plan({ text, ...(realm !== undefined ? { realm } : {}) });
+    const result = await runtimeQueries.plan({ text, ...(realm !== undefined ? { realm } : {}) });
     return [{ type: 'text', text: JSON.stringify(result) }];
   }
 
   if (name === 'zeus.status') {
-    const extra = Object.keys(kernelArgs);
+    const extra = Object.keys(runtimeArgs);
     if (extra.length > 0) {
       throw new McpParamError(`zeus.status takes no arguments (got: ${extra.join(', ')})`);
     }
-    const status = await kernelQueries.status();
+    const status = await runtimeQueries.status();
     return [{ type: 'text', text: JSON.stringify(status) }];
   }
 
@@ -529,17 +529,17 @@ function toolWriteItem(args: Record<string, unknown>): RealmWriteItem {
 
 /**
  * The grant is handed to the store untouched on purpose: shape, realm binding,
- * signature, expiry and single-use are verified by `verifyDriverWriteGrant`,
+ * signature, expiry and single-use are verified by `verifyOperatorWriteGrant`,
  * which every write path shares. A second verification here would be a second
  * answer to the same question, and the day they disagree one of them is wrong.
  */
-function toolWriteGrant(args: Record<string, unknown>): DriverWriteGrant | undefined {
+function toolWriteGrant(args: Record<string, unknown>): OperatorWriteGrant | undefined {
   if (args.grant === undefined) return undefined;
   const grant = args.grant;
   if (typeof grant !== 'object' || grant === null || Array.isArray(grant)) {
-    throw new McpParamError('grant must be a DriverWriteGrant object when present');
+    throw new McpParamError('grant must be a OperatorWriteGrant object when present');
   }
-  return grant as DriverWriteGrant;
+  return grant as OperatorWriteGrant;
 }
 
 function toolSearchQuery(args: Record<string, unknown>): SearchQuery {
@@ -697,11 +697,11 @@ class RealmNotConnectedMcpError extends Error {
     this.name = 'RealmNotConnectedMcpError';
   }
 }
-/** A zeus.* tool was called but the host did not mount the read-only kernel port. */
-class KernelNotMountedError extends Error {
+/** A zeus.* tool was called but the host did not mount the read-only runtime port. */
+class RuntimeNotMountedError extends Error {
   constructor(readonly tool: string) {
-    super(`${tool} unavailable: kernel queries not mounted`);
-    this.name = 'KernelNotMountedError';
+    super(`${tool} unavailable: runtime queries not mounted`);
+    this.name = 'RuntimeNotMountedError';
   }
 }
 
@@ -713,7 +713,7 @@ function mapError(
   if (
     error instanceof McpParamError ||
     error instanceof UnsupportedQueryError ||
-    error instanceof KernelNotMountedError
+    error instanceof RuntimeNotMountedError
   ) {
     return errorResponse(id, INVALID_PARAMS, error.message);
   }

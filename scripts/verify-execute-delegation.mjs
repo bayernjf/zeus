@@ -41,7 +41,7 @@ const REPO = fileURLToPath(new URL('..', import.meta.url));
 const KEEP = process.argv.includes('--keep');
 const BUDGET_MS = 60_000;
 const startedAt = Date.now();
-const DRIVER_TOKEN = `verify-exec-${randomBytes(8).toString('hex')}`;
+const OPERATOR_TOKEN = `verify-exec-${randomBytes(8).toString('hex')}`;
 
 /** @type {{ name: string, ok: boolean, detail: string }[]} */
 const steps = [];
@@ -76,8 +76,8 @@ async function freePort() {
 }
 
 // ---------------------------------------------------------------------------
-// Mock execution agent: one vassal on a loopback listener, real HTTP both ways,
-// recording exactly what the chain needs to prove - whether the kernel really
+// Mock execution agent: one executor on a loopback listener, real HTTP both ways,
+// recording exactly what the chain needs to prove - whether the runtime really
 // dispatched, and how many times.
 // ---------------------------------------------------------------------------
 /** @typedef {{ name: string, requests: number, auth: string[] }} AgentRecord */
@@ -97,11 +97,11 @@ function card(name, port) {
     name,
     url: `http://127.0.0.1:${port}/${name}/api/a2a/tasks`,
     skills: [{ id: 'research', name: 'Research', description: 'reads the task scope', tags: [] }],
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: 'smoke',
-      dataRealms: ['personal'],
+      realms: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',
@@ -168,7 +168,7 @@ const work = mkdtempSync(join(tmpdir(), 'zeus-verify-exec-'));
 const realmRoot = join(work, 'realm');
 mkdirSync(realmRoot, { recursive: true });
 writeFileSync(join(realmRoot, 'note.md'), '# verify\n\ncontext the execute chain reads back\n');
-const stateFile = join(work, 'kernel-state.json');
+const stateFile = join(work, 'runtime-state.json');
 const auditFile = join(work, 'audit.jsonl');
 const keyFile = join(work, 'verify-key.pem');
 execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), keyFile], { stdio: 'pipe' });
@@ -185,17 +185,17 @@ const env = {
   ZEUS_STATE_FILE: stateFile,
   ZEUS_AUDIT_FILE: auditFile,
   ZEUS_RSK_KEY_FILE: keyFile,
-  ZEUS_INTERNAL_TOKEN: DRIVER_TOKEN,
+  ZEUS_INTERNAL_TOKEN: OPERATOR_TOKEN,
   ZEUS_REALM_ROOTS: realmRoot,
 };
 // Never inherit a real deployment's seeds or decision keys.
-delete env.ZEUS_VASSAL_SEEDS;
+delete env.ZEUS_EXECUTOR_SEEDS;
 delete env.ZEUS_DECISION_BASE_URL;
 delete env.ZEUS_DECISION_API_KEY;
 delete env.ZEUS_LLM_BASE_URL;
 delete env.ZEUS_LLM_API_KEY;
 
-const bearer = { authorization: `Bearer ${DRIVER_TOKEN}`, 'content-type': 'application/json' };
+const bearer = { authorization: `Bearer ${OPERATOR_TOKEN}`, 'content-type': 'application/json' };
 /** @type {import('node:child_process').ChildProcess | undefined} */
 let proc;
 let lastErr = '';
@@ -253,7 +253,7 @@ try {
     record('realm mounted from a plain directory', !!personal && personal.itemCount >= 1, `realmId=${personal?.realmId} items=${personal?.itemCount}`);
     if (!personal?.realmId) throw new Error('personal realm never mounted');
 
-    const registered = await api('POST', '/api/vassals', { cardUrl: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`, token: `verify-vassal-${randomBytes(6).toString('hex')}` });
+    const registered = await api('POST', '/api/executors', { cardUrl: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`, token: `verify-executor-${randomBytes(6).toString('hex')}` });
     record('agent a1 registered over a real socket', registered.status === 201 || registered.status === 200, `status=${registered.status}${registered.text.slice(0, 220)}`);
 
     // Step 1: execute without a ticket is refused, zero outbound.
@@ -263,7 +263,7 @@ try {
       realm: 'personal',
       realmId: personal.realmId,
       params: {},
-      vassals: ['a1'],
+      executors: ['a1'],
       mode: 'execute',
     });
     const bareBranch = bare.json?.branches?.[0] ?? {};
@@ -278,7 +278,7 @@ try {
       grantedBy: 'operator@zeus',
       skill: 'research',
       capabilities: ['execute'],
-      vassal: 'a1',
+      executor: 'a1',
       reason: 'verify execute chain',
     });
     record('issuance endpoint hands out a signed delegation', issued.status === 201 && !!issued.json?.delegation, `status=${issued.status}`);
@@ -292,7 +292,7 @@ try {
       realm: 'personal',
       realmId: personal.realmId,
       params: {},
-      vassals: ['a1'],
+      executors: ['a1'],
       mode: 'execute',
       executionDelegation: issuedDelegation,
     };

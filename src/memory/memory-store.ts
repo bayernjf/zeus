@@ -326,7 +326,7 @@ export class MemoryStore {
   }
 
   /**
-   * Record a driver correction: the named authors produced a claim the driver
+   * Record a operator correction: the named authors produced a claim the operator
    * rejected. Each correction permanently lowers the author's score; this is
    * the "被纠错" feedback the metrics failure rate cannot see.
    */

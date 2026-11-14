@@ -10,10 +10,10 @@ function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
-function okResult(vassal: string, stance: string): DispatchResult {
+function okResult(executor: string, stance: string): DispatchResult {
   const task: Task = {
     kind: 'task',
-    id: `${vassal}-task`,
+    id: `${executor}-task`,
     contextId: 'ctx',
     status: { state: 'completed' },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance } }] }],
@@ -26,7 +26,7 @@ type Route = DispatchResult | ((req: DispatchRequest) => Promise<DispatchResult>
 function makePort(routes: Record<string, Route>): DispatchPort {
   return {
     async dispatch(req) {
-      const route = routes[req.vassal!]!; // test routes cover every dispatched vassal
+      const route = routes[req.executor!]!; // test routes cover every dispatched executor
       return typeof route === 'function' ? route(req) : route;
     },
     async cancel() {},
@@ -69,7 +69,7 @@ function splitPort(): DispatchPort {
 }
 
 describe('S2 backend arbitration on unresolved splits', () => {
-  it('concludes via a calibrated high-confidence backend and does not escalate to the driver', async () => {
+  it('concludes via a calibrated high-confidence backend and does not escalate to the operator', async () => {
     const backend = mockBackend('decision-model', calibratedHigh);
     const escalated: FanOutResult[] = [];
     const orch = new Orchestrator(lookupFor(['loom', 'atlas']), splitPort(), {
@@ -97,7 +97,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
     });
   });
 
-  it('keeps needs-driver and escalates when confidence is below the threshold', async () => {
+  it('keeps needs-operator and escalates when confidence is below the threshold', async () => {
     const backend = mockBackend('decision-model', calibratedLow);
     const escalated: FanOutResult[] = [];
     const orch = new Orchestrator(lookupFor(['loom', 'atlas']), splitPort(), {
@@ -109,7 +109,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
 
     const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
 
-    expect(result.status).toBe('needs-driver');
+    expect(result.status).toBe('needs-operator');
     expect(result.decision.conclusion).toBeNull();
     expect(result.conflicts).toHaveLength(1);
     expect(escalated).toHaveLength(1);
@@ -126,7 +126,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
 
     const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'personal' });
 
-    expect(result.status).toBe('needs-driver');
+    expect(result.status).toBe('needs-operator');
     expect(escalated).toHaveLength(1);
     expect(result.backendArbitration).toMatchObject({ concluded: false, calibrated: false, backend: 'llm' });
   });
@@ -145,7 +145,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
     expect(result.backendArbitration).toMatchObject({ concluded: true, calibrated: false });
   });
 
-  it('survives a backend failure: stays needs-driver and records the error without throwing', async () => {
+  it('survives a backend failure: stays needs-operator and records the error without throwing', async () => {
     const backend = createScriptedDecisionBackend({ failWith: 'timeout' });
     const escalated: FanOutResult[] = [];
     const orch = new Orchestrator(lookupFor(['loom', 'atlas']), splitPort(), {
@@ -155,7 +155,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
 
     const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
 
-    expect(result.status).toBe('needs-driver');
+    expect(result.status).toBe('needs-operator');
     expect(escalated).toHaveLength(1);
     expect(result.backendArbitration?.concluded).toBe(false);
     expect(result.backendArbitration?.error).toMatchObject({ code: 'timeout' });
@@ -170,7 +170,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
 
     const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
 
-    expect(result.status).toBe('needs-driver');
+    expect(result.status).toBe('needs-operator');
     expect(escalated).toHaveLength(1);
     expect(result.backendArbitration).toBeUndefined();
   });

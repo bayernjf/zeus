@@ -1,4 +1,4 @@
-import { VassalRegistry } from '../registry/registry.js';
+import { ExecutorRegistry } from '../registry/registry.js';
 import { sha256Hex } from '../util/crypto.js';
 import type { FetchLike } from '../dispatch/client.js';
 import { Dispatcher, type AuditSink } from '../dispatch/dispatcher.js';
@@ -18,7 +18,7 @@ import { DagRunner } from '../orchestrator/dag-runner.js';
 import { PlanFlow } from '../orchestrator/plan-flow.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
 import { FsRealmStore } from '../realm/store.js';
-import { DriverGrantLedger, type DriverGrantAuditEntry } from '../realm/grant.js';
+import { OperatorGrantLedger, type OperatorGrantAuditEntry } from '../realm/grant.js';
 import {
   ExecutionDelegationNonceLedger,
   type ExecutionDelegationAuditEntry,
@@ -58,12 +58,12 @@ import { branchVerdictClaims } from '../memory/producer.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
 import { CommissionLedger, type CommissionAuditEntry } from '../onboarding/commission.js';
 import {
-  FileKernelStateStore,
-  applyKernelState,
-  collectKernelState,
-  type KernelComponents,
-  type KernelSnapshot,
-} from './kernel-state.js';
+  FileRuntimeStateStore,
+  applyRuntimeState,
+  collectRuntimeState,
+  type RuntimeComponents,
+  type RuntimeSnapshot,
+} from './runtime-state.js';
 import { ProcessLock } from './process-lock.js';
 import { computeCheckpoint, executeRecovery } from '../orchestrator/recovery.js';
 import type { CostLimit } from '../orchestrator/cost-ledger.js';
@@ -75,25 +75,25 @@ import { redactUrl } from '../util/logger.js';
 
 /**
  * E5.3 process boot assembly (design-http-transport §2.2/§2.3: the long-running
- * service prerequisite). Wires the four live kernel components exactly once —
+ * service prerequisite). Wires the four live runtime components exactly once —
  * registry, oversight desk, dispatcher and orchestrator — with conflict
  * escalation already bridged into the desk (conflictsToDesk), and optionally
- * restores a JSON snapshot produced by FileKernelStateStore.
+ * restores a JSON snapshot produced by FileRuntimeStateStore.
  *
- * Without `stateFile` the kernel stays purely in-memory (library/H1 behaviour).
+ * Without `stateFile` the runtime stays purely in-memory (library/H1 behaviour).
  * With it, boot loads and applies the snapshot when one exists, and saveState()
  * atomically writes the live state for the next restart. The transport layer
  * (serve.js) calls saveState() during graceful shutdown.
  */
 
-export type KernelBoot = KernelComponents & {
+export type RuntimeBoot = RuntimeComponents & {
   /** E1.7 runtime concurrency metrics (not persisted); wired into the orchestrator. */
   metrics: ConcurrencyMetrics;
   /** H3: progress event hub feeding the SSE endpoint. */
   progressHub: ProgressHub;
   /**
    * Self-host loop §3.2: one evaluation pass over the watches. No timer lives in
-   * the kernel, so the caller owns the cadence; each watch still honours its own
+   * the runtime, so the caller owns the cadence; each watch still honours its own
    * `intervalSeconds`.
    */
   runWatchTick: (at?: Date) => Promise<WatchTickReport>;
@@ -105,15 +105,15 @@ export type KernelBoot = KernelComponents & {
   realmAudit: (entry: RealmAuditEntry) => void;
   /**
    * E3.5 / deferred #14: how enterprise writes are authorized here. 'signed'
-   * means a grant must carry an Ed25519 signature by an accepted driver key;
-   * 'shape-only' means the kernel holds no driver key and can only check a
+   * means a grant must carry an Ed25519 signature by an accepted operator key;
+   * 'shape-only' means the runtime holds no operator key and can only check a
    * grant's shape, realm binding and expiry. Reported, never assumed.
    */
-  driverGrantAuthority: 'signed' | 'shape-only';
-  /** The driver key when one is configured; the HTTP face issues grants with it. */
-  driverSigner: Ed25519MemorySigner | null;
+  operatorGrantAuthority: 'signed' | 'shape-only';
+  /** The operator key when one is configured; the HTTP face issues grants with it. */
+  operatorSigner: Ed25519MemorySigner | null;
   /** Feeds issued write grants into the audit spine. */
-  driverGrantAudit: (entry: DriverGrantAuditEntry) => void;
+  operatorGrantAudit: (entry: OperatorGrantAuditEntry) => void;
   /** Feeds issued execution delegations into the audit spine. */
   executionDelegationAudit: (entry: ExecutionDelegationAuditEntry) => void;
   /** Feeds delegation-contract issuance/revocation into the audit spine. */
@@ -131,7 +131,7 @@ export type KernelBoot = KernelComponents & {
   /** True when a snapshot was found and applied during boot. */
   restoredFromSnapshot: boolean;
   /** The applied snapshot, or null on first boot / in-memory mode. */
-  snapshot: KernelSnapshot | null;
+  snapshot: RuntimeSnapshot | null;
   /** deferred #42: out-window intent archive when retention is archive|evict. */
   intentArchive?: IntentArchiveLookup;
   /** deferred #42: effective retention mode (retain | archive | evict). */
@@ -160,7 +160,7 @@ export type KernelBoot = KernelComponents & {
    * otherwise undefined (default is off; the live window alone keeps working).
    */
   metricsHistory?: MetricsHistory;
-  /** Atomically persist live kernel state; a no-op without stateFile. */
+  /** Atomically persist live runtime state; a no-op without stateFile. */
   saveState(): Promise<void>;
   /**
    * Release the cross-process lock held on the state file for this boot's
@@ -169,7 +169,7 @@ export type KernelBoot = KernelComponents & {
   releaseLock(): Promise<void>;
 };
 
-export type KernelBootOptions = {
+export type RuntimeBootOptions = {
   /** When set, state is restored from this file on boot and saved on shutdown. */
   stateFile?: string;
   /**
@@ -202,9 +202,9 @@ export type KernelBootOptions = {
   oversightAudit?: (entry: OversightAuditEntry) => void;
   /** G1: card URLs auto-registered on boot. A URL already present (restored from
    *  snapshot or an earlier seed) is skipped, so seeds never trigger a refetch.
-   *  E4.8: an entry may be `{ cardUrl, token? }` to seed the vassal's outbound
+   *  E4.8: an entry may be `{ cardUrl, token? }` to seed the executor's outbound
    *  bearer; a plain string registers with no token. */
-  vassalSeeds?: Array<string | { cardUrl: string; token?: string }>;
+  executorSeeds?: Array<string | { cardUrl: string; token?: string }>;
   /** G4: realm roots connected on boot. Strings are personal read-write roots;
    *  objects may set type/readOnly/tenant (E3.6, enterprise scopes). Persisted
    *  roots are reconnected as well. */
@@ -218,7 +218,7 @@ export type KernelBootOptions = {
    * settled intent in the state file; 'archive' moves out-window records to
    * `<stateDir>/intent-archive.jsonl` (append-only, idempotent reads keep
    * working); 'evict' deletes them outright and documents idempotency as
-   * window-scoped. The mechanism lands in the kernel regardless; the default
+   * window-scoped. The mechanism lands in the runtime regardless; the default
    * keeps today's behaviour until a real instance meets the design §5 trigger.
    */
   intentRetention?: RetentionMode;
@@ -242,7 +242,7 @@ export type KernelBootOptions = {
   otlpTraceExporter?: TraceExporter;
   /**
    * TracePort v1 §2: the DecisionTrace registry the trace tree assembles model
-   * spans from (see the kernel component of the same name). Absent = no model
+   * spans from (see the runtime component of the same name). Absent = no model
    * spans, tree assembly unchanged.
    */
   decisionTraceBuffer?: DecisionTraceBuffer;
@@ -255,7 +255,7 @@ export type KernelBootOptions = {
   /**
    * E1.2/E1.3 decision backend wired into the orchestrator. When present the S2
    * critic arbitration path is live (rule-inconclusive fan-outs consult it);
-   * when omitted the kernel runs rules-only exactly as before. serve.ts builds
+   * when omitted the runtime runs rules-only exactly as before. serve.ts builds
    * this from process env via resolveDecisionConfig(). Tests inject a mock.
    */
   decisionBackend?: DecisionBackend | null;
@@ -273,20 +273,20 @@ export type KernelBootOptions = {
   maxConcurrentBranches?: number;
   /** Branches allowed to wait for a slot before one is refused. 0 = never queue. */
   branchQueueLimit?: number;
-  /** #9 per-vassal saturation cap; must sit below maxConcurrentBranches for
-   *  diversion to fire. Unset = no per-vassal saturation check. */
-  maxConcurrentPerVassal?: number;
+  /** #9 per-executor saturation cap; must sit below maxConcurrentBranches for
+   *  diversion to fire. Unset = no per-executor saturation check. */
+  maxConcurrentPerExecutor?: number;
   /**
-   * E3.5 / deferred #14: the driver key. When present, an enterprise write is
-   * only honored on a grant this key signed (or one whose signer the kernel
+   * E3.5 / deferred #14: the operator key. When present, an enterprise write is
+   * only honored on a grant this key signed (or one whose signer the runtime
    * accepts), and each grant nonce is consumed once. When absent, grants are
-   * checked for shape/realm/expiry only — a vassal that can reach `write()`
-   * could then author its own "authorization", which is why `KernelBoot` reports
+   * checked for shape/realm/expiry only — a executor that can reach `write()`
+   * could then author its own "authorization", which is why `RuntimeBoot` reports
    * the effective authority instead of hiding it.
    */
-  driverSigner?: Ed25519MemorySigner;
+  operatorSigner?: Ed25519MemorySigner;
   /** Called when a state write triggered by an event outside shutdown (a
-   *  consumed driver-grant nonce) fails. Defaults to silence; serve.ts logs it,
+   *  consumed operator-grant nonce) fails. Defaults to silence; serve.ts logs it,
    *  because a nonce that never reaches disk can be replayed after a restart. */
   onStateSaveError?: (message: string) => void;
   /** Called when a persisted audit line cannot be written. Defaults to silence; a
@@ -313,10 +313,10 @@ export type KernelBootOptions = {
 
 const noop = (): void => {};
 
-export async function bootKernel(options: KernelBootOptions = {}): Promise<KernelBoot> {
+export async function bootRuntime(options: RuntimeBootOptions = {}): Promise<RuntimeBoot> {
   // M-10: one cross-process lock covers the whole load-mutate-save window for
   // the boot's lifetime. Acquire is fail-fast (a live holder refuses this boot
-  // via KernelBootError). A boot that unwinds after taking the lock releases it,
+  // via RuntimeBootError). A boot that unwinds after taking the lock releases it,
   // so a bad configuration leaves no directory behind; a hard crash cannot run
   // this catch, and the next boot reclaims the stale pid.
   let processLock: ProcessLock | null = null;
@@ -324,13 +324,13 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
     try {
       processLock = await ProcessLock.acquire(`${options.stateFile}.lock`);
     } catch (error) {
-      throw new KernelBootError(
-        `kernel state file is locked by another Zeus process: ${error instanceof Error ? error.message : String(error)}`
+      throw new RuntimeBootError(
+        `runtime state file is locked by another Zeus process: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
   try {
-    return await assembleKernel(options, processLock);
+    return await assembleRuntime(options, processLock);
   } catch (error) {
     // Never mask the original boot failure with a release failure.
     if (processLock) await processLock.release().catch(() => {});
@@ -338,10 +338,10 @@ export async function bootKernel(options: KernelBootOptions = {}): Promise<Kerne
   }
 }
 
-async function assembleKernel(
-  options: KernelBootOptions,
+async function assembleRuntime(
+  options: RuntimeBootOptions,
   processLock: ProcessLock | null,
-): Promise<KernelBoot> {
+): Promise<RuntimeBoot> {
   const now = options.now ?? (() => new Date());
   const fetchImpl = options.fetchImpl;
 
@@ -383,7 +383,7 @@ async function assembleKernel(
         } catch (error) {
           // Constructing the sink creates the file, so an unusable path is a
           // boot-time configuration fact and must read like one.
-          throw new KernelBootError(
+          throw new RuntimeBootError(
             `audit log is unusable: ${error instanceof Error ? error.message : String(error)}`
           );
         }
@@ -406,7 +406,7 @@ async function assembleKernel(
     // A failing audit write must never become the reason a dispatch reports
     // failure. It used to: an ENOENT on the audit path surfaced as
     // `branch.reason: "ENOENT ... audit.jsonl"` for every branch, so a disk
-    // problem was indistinguishable from a vassal problem - and the operator
+    // problem was indistinguishable from a executor problem - and the operator
     // went looking for a broken agent. Observability that changes results is a
     // defect, so the file write is contained here and reported as what it is.
     if (fileSink) {
@@ -419,7 +419,7 @@ async function assembleKernel(
     }
     options.dispatchAudit?.(entry);
   };
-  const registry = new VassalRegistry(fetchImpl, now, {
+  const registry = new ExecutorRegistry(fetchImpl, now, {
     onRegister: entry => skillRegistry.registerFromCard(entry.card),
     onRevoke: revokeAuditBridge(auditSink),
     // A-02: the counterpart event — a revocation is only undone by an explicit
@@ -437,7 +437,7 @@ async function assembleKernel(
       : entry => {
           auditSink({
             ts: entry.ts,
-            vassal: entry.vassal,
+            executor: entry.executor,
             runId: entry.runId,
             decision:
               entry.action === 'approved'
@@ -472,18 +472,18 @@ async function assembleKernel(
   const metrics = new ConcurrencyMetrics({ now });
   const progressHub = new ProgressHub();
   // Replaced once the state file exists below. Until then it is a no-op: a
-  // kernel without a state file has nothing to persist a consumed nonce into.
+  // runtime without a state file has nothing to persist a consumed nonce into.
   let persistLiveState: () => Promise<void> = async () => {};
   // Tail of the save chain. Every save writes the same `.tmp` path, so two
   // overlapping saves can interleave content or lose a rename (the loser's tmp
   // is already gone) - chaining them keeps the file equal to the newest state.
   let persistTail: Promise<void> = Promise.resolve();
-  // E3.5 / deferred #14: the driver trust anchor. With a signer the kernel only
+  // E3.5 / deferred #14: the operator trust anchor. With a signer the runtime only
   // honors grants IT signed (or grants signed by a key it accepts) and consumes
   // each nonce once; without one, a grant is checked for shape, realm binding and
   // expiry only - which is why the authority is reported through stats instead of
   // being assumed.
-  const driverGrantLedger = new DriverGrantLedger({
+  const operatorGrantLedger = new OperatorGrantLedger({
     // A nonce that only lives in memory is a grant that replays after a crash,
     // so consumption pushes the state file immediately rather than waiting for
     // shutdown.
@@ -493,17 +493,17 @@ async function assembleKernel(
       });
     },
   });
-  const driverGrantAuthority: 'signed' | 'shape-only' = options.driverSigner ? 'signed' : 'shape-only';
+  const operatorGrantAuthority: 'signed' | 'shape-only' = options.operatorSigner ? 'signed' : 'shape-only';
   const realmStore = new FsRealmStore({
     now,
     // The nonce ledger is wired in BOTH modes: single-use is a property of the
     // credential, not of how it was authenticated. Stopping at "we can't check
     // the signature, so we won't check anything else either" would make the
     // weaker mode strictly weaker still.
-    driverGrants: {
-      ledger: driverGrantLedger,
-      ...(options.driverSigner
-        ? { verifier: options.driverSigner.verifier(), acceptedKeyIds: [options.driverSigner.keyId] }
+    operatorGrants: {
+      ledger: operatorGrantLedger,
+      ...(options.operatorSigner
+        ? { verifier: options.operatorSigner.verifier(), acceptedKeyIds: [options.operatorSigner.keyId] }
         : {}),
     },
     // Only grant-authorized (enterprise) writes reach the spine: a personal write
@@ -513,10 +513,10 @@ async function assembleKernel(
       if (!entry.grantedBy) return;
       auditSink({
         ts: entry.at,
-        vassal: entry.grantedBy,
+        executor: entry.grantedBy,
         decision: 'realm-write',
         realm: entry.realmType,
-        detail: `driver-authorized write ${entry.itemId} (${entry.bytes}B) into ${entry.realmId}`,
+        detail: `operator-authorized write ${entry.itemId} (${entry.bytes}B) into ${entry.realmId}`,
       });
     },
   });
@@ -525,7 +525,7 @@ async function assembleKernel(
   const grantAudit = (entry: GrantAuditEntry): void => {
     auditSink({
       ts: entry.at,
-      vassal: entry.subject,
+      executor: entry.subject,
       decision: entry.decision === 'grant-issued' ? 'domain-grant-issued' : 'domain-grant-revoked',
       realm: 'enterprise',
       detail: `${entry.decision} ${entry.grantId}: ${entry.access} ${entry.subject} -> ${entry.realmId} by ${entry.grantedBy}`,
@@ -543,13 +543,13 @@ async function assembleKernel(
   };
   // Issuance is audited separately from the write it authorizes: the moment a
   // human said "write this" matters even when the write never happens.
-  const driverGrantAudit = (entry: DriverGrantAuditEntry): void => {
+  const operatorGrantAudit = (entry: OperatorGrantAuditEntry): void => {
     auditSink({
       ts: entry.at,
-      vassal: entry.grantedBy,
-      decision: 'driver-grant-issued',
+      executor: entry.grantedBy,
+      decision: 'operator-grant-issued',
       realm: 'enterprise',
-      detail: `driver grant for ${entry.realmId} by ${entry.grantedBy} (key ${entry.keyId}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
+      detail: `operator grant for ${entry.realmId} by ${entry.grantedBy} (key ${entry.keyId}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
     });
   };
   // deferred #33: spent execution-delegation nonces. The ledger is wired to
@@ -564,20 +564,20 @@ async function assembleKernel(
   const executionDelegationAudit = (entry: ExecutionDelegationAuditEntry): void => {
     auditSink({
       ts: entry.at,
-      vassal: entry.grantedBy,
+      executor: entry.grantedBy,
       decision: 'execution-delegation-issued',
-      detail: `execution delegation for ${entry.skill}${entry.vassal ? ` (${entry.vassal})` : ''} by ${entry.grantedBy}, capabilities ${entry.capabilities.join(',')} (key ${entry.keyId}, nonce ${entry.nonce}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
+      detail: `execution delegation for ${entry.skill}${entry.executor ? ` (${entry.executor})` : ''} by ${entry.grantedBy}, capabilities ${entry.capabilities.join(',')} (key ${entry.keyId}, nonce ${entry.nonce}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
     });
   };
   const domainGrants = new DomainGrantRegistry(now, grantAudit);
   // E9.1/E9.2: the commission gate reads its evidence from the layers that own
-  // it (org roster, live vassal directory, realm boundary decisions, mentorship
+  // it (org roster, live executor directory, realm boundary decisions, mentorship
   // certifications), so nothing here can go stale in the way a cached "is this
   // agent cleared?" flag would.
   const commissionAudit = (entry: CommissionAuditEntry): void => {
     auditSink({
       ts: entry.at,
-      vassal: entry.agentId,
+      executor: entry.agentId,
       decision: entry.decision,
       detail: `${entry.decision} ${entry.commissionId} by ${entry.by}: ${entry.detail}`,
     });
@@ -585,7 +585,7 @@ async function assembleKernel(
   const commissionLedger = new CommissionLedger(
     {
       org: orgRegistry,
-      vassals: registry.asVassalLookup(),
+      executors: registry.asExecutorLookup(),
       realms: realmStore,
       grants: domainGrants,
       mentorships: mentorshipLedger,
@@ -616,7 +616,7 @@ async function assembleKernel(
     onExternalCall: entry =>
       auditSink({
         ts: now().toISOString(),
-        vassal: 'memory',
+        executor: 'memory',
         decision: 'memory-embed-external',
         // P2-5: the realm scope identifies whose memory the call served.
         detail: `hash=${entry.hash} ok=${entry.ok} latencyMs=${entry.latencyMs}${entry.realmId ? ` realmId=${entry.realmId}` : ''}${entry.reason ? ` reason=${entry.reason}` : ''}`,
@@ -627,25 +627,25 @@ async function assembleKernel(
     now,
     options.connectorAudit ?? noop,
   );
-  const dispatcher = new Dispatcher(registry.asVassalLookup(), {
+  const dispatcher = new Dispatcher(registry.asExecutorLookup(), {
     audit: auditSink,
     now,
-    // E4.8: the dispatcher attaches each vassal's seeded bearer. Revocations are
+    // E4.8: the dispatcher attaches each executor's seeded bearer. Revocations are
     // already gated before token issuance inside dispatch, and tokenFor itself
-    // yields nothing for revoked vassals, so no path can attach a retired token.
+    // yields nothing for revoked executors, so no path can attach a retired token.
     tokenFor: name => registry.tokenFor(name),
     // S8 V3 (design-guardrails §5): wire the DomainGrant registry into the
-    // dispatcher as the content-grant port. A vassal holds a content grant for
+    // dispatcher as the content-grant port. A executor holds a content grant for
     // a realm when it has a live (unrevoked, unexpired) grant entry whose
     // realmId matches the hit's realm; an unexpired grant for realm A does not
     // cover enterprise content from realm B. The gate is off until this port
-    // exists; an unconfigured kernel keeps the V2 dispatch behaviour.
+    // exists; an unconfigured runtime keeps the V2 dispatch behaviour.
     ...(domainGrants
       ? {
-          contentGrant: (vassal: string, realmId: string) =>
+          contentGrant: (executor: string, realmId: string) =>
             domainGrants.list().some(
               grant =>
-                grant.subject === vassal &&
+                grant.subject === executor &&
                 grant.realmId === realmId &&
                 (grant.expiresAt === undefined ||
                   Date.parse(grant.expiresAt) > now().getTime()),
@@ -654,14 +654,14 @@ async function assembleKernel(
       : {}),
     ...(fetchImpl ? { fetchImpl } : {}),
   });
-  const orchestrator = new Orchestrator(registry.asVassalLookup(), dispatcher, {
+  const orchestrator = new Orchestrator(registry.asExecutorLookup(), dispatcher, {
     now,
     metrics,
     ...(intentArchive ? { archive: intentArchive } : {}),
     // S1 context engineering V1 (design-context-engineering §10): memory recall
     // feeds the branch dispatch context. Assembled once per intent at the
     // dispatch boundary, audited on the same spine as dispatches. boot always
-    // has a memory store; an unconfigured kernel degrades to zero assembly.
+    // has a memory store; an unconfigured runtime degrades to zero assembly.
     memoryStore,
     contextOptions: { maxEntries: 20, ...options.contextOptions },
     // S1 V2 (design-context-engineering §10.3): the skill catalogue resolves
@@ -682,7 +682,7 @@ async function assembleKernel(
       for (const event of events) {
         auditSink({
           ts: entry.at,
-          vassal: '(intent)',
+          executor: '(intent)',
           runId: entry.runId,
           skill: entry.skill,
           realm: entry.realm,
@@ -705,8 +705,8 @@ async function assembleKernel(
       }
     },
     onConflict: conflictsToDesk(oversight),
-    // E6.1 (C-28): a branch that stops at input-required is a vassal asking the
-    // driver for parameters. The desk's `ingest` had no caller anywhere in src,
+    // E6.1 (C-28): a branch that stops at input-required is a executor asking the
+    // operator for parameters. The desk's `ingest` had no caller anywhere in src,
     // so in a booted process this question was never raised — only intent
     // conflicts and memory disputes reached the desk.
     onTaskInput: (result, request) => {
@@ -728,7 +728,7 @@ async function assembleKernel(
     onRefusal: entry => {
       auditSink({
         ts: entry.at,
-        vassal: '(auto)',
+        executor: '(auto)',
         skill: entry.skill,
         realm: entry.realm,
         decision: entry.reason === 'skill-uninstalled' ? 'refused-skill-uninstalled' : 'refused-no-active-provider',
@@ -741,7 +741,7 @@ async function assembleKernel(
     onTerminationRefused: entry => {
       auditSink({
         ts: entry.at,
-        vassal: '(intent)',
+        executor: '(intent)',
         skill: entry.skill,
         realm: entry.realm,
         decision: entry.reason === 'budget-exceeded' ? 'intent-branch-budget-exceeded' : 'intent-circuit-opened',
@@ -751,12 +751,12 @@ async function assembleKernel(
     // S9 V2 (design-cost-governance §5): the cost gate refused an admission —
     // a window-cap crossing or an open rate circuit lands on the same spine as
     // the other governance refusals. The limit itself is handed through only
-    // when configured (an unset kernel keeps its historical uncharged path).
+    // when configured (an unset runtime keeps its historical uncharged path).
     ...(options.costLimit !== undefined ? { costLimit: options.costLimit, onCostRefused: entry => {
       if (entry.reason === 'cost-budget-exceeded' || entry.reason === 'cost-rate-circuit-open') {
         auditSink({
           ts: entry.at,
-          vassal: '(intent)',
+          executor: '(intent)',
           skill: entry.skill,
           realm: entry.realm,
           decision: entry.reason,
@@ -769,7 +769,7 @@ async function assembleKernel(
     onDiverted: entry => {
       auditSink({
         ts: entry.at,
-        vassal: entry.to,
+        executor: entry.to,
         skill: entry.skill,
         realm: entry.realm,
         decision: 'branch-diverted',
@@ -782,54 +782,54 @@ async function assembleKernel(
     onCandidatesSelected: entry => {
       auditSink({
         ts: entry.at,
-        vassal: '(kernel)',
+        executor: '(runtime)',
         skill: entry.skill,
         realm: entry.realm,
         decision: 'tool-selected',
         detail: entry.pinned
-          ? `candidate face for skill '${entry.skill}': ${entry.namedCount} driver-pinned name(s); pool not consulted`
+          ? `candidate face for skill '${entry.skill}': ${entry.namedCount} operator-pinned name(s); pool not consulted`
           : `candidate face for skill '${entry.skill}': pool ${entry.poolSize}, live-saturated dropped ${entry.saturatedDropped}, diverted ${entry.diverted}`,
       });
     },
     // S11 V3 (design-tool-discovery §5): a failed branch and the recovery
     // chain's verdict for it. tool-failed is the failure itself (really emitted
     // on the runtime now); the chain-* line follows the fixed-order verdict.
-    // Escalate keeps the existing needs-driver semantics and adds no chain line.
+    // Escalate keeps the existing needs-operator semantics and adds no chain line.
     onChainRecovered: entry => {
       auditSink({
         ts: entry.at,
-        vassal: entry.vassal,
+        executor: entry.executor,
         skill: entry.skill,
         realm: entry.realm,
         decision: 'tool-failed',
-        detail: `branch for skill '${entry.skill}' on vassal '${entry.vassal}' failed: ${entry.reason}`,
+        detail: `branch for skill '${entry.skill}' on executor '${entry.executor}' failed: ${entry.reason}`,
       });
       if (entry.action === 'retry') {
         auditSink({
           ts: entry.at,
-          vassal: entry.vassal,
+          executor: entry.executor,
           skill: entry.skill,
           realm: entry.realm,
           decision: 'chain-retried',
-          detail: `recovery chain decided retry for skill '${entry.skill}' on vassal '${entry.vassal}'`,
+          detail: `recovery chain decided retry for skill '${entry.skill}' on executor '${entry.executor}'`,
         });
       } else if (entry.action === 'switch') {
         auditSink({
           ts: entry.at,
-          vassal: entry.alternateProvider ?? entry.vassal,
+          executor: entry.alternateProvider ?? entry.executor,
           skill: entry.skill,
           realm: entry.realm,
           decision: 'chain-switched',
-          detail: `recovery chain decided switch from '${entry.vassal}' to '${entry.alternateProvider}' for skill '${entry.skill}'`,
+          detail: `recovery chain decided switch from '${entry.executor}' to '${entry.alternateProvider}' for skill '${entry.skill}'`,
         });
       } else if (entry.action === 'degrade') {
         auditSink({
           ts: entry.at,
-          vassal: entry.vassal,
+          executor: entry.executor,
           skill: entry.skill,
           realm: entry.realm,
           decision: 'chain-degraded',
-          detail: `recovery chain decided degrade (skip step) for skill '${entry.skill}' on vassal '${entry.vassal}'`,
+          detail: `recovery chain decided degrade (skip step) for skill '${entry.skill}' on executor '${entry.executor}'`,
         });
       }
     },
@@ -839,22 +839,22 @@ async function assembleKernel(
     onExecutionDelegationRefused: entry => {
       auditSink({
         ts: entry.at,
-        vassal: entry.vassal,
+        executor: entry.executor,
         skill: entry.skill,
         realm: entry.realm,
         decision: 'execution-delegation-denied',
-        detail: `execute refused for skill '${entry.skill}' vassal '${entry.vassal}': ${entry.reason}`,
+        detail: `execute refused for skill '${entry.skill}' executor '${entry.executor}': ${entry.reason}`,
       });
     },
     // deferred #33: execute-mode gate. Signed, single-use approval for
-    // irreversible external writes; with no driver signer there is no trust
+    // irreversible external writes; with no operator signer there is no trust
     // anchor and execute fails closed.
-    ...(options.driverSigner
+    ...(options.operatorSigner
       ? {
           executionDelegation: {
-            verifier: options.driverSigner.verifier(),
+            verifier: options.operatorSigner.verifier(),
             ledger: executionDelegationLedger,
-            acceptedKeyIds: [options.driverSigner.keyId],
+            acceptedKeyIds: [options.operatorSigner.keyId],
             now,
           },
         }
@@ -898,12 +898,12 @@ async function assembleKernel(
       ? { maxConcurrentBranches: options.maxConcurrentBranches }
       : {}),
     ...(options.branchQueueLimit !== undefined ? { branchQueueLimit: options.branchQueueLimit } : {}),
-    ...(options.maxConcurrentPerVassal !== undefined ? { maxConcurrentPerVassal: options.maxConcurrentPerVassal } : {}),
+    ...(options.maxConcurrentPerExecutor !== undefined ? { maxConcurrentPerExecutor: options.maxConcurrentPerExecutor } : {}),
   });
   // S3 DAG orchestration: runs each DAG node as a fan-out through the SAME
-  // orchestrator, so node intents share the kernel's idempotency table and
+  // orchestrator, so node intents share the runtime's idempotency table and
   // persist with it. The runner only adds wave scheduling + spec/result recall.
-  const dagRunner = new DagRunner(registry.asVassalLookup(), dispatcher, { now }, orchestrator);
+  const dagRunner = new DagRunner(registry.asExecutorLookup(), dispatcher, { now }, orchestrator);
 
   // S12 V2 (design-planning §5): planning wired as a fan-out. Planner skills
   // are found by their `planning` tag, drafts are validated/scored/selected by
@@ -920,7 +920,7 @@ async function assembleKernel(
 
   // Self-host loop step 2: the trigger primitive. It is assembled here rather
   // than left as a library type so "an intent can be raised with nobody present"
-  // is a fact about the running kernel, not about a design document.
+  // is a fact about the running runtime, not about a design document.
   // The operator's own watch lifecycle acts (register/disable/revoke) are
   // governance facts and ride the same spine as the tick-time decisions.
   const watches = new WatchRegistry({
@@ -928,7 +928,7 @@ async function assembleKernel(
     audit: entry => {
       auditSink({
         ts: entry.at,
-        vassal: entry.owner,
+        executor: entry.owner,
         decision: entry.decision,
         detail: `${entry.watchId}: ${entry.detail}`,
       });
@@ -948,20 +948,20 @@ async function assembleKernel(
   const delegationContractAudit = (entry: DelegationContractAuditEntry): void => {
     auditSink({
       ts: entry.at,
-      vassal: entry.grantedBy,
+      executor: entry.grantedBy,
       skill: entry.skill,
       decision: entry.decision,
       detail:
         `delegation contract ${entry.contractId} ${entry.decision === 'delegation-contract-issued' ? 'issued' : 'revoked'}` +
-        ` by ${entry.grantedBy} for ${entry.skill}${entry.vassal ? ` (${entry.vassal})` : ''}` +
+        ` by ${entry.grantedBy} for ${entry.skill}${entry.executor ? ` (${entry.executor})` : ''}` +
         `, capabilities ${entry.capabilities.join(',')}, tickets ${entry.maxChildTickets}` +
         ` / concurrent ${entry.maxConcurrent}, window ends ${entry.windowEndsAt} (key ${entry.keyId})` +
         `${entry.reason ? `: ${entry.reason}` : ''}`,
     });
   };
 
-  const components: KernelComponents = {
-    registry, oversight, orchestrator, dagRunner, planFlow, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, driverGrantLedger, executionDelegationLedger, delegationContracts, watches,
+  const components: RuntimeComponents = {
+    registry, oversight, orchestrator, dagRunner, planFlow, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, operatorGrantLedger, executionDelegationLedger, delegationContracts, watches,
     // MemoryPort v1 §7: the HTTP consumer face writes its service-call lines
     // on the same audit spine; not part of any snapshot.
     auditSink,
@@ -1011,7 +1011,7 @@ async function assembleKernel(
     };
   }
 
-  // deferred #27: a finished fan-out's verdicts are the kernel's only memory
+  // deferred #27: a finished fan-out's verdicts are the runtime's only memory
   // producer. Written one step before consolidation so an intent folds into
   // facts on the same tick it produced them. Claims go through
   // appendFromRealm, never append, so the realm-boundary invariant cannot be
@@ -1028,7 +1028,7 @@ async function assembleKernel(
     if (!mounted) {
       auditSink({
         ts: now().toISOString(),
-        vassal: '(kernel)',
+        executor: '(runtime)',
         skill: result.skill,
         realm: result.realm,
         decision: 'memory-claim-skipped',
@@ -1042,7 +1042,7 @@ async function assembleKernel(
       } catch (error) {
         auditSink({
           ts: now().toISOString(),
-          vassal: claim.source.agentId,
+          executor: claim.source.agentId,
           skill: result.skill,
           realm: result.realm,
           decision: 'memory-claim-skipped',
@@ -1059,7 +1059,7 @@ async function assembleKernel(
     event: Extract<ProgressEvent, { type: 'intent-finished' }>,
   ): void {
     const reliability = (agentId: string): number => {
-      const stat = metrics.snapshot().perVassal[agentId];
+      const stat = metrics.snapshot().perExecutor[agentId];
       const base = !stat || stat.calls === 0 ? 0.5 : 1 - stat.failureRate;
       return memoryStore.reliabilityScore(agentId, base);
     };
@@ -1084,7 +1084,7 @@ async function assembleKernel(
       if (intent && realmId !== undefined && !mounted) {
         auditSink({
           ts: now().toISOString(),
-          vassal: '(kernel)',
+          executor: '(runtime)',
           skill: intent.skill,
           realm: intent.realm,
           decision: 'memory-writeback-skipped',
@@ -1097,7 +1097,7 @@ async function assembleKernel(
             eventId: `mem-decision-${sha256Hex(`${event.intentId}|${event.runId}`).slice(0, 16)}`,
             realmId,
             runId: event.runId,
-            source: { agentId: 'zeus-kernel' },
+            source: { agentId: 'zeus-runtime' },
             kind: 'claim',
             content: {
               subject: intent.skill,
@@ -1135,19 +1135,19 @@ async function assembleKernel(
       // must show why memory stopped updating.
       auditSink({
         ts: now().toISOString(),
-        vassal: 'memory',
+        executor: 'memory',
         decision: 'memory-consolidation-failed',
         detail: err instanceof Error ? err.message : String(err),
       });
     });
   }
 
-  let store: FileKernelStateStore | null = null;
-  let snapshot: KernelSnapshot | null = null;
+  let store: FileRuntimeStateStore | null = null;
+  let snapshot: RuntimeSnapshot | null = null;
   if (options.stateFile) {
-    // M-10: processLock was acquired by bootKernel() before this body ran and is
+    // M-10: processLock was acquired by bootRuntime() before this body ran and is
     // released through the returned handle (or on a failed boot by the wrapper).
-    store = new FileKernelStateStore(options.stateFile, now);
+    store = new FileRuntimeStateStore(options.stateFile, now);
     try {
       snapshot = await store.load();
     } catch (error) {
@@ -1155,12 +1155,12 @@ async function assembleKernel(
       // must act on (restore a backup, or delete the file), not a bug. Wrapping it
       // keeps it on `serve.ts`'s refused-to-start path - one line naming what to
       // fix - instead of falling through to a raw stack trace.
-      throw new KernelBootError(
-        `kernel state file is unusable: ${error instanceof Error ? error.message : String(error)}`
+      throw new RuntimeBootError(
+        `runtime state file is unusable: ${error instanceof Error ? error.message : String(error)}`
       );
     }
     if (snapshot) {
-      applyKernelState(components, snapshot);
+      applyRuntimeState(components, snapshot);
       // S13 V2 (design-long-running §5): crash recovery runs between state
       // restoration and the first new intent — every unsettled intent in the
       // snapshot is classified (auto-resume / await-operator / settle-failed /
@@ -1176,8 +1176,8 @@ async function assembleKernel(
             orchestrator.settleRecovered(intentId, status);
           },
           awaitOperator: () => {
-            // A restored needs-driver intent already has its escalation row:
-            // the desk is snapshotted with the kernel, so the audit is the
+            // A restored needs-operator intent already has its escalation row:
+            // the desk is snapshotted with the runtime, so the audit is the
             // recovery marker and the operator picks it up from the existing
             // queue face.
           },
@@ -1237,7 +1237,7 @@ async function assembleKernel(
     // landed, so a burst of governance changes cannot race on one `.tmp` file.
     const run = persistTail.then(async () => {
       await runRetention();
-      await target.save(collectKernelState(components));
+      await target.save(collectRuntimeState(components));
       // S6 V3: one metrics snapshot per save, keyed by capturedAt. Landed inside
       // the save chain so a burst of saves serializes the history file exactly
       // like the state file — no interleaved partial lines.
@@ -1271,9 +1271,9 @@ async function assembleKernel(
     });
   }
 
-  if (options.vassalSeeds && options.vassalSeeds.length > 0) {
+  if (options.executorSeeds && options.executorSeeds.length > 0) {
     const known = new Set(registry.listAll().map(entry => entry.cardUrl));
-    for (const seed of options.vassalSeeds) {
+    for (const seed of options.executorSeeds) {
       const cardUrl = typeof seed === 'string' ? seed : seed.cardUrl;
       if (known.has(cardUrl)) continue;
       try {
@@ -1284,8 +1284,8 @@ async function assembleKernel(
         // A seed that cannot be registered is a boot-time configuration fact:
         // the operator typed a URL, and either it is unreachable or the card does
         // not swear the oath. Say which, in one line, instead of a stack trace.
-        throw new KernelBootError(
-          `vassal seed failed for ${cardUrl}: ${error instanceof Error ? error.message : String(error)}`
+        throw new RuntimeBootError(
+          `executor seed failed for ${cardUrl}: ${error instanceof Error ? error.message : String(error)}`
         );
       }
       known.add(cardUrl);
@@ -1294,7 +1294,7 @@ async function assembleKernel(
 
   /**
    * Self-host loop §3.2: one evaluation pass over the enabled watches. The
-   * kernel holds no timer on purpose (the vault scheduler is external for the
+   * runtime holds no timer on purpose (the backup scheduler is external for the
    * same reason), so whatever drives this - cron, or the operator - decides the
    * cadence, and `intervalSeconds` still gates each individual watch.
    */
@@ -1346,9 +1346,9 @@ async function assembleKernel(
         }
       },
       // Step 4: derive the one-time child ticket from the watch's named
-      // contract. With no driver signer there is no trust anchor, so the hook
+      // contract. With no operator signer there is no trust anchor, so the hook
       // is absent and execute fires fail closed into a desk escalation.
-      ...(options.driverSigner
+      ...(options.operatorSigner
         ? {
             deriveExecution: async (input: { watchId: string; delegationId: string; skill: string }) => {
               const derived = await deriveExecutionDelegation(
@@ -1359,8 +1359,8 @@ async function assembleKernel(
                 },
                 {
                   registry: delegationContracts,
-                  signer: options.driverSigner!,
-                  verifier: options.driverSigner!.verifier(),
+                  signer: options.operatorSigner!,
+                  verifier: options.operatorSigner!.verifier(),
                   now,
                 },
               );
@@ -1386,7 +1386,7 @@ async function assembleKernel(
       audit: entry => {
         auditSink({
           ts: entry.at,
-          vassal: '(kernel)',
+          executor: '(runtime)',
           decision: entry.decision,
           detail: `${entry.watchId} (owner ${entry.owner}): ${entry.detail}`,
         });
@@ -1402,11 +1402,11 @@ async function assembleKernel(
     stateFile: options.stateFile ?? null,
     auditFile: options.auditFile ?? null,
     realmAudit,
-    driverGrantAuthority,
-    driverGrantAudit,
+    operatorGrantAuthority,
+    operatorGrantAudit,
     executionDelegationAudit,
     delegationContractAudit,
-    driverSigner: options.driverSigner ?? null,
+    operatorSigner: options.operatorSigner ?? null,
     auditMaxBytes: options.auditMaxBytes ?? DEFAULT_AUDIT_MAX_BYTES,
     auditKeep: options.auditKeep ?? DEFAULT_AUDIT_KEEP,
     get auditFailures(): number {
@@ -1436,7 +1436,7 @@ async function assembleKernel(
  *
  * Backend precedence: the dedicated decision model (Jev, ZEUS_DECISION_*) wins,
  * then a generic OpenAI-compatible LLM (ZEUS_LLM_*). With neither fully set the
- * result is `backend: null` and the kernel degrades to rules-only — booting with
+ * result is `backend: null` and the runtime degrades to rules-only — booting with
  * no keys must reproduce the pre-backend behaviour rather than crash.
  *
  * The E1.3 judge is opt-in (ZEUS_JUDGE_ENABLED) and silently stays disabled when
@@ -1542,7 +1542,7 @@ export async function resolveDecisionConfigWithHub(
 }
 
 /** A boot-time env value was present but unusable. */
-export class KernelBootError extends Error {}
+export class RuntimeBootError extends Error {}
 
 /**
  * E1.5 process-env concurrency wiring.
@@ -1554,7 +1554,7 @@ export class KernelBootError extends Error {}
 export type ProcessConcurrencyConfig = {
   maxConcurrentBranches?: number;
   branchQueueLimit?: number;
-  maxConcurrentPerVassal?: number;
+  maxConcurrentPerExecutor?: number;
 };
 
 export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): ProcessConcurrencyConfig {
@@ -1564,26 +1564,26 @@ export function resolveConcurrencyConfig(env: NodeJS.ProcessEnv = process.env): 
   // 0 is a meaningful queue limit: refuse immediately rather than wait for a slot.
   const limit = envInteger(env.ZEUS_BRANCH_QUEUE_LIMIT, 'ZEUS_BRANCH_QUEUE_LIMIT', 0);
   if (limit !== undefined) config.branchQueueLimit = limit;
-  // #9: per-vassal saturation cap (>= 1). Enables diversion only when it sits
+  // #9: per-executor saturation cap (>= 1). Enables diversion only when it sits
   // below maxConcurrentBranches; a malformed value fails boot loudly.
-  const perVassal = envInteger(env.ZEUS_MAX_CONCURRENT_PER_VASSAL, 'ZEUS_MAX_CONCURRENT_PER_VASSAL', 1);
-  if (perVassal !== undefined) config.maxConcurrentPerVassal = perVassal;
+  const perExecutor = envInteger(env.ZEUS_MAX_CONCURRENT_PER_EXECUTOR, 'ZEUS_MAX_CONCURRENT_PER_EXECUTOR', 1);
+  if (perExecutor !== undefined) config.maxConcurrentPerExecutor = perExecutor;
   return config;
 }
 
 /**
- * A-01: the resolved concurrency config is handed to bootKernel as a whole.
+ * A-01: the resolved concurrency config is handed to bootRuntime as a whole.
  *
  * The process used to copy it field by field, which is how
- * ZEUS_MAX_CONCURRENT_PER_VASSAL came to be parsed and validated at boot
+ * ZEUS_MAX_CONCURRENT_PER_EXECUTOR came to be parsed and validated at boot
  * (resolveConcurrencyConfig) and then dropped before reaching the orchestrator:
  * the operator set a cap, the boot accepted it, and the runtime never enforced
- * it. A whole-object spread puts every present field on the kernel options and
+ * it. A whole-object spread puts every present field on the runtime options and
  * keeps every future field doing the same.
  */
 export function concurrencyBootOptions(
   concurrency: ProcessConcurrencyConfig,
-): Pick<KernelBootOptions, 'maxConcurrentBranches' | 'branchQueueLimit' | 'maxConcurrentPerVassal'> {
+): Pick<RuntimeBootOptions, 'maxConcurrentBranches' | 'branchQueueLimit' | 'maxConcurrentPerExecutor'> {
   return { ...concurrency };
 }
 
@@ -1606,7 +1606,7 @@ export function resolveCostConfig(env: NodeJS.ProcessEnv = process.env): CostLim
 
 export function costBootOptions(
   cost: CostLimit,
-): Pick<KernelBootOptions, 'costLimit'> {
+): Pick<RuntimeBootOptions, 'costLimit'> {
   return { costLimit: cost };
 }
 
@@ -1618,7 +1618,7 @@ function envInteger(
   if (value === undefined || value.trim() === '') return undefined;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min) {
-    throw new KernelBootError(`${name} must be a whole number >= ${min}, got '${value}'`);
+    throw new RuntimeBootError(`${name} must be a whole number >= ${min}, got '${value}'`);
   }
   return parsed;
 }
@@ -1632,7 +1632,7 @@ function envNumber(
   if (value === undefined || value.trim() === '') return undefined;
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < min) {
-    throw new KernelBootError(`${name} must be a number >= ${min}, got '${value}'`);
+    throw new RuntimeBootError(`${name} must be a number >= ${min}, got '${value}'`);
   }
   return parsed;
 }
@@ -1677,7 +1677,7 @@ export function resolveAuditConfig(env: NodeJS.ProcessEnv = process.env): Proces
  * scope is for.
  */
 export type ProcessRealmConfig = {
-  realmRoots: NonNullable<KernelBootOptions['realmRoots']>;
+  realmRoots: NonNullable<RuntimeBootOptions['realmRoots']>;
 };
 
 export function resolveRealmConfig(env: NodeJS.ProcessEnv = process.env): ProcessRealmConfig {
@@ -1686,17 +1686,17 @@ export function resolveRealmConfig(env: NodeJS.ProcessEnv = process.env): Proces
   for (const entry of splitEnvList(env.ZEUS_REALM_ENTERPRISE)) {
     const separator = entry.indexOf('::');
     if (separator < 0) {
-      throw new KernelBootError(
+      throw new RuntimeBootError(
         `ZEUS_REALM_ENTERPRISE entries are "<root>::<tenant>", got '${entry}' (the tenant is what keeps an enterprise realm from being org-visible)`,
       );
     }
     const root = entry.slice(0, separator).trim();
     const tenant = entry.slice(separator + 2).trim();
-    if (!root) throw new KernelBootError(`ZEUS_REALM_ENTERPRISE entry has an empty root: '${entry}'`);
+    if (!root) throw new RuntimeBootError(`ZEUS_REALM_ENTERPRISE entry has an empty root: '${entry}'`);
     try {
       normalizeTenant(tenant);
     } catch (error) {
-      throw new KernelBootError(`ZEUS_REALM_ENTERPRISE entry '${entry}' has an unusable tenant: ${(error as Error).message}`);
+      throw new RuntimeBootError(`ZEUS_REALM_ENTERPRISE entry '${entry}' has an unusable tenant: ${(error as Error).message}`);
     }
     roots.push({ root, type: 'enterprise', tenant });
   }
@@ -1708,16 +1708,16 @@ function splitEnvList(value: string | undefined): string[] {
 }
 
 /**
- * E4.8: parse `ZEUS_VASSAL_SEEDS` — a comma list of card URLs, optionally each
- * carrying its vassal bearer after `|` (e.g. `"https://…/agent-card|token-1"`).
+ * E4.8: parse `ZEUS_EXECUTOR_SEEDS` — a comma list of card URLs, optionally each
+ * carrying its executor bearer after `|` (e.g. `"https://…/agent-card|token-1"`).
  * `|` is unambiguous: it is not a legal raw character in an RFC 3986 URL, so a
  * card URL can never contain it unencoded. A plain URL registers with no token.
  */
-export type ProcessVassalSeedsConfig = NonNullable<KernelBootOptions['vassalSeeds']>;
+export type ProcessExecutorSeedsConfig = NonNullable<RuntimeBootOptions['executorSeeds']>;
 
-export function resolveVassalSeedsConfig(env: NodeJS.ProcessEnv = process.env): ProcessVassalSeedsConfig {
-  const seeds: ProcessVassalSeedsConfig = [];
-  for (const entry of splitEnvList(env.ZEUS_VASSAL_SEEDS)) {
+export function resolveExecutorSeedsConfig(env: NodeJS.ProcessEnv = process.env): ProcessExecutorSeedsConfig {
+  const seeds: ProcessExecutorSeedsConfig = [];
+  for (const entry of splitEnvList(env.ZEUS_EXECUTOR_SEEDS)) {
     const separator = entry.indexOf('|');
     if (separator < 0) {
       seeds.push(entry);
@@ -1727,10 +1727,10 @@ export function resolveVassalSeedsConfig(env: NodeJS.ProcessEnv = process.env): 
     const token = entry.slice(separator + 1).trim();
     // Parse errors must not echo the entry: the token segment after '|' (and any
     // URL userinfo) is a credential, and boot errors travel into logs/audit.
-    if (!cardUrl) throw new KernelBootError('vassal seed entry has an empty card URL before \'|\'');
+    if (!cardUrl) throw new RuntimeBootError('executor seed entry has an empty card URL before \'|\'');
     if (!token) {
-      throw new KernelBootError(
-        `vassal seed entry '${redactUrl(cardUrl)}' has an empty token after '|'`,
+      throw new RuntimeBootError(
+        `executor seed entry '${redactUrl(cardUrl)}' has an empty token after '|'`,
       );
     }
     seeds.push({ cardUrl, token });

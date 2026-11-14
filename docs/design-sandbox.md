@@ -48,7 +48,7 @@ Zeus 内核本身是纯 TS 库，不执行 Agent 的模型代码；但"代码在
 
 ### 3.2 隔离清单（IsolationManifest）
 
-连接器/技能在注册时声明（与技能 spec、fealty 声明同处管理）：
+连接器/技能在注册时声明（与技能 spec、handshake 声明同处管理）：
 
 ```
 fs:      { read: [realmId/path...], write: [realmId/path...] }   // 必须是已授权 Realm 的子集
@@ -63,7 +63,7 @@ exec:    { command, args(固定形参), env(白名单) }                  // 不
 
 - 隔离闸在**注册/启动**；execute 授权闸（delegation）在**每次写动作**；护栏（S8）在**内容**；三者不互相替代。
 - 资源配额与 backpressure 的并发 Semaphore、S9 的 wall-time 预算共用度量口径，但执行点不同（一个限并发、一个限钱、一个限单进程资源）。
-- 子进程生命周期纳入 KernelSnapshot 语义：崩溃/重启后连接器的重连与 S13 恢复分类一致（不可信子进程崩溃不自动重连 N 次，计入失败恢复链）。
+- 子进程生命周期纳入 RuntimeSnapshot 语义：崩溃/重启后连接器的重连与 S13 恢复分类一致（不可信子进程崩溃不自动重连 N 次，计入失败恢复链）。
 
 ## 4. 落地接口草案（设计级，未落码）
 

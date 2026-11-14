@@ -204,8 +204,8 @@ describe('arbitrateSplit (design §3.1 gating)', () => {
   }
 
   const stances = [
-    { stance: 'go', vassals: ['a'], summary: 'green' },
-    { stance: 'hold', vassals: ['b'], summary: 'red' },
+    { stance: 'go', executors: ['a'], summary: 'green' },
+    { stance: 'hold', executors: ['b'], summary: 'red' },
   ];
 
   it('adopts a high-confidence calibrated arbitration', async () => {
@@ -233,7 +233,7 @@ describe('arbitrateSplit (design §3.1 gating)', () => {
 
   it('never calls the backend when fewer than two stances remain', async () => {
     const spy = spyBackend({ choice: 'go', probabilities: {}, confidence: 0.99, calibrated: true, decisionAt: 't' });
-    const outcome = await arbitrateSplit({ backend: spy.backend, stances: [{ stance: 'go', vassals: ['a'] }], runId: 'r', realm: 'personal', ruleReason: '' });
+    const outcome = await arbitrateSplit({ backend: spy.backend, stances: [{ stance: 'go', executors: ['a'] }], runId: 'r', realm: 'personal', ruleReason: '' });
     expect(spy.calls).toBe(0);
     expect(outcome.concluded).toBe(false);
   });
@@ -269,7 +269,7 @@ describe('judgeDecision evidence', () => {
     const result: FanOutResult = {
       intentId: 'i', runId: 'r', skill: 's', realm: 'personal',
       branches: [], stream: [],
-      positions: [{ vassal: 'a', stance: 'approve' }, { vassal: 'b', stance: 'reject' }],
+      positions: [{ executor: 'a', stance: 'approve' }, { executor: 'b', stance: 'reject' }],
       decision: { rule: 'majority', conclusion: 'approve', positions: [], reason: '2 approve vs 1 reject' },
       conflicts: [], status: 'completed', createdAt: 't',
     };

@@ -10,12 +10,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { JsonlEvalRunsStore } from '../src/evals/runs-store.js';
 import type { EvalRunRecord } from '../src/evals/runs-store.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 
 function record(runId: string, suite: string, model: string, ranAt: string): EvalRunRecord {
@@ -45,7 +45,7 @@ describe('W4-2 eval-runs query endpoint', () => {
 
   async function serverWith(store: JsonlEvalRunsStore): Promise<FastifyInstance> {
     return createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       evalRunsStore: store,
@@ -105,7 +105,7 @@ describe('W4-2 eval-runs query endpoint', () => {
 
   it('is not mounted without an eval-runs store', async () => {
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
     });

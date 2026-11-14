@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { SkillRegistry } from '../src/skills/registry.js';
 import { MentorshipLedger } from '../src/skills/mentor.js';
 import type { SkillSpec, TeamResolution } from '../src/skills/types.js';
 import type { MentorshipRecord } from '../src/skills/mentor.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = () => new Date('2026-09-24T00:00:00.000Z');
 
@@ -33,7 +33,7 @@ async function server(): Promise<{ app: FastifyInstance; skills: SkillRegistry }
   const skills = new SkillRegistry(NOW);
   const mentorships = new MentorshipLedger(skills, NOW);
   app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     skillRegistry: skills,
@@ -297,7 +297,7 @@ describe('E2.5 mentorship HTTP', () => {
   it('is not mounted when no ledger is wired', async () => {
     const skills = new SkillRegistry(NOW);
     app = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       skillRegistry: skills,

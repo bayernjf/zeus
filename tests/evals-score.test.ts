@@ -38,7 +38,7 @@ function case_(expect: EvalExpectation[], overrides: Partial<EvalCase> = {}): Ev
 }
 
 function audit(decision: AuditEntry['decision']): AuditEntry {
-  return { ts: 't1', vassal: 'a1', decision };
+  return { ts: 't1', executor: 'a1', decision };
 }
 
 describe('scoreEvalRun (S7 V1)', () => {
@@ -75,14 +75,14 @@ describe('scoreEvalRun (S7 V1)', () => {
 
   it('passes selection when all must-include targets are present', () => {
     const c = case_([{ selection: { mustInclude: ['a1', 'a2'] }, severity: 'block' }]);
-    const out = outcome({ branches: [{ vassal: 'a1', runId: 'r1', ok: true, events: [] }, { vassal: 'a2', runId: 'r2', ok: true, events: [] }] });
+    const out = outcome({ branches: [{ executor: 'a1', runId: 'r1', ok: true, events: [] }, { executor: 'a2', runId: 'r2', ok: true, events: [] }] });
     const r = scoreEvalRun(c, { outcome: out, audit: [], events: [] });
     expect(r.checks[0]).toMatchObject({ family: 'selection', passed: true });
   });
 
   it('fails selection on an excluded target and an unexpected diversion', () => {
     const c = case_([{ selection: { mustExclude: ['a3'], diversionAllowed: false }, severity: 'block' }]);
-    const out = outcome({ branches: [{ vassal: 'a3', runId: 'r1', ok: true, events: [] }] });
+    const out = outcome({ branches: [{ executor: 'a3', runId: 'r1', ok: true, events: [] }] });
     const r = scoreEvalRun(c, { outcome: out, audit: [audit('chain-switched')], events: [] });
     expect(r.checks[0]!.passed).toBe(false);
     expect(r.checks[0]!.detail).toContain('unexpected');
@@ -90,14 +90,14 @@ describe('scoreEvalRun (S7 V1)', () => {
 
   it('passes evidence when the conclusion cites the required sources', () => {
     const c = case_([{ evidence: { mustCite: ['doc-a'], forbidBareAssertions: true }, severity: 'block' }]);
-    const out = outcome({ positions: [{ vassal: 'a1', stance: 'x', rationale: 'per doc-a' }] });
+    const out = outcome({ positions: [{ executor: 'a1', stance: 'x', rationale: 'per doc-a' }] });
     const r = scoreEvalRun(c, { outcome: out, audit: [], events: [] });
     expect(r.checks[0]!.passed).toBe(true);
   });
 
   it('block-fails a bare assertion with no rationale (verify-before-asserting)', () => {
     const c = case_([{ evidence: { forbidBareAssertions: true }, severity: 'block' }]);
-    const out = outcome({ positions: [{ vassal: 'a1', stance: 'x' }] });
+    const out = outcome({ positions: [{ executor: 'a1', stance: 'x' }] });
     const r = scoreEvalRun(c, { outcome: out, audit: [], events: [] });
     expect(r.checks[0]).toMatchObject({ passed: false, severity: 'block' });
     expect(r.checks[0]!.detail).toContain('bare assertion');
@@ -105,7 +105,7 @@ describe('scoreEvalRun (S7 V1)', () => {
 
   it('fails evidence when a required citation is missing', () => {
     const c = case_([{ evidence: { mustCite: ['doc-b'] }, severity: 'block' }]);
-    const out = outcome({ positions: [{ vassal: 'a1', stance: 'x', rationale: 'per doc-a' }] });
+    const out = outcome({ positions: [{ executor: 'a1', stance: 'x', rationale: 'per doc-a' }] });
     const r = scoreEvalRun(c, { outcome: out, audit: [], events: [] });
     expect(r.checks[0]!.passed).toBe(false);
     expect(r.checks[0]!.detail).toContain('doc-b');
@@ -126,8 +126,8 @@ describe('scoreEvalRun (S7 V1)', () => {
   it('passes a signals requirement only when the audit detail signals segment lists it', () => {
     const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
     const hit: AuditEntry = {
-      ts: 't1', vassal: '(intent)', decision: 'guardrail-annotated',
-      detail: 'intent x: appendix entry f1 annotated (data-boundary:kernel-resolved-realm, signals external-url)',
+      ts: 't1', executor: '(intent)', decision: 'guardrail-annotated',
+      detail: 'intent x: appendix entry f1 annotated (data-boundary:runtime-resolved-realm, signals external-url)',
     };
     const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
     expect(r.checks[0]!.passed).toBe(true);
@@ -136,8 +136,8 @@ describe('scoreEvalRun (S7 V1)', () => {
   it('fails a signals requirement when the row is the default plan-mode label with no signals', () => {
     const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
     const hit: AuditEntry = {
-      ts: 't1', vassal: '(intent)', decision: 'guardrail-annotated',
-      detail: 'intent x: appendix entry f1 annotated (data-boundary:kernel-resolved-realm)',
+      ts: 't1', executor: '(intent)', decision: 'guardrail-annotated',
+      detail: 'intent x: appendix entry f1 annotated (data-boundary:runtime-resolved-realm)',
     };
     const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
     expect(r.checks[0]!.passed).toBe(false);
@@ -150,8 +150,8 @@ describe('scoreEvalRun (S7 V1)', () => {
     // Matching must stay inside the `signals …` segment.
     const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
     const hit: AuditEntry = {
-      ts: 't1', vassal: '(intent)', decision: 'guardrail-annotated',
-      detail: 'intent eval-guardrails-external-url-memory: appendix entry f1 annotated (data-boundary:kernel-resolved-realm)',
+      ts: 't1', executor: '(intent)', decision: 'guardrail-annotated',
+      detail: 'intent eval-guardrails-external-url-memory: appendix entry f1 annotated (data-boundary:runtime-resolved-realm)',
     };
     const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
     expect(r.checks[0]!.passed).toBe(false);
@@ -159,7 +159,7 @@ describe('scoreEvalRun (S7 V1)', () => {
 
   it('scores the branch budget and keeps cost-tokens not-assessable without a ledger', () => {
     const c = case_([{ budget: { maxBranches: 2, maxCostTokens: 100 }, severity: 'block' }]);
-    const out = outcome({ branches: [{ vassal: 'a1', runId: 'r1', ok: true, events: [] }, { vassal: 'a2', runId: 'r2', ok: true, events: [] }, { vassal: 'a3', runId: 'r3', ok: true, events: [] }] });
+    const out = outcome({ branches: [{ executor: 'a1', runId: 'r1', ok: true, events: [] }, { executor: 'a2', runId: 'r2', ok: true, events: [] }, { executor: 'a3', runId: 'r3', ok: true, events: [] }] });
     const r = scoreEvalRun(c, { outcome: out, audit: [], events: [] });
     const branches = r.checks.find((ch) => ch.name === 'budget.branches');
     expect(branches).toMatchObject({ passed: false, detail: '3 branches > cap 2' });
@@ -216,7 +216,7 @@ describe('scoreEvalRun (S7 V1)', () => {
 
   it('passes planning when the plan-selected row names the expected planner', () => {
     const c = case_([{ planning: { expected: 'selected', planner: 'planner-a' }, severity: 'block' }]);
-    const hit: AuditEntry = { ts: 't1', vassal: '(planning)', decision: 'plan-selected', detail: 'planner planner-a: 1 nodes, coverage 0.5' };
+    const hit: AuditEntry = { ts: 't1', executor: '(planning)', decision: 'plan-selected', detail: 'planner planner-a: 1 nodes, coverage 0.5' };
     const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
     expect(r.checks[0]).toMatchObject({ family: 'planning', passed: true });
   });
@@ -245,7 +245,7 @@ describe('scoreEvalRun (S7 V1)', () => {
     const c = case_([{ streaming: { deltaCountAtLeast: 1, previewNotInDecision: true }, severity: 'block' }]);
     const out = outcome({ decision: { rule: 'unanimous', conclusion: 'approve', positions: [], reason: '' } });
     const events = [
-      { type: 'branch-delta', intentId: 'i1', runId: 'r1', vassal: 'a1', seq: 1, preview: 'PREVIEW-MARKER-ONE', at: 't1' } as const,
+      { type: 'branch-delta', intentId: 'i1', runId: 'r1', executor: 'a1', seq: 1, preview: 'PREVIEW-MARKER-ONE', at: 't1' } as const,
     ];
     const r = scoreEvalRun(c, { outcome: out, audit: [], events });
     expect(r.checks[0]).toMatchObject({ family: 'streaming', passed: true });
@@ -253,9 +253,9 @@ describe('scoreEvalRun (S7 V1)', () => {
 
   it('fails streaming when a preview leaked into a branch rationale', () => {
     const c = case_([{ streaming: { previewNotInDecision: true }, severity: 'block' }]);
-    const out = outcome({ positions: [{ vassal: 'a1', stance: 'approve', rationale: 'per PREVIEW-MARKER-ONE' }] });
+    const out = outcome({ positions: [{ executor: 'a1', stance: 'approve', rationale: 'per PREVIEW-MARKER-ONE' }] });
     const events = [
-      { type: 'branch-delta', intentId: 'i1', runId: 'r1', vassal: 'a1', seq: 1, preview: 'PREVIEW-MARKER-ONE', at: 't1' } as const,
+      { type: 'branch-delta', intentId: 'i1', runId: 'r1', executor: 'a1', seq: 1, preview: 'PREVIEW-MARKER-ONE', at: 't1' } as const,
     ];
     const r = scoreEvalRun(c, { outcome: out, audit: [], events });
     expect(r.checks[0]!.passed).toBe(false);

@@ -4,36 +4,36 @@
  *
  *   ZEUS_PORT=8787 ZEUS_HOST=127.0.0.1 \
  *   ZEUS_INTERNAL_TOKEN=... \
- *   ZEUS_STATE_FILE=./data/kernel-state.json \
+ *   ZEUS_STATE_FILE=./data/runtime-state.json \
  *   ZEUS_RSK_KEY_ID=zeus-rsk-2026-09 ZEUS_RSK_KEY_FILE=./secrets/rsk-private.pem \
  *   node dist/http/serve.js
  *
  * Persistence (E5.3): when ZEUS_STATE_FILE is set the registry, oversight queue
  * and orchestrator idempotency tables are restored on boot and atomically saved
- * on graceful shutdown (SIGINT/SIGTERM). Without it the kernel stays in-memory.
+ * on graceful shutdown (SIGINT/SIGTERM). Without it the runtime stays in-memory.
  *
  * Production RSK: NODE_ENV=production refuses to boot without ZEUS_RSK_KEY or
  * ZEUS_RSK_KEY_FILE (generate a pair with `node scripts/gen-rsk-key.mjs`). The
  * public half is published on the public face at GET /api/roster/keys; key
  * storage and rotation remain a deployment-slice concern tracked by deferred #7
- * (runbook: design-fealty-signing §5.4). Without
+ * (runbook: design-handshake-signing §5.4). Without
  * a key in other environments an ephemeral in-memory key is generated (dev only
  * — restarts invalidate every signature, and with it the published key).
  */
 import { createRequire } from 'node:module';
 import {
-  bootKernel,
+  bootRuntime,
   concurrencyBootOptions,
   costBootOptions,
-  KernelBootError,
+  RuntimeBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
   resolveCostConfig,
   resolveDecisionConfigWithHub,
   resolveRealmConfig,
-  resolveVassalSeedsConfig,
+  resolveExecutorSeedsConfig,
 } from '../state/boot.js';
-import { kernelStats } from '../state/stats.js';
+import { runtimeStats } from '../state/stats.js';
 import { createDecisionTraceSink } from '../observability/decision-trace-sink.js';
 import { createDecisionTraceBuffer } from '../observability/trace.js';
 import { OtlpTraceExporter } from '../observability/exporter.js';
@@ -101,7 +101,7 @@ function mirrorAuditEntry(entry: { detail?: string }): string {
 function parseIntPositive(name: string, raw: string): number {
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
-    throw new KernelBootError(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
+    throw new RuntimeBootError(`${name} must be a positive integer, got ${JSON.stringify(raw)}`);
   }
   return value;
 }
@@ -147,7 +147,7 @@ function parseOtlpHeaders(raw: string | undefined, log: (msg: string) => void): 
 
 async function main(): Promise<void> {
   // T-C: build the decision backend (Jev preferred, LLM fallback) and the
-  // opt-in E1.3 judge from process env. No keys => null => rules-only kernel,
+  // opt-in E1.3 judge from process env. No keys => null => rules-only runtime,
   // identical to the pre-backend behaviour (deployment keys are operator-owned).
   // TracePort v1 §6 (W2-1): opt-in per-call decision ledger — JSONL, 0600,
   // redacted and truncated per D-4. Unset = no ledger, decision flow unchanged.
@@ -197,12 +197,12 @@ async function main(): Promise<void> {
     log.warn('judge-disabled', 'ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off');
   }
   // E3.5 / deferred #14: the same Ed25519 key that seals the roster is this
-  // process's driver key, so a write grant the kernel did not sign (or one a
-  // vassal authored) cannot authorize an enterprise write. Loaded before the
-  // kernel because the kernel needs it as the trust anchor.
+  // process's operator key, so a write grant the runtime did not sign (or one a
+  // executor authored) cannot authorize an enterprise write. Loaded before the
+  // runtime because the runtime needs it as the trust anchor.
   const { signer, ephemeral } = await loadRskSigner();
-  const kernel = await bootKernel({
-    driverSigner: signer,
+  const runtime = await bootRuntime({
+    operatorSigner: signer,
     onAuditError: message => {
       log.error('audit-persist-failed', message);
     },
@@ -225,17 +225,17 @@ async function main(): Promise<void> {
       ? { intentRetentionWindowMs: parseIntPositive('ZEUS_INTENT_RETENTION_WINDOW_MS', process.env.ZEUS_INTENT_RETENTION_WINDOW_MS) }
       : {}),
     // A-01: the resolved config goes across whole; copying it by hand is how the
-    // per-vassal cap was validated at boot and then never reached the kernel.
+    // per-executor cap was validated at boot and then never reached the runtime.
     ...concurrencyBootOptions(concurrency),
     ...costBootOptions(cost),
-    ...(process.env.ZEUS_VASSAL_SEEDS
-      ? { vassalSeeds: resolveVassalSeedsConfig(process.env) }
+    ...(process.env.ZEUS_EXECUTOR_SEEDS
+      ? { executorSeeds: resolveExecutorSeedsConfig(process.env) }
       : {}),
     ...(realm.realmRoots.length ? { realmRoots: realm.realmRoots } : {}),
     ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
     // E4.11 (design-a2a-push): Zeus's own push receiver address. Armed intents
     // carry it as pushNotificationConfig; the callback endpoint is mounted with
-    // the same gate as the driver token (unset → not mounted).
+    // the same gate as the operator token (unset → not mounted).
     ...(process.env.ZEUS_A2A_PUSH_URL
       ? {
           pushReceiver: {
@@ -249,7 +249,7 @@ async function main(): Promise<void> {
     // S6 V3: the two observability files are opt-in by path. Booted without them
     // the process is exactly V1/V2 - live metrics window only, no trace export -
     // and `GET /api/metrics/history` is not mounted at all. Before this they were
-    // reachable only from bootKernel callers: the shipped entry never passed the
+    // reachable only from bootRuntime callers: the shipped entry never passed the
     // options, so the endpoint existed in the library and was dead in deployment.
     ...(process.env.ZEUS_TRACE_EXPORT_FILE ? { traceExportFile: process.env.ZEUS_TRACE_EXPORT_FILE } : {}),
     ...(process.env.ZEUS_METRICS_HISTORY_FILE ? { metricsHistoryFile: process.env.ZEUS_METRICS_HISTORY_FILE } : {}),
@@ -284,13 +284,13 @@ async function main(): Promise<void> {
   log.info('branch-concurrency', undefined, {
     maxConcurrentBranches: concurrency.maxConcurrentBranches ?? 'unbounded',
     branchQueueLimit: concurrency.branchQueueLimit ?? 'unbounded',
-    maxConcurrentPerVassal: concurrency.maxConcurrentPerVassal ?? 'unbounded',
+    maxConcurrentPerExecutor: concurrency.maxConcurrentPerExecutor ?? 'unbounded',
   });
-  if (kernel.auditFile) {
-    const ceiling = kernel.auditMaxBytes === Number.POSITIVE_INFINITY
+  if (runtime.auditFile) {
+    const ceiling = runtime.auditMaxBytes === Number.POSITIVE_INFINITY
       ? 'no ceiling'
-      : `${Math.round((kernel.auditMaxBytes ?? 0) / 1048576)}MiB x ${kernel.auditKeep ?? 0} kept`;
-    log.info('audit-log', undefined, { file: kernel.auditFile, ceiling });
+      : `${Math.round((runtime.auditMaxBytes ?? 0) / 1048576)}MiB x ${runtime.auditKeep ?? 0} kept`;
+    log.info('audit-log', undefined, { file: runtime.auditFile, ceiling });
   }
   // Both switches print their resolved value, "off" included: an operator who
   // cannot tell whether the history file was configured reads an unmounted
@@ -310,7 +310,7 @@ async function main(): Promise<void> {
   // The operator's first question after "is it up" is "which realms did it
   // mount, and under which ids" - the ids otherwise only appear on the
   // bearer face, which presupposes knowing the bearer face exists.
-  for (const connection of kernel.realmStore?.connections() ?? []) {
+  for (const connection of runtime.realmStore?.connections() ?? []) {
     const scope = connection.tenant
       ? [connection.tenant.org, connection.tenant.department, connection.tenant.member].filter(Boolean).join('/')
       : undefined;
@@ -324,21 +324,21 @@ async function main(): Promise<void> {
   }
   log.info(
     'enterprise-writes',
-    kernel.driverGrantAuthority === 'signed'
-      ? `accepting only driver grants signed by "${kernel.driverSigner?.keyId}"`
-      : 'NO driver key configured - grants are checked for shape/realm/expiry only, so anything that can call write() can author its own authorization'
+    runtime.operatorGrantAuthority === 'signed'
+      ? `accepting only operator grants signed by "${runtime.operatorSigner?.keyId}"`
+      : 'NO operator key configured - grants are checked for shape/realm/expiry only, so anything that can call write() can author its own authorization'
   );
-  if (kernel.stateFile) {
-    if (kernel.restoredFromSnapshot) {
-      const intents = kernel.snapshot?.orchestrator.intents.length ?? 0;
-      log.info('kernel-state-restored', undefined, {
-        file: kernel.stateFile,
-        vassals: kernel.registry.listAll().length,
-        escalations: kernel.oversight.list().length,
+  if (runtime.stateFile) {
+    if (runtime.restoredFromSnapshot) {
+      const intents = runtime.snapshot?.orchestrator.intents.length ?? 0;
+      log.info('runtime-state-restored', undefined, {
+        file: runtime.stateFile,
+        executors: runtime.registry.listAll().length,
+        escalations: runtime.oversight.list().length,
         intents,
       });
     } else {
-      log.info('kernel-state-file-missing', undefined, { file: kernel.stateFile });
+      log.info('runtime-state-file-missing', undefined, { file: runtime.stateFile });
     }
   }
 
@@ -490,7 +490,7 @@ async function main(): Promise<void> {
   // §2.1); ZEUS_HOST / ZEUS_PORT only override them, so the process entry and the
   // published `zeus/http` API cannot drift into two different answers.
   const app = await startServer({
-    registry: kernel.registry,
+    registry: runtime.registry,
     signer,
     // One line on stderr at boot is not a record an operator can consult later, so
     // the fact the loader knows - whether this key survives a restart - is passed
@@ -501,14 +501,14 @@ async function main(): Promise<void> {
       ? { corsOrigins: process.env.ZEUS_CORS_ORIGINS.split(',').map(s => s.trim()).filter(s => s.length > 0) }
       : {}),
     version: pkg.version,
-    orchestrator: kernel.orchestrator,
-    dagRunner: kernel.dagRunner,
-    oversight: kernel.oversight,
-    metrics: kernel.metrics,
-    progressHub: kernel.progressHub,
-    ...(kernel.decisionTraceBuffer ? { decisionTraceBuffer: kernel.decisionTraceBuffer } : {}),
+    orchestrator: runtime.orchestrator,
+    dagRunner: runtime.dagRunner,
+    oversight: runtime.oversight,
+    metrics: runtime.metrics,
+    progressHub: runtime.progressHub,
+    ...(runtime.decisionTraceBuffer ? { decisionTraceBuffer: runtime.decisionTraceBuffer } : {}),
     // TracePort v1 §5 (D-5): same instance serves the cross-intent query face.
-    ...(kernel.traceExporter ? { traceExporter: kernel.traceExporter } : {}),
+    ...(runtime.traceExporter ? { traceExporter: runtime.traceExporter } : {}),
     // design-evals W4-2: the eval-runs store is written by the offline runner
     // (opt-in --runs-file); the serve process only mounts the read face over
     // the same file. Unset = the query endpoint is not mounted.
@@ -525,52 +525,52 @@ async function main(): Promise<void> {
     // deferred #42: replay/approve-resume read the out-window archive when the
     // state table misses; the retention mode is surfaced on replay misses so an
     // eviction-mode 404 is not mistaken for "never existed".
-    ...(kernel.intentArchive ? { intentArchive: kernel.intentArchive } : {}),
-    retention: kernel.retention,
-    ...(kernel.skillRegistry ? { skillRegistry: kernel.skillRegistry } : {}),
-    ...(kernel.mentorshipLedger ? { mentorshipLedger: kernel.mentorshipLedger } : {}),
-    ...(kernel.orgRegistry ? { orgRegistry: kernel.orgRegistry } : {}),
-    ...(kernel.memoryStore ? { memoryStore: kernel.memoryStore } : {}),
+    ...(runtime.intentArchive ? { intentArchive: runtime.intentArchive } : {}),
+    retention: runtime.retention,
+    ...(runtime.skillRegistry ? { skillRegistry: runtime.skillRegistry } : {}),
+    ...(runtime.mentorshipLedger ? { mentorshipLedger: runtime.mentorshipLedger } : {}),
+    ...(runtime.orgRegistry ? { orgRegistry: runtime.orgRegistry } : {}),
+    ...(runtime.memoryStore ? { memoryStore: runtime.memoryStore } : {}),
     // MemoryPort v1 §7: cross-agent consumer face; unset env = face not mounted.
     // MemoryPort v1 §7: namespace-bound consumer tokens ("realm:token,..."
     // comma-separated); unset env = face not mounted at all (fail-closed).
     ...(memoryServiceTokens ? { memoryServiceTokens } : {}),
     memoryServiceAudit: (decision: 'memory-service-call', detail: string) =>
-      kernel.auditSink?.({
+      runtime.auditSink?.({
         ts: new Date().toISOString(),
-        vassal: 'memory',
+        executor: 'memory',
         decision,
         detail,
       }),
     // M-12: retract / forget-subject answer only once the erasure is durable.
-    persistState: () => kernel.saveState(),
-    ...(kernel.realmStore ? { realmStore: kernel.realmStore } : {}),
-    ...(kernel.realmStore
+    persistState: () => runtime.saveState(),
+    ...(runtime.realmStore ? { realmStore: runtime.realmStore } : {}),
+    ...(runtime.realmStore
       ? {
           realmMcp: {
-            realmIds: (kernel.realmStore.connections() ?? []).map(connection => connection.realmId),
+            realmIds: (runtime.realmStore.connections() ?? []).map(connection => connection.realmId),
           },
         }
       : {}),
-    // G6: the read-only kernel tool face (/api/mcp). The flag is constant —
+    // G6: the read-only runtime tool face (/api/mcp). The flag is constant —
     // the route self-gates on internalToken + a mounted backing store, so an
     // exporter-less, memory-less build still mounts nothing.
-    kernelToolsMcp: true,
+    runtimeToolsMcp: true,
     // Inbound A2A (design-inbound-a2a, deferred #19): publish Zeus' own agent
-    // card when the kernel has a skill catalogue to advertise. The card URL is
+    // card when the runtime has a skill catalogue to advertise. The card URL is
     // the public-facing base (ZEUS_PUBLIC_URL when a reverse proxy fronts the
     // process, otherwise the bind defaults the start primitive owns).
-    ...(kernel.skillRegistry
+    ...(runtime.skillRegistry
       ? {
           agentCard: {
             name: 'zeus',
-            description: 'Zeus multi-agent runtime: aggregate intent fan-out and decision surface over pre-connected vassals.',
+            description: 'Zeus multi-agent runtime: aggregate intent fan-out and decision surface over pre-connected executors.',
             url: process.env.ZEUS_PUBLIC_URL ?? `http://${process.env.ZEUS_HOST ?? '127.0.0.1'}:${process.env.ZEUS_PORT ?? '8787'}`,
             version: pkg.version,
             capabilities: { streaming: false, pushNotifications: false, stateTransitionHistory: false },
             defaultInputModes: ['application/json'],
             defaultOutputModes: ['application/json'],
-            skills: kernel.skillRegistry.list().map(spec => ({
+            skills: runtime.skillRegistry.list().map(spec => ({
               id: spec.id,
               name: spec.name,
               description: spec.description ?? '',
@@ -583,30 +583,30 @@ async function main(): Promise<void> {
         }
       : {}),
     // E6.4: the two data domains, their tenant scopes and the grants between them.
-    ...(kernel.domainGrants ? { domainGrants: kernel.domainGrants } : {}),
-    realmAudit: kernel.realmAudit,
+    ...(runtime.domainGrants ? { domainGrants: runtime.domainGrants } : {}),
+    realmAudit: runtime.realmAudit,
     // E3.5 / deferred #14: enterprise write credentials (issue + replay ledger).
-    ...(kernel.driverGrantLedger ? { driverGrantLedger: kernel.driverGrantLedger } : {}),
-    driverGrantAuthority: kernel.driverGrantAuthority,
-    driverGrantAudit: kernel.driverGrantAudit,
+    ...(runtime.operatorGrantLedger ? { operatorGrantLedger: runtime.operatorGrantLedger } : {}),
+    operatorGrantAuthority: runtime.operatorGrantAuthority,
+    operatorGrantAudit: runtime.operatorGrantAudit,
     // deferred #33: issuing an execution delegation is audited separately from
     // the dispatch it authorizes - without this bridge the issuance endpoint
     // hands out tickets while the trail stays silent (inject tests cannot see
     // the process entry, deferred #25 discipline).
-    executionDelegationAudit: kernel.executionDelegationAudit,
+    executionDelegationAudit: runtime.executionDelegationAudit,
     // Self-host loop step 5: the operator-facing delegation-contract face.
-    ...(kernel.delegationContracts ? { delegationContracts: kernel.delegationContracts } : {}),
-    ...(kernel.watches ? { watches: kernel.watches } : {}),
-    runWatchTick: kernel.runWatchTick,
-    delegationContractAudit: kernel.delegationContractAudit,
+    ...(runtime.delegationContracts ? { delegationContracts: runtime.delegationContracts } : {}),
+    ...(runtime.watches ? { watches: runtime.watches } : {}),
+    runWatchTick: runtime.runWatchTick,
+    delegationContractAudit: runtime.delegationContractAudit,
     // E9.1/E9.2: the day-one briefing and the commission gate.
-    ...(kernel.commissionLedger ? { commissions: kernel.commissionLedger } : {}),
-    ...(kernel.connectorRegistry ? { connectorRegistry: kernel.connectorRegistry } : {}),
-    ...(kernel.auditFile ? { auditFile: kernel.auditFile } : {}),
+    ...(runtime.commissionLedger ? { commissions: runtime.commissionLedger } : {}),
+    ...(runtime.connectorRegistry ? { connectorRegistry: runtime.connectorRegistry } : {}),
+    ...(runtime.auditFile ? { auditFile: runtime.auditFile } : {}),
     // The route is conditional on the port being present, so this is the line
     // that decides whether an operator can read the trend at all.
-    ...(kernel.metricsHistory ? { metricsHistory: kernel.metricsHistory } : {}),
-    kernelStats: () => kernelStats(kernel),
+    ...(runtime.metricsHistory ? { metricsHistory: runtime.metricsHistory } : {}),
+    runtimeStats: () => runtimeStats(runtime),
     // Same facts the boot log line prints, now readable over the bearer face.
     decisionStatus: {
       configured: decision.backend !== null,
@@ -646,7 +646,7 @@ async function main(): Promise<void> {
   const boundLabel = typeof bound === 'object' && bound !== null ? `${bound.address}:${bound.port}` : String(bound);
   log.info('listening', undefined, {
     address: `http://${boundLabel}`,
-    faces: `healthz, roster public${process.env.ZEUS_INTERNAL_TOKEN ? ', roster internal + H2 driver API' : ''}`,
+    faces: `healthz, roster public${process.env.ZEUS_INTERNAL_TOKEN ? ', roster internal + H2 operator API' : ''}`,
   });
 
   let shuttingDown = false;
@@ -655,18 +655,18 @@ async function main(): Promise<void> {
     shuttingDown = true;
     log.info('shutdown-signal', undefined, { signal });
     try {
-      await kernel.saveState();
-      if (kernel.stateFile) log.info('kernel-state-saved', undefined, { file: kernel.stateFile });
+      await runtime.saveState();
+      if (runtime.stateFile) log.info('runtime-state-saved', undefined, { file: runtime.stateFile });
     } catch (error) {
-      log.error('kernel-state-save-failed', error instanceof Error ? error.message : String(error));
+      log.error('runtime-state-save-failed', error instanceof Error ? error.message : String(error));
     }
     // M-10: release only after the final snapshot landed (or failed). A failed
     // atomic save leaves the prior file intact, so the lock may still be handed
     // to the next boot.
     try {
-      await kernel.releaseLock();
+      await runtime.releaseLock();
     } catch (error) {
-      log.error('kernel-state-unlock-failed', error instanceof Error ? error.message : String(error));
+      log.error('runtime-state-unlock-failed', error instanceof Error ? error.message : String(error));
     }
     await app.close();
     process.exit(exitCode);
@@ -688,7 +688,7 @@ main().catch(error => {
   // audit path are configuration facts, not bugs: emit the one line that names
   // what to change and leave the stack to everything else. The structured log
   // keeps the same semantics: named event, error class, message, exit 1.
-  if (error instanceof KernelBootError || error instanceof RealmError || error instanceof RskConfigError) {
+  if (error instanceof RuntimeBootError || error instanceof RealmError || error instanceof RskConfigError) {
     log.error('boot-refused', error.message, { errorClass: error.constructor.name });
     process.exit(1);
   }

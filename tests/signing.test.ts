@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { projectInternalRoster, projectPublicRoster, ROSTER_SCHEMA_VERSION } from '../src/registry/roster.js';
 import {
   attestationMatchesCard,
@@ -45,7 +45,7 @@ describe('canonicalJson (RFC 8785 JCS subset)', () => {
   });
 
   it('leaves printable CJK text unescaped and escapes control characters', () => {
-    expect(canonicalJson({ note: '中文封臣' })).toBe('{"note":"中文封臣"}');
+    expect(canonicalJson({ note: '中文示例' })).toBe('{"note":"中文示例"}');
     expect(canonicalJson('a\nb')).toBe('"a\\nb"');
   });
 
@@ -75,11 +75,11 @@ describe('digestCard', () => {
       name: 'pr-helper',
       url: 'http://x/api/a2a/tasks',
       skills: [{ id: 'create-pr', name: 'Create PR', description: '', tags: [] }],
-      'x-zeus-fealty': {
+      'x-zeus-handshake': {
         version: '1',
         swornTo: 'zeus',
         domain: 'pr-release-control',
-        dataRealms: ['enterprise'],
+        realms: ['enterprise'],
         dataPolicy: 'read-task-scope',
         reportBack: true,
         escalationPolicy: 'auto',
@@ -88,27 +88,27 @@ describe('digestCard', () => {
     };
   }
 
-  it('digests the whole card and the fealty block separately', () => {
-    const { cardDigest, fealtyDigest } = digestCard(card());
+  it('digests the whole card and the handshake block separately', () => {
+    const { cardDigest, handshakeDigest } = digestCard(card());
     expect(cardDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(fealtyDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(cardDigest).not.toBe(fealtyDigest);
+    expect(handshakeDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(cardDigest).not.toBe(handshakeDigest);
   });
 
-  it('changes cardDigest when skills change but keeps fealtyDigest stable', () => {
+  it('changes cardDigest when skills change but keeps handshakeDigest stable', () => {
     const base = digestCard(card());
     const changed = card();
     changed.skills.push({ id: 'merge-pr', name: 'Merge', description: '', tags: [] });
     const after = digestCard(changed);
     expect(after.cardDigest).not.toBe(base.cardDigest);
-    expect(after.fealtyDigest).toBe(base.fealtyDigest);
+    expect(after.handshakeDigest).toBe(base.handshakeDigest);
   });
 
-  it('changes fealtyDigest when any commitment field changes', () => {
+  it('changes handshakeDigest when any commitment field changes', () => {
     const base = digestCard(card());
     const changed = card();
-    changed['x-zeus-fealty']!.dataPolicy = 'none';
-    expect(digestCard(changed).fealtyDigest).not.toBe(base.fealtyDigest);
+    changed['x-zeus-handshake']!.dataPolicy = 'none';
+    expect(digestCard(changed).handshakeDigest).not.toBe(base.handshakeDigest);
   });
 });
 
@@ -136,11 +136,11 @@ function loomCard(): AgentCard {
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
     skills: [{ id: 'generate-content', name: 'Plan content generation', description: 'plan only', tags: ['plan-only'] }],
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: 'content-production',
-      dataRealms: ['enterprise'],
+      realms: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -154,11 +154,11 @@ function prHelperCard(): AgentCard {
     name: 'pr-helper',
     url: 'http://pr.test/api/a2a/tasks',
     skills: [{ id: 'create-pr', name: 'Create pull request', description: 'drafts PRs', tags: ['github'] }],
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: 'pr-release-control',
-      dataRealms: ['enterprise'],
+      realms: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -169,7 +169,7 @@ function prHelperCard(): AgentCard {
 
 async function buildSignedFixture(now: Date, signer: Ed25519MemorySigner, maxAgeSeconds = 3600, attestationTtlSeconds = 86400) {
   const cards: Record<string, AgentCard> = { loom: loomCard(), 'pr-helper': prHelperCard() };
-  const registry = new VassalRegistry(async url => {
+  const registry = new ExecutorRegistry(async url => {
     const name = url.includes('loom') ? 'loom' : 'pr-helper';
     return new Response(JSON.stringify(cards[name]), { status: 200, headers: { 'Content-Type': 'application/json' } });
   });
@@ -187,7 +187,7 @@ async function buildSignedFixture(now: Date, signer: Ed25519MemorySigner, maxAge
 
 const T0 = new Date('2026-09-21T10:00:00.000Z');
 
-describe('signed roster snapshot — design-fealty-signing §8.1', () => {
+describe('signed roster snapshot — design-handshake-signing §8.1', () => {
   it('#1 signs and verifies a snapshot and returns the original snapshot', async () => {
     const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
     const { envelope } = await buildSignedFixture(T0, signer);
@@ -198,13 +198,13 @@ describe('signed roster snapshot — design-fealty-signing §8.1', () => {
     expect(result.snapshot.entries.map(e => e.name).sort()).toEqual(['loom', 'pr-helper']);
   });
 
-  it('#2 fails deep verification when a fealty field is tampered on the card', async () => {
+  it('#2 fails deep verification when a handshake field is tampered on the card', async () => {
     const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
     const { envelope, cards } = await buildSignedFixture(T0, signer);
     const attestation = envelope.attestations.loom!; // fixture keeps loom in the roster
 
     const tampered = structuredClone(cards.loom!);
-    tampered['x-zeus-fealty']!.dataPolicy = 'write';
+    tampered['x-zeus-handshake']!.dataPolicy = 'write';
     expect(attestationMatchesCard(attestation, tampered)).toBe(false);
     expect(attestationMatchesCard(attestation, cards.loom!)).toBe(true);
 
@@ -334,7 +334,7 @@ describe('signed roster snapshot — design-fealty-signing §8.1', () => {
 });
 
 describe('createAttestation', () => {
-  it('binds the vassal name and card url with active status and a TTL window', async () => {
+  it('binds the executor name and card url with active status and a TTL window', async () => {
     const signer = new Ed25519MemorySigner('zeus-rsk-2026-09');
     const card = loomCard();
     const attestation = await createAttestation(
@@ -349,7 +349,7 @@ describe('createAttestation', () => {
       status: 'active',
       keyId: 'zeus-rsk-2026-09',
     });
-    expect(attestation.vassal).toEqual({ name: 'loom', cardUrl: 'http://loom.test/api/a2a/agent-card' });
+    expect(attestation.executor).toEqual({ name: 'loom', cardUrl: 'http://loom.test/api/a2a/agent-card' });
     expect(attestation.issuedAt).toBe('2026-09-21T10:00:00.000Z');
     expect(attestation.expiresAt).toBe('2026-09-21T11:00:00.000Z');
     expect(attestation.sig).toMatch(/^[A-Za-z0-9_-]+$/); // base64url, no padding
@@ -366,7 +366,7 @@ async function buildInternalFixture(
   revokeNames: string[] = ['loom']
 ) {
   const cards: Record<string, AgentCard> = { loom: loomCard(), 'pr-helper': prHelperCard() };
-  const registry = new VassalRegistry(async url => {
+  const registry = new ExecutorRegistry(async url => {
     const name = url.includes('loom') ? 'loom' : 'pr-helper';
     return new Response(JSON.stringify(cards[name]), { status: 200, headers: { 'Content-Type': 'application/json' } });
   });

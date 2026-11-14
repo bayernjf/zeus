@@ -8,18 +8,18 @@ import type { A2AEvent, Task, TaskState } from '../src/a2a/types.js';
 function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
-function ok(vassal: string, state: TaskState = 'completed'): DispatchResult {
-  const task: Task = { kind: 'task', id: `${vassal}-t`, contextId: 'ctx', status: { state }, artifacts: [] };
+function ok(executor: string, state: TaskState = 'completed'): DispatchResult {
+  const task: Task = { kind: 'task', id: `${executor}-t`, contextId: 'ctx', status: { state }, artifacts: [] };
   return { ok: true, task, events: [statusEvent(task.id, state)], injectedHits: [] };
 }
 function failed(): DispatchResult {
-  return { ok: false, reason: 'boom', audit: { ts: 't', vassal: 'v', decision: 'dispatch-failed' } };
+  return { ok: false, reason: 'boom', audit: { ts: 't', executor: 'v', decision: 'dispatch-failed' } };
 }
 function portFor(routes: Record<string, DispatchResult>): DispatchPort {
   return {
     async dispatch(req) {
-      // Test routes cover every vassal the test dispatches to.
-      return routes[req.vassal!]!;
+      // Test routes cover every executor the test dispatches to.
+      return routes[req.executor!]!;
     },
     async cancel() {},
   };
@@ -39,7 +39,7 @@ describe('percentile', () => {
 });
 
 describe('ConcurrencyMetrics collector', () => {
-  it('tracks queue depth, in-flight, peak concurrency and per-vassal stats', () => {
+  it('tracks queue depth, in-flight, peak concurrency and per-executor stats', () => {
     let mono = 0;
     const metrics = new ConcurrencyMetrics({ elapsed: () => (mono += 10) });
     expect(metrics.snapshot().queueDepth).toBe(0);
@@ -48,8 +48,8 @@ describe('ConcurrencyMetrics collector', () => {
     metrics.enqueue();
     expect(metrics.snapshot().queueDepth).toBe(2);
 
-    metrics.branchStarted({ intentId: 'i', runId: 'r:a', vassal: 'a', skill: 's', startedAt: 't' });
-    metrics.branchStarted({ intentId: 'i', runId: 'r:b', vassal: 'b', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:a', executor: 'a', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:b', executor: 'b', skill: 's', startedAt: 't' });
     const active = metrics.snapshot();
     expect(active.inFlight).toBe(2);
     expect(active.maxInFlight).toBe(2);
@@ -62,16 +62,16 @@ describe('ConcurrencyMetrics collector', () => {
     expect(done.finished).toBe(2);
     expect(done.completed).toBe(1);
     expect(done.failed).toBe(1);
-    expect(done.perVassal.a!).toMatchObject({ calls: 1, completed: 1, failureRate: 0 });
-    expect(done.perVassal.b!).toMatchObject({ calls: 1, failed: 1, failureRate: 1 });
-    expect(done.perVassal.a!.latency?.count).toBe(1);
+    expect(done.perExecutor.a!).toMatchObject({ calls: 1, completed: 1, failureRate: 0 });
+    expect(done.perExecutor.b!).toMatchObject({ calls: 1, failed: 1, failureRate: 1 });
+    expect(done.perExecutor.a!.latency?.count).toBe(1);
   });
 
   it('measures queue wait, queue peak and refusals for threshold calibration', () => {
     let mono = 0;
     const metrics = new ConcurrencyMetrics({ elapsed: () => (mono += 10) });
-    const a = { intentId: 'i', runId: 'r:a', vassal: 'a' };
-    const b = { intentId: 'i', runId: 'r:b', vassal: 'b' };
+    const a = { intentId: 'i', runId: 'r:a', executor: 'a' };
+    const b = { intentId: 'i', runId: 'r:b', executor: 'b' };
 
     metrics.enqueue(a); // t=10
     metrics.enqueue(b); // t=20
@@ -93,53 +93,53 @@ describe('ConcurrencyMetrics collector', () => {
 
   it('classifies timeouts separately from failures', () => {
     const metrics = new ConcurrencyMetrics();
-    metrics.branchStarted({ intentId: 'i', runId: 'r:a', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:a', executor: 'a', skill: 's', startedAt: 't' });
     metrics.branchEnded('i', 'r:a', 'a', 'timeout');
     const snap = metrics.snapshot();
     expect(snap.timedOut).toBe(1);
-    expect(snap.perVassal.a!.failureRate).toBe(1);
+    expect(snap.perExecutor.a!.failureRate).toBe(1);
   });
 
   it('counts canceled branches so finished equals the outcome buckets', () => {
     const metrics = new ConcurrencyMetrics();
-    metrics.branchStarted({ intentId: 'i', runId: 'r:a', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:a', executor: 'a', skill: 's', startedAt: 't' });
     metrics.branchEnded('i', 'r:a', 'a', 'completed');
-    metrics.branchStarted({ intentId: 'i', runId: 'r:b', vassal: 'b', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:b', executor: 'b', skill: 's', startedAt: 't' });
     metrics.branchEnded('i', 'r:b', 'b', 'canceled');
 
     const snap = metrics.snapshot();
     expect(snap.canceled).toBe(1);
     expect(snap.completed + snap.failed + snap.timedOut + snap.canceled).toBe(snap.finished);
-    expect(snap.perVassal.b!.canceled).toBe(1);
+    expect(snap.perExecutor.b!.canceled).toBe(1);
   });
 
   it('keeps canceled branches out of the failure rate', () => {
     const metrics = new ConcurrencyMetrics();
-    metrics.branchStarted({ intentId: 'i', runId: 'r:ok', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:ok', executor: 'a', skill: 's', startedAt: 't' });
     metrics.branchEnded('i', 'r:ok', 'a', 'completed');
-    metrics.branchStarted({ intentId: 'i', runId: 'r:bad', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:bad', executor: 'a', skill: 's', startedAt: 't' });
     metrics.branchEnded('i', 'r:bad', 'a', 'failed');
-    metrics.branchStarted({ intentId: 'i', runId: 'r:cancel', vassal: 'a', skill: 's', startedAt: 't' });
+    metrics.branchStarted({ intentId: 'i', runId: 'r:cancel', executor: 'a', skill: 's', startedAt: 't' });
     metrics.branchEnded('i', 'r:cancel', 'a', 'canceled');
 
     // One failure out of two verdicts; the cancel neither helps nor hurts.
-    expect(metrics.snapshot().perVassal.a!.failureRate).toBe(0.5);
+    expect(metrics.snapshot().perExecutor.a!.failureRate).toBe(0.5);
   });
 
   it('does not double-count a repeated start key, so in-flight stays balanced', () => {
     const metrics = new ConcurrencyMetrics();
-    const event = { intentId: 'i', runId: 'r:a', vassal: 'a', skill: 's', startedAt: 't' };
+    const event = { intentId: 'i', runId: 'r:a', executor: 'a', skill: 's', startedAt: 't' };
     metrics.branchStarted(event);
     // A recycled runId collides with a live key; the second start must not push
-    // the vassal's in-flight count above the number of live entries.
+    // the executor's in-flight count above the number of live entries.
     metrics.branchStarted(event);
-    expect(metrics.inFlightByVassalNow('a')).toBe(1);
+    expect(metrics.inFlightByExecutorNow('a')).toBe(1);
 
     metrics.branchEnded('i', 'r:a', 'a', 'completed');
     const snap = metrics.snapshot();
     expect(snap.inFlight).toBe(0);
-    expect(snap.inFlightByVassal.a ?? 0).toBe(0);
-    expect(snap.perVassal.a!.calls).toBe(1);
+    expect(snap.inFlightByExecutor.a ?? 0).toBe(0);
+    expect(snap.perExecutor.a!.calls).toBe(1);
   });
 });
 
@@ -159,10 +159,10 @@ describe('E1.7 Orchestrator integration', () => {
     expect(snap.completed).toBe(1);
     expect(snap.failed).toBe(1);
     expect(snap.maxInFlight).toBe(2);
-    expect(snap.perVassal.loom!.calls).toBe(1);
-    expect(snap.perVassal.atlas!.failed).toBe(1);
-    expect(snap.perVassal.atlas!.failureRate).toBe(1);
-    expect(snap.perVassal.loom!.latency?.count).toBe(1);
+    expect(snap.perExecutor.loom!.calls).toBe(1);
+    expect(snap.perExecutor.atlas!.failed).toBe(1);
+    expect(snap.perExecutor.atlas!.failureRate).toBe(1);
+    expect(snap.perExecutor.loom!.latency?.count).toBe(1);
     // unbounded dispatch: nothing stays queued after the fan-out resolves
     expect(snap.queueDepth).toBe(0);
   });

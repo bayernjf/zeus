@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { FsRealmStore } from '../src/realm/store.js';
@@ -13,7 +13,7 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { Task, TaskState } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = new Date('2026-09-25T00:00:00.000Z');
 
@@ -25,7 +25,7 @@ function okResult(): DispatchResult {
 type Seen = { requests: DispatchRequest[] };
 
 /** A port that records what actually reached dispatch — the only way to prove
- *  the kernel-injected hits, not the caller's claim, are what a vassal saw. */
+ *  the runtime-injected hits, not the caller's claim, are what a executor saw. */
 function spyPort(seen: Seen): DispatchPort {
   return {
     async dispatch(request) {
@@ -56,7 +56,7 @@ async function harness(options: { withRealmStore?: boolean } = {}) {
 
   const seen: Seen = { requests: [] };
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('k'),
     internalToken: TOKEN,
     orchestrator: new Orchestrator(lookup, spyPort(seen), { now: () => NOW }),
@@ -106,9 +106,9 @@ describe('HTTP E6.4 — the domains face', () => {
     close = () => h.app.close();
     cleanup = () => rmSync(h.sandbox, { recursive: true, force: true });
 
-    // No internalToken configured: the whole driver face stays unmounted.
+    // No internalToken configured: the whole operator face stays unmounted.
     const open = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('k'),
       realmStore: h.store,
       domainGrants: h.grants,
@@ -130,7 +130,7 @@ describe('HTTP E6.4 — the domains face', () => {
       method: 'POST',
       url: '/api/domains/grants',
       headers: AUTH,
-      payload: { subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'driver', reason: 'review', nonce: 'n1' },
+      payload: { subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'operator', reason: 'review', nonce: 'n1' },
     });
     expect(created.statusCode).toBe(201);
     const grant = created.json() as { grantId: string; subject: string; reason?: string };
@@ -154,15 +154,15 @@ describe('HTTP E6.4 — the domains face', () => {
       h.app.inject({ method: 'POST', url: '/api/domains/grants', headers: AUTH, payload });
 
     // A grant only ever opens personal -> enterprise; the reverse is not for sale.
-    expect((await post({ subject: 'jev', realmId: h.personalRealmId, access: 'read', grantedBy: 'driver' })).statusCode).toBe(400);
-    expect((await post({ subject: 'jev', realmId: 'realm-nope', access: 'read', grantedBy: 'driver' })).statusCode).toBe(404);
-    expect((await post({ subject: 'jev', realmId: h.engRealmId, grantedBy: 'driver' })).statusCode).toBe(400);
-    expect((await post({ subject: 'jev', realmId: h.engRealmId, access: 'delete', grantedBy: 'driver' })).statusCode).toBe(400);
-    expect((await post({ subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'driver', expiresAt: 'next tuesday' })).statusCode).toBe(400);
+    expect((await post({ subject: 'jev', realmId: h.personalRealmId, access: 'read', grantedBy: 'operator' })).statusCode).toBe(400);
+    expect((await post({ subject: 'jev', realmId: 'realm-nope', access: 'read', grantedBy: 'operator' })).statusCode).toBe(404);
+    expect((await post({ subject: 'jev', realmId: h.engRealmId, grantedBy: 'operator' })).statusCode).toBe(400);
+    expect((await post({ subject: 'jev', realmId: h.engRealmId, access: 'delete', grantedBy: 'operator' })).statusCode).toBe(400);
+    expect((await post({ subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'operator', expiresAt: 'next tuesday' })).statusCode).toBe(400);
 
-    const first = await post({ subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'driver', nonce: 'same' });
+    const first = await post({ subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'operator', nonce: 'same' });
     expect(first.statusCode).toBe(201);
-    const replay = await post({ subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'driver', nonce: 'same' });
+    const replay = await post({ subject: 'jev', realmId: h.engRealmId, access: 'read', grantedBy: 'operator', nonce: 'same' });
     expect(replay.statusCode).toBe(409);
 
     const missing = await h.app.inject({ method: 'DELETE', url: '/api/domains/grants/nope', headers: AUTH });
@@ -176,30 +176,30 @@ describe('HTTP E6.4 — the domains face', () => {
 
     const probe = (query: string) => h.app.inject({ method: 'GET', url: `/api/domains/access?${query}`, headers: AUTH });
 
-    const down = await probe(`realmId=${h.engRealmId}&subject=pr-helper&kind=vassal&tenant=acme`);
+    const down = await probe(`realmId=${h.engRealmId}&subject=pr-helper&kind=executor&tenant=acme`);
     expect(down.statusCode).toBe(200);
     expect(down.json()).toEqual({ ok: true, via: 'tenant-hierarchy' });
 
-    const sideways = await probe(`realmId=${h.engRealmId}&subject=loom&kind=vassal&tenant=acme/mkt`);
+    const sideways = await probe(`realmId=${h.engRealmId}&subject=loom&kind=executor&tenant=acme/mkt`);
     expect(sideways.json()).toMatchObject({ ok: false, reason: 'tenant-out-of-scope' });
 
-    const toPersonal = await probe(`realmId=${h.personalRealmId}&subject=loom&kind=vassal&tenant=acme`);
+    const toPersonal = await probe(`realmId=${h.personalRealmId}&subject=loom&kind=executor&tenant=acme`);
     expect(toPersonal.json()).toMatchObject({ ok: false, reason: 'enterprise-to-personal' });
 
-    expect((await probe(`realmId=${h.engRealmId}&subject=jev&kind=vassal`)).json()).toMatchObject({ ok: false, reason: 'no-grant' });
-    expect((await probe(`realmId=${h.engRealmId}&subject=driver&kind=driver`)).json()).toEqual({ ok: true, via: 'same-domain' });
+    expect((await probe(`realmId=${h.engRealmId}&subject=jev&kind=executor`)).json()).toMatchObject({ ok: false, reason: 'no-grant' });
+    expect((await probe(`realmId=${h.engRealmId}&subject=operator&kind=operator`)).json()).toEqual({ ok: true, via: 'same-domain' });
 
-    expect((await probe('subject=jev&kind=vassal')).statusCode).toBe(400);
+    expect((await probe('subject=jev&kind=executor')).statusCode).toBe(400);
     expect((await probe(`realmId=${h.engRealmId}&subject=jev`)).statusCode).toBe(400);
-    expect((await probe(`realmId=${h.engRealmId}&subject=jev&kind=vassal&access=delete`)).statusCode).toBe(400);
-    expect((await probe(`realmId=realm-nope&subject=jev&kind=vassal`)).statusCode).toBe(404);
-    expect((await probe(`realmId=${h.engRealmId}&subject=jev&kind=vassal&tenant=too/deep/here/now`)).statusCode).toBe(400);
+    expect((await probe(`realmId=${h.engRealmId}&subject=jev&kind=executor&access=delete`)).statusCode).toBe(400);
+    expect((await probe(`realmId=realm-nope&subject=jev&kind=executor`)).statusCode).toBe(404);
+    expect((await probe(`realmId=${h.engRealmId}&subject=jev&kind=executor&tenant=too/deep/here/now`)).statusCode).toBe(400);
     // Nothing was read while answering any of the above.
     expect(h.audit).toEqual([]);
   });
 });
 
-describe('HTTP E6.4 — intent dispatch with kernel-resolved realm content', () => {
+describe('HTTP E6.4 — intent dispatch with runtime-resolved realm content', () => {
   let cleanup = (): void => {};
   let close: (() => Promise<void>) | undefined;
 
@@ -230,8 +230,8 @@ describe('HTTP E6.4 — intent dispatch with kernel-resolved realm content', () 
     const dispatched = h.seen.requests[0];
     // The full hit shape travels (design-realm §3.1: the field set does not vary
     // by policy), and the origin tag survives the assembly layer so the dispatch
-    // gate can distinguish kernel-resolved from caller-asserted content.
-    expect(dispatched?.realmHitsOrigin).toBe('kernel-resolved');
+    // gate can distinguish runtime-resolved from caller-asserted content.
+    expect(dispatched?.realmHitsOrigin).toBe('runtime-resolved');
     expect(dispatched?.realmHits).toHaveLength(1);
     expect(dispatched?.realmHits?.[0]).toMatchObject({ itemId: 'doc.md', snippet: 'compiler design' });
     expect(h.audit.map(entry => entry.decision)).toEqual(['domain-read']);
@@ -251,7 +251,7 @@ describe('HTTP E6.4 — intent dispatch with kernel-resolved realm content', () 
     expect(res.statusCode).toBe(403);
     expect(res.json()).toMatchObject({ error: 'realm_source_refused' });
     expect(res.json().detail).toMatch(/realm-type-mismatch/);
-    // The whole point: a refused crossing never reaches a vassal.
+    // The whole point: a refused crossing never reaches a executor.
     expect(h.seen.requests).toEqual([]);
     expect(h.audit.map(entry => entry.decision)).toEqual(['domain-refused']);
   });
@@ -268,20 +268,20 @@ describe('HTTP E6.4 — intent dispatch with kernel-resolved realm content', () 
       realmSource: { realmId: h.engRealmId, onBehalfOf },
     });
 
-    const sideways = await h.app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: payload({ kind: 'vassal', id: 'loom', tenant: 'acme/mkt' }) });
+    const sideways = await h.app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: payload({ kind: 'executor', id: 'loom', tenant: 'acme/mkt' }) });
     expect(sideways.statusCode).toBe(403);
     expect(sideways.json().detail).toMatch(/tenant-out-of-scope/);
 
-    const granted = h.grants.issue({ subject: 'loom', realmId: h.engRealmId, access: 'read', grantedBy: 'driver', nonce: 'n2' });
-    const stillBlocked = await h.app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: payload({ kind: 'vassal', id: 'loom', tenant: 'acme/mkt' }) });
+    const granted = h.grants.issue({ subject: 'loom', realmId: h.engRealmId, access: 'read', grantedBy: 'operator', nonce: 'n2' });
+    const stillBlocked = await h.app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: payload({ kind: 'executor', id: 'loom', tenant: 'acme/mkt' }) });
     // A tenant breach is structural: the domain grant does not open it.
     expect(stillBlocked.statusCode).toBe(403);
     expect(stillBlocked.json().detail).toMatch(/tenant-out-of-scope/);
     h.grants.revoke(granted.grantId);
 
-    const asDriver = await h.app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: payload({ kind: 'driver', id: 'driver' }) });
-    expect(asDriver.statusCode).toBe(400);
-    expect(asDriver.json().detail).toMatch(/must be "vassal" or "agent"/);
+    const asOperator = await h.app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: payload({ kind: 'operator', id: 'operator' }) });
+    expect(asOperator.statusCode).toBe(400);
+    expect(asOperator.json().detail).toMatch(/must be "executor" or "agent"/);
   });
 
   it('takes one provenance, not two', async () => {

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 import type { ContextAppendixEntry } from '../src/context/assemble.js';
 
 /**
  * S1 context engineering V1 (design-context-engineering §10.6, assembly tier):
- * in a booted kernel the memory appendix is assembled once per intent at the
- * dispatch boundary and travels the existing outbound channel, so a vassal
- * actually sees what context the kernel gave its branch. Cross-realm recall
- * stays impossible at the `searchRecall` signature; an unconfigured kernel
+ * in a booted runtime the memory appendix is assembled once per intent at the
+ * dispatch boundary and travels the existing outbound channel, so a executor
+ * actually sees what context the runtime gave its branch. Cross-realm recall
+ * stays impossible at the `searchRecall` signature; an unconfigured runtime
  * dispatches with zero appendix and zero audit events.
  */
 
@@ -24,7 +24,7 @@ function cardFor(name: string) {
     skills: [
       // A2A card skills are protocol-shaped (id/name/description/tags only) —
       // input declarations live on the registered catalogue spec, which the
-      // V2 cases inject explicitly via `kernel.skillRegistry.register`.
+      // V2 cases inject explicitly via `runtime.skillRegistry.register`.
       { id: 'review', name: 'Review', description: '', tags: [] },
       // Advertised without any catalogue-level input declaration — the
       // degradation case for V2 assembly (a spec with no inputs assembles
@@ -33,9 +33,9 @@ function cardFor(name: string) {
     ],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -100,15 +100,15 @@ function claimEvent(id: string, subject: string, predicate: string, object: unkn
 async function bootedWithMemory() {
   const { fetchImpl, sent } = capturingFetch();
   const audits: AuditEntry[] = [];
-  const kernel = await bootKernel({
+  const runtime = await bootRuntime({
     fetchImpl,
-    vassalSeeds: [SEED],
+    executorSeeds: [SEED],
     dispatchAudit: entry => audits.push(entry),
   });
-  kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
-  kernel.memoryStore!.append(claimEvent('e2', 'user', 'edits', 'vim'));
-  await kernel.memoryStore!.consolidateRealm('personal');
-  return { kernel, sent, audits };
+  runtime.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
+  runtime.memoryStore!.append(claimEvent('e2', 'user', 'edits', 'vim'));
+  await runtime.memoryStore!.consolidateRealm('personal');
+  return { runtime, sent, audits };
 }
 
 /** bootedWithMemory, plus a registered catalogue spec carrying an input shape. */
@@ -116,7 +116,7 @@ async function bootedWithInputs() {
   const booted = await bootedWithMemory();
   // Explicit catalogue spec: card advertising is protocol-shaped (no input
   // declarations); V2 input assembly reads the registered skill spec.
-  booted.kernel.skillRegistry!.register({
+  booted.runtime.skillRegistry!.register({
     id: 'review',
     name: 'Review',
     description: '',
@@ -128,15 +128,15 @@ async function bootedWithInputs() {
   return booted;
 }
 
-describe('S1 memory appendix in a booted kernel', () => {
+describe('S1 memory appendix in a booted runtime', () => {
   it('assembles recall into the outbound payload for every branch', async () => {
-    const { kernel, sent } = await bootedWithMemory();
-    const result = await kernel.orchestrator.fanOut({
+    const { runtime, sent } = await bootedWithMemory();
+    const result = await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     expect(result.branches[0]?.ok).toBe(true);
     expect(sent).toHaveLength(1);
@@ -151,13 +151,13 @@ describe('S1 memory appendix in a booted kernel', () => {
   });
 
   it('audits the assembly on the same spine as dispatches', async () => {
-    const { kernel, audits } = await bootedWithMemory();
-    await kernel.orchestrator.fanOut({
+    const { runtime, audits } = await bootedWithMemory();
+    await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     const assembled = audits.filter(entry => entry.decision === 'context-assembled');
     expect(assembled).toHaveLength(1);
@@ -166,12 +166,12 @@ describe('S1 memory appendix in a booted kernel', () => {
   });
 
   it('dispatches with zero appendix and zero assembly audit when no realm is named', async () => {
-    const { kernel, sent, audits } = await bootedWithMemory();
-    const result = await kernel.orchestrator.fanOut({
+    const { runtime, sent, audits } = await bootedWithMemory();
+    const result = await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review this' },
       realm: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     expect(result.branches[0]?.ok).toBe(true);
     expect(sent[0]!.params.contextAppendix).toBeUndefined();
@@ -179,13 +179,13 @@ describe('S1 memory appendix in a booted kernel', () => {
   });
 
   it('keeps the explicit realm payload untouched and threads it with the appendix', async () => {
-    const { kernel, sent } = await bootedWithMemory();
-    await kernel.orchestrator.fanOut({
+    const { runtime, sent } = await bootedWithMemory();
+    await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review my vim config', explicit: 'caller-owned' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     expect(sent[0]!.params.explicit).toBe('caller-owned');
     expect(sent[0]!.params.contextAppendix).toBeDefined();
@@ -193,45 +193,45 @@ describe('S1 memory appendix in a booted kernel', () => {
 
   it('recalls nothing when memory has no matching facts but still dispatches', async () => {
     const { fetchImpl, sent } = capturingFetch();
-    const kernel = await bootKernel({ fetchImpl, vassalSeeds: [SEED] });
-    const result = await kernel.orchestrator.fanOut({
+    const runtime = await bootRuntime({ fetchImpl, executorSeeds: [SEED] });
+    const result = await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'an empty realm' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     expect(result.branches[0]?.ok).toBe(true);
     expect(sent[0]!.params.contextAppendix).toBeUndefined();
   });
 });
 
-describe('S1 V2 skill-input assembly in a booted kernel', () => {
+describe('S1 V2 skill-input assembly in a booted runtime', () => {
   it('assembles declared inputs from the explicit payload into the outbound payload', async () => {
-    const { kernel, sent } = await bootedWithInputs();
-    await kernel.orchestrator.fanOut({
+    const { runtime, sent } = await bootedWithInputs();
+    await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review src/orchestrator.ts', code: 'src/orchestrator.ts', language: 'typescript' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     const skillInputs = sent[0]!.params.skillInputs as Array<{ name: string; source: string }> | undefined;
     expect(skillInputs).toBeDefined();
     expect(skillInputs).toEqual([
-      { name: 'code', source: 'explicit', value: 'src/orchestrator.ts', provenance: 'driver-supplied' },
-      { name: 'language', source: 'explicit', value: 'typescript', provenance: 'driver-supplied' },
+      { name: 'code', source: 'explicit', value: 'src/orchestrator.ts', provenance: 'operator-supplied' },
+      { name: 'language', source: 'explicit', value: 'typescript', provenance: 'operator-supplied' },
     ]);
   });
 
   it('marks a declared-but-unsupplied field unavailable in the payload and audits it', async () => {
-    const { kernel, sent, audits } = await bootedWithInputs();
-    await kernel.orchestrator.fanOut({
+    const { runtime, sent, audits } = await bootedWithInputs();
+    await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review this' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     const skillInputs = sent[0]!.params.skillInputs as Array<{ name: string; source: string }> | undefined;
     expect(skillInputs).toEqual([
@@ -244,13 +244,13 @@ describe('S1 V2 skill-input assembly in a booted kernel', () => {
   });
 
   it('assembles nothing for a skill whose catalogue spec declares no inputs', async () => {
-    const { kernel, sent } = await bootedWithInputs();
-    await kernel.orchestrator.fanOut({
+    const { runtime, sent } = await bootedWithInputs();
+    await runtime.orchestrator.fanOut({
       skill: 'editor',
       params: { message: 'edit this' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
     });
     expect(sent[0]!.params.skillInputs).toBeUndefined();
   });
@@ -260,26 +260,26 @@ function realmHit(itemId: string) {
   return { itemId, tags: [], snippet: `snippet ${itemId}`, modifiedAt: '2026-10-09T00:00:00.000Z' };
 }
 
-describe('S1 V3 per-branch context budget in a booted kernel', () => {
+describe('S1 V3 per-branch context budget in a booted runtime', () => {
   it('fills the budget with realm hits first and drops the memory appendix, auditing the source', async () => {
     const cap = capturingFetch();
     const audits: AuditEntry[] = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: cap.fetchImpl,
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
       dispatchAudit: entry => audits.push(entry),
       contextOptions: { maxContextEntriesPerBranch: 3 },
     });
-    kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
-    await kernel.memoryStore!.consolidateRealm('personal');
-    await kernel.orchestrator.fanOut({
+    runtime.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
+    await runtime.memoryStore!.consolidateRealm('personal');
+    await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
       realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3')],
-      realmHitsOrigin: 'kernel-resolved',
+      realmHitsOrigin: 'runtime-resolved',
     });
     const outbound = cap.sent[0]!.params;
     expect((outbound.realmHits as unknown[])).toHaveLength(3);
@@ -294,22 +294,22 @@ describe('S1 V3 per-branch context budget in a booted kernel', () => {
   it('truncates realm hits to the remaining slots and drops memory under a tighter budget', async () => {
     const cap = capturingFetch();
     const audits: AuditEntry[] = [];
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       fetchImpl: cap.fetchImpl,
-      vassalSeeds: [SEED],
+      executorSeeds: [SEED],
       dispatchAudit: entry => audits.push(entry),
       contextOptions: { maxContextEntriesPerBranch: 2 },
     });
-    kernel.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
-    await kernel.memoryStore!.consolidateRealm('personal');
-    await kernel.orchestrator.fanOut({
+    runtime.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
+    await runtime.memoryStore!.consolidateRealm('personal');
+    await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
       realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3'), realmHit('r4'), realmHit('r5')],
-      realmHitsOrigin: 'kernel-resolved',
+      realmHitsOrigin: 'runtime-resolved',
     });
     const outbound = cap.sent[0]!.params;
     expect((outbound.realmHits as Array<{ itemId: string }>).map(h => h.itemId)).toEqual(['r1', 'r2']);
@@ -320,15 +320,15 @@ describe('S1 V3 per-branch context budget in a booted kernel', () => {
   });
 
   it('keeps realm hits and the appendix untouched under the default structural-guard budget', async () => {
-    const { kernel, sent } = await bootedWithMemory();
-    await kernel.orchestrator.fanOut({
+    const { runtime, sent } = await bootedWithMemory();
+    await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
       realm: 'personal',
       realmId: 'personal',
-      vassals: ['loom'],
+      executors: ['loom'],
       realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3')],
-      realmHitsOrigin: 'kernel-resolved',
+      realmHitsOrigin: 'runtime-resolved',
     });
     const outbound = sent[0]!.params;
     expect((outbound.realmHits as unknown[])).toHaveLength(3);

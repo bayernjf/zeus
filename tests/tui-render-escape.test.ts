@@ -6,7 +6,7 @@ import { createDeck } from '../src/tui/runner.js';
 import type { DeckClient, DeckSnapshot } from '../src/tui/client.js';
 
 /**
- * Governance-surface injection: agent-controlled fields (vassal names,
+ * Governance-surface injection: agent-controlled fields (executor names,
  * escalation reasons, branch previews, connector commands, ...) must never
  * reach the TTY carrying terminal control sequences. SGR/CSI could forge
  * output, CR/LF could rewrite lines, OSC could carry hyperlink/title payloads.
@@ -23,7 +23,7 @@ const poisoned: DeckSnapshot = {
   state: {
     persistence: { enabled: true, stateFile: `/tmp/${PAYLOAD}`, restoredFromSnapshot: true },
     audit: { file: `/tmp/${PAYLOAD_OSC}`, failures: 0, degraded: false },
-    driverGrants: { authority: 'signed', keyId: PAYLOAD },
+    operatorGrants: { authority: 'signed', keyId: PAYLOAD },
   },
   metrics: null,
   roster: {
@@ -41,18 +41,18 @@ const poisoned: DeckSnapshot = {
     {
       id: PAYLOAD,
       kind: 'intent-conflict',
-      vassal: PAYLOAD,
+      executor: PAYLOAD,
       skill: PAYLOAD,
       realm: 'personal',
       reason: PAYLOAD_OSC,
       status: 'pending',
       options: [],
       createdAt: '',
-      stances: [{ stance: PAYLOAD, vassals: [] }],
+      stances: [{ stance: PAYLOAD, executors: [] }],
     },
   ],
   audit: [
-    { ts: `00:00${PAYLOAD}`, vassal: PAYLOAD, decision: `future${PAYLOAD}`, skill: PAYLOAD, state: PAYLOAD_OSC },
+    { ts: `00:00${PAYLOAD}`, executor: PAYLOAD, decision: `future${PAYLOAD}`, skill: PAYLOAD, state: PAYLOAD_OSC },
   ],
   domains: {
     realms: [
@@ -83,7 +83,7 @@ const poisoned: DeckSnapshot = {
         id: `\x1b[31m${PAYLOAD}`,
         grantedBy: 'operator',
         skill: PAYLOAD,
-        vassal: PAYLOAD,
+        executor: PAYLOAD,
         capabilities: ['execute', PAYLOAD],
         limits: { maxChildTickets: 4, maxConcurrent: 1, windowEndsAt: '2026-10-01T00:00:00.000Z' },
         used: { childTickets: 1, inFlight: 0 },
@@ -142,7 +142,7 @@ const poisoned: DeckSnapshot = {
         view: {
           order: ['r1'],
           branches: {
-            r1: { runId: 'r1', vassal: PAYLOAD, started: true, settled: false, lastSeq: 0, preview: PAYLOAD_OSC },
+            r1: { runId: 'r1', executor: PAYLOAD, started: true, settled: false, lastSeq: 0, preview: PAYLOAD_OSC },
           },
           partiallyReady: false,
         },

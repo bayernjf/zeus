@@ -13,7 +13,7 @@ function spec(overrides: Partial<SkillSpecInput> = {}): SkillSpecInput {
     description: 'reviews code',
     tags: ['code'],
     permissions: ['realm', 'network', 'execute:deploy'],
-    providedBy: ['vassal-1'],
+    providedBy: ['executor-1'],
     ...overrides,
   };
 }

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { FsRealmStore } from '../src/realm/store.js';
@@ -14,7 +14,7 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchRequest, DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { Task, TaskState } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = new Date('2026-09-25T00:00:00.000Z');
 
@@ -43,7 +43,7 @@ async function harness() {
   const engRealmId = (await store.connect(mount('eng', 'compiler design\n'), 'enterprise', { tenant: 'acme/eng' })).realmId;
   const personalRealmId = (await store.connect(mount('me', 'private diary\n'), 'personal')).realmId;
   const app: FastifyInstance = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('k'),
     internalToken: TOKEN,
     orchestrator: new Orchestrator(lookup, spyPort(), { now: () => NOW }),

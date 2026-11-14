@@ -63,11 +63,11 @@ export type TraceQueryResult = {
   summary: TraceSummary & { count: number };
 };
 
-/** Agents seen anywhere in the tree (branch/dag-node/model spans carry vassal). */
+/** Agents seen anywhere in the tree (branch/dag-node/model spans carry executor). */
 function agentsOf(tree: TraceTree): Set<string> {
   const agents = new Set<string>();
   for (const span of tree.spans) {
-    if (span.vassal !== undefined) agents.add(span.vassal);
+    if (span.executor !== undefined) agents.add(span.executor);
   }
   return agents;
 }

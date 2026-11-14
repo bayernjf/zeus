@@ -2,7 +2,7 @@
 /**
  * `npm run daily "<one sentence>"` — the product entry.
  *
- * This file is assembly, not a new mechanism. The kernel already resolves an
+ * This file is assembly, not a new mechanism. The runtime already resolves an
  * instruction to a skill (`recognizeIntent`), fans it out to the execution agents
  * that advertise it (`orchestrator.fanOut`), escalates a split to the oversight
  * desk, and writes into the user's own directory (`FsRealmStore`). What was
@@ -16,7 +16,7 @@
  *   - The record is written into the realm the intent operated on. An
  *     enterprise-realm result never lands in a personal directory
  *     (product-portrait constraint 4), so `--realm enterprise` needs a mounted
- *     enterprise root and authorizes its write with the local driver key.
+ *     enterprise root and authorizes its write with the local operator key.
  *
  * Exit codes: 0 the report was produced and stored (including a run that ended
  * in a split waiting for the operator) · 1 nothing dispatchable, no agent
@@ -29,23 +29,23 @@ import { pathToFileURL } from 'node:url';
 import type { TextPart } from '../a2a/types.js';
 import type { DecisionBackend } from '../decision/types.js';
 import {
-  bootKernel,
+  bootRuntime,
   concurrencyBootOptions,
   costBootOptions,
-  KernelBootError,
+  RuntimeBootError,
   resolveAuditConfig,
   resolveConcurrencyConfig,
   resolveCostConfig,
   resolveDecisionConfig,
   resolveRealmConfig,
-  resolveVassalSeedsConfig,
-  type KernelBoot,
-  type KernelBootOptions,
+  resolveExecutorSeedsConfig,
+  type RuntimeBoot,
+  type RuntimeBootOptions,
 } from '../state/boot.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { recognizeIntent, rankCandidates, MODEL_OPTION_LIMIT, type SkillCatalogEntry } from '../intent/recognize.js';
 import { loadRskSigner } from '../http/rsk.js';
-import { issueDriverWriteGrant } from '../realm/grant.js';
+import { issueOperatorWriteGrant } from '../realm/grant.js';
 import type { BranchOutcome, FanOutResult } from '../orchestrator/types.js';
 import { RealmError, type RealmConnection } from '../realm/types.js';
 import { DuplicateSkillError, type SkillRegistry } from '../skills/registry.js';
@@ -67,7 +67,7 @@ Options:
                         ZEUS_REALM_ROOTS entries are mounted alongside, and the
                         roots saved by an earlier run are re-mounted by default)
   --agent CARD[|TOKEN]  register an execution agent before dispatch (repeatable;
-                        merged with ZEUS_VASSAL_SEEDS)
+                        merged with ZEUS_EXECUTOR_SEEDS)
   --spec FILE           register an explicit skill spec before dispatch (repeatable;
                         JSON object or array of them, same fields POST /api/skills
                         accepts). This is how an operator declares aliases — the
@@ -83,12 +83,12 @@ Options:
   --realm personal      'personal' (default) or 'enterprise': the data domain the
                         intent operates on. An enterprise run writes its record
                         into the enterprise realm on a grant signed by the local
-                        driver key; it never lands in a personal directory
+                        operator key; it never lands in a personal directory
   --timeout MS          per-branch timeout (default ${DEFAULT_BRANCH_TIMEOUT_MS})
   --model               let this run consult the configured decision backend for
                         recognition and for split arbitration. Without it nothing
                         leaves the machine
-  --state FILE          kernel state file (default ${DEFAULT_STATE_FILE},
+  --state FILE          runtime state file (default ${DEFAULT_STATE_FILE},
                         ZEUS_STATE_FILE overrides, 'none' keeps state in memory)
   --help                this page
 
@@ -122,7 +122,7 @@ type RunContext = {
   args: DailyArgs;
   env: NodeJS.ProcessEnv;
   err: string[];
-  kernel: KernelBoot | null;
+  runtime: RuntimeBoot | null;
   report: DailyReportModel | null;
   realm: RealmConnection | null;
 };
@@ -130,7 +130,7 @@ type RunContext = {
 const VALUE_FLAGS = new Set(['--root', '--agent', '--skill', '--params', '--record', '--realm', '--timeout', '--state', '--spec']);
 
 /**
- * Resolves where kernel state lives. `undefined` means the operator said nothing
+ * Resolves where runtime state lives. `undefined` means the operator said nothing
  * and the default file applies; `null` means they said `none` and nothing is
  * loaded or saved. Collapsing the two (a `??` chain over `null`) makes
  * `--state none` write the repository's own default file, and the next run then
@@ -163,7 +163,7 @@ export function registerSkillSpecs(
   read: (path: string) => string = path => readFileSync(path, 'utf8'),
 ): string[] {
   if (files.length === 0) return [];
-  if (!registry) throw new UsageError('--spec needs the skill catalogue, which this kernel does not mount');
+  if (!registry) throw new UsageError('--spec needs the skill catalogue, which this runtime does not mount');
   const registered: string[] = [];
   for (const file of files) {
     let raw: string;
@@ -282,8 +282,8 @@ function parseArgs(argv: string[]): DailyArgs {
 }
 
 /** Seed order: explicit --agent first (the operator just typed it), then env. */
-function collectSeeds(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<KernelBootOptions['vassalSeeds']> {
-  const seeds: NonNullable<KernelBootOptions['vassalSeeds']> = [];
+function collectSeeds(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['executorSeeds']> {
+  const seeds: NonNullable<RuntimeBootOptions['executorSeeds']> = [];
   for (const entry of args.agents) {
     const separator = entry.indexOf('|');
     const cardUrl = (separator < 0 ? entry : entry.slice(0, separator)).trim();
@@ -292,7 +292,7 @@ function collectSeeds(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<Kern
     if (separator >= 0 && !token) throw new UsageError(`--agent '${entry}' has nothing after '|'`);
     seeds.push(token ? { cardUrl, token } : { cardUrl });
   }
-  for (const seed of resolveVassalSeedsConfig(env)) {
+  for (const seed of resolveExecutorSeedsConfig(env)) {
     if (!seeds.some(existing => cardUrlOf(existing) === cardUrlOf(seed))) seeds.push(seed);
   }
   return seeds;
@@ -307,7 +307,7 @@ function cardUrlOf(seed: string | { cardUrl: string; token?: string }): string {
  * deployment already declared), and the enterprise entries keep working so
  * `--realm enterprise` needs nothing beyond the env the operator set.
  */
-function realmRootsFor(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<KernelBootOptions['realmRoots']> {
+function realmRootsFor(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['realmRoots']> {
   const configured = resolveRealmConfig(env).realmRoots;
   const personal = configured.filter((entry): entry is string => typeof entry === 'string');
   const enterprise = configured.filter(entry => typeof entry !== 'string');
@@ -352,7 +352,7 @@ function branchView(branch: BranchOutcome): DailyBranchView {
     .trim();
   const data = parts.find(part => part.kind === 'data');
   return {
-    vassal: branch.vassal,
+    executor: branch.executor,
     ok: branch.ok,
     ...(branch.outcome !== undefined ? { outcome: branch.outcome } : {}),
     ...(branch.state !== undefined ? { state: branch.state } : {}),
@@ -368,7 +368,7 @@ function fillFromFanOut(model: DailyReportModel, result: FanOutResult): void {
   model.status = result.status;
   model.decision = { rule: result.decision.rule, conclusion: result.decision.conclusion, reason: result.decision.reason };
   model.positions = result.positions.map(position => ({
-    vassal: position.vassal,
+    executor: position.executor,
     stance: position.stance,
     ...(position.rationale !== undefined ? { rationale: position.rationale } : {}),
   }));
@@ -418,7 +418,7 @@ async function findPreviousRecord(
   ctx: RunContext,
   skill: string,
 ): Promise<DailyReportModel['previous'] | undefined> {
-  const store = ctx.kernel?.realmStore;
+  const store = ctx.runtime?.realmStore;
   const realm = ctx.realm;
   if (!store || !realm) return undefined;
   try {
@@ -437,11 +437,11 @@ async function findPreviousRecord(
 /** Returns true when the record did not reach the realm. */
 async function writeRecord(ctx: RunContext): Promise<boolean> {
   const model = ctx.report!;
-  const kernel = ctx.kernel!;
+  const runtime = ctx.runtime!;
   const realm = ctx.realm!;
-  const store = kernel.realmStore;
+  const store = runtime.realmStore;
   if (!store) {
-    model.writeError = 'this kernel was booted without a realm store';
+    model.writeError = 'this runtime was booted without a realm store';
     return true;
   }
   const itemId = ctx.args.record ?? recordItemId(model.at, model.skill ?? 'unresolved', model.intentId);
@@ -454,14 +454,14 @@ async function writeRecord(ctx: RunContext): Promise<boolean> {
   }
   try {
     if (realm.type === 'enterprise') {
-      const signer = kernel.driverSigner;
+      const signer = runtime.operatorSigner;
       if (!signer) {
         model.writeError =
-          'an enterprise record needs a driver grant and this process has no driver key (set ZEUS_RSK_KEY or ZEUS_RSK_KEY_FILE)';
+          'an enterprise record needs a operator grant and this process has no operator key (set ZEUS_RSK_KEY or ZEUS_RSK_KEY_FILE)';
         return true;
       }
-      const grant = await issueDriverWriteGrant(
-        { realmId: realm.realmId, grantedBy: 'driver:daily-cli', reason: `npm run daily: ${model.skill ?? 'unresolved'}` },
+      const grant = await issueOperatorWriteGrant(
+        { realmId: realm.realmId, grantedBy: 'operator:daily-cli', reason: `npm run daily: ${model.skill ?? 'unresolved'}` },
         { signer },
       );
       const written = await store.write(realm.realmId, { itemId, data: markdown }, grant);
@@ -486,7 +486,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
   let backend: DecisionBackend | null = null;
   const stateFile = resolveStateFile(args.stateFile, env.ZEUS_STATE_FILE);
   const roots = realmRootsFor(args, env);
-  const kernelOptions: KernelBootOptions = {
+  const runtimeOptions: RuntimeBootOptions = {
     ...(stateFile ? { stateFile } : {}),
     ...(roots.length > 0 ? { realmRoots: roots } : {}),
     ...(env.ZEUS_AUDIT_FILE ? { auditFile: env.ZEUS_AUDIT_FILE } : {}),
@@ -495,31 +495,31 @@ async function runOnce(ctx: RunContext): Promise<number> {
     ...(env.ZEUS_INTENT_RETENTION ? { intentRetention: parseRetentionMode(env.ZEUS_INTENT_RETENTION) } : {}),
   };
   const seeds = collectSeeds(args, env);
-  if (seeds.length > 0) kernelOptions.vassalSeeds = seeds;
+  if (seeds.length > 0) runtimeOptions.executorSeeds = seeds;
   const audit = resolveAuditConfig(env);
-  if (audit.auditMaxBytes !== undefined) kernelOptions.auditMaxBytes = audit.auditMaxBytes;
-  if (audit.auditKeep !== undefined) kernelOptions.auditKeep = audit.auditKeep;
+  if (audit.auditMaxBytes !== undefined) runtimeOptions.auditMaxBytes = audit.auditMaxBytes;
+  if (audit.auditKeep !== undefined) runtimeOptions.auditKeep = audit.auditKeep;
   if (args.model) {
     const decision = resolveDecisionConfig(env);
     backend = decision.backend ?? null;
     if (backend) {
-      kernelOptions.decisionBackend = backend;
-      kernelOptions.judgeEnabled = decision.judgeEnabled;
+      runtimeOptions.decisionBackend = backend;
+      runtimeOptions.judgeEnabled = decision.judgeEnabled;
     }
   }
-  // The driver key is only needed to authorize an enterprise write, and loading it
+  // The operator key is only needed to authorize an enterprise write, and loading it
   // touches the deployment's key material. A personal run loads none of it.
   if (args.realm === 'enterprise') {
     const { signer } = await loadRskSigner({ env });
-    kernelOptions.driverSigner = signer;
+    runtimeOptions.operatorSigner = signer;
   }
 
-  ctx.kernel = await bootKernel(kernelOptions);
+  ctx.runtime = await bootRuntime(runtimeOptions);
   // Registered before the realm is picked and before anything dispatches: a
   // rejected spec is a configuration fact, not a failed run.
-  registerSkillSpecs(ctx.kernel.skillRegistry, args.specs);
+  registerSkillSpecs(ctx.runtime.skillRegistry, args.specs);
 
-  const connections = ctx.kernel.realmStore?.connections() ?? [];
+  const connections = ctx.runtime.realmStore?.connections() ?? [];
   const realm = pickRealm(connections, args.realm, args.roots);
   if (!realm) {
     ctx.err.push(
@@ -531,7 +531,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
   }
   ctx.realm = realm;
 
-  const catalog: SkillCatalogEntry[] = (ctx.kernel.skillRegistry?.list() ?? []).map(skillCatalogEntry);
+  const catalog: SkillCatalogEntry[] = (ctx.runtime.skillRegistry?.list() ?? []).map(skillCatalogEntry);
   const model: DailyReportModel = {
     at: new Date().toISOString(),
     instruction: args.instruction,
@@ -540,7 +540,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
     candidates: [],
     params: {},
     realm: { realmId: realm.realmId, root: realm.root, type: realm.type, readOnly: realm.readOnly },
-    agents: ctx.kernel.registry.listAll().filter(entry => entry.status === 'active').map(entry => entry.card.name),
+    agents: ctx.runtime.registry.listAll().filter(entry => entry.status === 'active').map(entry => entry.card.name),
     positions: [],
     branches: [],
     escalations: [],
@@ -551,7 +551,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
     model.writeError = 'nothing was dispatched, so nothing was stored';
     ctx.err.push(
       'no execution agent is registered, so there is no capability catalogue to choose from.',
-      'Register one with --agent <agent-card-url> (or ZEUS_VASSAL_SEEDS) and run again.',
+      'Register one with --agent <agent-card-url> (or ZEUS_EXECUTOR_SEEDS) and run again.',
     );
     return 2;
   }
@@ -608,7 +608,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
     const previous = await findPreviousRecord(ctx, model.skill);
     if (previous) model.previous = previous;
   }
-  const result = await ctx.kernel.orchestrator.fanOut({
+  const result = await ctx.runtime.orchestrator.fanOut({
     skill: model.skill,
     params: model.params,
     realm: args.realm,
@@ -617,7 +617,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
     branchTimeoutMs: args.timeoutMs,
   });
   fillFromFanOut(model, result);
-  model.escalations = ctx.kernel.oversight
+  model.escalations = ctx.runtime.oversight
     .list('pending')
     .filter(item => item.intentId === result.intentId)
     .map(item => ({ id: item.id, kind: item.kind, reason: item.reason, options: item.options }));
@@ -633,7 +633,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
   } else if (delivered.length === 0) {
     ctx.err.push(
       `no agent delivered: ${result.branches
-        .map(branch => `${branch.vassal}=${branch.state ? `agent state ${branch.state}` : (branch.reason ?? branch.outcome ?? 'failed')}`)
+        .map(branch => `${branch.executor}=${branch.state ? `agent state ${branch.state}` : (branch.reason ?? branch.outcome ?? 'failed')}`)
         .join(', ')}`,
     );
   }
@@ -654,7 +654,7 @@ export async function runDailyCli(
   }
   if (args.help) return { code: 0, stdout: `${USAGE}\n`, stderr: '' };
 
-  const ctx: RunContext = { args, env, err: [], kernel: null, report: null, realm: null };
+  const ctx: RunContext = { args, env, err: [], runtime: null, report: null, realm: null };
   let code: number;
   try {
     code = await runOnce(ctx);
@@ -662,16 +662,16 @@ export async function runDailyCli(
     // An unmountable root and an unfetchable card are both boot-time configuration
     // facts: nothing was dispatched, so they are exit 2, not a failed run.
     code =
-      error instanceof KernelBootError || error instanceof UsageError || error instanceof RealmError ? 2 : 1;
+      error instanceof RuntimeBootError || error instanceof UsageError || error instanceof RealmError ? 2 : 1;
     ctx.err.push(`error: ${(error as Error).message}`);
   }
 
   // A one-shot entry still owns a state file, and the reason it owns one is that
   // this run's intent — and any split it left on the desk — must outlive the
   // process. Saving happens before rendering so a failed save is in the report.
-  if (ctx.kernel?.stateFile) {
+  if (ctx.runtime?.stateFile) {
     try {
-      await ctx.kernel.saveState();
+      await ctx.runtime.saveState();
     } catch (error) {
       ctx.err.push(`state was not saved: ${(error as Error).message}`);
       if (code === 0) code = 1;
@@ -680,9 +680,9 @@ export async function runDailyCli(
   // M-10: drop the cross-process lock last. A leftover lock is reclaimed by the
   // next boot once this process' pid is gone, but a clean release is the normal
   // path and its failure is reported.
-  if (ctx.kernel) {
+  if (ctx.runtime) {
     try {
-      await ctx.kernel.releaseLock();
+      await ctx.runtime.releaseLock();
     } catch (error) {
       ctx.err.push(`state lock was not released: ${(error as Error).message}`);
       if (code === 0) code = 1;

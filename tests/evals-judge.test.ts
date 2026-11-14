@@ -17,8 +17,8 @@ function outcome(overrides: Partial<FanOutResult> = {}): FanOutResult {
   return {
     intentId: 'intent-1', runId: 'r1', skill: 'research', realm: 'personal', branches: [], stream: [],
     positions: [
-      { vassal: 'alpha', stance: 'approve', rationale: 'verified against brief.md' },
-      { vassal: 'beta', stance: 'approve', rationale: 'same finding, independent check' },
+      { executor: 'alpha', stance: 'approve', rationale: 'verified against brief.md' },
+      { executor: 'beta', stance: 'approve', rationale: 'same finding, independent check' },
     ],
     decision: { rule: 'unanimous', conclusion: 'approve', positions: [], reason: 'unanimous' },
     conflicts: [], status: 'completed', createdAt: 't0',

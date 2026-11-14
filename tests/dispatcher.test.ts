@@ -1,24 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { Dispatcher, type AuditEntry, type DispatchResult } from '../src/dispatch/dispatcher.js';
 import { memoryAuditSink } from '../src/dispatch/audit.js';
-import type { Fealty, Task } from '../src/a2a/types.js';
-import type { VassalLike, VassalLookup } from '../src/dispatch/types.js';
+import type { Handshake, Task } from '../src/a2a/types.js';
+import type { ExecutorLike, ExecutorLookup } from '../src/dispatch/types.js';
 import type { RealmHit } from '../src/realm/types.js';
 
 function hit(itemId: string, snippet: string): RealmHit {
   return { itemId, tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet };
 }
 
-function fealty(overrides: Partial<Fealty> = {}): Fealty {
-  return { version: '1', swornTo: 'zeus', domain: 'pr-release-control', dataRealms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto', ...overrides };
+function handshake(overrides: Partial<Handshake> = {}): Handshake {
+  return { version: '1', swornTo: 'zeus', domain: 'pr-release-control', realms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto', ...overrides };
 }
 
-function vassal(overrides: Partial<VassalLike> = {}): VassalLike {
+function executor(overrides: Partial<ExecutorLike> = {}): ExecutorLike {
   return {
     name: 'pr-helper',
     taskUrl: 'http://pr-helper.internal/api/a2a/tasks',
     card: { name: 'pr-helper', url: '', skills: [{ id: 'create-pr', name: '', description: '', tags: [] }] },
-    fealty: fealty(),
+    handshake: handshake(),
     ...overrides,
   };
 }
@@ -38,7 +38,7 @@ function task(state: Task['status']['state'], id = 'task-1'): Task {
   return { kind: 'task', id, contextId: 'ctx', status: { state }, artifacts: [] };
 }
 
-function fakeVassalServer(options: { seenBodies?: unknown[]; token?: string; status?: Task['status']['state']; escalate?: boolean } = {}) {
+function fakeExecutorServer(options: { seenBodies?: unknown[]; token?: string; status?: Task['status']['state']; escalate?: boolean } = {}) {
   const seenBodies: unknown[] = (options.seenBodies = options.seenBodies ?? []);
   return async (url: string, init?: RequestInit): Promise<Response> => {
     if (init?.method !== 'POST') throw new Error(`unexpected method on ${url}`);
@@ -50,7 +50,7 @@ function fakeVassalServer(options: { seenBodies?: unknown[]; token?: string; sta
     if (options.escalate) {
       return sseResponse(
         [
-          { kind: 'status-update', taskId: 'task-1', contextId: 'ctx', status: { state: 'input-required' }, final: true, 'x-zeus': { runId: 'r' }, 'x-zeus-escalation': { level: 'driver', reason: 'irreversible: merge', options: ['approve', 'reject'] } },
+          { kind: 'status-update', taskId: 'task-1', contextId: 'ctx', status: { state: 'input-required' }, final: true, 'x-zeus': { runId: 'r' }, 'x-zeus-escalation': { level: 'operator', reason: 'irreversible: merge', options: ['approve', 'reject'] } },
         ],
         task('input-required')
       );
@@ -65,19 +65,19 @@ function fakeVassalServer(options: { seenBodies?: unknown[]; token?: string; sta
   };
 }
 
-function dispatcher(vassalMap: Map<string, VassalLike>, fetchImpl: (url: string, init?: RequestInit) => Promise<Response>, token?: string) {
+function dispatcher(executorMap: Map<string, ExecutorLike>, fetchImpl: (url: string, init?: RequestInit) => Promise<Response>, token?: string) {
   const { log, sink } = memoryAuditSink();
-  const dispatcherInstance = new Dispatcher(vassalMap, { audit: sink, fetchImpl, tokenFor: () => token });
+  const dispatcherInstance = new Dispatcher(executorMap, { audit: sink, fetchImpl, tokenFor: () => token });
   return { dispatcherInstance, audit: log };
 }
 
 describe('Dispatcher', () => {
   it('§7: aborts a live stream when the caller signal fires and audits branch-aborted', async () => {
-    const map = new Map([['pr-helper', vassal()]]);
+    const map = new Map([['pr-helper', executor()]]);
     const controller = new AbortController();
     const { dispatcherInstance, audit } = dispatcher(map, async (_url, init) => {
       // A stream that never ends unless the caller aborts it, like a healthy
-      // long-lived A2A subscription a driver cancels mid-flight.
+      // long-lived A2A subscription a operator cancels mid-flight.
       const body = new ReadableStream<Uint8Array>({
         start(stream) {
           const encoder = new TextEncoder();
@@ -89,18 +89,18 @@ describe('Dispatcher', () => {
     });
 
     const resultPromise = dispatcherInstance.dispatch({
-      vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', signal: controller.signal,
+      executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', signal: controller.signal,
     });
     controller.abort();
     const result = await resultPromise;
-    expect(result).toMatchObject({ ok: false, reason: 'aborted by the driver' });
+    expect(result).toMatchObject({ ok: false, reason: 'aborted by the operator' });
     expect(audit.some(entry => entry.decision === 'branch-aborted')).toBe(true);
   });
 
   it('dispatches a task, streams events, and audits dispatched + final state', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal()]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const map = new Map([['pr-helper', executor()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ seenBodies }));
     const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: { owner: 'acme', repo: 'app' }, realm: 'enterprise' });
 
     expect(result.ok).toBe(true);
@@ -117,13 +117,13 @@ describe('Dispatcher', () => {
     // written before the request left, so every governance view that counts by
     // decision read double.
     expect(decisions).toEqual(['dispatched']);
-    expect(audit[0]!).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1', state: 'completed' });
+    expect(audit[0]!).toMatchObject({ executor: 'pr-helper', taskId: 'task-1', state: 'completed' });
   });
 
-  it('refuses personal-realm tasks for an enterprise-only vassal (data diode)', async () => {
+  it('refuses personal-realm tasks for an enterprise-only executor (data diode)', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal()]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const map = new Map([['pr-helper', executor()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ seenBodies }));
     const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'personal' });
 
     expect(result.ok).toBe(false);
@@ -133,7 +133,7 @@ describe('Dispatcher', () => {
     expect(seenBodies).toHaveLength(0);
   });
 
-  it('does not relabel an audit-write failure as a vassal dispatch failure', async () => {
+  it('does not relabel an audit-write failure as a executor dispatch failure', async () => {
     const seenBodies: unknown[] = [];
     const log: AuditEntry[] = [];
     let writes = 0;
@@ -144,25 +144,25 @@ describe('Dispatcher', () => {
       if (writes === 1) throw new Error('ENOSPC: audit volume is full');
       log.push(entry);
     };
-    const d = new Dispatcher(new Map([['pr-helper', vassal()]]), { audit: sink, fetchImpl: fakeVassalServer({ seenBodies }) });
+    const d = new Dispatcher(new Map([['pr-helper', executor()]]), { audit: sink, fetchImpl: fakeExecutorServer({ seenBodies }) });
 
     await expect(d.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' })).rejects.toThrow(/ENOSPC/);
     expect(log.map(entry => entry.decision)).not.toContain('dispatch-failed');
   });
 
-  it('refuses unknown vassals and unknown skills', async () => {
-    const { dispatcherInstance, audit } = dispatcher(new Map(), fakeVassalServer({}));
-    const byName = await dispatcherInstance.dispatch({ vassal: 'ghost', skill: 'create-pr', params: {}, realm: 'enterprise' });
+  it('refuses unknown executors and unknown skills', async () => {
+    const { dispatcherInstance, audit } = dispatcher(new Map(), fakeExecutorServer({}));
+    const byName = await dispatcherInstance.dispatch({ executor: 'ghost', skill: 'create-pr', params: {}, realm: 'enterprise' });
     expect(byName.ok).toBe(false);
     const bySkill = await dispatcherInstance.dispatch({ skill: 'does-not-exist', params: {}, realm: 'enterprise' });
     expect(bySkill.ok).toBe(false);
-    expect(audit.map(entry => entry.decision)).toEqual(['refused-unknown-vassal', 'refused-unknown-vassal']);
+    expect(audit.map(entry => entry.decision)).toEqual(['refused-unknown-executor', 'refused-unknown-executor']);
   });
 
-  it('refuses realm content for a none-policy vassal instead of dropping it silently', async () => {
+  it('refuses realm content for a none-policy executor instead of dropping it silently', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['loom', vassal({ name: 'loom', fealty: fealty({ domain: 'content-production', dataRealms: ['personal'], dataPolicy: 'none' }), card: { name: 'loom', url: '', skills: [{ id: 'generate-content', name: '', description: '', tags: [] }] } })]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const map = new Map([['loom', executor({ name: 'loom', handshake: handshake({ domain: 'content-production', realms: ['personal'], dataPolicy: 'none' }), card: { name: 'loom', url: '', skills: [{ id: 'generate-content', name: '', description: '', tags: [] }] } })]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ seenBodies }));
     const result = await dispatcherInstance.dispatch({ skill: 'generate-content', params: {}, realm: 'personal', realmHits: [hit('diary-1', 'secret')], realmHitsOrigin: 'caller-asserted' });
 
     // design-realm §3.1: none accepts no realm content at all; the request is
@@ -175,13 +175,13 @@ describe('Dispatcher', () => {
     expect(audit.map(entry => entry.decision)).toEqual(['refused-data-policy']);
   });
 
-  it('refuses self-asserted hits for a read-task-scope vassal (only kernel-resolved may pass)', async () => {
+  it('refuses self-asserted hits for a read-task-scope executor (only runtime-resolved may pass)', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal()]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const map = new Map([['pr-helper', executor()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ seenBodies }));
     const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: [hit('hit-1', 'pr context')], realmHitsOrigin: 'caller-asserted' });
 
-    // "Belongs to this task" is only verifiable when the kernel itself resolved
+    // "Belongs to this task" is only verifiable when the runtime itself resolved
     // the hits; a caller's claim cannot be checked, so it is refused outright.
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -192,12 +192,12 @@ describe('Dispatcher', () => {
     expect(audit.map(entry => entry.decision)).toEqual(['refused-data-policy']);
   });
 
-  it('injects kernel-resolved hits for a read-task-scope vassal and audits the injection', async () => {
+  it('injects runtime-resolved hits for a read-task-scope executor and audits the injection', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal()]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const map = new Map([['pr-helper', executor()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ seenBodies }));
     const hits = [hit('hit-1', 'pr context')];
-    const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: hits, realmHitsOrigin: 'kernel-resolved' });
+    const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: hits, realmHitsOrigin: 'runtime-resolved' });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -206,13 +206,13 @@ describe('Dispatcher', () => {
     expect(body.params.message.parts[0]!.data.realmHits).toEqual(hits);
     const injected = audit.find(entry => entry.decision === 'content-injected');
     expect(injected).toBeDefined();
-    expect(injected?.detail).toMatch(/dataPolicy=read-task-scope, origin=kernel-resolved, hits=1/);
+    expect(injected?.detail).toMatch(/dataPolicy=read-task-scope, origin=runtime-resolved, hits=1/);
   });
 
-  it('injects caller-asserted hits for a read-realm vassal (the operator is the data sovereign)', async () => {
+  it('injects caller-asserted hits for a read-realm executor (the operator is the data sovereign)', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal({ fealty: fealty({ dataPolicy: 'read-realm' }) })]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const map = new Map([['pr-helper', executor({ handshake: handshake({ dataPolicy: 'read-realm' }) })]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ seenBodies }));
     const hits = [hit('hit-1', 'pr context')];
     const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: hits, realmHitsOrigin: 'caller-asserted' });
 
@@ -224,8 +224,8 @@ describe('Dispatcher', () => {
   });
 
   it('fails closed when hits carry no origin', async () => {
-    const map = new Map([['pr-helper', vassal()]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({}));
+    const map = new Map([['pr-helper', executor()]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({}));
     const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', realmHits: [hit('hit-1', 'pr context')] });
 
     // A path that forgets to tag provenance must not silently degrade into
@@ -239,22 +239,22 @@ describe('Dispatcher', () => {
 
   it('honors a revoked entry in a Map-wired lookup', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal({ revoked: true })]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ seenBodies }));
+    const map = new Map([['pr-helper', executor({ revoked: true })]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ seenBodies }));
 
-    const named = await dispatcherInstance.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise' });
+    const named = await dispatcherInstance.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise' });
     const auto = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
 
     expect(named.ok).toBe(false);
     expect(auto.ok).toBe(false);
-    expect(audit.map(entry => entry.decision)).toEqual(['refused-revoked', 'refused-unknown-vassal']);
+    expect(audit.map(entry => entry.decision)).toEqual(['refused-revoked', 'refused-unknown-executor']);
     expect(seenBodies).toHaveLength(0);
   });
 
-  it('refuses when the vassal is revoked between the gate and credential issuance', async () => {
-    const active = vassal();
+  it('refuses when the executor is revoked between the gate and credential issuance', async () => {
+    const active = executor();
     let statusCalls = 0;
-    const lookup: VassalLookup = {
+    const lookup: ExecutorLookup = {
       get: () => active,
       // 'active' for the governance gate, 'revoked' by the time the credential is read
       statusOf: () => (statusCalls++ === 0 ? 'active' : 'revoked'),
@@ -262,19 +262,19 @@ describe('Dispatcher', () => {
     };
     const seenBodies: unknown[] = [];
     const { log, sink } = memoryAuditSink();
-    const d = new Dispatcher(lookup, { audit: sink, fetchImpl: fakeVassalServer({ seenBodies }), tokenFor: () => 'zeus-secret' });
+    const d = new Dispatcher(lookup, { audit: sink, fetchImpl: fakeExecutorServer({ seenBodies }), tokenFor: () => 'zeus-secret' });
 
-    const result = await d.dispatch({ vassal: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise' });
+    const result = await d.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise' });
 
     expect(result.ok).toBe(false);
     expect(log[0]!.decision).toBe('refused-revoked');
     expect(seenBodies).toHaveLength(0);
   });
 
-  it('refuses an explicitly named vassal that does not declare the skill', async () => {
+  it('refuses an explicitly named executor that does not declare the skill', async () => {
     const seenBodies: unknown[] = [];
-    const { dispatcherInstance, audit } = dispatcher(new Map([['pr-helper', vassal()]]), fakeVassalServer({ seenBodies }));
-    const result = await dispatcherInstance.dispatch({ vassal: 'pr-helper', skill: 'merge-pr', params: {}, realm: 'enterprise' });
+    const { dispatcherInstance, audit } = dispatcher(new Map([['pr-helper', executor()]]), fakeExecutorServer({ seenBodies }));
+    const result = await dispatcherInstance.dispatch({ executor: 'pr-helper', skill: 'merge-pr', params: {}, realm: 'enterprise' });
 
     expect(result.ok).toBe(false);
     expect(audit[0]!.decision).toBe('refused-skill-uninstalled');
@@ -282,30 +282,30 @@ describe('Dispatcher', () => {
   });
 
   it('audits escalations as input-required terminal states', async () => {
-    const map = new Map([['pr-helper', vassal({ card: { name: 'pr-helper', url: '', skills: [{ id: 'create-pr', name: '', description: '', tags: [] }, { id: 'merge-pr', name: '', description: '', tags: [] }] } })]]);
-    const { dispatcherInstance, audit } = dispatcher(map, fakeVassalServer({ escalate: true }));
-    const result = await dispatcherInstance.dispatch({ vassal: 'pr-helper', skill: 'merge-pr', params: { mode: 'execute' }, realm: 'enterprise' });
+    const map = new Map([['pr-helper', executor({ card: { name: 'pr-helper', url: '', skills: [{ id: 'create-pr', name: '', description: '', tags: [] }, { id: 'merge-pr', name: '', description: '', tags: [] }] } })]]);
+    const { dispatcherInstance, audit } = dispatcher(map, fakeExecutorServer({ escalate: true }));
+    const result = await dispatcherInstance.dispatch({ executor: 'pr-helper', skill: 'merge-pr', params: { mode: 'execute' }, realm: 'enterprise' });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.task.status.state).toBe('input-required');
     const escalation = result.events[0] as Record<string, unknown>;
-    expect(escalation['x-zeus-escalation']).toMatchObject({ level: 'driver' });
+    expect(escalation['x-zeus-escalation']).toMatchObject({ level: 'operator' });
     expect(audit[0]!.state).toBe('input-required');
   });
 
   it('sends the bearer token when configured', async () => {
     const seenBodies: unknown[] = [];
-    const map = new Map([['pr-helper', vassal()]]);
-    const { dispatcherInstance } = dispatcher(map, fakeVassalServer({ seenBodies, token: 'zeus-secret' }), 'zeus-secret');
+    const map = new Map([['pr-helper', executor()]]);
+    const { dispatcherInstance } = dispatcher(map, fakeExecutorServer({ seenBodies, token: 'zeus-secret' }), 'zeus-secret');
     const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
     expect(result.ok).toBe(true);
   });
 
-  it('requires an explicit vassal name when several provide the same skill', async () => {
-    const twin = vassal({ name: 'pr-helper-2', taskUrl: 'http://twin.internal/api/a2a/tasks' });
-    const map = new Map([['pr-helper', vassal()], ['pr-helper-2', twin]]);
-    const { dispatcherInstance } = dispatcher(map, fakeVassalServer({}));
+  it('requires an explicit executor name when several provide the same skill', async () => {
+    const twin = executor({ name: 'pr-helper-2', taskUrl: 'http://twin.internal/api/a2a/tasks' });
+    const map = new Map([['pr-helper', executor()], ['pr-helper-2', twin]]);
+    const { dispatcherInstance } = dispatcher(map, fakeExecutorServer({}));
     const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -324,7 +324,7 @@ describe('Dispatcher', () => {
 
   describe('cancel', () => {
     it('audits a forwarded cancellation so the governance surface sees it', async () => {
-      const map = new Map([['pr-helper', vassal()]]);
+      const map = new Map([['pr-helper', executor()]]);
       const fetches: string[] = [];
       const fetchImpl = async (url: string): Promise<Response> => {
         fetches.push(url);
@@ -342,11 +342,11 @@ describe('Dispatcher', () => {
       expect(cancelled.status.state).toBe('canceled');
       // A dispatch is audited; a cancellation used to vanish from the trail.
       expect(log.map(entry => entry.decision)).toEqual(['cancel-requested']);
-      expect(log[0]).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+      expect(log[0]).toMatchObject({ executor: 'pr-helper', taskId: 'task-1' });
     });
 
-    it('refuses to cancel through a revoked vassal, and audits the refusal', async () => {
-      const map = new Map([['pr-helper', vassal({ revoked: true })]]);
+    it('refuses to cancel through a revoked executor, and audits the refusal', async () => {
+      const map = new Map([['pr-helper', executor({ revoked: true })]]);
       const { log, sink } = memoryAuditSink();
       let reached = false;
       const d = new Dispatcher(map, {
@@ -360,20 +360,20 @@ describe('Dispatcher', () => {
       await expect(d.cancel('pr-helper', 'task-1')).rejects.toThrow(/revoked/);
       expect(reached).toBe(false);
       expect(log.map(entry => entry.decision)).toEqual(['refused-revoked']);
-      expect(log[0]).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+      expect(log[0]).toMatchObject({ executor: 'pr-helper', taskId: 'task-1' });
     });
 
-    it('audits a cancel aimed at a vassal that is not registered', async () => {
+    it('audits a cancel aimed at a executor that is not registered', async () => {
       const { log, sink } = memoryAuditSink();
-      const d = new Dispatcher(new Map<string, VassalLike>(), { audit: sink, fetchImpl: fakeVassalServer({}) });
+      const d = new Dispatcher(new Map<string, ExecutorLike>(), { audit: sink, fetchImpl: fakeExecutorServer({}) });
       await expect(d.cancel('ghost', 'task-1')).rejects.toThrow(/ghost/);
-      expect(log.map(entry => entry.decision)).toEqual(['refused-unknown-vassal']);
+      expect(log.map(entry => entry.decision)).toEqual(['refused-unknown-executor']);
     });
   });
 
   describe('sla.ackSeconds enforcement', () => {
     function dispatcherWithClock(
-      map: Map<string, VassalLike>,
+      map: Map<string, ExecutorLike>,
       fetchImpl: (url: string, init?: RequestInit) => Promise<Response>,
       elapsed: () => number
     ) {
@@ -389,28 +389,28 @@ describe('Dispatcher', () => {
     }
 
     it('stays silent when the first event arrives within ackSeconds', async () => {
-      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
-      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeVassalServer({}), steppingClock(100));
+      const map = new Map([['pr-helper', executor({ handshake: handshake({ sla: { ackSeconds: 5 } }) })]]);
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeExecutorServer({}), steppingClock(100));
       const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
       expect(result.ok).toBe(true);
       expect(audit.map((entry: AuditEntry) => entry.decision)).not.toContain('sla-ack-breached');
     });
 
     it('audits sla-ack-breached (without failing the task) when the first event is late', async () => {
-      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
-      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeVassalServer({}), steppingClock(6000));
+      const map = new Map([['pr-helper', executor({ handshake: handshake({ sla: { ackSeconds: 5 } }) })]]);
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeExecutorServer({}), steppingClock(6000));
       const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
 
       expect(result.ok).toBe(true);
       const breach = audit.find((entry: AuditEntry) => entry.decision === 'sla-ack-breached');
       expect(breach).toBeDefined();
-      expect(breach).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+      expect(breach).toMatchObject({ executor: 'pr-helper', taskId: 'task-1' });
       expect(breach?.detail).toContain('6000ms');
       expect(breach?.detail).toContain('ackSeconds=5');
     });
 
     it('audits sla-ack-breached for a peer that returns only a terminal snapshot', async () => {
-      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
+      const map = new Map([['pr-helper', executor({ handshake: handshake({ sla: { ackSeconds: 5 } }) })]]);
       // No intermediate events at all: the only acceptance signal is the snapshot.
       const fetchImpl = async () => sseResponse([], task('completed'));
       const { dispatcherInstance, audit } = dispatcherWithClock(map, fetchImpl, steppingClock(6000));
@@ -418,12 +418,12 @@ describe('Dispatcher', () => {
 
       expect(result.ok).toBe(true);
       const breach = audit.find((entry: AuditEntry) => entry.decision === 'sla-ack-breached');
-      expect(breach).toMatchObject({ vassal: 'pr-helper', taskId: 'task-1' });
+      expect(breach).toMatchObject({ executor: 'pr-helper', taskId: 'task-1' });
       expect(breach?.detail).toContain('6000ms');
     });
 
     it('stays silent for a prompt non-streaming peer', async () => {
-      const map = new Map([['pr-helper', vassal({ fealty: fealty({ sla: { ackSeconds: 5 } }) })]]);
+      const map = new Map([['pr-helper', executor({ handshake: handshake({ sla: { ackSeconds: 5 } }) })]]);
       const fetchImpl = async () => sseResponse([], task('completed'));
       const { dispatcherInstance, audit } = dispatcherWithClock(map, fetchImpl, steppingClock(100));
       const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
@@ -431,9 +431,9 @@ describe('Dispatcher', () => {
       expect(audit.map((entry: AuditEntry) => entry.decision)).not.toContain('sla-ack-breached');
     });
 
-    it('does not measure anything when the vassal declares no sla', async () => {
-      const map = new Map([['pr-helper', vassal()]]);
-      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeVassalServer({}), steppingClock(60_000));
+    it('does not measure anything when the executor declares no sla', async () => {
+      const map = new Map([['pr-helper', executor()]]);
+      const { dispatcherInstance, audit } = dispatcherWithClock(map, fakeExecutorServer({}), steppingClock(60_000));
       const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise' });
       expect(result.ok).toBe(true);
       expect(audit.map((entry: AuditEntry) => entry.decision)).not.toContain('sla-ack-breached');

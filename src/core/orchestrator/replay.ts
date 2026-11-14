@@ -11,7 +11,7 @@
  *
  * The original dispatch input (params) lives on FanOutRequest, which is not
  * part of FanOutResult; it is therefore included only when the matching
- * request is supplied (e.g. when replaying from a kernel snapshot, which
+ * request is supplied (e.g. when replaying from a runtime snapshot, which
  * persists both tables).
  */
 import type { RealmType, TaskState } from '../../a2a/types.js';
@@ -22,7 +22,7 @@ import type {
   BackendArbitration,
   BranchOutcome,
   Conflict,
-  DriverResolution,
+  OperatorResolution,
   FanOutRequest,
   FanOutResult,
   FanOutStatus,
@@ -41,7 +41,7 @@ export type ReplayStepKind =
   | 'conflict-detected'
   | 'backend-arbitrated'
   | 'judge-reviewed'
-  | 'driver-resolved'
+  | 'operator-resolved'
   | 'intent-finished';
 
 /** One ordered, serializable step in the replayed decision timeline. */
@@ -52,16 +52,16 @@ export type ReplayStep = {
   /** Timestamp when the source record carries one. */
   at?: string;
   /** Set for branch-scoped steps. */
-  vassal?: string;
+  executor?: string;
   runId?: string;
   taskId?: string;
   /** Kind-specific, JSON-serializable detail (never a class instance). */
   detail: Record<string, unknown>;
 };
 
-/** One participating vassal and how its branch ended. */
+/** One participating executor and how its branch ended. */
 export type ReplayParticipant = {
-  vassal: string;
+  executor: string;
   runId: string;
   taskId?: string;
   ok: boolean;
@@ -90,7 +90,7 @@ export type DecisionReplay = {
   conflicts: Conflict[];
   backendArbitration?: BackendArbitration;
   judgeReview?: JudgeReview;
-  driverResolution?: DriverResolution;
+  operatorResolution?: OperatorResolution;
   /** True when the served result was itself an idempotent replay (not a fresh fan-out). */
   replayed?: boolean;
   timeline: ReplayStep[];
@@ -167,7 +167,7 @@ function buildBranchSteps(
       push({
         kind: 'branch-dispatched',
         ...(at ? { at } : {}),
-        vassal: branch.vassal,
+        executor: branch.executor,
         runId,
         ...(taskId ? { taskId } : {}),
         detail: { skill: result.skill },
@@ -176,7 +176,7 @@ function buildBranchSteps(
     push({
       kind: 'branch-event',
       ...(at ? { at } : {}),
-      vassal: branch.vassal,
+      executor: branch.executor,
       runId,
       ...(taskId ? { taskId } : {}),
       detail: eventDetail(sourced),
@@ -186,7 +186,7 @@ function buildBranchSteps(
       push({
         kind: 'branch-finished',
         ...(at ? { at } : {}),
-        vassal: branch.vassal,
+        executor: branch.executor,
         runId,
         ...(taskId ? { taskId } : {}),
         detail: branchFinishDetail(branch),
@@ -199,7 +199,7 @@ function buildBranchSteps(
     if (!dispatched.has(branch.runId)) {
       push({
         kind: 'branch-dispatched',
-        vassal: branch.vassal,
+        executor: branch.executor,
         runId: branch.runId,
         ...(branch.taskId ? { taskId: branch.taskId } : {}),
         detail: { skill: result.skill },
@@ -208,7 +208,7 @@ function buildBranchSteps(
     if (!finished.has(branch.runId)) {
       push({
         kind: 'branch-finished',
-        vassal: branch.vassal,
+        executor: branch.executor,
         runId: branch.runId,
         ...(branch.taskId ? { taskId: branch.taskId } : {}),
         detail: branchFinishDetail(branch),
@@ -230,7 +230,7 @@ function branchFinishDetail(branch: BranchOutcome): Record<string, unknown> {
 /**
  * Offline replay of one fan-out decision. Pure and read-only: no dispatch, no
  * I/O, no re-aggregation. Pass the matching FanOutRequest (available in a
- * kernel snapshot) to include the original input and aggregation rule.
+ * runtime snapshot) to include the original input and aggregation rule.
  */
 export function replayDecision(result: FanOutResult, request?: FanOutRequest): DecisionReplay {
   if (request && request.intentId && request.intentId !== result.intentId) {
@@ -259,7 +259,7 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
     kind: 'positions-extracted',
     detail: {
       positions: result.positions.map(p => ({
-        vassal: p.vassal,
+        executor: p.executor,
         stance: p.stance,
         ...(p.weight !== undefined ? { weight: p.weight } : {}),
         ...(p.rationale ? { rationale: p.rationale } : {}),
@@ -300,14 +300,14 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
     });
   }
 
-  if (result.driverResolution) {
+  if (result.operatorResolution) {
     push({
-      kind: 'driver-resolved',
-      at: result.driverResolution.decidedAt,
+      kind: 'operator-resolved',
+      at: result.operatorResolution.decidedAt,
       detail: {
-        escalationId: result.driverResolution.escalationId,
-        stance: result.driverResolution.stance,
-        ...(result.driverResolution.note ? { note: result.driverResolution.note } : {}),
+        escalationId: result.operatorResolution.escalationId,
+        stance: result.operatorResolution.stance,
+        ...(result.operatorResolution.note ? { note: result.operatorResolution.note } : {}),
       },
     });
   }
@@ -322,7 +322,7 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
   }
 
   const participants: ReplayParticipant[] = result.branches.map(branch => ({
-    vassal: branch.vassal,
+    executor: branch.executor,
     runId: branch.runId,
     ...(branch.taskId ? { taskId: branch.taskId } : {}),
     ok: branch.ok,
@@ -349,7 +349,7 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
     conflicts: result.conflicts,
     ...(result.backendArbitration ? { backendArbitration: result.backendArbitration } : {}),
     ...(result.judgeReview ? { judgeReview: result.judgeReview } : {}),
-    ...(result.driverResolution ? { driverResolution: result.driverResolution } : {}),
+    ...(result.operatorResolution ? { operatorResolution: result.operatorResolution } : {}),
     ...(result.replayed ? { replayed: true } : {}),
     timeline,
   };
@@ -420,13 +420,13 @@ export function renderReplay(replay: DecisionReplay): string {
       .filter(Boolean)
       .join(', ');
     lines.push(
-      `    - ${participant.vassal} run=${participant.runId}${participant.taskId ? ` task=${participant.taskId}` : ''}: ${tail}`,
+      `    - ${participant.executor} run=${participant.runId}${participant.taskId ? ` task=${participant.taskId}` : ''}: ${tail}`,
     );
   }
 
   lines.push('  timeline:');
   for (const step of replay.timeline) {
-    const who = step.vassal ? ` [${step.vassal}${step.taskId ? `/${step.taskId}` : ''}]` : '';
+    const who = step.executor ? ` [${step.executor}${step.taskId ? `/${step.taskId}` : ''}]` : '';
     const when = step.at ? ` ${step.at}` : '';
     lines.push(`    ${step.index}. ${step.kind}${who}${when} ${safeStringify(step.detail)}`);
   }
@@ -436,7 +436,7 @@ export function renderReplay(replay: DecisionReplay): string {
     for (const position of replay.positions) {
       const weight = position.weight !== undefined ? ` weight=${position.weight}` : '';
       const rationale = position.rationale ? ` — ${position.rationale}` : '';
-      lines.push(`    - ${position.vassal}: ${position.stance}${weight}${rationale}`);
+      lines.push(`    - ${position.executor}: ${position.stance}${weight}${rationale}`);
     }
   }
 
@@ -448,7 +448,7 @@ export function renderReplay(replay: DecisionReplay): string {
   if (replay.conflicts.length > 0) {
     lines.push(`  conflicts (${replay.conflicts.length}):`);
     for (const conflict of replay.conflicts) {
-      const stances = conflict.stances.map(s => `${s.stance}{${s.vassals.join(',')}}`).join(' vs ');
+      const stances = conflict.stances.map(s => `${s.stance}{${s.executors.join(',')}}`).join(' vs ');
       lines.push(`    - ${stances} — ${conflict.reason}`);
     }
   }
@@ -468,9 +468,9 @@ export function renderReplay(replay: DecisionReplay): string {
       lines.push(`  judge review: not counted (${review.reason ?? 'skipped'}) backend=${review.backend ?? '?'} model=${review.model ?? '?'}`);
     }
   }
-  if (replay.driverResolution) {
-    const resolution = replay.driverResolution;
-    lines.push(`  driver resolution: stance="${resolution.stance}" escalation=${resolution.escalationId} at=${resolution.decidedAt}`);
+  if (replay.operatorResolution) {
+    const resolution = replay.operatorResolution;
+    lines.push(`  operator resolution: stance="${resolution.stance}" escalation=${resolution.escalationId} at=${resolution.decidedAt}`);
   }
 
   return lines.join('\n');

@@ -10,9 +10,9 @@ function statusEvent(taskId: string, state: TaskState): A2AEvent {
   return { kind: 'status-update', taskId, contextId: 'ctx', status: { state }, final: state === 'completed' };
 }
 
-function stanceResult(vassal: string, stance: string, state: TaskState = 'completed'): DispatchResult {
+function stanceResult(executor: string, stance: string, state: TaskState = 'completed'): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-task`, contextId: 'ctx', status: { state },
+    kind: 'task', id: `${executor}-task`, contextId: 'ctx', status: { state },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance } }] }],
   };
   return { ok: true, task, events: [statusEvent(task.id, state)], injectedHits: [] };
@@ -24,7 +24,7 @@ function makePort(routes: Record<string, Route>): DispatchPort & { dispatchCount
   return {
     dispatchCount,
     async dispatch(req) {
-      const name = req.vassal!;
+      const name = req.executor!;
       const no = (dispatchCount[name] = (dispatchCount[name] ?? 0) + 1);
       const route = routes[name];
       return typeof route === 'function' ? (route)(req, no) : route!;
@@ -52,8 +52,8 @@ describe('E6.2 OversightDesk intent-conflict intake and decision', () => {
       intentId: 'intent-1', runId: 'run-1', skill: 'decide', realm: 'personal',
       branches: [], stream: [], positions: [],
       decision: { rule: 'majority', conclusion: null, positions: [], reason: 'tie 1-1' },
-      conflicts: [{ stances: [{ stance: 'go', vassals: ['a'] }, { stance: 'hold', vassals: ['b'] }], reason: 'split' }],
-      status: 'needs-driver', createdAt: 't',
+      conflicts: [{ stances: [{ stance: 'go', executors: ['a'] }, { stance: 'hold', executors: ['b'] }], reason: 'split' }],
+      status: 'needs-operator', createdAt: 't',
     };
 
     const first = desk.ingestConflict({ intentId: 'intent-1', runId: 'run-1', skill: 'decide', realm: 'personal', conflict: result.conflicts[0]! });
@@ -75,7 +75,7 @@ describe('E6.2 OversightDesk intent-conflict intake and decision', () => {
     const desk = new OversightDesk({ cancelTask });
     const esc = desk.ingestConflict({
       runId: 'r', skill: 's', realm: 'personal',
-      conflict: { stances: [{ stance: 'go', vassals: ['a'] }, { stance: 'hold', vassals: ['b'] }], reason: 'split' },
+      conflict: { stances: [{ stance: 'go', executors: ['a'] }, { stance: 'hold', executors: ['b'] }], reason: 'split' },
     });
     const rejected = await desk.reject(esc.id, 'no go');
     expect(rejected.status).toBe('rejected');
@@ -84,13 +84,13 @@ describe('E6.2 OversightDesk intent-conflict intake and decision', () => {
 });
 
 describe('E6.2 end-to-end: fan-out split -> desk -> write-back', () => {
-  it('routes a needs-driver split into the desk and the driver decision closes the intent', async () => {
+  it('routes a needs-operator split into the desk and the operator decision closes the intent', async () => {
     const port = makePort({ loom: stanceResult('loom', 'go'), atlas: stanceResult('atlas', 'hold') });
     const desk = new OversightDesk({ newId: () => 'esc-1' });
     const orch = splitOrchestrator(port, ['loom', 'atlas'], conflictsToDesk(desk));
 
     const split = await orch.fanOut({ intentId: 'intent-1', skill: 'decide', params: {}, realm: 'personal', aggregation: { kind: 'majority' } });
-    expect(split.status).toBe('needs-driver');
+    expect(split.status).toBe('needs-operator');
     expect(desk.list('pending')).toHaveLength(1);
 
     const esc = desk.list('pending')[0]!;
@@ -104,37 +104,37 @@ describe('E6.2 end-to-end: fan-out split -> desk -> write-back', () => {
     expect(resolved.status).toBe('completed');
     expect(resolved.decision.conclusion).toBe('go');
     expect(resolved.conflicts).toEqual([]);
-    expect(resolved.driverResolution).toMatchObject({ escalationId: 'esc-1', stance: 'go' });
+    expect(resolved.operatorResolution).toMatchObject({ escalationId: 'esc-1', stance: 'go' });
     // idempotent replay still returns the resolved result
     const replayed = await orch.fanOut({ intentId: 'intent-1', skill: 'decide', params: {}, realm: 'personal' });
     expect(replayed.status).toBe('completed');
     expect(replayed.replayed).toBe(true);
   });
 
-  it('refuses write-back onto an intent that is not needs-driver', () => {
+  it('refuses write-back onto an intent that is not needs-operator', () => {
     const completed: FanOutResult = {
       intentId: 'i', runId: 'r', skill: 's', realm: 'personal', branches: [], stream: [], positions: [],
       decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'unanimous' },
       conflicts: [], status: 'completed', createdAt: 't',
     };
-    expect(() => applyConflictResolution(completed, { escalationId: 'e', stance: 'go', decidedAt: 't' })).toThrow(/only needs-driver/);
+    expect(() => applyConflictResolution(completed, { escalationId: 'e', stance: 'go', decidedAt: 't' })).toThrow(/only needs-operator/);
   });
 });
 
 describe('E6.3 recompute drops the settlement records of the superseded branch set', () => {
-  it('clears driver resolution, judge review and backend arbitration before re-deriving', () => {
+  it('clears operator resolution, judge review and backend arbitration before re-deriving', () => {
     const previous: FanOutResult = {
       intentId: 'i', runId: 'r', skill: 's', realm: 'personal', branches: [], stream: [], positions: [],
-      decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'driver settled' },
+      decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'operator settled' },
       conflicts: [], status: 'completed', createdAt: 't',
-      driverResolution: { escalationId: 'esc-1', stance: 'go', decidedAt: 't' },
+      operatorResolution: { escalationId: 'esc-1', stance: 'go', decidedAt: 't' },
       judgeReview: { judged: true, recommended: 'go', agreesWithRule: true, decidedAt: 't' },
       backendArbitration: { concluded: true, conclusion: 'go', decidedAt: 't' },
     };
 
     const recomputed = recomputeResult(previous, previous.branches, { kind: 'majority' }, () => new Date('2026-01-01T00:00:00.000Z'));
 
-    expect(recomputed.driverResolution).toBeUndefined();
+    expect(recomputed.operatorResolution).toBeUndefined();
     expect(recomputed.judgeReview).toBeUndefined();
     expect(recomputed.backendArbitration).toBeUndefined();
   });
@@ -147,7 +147,7 @@ describe('E6.3 minimal re-dispatch after a branch needs another attempt', () => 
       loom: (req, callNo) => {
         seenParams.push(req.params);
         return callNo === 1
-          ? { ok: false, reason: 'missing approval', audit: { ts: 't', vassal: 'loom', decision: 'dispatch-failed' as const } }
+          ? { ok: false, reason: 'missing approval', audit: { ts: 't', executor: 'loom', decision: 'dispatch-failed' as const } }
           : stanceResult('loom', 'go');
       },
       atlas: stanceResult('atlas', 'go'),
@@ -164,11 +164,11 @@ describe('E6.3 minimal re-dispatch after a branch needs another attempt', () => 
     expect(seenParams[1]).toMatchObject({ ticket: 'OPS-1', approved: true });
     expect(resumed.status).toBe('completed');
     expect(resumed.decision.conclusion).toBe('go');
-    expect(resumed.branches.find(b => b.vassal === 'loom')?.state).toBe('completed');
+    expect(resumed.branches.find(b => b.executor === 'loom')?.state).toBe('completed');
     expect(resumed.branches).toHaveLength(2);
   });
 
-  it('resumeBranch on an unknown intent or unknown vassal throws', async () => {
+  it('resumeBranch on an unknown intent or unknown executor throws', async () => {
     const port = makePort({ loom: stanceResult('loom', 'go') });
     const orch = splitOrchestrator(port, ['loom']);
     await expect(orch.resumeBranch('nope', 'loom', {})).rejects.toThrow(/unknown intent/);

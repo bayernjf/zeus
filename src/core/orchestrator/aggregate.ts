@@ -4,13 +4,13 @@ import type { AggregatedDecision, AggregationRule, BranchOutcome, Position } fro
 const STANCE_KEYS = ['stance', 'verdict'] as const;
 
 /**
- * Pull a vassal's stance out of its terminal task's data parts, if it gave one.
+ * Pull a executor's stance out of its terminal task's data parts, if it gave one.
  *
  * Trust boundary (deep review 2026-11-02 P1-2): the artifact contract is
- * stance + rationale only. A vassal-reported `weight` is never ingested —
+ * stance + rationale only. A executor-reported `weight` is never ingested —
  * `Position.weight` is a voting weight assigned by the platform/caller, not an
  * author-side claim (the memory producer reads no weight for the same reason).
- * A vassal that wants a bigger say must be granted it operator-side; it cannot
+ * A executor that wants a bigger say must be granted it operator-side; it cannot
  * self-report one.
  */
 export function extractStance(task: Task): { stance: string; rationale?: string } | null {
@@ -37,7 +37,7 @@ export function extractPositions(branches: BranchOutcome[]): Position[] {
   for (const branch of branches) {
     if (!branch.ok || !branch.task) continue;
     const found = extractStance(branch.task);
-    if (found) positions.push({ vassal: branch.vassal, ...found });
+    if (found) positions.push({ executor: branch.executor, ...found });
   }
   return positions;
 }
@@ -58,7 +58,7 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
   const base = { rule: rule.kind, positions, conclusion: null as string | null };
 
   if (positions.length === 0) {
-    return { ...base, reason: 'no vassal returned a stance; nothing to aggregate' };
+    return { ...base, reason: 'no executor returned a stance; nothing to aggregate' };
   }
 
   const groups = groupByStance(positions);
@@ -66,9 +66,9 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
 
   if (rule.kind === 'unanimous') {
     if (distinct.length === 1) {
-      return { ...base, conclusion: distinct[0]!, reason: `unanimous: all ${positions.length} vassal(s) hold "${distinct[0]}"` };
+      return { ...base, conclusion: distinct[0]!, reason: `unanimous: all ${positions.length} executor(s) hold "${distinct[0]}"` };
     }
-    return { ...base, reason: `not unanimous: ${distinct.length} distinct stances among ${positions.length} vassal(s)` };
+    return { ...base, reason: `not unanimous: ${distinct.length} distinct stances among ${positions.length} executor(s)` };
   }
 
   if (rule.kind === 'majority') {
@@ -101,7 +101,7 @@ export function aggregate(positions: Position[], rule: AggregationRule = { kind:
   const voters = positions.filter(weightValid);
   const excluded = positions.filter(p => !weightValid(p));
   const exclusion = excluded.length > 0
-    ? `excluded ${excluded.length} position(s) with non-finite or negative weight (${excluded.map(p => p.vassal).join(', ')}); `
+    ? `excluded ${excluded.length} position(s) with non-finite or negative weight (${excluded.map(p => p.executor).join(', ')}); `
     : '';
   const voterGroups = groupByStance(voters);
   const voterStances = [...voterGroups.keys()];

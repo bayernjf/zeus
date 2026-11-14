@@ -123,7 +123,7 @@ describe('FsRealmStore P0', () => {
   it('keeps a read-only mount read-only across reconnects that omit the flag', async () => {
     const store = new FsRealmStore();
     const manifest = await store.connect(root, 'personal', { readOnly: true });
-    // A later reconnect with no flag (vault live-source, boot restore) must not
+    // A later reconnect with no flag (backup live-source, boot restore) must not
     // silently promote the mount back to writable.
     await store.connect(root, 'personal');
     expect(store.connections().find(c => c.realmId === manifest.realmId)?.readOnly).toBe(true);

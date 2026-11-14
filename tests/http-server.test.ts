@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { AddressInfo } from 'node:net';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner, verifySignedSnapshot } from '../src/registry/signing.js';
 import { timingSafeEqual } from 'node:crypto';
 import {
   classifyCatalogueError,
   classifyConnectorError,
-  classifyKernelError,
+  classifyRuntimeError,
   classifyOrgError,
   createHttpServer,
   constantTimeEqual,
   mapCatalogueError,
   mapDiaryError,
-  mapKernelError,
+  mapRuntimeError,
   mapOrgError,
   mapRealmQueryError,
   DEFAULT_HTTP_HOST,
@@ -34,14 +34,14 @@ import type { SignedRosterSnapshot } from '../src/registry/signing.js';
 function card(name: string, overrides: Record<string, unknown> = {}): AgentCard {
   return {
     name,
-    description: `${name} vassal`,
+    description: `${name} executor`,
     url: `http://${name}.internal/api/a2a/tasks`,
     skills: [{ id: `${name}-skill`, name: `${name} skill`, description: '', tags: [] }],
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1',
       swornTo: 'zeus',
       domain: `${name}-domain`,
-      dataRealms: ['enterprise'],
+      realms: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -50,8 +50,8 @@ function card(name: string, overrides: Record<string, unknown> = {}): AgentCard 
   };
 }
 
-async function registryWithTwo(): Promise<VassalRegistry> {
-  const registry = new VassalRegistry(async url =>
+async function registryWithTwo(): Promise<ExecutorRegistry> {
+  const registry = new ExecutorRegistry(async url =>
     new Response(
       JSON.stringify(url.includes('loom') ? card('loom') : card('pr-helper')),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -65,7 +65,7 @@ async function registryWithTwo(): Promise<VassalRegistry> {
 
 const KEY_ID = 'zeus-rsk-2026-09';
 
-async function serverWith(registry: VassalRegistry, internalToken?: string, signer = new Ed25519MemorySigner(KEY_ID)) {
+async function serverWith(registry: ExecutorRegistry, internalToken?: string, signer = new Ed25519MemorySigner(KEY_ID)) {
   const app = await createHttpServer({
     registry,
     signer,
@@ -82,7 +82,7 @@ describe('HTTP H1 server', () => {
     app = undefined;
   });
 
-  it('GET /healthz returns liveness only, no vassal or realm data', async () => {
+  it('GET /healthz returns liveness only, no executor or realm data', async () => {
     const registry = await registryWithTwo();
     app = (await serverWith(registry)).app;
     const reply = await app.inject({ method: 'GET', url: '/healthz' });
@@ -102,7 +102,7 @@ describe('HTTP H1 server', () => {
     expect(reply.headers['content-type']).toContain('application/json');
 
     const envelope = JSON.parse(reply.body) as SignedRosterSnapshot;
-    // revoked vassal absent from the public snapshot and its attestations
+    // revoked executor absent from the public snapshot and its attestations
     expect(envelope.snapshot.scope).toBe('public');
     expect(envelope.snapshot.entries.map(e => e.name)).toEqual(['pr-helper']);
     expect(Object.keys(envelope.attestations).sort()).toEqual(['pr-helper']);
@@ -113,14 +113,14 @@ describe('HTTP H1 server', () => {
     expect(entriesJson).not.toContain('taskUrl');
     expect(entriesJson).not.toContain('healthDetail');
     // taskUrl/healthDetail never appear anywhere in the envelope; the revoked
-    // vassal's name is absent too. cardUrl is allowed ONLY inside attestation
-    // provenance (fealty-signing §4.2 anchors {name,cardUrl} under the signature;
+    // executor's name is absent too. cardUrl is allowed ONLY inside attestation
+    // provenance (handshake-signing §4.2 anchors {name,cardUrl} under the signature;
     // §8.1-6 requires tampering with it to fail verification).
     expect(reply.body).not.toContain('taskUrl');
     expect(reply.body).not.toContain('healthDetail');
     expect(reply.body).not.toContain('loom');
     expect((envelope.snapshot.entries[0] as Record<string, unknown>).cardUrl).toBeUndefined();
-    expect(envelope.attestations['pr-helper']!.vassal).toEqual({
+    expect(envelope.attestations['pr-helper']!.executor).toEqual({
       name: 'pr-helper',
       cardUrl: 'http://pr-helper.internal/api/a2a/agent-card',
     });
@@ -133,7 +133,7 @@ describe('HTTP H1 server', () => {
     const attestation = envelope.attestations['pr-helper']!;
     expect(attestation).toMatchObject({ status: 'active', keyId: KEY_ID, issuer: 'zeus' });
     expect(attestation.cardDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(attestation.fealtyDigest).toMatch(/^sha256:/);
+    expect(attestation.handshakeDigest).toMatch(/^sha256:/);
   });
 
   it('rejects a tampered snapshot (edited entry, provenance cardUrl) and a tampered seal signature', async () => {
@@ -150,9 +150,9 @@ describe('HTTP H1 server', () => {
     expect(entryVerdict.ok).toBe(false);
     if (!entryVerdict.ok) expect(entryVerdict.reason).toMatch(/snapshotDigest/);
 
-    // fealty-signing §8.1-6: tampering with the provenance cardUrl fails attestation
+    // handshake-signing §8.1-6: tampering with the provenance cardUrl fails attestation
     const tamperedProvenance = structuredClone(envelope);
-    tamperedProvenance.attestations['pr-helper']!.vassal.cardUrl = 'http://evil.internal/agent-card';
+    tamperedProvenance.attestations['pr-helper']!.executor.cardUrl = 'http://evil.internal/agent-card';
     const provenanceVerdict = await verifySignedSnapshot(tamperedProvenance, signer.verifier(), withinWindow);
     expect(provenanceVerdict.ok).toBe(false);
     if (!provenanceVerdict.ok) expect(provenanceVerdict.reason).toMatch(/attestation signature/);
@@ -225,7 +225,7 @@ describe('HTTP H1 server', () => {
   });
 
   it('seals an empty registry into a verifiable snapshot', async () => {
-    const { app: server, signer } = await serverWith(new VassalRegistry());
+    const { app: server, signer } = await serverWith(new ExecutorRegistry());
     app = server;
     const reply = await app.inject({ method: 'GET', url: '/api/roster/public' });
     expect(reply.statusCode).toBe(200);
@@ -247,7 +247,7 @@ describe('startServer (the process-entry start primitive)', () => {
   });
 
   it('listens on a real socket and serves /healthz over TCP', async () => {
-    const app = await startServer({ registry: new VassalRegistry(), signer: new Ed25519MemorySigner(KEY_ID) }, { port: 0 });
+    const app = await startServer({ registry: new ExecutorRegistry(), signer: new Ed25519MemorySigner(KEY_ID) }, { port: 0 });
     try {
       const address = app.server.address();
       expect(typeof address).toBe('object');
@@ -292,7 +292,7 @@ describe('domain error -> HTTP status classification', () => {
   // regexes ("unknown department", "not found", "already ..."): a mapper that
   // still decides by message text returns 400 for every one of them.
   it('reads the kind off the type, whatever the message says', () => {
-    expect(classifyKernelError(new DomainError('totally unrelated wording', 'not-found')))
+    expect(classifyRuntimeError(new DomainError('totally unrelated wording', 'not-found')))
       .toEqual({ status: 404, code: 'not_found' });
     expect(classifyOrgError(new DomainError('totally unrelated wording', 'not-found')))
       .toEqual({ status: 404, code: 'not_found' });
@@ -303,7 +303,7 @@ describe('domain error -> HTTP status classification', () => {
   });
 
   it('classifies the real domain errors by class, not by message text', () => {
-    expect(classifyKernelError(new UnknownIntentError('anything at all')))
+    expect(classifyRuntimeError(new UnknownIntentError('anything at all')))
       .toEqual({ status: 404, code: 'not_found' });
     expect(classifyCatalogueError(new SkillNotFoundError('anything at all')))
       .toEqual({ status: 404, code: 'not_found' });
@@ -316,7 +316,7 @@ describe('domain error -> HTTP status classification', () => {
   });
 
   it('does not classify an untyped throw by its message, and never as a client fault', () => {
-    expect(classifyKernelError(new Error('unknown intent: x')))
+    expect(classifyRuntimeError(new Error('unknown intent: x')))
       .toEqual({ status: 500, code: 'internal_error' });
     expect(classifyOrgError(new Error('Unknown department dept:nope')))
       .toEqual({ status: 500, code: 'internal_error' });
@@ -325,7 +325,7 @@ describe('domain error -> HTTP status classification', () => {
   });
 
   it('maps untyped throws to a fixed 500 body and logs the original server-side', () => {
-    for (const mapper of [mapKernelError, mapOrgError, mapCatalogueError]) {
+    for (const mapper of [mapRuntimeError, mapOrgError, mapCatalogueError]) {
       const errors: unknown[] = [];
       let code = 0;
       let sent: unknown;
@@ -415,7 +415,7 @@ describe('domain error -> HTTP status classification', () => {
       send(body: unknown) { sent = body; return this; },
       log: { error(entry: unknown) { errors.push(entry); } },
     };
-    mapKernelError(reply as never, new DomainError('no such intent', 'not-found'));
+    mapRuntimeError(reply as never, new DomainError('no such intent', 'not-found'));
     expect(code).toBe(404);
     expect(sent).toEqual({ error: 'not_found', detail: 'no such intent' });
     expect(errors).toHaveLength(0);

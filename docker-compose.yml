@@ -1,13 +1,13 @@
-# zeus decision kernel, standalone. growth-agent builds and runs its own copy
+# zeus decision runtime, standalone. growth-agent builds and runs its own copy
 # from ../zeus, so this stack is for working on zeus directly.
 #
-# A roster signing key is mandatory: the kernel refuses to boot without one (an
-# unsigned kernel would publish a roster nothing can pin). Generate it once into
+# A roster signing key is mandatory: the runtime refuses to boot without one (an
+# unsigned runtime would publish a roster nothing can pin). Generate it once into
 # the volume:
 #
 #   docker compose run --rm zeus-keygen
 #
-# 8787 is already taken on this machine (commerce-os), so the kernel is published
+# 8787 is already taken on this machine (commerce-os), so the runtime is published
 # on 18787.
 services:
   zeus:
@@ -22,7 +22,7 @@ services:
       ZEUS_INTERNAL_TOKEN: ${ZEUS_INTERNAL_TOKEN:-local-dev-internal-token-16chars}
       ZEUS_RSK_KEY_FILE: /data/rsk.key
       ZEUS_RSK_KEY_ID: ${ZEUS_RSK_KEY_ID:-local-rsk}
-      ZEUS_STATE_FILE: /data/kernel-state.json
+      ZEUS_STATE_FILE: /data/runtime-state.json
       # model-hub is the only model source (the W7-3 kill switch for
       # non-hub providers is gone). Address it by service name on tier0-net:
       # inside the container localhost is the container itself, so the
@@ -35,17 +35,17 @@ services:
       # not writable by the node process, so the cache silently never wrote.
       MODEL_HUB_CACHE_PATH: /data/model-cache.json
       # The outbound guard rejects RFC1918 and 0.0.0.0/8 by default (SSRF
-      # protection), which would 502 every vassal registration against a
+      # protection), which would 502 every executor registration against a
       # sibling container on the private network. This hostname allowlist is
-      # the sanctioned escape hatch and must name each local vassal.
+      # the sanctioned escape hatch and must name each local executor.
       ZEUS_OUTBOUND_ALLOW_HOSTS: zeus-example-agent,zeus-llm-agent,model-hub
-      # Registration is restored from kernel-state on restart, but a fresh
+      # Registration is restored from runtime-state on restart, but a fresh
       # data volume starts with an empty roster - and an empty roster makes
       # fan-out produce zero branches, so every intent settles as "failed"
-      # with "no vassal returned a stance". Seeding the card URL at boot keeps
+      # with "no executor returned a stance". Seeding the card URL at boot keeps
       # the dispatch path working on a first boot too. Format is a comma list;
-      # a vassal bearer token can follow the URL after '|'.
-      ZEUS_VASSAL_SEEDS: http://zeus-example-agent:8090/api/a2a/agent-card,http://zeus-llm-agent:8091/api/a2a/agent-card
+      # a executor bearer token can follow the URL after '|'.
+      ZEUS_EXECUTOR_SEEDS: http://zeus-example-agent:8090/api/a2a/agent-card,http://zeus-llm-agent:8091/api/a2a/agent-card
       # Without an audit sink the trace endpoint answers 404 for an intent
       # that just completed, because it requires both progress events and a
       # readable audit file. W2-7's span-tree check cannot run without it.
@@ -66,13 +66,13 @@ services:
       - zeus-data:/data
     restart: unless-stopped
     logging:
-      driver: json-file
+      operator: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
   # Reference execution agent, so the dispatch/aggregate loop has at least one
-  # registered vassal to fan out to. It reads only the A2A task message: no
+  # registered executor to fan out to. It reads only the A2A task message: no
   # filesystem, no outbound network, no model call. Its report demonstrates
   # the protocol shape and never asks model-hub for anything, so it produces
   # zero real model cost - fine for proving the wiring, not for W2-7's
@@ -96,7 +96,7 @@ services:
     healthcheck:
       disable: true
     logging:
-      driver: json-file
+      operator: json-file
       options:
         max-size: "10m"
         max-file: "3"
@@ -123,7 +123,7 @@ services:
     healthcheck:
       disable: true
     logging:
-      driver: json-file
+      operator: json-file
       options:
         max-size: "10m"
         max-file: "3"

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import {
   DecisionAuditChain,
@@ -36,7 +36,7 @@ interface Stack {
 let stack: Stack;
 
 async function startStack(): Promise<Stack> {
-  const registry = new VassalRegistry();
+  const registry = new ExecutorRegistry();
   const signer = new Ed25519MemorySigner('zeus-rsk-org-contract');
   const policyStore = new MemoryPolicyStore();
   policyStore.put(DEFAULT_POLICY_V1);
@@ -298,7 +298,7 @@ describe('org contract: task dispatch (T-M2-03)', () => {
     });
     const org2 = new OrgService({ decisions: decisions2 });
     const app2 = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-noexec'),
       internalToken: TOKEN,
       decisionService: decisions2,

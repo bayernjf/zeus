@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { FsRealmStore } from '../src/realm/store.js';
 
@@ -29,9 +29,9 @@ async function mount(withMcp: boolean): Promise<FastifyInstance> {
   writeFileSync(join(root, 'notes', 'todo.txt'), 'buy milk\n');
   const manifest = await store.connect(root, 'personal', { readOnly: true });
   app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
-    internalToken: 'driver-secret',
+    internalToken: 'operator-secret',
     realmStore: store,
     ...(withMcp ? { realmMcp: { realmIds: [manifest.realmId] } } : {}),
   });
@@ -42,7 +42,7 @@ function rpc(id: number | string, method: string, params?: unknown) {
   return { jsonrpc: '2.0' as const, id, method, ...(params ? { params } : {}) };
 }
 
-const TOKEN = { authorization: 'Bearer driver-secret' };
+const TOKEN = { authorization: 'Bearer operator-secret' };
 
 describe('Realm MCP streamable HTTP exposure (E3.4 transport, design-realm §6.5)', () => {
   it('does not mount /mcp when realmMcp is not configured (default unchanged)', async () => {

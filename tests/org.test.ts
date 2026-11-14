@@ -29,13 +29,13 @@ function fanOut(partial: Partial<FanOutResult> & { branches: BranchOutcome[] }):
   };
 }
 
-function branch(vassal: string): BranchOutcome {
-  return { vassal, runId: `run-${vassal}`, ok: true, events: [] };
+function branch(executor: string): BranchOutcome {
+  return { executor, runId: `run-${executor}`, ok: true, events: [] };
 }
 
 describe('createDepartment / slug', () => {
   it('creates a department with a deterministic id and no members', () => {
-    const d = createDepartment({ name: 'Engineering Team', mission: 'build the kernel' });
+    const d = createDepartment({ name: 'Engineering Team', mission: 'build the runtime' });
     expect(d.departmentId).toBe('dept:engineering-team');
     expect(d.members).toEqual([]);
     expect(d.name).toBe('Engineering Team');
@@ -195,19 +195,19 @@ describe('traceAccountability', () => {
     expect(chain.leads.map(n => n.agentId).sort()).toEqual(['agent-b', 'agent-d']);
   });
 
-  it('surfaces the deciding driver from a driver resolution', () => {
+  it('surfaces the deciding operator from a operator resolution', () => {
     const chain = traceAccountability(
       [engineering()],
       fanOut({
         branches: [branch('agent-a')],
-        driverResolution: {
+        operatorResolution: {
           escalationId: 'esc-1',
           stance: 'approve',
           decidedAt: '2026-09-23T12:00:00.000Z',
         },
       }),
     );
-    expect(chain.driver).toEqual({
+    expect(chain.operator).toEqual({
       escalationId: 'esc-1',
       stance: 'approve',
       decidedAt: '2026-09-23T12:00:00.000Z',

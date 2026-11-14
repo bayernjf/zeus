@@ -85,7 +85,7 @@ export function costRateCircuitOpen(b: CostBudget, limit: CostLimit, now: string
 
 - 接线点（V2，设计级）：boot 装配时经配置注入 CostLimit（env 形状沿用 resolveConcurrencyConfig，不合法即 boot 失败，不静默忽略）；fanOutNew 派发边界在 mayDispatch 后串 costAdmit；分支落定（publishBranch/branchEnded 处）recordSettled；watch tick 兼查速率窗。
 - 审计新值：`cost-budget-exceeded` / `cost-rate-circuit-open` / `cost-self-report-mismatch` / `cost-backend-degraded` 入 AUDIT_DECISIONS。
-- 域级账本随 KernelSnapshot 持久化（周期重置时间戳入快照），意图级账本随意图归档。
+- 域级账本随 RuntimeSnapshot 持久化（周期重置时间戳入快照），意图级账本随意图归档。
 
 ## 5. 分期
 

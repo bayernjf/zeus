@@ -2,14 +2,14 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { bootKernel } from '../src/state/boot.js';
+import { bootRuntime } from '../src/state/boot.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { issueDelegationContract } from '../src/delegation/delegation-contract.js';
 import type { WatchRegistry } from '../src/watch/watch.js';
 import type { AuditEntry } from '../src/dispatch/dispatcher.js';
 
 /**
- * design-self-host-loop §7 step 4, proved on the assembled kernel: an
+ * design-self-host-loop §7 step 4, proved on the assembled runtime: an
  * unattended execute watch derives a real one-time child ticket from its
  * signed contract, that ticket passes the orchestrator's execute gate, and the
  * dispatch actually happens. Every failure mode (no signer, no contract, a
@@ -28,15 +28,15 @@ function cardFor(name: string) {
     skills: [{ id: 'review', name: 'Review', description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-fealty': {
+    'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      dataRealms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
 }
 
-function vassalFetch(): typeof fetch {
+function executorFetch(): typeof fetch {
   return (async (input: unknown) => {
     const url = String(input);
     const name = url.split('/')[3]!;
@@ -81,7 +81,7 @@ function registerExecuteWatch(watches: WatchRegistry, delegationId: string) {
   });
 }
 
-describe('an execute watch on a booted kernel (step 4)', () => {
+describe('an execute watch on a booted runtime (step 4)', () => {
   let dir = '';
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'zeus-boot-watch-exec-'));
@@ -93,11 +93,11 @@ describe('an execute watch on a booted kernel (step 4)', () => {
   it('derives a child ticket from the signed contract and really executes', async () => {
     const audits: AuditEntry[] = [];
     const signer = new Ed25519MemorySigner('zeus-rsk-dev');
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       now: () => TICK_AT,
-      fetchImpl: vassalFetch(),
-      vassalSeeds: seeds,
-      driverSigner: signer,
+      fetchImpl: executorFetch(),
+      executorSeeds: seeds,
+      operatorSigner: signer,
       dispatchAudit: entry => audits.push(entry),
     });
 
@@ -110,57 +110,57 @@ describe('an execute watch on a booted kernel (step 4)', () => {
       },
       { signer, now: () => TICK_AT },
     );
-    kernel.delegationContracts!.add(contract);
-    registerExecuteWatch(kernel.watches!, contract.id);
+    runtime.delegationContracts!.add(contract);
+    registerExecuteWatch(runtime.watches!, contract.id);
 
-    const report = await kernel.runWatchTick(TICK_AT);
+    const report = await runtime.runWatchTick(TICK_AT);
     expect(report.fired).toEqual(['w1']);
 
-    // The intent really ran in execute mode and completed against the vassal.
-    const intent = kernel.orchestrator.getIntent('watch:w1:1');
+    // The intent really ran in execute mode and completed against the executor.
+    const intent = runtime.orchestrator.getIntent('watch:w1:1');
     expect(intent?.status).toBe('completed');
     expect(intent?.branches.every(branch => branch.ok)).toBe(true);
 
     // The contract slot was spent then released when the dispatch settled, so
     // maxConcurrent is not permanently consumed by a finished fire.
-    const stored = kernel.delegationContracts!.get(contract.id)!;
+    const stored = runtime.delegationContracts!.get(contract.id)!;
     expect(stored.used.childTickets).toBe(1);
     expect(stored.used.inFlight).toBe(0);
 
     expect(audits.some(entry => entry.decision === 'delegation-child-issued')).toBe(true);
-    expect(kernel.oversight.list(undefined, 'delegation-limit')).toHaveLength(0);
+    expect(runtime.oversight.list(undefined, 'delegation-limit')).toHaveLength(0);
   });
 
   it('escalates with zero outbound when the named contract does not exist', async () => {
     const signer = new Ed25519MemorySigner('zeus-rsk-dev');
-    const kernel = await bootKernel({
+    const runtime = await bootRuntime({
       now: () => TICK_AT,
-      fetchImpl: vassalFetch(),
-      vassalSeeds: seeds,
-      driverSigner: signer,
+      fetchImpl: executorFetch(),
+      executorSeeds: seeds,
+      operatorSigner: signer,
     });
-    registerExecuteWatch(kernel.watches!, 'missing-contract');
+    registerExecuteWatch(runtime.watches!, 'missing-contract');
 
-    const report = await kernel.runWatchTick(TICK_AT);
+    const report = await runtime.runWatchTick(TICK_AT);
     expect(report.fired).toEqual([]);
-    expect(kernel.orchestrator.getIntent('watch:w1:1')).toBeUndefined();
+    expect(runtime.orchestrator.getIntent('watch:w1:1')).toBeUndefined();
 
-    const rows = kernel.oversight.list('pending', 'delegation-limit');
+    const rows = runtime.oversight.list('pending', 'delegation-limit');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.limitReason).toBe('unknown-contract');
     expect(rows[0]!.watchId).toBe('w1');
-    expect(kernel.watches!.get('w1')!.used.executes).toBe(0);
+    expect(runtime.watches!.get('w1')!.used.executes).toBe(0);
   });
 
-  it('fails closed to a desk escalation when no driver signer is assembled', async () => {
-    const kernel = await bootKernel({ now: () => TICK_AT, fetchImpl: vassalFetch(), vassalSeeds: seeds });
-    registerExecuteWatch(kernel.watches!, 'contract-1');
+  it('fails closed to a desk escalation when no operator signer is assembled', async () => {
+    const runtime = await bootRuntime({ now: () => TICK_AT, fetchImpl: executorFetch(), executorSeeds: seeds });
+    registerExecuteWatch(runtime.watches!, 'contract-1');
 
-    const report = await kernel.runWatchTick(TICK_AT);
+    const report = await runtime.runWatchTick(TICK_AT);
     expect(report.fired).toEqual([]);
-    expect(kernel.orchestrator.getIntent('watch:w1:1')).toBeUndefined();
+    expect(runtime.orchestrator.getIntent('watch:w1:1')).toBeUndefined();
 
-    const rows = kernel.oversight.list('pending', 'delegation-limit');
+    const rows = runtime.oversight.list('pending', 'delegation-limit');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.limitReason).toBe('no-trust-anchor');
   });

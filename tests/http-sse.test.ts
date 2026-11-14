@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer, streamIntentProgress, type EventStreamSocket } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { ConcurrencyMetrics } from '../src/orchestrator/metrics.js';
@@ -11,7 +11,7 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchResult } from '../src/dispatch/dispatcher.js';
 import type { A2AEvent, Task } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 
 function completed(): DispatchResult {
   const taskId = 't1';
@@ -42,7 +42,7 @@ async function harness(delayedMs = 0): Promise<Harness> {
     newIntentId: () => 'intent-1', newRunId: () => 'run-1', metrics, onProgress: e => hub.publish(e),
   });
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: TOKEN,
     orchestrator,
@@ -72,7 +72,7 @@ describe('H3 SSE intent events', () => {
   it('404s an unknown intent when no hub is configured', async () => {
     const { app } = await harness();
     const resNoHub = await createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       orchestrator: new Orchestrator(
@@ -147,7 +147,7 @@ class FakeSocket extends EventEmitter {
 }
 
 const started: ProgressEvent = {
-  type: 'branch-started', intentId: 'i', runId: 'r', vassal: 'v', skill: 's', at: '2026-10-01T00:00:00.000Z',
+  type: 'branch-started', intentId: 'i', runId: 'r', executor: 'v', skill: 's', at: '2026-10-01T00:00:00.000Z',
 };
 const finished: ProgressEvent = {
   type: 'intent-finished', intentId: 'i', runId: 'r', status: 'completed', at: '2026-10-01T00:00:01.000Z',
@@ -201,7 +201,7 @@ describe('hijacked SSE stream lifecycle', () => {
     // settled, and the thinking-state view starts from a false "no branches".
     const hub = new ProgressHub();
     const pastEnd: ProgressEvent = {
-      type: 'branch-ended', intentId: 'i', runId: 'r', vassal: 'v', outcome: 'completed', state: 'completed',
+      type: 'branch-ended', intentId: 'i', runId: 'r', executor: 'v', outcome: 'completed', state: 'completed',
       at: '2026-10-01T00:00:00.500Z',
     };
     hub.publish(started);
@@ -331,7 +331,7 @@ describe('live SSE stream cap', () => {
       }
     );
     return createHttpServer({
-      registry: new VassalRegistry(),
+      registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       orchestrator,

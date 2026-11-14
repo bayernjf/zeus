@@ -121,12 +121,12 @@ export class PlanFlow {
         if (draft === undefined) {
           this.audit({
             ts: this.now().toISOString(),
-            vassal: branch.vassal,
+            executor: branch.executor,
             runId: branch.runId,
             skill,
             realm: request.realm,
             decision: 'plan-malformed',
-            detail: `planner ${branch.vassal} returned no structured plan draft (data part key '${PLAN_DATA_KEY}' expected)`,
+            detail: `planner ${branch.executor} returned no structured plan draft (data part key '${PLAN_DATA_KEY}' expected)`,
           });
           continue;
         }
@@ -137,16 +137,16 @@ export class PlanFlow {
         if (draft.realm !== request.realm) {
           this.audit({
             ts: this.now().toISOString(),
-            vassal: branch.vassal,
+            executor: branch.executor,
             runId: branch.runId,
             skill,
             realm: request.realm,
             decision: 'plan-malformed',
-            detail: `planner ${branch.vassal} draft realm '${draft.realm}' does not match request realm '${request.realm}'; draft dropped`,
+            detail: `planner ${branch.executor} draft realm '${draft.realm}' does not match request realm '${request.realm}'; draft dropped`,
           });
           continue;
         }
-        drafts.push({ planner: branch.vassal, spec: draft });
+        drafts.push({ planner: branch.executor, spec: draft });
       }
     }
 
@@ -157,7 +157,7 @@ export class PlanFlow {
           : 'every planner draft was malformed or missing';
       this.audit({
         ts: this.now().toISOString(),
-        vassal: '(planning)',
+        executor: '(planning)',
         runId: intentId,
         skill: plannerSkills.join(',') || '(none)',
         realm: request.realm,
@@ -182,7 +182,7 @@ export class PlanFlow {
       const reasons = ranking.scores.flatMap((score) => score.rejects);
       this.audit({
         ts: this.now().toISOString(),
-        vassal: '(planning)',
+        executor: '(planning)',
         runId: intentId,
         skill: plannerSkills.join(',') || '(none)',
         realm: request.realm,
@@ -202,7 +202,7 @@ export class PlanFlow {
     if (verdict.kind === 'conflict') {
       this.audit({
         ts: this.now().toISOString(),
-        vassal: '(planning)',
+        executor: '(planning)',
         runId: intentId,
         skill: plannerSkills.join(',') || '(none)',
         realm: request.realm,
@@ -211,14 +211,14 @@ export class PlanFlow {
       });
       const escalated = this.oversight
         ? this.escalateConflict(intentId, request, verdict.planners, ranking)
-        : { id: `esc-plan-${intentId}`, kind: 'intent-conflict' as const, runId: intentId, vassal: '(planning)', skill: request.goal.description.slice(0, 40), realm: request.realm, reason: 'plan-conflict', options: verdict.planners, status: 'pending' as const, createdAt: this.now().toISOString() };
+        : { id: `esc-plan-${intentId}`, kind: 'intent-conflict' as const, runId: intentId, executor: '(planning)', skill: request.goal.description.slice(0, 40), realm: request.realm, reason: 'plan-conflict', options: verdict.planners, status: 'pending' as const, createdAt: this.now().toISOString() };
       return { kind: 'conflict', escalated, planners: verdict.planners, scores: ranking.scores };
     }
 
     const selected = drafts.find((d) => d.planner === verdict.planner)!;
     this.audit({
       ts: this.now().toISOString(),
-      vassal: '(planning)',
+      executor: '(planning)',
       runId: intentId,
       skill: plannerSkills.join(',') || '(none)',
       realm: request.realm,
@@ -259,7 +259,7 @@ export class PlanFlow {
           ...(score === undefined
             ? {}
             : { summary: `coverage ${score.coverage}, cost ${score.estimatedCost}, critical path ${score.criticalPathLength}` }),
-          vassals: [planner],
+          executors: [planner],
         };
       }),
       reason: `plan-conflict: feasible plans within tie threshold ${this.tieThreshold} (${planners.join(', ')})`,
@@ -281,7 +281,7 @@ export class PlanFlow {
     reasons: string[],
   ): Escalation {
     const conflict: Conflict = {
-      stances: reasons.map((reason) => ({ stance: `rejected: ${reason}`, vassals: ['(planning)'] })),
+      stances: reasons.map((reason) => ({ stance: `rejected: ${reason}`, executors: ['(planning)'] })),
       reason: `plan-rejected-unplannable: no feasible plan (${reasons.length} rejection(s))`,
     };
     return this.oversight!.ingestConflict({

@@ -7,7 +7,7 @@ import {
 } from './execution-delegation.js';
 
 /**
- * A bounded delegation contract: the operator's signed permission for the kernel
+ * A bounded delegation contract: the operator's signed permission for the runtime
  * to mint execution tickets **later, with nobody present** (the `watch` trigger).
  * A per-dispatch ticket cannot carry that, because at dispatch time there is no
  * one left to sign.
@@ -26,8 +26,8 @@ export type DelegationContract = {
   /** Same identity semantics as a child ticket's `grantedBy`. */
   grantedBy: string;
   skill: string;
-  /** When set, a child may only name this vassal. */
-  vassal?: string;
+  /** When set, a child may only name this executor. */
+  executor?: string;
   /** Full set children draw from; every child capability set must be a subset. */
   capabilities: string[];
   limits: {
@@ -37,7 +37,7 @@ export type DelegationContract = {
     windowEndsAt: string;
   };
   /**
-   * Kernel bookkeeping, deliberately **not** part of the signed claim: counters
+   * Runtime bookkeeping, deliberately **not** part of the signed claim: counters
    * move every time the approval is spent, and signing them would invalidate the
    * signature on first use. The signature commits to the boundary the operator
    * approved, not to how much of it has been consumed.
@@ -62,7 +62,7 @@ export type IssueDelegationContractInput = {
   skill: string;
   capabilities: string[];
   limits: { maxChildTickets: number; maxConcurrent: number; windowEndsAt: string };
-  vassal?: string;
+  executor?: string;
   id?: string;
 };
 
@@ -82,13 +82,13 @@ export type DelegationContractCheck = { ok: true } | { ok: false; reason: Delega
 export type DeriveRefusal =
   | DelegationContractRefusal
   | 'child-capability-not-covered'
-  | 'child-vassal-mismatch'
+  | 'child-executor-mismatch'
   | 'child-ticket-limit-reached'
   | 'concurrent-limit-reached';
 
 export type DeriveExecutionDelegationInput = {
   capabilities: string[];
-  vassal?: string;
+  executor?: string;
   reason?: string;
   ttlMs?: number;
   nonce?: string;
@@ -105,7 +105,7 @@ export type DelegationContractAuditEntry = {
   contractId: string;
   grantedBy: string;
   skill: string;
-  vassal?: string;
+  executor?: string;
   capabilities: string[];
   keyId: string;
   windowEndsAt: string;
@@ -119,7 +119,7 @@ function normalizeCapabilities(capabilities: readonly string[]): string[] {
 }
 
 /** What the signature commits to: the approved boundary, without the parts the
- *  kernel writes as it spends that approval. */
+ *  runtime writes as it spends that approval. */
 function contractClaim(contract: DelegationContract): Record<string, unknown> {
   const { sig: _sig, used: _used, revokedAt: _revokedAt, ...claim } = contract;
   return claim;
@@ -141,8 +141,8 @@ export async function issueDelegationContract(
       `delegation contract must cover "${DELEGATION_CONTRACT_REQUIRED_CAPABILITY}"; a plan-only intent needs no ticket at all`,
     );
   }
-  if (input.vassal !== undefined && !input.vassal.trim()) {
-    throw new DelegationContractError('delegation contract vassal must be a non-empty string when provided');
+  if (input.executor !== undefined && !input.executor.trim()) {
+    throw new DelegationContractError('delegation contract executor must be a non-empty string when provided');
   }
 
   const maxChildTickets = input.limits?.maxChildTickets;
@@ -167,7 +167,7 @@ export async function issueDelegationContract(
     version: 1,
     grantedBy,
     skill,
-    ...(input.vassal?.trim() ? { vassal: input.vassal.trim() } : {}),
+    ...(input.executor?.trim() ? { executor: input.executor.trim() } : {}),
     capabilities,
     limits: { maxChildTickets, maxConcurrent, windowEndsAt: new Date(windowEndsAt).toISOString() },
     used: { childTickets: 0, inFlight: 0 },
@@ -205,7 +205,7 @@ function isWellFormed(contract: DelegationContract): boolean {
     !Number.isNaN(Date.parse(contract.issuedAt)) &&
     typeof contract.used?.childTickets === 'number' &&
     typeof contract.used?.inFlight === 'number' &&
-    (contract.vassal === undefined || typeof contract.vassal === 'string') &&
+    (contract.executor === undefined || typeof contract.executor === 'string') &&
     (contract.revokedAt === undefined || typeof contract.revokedAt === 'string')
   );
 }
@@ -233,7 +233,7 @@ export async function verifyDelegationContract(
 }
 
 /**
- * Contracts in memory, exportable to the kernel snapshot.
+ * Contracts in memory, exportable to the runtime snapshot.
  *
  * `used.inFlight` counts tickets that have been derived and not yet released.
  * Nothing releases them until the execute path is wired (implementation step
@@ -377,8 +377,8 @@ export async function deriveExecutionDelegation(
   ) {
     return { ok: false, reason: 'child-capability-not-covered' };
   }
-  const childVassal = input.vassal?.trim();
-  if (stored.vassal && childVassal && childVassal !== stored.vassal) return { ok: false, reason: 'child-vassal-mismatch' };
+  const childExecutor = input.executor?.trim();
+  if (stored.executor && childExecutor && childExecutor !== stored.executor) return { ok: false, reason: 'child-executor-mismatch' };
 
   const nonce = input.nonce?.trim() || randomUUID();
   const reserve = context.registry.reserve(contractId, nonce);
@@ -395,7 +395,7 @@ export async function deriveExecutionDelegation(
         grantedBy: stored.grantedBy,
         skill: stored.skill,
         capabilities: childCapabilities,
-        ...(childVassal ? { vassal: childVassal } : stored.vassal ? { vassal: stored.vassal } : {}),
+        ...(childExecutor ? { executor: childExecutor } : stored.executor ? { executor: stored.executor } : {}),
         reason: input.reason?.trim()
           ? `${input.reason.trim()} (contract ${contractId})`
           : `derived from contract ${contractId}`,

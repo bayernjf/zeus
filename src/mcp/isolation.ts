@@ -27,7 +27,7 @@ export type IsolationManifest = {
 /**
  * Determine the isolation level for an execution body (design-sandbox §3.1):
  *
- * - `http` transports are remote by construction — the kernel constrains the
+ * - `http` transports are remote by construction — the runtime constrains the
  *   peer over protocol/tier/credentials/data policy, never over host measures;
  * - a `stdio` body declaring `network: 'direct'` requires container isolation
  *   (direct network is only legal under L-container);

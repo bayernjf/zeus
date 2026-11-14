@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
-import { VassalRegistry } from '../src/registry/registry.js';
+import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import { OversightDesk, conflictsToDesk } from '../src/oversight/oversight.js';
@@ -11,13 +11,13 @@ import type { DispatchPort, TargetLookup } from '../src/orchestrator/types.js';
 import type { DispatchResult, AuditEntry } from '../src/dispatch/dispatcher.js';
 import type { Task } from '../src/a2a/types.js';
 
-const TOKEN = 'driver-secret';
+const TOKEN = 'operator-secret';
 const AUTH = { authorization: `Bearer ${TOKEN}` };
 const NOW = new Date('2026-10-03T00:00:00.000Z');
 
-function okResult(vassal: string): DispatchResult {
+function okResult(executor: string): DispatchResult {
   const task: Task = {
-    kind: 'task', id: `${vassal}-task`, contextId: 'ctx', status: { state: 'completed' },
+    kind: 'task', id: `${executor}-task`, contextId: 'ctx', status: { state: 'completed' },
     artifacts: [{ artifactId: 'a1', name: 'verdict', parts: [{ kind: 'data', data: { stance: 'go' } }] }],
   };
   return { ok: true, task, events: [{ kind: 'status-update', taskId: task.id, contextId: 'ctx', status: { state: 'completed' }, final: true }], injectedHits: [] };
@@ -55,7 +55,7 @@ async function gateServer() {
     onExecutionDelegationRefused: entry => {
       audit.push({
         ts: entry.at,
-        vassal: entry.vassal,
+        executor: entry.executor,
         skill: entry.skill,
         realm: entry.realm,
         decision: 'execution-delegation-denied',
@@ -64,7 +64,7 @@ async function gateServer() {
     },
   });
   const app = await createHttpServer({
-    registry: new VassalRegistry(),
+    registry: new ExecutorRegistry(),
     signer,
     internalToken: TOKEN,
     orchestrator,
@@ -137,7 +137,7 @@ describe('HTTP H2 — execute-mode dispatch gate (deferred #33)', () => {
     expect(h.audit.some(e => e.decision === 'execution-delegation-denied' && e.detail === 'replayed')).toBe(true);
   });
 
-  it('rejects an unknown mode value with 400 before touching the kernel', async () => {
+  it('rejects an unknown mode value with 400 before touching the runtime', async () => {
     const h = await gateServer();
     app = h.app;
     const res = await app.inject({

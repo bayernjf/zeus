@@ -1,19 +1,19 @@
-import type { VassalStatus } from '../../registry/registry.js';
+import type { ExecutorStatus } from '../../registry/registry.js';
 
 /**
  * #9 backpressure diversion (design-backpressure.md): a pure target-selection
- * primitive that re-points a saturated (or ineligible) auto-selected vassal to
+ * primitive that re-points a saturated (or ineligible) auto-selected executor to
  * the best available same-skill provider *before* dispatch. It mirrors `aggregate`
  * in being side-effect-free (no clock, no IO, no LLM), so it is fully unit-testable
  * and its decisions are reproducible and auditable.
  *
- * Saturation is read from a caller-supplied load snapshot; the live per-vassal
- * in-flight counter lives in `ConcurrencyMetrics` (`inFlightByVassalNow`). The
- * per-vassal saturation cap (`capOf`) is deliberately separate from the global
+ * Saturation is read from a caller-supplied load snapshot; the live per-executor
+ * in-flight counter lives in `ConcurrencyMetrics` (`inFlightByExecutorNow`). The
+ * per-executor saturation cap (`capOf`) is deliberately separate from the global
  * `maxConcurrentBranches` gate: if it equalled the global cap, a saturated agent
  * would imply the global pool was full and no idle alternate could ever take a
  * slot, so diversion could never fire. The orchestrator therefore owns an
- * independently configured `maxConcurrentPerVassal`.
+ * independently configured `maxConcurrentPerExecutor`.
  *
  * Health is a *synchronous snapshot* (`statusOf`): the live async `healthCheck`
  * probe (registry.ts:185) is intentionally not called here — doing so per
@@ -25,26 +25,26 @@ import type { VassalStatus } from '../../registry/registry.js';
 
 export type DiversionInput = {
   skill: string;
-  /** Explicitly-named targets (`request.vassals`). Presence = hard pin, never divert. */
-  explicitVassals?: string[];
+  /** Explicitly-named targets (`request.executors`). Presence = hard pin, never divert. */
+  explicitExecutors?: string[];
   /** Auto-selected names after the skill-governor gate (already filtered). */
   initialNames: string[];
   /** Same-skill candidate pool from `activeProviders()`; `undefined` = pass-through, no diversion. */
   candidatePool?: string[];
   load: {
-    inFlightByVassal: (vassal: string) => number;
-    /** Per-vassal saturation cap; `Infinity` means no per-vassal bound. */
-    capOf: (vassal: string) => number;
+    inFlightByExecutor: (executor: string) => number;
+    /** Per-executor saturation cap; `Infinity` means no per-executor bound. */
+    capOf: (executor: string) => number;
   };
   metrics: {
     /** Historical failure rate (0 when no record). */
-    failureRate: (vassal: string) => number;
+    failureRate: (executor: string) => number;
     /** Historical p50 latency ms (null when no record). */
-    p50Ms: (vassal: string) => number | null;
+    p50Ms: (executor: string) => number | null;
   };
   health: {
     /** Synchronous status snapshot; 'revoked'/'unknown' are excluded from candidacy. */
-    statusOf: (vassal: string) => VassalStatus;
+    statusOf: (executor: string) => ExecutorStatus;
   };
   /** Scoring weights + normalizer. Threshold tuning is gated on the pressure test. */
   weights?: DiversionWeights;
@@ -70,7 +70,7 @@ export type DiversionTarget = {
 };
 
 export type DiversionTried = {
-  vassal: string;
+  executor: string;
   state: 'saturated' | 'unhealthy' | 'revoked' | 'none-active';
 };
 
@@ -82,7 +82,7 @@ export type SelectTargetsResult = {
 
 /** Format an exhaustion report for inclusion in a branch's refusal reason. */
 export function formatExhausted(exhausted: { skill: string; tried: DiversionTried[] }): string {
-  const tried = exhausted.tried.map(t => `${t.vassal}[${t.state}]`).join(', ');
+  const tried = exhausted.tried.map(t => `${t.executor}[${t.state}]`).join(', ');
   return `no alternate provider for skill '${exhausted.skill}'; tried: ${tried}`;
 }
 
@@ -97,8 +97,8 @@ export function formatExhausted(exhausted: { skill: string; tried: DiversionTrie
 export function selectTargets(input: DiversionInput): SelectTargetsResult {
   const { skill, initialNames, candidatePool } = input;
 
-  // Hard pin: explicit targets are a deliberate driver override — never divert.
-  if (input.explicitVassals && input.explicitVassals.length > 0) {
+  // Hard pin: explicit targets are a deliberate operator override — never divert.
+  if (input.explicitExecutors && input.explicitExecutors.length > 0) {
     return { plan: initialNames.map(target => ({ target, divertedFrom: null })), exhausted: null };
   }
   // Pass-through (skill not governed) or nothing selected: no diversion.
@@ -107,7 +107,7 @@ export function selectTargets(input: DiversionInput): SelectTargetsResult {
   }
 
   const w = input.weights ?? DEFAULT_DIVERSION_WEIGHTS;
-  const saturated = (v: string) => input.load.inFlightByVassal(v) >= input.load.capOf(v);
+  const saturated = (v: string) => input.load.inFlightByExecutor(v) >= input.load.capOf(v);
   const eligible = (v: string) => input.health.statusOf(v) === 'active';
   const score = (v: string): number => {
     const failureRate = input.metrics.failureRate(v);
@@ -144,7 +144,7 @@ export function selectTargets(input: DiversionInput): SelectTargetsResult {
     } else {
       // No alternate: keep the original so it hits the global queue→reject gate.
       plan.push({ target: name, divertedFrom: null });
-      if (!exhausted) exhausted = { skill, tried: candidatePool.map(v => ({ vassal: v, state: classify(v) })) };
+      if (!exhausted) exhausted = { skill, tried: candidatePool.map(v => ({ executor: v, state: classify(v) })) };
     }
   }
 
