@@ -17,6 +17,7 @@ import {
   recordUtterance,
 } from '../meeting/protocol.js';
 import type { MeetingStore } from '../meeting/store.js';
+import { exportMarkdown } from '../meeting/export.js';
 import type { MeetingErrorCode } from '../meeting/protocol.js';
 import type { Claim, Meeting, Utterance } from '../meeting/types.js';
 
@@ -193,6 +194,21 @@ export async function decideRoute(store: MeetingStore, request: FastifyRequest, 
     });
     await store.save(next);
     return reply.code(201).send(next);
+  } catch (thrown) {
+    return sendError(reply, thrown);
+  }
+}
+
+/** GET /api/v1/meetings/:id/markdown — the meeting as minutes, for handoff. */
+export async function markdownRoute(store: MeetingStore, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    const { id } = request.params as { id: string };
+    const meeting = await loadOr404(store, id, reply);
+    if (!meeting) return reply;
+    return reply
+      .header('Content-Type', 'text/markdown; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${meeting.id}.md"`)
+      .send(exportMarkdown(meeting));
   } catch (thrown) {
     return sendError(reply, thrown);
   }

@@ -148,4 +148,27 @@ describe('Meeting API v1', () => {
     })).body) as { utterances: Array<{ claims: Array<{ id: string }> }> };
     expect(posted.utterances[0]?.claims.map(claim => claim.id)).toEqual(['c1', 'c2']);
   });
+
+  it('serves the meeting as markdown minutes', async () => {
+    const app = await server(await dir());
+    await app.inject({ method: 'POST', url: '/api/v1/meetings', headers: AUTH, payload: { topic: '纪要导出', maxRounds: 1, id: 'm-md' } });
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/meetings/m-md/utterances',
+      headers: AUTH,
+      payload: { speakerId: 'a', stance: 'propose', claims: [{ text: '方案甲' }] },
+    });
+    const response = await app.inject({ method: 'GET', url: '/api/v1/meetings/m-md/markdown', headers: AUTH });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/markdown');
+    expect(response.headers['content-disposition']).toContain('m-md.md');
+    expect(response.body).toContain('# 纪要导出');
+    expect(response.body).toContain('## 决策');
+  });
+
+  it('returns 404 for markdown of an unknown meeting', async () => {
+    const app = await server(await dir());
+    const response = await app.inject({ method: 'GET', url: '/api/v1/meetings/m-nope/markdown', headers: AUTH });
+    expect(response.statusCode).toBe(404);
+  });
 });

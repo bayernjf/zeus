@@ -1,6 +1,6 @@
 # 会议（Meeting）设计：主张图上的多轮决策
 
-> 状态：**现行（v0.5，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI）。S2 已落库：`src/meeting/convene.ts`（ProposalSource、`convene`、fan-out 结果映射、orchestrator 源）+ CLI `convene --drafts`。S3 已落库：`src/meeting/challenge.ts`（目标选择、claim 投影、`challenge`、`nextStep`）+ CLI `targets` / `challenge --critics`。meeting 单测 21 条。S4 回放 + 写入已落库（ops-console `/app/meetings`：发起/发言/推进/决策经 zeus `/api/v1/meetings`，读优先 API、回落本地 store）；S5 决策写回已落库（`src/meeting/settle.ts` + CLI `settle`）。meeting 单测 24 条，ops-console 侧 4 条。S4 写入侧待做。本地单人自用，不做多租户与公网暴露。
+> 状态：**现行（v0.6，2026-11-15）**。S1 已落库：`src/meeting/`（领域模型、协议状态机、本地 JSON store、CLI）。S2 已落库：`src/meeting/convene.ts`（ProposalSource、`convene`、fan-out 结果映射、orchestrator 源）+ CLI `convene --drafts`。S3 已落库：`src/meeting/challenge.ts`（目标选择、claim 投影、`challenge`、`nextStep`）+ CLI `targets` / `challenge --critics`。meeting 单测 21 条。S4 回放 + 写入已落库（ops-console `/app/meetings`：发起/发言/推进/决策经 zeus `/api/v1/meetings`，读优先 API、回落本地 store）；S5 决策写回已落库（`src/meeting/settle.ts` + CLI `settle`）。meeting 单测 24 条，ops-console 侧 4 条。S4 写入侧待做。本地单人自用，不做多租户与公网暴露。
 
 ## 0. 一句话
 
@@ -125,7 +125,8 @@ open → proposing → challenging ⇄ (下一轮) → converging → decided �
 - 只读：决策仍只在 zeus 侧发生，页面不给写入口；
 - 写入侧 API 已落库（`src/http/meetings-v1.ts`，6 条 bearer 路由：开新会 / 发言 / 推进轮次 / 决策 + 列会与详情），规则仍全部走 `src/meeting/protocol.ts`，console 不再直接改 JSON；
 - console 写入 UI 已落库（2026-11-15）：发起、发言（含质疑目标与证据）、推进轮次、逐条采纳/否决 + 理由，全部 POST `/api/meetings` 转 zeus，协议守卫不复制；
-- 待做：导出 Markdown 会议纪要、从 console 触发自动提案（`convene`）。
+- 导出 Markdown 纪要已落库（2026-11-15）：`src/meeting/export.ts` + CLI `export <id> [--out file]` + `GET /api/v1/meetings/:id/markdown`，console 会议页直接下载 `.md`；纪要只是会议文档的投影（决策在前、被否方案与理由在后）；
+- 待做：从 console 触发自动提案（`convene`）。
 - 载体：ops-console 新增一页（先只读回放：时间线 + 主张图 + 决策记录）；
 - 再做写入：发起会议、插入你的发言、点决策；
 - 导出 Markdown 会议纪要。

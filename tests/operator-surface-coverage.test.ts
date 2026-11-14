@@ -297,6 +297,7 @@ const READ_API_ONLY: Record<string, string> = {
   // mounted for the console's write path and for distant readers).
   'GET /api/v1/meetings': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting replay page)',
   'GET /api/v1/meetings/:id': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting replay page)',
+  'GET /api/v1/meetings/:id/markdown': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting page downloads the minutes through its own endpoint)',
   // TracePort v1 §5 (D-5, W2-4): the cross-intent trace query face ships
   // API-only; the ops-console /app/traces BFF page (W2-5) is its reader.
   'GET /api/v1/traces': 'tracked: PRD F2 / D-5 (TracePort v1 section 5; ops-console reader lands with W2-5)',

@@ -18,7 +18,7 @@ MCP 在 Zeus 里同时出现在两个方向，且**不是**第三个（跨 Agent
 
 术语提醒：本文的 **DataDomain / 数据域** 指"一个用户目录即一个数据边界"，与 Kerberos / LDAP 的 security dataDomain 无关（见 [terminology.md](terminology.md) 的 C 类同名异义）。对外沟通建议直说"Zeus 的数据域 MCP 服务"。
 
-**文件正文不经 HTTP 面暴露**（代码级依据：`src/http/server.ts:128 #content` 的面定义——"DataDomain **content** 只走 MCP stdio"；带 `dataDomain` 字样的路由只有治理动作 `/api/dataDomains/:id/disconnect`、`/api/dataDomains/:id/retarget-tenant`、`/api/dataDomain/write-grants`，加上不读正文的挂载视图 `/api/domains`——后者逐字段是 `dataDomainId / type / tenant / readOnly / itemCount / contentDigest`，既无正文也无绝对根路径，`src/http/server.ts:2004-1983 #`）。正文只经 §1 的 stdio 通道出入，这是"数据主权在用户"这条设计约束的执行点之一。
+**文件正文不经 HTTP 面暴露**（代码级依据：`src/http/server.ts:129 #content` 的面定义——"DataDomain **content** 只走 MCP stdio"；带 `dataDomain` 字样的路由只有治理动作 `/api/dataDomains/:id/disconnect`、`/api/dataDomains/:id/retarget-tenant`、`/api/dataDomain/write-grants`，加上不读正文的挂载视图 `/api/domains`——后者逐字段是 `dataDomainId / type / tenant / readOnly / itemCount / contentDigest`，既无正文也无绝对根路径，`src/http/server.ts:2004-1983 #`）。正文只经 §1 的 stdio 通道出入，这是"数据主权在用户"这条设计约束的执行点之一。
 
 ---
 

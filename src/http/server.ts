@@ -52,6 +52,7 @@ import {
   decideRoute as decideMeetingRoute,
   getMeetingRoute,
   listMeetingsRoute,
+  markdownRoute as markdownMeetingRoute,
   openMeetingRoute,
   sayRoute as sayMeetingRoute,
 } from './meetings-v1.js';
@@ -3287,6 +3288,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         advanceMeetingRoute(meetings, request, reply));
       app.post('/api/v1/meetings/:id/decision', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         decideMeetingRoute(meetings, request, reply));
+      app.get('/api/v1/meetings/:id/markdown', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        markdownMeetingRoute(meetings, request, reply));
     }
 
     // Org API v1 (Tier0 M2, design §4.4): organizations, departments,
