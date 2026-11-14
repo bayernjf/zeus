@@ -24,7 +24,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -66,12 +66,12 @@ describe('S9 V2 cost gate wiring', () => {
       dispatchAudit: e => audits.push(e),
     });
     const cheap = await runtime.orchestrator.fanOut({
-      intentId: 'cheap', skill: 'review', params: { message: 'x' }, realm: 'personal', executors: ['alpha'],
+      intentId: 'cheap', skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
       costEstimate: { tokens: 2 },
     });
     expect(cheap.status).toBe('completed');
     const overBudget = await runtime.orchestrator.fanOut({
-      intentId: 'over-budget', skill: 'review', params: { message: 'y' }, realm: 'personal', executors: ['alpha'],
+      intentId: 'over-budget', skill: 'review', params: { message: 'y' }, dataDomain: 'personal', executors: ['alpha'],
       costEstimate: { tokens: 5 },
     });
     expect(overBudget.status).toBe('failed');
@@ -88,15 +88,15 @@ describe('S9 V2 cost gate wiring', () => {
       dispatchAudit: e => audits.push(e),
     });
     // Each intent is charged against its own ledger, so two intents can each
-    // sit under the per-intent cap without cross-charging (realm-period
+    // sit under the per-intent cap without cross-charging (dataDomain-period
     // accounting is V3).
     const first = await runtime.orchestrator.fanOut({
-      intentId: 'settled-a', skill: 'review', params: { message: 'x' }, realm: 'personal', executors: ['alpha'],
+      intentId: 'settled-a', skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
       costEstimate: { tokens: 2 },
     });
     expect(first.status).toBe('completed');
     const second = await runtime.orchestrator.fanOut({
-      intentId: 'settled-b', skill: 'review', params: { message: 'y' }, realm: 'personal', executors: ['alpha'],
+      intentId: 'settled-b', skill: 'review', params: { message: 'y' }, dataDomain: 'personal', executors: ['alpha'],
       costEstimate: { tokens: 2 },
     });
     expect(second.status).toBe('completed');
@@ -106,7 +106,7 @@ describe('S9 V2 cost gate wiring', () => {
   it('leaves an unconfigured runtime on its historical uncharged path', async () => {
     const runtime = await bootRuntime({ fetchImpl: approveFetch(), executorSeeds: [SEED] });
     const result = await runtime.orchestrator.fanOut({
-      intentId: 'uncharged', skill: 'review', params: { message: 'x' }, realm: 'personal', executors: ['alpha'],
+      intentId: 'uncharged', skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
     });
     expect(result.status).toBe('completed');
   });
@@ -127,11 +127,11 @@ describe('S9 V2 cost gate wiring', () => {
         costLimit: { maxWindowCost: 3, circuitWindowMs: 60_000 },
       });
       await runtime.orchestrator.fanOut({
-        intentId: 'acct-cheap', skill: 'review', params: { message: 'x' }, realm: 'personal', executors: ['alpha'],
+        intentId: 'acct-cheap', skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
         costEstimate: { tokens: 2 },
       });
       await runtime.orchestrator.fanOut({
-        intentId: 'acct-over', skill: 'review', params: { message: 'y' }, realm: 'personal', executors: ['alpha'],
+        intentId: 'acct-over', skill: 'review', params: { message: 'y' }, dataDomain: 'personal', executors: ['alpha'],
         costEstimate: { tokens: 5 },
       });
       const readout = runtime.orchestrator.costReadout();
@@ -148,7 +148,7 @@ describe('S9 V2 cost gate wiring', () => {
     it('says the gate is unconfigured instead of reporting an empty account as spent', async () => {
       const runtime = await bootRuntime({ fetchImpl: approveFetch(), executorSeeds: [SEED] });
       await runtime.orchestrator.fanOut({
-        intentId: 'free', skill: 'review', params: { message: 'x' }, realm: 'personal', executors: ['alpha'],
+        intentId: 'free', skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
       });
       const readout = runtime.orchestrator.costReadout();
       expect(readout).toMatchObject({ configured: false, refusals: 0, limits: {}, totals: { intents: 0, spent: 0 } });
@@ -162,7 +162,7 @@ describe('S9 V2 cost gate wiring', () => {
       });
       for (const intentId of ['win-a', 'win-b']) {
         await runtime.orchestrator.fanOut({
-          intentId, skill: 'review', params: { message: 'x' }, realm: 'personal', executors: ['alpha'],
+          intentId, skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
           costEstimate: { tokens: 2 },
         });
       }

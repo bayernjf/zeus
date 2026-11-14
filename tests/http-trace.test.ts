@@ -63,7 +63,7 @@ describe('S6 V2 trace propagation (design-observability §5)', () => {
       newRunId: () => 'run-1',
       onProgress: e => hub.publish(e),
     });
-    await orchestrator.fanOut({ skill: 'summarize', realm: 'personal', params: {} });
+    await orchestrator.fanOut({ skill: 'summarize', dataDomain: 'personal', params: {} });
 
     expect(captured.length).toBe(1);
     const req = captured[0]!;
@@ -82,7 +82,7 @@ describe('S6 V2 trace propagation (design-observability §5)', () => {
     const req: DispatchRequest = {
       skill: 'summarize',
       params: {},
-      realm: 'personal',
+      dataDomain: 'personal',
       executor: 'loom',
       runId: 'run-9',
     };
@@ -121,7 +121,7 @@ describe('S6 V2 trace endpoint', () => {
       now: () => new Date('2026-10-10T00:00:00.000Z'),
     });
 
-    const res = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'summarize', realm: 'personal' } });
+    const res = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'summarize', dataDomain: 'personal' } });
     expect(res.statusCode).toBe(200);
 
     const trace = await app.inject({ method: 'GET', url: '/api/intents/intent-1/trace', headers: AUTH });
@@ -168,7 +168,7 @@ describe('S6 V2 trace endpoint', () => {
       now: () => new Date('2026-10-10T00:00:00.000Z'),
     });
 
-    const res = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'summarize', realm: 'personal' } });
+    const res = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'summarize', dataDomain: 'personal' } });
     expect(res.statusCode).toBe(200);
 
     const trace = await app.inject({ method: 'GET', url: '/api/intents/intent-1/trace', headers: AUTH });
@@ -199,7 +199,7 @@ describe('S6 V2 trace endpoint', () => {
       progressHub: hub,
       auditFile: join(dir, 'audit.jsonl'),
     });
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'summarize', realm: 'personal' } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'summarize', dataDomain: 'personal' } });
     const res = await app.inject({ method: 'GET', url: '/api/intents/intent-1/trace' });
     expect(res.statusCode).toBe(401);
   });
@@ -235,7 +235,7 @@ describe('S6 V2 external-link recording', () => {
           intentId: req.intentId ?? 'intent-in',
           runId: 'run-in',
           skill: req.skill,
-          realm: req.realm,
+          dataDomain: req.dataDomain,
           branches: [],
           stream: [],
           positions: [],

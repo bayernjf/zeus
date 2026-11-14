@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
 import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
-import { FsRealmStore } from '../src/realm/store.js';
+import { FsDataDomainStore } from '../src/dataDomain/store.js';
 
 let app: FastifyInstance | undefined;
 let sandbox: string | undefined;
@@ -21,9 +21,9 @@ afterEach(async () => {
 });
 
 async function mount(withMcp: boolean): Promise<FastifyInstance> {
-  const store = new FsRealmStore();
+  const store = new FsDataDomainStore();
   sandbox = mkdtempSync(join(tmpdir(), 'zeus-http-mcp-'));
-  const root = join(sandbox, 'realm');
+  const root = join(sandbox, 'dataDomain');
   mkdirSync(join(root, 'notes'), { recursive: true });
   writeFileSync(join(root, 'notes', 'diary.md'), '# Diary\nhello world secret zeus\n');
   writeFileSync(join(root, 'notes', 'todo.txt'), 'buy milk\n');
@@ -32,8 +32,8 @@ async function mount(withMcp: boolean): Promise<FastifyInstance> {
     registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-2026-09'),
     internalToken: 'operator-secret',
-    realmStore: store,
-    ...(withMcp ? { realmMcp: { realmIds: [manifest.realmId] } } : {}),
+    dataDomainStore: store,
+    ...(withMcp ? { dataDomainMcp: { dataDomainIds: [manifest.dataDomainId] } } : {}),
   });
   return app;
 }
@@ -44,8 +44,8 @@ function rpc(id: number | string, method: string, params?: unknown) {
 
 const TOKEN = { authorization: 'Bearer operator-secret' };
 
-describe('Realm MCP streamable HTTP exposure (E3.4 transport, design-realm §6.5)', () => {
-  it('does not mount /mcp when realmMcp is not configured (default unchanged)', async () => {
+describe('DataDomain MCP streamable HTTP exposure (E3.4 transport, design-dataDomain §6.5)', () => {
+  it('does not mount /mcp when dataDomainMcp is not configured (default unchanged)', async () => {
     const server = await mount(false);
     const get = await server.inject({ method: 'GET', url: '/mcp' });
     const post = await server.inject({ method: 'POST', url: '/mcp', headers: TOKEN, payload: rpc(1, 'initialize') });
@@ -53,15 +53,15 @@ describe('Realm MCP streamable HTTP exposure (E3.4 transport, design-realm §6.5
     expect(post.statusCode).toBe(404);
   });
 
-  it('serves public server metadata on GET with no realm data', async () => {
+  it('serves public server metadata on GET with no dataDomain data', async () => {
     const server = await mount(true);
     const res = await server.inject({ method: 'GET', url: '/mcp' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.protocolVersion).toBe('2025-06-18');
-    expect(body.serverInfo.name).toBe('zeus-realm');
-    // No mount state: realmIds, realm URIs or absolute roots must never appear.
-    expect(JSON.stringify(body)).not.toMatch(/realmId|zeus-realm:|\/Users\/|\/tmp\//i);
+    expect(body.serverInfo.name).toBe('zeus-dataDomain');
+    // No mount state: dataDomainIds, dataDomain URIs or absolute roots must never appear.
+    expect(JSON.stringify(body)).not.toMatch(/dataDomainId|zeus-dataDomain:|\/Users\/|\/tmp\//i);
   });
 
   it('rejects JSON-RPC without the bearer token (RFC 6750 challenge)', async () => {
@@ -91,7 +91,7 @@ describe('Realm MCP streamable HTTP exposure (E3.4 transport, design-realm §6.5
     const res = await server.inject({
       method: 'POST',
       url: '/mcp',
-      headers: { ...TOKEN, 'x-zeus-realm-actor': 'loom' },
+      headers: { ...TOKEN, 'x-zeus-data-domain-actor': 'loom' },
       payload: rpc(1, 'initialize'),
     });
     expect(res.statusCode).toBe(200);
@@ -104,7 +104,7 @@ describe('Realm MCP streamable HTTP exposure (E3.4 transport, design-realm §6.5
     expect(res.json().result.serverInfo.actor).toBeUndefined();
   });
 
-  it('lists only the host pre-connected realmIds and never the absolute root', async () => {
+  it('lists only the host pre-connected dataDomainIds and never the absolute root', async () => {
     const server = await mount(true);
     const res = await server.inject({
       method: 'POST',
@@ -120,13 +120,13 @@ describe('Realm MCP streamable HTTP exposure (E3.4 transport, design-realm §6.5
     expect(serialized).not.toMatch(/^\s*\/[A-Za-z]:|\/Users\/|\/tmp\//m);
   });
 
-  it('refuses a tool call aimed at a realm outside the whitelist with a realm error', async () => {
+  it('refuses a tool call aimed at a dataDomain outside the whitelist with a dataDomain error', async () => {
     const server = await mount(true);
     const res = await server.inject({
       method: 'POST',
       url: '/mcp',
       headers: TOKEN,
-      payload: rpc(3, 'tools/call', { name: 'realm.read', arguments: { realmId: 'not-mounted', itemId: 'notes/diary.md' } }),
+      payload: rpc(3, 'tools/call', { name: 'dataDomain.read', arguments: { dataDomainId: 'not-mounted', itemId: 'notes/diary.md' } }),
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
@@ -134,16 +134,16 @@ describe('Realm MCP streamable HTTP exposure (E3.4 transport, design-realm §6.5
     expect(body.error.code).toBe(-32002);
   });
 
-  it('reads an item through the tool when realmId is in the whitelist', async () => {
+  it('reads an item through the tool when dataDomainId is in the whitelist', async () => {
     const server = await mount(true);
-    // Learn the real realmId from resources/list (uri shape: zeus-realm://<realmId>/…).
+    // Learn the real dataDomainId from resources/list (uri shape: zeus-data-domain://<dataDomainId>/…).
     const list = await server.inject({ method: 'POST', url: '/mcp', headers: TOKEN, payload: rpc(4, 'resources/list') });
-    const realmId = list.json().result.resources[0].uri.replace(`${'zeus-realm'}://`, '').split('/')[0];
+    const dataDomainId = list.json().result.resources[0].uri.replace(`${'zeus-data-domain'}://`, '').split('/')[0];
     const res = await server.inject({
       method: 'POST',
       url: '/mcp',
       headers: TOKEN,
-      payload: rpc(5, 'tools/call', { name: 'realm.read', arguments: { realmId, itemId: 'notes/todo.txt' } }),
+      payload: rpc(5, 'tools/call', { name: 'dataDomain.read', arguments: { dataDomainId, itemId: 'notes/todo.txt' } }),
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();

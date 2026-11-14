@@ -7,7 +7,7 @@
  *    service token binds one namespace (the same ZEUS_MEMORY_SERVICE_TOKENS
  *    material the HTTP consumer face uses); a claimed namespace that differs
  *    from the bound one is refused through MemoryBoundaryError — the same
- *    refusal class the store raises on every cross-realm read. The operator
+ *    refusal class the store raises on every cross-dataDomain read. The operator
  *    token names its namespace explicitly, like the bearer memory face does.
  *  - `traces.query`: a transparent pass-through of the TracePort v1 §5 query
  *    (the same `queryTraceTrees` projection `GET /api/v1/traces` serves, D-4
@@ -19,7 +19,7 @@
  * (M-12) and every write is audited; a second write surface would double the
  * paths that durability and audit guarantees have to cover.
  *
- * Transport-agnostic like realm/mcp.ts: newline-delimited JSON-RPC semantics,
+ * Transport-agnostic like dataDomain/mcp.ts: newline-delimited JSON-RPC semantics,
  * no I/O, no SDK. The HTTP route (POST /api/mcp) resolves the caller's token
  * into an actor and builds one handler per call. Unmounted backing stores fail
  * closed by name — never an empty result a client would read as "nothing
@@ -36,7 +36,7 @@ export const RUNTIME_MCP_PROTOCOL_VERSION = '2025-06-18' as const;
 // JSON-RPC standard codes + the server-defined application range.
 const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
-/** Permission / realm-boundary refusal (same application range realm/mcp.ts uses). */
+/** Permission / dataDomain-boundary refusal (same application range dataDomain/mcp.ts uses). */
 const PERMISSION_DENIED = -32004;
 /** A tool whose backing store the host did not mount. */
 const NOT_MOUNTED = -32005;
@@ -82,13 +82,13 @@ const TOOLS: readonly ToolDescriptor[] = [
   {
     name: 'memory.recall',
     description:
-      'Read-only recall over one realm\'s consolidated memory (MemoryPort v1 §7 semantics). ' +
+      'Read-only recall over one dataDomain\'s consolidated memory (MemoryPort v1 §7 semantics). ' +
       'Your memory service token binds exactly one namespace; claiming another is refused. ' +
       'No write surface exists here — remember/forget stay on the HTTP consumer face.',
     inputSchema: {
       type: 'object',
       properties: {
-        namespace: { type: 'string', description: 'Realm to recall from; defaults to your token-bound namespace, and any other value is refused' },
+        namespace: { type: 'string', description: 'DataDomain to recall from; defaults to your token-bound namespace, and any other value is refused' },
         query: { type: 'string', description: 'Natural-language recall query' },
         k: { type: 'number', description: 'Max hits (positive integer)' },
         kinds: { type: 'string', description: 'Comma-separated kind filter: preference|fact|decision|episodic' },
@@ -139,7 +139,7 @@ export type JsonRpcResponse = { jsonrpc: '2.0'; id: string | number | null; resu
 
 /**
  * Build one request-scoped handler. `undefined` result = notification (no
- * response body), mirroring the realm face's transport contract.
+ * response body), mirroring the dataDomain face's transport contract.
  */
 export function createRuntimeToolsMcpHandler(deps: RuntimeToolsMcpDeps): (message: unknown) => Promise<JsonRpcResponse | null> {
   const ok = (id: string | number | null, result: unknown): JsonRpcResponse => ({ jsonrpc: '2.0', id, result });
@@ -174,8 +174,8 @@ export function createRuntimeToolsMcpHandler(deps: RuntimeToolsMcpDeps): (messag
     } catch (error) {
       if (error instanceof McpParamError) return fail(id, INVALID_PARAMS, error.message);
       if (error instanceof MemoryBoundaryError) {
-        // The boundary refusal reason is the message: "realm X cannot read
-        // memory of realm Y" — no namespace contents, no paths, safe to serve.
+        // The boundary refusal reason is the message: "dataDomain X cannot read
+        // memory of dataDomain Y" — no namespace contents, no paths, safe to serve.
         return fail(id, PERMISSION_DENIED, error.message);
       }
       if (error instanceof PermissionDeniedError) return fail(id, PERMISSION_DENIED, error.message);
@@ -248,8 +248,8 @@ async function memoryRecall(
 
   // The namespace argument can only ever name the caller's own namespace:
   // a memory consumer's token binds one, and the operator names one explicitly
-  // (no implicit default — the internal bearer face requires realmId too).
-  // Claiming another namespace is the same cross-realm read the store refuses
+  // (no implicit default — the internal bearer face requires dataDomainId too).
+  // Claiming another namespace is the same cross-dataDomain read the store refuses
   // everywhere else, so the refusal reuses MemoryBoundaryError itself.
   const requested = args.namespace === undefined ? undefined : String(args.namespace);
   if (requested !== undefined && requested.trim() === '') {
@@ -261,7 +261,7 @@ async function memoryRecall(
     namespace = requested;
   } else {
     if (requested !== undefined && requested !== deps.actor.namespace) {
-      throw new MemoryBoundaryError(`realm ${deps.actor.namespace} cannot read memory of realm ${requested}`);
+      throw new MemoryBoundaryError(`dataDomain ${deps.actor.namespace} cannot read memory of dataDomain ${requested}`);
     }
     namespace = deps.actor.namespace;
   }

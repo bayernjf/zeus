@@ -25,11 +25,11 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { writeFileAtomic } from './fs.js';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { RealmType } from '../a2a/types.js';
-import { FsRealmStore } from '../realm/store.js';
+import type { DataDomainType } from '../a2a/types.js';
+import { FsDataDomainStore } from '../dataDomain/store.js';
 import { openMap, packFull, restoreFromBundle, sealMap } from './bundle.js';
 import type { BackupKey } from './cipher.js';
-import { inventoryFromFiles, inventoryFromRealm, liveSourceFor } from './inventory.js';
+import { inventoryFromFiles, inventoryFromDataDomain, liveSourceFor } from './inventory.js';
 import { buildBackup } from './map.js';
 import { restoreDryRun } from './restore.js';
 import {
@@ -136,21 +136,21 @@ async function readEnvelope(path: string): Promise<SealedEnvelope> {
   return parsed as SealedEnvelope;
 }
 
-async function connectInventory(root: string, type: RealmType, tenant?: string) {
-  const store = new FsRealmStore();
+async function connectInventory(root: string, type: DataDomainType, tenant?: string) {
+  const store = new FsDataDomainStore();
   const manifest = await store.connect(root, type, tenant ? { tenant } : {});
-  return { store, inventory: inventoryFromRealm(store, manifest.realmId), manifest };
+  return { store, inventory: inventoryFromDataDomain(store, manifest.dataDomainId), manifest };
 }
 
 /**
- * The inventory the flags name: a Realm mount (`--root`, optional `--tenant`),
+ * The inventory the flags name: a DataDomain mount (`--root`, optional `--tenant`),
  * or an explicit file whitelist (`--files-root` + `--files a.json,b.json`) - the
- * shape needed to back up the runtime state file, which lives outside every Realm.
+ * shape needed to back up the runtime state file, which lives outside every DataDomain.
  */
 async function openInventory(
   flags: Map<string, string>,
-  realmType: RealmType,
-): Promise<{ inventory: BackupInventory; store?: FsRealmStore }> {
+  dataDomainType: DataDomainType,
+): Promise<{ inventory: BackupInventory; store?: FsDataDomainStore }> {
   const filesRoot = flags.get('files-root');
   const filesList = flags.get('files');
   if (filesRoot || filesList) {
@@ -168,16 +168,16 @@ async function openInventory(
       }),
     };
   }
-  const { inventory, store } = await connectInventory(requireFlag(flags, 'root'), realmType, flags.get('tenant'));
+  const { inventory, store } = await connectInventory(requireFlag(flags, 'root'), dataDomainType, flags.get('tenant'));
   return { inventory, store };
 }
 
 function sourceTag(source: MapSource): string {
-  return source.kind === 'realm' ? `realm ${source.realmId}` : `files ${source.label}`;
+  return source.kind === 'dataDomain' ? `dataDomain ${source.dataDomainId}` : `files ${source.label}`;
 }
 
 function sourceShard(source: MapSource): string {
-  return source.kind === 'realm' ? source.realmId.slice(0, 8) : 'files';
+  return source.kind === 'dataDomain' ? source.dataDomainId.slice(0, 8) : 'files';
 }
 
 function formatReport(report: RestoreReport): string {
@@ -222,16 +222,16 @@ export async function runBackupCli(argv: string[], deps: BackupCliDeps = {}): Pr
   let code: number = BACKUP_EXIT.ok;
   try {
     const { command, flags } = parseArgs(argv);
-    const realmType = (flags.get('type') as RealmType | undefined) ?? 'personal';
-    if (realmType !== 'personal' && realmType !== 'enterprise') {
-      throw new CliUsageError(`unsupported --type: ${realmType}`);
+    const dataDomainType = (flags.get('type') as DataDomainType | undefined) ?? 'personal';
+    if (dataDomainType !== 'personal' && dataDomainType !== 'enterprise') {
+      throw new CliUsageError(`unsupported --type: ${dataDomainType}`);
     }
     const asJson = flags.has('json');
 
     if (command === 'build') {
       const out = requireFlag(flags, 'out');
       const key = await loadKey(flags, env);
-      const { inventory } = await openInventory(flags, realmType);
+      const { inventory } = await openInventory(flags, dataDomainType);
       const map = await buildBackup(inventory, { now });
       const sealed = sealMap(map, key);
       await mkdir(dirnameOf(out), { recursive: true });
@@ -242,7 +242,7 @@ export async function runBackupCli(argv: string[], deps: BackupCliDeps = {}): Pr
     } else if (command === 'backup') {
       const outDir = requireFlag(flags, 'out-dir');
       const key = await loadKey(flags, env);
-      const { inventory } = await openInventory(flags, realmType);
+      const { inventory } = await openInventory(flags, dataDomainType);
       const packed = await packFull(inventory, key, { now });
       const stem = flags.get('name') ?? `backup-${sourceShard(packed.map.source)}-${timestampStem(now())}`;
       const mapPath = join(outDir, `${stem}.map.json`);
@@ -258,10 +258,10 @@ export async function runBackupCli(argv: string[], deps: BackupCliDeps = {}): Pr
       const key = await loadKey(flags, env);
       const sealed = await readEnvelope(mapPath);
       const map = openMap(sealed, key);
-      // The map names its own source (and, for a tenant-scoped realm, its own
+      // The map names its own source (and, for a tenant-scoped dataDomain, its own
       // scope), so no mount flags are needed here - and reconnecting without
       // that scope is what used to fake an "unreachable" root.
-      const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
+      const report = await restoreDryRun(map, liveSourceFor(new FsDataDomainStore()));
       code = reportExitCode(report);
       stdout = asJson ? JSON.stringify({ ok: true, command, report }) : formatReport(report);
     } else if (command === 'restore') {

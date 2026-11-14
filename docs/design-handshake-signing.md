@@ -15,7 +15,7 @@
 | 编号 | 攻击 | 后果 |
 | --- | --- | --- |
 | T1 | 伪造名册条目：攻击者发布假 card + 假 handshake，诱使第三方相信其为在册执行 Agent | 假执行 Agent 冒名招募/接单 |
-| T2 | 篡改在册执行 Agent 承诺：中间人改写 handshake（如 `dataPolicy: none` → `read-realm`）或 card 内容 | 名册替假承诺背书；调度方误判数据权限 |
+| T2 | 篡改在册执行 Agent 承诺：中间人改写 handshake（如 `dataPolicy: none` → `read-dataDomain`）或 card 内容 | 名册替假承诺背书；调度方误判数据权限 |
 | T3 | 重放已吊销执行 Agent：`revoke()` 后拿历史有效快照/签名继续冒充 | 叛将不下榜 |
 | T4 | 伪造/裁剪整份快照：虚构在榜名单、增删条目、隐瞒吊销、重放旧快照 | 名册整体不可信 |
 
@@ -51,7 +51,7 @@ design-bayjf-roster §7 给了两个候选，本文决定：
 ### 3.1 签什么
 
 - **主签名覆盖整张 Agent Card 的摘要 `cardDigest`**：名册条目每个字段都派生自 card（roster §3），公开版连 skills/description 一并展示，故签名覆盖整张 card，任何字段被改即验签失败（防 T2 的全部面，而不只是 handshake）。
-- **显式冗余 `handshakeDigest`**：治理承诺（realms/dataPolicy/reportBack/escalationPolicy/swornTo/version）单独列摘要，便于审计日志、调度侧快速比对与告警，不必反查整张 card。
+- **显式冗余 `handshakeDigest`**：治理承诺（dataDomains/dataPolicy/reportBack/escalationPolicy/swornTo/version）单独列摘要，便于审计日志、调度侧快速比对与告警，不必反查整张 card。
 - card 任何无害改动（改 typo）也会使 cardDigest 变化——这是**有意为之**：card 变更本就应触发重新拉取与重签（注册侧自动化，成本在 Zeus 不在执行 Agent）；承诺变更史另见 roster §9.2（R1）。
 
 ### 3.2 规范化（Canonicalization）
@@ -251,7 +251,7 @@ Ed25519 + RFC 8785；条目 attestation（cardDigest + handshakeDigest + status 
 验收用例（实现期测试，逐条必过）：
 
 1. 正常签名快照验签通过，能取回原 snapshot。
-2. 篡改 handshake 任一字段（realms/dataPolicy/reportBack/escalationPolicy/swornTo/version）→ 摘要不符 → 失败。
+2. 篡改 handshake 任一字段（dataDomains/dataPolicy/reportBack/escalationPolicy/swornTo/version）→ 摘要不符 → 失败。
 3. 篡改 skills / description / name → cardDigest 不符 → 失败。
 4. 增删条目、调整 entries 顺序、改 scope/generatedAt → seal 失败。
 5. revoked 执行 Agent 不出现在 public 信封；构造含该条目的旧信封 → expiresAt/maxAge 过期拒绝。

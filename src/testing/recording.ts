@@ -1,7 +1,7 @@
 // design-agent-testing (tech map S17): deterministic replay and chaos for the
 // dispatch port. Recordings capture the dispatch port's observable behaviour
 // (request/response pairs, outbound events); redaction strips a recording of
-// any realm data before it leaves the machine (a recording is test data, and
+// any dataDomain data before it leaves the machine (a recording is test data, and
 // test data obeys the data-sovereignty rule); chaos scripts inject failures
 // into an otherwise working port. V1 is the pure layer (design-agent-testing
 // §5): record framing + redaction + fetch assembly, and the chaos wrapper over
@@ -35,7 +35,7 @@ export function recordFrame(rec: Recording, frame: RecordedFrame): Recording {
   return { intent: rec.intent, frames: [...rec.frames, frame] };
 }
 
-/** Redact a recording: drop every request payload value (params are realm
+/** Redact a recording: drop every request payload value (params are dataDomain
  *  data) and every response reason, keeping the shape — decision names,
  *  ok flags, seq order — so the flow stays verifiable off-machine. */
 export function redactRecording(rec: Recording): Recording {
@@ -74,7 +74,7 @@ export function recordingToFetch(
       return {
         ok: false,
         reason: match.reason ?? 'replayed failure',
-        audit: { ts: match.at, executor: req.executor ?? 'replayed', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
+        audit: { ts: match.at, executor: req.executor ?? 'replayed', skill: req.skill, dataDomain: req.dataDomain, decision, ...(runId === undefined ? {} : { runId }) },
       };
     }
     const runId = req.runId ?? 'r1';
@@ -171,6 +171,6 @@ function chaosFailure(req: DispatchRequest, reason: string, decision: 'dispatch-
   return {
     ok: false,
     reason,
-    audit: { ts: new Date().toISOString(), executor: req.executor ?? 'chaos', skill: req.skill, realm: req.realm, decision, ...(runId === undefined ? {} : { runId }) },
+    audit: { ts: new Date().toISOString(), executor: req.executor ?? 'chaos', skill: req.skill, dataDomain: req.dataDomain, decision, ...(runId === undefined ? {} : { runId }) },
   };
 }

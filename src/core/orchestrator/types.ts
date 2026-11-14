@@ -1,4 +1,4 @@
-import type { A2AEvent, RealmType, Task, TaskState } from '../../a2a/types.js';
+import type { A2AEvent, DataDomainType, Task, TaskState } from '../../a2a/types.js';
 import type { ExecutionDelegation } from '../../delegation/execution-delegation.js';
 import type { ExecutorStatus } from '../../registry/registry.js';
 import type { DispatchRequest, DispatchResult } from '../../dispatch/dispatcher.js';
@@ -95,14 +95,14 @@ export type FanOutRequest = {
   /** Explicit targets; defaults to every active executor providing the skill. */
   executors?: string[];
   params: Record<string, unknown>;
-  realm: RealmType;
-  /** Connected realm this intent operates on, when one was named. Required
+  dataDomain: DataDomainType;
+  /** Connected dataDomain this intent operates on, when one was named. Required
    *  for memory consolidation to land in the right memory domain. */
-  realmId?: string;
+  dataDomainId?: string;
   runId?: string;
-  realmHits?: DispatchRequest['realmHits'];
-  /** Provenance of realmHits; required when they are non-empty (design-realm §3.1). */
-  realmHitsOrigin?: DispatchRequest['realmHitsOrigin'];
+  dataDomainHits?: DispatchRequest['dataDomainHits'];
+  /** Provenance of dataDomainHits; required when they are non-empty (design-dataDomain §3.1). */
+  dataDomainHitsOrigin?: DispatchRequest['dataDomainHitsOrigin'];
   aggregation?: AggregationRule;
   /** Per-branch timeout; a branch still pending at the limit is recorded as timed out. */
   branchTimeoutMs?: number;
@@ -126,8 +126,8 @@ export type FanOutResult = {
   intentId: string;
   runId: string;
   skill: string;
-  realm: RealmType;
-  realmId?: string;
+  dataDomain: DataDomainType;
+  dataDomainId?: string;
   branches: BranchOutcome[];
   stream: SourcedEvent[];
   positions: Position[];

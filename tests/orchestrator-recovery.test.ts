@@ -64,7 +64,7 @@ function build(names: string[], options: OrchestratorOptions = {}, port: Dispatc
   return { orchestrator, port };
 }
 
-const request = { skill: 'review', realm: 'personal' as const, params: {} };
+const request = { skill: 'review', dataDomain: 'personal' as const, params: {} };
 
 describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
   it('a failed branch emits tool-failed and the escalate verdict, settles failed, no chain line', async () => {
@@ -155,7 +155,7 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
             preferredTransport: 'JSONRPC',
             'x-zeus-handshake': {
               version: '1', swornTo: 'zeus', domain: 'test-domain',
-              realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+              dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
               reportBack: true, escalationPolicy: 'auto',
             },
           }), { status: 200, headers: { 'Content-Type': 'application/json' } });
@@ -170,7 +170,7 @@ describe('S11 V3 recovery-chain runtime (design-tool-discovery §5)', () => {
       dispatchAudit: entry => audits.push(entry),
     });
 
-    const result = await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    const result = await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
 
     expect(result.status).toBe('failed');
     const failed = audits.find(entry => entry.decision === 'tool-failed');

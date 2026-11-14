@@ -41,7 +41,7 @@
 
 ### 3.1 生成（plan = 一种 fan-out）
 
-- 输入：目标（目标描述 + 验收标准）、技能目录快照（id/inputs/providedBy/tags/只读 tag）、Realm 可用面、约束（成本上限 S9、步数上限 S4、时限）。
+- 输入：目标（目标描述 + 验收标准）、技能目录快照（id/inputs/providedBy/tags/只读 tag）、DataDomain 可用面、约束（成本上限 S9、步数上限 S4、时限）。
 - 扇出到所有声明规划技能（如 `planning.compose`）的 Agent；tier/只读/能力面判定照走 E9.4/S11。
 - 每个 planner 回传结构化 DagSpec 草稿（非自由文本；解析失败的候选直接淘汰并审计 `plan-malformed`）。
 

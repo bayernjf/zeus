@@ -183,7 +183,7 @@
       "roster.colDomain": "数据域",
       "roster.colSkills": "技能",
       "roster.colHealth": "健康",
-      "roster.colRealms": "数据域承诺",
+      "roster.colDataDomains": "数据域承诺",
       "roster.colSince": "注册时间",
       "roster.colAttestation": "attestation",
       "att.active": "active · 有效期至 {exp}",
@@ -245,7 +245,7 @@
       "roster.colDomain": "Domain",
       "roster.colSkills": "Skills",
       "roster.colHealth": "Health",
-      "roster.colRealms": "Data realm commitments",
+      "roster.colDataDomains": "Data dataDomain commitments",
       "roster.colSince": "Registered at",
       "roster.colAttestation": "attestation",
       "att.active": "active · expires {exp}",
@@ -375,7 +375,7 @@
     }
     const rows = entries.map(e => {
       const skills = (e.skills || []).map(s => s.id || s.name || "").filter(Boolean).join(", ");
-      const realms = (e.commitments && e.commitments.realms || []).join(", ");
+      const dataDomains = (e.commitments && e.commitments.dataDomains || []).join(", ");
       const att = attestations[e.name];
       const attText = !att
         ? t("att.none")
@@ -387,14 +387,14 @@
         <td>${esc(e.domain)}</td>
         <td class="skills">${esc(skills)}</td>
         <td>${healthBadge(e.health)}</td>
-        <td>${esc(realms)}</td>
+        <td>${esc(dataDomains)}</td>
         <td class="skills">${esc(e.registeredAt || "")}</td>
         <td class="skills">${esc(attText)}</td>
       </tr>`;
     }).join("");
     body.innerHTML = `<table><thead><tr>
       <th>${esc(t("roster.colName"))}</th><th>${esc(t("roster.colDomain"))}</th><th>${esc(t("roster.colSkills"))}</th>
-      <th>${esc(t("roster.colHealth"))}</th><th>${esc(t("roster.colRealms"))}</th><th>${esc(t("roster.colSince"))}</th><th>${esc(t("roster.colAttestation"))}</th>
+      <th>${esc(t("roster.colHealth"))}</th><th>${esc(t("roster.colDataDomains"))}</th><th>${esc(t("roster.colSince"))}</th><th>${esc(t("roster.colAttestation"))}</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
   }
 

@@ -234,14 +234,14 @@ describe('E7 MCP connectors', () => {
       name: 'Local notes',
       endpoint: undefined,
       command: 'node',
-      args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
-      env: { ZEUS_REALM_ROOTS: '/tmp/notes' },
-      permissions: ['mcp:realm.search'],
+      args: ['dist/dataDomain/mcp-stdio.js', '/tmp/notes'],
+      env: { ZEUS_DATA_DOMAIN_ROOTS: '/tmp/notes' },
+      permissions: ['mcp:dataDomain.search'],
     }));
     const record = registry.get('local-notes')!;
     expect(record.command).toBe('node');
     expect(record.endpoint).toBeUndefined();
-    expect(record.args).toEqual(['dist/realm/mcp-stdio.js', '/tmp/notes']);
+    expect(record.args).toEqual(['dist/dataDomain/mcp-stdio.js', '/tmp/notes']);
   });
 
   it('rejects a declaration with neither endpoint nor command', () => {
@@ -461,9 +461,9 @@ describe('E7 connector credentials do not cross into the persisted state', () =>
         name: 'Local notes',
         endpoint: undefined,
         command: 'node',
-        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
-        env: { ZEUS_REALM_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
-        permissions: ['mcp:realm.search'],
+        args: ['dist/dataDomain/mcp-stdio.js', '/tmp/notes'],
+        env: { ZEUS_DATA_DOMAIN_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
+        permissions: ['mcp:dataDomain.search'],
       }),
     );
 
@@ -474,7 +474,7 @@ describe('E7 connector credentials do not cross into the persisted state', () =>
     expect(JSON.stringify(exported)).not.toContain('hidden-value');
     // It is still held in memory for the spawned child process.
     expect(registry.get('local-notes')!.env).toEqual({
-      ZEUS_REALM_ROOTS: '/tmp/notes',
+      ZEUS_DATA_DOMAIN_ROOTS: '/tmp/notes',
       SECRET: 'hidden-value',
     });
   });
@@ -487,7 +487,7 @@ describe('E7 connector credentials do not cross into the persisted state', () =>
         endpoint: undefined,
         command: 'node',
         env: { SECRET: 'hidden-value' },
-        permissions: ['mcp:realm.search'],
+        permissions: ['mcp:dataDomain.search'],
       }),
     );
 

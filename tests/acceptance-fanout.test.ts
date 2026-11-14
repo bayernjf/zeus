@@ -46,7 +46,7 @@ describe('scripts/acceptance-real-fanout.mjs', { timeout: 90_000 }, () => {
     // (this case already runs the script), so the surface cannot be dropped
     // silently. Their validation is not asserted: each would need its own cold
     // process, and this file is already the slow exception.
-    expect(help.out).toContain('REALM=personal|enterprise');
+    expect(help.out).toContain('DATA_DOMAIN=personal|enterprise');
     expect(help.out).toContain('TASK_URL=…');
     // EXPECT_STANCE selects which criteria are asserted (executor content vs
     // decision-agent stance), so an operator must be able to see that it exists.

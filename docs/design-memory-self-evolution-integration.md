@@ -70,7 +70,7 @@
 | **① 模型驱动的复盘**（闭环第 2 步） | 归因是确定性聚合（分类计数），没有"用模型生成结构化复盘 + 经验卡" | 需先裁定**是否允许外部模型参与**（正文出域 vs `dataPolicy` 口径）；允许后才可开工 |
 | **② 写回面**（闭环第 3/5 步） | 未做；#40 只读归因已落地并标 `writebackCandidate` | 挂 deferred **#40** 触发条件：首个真实执行 Agent 长期运行、有可统计的失败样本分布（同 #9 的 ≥3 真实 Agent 口径）。mock 的失败模式是编的，会把猜测锁成猜测 |
 | **③ 记忆 producer 只产 claim** | `MemoryKind` 四类里 observation / action / decision 未接 | 需要真实负载里"哪些执行 Agent 的哪种回报值得入记忆"这一分布；与 ② 同触发条件 |
-| **④ 检索规模化** | P0 是文件系统扫描 | deferred **#10**：单 Realm > 2 万文件 / P50 > 500ms / 语义检索成为明确需求 |
+| **④ 检索规模化** | P0 是文件系统扫描 | deferred **#10**：单 DataDomain > 2 万文件 / P50 > 500ms / 语义检索成为明确需求 |
 
 另有两条**非缺口但可能被误当缺口**的：遗忘"淡化"（按重要性衰减）——本项目走的是显式遗忘 + 用户可擦除，刻意不做隐式衰减（记错比记不住更糟）；长期画像层——已以编制/席位/认证形态存在，不需要再建一层"Profile"。
 
@@ -176,7 +176,7 @@ research 文档给的是**行业通用参考技术**（含 Mem0 / Zep / Pinecone
 ```ts
 export type WritebackParam = 'selection-weight';
 export interface WritebackRecord {
-  id: string; realmId: string; createdAt: string;
+  id: string; dataDomainId: string; createdAt: string;
   source: { kind: string; target: string; confidence: 'stable' | 'suggestive' };
   param: WritebackParam;     // 当前只有 selection-weight（D2：只改排序权重）
   target: string;            // 被调整的实体（selection-weight 下是 executor id）
@@ -194,7 +194,7 @@ export interface WritebackRecord {
 - `selectionWeightsFromWritebacks(records)`：active 的 `selection-weight` 卡片按 target 取最新，得 `{target: factor}`；无卡片返回 `{}`（基线）。
 - `WritebackLedger`：管理 active 卡片，`record` 校验 `factor ∈ (0.1, 1]`（下限保证 fail-soft，被降权的 executor 在他人饱和时仍可被选）、`retract` 保留行并翻转状态（全程可溯源）。
 
-真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/core/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(realm)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
+真实写回目标（design §2.2 的「选靶评分权重」）已接线：`src/core/orchestrator/discovery.ts` 的 `selectCandidates` 新增可选 `weights`，**只对 auto 候选池按权重降序重排，named 硬钉不动**；默认空=恒等，既有测试不受影响。运行时把 `MemoryStore.selectionWeights(dataDomain)` 喂给 `selectCandidates` 即生效——这一步的接线与真实负载调参仍挂 deferred #40 触发条件（首个真实执行 Agent 失败样本），本轮只以合成样本验证机制。
 
 ### 9.3 已验证（合成样本）+ 仍挂 #40
 

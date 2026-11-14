@@ -1,6 +1,6 @@
-import type { RealmType } from '../a2a/types.js';
+import type { DataDomainType } from '../a2a/types.js';
 import type { MetricsSnapshot } from '../orchestrator/metrics.js';
-import type { RealmStore } from '../realm/types.js';
+import type { DataDomainStore } from '../dataDomain/types.js';
 import { classifyInterruption, type InterruptLevel } from '../oversight/interrupt.js';
 
 /**
@@ -13,12 +13,12 @@ import { classifyInterruption, type InterruptLevel } from '../oversight/interrup
  *    whitelist, so the boundary stays in the type instead of in an evaluator
  *    that would have to remember every prohibition.
  *  - no outbound surface. A tick reads what the runtime already holds (metrics)
- *    or what the user already authorized (a mounted realm); `connector` is
+ *    or what the user already authorized (a mounted dataDomain); `connector` is
  *    step 3 and is absent here, so an unreadable source is reported as unknown
  *    rather than guessed at.
  */
 
-export const WATCH_SOURCES = ['metrics', 'realm', 'connector'] as const;
+export const WATCH_SOURCES = ['metrics', 'dataDomain', 'connector'] as const;
 export type WatchSource = (typeof WATCH_SOURCES)[number];
 
 export const WATCH_OPS = ['above', 'below', 'present', 'absent', 'changed'] as const;
@@ -31,7 +31,7 @@ export type WatchOp = (typeof WATCH_OPS)[number];
  */
 export const WATCH_FIELDS: Record<WatchSource, readonly string[]> = {
   metrics: ['inFlight', 'queueDepth', 'failureRate', 'finished'],
-  realm: ['entryCount', 'lastItemModifiedAt'],
+  dataDomain: ['entryCount', 'lastItemModifiedAt'],
   // A connector's payload is not knowable at compile time, so there is no field
   // list to close over; the boundary is the connector's own declaration plus the
   // outbound guards, and the path is checked against `WATCH_PATH_GRAMMAR`.
@@ -58,8 +58,8 @@ export type Watch = {
   /** Who registered it; an auto-raised intent is attributed to this actor. */
   owner: string;
   /** §5: a watch belongs to a single domain, fixed at registration. */
-  realm: RealmType;
-  realmId?: string;
+  dataDomain: DataDomainType;
+  dataDomainId?: string;
   /** Which declared connector tool to read. Args are fixed at registration:
    *  nothing here is computed per tick. */
   connector?: { id: string; tool: string; args?: Record<string, unknown> };
@@ -97,13 +97,13 @@ export type WatchReading = { kind: 'value'; value: string | number } | { kind: '
 
 export type WatchSources = {
   metrics?: () => MetricsSnapshot | undefined;
-  realm?: (realmId: string) => Promise<{ entryCount: number; lastItemModifiedAt?: string }>;
+  dataDomain?: (dataDomainId: string) => Promise<{ entryCount: number; lastItemModifiedAt?: string }>;
   connector?: (ref: { id: string; tool: string; args?: Record<string, unknown> }) => Promise<unknown>;
 };
 
-/** Read a mounted realm through its existing read-only enumeration (no new surface). */
-export async function realmReading(store: RealmStore, realmId: string): Promise<{ entryCount: number; lastItemModifiedAt?: string }> {
-  const entries = await store.entries(realmId);
+/** Read a mounted dataDomain through its existing read-only enumeration (no new surface). */
+export async function dataDomainReading(store: DataDomainStore, dataDomainId: string): Promise<{ entryCount: number; lastItemModifiedAt?: string }> {
+  const entries = await store.entries(dataDomainId);
   let lastItemModifiedAt: string | undefined;
   for (const entry of entries) {
     if (lastItemModifiedAt === undefined || entry.modifiedAt > lastItemModifiedAt) {
@@ -192,7 +192,7 @@ export type WatchSubmitRequest = {
   skill: string;
   subject: string;
   mode: 'plan' | 'execute';
-  realm: RealmType;
+  dataDomain: DataDomainType;
   maxFanOut: number;
   /** Execute fires only: the one-time child ticket derived from the watch's
    *  delegation contract. The orchestrator gate verifies and consumes it. */
@@ -241,8 +241,8 @@ export type WatchTickOptions = {
     watchId: string;
     delegationId?: string;
     skill: string;
-    realm: RealmType;
-    realmId?: string;
+    dataDomain: DataDomainType;
+    dataDomainId?: string;
     reason: string;
     tickSeq: number;
     interruptLevel: InterruptLevel;
@@ -547,8 +547,8 @@ export class WatchRegistry {
                 watchId: watch.id,
                 ...(delegationId ? { delegationId } : {}),
                 skill: watch.intent.skill,
-                realm: watch.realm,
-                ...(watch.realmId ? { realmId: watch.realmId } : {}),
+                dataDomain: watch.dataDomain,
+                ...(watch.dataDomainId ? { dataDomainId: watch.dataDomainId } : {}),
                 reason,
                 tickSeq: seq,
                 interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
@@ -575,8 +575,8 @@ export class WatchRegistry {
               watchId: watch.id,
               ...(delegationId ? { delegationId: delegationId } : {}),
               skill: watch.intent.skill,
-              realm: watch.realm,
-              ...(watch.realmId ? { realmId: watch.realmId } : {}),
+              dataDomain: watch.dataDomain,
+              ...(watch.dataDomainId ? { dataDomainId: watch.dataDomainId } : {}),
               reason: derived.reason,
               tickSeq: seq,
               interruptLevel: classifyInterruption({ kind: 'delegation-limit-hit', coveredByContract: false }),
@@ -600,7 +600,7 @@ export class WatchRegistry {
             skill: watch.intent.skill,
             subject: watch.intent.subject,
             mode: watch.intent.mode,
-            realm: watch.realm,
+            dataDomain: watch.dataDomain,
             maxFanOut: watch.intent.maxFanOut,
             ...(childTicket !== undefined ? { executionDelegation: childTicket } : {}),
           });
@@ -671,9 +671,9 @@ export class WatchRegistry {
       if (typeof value !== 'number') return { kind: 'unavailable' };
       return { kind: 'value', value };
     }
-    if (watch.predicate.source === 'realm') {
-      if (!sources.realm || !watch.realmId) return { kind: 'unavailable' };
-      const reading = await sources.realm(watch.realmId);
+    if (watch.predicate.source === 'dataDomain') {
+      if (!sources.dataDomain || !watch.dataDomainId) return { kind: 'unavailable' };
+      const reading = await sources.dataDomain(watch.dataDomainId);
       const value = (reading as unknown as Record<string, unknown>)[watch.predicate.field];
       if (typeof value !== 'number' && typeof value !== 'string') return { kind: 'unavailable' };
       return { kind: 'value', value };

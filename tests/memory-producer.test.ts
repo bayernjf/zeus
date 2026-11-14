@@ -23,8 +23,8 @@ function fanOut(overrides: Partial<FanOutResult> = {}): FanOutResult {
     intentId: 'intent-1',
     runId: 'run-1',
     skill: 'research',
-    realm: 'personal',
-    realmId: 'realm-a',
+    dataDomain: 'personal',
+    dataDomainId: 'dataDomain-a',
     branches: [
       { executor: 'executor-a', runId: 'run-1', ok: true, taskId: 't-a', events: [] },
       { executor: 'executor-b', runId: 'run-1', ok: true, taskId: 't-b', events: [] },
@@ -43,10 +43,10 @@ function fanOut(overrides: Partial<FanOutResult> = {}): FanOutResult {
 }
 
 function request(overrides: Partial<FanOutRequest> = {}): FanOutRequest {
-  return { skill: 'research', realm: 'personal', params: { q: 'language of pr-helper' }, ...overrides };
+  return { skill: 'research', dataDomain: 'personal', params: { q: 'language of pr-helper' }, ...overrides };
 }
 
-const claimOptions = { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' };
+const claimOptions = { dataDomainId: 'dataDomain-a', occurredAt: '2026-09-27T00:00:00.000Z' };
 
 /**
  * The intent-finished boundary fires consolidation fire-and-forget (fail-soft,
@@ -66,7 +66,7 @@ describe('branchVerdictClaims (the claim contract)', () => {
       // Not merely shaped - isClaimContent is the gate consolidate.ts applies
       // before an event becomes a fact, so a claim failing it is a silent no-op.
       expect(isClaimContent(event.content)).toBe(true);
-      expect(event.realmId).toBe('realm-a');
+      expect(event.dataDomainId).toBe('dataDomain-a');
       expect(event.source.taskId).toMatch(/^t-/);
       expect(event.confidence).toBe(0.5);
     }
@@ -127,16 +127,16 @@ describe('branchVerdictClaims (the claim contract)', () => {
     expect(branchVerdictClaims(fanOut({ positions: [] }), request(), claimOptions)).toEqual([]);
   });
 
-  it('#16 keys a claim by realm too, so one run across two realms does not collide', () => {
+  it('#16 keys a claim by dataDomain too, so one run across two dataDomains does not collide', () => {
     const result = fanOut();
     const req = request();
-    const personal = branchVerdictClaims(result, req, { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' });
-    const enterprise = branchVerdictClaims(result, req, { realmId: 'realm-b', occurredAt: '2026-09-27T00:00:00.000Z' });
-    // Same run, same executor, same stance - but a different realm is a different
-    // claim, or the second realm's event would be dropped by dedupe.
+    const personal = branchVerdictClaims(result, req, { dataDomainId: 'dataDomain-a', occurredAt: '2026-09-27T00:00:00.000Z' });
+    const enterprise = branchVerdictClaims(result, req, { dataDomainId: 'dataDomain-b', occurredAt: '2026-09-27T00:00:00.000Z' });
+    // Same run, same executor, same stance - but a different dataDomain is a different
+    // claim, or the second dataDomain's event would be dropped by dedupe.
     expect(personal[0]!.eventId).not.toBe(enterprise[0]!.eventId);
-    // Within one realm the id is still stable, so a replay stays idempotent.
-    const replay = branchVerdictClaims(result, req, { realmId: 'realm-a', occurredAt: '2026-09-27T00:00:00.000Z' });
+    // Within one dataDomain the id is still stable, so a replay stays idempotent.
+    const replay = branchVerdictClaims(result, req, { dataDomainId: 'dataDomain-a', occurredAt: '2026-09-27T00:00:00.000Z' });
     expect(replay[0]!.eventId).toBe(personal[0]!.eventId);
   });
 });
@@ -154,7 +154,7 @@ describe('runtime producer (bootRuntime, end to end)', () => {
       skills: [{ id: 'research', name: 'Research', description: '', tags: [] }],
       'x-zeus-handshake': {
         version: '1', swornTo: 'zeus', domain: 'test-domain',
-        realms: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto',
+        dataDomains: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto',
       },
     } as unknown as AgentCard;
   }
@@ -187,17 +187,17 @@ describe('runtime producer (bootRuntime, end to end)', () => {
     const runtime = await bootRuntime({
       fetchImpl: fetchServing(stances),
       executorSeeds: seeds,
-      realmRoots: [dir],
+      dataDomainRoots: [dir],
       dispatchAudit: entry => audit.push({ ...entry }),
     });
-    const realmId = runtime.realmStore!.connections()[0]!.realmId;
-    return { runtime, realmId };
+    const dataDomainId = runtime.dataDomainStore!.connections()[0]!.dataDomainId;
+    return { runtime, dataDomainId };
   }
 
   it('a finished fan-out leaves claims and facts in the store - the gap deferred #27 described', async () => {
-    const { runtime, realmId } = await boot({ 'executor-a': 'typescript', 'executor-b': 'typescript' });
+    const { runtime, dataDomainId } = await boot({ 'executor-a': 'typescript', 'executor-b': 'typescript' });
     const result = await runtime.orchestrator.fanOut({
-      skill: 'research', realm: 'personal', realmId,
+      skill: 'research', dataDomain: 'personal', dataDomainId,
       params: { subject: 'pr-helper', predicate: 'primary-language', q: 'what language' },
     });
     expect(result.status).toBe('completed');
@@ -206,23 +206,23 @@ describe('runtime producer (bootRuntime, end to end)', () => {
     // The two branch verdict claims plus the runtime's own decision writeback
     // (MemoryPort v1 §6): the settled conclusion lands as a decision claim.
     expect(events).toHaveLength(3);
-    expect(events.every(e => e.kind === 'claim' && e.realmId === realmId)).toBe(true);
+    expect(events.every(e => e.kind === 'claim' && e.dataDomainId === dataDomainId)).toBe(true);
     const writeback = events.find(e => isClaimContent(e.content) && e.content.category === 'decision');
     expect(writeback).toBeDefined();
     expect(writeback!.source.agentId).toBe('zeus-runtime');
     // Consolidation is wired on the same seam, so the intent has already folded:
     // two authors agreeing produce ONE fact carrying both provenances, next to
     // the fact folded from the decision writeback.
-    const facts = runtime.memoryStore!.facts(realmId, realmId);
+    const facts = runtime.memoryStore!.facts(dataDomainId, dataDomainId);
     expect(facts).toHaveLength(2);
     expect(facts.find(f => f.subject === 'pr-helper')!.provenance).toHaveLength(2);
     expect(facts.find(f => f.kind === 'decision')!.subject).toBe('research');
   });
 
   it('disagreement between authors becomes a memory dispute on the desk', async () => {
-    const { runtime, realmId } = await boot({ 'executor-a': 'typescript', 'executor-b': 'python' });
+    const { runtime, dataDomainId } = await boot({ 'executor-a': 'typescript', 'executor-b': 'python' });
     await runtime.orchestrator.fanOut({
-      skill: 'research', realm: 'personal', realmId,
+      skill: 'research', dataDomain: 'personal', dataDomainId,
       params: { subject: 'pr-helper', predicate: 'primary-language' },
       aggregation: { kind: 'unanimous' },
     });
@@ -232,29 +232,29 @@ describe('runtime producer (bootRuntime, end to end)', () => {
     expect(disputes[0]!.conflictingFacts?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it('drops claims for a realm that is no longer mounted, and says so on the audit spine', async () => {
+  it('drops claims for a dataDomain that is no longer mounted, and says so on the audit spine', async () => {
     const audit: Array<Record<string, unknown>> = [];
     const { runtime } = await boot({ 'executor-a': 'typescript', 'executor-b': 'typescript' }, audit);
     const result = await runtime.orchestrator.fanOut({
-      skill: 'research', realm: 'personal', realmId: 'realm-never-mounted',
+      skill: 'research', dataDomain: 'personal', dataDomainId: 'dataDomain-never-mounted',
       params: { subject: 'pr-helper', predicate: 'primary-language' },
     });
     expect(result.status).toBe('completed');
     // Zero events: neither the verdict claims nor the runtime's own decision
-    // writeback may land in a realm the mount table no longer hosts.
+    // writeback may land in a dataDomain the mount table no longer hosts.
     expect(runtime.memoryStore!.exportState().events).toHaveLength(0);
     const skipped = audit.filter(entry => entry.decision === 'memory-claim-skipped');
     expect(skipped).toHaveLength(1);
-    expect(String(skipped[0]!.detail)).toContain('realm-never-mounted');
+    expect(String(skipped[0]!.detail)).toContain('dataDomain-never-mounted');
     // The settled conclusion had nowhere to go either, and says so.
     const writebackSkipped = audit.filter(entry => entry.decision === 'memory-writeback-skipped');
     expect(writebackSkipped).toHaveLength(1);
-    expect(String(writebackSkipped[0]!.detail)).toContain('realm-never-mounted');
+    expect(String(writebackSkipped[0]!.detail)).toContain('dataDomain-never-mounted');
   });
 
-  it('an intent that named no realm stays out of memory, so no claim lands without an owner', async () => {
+  it('an intent that named no dataDomain stays out of memory, so no claim lands without an owner', async () => {
     const { runtime } = await boot({ 'executor-a': 'typescript', 'executor-b': 'typescript' });
-    await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { subject: 'x' } });
+    await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { subject: 'x' } });
     expect(runtime.memoryStore!.exportState().events).toHaveLength(0);
   });
 });

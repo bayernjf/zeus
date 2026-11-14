@@ -69,7 +69,7 @@ function makeIntent(id: string, createdAt: string, overrides: Partial<FanOutResu
     intentId: id,
     runId: `run-${id}`,
     skill: 'decide',
-    realm: 'personal',
+    dataDomain: 'personal',
     createdAt,
     status: 'completed',
     branches: [{ executor: 'loom', runId: `run-${id}:loom`, ok: true, events: [statusEvent('t', 'completed', createdAt)] }],
@@ -84,7 +84,7 @@ function makeIntent(id: string, createdAt: string, overrides: Partial<FanOutResu
 }
 
 function requestFor(id: string, params: Record<string, unknown> = { ticket: id }): FanOutRequest {
-  return { intentId: id, skill: 'decide', params, realm: 'personal' };
+  return { intentId: id, skill: 'decide', params, dataDomain: 'personal' };
 }
 
 function pendingIntentConflict(escalationId: string, intentId: string): Escalation {
@@ -94,7 +94,7 @@ function pendingIntentConflict(escalationId: string, intentId: string): Escalati
     runId: `run-${intentId}`,
     executor: '(intent)',
     skill: 'decide',
-    realm: 'personal',
+    dataDomain: 'personal',
     reason: 'split',
     options: ['go', 'no'],
     status: 'pending',
@@ -110,7 +110,7 @@ function pendingTaskInput(escalationId: string, runId: string, executor: string)
     runId,
     executor,
     skill: 'decide',
-    realm: 'personal',
+    dataDomain: 'personal',
     reason: 'input needed',
     options: [],
     status: 'pending',

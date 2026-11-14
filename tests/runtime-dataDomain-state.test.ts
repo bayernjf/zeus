@@ -6,28 +6,28 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { bootRuntime } from '../src/state/boot.js';
 
 async function freshRoot(): Promise<string> {
-  const root = join(tmpdir(), `zeus-realm-${crypto.randomUUID()}`);
+  const root = join(tmpdir(), `zeus-dataDomain-${crypto.randomUUID()}`);
   await mkdir(root, { recursive: true });
   await writeFile(join(root, 'note.md'), '# hello world\n', 'utf8');
   return root;
 }
 
-describe('G4 realm connection persistence', () => {
-  it('connects a realm root on boot, persists it, and reconnects after restart', async () => {
+describe('G4 dataDomain connection persistence', () => {
+  it('connects a dataDomain root on boot, persists it, and reconnects after restart', async () => {
     const stateFile = join(tmpdir(), `zeus-state-${crypto.randomUUID()}.json`);
     const root = await realpath(await freshRoot());
 
-    const first = await bootRuntime({ stateFile, realmRoots: [root] });
-    const connection = first.realmStore!.connections()[0]!;
+    const first = await bootRuntime({ stateFile, dataDomainRoots: [root] });
+    const connection = first.dataDomainStore!.connections()[0]!;
     expect(connection.root).toBe(root);
-    expect((await first.realmStore!.search(connection.realmId, { text: 'hello' }))).toHaveLength(1);
+    expect((await first.dataDomainStore!.search(connection.dataDomainId, { text: 'hello' }))).toHaveLength(1);
     await first.saveState();
 
     const restarted = await bootRuntime({ stateFile });
-    const restored = restarted.realmStore!.connections()[0]!;
+    const restored = restarted.dataDomainStore!.connections()[0]!;
     expect(restored.root).toBe(root);
-    expect(restored.realmId).toBe(connection.realmId);
-    expect((await restarted.realmStore!.search(restored.realmId, { text: 'world' }))).toHaveLength(1);
+    expect(restored.dataDomainId).toBe(connection.dataDomainId);
+    expect((await restarted.dataDomainStore!.search(restored.dataDomainId, { text: 'world' }))).toHaveLength(1);
   });
 
   it('persists issue/revoke of a domain grant without waiting for shutdown', async () => {
@@ -36,7 +36,7 @@ describe('G4 realm connection persistence', () => {
     const first = await bootRuntime({ stateFile });
     const issued = first.domainGrants!.issue({
       subject: 'jev',
-      realmId: 'realm-dept',
+      dataDomainId: 'dataDomain-dept',
       access: 'read',
       grantedBy: 'operator',
       nonce: 'n1',
@@ -61,7 +61,7 @@ describe('G4 realm connection persistence', () => {
     // fresh credential reusing the revoked one's nonce.
     expect(() => restarted.domainGrants!.issue({
       subject: 'jev',
-      realmId: 'realm-dept',
+      dataDomainId: 'dataDomain-dept',
       access: 'read',
       grantedBy: 'operator',
       nonce: 'n1',
@@ -70,6 +70,6 @@ describe('G4 realm connection persistence', () => {
 
   it('fails boot when a supplied root cannot be connected', async () => {
     const stateFile = join(tmpdir(), `zeus-state-${crypto.randomUUID()}.json`);
-    await expect(bootRuntime({ stateFile, realmRoots: [join(tmpdir(), `no-such-${crypto.randomUUID()}`)] })).rejects.toThrow();
+    await expect(bootRuntime({ stateFile, dataDomainRoots: [join(tmpdir(), `no-such-${crypto.randomUUID()}`)] })).rejects.toThrow();
   });
 });

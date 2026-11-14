@@ -44,7 +44,7 @@ const VALID_HANDSHAKE: Handshake = {
   version: '1',
   swornTo: 'zeus',
   domain: 'test-domain',
-  realms: ['personal'],
+  dataDomains: ['personal'],
   dataPolicy: 'read-task-scope',
   reportBack: true,
   escalationPolicy: 'on-failure',
@@ -56,7 +56,7 @@ function makeOrchestrator(): Orchestrator {
       intentId: request.intentId ?? 'intent-1',
       runId: 'run-1',
       skill: request.skill,
-      realm: request.realm,
+      dataDomain: request.dataDomain,
       branches: [],
       stream: [],
       positions: [],
@@ -135,7 +135,7 @@ describe('S17 V2 protocol compatibility matrix', () => {
 
   describe('handshake oath shape face', () => {
     it('flags each missing oath field dispatch would otherwise read', () => {
-      expect(handshakeOathProblem({ ...VALID_HANDSHAKE, realms: undefined as unknown as never[] })).toMatch(/realms/);
+      expect(handshakeOathProblem({ ...VALID_HANDSHAKE, dataDomains: undefined as unknown as never[] })).toMatch(/dataDomains/);
       expect(handshakeOathProblem({ ...VALID_HANDSHAKE, dataPolicy: undefined as unknown as never })).toMatch(/dataPolicy/);
       expect(handshakeOathProblem({ ...VALID_HANDSHAKE, escalationPolicy: undefined as unknown as never })).toMatch(/escalationPolicy/);
       expect(handshakeOathProblem(VALID_HANDSHAKE)).toBeNull();

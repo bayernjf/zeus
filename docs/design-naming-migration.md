@@ -9,9 +9,9 @@
 | 档 | 对象 | 谁受影响 | 破坏性 |
 |---|---|---|---|
 | **T1 纯内部标识符** | 类名/函数名/目录名：`ExecutorRegistry`、`ExecutorEntry`、`bootRuntime`、`src/backup/`、`OversightDesk` 等 | 只有读代码的人；`src` + `tests` 约 **4,000+** 处引用 | 无（只要不改下面三档） |
-| **T2 已落盘数据格式** | 状态文件 JSON 键（`registry` / `realms` / `commissions` / `mentorships` / `domainGrants` / `writeGrantNonces`）、审计 JSONL 的 `decision` 取值、备份清单与加密包、**签名名册的载荷键** | 用户机器上已存在的状态文件与备份包；已发布给外部的签名名册；任何离线验签脚本 | **有**：旧数据必须仍可读，历史签名仍可验 |
-| **T3 配置与环境变量** | 8 个（全部经 `grep src` 核实确被读取）：`ZEUS_EXECUTOR_SEEDS`、`ZEUS_REALM_ROOTS`、`ZEUS_REALM_ENTERPRISE`、`ZEUS_BACKUP_PASSPHRASE`、`ZEUS_RSK_KEY`、`ZEUS_RSK_KEY_FILE`、`ZEUS_RSK_KEY_ID`、`ZEUS_INTERNAL_TOKEN`（后 4 个名字本身不含隐喻，列在此处是为了给出完整的对外配置面） | 现有 `.env`、systemd `EnvironmentFile=`、`docker run --env-file`、`docs/deployment.md` 全部示例 | **有**：静默失配最危险——名字写错时进程照样起得来，只是少挂了域/少注册了执行 Agent |
-| **T4 线上协议与 HTTP 面** | 卡片头 `x-zeus-handshake`（及 `x-zeus-report` / `x-zeus-escalation` / `x-zeus-run`）、路由 `/api/executors`、`/api/realm/write-grants`、响应字段 `Position.executor`、`Entry.executor` | **已部署的对端**：生产上的 pr-helper 按 `x-zeus-handshake` 声明归属；loom 侧已有自己的 A2A 实现 | **有，且跨仓库**：本仓库单方面改，对端立刻失配 |
+| **T2 已落盘数据格式** | 状态文件 JSON 键（`registry` / `dataDomains` / `seatGrants` / `mentorships` / `domainGrants` / `writeGrantNonces`）、审计 JSONL 的 `decision` 取值、备份清单与加密包、**签名名册的载荷键** | 用户机器上已存在的状态文件与备份包；已发布给外部的签名名册；任何离线验签脚本 | **有**：旧数据必须仍可读，历史签名仍可验 |
+| **T3 配置与环境变量** | 8 个（全部经 `grep src` 核实确被读取）：`ZEUS_EXECUTOR_SEEDS`、`ZEUS_DATA_DOMAIN_ROOTS`、`ZEUS_DATA_DOMAIN_ENTERPRISE`、`ZEUS_BACKUP_PASSPHRASE`、`ZEUS_RSK_KEY`、`ZEUS_RSK_KEY_FILE`、`ZEUS_RSK_KEY_ID`、`ZEUS_INTERNAL_TOKEN`（后 4 个名字本身不含隐喻，列在此处是为了给出完整的对外配置面） | 现有 `.env`、systemd `EnvironmentFile=`、`docker run --env-file`、`docs/deployment.md` 全部示例 | **有**：静默失配最危险——名字写错时进程照样起得来，只是少挂了域/少注册了执行 Agent |
+| **T4 线上协议与 HTTP 面** | 卡片头 `x-zeus-handshake`（及 `x-zeus-report` / `x-zeus-escalation` / `x-zeus-run`）、路由 `/api/executors`、`/api/dataDomain/write-grants`、响应字段 `Position.executor`、`Entry.executor` | **已部署的对端**：生产上的 pr-helper 按 `x-zeus-handshake` 声明归属；loom 侧已有自己的 A2A 实现 | **有，且跨仓库**：本仓库单方面改，对端立刻失配 |
 
 ## 2. 现状事实（本轮逐个 grep/读码核实，非转述）
 
@@ -20,7 +20,7 @@
 - **协议版本协商的容器已存在**：`src/a2a/types.ts:5-5 #SUPPORTED_HANDSHAKE_VERSIONS` `SUPPORTED_HANDSHAKE_VERSIONS = ['1']` 是**数组**，注册时对不在数组内的版本 fail-loud。也就是说"同时接受两代声明形态"在架构上是现成的，不需要新发明。
 - **签名信封有版本字段，但验签路径从不读它**（本条已修，见下）：`Seal.v = 1` 与 `Attestation.v = 1` 由 `ENVELOPE_VERSION`（`src/core/signing.ts:188-188 #ENVELOPE_VERSION`，写入点 `src/core/signing.ts:265-265 #ENVELOPE_VERSION` 与 `src/core/signing.ts:338-338 #ENVELOPE_VERSION`，验签侧闸门 `src/core/signing.ts:395-395 #ENVELOPE_VERSION`）产出，但 `verifySignedSnapshot` 没有任何一处检查它。**我在 v0.1 里把这条写成"签名快照没有任何版本字段"，那是不准确的**：字段在，只是装饰性的——与"只写不读的权限清单"是同一种失效。真正缺形状标记的是**载荷**：`RosterSnapshot = { generatedAt, scope, entries }`（`src/registry/roster.ts:43-43 #envelope`），而改名要动的恰好是载荷。
   - **✅ 同日已修（deferred #22 销项）**：载荷加 `schemaVersion`（落在 `seal.snapshotDigest` 覆盖的对象内，因此不必改签名输入就被签名保护），并把 `schemaVersion` / `seal.v` / `attestation.v` 三道版本闸提到验签最前面（在任何密码学之前，拒绝原因点名是哪道闸）；缺 `schemaVersion` 的旧件读作 1，仍可验签。**本文件 §3–§5 的 T2 论述以修复后的状态为前提**：将来真要改载荷，才有按 `schemaVersion` 双读的安全灰度可能。
-- **审计取值里带历史名的**：`executor-revoked`、`operator-grant-issued`、`operator-resolved`、`operator-write`、`realm-write`、`realm-type-mismatch`、`commission-granted|waived|withdrawn|refused`、`commissioned`。这些是**已经写进用户磁盘 JSONL 的历史记录**，改词汇等于让历史与现在说两种话；`GET /api/audit?decision=...` 的过滤器也会跟着分叉。
+- **审计取值里带历史名的**：`executor-revoked`、`operator-grant-issued`、`operator-resolved`、`operator-write`、`dataDomain-write`、`dataDomain-type-mismatch`、`seatGrant-granted|waived|withdrawn|refused`、`seatGranted`。这些是**已经写进用户磁盘 JSONL 的历史记录**，改词汇等于让历史与现在说两种话；`GET /api/audit?decision=...` 的过滤器也会跟着分叉。
 - **`Position.executor` 出现在 HTTP 响应里**（`src/core/orchestrator/types.ts:38-38 #executor`），改名即改响应结构，属于 T4。（注意：名册投影 `RosterEntry` 用的是 `name`，**没有** `executor` 字段，所以名册响应不在此列。）
 
 ## 3. 每档的迁移机制（若决定做，就按这个做）
@@ -68,7 +68,7 @@
 3. **T4 会让"标准客户端"这条承诺变复杂**。现在只有一条协议代次；双读之后，验收脚本、离线验签客户端、对端文档都要讨论"哪一代"。这是长期的复杂度，不是一次性的。
 4. **真正该修的缺口已修**：载荷缺形状标记（§2）已于同日补上 `schemaVersion` 并把三道版本闸接进验签（deferred #22 销项）。也就是说**"为了能安全改名而先做的准备"已经完成，而改名本身仍然没有排到**——这正好说明改名的收益不在功能面上，它在别处兑不了现。
 
-若仍要继续推进 T1，建议**只挑"名字真的误导"的**（`commission`、`noul`、`operator-*` 审计取值不在此列，它们属 T2），而不是把 `executor`/`realm` 全库铲平——后两者一旦牵进 T2 的载荷与键名，收益/成本比立刻转负。
+若仍要继续推进 T1，建议**只挑"名字真的误导"的**（`seatGrant`、`noul`、`operator-*` 审计取值不在此列，它们属 T2），而不是把 `executor`/`dataDomain` 全库铲平——后两者一旦牵进 T2 的载荷与键名，收益/成本比立刻转负。
 
 ## 6. 每批的门禁与回滚
 

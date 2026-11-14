@@ -23,7 +23,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -95,7 +95,7 @@ describe('E6.1 task-input escalations reach the oversight desk in a booted runti
       executorSeeds: seeds,
     });
 
-    const result = await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    const result = await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
     expect(result.branches[0]?.state).toBe('input-required');
 
     const escalations = runtime.oversight.list();
@@ -118,7 +118,7 @@ describe('E6.1 task-input escalations reach the oversight desk in a booted runti
       fetchImpl: executorFetch({ state: 'completed' }),
       executorSeeds: seeds,
     });
-    await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
     expect(runtime.oversight.list()).toEqual([]);
   });
 });

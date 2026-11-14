@@ -13,7 +13,7 @@ import {
 
 function manifest(overrides: Partial<IsolationManifest> = {}): IsolationManifest {
   return {
-    fs: { read: ['realm-docs'], write: [] },
+    fs: { read: ['dataDomain-docs'], write: [] },
     network: 'off',
     resources: { cpuShares: 2, memoryMb: 512 },
     exec: { command: '/usr/local/bin/server', args: ['--stdio'], envAllowList: ['PATH'] },
@@ -51,18 +51,18 @@ describe('validateIsolation (S16 V1)', () => {
   it('passes a declaration fully inside the authorized face', () => {
     const r = validateIsolation({
       level: 'L-process-restricted',
-      manifest: manifest({ fs: { read: ['realm-docs'], write: ['realm-drafts'] } }),
-      authorizedRealms: ['realm-docs', 'realm-drafts'],
+      manifest: manifest({ fs: { read: ['dataDomain-docs'], write: ['dataDomain-drafts'] } }),
+      authorizedDataDomains: ['dataDomain-docs', 'dataDomain-drafts'],
       containerRuntimeAvailable: false,
     });
     expect(r).toEqual({ ok: true });
   });
 
-  it('refuses when the fs face extends beyond the authorized Realms', () => {
+  it('refuses when the fs face extends beyond the authorized DataDomains', () => {
     const r = validateIsolation({
       level: 'L-process',
-      manifest: manifest({ fs: { read: ['realm-docs', 'home-anywhere'], write: [] } }),
-      authorizedRealms: ['realm-docs'],
+      manifest: manifest({ fs: { read: ['dataDomain-docs', 'home-anywhere'], write: [] } }),
+      authorizedDataDomains: ['dataDomain-docs'],
       containerRuntimeAvailable: false,
     });
     expect(r.ok).toBe(false);
@@ -73,7 +73,7 @@ describe('validateIsolation (S16 V1)', () => {
     const r = validateIsolation({
       level: 'L-process-restricted',
       manifest: manifest({ network: 'direct' }),
-      authorizedRealms: ['realm-docs'],
+      authorizedDataDomains: ['dataDomain-docs'],
       containerRuntimeAvailable: true,
     });
     expect(r.ok).toBe(false);
@@ -84,18 +84,18 @@ describe('validateIsolation (S16 V1)', () => {
     const r = validateIsolation({
       level: 'L-container',
       manifest: manifest({ network: 'direct' }),
-      authorizedRealms: ['realm-docs'],
+      authorizedDataDomains: ['dataDomain-docs'],
       containerRuntimeAvailable: false,
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reasons.join(' ')).toContain('container runtime unavailable');
   });
 
-  it('passes L-container when the runtime is available and the face is inside the Realms', () => {
+  it('passes L-container when the runtime is available and the face is inside the DataDomains', () => {
     const r = validateIsolation({
       level: 'L-container',
-      manifest: manifest({ network: 'direct', fs: { read: ['realm-docs'], write: [] } }),
-      authorizedRealms: ['realm-docs'],
+      manifest: manifest({ network: 'direct', fs: { read: ['dataDomain-docs'], write: [] } }),
+      authorizedDataDomains: ['dataDomain-docs'],
       containerRuntimeAvailable: true,
     });
     expect(r).toEqual({ ok: true });
@@ -105,7 +105,7 @@ describe('validateIsolation (S16 V1)', () => {
     const r = validateIsolation({
       level: 'L-remote',
       manifest: manifest({ fs: { read: ['anywhere'], write: [] }, network: 'direct' }),
-      authorizedRealms: [],
+      authorizedDataDomains: [],
       containerRuntimeAvailable: false,
     });
     expect(r).toEqual({ ok: true });
@@ -115,7 +115,7 @@ describe('validateIsolation (S16 V1)', () => {
     const r = validateIsolation({
       level: 'L-none',
       manifest: manifest({ fs: { read: ['anywhere'], write: [] } }),
-      authorizedRealms: [],
+      authorizedDataDomains: [],
       containerRuntimeAvailable: false,
     });
     expect(r).toEqual({ ok: true });
@@ -125,7 +125,7 @@ describe('validateIsolation (S16 V1)', () => {
     const r = validateIsolation({
       level: 'L-process',
       manifest: manifest({ resources: {} }),
-      authorizedRealms: ['realm-docs'],
+      authorizedDataDomains: ['dataDomain-docs'],
       containerRuntimeAvailable: false,
     });
     expect(r.ok).toBe(false);
@@ -136,7 +136,7 @@ describe('validateIsolation (S16 V1)', () => {
     const r = validateIsolation({
       level: 'L-process-restricted',
       manifest: manifest({ exec: { command: '', args: [], envAllowList: [] } }),
-      authorizedRealms: ['realm-docs'],
+      authorizedDataDomains: ['dataDomain-docs'],
       containerRuntimeAvailable: false,
     });
     expect(r.ok).toBe(false);
@@ -146,8 +146,8 @@ describe('validateIsolation (S16 V1)', () => {
   it('collects every refusal reason in one pass', () => {
     const r = validateIsolation({
       level: 'L-container',
-      manifest: manifest({ fs: { read: ['realm-docs', 'outside'], write: [] }, exec: { command: '', args: [], envAllowList: [] } }),
-      authorizedRealms: ['realm-docs'],
+      manifest: manifest({ fs: { read: ['dataDomain-docs', 'outside'], write: [] }, exec: { command: '', args: [], envAllowList: [] } }),
+      authorizedDataDomains: ['dataDomain-docs'],
       containerRuntimeAvailable: false,
     });
     expect(r.ok).toBe(false);

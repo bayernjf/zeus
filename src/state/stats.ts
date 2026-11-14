@@ -35,16 +35,16 @@ export type RuntimeStats = {
     departments: number;
     memoryEvents: number;
     memoryFacts: number;
-    realms: number;
-    /** E3.6: enterprise realms, and how many carry a tenant scope. An unscoped
-     *  enterprise realm is only reachable by the operator, so the gap matters. */
-    enterpriseRealms: number;
-    tenantScopedRealms: number;
+    dataDomains: number;
+    /** E3.6: enterprise dataDomains, and how many carry a tenant scope. An unscoped
+     *  enterprise dataDomain is only reachable by the operator, so the gap matters. */
+    enterpriseDataDomains: number;
+    tenantScopedDataDomains: number;
     /** E6.4: cross-domain grants currently on record. */
     domainGrants: number;
-    /** E9.1/E9.2: commission files open, and how many are currently signed off. */
-    commissions: number;
-    commissioned: number;
+    /** E9.1/E9.2: seatGrant files open, and how many are currently signed off. */
+    seatGrants: number;
+    seatGranted: number;
     /** E3.5 / deferred #14: operator write grants already consumed (replay window). */
     spentWriteGrantNonces: number;
   };
@@ -63,10 +63,10 @@ export function runtimeStats(runtime: RuntimeBoot): RuntimeStats {
   const executors = runtime.registry.listAll();
   const revoked = executors.filter(entry => entry.revoked).length;
   const memory = runtime.memoryStore!.counts();
-  const connections = runtime.realmStore!.connections();
+  const connections = runtime.dataDomainStore!.connections();
   const enterprise = connections.filter(entry => entry.type === 'enterprise').length;
   const tenantScoped = connections.filter(entry => entry.tenant !== undefined).length;
-  const commissions = runtime.commissionLedger!.list();
+  const seatGrants = runtime.seatGrantLedger!.list();
   return {
     persistence: {
       enabled: runtime.stateFile !== null,
@@ -92,12 +92,12 @@ export function runtimeStats(runtime: RuntimeBoot): RuntimeStats {
       departments: runtime.orgRegistry!.listDepartments().length,
       memoryEvents: memory.events,
       memoryFacts: memory.facts,
-      realms: connections.length,
-      enterpriseRealms: enterprise,
-      tenantScopedRealms: tenantScoped,
+      dataDomains: connections.length,
+      enterpriseDataDomains: enterprise,
+      tenantScopedDataDomains: tenantScoped,
       domainGrants: runtime.domainGrants!.list().length,
-      commissions: commissions.length,
-      commissioned: commissions.filter(record => record.commissioned && !record.withdrawn).length,
+      seatGrants: seatGrants.length,
+      seatGranted: seatGrants.filter(record => record.seatGranted && !record.withdrawn).length,
       spentWriteGrantNonces: runtime.operatorGrantLedger?.size ?? 0,
     },
     operatorGrants: {

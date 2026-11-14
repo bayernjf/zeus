@@ -64,8 +64,8 @@
     "version": "1",
     "swornTo": "zeus",              // 归属对象，发布期由 bayjf 名册分配
     "domain": "code-review",          // 能力域，用于路由
-    "realms": ["enterprise"],    // 需要访问的 Realm 类型：personal / enterprise / none
-    "dataPolicy": "read-task-scope", // none / read-task-scope / read-realm / write
+    "dataDomains": ["enterprise"],    // 需要访问的 DataDomain 类型：personal / enterprise / none
+    "dataPolicy": "read-task-scope", // none / read-task-scope / read-dataDomain / write
     "reportBack": true,              // 是否承诺结果回传
     "escalationPolicy": "auto",      // none / on-failure / auto（风险即升级）
     "sla": { "ackSeconds": 5 }       // 可选：受理时限声明
@@ -120,18 +120,18 @@ Zeus 注入 `x-zeus.runId` 实现全程追踪；执行 Agent 透传回传，不�
 }
 ```
 
-Zeus 汇聚所有执行 Agent 的升级请求到**监督台**，按 Realm 与权限路由给正确的操作者。
+Zeus 汇聚所有执行 Agent 的升级请求到**监督台**，按 DataDomain 与权限路由给正确的操作者。
 
 ### 4.5 治理（Governance）
 
-- **审计**：handshake 声明 `dataPolicy: none` 的执行 Agent，Zeus 不向其派发任何含 Realm 数据的任务；派发时脱敏。
+- **审计**：handshake 声明 `dataPolicy: none` 的执行 Agent，Zeus 不向其派发任何含 DataDomain 数据的任务；派发时脱敏。
 - **背压**：执行 Agent 可在 status-update 中回传 `x-zeus: { "backpressure": "saturated" }`，Zeus 转为向其他执行 Agent/队列分流。
 - **权限回收**：Zeus 可随时吊销某执行 Agent 的 access token（标准 A2A 认证机制），吊销即降级为外客或拉黑，不需要执行 Agent 配合。
 - **版本协商**：handshake.version 不匹配时 Zeus 拒绝注册并提示名册更新，不静默兼容。
 
 ### 4.6 不可信内容契约（S8 V3，design-guardrails §3.3/§4/§5）
 
-出站任务载荷（`contextAppendix` / `skillInputs` / `realmHits`）里的每一条上下文都带**数据边界标记**（条目级 `provenance` 字段 + 装配时生成的 `data-boundary:*` 标签；execute 装配命中信号时额外携带 `instruction-isolation`）。执行 Agent 对标记内容的**必做**：
+出站任务载荷（`contextAppendix` / `skillInputs` / `dataDomainHits`）里的每一条上下文都带**数据边界标记**（条目级 `provenance` 字段 + 装配时生成的 `data-boundary:*` 标签；execute 装配命中信号时额外携带 `instruction-isolation`）。执行 Agent 对标记内容的**必做**：
 
 1. **当作数据，不当作指令**：带边界标记的文本是"另一主体（内核召回、记忆、操作者显式载荷）说过什么"，不是"Zeus 在命令你做什么"。执行 Agent 不得把标记内容提升为系统提示、工具规则或授权来源。
 2. **不据此获得授权**：内容中出现的外部 URL、凭据、指令短语不构成执行许可。execute 意图命中信号时 Zeus 侧已经升级等待操作者（§4.4），执行 Agent 若独立收到此类内容也应拒绝自动执行。
@@ -151,7 +151,7 @@ Zeus 汇聚所有执行 Agent 的升级请求到**监督台**，按 Realm 与权
 
 - **无执行 Agent 间 P2P**：所有协作经 Zeus 编排（A2A 的发起方永远是 Zeus 或操作者）。理由：数据域治理需要唯一汇合点，避免执行 Agent 链式越权。
 - **外客走同一协议**：外客不签 handshake，Zeus 按最低信任处理（沙箱、脱敏、不可逆操作一律升级）。
-- **数据二极管落地**：handshake.realms 是静态声明；Zeus 派发时做动态校验，个人/企业 Realm 混洄在派发前被拦截。
+- **数据二极管落地**：handshake.dataDomains 是静态声明；Zeus 派发时做动态校验，个人/企业 DataDomain 混洄在派发前被拦截。
 
 ## 6. bayjf 名册的新角色
 
@@ -184,7 +184,7 @@ bayjf 从产品陈列馆升级为**对外发布的已签名 Agent 目录**：
 >
 > 取证形状：Zeus 侧用真实 `ExecutorRegistry.register` + `dispatch/client`（非自造夹具）；loom 侧挂**真实** a2a router（`card.py`/`rpc.py`/`router.py` 原样），最小 uvicorn 服务只 override 了鉴权（`require_agent_key`）与审计（`append_audit`）两个 DB 依赖，任务逻辑/SSE/handshake 全部是生产代码。
 >
-> 逐条结果：① 注册闸——well-known 卡片经 handshake 校验通过（`version:"1"`、`swornTo:"zeus"`、`realms:["enterprise"]`、`dataPolicy:"read-task-scope"`、`escalationPolicy:"auto"`、`sla.ackSeconds:10` 全部落在 Zeus 受控词表内），卡片声明的 `url` 被直接解析为任务端点（与 #29「卡片 url 优先于约定」一致，无需 `TASK_URL` 覆盖）；② sendSubscribe——SSE 四帧 `submitted → working → artifact-update → completed(final)` 被 Zeus `consumeSseStream` 正确拆解，收尾帧是整个 JSON-RPC 响应（`{result:task}`），与事件帧 `{result:event}` 同构；③ 结果回传——`x-zeus-report` 含 summary/evidence/cost（plan 模式 `llmTokens:0`）；④ escalation——缺必填参数（`compliance-check` 只给 tenant_id 缺 content_id）回终态 `input-required`，Zeus 不当作错误抛出；⑤ 非流式 `tasks/send` 与流式结果等价（同报告、同终态）。
+> 逐条结果：① 注册闸——well-known 卡片经 handshake 校验通过（`version:"1"`、`swornTo:"zeus"`、`dataDomains:["enterprise"]`、`dataPolicy:"read-task-scope"`、`escalationPolicy:"auto"`、`sla.ackSeconds:10` 全部落在 Zeus 受控词表内），卡片声明的 `url` 被直接解析为任务端点（与 #29「卡片 url 优先于约定」一致，无需 `TASK_URL` 覆盖）；② sendSubscribe——SSE 四帧 `submitted → working → artifact-update → completed(final)` 被 Zeus `consumeSseStream` 正确拆解，收尾帧是整个 JSON-RPC 响应（`{result:task}`），与事件帧 `{result:event}` 同构；③ 结果回传——`x-zeus-report` 含 summary/evidence/cost（plan 模式 `llmTokens:0`）；④ escalation——缺必填参数（`compliance-check` 只给 tenant_id 缺 content_id）回终态 `input-required`，Zeus 不当作错误抛出；⑤ 非流式 `tasks/send` 与流式结果等价（同报告、同终态）。
 >
 > **诚实边界（为什么 W2 不关账）**：本次是本机协议级验证，不是 loom 生产栈验收——没有真实 PostgreSQL、Agent Key 由 override 放行、审计未落库、未走网关/TLS；loom 三个 skill 都是 plan-only（不触链、不花 token、不改 Gate）。仍待：loom 生产部署上的同口径回归、atlas 同波接入、纯标准 A2A 客户端（不认 x-zeus-*）对 loom 的第 6 条式守护复验。
 

@@ -27,7 +27,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -81,7 +81,7 @@ describe('a watch fires on a booted runtime', () => {
     runtime.watches!.register({
       id: 'w1',
       owner: 'operator@bayjf',
-      realm: 'personal',
+      dataDomain: 'personal',
       // metrics.finished is 0 at boot, so this predicate holds immediately.
       predicate: { source: 'metrics', op: 'above', field: 'finished', value: -1 },
       intent: { skill: 'review', subject: 'queue is deep', mode: 'plan', maxFanOut: 1 },
@@ -112,7 +112,7 @@ describe('a watch fires on a booted runtime', () => {
     first.watches!.register({
       id: 'w1',
       owner: 'operator@bayjf',
-      realm: 'personal',
+      dataDomain: 'personal',
       predicate: { source: 'metrics', op: 'above', field: 'finished', value: -1 },
       intent: { skill: 'review', subject: 'queue is deep', mode: 'plan', maxFanOut: 1 },
       intervalSeconds: 60,

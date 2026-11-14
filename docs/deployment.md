@@ -4,13 +4,13 @@
 
 **运行时要求**：Node.js **≥ 22**（`package.json` 的 `engines.node`；仓库 `.npmrc` 开了 `engine-strict`，装依赖时越界即失败）。Docker 镜像为 `node:22-slim`，CI 在 22.x 与 24.x 双档验证；Node 20 自 2026-03-24 起不再有任何发布，**不要**把它用于生产部署。
 
-> 当前边界：执行 Agent 可经 `POST /api/executors`（H2 内部面，bearer 保护）注册，或经 `ZEUS_EXECUTOR_SEEDS` 启动自动注册；Realm 不挂 HTTP。
+> 当前边界：执行 Agent 可经 `POST /api/executors`（H2 内部面，bearer 保护）注册，或经 `ZEUS_EXECUTOR_SEEDS` 启动自动注册；DataDomain 不挂 HTTP。
 
 ## 1. 端点
 
 | 端点 | 鉴权 | 说明 |
 |---|---|---|
-| `GET /healthz` | 无 | 仅 `status/version/ts`，不含执行 Agent 与 Realm 信息 |
+| `GET /healthz` | 无 | 仅 `status/version/ts`，不含执行 Agent 与 DataDomain 信息 |
 | `GET /api/roster/public` | 无 | 实时名册投影 + Ed25519 封签（离线可验，1h seal / 24h attestation TTL） |
 | `GET /api/roster` | bearer（`ZEUS_INTERNAL_TOKEN`） | 内部全量视图；未配 token 时该路由不挂载（404） |
 
@@ -43,8 +43,8 @@
 | `ZEUS_MAX_CONCURRENT_PER_EXECUTOR` | 未设置（=不分流） | #9 背压分流的**每 Agent 饱和线**（≥1）。设了才启用分流：自动选路时把已在途数达到该线的执行 Agent **改派给同技能的其他提供者**；它**不是**每 Agent 并发硬上限（限流是 `ZEUS_MAX_CONCURRENT_BRANCHES` 的职责），且必须低于全局上界才有空闲可派，否则分流永不触发。显式点名的 `executors` 是硬绑定，永不被改派。非数字或 `<1` 拒启 |
 | `ZEUS_CLOCK_SKEW_DAYS` | `730`（+2 年） | **仅 CI 的 `clock-skew` 作业用**（deferred #24，`scripts/clock-skew-setup.mjs` 以 vitest setup 拨快 JS 时钟），**不是进程配置**（`.env.example` 里仍保留脚本专用条目）。它让"悄悄依赖墙上时钟"的用例当场变红而不是某天突然变红/变绿；本地复跑：`npx vitest run --config vitest.clock-skew.config.ts` |
 | `ZEUS_EVAL_BUDGET_MS` | `120000`（120 秒） | **仅 `scripts/eval-run.mjs` 用**（测试以 1ms 强制触发预算看门狗；CI 无人值守跑保留默认）。单次跑的墙钟预算，超时 exit 2（cannot start / stalled），与缺构建同一类。**不是进程配置**（`.env.example` 里仍保留脚本专用条目） |
-| `ZEUS_REALM_ROOTS` | 未设置 | G4：启动时连接的个人域根目录，逗号分隔；连接参数写进状态文件，重启自动重连 |
-| `ZEUS_REALM_ENTERPRISE` | 未设置 | E3.6：企业域挂载，每项 `"<root>::<tenant>"`（tenant 为 `org[/department[/member]]`，如 `/srv/acme-eng::acme/eng`）。**缺 tenant 或写法非法直接拒启**——一个没有边界的企业域等于对整个名册可见；`::` 是因为 Windows 盘符已占用单冒号 |
+| `ZEUS_DATA_DOMAIN_ROOTS` | 未设置 | G4：启动时连接的个人域根目录，逗号分隔；连接参数写进状态文件，重启自动重连 |
+| `ZEUS_DATA_DOMAIN_ENTERPRISE` | 未设置 | E3.6：企业域挂载，每项 `"<root>::<tenant>"`（tenant 为 `org[/department[/member]]`，如 `/srv/acme-eng::acme/eng`）。**缺 tenant 或写法非法直接拒启**——一个没有边界的企业域等于对整个名册可见；`::` 是因为 Windows 盘符已占用单冒号 |
 | `ZEUS_JEV_ENABLED` | 未设置（等同启用） | A4 显式关闭开关：`0/false/no/off` 时即使 `ZEUS_DECISION_*` 已配也不构造 Jev 后端，内核退回 rules-only；**未设置 = 保持“配了即启用”的既有行为**。关闭时必须在上线 checklist A4 行标注并写明影响面 |
 | `ZEUS_DECISION_BASE_URL` + `ZEUS_DECISION_API_KEY` | 未设置 | S2 critic 仲裁的决策后端（Jev 优先）。**两项同时给出才启用**，缺任一即 `backend: null`、内核退回 rules-only（这是设计好的降级，不是错误） |
 | `ZEUS_DECISION_MODEL` | 适配器默认 | 决策模型名，只在上面两项齐时生效 |
@@ -253,7 +253,7 @@ WantedBy=multi-user.target
 - [ ] `ZEUS_INTERNAL_TOKEN` 为长随机串（或明确不挂载内部路由）
 - [ ] `ZEUS_STATE_FILE` 指向持久卷，`docker stop`/重启后日志出现 restored；**状态文件权限为 0600**（内含记忆事实明文；连接器 bearer token 与 stdio env 值不入库）：`ls -l /data/runtime-state.json`
 - [ ] `ZEUS_AUDIT_FILE` 已配置（否则审计只活在 stderr 里，重启即丢）；若把 `ZEUS_AUDIT_MAX_BYTES` 设成不轮转，确认已接外部 logrotate
-- [ ] **E3.6 边界自查**：每个企业域挂载都带 tenant；`GET /api/state` 里 `enterpriseRealms == tenantScopedRealms`（不等 = 有企业域没标边界，它只对操作者可达，但迟早被人当成"已经隔离了"）
+- [ ] **E3.6 边界自查**：每个企业域挂载都带 tenant；`GET /api/state` 里 `enterpriseDataDomains == tenantScopedDataDomains`（不等 = 有企业域没标边界，它只对操作者可达，但迟早被人当成"已经隔离了"）
 - [ ] **E6.4 授权自查**：`GET /api/domains` 的 `grants` 逐条读过——无 `expiresAt` 的长期授权必须是有意的；再用 `GET /api/domains/access` 抽查两类必答组合：企业主体读个人域（**必拒**）、未授权的个人侧主体读企业域（必拒）；`GET /api/audit?decision=domain-refused` 看有没有人正在撞边界
 - [ ] 端口默认只绑 loopback，TLS 在反向代理终止
 - [ ] `/healthz` 与 `/api/roster/public` 封签经独立通道验签通过（`npm run verify:roster -- --url <host>/api/roster/public --key <公钥>`；只看 HTTP 200 不算过——200 只说明服务活着，不说明名册是真的）
@@ -282,7 +282,7 @@ WantedBy=multi-user.target
 
 ```cron
 # /etc/cron.d/zeus-backup：每日 03:17 全包备份，03:30 原地校验
-17 3 * * * zeus set -a; . /opt/zeus/.backup-env; set +a; cd /opt/zeus && node dist/backup/cli.js backup --root /data/realm --out-dir /var/backups/zeus
+17 3 * * * zeus set -a; . /opt/zeus/.backup-env; set +a; cd /opt/zeus && node dist/backup/cli.js backup --root /data/dataDomain --out-dir /var/backups/zeus
 30 3 * * * zeus set -a; . /opt/zeus/.backup-env; set +a; cd /opt/zeus && node dist/backup/cli.js check --map /var/backups/zeus/latest.map.json || logger -t zeus-backup "drift detected"
 ```
 
@@ -291,11 +291,11 @@ WantedBy=multi-user.target
 ```bash
 # 1. 用最近一次全包恢复到新位置（包与图 digest 不符会被拒绝）
 node dist/backup/cli.js restore --map backups/backup-xxxx.map.json \
-  --bundle backups/backup-xxxx.bundle.json --target /data/realm-restored
+  --bundle backups/backup-xxxx.bundle.json --target /data/dataDomain-restored
 # 2. 退出码 0 且报告 recoverable: true 后，再切换挂载
 ```
 
-备份**内核状态文件**（`ZEUS_STATE_FILE` 指的那个文件：容器内是 `/data/runtime-state.json`，内容是名册、记忆事实、连接器声明（bearer token 与 stdio env 值在持久化边界剥离，恢复后需重新声明）、部门编制、授权台账）走文件白名单——它在每个已连接 Realm 之外：
+备份**内核状态文件**（`ZEUS_STATE_FILE` 指的那个文件：容器内是 `/data/runtime-state.json`，内容是名册、记忆事实、连接器声明（bearer token 与 stdio env 值在持久化边界剥离，恢复后需重新声明）、部门编制、授权台账）走文件白名单——它在每个已连接 DataDomain 之外：
 
 ```bash
 # 宿主机上（把 $STATE_DIR 换成 ZEUS_STATE_FILE 所在目录，文件名以 basename 为准）

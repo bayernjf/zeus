@@ -46,9 +46,9 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
   const tz = options.timeZone ?? 'UTC';
   const maxJson = options.maxJsonLength ?? 500;
 
-  const realmId = events[0]!.realmId; // guarded by the empty-return above
-  if (events.some(e => e.realmId !== realmId)) {
-    throw new DiaryBoundaryError('Diary cannot mix events from multiple realms');
+  const dataDomainId = events[0]!.dataDomainId; // guarded by the empty-return above
+  if (events.some(e => e.dataDomainId !== dataDomainId)) {
+    throw new DiaryBoundaryError('Diary cannot mix events from multiple dataDomains');
   }
 
   const buckets = new Map<string, MemoryEvent[]>();
@@ -80,7 +80,7 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
     // would write the withdrawn claim into the diary file on disk, creating a
     // second retention the memory store no longer holds.
     const matchedFacts = (options.facts ?? [])
-      .filter(f => f.realmId === realmId && f.status !== 'retracted')
+      .filter(f => f.dataDomainId === dataDomainId && f.status !== 'retracted')
       .filter(
         f => f.provenance.some(id => dayEventIds.has(id)) || dayBucket(f.updatedAt, tz) === date,
       )
@@ -91,7 +91,7 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
 
     const windowStart = sorted[0]!.occurredAt;
     const windowEnd = sorted[sorted.length - 1]!.occurredAt;
-    const id = `diary:${realmId}:${date}`;
+    const id = `diary:${dataDomainId}:${date}`;
     const provenance = uniqueSorted([
       ...sorted.map(e => e.eventId),
       ...facts.map(f => f.factId),
@@ -101,7 +101,7 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
       format: 'zeus-diary',
       version: 1,
       id,
-      realmId,
+      dataDomainId,
       date,
       windowStart,
       windowEnd,
@@ -118,7 +118,7 @@ export function buildDiary(events: MemoryEvent[], options: BuildDiaryOptions = {
         format: entry.format,
         version: entry.version,
         id,
-        realmId,
+        dataDomainId,
         date,
         windowStart,
         windowEnd,

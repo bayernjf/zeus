@@ -21,7 +21,7 @@ function card(overrides: Partial<AgentCard> = {}): AgentCard {
       version: '1',
       swornTo: 'zeus',
       domain: 'work',
-      realms: ['personal'],
+      dataDomains: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',

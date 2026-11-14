@@ -108,7 +108,7 @@ describe('failure attribution (deferred #40 read-only half)', () => {
     const entries: AuditEntry[] = [
       entry({ executor: 'a', decision: 'dispatched' }),
       entry({ executor: 'a', decision: 'domain-read' }),
-      entry({ executor: 'a', decision: 'realm-write' }),
+      entry({ executor: 'a', decision: 'dataDomain-write' }),
       entry({ executor: 'a', decision: 'content-injected', detail: 'policy recorded' }),
     ];
     const out = attributeFailures(entries);

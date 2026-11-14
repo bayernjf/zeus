@@ -94,7 +94,7 @@ export type EscalationView = {
   kind: 'task-input' | 'intent-conflict' | 'memory-dispute' | 'delegation-limit';
   executor: string;
   skill: string;
-  realm: string;
+  dataDomain: string;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
   options: string[];
@@ -134,16 +134,16 @@ export type AuditView = {
   decision: string;
   runId?: string;
   skill?: string;
-  realm?: string;
+  dataDomain?: string;
   taskId?: string;
   state?: string;
   detail?: string;
 };
 
-/** GET /api/domains: mounted realms plus the personal->enterprise grant ledger. */
+/** GET /api/domains: mounted dataDomains plus the personal->enterprise grant ledger. */
 export type DomainsView = {
-  realms: Array<{
-    realmId: string;
+  dataDomains: Array<{
+    dataDomainId: string;
     type: 'personal' | 'enterprise';
     /** Structured enterprise tenant as served by GET /api/domains. */
     tenant?: { org: string; department?: string; member?: string };
@@ -154,7 +154,7 @@ export type DomainsView = {
   grants: Array<{
     grantId: string;
     subject: string;
-    realmId: string;
+    dataDomainId: string;
     access: 'read' | 'write';
     grantedBy: string;
     reason?: string;
@@ -183,8 +183,8 @@ export type ContractsView = { contracts: ContractView[] };
 export type WatchView = {
   id: string;
   owner: string;
-  realm: 'personal' | 'enterprise';
-  realmId?: string;
+  dataDomain: 'personal' | 'enterprise';
+  dataDomainId?: string;
   predicate: { source: string; op: string; field: string; value?: string | number };
   intent: { skill: string; subject: string; mode: 'plan' | 'execute'; maxFanOut: number };
   intervalSeconds: number;
@@ -223,12 +223,12 @@ export type DeckClient = {
   snapshot(): Promise<DeckSnapshot>;
   /** Read-only fan-out/decision timeline. */
   timeline(limit?: number): Promise<AuditView[]>;
-  /** Read-only mounted realms and cross-domain grant ledger. */
+  /** Read-only mounted dataDomains and cross-domain grant ledger. */
   domains(): Promise<DomainsView>;
   /** Issue a personal -> enterprise cross-domain grant (audited by the runtime). */
   issueGrant(input: {
     subject: string;
-    realmId: string;
+    dataDomainId: string;
     access: 'read' | 'write';
     grantedBy: string;
     reason?: string;
@@ -290,7 +290,7 @@ export type DeckClient = {
    *  `approve` records the decision and leaves the branch parked. */
   resume(id: string, params: Record<string, unknown>): Promise<void>;
   /** E2.6: recognize an operator instruction as a plan-only intent. */
-  recognize(text: string, opts?: { realm?: 'personal' | 'enterprise'; useModel?: boolean }): Promise<RecognizeView>;
+  recognize(text: string, opts?: { dataDomain?: 'personal' | 'enterprise'; useModel?: boolean }): Promise<RecognizeView>;
 };
 
 /** E2.6 recognition result normalized for the deck (no protocol details). */
@@ -464,7 +464,7 @@ export function createDeckClient(baseUrl: string, token: string, fetchImpl: Fetc
         headers: { ...headers, 'content-type': 'application/json' },
         body: JSON.stringify({
           text,
-          ...(opts?.realm !== undefined ? { realm: opts.realm } : {}),
+          ...(opts?.dataDomain !== undefined ? { dataDomain: opts.dataDomain } : {}),
           ...(opts?.useModel === true ? { useModel: true } : {}),
         }),
       });

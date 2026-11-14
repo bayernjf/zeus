@@ -1,33 +1,33 @@
 /**
- * Minimal MCP (Model Context Protocol) JSON-RPC surface for a Realm.
+ * Minimal MCP (Model Context Protocol) JSON-RPC surface for a DataDomain.
  *
- * Scope (P1 scaffold, design-realm.md §6.1):
+ * Scope (P1 scaffold, design-dataDomain.md §6.1):
  *  - resources map to manifest/search/read.
- *  - tools: realm.search / realm.read (read access through the same store) and
- *    realm.write, which is the E3.4 remaining write step. The realmId whitelist
+ *  - tools: dataDomain.search / dataDomain.read (read access through the same store) and
+ *    dataDomain.write, which is the E3.4 remaining write step. The dataDomainId whitelist
  *    is still the domain boundary for all three.
- *  - realm.write carries no special authority of its own: an ENTERPRISE write is
+ *  - dataDomain.write carries no special authority of its own: an ENTERPRISE write is
  *    refused unless the caller presents a signed, unexpired, single-use
- *    OperatorWriteGrant for that exact realmId (E3.5), and a personal realm takes
+ *    OperatorWriteGrant for that exact dataDomainId (E3.5), and a personal dataDomain takes
  *    no grant — the same contract every other write path in the runtime obeys.
  *    The grant is verified by the store, never here.
  *  - This is a transport-agnostic, dependency-free message handler: it speaks
  *    newline-delimited JSON-RPC semantics but does no I/O. mcp-stdio.ts wires
  *    it to stdin/stdout. No @modelcontextprotocol/sdk dependency by design;
  *    compatibility with a specific SDK version is to be re-verified when the
- *    real read-realm executor triggers the formal P1 start.
+ *    real read-dataDomain executor triggers the formal P1 start.
  *
- * Path non-disclosure invariant (design-realm.md §1.3, types.ts RealmManifest.root):
- *  - connect is NOT exposed over MCP; realms are pre-connected by the host.
+ * Path non-disclosure invariant (design-dataDomain.md §1.3, types.ts DataDomainManifest.root):
+ *  - connect is NOT exposed over MCP; dataDomains are pre-connected by the host.
  *  - the absolute root is stripped from every manifest before serialization
- *    and never appears in any response; only realmId + root-relative itemIds.
- *  - tools/call follows the same rule: it accepts realmIds the host authorized
+ *    and never appears in any response; only dataDomainId + root-relative itemIds.
+ *  - tools/call follows the same rule: it accepts dataDomainIds the host authorized
  *    and root-relative itemIds, and error messages never carry absolute paths.
  *
  * Runtime read-only face (design P1-1):
  *  - zeus.skills / zeus.plan / zeus.status read runtime-internal registries
- *    through the injected PersonalRuntimeQueries port. They bypass the realmId
- *    whitelist on purpose - they never touch a connected realm - and their
+ *    through the injected PersonalRuntimeQueries port. They bypass the dataDomainId
+ *    whitelist on purpose - they never touch a connected dataDomain - and their
  *    output is a designed subset that carries no absolute path.
  *  - The port is optional. When the host did not mount it, calling a zeus.*
  *    tool fails closed with a named error instead of returning an empty result
@@ -37,22 +37,22 @@
  */
 import type {
   OperatorWriteGrant,
-  RealmItem,
-  RealmManifest,
-  RealmStore,
-  RealmWriteItem,
+  DataDomainItem,
+  DataDomainManifest,
+  DataDomainStore,
+  DataDomainWriteItem,
   SearchQuery,
 } from './types.js';
 import {
   InvalidItemIdError,
-  RealmNotConnectedError,
-  UnauthorizedRealmWriteError,
+  DataDomainNotConnectedError,
+  UnauthorizedDataDomainWriteError,
   UnsupportedQueryError,
   UnsupportedWriteError,
 } from './types.js';
 
 export const JSONRPC_VERSION = '2.0' as const;
-export const REALM_URI_SCHEME = 'zeus-realm:';
+export const DATA_DOMAIN_URI_SCHEME = 'zeus-data-domain:';
 
 /** Newest first; the server negotiates down to the highest version the client sent. */
 export const SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
@@ -64,11 +64,11 @@ const INVALID_REQUEST = -32600;
 const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
 const INTERNAL_ERROR = -32603;
-const REALM_ERROR = -32000;
-const REALM_NOT_CONNECTED = -32002;
+const DATA_DOMAIN_ERROR = -32000;
+const DATA_DOMAIN_NOT_CONNECTED = -32002;
 const INVALID_ITEM = -32003;
-/** A write the store refused: read-only realm, or a grant that failed a named check. */
-const REALM_UNAUTHORIZED = -32004;
+/** A write the store refused: read-only dataDomain, or a grant that failed a named check. */
+const DATA_DOMAIN_UNAUTHORIZED = -32004;
 
 export type JsonRpcId = string | number | null;
 
@@ -89,22 +89,22 @@ export type JsonRpcResponse = {
 };
 
 export type McpHandlerDeps = {
-  store: RealmStore;
-  /** Pre-connected realmIds the host authorizes this server to expose. */
-  realmIds: string[];
+  store: DataDomainStore;
+  /** Pre-connected dataDomainIds the host authorizes this server to expose. */
+  dataDomainIds: string[];
   serverName?: string;
   serverVersion?: string;
   /**
-   * Session-scoped actor (design-realm §6.5, deferred #18 ruling #1): the host
-   * explicitly declares who is calling. When the actor also declares realmIds,
-   * the effective whitelist is the intersection with deps.realmIds — the actor
+   * Session-scoped actor (design-dataDomain §6.5, deferred #18 ruling #1): the host
+   * explicitly declares who is calling. When the actor also declares dataDomainIds,
+   * the effective whitelist is the intersection with deps.dataDomainIds — the actor
    * can only ever narrow, never widen, the host's pre-connected boundary.
    * Absent an actor, the call stays anonymous with the full host whitelist.
    */
-  actor?: RealmMcpActor;
+  actor?: DataDomainMcpActor;
   /**
    * Sink for fault details whose JSON-RPC response must stay generic
-   * (store errors may carry the realm-local absolute root). Absent = the
+   * (store errors may carry the dataDomain-local absolute root). Absent = the
    * detail is dropped after the fixed response is produced.
    */
   log?: (event: string, msg?: string, fields?: Record<string, unknown>) => void;
@@ -116,11 +116,11 @@ export type McpHandlerDeps = {
   runtimeQueries?: PersonalRuntimeQueries;
 };
 
-/** Session-scoped caller identity (design-realm §6.5). */
-export type RealmMcpActor = {
+/** Session-scoped caller identity (design-dataDomain §6.5). */
+export type DataDomainMcpActor = {
   name: string;
   /** Optional narrowing of the host whitelist for this session. */
-  realmIds?: string[];
+  dataDomainIds?: string[];
 };
 
 /**
@@ -128,7 +128,7 @@ export type RealmMcpActor = {
  * never reaches for a live runtime: the host (mcp-stdio.ts) implements this
  * port over a booted, read-only runtime, so this file stays transport-agnostic
  * and dependency-free. Every method is read-only; the shapes below deliberately
- * omit absolute paths (realms expose realmId/type/readOnly, never root).
+ * omit absolute paths (dataDomains expose dataDomainId/type/readOnly, never root).
  */
 export type PersonalRuntimeQueries = {
   listSkills(filter?: {
@@ -160,7 +160,7 @@ export type PersonalRuntimeQueries = {
   >;
   plan(input: {
     text: string;
-    realm?: 'personal' | 'enterprise';
+    dataDomain?: 'personal' | 'enterprise';
   }): Promise<{
     ok: boolean;
     chosenBy: string;
@@ -172,22 +172,22 @@ export type PersonalRuntimeQueries = {
   }>;
   status(): Promise<{
     ts: string;
-    realms: Array<{ realmId: string; type: string; readOnly: boolean }>;
+    dataDomains: Array<{ dataDomainId: string; type: string; readOnly: boolean }>;
     agents: { activeCount: number; names: string[] };
     pendingOversight: number;
     watches: number;
   }>;
 };
 
-export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) => Promise<JsonRpcResponse | null> {
-  const serverName = deps.serverName ?? 'zeus-realm';
+export function createDataDomainMcpHandler(deps: McpHandlerDeps): (message: unknown) => Promise<JsonRpcResponse | null> {
+  const serverName = deps.serverName ?? 'zeus-dataDomain';
   const serverVersion = deps.serverVersion ?? '0.1.0';
   // §6.5: the actor can only narrow. The effective boundary is the host
-  // whitelist intersected with the actor's declared realms (if any).
-  const effectiveRealmIds =
-    deps.actor?.realmIds && deps.actor.realmIds.length > 0
-      ? deps.realmIds.filter(realmId => deps.actor!.realmIds!.includes(realmId))
-      : deps.realmIds;
+  // whitelist intersected with the actor's declared dataDomains (if any).
+  const effectiveDataDomainIds =
+    deps.actor?.dataDomainIds && deps.actor.dataDomainIds.length > 0
+      ? deps.dataDomainIds.filter(dataDomainId => deps.actor!.dataDomainIds!.includes(dataDomainId))
+      : deps.dataDomainIds;
 
   function ok(id: JsonRpcId, result: unknown): JsonRpcResponse {
     return { jsonrpc: JSONRPC_VERSION, id, result };
@@ -215,15 +215,15 @@ export function createRealmMcpHandler(deps: McpHandlerDeps): (message: unknown) 
         case 'ping':
           return ok(id, {});
         case 'resources/list':
-          return ok(id, { resources: listResources(effectiveRealmIds) });
+          return ok(id, { resources: listResources(effectiveDataDomainIds) });
         case 'resources/templates/list':
           return ok(id, { resourceTemplates: RESOURCE_TEMPLATES });
         case 'resources/read':
-          return ok(id, { contents: await readResource(deps.store, effectiveRealmIds, req.params) });
+          return ok(id, { contents: await readResource(deps.store, effectiveDataDomainIds, req.params) });
         case 'tools/list':
-          return ok(id, { tools: [...REALM_TOOLS, ...RUNTIME_TOOLS] });
+          return ok(id, { tools: [...DATA_DOMAIN_TOOLS, ...RUNTIME_TOOLS] });
         case 'tools/call':
-          return ok(id, { content: await callTool(deps.store, effectiveRealmIds, deps.runtimeQueries, req.params) });
+          return ok(id, { content: await callTool(deps.store, effectiveDataDomainIds, deps.runtimeQueries, req.params) });
         default:
           return fail(id, METHOD_NOT_FOUND, `method not found: ${req.method}`);
       }
@@ -246,7 +246,7 @@ function initializeResult(params: unknown, serverName: string, serverVersion: st
       : PREFERRED_PROTOCOL_VERSION;
   return {
     protocolVersion: negotiated,
-    // Realm face: resources plus the tools below. Two of them read; realm.write
+    // DataDomain face: resources plus the tools below. Two of them read; dataDomain.write
     // exists and carries no extra authority — an enterprise write still needs a
     // OperatorWriteGrant the store verifies. No prompts.
     capabilities: {
@@ -258,8 +258,8 @@ function initializeResult(params: unknown, serverName: string, serverVersion: st
 }
 
 // --- Tools (Active work 47 §E-4): read-only access through the whitelisted
-// realmIds. The whitelist is the domain boundary: a caller cannot point a tool
-// at a realm the host did not pre-connect. ---
+// dataDomainIds. The whitelist is the domain boundary: a caller cannot point a tool
+// at a dataDomain the host did not pre-connect. ---
 
 type ToolDescriptor = {
   name: string;
@@ -271,47 +271,47 @@ type ToolDescriptor = {
   };
 };
 
-const REALM_TOOLS: readonly ToolDescriptor[] = [
+const DATA_DOMAIN_TOOLS: readonly ToolDescriptor[] = [
   {
-    name: 'realm.search',
-    description: 'Search one connected realm by text; returns root-relative item metadata.',
+    name: 'dataDomain.search',
+    description: 'Search one connected dataDomain by text; returns root-relative item metadata.',
     inputSchema: {
       type: 'object',
       properties: {
-        realmId: { type: 'string', description: 'A realmId the host connected' },
+        dataDomainId: { type: 'string', description: 'A dataDomainId the host connected' },
         text: { type: 'string', description: 'Substring filter over item content' },
         since: { type: 'string', description: 'ISO timestamp; only items changed after it' },
         tags: { type: 'string', description: 'Comma-separated tags; NOT supported by the P0 filesystem backend and returns an explicit error' },
         limit: { type: 'number', description: 'Max hits, positive integer' },
       },
-      required: ['realmId'],
+      required: ['dataDomainId'],
     },
   },
   {
-    name: 'realm.read',
-    description: 'Read one item by root-relative itemId from a connected realm.',
+    name: 'dataDomain.read',
+    description: 'Read one item by root-relative itemId from a connected dataDomain.',
     inputSchema: {
       type: 'object',
       properties: {
-        realmId: { type: 'string', description: 'A realmId the host connected' },
+        dataDomainId: { type: 'string', description: 'A dataDomainId the host connected' },
         itemId: { type: 'string', description: 'Root-relative item path' },
       },
-      required: ['realmId', 'itemId'],
+      required: ['dataDomainId', 'itemId'],
     },
   },
   {
-    name: 'realm.write',
+    name: 'dataDomain.write',
     description:
-      'Write one text item into a connected realm. An ENTERPRISE realm requires a signed, unexpired, single-use OperatorWriteGrant for that exact realmId; a personal realm takes no grant. Grants are issued by the operator over POST /api/realm/write-grants.',
+      'Write one text item into a connected dataDomain. An ENTERPRISE dataDomain requires a signed, unexpired, single-use OperatorWriteGrant for that exact dataDomainId; a personal dataDomain takes no grant. Grants are issued by the operator over POST /api/dataDomain/write-grants.',
     inputSchema: {
       type: 'object',
       properties: {
-        realmId: { type: 'string', description: 'A realmId the host connected' },
+        dataDomainId: { type: 'string', description: 'A dataDomainId the host connected' },
         data: { type: 'string', description: 'Text written verbatim; JSON-compatible values are serialized' },
         itemId: { type: 'string', description: 'Root-relative POSIX path; omitted lets the store mint one under writes/' },
-        grant: { type: 'object', description: 'OperatorWriteGrant for an enterprise realm; refused by name when absent, unsigned, expired, replayed or bound to another realm' },
+        grant: { type: 'object', description: 'OperatorWriteGrant for an enterprise dataDomain; refused by name when absent, unsigned, expired, replayed or bound to another dataDomain' },
       },
-      required: ['realmId', 'data'],
+      required: ['dataDomainId', 'data'],
     },
   },
 ];
@@ -320,7 +320,7 @@ const RUNTIME_TOOLS: readonly ToolDescriptor[] = [
   {
     name: 'zeus.skills',
     description:
-      'Read the runtime skill catalogue. Without id, list (optionally filtered by domain/tag); with id, fetch one skill. No realmId needed; read-only.',
+      'Read the runtime skill catalogue. Without id, list (optionally filtered by domain/tag); with id, fetch one skill. No dataDomainId needed; read-only.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -340,7 +340,7 @@ const RUNTIME_TOOLS: readonly ToolDescriptor[] = [
       type: 'object',
       properties: {
         text: { type: 'string', description: 'The operator instruction in natural language' },
-        realm: { type: 'string', description: "'personal' (default) or 'enterprise'" },
+        dataDomain: { type: 'string', description: "'personal' (default) or 'enterprise'" },
       },
       required: ['text'],
     },
@@ -348,7 +348,7 @@ const RUNTIME_TOOLS: readonly ToolDescriptor[] = [
   {
     name: 'zeus.status',
     description:
-      'Read-only runtime status: connected realms (realmId/type/readOnly, never absolute paths), active agents, pending oversight count, watches count.',
+      'Read-only runtime status: connected dataDomains (dataDomainId/type/readOnly, never absolute paths), active agents, pending oversight count, watches count.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -358,8 +358,8 @@ const RUNTIME_TOOLS: readonly ToolDescriptor[] = [
 ];
 
 async function callTool(
-  store: RealmStore,
-  realmIds: string[],
+  store: DataDomainStore,
+  dataDomainIds: string[],
   runtimeQueries: PersonalRuntimeQueries | undefined,
   params: unknown
 ): Promise<Array<{ type: 'text'; text: string }>> {
@@ -367,45 +367,45 @@ async function callTool(
   if (typeof name !== 'string' || name.length === 0) {
     throw new McpParamError(`unknown tool: ${String(name)}`);
   }
-  // The runtime face is its own boundary: it never goes through the realmId
-  // whitelist (it does not address a realm at all) and never writes.
+  // The runtime face is its own boundary: it never goes through the dataDomainId
+  // whitelist (it does not address a dataDomain at all) and never writes.
   if (name.startsWith('zeus.')) {
     return callRuntimeTool(runtimeQueries, name, args);
   }
-  if (!REALM_TOOLS.some(tool => tool.name === name)) {
+  if (!DATA_DOMAIN_TOOLS.some(tool => tool.name === name)) {
     throw new McpParamError(`unknown tool: ${name}`);
   }
   if (typeof args !== 'object' || args === null || Array.isArray(args)) {
     throw new McpParamError('tools/call requires an arguments object');
   }
-  const realmId = args.realmId;
-  if (typeof realmId !== 'string' || !realmIds.includes(realmId)) {
-    throw new RealmNotConnectedMcpError(typeof realmId === 'string' ? realmId : '?');
+  const dataDomainId = args.dataDomainId;
+  if (typeof dataDomainId !== 'string' || !dataDomainIds.includes(dataDomainId)) {
+    throw new DataDomainNotConnectedMcpError(typeof dataDomainId === 'string' ? dataDomainId : '?');
   }
 
-  if (name === 'realm.search') {
+  if (name === 'dataDomain.search') {
     const query = toolSearchQuery(args);
-    const hits = await store.search(realmId, query);
+    const hits = await store.search(dataDomainId, query);
     return [{ type: 'text', text: JSON.stringify(hits) }];
   }
 
-  if (name === 'realm.write') {
-    // `RealmStore.write` is optional: a read-only deployment or a P0 backend
+  if (name === 'dataDomain.write') {
+    // `DataDomainStore.write` is optional: a read-only deployment or a P0 backend
     // may not implement it at all. Refuse by name instead of invoking undefined.
     if (typeof store.write !== 'function') {
       throw new McpParamError(
-        'realm.write is unavailable: the connected realm store does not implement writes',
+        'dataDomain.write is unavailable: the connected dataDomain store does not implement writes',
       );
     }
-    const write = await store.write(realmId, toolWriteItem(args), toolWriteGrant(args));
+    const write = await store.write(dataDomainId, toolWriteItem(args), toolWriteGrant(args));
     return [{ type: 'text', text: JSON.stringify(write) }];
   }
 
   const itemId = args.itemId;
   if (typeof itemId !== 'string' || itemId.trim() === '') {
-    throw new McpParamError('realm.read requires a root-relative itemId string');
+    throw new McpParamError('dataDomain.read requires a root-relative itemId string');
   }
-  const item: RealmItem = await store.read(realmId, itemId);
+  const item: DataDomainItem = await store.read(dataDomainId, itemId);
   return [{ type: 'text', text: item.content }];
 }
 
@@ -472,21 +472,21 @@ async function callRuntimeTool(
   }
 
   if (name === 'zeus.plan') {
-    const known = new Set(['text', 'realm']);
+    const known = new Set(['text', 'dataDomain']);
     for (const key of Object.keys(runtimeArgs)) {
       if (!known.has(key)) {
-        throw new McpParamError(`unsupported plan parameter: ${key} (supported: text, realm)`);
+        throw new McpParamError(`unsupported plan parameter: ${key} (supported: text, dataDomain)`);
       }
     }
     const text = asRuntimeString(runtimeArgs.text, 'text');
-    let realm: 'personal' | 'enterprise' | undefined;
-    if (runtimeArgs.realm !== undefined) {
-      if (runtimeArgs.realm !== 'personal' && runtimeArgs.realm !== 'enterprise') {
-        throw new McpParamError(`realm must be 'personal' or 'enterprise', got: ${String(runtimeArgs.realm)}`);
+    let dataDomain: 'personal' | 'enterprise' | undefined;
+    if (runtimeArgs.dataDomain !== undefined) {
+      if (runtimeArgs.dataDomain !== 'personal' && runtimeArgs.dataDomain !== 'enterprise') {
+        throw new McpParamError(`dataDomain must be 'personal' or 'enterprise', got: ${String(runtimeArgs.dataDomain)}`);
       }
-      realm = runtimeArgs.realm;
+      dataDomain = runtimeArgs.dataDomain;
     }
-    const result = await runtimeQueries.plan({ text, ...(realm !== undefined ? { realm } : {}) });
+    const result = await runtimeQueries.plan({ text, ...(dataDomain !== undefined ? { dataDomain } : {}) });
     return [{ type: 'text', text: JSON.stringify(result) }];
   }
 
@@ -507,17 +507,17 @@ async function callRuntimeTool(
  * arguments (deferred #31): an argument the schema never declared is rejected by
  * name rather than ignored.
  */
-function toolWriteItem(args: Record<string, unknown>): RealmWriteItem {
-  const known = new Set(['realmId', 'data', 'itemId', 'grant']);
+function toolWriteItem(args: Record<string, unknown>): DataDomainWriteItem {
+  const known = new Set(['dataDomainId', 'data', 'itemId', 'grant']);
   for (const name of Object.keys(args)) {
     if (!known.has(name)) {
       throw new McpParamError(`unsupported write parameter: ${name} (supported: data, itemId, grant)`);
     }
   }
   if (!('data' in args)) {
-    throw new McpParamError('realm.write requires a data payload');
+    throw new McpParamError('dataDomain.write requires a data payload');
   }
-  const item: RealmWriteItem = { data: args.data };
+  const item: DataDomainWriteItem = { data: args.data };
   if (args.itemId !== undefined) {
     if (typeof args.itemId !== 'string' || args.itemId.trim() === '') {
       throw new McpParamError(`itemId must be a non-empty root-relative string, got: ${String(args.itemId)}`);
@@ -528,7 +528,7 @@ function toolWriteItem(args: Record<string, unknown>): RealmWriteItem {
 }
 
 /**
- * The grant is handed to the store untouched on purpose: shape, realm binding,
+ * The grant is handed to the store untouched on purpose: shape, dataDomain binding,
  * signature, expiry and single-use are verified by `verifyOperatorWriteGrant`,
  * which every write path shares. A second verification here would be a second
  * answer to the same question, and the day they disagree one of them is wrong.
@@ -547,7 +547,7 @@ function toolSearchQuery(args: Record<string, unknown>): SearchQuery {
   // Same fail-loud contract as the resource URI (deferred #31): an argument the
   // schema never declared is rejected, and tags is forwarded so the P0 backend
   // returns its explicit "unsupported" error instead of unfiltered hits.
-  const known = new Set(['realmId', 'text', 'since', 'limit', 'tags']);
+  const known = new Set(['dataDomainId', 'text', 'since', 'limit', 'tags']);
   for (const name of Object.keys(args)) {
     if (!known.has(name)) {
       throw new McpParamError(`unsupported search parameter: ${name} (supported: text, since, limit, tags)`);
@@ -570,38 +570,38 @@ function toolSearchQuery(args: Record<string, unknown>): SearchQuery {
   return query;
 }
 
-// --- URI scheme: zeus-realm://<realmId>/(manifest|search|item) ---
+// --- URI scheme: zeus-data-domain://<dataDomainId>/(manifest|search|item) ---
 
-export function manifestUri(realmId: string): string {
-  return `${REALM_URI_SCHEME}//${realmId}/manifest`;
+export function manifestUri(dataDomainId: string): string {
+  return `${DATA_DOMAIN_URI_SCHEME}//${dataDomainId}/manifest`;
 }
-export function searchUri(realmId: string): string {
-  return `${REALM_URI_SCHEME}//${realmId}/search`;
+export function searchUri(dataDomainId: string): string {
+  return `${DATA_DOMAIN_URI_SCHEME}//${dataDomainId}/search`;
 }
 
 type ResourceDescriptor = { uri: string; name: string; mimeType?: string };
 type ResourceTemplateDescriptor = { name: string; uriTemplate: string; mimeType?: string };
 
-function listResources(realmIds: string[]): ResourceDescriptor[] {
-  return realmIds.flatMap(realmId => [
-    { uri: manifestUri(realmId), name: `Realm manifest (${realmId})`, mimeType: 'application/json' },
-    { uri: searchUri(realmId), name: `Realm search (${realmId})`, mimeType: 'application/json' },
+function listResources(dataDomainIds: string[]): ResourceDescriptor[] {
+  return dataDomainIds.flatMap(dataDomainId => [
+    { uri: manifestUri(dataDomainId), name: `DataDomain manifest (${dataDomainId})`, mimeType: 'application/json' },
+    { uri: searchUri(dataDomainId), name: `DataDomain search (${dataDomainId})`, mimeType: 'application/json' },
   ]);
 }
 
 const RESOURCE_TEMPLATES: ResourceTemplateDescriptor[] = [
-  { name: 'Realm manifest', uriTemplate: 'zeus-realm://{realmId}/manifest', mimeType: 'application/json' },
+  { name: 'DataDomain manifest', uriTemplate: 'zeus-data-domain://{dataDomainId}/manifest', mimeType: 'application/json' },
   {
-    name: 'Search realm items',
-    uriTemplate: 'zeus-realm://{realmId}/search?text={text}&since={since}&limit={limit}&tags={tags}',
+    name: 'Search dataDomain items',
+    uriTemplate: 'zeus-data-domain://{dataDomainId}/search?text={text}&since={since}&limit={limit}&tags={tags}',
     mimeType: 'application/json',
   },
-  { name: 'Read one realm item', uriTemplate: 'zeus-realm://{realmId}/item?path={path}', mimeType: 'text/plain' },
+  { name: 'Read one dataDomain item', uriTemplate: 'zeus-data-domain://{dataDomainId}/item?path={path}', mimeType: 'text/plain' },
 ];
 
-type ParsedRealmUri = { realmId: string; kind: 'manifest' | 'search' | 'item'; url: URL };
+type ParsedDataDomainUri = { dataDomainId: string; kind: 'manifest' | 'search' | 'item'; url: URL };
 
-function parseRealmUri(rawUri: unknown, realmIds: string[]): ParsedRealmUri {
+function parseDataDomainUri(rawUri: unknown, dataDomainIds: string[]): ParsedDataDomainUri {
   if (typeof rawUri !== 'string' || rawUri.length === 0) {
     throw new McpParamError('resources/read requires a string uri');
   }
@@ -611,26 +611,26 @@ function parseRealmUri(rawUri: unknown, realmIds: string[]): ParsedRealmUri {
   } catch {
     throw new McpParamError(`malformed uri: ${rawUri}`);
   }
-  if (url.protocol !== REALM_URI_SCHEME) {
-    throw new McpParamError(`unsupported uri scheme (expected ${REALM_URI_SCHEME}//): ${rawUri}`);
+  if (url.protocol !== DATA_DOMAIN_URI_SCHEME) {
+    throw new McpParamError(`unsupported uri scheme (expected ${DATA_DOMAIN_URI_SCHEME}//): ${rawUri}`);
   }
-  const realmId = url.hostname;
-  if (!realmIds.includes(realmId)) {
-    throw new RealmNotConnectedMcpError(realmId);
+  const dataDomainId = url.hostname;
+  if (!dataDomainIds.includes(dataDomainId)) {
+    throw new DataDomainNotConnectedMcpError(dataDomainId);
   }
-  const kind = url.pathname.replace(/^\//, '') as ParsedRealmUri['kind'];
+  const kind = url.pathname.replace(/^\//, '') as ParsedDataDomainUri['kind'];
   if (kind !== 'manifest' && kind !== 'search' && kind !== 'item') {
-    throw new McpParamError(`unknown realm resource: ${url.pathname}`);
+    throw new McpParamError(`unknown dataDomain resource: ${url.pathname}`);
   }
-  return { realmId, kind, url };
+  return { dataDomainId, kind, url };
 }
 
-async function readResource(store: RealmStore, realmIds: string[], params: unknown): Promise<unknown[]> {
+async function readResource(store: DataDomainStore, dataDomainIds: string[], params: unknown): Promise<unknown[]> {
   const uri = (params as { uri?: unknown } | undefined)?.uri;
-  const parsed = parseRealmUri(uri, realmIds);
+  const parsed = parseDataDomainUri(uri, dataDomainIds);
 
   if (parsed.kind === 'manifest') {
-    const manifest = await store.manifest(parsed.realmId);
+    const manifest = await store.manifest(parsed.dataDomainId);
     return [
       {
         uri: parsed.url.href,
@@ -642,13 +642,13 @@ async function readResource(store: RealmStore, realmIds: string[], params: unkno
 
   if (parsed.kind === 'search') {
     const query = parseSearchQuery(parsed.url);
-    const hits = await store.search(parsed.realmId, query);
+    const hits = await store.search(parsed.dataDomainId, query);
     return [{ uri: parsed.url.href, mimeType: 'application/json', text: JSON.stringify(hits) }];
   }
 
   const itemId = parsed.url.searchParams.get('path');
   if (!itemId) throw new McpParamError('item resource requires a root-relative path query parameter');
-  const item: RealmItem = await store.read(parsed.realmId, itemId);
+  const item: DataDomainItem = await store.read(parsed.dataDomainId, itemId);
   return [{ uri: parsed.url.href, mimeType: 'text/plain', text: item.content }];
 }
 
@@ -685,16 +685,16 @@ function parseSearchQuery(url: URL): SearchQuery {
 }
 
 /** Strip the in-process-only absolute root before any client serialization. */
-export function publicManifest(manifest: RealmManifest): Omit<RealmManifest, 'root'> {
+export function publicManifest(manifest: DataDomainManifest): Omit<DataDomainManifest, 'root'> {
   const { root: _root, ...publicPart } = manifest;
   return publicPart;
 }
 
 class McpParamError extends Error {}
-class RealmNotConnectedMcpError extends Error {
-  constructor(readonly realmId: string) {
-    super(`realm not connected: ${realmId}`);
-    this.name = 'RealmNotConnectedMcpError';
+class DataDomainNotConnectedMcpError extends Error {
+  constructor(readonly dataDomainId: string) {
+    super(`dataDomain not connected: ${dataDomainId}`);
+    this.name = 'DataDomainNotConnectedMcpError';
   }
 }
 /** A zeus.* tool was called but the host did not mount the read-only runtime port. */
@@ -717,19 +717,19 @@ function mapError(
   ) {
     return errorResponse(id, INVALID_PARAMS, error.message);
   }
-  if (error instanceof RealmNotConnectedError || error instanceof RealmNotConnectedMcpError) {
-    return errorResponse(id, REALM_NOT_CONNECTED, error.message);
+  if (error instanceof DataDomainNotConnectedError || error instanceof DataDomainNotConnectedMcpError) {
+    return errorResponse(id, DATA_DOMAIN_NOT_CONNECTED, error.message);
   }
   if (error instanceof InvalidItemIdError) {
     // InvalidItemIdError messages carry only the root-relative itemId, never the root.
     return errorResponse(id, INVALID_ITEM, error.message);
   }
-  if (error instanceof UnauthorizedRealmWriteError) {
+  if (error instanceof UnauthorizedDataDomainWriteError) {
     // The refusal REASON crosses the boundary, not the prose: a client branches
     // on "grant-expired" vs "grant-bad-signature", and neither message carries a
     // path. The store is the only place that decides this, so the name is read
     // off the error rather than re-derived here.
-    return errorResponse(id, REALM_UNAUTHORIZED, `write refused: ${error.reason}`);
+    return errorResponse(id, DATA_DOMAIN_UNAUTHORIZED, `write refused: ${error.reason}`);
   }
   if (error instanceof UnsupportedWriteError) {
     // Same contract as the P0 tag refusal on the read path (deferred #31): the
@@ -737,11 +737,11 @@ function mapError(
     return errorResponse(id, INVALID_PARAMS, error.message);
   }
   // Anything else is a store/transport fault: its message may carry the
-  // realm-local absolute root (EACCES, ENOSPC, ...), which must never cross the
+  // dataDomain-local absolute root (EACCES, ENOSPC, ...), which must never cross the
   // JSON-RPC boundary. Answer with the fixed code+message instead; the raw
   // detail goes only to the host-supplied log sink, if any.
-  log?.('realm-mcp-error', error instanceof Error ? error.message : String(error));
-  return errorResponse(id, REALM_ERROR, 'realm error');
+  log?.('dataDomain-mcp-error', error instanceof Error ? error.message : String(error));
+  return errorResponse(id, DATA_DOMAIN_ERROR, 'dataDomain error');
 }
 
 function errorResponse(id: JsonRpcId, code: number, message: string): JsonRpcResponse {
@@ -754,8 +754,8 @@ export const JSON_RPC_CODES = {
   METHOD_NOT_FOUND,
   INVALID_PARAMS,
   INTERNAL_ERROR,
-  REALM_ERROR,
-  REALM_NOT_CONNECTED,
+  DATA_DOMAIN_ERROR,
+  DATA_DOMAIN_NOT_CONNECTED,
   INVALID_ITEM,
-  REALM_UNAUTHORIZED,
+  DATA_DOMAIN_UNAUTHORIZED,
 } as const;

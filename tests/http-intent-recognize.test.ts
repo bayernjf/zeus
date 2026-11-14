@@ -66,9 +66,9 @@ describe('POST /api/intents/recognize', () => {
     }
   });
 
-  it('400 on an invalid realm or useModel', async () => {
+  it('400 on an invalid dataDomain or useModel', async () => {
     const a = await server({ skillRegistry: registryWithSkills() });
-    const bad = await a.inject({ method: 'POST', url: '/api/intents/recognize', headers: AUTH, payload: { text: 'review', realm: 'public' } });
+    const bad = await a.inject({ method: 'POST', url: '/api/intents/recognize', headers: AUTH, payload: { text: 'review', dataDomain: 'public' } });
     expect(bad.statusCode).toBe(400);
     const badModel = await a.inject({ method: 'POST', url: '/api/intents/recognize', headers: AUTH, payload: { text: 'review', useModel: 'yes' } });
     expect(badModel.statusCode).toBe(400);

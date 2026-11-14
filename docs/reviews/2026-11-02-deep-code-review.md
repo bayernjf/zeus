@@ -19,7 +19,7 @@ Zeus 是一个多 Agent 编排与决策运行时：并行派发意图给外部 A
 | HTTP 面 | server.ts 实测注册 132 条路由，与 README 声明一致 |
 | CI | .github/workflows/ci.yml：build → typecheck → test → smoke:core → lint → npm audit → secret scan，另有 +2 年时钟偏移门；Node 22/24 双矩阵 |
 
-架构分层清晰：`core/`（纯领域逻辑：orchestrator、decision-service、grading、audit、persistence）→ `http/`（传输映射层）→ `state/`、`realm/`、`backup/`（持久化与数据域）→ `dispatch/`、`mcp/`、`a2a/`（协议面）。设计文档 60+ 份与代码互相引用，且近期修复（如 PR #178 diary 错误映射）同步更新了文档与测试。
+架构分层清晰：`core/`（纯领域逻辑：orchestrator、decision-service、grading、audit、persistence）→ `http/`（传输映射层）→ `state/`、`dataDomain/`、`backup/`（持久化与数据域）→ `dispatch/`、`mcp/`、`a2a/`（协议面）。设计文档 60+ 份与代码互相引用，且近期修复（如 PR #178 diary 错误映射）同步更新了文档与测试。
 
 ## 2. 结论摘要
 
@@ -120,9 +120,9 @@ Zeus 是一个多 Agent 编排与决策运行时：并行派发意图给外部 A
 ## 5. 已验证为健壮的方面（抽样记录，供后续评审复用）
 
 - **认证**：bearer 全部 `timingSafeEqual`（server.ts:3718）；401 带 RFC 6750 challenge；4 条常驻公开路由仅暴露聚合计数，审计原文不出公开面（server.ts:446-483）。
-- **路径穿越/符号链接**：realm store 双重防护——`assertSafeItemId` 拒绝 `..`/空段（store.ts:482），realpath 回检父目录符号链接（store.ts:218-222），写路径 tmp+rename 且 0600（store.ts:345,511）。
+- **路径穿越/符号链接**：dataDomain store 双重防护——`assertSafeItemId` 拒绝 `..`/空段（store.ts:482），realpath 回检父目录符号链接（store.ts:218-222），写路径 tmp+rename 且 0600（store.ts:345,511）。
 - **SSRF**：注册面 cardUrl 与 taskUrl 均先过 `assertOutboundUrlAllowed`（registry.ts:117,177）；guardedFetch 在 connect 期钉住过检地址、每跳重检（outbound-dns.ts:140-158），混合解析结果整域名 fail-closed。
-- **授权凭证**：operator write grant 全链路（签发 TTL 上限 24h、验签、nonce 单次消费、账本持久化防崩溃重放）`realm/grant.ts:199-243`；nonce 账本满窗淘汰仍落盘的设计注释（grant.ts:150-154）显示对崩溃窗口有正确推理。
+- **授权凭证**：operator write grant 全链路（签发 TTL 上限 24h、验签、nonce 单次消费、账本持久化防崩溃重放）`dataDomain/grant.ts:199-243`；nonce 账本满窗淘汰仍落盘的设计注释（grant.ts:150-154）显示对崩溃窗口有正确推理。
 - **审计链**：JSONL 决策审计开库即全量验签，失败拒绝打开（jsonl-chain-store.ts:44-53）；签名链 Ed25519，seal maxAge/attestation TTL/keyId 绑定/issuer 绑定逐项校验（core/signing.ts:368-509）。
 - **Backup**：AES-256-GCM + scrypt(N=2^17)，kdfParams 随信封记录且有 2^20 上限与 2 的幂校验（cipher.ts:51-72）；错误区分 BackupFormatError/BackupDecryptError。
 - **失败模式**：聚合不可收敛 → conclusion=null 升级（aggregate.ts:49-54）；judge 后端失败 → judged:false + 错误记录（judge.ts:101-112）；webhook 推送 fail-soft 不阻塞决策路径（webhook.ts:113-115）；org 无执行器 → 503 fail-closed（serve.ts:431-434）。

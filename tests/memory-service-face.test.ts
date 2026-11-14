@@ -11,7 +11,7 @@ import type { ClaimContent, MemoryEvent } from '../src/memory/types.js';
 // MemoryPort v1 §7 (D-6): the cross-agent consumer face. Mounted only behind
 // ZEUS_MEMORY_SERVICE_TOKENS ("namespace:token,..."), and each token binds to
 // exactly one namespace: the binding overrides whatever namespace the caller
-// claims in the body, so a consumer can never touch another realm's memory.
+// claims in the body, so a consumer can never touch another dataDomain's memory.
 const INTERNAL_TOKEN = 'operator-secret';
 const NS_A = 'job-agent';
 const NS_B = 'loom';
@@ -29,11 +29,11 @@ function claim(
   subject: string,
   predicate: string,
   object: unknown,
-  options: { agentId?: string; category?: ClaimContent['category']; realm?: string } = {},
+  options: { agentId?: string; category?: ClaimContent['category']; dataDomain?: string } = {},
 ): MemoryEvent {
   return {
     eventId,
-    realmId: options.realm ?? NS_A,
+    dataDomainId: options.dataDomain ?? NS_A,
     runId: `run-${eventId}`,
     source: { agentId: options.agentId ?? 'agent-a' },
     kind: 'claim',
@@ -60,9 +60,9 @@ async function setup(options: { persistState?: () => Promise<void> } = {}): Prom
   store.append(claim('evt-2', 'reviewer', 'language', 'python'));
   store.append(claim('evt-3', 'operator', 'prefers', 'dark-mode', { category: 'preference' }));
   // A second bound namespace with its own fact, for the isolation assertions.
-  store.append(claim('evt-4', 'loom-agent', 'language', 'python', { agentId: 'agent-b', realm: NS_B }));
-  await store.consolidateRealm(NS_A);
-  await store.consolidateRealm(NS_B);
+  store.append(claim('evt-4', 'loom-agent', 'language', 'python', { agentId: 'agent-b', dataDomain: NS_B }));
+  await store.consolidateDataDomain(NS_A);
+  await store.consolidateDataDomain(NS_B);
   const audit: AuditLine[] = [];
   const persist = { calls: 0 };
   const app = await createHttpServer({
@@ -407,7 +407,7 @@ describe('v1 memory counts', () => {
     const { app, store } = await setup();
     store.append(claim('evt-5', 'deploy', 'target', 'staging'));
     store.append(claim('evt-6', 'deploy', 'settled-decision', 'ship', { agentId: 'zeus-runtime', category: 'decision' }));
-    await store.consolidateRealm(NS_A);
+    await store.consolidateDataDomain(NS_A);
 
     const res = await app.inject({ method: 'GET', url: '/api/v1/memory/counts', headers: AUTH_A });
     expect(res.statusCode).toBe(200);

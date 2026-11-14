@@ -2,11 +2,11 @@
 
 > 状态：**设计稿 v0.2（2026-10-25，修正 atlas 归属）**。本文回答「要不要做 Personal Agent、怎么做、与 Tier0 八个产品是什么关系」，是宿主层的单一事实源；内核能力的「怎么做」仍以各 `design-*.md` 为准。
 > 性质：**产品判断 + 架构分层文档**。它不新增内核原语，只规定「内核之外、用户身边」那一层的形状与落地顺序。
-> 关联：[design-agentic-integration.md](design-agentic-integration.md)（系统互联立场：Agent 是编排层、确定性原语是骨）、[design-self-host-loop.md](design-self-host-loop.md)（常驻 watch + 有界委托，内核已有，宿主不重做）、[design-inbound-a2a.md](design-inbound-a2a.md)（zeus 被外部 agent 反向派任务）、[design-realm.md](design-realm.md)（个人数据域）、[mcp-integration.md](mcp-integration.md)（MCP 三通道）、[prd.md](prd.md)（E1–E10）。
+> 关联：[design-agentic-integration.md](design-agentic-integration.md)（系统互联立场：Agent 是编排层、确定性原语是骨）、[design-self-host-loop.md](design-self-host-loop.md)（常驻 watch + 有界委托，内核已有，宿主不重做）、[design-inbound-a2a.md](design-inbound-a2a.md)（zeus 被外部 agent 反向派任务）、[design-dataDomain.md](design-dataDomain.md)（个人数据域）、[mcp-integration.md](mcp-integration.md)（MCP 三通道）、[prd.md](prd.md)（E1–E10）。
 
 ## 0. 一句话结论
 
-**要做 Personal Agent，但不新建产品、不重写内核：zeus 的 personal realm 已经是 Personal Agent 的大脑（决策、记忆、数据主权、备份恢复、常驻委托、监督审计都在），缺的是它刻意留给「宿主层」的那一层——个人用户身边的对话入口、被通用 Agent 助手一键接入的标准门面、常驻运行与通知、跨设备。** 本轮应交付的是这层宿主的最小闭环（让 zeus 现在就能被 Claude Desktop / Cursor 等个人 Agent 助手以标准 MCP 接入），而不是再做一个聊天机器人。
+**要做 Personal Agent，但不新建产品、不重写内核：zeus 的 personal dataDomain 已经是 Personal Agent 的大脑（决策、记忆、数据主权、备份恢复、常驻委托、监督审计都在），缺的是它刻意留给「宿主层」的那一层——个人用户身边的对话入口、被通用 Agent 助手一键接入的标准门面、常驻运行与通知、跨设备。** 本轮应交付的是这层宿主的最小闭环（让 zeus 现在就能被 Claude Desktop / Cursor 等个人 Agent 助手以标准 MCP 接入），而不是再做一个聊天机器人。
 
 ## 1. 背景与问题
 
@@ -27,7 +27,7 @@
 - **门面/名册**：公开 + 内部双投影、签名验签、bayjf 公开名册页（E5，✅）。
 - **常驻委托**：watch 触发器 + 有界委托契约（DelegationContract），「条件成立替我办一次、越限回人」六步全完成（[design-self-host-loop.md](design-self-host-loop.md)）。
 - **个人情感层**：加密备份清单、恢复协议、日记、记忆整理与遗忘权（E8，✅；传承 E8.4 为 P3 ⬜）。
-- **入站面**：`GET /.well-known/agent-card.json` + 入站 `tasks/send`（落 H2 意图面，bearer/handshake 验签）、`POST /mcp`（Realm HTTP MCP）、`src/realm/mcp-stdio.ts`（个人 Realm 的 stdio MCP，只读）。
+- **入站面**：`GET /.well-known/agent-card.json` + 入站 `tasks/send`（落 H2 意图面，bearer/handshake 验签）、`POST /mcp`（DataDomain HTTP MCP）、`src/dataDomain/mcp-stdio.ts`（个人 DataDomain 的 stdio MCP，只读）。
 
 **关键缺口（zeus 文档里自己点名的边界）**：[design-self-host-loop.md](design-self-host-loop.md) §2 明确「**不做常驻人格、对话入口、通知渠道（那是宿主层，不是内核）**」；PRD §2.2 也把产品边界画在内核。换言之——**大脑齐了，身体和「别人怎么叫它」的门面没做**。这正是 Personal Agent 该补的位置，也解释了为什么不应另起炉灶。
 
@@ -59,7 +59,7 @@
                     └───────────────┬─────────────────────────────┘
                                      │ 只进三条通道（MCP / Skill / A2A）
                     ┌────────────────▼─────────────────────────────┐
-                    │  ZEUS 内核（personal realm，已落地）             │
+                    │  ZEUS 内核（personal dataDomain，已落地）             │
                     │  决策编排 · 记忆 · 数据主权 · 备份恢复 · 监督     │
                     │  watch 常驻委托 · 签名授权 · 审计回放            │
                     └───────┬───────────────┬───────────────┬───────┘
@@ -78,7 +78,7 @@
 3. **常驻与通知（Daemon + Notify）**：把内核已有的 `watch` 用一个宿主进程跑起来（内核不持定时器，由宿主驱动 tick）；触发结果/升级经用户选择的渠道（系统通知、邮件、IM）送达。内核只产出结论，通知是壳。
 4. **多设备/恢复（Sync + Recover）**：基于已有的 Backup 备份恢复协议，让数据目录在设备间可同步、可恢复（个人域不依赖任何云端账号；远程只是可选的传输）。
 
-> 形状对照：Moryn 做的「user-owned、auditable context store + handoff、multi-device」在 zeus 里对应 Realm + Backup + 记忆审计；OpenJarvis 的本地 MCP+A2A 对应 zeus 已有的 stdio/HTTP 面。zeus 比它们多的是**确定性闸门与可回放的多 agent 决策**，少的只是上面这层壳。
+> 形状对照：Moryn 做的「user-owned、auditable context store + handoff、multi-device」在 zeus 里对应 DataDomain + Backup + 记忆审计；OpenJarvis 的本地 MCP+A2A 对应 zeus 已有的 stdio/HTTP 面。zeus 比它们多的是**确定性闸门与可回放的多 agent 决策**，少的只是上面这层壳。
 
 ## 4. 与 Tier0 八个产品的接入拓扑（唯一编排者：zeus）
 
@@ -86,7 +86,7 @@
 
 | 产品 | 现状协议（已核查） | 在 Personal Agent 里的角色 | 宿主层动作 |
 | --- | --- | --- | --- |
-| **zeus** | HTTP MCP `/mcp`（Bearer）、入站 A2A + 公开 agent-card、stdio Realm MCP（只读）、MCP 客户端 | **编排者 / 个人助理大脑** | 本轮：暴露 stdio 入口、一键配置、手册；远程随部署 |
+| **zeus** | HTTP MCP `/mcp`（Bearer）、入站 A2A + 公开 agent-card、stdio DataDomain MCP（只读）、MCP 客户端 | **编排者 / 个人助理大脑** | 本轮：暴露 stdio 入口、一键配置、手册；远程随部署 |
 | **agent-world** | stdio（默认）+ Streamable HTTP MCP（OAuth 2.1，默认绑 127.0.0.1:3100）；可消费外部 MCP | 世界/沙箱**工具**，由 zeus 或个人助手经 MCP 调用 | 已就绪，写入手册即可 |
 | **job-agent** | stdio MCP（仅本机，v0 明确不做远程 HTTP/SSE；MCP_API_KEY 门控） | 求职**工具**，本机 stdio 接 zeus/个人助手 | 补落地页发现层（本轮）；远程是 v0 非目标，不擅改 |
 | **agent-dev** | stdio MCP（CLI 子命令，桥本机 daemon，Bearer） | 开发**工具**，本机 stdio 接入 | 已就绪，写入手册 |
@@ -110,7 +110,7 @@
 
 ### P0 — 本机零配置接入闭环（本轮实施，纯增量、零运行时依赖、不放开任何写/出域）
 
-- **P0-1** zeus 暴露标准个人 MCP 入口：`package.json` 增加 `npm run mcp:realm` 脚本（`node dist/realm/mcp-stdio.js`）。全仓 `package.json` 无 `bin` 先例（`private`、`files:["dist"]`），本轮**不引入 `bin`**，客户端配置直接用 `node <绝对路径>/dist/realm/mcp-stdio.js <root>`；是否补一个 `bin` 命令列入 P1-2 配置生成器一并定。维持其**只读 personal Realm** 安全模型不变（启动期授权目录、无 MCP 方法可连任意路径）。
+- **P0-1** zeus 暴露标准个人 MCP 入口：`package.json` 增加 `npm run mcp:dataDomain` 脚本（`node dist/dataDomain/mcp-stdio.js`）。全仓 `package.json` 无 `bin` 先例（`private`、`files:["dist"]`），本轮**不引入 `bin`**，客户端配置直接用 `node <绝对路径>/dist/dataDomain/mcp-stdio.js <root>`；是否补一个 `bin` 命令列入 P1-2 配置生成器一并定。维持其**只读 personal DataDomain** 安全模型不变（启动期授权目录、无 MCP 方法可连任意路径）。
 - **P0-2** 新增接入手册 `docs/runbooks/personal-mcp-access.md`：可直接抄的 Claude Desktop / Cursor `mcpServers` 配置、stdio 与（未来）HTTP 两种形态、环境变量、**本机实测验收表**、明确列出「目前没有写/没有编排/不能连任意目录」。
 - **P0-3** 补齐 `job-agent-landing/public/llms.txt` 与 `llms-en.txt`（与同构落地页同口径）。
 - 验收：本机用标准 MCP initialize + tools/list + tools/call 走通只读 search/read；落地页两文件可被构建输出并可访问。
@@ -140,11 +140,11 @@
 
 ## 7. 安全边界（宿主层不移动任何闸门）
 
-- **只读优先**：P0 经 stdio 暴露的是只读 personal Realm（search/read）；写入、执行、对外发送一律不进个人 MCP 通道。
+- **只读优先**：P0 经 stdio 暴露的是只读 personal DataDomain（search/read）；写入、执行、对外发送一律不进个人 MCP 通道。
 - **自由在左、确定在右**：宿主只负责把自然语言交给内核、把结论讲成人话；权限、不可逆动作、钱、状态机、provenance/审计仍由内核确定性闸门与签名票据把关（[design-agentic-integration.md](design-agentic-integration.md) §3.2 钉死清单）。
 - **启动期授权目录**：stdio MCP 不提供「连任意路径」的方法，根目录只在启动时由 argv/env 授权（沿用 `mcp-stdio.ts` 现有安全模型）。
 - **默认零出域**：本地规则意图识别 `backend:null`；要模型/远程才显式 opt-in（PRD E2.6）。
-- **个人域与企业域不互通**：宿主不新增任何跨域路径，沿用 `decideRealmAccess`。
+- **个人域与企业域不互通**：宿主不新增任何跨域路径，沿用 `decideDataDomainAccess`。
 
 ## 8. 明确不做（以及为什么不是偷懒）
 
@@ -158,7 +158,7 @@
 
 | # | 仓库 | 改动 | 类型 |
 | --- | --- | --- | --- |
-| P0-1 | zeus | `package.json` 增加 `mcp:realm` 脚本（不加 bin，沿用全仓无 bin 惯例），暴露只读个人 Realm stdio MCP | 配置/入口 |
+| P0-1 | zeus | `package.json` 增加 `mcp:dataDomain` 脚本（不加 bin，沿用全仓无 bin 惯例），暴露只读个人 DataDomain stdio MCP | 配置/入口 |
 | P0-2 | zeus | `docs/runbooks/personal-mcp-access.md` 接入手册 + 本机实测验收 | 文档 |
 | P0-3 | job-agent-landing | `public/llms.txt` + `public/llms-en.txt` 发现层补齐 | 静态发现 |
 

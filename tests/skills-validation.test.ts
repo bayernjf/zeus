@@ -42,7 +42,7 @@ describe('E2.1 skill spec validation', () => {
 
   it('accepts valid scope and scope:action claims', () => {
     const registry = new SkillRegistry();
-    const registered = registry.register(spec({ permissions: ['realm:read', 'execute', 'mcp:connect'] }));
+    const registered = registry.register(spec({ permissions: ['data-domain:read', 'execute', 'mcp:connect'] }));
     expect(registered.permissions).toHaveLength(3);
   });
 

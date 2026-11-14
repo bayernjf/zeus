@@ -78,7 +78,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'intent-1',
       skill: 'decide',
       params: { ticket: 'OPS-1' },
-      realm: 'personal',
+      dataDomain: 'personal',
       aggregation: { kind: 'unanimous' },
     };
     const result = await orch.fanOut(request);
@@ -89,7 +89,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'intent-1',
       runId: 'run-1',
       skill: 'decide',
-      realm: 'personal',
+      dataDomain: 'personal',
       status: 'completed',
       input: { ticket: 'OPS-1' },
     });
@@ -125,7 +125,7 @@ describe('E1.6 offline decision replay', () => {
       newIntentId: () => 'i',
       newRunId: () => 'r',
     });
-    const result = await orch.fanOut({ intentId: 'i', skill: 's', params: { secret: 1 }, realm: 'personal' });
+    const result = await orch.fanOut({ intentId: 'i', skill: 's', params: { secret: 1 }, dataDomain: 'personal' });
     const replay = replayDecision(result);
     expect(replay.input).toBeUndefined();
     expect(replay.aggregation).toBeUndefined();
@@ -137,7 +137,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'i',
       runId: 'r',
       skill: 'decide',
-      realm: 'personal',
+      dataDomain: 'personal',
       branches: [],
       stream: [],
       positions: [],
@@ -180,7 +180,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'i',
       runId: 'r',
       skill: 's',
-      realm: 'personal',
+      dataDomain: 'personal',
       branches: [
         { executor: 'dead', runId: 'run-dead', ok: false, events: [], reason: 'dispatch refused' },
         { executor: 'slow', runId: 'run-slow', ok: false, events: [], timedOut: true, reason: 'branch timeout' },
@@ -209,7 +209,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'i',
       runId: 'r',
       skill: 's',
-      realm: 'personal',
+      dataDomain: 'personal',
       branches: [],
       stream: [
         {
@@ -226,7 +226,7 @@ describe('E1.6 offline decision replay', () => {
     expect(() => replayDecision(corrupt)).toThrowError(ReplayError);
 
     const clean: FanOutResult = { ...corrupt, branches: [{ executor: 'ghost', runId: 'run-ghost', ok: true, events: [] }], stream: [] };
-    const mismatchedRequest: FanOutRequest = { intentId: 'other', skill: 's', params: {}, realm: 'personal' };
+    const mismatchedRequest: FanOutRequest = { intentId: 'other', skill: 's', params: {}, dataDomain: 'personal' };
     expect(() => replayDecision(clean, mismatchedRequest)).toThrowError(ReplayError);
   });
 
@@ -234,19 +234,19 @@ describe('E1.6 offline decision replay', () => {
     const snapshot: OrchestratorSnapshot = {
       intents: [
         {
-          intentId: 'i-1', runId: 'r-1', skill: 's', realm: 'personal', branches: [], stream: [],
+          intentId: 'i-1', runId: 'r-1', skill: 's', dataDomain: 'personal', branches: [], stream: [],
           positions: [], decision: { rule: 'majority', conclusion: 'go', positions: [], reason: 'ok' },
           conflicts: [], status: 'completed', createdAt: 't0',
         },
         {
-          intentId: 'i-2', runId: 'r-2', skill: 's', realm: 'personal', branches: [], stream: [],
+          intentId: 'i-2', runId: 'r-2', skill: 's', dataDomain: 'personal', branches: [], stream: [],
           positions: [], decision: { rule: 'majority', conclusion: null, positions: [], reason: 'split' },
           conflicts: [], status: 'needs-operator', createdAt: 't1',
         },
       ],
       requests: [
-        { intentId: 'i-1', request: { intentId: 'i-1', skill: 's', params: { n: 1 }, realm: 'personal' } },
-        { intentId: 'i-2', request: { intentId: 'i-2', skill: 's', params: { n: 2 }, realm: 'personal' } },
+        { intentId: 'i-1', request: { intentId: 'i-1', skill: 's', params: { n: 1 }, dataDomain: 'personal' } },
+        { intentId: 'i-2', request: { intentId: 'i-2', skill: 's', params: { n: 2 }, dataDomain: 'personal' } },
       ],
     };
 
@@ -270,7 +270,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'i-9',
       runId: 'r-9',
       skill: 'decide',
-      realm: 'personal',
+      dataDomain: 'personal',
       branches: [
         { executor: 'loom', runId: 'run-loom', taskId: 't-loom', ok: true, state: 'completed', events: [] },
       ],
@@ -306,7 +306,7 @@ describe('E1.6 offline decision replay', () => {
       newRunId: () => 'run-1',
     });
     const split = await orch.fanOut({
-      intentId: 'intent-1', skill: 'decide', params: {}, realm: 'personal', aggregation: { kind: 'majority' },
+      intentId: 'intent-1', skill: 'decide', params: {}, dataDomain: 'personal', aggregation: { kind: 'majority' },
     });
     expect(split.status).toBe('needs-operator');
     const resolved = orch.resolveIntent('intent-1', {
@@ -326,7 +326,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'i',
       runId: 'r',
       skill: 's',
-      realm: 'personal',
+      dataDomain: 'personal',
       branches: [{ executor: 'loom', runId: 'run-loom', taskId: 't-loom', ok: true, state: 'working', events: [] }],
       stream: [
         {
@@ -359,7 +359,7 @@ describe('E1.6 offline decision replay', () => {
       intentId: 'i',
       runId: 'r',
       skill: 's',
-      realm: 'personal',
+      dataDomain: 'personal',
       branches: [],
       stream: [],
       positions: [],
@@ -368,7 +368,7 @@ describe('E1.6 offline decision replay', () => {
       status: 'failed',
       createdAt: 't0',
     };
-    const request: FanOutRequest = { intentId: 'i', skill: 's', params, realm: 'personal' };
+    const request: FanOutRequest = { intentId: 'i', skill: 's', params, dataDomain: 'personal' };
 
     const text = renderReplay(replayDecision(result, request));
     expect(text).toContain('input=');

@@ -24,7 +24,7 @@ function cardFor(name: string) {
     skills: [{ id: `skill-${name}`, name, description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'test-domain', realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
+    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'test-domain', dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 
@@ -34,12 +34,12 @@ const nameAwareFetch = async (input: RequestInfo | URL) =>
   });
 
 let dir: string;
-let realmRoot: string;
+let dataDomainRoot: string;
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'zeus-state-'));
-  realmRoot = join(dir, 'realm');
-  await (await import('node:fs/promises')).mkdir(realmRoot, { recursive: true });
+  dataDomainRoot = join(dir, 'dataDomain');
+  await (await import('node:fs/promises')).mkdir(dataDomainRoot, { recursive: true });
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -49,7 +49,7 @@ async function assemble() {
   const runtime = await bootRuntime({
     fetchImpl: nameAwareFetch,
     executorSeeds: ['http://127.0.0.1/v0/card.json', 'http://127.0.0.1/v1/card.json'],
-    realmRoots: [realmRoot],
+    dataDomainRoots: [dataDomainRoot],
     auditFile: join(dir, 'audit.jsonl'),
     auditMaxBytes: Number.POSITIVE_INFINITY,
     auditKeep: 2,
@@ -61,12 +61,12 @@ async function assemble() {
   });
   runtime.orgRegistry!.createDepartment({ name: 'Engineering', mission: 'ship' });
   const event: MemoryEvent = {
-    eventId: 'evt-1', realmId: 'realm-x', runId: 'run-1', source: { agentId: 'agent-a' },
+    eventId: 'evt-1', dataDomainId: 'dataDomain-x', runId: 'run-1', source: { agentId: 'agent-a' },
     kind: 'observation', content: 'noted', refs: [], confidence: 0.5,
     occurredAt: '2026-09-25T00:00:00.000Z',
   };
   runtime.memoryStore!.append(event);
-  await runtime.orchestrator.fanOut({ skill: 'nothing-provides-this', realm: 'personal', params: {} });
+  await runtime.orchestrator.fanOut({ skill: 'nothing-provides-this', dataDomain: 'personal', params: {} });
   return runtime;
 }
 
@@ -92,7 +92,7 @@ describe('runtime inventory', () => {
       departments: 1,
       memoryEvents: 1,
       memoryFacts: 0, // appending an observation does not create a fact
-      realms: 1,
+      dataDomains: 1,
       skills: 2, // both cards' skills were imported on registration
       intents: 1,
       mentorships: 0,

@@ -1,4 +1,4 @@
-export type RealmType = 'personal' | 'enterprise';
+export type DataDomainType = 'personal' | 'enterprise';
 
 /** handshake contract versions Zeus accepts at registration.
  *  A mismatched version is refused, never silently accepted (design-executor-protocol §4.5). */
@@ -8,8 +8,8 @@ export type Handshake = {
   version: string;
   swornTo: string;
   domain: string;
-  realms: RealmType[];
-  dataPolicy: 'none' | 'read-task-scope' | 'read-realm' | 'write';
+  dataDomains: DataDomainType[];
+  dataPolicy: 'none' | 'read-task-scope' | 'read-dataDomain' | 'write';
   reportBack: boolean;
   escalationPolicy: 'none' | 'on-failure' | 'auto';
   sla?: { ackSeconds?: number };

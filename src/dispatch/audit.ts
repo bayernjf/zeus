@@ -88,7 +88,7 @@ export function jsonlAuditSink(path: string, options: JsonlAuditSinkOptions = {}
  * documented default (`./data/audit.jsonl` in a fresh data dir) the very first
  * audit write threw ENOENT, and the dispatcher's branch `catch` re-labelled that
  * filesystem error as the reason the *executor* failed. The mode matters for the
- * same reason the runtime state file's does - audit lines carry realm ids, executor
+ * same reason the runtime state file's does - audit lines carry dataDomain ids, executor
  * names and decision detail - and `appendFileSync` alone would leave the file
  * 0644 on a default umask.
  */

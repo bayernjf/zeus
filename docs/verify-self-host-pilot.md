@@ -40,7 +40,7 @@ export ZEUS_INTERNAL_TOKEN="$(openssl rand -hex 32)"
 export ZEUS_STATE_FILE=./data/runtime-state.json
 export ZEUS_AUDIT_FILE=./data/audit.jsonl
 export ZEUS_RSK_KEY_FILE=./secrets/rsk-private.pem ZEUS_RSK_KEY_ID=zeus-rsk-2026-09
-export ZEUS_REALM_ROOTS="$HOME/Documents"                   # 一个本地目录就是数据底座
+export ZEUS_DATA_DOMAIN_ROOTS="$HOME/Documents"                   # 一个本地目录就是数据底座
 node dist/http/serve.js
 ```
 
@@ -54,8 +54,8 @@ node dist/http/serve.js
 curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/domains | jq
 ```
 
-- **退出判据**：`realms[]` 至少一条，字段只有 `realmId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:2004-1983 #`——这个视图**不返回根目录字符串**）。
-- **可执行断言**：把上面 JSON 存盘，`grep -c "$HOME/Documents" <file>` 必须为 **0**。这是"边界是目录，定位符只有 realmId + 根相对 itemId"的操作者侧核对（MCP 侧的实测口径见 [mcp-integration.md](mcp-integration.md) §1.4）。
+- **退出判据**：`dataDomains[]` 至少一条，字段只有 `dataDomainId / type / tenant? / readOnly / itemCount / contentDigest`（代码级 `src/http/server.ts:2004-1983 #`——这个视图**不返回根目录字符串**）。
+- **可执行断言**：把上面 JSON 存盘，`grep -c "$HOME/Documents" <file>` 必须为 **0**。这是"边界是目录，定位符只有 dataDomainId + 根相对 itemId"的操作者侧核对（MCP 侧的实测口径见 [mcp-integration.md](mcp-integration.md) §1.4）。
 - **现在跑不了的部分**：无。
 
 ### P0-3 接一个真实执行 Agent，并离线验一名册
@@ -74,7 +74,7 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key sec
 
 ```sh
 curl -fsS -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -H 'content-type: application/json' \
-  -d '{"skill":"<技能 id>","realm":"personal","subject":"<一件真实要做的事>"}' \
+  -d '{"skill":"<技能 id>","dataDomain":"personal","subject":"<一件真实要做的事>"}' \
   http://127.0.0.1:8787/api/intents | jq '.id'
 curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/intents/<id> | jq
 curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/api/intents/<id>/replay | jq
@@ -89,7 +89,7 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
   CARD_URL=https://<你的 Agent>/api/a2a/agent-card [AGENT_TOKEN=…] SKILL=<技能 id> \
   npm run acceptance:fanout
   ```
-  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `realms` 与 `REALM` 不匹配会被拒（这是 handshake 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/executors/:name/reinstate`（`src/http/server.ts:611-590 #`）。共用部署上不要带它。
+  它把"注册真 Agent → 驱动一次扇出 → 离线验名册"三段连起来；对端卡片声明的 `dataDomains` 与 `DATA_DOMAIN` 不匹配会被拒（这是 handshake 边界，不是脚本故障）；`--revoke-test` 会真的 `DELETE` 那个条目并断言它立刻从公开名册消失，**且不会自动恢复**——要恢复得自己再调 `POST /api/executors/:name/reinstate`（`src/http/server.ts:611-590 #`）。共用部署上不要带它。
 - **不起服务进程的等价物**（同一条链路的入口形态，2026-10-08 Active work 147 新增）：不常驻、不占端口、不用 bearer，一句话直接走完「意图 → 扇出 → 决策与依据 → 写回目录」。
 
   ```sh
@@ -97,8 +97,8 @@ curl -fsS -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" http://127.0.0.1:8787/
     --agent https://<你的 Agent>/api/a2a/agent-card "check the deployment health"
   ```
 
-  进程内 `bootRuntime` 装配（`src/daily/cli.ts` + 纯渲染 `src/daily/report.ts`）：终端打出的那一页 markdown 与 `Realm.write` 落进 `--root` 的那一页**逐字节相同**（`--record` 定路径，默认 `zeus-daily/<时间戳>-<技能>.md`），结束时 `saveState()` 把这次的意图与升级项落进状态文件。退出码 0/1/2：0 = 页面已产出并落盘（含"分裂等人裁决"这种没结论的结局）；1 = 无可派发内容、无 Agent 送达、或写回失败；2 = 配置/用法错误（什么都没派发）。
-  - **一条必须能失败的对照**（2026-10-08 本机真进程实测）：`--skill <没人广告的技能>` → 退出 1、stderr 说明"没有注册 Agent 提供该技能"，而页面仍然落盘（失败证据也是证据）；`--agent http://127.0.0.1:1/…` → 退出 2 并给 `executor seed failed for <url>`；`--root <不存在的目录>` → 退出 2（`realm root not accessible`）；不带 `--root` 且 env 无挂载 → 退出 2 并给补目录的下一步。**这四档任一被静默吞掉，入口就是在骗人**。
+  进程内 `bootRuntime` 装配（`src/daily/cli.ts` + 纯渲染 `src/daily/report.ts`）：终端打出的那一页 markdown 与 `DataDomain.write` 落进 `--root` 的那一页**逐字节相同**（`--record` 定路径，默认 `zeus-daily/<时间戳>-<技能>.md`），结束时 `saveState()` 把这次的意图与升级项落进状态文件。退出码 0/1/2：0 = 页面已产出并落盘（含"分裂等人裁决"这种没结论的结局）；1 = 无可派发内容、无 Agent 送达、或写回失败；2 = 配置/用法错误（什么都没派发）。
+  - **一条必须能失败的对照**（2026-10-08 本机真进程实测）：`--skill <没人广告的技能>` → 退出 1、stderr 说明"没有注册 Agent 提供该技能"，而页面仍然落盘（失败证据也是证据）；`--agent http://127.0.0.1:1/…` → 退出 2 并给 `executor seed failed for <url>`；`--root <不存在的目录>` → 退出 2（`dataDomain root not accessible`）；不带 `--root` 且 env 无挂载 → 退出 2 并给补目录的下一步。**这四档任一被静默吞掉，入口就是在骗人**。
   - **正控**：两个 Agent 立场分裂时，该命令必须给出 `needs-operator` 与一条 `intent-conflict` 升级项，并且那个 escalation id 与 intentId 在状态文件里查得到——否则「等待人工裁决」这一整段就从没被这条命令执行过。
   - **当前的真实边界（不掩饰）**：本地规则那条路仍按字面重合评分（ASCII 词与 CJK 连续段），**中文指令对英文技能目录给不出候选**，入口按 `no-candidates` 退出 1 且不写文件。自 2026-10-08 起，显式 `--model` 且配了决策后端时这条路不再死在这里：词法零命中就把整个目录（按 id 定序、上限 30 条）交给模型选，页面同时写明"排序器没有字面命中、由模型在整目录中选"。**没配后端就仍然零出域**——这条边界一次都没被越过。
 
@@ -123,7 +123,7 @@ curl -fsS -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -H 'content-ty
   -d '{"grantedBy":"<用户标识>","skill":"<技能 id>","capabilities":["<权限声明>"],"ttlSeconds":600}' \
   http://127.0.0.1:8787/api/execution-delegations | jq '.delegation'      # 路由与签发：src/http/server.ts:1841-1875 #issueExecutionDelegation
 curl -fsS -X POST -H "Authorization: Bearer $ZEUS_INTERNAL_TOKEN" -H 'content-type: application/json' \
-  -d '{"skill":"<技能 id>","realm":"personal","subject":"<要真做的事>","mode":"execute","executionDelegation":<上面那个对象>}' \
+  -d '{"skill":"<技能 id>","dataDomain":"personal","subject":"<要真做的事>","mode":"execute","executionDelegation":<上面那个对象>}' \
   http://127.0.0.1:8787/api/intents | jq '.id'
 ```
 
@@ -153,7 +153,7 @@ npm run backup -- restore --map data/bundles/<stem>.map.json \
 
 - **退出判据（四条）**：
   1. 重启后 `GET /api/roster` 里 P0-3 那个 Agent 仍在册（注册表进快照）；
-  2. 重启后 P0-2 那个 realm 自动重连（连接关系写进状态文件，`ZEUS_REALM_ROOTS` 只在首次需要）；
+  2. 重启后 P0-2 那个 dataDomain 自动重连（连接关系写进状态文件，`ZEUS_DATA_DOMAIN_ROOTS` 只在首次需要）；
   3. **P0-6 已花掉的票据重放仍被拒**——已花 nonce 跨重启有效（导出 `src/state/runtime-state.ts:155-155 #executionDelegationNonces`、回灌 `src/state/runtime-state.ts:175-175 #executionDelegationNonces`）；
   4. `backup check` 退出码 **0**（无漂移）；把目录里任一被收录文件改一个字节再跑，退出码必须是 **2**（漂移档位 `src/backup/cli.ts:208-208 #drift`，四档定义 `src/backup/cli.ts:44-44 #BACKUP_EXIT`），根目录整个不可达则是 **3**。这一步的正向对照就是"改一个字节"——不红就说明 check 是空转。四个子命令的标志形状以 `src/backup/cli.ts:16-16 #restore` 的用法块为准。
 - **备份调度在内核外**：cron/systemd 调 `npm run backup -- ...` 即可（`src/backup/cli.ts:7-7 #scheduler`）。试点期至少要跑一次**异地恢复**：`backup restore` 到另一个位置，然后 `backup check` 指过去。
@@ -201,7 +201,7 @@ tick 时判据（逐条要有对应测试，不接受"看起来对"；均已在 
 | --- | --- | --- |
 | 1 | 注册一条 watch 到点真的命中谓词并发起一条意图，意图在 `GET /api/audit` 里可辨认出来源是 watch | 把 `expiresAt` 设成过去 → 必须**不发起** |
 | 2 | `budget.fires` 耗尽后自动 `enabled=false` 并审计 `watch-auto-disabled` | 预算设 1、连发两次命中 → 第二次必须被拒且有审计 |
-| 3 | 谓词源只能取 `metrics` / `realm` / `connector` 三类，其他字符串在**注册时**就 400 | 注册 `source.kind:'shell'` → 必须 400 而非静默忽略 |
+| 3 | 谓词源只能取 `metrics` / `dataDomain` / `connector` 三类，其他字符串在**注册时**就 400 | 注册 `source.kind:'shell'` → 必须 400 而非静默忽略 |
 | 4 | 评估失败（连接器不可达）不触发意图，按阈值自动禁用 | 拔掉数据源再等到点 → 意图数不变，且审计有 `watch-eval-unavailable` |
 | 5 | watch 进内核快照，重启后 `lastFiredAt`/`budget.used` 不重置 | 重启后 `GET` 回来的计数必须等于重启前 |
 | 6 | `mode:'execute'` 的 watch 无票据时**到点即失败并升级**，不是静默跳过 | 建一条 execute 型 watch 且不给 `delegationId` → 必须落到升级台 |

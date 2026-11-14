@@ -18,7 +18,7 @@
 ZEUS_INTERNAL_TOKEN="$(openssl rand -hex 24)" \
 ZEUS_STATE_FILE=./data/runtime-state.json \
 ZEUS_AUDIT_FILE=./data/audit.jsonl \
-ZEUS_REALM_ROOTS=/path/to/your/dir \
+ZEUS_DATA_DOMAIN_ROOTS=/path/to/your/dir \
 ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 \
 npm start
 ```

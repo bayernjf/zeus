@@ -171,27 +171,27 @@ export function createDeck(options: RunnerOptions): DeckController {
     }
 
     if (parsed.kind === 'grantIssue') {
-      const realms = snapshot.domains?.realms ?? [];
-      const realm = realms[parsed.realmIndex - 1];
-      if (!realm) {
-        io.print(`${t('domains.grantFailed', { message: `realm #${parsed.realmIndex}` })}\n`);
+      const dataDomains = snapshot.domains?.dataDomains ?? [];
+      const dataDomain = dataDomains[parsed.dataDomainIndex - 1];
+      if (!dataDomain) {
+        io.print(`${t('domains.grantFailed', { message: `dataDomain #${parsed.dataDomainIndex}` })}\n`);
         return true;
       }
-      if (realm.type !== 'enterprise') {
+      if (dataDomain.type !== 'enterprise') {
         io.print(`${t('domains.grantEnterpriseOnly')}\n`);
         return true;
       }
       const access = parsed.access === 'write' ? t('domains.access.write') : t('domains.access.read');
-      const promptLine = t('domains.confirmGrant', { subject: parsed.subject, realmId: realm.realmId, access });
+      const promptLine = t('domains.confirmGrant', { subject: parsed.subject, dataDomainId: dataDomain.dataDomainId, access });
       if (!(await confirm(promptLine))) return true;
       try {
         await client.issueGrant({
           subject: parsed.subject,
-          realmId: realm.realmId,
+          dataDomainId: dataDomain.dataDomainId,
           access: parsed.access,
           grantedBy: parsed.grantedBy,
         });
-        io.print(`${t('domains.granted', { subject: parsed.subject, realmId: realm.realmId })}\n`);
+        io.print(`${t('domains.granted', { subject: parsed.subject, dataDomainId: dataDomain.dataDomainId })}\n`);
       } catch (error) {
         io.print(`${t('domains.grantFailed', { message: error instanceof Error ? error.message : String(error) })}\n`);
       }

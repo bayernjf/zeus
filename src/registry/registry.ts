@@ -356,13 +356,13 @@ export function defaultTaskUrl(cardUrl: string): string {
   return cardUrl.replace(/\/api\/a2a\/agent-card\/?$/, '/api/a2a/tasks').replace(/\/\.well-known\/agent(-card)?\.json\/?$/, '/api/a2a/tasks');
 }
 
-const REALM_TYPES = ['personal', 'enterprise'] as const;
-const DATA_POLICIES = ['none', 'read-task-scope', 'read-realm', 'write'] as const;
+const DATA_DOMAIN_TYPES = ['personal', 'enterprise'] as const;
+const DATA_POLICIES = ['none', 'read-task-scope', 'read-dataDomain', 'write'] as const;
 const ESCALATION_POLICIES = ['none', 'on-failure', 'auto'] as const;
 
 /**
  * The first defect in the part of the oath that dispatch reads on every request.
- * An empty realms array is not a defect: it means "no data at all", and the
+ * An empty dataDomains array is not a defect: it means "no data at all", and the
  * diode then refuses each task with an explicit audit reason.
  *
  * Exported so the inbound A2A face (design-inbound-a2a §2) runs the same shape
@@ -375,12 +375,12 @@ export function handshakeOathProblem(handshake: Handshake): string | null {
   if (typeof oath.domain !== 'string' || oath.domain.trim() === '') {
     return `domain must be a non-empty string, got ${describeOathValue(oath.domain)}`;
   }
-  if (!Array.isArray(oath.realms)) {
-    return `realms must be an array of realm types, got ${describeOathValue(oath.realms)}`;
+  if (!Array.isArray(oath.dataDomains)) {
+    return `dataDomains must be an array of dataDomain types, got ${describeOathValue(oath.dataDomains)}`;
   }
-  const unknownRealms = (oath.realms as unknown[]).filter(realm => !(REALM_TYPES as readonly string[]).includes(realm as string));
-  if (unknownRealms.length > 0) {
-    return `realms holds unknown realm types: ${unknownRealms.map(value => describeOathValue(value)).join(', ')}`;
+  const unknownDataDomains = (oath.dataDomains as unknown[]).filter(dataDomain => !(DATA_DOMAIN_TYPES as readonly string[]).includes(dataDomain as string));
+  if (unknownDataDomains.length > 0) {
+    return `dataDomains holds unknown dataDomain types: ${unknownDataDomains.map(value => describeOathValue(value)).join(', ')}`;
   }
   if (!(DATA_POLICIES as readonly string[]).includes(oath.dataPolicy as string)) {
     return `dataPolicy must be one of ${DATA_POLICIES.join(', ')}, got ${describeOathValue(oath.dataPolicy)}`;

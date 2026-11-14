@@ -84,7 +84,7 @@ describe('appendStreamFrame (S15 V1)', () => {
 describe('settledViewMatchesMerge (S15 V1)', () => {
   function merge(branches: FanOutResult['branches']): FanOutResult {
     return {
-      intentId: 'intent-1', runId: 'r0', skill: 'research', realm: 'personal', branches, stream: [], positions: [],
+      intentId: 'intent-1', runId: 'r0', skill: 'research', dataDomain: 'personal', branches, stream: [], positions: [],
       decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0',
     };
   }

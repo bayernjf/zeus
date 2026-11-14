@@ -1,11 +1,11 @@
 /**
- * Cross-domain authorization (design-realm.md §8.3, E6.4).
+ * Cross-domain authorization (design-dataDomain.md §8.3, E6.4).
  *
- * One decision function, so every face that touches a realm (dispatch-time
+ * One decision function, so every face that touches a dataDomain (dispatch-time
  * retrieval, the MCP resource handler, the operator API) answers the same
  * question the same way:
  *
- *   personal -> enterprise   needs a DomainGrant, one subject at one realm
+ *   personal -> enterprise   needs a DomainGrant, one subject at one dataDomain
  *   enterprise -> personal   refused, and there is deliberately no shape that
  *                            could authorize it
  *   enterprise -> enterprise the tenant subtree rule, structural and NOT
@@ -21,11 +21,11 @@
  * OperatorWriteGrant, not this one.
  */
 import { randomUUID } from 'node:crypto';
-import type { DomainDecision, DomainGrant, RealmAccess, RealmActor, TenantScope } from './types.js';
+import type { DomainDecision, DomainGrant, DataDomainAccess, DataDomainActor, TenantScope } from './types.js';
 import { formatTenant, tenantReaches } from './tenant.js';
 
-export type ScopedRealm = {
-  realmId: string;
+export type ScopedDataDomain = {
+  dataDomainId: string;
   type: 'personal' | 'enterprise';
   tenant?: TenantScope;
   readOnly: boolean;
@@ -33,11 +33,11 @@ export type ScopedRealm = {
 
 export type GrantVerification =
   | { ok: true }
-  | { ok: false; reason: 'malformed' | 'wrong-subject' | 'wrong-realm' | 'wrong-access' | 'expired' };
+  | { ok: false; reason: 'malformed' | 'wrong-subject' | 'wrong-dataDomain' | 'wrong-access' | 'expired' };
 
 export function verifyDomainGrant(
   grant: DomainGrant,
-  expected: { subject: string; realmId: string; access: RealmAccess },
+  expected: { subject: string; dataDomainId: string; access: DataDomainAccess },
   now: () => Date = () => new Date(),
 ): GrantVerification {
   const malformed =
@@ -46,8 +46,8 @@ export function verifyDomainGrant(
     grant.grantId.length === 0 ||
     typeof grant.subject !== 'string' ||
     grant.subject.length === 0 ||
-    typeof grant.realmId !== 'string' ||
-    grant.realmId.length === 0 ||
+    typeof grant.dataDomainId !== 'string' ||
+    grant.dataDomainId.length === 0 ||
     (grant.access !== 'read' && grant.access !== 'write') ||
     typeof grant.grantedBy !== 'string' ||
     grant.grantedBy.length === 0 ||
@@ -58,7 +58,7 @@ export function verifyDomainGrant(
   if (malformed) return { ok: false, reason: 'malformed' };
 
   if (grant.subject !== expected.subject) return { ok: false, reason: 'wrong-subject' };
-  if (grant.realmId !== expected.realmId) return { ok: false, reason: 'wrong-realm' };
+  if (grant.dataDomainId !== expected.dataDomainId) return { ok: false, reason: 'wrong-dataDomain' };
   // A read grant must never be laundered into a write by asking for more.
   if (grant.access !== expected.access) return { ok: false, reason: 'wrong-access' };
   if (grant.expiresAt !== undefined && now().getTime() > Date.parse(grant.expiresAt)) {
@@ -71,14 +71,14 @@ export function verifyDomainGrant(
  * The single access decision. `grants` is the set currently on record; expired
  * entries simply never match, so callers can pass the raw list.
  */
-export function decideRealmAccess(input: {
-  actor: RealmActor;
-  realm: ScopedRealm;
-  access: RealmAccess;
+export function decideDataDomainAccess(input: {
+  actor: DataDomainActor;
+  dataDomain: ScopedDataDomain;
+  access: DataDomainAccess;
   grants?: DomainGrant[];
   now?: () => Date;
 }): DomainDecision {
-  const { actor, realm, access } = input;
+  const { actor, dataDomain, access } = input;
   const now = input.now ?? (() => new Date());
 
   const refuse = (reason: Exclude<DomainDecision, { ok: true }>['reason'], detail: string): DomainDecision => ({
@@ -87,8 +87,8 @@ export function decideRealmAccess(input: {
     detail,
   });
 
-  if (realm.readOnly && access === 'write') {
-    return refuse('read-only', `realm was connected read-only: ${realm.realmId}`);
+  if (dataDomain.readOnly && access === 'write') {
+    return refuse('read-only', `dataDomain was connected read-only: ${dataDomain.dataDomainId}`);
   }
 
   // The operator IS the data sovereign: asking is the authorization. Enterprise
@@ -97,11 +97,11 @@ export function decideRealmAccess(input: {
 
   const subjectTenant = actor.tenant;
 
-  if (realm.type === 'personal') {
+  if (dataDomain.type === 'personal') {
     if (subjectTenant) {
       return refuse(
         'enterprise-to-personal',
-        `an enterprise-scoped subject (${formatTenant(subjectTenant)}) may not reach the personal realm ${realm.realmId}`,
+        `an enterprise-scoped subject (${formatTenant(subjectTenant)}) may not reach the personal dataDomain ${dataDomain.dataDomainId}`,
       );
     }
     return { ok: true, via: 'same-domain' };
@@ -109,40 +109,40 @@ export function decideRealmAccess(input: {
 
   // Enterprise target from an enterprise-subject: structural hierarchy only.
   if (subjectTenant) {
-    if (!realm.tenant || !tenantReaches(subjectTenant, realm.tenant)) {
+    if (!dataDomain.tenant || !tenantReaches(subjectTenant, dataDomain.tenant)) {
       return refuse(
         'tenant-out-of-scope',
-        `subject ${formatTenant(subjectTenant)} is not at or above realm tenant ${realm.tenant ? formatTenant(realm.tenant) : '(unscoped)'} for ${realm.realmId}`,
+        `subject ${formatTenant(subjectTenant)} is not at or above dataDomain tenant ${dataDomain.tenant ? formatTenant(dataDomain.tenant) : '(unscoped)'} for ${dataDomain.dataDomainId}`,
       );
     }
     return { ok: true, via: 'tenant-hierarchy' };
   }
 
-  // Personal-side subject into an enterprise realm: needs an explicit grant.
+  // Personal-side subject into an enterprise dataDomain: needs an explicit grant.
   // A grant that exists but lapsed, or that covers the other access, is reported
   // as such - "no grant" would send the operator looking for a record that is
   // already there.
   let nearMiss: DomainDecision | undefined;
   for (const candidate of input.grants ?? []) {
-    const checked = verifyDomainGrant(candidate, { subject: actor.id, realmId: realm.realmId, access }, now);
+    const checked = verifyDomainGrant(candidate, { subject: actor.id, dataDomainId: dataDomain.dataDomainId, access }, now);
     if (checked.ok) return { ok: true, via: 'grant', grantId: candidate.grantId };
     if (nearMiss) continue;
     if (checked.reason === 'expired') {
       nearMiss = refuse(
         'grant-expired',
-        `grant ${candidate.grantId} for ${actor.id} on ${realm.realmId} expired ${String(candidate.expiresAt)}`,
+        `grant ${candidate.grantId} for ${actor.id} on ${dataDomain.dataDomainId} expired ${String(candidate.expiresAt)}`,
       );
     } else if (checked.reason === 'wrong-access') {
       nearMiss = refuse(
         'access-not-granted',
-        `grant ${candidate.grantId} covers ${candidate.access} only, not ${access}, for ${actor.id} on ${realm.realmId}`,
+        `grant ${candidate.grantId} covers ${candidate.access} only, not ${access}, for ${actor.id} on ${dataDomain.dataDomainId}`,
       );
     }
   }
   if (nearMiss) return nearMiss;
   return refuse(
     'no-grant',
-    `subject ${actor.id} has no ${access} grant for enterprise realm ${realm.realmId}`,
+    `subject ${actor.id} has no ${access} grant for enterprise dataDomain ${dataDomain.dataDomainId}`,
   );
 }
 
@@ -158,8 +158,8 @@ export type GrantAuditEntry = {
   decision: 'grant-issued' | 'grant-revoked';
   grantId: string;
   subject: string;
-  realmId: string;
-  access: RealmAccess;
+  dataDomainId: string;
+  access: DataDomainAccess;
   grantedBy: string;
 };
 
@@ -206,7 +206,7 @@ export class DomainGrantRegistry {
     const nonce = input.nonce?.trim() || randomUUID();
     if (this.seenNonces.has(nonce)) throw new DomainGrantError(`nonce already used by an earlier grant: ${nonce}`);
     if (input.access !== 'read' && input.access !== 'write') throw new DomainGrantError(`access must be read or write, got ${String(input.access)}`);
-    for (const field of ['subject', 'realmId', 'grantedBy'] as const) {
+    for (const field of ['subject', 'dataDomainId', 'grantedBy'] as const) {
       const value = input[field];
       if (typeof value !== 'string' || value.trim().length === 0) {
         throw new DomainGrantError(`${field} is required`);
@@ -220,7 +220,7 @@ export class DomainGrantRegistry {
       kind: 'domain-access',
       grantId,
       subject: input.subject.trim(),
-      realmId: input.realmId.trim(),
+      dataDomainId: input.dataDomainId.trim(),
       access: input.access,
       grantedBy: input.grantedBy.trim(),
       ...(input.reason ? { reason: input.reason } : {}),
@@ -235,7 +235,7 @@ export class DomainGrantRegistry {
       decision: 'grant-issued',
       grantId,
       subject: grant.subject,
-      realmId: grant.realmId,
+      dataDomainId: grant.dataDomainId,
       access: grant.access,
       grantedBy: grant.grantedBy,
     });
@@ -252,14 +252,14 @@ export class DomainGrantRegistry {
       decision: 'grant-revoked',
       grantId,
       subject: grant.subject,
-      realmId: grant.realmId,
+      dataDomainId: grant.dataDomainId,
       access: grant.access,
       grantedBy: grant.grantedBy,
     });
     return structuredClone(grant);
   }
 
-  /** For decideRealmAccess: the live list, cheap to hand out. */
+  /** For decideDataDomainAccess: the live list, cheap to hand out. */
   decisionsInput(): DomainGrant[] {
     return this.list();
   }

@@ -31,7 +31,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -66,7 +66,7 @@ function sampleTree(): TraceTree {
   return buildTraceTree({
     traceId: 'trace-1',
     audit: [
-      { ts: '2026-10-10T00:00:00.000Z', executor: 'alpha', skill: 'review', realm: 'personal', runId: 'r1', decision: 'chain-switched', detail: 'alpha -> beta' },
+      { ts: '2026-10-10T00:00:00.000Z', executor: 'alpha', skill: 'review', dataDomain: 'personal', runId: 'r1', decision: 'chain-switched', detail: 'alpha -> beta' },
     ],
     progress: [
       { type: 'branch-started', intentId: 'intent-1', runId: 'r1', executor: 'alpha', skill: 'review', at: '2026-10-10T00:00:00.000Z' },
@@ -170,7 +170,7 @@ describe('S6 V3 boot wiring', () => {
       intentId: 'intent-1',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['alpha'],
     });
     expect(result.status).toBe('completed');

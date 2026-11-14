@@ -35,7 +35,7 @@ export async function arbitrateConflict(input: ArbitrateConflictInput): Promise<
     backend,
     stances: conflict.stances,
     runId: result.runId,
-    realm: result.realm,
+    dataDomain: result.dataDomain,
     ruleReason: conflict.reason,
     ...(input.threshold !== undefined ? { threshold: input.threshold } : {}),
     ...(input.allowUncalibrated !== undefined ? { allowUncalibrated: input.allowUncalibrated } : {}),

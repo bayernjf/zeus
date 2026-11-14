@@ -74,13 +74,13 @@ if (!existsSync(join(REPO, 'dist/http/serve.js')) || !existsSync(join(REPO, 'dis
 }
 
 // ---------------------------------------------------------------------------
-// Workspace: temp realm, state, audit and root signing key. Nothing touches a
+// Workspace: temp dataDomain, state, audit and root signing key. Nothing touches a
 // real deployment.
 // ---------------------------------------------------------------------------
 const work = mkdtempSync(join(tmpdir(), 'zeus-verify-tui-'));
-const realmRoot = join(work, 'realm');
-mkdirSync(realmRoot, { recursive: true });
-writeFileSync(join(realmRoot, 'note.md'), '# verify\n\ncontext the TUI recognition face runs against\n');
+const dataDomainRoot = join(work, 'dataDomain');
+mkdirSync(dataDomainRoot, { recursive: true });
+writeFileSync(join(dataDomainRoot, 'note.md'), '# verify\n\ncontext the TUI recognition face runs against\n');
 const stateFile = join(work, 'runtime-state.json');
 const auditFile = join(work, 'audit.jsonl');
 const keyFile = join(work, 'verify-key.pem');
@@ -114,7 +114,7 @@ const agentServer = createServer((req, res) => {
           version: '1',
           swornTo: 'zeus',
           domain: 'smoke',
-          realms: ['personal'],
+          dataDomains: ['personal'],
           dataPolicy: 'read-task-scope',
           reportBack: true,
           escalationPolicy: 'on-failure',
@@ -152,7 +152,7 @@ const env = {
   ZEUS_AUDIT_FILE: auditFile,
   ZEUS_RSK_KEY_FILE: keyFile,
   ZEUS_INTERNAL_TOKEN: OPERATOR_TOKEN,
-  ZEUS_REALM_ROOTS: realmRoot,
+  ZEUS_DATA_DOMAIN_ROOTS: dataDomainRoot,
   ZEUS_EXECUTOR_SEEDS: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`,
 };
 // Never inherit a real deployment's model keys: the model path must fail

@@ -45,7 +45,7 @@ const CORPORA: Array<[string, string]> = [
 /** Collapse a path's parameter segments and the call sites' interpolations to
  * one placeholder so `/api/x/${id}/y`, `'/api/x/' + id + '/y'` and the route
  * `/api/x/:id/y` all normalize to `/api/x/§/y`. A trailing `+ verb`/`+ kind`
- * (the skill and commission call sites pick the last path segment from the
+ * (the skill and seatGrant call sites pick the last path segment from the
  * delegated action) collapses as well, producing the call site's shape. */
 function normalize(p: string): string {
   return p
@@ -115,7 +115,7 @@ const PROTOCOL_FACES = new Set(['POST /mcp', 'POST /.well-known/agent-card.json'
 // later gains a TUI/Web/script operator must leave this table.
 const HTTP_ONLY: Record<string, string> = {
   'POST /api/org/departments/:id/first-task':
-    'PRD E9.2 / v0.29: onboarding flow-internal dispatch after the commission gate; driven by the commissioning flow over the bearer API',
+    'PRD E9.2 / v0.29: onboarding flow-internal dispatch after the seatGrant gate; driven by the seatGranting flow over the bearer API',
   'POST /api/memory/retract':
     'PRD E8.5 / v0.23: memory erasure face, documented as HTTP operator API (read + retract only, no fact write entry)',
   'POST /api/memory/forget-subject':
@@ -124,11 +124,11 @@ const HTTP_ONLY: Record<string, string> = {
     'PRD E8.3: diary generation over the bearer API; the daily CLI path assembles the runtime in-process',
   'POST /api/skills/team':
     'PRD E2.4 / v0.23: skill-to-team resolution for integrations; ambiguous slots are returned for the caller to resolve',
-  'POST /api/realms/:id/disconnect':
-    'PRD v0.41: low-frequency realm boundary change, deliberately HTTP operator API; CLI/MCP exposure deferred with item #18',
-  'POST /api/realms/:id/retarget-tenant':
+  'POST /api/dataDomains/:id/disconnect':
+    'PRD v0.41: low-frequency dataDomain boundary change, deliberately HTTP operator API; CLI/MCP exposure deferred with item #18',
+  'POST /api/dataDomains/:id/retarget-tenant':
     'PRD v0.41: enterprise tenant compare-and-swap, deliberately HTTP operator API; CLI/MCP exposure deferred with item #18',
-  'POST /api/realm/write-grants':
+  'POST /api/dataDomain/write-grants':
     'PRD E3.5 / v0.30: one-shot signed enterprise write-grant minting, an operations action over the bearer API',
   'POST /api/a2a/push-notifications':
     'PRD E4.11 / v0.86: peer callback receiver for push-delivered outbound tasks; the operator face is the peer A2A client sending the callback, not a local operator',
@@ -143,7 +143,7 @@ const HTTP_ONLY: Record<string, string> = {
   'POST /api/v1/org/policy/thresholds':
     'Tier0 PRD §11 / T-M2-04: per-organization D0-D3 threshold configuration; low-frequency high-blast-radius config action',
   'POST /api/v1/memory/recall':
-    'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent is the operator over the bearer API, namespace is its realm',
+    'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent is the operator over the bearer API, namespace is its dataDomain',
   'POST /api/v1/memory/remember':
     'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent writes its own namespace over the bearer API',
   'POST /api/v1/memory/forget':
@@ -164,7 +164,7 @@ describe('operator surface coverage (every write route is drivable or explicitly
   it('drives known TUI and Web write routes (normalization positive control)', () => {
     expect(drivenIn('/api/executors/:name')).toContain('tui'); // d<n> revoke
     expect(drivenIn('/api/skills/:id/install')).toContain('web');
-    expect(drivenIn('/api/org/departments/:id/commissions/:agentId/waive')).toContain('web'); // dynamic + verb
+    expect(drivenIn('/api/org/departments/:id/seatGrants/:agentId/waive')).toContain('web'); // dynamic + verb
     expect(drivenIn('/api/org/departments/:id/members/:agentId')).toContain('web'); // member removal
     expect(drivenIn('/api/connectors/:id/connect')).toContain('tui'); // m<n>
     expect(drivenIn('/api/connectors/:id/connect')).toContain('web');
@@ -264,7 +264,7 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/v1/org/tasks/:id',
   // Memory API v1 (MemoryPort v1 §7, ruling D-6): machine-to-machine reads
   // for the cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the
-  // calling agent is the reader, namespace is its realm. No operator deck.
+  // calling agent is the reader, namespace is its dataDomain. No operator deck.
   'GET /api/v1/memory/counts',
 ]);
 

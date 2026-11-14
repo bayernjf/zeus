@@ -32,7 +32,7 @@ function cardFor(name: string) {
     skills: (CARDS[name] ?? []).map(id => ({ id, name: id, description: `${id} work`, tags: [id] })),
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'acme', realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
+    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'acme', dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 
@@ -53,7 +53,7 @@ type Face = {
   runtime: RuntimeBoot;
   sandbox: string;
   deptId: string;
-  realmId: string;
+  dataDomainId: string;
   auditFile: string;
   close: () => Promise<void>;
 };
@@ -62,9 +62,9 @@ let face: Face;
 
 async function bootFace(): Promise<Face> {
   const sandbox = await mkdtemp(join(tmpdir(), 'zeus-http-onboarding-'));
-  const realmRoot = join(sandbox, 'eng');
-  await mkdir(realmRoot, { recursive: true });
-  await writeFile(join(realmRoot, 'charter.md'), 'how we ship the compiler safely\n');
+  const dataDomainRoot = join(sandbox, 'eng');
+  await mkdir(dataDomainRoot, { recursive: true });
+  await writeFile(join(dataDomainRoot, 'charter.md'), 'how we ship the compiler safely\n');
   const auditFile = join(sandbox, 'audit.jsonl');
   const stateFile = join(sandbox, 'runtime.json');
 
@@ -73,9 +73,9 @@ async function bootFace(): Promise<Face> {
     now: () => NOW,
     auditFile,
     stateFile,
-    realmRoots: [{ root: realmRoot, type: 'enterprise', tenant: 'acme/eng' }],
+    dataDomainRoots: [{ root: dataDomainRoot, type: 'enterprise', tenant: 'acme/eng' }],
   });
-  const realmId = runtime.realmStore!.connections()[0]!.realmId;
+  const dataDomainId = runtime.dataDomainStore!.connections()[0]!.dataDomainId;
   const dept = runtime.orgRegistry!.createDepartment({ name: 'Engineering', mission: 'ship the compiler safely' });
   runtime.orgRegistry!.assignMember(dept.departmentId, { agentId: 'pr-helper', role: 'lead', title: 'EM', skills: ['release-review'] });
   runtime.orgRegistry!.assignMember(dept.departmentId, { agentId: 'new-hire', role: 'member', title: 'Junior reviewer' });
@@ -92,10 +92,10 @@ async function bootFace(): Promise<Face> {
     ...(runtime.mentorshipLedger ? { mentorshipLedger: runtime.mentorshipLedger } : {}),
     ...(runtime.orgRegistry ? { orgRegistry: runtime.orgRegistry } : {}),
     ...(runtime.memoryStore ? { memoryStore: runtime.memoryStore } : {}),
-    ...(runtime.realmStore ? { realmStore: runtime.realmStore } : {}),
+    ...(runtime.dataDomainStore ? { dataDomainStore: runtime.dataDomainStore } : {}),
     ...(runtime.domainGrants ? { domainGrants: runtime.domainGrants } : {}),
-    realmAudit: runtime.realmAudit,
-    ...(runtime.commissionLedger ? { commissions: runtime.commissionLedger } : {}),
+    dataDomainAudit: runtime.dataDomainAudit,
+    ...(runtime.seatGrantLedger ? { seatGrants: runtime.seatGrantLedger } : {}),
     auditFile,
     runtimeStats: () => runtimeStats(runtime),
   });
@@ -105,7 +105,7 @@ async function bootFace(): Promise<Face> {
     runtime,
     sandbox,
     deptId: dept.departmentId,
-    realmId,
+    dataDomainId,
     auditFile,
     close: async () => {
       await app.close();
@@ -125,14 +125,14 @@ afterEach(async () => {
 async function openSeat(over: Record<string, unknown> = {}) {
   return face.app.inject({
     method: 'POST',
-    url: `/api/org/departments/${face.deptId}/commissions`,
+    url: `/api/org/departments/${face.deptId}/seatGrants`,
     headers: AUTH,
-    payload: { agentId: 'new-hire', realmId: face.realmId, openedBy: 'operator', ...over },
+    payload: { agentId: 'new-hire', dataDomainId: face.dataDomainId, openedBy: 'operator', ...over },
   });
 }
 
 /** Walk the whole chain over HTTP, ending in a sign-off. */
-async function commissionThroughHttp() {
+async function seatGrantThroughHttp() {
   await face.app.inject({
     method: 'POST',
     url: '/api/executors',
@@ -144,38 +144,38 @@ async function commissionThroughHttp() {
   expect([201, 409]).toContain((await openSeat()).statusCode);
   const waived = await face.app.inject({
     method: 'POST',
-    url: `/api/org/departments/${face.deptId}/commissions/new-hire/waive`,
+    url: `/api/org/departments/${face.deptId}/seatGrants/new-hire/waive`,
     headers: AUTH,
     payload: { reason: 'supervised internship', by: 'operator' },
   });
   expect(waived.statusCode).toBe(200);
   return face.app.inject({
     method: 'POST',
-    url: `/api/org/departments/${face.deptId}/commissions/new-hire/commission`,
+    url: `/api/org/departments/${face.deptId}/seatGrants/new-hire/seatGrant`,
     headers: AUTH,
     payload: { by: 'operator', note: 'day one' },
   });
 }
 
-describe('HTTP E9.2 - the commission face', () => {
-  it('lists commissions with a live verdict for each', async () => {
-    const empty = await face.app.inject({ method: 'GET', url: `/api/org/departments/${face.deptId}/commissions`, headers: AUTH });
-    expect(empty.json()).toEqual({ commissions: [] });
+describe('HTTP E9.2 - the seatGrant face', () => {
+  it('lists seatGrants with a live verdict for each', async () => {
+    const empty = await face.app.inject({ method: 'GET', url: `/api/org/departments/${face.deptId}/seatGrants`, headers: AUTH });
+    expect(empty.json()).toEqual({ seatGrants: [] });
 
     await openSeat();
-    const listed = await face.app.inject({ method: 'GET', url: `/api/org/departments/${face.deptId}/commissions`, headers: AUTH });
-    const rows = listed.json().commissions as Array<{ agentId: string; verdict: { stage: string; blockedOn: string } }>;
+    const listed = await face.app.inject({ method: 'GET', url: `/api/org/departments/${face.deptId}/seatGrants`, headers: AUTH });
+    const rows = listed.json().seatGrants as Array<{ agentId: string; verdict: { stage: string; blockedOn: string } }>;
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ agentId: 'new-hire', verdict: { blockedOn: 'account' } });
 
-    const unknown = await face.app.inject({ method: 'GET', url: '/api/org/departments/dept:nope/commissions', headers: AUTH });
+    const unknown = await face.app.inject({ method: 'GET', url: '/api/org/departments/dept:nope/seatGrants', headers: AUTH });
     expect(unknown.statusCode).toBe(404);
   });
 
   it('refuses the shapes that cannot name a seat', async () => {
     expect((await openSeat({ agentId: undefined })).statusCode).toBe(400);
     expect((await openSeat({ openedBy: undefined })).statusCode).toBe(400);
-    expect((await openSeat({ realmId: 'realm-missing' })).statusCode).toBe(404);
+    expect((await openSeat({ dataDomainId: 'dataDomain-missing' })).statusCode).toBe(404);
     expect((await openSeat({ requiredSkills: 'release-review' })).statusCode).toBe(400);
     expect((await openSeat({ tenant: 42 })).statusCode).toBe(400);
     expect((await openSeat({ agentId: 'nobody' })).statusCode).toBe(400);
@@ -185,22 +185,22 @@ describe('HTTP E9.2 - the commission face', () => {
     expect((await openSeat()).statusCode).toBe(201);
     const refused = await face.app.inject({
       method: 'POST',
-      url: `/api/org/departments/${face.deptId}/commissions/new-hire/commission`,
+      url: `/api/org/departments/${face.deptId}/seatGrants/new-hire/seatGrant`,
       headers: AUTH,
       payload: { by: 'operator' },
     });
     expect(refused.statusCode).toBe(409);
-    expect(refused.json()).toMatchObject({ error: 'commission_gate', blockedOn: 'account' });
+    expect(refused.json()).toMatchObject({ error: 'seatGrant_gate', blockedOn: 'account' });
     expect(refused.json().reason).toMatch(/no executor named new-hire/);
 
     // A refusal is part of the trail, not just a response code.
-    const refusedEntry = await face.app.inject({ method: 'GET', url: '/api/audit?decision=commission-refused', headers: AUTH });
+    const refusedEntry = await face.app.inject({ method: 'GET', url: '/api/audit?decision=seatGrant-refused', headers: AUTH });
     expect((refusedEntry.json().entries as unknown[]).length).toBe(1);
 
     // 404 for a seat that has no file at all, 400 for a waiver that waists nothing
     const missing = await face.app.inject({
       method: 'POST',
-      url: `/api/org/departments/${face.deptId}/commissions/ghost/commission`,
+      url: `/api/org/departments/${face.deptId}/seatGrants/ghost/seatGrant`,
       headers: AUTH,
       payload: { by: 'operator' },
     });
@@ -214,14 +214,14 @@ describe('HTTP E9.2 - the commission face', () => {
   });
 
   it('walks account -> authorization -> mentorship -> sign-off and reports it in the audit trail', async () => {
-    const commissioned = await commissionThroughHttp();
-    expect(commissioned.statusCode).toBe(200);
-    expect(commissioned.json()).toMatchObject({ commissioned: { by: 'operator' } });
+    const seatGranted = await seatGrantThroughHttp();
+    expect(seatGranted.statusCode).toBe(200);
+    expect(seatGranted.json()).toMatchObject({ seatGranted: { by: 'operator' } });
 
     expect(existsSync(face.auditFile)).toBe(true);
     const granted = await face.app.inject({
       method: 'GET',
-      url: '/api/audit?decision=commission-granted',
+      url: '/api/audit?decision=seatGrant-granted',
       headers: AUTH,
     });
     const entries = granted.json().entries as Array<{ executor: string; detail: string }>;
@@ -229,33 +229,33 @@ describe('HTTP E9.2 - the commission face', () => {
     expect(entries[0]).toMatchObject({ executor: 'new-hire' });
     expect(entries[0]!.detail).toContain('acme/eng');
 
-    const waivedEntry = await face.app.inject({ method: 'GET', url: '/api/audit?decision=commission-waived', headers: AUTH });
+    const waivedEntry = await face.app.inject({ method: 'GET', url: '/api/audit?decision=seatGrant-waived', headers: AUTH });
     const waivers = waivedEntry.json().entries as Array<{ detail: string }>;
     expect(waivers).toHaveLength(1);
     expect(waivers[0]!.detail).toContain('supervised internship');
 
     const state = await face.app.inject({ method: 'GET', url: '/api/state', headers: AUTH });
-    expect(state.json().counts).toMatchObject({ commissions: 1, commissioned: 1 });
+    expect(state.json().counts).toMatchObject({ seatGrants: 1, seatGranted: 1 });
   });
 
   it('carries a seat through a restart with its sign-off intact', async () => {
-    await commissionThroughHttp();
+    await seatGrantThroughHttp();
     await face.runtime.saveState();
-    const before = face.runtime.commissionLedger!.exportState();
+    const before = face.runtime.seatGrantLedger!.exportState();
 
     const second = await bootRuntime({
       fetchImpl: routingFetch,
       now: () => NOW,
       stateFile: join(face.sandbox, 'runtime.json'),
     });
-    expect(second.commissionLedger!.exportState()).toEqual(before);
-    expect(() => second.commissionLedger!.assertCommissioned(before[0]!.id)).not.toThrow();
+    expect(second.seatGrantLedger!.exportState()).toEqual(before);
+    expect(() => second.seatGrantLedger!.assertSeatGranted(before[0]!.id)).not.toThrow();
   });
 });
 
 describe('HTTP E9.1 - the briefing face', () => {
   it('returns the assembled seat context over HTTP, with no path disclosure', async () => {
-    await commissionThroughHttp();
+    await seatGrantThroughHttp();
     const res = await face.app.inject({
       method: 'GET',
       url: `/api/org/departments/${face.deptId}/briefing/new-hire`,
@@ -275,17 +275,17 @@ describe('HTTP E9.1 - the briefing face', () => {
       digest: string;
     };
     expect(parsed.chain.lead).toBe('pr-helper');
-    expect(parsed.boundaries).toMatchObject({ realmType: 'enterprise', canRead: true, writeNeedsGrant: true });
+    expect(parsed.boundaries).toMatchObject({ dataDomainType: 'enterprise', canRead: true, writeNeedsGrant: true });
     expect(parsed.culture.totalFacts).toBe(0);
     expect(parsed.digest).toMatch(/^[0-9a-f]{64}$/);
-    // design-realm invariant 3: the absolute root never leaves the process.
+    // design-dataDomain invariant 3: the absolute root never leaves the process.
     expect(res.body).not.toContain(face.sandbox);
   });
 });
 
 describe('HTTP E9.2 - the first task', () => {
-  it('refers the task to the commissioned agent, carrying the briefing digest', async () => {
-    await commissionThroughHttp();
+  it('refers the task to the seatGranted agent, carrying the briefing digest', async () => {
+    await seatGrantThroughHttp();
     const res = await face.app.inject({
       method: 'POST',
       url: `/api/org/departments/${face.deptId}/first-task`,
@@ -295,13 +295,13 @@ describe('HTTP E9.2 - the first task', () => {
     expect(res.statusCode).toBe(200);
     const body = res.json() as {
       intentId: string;
-      realm: string;
-      realmId: string;
+      dataDomain: string;
+      dataDomainId: string;
       branches: Array<{ executor: string }>;
       briefing: { digest: string; gaps: string[] };
     };
-    expect(body.realm).toBe('enterprise');
-    expect(body.realmId).toBe(face.realmId);
+    expect(body.dataDomain).toBe('enterprise');
+    expect(body.dataDomainId).toBe(face.dataDomainId);
     expect(body.branches.map(branch => branch.executor)).toEqual(['new-hire']);
     expect(body.briefing.digest).toMatch(/^[0-9a-f]{64}$/);
     expect(body.intentId).toBeTruthy();
@@ -317,19 +317,19 @@ describe('HTTP E9.2 - the first task', () => {
     expect(beforeAny.statusCode).toBe(404);
 
     await openSeat();
-    const notCommissioned = await face.app.inject({
+    const notSeatGranted = await face.app.inject({
       method: 'POST',
       url: `/api/org/departments/${face.deptId}/first-task`,
       headers: AUTH,
       payload: { agentId: 'new-hire', skill: 'release-review' },
     });
-    expect(notCommissioned.statusCode).toBe(409);
-    expect(notCommissioned.json()).toMatchObject({ error: 'commission_gate', blockedOn: 'account' });
+    expect(notSeatGranted.statusCode).toBe(409);
+    expect(notSeatGranted.json()).toMatchObject({ error: 'seatGrant_gate', blockedOn: 'account' });
 
-    await commissionThroughHttp();
+    await seatGrantThroughHttp();
     const withdrawn = await face.app.inject({
       method: 'POST',
-      url: `/api/org/departments/${face.deptId}/commissions/new-hire/withdraw`,
+      url: `/api/org/departments/${face.deptId}/seatGrants/new-hire/withdraw`,
       headers: AUTH,
       payload: { by: 'operator', reason: 'reorg' },
     });
@@ -346,7 +346,7 @@ describe('HTTP E9.2 - the first task', () => {
   });
 
   it('validates the request before it touches the gate', async () => {
-    await commissionThroughHttp();
+    await seatGrantThroughHttp();
     const post = (payload: Record<string, unknown>) =>
       face.app.inject({ method: 'POST', url: `/api/org/departments/${face.deptId}/first-task`, headers: AUTH, payload });
     expect((await post({ skill: 'release-review' })).statusCode).toBe(400);

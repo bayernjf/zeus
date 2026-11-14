@@ -101,7 +101,7 @@ function card(name, port) {
       version: '1',
       swornTo: 'zeus',
       domain: 'smoke',
-      realms: ['personal'],
+      dataDomains: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',
@@ -161,13 +161,13 @@ if (agentPort === undefined) {
 }
 
 // ---------------------------------------------------------------------------
-// Workspace: a temp directory with its own realm, state file, audit file and
+// Workspace: a temp directory with its own dataDomain, state file, audit file and
 // root signing key. Nothing here touches a real deployment.
 // ---------------------------------------------------------------------------
 const work = mkdtempSync(join(tmpdir(), 'zeus-verify-exec-'));
-const realmRoot = join(work, 'realm');
-mkdirSync(realmRoot, { recursive: true });
-writeFileSync(join(realmRoot, 'note.md'), '# verify\n\ncontext the execute chain reads back\n');
+const dataDomainRoot = join(work, 'dataDomain');
+mkdirSync(dataDomainRoot, { recursive: true });
+writeFileSync(join(dataDomainRoot, 'note.md'), '# verify\n\ncontext the execute chain reads back\n');
 const stateFile = join(work, 'runtime-state.json');
 const auditFile = join(work, 'audit.jsonl');
 const keyFile = join(work, 'verify-key.pem');
@@ -186,7 +186,7 @@ const env = {
   ZEUS_AUDIT_FILE: auditFile,
   ZEUS_RSK_KEY_FILE: keyFile,
   ZEUS_INTERNAL_TOKEN: OPERATOR_TOKEN,
-  ZEUS_REALM_ROOTS: realmRoot,
+  ZEUS_DATA_DOMAIN_ROOTS: dataDomainRoot,
 };
 // Never inherit a real deployment's seeds or decision keys.
 delete env.ZEUS_EXECUTOR_SEEDS;
@@ -249,9 +249,9 @@ try {
     record('HTTP process boots on a directory and answers /healthz', health.json?.status === 'ok', `port ${port}`);
 
     const domains = await api('GET', '/api/domains');
-    const personal = domains.json?.realms?.find(/** @param {{ type?: string, realmId?: string, itemCount?: number }} realm */ realm => realm.type === 'personal');
-    record('realm mounted from a plain directory', !!personal && personal.itemCount >= 1, `realmId=${personal?.realmId} items=${personal?.itemCount}`);
-    if (!personal?.realmId) throw new Error('personal realm never mounted');
+    const personal = domains.json?.dataDomains?.find(/** @param {{ type?: string, dataDomainId?: string, itemCount?: number }} dataDomain */ dataDomain => dataDomain.type === 'personal');
+    record('dataDomain mounted from a plain directory', !!personal && personal.itemCount >= 1, `dataDomainId=${personal?.dataDomainId} items=${personal?.itemCount}`);
+    if (!personal?.dataDomainId) throw new Error('personal dataDomain never mounted');
 
     const registered = await api('POST', '/api/executors', { cardUrl: `http://127.0.0.1:${agentPort}/a1/api/a2a/agent-card`, token: `verify-executor-${randomBytes(6).toString('hex')}` });
     record('agent a1 registered over a real socket', registered.status === 201 || registered.status === 200, `status=${registered.status}${registered.text.slice(0, 220)}`);
@@ -260,8 +260,8 @@ try {
     const before = agent('a1').requests;
     const bare = await api('POST', '/api/intents', {
       skill: 'research',
-      realm: 'personal',
-      realmId: personal.realmId,
+      dataDomain: 'personal',
+      dataDomainId: personal.dataDomainId,
       params: {},
       executors: ['a1'],
       mode: 'execute',
@@ -289,8 +289,8 @@ try {
     // really receives the request.
     const payloadWith = {
       skill: 'research',
-      realm: 'personal',
-      realmId: personal.realmId,
+      dataDomain: 'personal',
+      dataDomainId: personal.dataDomainId,
       params: {},
       executors: ['a1'],
       mode: 'execute',

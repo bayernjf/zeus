@@ -37,7 +37,7 @@ interface WorkOrder {              // supervisor → subagent
   subGoal: string;
   inputs: unknown;                // 最小必要上下文
   expectedOutput: { schema: string };
-  constraints: { realms: string[]; dataPolicy: string; budget?: Tokens; deadline?: string };
+  constraints: { dataDomains: string[]; dataPolicy: string; budget?: Tokens; deadline?: string };
   credentials?: { kind: string; ref: string };
 }
 

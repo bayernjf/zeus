@@ -5,7 +5,7 @@
  * This file is assembly, not a new mechanism. The runtime already resolves an
  * instruction to a skill (`recognizeIntent`), fans it out to the execution agents
  * that advertise it (`orchestrator.fanOut`), escalates a split to the oversight
- * desk, and writes into the user's own directory (`FsRealmStore`). What was
+ * desk, and writes into the user's own directory (`FsDataDomainStore`). What was
  * missing is one command that walks a first-time user down that path and shows
  * them the outcome. Step 1 of docs/design-self-host-loop.md.
  *
@@ -13,9 +13,9 @@
  *   - Nothing leaves the machine unless `--model` is passed. Without it
  *     recognition is the local ranker, and the fan-out only reaches agents the
  *     operator registered themselves.
- *   - The record is written into the realm the intent operated on. An
- *     enterprise-realm result never lands in a personal directory
- *     (product-portrait constraint 4), so `--realm enterprise` needs a mounted
+ *   - The record is written into the dataDomain the intent operated on. An
+ *     enterprise-dataDomain result never lands in a personal directory
+ *     (product-portrait constraint 4), so `--dataDomain enterprise` needs a mounted
  *     enterprise root and authorizes its write with the local operator key.
  *
  * Exit codes: 0 the report was produced and stored (including a run that ended
@@ -37,7 +37,7 @@ import {
   resolveConcurrencyConfig,
   resolveCostConfig,
   resolveDecisionConfig,
-  resolveRealmConfig,
+  resolveDataDomainConfig,
   resolveExecutorSeedsConfig,
   type RuntimeBoot,
   type RuntimeBootOptions,
@@ -45,9 +45,9 @@ import {
 import { parseRetentionMode } from '../state/archive.js';
 import { recognizeIntent, rankCandidates, MODEL_OPTION_LIMIT, type SkillCatalogEntry } from '../intent/recognize.js';
 import { loadRskSigner } from '../http/rsk.js';
-import { issueOperatorWriteGrant } from '../realm/grant.js';
+import { issueOperatorWriteGrant } from '../dataDomain/grant.js';
 import type { BranchOutcome, FanOutResult } from '../orchestrator/types.js';
-import { RealmError, type RealmConnection } from '../realm/types.js';
+import { DataDomainError, type DataDomainConnection } from '../dataDomain/types.js';
 import { DuplicateSkillError, type SkillRegistry } from '../skills/registry.js';
 import { skillSpecInputFrom } from '../skills/spec-input.js';
 import { renderDailyReport, parsePreviousRecord, type DailyBranchView, type DailyReportModel } from './report.js';
@@ -64,7 +64,7 @@ markdown so a later run can read it.
 
 Options:
   --root DIR            directory to work in, mounted read-write (repeatable;
-                        ZEUS_REALM_ROOTS entries are mounted alongside, and the
+                        ZEUS_DATA_DOMAIN_ROOTS entries are mounted alongside, and the
                         roots saved by an earlier run are re-mounted by default)
   --agent CARD[|TOKEN]  register an execution agent before dispatch (repeatable;
                         merged with ZEUS_EXECUTOR_SEEDS)
@@ -78,11 +78,11 @@ Options:
   --params JSON         skill parameters, merged over the default
                         {"prompt": "<your sentence>"}; an agent whose skill takes
                         named parameters needs those names
-  --record PATH         realm-relative path for the markdown record
+  --record PATH         dataDomain-relative path for the markdown record
                         (default zeus-daily/<timestamp>-<skill>.md)
-  --realm personal      'personal' (default) or 'enterprise': the data domain the
+  --dataDomain personal      'personal' (default) or 'enterprise': the data domain the
                         intent operates on. An enterprise run writes its record
-                        into the enterprise realm on a grant signed by the local
+                        into the enterprise dataDomain on a grant signed by the local
                         operator key; it never lands in a personal directory
   --timeout MS          per-branch timeout (default ${DEFAULT_BRANCH_TIMEOUT_MS})
   --model               let this run consult the configured decision backend for
@@ -110,7 +110,7 @@ type DailyArgs = {
   skill?: string;
   params: Record<string, unknown>;
   record?: string;
-  realm: 'personal' | 'enterprise';
+  dataDomain: 'personal' | 'enterprise';
   timeoutMs: number;
   model: boolean;
   /** undefined = operator said nothing; null = they passed `--state none`. */
@@ -124,18 +124,18 @@ type RunContext = {
   err: string[];
   runtime: RuntimeBoot | null;
   report: DailyReportModel | null;
-  realm: RealmConnection | null;
+  dataDomain: DataDomainConnection | null;
 };
 
-const VALUE_FLAGS = new Set(['--root', '--agent', '--skill', '--params', '--record', '--realm', '--timeout', '--state', '--spec']);
+const VALUE_FLAGS = new Set(['--root', '--agent', '--skill', '--params', '--record', '--dataDomain', '--timeout', '--state', '--spec']);
 
 /**
  * Resolves where runtime state lives. `undefined` means the operator said nothing
  * and the default file applies; `null` means they said `none` and nothing is
  * loaded or saved. Collapsing the two (a `??` chain over `null`) makes
  * `--state none` write the repository's own default file, and the next run then
- * re-mounts a realm root that the earlier run's temp directory no longer
- * provides — the run fails with `realm root not accessible` for a path the
+ * re-mounts a dataDomain root that the earlier run's temp directory no longer
+ * provides — the run fails with `dataDomain root not accessible` for a path the
  * operator never asked for.
  */
 export function resolveStateFile(explicit: string | null | undefined, fromEnv: string | undefined): string | null {
@@ -202,7 +202,7 @@ function parseArgs(argv: string[]): DailyArgs {
     agents: [],
     specs: [],
     params: {},
-    realm: 'personal',
+    dataDomain: 'personal',
     timeoutMs: DEFAULT_BRANCH_TIMEOUT_MS,
     model: false,
     help: false,
@@ -240,11 +240,11 @@ function parseArgs(argv: string[]): DailyArgs {
         case '--record':
           args.record = value;
           break;
-        case '--realm':
+        case '--dataDomain':
           if (value !== 'personal' && value !== 'enterprise') {
-            throw new UsageError(`--realm is 'personal' or 'enterprise', got '${value}'`);
+            throw new UsageError(`--dataDomain is 'personal' or 'enterprise', got '${value}'`);
           }
-          args.realm = value;
+          args.dataDomain = value;
           break;
         case '--timeout':
           args.timeoutMs = Number(value);
@@ -303,12 +303,12 @@ function cardUrlOf(seed: string | { cardUrl: string; token?: string }): string {
 }
 
 /**
- * `--root` adds a personal mount; ZEUS_REALM_ROOTS stays in force (it is what the
+ * `--root` adds a personal mount; ZEUS_DATA_DOMAIN_ROOTS stays in force (it is what the
  * deployment already declared), and the enterprise entries keep working so
- * `--realm enterprise` needs nothing beyond the env the operator set.
+ * `--dataDomain enterprise` needs nothing beyond the env the operator set.
  */
-function realmRootsFor(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['realmRoots']> {
-  const configured = resolveRealmConfig(env).realmRoots;
+function dataDomainRootsFor(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['dataDomainRoots']> {
+  const configured = resolveDataDomainConfig(env).dataDomainRoots;
   const personal = configured.filter((entry): entry is string => typeof entry === 'string');
   const enterprise = configured.filter(entry => typeof entry !== 'string');
   return [...new Set([...args.roots, ...personal]), ...enterprise];
@@ -319,12 +319,12 @@ function realmRootsFor(args: DailyArgs, env: NodeJS.ProcessEnv): NonNullable<Run
  * roots before these, so "first writable match" alone would keep writing the
  * record into last week's directory.
  */
-function pickRealm(
-  connections: RealmConnection[],
-  realm: 'personal' | 'enterprise',
+function pickDataDomain(
+  connections: DataDomainConnection[],
+  dataDomain: 'personal' | 'enterprise',
   requested: string[],
-): RealmConnection | undefined {
-  const candidates = connections.filter(connection => connection.type === realm && !connection.readOnly);
+): DataDomainConnection | undefined {
+  const candidates = connections.filter(connection => connection.type === dataDomain && !connection.readOnly);
   if (candidates.length === 0) return undefined;
   for (const root of requested) {
     const match = candidates.find(connection => connection.root === safeRealpath(root) || connection.root === resolve(root));
@@ -407,25 +407,25 @@ export function recordItemId(at: string, skill: string, intentId?: string): stri
 
 /**
  * Reads the most recent stored daily page for the same skill in the mounted
- * realm, so this run's page can carry a "previous" line. The query is anchored
+ * dataDomain, so this run's page can carry a "previous" line. The query is anchored
  * on the two facts every daily page contains — the `zeus-daily/` prefix (Record
  * path line) and the skill id (Intent line) — so the connect-time search
  * snapshot finds them without a full listing. This is a read-only look back:
  * the result never enters the dispatch load, the params, or the protocol, and
- * a realm whose store cannot answer the query simply has no previous line.
+ * a dataDomain whose store cannot answer the query simply has no previous line.
  */
 async function findPreviousRecord(
   ctx: RunContext,
   skill: string,
 ): Promise<DailyReportModel['previous'] | undefined> {
-  const store = ctx.runtime?.realmStore;
-  const realm = ctx.realm;
-  if (!store || !realm) return undefined;
+  const store = ctx.runtime?.dataDomainStore;
+  const dataDomain = ctx.dataDomain;
+  if (!store || !dataDomain) return undefined;
   try {
-    const hits = await store.search(realm.realmId, { text: `zeus-daily ${skill}`, limit: 20 });
+    const hits = await store.search(dataDomain.dataDomainId, { text: `zeus-daily ${skill}`, limit: 20 });
     const hit = hits.find(candidate => candidate.itemId.startsWith('zeus-daily/'));
     if (!hit) return undefined;
-    const item = await store.read(realm.realmId, hit.itemId);
+    const item = await store.read(dataDomain.dataDomainId, hit.itemId);
     return parsePreviousRecord(item.content, hit.itemId);
   } catch {
     // Reading history is an enhancement, not a guarantee: a store that cannot
@@ -434,14 +434,14 @@ async function findPreviousRecord(
   }
 }
 
-/** Returns true when the record did not reach the realm. */
+/** Returns true when the record did not reach the dataDomain. */
 async function writeRecord(ctx: RunContext): Promise<boolean> {
   const model = ctx.report!;
   const runtime = ctx.runtime!;
-  const realm = ctx.realm!;
-  const store = runtime.realmStore;
+  const dataDomain = ctx.dataDomain!;
+  const store = runtime.dataDomainStore;
   if (!store) {
-    model.writeError = 'this runtime was booted without a realm store';
+    model.writeError = 'this runtime was booted without a dataDomain store';
     return true;
   }
   const itemId = ctx.args.record ?? recordItemId(model.at, model.skill ?? 'unresolved', model.intentId);
@@ -449,11 +449,11 @@ async function writeRecord(ctx: RunContext): Promise<boolean> {
   model.itemId = itemId;
   const markdown = renderDailyReport(model);
   if (!store.write) {
-    model.writeError = 'the mounted realm store does not support writes in this build';
+    model.writeError = 'the mounted dataDomain store does not support writes in this build';
     return true;
   }
   try {
-    if (realm.type === 'enterprise') {
+    if (dataDomain.type === 'enterprise') {
       const signer = runtime.operatorSigner;
       if (!signer) {
         model.writeError =
@@ -461,14 +461,14 @@ async function writeRecord(ctx: RunContext): Promise<boolean> {
         return true;
       }
       const grant = await issueOperatorWriteGrant(
-        { realmId: realm.realmId, grantedBy: 'operator:daily-cli', reason: `npm run daily: ${model.skill ?? 'unresolved'}` },
+        { dataDomainId: dataDomain.dataDomainId, grantedBy: 'operator:daily-cli', reason: `npm run daily: ${model.skill ?? 'unresolved'}` },
         { signer },
       );
-      const written = await store.write(realm.realmId, { itemId, data: markdown }, grant);
+      const written = await store.write(dataDomain.dataDomainId, { itemId, data: markdown }, grant);
       model.record = { itemId: written.itemId, bytes: Buffer.byteLength(markdown, 'utf8') };
       return false;
     }
-    const written = await store.write(realm.realmId, { itemId, data: markdown });
+    const written = await store.write(dataDomain.dataDomainId, { itemId, data: markdown });
     model.record = { itemId: written.itemId, bytes: Buffer.byteLength(markdown, 'utf8') };
     return false;
   } catch (error) {
@@ -485,10 +485,10 @@ async function runOnce(ctx: RunContext): Promise<number> {
   // with it, the orchestrator arbitrates a split with the same one.
   let backend: DecisionBackend | null = null;
   const stateFile = resolveStateFile(args.stateFile, env.ZEUS_STATE_FILE);
-  const roots = realmRootsFor(args, env);
+  const roots = dataDomainRootsFor(args, env);
   const runtimeOptions: RuntimeBootOptions = {
     ...(stateFile ? { stateFile } : {}),
-    ...(roots.length > 0 ? { realmRoots: roots } : {}),
+    ...(roots.length > 0 ? { dataDomainRoots: roots } : {}),
     ...(env.ZEUS_AUDIT_FILE ? { auditFile: env.ZEUS_AUDIT_FILE } : {}),
     ...concurrencyBootOptions(resolveConcurrencyConfig(env)),
     ...costBootOptions(resolveCostConfig(env)),
@@ -509,27 +509,27 @@ async function runOnce(ctx: RunContext): Promise<number> {
   }
   // The operator key is only needed to authorize an enterprise write, and loading it
   // touches the deployment's key material. A personal run loads none of it.
-  if (args.realm === 'enterprise') {
+  if (args.dataDomain === 'enterprise') {
     const { signer } = await loadRskSigner({ env });
     runtimeOptions.operatorSigner = signer;
   }
 
   ctx.runtime = await bootRuntime(runtimeOptions);
-  // Registered before the realm is picked and before anything dispatches: a
+  // Registered before the dataDomain is picked and before anything dispatches: a
   // rejected spec is a configuration fact, not a failed run.
   registerSkillSpecs(ctx.runtime.skillRegistry, args.specs);
 
-  const connections = ctx.runtime.realmStore?.connections() ?? [];
-  const realm = pickRealm(connections, args.realm, args.roots);
-  if (!realm) {
+  const connections = ctx.runtime.dataDomainStore?.connections() ?? [];
+  const dataDomain = pickDataDomain(connections, args.dataDomain, args.roots);
+  if (!dataDomain) {
     ctx.err.push(
-      args.realm === 'enterprise'
-        ? 'no writable enterprise realm to work in: mount one with ZEUS_REALM_ENTERPRISE="<dir>::<tenant>"'
-        : 'no writable directory to work in: pass --root DIR (the folder your notes live in), or set ZEUS_REALM_ROOTS',
+      args.dataDomain === 'enterprise'
+        ? 'no writable enterprise dataDomain to work in: mount one with ZEUS_DATA_DOMAIN_ENTERPRISE="<dir>::<tenant>"'
+        : 'no writable directory to work in: pass --root DIR (the folder your notes live in), or set ZEUS_DATA_DOMAIN_ROOTS',
     );
     return 2;
   }
-  ctx.realm = realm;
+  ctx.dataDomain = dataDomain;
 
   const catalog: SkillCatalogEntry[] = (ctx.runtime.skillRegistry?.list() ?? []).map(skillCatalogEntry);
   const model: DailyReportModel = {
@@ -539,7 +539,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
     chosenBy: 'rules',
     candidates: [],
     params: {},
-    realm: { realmId: realm.realmId, root: realm.root, type: realm.type, readOnly: realm.readOnly },
+    dataDomain: { dataDomainId: dataDomain.dataDomainId, root: dataDomain.root, type: dataDomain.type, readOnly: dataDomain.readOnly },
     agents: ctx.runtime.registry.listAll().filter(entry => entry.status === 'active').map(entry => entry.card.name),
     positions: [],
     branches: [],
@@ -568,7 +568,7 @@ async function runOnce(ctx: RunContext): Promise<number> {
     const recognition = await recognizeIntent({
       text: args.instruction,
       catalog,
-      realm: args.realm,
+      dataDomain: args.dataDomain,
       ...(args.model && backend ? { useModel: true, backend } : {}),
     });
     model.candidates = rankCandidates(catalog, args.instruction, 5).map(candidate => ({
@@ -611,8 +611,8 @@ async function runOnce(ctx: RunContext): Promise<number> {
   const result = await ctx.runtime.orchestrator.fanOut({
     skill: model.skill,
     params: model.params,
-    realm: args.realm,
-    realmId: realm.realmId,
+    dataDomain: args.dataDomain,
+    dataDomainId: dataDomain.dataDomainId,
     mode: 'plan',
     branchTimeoutMs: args.timeoutMs,
   });
@@ -654,7 +654,7 @@ export async function runDailyCli(
   }
   if (args.help) return { code: 0, stdout: `${USAGE}\n`, stderr: '' };
 
-  const ctx: RunContext = { args, env, err: [], runtime: null, report: null, realm: null };
+  const ctx: RunContext = { args, env, err: [], runtime: null, report: null, dataDomain: null };
   let code: number;
   try {
     code = await runOnce(ctx);
@@ -662,7 +662,7 @@ export async function runDailyCli(
     // An unmountable root and an unfetchable card are both boot-time configuration
     // facts: nothing was dispatched, so they are exit 2, not a failed run.
     code =
-      error instanceof RuntimeBootError || error instanceof UsageError || error instanceof RealmError ? 2 : 1;
+      error instanceof RuntimeBootError || error instanceof UsageError || error instanceof DataDomainError ? 2 : 1;
     ctx.err.push(`error: ${(error as Error).message}`);
   }
 
@@ -690,8 +690,8 @@ export async function runDailyCli(
   }
 
   const storedLine =
-    ctx.report?.record && ctx.realm
-      ? `\nstored: ${join(ctx.realm.root, ctx.report.record.itemId)} (${ctx.report.record.bytes} bytes)\n`
+    ctx.report?.record && ctx.dataDomain
+      ? `\nstored: ${join(ctx.dataDomain.root, ctx.report.record.itemId)} (${ctx.report.record.bytes} bytes)\n`
       : '';
   const stdout = ctx.report ? `${renderDailyReport(ctx.report)}${storedLine}` : '';
   return { code, stdout, stderr: ctx.err.length > 0 ? `${ctx.err.join('\n')}\n` : '' };

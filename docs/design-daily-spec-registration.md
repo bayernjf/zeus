@@ -15,7 +15,7 @@
 `npm run daily -- --spec FILE`（可重复）
 
 - `FILE` 是 JSON 文件的路径，内容是一个 SkillSpec 对象，或一个由它们组成的数组。
-- 登记发生在 `bootRuntime()` 之后、Realm 选取与任何派发之前。拒绝即 `UsageError` → `exit 2`，目录零写出，符合"配置错误什么都没派发"的语义。
+- 登记发生在 `bootRuntime()` 之后、DataDomain 选取与任何派发之前。拒绝即 `UsageError` → `exit 2`，目录零写出，符合"配置错误什么都没派发"的语义。
 - 同一 id+version 已在目录中则跳过而非报错，否则带着状态文件重跑会被自己的幂等性挡住。
 
 ### 共享白名单

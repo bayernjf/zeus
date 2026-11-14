@@ -197,7 +197,7 @@ export async function executeRecovery(
       runId: row.intentId,
       executor: '(recovery)',
       skill: '(restored)',
-      realm: 'personal' as const,
+      dataDomain: 'personal' as const,
     };
     switch (verdict.kind) {
       case 'auto-resume': {

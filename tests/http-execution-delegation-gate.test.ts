@@ -57,7 +57,7 @@ async function gateServer() {
         ts: entry.at,
         executor: entry.executor,
         skill: entry.skill,
-        realm: entry.realm,
+        dataDomain: entry.dataDomain,
         decision: 'execution-delegation-denied',
         detail: entry.reason,
       });
@@ -89,7 +89,7 @@ describe('HTTP H2 — execute-mode dispatch gate (deferred #33)', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { ...AUTH, 'content-type': 'application/json' },
-      payload: { skill: 'deployment-health', realm: 'personal', params: {}, mode: 'execute' },
+      payload: { skill: 'deployment-health', dataDomain: 'personal', params: {}, mode: 'execute' },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { branches: Array<{ ok: boolean; reason?: string }> };
@@ -110,7 +110,7 @@ describe('HTTP H2 — execute-mode dispatch gate (deferred #33)', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { ...AUTH, 'content-type': 'application/json' },
-      payload: { skill: 'deployment-health', realm: 'personal', params: {}, mode: 'execute', executionDelegation: issued },
+      payload: { skill: 'deployment-health', dataDomain: 'personal', params: {}, mode: 'execute', executionDelegation: issued },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json() as { branches: Array<{ ok: boolean }> };
@@ -126,7 +126,7 @@ describe('HTTP H2 — execute-mode dispatch gate (deferred #33)', () => {
       { grantedBy: 'operator@zeus', skill: 'deployment-health', capabilities: ['execute'] },
       { signer: h.signer, now: () => NOW },
     );
-    const payload = { skill: 'deployment-health', realm: 'personal', params: {}, mode: 'execute', executionDelegation: issued };
+    const payload = { skill: 'deployment-health', dataDomain: 'personal', params: {}, mode: 'execute', executionDelegation: issued };
     await app.inject({ method: 'POST', url: '/api/intents', headers: { ...AUTH, 'content-type': 'application/json' }, payload });
     const replay = await app.inject({ method: 'POST', url: '/api/intents', headers: { ...AUTH, 'content-type': 'application/json' }, payload });
     expect(replay.statusCode).toBe(200);
@@ -144,7 +144,7 @@ describe('HTTP H2 — execute-mode dispatch gate (deferred #33)', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { ...AUTH, 'content-type': 'application/json' },
-      payload: { skill: 'deployment-health', realm: 'personal', params: {}, mode: 'execute-now' },
+      payload: { skill: 'deployment-health', dataDomain: 'personal', params: {}, mode: 'execute-now' },
     });
     expect(res.statusCode).toBe(400);
     expect(h.dispatch).not.toHaveBeenCalled();

@@ -33,8 +33,8 @@ bayjf 从「产品陈列馆」升级为 Zeus 的**公开签名目录**：一份�
 | `description` | `card.description` | 一句话自我介绍（执行 Agent 自述，非名册编辑） |
 | `domain` | `handshake.domain` | 能力域，用于路由与分组 |
 | `skills[]` | `card.skills[]`（id/name/description/tags） | 可招募的具体技能 |
-| `commitments.realms` | `handshake.realms` | 可接触的数据域：personal / enterprise / none |
-| `commitments.dataPolicy` | `handshake.dataPolicy` | none / read-task-scope / read-realm / write |
+| `commitments.dataDomains` | `handshake.dataDomains` | 可接触的数据域：personal / enterprise / none |
+| `commitments.dataPolicy` | `handshake.dataPolicy` | none / read-task-scope / read-dataDomain / write |
 | `commitments.reportBack` | `handshake.reportBack` | 是否承诺结果回传回流 |
 | `commitments.escalationPolicy` | `handshake.escalationPolicy` | none / on-failure / auto |
 | `sla.ackSeconds` | `handshake.sla.ackSeconds` | **声明**受理时限（非实测） |

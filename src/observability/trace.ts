@@ -54,7 +54,7 @@ export type TraceSpan = {
   kind: TraceSpanKind;
   executor?: string;
   skill?: string;
-  realm?: string;
+  dataDomain?: string;
   startedAt: string;
   endedAt?: string;
   outcome?: string;
@@ -393,7 +393,7 @@ export function buildTraceTree(input: {
         kind: 'tool',
         executor: a.executor,
         ...(a.skill !== undefined ? { skill: a.skill } : {}),
-        ...(a.realm !== undefined ? { realm: a.realm } : {}),
+        ...(a.dataDomain !== undefined ? { dataDomain: a.dataDomain } : {}),
         startedAt: a.ts,
         outcome: a.decision,
         ...(a.detail !== undefined ? { summary: a.detail } : {}),

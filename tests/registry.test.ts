@@ -15,7 +15,7 @@ function prHelperCard(overrides: Record<string, unknown> = {}): AgentCard {
       version: '1',
       swornTo: 'zeus',
       domain: 'pr-release-control',
-      realms: ['enterprise'],
+      dataDomains: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -60,7 +60,7 @@ describe('ExecutorRegistry', () => {
       version: '1',
       swornTo: 'zeus',
       domain: 'pr-release-control',
-      realms: ['enterprise'],
+      dataDomains: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -68,23 +68,23 @@ describe('ExecutorRegistry', () => {
     });
 
     it('names the missing field instead of accepting a card it cannot honour', async () => {
-      const { realms, ...noRealms } = oath();
-      void realms;
-      await expect(registerWith(noRealms)).rejects.toThrow(/realms must be an array of realm types, got nothing/);
+      const { dataDomains, ...noDataDomains } = oath();
+      void dataDomains;
+      await expect(registerWith(noDataDomains)).rejects.toThrow(/dataDomains must be an array of dataDomain types, got nothing/);
       await expect(registerWith(oath({ dataPolicy: 'read-everything' })))
-        .rejects.toThrow(/dataPolicy must be one of none, read-task-scope, read-realm, write, got "read-everything"/);
+        .rejects.toThrow(/dataPolicy must be one of none, read-task-scope, read-dataDomain, write, got "read-everything"/);
       const { reportBack, ...noReport } = oath();
       void reportBack;
       await expect(registerWith(noReport)).rejects.toThrow(/reportBack must be a boolean, got nothing/);
       await expect(registerWith(oath({ escalationPolicy: 'vibes' }))).rejects.toThrow(/escalationPolicy must be one of/);
     });
 
-    it('refuses an unknown realm type but accepts an empty oath list', async () => {
-      await expect(registerWith(oath({ realms: ['Enterprise'] })))
-        .rejects.toThrow(/realms holds unknown realm types: "Enterprise"/);
+    it('refuses an unknown dataDomain type but accepts an empty oath list', async () => {
+      await expect(registerWith(oath({ dataDomains: ['Enterprise'] })))
+        .rejects.toThrow(/dataDomains holds unknown dataDomain types: "Enterprise"/);
       // Swearing to no data domain at all is a legitimate (if unusual) oath; the
       // diode then refuses every task with an explicit reason, which is honest.
-      await expect(registerWith(oath({ realms: [] }))).resolves.toBeUndefined();
+      await expect(registerWith(oath({ dataDomains: [] }))).resolves.toBeUndefined();
     });
 
     it('rejects an unusable SLA number and accepts a card without SLA', async () => {
@@ -112,7 +112,7 @@ describe('ExecutorRegistry', () => {
       version: '999',
       swornTo: 'zeus',
       domain: 'pr-release-control',
-      realms: [],
+      dataDomains: [],
       dataPolicy: 'none' as const,
       reportBack: true,
       escalationPolicy: 'none' as const,
@@ -307,7 +307,7 @@ describe('ExecutorRegistry', () => {
     const registry = new ExecutorRegistry(async url =>
       cardResponse(
         url.includes('loom')
-          ? prHelperCard({ name: 'loom', 'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'content-production', realms: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' }, skills: [{ id: 'generate-content', name: '', description: '', tags: [] }] })
+          ? prHelperCard({ name: 'loom', 'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'content-production', dataDomains: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' }, skills: [{ id: 'generate-content', name: '', description: '', tags: [] }] })
           : prHelperCard()
       )
     );

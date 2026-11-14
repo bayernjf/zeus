@@ -64,11 +64,11 @@ async function setup(options: { mode?: 'plan' | 'execute' } = {}): Promise<Harne
       )
     : undefined;
   await orchestrator.fanOut({
-    skill: 'research', realm: 'personal', params: {},
+    skill: 'research', dataDomain: 'personal', params: {},
     ...(seedDelegation ? { mode: 'execute' as const, executionDelegation: seedDelegation } : {}),
   });
   // The paused branch surfaces as a task-input escalation at the desk.
-  desk.ingest(seen[0]!, { executor: 'v1', skill: 'research', realm: 'personal', runId: 'run-1:v1', params: {} });
+  desk.ingest(seen[0]!, { executor: 'v1', skill: 'research', dataDomain: 'personal', runId: 'run-1:v1', params: {} });
 
   const app = await createHttpServer({
     registry, signer, internalToken: TOKEN, orchestrator, oversight: desk, metrics,

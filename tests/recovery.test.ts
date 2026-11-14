@@ -121,7 +121,7 @@ describe('computeCheckpoint (S13 V1)', () => {
     const snapshot: OrchestratorSnapshot = {
       intents: [
         {
-          intentId: 'i1', runId: 'r1', skill: 'research', realm: 'personal', branches: [], stream: [], positions: [],
+          intentId: 'i1', runId: 'r1', skill: 'research', dataDomain: 'personal', branches: [], stream: [], positions: [],
           decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'failed', createdAt: '',
         },
       ],
@@ -140,7 +140,7 @@ describe('computeCheckpoint (S13 V1)', () => {
     const snapshot: OrchestratorSnapshot = {
       intents: [
         {
-          intentId: 'i2', runId: 'r2', skill: 'research', realm: 'personal', branches: [], stream: [], positions: [],
+          intentId: 'i2', runId: 'r2', skill: 'research', dataDomain: 'personal', branches: [], stream: [], positions: [],
           decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'canceled', createdAt: '',
         },
       ],
@@ -154,7 +154,7 @@ describe('computeCheckpoint (S13 V1)', () => {
     const snapshot: OrchestratorSnapshot = {
       intents: [
         {
-          intentId: 'i3', runId: 'r3', skill: 'research', realm: 'personal', branches: [], stream: [], positions: [],
+          intentId: 'i3', runId: 'r3', skill: 'research', dataDomain: 'personal', branches: [], stream: [], positions: [],
           decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'failed', createdAt: '',
         },
       ],

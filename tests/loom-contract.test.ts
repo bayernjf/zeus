@@ -67,7 +67,7 @@ function loomCard(): AgentCard {
       version: '1',
       swornTo: 'zeus',
       domain: 'content-production',
-      realms: ['enterprise'],
+      dataDomains: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -256,7 +256,7 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
     const result = await dispatcher.dispatch({
       skill: 'generate-content',
       params: { tenant_id: 't-7', product_id: 'p-9' },
-      realm: 'enterprise',
+      dataDomain: 'enterprise',
       runId: 'zeus-run-loom-1',
     });
 
@@ -304,7 +304,7 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
     const result = await dispatcher.dispatch({
       skill: 'compliance-check',
       params: { tenant_id: 't-7' }, // missing content_id -> skills.py returns input-required
-      realm: 'enterprise',
+      dataDomain: 'enterprise',
       runId: 'zeus-run-loom-2',
     });
 
@@ -318,7 +318,7 @@ describe('Zeus ↔ loom A2A contract compatibility', () => {
       executor: 'loom',
       skill: 'compliance-check',
       params: { tenant_id: 't-7' },
-      realm: 'enterprise',
+      dataDomain: 'enterprise',
       runId: 'zeus-run-loom-2',
     });
     expect(escalation?.status).toBe('pending');

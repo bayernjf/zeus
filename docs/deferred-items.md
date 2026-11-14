@@ -10,7 +10,7 @@
 
 ### #41 企业形态：隔离实例 vs 同实例多租户 ✅ 已销项（2026-10-08，决策裁定）
 - 议题：一家公司用 zeus 时，是**每个客户（或每个团队）一套进程**（隔离实例），还是**一套进程内跑多个租户**（同实例多租户）。这条决定会决定认证面、状态文件形状、备份清单粒度和运维模型，所以必须显式记，不能靠"以后再说"默认成某一边。
-- **现状（代码级，2026-10-05 测）**：租户**模型**已在库内——三级范围（org/部门/成员）与跨域一次性授权判定见 `src/realm/authorization.ts:74-74 #decideRealmAccess`（#6 销项时落地）。但进程**只有一套身份**：H2 全操作面的挂载条件是单个 `ZEUS_INTERNAL_TOKEN`（注入 `src/http/serve.ts:499 #internalToken`，比较 `src/http/server.ts:498 #internalToken`），一份状态文件、一份审计文件。实测该面共 **78 条路由**，其中 3 条公开、**75 条共用同一个 bearer**。也就是：今天的实际隔离档位就是"一实例一租户"，租户范围只在**数据域内**收窄可见性，不区分"哪个客户在调这个进程"。
+- **现状（代码级，2026-10-05 测）**：租户**模型**已在库内——三级范围（org/部门/成员）与跨域一次性授权判定见 `src/dataDomain/authorization.ts:74-74 #decideDataDomainAccess`（#6 销项时落地）。但进程**只有一套身份**：H2 全操作面的挂载条件是单个 `ZEUS_INTERNAL_TOKEN`（注入 `src/http/serve.ts:499 #internalToken`，比较 `src/http/server.ts:498 #internalToken`），一份状态文件、一份审计文件。实测该面共 **78 条路由**，其中 3 条公开、**75 条共用同一个 bearer**。也就是：今天的实际隔离档位就是"一实例一租户"，租户范围只在**数据域内**收窄可见性，不区分"哪个客户在调这个进程"。
 - **A 隔离实例（当前倾向）**：
   - 代价：部署数量随客户数线性增长（每客户一套密钥、状态卷、备份计划、`ZEUS_*` 配置）；没有跨客户统一盘点/升级看板；版本要滚动 N 次；客户数上去之后运维是主要成本。
   - 收益：设计约束 4（个人域与企业域不互通）由**进程边界**保证，而不是由一段判定代码保证——判定代码出 bug 也越不过去；跨租户串数据这类事故的最坏情况被限制在单个进程内；一个客户的正文、名册、审计不会落在另一个客户的卷上；现有配置面**零改动**。
@@ -47,7 +47,7 @@
 
 ### #2 备份清单加密与托管方案 ✅ 已销项（2026-09-23）
 - 原议题：纯本地密钥 vs 可恢复托管的取舍；密钥丢失 = 数据永久丢失。
-- **触发条件**：Realm 数据层与备份机制进入实施阶段。
+- **触发条件**：DataDomain 数据层与备份机制进入实施阶段。
 - **销项结论**：触发条件已满足（Backup E8.1/E8.2 + E3.7 已落地）；方案在 [design-backup.md](design-backup.md) v0.1 §9 决定为**纯本地、密钥分离**（AES-256-GCM，scrypt 口令或 raw key，信封不含密钥），**KMS 托管/自动云备份明确列为非目标**；CLI（`src/backup/cli.ts`）只提供用户/外部脚本触发的 build/check/backup/restore。密钥丢失无后门是显式接受的产品语义。传承场景（dead-man's switch、法律框架）仍归 #3，不随本条销项。
 
 ### #3 传承（Inheritance）
@@ -56,9 +56,9 @@
 
 ### #4 企业版计费模型
 - 按「部门/编制」还是按席位计费。
-- **触发条件**：企业 Realm 多租户进入实施，且有首批意向企业用户。
+- **触发条件**：企业 DataDomain 多租户进入实施，且有首批意向企业用户。
 - **进展（2026-09-25）**：前半条**已经满足**——E3.6 三级租户（org/部门/成员）与 E6.4 授权粒度已在库内落地，"按部门计量"所需的边界与可审计授权记录现在都存在（`GET /api/domains` 给出台账，`/api/audit?decision=domain-*` 给出穿越记录）。后半条（首批意向企业用户）未到，故本条仍缓做；届时不必再从模型层起步。
-- **触发条件重审（2026-10-09，与 #41 裁定对齐）**：#41 已于 2026-10-08 裁定企业形态 = **A 隔离实例**（每实例独立部署，不做同实例多租户）——原触发条件"企业 Realm 多租户进入实施"被裁定**消解**（多租户不做，部署模型=每实例一套，认证面/状态卷/备份粒度/运维模型全部按 A 定案）。触发条件改写为：**出现首批意向企业用户（真实签约意向）且需要按部署实例出账的计费口径**。候选口径（按部门/编制、按席位、按实例）全部保留待届时定，不提前拍板。
+- **触发条件重审（2026-10-09，与 #41 裁定对齐）**：#41 已于 2026-10-08 裁定企业形态 = **A 隔离实例**（每实例独立部署，不做同实例多租户）——原触发条件"企业 DataDomain 多租户进入实施"被裁定**消解**（多租户不做，部署模型=每实例一套，认证面/状态卷/备份粒度/运维模型全部按 A 定案）。触发条件改写为：**出现首批意向企业用户（真实签约意向）且需要按部署实例出账的计费口径**。候选口径（按部门/编制、按席位、按实例）全部保留待届时定，不提前拍板。
 
 ### #5 外部 Agent 信任分级与沙箱 ✅ 已销项（2026-10-16）
 - 第三方 Agent 接入的信任分级、权限沙箱边界。
@@ -68,9 +68,9 @@
 - **进展（2026-10-16）→ 销项**：V3 已实施（Active work 247，design-external-trust v0.3）——`RosterAnchor` 可信只读视图 + `trustTierOf(card, isActive, rosterAnchor?)` 三参版 + `buildRosterAnchor` 装配，attestation 精确匹配携卡升 tier-3、失配回落 tier-2、公钥缺失/验签失败/异常三路 fail-closed。前置守卫（V1 判档 + 审计、V2 只读白名单、V3 签名锚）全部落地，触发条件「首个矩阵外 Agent 接入**前**完成」按前置守卫口径达成。**销项**：残余两件均不属本条范围——锚来源平移到 bayjf 公钥锚是 R2 公开后的增强（判档函数不动）；tier-1 资源阈值占位系数按设计 §5 既定口径挂 deferred #9，等真实负载数据调参。
 
 ### #6 个人/企业双数据域授权粒度 ✅ 已销项（2026-09-25）
-- 原议题：同一员工同时持有两个 Realm 时的数据二极管授权界面与审计呈现。
-- **触发条件回顾**：写的是"首个双重身份用户出现"。2026-09-25 决定**不等用户先到就把机制做出来**，理由是反向的代价更高：没有授权面时，个人域与企业域的边界只能靠"调用方自己声明 realm 类型"，而内核从没进过任何 Realm，所以那句声明**永远无法被核对**——一个不可核对的边界就是一道装饰性的边界。
-- **销项结论**：`src/realm/authorization.ts`（`DomainGrant` + `decideRealmAccess` 单一判定 + `DomainGrantRegistry` 的 nonce 一次性与快照持久化）、`src/realm/source.ts`（内核代取内容并核对声明、放行/拒绝同一审计流审计）、操作者面 `/api/domains*` 与 `GET /api/audit?decision=domain-*`，设计见 design-realm §7。**个人域→企业域**已可显式授权并留痕，**企业域→个人域**在类型层面就没有可表达的凭证。
+- 原议题：同一员工同时持有两个 DataDomain 时的数据二极管授权界面与审计呈现。
+- **触发条件回顾**：写的是"首个双重身份用户出现"。2026-09-25 决定**不等用户先到就把机制做出来**，理由是反向的代价更高：没有授权面时，个人域与企业域的边界只能靠"调用方自己声明 dataDomain 类型"，而内核从没进过任何 DataDomain，所以那句声明**永远无法被核对**——一个不可核对的边界就是一道装饰性的边界。
+- **销项结论**：`src/dataDomain/authorization.ts`（`DomainGrant` + `decideDataDomainAccess` 单一判定 + `DomainGrantRegistry` 的 nonce 一次性与快照持久化）、`src/dataDomain/source.ts`（内核代取内容并核对声明、放行/拒绝同一审计流审计）、操作者面 `/api/domains*` 与 `GET /api/audit?decision=domain-*`，设计见 design-dataDomain §7。**个人域→企业域**已可显式授权并留痕，**企业域→个人域**在类型层面就没有可表达的凭证。
 - **仍不在本条范围内**（不因销项而消失）：MCP 暴露侧的 actor 判定 → **#18**；改租户边界的显式操作 → **#17**。
 
 ### #7 handshake 签名链
@@ -93,10 +93,10 @@
 - **触发条件**：≥3 个执行 Agent 在线压测（同一台机器上的 mock 不算：mock 的延迟分布与失败模式是编的，只会把一个猜测变成锁定的猜测）。
 - **启用代码已落地（2026-09-27，设计稿 v0.2）**：`PerExecutorLoad`（`ConcurrencyMetrics.inFlightByExecutor` + 访问器）与 `selectTargets` 纯函数（`src/core/orchestrator/diversion.ts`）已接入编排器选靶路径；`maxConcurrentPerExecutor` 独立可配（关键修正：必须低于全局 `maxConcurrentBranches` 否则分流永不触发），`branch-diverted` 事件入审计链，全局拒绝原因带 tried 候选审计；7 例单测全绿。机制可闭环，**仅阈值（`w_r`/`w_l`/`LATENCY_NORMALIZER`/`cap(v)`）调参仍挂上述触发条件**——不凭空拍数。
 
-### #10 Realm 检索后端升级（倒排 / 向量）
-- P0 检索为纯文件系统扫描（design-realm.md §6.2），后端接口可替换；倒排索引或向量检索的立项条件。
-- **触发条件**：单 Realm 文件数 > 2 万，或 P50 检索 > 500ms，或语义检索成为明确需求（且本地 embedding 可行、数据不出域）。
-- **实测（2026-10-19，本机 M4，`scripts/probe-realm-search.mjs` 可复跑）**：2 万文件 Realm（200 目录 × 100 个 ~200B .md）实测——**① 默认 scanLimits（maxItems=5000）**：连接快照在 5000 项截断（skipped 显式记录 "scan stopped at the item-count bound (5000 items, 479561 bytes)"），2 万文件只索引 25%，截断后内容不可检索（显式可观测，非静默丢内容）；快照上检索 P50 1.9ms。**② 调大 scanLimits（maxItems=25000）全量 2 万**：连接全量扫描 1327ms（2 万文件全文读入内存，成本随文件数线性涨）；检索全扫 2 万条 P50 最大 **7.1ms**（all-hit）/ 2.6ms（sparse）/ 6.7ms（multi-term）。**结论：触发条件未到**（P50 7.1ms << 500ms；文件数恰在 2 万边界、默认配置按显式截断处理），倒排/向量不立项。**结构性观察（未来立项数据点，非触发）**：连接快照全文进内存 + 检索全量线性 includes 匹配，连接成本与内存占用随文件数线性涨（2 万文件 connect 1.3s）；默认 5000 项截断意味着大 Realm 只索引 25%——若真实用户 Realm 超过 5000 个可检索文件，先出现的是"索引不完整"的功能缺口而非延迟问题。**条目不销项（触发条件未到），判据从此有真数据**。
+### #10 DataDomain 检索后端升级（倒排 / 向量）
+- P0 检索为纯文件系统扫描（design-dataDomain.md §6.2），后端接口可替换；倒排索引或向量检索的立项条件。
+- **触发条件**：单 DataDomain 文件数 > 2 万，或 P50 检索 > 500ms，或语义检索成为明确需求（且本地 embedding 可行、数据不出域）。
+- **实测（2026-10-19，本机 M4，`scripts/probe-dataDomain-search.mjs` 可复跑）**：2 万文件 DataDomain（200 目录 × 100 个 ~200B .md）实测——**① 默认 scanLimits（maxItems=5000）**：连接快照在 5000 项截断（skipped 显式记录 "scan stopped at the item-count bound (5000 items, 479561 bytes)"），2 万文件只索引 25%，截断后内容不可检索（显式可观测，非静默丢内容）；快照上检索 P50 1.9ms。**② 调大 scanLimits（maxItems=25000）全量 2 万**：连接全量扫描 1327ms（2 万文件全文读入内存，成本随文件数线性涨）；检索全扫 2 万条 P50 最大 **7.1ms**（all-hit）/ 2.6ms（sparse）/ 6.7ms（multi-term）。**结论：触发条件未到**（P50 7.1ms << 500ms；文件数恰在 2 万边界、默认配置按显式截断处理），倒排/向量不立项。**结构性观察（未来立项数据点，非触发）**：连接快照全文进内存 + 检索全量线性 includes 匹配，连接成本与内存占用随文件数线性涨（2 万文件 connect 1.3s）；默认 5000 项截断意味着大 DataDomain 只索引 25%——若真实用户 DataDomain 超过 5000 个可检索文件，先出现的是"索引不完整"的功能缺口而非延迟问题。**条目不销项（触发条件未到），判据从此有真数据**。
 
 ### #11 测试超时根治（全局 testTimeout / 低并发池） ✅ 已销项（2026-09-25）
 - 原议题：仓库无 vitest 配置文件，所有用例吃 5s 默认超时；scrypt 全量打包、RSA-2048 keygen 这类 CPU 密集用例在并行 fork 争抢下会飘红（成因见 handoff Active work 38）。
@@ -125,24 +125,24 @@
     - **C 全覆盖**：矩阵 **20.x / 22.x / 24.x**，`engines.node: ">=20.6.0"`。代价：CI job 由 2 变 3（时间约 ×1.5），且继续给已停止发布的 20 发通行证。
   - **不在本条内**：v26 何时进矩阵——等它进 LTS 再考虑替换 22，现在不加（当前线 `lts: false`）。runner 镜像归 **#16**（已于同日销项，钉 `ubuntu-24.04`），两条互不重叠。
 
-### #13 内核状态文件纳入备份清单（非 Realm 条目源）✅ 已销项（2026-09-25）
-- **原缺口**：`ZEUS_STATE_FILE` 里现在有执行 Agent 名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。备份清单却盖不到它：唯一条目源是 `inventoryFromRealm`。**"备份是第一公民"当时只覆盖 Realm 目录**，用户最容易丢的恰恰是这份。
-- **触发条件回顾**：写的是①真实丢失事故/灾备演练要求 ②E8.4 传承立项 ③下次 `BACKUP_VERSION` 升版顺手并入。2026-09-25 决定**不等触发条件**：这一条是"设计哲学第 1 条尚未执行"的登记，而不是一个可选增强；且当年列出的三个阻塞点在 E3.6/E6.4 之后已经各自有了落点（`MapSource` 需要 `tenant`，而 `tenant` 已经是 Realm 的一等事实）。
+### #13 内核状态文件纳入备份清单（非 DataDomain 条目源）✅ 已销项（2026-09-25）
+- **原缺口**：`ZEUS_STATE_FILE` 里现在有执行 Agent 名册（含已吊销）、记忆事实+provenance、部门编制、Skill 目录与加固、带教台账、MCP 连接器声明（**含上游 bearer token**）。备份清单却盖不到它：唯一条目源是 `inventoryFromDataDomain`。**"备份是第一公民"当时只覆盖 DataDomain 目录**，用户最容易丢的恰恰是这份。
+- **触发条件回顾**：写的是①真实丢失事故/灾备演练要求 ②E8.4 传承立项 ③下次 `BACKUP_VERSION` 升版顺手并入。2026-09-25 决定**不等触发条件**：这一条是"设计哲学第 1 条尚未执行"的登记，而不是一个可选增强；且当年列出的三个阻塞点在 E3.6/E6.4 之后已经各自有了落点（`MapSource` 需要 `tenant`，而 `tenant` 已经是 DataDomain 的一等事实）。
 - **销项结论**（设计见 [design-backup.md](design-backup.md) v0.2）：
-  1. `TreasureMap.source: MapSource`（`{kind:'realm',…,tenant?}` | `{kind:'files',label,root,files[]}`），`BACKUP_VERSION` 1→2，**v1 图读入归一化、写出不兼容**；
-  2. L0 的现盘视图从 `RealmStore` 解耦成 `LiveSource` 端口（`realmLiveSource` / `fileLiveSource` / `liveSourceFor`），这是"盖非 Realm 源"的前置；
+  1. `TreasureMap.source: MapSource`（`{kind:'dataDomain',…,tenant?}` | `{kind:'files',label,root,files[]}`），`BACKUP_VERSION` 1→2，**v1 图读入归一化、写出不兼容**；
+  2. L0 的现盘视图从 `DataDomainStore` 解耦成 `LiveSource` 端口（`dataDomainLiveSource` / `fileLiveSource` / `liveSourceFor`），这是"盖非 DataDomain 源"的前置；
   3. `inventoryFromFiles`：**显式白名单，绝不目录遍历**，七类硬拒（缺失 / 绝对路径 / `..` 逃逸 / 非普通文件 / 软链 / 二进制 / 超过 64 MiB）；
-  4. CLI `build|backup --files-root <dir> --files a.json,b.json`、Realm 侧 `--tenant`；`check|restore` 不再接受挂载参数——图自己声明源与 scope。
+  4. CLI `build|backup --files-root <dir> --files a.json,b.json`、DataDomain 侧 `--tenant`；`check|restore` 不再接受挂载参数——图自己声明源与 scope。
 - **顺带修掉两个真实缺陷**（都不是"接线"能发现的）：
-  - **误报**：带租户 scope 的企业 Realm，图里丢掉 `tenant`、校验时又无 scope 重连，被 catch-all 吞成 `root unreachable`——唯一的"数据还在吗"工具对健康语料库喊狼来了。现在 scope 随图走，且报告必带 `unreachableReason`。
+  - **误报**：带租户 scope 的企业 DataDomain，图里丢掉 `tenant`、校验时又无 scope 重连，被 catch-all 吞成 `root unreachable`——唯一的"数据还在吗"工具对健康语料库喊狼来了。现在 scope 随图走，且报告必带 `unreachableReason`。
   - **containment 用错了 root**：白名单包含性判定拿"未解析的 root"比"已 realpath 的文件"，在 macOS（`/var → /private/var`）上会拒绝**每一个**白名单文件；实测由 `tests/backup-files.test.ts` 先红后绿。
 - **验收**：`runtime.json` 毁库演练走真 CLI（`backup`→`check` 0→删除→`check` 2→`restore`→字节级 sha256 相同→用恢复出的文件 `bootRuntime` 且 `restoredFromSnapshot: true`），另有 `dist/backup/cli.js` 真实进程冒烟逐条核对退出码。测试 `tests/backup-files.test.ts` 12 项。
 - **不因本条销项而消失**：二进制备份、目录通配、内置默认名单——仍是非目标（design-backup §9）；**E8.4 传承**（#3）仍需要"图 + 密钥分渠道交接"的法律与叙事层，本条只给了它可交付的物证。
 
 ### #14 驱动凭证的签发与校验时钟 ✅ 已销项（2026-09-25）
-- **原缺口**：E3.5 的 `OperatorWriteGrant` 只有**校验**端（形状/绑定域/有效期），没有任何签发路径，也没有签名——`verifyOperatorWriteGrant` 信的是"拿到的 JSON 就是操作者给的"。且 `FsRealmStore.write` 内部用 `new Date()` 判过期，端口层没有注入时钟，测试里"仍然有效"的凭证只能写成 `expiresAt: '2099-…'`。
+- **原缺口**：E3.5 的 `OperatorWriteGrant` 只有**校验**端（形状/绑定域/有效期），没有任何签发路径，也没有签名——`verifyOperatorWriteGrant` 信的是"拿到的 JSON 就是操作者给的"。且 `FsDataDomainStore.write` 内部用 `new Date()` 判过期，端口层没有注入时钟，测试里"仍然有效"的凭证只能写成 `expiresAt: '2099-…'`。
 - **触发条件回顾**：写的是"MCP `tools/write` 暴露立项时一并定"。2026-09-25 决定提前做，理由与 #13 同类：一个**任何能摸到 `write()` 的代码都能自己伪造**的授权检查不是授权检查；等 MCP 暴露时才补，等于先把门装歪再拆。
-- **销项结论**（设计见 [design-realm.md](design-realm.md) §7.7）：`issueOperatorWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `core/signing.ts`）、`verifyOperatorWriteGrant` 改 async 并按 形状→realm 绑定→验签→有效期 判定（`unsigned`/`unknown-key`/`bad-signature`/`no-expiry`）、`OperatorGrantLedger` 在落盘前消费 nonce 且随内核快照持久化（`writeGrantNonces`）、`FsRealmStoreOptions.now` 注入时钟。操作者面 `POST /api/realm/write-grants`、日记写凭证透传（缺授权 403）、审计事件流 `operator-grant-issued`/`realm-write`、`GET /api/state` 报 `operatorGrants.authority`。
+- **销项结论**（设计见 [design-dataDomain.md](design-dataDomain.md) §7.7）：`issueOperatorWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `core/signing.ts`）、`verifyOperatorWriteGrant` 改 async 并按 形状→dataDomain 绑定→验签→有效期 判定（`unsigned`/`unknown-key`/`bad-signature`/`no-expiry`）、`OperatorGrantLedger` 在落盘前消费 nonce 且随内核快照持久化（`writeGrantNonces`）、`FsDataDomainStoreOptions.now` 注入时钟。操作者面 `POST /api/dataDomain/write-grants`、日记写凭证透传（缺授权 403）、审计事件流 `operator-grant-issued`/`dataDomain-write`、`GET /api/state` 报 `operatorGrants.authority`。
 - **不因本条销项而消失**：**MCP `tools/write` 暴露仍未做**（E3.4/E3.5 剩余半边），其 actor 判定归 **#18**；单 owner 部署下签发方=验签方，因此这条链目前证明的是"凭证出自签发路径"，不是"第三方操作者签的字"（外部操作者只需把公钥加进 `acceptedKeyIds`，判定与账本都不用动）。
 
 ### #16 CI runner 镜像钉版 ✅ 已销项（2026-09-26）
@@ -153,30 +153,30 @@
 - **与 #15 的边界**：#15 决定"测哪些 Node"，本条决定"在谁的机器上测"。
 
 ### #17 数据域边界的显式变更操作（disconnect / 改租户）✅ 已销项（2026-09-26）
-- **原缺口**：`FsRealmStore` 只有 `connect`，没有 `disconnect`；同一 root 带不同 tenant 重连会被拒（`would change its tenant scope`）。效果：调整企业域租户级没有可执行路径——只能改 env 重启，而重启时快照里存的仍是旧 tenant，照样撞漂移检查；唯一"办法"是手改 `runtime.json` 或删状态文件。
-- **做了什么**：在 `RealmStore` 接口与 `FsRealmStore` 上新增两个显式操作（未走 `connect`，故不会触发那条漂移拒绝）：
-  - `disconnect(realmId)`：从 `realms`/`roots` 内存表移除该挂载；`connections()` 随即不再列出它，下一轮快照即不再持久化。未知 realm 抛 `RealmNotConnectedError`（fail-loud，不是静默 no-op）。
-  - `retargetTenant(realmId, from, to)`：仅企业域可调用（个人域无租户概念，直接 `RealmError`）；**比较交换**——`from` 必须与当前挂载租户一致（大小写不敏感），否则以 `tenant drift ... (compare-swap)` 拒绝并中止，绝不静默移动边界；通过后更新内存 `manifest.tenant`，持久化随下次快照落盘。
-- **操作员面**：`POST /api/realms/:id/disconnect` 与 `POST /api/realms/:id/retarget-tenant`（body `{from,to}`），均走 `requireBearer`；未知 realm 404、漂移 409、个人域 400、缺参 400；两条动作各写一条 `realm-disconnected` / `realm-tenant-retargeted` 审计（`AuditDecision` 已扩）。
-- **与启动漂移检查的关系（重要）**：`retargetTenant` 改的是运行态内存。若操作员**不随之更新 `ZEUS_REALM_ENTERPRISE`**，下次启动 boot 会用 env 里的旧 tenant 重连同一 root，与快照里的新 tenant 撞上那条漂移拒绝 → **启动失败（fail-loud）**。这是预期行为：运行时改边界必须让 env 与之对齐，否则重启即暴露不一致。把启动期的租户变更识别为"显式声明的迁移而非静默漂移"是更大的改造，留作后续（本次只交付运行时显式操作）。
-- **验证**：新增 `tests/realm-operations.test.ts` **8 例**（disconnect 移除 / 未知域拒绝 / 同 root 重连无残留租户；retarget 成功 / 漂移拒绝且不变 / 个人域拒绝 / 缺参拒绝 / 大小写不敏感比较交换）+ `tests/http-realms.test.ts` **7 例**（disconnect 后 `/api/domains` 不再列出、未知 404、无 token 401、retarget 成功并反映、漂移 409 且租户不变、个人域 400、缺参 400，均验审计落点）。全量 **726 绿 / 76 文件**、typecheck/build exit 0。
+- **原缺口**：`FsDataDomainStore` 只有 `connect`，没有 `disconnect`；同一 root 带不同 tenant 重连会被拒（`would change its tenant scope`）。效果：调整企业域租户级没有可执行路径——只能改 env 重启，而重启时快照里存的仍是旧 tenant，照样撞漂移检查；唯一"办法"是手改 `runtime.json` 或删状态文件。
+- **做了什么**：在 `DataDomainStore` 接口与 `FsDataDomainStore` 上新增两个显式操作（未走 `connect`，故不会触发那条漂移拒绝）：
+  - `disconnect(dataDomainId)`：从 `dataDomains`/`roots` 内存表移除该挂载；`connections()` 随即不再列出它，下一轮快照即不再持久化。未知 dataDomain 抛 `DataDomainNotConnectedError`（fail-loud，不是静默 no-op）。
+  - `retargetTenant(dataDomainId, from, to)`：仅企业域可调用（个人域无租户概念，直接 `DataDomainError`）；**比较交换**——`from` 必须与当前挂载租户一致（大小写不敏感），否则以 `tenant drift ... (compare-swap)` 拒绝并中止，绝不静默移动边界；通过后更新内存 `manifest.tenant`，持久化随下次快照落盘。
+- **操作员面**：`POST /api/dataDomains/:id/disconnect` 与 `POST /api/dataDomains/:id/retarget-tenant`（body `{from,to}`），均走 `requireBearer`；未知 dataDomain 404、漂移 409、个人域 400、缺参 400；两条动作各写一条 `dataDomain-disconnected` / `dataDomain-tenant-retargeted` 审计（`AuditDecision` 已扩）。
+- **与启动漂移检查的关系（重要）**：`retargetTenant` 改的是运行态内存。若操作员**不随之更新 `ZEUS_DATA_DOMAIN_ENTERPRISE`**，下次启动 boot 会用 env 里的旧 tenant 重连同一 root，与快照里的新 tenant 撞上那条漂移拒绝 → **启动失败（fail-loud）**。这是预期行为：运行时改边界必须让 env 与之对齐，否则重启即暴露不一致。把启动期的租户变更识别为"显式声明的迁移而非静默漂移"是更大的改造，留作后续（本次只交付运行时显式操作）。
+- **验证**：新增 `tests/dataDomain-operations.test.ts` **8 例**（disconnect 移除 / 未知域拒绝 / 同 root 重连无残留租户；retarget 成功 / 漂移拒绝且不变 / 个人域拒绝 / 缺参拒绝 / 大小写不敏感比较交换）+ `tests/http-dataDomains.test.ts` **7 例**（disconnect 后 `/api/domains` 不再列出、未知 404、无 token 401、retarget 成功并反映、漂移 409 且租户不变、个人域 400、缺参 400，均验审计落点）。全量 **726 绿 / 76 文件**、typecheck/build exit 0。
 - **未做**：CLI 面同样没有这两个操作（MCP 暴露侧 actor 判定仍归 #18，disconnect/retarget 是否要在 MCP server 上暴露待 #18 一并定）；启动期的"显式声明迁移"识别未做（见上）。
 
 ### #18 MCP 暴露侧的主体（actor）判定 ✅ 已销项（2026-10-08）
-- **缺口**：`createRealmMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `realmIds`"，handler 内部没有主体概念——因此 design-realm §7.2 的租户/域规则在 **MCP 读取路径（`resources/read` 与 v0.10 新增的 `tools/call`）上没有执行点**，只在 `realmSource`（内核代取）与访问探针上生效。
+- **缺口**：`createDataDomainMcpHandler` 的隔离单位仍是"宿主给这个 server 预连接了哪些 `dataDomainIds`"，handler 内部没有主体概念——因此 design-dataDomain §7.2 的租户/域规则在 **MCP 读取路径（`resources/read` 与 v0.10 新增的 `tools/call`）上没有执行点**，只在 `dataDomainSource`（内核代取）与访问探针上生效。
 - **为什么不在本批一起做**：接一个假 actor 进去只能证明"这段代码能被调用"，证不了真实执行 Agent 会带什么身份形态（会话级？条目级？），那是猜。
-- **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-realm 执行 Agent 出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-realm:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑；同时定 `tools/call` 是否与 `resources/read` 共用同一份 realmId 白名单。
-- **裁定（2026-10-03，方向固化，未销项）**：四问定案写入 [design-realm.md](design-realm.md) §6.5——① 主体 = 会话级 actor（宿主显式声明，缺省 anonymous）；② `zeus-realm:` URI 不编码租户；③ 不与签发凭证合并（读取路径边界 = 宿主白名单，写路径已有签名且一次性的 OperatorWriteGrant）；④ `tools/call` 与 `resources/read` 共用同一份 realmId 白名单（现状固化）。实现仍随 E3.4 正式暴露立项。
-- **2026-10-07 传输层先落地（Active work 144，按 #6 先例"方向已固化、不等触发先做"）**：E3.4 MCP streamable HTTP 传输层已实现——`GET /mcp` 公开元信息（protocolVersion/capabilities/serverInfo，**零 realm 数据**）+ `POST /mcp` bearer 保护 JSON-RPC 喂同一传输无关 `createRealmMcpHandler`（stdio 与 HTTP 共用，零 SDK 依赖约定保持）；`x-zeus-realm-actor` header 实现 §6.5 裁定 ①（会话级 actor，effectiveRealmIds = 宿主白名单 ∩ actor.realmIds，**仅可收窄**，缺省 anonymous）；realmIds 从 boot 连接列表装配（与 stdio 宿主同一来源）。`tests/http-realm-mcp.test.ts` 11 例全绿。
-- **销项（2026-10-08）**：主体判定机制已落地（会话级 actor 仅可收窄宿主白名单，§6.5 裁定 ① 已实现，checklist D1 同步）；"首个 read-realm 执行 Agent 出现时定 OAuth subject 形态"降级为真实读取方出现时的复核项，不再挂实现待办（按 #6 先例：方向已固化、机制先做）。**本条销项**。
+- **触发条件**：E3.4 正式 MCP 暴露立项（首个 read-dataDomain 执行 Agent 出现）时一并定：主体身份如何随 MCP 会话传入（stdio 环境 / header / OAuth subject）、`zeus-dataDomain:` URI 是否编码租户、以及与 #14 的**签发（签名）凭证**合并考虑；同时定 `tools/call` 是否与 `resources/read` 共用同一份 dataDomainId 白名单。
+- **裁定（2026-10-03，方向固化，未销项）**：四问定案写入 [design-dataDomain.md](design-dataDomain.md) §6.5——① 主体 = 会话级 actor（宿主显式声明，缺省 anonymous）；② `zeus-dataDomain:` URI 不编码租户；③ 不与签发凭证合并（读取路径边界 = 宿主白名单，写路径已有签名且一次性的 OperatorWriteGrant）；④ `tools/call` 与 `resources/read` 共用同一份 dataDomainId 白名单（现状固化）。实现仍随 E3.4 正式暴露立项。
+- **2026-10-07 传输层先落地（Active work 144，按 #6 先例"方向已固化、不等触发先做"）**：E3.4 MCP streamable HTTP 传输层已实现——`GET /mcp` 公开元信息（protocolVersion/capabilities/serverInfo，**零 dataDomain 数据**）+ `POST /mcp` bearer 保护 JSON-RPC 喂同一传输无关 `createDataDomainMcpHandler`（stdio 与 HTTP 共用，零 SDK 依赖约定保持）；`x-zeus-dataDomain-actor` header 实现 §6.5 裁定 ①（会话级 actor，effectiveDataDomainIds = 宿主白名单 ∩ actor.dataDomainIds，**仅可收窄**，缺省 anonymous）；dataDomainIds 从 boot 连接列表装配（与 stdio 宿主同一来源）。`tests/http-dataDomain-mcp.test.ts` 11 例全绿。
+- **销项（2026-10-08）**：主体判定机制已落地（会话级 actor 仅可收窄宿主白名单，§6.5 裁定 ① 已实现，checklist D1 同步）；"首个 read-dataDomain 执行 Agent 出现时定 OAuth subject 形态"降级为真实读取方出现时的复核项，不再挂实现待办（按 #6 先例：方向已固化、机制先做）。**本条销项**。
 
 ### #19 入站 A2A 面（外部 Agent 调不进 Zeus）✅ 已销项（2026-10-08）
 - **缺口**：Zeus 只有**出站** A2A（拉卡片、`tasks/send`、SSE 回读、`tasks/cancel`）。`src/http` 里既没有 `/.well-known/agent-card.json`，也没有任何 `tasks/*` 路由——即**别的 Agent 无法把任务派给 Zeus**，也不存在一张可供别人校验的 Zeus 卡片。v0.9 §A 判过这条（"没有入站面"），但**当时没进本清单**，于是 2026-09-25 复核才发现它是"评审说过、没人接"的失物。
 - **为什么仍然缓做**：入站面一开，就要同时回答"谁能派给我""派进来的东西落在哪个域""谁为结果负责"——这三问的答案取决于第一个真实的上游调用者（loom 或 bayjf），现在做只会得到一个没人用的空壳。且它不在 MVP 的核心叙事里：产品核心是"一个意图扇出多 Agent 并聚合"，出站已覆盖。
 - **触发条件**：① Zeus↔loom 真机联调时 loom 需要**反向**派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent 调用 Zeus 的聚合能力；③ 出现"多 Zeus 实例协作"的需求。
 - **建议做法（决定后）**：发一张 Zeus 自己的 agent card（形状与 handshake 与我们要求执行 Agent 的一致，吃自己的狗粮），入站 `tasks/send` 落到 H2 的意图面并复用同一根审计事件流。
-- **裁定（2026-10-03，方向固化，未销项）**：入站 A2A 面设计裁定见 [design-inbound-a2a.md](design-inbound-a2a.md) v0.1——Zeus 发布自己的 agent card（`/.well-known/agent-card.json`，形状与要求执行 Agent 一致）、入站 `tasks/send` 落 H2 意图面、三问暂定答案（上游 handshake 验签 / `realmSource` 显式声明缺省个人域 / 审计责任链延伸）、不做入站 SSE。实现仍挂触发条件①②③。
-- **2026-10-07 机制先落地（Active work 144，按 #6 先例）**：入站面已实现——`GET /.well-known/agent-card.json`（公开 Zeus 卡片，形状与出站一致、无自家 handshake）+ 同路径 `POST`（requireBearer，JSON-RPC `tasks/send` 落 H2 意图面，复用 fanOut 内核路径与审计流）；`x-zeus-caller-card` 过与注册同源的 handshake 形状闸（`handshakeOathProblem` 由 registry 导出复用；无卡则 bearer 即人工在环操作者本人，fail-closed 403+审计）；`realm` 缺省 personal；调用方 taskId 兼作幂等键；审计 `inbound-task-accepted`/`inbound-task-refused` 入 AUDIT_DECISIONS 单一来源；回标准 A2A 收据 `{kind: "task", id, contextId, status}`；不做入站 SSE（与出站对称）。`tests/http-inbound-a2a.test.ts` 10 例全绿。
+- **裁定（2026-10-03，方向固化，未销项）**：入站 A2A 面设计裁定见 [design-inbound-a2a.md](design-inbound-a2a.md) v0.1——Zeus 发布自己的 agent card（`/.well-known/agent-card.json`，形状与要求执行 Agent 一致）、入站 `tasks/send` 落 H2 意图面、三问暂定答案（上游 handshake 验签 / `dataDomainSource` 显式声明缺省个人域 / 审计责任链延伸）、不做入站 SSE。实现仍挂触发条件①②③。
+- **2026-10-07 机制先落地（Active work 144，按 #6 先例）**：入站面已实现——`GET /.well-known/agent-card.json`（公开 Zeus 卡片，形状与出站一致、无自家 handshake）+ 同路径 `POST`（requireBearer，JSON-RPC `tasks/send` 落 H2 意图面，复用 fanOut 内核路径与审计流）；`x-zeus-caller-card` 过与注册同源的 handshake 形状闸（`handshakeOathProblem` 由 registry 导出复用；无卡则 bearer 即人工在环操作者本人，fail-closed 403+审计）；`dataDomain` 缺省 personal；调用方 taskId 兼作幂等键；审计 `inbound-task-accepted`/`inbound-task-refused` 入 AUDIT_DECISIONS 单一来源；回标准 A2A 收据 `{kind: "task", id, contextId, status}`；不做入站 SSE（与出站对称）。`tests/http-inbound-a2a.test.ts` 10 例全绿。
 - **销项（2026-10-08）**：入站面机制已落地（卡片公开 + tasks/send 落 H2 意图面 + handshake 形状闸 fail-closed + 审计责任链延伸，checklist D2 同步）；触发条件①②③降级为真实上游调用者（loom 反向派任务 / 公开执行 Agent / 多 Zeus 协作）出现时的最终验证，不再挂实现待办。**本条销项**。
 
 ### #20 `ZEUS_JUDGE_THRESHOLD` 与其他 boot 参数的校验口径不一致 ✅ 已销项（2026-09-26）
@@ -187,7 +187,7 @@
 - **未做**：尚未把"boot 参数一律 fail-loud"扩成一条覆盖所有现存例外的总原则文档；本批只统一了阈值这一处（其余参数本就已拒启，无例外要改）。
 
 ### #21 历史标识符改名（代码 / 环境变量 / 协议字段 / 数据格式）
-- **现状**：对外文档已全量改用工程术语，但代码与环境变量里仍是历史名（`executor` / `handshake` / `realm` / `backup` / `runtime` / `commission` / `operator-*` 审计取值 / `ZEUS_EXECUTOR_SEEDS` / `x-zeus-handshake`）。**方案、代价四档与逐档机制已写全**：见 [design-naming-migration.md](design-naming-migration.md)。
+- **现状**：对外文档已全量改用工程术语，但代码与环境变量里仍是历史名（`executor` / `handshake` / `dataDomain` / `backup` / `runtime` / `seatGrant` / `operator-*` 审计取值 / `ZEUS_EXECUTOR_SEEDS` / `x-zeus-handshake`）。**方案、代价四档与逐档机制已写全**：见 [design-naming-migration.md](design-naming-migration.md)。
 - **本轮结论（2026-09-25）**：**T2 数据格式、T3 环境变量、T4 协议字段与路由全部不做**。理由不是"太难"，是**收益已经拿到手**：外部误读的风险由 README 的标识符说明 + 术语表解决；而 T2/T4 要烧掉的正是"备份可恢复、签名可长期验证、对端已部署"这三项可信性资产。T1（纯内部标识符）可选，但只挑"名字真的误导"的。
 - **触发条件**：① 某个历史名字**实际挡住了功能**（例如新人/对端因名字误解而接错），而不是"看起来不专业"；② 出现必须新增协议代次的真实需求，此时顺路把 T4 的双读一起做；③ #22 的 version 字段落地后，若仍有改载荷的需求。
 - **硬约束（若开工）**：一个 commit 只动一档；T2 必须双读单写且提升版本号 + 实测"改前备份能在改后恢复"；T4 必须先服务端双读、**在对端确认切换前不得移除 v1 路径**。
@@ -236,15 +236,15 @@
 
 ### #27 运行进程内没有记忆事件的生产者（E8.5/E8.3 在实跑中是空转的）✅ 已销项（2026-09-27）
 
-- **销项（同日，按 §8 的 P1 落地）**：`src/memory/producer.ts`（每个不同 `(作者, 立场)` 一条 claim；object 只放立场、超 512 截断；`claimSubject` 显式优先、缺省派生自 skill+问题而**绝不用 intentId**）+ `boot.ts` 在 `intent-finished` 处装配（**先写 claim，再 consolidate**，同一次意图当场成事实）。写入一律走 `appendFromRealm`，realm 已被下线时丢弃并审计 `memory-claim-skipped`。契约全文与四问答案见 [design-memory-consolidation.md](design-memory-consolidation.md) §8（文档升 v0.5）。
-- **可失效性（不是断言，是量出来的）**：`smoke:core` 新增的那一步**要求快照非空**。本改动之前它打印 `events=0 factGroups=1`、日记 `entries=0`；之后打印 **`events=6 facts=1`、日记 `entries=1`**——同一条断言在缺陷存在时是红的，这才是它有效的证明。另 10 例单测覆盖：claim 形状（过 `isClaimContent`）、派生 subject 可重复、显式 subject/predicate 优先、重放不增条数、超长截断、空立场跳过、**realm 未挂载时不写且上报审计**（这条是"并非无条件就写"的反向对照）、**未指名 realm 的意图不进记忆**。
-- **顺带修掉一条同形状的漂移**：`GET /api/audit?decision=` 的白名单此前在 server 侧手工维护，**已有 5 个决策值查不到**（`refused-skill-uninstalled`/`refused-no-active-provider`/`branch-diverted`/`realm-disconnected`/`realm-tenant-retargeted`）；现在 `AuditDecision` 类型由 `AUDIT_DECISIONS` 数组派生，单一来源，加值不会再漏。
+- **销项（同日，按 §8 的 P1 落地）**：`src/memory/producer.ts`（每个不同 `(作者, 立场)` 一条 claim；object 只放立场、超 512 截断；`claimSubject` 显式优先、缺省派生自 skill+问题而**绝不用 intentId**）+ `boot.ts` 在 `intent-finished` 处装配（**先写 claim，再 consolidate**，同一次意图当场成事实）。写入一律走 `appendFromDataDomain`，dataDomain 已被下线时丢弃并审计 `memory-claim-skipped`。契约全文与四问答案见 [design-memory-consolidation.md](design-memory-consolidation.md) §8（文档升 v0.5）。
+- **可失效性（不是断言，是量出来的）**：`smoke:core` 新增的那一步**要求快照非空**。本改动之前它打印 `events=0 factGroups=1`、日记 `entries=0`；之后打印 **`events=6 facts=1`、日记 `entries=1`**——同一条断言在缺陷存在时是红的，这才是它有效的证明。另 10 例单测覆盖：claim 形状（过 `isClaimContent`）、派生 subject 可重复、显式 subject/predicate 优先、重放不增条数、超长截断、空立场跳过、**dataDomain 未挂载时不写且上报审计**（这条是"并非无条件就写"的反向对照）、**未指名 dataDomain 的意图不进记忆**。
+- **顺带修掉一条同形状的漂移**：`GET /api/audit?decision=` 的白名单此前在 server 侧手工维护，**已有 5 个决策值查不到**（`refused-skill-uninstalled`/`refused-no-active-provider`/`branch-diverted`/`dataDomain-disconnected`/`dataDomain-tenant-retargeted`）；现在 `AuditDecision` 类型由 `AUDIT_DECISIONS` 数组派生，单一来源，加值不会再漏。
 - **E8.5 状态列回到 ✅**（正文注明运行时生产者已就位）。
 
 - **发现方式**：把 `GET /api/memory/snapshot` 与 `GET /api/diary/export` 接进核心链路冒烟后**第一次真机实跑**：派发三条分支、审计落盘 13 行之后，`snapshot.state.events.length = 0`、`factGroups = 1`（空组）、日记 `entries = []`。
-- **代码级证据**（本轮复跑，非引用）：`MemoryEvent` 的构造只出现在 `src/memory/` 内部；`grep -rn "\.append(" src` 在 memory 模块之外**零命中**（audit sink 是另一个对象）。HTTP 面对 memory 只有读（`read`/`facts`/`replay`/`searchRecall`/`exportState`）与擦除（`retract`/`forget-subject`）；`boot.ts` 只用 `consolidateRealm`/`authorsOfFacts`/`recordCorrections`/`reliabilityScore`。**没有任何一方把执行 Agent 的回报变成事件**。
+- **代码级证据**（本轮复跑，非引用）：`MemoryEvent` 的构造只出现在 `src/memory/` 内部；`grep -rn "\.append(" src` 在 memory 模块之外**零命中**（audit sink 是另一个对象）。HTTP 面对 memory 只有读（`read`/`facts`/`replay`/`searchRecall`/`exportState`）与擦除（`retract`/`forget-subject`）；`boot.ts` 只用 `consolidateDataDomain`/`authorsOfFacts`/`recordCorrections`/`reliabilityScore`。**没有任何一方把执行 Agent 的回报变成事件**。
 - **后果**：E8.5 的"事件→事实→混合检索→遗忘权→漂移对账"整条链在**库里**成立（752 项测试覆盖），在**出货进程里**输入恒为空；连带 E8.3 的日记恒空。这不属于"能力没有入口"（#23/#25 那一类），而是更深一层：**能力没有数据源**。
-- **需要决定的是设计而不是代码**：事件的产生点应在哪一层——① Dispatcher 收到 task 回报时按 report-back 落 observation/claim；② 裁决/纠偏落 decision 事件（`recordCorrections` 已在，但它只改可靠度、不产生事件）；③ 域内容变化落 observation。三者的 `eventId` 幂等与去重、realm 归属（跨域拒绝那条不变量要同样成立）、以及"哪些内容进事件、哪些留在审计链"都需要定契约，不能顺手接一根线。
+- **需要决定的是设计而不是代码**：事件的产生点应在哪一层——① Dispatcher 收到 task 回报时按 report-back 落 observation/claim；② 裁决/纠偏落 decision 事件（`recordCorrections` 已在，但它只改可靠度、不产生事件）；③ 域内容变化落 observation。三者的 `eventId` 幂等与去重、dataDomain 归属（跨域拒绝那条不变量要同样成立）、以及"哪些内容进事件、哪些留在审计链"都需要定契约，不能顺手接一根线。
 - **触发条件**：① 任何要把记忆/日记面真正用起来的部署（现在开着会静默产出空事实源，比报错更糟）；② E8.5 升 P0 或 bayjf 名册需要事实来源时；③ 出现"为什么日记是空的"报障——本轮冒烟已给出可复现证据。
 - **提案已出（2026-09-27）**：见 [design-memory-consolidation.md](design-memory-consolidation.md) **§8**——边界判据（陈述进记忆、动作进审计链）、四条触点与后果（建议只做 P1「分支结论→claim」，因为消费端 `boot.ts:388-392` 起那条链已接好，缺的只是输入），以及**四个不定就写不出代码的决策问题**：`subject` 由谁给、`predicate` 粒度、第三方结论文本能否常驻状态文件与备份、要不要开关。落地时按 §8.4 第 3 条给 `smoke:core` 加一步「事件数必须非零」的断言，把恒空转变成会红的闸门。
 - **口径**：在它落地前，`E8.5` 状态列应为 🚧（库内能力已验收、运行面无生产者），`E8.3` 保持 ✅ 但正文注明输入依赖本条。
@@ -269,18 +269,18 @@
 
 ### #30 连接器权限词汇无法绑定"名字不合词法"的工具 ✅ 已销项（2026-09-30）
 ，词表不放宽。`validateSkillSpecShape` 与 `validatePermissionClaims` 两处复用同一判定。② 绑定仍为**精确、大小写敏感**的字符串相等（`withinBoundary` 本就是 `mcp:${name}` 原样比对，无需改），与上游 `tools/list` 一一对应。③ 防改名静默失权：连接握手后，声明了但上游清单没有的 `mcp:<工具名>` 产生新审计动作 `boundary-unmatched`（`ConnectorAuditEntry.action` 扩枚举，含未发现工具名列表），声明早于连接不报错、但改名/下线在连接时可见。④ 测试 +4（skills-validation 2：原名工具名合法/空与控制字符非法且非 mcp 作用域仍封闭；mcp-connectors 2：原名三件套经握手精确裁剪且未授权工具拒调、失配工具发 `boundary-unmatched` 审计且命中工具仍可用），活基线 850/90 → **854/90**。⑤ 文档：mcp-integration §2.1 与缺口表更新。**仍不在本条文内**：对真实外部 MCP 服务的 connect（E7 至今只用自造上游夹具，真实实连仍待外部服务端出现）；按能力指纹而非名字授权未做（当前以审计告警兜底改名问题）。
-- **缺口**：工具级边界的写法是 `mcp:<工具名>`，而整个声明串要先过 Skill 的封闭词法（`src/skills/validate-spec.ts:15-17`：`^[a-z][a-z-]*(:[a-z][a-z-]*)?$`，作用域只允许 `realm`/`execute`/`network`/`credential`/`mcp`）。于是**上游工具名里带下划线、点、大写的，一条都声明不进去**——2026-09-28 直接对 `validatePermissionClaims` 实测：`mcp:search` 通过，而 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` **四条全部判 invalid**（经 HTTP 面表现为 400）。真实 MCP 生态里 `fetch_html`、`notion.search` 这类命名很常见。
+- **缺口**：工具级边界的写法是 `mcp:<工具名>`，而整个声明串要先过 Skill 的封闭词法（`src/skills/validate-spec.ts:15-17`：`^[a-z][a-z-]*(:[a-z][a-z-]*)?$`，作用域只允许 `dataDomain`/`execute`/`network`/`credential`/`mcp`）。于是**上游工具名里带下划线、点、大写的，一条都声明不进去**——2026-09-28 直接对 `validatePermissionClaims` 实测：`mcp:search` 通过，而 `mcp:search_docs`、`mcp:Search`、`mcp:search.x`、`mcp:` **四条全部判 invalid**（经 HTTP 面表现为 400）。真实 MCP 生态里 `fetch_html`、`notion.search` 这类命名很常见。
 - **后果**：想给这类工具开最小权限，只能退到裸 `mcp`——而裸 `mcp` 的语义是"放行该连接器握手发现到的**全部**工具"（`src/mcp/connectors.ts:85-91`）。也就是"要么全给，要么给不了"，与"每条能力都要落到权限声明里"的设计约束相反。
 - **为什么本批只登记不修**：修法有两种（放宽词法，或把声明改成"引用上游原样字符串"），这是**契约决定**不是补漏；且当前没有任何真实连接器因此接不上——本库至今没有对真实外部 MCP 服务跑过一次 `connect`（E7 的实连仍待外部服务端出现）。用一个自造上游去证明"放宽后能用"，证的只是我自己写的假设。
 - **触发条件**：① 第一个真实外部 MCP 服务的工具名不合现有词法（实测撞上，而非推测）；② 有部署要求"按工具名单独授权"而被迫声明裸 `mcp`。
 - **建议做法（决定后）**：把 `mcp:` 后的取值域从"受词法约束的名字"改为"握手能力清单里的原样字符串"（校验只查前缀与非空，其余按上游原样比对）。代价要一并记账：声明与上游名字硬绑定，**上游改名即静默失去授权**，所以要么同时把"已声明但清单里没有"做成启动告警，要么改成按能力指纹而非名字授权。
 
 ### #31 MCP 面把未声明的查询参数静默丢掉（`?tags=` 是实例） ✅ 已销项（2026-09-30）
-- **销项结论**：触发条件②（真实误读）以 A1 真机批次的取证形式满足——`?tags=` 返回未过滤全量且不报错已被明确记录为会误导集成方的静默降级。修法按 fail-loud 收口（`src/realm/mcp.ts`，resource URI 与 `tools/call` 两通道同口径）：① `tags` 不再丢弃，下传到存储层由 P0 文件系统后端显式抛 `UnsupportedQueryError` → JSON-RPC `-32602`（"tag search is not supported in P0"），客户端看得到限制而非拿到错结果；② 任何资源模板/参数 schema 未声明的参数名（URI 上除 `text/since/limit/tags` 外、`arguments` 上除 `realmId/text/since/limit/tags` 外）一律按名拒绝为 `-32602 unsupported search parameter: <name>`；③ `realm.search` 的 `inputSchema` 补声明 `tags`（注明 P0 后端不支持），资源模板补 `&tags={tags}`。tests/realm-mcp.test.ts 新增两例（URI 侧 tags/未知参/合法参、tools 侧 tags/未知键/非法 tags），15 → 17 例。文档同步 docs/mcp-integration.md §1.4 与 §3（原"静默忽略"改为"显式 -32602"）。**不在本条文内**：标签检索真正立项（倒排/向量后端）仍走 design-realm §6.2 / 单 Realm >2 万文件或 P50>500ms 的阈值，本条只修"静默丢参"这一失效形状。
-- **缺口**：`resources/read` 的 search URI 只解析 `text`/`since`/`limit`（`src/realm/mcp.ts:304-319`），**其余查询参数被忽略且不报错**。2026-09-28 实测：`zeus-realm://<realmId>/search?tags=important` 返回**未过滤的全量命中**。更关键的是——存储层那条"P0 不支持标签检索"的拒绝路径（`src/realm/store.ts:151-153` 抛 `UnsupportedQueryError`）在 MCP 面上**永远走不到**，因为参数根本没往下传。
+- **销项结论**：触发条件②（真实误读）以 A1 真机批次的取证形式满足——`?tags=` 返回未过滤全量且不报错已被明确记录为会误导集成方的静默降级。修法按 fail-loud 收口（`src/dataDomain/mcp.ts`，resource URI 与 `tools/call` 两通道同口径）：① `tags` 不再丢弃，下传到存储层由 P0 文件系统后端显式抛 `UnsupportedQueryError` → JSON-RPC `-32602`（"tag search is not supported in P0"），客户端看得到限制而非拿到错结果；② 任何资源模板/参数 schema 未声明的参数名（URI 上除 `text/since/limit/tags` 外、`arguments` 上除 `dataDomainId/text/since/limit/tags` 外）一律按名拒绝为 `-32602 unsupported search parameter: <name>`；③ `dataDomain.search` 的 `inputSchema` 补声明 `tags`（注明 P0 后端不支持），资源模板补 `&tags={tags}`。tests/dataDomain-mcp.test.ts 新增两例（URI 侧 tags/未知参/合法参、tools 侧 tags/未知键/非法 tags），15 → 17 例。文档同步 docs/mcp-integration.md §1.4 与 §3（原"静默忽略"改为"显式 -32602"）。**不在本条文内**：标签检索真正立项（倒排/向量后端）仍走 design-dataDomain §6.2 / 单 DataDomain >2 万文件或 P50>500ms 的阈值，本条只修"静默丢参"这一失效形状。
+- **缺口**：`resources/read` 的 search URI 只解析 `text`/`since`/`limit`（`src/dataDomain/mcp.ts:304-319`），**其余查询参数被忽略且不报错**。2026-09-28 实测：`zeus-dataDomain://<dataDomainId>/search?tags=important` 返回**未过滤的全量命中**。更关键的是——存储层那条"P0 不支持标签检索"的拒绝路径（`src/dataDomain/store.ts:151-153` 抛 `UnsupportedQueryError`）在 MCP 面上**永远走不到**，因为参数根本没往下传。
 - **后果**：一个按 `?tags=` 写的客户端会拿到"看起来成功"的错误结果，并以为过滤生效。这是**静默降级**，与 #20 修掉的那类"env 写错就静默退默认"同一种失效形状。
 - **为什么本批只登记不修**：两种修法（未知参数一律拒成 `-32602`，或接通 `tags` 并显式返回"不支持"）都是对外契约的口径决定，不该由一次文档批次顺手定。本轮做的是把它写成明文行为，让集成方看得见——见 [mcp-integration.md](mcp-integration.md) §1.4 与 §3。
-- **触发条件**：① 标签检索立项（design-realm §6.2 的检索升级阈值，或 E3 侧新增能力）；② 出现一次真实误读——客户端传了过滤参数而结果不对。
+- **触发条件**：① 标签检索立项（design-dataDomain §6.2 的检索升级阈值，或 E3 侧新增能力）；② 出现一次真实误读——客户端传了过滤参数而结果不对。
 - **与既有条目的边界**：**#18** 管"谁是主体（actor）判定"，本条管"参数丢失"，两者不相干；`tools/call` 侧的非法 `limit` **是**会报错的（实测 `-32602`），所以本条只关于"未在资源模板里声明的参数名"。
 
 ### #32 现行叙述层仍留着叙事隐喻（措辞清扫的残余范围没有边界文件清单） ✅ 已销项（2026-09-30）
@@ -308,7 +308,7 @@
 - **为什么登记不做**：① 当前关口（A2–A5、B 系列、Zeus↔loom 联调）全部在仓库外，扇出 / 升级 / 授权的交互形态尚未在真实多 Agent 环境定型，此时做 UI 必然返工；② 护城河是运行时内核而非界面，过早投入稀释精力；③ "无官方 UI"客观上强制所有能力走 API，保证内核可被任意客户端（IDE 插件、CLI、Web、企业内网门户）复用；先做官方 UI 容易使其成为唯一入口并诱导在界面层加入私有旁路，违反三条接入通道约束。
 - **触发条件**：① M3 收尾——Zeus↔loom 联调通过、≥2–3 个真实执行 Agent 在册受调度（与 #9 / C 系列"≥3 真实 Agent 压测"同口径）；② 识别出第一个非技术使用者（个人或企业真实场景），UI 需求由真实使用验证而非猜测。
 - **进展（2026-09-30，**未销项**，触发条件①②均未满足）**：方案 D 终端监督台在第一版三类页面上推进——① 只读监控：除内核状态/并发指标/名额外，新增**扇出/决策时间线**，消费现有 `GET /api/audit?limit=N`（零新增内核端点），25 个 audit decision 一一映射语义 token，审计面未挂载/无权限时显式降级为"不可用"而非空白；`src/tui/client.ts` 加 `timeline(limit)`。② escalation 裁决（approve/reject/resolve+立场）与 ③ 授权吊销（名册 DELETE + y/N 确认）前一批已在。TUI 测试 25 → 34（新增 `tests/tui-client.test.ts` 4 例、render 时间线 3 例、audit token 2 例），全库活基线 827/89 → **836/90**。仍**不触发 Web 立项**：方案 A（Web v1）及其 token 机器可读源/CSS 生成物继续等 M3 收尾（Zeus↔loom 联调 + ≥2–3 真实执行 Agent 在册）与首个非技术使用者。
-- **进展（2026-09-30 第二批，**未销项**）**：方案 D 只读监控再补**数据域与跨域授权台账**——`GET /api/domains` 现有的挂载域（个人/企业、租户、只读、条目数）与 personal→enterprise 授权清单渲染成一屏，与时间线的 `domain-*` 审计事件互补（事件是流水、台账是当前态）；面未挂载（Realm 未装配）时显式降级。`src/tui/client.ts` 加 `DomainsView`/`domains()`，快照并发拉取且列为附加面（失败降级 null，不拖垮 roster/escalations 权威面）。**真机抓到一条真缺陷并修复**：`/api/domains` 的 `tenant` 是结构化 `{org,department?,member?}`（与内核 `formatTenant` 同口径），TUI 初版类型误写成字符串导致渲染成 `[object Object]`；改为按段 `/` 拼接（`acme/eng`），双域临时服务真机复验通过。新增 render 2 例 + client 2 例，TUI 测试 34 → 38，全库活基线 836/90 → **840/90**（文件数不变）。授权的**签发/吊销写操作仍走 curl/API**（#34 第一版授权类页面的"操作"部分待 Web v1，TUI 先只读）。
+- **进展（2026-09-30 第二批，**未销项**）**：方案 D 只读监控再补**数据域与跨域授权台账**——`GET /api/domains` 现有的挂载域（个人/企业、租户、只读、条目数）与 personal→enterprise 授权清单渲染成一屏，与时间线的 `domain-*` 审计事件互补（事件是流水、台账是当前态）；面未挂载（DataDomain 未装配）时显式降级。`src/tui/client.ts` 加 `DomainsView`/`domains()`，快照并发拉取且列为附加面（失败降级 null，不拖垮 roster/escalations 权威面）。**真机抓到一条真缺陷并修复**：`/api/domains` 的 `tenant` 是结构化 `{org,department?,member?}`（与内核 `formatTenant` 同口径），TUI 初版类型误写成字符串导致渲染成 `[object Object]`；改为按段 `/` 拼接（`acme/eng`），双域临时服务真机复验通过。新增 render 2 例 + client 2 例，TUI 测试 34 → 38，全库活基线 836/90 → **840/90**（文件数不变）。授权的**签发/吊销写操作仍走 curl/API**（#34 第一版授权类页面的"操作"部分待 Web v1，TUI 先只读）。
 - **进展（2026-09-30 第三批，**未销项**）**：方案 D 把第三类页面的**写操作**补齐——跨域授权可在 TUI 直接签发与吊销，仍只调现有 `POST/DELETE /api/domains/grants`（无新内核端点）。命令：`g<企业域#> <subject> <r|w> [签发者]`（只能对企业域，个人域在客户端拒绝且不发请求）签发、`k<授权#>` 吊销，均 y/N 二次确认、写后重绘；数据域块给域与授权台账加 `#编号` 与命令提示。**标识符大小写保真**：解析器动词大小写折叠但 subject/grantedBy 原样透传（修掉初版整行 lowercase 会破坏机器名的问题）。端到端真机验证（真实 HTTP client + 队列 IO 驱动 createDeck 打 :6404）：`g2 loom r` → 台账 +1，`k1` → 归 0，审计留 `domain-grant-issued`/`-revoked` 两条（注：管道喂 stdin 会因 readline 时序丢行，故真机走控制器注入而非 cli 管道，写逻辑另有单测覆盖）。测试 +10：commands 3（解析/大小写/错误分支）、controller 5（签发确认门、个人域拒绝、拒签不写、吊销按台账号、标识符大小写）、client 2（POST 体/4xx、DELETE 编码），TUI 测试 38 → 48，活基线 840/90 → **850/90**。至此方案 D 第一版三类页面（只读监控/裁决/授权）在终端全部可操作。
 - **进展（2026-10-03，**未销项**）**：**方案 A（Web v1）经用户以 owner 身份裁定提前激活并落地**（触发条件①未满足但用户决定优先，与 TUI 同口径：UI 仅消费现有 HTTP API、零新增内核端点、无界面私有逻辑）。产物 `web/supervisor/index.html`（单文件自包含、原生 JS、hash 路由三视图）：① 只读监控——内核状态（/api/state）/ 并发指标（/api/metrics，含 perExecutor 延迟）/ 名册（/api/roster）/ 扇出·决策时间线（/api/audit）/ 数据域与跨域授权台账（/api/domains）；② escalation 裁决——队列列表 + approve / reject（task-input）与 resolve+立场（intent-conflict），备注进审计；③ 跨域授权——签发（POST /api/domains/grants，只能选企业域）与吊销（DELETE，y/N 二次确认）。连接配置（API base + bearer token）存 localStorage，首访未配置落连接引导页。**为让浏览器跨域消费现有 API，补了一个最小可选传输层配置**：`HttpDeps.corsOrigins`（精确 Origin 白名单匹配 + OPTIONS 预检 204，无通配回显、无 credentials），serve.ts 从 `ZEUS_CORS_ORIGINS`（逗号分隔）读入，**默认空 = 行为不变**；4 项测试（未配置无头 / 白名单回显 + Vary / 非白名单不放行 / 预检 204）。**浏览器真机 E2E 通过**（computer-use 驱动 Chrome + 真服务 + 真 socket agent）：连接测试 → 监控视图真实数据（内核状态/指标/perExecutor/名册/时间线/数据域）→ 裁决/授权空态与表单渲染全部验证。启动：`ZEUS_CORS_ORIGINS=http://127.0.0.1:5173 node dist/http/serve.js` + `python -m http.server 5173 --directory web`，浏览器打开 `http://127.0.0.1:5173/supervisor/index.html`。
 - **建议做法（决定后）**：第一版只做三类页面——扇出 / 决策时间线的只读监控、escalation 队列裁决（approve / reject / resolve / 补参）、授权签发与吊销操作；配置、备份、技能管理等继续走 CLI / API。UI 仅消费现有 HTTP API、内核零改动，不引入界面私有逻辑；定位是"监督台"（人是决策者），不是全能控制台。验收：UI 每个写操作都能在审计日志回读且与直接调 API 等价；无新增内核端点或私有通道。
@@ -329,7 +329,7 @@
 - **触发条件**：① 下一次大范围重构（集中改 `listAll`/遍历路径）时顺手迁移；② 出现一次由"下标越界返回 `undefined` 未被处理"或"可选属性被显式传 `undefined`"造成的真实缺陷。
 - **建议做法（决定后）**：按 flag 逐个原子迁移（`noUnusedParameters` 7 处最小 → `exactOptionalPropertyTypes` 40 处 → `noUncheckedIndexedAccess` 400 处），每步单独提交并跑全量门禁；迁移前先确认 `tsconfig.build.json` 的 `include: ["src"]` 面受不受影响，或一并收口。
 - **进展（2026-10-02，最小档已迁移，本条仍未销项）**：`noUnusedParameters` 已启用并清零——实测 8 处（登记 7 处 + `bench-capacity.mjs` 的 `startMockFarm(count,…)` 参数，后者是 deferred #37 后半段把 scripts 纳入检查后新暴露的），全部按 `_` 前缀改名收口（公共导出 `createTraceSink` 的 `backend`/`model`、`recomputeResult` 的 `now` 保留签名只改名，测试 mock 回调同法）。启用后 `npm run typecheck` 与 `npm run build` exit 0、`npm test` 1012 / 94 全绿、`smoke:core` 36/36。**中档量法刷新**：`exactOptionalPropertyTypes` 现量 **41 处**（登记 40 + scripts 纳入检查后新浮出 1），`noUncheckedIndexedAccess` 仍为 400 档；两档待触发条件。
-- **销项（2026-10-02，末档迁移完成，本条已销项）**：`noUncheckedIndexedAccess` 实测 **434 处**（登记 400 + scripts 纳入检查后新浮出 34）全部清零并正式启用（`tsconfig.json` 开启 `noUncheckedIndexedAccess: true`，`npx tsc --noEmit` 0 错）——`strict` 系四 flag（`strict` / `exactOptionalPropertyTypes` / `noUncheckedIndexedAccess` / `noUnusedLocals+Parameters`）全开，三档全部销项。按模块分七批（A util/oversight/dispatch 37 → B orchestrator 34 → C memory 53 → D realm/skills/tui 82 → E diary/org/tui/backup 80 → F doc-consistency/http/audit/registry/conflict 61 → G decision/scripts/state 53），错误计数 434→397→341→282→200→114→53→0 递减验证，src 与 tests 分组共 12 个原子 commit。**手法统一两种，零运行时行为变化**：长度守卫/正则捕获组/`indexOf` 结构保证处 `!` 断言（带注释）；循环体元素与缺失语义等价处 `?? ''`/`?? 0`/`?? 1` 兜底。**`scripts/*.mjs` 纯 JS 不能用 `!`**——统一 `??` 兜底或 JSDoc 标注（`scan-secrets.mjs` `PATTERNS` 补 `@type {Array<[RegExp,string]>}` 消 TS2769）。**关键教训**：scripts 测试动态 import `dist/` 编译产物，本地直跑挂 `publishRootKey is not a function`，`npm run build` 后 10/10 绿（与 Active work 93 同根）。**Windows 本机门禁如实记**：`npm test` 990 绿 / 25 失败全为环境性（目录 fsync EPERM 17 / chmod 0600 断言 4 / symlink EPERM 4，逐类 stash 对照验证与改动无关），`smoke:core` 31/36（0600 chmod ×2 + SIGTERM 持久化连锁 ×3，Windows 信号语义差异）；typecheck/build exit 0、doc-consistency 9/9，活基线数字 1015/94/36 以 CI 口径为准。
+- **销项（2026-10-02，末档迁移完成，本条已销项）**：`noUncheckedIndexedAccess` 实测 **434 处**（登记 400 + scripts 纳入检查后新浮出 34）全部清零并正式启用（`tsconfig.json` 开启 `noUncheckedIndexedAccess: true`，`npx tsc --noEmit` 0 错）——`strict` 系四 flag（`strict` / `exactOptionalPropertyTypes` / `noUncheckedIndexedAccess` / `noUnusedLocals+Parameters`）全开，三档全部销项。按模块分七批（A util/oversight/dispatch 37 → B orchestrator 34 → C memory 53 → D dataDomain/skills/tui 82 → E diary/org/tui/backup 80 → F doc-consistency/http/audit/registry/conflict 61 → G decision/scripts/state 53），错误计数 434→397→341→282→200→114→53→0 递减验证，src 与 tests 分组共 12 个原子 commit。**手法统一两种，零运行时行为变化**：长度守卫/正则捕获组/`indexOf` 结构保证处 `!` 断言（带注释）；循环体元素与缺失语义等价处 `?? ''`/`?? 0`/`?? 1` 兜底。**`scripts/*.mjs` 纯 JS 不能用 `!`**——统一 `??` 兜底或 JSDoc 标注（`scan-secrets.mjs` `PATTERNS` 补 `@type {Array<[RegExp,string]>}` 消 TS2769）。**关键教训**：scripts 测试动态 import `dist/` 编译产物，本地直跑挂 `publishRootKey is not a function`，`npm run build` 后 10/10 绿（与 Active work 93 同根）。**Windows 本机门禁如实记**：`npm test` 990 绿 / 25 失败全为环境性（目录 fsync EPERM 17 / chmod 0600 断言 4 / symlink EPERM 4，逐类 stash 对照验证与改动无关），`smoke:core` 31/36（0600 chmod ×2 + SIGTERM 持久化连锁 ×3，Windows 信号语义差异）；typecheck/build exit 0、doc-consistency 9/9，活基线数字 1015/94/36 以 CI 口径为准。
 
 ### #37 `scripts/*.mjs` 未纳入类型检查 ✅ 已销项（2026-10-02）
 - **缺口**：`tsconfig.json` 的 `include` 覆盖 `src`、`tests` 与两个 vitest 配置；7 个 `scripts/*.mjs`（验收 / 压测 / 冒烟 / 密钥生成 / 时钟偏移 / 代理设置等）不受任何静态检查。实测开启 `allowJs + checkJs` 后 scripts 报 **216** 条诊断（量法：仓库根临时建 standalone probe tsconfig，`allowJs:true, checkJs:true`，`include` 加 `scripts`，`tsc -p` 跑完即删；两个 vitest 配置的对应诊断数为 0，已并入 b46 的 `include`）。
@@ -360,7 +360,7 @@
 - **建议做法（决定后）**：先做一个**只读的失败归因摘要纯函数**（从审计 reason 聚合 + E1.6 回放重建，只读、可验证、可回滚——design constraint 2），看聚合结果是否真有可写回的稳定规律，再谈写回；写回面必须可审计（写什么、何时写、可否吊销）。
 - **2026-10-07 第一段（只读归因）已落地（Active work 143）**：`src/reflection/failure-attribution.ts` —— `attributeFailures(entries: AuditEntry[])` 纯函数：按失败类目（dispatch/abort/refused-skill/refused-policy/refused-unknown/refused-revoked/delegation/ack）× 执行 Agent 聚合，输出 totals / byCategory / byExecutor（rate + sampleReasons 上限 5）/ patterns（稳定或提示性两档，`writebackCandidate` 为真才值得进写回设计——本模块只读、永不写回）；`participantsToEntries()` 把决策回放参与方映射为审计条目并入同一聚合（对齐 `src/core/orchestrator/replay.ts:62-101` 的 `ReplayParticipant`/`replayDecision`）。测试 `tests/failure-attribution.test.ts` 10 例绿。
 - **2026-10-14 D4 拆分 + S2 写回面机械层落地（Active work 240）**：按 [decision-memory-writeback.md](decision-memory-writeback.md) 裁定（D1=C 先只做纯规则复盘 / D2 只改排序权重 / D3 经验卡进用户目录 / D4 把「复盘原语」「写回面」从本条目拆出），本条退回「**真实样本触发**」单一职责。落地内容（合成样本验证，见 [design §九](design-memory-self-evolution-integration.md)）：① `WritebackRecord`（经验卡，`src/memory/types.ts`）+ `MemoryState.writebacks` 落盘用户目录快照（D3）；② 机械层 `src/memory/writeback.ts`（`selectionWeightsFromWritebacks` / `WritebackLedger`，`record` 校验 `factor ∈ (0.1,1]` fail-soft、`retract` 保留行翻转状态，可逆性结构性）；③ `MemoryStore` 接管 `recordWriteback`/`retractWriteback`/`listWritebacks`/`selectionWeights` + `exportState`/`importState` 往返；④ 真实写回目标 `selectCandidates`（`src/core/orchestrator/discovery.ts`）新增可选 `weights`，只对 auto 池按权重降序重排、named 硬钉不动，默认恒等。测试 `tests/memory-writeback.test.ts` **6/6 绿**（2026-10-14 本机实测，合成样本：稳定模式→降权→吊销回到基线 / 因子越界抛错 / 快照往返 / 唯一候选 fail-soft）；定向复跑 `orchestrator-discovery` 17/17、`failure-attribution` 10/10、`doc-consistency` 18/18 均无回归。
-- **2026-10-14 运行时接线已落地（Active work 242）**：boot 装配 `selectionWeightsProvider: realmId => memoryStore.selectionWeights(realmId)`，`fanOutNew` 的 `selectCandidates` 收权重、**自动路径派发列表跟随选中面**（`names = faceAuto`，仅无 per-executor cap 时——cap 路径保持 #9 diversion 语义；修复「face 滤掉饱和者致分流无对象可转」的回归），无权重与 lookup 序恒等、named 硬钉不动、重取/吊销卡即回退基线（可逆性结构性）。新建 `tests/writeback-wiring.test.ts` 6 例（含 boot 契约与吊销回基线）全绿。**剩「真实样本阈值调参」仍挂本条**（与 #9 同口径 ≥3 真实 Agent）。
+- **2026-10-14 运行时接线已落地（Active work 242）**：boot 装配 `selectionWeightsProvider: dataDomainId => memoryStore.selectionWeights(dataDomainId)`，`fanOutNew` 的 `selectCandidates` 收权重、**自动路径派发列表跟随选中面**（`names = faceAuto`，仅无 per-executor cap 时——cap 路径保持 #9 diversion 语义；修复「face 滤掉饱和者致分流无对象可转」的回归），无权重与 lookup 序恒等、named 硬钉不动、重取/吊销卡即回退基线（可逆性结构性）。新建 `tests/writeback-wiring.test.ts` 6 例（含 boot 契约与吊销回基线）全绿。**剩「真实样本阈值调参」仍挂本条**（与 #9 同口径 ≥3 真实 Agent）。
 
 ### #44 写回面真实样本阈值调参（挂 #40 触发）
 - **缺口**：S2 写回面机械层（Active work 240）与运行时接线（Active work 242，`selectionWeightsProvider` 已喂进派发路径）均已落地且测试全绿，但**真实失败样本下的 `factor` 取值档位与阈值未定**（当前默认 `factor ∈ (0.1,1]` fail-soft、重取即回退基线）。

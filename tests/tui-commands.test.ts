@@ -66,12 +66,12 @@ describe('TUI command parser', () => {
     expect(COMMAND_HELP).toContain('revoke');
   });
 
-  it('parses grant issuance with realm#, subject, access token and optional issuer', () => {
+  it('parses grant issuance with dataDomain#, subject, access token and optional issuer', () => {
     expect(parseCommand('g2 loom r')).toEqual({
-      kind: 'grantIssue', realmIndex: 2, subject: 'loom', access: 'read', grantedBy: 'operator',
+      kind: 'grantIssue', dataDomainIndex: 2, subject: 'loom', access: 'read', grantedBy: 'operator',
     });
     expect(parseCommand('G 1 Agent-X W alice')).toEqual({
-      kind: 'grantIssue', realmIndex: 1, subject: 'Agent-X', access: 'write', grantedBy: 'alice',
+      kind: 'grantIssue', dataDomainIndex: 1, subject: 'Agent-X', access: 'write', grantedBy: 'alice',
     });
     // Machine identifiers keep their case even though the verb is case-folded.
     expect(parseCommand('g1 Pr-Helper read ops bot')).toMatchObject({ subject: 'Pr-Helper', grantedBy: 'ops bot' });

@@ -62,7 +62,7 @@ describe('resolveStateFile (--state none really means none)', () => {
 
   it('honours an explicit none instead of silently writing the default file', () => {
     // `null ?? env ?? DEFAULT` collapses "said nothing" with "said none", which
-    // made the run persist to the repo's own state file and then re-mount a realm
+    // made the run persist to the repo's own state file and then re-mount a dataDomain
     // root from a temp directory that no longer exists.
     expect(resolveStateFile(null, undefined)).toBeNull();
     expect(resolveStateFile(null, '/tmp/runtime.json')).toBeNull();
@@ -99,7 +99,7 @@ function baseModel(overrides: Partial<DailyReportModel> = {}): DailyReportModel 
     confidence: 0.5,
     candidates: [],
     params: { prompt: 'is the deployment healthy' },
-    realm: { realmId: 'realm-abc', root: '/notes', type: 'personal', readOnly: false },
+    dataDomain: { dataDomainId: 'dataDomain-abc', root: '/notes', type: 'personal', readOnly: false },
     agents: ['demo-a'],
     positions: [],
     branches: [],
@@ -109,7 +109,7 @@ function baseModel(overrides: Partial<DailyReportModel> = {}): DailyReportModel 
 }
 
 describe('daily report rendering', () => {
-  it('shows the intent, the realm, the decision and the evidence', () => {
+  it('shows the intent, the dataDomain, the decision and the evidence', () => {
     const text = renderDailyReport(
       baseModel({
         status: 'completed',
@@ -131,7 +131,7 @@ describe('daily report rendering', () => {
       }),
     );
     expect(text).toContain('**Intent** `deployment-health` — chosen by local rules, confidence 0.500');
-    expect(text).toContain('`realm-abc` (personal, writable) — /notes');
+    expect(text).toContain('`dataDomain-abc` (personal, writable) — /notes');
     expect(text).toContain('rule `majority` → **healthy**');
     expect(text).toContain('- `demo-a` = `healthy` — no failed checks');
     expect(text).toContain('evidence: GET /healthz -> 200');
@@ -267,7 +267,7 @@ const HANDSHAKE = {
   version: '1',
   swornTo: 'zeus',
   domain: 'test-domain',
-  realms: ['personal', 'enterprise'],
+  dataDomains: ['personal', 'enterprise'],
   dataPolicy: 'read-task-scope',
   reportBack: true,
   escalationPolicy: 'on-failure',
@@ -386,7 +386,7 @@ describe('npm run daily', () => {
     { argv: [], reason: 'an instruction is required' },
     { argv: ['one', 'two'], reason: 'expected one instruction' },
     { argv: ['--bogus', 'x', 'hello'], reason: 'unknown option: --bogus' },
-    { argv: ['hello', '--realm', 'both'], reason: "--realm is 'personal' or 'enterprise'" },
+    { argv: ['hello', '--dataDomain', 'both'], reason: "--dataDomain is 'personal' or 'enterprise'" },
     { argv: ['hello', '--params', '[1]'], reason: '--params is not a JSON object' },
     { argv: ['hello', '--timeout', '0'], reason: '--timeout must be a positive number' },
   ])('rejects "$reason" before booting anything', async ({ argv, reason }) => {
@@ -505,11 +505,11 @@ describe('npm run daily', () => {
     expect(readdirSync(root)).toEqual(['state.json']);
   });
 
-  it('exits 2 with no realm and no catalogue rather than inventing a work surface', async () => {
-    const root = tempRoot('no-realm');
-    const noRealm = await runDailyCli(['--state', join(root, 'a.json'), 'check the deployment health'], cleanEnv());
-    expect(noRealm.code).toBe(2);
-    expect(noRealm.stderr).toContain('no writable directory to work in');
+  it('exits 2 with no dataDomain and no catalogue rather than inventing a work surface', async () => {
+    const root = tempRoot('no-dataDomain');
+    const noDataDomain = await runDailyCli(['--state', join(root, 'a.json'), 'check the deployment health'], cleanEnv());
+    expect(noDataDomain.code).toBe(2);
+    expect(noDataDomain.stderr).toContain('no writable directory to work in');
 
     const noAgent = await runDailyCli(
       ['--root', root, '--state', join(root, 'b.json'), 'check the deployment health'],
@@ -523,7 +523,7 @@ describe('npm run daily', () => {
       cleanEnv(),
     );
     expect(missing.code).toBe(2);
-    expect(missing.stderr).toContain('realm root not accessible');
+    expect(missing.stderr).toContain('dataDomain root not accessible');
     // The failed boot never got as far as owning a ledger.
     expect(readdirSync(root).sort()).toEqual(['a.json', 'b.json']);
   });
@@ -539,13 +539,13 @@ describe('npm run daily', () => {
     expect(readFileSync(join(root, 'missing.md'), 'utf8')).toContain('**Agents** `demo-agent`');
   });
 
-  it('writes an enterprise run into the enterprise realm, never into the personal directory', async () => {
+  it('writes an enterprise run into the enterprise dataDomain, never into the personal directory', async () => {
     const personal = tempRoot('iso-personal');
     const enterprise = tempRoot('iso-enterprise');
     const result = await runDailyCli(
-      ['--root', personal, '--agent', agentUrl('demo-agent'), '--state', join(personal, 'state.json'), '--realm', 'enterprise', '--record', 'run.md', 'check the deployment health'],
+      ['--root', personal, '--agent', agentUrl('demo-agent'), '--state', join(personal, 'state.json'), '--dataDomain', 'enterprise', '--record', 'run.md', 'check the deployment health'],
       cleanEnv({
-        ZEUS_REALM_ENTERPRISE: `${enterprise}::acme`,
+        ZEUS_DATA_DOMAIN_ENTERPRISE: `${enterprise}::acme`,
         ZEUS_RSK_KEY: OPERATOR_KEY_PEM,
         ZEUS_RSK_KEY_ID: 'zeus-rsk-test',
       }),

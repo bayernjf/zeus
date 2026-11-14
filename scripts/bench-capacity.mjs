@@ -235,7 +235,7 @@ function farmEntries(port, count) {
     version: '1',
     swornTo: 'zeus',
     domain: 'bench',
-    realms: ['personal'],
+    dataDomains: ['personal'],
     dataPolicy: 'none',
     reportBack: true,
     escalationPolicy: 'auto',
@@ -313,7 +313,7 @@ async function postIntent(base, names) {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${FACE_TOKEN}` },
     body: JSON.stringify({
       skill: 'bench',
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: names,
       aggregation: { kind: 'unanimous' },
       branchTimeoutMs: BRANCH_WATCHDOG_MS,
@@ -340,7 +340,7 @@ async function benchFanoutWidth(port) {
         skill: 'bench',
         executors: names,
         params: {},
-        realm: 'personal',
+        dataDomain: 'personal',
         aggregation: { kind: 'unanimous' },
         branchTimeoutMs: BRANCH_WATCHDOG_MS,
       });
@@ -394,7 +394,7 @@ async function runConcurrentIntents(orchestrator, metrics, intents, options = {}
           skill: 'bench',
           executors: names,
           params: {},
-          realm: 'personal',
+          dataDomain: 'personal',
           aggregation: { kind: 'unanimous' },
           branchTimeoutMs: BRANCH_WATCHDOG_MS,
         });
@@ -630,7 +630,7 @@ async function benchCancellation() {
             skill: 'bench',
             executors: names,
             params: {},
-            realm: 'personal',
+            dataDomain: 'personal',
             aggregation: { kind: 'unanimous' },
             branchTimeoutMs: 5000,
           });
@@ -713,7 +713,7 @@ async function main() {
         skill: 'bench',
         executors: ['executor-0', 'executor-1', 'executor-2', 'executor-3'],
         params: {},
-        realm: 'personal',
+        dataDomain: 'personal',
         aggregation: { kind: 'unanimous' },
         branchTimeoutMs: BRANCH_WATCHDOG_MS,
       });

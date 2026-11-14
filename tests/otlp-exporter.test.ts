@@ -26,7 +26,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -252,7 +252,7 @@ describe('G2 boot wiring (opt-in, unconfigured = silent)', () => {
       intentId: 'intent-g2-boot',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['alpha'],
     });
     expect(result.status).toBe('completed');

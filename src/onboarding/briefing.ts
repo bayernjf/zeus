@@ -3,7 +3,7 @@
  *
  * Everything here is *read* from a layer that already owns the fact - the
  * department establishment, the skill catalogue, the mentorship ledger, the executor
- * directory, the realm boundary decisions, and the department's own memory. No
+ * directory, the dataDomain boundary decisions, and the department's own memory. No
  * prompt template, no invented culture: when the org has written nothing down,
  * the briefing says so in `gaps` instead of dressing an empty room up as context.
  */
@@ -13,15 +13,15 @@ import type { OrgRegistry } from '../org/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
 import type { SkillRegistry } from '../skills/registry.js';
 import type { MemoryStore } from '../memory/memory-store.js';
-import { decideRealmAccess, type DomainGrantRegistry } from '../realm/authorization.js';
-import type { RealmActor, RealmStore, TenantScope } from '../realm/types.js';
-import { verifyCommission } from './commission.js';
-import type { CommissionRecord } from './types.js';
+import { decideDataDomainAccess, type DomainGrantRegistry } from '../dataDomain/authorization.js';
+import type { DataDomainActor, DataDomainStore, TenantScope } from '../dataDomain/types.js';
+import { verifySeatGrant } from './seatGrant.js';
+import type { SeatGrantRecord } from './types.js';
 
 export type BriefingDeps = {
   org: Pick<OrgRegistry, 'listDepartments'>;
   executors: ExecutorLookup;
-  realms: Pick<RealmStore, 'manifest' | 'connections'>;
+  dataDomains: Pick<DataDomainStore, 'manifest' | 'connections'>;
   grants: Pick<DomainGrantRegistry, 'list'>;
   mentorships: Pick<MentorshipLedger, 'list'>;
   skills: Pick<SkillRegistry, 'get'>;
@@ -57,14 +57,14 @@ export type RoleBriefing = {
   culture: {
     query: string;
     facts: Array<{ subject: string; predicate: string; object: unknown; confidence: number; updatedAt: string; score: number }>;
-    /** How much this realm knows in total, so "nothing matched" and "nothing
+    /** How much this dataDomain knows in total, so "nothing matched" and "nothing
      *  was ever written" stay distinguishable. */
     totalFacts: number;
     empty: boolean;
   };
   boundaries: {
-    realmId: string;
-    realmType: 'personal' | 'enterprise';
+    dataDomainId: string;
+    dataDomainType: 'personal' | 'enterprise';
     tenant?: TenantScope;
     readOnly: boolean;
     itemCount: number;
@@ -83,7 +83,7 @@ export type RoleBriefing = {
 const CULTURE_QUERIES = 5;
 
 export async function composeBriefing(
-  record: CommissionRecord,
+  record: SeatGrantRecord,
   deps: BriefingDeps,
 ): Promise<RoleBriefing> {
   const now = deps.now ?? (() => new Date());
@@ -141,13 +141,13 @@ export async function composeBriefing(
   }
 
   // The org's culture and business facts are what its memory actually holds for
-  // this realm. Same-realm read only: a cross-realm query would be the exact
+  // this dataDomain. Same-dataDomain read only: a cross-dataDomain query would be the exact
   // boundary violation this layer exists to catch, and MemoryStore throws on it.
   const query = [department.mission, department.name, ...record.requiredSkills].join(' ').trim().slice(0, 160);
   const hits = query
     ? (
         await deps.memory
-          .searchRecall(record.realmId, record.realmId, query, { limit: CULTURE_QUERIES })
+          .searchRecall(record.dataDomainId, record.dataDomainId, query, { limit: CULTURE_QUERIES })
       ).map(hit => ({
           subject: hit.fact.subject,
           predicate: hit.fact.predicate,
@@ -157,34 +157,34 @@ export async function composeBriefing(
           score: Number(hit.score.toFixed(4)),
         }))
     : [];
-  const knownFacts = deps.memory.facts(record.realmId, record.realmId);
+  const knownFacts = deps.memory.facts(record.dataDomainId, record.dataDomainId);
   if (hits.length === 0) {
     gaps.push(knownFacts.length === 0
-      ? `memory of ${record.realmId} holds no facts at all - nobody has written the org's practice down`
-      : `no recorded practice matches this seat (${knownFacts.length} fact(s) known in ${record.realmId})`);
+      ? `memory of ${record.dataDomainId} holds no facts at all - nobody has written the org's practice down`
+      : `no recorded practice matches this seat (${knownFacts.length} fact(s) known in ${record.dataDomainId})`);
   }
 
-  const realm = deps.realms.connections().find(entry => entry.realmId === record.realmId);
-  if (!realm) throw new Error(`realm not connected: ${record.realmId}`);
-  const manifest = await deps.realms.manifest(record.realmId);
-  const actor: RealmActor = record.tenant
+  const dataDomain = deps.dataDomains.connections().find(entry => entry.dataDomainId === record.dataDomainId);
+  if (!dataDomain) throw new Error(`dataDomain not connected: ${record.dataDomainId}`);
+  const manifest = await deps.dataDomains.manifest(record.dataDomainId);
+  const actor: DataDomainActor = record.tenant
     ? { kind: 'agent', id: record.agentId, tenant: record.tenant }
     : { kind: 'agent', id: record.agentId };
-  const read = decideRealmAccess({ actor, realm, access: 'read', grants: deps.grants.list(), now });
-  const write = decideRealmAccess({ actor, realm, access: 'write', grants: deps.grants.list(), now });
+  const read = decideDataDomainAccess({ actor, dataDomain, access: 'read', grants: deps.grants.list(), now });
+  const write = decideDataDomainAccess({ actor, dataDomain, access: 'write', grants: deps.grants.list(), now });
 
-  const verdict = verifyCommission(record, {
+  const verdict = verifySeatGrant(record, {
     org: deps.org,
     executors: deps.executors,
-    realms: deps.realms,
+    dataDomains: deps.dataDomains,
     grants: deps.grants,
     mentorships: deps.mentorships,
     ...(deps.now ? { now: deps.now } : {}),
   });
-  if (verdict.blockedOn === 'commissioned' && !record.commissioned) {
-    gaps.push('not commissioned yet - the seat exists but nobody has signed it off');
+  if (verdict.blockedOn === 'seatGranted' && !record.seatGranted) {
+    gaps.push('not seatGranted yet - the seat exists but nobody has signed it off');
   }
-  if (!read.ok) gaps.push(`you cannot read your own realm: ${read.detail}`);
+  if (!read.ok) gaps.push(`you cannot read your own dataDomain: ${read.detail}`);
 
   const briefing: Omit<RoleBriefing, 'digest' | 'generatedAt'> = {
     agentId: record.agentId,
@@ -216,22 +216,22 @@ export async function composeBriefing(
     business: { skills, teammates, mentorsForMissing },
     culture: { query, facts: hits, totalFacts: knownFacts.length, empty: hits.length === 0 },
     boundaries: {
-      realmId: record.realmId,
-      realmType: realm.type,
-      ...(realm.tenant ? { tenant: realm.tenant } : {}),
-      readOnly: realm.readOnly,
+      dataDomainId: record.dataDomainId,
+      dataDomainType: dataDomain.type,
+      ...(dataDomain.tenant ? { tenant: dataDomain.tenant } : {}),
+      readOnly: dataDomain.readOnly,
       itemCount: manifest.itemCount,
       canRead: read.ok,
       canWrite: write.ok,
-      writeNeedsGrant: realm.type === 'enterprise',
+      writeNeedsGrant: dataDomain.type === 'enterprise',
       rules: [
         'enterprise -> personal is never allowed; no credential can authorize it',
         'personal -> enterprise requires an explicit DomainGrant from the operator',
-        realm.type === 'enterprise'
-          ? 'writing into this enterprise realm additionally needs a per-write OperatorWriteGrant'
-          : 'this personal realm is writable by default',
+        dataDomain.type === 'enterprise'
+          ? 'writing into this enterprise dataDomain additionally needs a per-write OperatorWriteGrant'
+          : 'this personal dataDomain is writable by default',
         'the tenant hierarchy (org / department / member) is structural - no grant loosens it',
-      ].concat(realm.readOnly ? ['this realm is mounted read-only: writes refuse even when authorized'] : []),
+      ].concat(dataDomain.readOnly ? ['this dataDomain is mounted read-only: writes refuse even when authorized'] : []),
     },
     gaps,
   };

@@ -111,7 +111,7 @@ const card = {
     version: '1',
     swornTo: 'zeus',
     domain: 'acme',
-    realms: ['personal'],
+    dataDomains: ['personal'],
     dataPolicy: 'none',
     reportBack: true,
     escalationPolicy: 'auto',

@@ -25,7 +25,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -108,7 +108,7 @@ function watchInput(tool: string, permissions: string[]) {
   return {
     id: 'wc',
     owner: 'operator@bayjf',
-    realm: 'personal' as const,
+    dataDomain: 'personal' as const,
     predicate: { source: 'connector' as const, op: 'above' as const, field: 'queue.depth', value: 2 },
     connector: { id: 'knowledge', tool },
     intent: { skill: 'review', subject: 'upstream queue is deep', mode: 'plan' as const, maxFanOut: 1 },

@@ -87,7 +87,7 @@ describe('HTTP S3 DAG operator API', () => {
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
       payload: {
-        realm: 'personal',
+        dataDomain: 'personal',
         dag: {
           nodes: [
             { id: 'A', skill: 's' },
@@ -122,7 +122,7 @@ describe('HTTP S3 DAG operator API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', dag: { nodes: [{ id: 'A', skill: 's' }, { id: 'B', skill: 't', dependsOn: ['A'] }] } },
+      payload: { dataDomain: 'personal', dag: { nodes: [{ id: 'A', skill: 's' }, { id: 'B', skill: 't', dependsOn: ['A'] }] } },
     });
     const dagId = run.json().dagId;
     const reply = await app.inject({
@@ -146,7 +146,7 @@ describe('HTTP S3 DAG operator API', () => {
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
       payload: {
-        realm: 'personal',
+        dataDomain: 'personal',
         dag: { nodes: [{ id: 'A', skill: 's', dependsOn: ['B'] }, { id: 'B', skill: 't', dependsOn: ['A'] }] },
       },
     });
@@ -162,7 +162,7 @@ describe('HTTP S3 DAG operator API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', dag: { nodes: [{ id: 'A', skill: 's', dependsOn: ['ghost'] }] } },
+      payload: { dataDomain: 'personal', dag: { nodes: [{ id: 'A', skill: 's', dependsOn: ['ghost'] }] } },
     });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error).toBe('invalid_dag');
@@ -176,7 +176,7 @@ describe('HTTP S3 DAG operator API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', dag: { nodes: [{ id: '', skill: 's' }] } },
+      payload: { dataDomain: 'personal', dag: { nodes: [{ id: '', skill: 's' }] } },
     });
     expect(reply.statusCode).toBe(400);
     expect(reply.json().error).toBe('invalid_request');
@@ -189,7 +189,7 @@ describe('HTTP S3 DAG operator API', () => {
       method: 'POST',
       url: '/api/intents',
       headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { realm: 'personal', skill: 's', dag: { nodes: [{ id: 'A', skill: 's' }] } },
+      payload: { dataDomain: 'personal', skill: 's', dag: { nodes: [{ id: 'A', skill: 's' }] } },
     });
     expect(reply.statusCode).toBe(400);
   });

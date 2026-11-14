@@ -14,7 +14,7 @@ const memory = { kind: 'memory-consolidation' } as const;
 const cross = (grantCoversContent: boolean) =>
   ({ kind: 'cross-domain', from: 'personal', to: 'enterprise', grantCoversContent }) as const;
 
-const prov: ContentProvenance = 'runtime-resolved-realm';
+const prov: ContentProvenance = 'runtime-resolved-dataDomain';
 
 describe('classifyContentRisk decision table (design-guardrails §3.2/§4)', () => {
   it('passes audit-log content unless it carries a credential pattern', () => {
@@ -35,7 +35,7 @@ describe('classifyContentRisk decision table (design-guardrails §3.2/§4)', () 
   it('annotates outbound plan content with a data boundary (with and without signals)', () => {
     expect(classifyContentRisk({ provenance: prov, destination: plan, signals: [] })).toEqual({
       action: 'annotate',
-      boundary: 'data-boundary:runtime-resolved-realm',
+      boundary: 'data-boundary:runtime-resolved-dataDomain',
       matches: [],
     });
     const hit = classifyContentRisk({
@@ -45,7 +45,7 @@ describe('classifyContentRisk decision table (design-guardrails §3.2/§4)', () 
     });
     expect(hit).toEqual({
       action: 'annotate',
-      boundary: 'data-boundary:runtime-resolved-realm',
+      boundary: 'data-boundary:runtime-resolved-dataDomain',
       matches: ['instruction-phrase'],
     });
   });
@@ -53,7 +53,7 @@ describe('classifyContentRisk decision table (design-guardrails §3.2/§4)', () 
   it('annotates outbound execute content with instruction isolation when no URL/credential hit', () => {
     expect(classifyContentRisk({ provenance: prov, destination: execute, signals: [] })).toEqual({
       action: 'annotate',
-      boundary: 'data-boundary:runtime-resolved-realm;instruction-isolation',
+      boundary: 'data-boundary:runtime-resolved-dataDomain;instruction-isolation',
       matches: [],
     });
     // instruction phrases are isolated, not escalated
@@ -132,7 +132,7 @@ describe('classifyContentRisk decision table (design-guardrails §3.2/§4)', () 
   it('annotates memory-consolidation content with its provenance marker', () => {
     expect(classifyContentRisk({ provenance: prov, destination: memory, signals: [] })).toEqual({
       action: 'annotate',
-      boundary: 'memory:runtime-resolved-realm',
+      boundary: 'memory:runtime-resolved-dataDomain',
       matches: [],
     });
   });

@@ -30,7 +30,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -70,7 +70,7 @@ function registerExecuteWatch(watches: WatchRegistry, delegationId: string) {
   watches.register({
     id: 'w1',
     owner: 'operator@bayjf',
-    realm: 'personal',
+    dataDomain: 'personal',
     predicate: { source: 'metrics', op: 'above', field: 'finished', value: -1 },
     intent: { skill: 'review', subject: 'queue is deep', mode: 'execute', maxFanOut: 1 },
     delegationId,

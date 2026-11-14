@@ -206,7 +206,7 @@ describe('HTTP self-host step 5 — approving a delegation-limit escalation', ()
     watches.register({
       id: 'w1',
       owner: 'operator@example',
-      realm: 'personal',
+      dataDomain: 'personal',
       predicate: { source: 'metrics', op: 'above', field: 'queueDepth', value: 2 },
       intent: { skill: 'merge', subject: 'x', mode: 'execute', maxFanOut: 1 },
       delegationId: 'old-contract',
@@ -219,7 +219,7 @@ describe('HTTP self-host step 5 — approving a delegation-limit escalation', ()
       watchId: 'w1',
       delegationId: 'old-contract',
       skill: 'merge',
-      realm: 'personal',
+      dataDomain: 'personal',
       limitReason: 'child-ticket-limit-reached',
       tickSeq: 1,
     });
@@ -273,8 +273,8 @@ describe('HTTP self-host step 5 — approving a delegation-limit escalation', ()
     oversight.ingestMemoryDispute({
       id: 'esc-m1',
       runId: 'run-1',
-      realm: 'personal',
-      realmId: 'r1',
+      dataDomain: 'personal',
+      dataDomainId: 'r1',
       factId: 'm1',
       conflictingFacts: ['e1', 'e2'],
       reason: 'contradictory facts',

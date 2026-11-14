@@ -1,8 +1,8 @@
 import { mkdir, realpath, utimes } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { assertPublishedInsideRoot, ensureDirInsideRoot, isInsideRoot, writeFileAtomic } from './fs.js';
-import { digestManifest } from '../realm/digest.js';
-import { FsRealmStore } from '../realm/store.js';
+import { digestManifest } from '../dataDomain/digest.js';
+import { FsDataDomainStore } from '../dataDomain/store.js';
 import { open, seal, type BackupKey } from './cipher.js';
 import { assertSource, buildBackup, parseMap } from './map.js';
 import { liveSourceFor } from './inventory.js';
@@ -40,7 +40,7 @@ export function openMap(envelope: SealedEnvelope, key: BackupKey): TreasureMap {
 /**
  * Pack a full, portable backup (L1): draw the map, bundle every item's content,
  * seal both with the same key, and mount the bundle reference on the map. The
- * bundle digest equals the whole-realm fingerprint, binding map and bundle.
+ * bundle digest equals the whole-dataDomain fingerprint, binding map and bundle.
  */
 export async function packFull(inventory: BackupInventory, key: BackupKey, opts: { now?: () => Date } = {}): Promise<PackedFull> {
   const now = (opts.now ?? (() => new Date()))().toISOString();
@@ -117,7 +117,7 @@ export async function restoreFromBundle(
   }
 
   const verifyMap: TreasureMap = { ...map, source: { ...source, root: targetRoot } };
-  const verifyStore = new FsRealmStore();
+  const verifyStore = new FsDataDomainStore();
   return restoreDryRun(verifyMap, liveSourceFor(verifyStore));
 }
 

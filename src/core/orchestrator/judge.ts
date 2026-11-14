@@ -95,7 +95,7 @@ export async function judgeDecision(input: JudgeDecisionInput): Promise<FanOutRe
       stateKeys: ['rule', 'ruleConclusion', 'ruleReason', 'positions'],
       options,
       runId: result.runId,
-      realm: result.realm,
+      dataDomain: result.dataDomain,
       ...(input.maxWaitMs !== undefined ? { maxWaitMs: input.maxWaitMs } : {}),
     });
   } catch (error) {

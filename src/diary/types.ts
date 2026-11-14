@@ -1,16 +1,16 @@
 /**
  * Diary (E8.3): narrative rendering of the memory event log.
  *
- * Pure, deterministic narrative functions plus a Realm-backed persistence
+ * Pure, deterministic narrative functions plus a DataDomain-backed persistence
  * step. Every narrative line keeps its source eventId (traceable); the diary
- * never invents content and never crosses a realm boundary.
+ * never invents content and never crosses a dataDomain boundary.
  */
 import type { MemoryKind, MemoryEvent, FactRecord, FactStatus } from '../memory/types.js';
-import type { OperatorWriteGrant } from '../realm/types.js';
+import type { OperatorWriteGrant } from '../dataDomain/types.js';
 
 export type { MemoryKind, MemoryEvent, FactRecord, FactStatus, OperatorWriteGrant };
 
-/** Deterministic diary id: `diary:{realmId}:{date}`. */
+/** Deterministic diary id: `diary:{dataDomainId}:{date}`. */
 export type DiaryId = string;
 
 /** One narrative line, rendered from a single MemoryEvent. */
@@ -44,7 +44,7 @@ export interface DiaryEntry {
   format: 'zeus-diary';
   version: 1;
   id: DiaryId;
-  realmId: string;
+  dataDomainId: string;
   /** YYYY-MM-DD. */
   date: string;
   windowStart: string;
@@ -71,7 +71,7 @@ export interface BuildDiaryOptions {
 }
 
 export interface PersistDiaryOptions {
-  /** Required operator write grant for enterprise realms; omitted on personal. */
+  /** Required operator write grant for enterprise dataDomains; omitted on personal. */
   grant?: OperatorWriteGrant;
   /** Directory prefix; defaults to 'diary', yielding diary/YYYY-MM-DD.md. */
   dir?: string;
@@ -84,7 +84,7 @@ export class DiaryError extends Error {
   }
 }
 
-/** Mixed-realm input was supplied; a diary belongs to exactly one realm. */
+/** Mixed-dataDomain input was supplied; a diary belongs to exactly one dataDomain. */
 export class DiaryBoundaryError extends DiaryError {
   constructor(message: string) {
     super(message);
@@ -92,7 +92,7 @@ export class DiaryBoundaryError extends DiaryError {
   }
 }
 
-/** The RealmStore cannot persist (no write capability). */
+/** The DataDomainStore cannot persist (no write capability). */
 export class DiaryUnsupportedError extends DiaryError {
   constructor(message: string) {
     super(message);

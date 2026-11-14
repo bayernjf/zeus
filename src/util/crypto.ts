@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 /** Algorithm label a digest that names its primitive carries in front of the hex body. */
 export const SHA256_LABEL = 'sha256:';
 
-/** SHA-256 hex digest shared by Realm fingerprints and roster signing. */
+/** SHA-256 hex digest shared by DataDomain fingerprints and roster signing. */
 export function sha256Hex(input: string | Buffer): string {
   return createHash('sha256').update(input).digest('hex');
 }

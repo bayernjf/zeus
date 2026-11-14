@@ -24,7 +24,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -84,7 +84,7 @@ describe('S15 V2 working-frame increments in a booted runtime', () => {
       intentId: 'intent-1',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['alpha', 'beta'],
     });
 
@@ -130,7 +130,7 @@ describe('S15 V2 working-frame increments in a booted runtime', () => {
       intentId: 'intent-2',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['alpha', 'beta'],
     });
 
@@ -152,7 +152,7 @@ describe('S15 V2 working-frame increments in a booted runtime', () => {
       intentId: 'intent-3',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['beta'],
     });
 
@@ -198,7 +198,7 @@ describe('S15 V2 working-frame increments in a booted runtime', () => {
       intentId: 'intent-4',
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['broken', 'offline'],
     });
 

@@ -22,7 +22,7 @@ function prHelperCard(): AgentCard {
       version: '1',
       swornTo: 'zeus',
       domain: 'pr-release-control',
-      realms: ['enterprise'],
+      dataDomains: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -87,15 +87,15 @@ describe('Acceptance #5 governance loop', () => {
     });
 
     // 1) healthy dispatch: bearer token presented, dispatched + final state audited
-    const first = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: { repo: 'app' }, realm: 'enterprise', runId: 'run-1' });
+    const first = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: { repo: 'app' }, dataDomain: 'enterprise', runId: 'run-1' });
     expect(first.ok).toBe(true);
     expect(seen).toHaveLength(1);
     expect(seen[0]!.auth).toBe(`Bearer ${TOKEN}`);
 
     // 2) dataPolicy origin gate: a read-task-scope executor refuses self-asserted
-    // realm hits outright — "belongs to this task" is only verifiable when the
-    // runtime itself resolved them (design-realm §3.1). No request, no token.
-    const second = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-2', realmHits: [{ itemId: 'hit-9', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'pr context' }], realmHitsOrigin: 'caller-asserted' });
+    // dataDomain hits outright — "belongs to this task" is only verifiable when the
+    // runtime itself resolved them (design-dataDomain §3.1). No request, no token.
+    const second = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, dataDomain: 'enterprise', runId: 'run-2', dataDomainHits: [{ itemId: 'hit-9', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'pr context' }], dataDomainHitsOrigin: 'caller-asserted' });
     expect(second.ok).toBe(false);
     if (second.ok) return;
     expect(second.audit.decision).toBe('refused-data-policy');
@@ -108,7 +108,7 @@ describe('Acceptance #5 governance loop', () => {
     expect(revokeEntry).toMatchObject({ executor: 'pr-helper' });
 
     // 4) named dispatch after revocation: blocked BEFORE any HTTP request or token issuance
-    const blocked = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-3' });
+    const blocked = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, dataDomain: 'enterprise', runId: 'run-3' });
     expect(blocked.ok).toBe(false);
     if (blocked.ok) return;
     expect(blocked.audit.decision).toBe('refused-revoked');
@@ -116,7 +116,7 @@ describe('Acceptance #5 governance loop', () => {
     expect(tokenRequests).toBe(1); // tokenFor never consulted for a revoked executor
 
     // 5) skill-based auto-selection skips the revoked executor as well
-    const auto = await dispatcher.dispatch({ skill: 'create-pr', params: {}, realm: 'enterprise', runId: 'run-4' });
+    const auto = await dispatcher.dispatch({ skill: 'create-pr', params: {}, dataDomain: 'enterprise', runId: 'run-4' });
     expect(auto.ok).toBe(false);
     if (auto.ok) return;
     expect(auto.audit.decision).toBe('refused-unknown-executor');
@@ -132,18 +132,18 @@ describe('Acceptance #5 governance loop', () => {
     ]);
   });
 
-  it('refuses to dispatch realm content the handshake does not allow (data diode)', async () => {
+  it('refuses to dispatch dataDomain content the handshake does not allow (data diode)', async () => {
     const { fetchImpl, seen } = buildServer();
     const { log, sink } = memoryAuditSink();
     const registry = new ExecutorRegistry(fetchImpl);
     await registry.register(CARD_URL);
     const dispatcher = new Dispatcher(registry.asExecutorLookup(), { audit: sink, fetchImpl, tokenFor: () => TOKEN });
 
-    const result = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, realm: 'personal', runId: 'run-x' });
+    const result = await dispatcher.dispatch({ executor: 'pr-helper', skill: 'create-pr', params: {}, dataDomain: 'personal', runId: 'run-x' });
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.audit.decision).toBe('refused-realm-policy');
+    expect(result.audit.decision).toBe('refused-dataDomain-policy');
     expect(seen).toHaveLength(0); // blocked before the network
-    expect(log[0]).toMatchObject({ decision: 'refused-realm-policy', executor: 'pr-helper', realm: 'personal' });
+    expect(log[0]).toMatchObject({ decision: 'refused-dataDomain-policy', executor: 'pr-helper', dataDomain: 'personal' });
   });
 });

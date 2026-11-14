@@ -55,7 +55,7 @@
 | `ZEUS_JUDGE_ALLOW_UNCALIBRATED` | 可选（默认关） | 仅校准后 judge 采信；开启即放弃该防线，只用于实验环境 | ☐ 已核对：________ |
 | `MODEL_HUB_URL` + `MODEL_HUB_TOKEN` | 条件必需（W7-3 后唯一 hub 后端） | 缺任一 → hub 不装配，退回 env 决策后端；两者都没有则 rules-only | ☐ 已核对：________ |
 | `MODEL_HUB_CACHE_PATH` | 可选（默认 `./data/model-cache.json`） | 用默认缓存路径；只读卷会让缓存写失败（fail-soft） | ☐ 已核对：________ |
-| `ZEUS_LLM_BASE_URL` + `ZEUS_LLM_API_KEY` + `ZEUS_LLM_MODEL` | 遗留（不建议生产启用） | **代码仍会读取并在 Jev 缺席时生效**，与模板「已 decommissioned」表述不一致：上线前必须确认是否允许裁决数据出境，否则保持三项全空 | ☐ 已核对：________ |
+| `ZEUS_LLM_BASE_URL` + `ZEUS_LLM_API_KEY` + `ZEUS_LLM_MODEL` | 遗留（不建议生产启用） | **代码仍会读取并在 Jev 缺席时生效**，与模板「已 deseatGranted」表述不一致：上线前必须确认是否允许裁决数据出境，否则保持三项全空 | ☐ 已核对：________ |
 
 ## 5. 并发、限流与成本
 
@@ -74,8 +74,8 @@
 |---|---|---|---|
 | `ZEUS_EXECUTOR_SEEDS` | 可选（首次引导） | 启动不自动注册执行 Agent；可改用 `POST /api/executors` | ☐ 已核对：________ |
 | `ZEUS_OUTBOUND_ALLOW_HOSTS` | 内网 peer 时必需 | 出站守卫拒绝私网目标（RFC1918/ULA 等），联调表现为不可达 | ☐ 已核对：________ |
-| `ZEUS_REALM_ROOTS` | 可选 | 不连接个人域；首连后可留空，状态文件会重连 | ☐ 已核对：________ |
-| `ZEUS_REALM_ENTERPRISE` | 企业域时必需 | 不挂企业域；条目缺 tenant 或非法会**直接拒启**（防止无边界域） | ☐ 已核对：________ |
+| `ZEUS_DATA_DOMAIN_ROOTS` | 可选 | 不连接个人域；首连后可留空，状态文件会重连 | ☐ 已核对：________ |
+| `ZEUS_DATA_DOMAIN_ENTERPRISE` | 企业域时必需 | 不挂企业域；条目缺 tenant 或非法会**直接拒启**（防止无边界域） | ☐ 已核对：________ |
 | `ZEUS_AGENT_WORLD_BASE_URL` | 条件必需（用 org 执行） | 组织任务返回 `503 ORG_EXECUTOR_UNCONFIGURED`，不伪造执行 | ☐ 已核对：________ |
 | `ZEUS_A2A_PUSH_URL` | 可选 | push 回调端点不挂载，出站仍走 SSE | ☐ 已核对：________ |
 | `ZEUS_MEMORY_EMBEDDING` | 可选 | 默认开启 hub embedding；设 `off` 固定本地 hash、正文不出域 | ☐ 已核对：________ |

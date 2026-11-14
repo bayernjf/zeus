@@ -1,6 +1,6 @@
-import type { A2AEvent, PushNotificationConfig, RealmType, Task } from '../a2a/types.js';
+import type { A2AEvent, PushNotificationConfig, DataDomainType, Task } from '../a2a/types.js';
 import type { ExecutorLike, ExecutorLookup } from './types.js';
-import type { RealmHit } from '../realm/types.js';
+import type { DataDomainHit } from '../dataDomain/types.js';
 import type { ContextAppendixEntry } from '../context/assemble.js';
 import type { SkillInputEntry } from '../context/skill-inputs.js';
 import { sendTask, sendTaskSubscribe, cancelTask } from './client.js';
@@ -12,12 +12,12 @@ import { scanContentSignals } from '../guardrails/content-risk.js';
  * (`GET /api/audit?decision=…`) validates against this same array, because a
  * second hand-maintained allowlist silently rots: five decisions
  * (`refused-skill-uninstalled`, `refused-no-active-provider`, `branch-diverted`,
- * `realm-disconnected`, `realm-tenant-retargeted`) were written to the audit
+ * `dataDomain-disconnected`, `dataDomain-tenant-retargeted`) were written to the audit
  * file but could not be queried, and the new one below would have been the sixth.
  */
 export const AUDIT_DECISIONS = [
   'dispatched',
-  'refused-realm-policy',
+  'refused-dataDomain-policy',
   'refused-unknown-executor',
   'refused-revoked',
   'executor-revoked',
@@ -25,40 +25,40 @@ export const AUDIT_DECISIONS = [
   'executor-reinstated',
   'dispatch-failed',
   'sla-ack-breached',
-  // E6.4: a subject crossed (or tried to cross) a realm boundary.
+  // E6.4: a subject crossed (or tried to cross) a dataDomain boundary.
   'domain-read',
   'domain-refused',
   // E6.4: the authorization lifecycle for those crossings.
   'domain-grant-issued',
   'domain-grant-revoked',
-  // E3.5 / deferred #14: the single-use write credential for an enterprise realm.
+  // E3.5 / deferred #14: the single-use write credential for an enterprise dataDomain.
   'operator-grant-issued',
-  // deferred #17: explicit realm boundary mutations (teardown / tenant re-scope).
-  'realm-disconnected',
-  'realm-tenant-retargeted',
+  // deferred #17: explicit dataDomain boundary mutations (teardown / tenant re-scope).
+  'dataDomain-disconnected',
+  'dataDomain-tenant-retargeted',
   // A write that a operator grant authorized (personal writes are not logged: they
   // are the user writing in their own directory, and logging them buries this).
-  'realm-write',
+  'dataDomain-write',
   // E9.1/E9.2: onboarding decisions for a seat in a department.
-  'commission-granted',
-  'commission-waived',
-  'commission-withdrawn',
-  'commission-refused',
+  'seatGrant-granted',
+  'seatGrant-waived',
+  'seatGrant-withdrawn',
+  'seatGrant-refused',
   // E2.2/E2.3/E2.4: the skill catalogue refused auto-selected fan-out targets.
   'refused-skill-uninstalled',
   'refused-no-active-provider',
   // #9: a saturated/eligible-lacking target re-pointed to an alternate provider.
   'branch-diverted',
   // MemoryPort v1 §6: the settled conclusion that could not be written back
-  // because its realm was unmounted at settle time. Like the dropped-claim
+  // because its dataDomain was unmounted at settle time. Like the dropped-claim
   // case below, the skip is a governance fact, not a silent drop.
   'memory-writeback-skipped',
-  // deferred #27: finished-intent verdicts that could not become claims (the realm
+  // deferred #27: finished-intent verdicts that could not become claims (the dataDomain
   // they belonged to was unmounted mid-flight). A dropped claim is a governance
   // fact, so it is announced rather than swallowed.
   'memory-claim-skipped',
   // MemoryPort contract v1 §4 (ruling D-1): every hub embedding call is an
-  // authorised out-of-realm call, so it is audited by content hash only.
+  // authorised out-of-dataDomain call, so it is audited by content hash only.
   'memory-embed-external',
   // MemoryPort contract v1 §7: one line per cross-agent consumer-face call
   // (namespace-bound, content hashes only).
@@ -72,12 +72,12 @@ export const AUDIT_DECISIONS = [
   // design-fan-out §7: the operator aborted a live outbound A2A stream through the
   // dispatcher port (no tasks/cancel was sent — there was no task id to name).
   'branch-aborted',
-  // design-realm §3.1: realm content was refused because handshake.dataPolicy does
+  // design-dataDomain §3.1: dataDomain content was refused because handshake.dataPolicy does
   // not admit its origin (none accepts none; read-task-scope only runtime-resolved;
   // hits without a declared origin fail closed). The refusal is the policy
   // working, so it is visible rather than a silent drop.
   'refused-data-policy',
-  // design-realm §3.1: realm content was injected, recording the policy, the
+  // design-dataDomain §3.1: dataDomain content was injected, recording the policy, the
   // origin and the count so "what did this task give that agent" can be traced.
   'content-injected',
   // S1 context engineering V1 (design-context-engineering §10): the memory
@@ -222,7 +222,7 @@ export type AuditEntry = {
   /** Governance events (executor-revoked) carry no task context. */
   runId?: string;
   skill?: string;
-  realm?: RealmType;
+  dataDomain?: DataDomainType;
   taskId?: string;
   state?: Task['status']['state'];
   /** Trust tier of a caller card on the external-agent-* face (PRD E9.4). */
@@ -235,20 +235,20 @@ export type DispatchRequest = {
   executor?: string;
   skill: string;
   params: Record<string, unknown>;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   runId?: string;
-  /** Realm content offered to the executor; gated by handshake.dataPolicy on *origin* (design-realm §3.1). */
-  realmHits?: RealmHit[];
-  /** Where the hits came from. Required whenever realmHits is non-empty; a
+  /** DataDomain content offered to the executor; gated by handshake.dataPolicy on *origin* (design-dataDomain §3.1). */
+  dataDomainHits?: DataDomainHit[];
+  /** Where the hits came from. Required whenever dataDomainHits is non-empty; a
    *  request whose hits carry no origin fails closed (the runtime can verify
    *  runtime-resolved hits as task-scoped, and can verify nothing about
    *  caller-asserted ones). */
-  realmHitsOrigin?: 'runtime-resolved' | 'caller-asserted';
+  dataDomainHitsOrigin?: 'runtime-resolved' | 'caller-asserted';
   /**
    * S1 context engineering V1: the read-only memory appendix assembled by the
    * runtime at dispatch time (design-context-engineering §10). Never supplied
    * by a caller — `FanOutRequest` has no such field — and never written back.
-   * Like `realmHits`, it is instantaneous at dispatch and a replay may omit it.
+   * Like `dataDomainHits`, it is instantaneous at dispatch and a replay may omit it.
    */
   contextAppendix?: ContextAppendixEntry[];
   /**
@@ -291,7 +291,7 @@ export type DispatchRequest = {
 };
 
 export type DispatchResult =
-  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: RealmHit[] }
+  | { ok: true; task: Task; events: A2AEvent[]; injectedHits: DataDomainHit[] }
   | { ok: false; reason: string; audit: AuditEntry };
 
 export type AuditSink = (entry: AuditEntry) => void;
@@ -310,16 +310,16 @@ export class Dispatcher {
       tokenFor?: (executorName: string) => string | undefined;
       /**
        * S8 V3 (design-guardrails §5): whether a executor holds a content grant
-       * (a valid DomainGrant) for a *specific realm*. Realm-scoped since the
-       * enterprise gate went realm-granular (an unexpired grant for realm A
-       * no longer covers enterprise content from realm B). The realmId is the
-       * hit's own realm binding; runtime-resolved hits always carry one,
+       * (a valid DomainGrant) for a *specific dataDomain*. DataDomain-scoped since the
+       * enterprise gate went dataDomain-granular (an unexpired grant for dataDomain A
+       * no longer covers enterprise content from dataDomain B). The dataDomainId is the
+       * hit's own dataDomain binding; runtime-resolved hits always carry one,
        * caller-asserted hits never do, and the gate refuses the latter as
        * unverifiable. Present only when the runtime is booted with a DomainGrant
        * registry; absent, the enterprise-content guardrail is off and dispatch
        * keeps its V2 behaviour.
        */
-      contentGrant?: (executorName: string, realmId: string) => boolean;
+      contentGrant?: (executorName: string, dataDomainId: string) => boolean;
     }
   ) {
     this.lookup = directory instanceof Map ? mapAsLookup(directory) : directory;
@@ -335,7 +335,7 @@ export class Dispatcher {
       // or token issued, and the block is audited distinctly from "unknown".
       if (this.lookup.statusOf(request.executor) === 'revoked') {
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, executor: request.executor, skill: request.skill, realm: request.realm,
+          ts: now().toISOString(), runId, executor: request.executor, skill: request.skill, dataDomain: request.dataDomain,
           decision: 'refused-revoked', detail: `executor ${request.executor} is revoked; dispatch blocked before token issuance`,
         };
         this.options.audit(audit);
@@ -348,7 +348,7 @@ export class Dispatcher {
       // already routes through findBySkill; this is the explicit-name path.
       if (executor && !executor.card.skills.some(skill => skill.id === request.skill)) {
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
           decision: 'refused-skill-uninstalled',
           detail: `executor ${executor.name} does not declare skill ${request.skill}`,
         };
@@ -364,45 +364,45 @@ export class Dispatcher {
     }
 
     if (!executor || selectionDetail) {
-      const audit: AuditEntry = { ts: now().toISOString(), runId, executor: request.executor ?? '(auto)', skill: request.skill, realm: request.realm, decision: 'refused-unknown-executor', detail: selectionDetail ?? 'no registered executor provides this skill' };
+      const audit: AuditEntry = { ts: now().toISOString(), runId, executor: request.executor ?? '(auto)', skill: request.skill, dataDomain: request.dataDomain, decision: 'refused-unknown-executor', detail: selectionDetail ?? 'no registered executor provides this skill' };
       this.options.audit(audit);
       return { ok: false, reason: audit.detail!, audit };
     }
 
-    // Data diode: task realm must be allowed by the executor handshake
-    if (!executor.handshake.realms.includes(request.realm)) {
-      const audit: AuditEntry = { ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm, decision: 'refused-realm-policy', detail: `handshake.realms=${executor.handshake.realms.join(',')} excludes ${request.realm}` };
+    // Data diode: task dataDomain must be allowed by the executor handshake
+    if (!executor.handshake.dataDomains.includes(request.dataDomain)) {
+      const audit: AuditEntry = { ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision: 'refused-dataDomain-policy', detail: `handshake.dataDomains=${executor.handshake.dataDomains.join(',')} excludes ${request.dataDomain}` };
       this.options.audit(audit);
       return { ok: false, reason: audit.detail!, audit };
     }
 
-    // design-realm §3.1: handshake.dataPolicy gates the *origin* the realm hits may
+    // design-dataDomain §3.1: handshake.dataPolicy gates the *origin* the dataDomain hits may
     // come from, not the field set (which is the same across policies). The two
     // failure modes — hits that cannot be traced to a declared origin, and a
     // policy that does not admit the origin — refuse the dispatch instead of
     // silently dropping content (the "silent downgrade is a failure shape" rule
     // from #20/#31). Refusals are audited, so a policy that blocked content is
     // visible as the policy working, not as a gap.
-    const hits = request.realmHits;
-    const origin = request.realmHitsOrigin;
+    const hits = request.dataDomainHits;
+    const origin = request.dataDomainHitsOrigin;
     const policy = executor.handshake.dataPolicy;
-    let injectedHits: RealmHit[] = [];
+    let injectedHits: DataDomainHit[] = [];
     if (hits && hits.length > 0) {
       if (!origin) {
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
           decision: 'refused-data-policy',
-          detail: `handshake.dataPolicy=${policy}: ${hits.length} realm hits carry no origin; dispatch refused (fail-closed)`,
+          detail: `handshake.dataPolicy=${policy}: ${hits.length} dataDomain hits carry no origin; dispatch refused (fail-closed)`,
         };
         this.options.audit(audit);
         return { ok: false, reason: audit.detail!, audit };
       }
       if (policy === 'none' || (policy === 'read-task-scope' && origin === 'caller-asserted')) {
         const why = policy === 'none'
-          ? `handshake.dataPolicy=none does not accept realm content`
+          ? `handshake.dataPolicy=none does not accept dataDomain content`
           : `handshake.dataPolicy=read-task-scope accepts only runtime-resolved hits; self-asserted hits cannot be verified as task-scoped`;
         const audit: AuditEntry = {
-          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+          ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
           decision: 'refused-data-policy',
           detail: `${why} (origin=${origin})`,
         };
@@ -411,49 +411,49 @@ export class Dispatcher {
       }
       injectedHits = hits;
       this.options.audit({
-        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
         decision: 'content-injected',
         detail: `handshake.dataPolicy=${policy}, origin=${origin}, hits=${hits.length}`,
       });
       // S8 V3 (design-guardrails §5): the content-side second gate. Domain
       // isolation already made the hits task-scoped (dataPolicy/origin) and
-      // the executor's realms admit the realm type; this gate judges the
-      // *content* itself. Enterprise-realm hits carrying a deterministic PII
+      // the executor's dataDomains admit the dataDomain type; this gate judges the
+      // *content* itself. Enterprise-dataDomain hits carrying a deterministic PII
       // pattern are never shipped verbatim: a content grant (DomainGrant)
       // redacts the PII-bearing entries from the outbound copy, no grant
-      // refuses them. Both are audited on the same spine. Personal-realm
+      // refuses them. Both are audited on the same spine. Personal-dataDomain
       // content and signal-free enterprise content pass through unchanged.
       // The gate is off until boot wires a contentGrant port (absent port =
       // V2 behaviour).
-      // Realm-scoped (S8 V3 + realm-granular pass): a PII hit is redacted
+      // DataDomain-scoped (S8 V3 + dataDomain-granular pass): a PII hit is redacted
       // only when the executor holds a content grant for the hit's *own*
-      // realm. A hit without a realmId (caller-asserted) has no realm
+      // dataDomain. A hit without a dataDomainId (caller-asserted) has no dataDomain
       // binding a grant could cover, so it is unverifiable and the dispatch
-      // fails closed; a hit whose realm the executor has no grant for is
+      // fails closed; a hit whose dataDomain the executor has no grant for is
       // refused outright. Any uncovered or unverifiable hit refuses the
       // whole dispatch rather than silently leaking one entry (the "silent
       // downgrade is a failure shape" rule from #20/#31).
       const contentGrant = this.options.contentGrant;
-      if (contentGrant && request.realm === 'enterprise' && injectedHits.length > 0) {
+      if (contentGrant && request.dataDomain === 'enterprise' && injectedHits.length > 0) {
         const piiHits = injectedHits.filter(hit => scanContentSignals(hit.snippet).includes('pii-pattern'));
         if (piiHits.length > 0) {
-          const unverifiable = piiHits.filter(hit => !hit.realmId);
-          const uncovered = piiHits.filter(hit => hit.realmId && !contentGrant(executor.name, hit.realmId));
+          const unverifiable = piiHits.filter(hit => !hit.dataDomainId);
+          const uncovered = piiHits.filter(hit => hit.dataDomainId && !contentGrant(executor.name, hit.dataDomainId));
           if (unverifiable.length > 0 || uncovered.length > 0) {
             const audit: AuditEntry = {
-              ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+              ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
               decision: 'guardrail-refused',
-              detail: `enterprise realm content: ${piiHits.length} PII hit(s) refused (${unverifiable.length} carry no realmId; ${uncovered.length} have no realm-scoped content grant) for executor ${executor.name}`,
+              detail: `enterprise dataDomain content: ${piiHits.length} PII hit(s) refused (${unverifiable.length} carry no dataDomainId; ${uncovered.length} have no dataDomain-scoped content grant) for executor ${executor.name}`,
             };
             this.options.audit(audit);
             return { ok: false, reason: audit.detail!, audit };
           }
-          const covered = piiHits.filter(hit => hit.realmId);
+          const covered = piiHits.filter(hit => hit.dataDomainId);
           injectedHits = injectedHits.filter(hit => !covered.includes(hit));
           this.options.audit({
-            ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+            ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
             decision: 'guardrail-redacted',
-            detail: `enterprise realm content: ${covered.length} PII hit(s) redacted from outbound copy (realm-scoped content grant) for executor ${executor.name}`,
+            detail: `enterprise dataDomain content: ${covered.length} PII hit(s) redacted from outbound copy (dataDomain-scoped content grant) for executor ${executor.name}`,
           });
         }
       }
@@ -467,7 +467,7 @@ export class Dispatcher {
     // so this check covers both selection paths.
     if (this.lookup.statusOf(executor.name) === 'revoked') {
       const audit: AuditEntry = {
-        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
         decision: 'refused-revoked', detail: `executor ${executor.name} was revoked before its credential was issued; dispatch blocked`,
       };
       this.options.audit(audit);
@@ -508,7 +508,7 @@ export class Dispatcher {
               skill: request.skill,
               params: {
                 ...request.params,
-                ...(injectedHits.length ? { realmHits: injectedHits } : {}),
+                ...(injectedHits.length ? { dataDomainHits: injectedHits } : {}),
                 ...(request.contextAppendix !== undefined && request.contextAppendix.length > 0
                   ? { contextAppendix: request.contextAppendix }
                   : {}),
@@ -529,7 +529,7 @@ export class Dispatcher {
           skill: request.skill,
           params: {
             ...request.params,
-            ...(injectedHits.length ? { realmHits: injectedHits } : {}),
+            ...(injectedHits.length ? { dataDomainHits: injectedHits } : {}),
             // S1 (design-context-engineering §10): the runtime-assembled memory
             // appendix travels the existing outbound channel — the executor sees
             // what context the runtime gave this branch.
@@ -575,8 +575,8 @@ export class Dispatcher {
       const aborted = request.signal?.aborted ?? false;
       const decision = aborted ? 'branch-aborted' : 'dispatch-failed';
       const detail = aborted ? 'aborted by the operator' : error instanceof Error ? error.message : 'dispatch failed';
-      this.options.audit({ ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm, decision, detail });
-      return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm, decision, detail } };
+      this.options.audit({ ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision, detail });
+      return { ok: false, reason: detail, audit: { ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision, detail } };
     }
 
     // A peer that streamed no intermediate event still accepted the task by
@@ -585,12 +585,12 @@ export class Dispatcher {
 
     if (ackSeconds !== undefined && ack.elapsedMs > ackSeconds * 1000) {
       this.options.audit({
-        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm,
+        ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain,
         decision: 'sla-ack-breached', taskId: ack.taskId,
         detail: `accepted after ${ack.elapsedMs}ms exceeds declared sla.ackSeconds=${ackSeconds}s`,
       });
     }
-    this.options.audit({ ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, realm: request.realm, decision: 'dispatched', taskId: task.id, state: task.status.state });
+    this.options.audit({ ts: now().toISOString(), runId, executor: executor.name, skill: request.skill, dataDomain: request.dataDomain, decision: 'dispatched', taskId: task.id, state: task.status.state });
     return { ok: true, task, events, injectedHits };
   }
 

@@ -27,7 +27,7 @@ function handshakeCard(name: string): AgentCard {
       version: '1',
       swornTo: 'zeus',
       domain: `${name}-domain`,
-      realms: ['personal'],
+      dataDomains: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',

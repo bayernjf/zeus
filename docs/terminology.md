@@ -43,7 +43,7 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | 遗忘权 | 数据主体删除权（erasure） | `MemoryStore.forgetSubject` + `POST /api/memory/forget-subject` |
 | 日记 | 把事件流写成可读叙事的日志 | `src/diary/`（`build` / `from-memory` / `markdown` / `persist`） |
 | 编制 / 岗位 / 单一负责人 | 组织结构与问责映射（accountability） | `src/org/`（`OrgRole`、`lead` / `leadId` / `leadMember`） |
-| 上岗签字（commission） | 上岗授权的签署 / 豁免 / 撤回 | 审计枚举 `commission-granted\|waived\|withdrawn\|refused`（`src/dispatch/dispatcher.ts:43-45 #commission`）+ `src/onboarding/` |
+| 上岗签字（commission） | 上岗授权的签署 / 豁免 / 撤回 | 审计枚举 `commission-granted\|waived\|withdrawn\|refused`（`src/dispatch/dispatcher.ts:43-45 #seatGrant`）+ `src/onboarding/` |
 | 封神榜 | 对外发布的**已签名**公开名册 | `projectPublicRoster` + `sealSnapshot`（`src/registry/roster.ts`） |
 | 内核（runtime） | **运行时 / 编排引擎**，勿直译成 OS runtime | `bootRuntime`（`src/state/boot.ts`） |
 | 决策回放 | 确定性重放（deterministic replay） | `src/core/orchestrator/replay.ts` + `GET /api/intents/:id/replay` |
@@ -85,7 +85,7 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 | `executor` / `ExecutorEntry` / `ExecutorRegistry` | 已注册、可被派发任务的外部执行 Agent 及其注册表（A2A 卡片发现、active/revoked 状态、出站凭证） | 代码、状态文件键 `registry`、HTTP 路径 `/api/executors`、环境变量 `ZEUS_EXECUTOR_SEEDS`、审计事件 `executor-revoked` |
 | `handshake` / `x-zeus-handshake` | 注册握手声明：归属、数据域、数据策略、结果回传与升级策略；缺失即拒绝注册 | **线上协议字段**（卡片 HTTP 头）、`Handshake` 类型 |
 | `roster` | 注册表状态的不可变签名投影（`entries` + 条目 attestation + 快照签名） | 代码、HTTP `/api/roster`、`/api/roster/public`、对外发布物 |
-| `realm` | 一个可连接的本地数据目录（`personal` / `enterprise`），带确定性 ID 与内容摘要 | 代码、状态文件键 `realms`、HTTP `/api/domains*`、环境变量 `ZEUS_REALM_ROOTS` / `ZEUS_REALM_ENTERPRISE`、审计事件 `realm-write` |
+| `realm` | 一个可连接的本地数据目录（`personal` / `enterprise`），带确定性 ID 与内容摘要 | 代码、状态文件键 `realms`、HTTP `/api/domains*`、环境变量 `ZEUS_DATA_DOMAIN_ROOTS` / `ZEUS_DATA_DOMAIN_ENTERPRISE`、审计事件 `realm-write` |
 | `backup` | 备份与恢复协议：只存引用与指纹的清单 + AES-256-GCM 加密内容包。**与 HashiCorp Backup 无关** | 代码目录 `src/backup/`、CLI `npm run backup`、环境变量 `ZEUS_BACKUP_PASSPHRASE` |
 | `runtime` / `bootRuntime` | 运行时核心的装配入口：把注册表、派发器、人工队列、编排器、指标、组织一次接起来 | 代码、状态文件 `ZEUS_STATE_FILE` |
 | `operator` / `needs-operator` / `OperatorResolution` | **人工在环**：需要操作者判断的状态，与操作者给出的裁决结果 | 状态枚举、HTTP 响应字段、审计事件 `operator-grant-issued` |
@@ -102,7 +102,7 @@ Zeus 的项目文档与代码大量使用**叙事化隐喻**（封臣/效忠/战
 |---|---|---|
 | 1 纯内部标识符 | 类名 / 函数名 / 目录名（如 `ExecutorRegistry`、`src/backup/`） | 只影响代码内；`src` + `tests` 约 **4,000+ 处**引用，需一次全量回归（基线 692 项 / 72 文件、CI 双矩阵） |
 | 2 已落盘的数据格式 | 状态文件 JSON 键（`registry` / `realms` / `commissions` / `mentorships` / `domainGrants` / `writeGrantNonces`）、审计 JSONL 的 `decision` 取值、备份清单与加密包、**签名名册的载荷**（JCS 规范化后逐字节参与验签） | 旧文件与旧备份必须仍可读；改签名载荷会让**历史名册与已发凭证全部需重签或加兼容分支** |
-| 3 配置与环境 | 24 个 `ZEUS_*` 变量里的 `ZEUS_EXECUTOR_SEEDS`、`ZEUS_REALM_ROOTS`、`ZEUS_REALM_ENTERPRISE`、`ZEUS_BACKUP_PASSPHRASE`、`ZEUS_RSK_KEY*` | 破坏现有 `.env`、systemd `EnvironmentFile`、`docker run --env-file` 与部署手册 |
+| 3 配置与环境 | 24 个 `ZEUS_*` 变量里的 `ZEUS_EXECUTOR_SEEDS`、`ZEUS_DATA_DOMAIN_ROOTS`、`ZEUS_DATA_DOMAIN_ENTERPRISE`、`ZEUS_BACKUP_PASSPHRASE`、`ZEUS_RSK_KEY*` | 破坏现有 `.env`、systemd `EnvironmentFile`、`docker run --env-file` 与部署手册 |
 | 4 线上协议与路由 | 卡片头 `x-zeus-handshake`、HTTP 路径 `/api/executors`、响应字段 `Position.executor` 等 | **对端已部署**：生产上的 pr-helper 按这个头声明归属，改字段需两侧同步迁移并留兼容期 |
 
 **当前口径（2026-09-25 用户定）**：文档与注释措辞换专业术语；标识符、协议字段、环境变量与数据格式**不动**，需要时由本节解释含义。将来若要动第 2–4 档，按**契约变更**立项（含迁移与兼容读取），不作为文档批次的顺带项。

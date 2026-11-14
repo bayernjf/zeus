@@ -32,7 +32,7 @@
  *                         for the optional SSE probe.
  *   SKILL               — loom skill id; default "generate-content" (the card's
  *                         display name is not what tasks/send executes).
- *   REALM               — intent realm, default "personal".
+ *   DATA_DOMAIN               — intent dataDomain, default "personal".
  *   PARAMS              — optional JSON skill params for the intent.
  *
  * Asserted contract (loom side, Q150):
@@ -64,7 +64,7 @@ const LOOM_URL = (env.LOOM_URL ?? '').replace(/\/+$/, '');
 const CARD_URL = (env.CARD_URL ?? (LOOM_URL ? `${LOOM_URL}/.well-known/agent-card.json` : '')).replace(/\/+$/, '');
 const AGENT_TOKEN = env.AGENT_TOKEN ?? '';
 const SKILL = env.SKILL ?? 'generate-content';
-const REALM = env.REALM ?? 'personal';
+const DATA_DOMAIN = env.DATA_DOMAIN ?? 'personal';
 const PARAMS = env.PARAMS ? JSON.parse(env.PARAMS) : undefined;
 
 // loom executes plan skills by their **id** (generate-content / compliance-check /
@@ -105,7 +105,7 @@ async function call(method, path, { auth = false, body } = {}) {
 async function main() {
   console.log(`runtime: ${RUNTIME_URL}`);
   console.log(`card:   ${CARD_URL}`);
-  console.log(`skill:  ${SKILL}  realm: ${REALM}  marker: ${marker}`);
+  console.log(`skill:  ${SKILL}  dataDomain: ${DATA_DOMAIN}  marker: ${marker}`);
 
   // 1. Runtime is up.
   const health = await call('GET', '/healthz');
@@ -191,13 +191,13 @@ async function main() {
 
   // 6. One fan-out through loom (plan mode). Runtime reads the card-declared url.
   const domains = await call('GET', '/api/domains', { auth: true });
-  const target = (domains.json?.realms ?? []).find((/** @type {any} */ realm) => realm.type === REALM);
+  const target = (domains.json?.dataDomains ?? []).find((/** @type {any} */ dataDomain) => dataDomain.type === DATA_DOMAIN);
   const fanOut = await call('POST', '/api/intents', {
     auth: true,
     body: {
       skill: SKILL,
-      realm: REALM,
-      ...(target?.realmId ? { realmId: target.realmId } : {}),
+      dataDomain: DATA_DOMAIN,
+      ...(target?.dataDomainId ? { dataDomainId: target.dataDomainId } : {}),
       executors: ['loom'],
       params: PARAMS ?? { tenant_id: marker, product_id: marker },
     },

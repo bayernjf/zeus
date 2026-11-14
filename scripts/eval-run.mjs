@@ -272,7 +272,7 @@ function cardFor(name, dataPolicy, isPlanner) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'eval-domain',
-      realms: ['personal'], dataPolicy,
+      dataDomains: ['personal'], dataPolicy,
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -313,11 +313,11 @@ function makeOversightBridge(audits) {
  *   memory?: Array<{ id: string, subject: string, predicate: string, object: string }>;
  *   planFlow?: { goal: string; plannerSkills?: string[] };
  *   recovery?: { intents: Array<{ intentId: string, status: string, branch: Record<string, unknown> }>; maxAutoResumeMs?: number };
- *   isolation?: { transport: 'stdio' | 'http'; tier: string; manifest: Record<string, unknown>; authorizedRealms: string[]; containerRuntimeAvailable: boolean };
+ *   isolation?: { transport: 'stdio' | 'http'; tier: string; manifest: Record<string, unknown>; authorizedDataDomains: string[]; containerRuntimeAvailable: boolean };
  * }} RunnerCase
  */
 
-/** Build a personal-realm claim event for the guardrails family (S8): the
+/** Build a personal-dataDomain claim event for the guardrails family (S8): the
  *  memory assembly path scans recalled fact text through the content-risk
  *  chain, so a case seeds facts whose rendered text carries (or deliberately
  *  lacks) the adversarial signals.
@@ -327,7 +327,7 @@ function makeOversightBridge(audits) {
 function memoryClaim(m) {
   return {
     eventId: m.id,
-    realmId: 'personal',
+    dataDomainId: 'personal',
     runId: 'eval-memory-seed',
     source: { agentId: 'eval-seed' },
     kind: 'claim',
@@ -370,7 +370,7 @@ async function runCase(c) {
   });
   if (c.memory !== undefined) {
     for (const m of c.memory) runtime.memoryStore?.append(memoryClaim(m));
-    runtime.memoryStore?.consolidateRealm('personal');
+    runtime.memoryStore?.consolidateDataDomain('personal');
   }
 
   // S12 planning family: drive PlanFlow instead of a single fan-out. The
@@ -381,12 +381,12 @@ async function runCase(c) {
     if (planFlow === undefined) throw new Error(`case ${c.id}: runtime has no planFlow component`);
     const planResult = await planFlow.run({
       goal: { description: c.planFlow.goal },
-      realm: 'personal',
+      dataDomain: 'personal',
       ...(c.planFlow.plannerSkills !== undefined ? { plannerSkills: c.planFlow.plannerSkills } : {}),
       requireConfirmation: true,
     });
     /** @type {import('../src/evals/score.js').EvalTrace} */
-    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(planning)', runId: '(planning)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [], planFlow: planResult };
+    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(planning)', runId: '(planning)', skill: c.skill, dataDomain: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [], planFlow: planResult };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
       trace,
@@ -414,7 +414,7 @@ async function runCase(c) {
       ...(c.recovery.maxAutoResumeMs !== undefined ? { maxAutoResumeMs: c.recovery.maxAutoResumeMs } : {}),
     });
     /** @type {import('../src/evals/score.js').EvalTrace} */
-    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(recovery)', runId: '(recovery)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [] };
+    const trace = { outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(recovery)', runId: '(recovery)', skill: c.skill, dataDomain: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }), audit: audits, events: [] };
     return {
       caseDef: /** @type {import('../dist/evals/types.js').EvalCase} */ ({ id: c.id, world: null, agents: c.agents, input: c.request, expect: c.expect }),
       trace,
@@ -426,10 +426,10 @@ async function runCase(c) {
     const { classifyIsolation, validateIsolation } = await import('../dist/mcp/isolation.js');
     const manifest = /** @type {import('../dist/mcp/isolation.js').IsolationManifest} */ (c.isolation.manifest);
     const level = classifyIsolation({ transport: c.isolation.transport, tier: /** @type {import('../dist/trust/tier.js').TrustTier} */ (c.isolation.tier), manifest });
-    const verdict = validateIsolation({ level, manifest, authorizedRealms: c.isolation.authorizedRealms, containerRuntimeAvailable: c.isolation.containerRuntimeAvailable });
+    const verdict = validateIsolation({ level, manifest, authorizedDataDomains: c.isolation.authorizedDataDomains, containerRuntimeAvailable: c.isolation.containerRuntimeAvailable });
     /** @type {import('../src/evals/score.js').EvalTrace} */
     const trace = {
-      outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(isolation)', runId: '(isolation)', skill: c.skill, realm: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }),
+      outcome: /** @type {import('../dist/orchestrator/types.js').FanOutResult} */ ({ intentId: '(isolation)', runId: '(isolation)', skill: c.skill, dataDomain: 'personal', branches: [], stream: [], positions: [], decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0' }),
       audit: audits,
       events: [],
       isolation: { level, valid: verdict.ok, reasons: verdict.ok ? [] : verdict.reasons },

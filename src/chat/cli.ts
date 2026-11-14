@@ -6,13 +6,13 @@
  * a conversation shell. This file is assembly, not a new mechanism: the runtime
  * already recognizes an instruction (`recognizeIntent`) and fans it out to the
  * registered execution agents (`orchestrator.fanOut`). What is new here is the
- * readline loop that keeps the same booted runtime — and the realm it mounted —
+ * readline loop that keeps the same booted runtime — and the dataDomain it mounted —
  * alive across many turns, instead of booting and tearing down per sentence.
  *
  * Three boundaries are deliberate, same as `daily`:
  *   - Plan-only. Every recognized sentence goes out with `mode: 'plan'`. No
  *     execute delegation is ever minted here, and no record is written back to
- *     the realm. The shell reads and plans; the operator decides what to run.
+ *     the dataDomain. The shell reads and plans; the operator decides what to run.
  *   - Zero out-of-domain by default. Recognition is the local rule ranker unless
  *     the operator passes `--model` (which attaches the configured decision
  *     backend for that whole session). Without it nothing leaves the machine.
@@ -24,7 +24,7 @@
  *
  * Exit codes: 0 the loop ended cleanly (after /exit, EOF, or a broken pipe we
  * reported) · 2 boot/usage error (nothing was recognized, the runtime did not
- * start, or no writable realm was mounted).
+ * start, or no writable dataDomain was mounted).
  */
 import readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
@@ -38,14 +38,14 @@ import {
   resolveConcurrencyConfig,
   resolveCostConfig,
   resolveDecisionConfig,
-  resolveRealmConfig,
+  resolveDataDomainConfig,
   resolveExecutorSeedsConfig,
   type RuntimeBoot,
   type RuntimeBootOptions,
 } from '../state/boot.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { recognizeIntent, rankCandidates, type SkillCatalogEntry } from '../intent/recognize.js';
-import { RealmError, type RealmConnection } from '../realm/types.js';
+import { DataDomainError, type DataDomainConnection } from '../dataDomain/types.js';
 import type { BranchOutcome, FanOutResult } from '../core/orchestrator/types.js';
 import { registerSkillSpecs, skillCatalogEntry } from '../daily/cli.js';
 
@@ -58,12 +58,12 @@ const USAGE = `usage: npm run chat [options]
 
 A local multi-turn planning shell. It boots the runtime once, then reads one
 operator sentence per line, recognizes which registered skill it means, and
-prints a plan (never an execution). The same runtime and realm stay mounted
+prints a plan (never an execution). The same runtime and dataDomain stay mounted
 across turns.
 
 Options:
   --root DIR            directory to work in, mounted read-write (repeatable;
-                        ZEUS_REALM_ROOTS entries are mounted alongside)
+                        ZEUS_DATA_DOMAIN_ROOTS entries are mounted alongside)
   --agent CARD[|TOKEN]  register an execution agent before the loop starts
                         (repeatable; merged with ZEUS_EXECUTOR_SEEDS)
   --spec FILE           register an explicit skill spec before the loop starts
@@ -180,14 +180,14 @@ function collectSeeds(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<Runti
   return seeds;
 }
 
-function realmRootsFor(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['realmRoots']> {
-  const configured = resolveRealmConfig(env).realmRoots;
+function dataDomainRootsFor(args: ChatArgs, env: NodeJS.ProcessEnv): NonNullable<RuntimeBootOptions['dataDomainRoots']> {
+  const configured = resolveDataDomainConfig(env).dataDomainRoots;
   const personal = configured.filter((entry): entry is string => typeof entry === 'string');
   const enterprise = configured.filter(entry => typeof entry !== 'string');
   return [...new Set([...args.roots, ...personal]), ...enterprise];
 }
 
-function pickWritablePersonal(connections: RealmConnection[]): RealmConnection | undefined {
+function pickWritablePersonal(connections: DataDomainConnection[]): DataDomainConnection | undefined {
   return connections.find(connection => connection.type === 'personal' && !connection.readOnly);
 }
 
@@ -257,14 +257,14 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
   }
 
   let runtime: RuntimeBoot;
-  let realm: RealmConnection;
+  let dataDomain: DataDomainConnection;
   let backend: DecisionBackend | null = null;
   try {
     const stateFile = resolveStateFile(args.stateFile, env.ZEUS_STATE_FILE);
-    const roots = realmRootsFor(args, env);
+    const roots = dataDomainRootsFor(args, env);
     const runtimeOptions: RuntimeBootOptions = {
       ...(stateFile ? { stateFile } : {}),
-      ...(roots.length > 0 ? { realmRoots: roots } : {}),
+      ...(roots.length > 0 ? { dataDomainRoots: roots } : {}),
       ...(env.ZEUS_AUDIT_FILE ? { auditFile: env.ZEUS_AUDIT_FILE } : {}),
       ...concurrencyBootOptions(resolveConcurrencyConfig(env)),
       ...costBootOptions(resolveCostConfig(env)),
@@ -286,11 +286,11 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
     runtime = await bootRuntime(runtimeOptions);
     // Registered before the loop starts: a rejected spec is a configuration fact.
     registerSkillSpecs(runtime.skillRegistry, args.specs);
-    const connections = runtime.realmStore?.connections() ?? [];
+    const connections = runtime.dataDomainStore?.connections() ?? [];
     const picked = pickWritablePersonal(connections);
     if (!picked) {
       writeErr(
-        'no writable personal realm to work in: pass --root DIR (the folder your notes live in), or set ZEUS_REALM_ROOTS.\n',
+        'no writable personal dataDomain to work in: pass --root DIR (the folder your notes live in), or set ZEUS_DATA_DOMAIN_ROOTS.\n',
       );
       try {
         await runtime.releaseLock();
@@ -299,9 +299,9 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
       }
       return { code: 2, stdout: '', stderr: err.join('') };
     }
-    realm = picked;
+    dataDomain = picked;
   } catch (error) {
-    const code = error instanceof RuntimeBootError || error instanceof UsageError || error instanceof RealmError ? 2 : 1;
+    const code = error instanceof RuntimeBootError || error instanceof UsageError || error instanceof DataDomainError ? 2 : 1;
     writeErr(`error: ${(error as Error).message}\n`);
     return { code, stdout: '', stderr: err.join('') };
   }
@@ -309,7 +309,7 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
   const agents = runtime.registry.listAll().filter(entry => entry.status === 'active').map(entry => entry.card.name);
   writeOut(
     `Zeus chat (plan-only, local${args.model ? ' + model backend' : ''}). ` +
-      `Realm: ${realm.root} · agents: ${agents.join(', ') || 'none'}\n` +
+      `DataDomain: ${dataDomain.root} · agents: ${agents.join(', ') || 'none'}\n` +
       `Type a sentence to plan, /help for commands, /exit to quit.\n`,
   );
 
@@ -342,7 +342,7 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
    * Process one raw line. Returns true when the line asked to exit.
    *
    * Deliberately plan-only: a recognized sentence fans out with `mode: 'plan'`
-   * and nothing is written back to the realm. A blank line is ignored.
+   * and nothing is written back to the dataDomain. A blank line is ignored.
    */
   const processLine = async (raw: string): Promise<boolean> => {
     const line = raw.trim();
@@ -364,7 +364,7 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
     const recognition = await recognizeIntent({
       text: line,
       catalog,
-      realm: 'personal',
+      dataDomain: 'personal',
       ...(args.model && backend ? { useModel: true, backend } : {}),
     });
     if (!recognition.ok) {
@@ -378,8 +378,8 @@ export async function runChatCli(argv: string[], io: ChatCliIO): Promise<ChatCli
     const result = await runtime.orchestrator.fanOut({
       skill: recognition.intent.skill,
       params: { prompt: line },
-      realm: 'personal',
-      realmId: realm.realmId,
+      dataDomain: 'personal',
+      dataDomainId: dataDomain.dataDomainId,
       mode: 'plan',
       branchTimeoutMs: args.timeoutMs,
     });

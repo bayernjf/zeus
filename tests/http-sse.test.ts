@@ -57,7 +57,7 @@ describe('H3 SSE intent events', () => {
     const seeded = await harness();
     await seeded.app.inject({
       method: 'POST', url: '/api/intents', headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { skill: 'research', realm: 'personal' },
+      payload: { skill: 'research', dataDomain: 'personal' },
     });
     const res = await seeded.app.inject({
       method: 'GET', url: '/api/intents/intent-1/events', headers: { authorization: `Bearer ${TOKEN}` },
@@ -106,7 +106,7 @@ describe('H3 SSE intent events', () => {
     const done = fetch(`${base}/api/intents`, {
       method: 'POST',
       headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ skill: 'research', realm: 'personal', intentId: 'live-1' }),
+      body: JSON.stringify({ skill: 'research', dataDomain: 'personal', intentId: 'live-1' }),
     });
 
     let buffer = '';
@@ -353,7 +353,7 @@ describe('live SSE stream cap', () => {
     // A finished intent is replayed inline and never occupies a live slot.
     await app.inject({
       method: 'POST', url: '/api/intents', headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { skill: 'research', realm: 'personal' },
+      payload: { skill: 'research', dataDomain: 'personal' },
     });
     const replay = await app.inject({
       method: 'GET', url: '/api/intents/intent-1/events', headers: { authorization: `Bearer ${TOKEN}` },

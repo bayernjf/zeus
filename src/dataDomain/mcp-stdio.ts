@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * stdio MCP host for read-only personal Realms (P1 scaffold).
+ * stdio MCP host for read-only personal DataDomains (P1 scaffold).
  *
  * Usage:
- *   node dist/realm/mcp-stdio.js <root-dir> [<root-dir> ...]
- *   ZEUS_REALM_ROOTS=/path/a,/path/b node dist/realm/mcp-stdio.js
+ *   node dist/dataDomain/mcp-stdio.js <root-dir> [<root-dir> ...]
+ *   ZEUS_DATA_DOMAIN_ROOTS=/path/a,/path/b node dist/dataDomain/mcp-stdio.js
  *
  * Security model:
  *  - Roots are authorized at launch (argv/env) and pre-connected read-only by
@@ -14,8 +14,8 @@
  *  - The runtime boots in-memory by default (zero side effects): no state file
  *    is written unless ZEUS_STATE_FILE is explicitly set, and no decision
  *    backend is mounted - zeus.plan runs the local ranker only.
- *  - The face is read-only: realm.search/realm.read plus the runtime face
- *    zeus.skills/zeus.plan/zeus.status. realm.write is refused on a read-only
+ *  - The face is read-only: dataDomain.search/dataDomain.read plus the runtime face
+ *    zeus.skills/zeus.plan/zeus.status. dataDomain.write is refused on a read-only
  *    mount; execute stays on the signed-ticket + HTTP face, never here.
  *  - stdout carries only newline-delimited JSON-RPC; all diagnostics go to stderr.
  */
@@ -23,7 +23,7 @@ import { createInterface } from 'node:readline';
 import { bootRuntime } from '../state/boot.js';
 import { createPersonalRuntimeQueries } from './runtime-queries.js';
 import {
-  createRealmMcpHandler,
+  createDataDomainMcpHandler,
   JSON_RPC_CODES,
   JSONRPC_VERSION,
   type JsonRpcResponse,
@@ -32,7 +32,7 @@ import {
 async function main(): Promise<void> {
   const roots = collectRoots();
   if (roots.length === 0) {
-    process.stderr.write('usage: mcp-stdio <root-dir>... (or set ZEUS_REALM_ROOTS)\n');
+    process.stderr.write('usage: mcp-stdio <root-dir>... (or set ZEUS_DATA_DOMAIN_ROOTS)\n');
     process.exit(1);
   }
 
@@ -40,28 +40,28 @@ async function main(): Promise<void> {
   // mounts are personal + readOnly, and no decision backend is wired.
   const stateFile = process.env.ZEUS_STATE_FILE?.trim() || undefined;
   const runtime = await bootRuntime({
-    realmRoots: roots.map(root => ({ root, type: 'personal' as const, readOnly: true })),
+    dataDomainRoots: roots.map(root => ({ root, type: 'personal' as const, readOnly: true })),
     ...(stateFile ? { stateFile } : {}),
   });
 
-  const store = runtime.realmStore;
+  const store = runtime.dataDomainStore;
   if (!store) {
-    process.stderr.write('[zeus-realm-mcp] fatal: runtime booted without a realm store\n');
+    process.stderr.write('[zeus-dataDomain-mcp] fatal: runtime booted without a dataDomain store\n');
     process.exit(1);
   }
 
-  const realmIds: string[] = [];
+  const dataDomainIds: string[] = [];
   for (const connection of store.connections()) {
-    realmIds.push(connection.realmId);
-    const manifest = await store.manifest(connection.realmId);
+    dataDomainIds.push(connection.dataDomainId);
+    const manifest = await store.manifest(connection.dataDomainId);
     process.stderr.write(
-      `[zeus-realm-mcp] connected ${connection.realmId} (${manifest.itemCount} items) type=${connection.type} readOnly=${connection.readOnly}\n`
+      `[zeus-dataDomain-mcp] connected ${connection.dataDomainId} (${manifest.itemCount} items) type=${connection.type} readOnly=${connection.readOnly}\n`
     );
   }
 
-  const handle = createRealmMcpHandler({
+  const handle = createDataDomainMcpHandler({
     store,
-    realmIds,
+    dataDomainIds,
     runtimeQueries: createPersonalRuntimeQueries(runtime),
   });
   const rl = createInterface({ input: process.stdin });
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
           error: { code: JSON_RPC_CODES.INTERNAL_ERROR, message: 'internal error' },
         });
         process.stderr.write(
-          `[zeus-realm-mcp] handler error: ${error instanceof Error ? error.message : String(error)}\n`
+          `[zeus-dataDomain-mcp] handler error: ${error instanceof Error ? error.message : String(error)}\n`
         );
       });
   });
@@ -126,7 +126,7 @@ function collectRoots(): string[] {
   // list would shred a Windows drive path (C:\Users\...) into two bogus roots,
   // and as long as the two doors disagree about one variable, a host can end up
   // serving a different set of directories than the runtime was pointed at.
-  const fromEnv = (process.env.ZEUS_REALM_ROOTS ?? '')
+  const fromEnv = (process.env.ZEUS_DATA_DOMAIN_ROOTS ?? '')
     .split(',')
     .map(value => value.trim())
     .filter(Boolean);
@@ -134,6 +134,6 @@ function collectRoots(): string[] {
 }
 
 main().catch(error => {
-  process.stderr.write(`[zeus-realm-mcp] fatal: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(`[zeus-dataDomain-mcp] fatal: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exit(1);
 });

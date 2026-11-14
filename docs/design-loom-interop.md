@@ -25,7 +25,7 @@ A3 行的判据是「用 loom 的 endpoint / agent-card 跑通一次双向 A2A�
 | loom 实例 | loom 后端（uvicorn `backend/app`，`LOOM_URL=http://127.0.0.1:8000`），Agent Key 就绪，`public_base_url` 指向可访问基址（Q280 起 compose 转发该 env） |
 | 凭证 | `ZEUS_INTERNAL_TOKEN`（Zeus 内部 bearer）、`AGENT_TOKEN`（loom Agent Key）——脚本永不打印 |
 
-**域与审计前置（2026-10-08 实跑确认）**：loom 卡片声明 `realms=["enterprise"]`，personal 域派发被数据主权边界正确拒绝（`handshake.realms=enterprise excludes personal`，审计 `refused-realm-policy`）——**需 `REALM=enterprise` 且 Zeus 挂企业域**（`ZEUS_REALM_ENTERPRISE="<root>::<tenant>"`，A1 同款场景）；审计断言依赖 `ZEUS_AUDIT_FILE` 配置（未配则 `/api/audit` 路由不注册、404）。
+**域与审计前置（2026-10-08 实跑确认）**：loom 卡片声明 `dataDomains=["enterprise"]`，personal 域派发被数据主权边界正确拒绝（`handshake.dataDomains=enterprise excludes personal`，审计 `refused-dataDomain-policy`）——**需 `DATA_DOMAIN=enterprise` 且 Zeus 挂企业域**（`ZEUS_DATA_DOMAIN_ENTERPRISE="<root>::<tenant>"`，A1 同款场景）；审计断言依赖 `ZEUS_AUDIT_FILE` 配置（未配则 `/api/audit` 路由不注册、404）。
 
 ## 用法
 
@@ -46,7 +46,7 @@ npm run acceptance:loom
 | `CARD_URL` / `LOOM_URL` | 必填其一 | 卡片地址；给 `LOOM_URL` 时自动派生 `{LOOM_URL}/.well-known/agent-card.json` |
 | `AGENT_TOKEN` | 必填 | loom Agent Key |
 | `SKILL` | `generate-content` | **loom 执行端认 skill id**（`generate-content`/`compliance-check`/`effect-backfill`），卡片展示名（"Plan content generation" 等）只是公开标签，传给 `tasks/send` 会得到 `unknown skill` → failed（2026-10-08 真机确认） |
-| `REALM` | `personal` | 意图域类型；loom 卡声明 `realms=["enterprise"]`，**必须 `enterprise`**（personal 被数据主权边界拒绝） |
+| `DATA_DOMAIN` | `personal` | 意图域类型；loom 卡声明 `dataDomains=["enterprise"]`，**必须 `enterprise`**（personal 被数据主权边界拒绝） |
 | `PARAMS` | `{"tenant_id":…,"product_id":…}` | 技能的具名参数（JSON）；`generate-content` 必填 `tenant_id`+`product_id`，缺失回 `input-required` |
 
 CLI：`--revoke-test`（跑完吊销 loom 注册）、`--sse-test`（额外直接对 loom `tasks/sendSubscribe` 探 SSE 流）、`--timeout <ms>`。**吊销后再跑需先 `POST /api/executors/loom/reinstate`**（Zeus 吊销语义：revoked 重注册 409，不自动清除吊销）。
@@ -65,9 +65,9 @@ CLI：`--revoke-test`（跑完吊销 loom 注册）、`--sse-test`（额外直�
 
 ## 销项证据（2026-10-08 实跑）
 
-隔离真机栈：一次性 PG16（`pgvector/pgvector:pg16`，宿主 5549）+ 一次性 Redis（6380）+ loom backend（uvicorn，8000，`LOOM_PUBLIC_BASE_URL=http://127.0.0.1:8000`，迁移到 head `0052_pool_options`，Agent Key 经 `issue_key` service 直插一次性库）；Zeus dev 实例（8787，`ZEUS_AUDIT_FILE=/tmp/zeus-audit.jsonl`，`ZEUS_REALM_ENTERPRISE="/tmp/zeus-ent::zeus-interop"`）。跑完即删，loom 开发栈（`infra-postgres-1`/`infra-redis-1`）零接触。
+隔离真机栈：一次性 PG16（`pgvector/pgvector:pg16`，宿主 5549）+ 一次性 Redis（6380）+ loom backend（uvicorn，8000，`LOOM_PUBLIC_BASE_URL=http://127.0.0.1:8000`，迁移到 head `0052_pool_options`，Agent Key 经 `issue_key` service 直插一次性库）；Zeus dev 实例（8787，`ZEUS_AUDIT_FILE=/tmp/zeus-audit.jsonl`，`ZEUS_DATA_DOMAIN_ENTERPRISE="/tmp/zeus-ent::zeus-interop"`）。跑完即删，loom 开发栈（`infra-postgres-1`/`infra-redis-1`）零接触。
 
-`npm run acceptance:loom`（`REALM=enterprise --sse-test --revoke-test`）**18/18 PASS、exit 0**：
+`npm run acceptance:loom`（`DATA_DOMAIN=enterprise --sse-test --revoke-test`）**18/18 PASS、exit 0**：
 - 卡片契约 7 步全过（name=loom、url 绝对指向 `/api/a2a/tasks`、streaming、bearer、三 plan 技能）
 - `tasks/sendSubscribe` SSE 事件流（streaming 能力真机确认）
 - 注册 201（card fetched、handshake validated、`taskUrl` 由内核读卡片声明 `url` 解析——deferred #29 修复在 loom 上再确认）、名册 active、三视图不回声凭证

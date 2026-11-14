@@ -30,7 +30,7 @@ const PLANNER_CARD: AgentCard = {
   preferredTransport: 'JSONRPC',
   'x-zeus-handshake': {
     version: '1', swornTo: 'zeus', domain: 'test-domain',
-    realms: ['personal'], dataPolicy: 'read-task-scope',
+    dataDomains: ['personal'], dataPolicy: 'read-task-scope',
     reportBack: true, escalationPolicy: 'on-failure',
   },
 };
@@ -72,7 +72,7 @@ const SEED = 'http://127.0.0.1/alpha/api/a2a/agent-card';
 /** A valid draft: research then write, both skills in the catalogue. */
 function goodDraft() {
   return {
-    realm: 'personal',
+    dataDomain: 'personal',
     nodes: [
       { id: 'n1', skill: 'research' },
       { id: 'n2', skill: 'write', dependsOn: ['n1'] },
@@ -87,13 +87,13 @@ describe('S12 V2 plan flow wiring', () => {
     ];
     const extracted = extractPlanDraft(artifacts);
     expect(extracted?.nodes).toHaveLength(2);
-    expect(extracted?.realm).toBe('personal');
+    expect(extracted?.dataDomain).toBe('personal');
 
     expect(extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'text', text: 'I would research first.' }] }])).toBeUndefined();
     expect(extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { summary: 'no plan key' } }] }])).toBeUndefined();
-    // A draft naming a realm outside the RealmType union is not a DagSpec.
+    // A draft naming a dataDomain outside the DataDomainType union is not a DagSpec.
     expect(
-      extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { plan: { realm: 'unknown-realm', nodes: [] } } }] }]),
+      extractPlanDraft([{ artifactId: 'a', name: 'plan', parts: [{ kind: 'data', data: { plan: { dataDomain: 'unknown-dataDomain', nodes: [] } } }] }]),
     ).toBeUndefined();
   });
 
@@ -113,7 +113,7 @@ describe('S12 V2 plan flow wiring', () => {
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('selected');
@@ -132,8 +132,8 @@ describe('S12 V2 plan flow wiring', () => {
     const runtime = await bootRuntime({
       fetchImpl: approveFetch((name) =>
         name === 'beta'
-          ? { realm: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] }
-          : { realm: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] },
+          ? { dataDomain: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] }
+          : { dataDomain: 'personal', nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }] },
       ),
       // Two planners with identical coverage produce a tie inside the default
       // threshold -> plan-conflict, not a silent selection.
@@ -150,7 +150,7 @@ describe('S12 V2 plan flow wiring', () => {
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('conflict');
@@ -165,7 +165,7 @@ describe('S12 V2 plan flow wiring', () => {
     const audit: AuditEntry[] = [];
     const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => ({
-        realm: 'personal',
+        dataDomain: 'personal',
         nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'missing-skill', dependsOn: ['n1'] }],
       })),
       executorSeeds: [SEED],
@@ -180,7 +180,7 @@ describe('S12 V2 plan flow wiring', () => {
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('unplannable');
@@ -205,18 +205,18 @@ describe('S12 V2 plan flow wiring', () => {
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
     expect(result.kind).toBe('unplannable');
     expect(audit.some((entry) => entry.decision === 'plan-malformed')).toBe(true);
   });
 
-  it('drops a draft whose realm does not match the request realm (C-01)', async () => {
+  it('drops a draft whose dataDomain does not match the request dataDomain (C-01)', async () => {
     const audit: AuditEntry[] = [];
     const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => ({
-        realm: 'enterprise',
+        dataDomain: 'enterprise',
         nodes: [{ id: 'n1', skill: 'research' }, { id: 'n2', skill: 'write', dependsOn: ['n1'] }],
       })),
       executorSeeds: [SEED],
@@ -232,21 +232,21 @@ describe('S12 V2 plan flow wiring', () => {
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
     });
 
-    // The draft is data from an external planner: its self-declared realm can
-    // never promote execution into another realm. It is dropped exactly like a
-    // malformed draft instead of being selected or executed cross-realm.
+    // The draft is data from an external planner: its self-declared dataDomain can
+    // never promote execution into another dataDomain. It is dropped exactly like a
+    // malformed draft instead of being selected or executed cross-dataDomain.
     expect(result.kind).toBe('unplannable');
     const malformed = audit.find((entry) => entry.decision === 'plan-malformed');
-    expect(malformed?.detail).toContain('realm');
+    expect(malformed?.detail).toContain('dataDomain');
   });
 
-  it('never returns a cross-realm draft as the confirmed selection either (C-01)', async () => {
+  it('never returns a cross-dataDomain draft as the confirmed selection either (C-01)', async () => {
     const runtime = await bootRuntime({
       fetchImpl: approveFetch(() => ({
-        realm: 'enterprise',
+        dataDomain: 'enterprise',
         nodes: [{ id: 'n1', skill: 'research' }],
       })),
       executorSeeds: [SEED],
@@ -259,7 +259,7 @@ describe('S12 V2 plan flow wiring', () => {
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
       requireConfirmation: true,
     });
 
@@ -279,7 +279,7 @@ describe('S12 V2 plan flow wiring', () => {
 
     const result = await flow.run({
       goal: { description: 'research the topic then write the document' },
-      realm: 'personal',
+      dataDomain: 'personal',
       requireConfirmation: true,
     });
 

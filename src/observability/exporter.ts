@@ -179,7 +179,7 @@ function spanAttributes(span: TraceSpan): OtlpAttribute[] {
     ['zeus.run_id', span.spanId],
     ['zeus.outcome', span.outcome],
     ['zeus.skill', span.skill],
-    ['zeus.realm', span.realm],
+    ['zeus.dataDomain', span.dataDomain],
   ];
   if (span.kind === 'intent') base.push(['zeus.intent.id', span.spanId]);
   if (span.executor !== undefined) base.push(['gen_ai.agent.name', span.executor]);

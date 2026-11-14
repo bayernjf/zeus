@@ -217,9 +217,9 @@ describe('web supervisor audit-equivalence (§7.8)', () => {
       'reinstate-executor', // POST /api/executors/:name/reinstate
       'org-set-lead', // POST /api/org/departments/:id/lead
       'org-remove-member', // DELETE /api/org/departments/:id/members/:agentId
-      'cm-waive', // POST /api/org/departments/:id/commissions/:agentId/waive
-      'cm-commission', // POST /api/org/departments/:id/commissions/:agentId/commission
-      'cm-withdraw', // POST /api/org/departments/:id/commissions/:agentId/withdraw
+      'cm-waive', // POST /api/org/departments/:id/seatGrants/:agentId/waive
+      'cm-seatGrant', // POST /api/org/departments/:id/seatGrants/:agentId/seatGrant
+      'cm-withdraw', // POST /api/org/departments/:id/seatGrants/:agentId/withdraw
       'skill-install', // POST /api/skills/:id/install
       'skill-uninstall', // POST /api/skills/:id/uninstall
       'skill-deprecate', // POST /api/skills/:id/deprecate
@@ -362,7 +362,7 @@ describe('supervisor copy describes the actions the page actually has', () => {
 /**
  * M7 slice 4 (2026-10-14): four GET routes the runtime computes had no reader on
  * any shipped face - the trace tree, the skill version history, the first-day
- * briefing and the realm access probe. Supervisor v1.20 wired them and left
+ * briefing and the dataDomain access probe. Supervisor v1.20 wired them and left
  * READ_API_ONLY in operator-surface-coverage.test.ts. These gates pin the
  * wiring itself: a call site that silently disappears (renamed variable,
  * dropped during a refactor) would otherwise turn the face back into an
@@ -397,13 +397,13 @@ describe('supervisor read faces (M7 slice 4)', () => {
     expect(Object.hasOwn(en, 'org.briefingNone')).toBe(true);
   });
 
-  it('probes realm access as a dry run from the domains panel', () => {
+  it('probes dataDomain access as a dry run from the domains panel', () => {
     expect(HTML.includes("api('GET', '/api/domains/access' + qs)"), 'the domains panel stopped probing access').toBe(true);
     expect(HTML.includes('id="btnAccessProbe"'), 'the probe button disappeared').toBe(true);
     expect(HTML.includes("$('btnAccessProbe').addEventListener('click', probeAccess)"), 'the probe button is not wired').toBe(true);
-    // The realm dropdown is fed from the same /api/domains projection the
+    // The dataDomain dropdown is fed from the same /api/domains projection the
     // panel renders; a static empty select would make the probe unusable.
-    expect(HTML.includes("const apRealm = $('apRealm')"), 'the probe realm select is not populated from the domains projection').toBe(true);
+    expect(HTML.includes("const apDataDomain = $('apDataDomain')"), 'the probe dataDomain select is not populated from the domains projection').toBe(true);
     // Both verdict arms are rendered: an allowed-via and a denied-reason.
     expect(Object.hasOwn(zh, 'access.allowed')).toBe(true);
     expect(Object.hasOwn(zh, 'access.denied')).toBe(true);
@@ -429,8 +429,8 @@ describe('supervisor read faces (M7 slice 4)', () => {
 /**
  * M7 slice 4 second batch (2026-10-14): the memory face - six bearer routes
  * (events / facts / replay / recall / retractions / integrity) that emptied
- * READ_API_ONLY in operator-surface-coverage.test.ts. The view is realm-scoped
- * like the rest of the data domain, so these gates pin the realm selector
+ * READ_API_ONLY in operator-surface-coverage.test.ts. The view is dataDomain-scoped
+ * like the rest of the data domain, so these gates pin the dataDomain selector
  * (fed from the same /api/domains projection), the six call sites, the two
  * on-demand query faces (recall / replay) and the independent degradation: one
  * unreadable face must not blank the other five.
@@ -442,22 +442,22 @@ describe('supervisor memory face (M7 slice 4 second batch)', () => {
     expect(HTML.includes("else if (view === 'memory') await loadMemory()"), 'refreshView no longer loads the memory view').toBe(true);
   });
 
-  it('reads all six memory routes, realm-scoped', () => {
-    expect(HTML.includes("api('GET', '/api/memory/events?realmId=' + encodeURIComponent(realmId))"), 'the memory view stopped reading events').toBe(true);
-    expect(HTML.includes("api('GET', '/api/memory/facts?realmId=' + encodeURIComponent(realmId))"), 'the memory view stopped reading facts').toBe(true);
+  it('reads all six memory routes, dataDomain-scoped', () => {
+    expect(HTML.includes("api('GET', '/api/memory/events?dataDomainId=' + encodeURIComponent(dataDomainId))"), 'the memory view stopped reading events').toBe(true);
+    expect(HTML.includes("api('GET', '/api/memory/facts?dataDomainId=' + encodeURIComponent(dataDomainId))"), 'the memory view stopped reading facts').toBe(true);
     expect(HTML.includes("api('GET', '/api/memory/recall' + qs)"), 'the memory view stopped reading recall').toBe(true);
-    expect(HTML.includes("api('GET', '/api/memory/replay?realmId=' + encodeURIComponent(realmId) + '&runId=' + encodeURIComponent(runId))"), 'the memory view stopped reading replay').toBe(true);
+    expect(HTML.includes("api('GET', '/api/memory/replay?dataDomainId=' + encodeURIComponent(dataDomainId) + '&runId=' + encodeURIComponent(runId))"), 'the memory view stopped reading replay').toBe(true);
     expect(HTML.includes("api('GET', '/api/memory/retractions')"), 'the memory view stopped reading retractions').toBe(true);
     expect(HTML.includes("api('GET', '/api/memory/integrity')"), 'the memory view stopped reading integrity').toBe(true);
   });
 
-  it('feeds the realm selector from the domains projection and keeps the operator choice', () => {
-    expect(HTML.includes("const apRealm = $('apRealm')"), 'the probe realm select is not populated').toBe(true);
-    expect(HTML.includes('function populateMemoryRealm'), 'the memory realm selector is not populated').toBe(true);
-    expect(HTML.includes("const prev = sel.value;"), 'the memory realm selector drops the operator choice on every poll').toBe(true);
-    // A memory view without a realm must say so, not query with an empty id.
-    expect(Object.hasOwn(zh, 'mem.needRealm')).toBe(true);
-    expect(Object.hasOwn(en, 'mem.needRealm')).toBe(true);
+  it('feeds the dataDomain selector from the domains projection and keeps the operator choice', () => {
+    expect(HTML.includes("const apDataDomain = $('apDataDomain')"), 'the probe dataDomain select is not populated').toBe(true);
+    expect(HTML.includes('function populateMemoryDataDomain'), 'the memory dataDomain selector is not populated').toBe(true);
+    expect(HTML.includes("const prev = sel.value;"), 'the memory dataDomain selector drops the operator choice on every poll').toBe(true);
+    // A memory view without a dataDomain must say so, not query with an empty id.
+    expect(Object.hasOwn(zh, 'mem.needDataDomain')).toBe(true);
+    expect(Object.hasOwn(en, 'mem.needDataDomain')).toBe(true);
   });
 
   it('wires the two on-demand query faces (recall and replay)', () => {
@@ -500,9 +500,9 @@ describe('supervisor memory face (M7 slice 4 second batch)', () => {
 describe('mentorship assessment parsing', () => {
   type Checks = { checks: Array<{ criterion: string; passed: boolean; score: number }>; bad: string | null };
   const begin = HTML.indexOf('  const MT_PASS');
-  const end = HTML.indexOf('\n  async function loadCommissions');
+  const end = HTML.indexOf('\n  async function loadSeatGrants');
   expect(begin, 'the verdict token set moved - the extraction would pass by taking no source').toBeGreaterThan(-1);
-  expect(end, 'the parser region no longer ends before loadCommissions').toBeGreaterThan(begin);
+  expect(end, 'the parser region no longer ends before loadSeatGrants').toBeGreaterThan(begin);
   const sandbox: Record<string, unknown> = {};
   vm.createContext(sandbox);
   vm.runInContext(

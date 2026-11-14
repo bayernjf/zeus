@@ -27,7 +27,7 @@ describe('SkillRegistry registration and lookup', () => {
     const registry = new SkillRegistry(fixedNow);
     const spec = registry.register({
       id: 'code-review', name: 'Review code', description: 'd', version: '1.0.0',
-      domain: 'code', tags: ['review'], permissions: ['realm:read'],
+      domain: 'code', tags: ['review'], permissions: ['data-domain:read'],
     });
     expect(spec.status).toBe('active');
     expect(spec.providedBy).toEqual([]);

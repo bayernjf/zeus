@@ -26,7 +26,7 @@ describe('E2.5 mentorship runtime persistence', () => {
       tags: [],
       providedBy: ['mentor-1'],
     });
-    const record = firstMentor.commission({
+    const record = firstMentor.seatGrant({
       skillId: 'code-review',
       mentorId: 'mentor-1',
       learnerId: 'newbie-1',

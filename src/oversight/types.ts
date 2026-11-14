@@ -1,4 +1,4 @@
-import type { RealmType } from '../a2a/types.js';
+import type { DataDomainType } from '../a2a/types.js';
 import type { Conflict } from '../orchestrator/types.js';
 import type { InterruptLevel } from './interrupt.js';
 
@@ -25,7 +25,7 @@ export type Escalation = {
   skill: string;
   /** task-input only: the executor-side task to cancel on rejection. */
   taskId?: string;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   /** Why the executor escalated: taken from the terminal input-required event's
    *  x-zeus-escalation payload, with a neutral fallback. */
   reason: string;
@@ -51,9 +51,9 @@ export type Escalation = {
   /** memory-dispute only. */
   factId?: string;
   conflictingFacts?: string[];
-  /** memory-dispute only: the connected realm the disputed facts belong to, so
+  /** memory-dispute only: the connected dataDomain the disputed facts belong to, so
    *  the reliability write-back can resolve authors without a cross-domain scan. */
-  realmId?: string;
+  dataDomainId?: string;
   /** delegation-limit only: the watch whose fire was refused. */
   watchId?: string;
   /** delegation-limit only: the delegation contract the fire derived from. */

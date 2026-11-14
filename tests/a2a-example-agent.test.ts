@@ -40,7 +40,7 @@ describe('reference execution agent (E4.12)', () => {
       version: '1',
       swornTo: 'zeus',
       domain: 'reference',
-      realms: ['personal'],
+      dataDomains: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',
@@ -83,7 +83,7 @@ describe('reference execution agent (E4.12)', () => {
     const source = readFileSync(join('src', 'a2a', 'example-agent.ts'), 'utf8');
     // The claims are "answers from the task input only" and "no outbound request".
     // Pinning them on the import list is what makes them checkable: adding a
-    // realm read or a fetch to this peer would silently break both.
+    // dataDomain read or a fetch to this peer would silently break both.
     expect(source).not.toMatch(/from 'node:fs'/);
     expect(source).not.toMatch(/\bfetch\(/);
     expect(source).toMatch(/from 'node:http'/);

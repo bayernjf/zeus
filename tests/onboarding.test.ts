@@ -3,17 +3,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { OrgRegistry } from '../src/org/registry.js';
-import { FsRealmStore } from '../src/realm/store.js';
-import { DomainGrantRegistry } from '../src/realm/authorization.js';
+import { FsDataDomainStore } from '../src/dataDomain/store.js';
+import { DomainGrantRegistry } from '../src/dataDomain/authorization.js';
 import { SkillRegistry } from '../src/skills/registry.js';
 import { MentorshipLedger } from '../src/skills/mentor.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import type { MemoryEvent } from '../src/memory/types.js';
 import { ExecutorRegistry } from '../src/registry/registry.js';
-import { CommissionLedger, verifyCommission } from '../src/onboarding/commission.js';
+import { SeatGrantLedger, verifySeatGrant } from '../src/onboarding/seatGrant.js';
 import { composeBriefing } from '../src/onboarding/briefing.js';
-import { CommissionError, commissionId } from '../src/onboarding/types.js';
-import type { CommissionAuditEntry } from '../src/onboarding/commission.js';
+import { SeatGrantError, seatGrantId } from '../src/onboarding/types.js';
+import type { SeatGrantAuditEntry } from '../src/onboarding/seatGrant.js';
 
 const NOW = new Date('2026-09-25T09:00:00.000Z');
 const now = () => NOW;
@@ -37,7 +37,7 @@ function cardFor(name: string, skills: string[]) {
     skills: skills.map(id => ({ id, name: id, description: `${id} work`, tags: [id] })),
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'acme', realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
+    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'acme', dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 
@@ -52,10 +52,10 @@ function routingFetch() {
   };
 }
 
-function claim(eventId: string, realmId: string, subject: string, predicate: string, object: unknown, agentId: string): MemoryEvent {
+function claim(eventId: string, dataDomainId: string, subject: string, predicate: string, object: unknown, agentId: string): MemoryEvent {
   return {
     eventId,
-    realmId,
+    dataDomainId,
     runId: `run-${eventId}`,
     source: { agentId },
     kind: 'claim',
@@ -68,35 +68,35 @@ function claim(eventId: string, realmId: string, subject: string, predicate: str
 
 type Harness = {
   org: OrgRegistry;
-  realms: FsRealmStore;
+  dataDomains: FsDataDomainStore;
   grants: DomainGrantRegistry;
   skills: SkillRegistry;
   mentorships: MentorshipLedger;
   memory: MemoryStore;
   registry: ExecutorRegistry;
-  commissions: CommissionLedger;
-  audit: CommissionAuditEntry[];
-  engRealmId: string;
-  personalRealmId: string;
+  seatGrants: SeatGrantLedger;
+  audit: SeatGrantAuditEntry[];
+  engDataDomainId: string;
+  personalDataDomainId: string;
   deptId: string;
   register: (name: string) => Promise<unknown>;
   openFor: (over?: {
     agentId?: string;
-    realmId?: string;
+    dataDomainId?: string;
     tenant?: string;
     requiredSkills?: string[];
-  }) => ReturnType<CommissionLedger['open']>;
+  }) => ReturnType<SeatGrantLedger['open']>;
 };
 
 let sandbox: string;
 let harness: Harness;
 
-/** A department with a mentor, a learner seat, one enterprise realm (scoped) and
- *  one personal realm. Every collaborator is the real class, not a stub: a
+/** A department with a mentor, a learner seat, one enterprise dataDomain (scoped) and
+ *  one personal dataDomain. Every collaborator is the real class, not a stub: a
  *  hand-made "mentorship says certified" double would prove nothing about E2.5. */
 async function setup(): Promise<Harness> {
   const org = new OrgRegistry(now);
-  const realms = new FsRealmStore();
+  const dataDomains = new FsDataDomainStore();
   const grants = new DomainGrantRegistry(now);
   const skills = new SkillRegistry(now);
   const mentorships = new MentorshipLedger(skills, now);
@@ -108,8 +108,8 @@ async function setup(): Promise<Harness> {
   await mkdir(meRoot, { recursive: true });
   await writeFile(join(engRoot, 'charter.md'), 'department charter\n');
   await writeFile(join(meRoot, 'diary.md'), 'private\n');
-  const engRealmId = (await realms.connect(engRoot, 'enterprise', { tenant: 'acme/eng' })).realmId;
-  const personalRealmId = (await realms.connect(meRoot, 'personal')).realmId;
+  const engDataDomainId = (await dataDomains.connect(engRoot, 'enterprise', { tenant: 'acme/eng' })).dataDomainId;
+  const personalDataDomainId = (await dataDomains.connect(meRoot, 'personal')).dataDomainId;
 
   const registry = new ExecutorRegistry(routingFetch(), now, {
     onRegister: entry => skills.registerFromCard(entry.card),
@@ -118,9 +118,9 @@ async function setup(): Promise<Harness> {
   await register('pr-helper');
   await register('senior');
 
-  const audit: CommissionAuditEntry[] = [];
-  const commissions = new CommissionLedger(
-    { org, executors: registry.asExecutorLookup(), realms, grants, mentorships, now },
+  const audit: SeatGrantAuditEntry[] = [];
+  const seatGrants = new SeatGrantLedger(
+    { org, executors: registry.asExecutorLookup(), dataDomains, grants, mentorships, now },
     now,
     entry => audit.push(entry),
   );
@@ -131,10 +131,10 @@ async function setup(): Promise<Harness> {
   org.assignMember(dept.departmentId, { agentId: 'senior', role: 'member', title: 'Staff engineer' });
 
   const openFor: Harness['openFor'] = (over = {}) =>
-    commissions.open({
+    seatGrants.open({
       departmentId: dept.departmentId,
       agentId: over.agentId ?? 'new-hire',
-      realmId: over.realmId ?? engRealmId,
+      dataDomainId: over.dataDomainId ?? engDataDomainId,
       openedBy: 'operator',
       ...(over.tenant !== undefined ? { tenant: over.tenant } : {}),
       ...(over.requiredSkills ? { requiredSkills: over.requiredSkills } : {}),
@@ -142,16 +142,16 @@ async function setup(): Promise<Harness> {
 
   return {
     org,
-    realms,
+    dataDomains,
     grants,
     skills,
     mentorships,
     memory,
     registry,
-    commissions,
+    seatGrants,
     audit,
-    engRealmId,
-    personalRealmId,
+    engDataDomainId,
+    personalDataDomainId,
     deptId: dept.departmentId,
     register,
     openFor,
@@ -167,37 +167,37 @@ afterEach(async () => {
   await rm(sandbox, { recursive: true, force: true });
 });
 
-describe('E9.2 opening a commission file', () => {
+describe('E9.2 opening a seatGrant file', () => {
   it('refuses an agent with no seat in the department', () => {
     expect(() => harness.openFor({ agentId: 'nobody' })).toThrow(/is not on the Engineering roster/);
   });
 
-  it('refuses an unknown department and an unconnected realm, with an error kind', () => {
+  it('refuses an unknown department and an unconnected dataDomain, with an error kind', () => {
     try {
-      harness.commissions.open({ departmentId: 'dept:nope', agentId: 'new-hire', realmId: harness.engRealmId, openedBy: 'operator' });
+      harness.seatGrants.open({ departmentId: 'dept:nope', agentId: 'new-hire', dataDomainId: harness.engDataDomainId, openedBy: 'operator' });
       expect.unreachable();
     } catch (thrown) {
-      expect((thrown as CommissionError).kind).toBe('not-found');
+      expect((thrown as SeatGrantError).kind).toBe('not-found');
     }
     try {
-      harness.openFor({ realmId: 'realm-missing' });
+      harness.openFor({ dataDomainId: 'dataDomain-missing' });
       expect.unreachable();
     } catch (thrown) {
-      expect((thrown as CommissionError).kind).toBe('not-found');
-      expect((thrown as CommissionError).message).toMatch(/realm not connected/);
+      expect((thrown as SeatGrantError).kind).toBe('not-found');
+      expect((thrown as SeatGrantError).message).toMatch(/dataDomain not connected/);
     }
   });
 
-  it('refuses a tenant scope on a personal realm', () => {
-    expect(() => harness.openFor({ realmId: harness.personalRealmId, tenant: 'acme/eng' }))
-      .toThrow(/belongs to an enterprise realm/);
+  it('refuses a tenant scope on a personal dataDomain', () => {
+    expect(() => harness.openFor({ dataDomainId: harness.personalDataDomainId, tenant: 'acme/eng' }))
+      .toThrow(/belongs to an enterprise dataDomain/);
   });
 
-  it('inherits the realm tenant when none is given, and refuses to open the same seat twice', () => {
+  it('inherits the dataDomain tenant when none is given, and refuses to open the same seat twice', () => {
     const opened = harness.openFor();
     expect(opened.tenant).toEqual({ org: 'acme', department: 'eng' });
     expect(() => harness.openFor()).toThrow(/already open/);
-    // A seat scoped broader than its own department realm is refused outright.
+    // A seat scoped broader than its own department dataDomain is refused outright.
     expect(() => harness.openFor({ agentId: 'senior', tenant: 'acme' })).toThrow(/cannot be scoped broader/);
     expect(() => harness.openFor({ agentId: 'senior', tenant: 'acme/mkt' })).toThrow(/cannot be scoped broader/);
     const narrowed = harness.openFor({ agentId: 'senior', tenant: 'acme/eng' });
@@ -208,20 +208,20 @@ describe('E9.2 opening a commission file', () => {
 describe('E9.2 the four evidence gates', () => {
   it('account: a roster seat with no executor card cannot be signed off, and registering it moves the gate', async () => {
     const record = harness.openFor();
-    harness.commissions.waiveMentorship(record.id, { reason: 'supervised internship', by: 'operator' });
+    harness.seatGrants.waiveMentorship(record.id, { reason: 'supervised internship', by: 'operator' });
     try {
-      harness.commissions.commission(record.id, { by: 'operator' });
+      harness.seatGrants.seatGrant(record.id, { by: 'operator' });
       expect.unreachable();
     } catch (thrown) {
-      const error = thrown as CommissionError;
+      const error = thrown as SeatGrantError;
       expect(error.kind).toBe('gate');
       expect(error.blocked?.blockedOn).toBe('account');
       expect(error.blocked?.reason).toMatch(/no executor named new-hire/);
     }
-    expect(harness.audit.map(entry => entry.decision)).toContain('commission-refused');
+    expect(harness.audit.map(entry => entry.decision)).toContain('seatGrant-refused');
 
     await harness.register('new-hire');
-    expect(harness.commissions.verify(record.id).checks.account.ok).toBe(true);
+    expect(harness.seatGrants.verify(record.id).checks.account.ok).toBe(true);
   });
 
   it('authorization: a personal-side subject needs a DomainGrant, and the grant satisfies exactly that gate', () => {
@@ -230,42 +230,42 @@ describe('E9.2 the four evidence gates', () => {
     const deps = {
       org: harness.org,
       executors: harness.registry.asExecutorLookup(),
-      realms: harness.realms,
+      dataDomains: harness.dataDomains,
       grants: harness.grants,
       mentorships: harness.mentorships,
       now,
     };
     const { tenant: _omitted, ...withoutTenant } = record;
-    const ungranted = verifyCommission(withoutTenant, deps);
+    const ungranted = verifySeatGrant(withoutTenant, deps);
     expect(ungranted.checks.authorization.ok).toBe(false);
-    expect(ungranted.checks.authorization.reason).toMatch(/no read grant for enterprise realm/);
+    expect(ungranted.checks.authorization.reason).toMatch(/no read grant for enterprise dataDomain/);
 
-    harness.grants.issue({ subject: 'new-hire', realmId: harness.engRealmId, access: 'read', grantedBy: 'operator' });
-    expect(verifyCommission(withoutTenant, deps).checks.authorization.ok).toBe(true);
+    harness.grants.issue({ subject: 'new-hire', dataDomainId: harness.engDataDomainId, access: 'read', grantedBy: 'operator' });
+    expect(verifySeatGrant(withoutTenant, deps).checks.authorization.ok).toBe(true);
   });
 
   it('mentorship: attendance is not competency - only certification opens the gate', async () => {
     await harness.register('new-hire');
     const record = harness.openFor({ requiredSkills: ['release-review'] });
-    const before = harness.commissions.verify(record.id);
+    const before = harness.seatGrants.verify(record.id);
     expect(before.checks.mentorship.ok).toBe(false);
     if (!before.checks.mentorship.ok) expect(before.checks.mentorship.missing).toEqual(['release-review']);
 
-    const first = harness.mentorships.commission({
+    const first = harness.mentorships.seatGrant({
       skillId: 'release-review',
       mentorId: 'pr-helper',
       learnerId: 'new-hire',
-      realmId: harness.engRealmId,
+      dataDomainId: harness.engDataDomainId,
     });
     harness.mentorships.teach(first.id, [{ topic: 'what a safe release looks like' }]);
     const failed = harness.mentorships.assess(first.id, [
       { criterion: 'blocks an unsafe deploy', passed: false, required: true, score: 0.95 },
     ]);
     expect(failed.status).toBe('failed');
-    expect(harness.commissions.verify(record.id).checks.mentorship.ok).toBe(false);
+    expect(harness.seatGrants.verify(record.id).checks.mentorship.ok).toBe(false);
 
     // A different mentor gives a fresh run; passing it certifies the learner.
-    const second = harness.mentorships.commission({
+    const second = harness.mentorships.seatGrant({
       skillId: 'release-review',
       mentorId: 'senior',
       learnerId: 'new-hire',
@@ -273,77 +273,77 @@ describe('E9.2 the four evidence gates', () => {
     harness.mentorships.assess(second.id, [
       { criterion: 'blocks an unsafe deploy', passed: true, required: true, score: 0.9 },
     ]);
-    const after = harness.commissions.verify(record.id);
+    const after = harness.seatGrants.verify(record.id);
     expect(after.checks.mentorship.ok).toBe(true);
     expect(after.checks.mentorship.certified.map(entry => entry.mentorId)).toEqual(['senior']);
-    expect(harness.commissions.commission(record.id, { by: 'operator' }).commissioned?.by).toBe('operator');
+    expect(harness.seatGrants.seatGrant(record.id, { by: 'operator' }).seatGranted?.by).toBe('operator');
   });
 
   it('mentorship: a seat with no stated competencies needs an explicit waiver', () => {
     const record = harness.openFor();
-    expect(harness.commissions.verify(record.id).checks.mentorship.reason).toMatch(/list them or waive/);
-    expect(() => harness.commissions.waiveMentorship(record.id, { reason: '  ', by: 'operator' }))
+    expect(harness.seatGrants.verify(record.id).checks.mentorship.reason).toMatch(/list them or waive/);
+    expect(() => harness.seatGrants.waiveMentorship(record.id, { reason: '  ', by: 'operator' }))
       .toThrow(/needs a reason/);
-    expect(() => harness.commissions.waiveMentorship(record.id, { reason: 'skip', by: '  ' }))
+    expect(() => harness.seatGrants.waiveMentorship(record.id, { reason: 'skip', by: '  ' }))
       .toThrow(/needs an author/);
-    const waived = harness.commissions.waiveMentorship(record.id, { reason: 'internship, supervised', by: 'operator' });
+    const waived = harness.seatGrants.waiveMentorship(record.id, { reason: 'internship, supervised', by: 'operator' });
     expect(waived.waiver?.reason).toBe('internship, supervised');
-    expect(harness.commissions.verify(record.id).checks.mentorship.ok).toBe(true);
+    expect(harness.seatGrants.verify(record.id).checks.mentorship.ok).toBe(true);
   });
 
   it('mentorship: a waiver cannot cover a seat that does state requirements', () => {
     const record = harness.openFor({ requiredSkills: ['release-review'] });
-    expect(() => harness.commissions.waiveMentorship(record.id, { reason: 'just let them ship', by: 'operator' }))
+    expect(() => harness.seatGrants.waiveMentorship(record.id, { reason: 'just let them ship', by: 'operator' }))
       .toThrow(/cannot cover a stated requirement/);
   });
 });
 
-describe('E9.2 commission state is recomputed, never cached', () => {
-  async function commissionSeat() {
+describe('E9.2 seatGrant state is recomputed, never cached', () => {
+  async function seatGrantSeat() {
     await harness.register('new-hire');
     const record = harness.openFor();
-    harness.commissions.waiveMentorship(record.id, { reason: 'supervised internship', by: 'operator' });
-    return harness.commissions.commission(record.id, { by: 'operator' });
+    harness.seatGrants.waiveMentorship(record.id, { reason: 'supervised internship', by: 'operator' });
+    return harness.seatGrants.seatGrant(record.id, { by: 'operator' });
   }
 
   it('signs off and clears the task gate', async () => {
-    const record = await commissionSeat();
-    expect(record.commissioned?.by).toBe('operator');
-    expect(harness.commissions.verify(record.id).stage).toBe('commissioned');
-    expect(() => harness.commissions.assertCommissioned(record.id)).not.toThrow();
+    const record = await seatGrantSeat();
+    expect(record.seatGranted?.by).toBe('operator');
+    expect(harness.seatGrants.verify(record.id).stage).toBe('seatGranted');
+    expect(() => harness.seatGrants.assertSeatGranted(record.id)).not.toThrow();
   });
 
   it('a later revocation takes eligibility away by itself', async () => {
-    const record = await commissionSeat();
+    const record = await seatGrantSeat();
     expect(harness.registry.revoke('new-hire')).toBe(true);
     try {
-      harness.commissions.assertCommissioned(record.id);
+      harness.seatGrants.assertSeatGranted(record.id);
       expect.unreachable();
     } catch (thrown) {
-      const error = thrown as CommissionError;
+      const error = thrown as SeatGrantError;
       expect(error.blocked?.blockedOn).toBe('account');
       expect(error.blocked?.reason).toMatch(/has been revoked/);
     }
   });
 
   it('striking the seat makes the sign-off stale', async () => {
-    const record = await commissionSeat();
+    const record = await seatGrantSeat();
     harness.org.removeMember(harness.deptId, 'new-hire');
-    const verdict = harness.commissions.verify(record.id);
+    const verdict = harness.seatGrants.verify(record.id);
     expect(verdict.checks.seat.ok).toBe(false);
-    expect(verdict.checks.commission.reason).toMatch(/commission is stale/);
+    expect(verdict.checks.seatGrant.reason).toMatch(/seatGrant is stale/);
     expect(verdict.stage).toBe('opened');
   });
 
-  it('withdrawing ends it, and re-commissioning is an explicit new act', async () => {
-    const record = await commissionSeat();
-    const withdrawn = harness.commissions.withdraw(record.id, { by: 'operator', reason: 'moved teams' });
+  it('withdrawing ends it, and re-seatGranting is an explicit new act', async () => {
+    const record = await seatGrantSeat();
+    const withdrawn = harness.seatGrants.withdraw(record.id, { by: 'operator', reason: 'moved teams' });
     expect(withdrawn.withdrawn?.reason).toBe('moved teams');
-    expect(() => harness.commissions.assertCommissioned(record.id)).toThrow(/withdrawn/);
+    expect(() => harness.seatGrants.assertSeatGranted(record.id)).toThrow(/withdrawn/);
 
-    const again = harness.commissions.commission(record.id, { by: 'other-operator' });
+    const again = harness.seatGrants.seatGrant(record.id, { by: 'other-operator' });
     expect(again.withdrawn).toBeUndefined();
-    expect(again.commissioned?.by).toBe('other-operator');
+    expect(again.seatGranted?.by).toBe('other-operator');
   });
 });
 
@@ -352,7 +352,7 @@ describe('E9.1 the day-one briefing', () => {
     composeBriefing(record, {
       org: harness.org,
       executors: harness.registry.asExecutorLookup(),
-      realms: harness.realms,
+      dataDomains: harness.dataDomains,
       grants: harness.grants,
       mentorships: harness.mentorships,
       skills: harness.skills,
@@ -363,8 +363,8 @@ describe('E9.1 the day-one briefing', () => {
   async function briefedRecord(requiredSkills: string[] = []) {
     await harness.register('new-hire');
     const record = harness.openFor({ requiredSkills });
-    if (requiredSkills.length === 0) harness.commissions.waiveMentorship(record.id, { reason: 'supervised', by: 'operator' });
-    return harness.commissions.commission(record.id, { by: 'operator' });
+    if (requiredSkills.length === 0) harness.seatGrants.waiveMentorship(record.id, { reason: 'supervised', by: 'operator' });
+    return harness.seatGrants.seatGrant(record.id, { by: 'operator' });
   }
 
   it('assembles seat, chain, boundaries and team from runtime state alone', async () => {
@@ -378,7 +378,7 @@ describe('E9.1 the day-one briefing', () => {
     expect(briefing.chain.lead).toBe('pr-helper');
     expect(briefing.chain.leadTitle).toBe('EM');
     expect(briefing.boundaries).toMatchObject({
-      realmType: 'enterprise',
+      dataDomainType: 'enterprise',
       readOnly: false,
       itemCount: 1,
       canRead: true,
@@ -402,13 +402,13 @@ describe('E9.1 the day-one briefing', () => {
   it('pulls org practice out of memory once it exists', async () => {
     harness.memory.append(claim(
       'evt-1',
-      harness.engRealmId,
+      harness.engDataDomainId,
       'compiler team policy',
       'requires',
       'shipping the compiler safely means two approvals before any deploy',
       'pr-helper',
     ));
-    await harness.memory.consolidateRealm(harness.engRealmId);
+    await harness.memory.consolidateDataDomain(harness.engDataDomainId);
     const briefing = await brief(await briefedRecord());
     expect(briefing.culture.facts.length).toBeGreaterThan(0);
     expect(JSON.stringify(briefing.culture.facts)).toContain('two approvals before any deploy');
@@ -437,10 +437,10 @@ describe('E9.1 the day-one briefing', () => {
     const roRoot = join(sandbox, 'ro');
     await mkdir(roRoot, { recursive: true });
     await writeFile(join(roRoot, 'a.md'), 'a\n');
-    const roRealmId = (await harness.realms.connect(roRoot, 'personal', { readOnly: true })).realmId;
+    const roDataDomainId = (await harness.dataDomains.connect(roRoot, 'personal', { readOnly: true })).dataDomainId;
     await harness.register('new-hire');
-    const record = harness.openFor({ realmId: roRealmId });
-    harness.commissions.waiveMentorship(record.id, { reason: 'supervised', by: 'operator' });
+    const record = harness.openFor({ dataDomainId: roDataDomainId });
+    harness.seatGrants.waiveMentorship(record.id, { reason: 'supervised', by: 'operator' });
     const briefing = await brief(record);
     expect(briefing.boundaries.canWrite).toBe(false);
     expect(briefing.boundaries.rules.join(' ')).toContain('read-only');
@@ -448,22 +448,22 @@ describe('E9.1 the day-one briefing', () => {
 });
 
 describe('E9.2 persistence', () => {
-  it('round-trips commission files through the runtime snapshot', async () => {
+  it('round-trips seatGrant files through the runtime snapshot', async () => {
     await harness.register('new-hire');
     const record = harness.openFor();
-    harness.commissions.waiveMentorship(record.id, { reason: 'supervised', by: 'operator' });
-    harness.commissions.commission(record.id, { by: 'operator' });
+    harness.seatGrants.waiveMentorship(record.id, { reason: 'supervised', by: 'operator' });
+    harness.seatGrants.seatGrant(record.id, { by: 'operator' });
 
-    const restored = new CommissionLedger({
+    const restored = new SeatGrantLedger({
       org: harness.org,
       executors: harness.registry.asExecutorLookup(),
-      realms: harness.realms,
+      dataDomains: harness.dataDomains,
       grants: harness.grants,
       mentorships: harness.mentorships,
       now,
     }, now);
-    restored.importState(JSON.parse(JSON.stringify(harness.commissions.exportState())));
-    expect(restored.get(commissionId(harness.deptId, 'new-hire'))?.commissioned?.by).toBe('operator');
-    expect(() => restored.assertCommissioned(record.id)).not.toThrow();
+    restored.importState(JSON.parse(JSON.stringify(harness.seatGrants.exportState())));
+    expect(restored.get(seatGrantId(harness.deptId, 'new-hire'))?.seatGranted?.by).toBe('operator');
+    expect(() => restored.assertSeatGranted(record.id)).not.toThrow();
   });
 });

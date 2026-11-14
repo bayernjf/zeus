@@ -29,8 +29,8 @@ export type ProgressEvent =
       intentId: string;
       runId: string;
       status: string;
-      /** Present when the intent named a connected realm; drives auto-consolidation. */
-      realmId?: string;
+      /** Present when the intent named a connected dataDomain; drives auto-consolidation. */
+      dataDomainId?: string;
       at: string;
     }
   | {

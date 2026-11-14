@@ -9,9 +9,9 @@
  * each round had to re-invent it and the strongest class of evidence survived
  * only as prose in a change log (deferred #25). This is that chain as an asset:
  *
- *   boot the HTTP process -> mount a realm from a plain directory -> register an
+ *   boot the HTTP process -> mount a dataDomain from a plain directory -> register an
  *   execution agent over a real socket with an outbound credential -> fan out an
- *   intent -> runtime-resolved realm content reaches the agent -> the published
+ *   intent -> runtime-resolved dataDomain content reaches the agent -> the published
  *   roster verifies offline with only the public key -> the published root key
  *   is that same key -> revoke cuts the wire ->
  *   SIGTERM persists -> a restart restores ->
@@ -107,7 +107,7 @@ function card(name, port) {
       version: '1',
       swornTo: 'zeus',
       domain: 'smoke',
-      realms: ['personal'],
+      dataDomains: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',
@@ -174,10 +174,10 @@ const cardUrl = name => `http://127.0.0.1:${agentPort}/${name}/api/a2a/agent-car
 // is the claim being tested, so the smoke must not need anything else).
 // ---------------------------------------------------------------------------
 const work = mkdtempSync(join(tmpdir(), 'zeus-smoke-core-'));
-const realmRoot = join(work, 'realm');
+const dataDomainRoot = join(work, 'dataDomain');
 const dataDir = join(work, 'data');
-mkdirSync(realmRoot, { recursive: true });
-writeFileSync(join(realmRoot, 'brief.md'), `# brief\nthe marker ${NEEDLE_TOKEN} lives only in the user's directory\n`);
+mkdirSync(dataDomainRoot, { recursive: true });
+writeFileSync(join(dataDomainRoot, 'brief.md'), `# brief\nthe marker ${NEEDLE_TOKEN} lives only in the user's directory\n`);
 const keygenOutput = execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), join(work, 'smoke-key.pem')], { stdio: 'pipe' }).toString();
 const publicKeyPath = join(work, 'smoke-key.public.pem');
 if (!existsSync(publicKeyPath)) {
@@ -208,7 +208,7 @@ const env = {
   ZEUS_COST_MAX_WINDOW_COST: '1000',
   ZEUS_RSK_KEY_FILE: join(work, 'smoke-key.pem'),
   ZEUS_INTERNAL_TOKEN: OPERATOR_TOKEN,
-  ZEUS_REALM_ROOTS: realmRoot,
+  ZEUS_DATA_DOMAIN_ROOTS: dataDomainRoot,
   NO_PROXY: '127.0.0.1,localhost',
   no_proxy: '127.0.0.1,localhost',
 };
@@ -334,9 +334,9 @@ try {
   });
   /** @type {Record<string, string | undefined>} */
   const day1Env = { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' };
-  // The reader's own shell must not pre-seed the run: state, realm roots and
+  // The reader's own shell must not pre-seed the run: state, dataDomain roots and
   // agent seeds all come from the command line here.
-  for (const key of ['ZEUS_STATE_FILE', 'ZEUS_REALM_ROOTS', 'ZEUS_EXECUTOR_SEEDS', 'ZEUS_INTERNAL_TOKEN', 'ZEUS_RSK_KEY_FILE']) {
+  for (const key of ['ZEUS_STATE_FILE', 'ZEUS_DATA_DOMAIN_ROOTS', 'ZEUS_EXECUTOR_SEEDS', 'ZEUS_INTERNAL_TOKEN', 'ZEUS_RSK_KEY_FILE']) {
     delete day1Env[key];
   }
   let day1 = { code: 1, out: '', err: day1CardReady ? '' : 'the reference agent never printed its card url' };
@@ -410,8 +410,8 @@ try {
   record('HTTP process boots on a directory and answers /healthz', health.json?.status === 'ok', `port ${port}`);
 
   const domains = await api('GET', '/api/domains');
-  const personal = domains.json?.realms?.find(/** @param {{ type?: string, realmId?: string, itemCount?: number }} realm */ realm => realm.type === 'personal');
-  record('realm mounted from a plain directory', !!personal && personal.itemCount >= 1, `realmId=${personal?.realmId} items=${personal?.itemCount}`);
+  const personal = domains.json?.dataDomains?.find(/** @param {{ type?: string, dataDomainId?: string, itemCount?: number }} dataDomain */ dataDomain => dataDomain.type === 'personal');
+  record('dataDomain mounted from a plain directory', !!personal && personal.itemCount >= 1, `dataDomainId=${personal?.dataDomainId} items=${personal?.itemCount}`);
 
   for (const name of ['a1', 'a2', 'a3']) {
     const registered = await api('POST', '/api/executors', { cardUrl: cardUrl(name), token: EXECUTOR_SECRET });
@@ -477,24 +477,24 @@ try {
     `jwk=${pin.slice(0, 10)}… spki=${spkiPin.slice(0, 8)}…`
   );
 
-  const fanOut = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
+  const fanOut = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', dataDomainId: personal.dataDomainId, aggregation: { kind: 'unanimous' }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   record('intent fans out to every provider', fanOut.json?.status === 'completed' && fanOut.json?.branches?.length === 3, `status=${fanOut.json?.status} http=${fanOut.status} body=${fanOut.text.slice(0, 220)}`);
   record('the outbound credential reaches the agent', ['a1', 'a2', 'a3'].every(name => agent(name).auth.at(-1) === `Bearer ${EXECUTOR_SECRET}`), `seen: ${['a1','a2','a3'].map(n => agent(n).auth.map(/** @param {string} x */ x => x === `Bearer ${EXECUTOR_SECRET}` ? 'ok' : (x === '(none)' ? 'none' : x.slice(0, 10) + '…')).join(',')).join(' | ')}`);
   record('branches ran concurrently, not serially', ['a1', 'a2', 'a3'].every(name => agent(name).requests === 1), 'one request each inside a single fan-out');
 
-  const sourced = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, realmSource: { realmId: personal.realmId, text: NEEDLE_TOKEN }, params: { subject: 'smoke-target', predicate: 'verdict' } });
+  const sourced = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', dataDomainId: personal.dataDomainId, dataDomainSource: { dataDomainId: personal.dataDomainId, text: NEEDLE_TOKEN }, params: { subject: 'smoke-target', predicate: 'verdict' } });
   const forwarded = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
-  record('the runtime itself reads the realm and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
+  record('the runtime itself reads the dataDomain and forwards content', sourced.json?.status === 'completed' && forwarded.includes(NEEDLE_TOKEN), `agent saw the marker: ${forwarded.includes(NEEDLE_TOKEN)}`);
 
-  // design-realm §3.1 on a real process: the same read-task-scope executor refuses
+  // design-dataDomain §3.1 on a real process: the same read-task-scope executor refuses
   // self-asserted hits — the runtime can verify content it resolved itself and
   // nothing the caller claims — and the refusal makes no outbound request.
   const requestsBefore = ['a1', 'a2', 'a3'].map(name => agent(name).requests);
-  const selfAsserted = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, realmHits: [{ itemId: 'claim-1', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'claimed context' }], params: { subject: 'smoke-target', predicate: 'verdict' } });
+  const selfAsserted = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', dataDomainId: personal.dataDomainId, dataDomainHits: [{ itemId: 'claim-1', tags: [], modifiedAt: '2026-09-25T00:00:00.000Z', snippet: 'claimed context' }], params: { subject: 'smoke-target', predicate: 'verdict' } });
   /** @type {string[]} */
   const refusedReasons = (selfAsserted.json?.branches ?? []).map(/** @param {any} branch */ branch => String(branch.reason ?? ''));
   record(
-    'self-asserted realm hits are refused for a read-task-scope executor without an outbound request',
+    'self-asserted dataDomain hits are refused for a read-task-scope executor without an outbound request',
     selfAsserted.json?.status === 'failed'
       && (selfAsserted.json?.branches?.length ?? 0) === 3
       && refusedReasons.every(reason => reason.includes('dataPolicy'))
@@ -591,7 +591,7 @@ try {
   // intent's branches carry the runtime-assembled memory appendix on the wire —
   // recall stops being "only persisted" and reaches the executing agent. The
   // query mirrors the earlier fan-out's terms so the recall has a match.
-  const appendixProbe = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, executors: ['a1'], params: { subject: 'appendix', predicate: 'probe', message: 'smoke-target verdict' } });
+  const appendixProbe = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', dataDomainId: personal.dataDomainId, executors: ['a1'], params: { subject: 'appendix', predicate: 'probe', message: 'smoke-target verdict' } });
   const appendixPayload = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record(
     'memory recall is assembled into the outbound branch context',
@@ -610,7 +610,7 @@ try {
   // takes explicit versions over the 0.0.0 catalogue entry), so the registered
   // version must re-declare the providers or auto-selection loses them.
   const registerInputs = await api('POST', '/api/skills', { id: 'research', name: 'Research', description: 'smoke spec', version: '9.9.9', tags: [], providedBy: ['a1', 'a2', 'a3'], inputs: { subject: {}, predicate: {} } }, { authorization: `Bearer ${OPERATOR_TOKEN}`, 'content-type': 'application/json' });
-  const suppliedProbe = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, executors: ['a1'], params: { subject: 'smoke-supplied', predicate: 'verdict', message: 'smoke-target verdict' } });
+  const suppliedProbe = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', dataDomainId: personal.dataDomainId, executors: ['a1'], params: { subject: 'smoke-supplied', predicate: 'verdict', message: 'smoke-target verdict' } });
   const suppliedPayload = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record(
     'skill-declared inputs are assembled from the explicit payload',
@@ -621,7 +621,7 @@ try {
       && suppliedPayload.includes('"subject"'),
     `register=${registerInputs.status} ${registerInputs.text.slice(0,160)} | agent saw skillInputs: ${suppliedPayload.includes('"skillInputs"') ? 'yes' : 'no'} status=${String(suppliedProbe.json?.status)}`
   );
-  const unsuppliedProbe = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', realmId: personal.realmId, executors: ['a1'], params: { message: 'smoke-target verdict' } });
+  const unsuppliedProbe = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', dataDomainId: personal.dataDomainId, executors: ['a1'], params: { message: 'smoke-target verdict' } });
   const unsuppliedPayload = JSON.stringify(agent('a1').payloads.at(-1) ?? {});
   record(
     'an unsupplied declared input is marked unavailable, never fabricated',
@@ -633,7 +633,7 @@ try {
 
   const revokedAt = agent('a1').requests;
   const revoked = await api('DELETE', '/api/executors/a1', undefined, { authorization: `Bearer ${OPERATOR_TOKEN}` });
-  const afterRevoke = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', executors: ['a1'] });
+  const afterRevoke = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', executors: ['a1'] });
   record('revocation cuts the wire immediately', revoked.status === 200 && agent('a1').requests === revokedAt && afterRevoke.json?.status !== 'completed', `delete=${revoked.status} ${revoked.text.slice(0,120)} | requests stayed at ${agent('a1').requests}, intent status=${afterRevoke.json?.status}`);
   // The public view drops revoked rows by design, so the revoked state is
   // read from the internal roster.
@@ -656,11 +656,11 @@ try {
     .map(/** @param {{ name?: string, status?: string }} entry */ entry => `${entry.name}=${entry.status}`)
     .join(' ');
   record('restart restores agents and governance state', /a1=revoked/.test(statuses) && /a2=active/.test(statuses), statuses);
-  const restoredRealms = await api('GET', '/api/domains');
+  const restoredDataDomains = await api('GET', '/api/domains');
   record(
     'restart re-attaches the data domain',
-    (restoredRealms.json?.realms ?? []).some(/** @param {{ type?: string, itemCount?: number }} realm */ realm => realm.type === 'personal' && (realm.itemCount ?? 0) >= 1),
-    `realms=${(restoredRealms.json?.realms ?? []).length}`,
+    (restoredDataDomains.json?.dataDomains ?? []).some(/** @param {{ type?: string, itemCount?: number }} dataDomain */ dataDomain => dataDomain.type === 'personal' && (dataDomain.itemCount ?? 0) >= 1),
+    `dataDomains=${(restoredDataDomains.json?.dataDomains ?? []).length}`,
   );
   // Memory is the layer that was silently empty before deferred #27, so the
   // restart has to be proven against it and not assumed from the roster.
@@ -674,7 +674,7 @@ try {
     0,
   );
   record('restart restores the memory fact source, not just the roster', (restoredMemory.json?.state?.events?.length ?? 0) >= 3 && restoredFacts >= 1, `events=${restoredMemory.json?.state?.events?.length} facts=${restoredFacts}`);
-  const afterRestart = await api('POST', '/api/intents', { skill: 'research', realm: 'personal', executors: ['a2'] });
+  const afterRestart = await api('POST', '/api/intents', { skill: 'research', dataDomain: 'personal', executors: ['a2'] });
   record('dispatch works after the restart', afterRestart.json?.status === 'completed', `status=${afterRestart.json?.status} agent requests=${agent('a2').requests}`);
   // Both observability files are configured on this very process, so these two
   // steps fail if serve.ts stops passing them to bootRuntime - which is exactly
@@ -773,23 +773,23 @@ const { bootRuntime } = await mod(${JSON.stringify(join(REPO, 'dist/state/boot.j
 const { issueDelegationContract } = await mod(${JSON.stringify(join(REPO, 'dist/delegation/delegation-contract.js'))});
 const { Ed25519MemorySigner } = await mod(${JSON.stringify(join(REPO, 'dist/registry/signing.js'))});
 const agentPort = ${JSON.stringify(agentPort)};
-const realmRoot = ${JSON.stringify(realmRoot)};
+const dataDomainRoot = ${JSON.stringify(dataDomainRoot)};
 const phase = process.argv[2];
 const decisions = [];
 const signer = new Ed25519MemorySigner('smoke-operator');
 const runtime = await bootRuntime({
   executorSeeds: ['http://127.0.0.1:' + agentPort + '/a2/api/a2a/agent-card'],
-  realmRoots: [realmRoot],
+  dataDomainRoots: [dataDomainRoot],
   operatorSigner: signer,
   dispatchAudit: entry => decisions.push(entry.decision),
 });
-const realmId = runtime.realmStore.connections()[0]?.realmId ?? '';
+const dataDomainId = runtime.dataDomainStore.connections()[0]?.dataDomainId ?? '';
 const iso = offset => new Date(Date.now() + offset).toISOString();
 let out = {};
 if (phase === 'plan') {
   runtime.watches.register({
-    id: 'smoke-watch-plan', owner: 'smoke-operator', realm: 'personal', realmId,
-    predicate: { source: 'realm', op: 'above', field: 'entryCount', value: 0 },
+    id: 'smoke-watch-plan', owner: 'smoke-operator', dataDomain: 'personal', dataDomainId,
+    predicate: { source: 'dataDomain', op: 'above', field: 'entryCount', value: 0 },
     intent: { skill: 'research', subject: 'smoke-watch-plan', mode: 'plan', maxFanOut: 1 },
     intervalSeconds: 1, startsAt: iso(-60000), expiresAt: iso(3600000),
     budget: { fires: 1, executes: 0 },
@@ -802,8 +802,8 @@ if (phase === 'plan') {
   }, { signer });
   runtime.delegationContracts.add(contract);
   runtime.watches.register({
-    id: 'smoke-watch-exec', owner: 'smoke-operator', realm: 'personal', realmId,
-    predicate: { source: 'realm', op: 'above', field: 'entryCount', value: 0 },
+    id: 'smoke-watch-exec', owner: 'smoke-operator', dataDomain: 'personal', dataDomainId,
+    predicate: { source: 'dataDomain', op: 'above', field: 'entryCount', value: 0 },
     intent: { skill: 'research', subject: 'smoke-watch-exec', mode: 'execute', maxFanOut: 1 },
     intervalSeconds: 1, startsAt: iso(-60000), expiresAt: iso(3600000),
     budget: { fires: 2, executes: 2 },
@@ -823,7 +823,7 @@ process.exit(0);
 `);
   /** @type {Record<string, string | undefined>} */
   const runnerEnv = { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' };
-  for (const key of ['ZEUS_STATE_FILE', 'ZEUS_AUDIT_FILE', 'ZEUS_EXECUTOR_SEEDS', 'ZEUS_REALM_ROOTS', 'ZEUS_RSK_KEY_FILE', 'ZEUS_INTERNAL_TOKEN']) {
+  for (const key of ['ZEUS_STATE_FILE', 'ZEUS_AUDIT_FILE', 'ZEUS_EXECUTOR_SEEDS', 'ZEUS_DATA_DOMAIN_ROOTS', 'ZEUS_RSK_KEY_FILE', 'ZEUS_INTERNAL_TOKEN']) {
     delete runnerEnv[key];
   }
   /** @param {string} phase */
@@ -881,7 +881,7 @@ process.exit(0);
   // that forgot runWatchTick answers 503 on the tick and only there.
   const watchRes = await api('POST', '/api/watches', {
     owner: 'smoke-operator',
-    realm: 'personal',
+    dataDomain: 'personal',
     predicate: { source: 'metrics', op: 'below', field: 'inFlight', value: 1 },
     intent: { skill: 'research', subject: 'smoke-watch-op', mode: 'plan', maxFanOut: 2 },
     intervalSeconds: 60,

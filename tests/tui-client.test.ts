@@ -146,10 +146,10 @@ describe('TUI HTTP client', () => {
     expect(call?.init?.headers?.authorization).toBe('Bearer tok');
   });
 
-  it('fetches mounted realms and the grant ledger from /api/domains', async () => {
+  it('fetches mounted dataDomains and the grant ledger from /api/domains', async () => {
     const payload = {
-      realms: [{ realmId: 'acme', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 3, contentDigest: 'sha256:x' }],
-      grants: [{ grantId: 'g-1', subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' }],
+      dataDomains: [{ dataDomainId: 'acme', type: 'enterprise', tenant: { org: 'acme' }, readOnly: true, itemCount: 3, contentDigest: 'sha256:x' }],
+      grants: [{ grantId: 'g-1', subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' }],
     };
     const { calls, client } = mockClient(url =>
       url === 'http://runtime/api/domains'
@@ -182,19 +182,19 @@ describe('TUI HTTP client', () => {
     const calls: Call[] = [];
     const fetchImpl = vi.fn(async (url: string, init?: Init) => {
       calls.push({ url, ...(init !== undefined ? { init } : {}) });
-      return okJson({ grantId: 'g-9', subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' });
+      return okJson({ grantId: 'g-9', subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op', grantedAt: 't', nonce: 'n' });
     });
     const client = createDeckClient('http://runtime', 'tok', fetchImpl);
-    const grant = await client.issueGrant({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
+    const grant = await client.issueGrant({ subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op' });
     expect(grant.grantId).toBe('g-9');
     expect(calls[0]!.url).toBe('http://runtime/api/domains/grants');
     expect(calls[0]!.init?.method).toBe('POST');
-    expect(JSON.parse(calls[0]!.init?.body ?? '{}')).toEqual({ subject: 'loom', realmId: 'acme', access: 'read', grantedBy: 'op' });
+    expect(JSON.parse(calls[0]!.init?.body ?? '{}')).toEqual({ subject: 'loom', dataDomainId: 'acme', access: 'read', grantedBy: 'op' });
 
     const bad = createDeckClient('http://runtime', 'tok', vi.fn(async () => ({
-      ok: false, status: 400, json: async () => ({ error: { message: 'grants authorize enterprise realms' } }),
+      ok: false, status: 400, json: async () => ({ error: { message: 'grants authorize enterprise dataDomains' } }),
     })));
-    await expect(bad.issueGrant({ subject: 'x', realmId: 'p', access: 'read', grantedBy: 'op' })).rejects.toBeInstanceOf(ApiError);
+    await expect(bad.issueGrant({ subject: 'x', dataDomainId: 'p', access: 'read', grantedBy: 'op' })).rejects.toBeInstanceOf(ApiError);
   });
 
   it('revokes a grant by encoded grantId on DELETE', async () => {
@@ -223,11 +223,11 @@ describe('TUI HTTP client', () => {
     expect(calls[0]!.init!.headers!['content-type']).toBe('application/json');
   });
 
-  it('sends realm + useModel only when opted in', async () => {
+  it('sends dataDomain + useModel only when opted in', async () => {
     const { calls, client } = mockClient(() => okJson({ ok: true, intent: { skill: 'research' }, confidence: 0.8, backend: { kind: 'llm', model: 'm' }, decisionAt: 'd' }));
-    await client.recognize('research postgres vs sqlite', { realm: 'enterprise', useModel: true });
+    await client.recognize('research postgres vs sqlite', { dataDomain: 'enterprise', useModel: true });
     const body = JSON.parse(calls[0]!.init!.body!);
-    expect(body).toEqual({ text: 'research postgres vs sqlite', realm: 'enterprise', useModel: true });
+    expect(body).toEqual({ text: 'research postgres vs sqlite', dataDomain: 'enterprise', useModel: true });
   });
 
   it('surfaces a fail-closed response as-is (never turns it into a guessed intent)', async () => {

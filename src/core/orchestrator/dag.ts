@@ -1,4 +1,4 @@
-import type { RealmType } from '../../a2a/types.js';
+import type { DataDomainType } from '../../a2a/types.js';
 import type { AggregationRule } from './types.js';
 
 /**
@@ -37,7 +37,7 @@ export type DagNode = {
 
 export type DagSpec = {
   dagId?: string;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   nodes: DagNode[];
   branchTimeoutMs?: number;
 };

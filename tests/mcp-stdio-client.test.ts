@@ -34,10 +34,10 @@ function fakeSpawn(
           result = { protocolVersion: '2025-03-26', capabilities: { tools: {} }, serverInfo: { name: 'fake' } };
           break;
         case 'tools/list':
-          result = { tools: [{ name: 'realm.search' }, { name: 'realm.read' }] };
+          result = { tools: [{ name: 'dataDomain.search' }, { name: 'dataDomain.read' }] };
           break;
         case 'resources/list':
-          result = { resources: [{ uri: 'zeus-realm://r/manifest', name: 'manifest' }] };
+          result = { resources: [{ uri: 'zeus-data-domain://r/manifest', name: 'manifest' }] };
           break;
         case 'prompts/list':
           result = { prompts: [] };
@@ -106,7 +106,7 @@ describe('McpStdioClient', () => {
     const { spawnImpl } = fakeSpawn();
     const client = new McpStdioClient({ command: 'node', spawnImpl });
     const caps = await client.initialize();
-    expect(caps.tools).toEqual(['realm.search', 'realm.read']);
+    expect(caps.tools).toEqual(['dataDomain.search', 'dataDomain.read']);
     expect(caps.resources).toEqual(['manifest']);
     expect(caps.prompts).toEqual([]);
     client.close();
@@ -115,24 +115,24 @@ describe('McpStdioClient', () => {
   it('calls a tool with arguments over stdio', async () => {
     const { spawnImpl, take } = fakeSpawn();
     const client = new McpStdioClient({ command: 'node', spawnImpl });
-    const result = await client.callTool('realm.search', { realmId: 'r', text: 'auth' });
+    const result = await client.callTool('dataDomain.search', { dataDomainId: 'r', text: 'auth' });
     expect(result).toEqual({ content: [{ type: 'text', text: 'ok' }] });
     const callLine = take().sent.map(line => JSON.parse(line) as { method: string; params?: unknown }).find(m => m.method === 'tools/call');
-    expect(callLine?.params).toMatchObject({ name: 'realm.search', arguments: { realmId: 'r', text: 'auth' } });
+    expect(callLine?.params).toMatchObject({ name: 'dataDomain.search', arguments: { dataDomainId: 'r', text: 'auth' } });
     client.close();
   });
 
   it('surfaces a JSON-RPC error from the upstream server', async () => {
     const { spawnImpl } = fakeSpawn({ errorOn: 'tools/call' });
     const client = new McpStdioClient({ command: 'node', spawnImpl });
-    await expect(client.callTool('realm.read', { realmId: 'r', itemId: 'missing' })).rejects.toBeInstanceOf(McpStdioError);
+    await expect(client.callTool('dataDomain.read', { dataDomainId: 'r', itemId: 'missing' })).rejects.toBeInstanceOf(McpStdioError);
     client.close();
   });
 
   it('rejects pending calls when the process exits early', async () => {
     const { spawnImpl, take } = fakeSpawn();
     const client = new McpStdioClient({ command: 'node', spawnImpl });
-    const promise = client.callTool('realm.read', { realmId: 'r', itemId: 'a' });
+    const promise = client.callTool('dataDomain.read', { dataDomainId: 'r', itemId: 'a' });
     take().child.emit('exit', 1);
     await expect(promise).rejects.toThrow(/exited early/);
   });
@@ -143,7 +143,7 @@ describe('McpStdioClient', () => {
     const { spawnImpl, take } = fakeSpawn({ hangOn: 'tools/call' });
     const client = new McpStdioClient({ command: 'node', spawnImpl, callTimeoutSeconds: 1 });
     try {
-      const promise = client.callTool('realm.search', {});
+      const promise = client.callTool('dataDomain.search', {});
       // The rejection fires inside the clock advance, before the await below
       // attaches its reaction; mark the promise handled so the fake clock does
       // not report a test-only unhandled rejection.
@@ -167,7 +167,7 @@ describe('McpStdioClient', () => {
   it('rejects every pending call immediately on close without waiting for process exit', async () => {
     const { spawnImpl } = fakeSpawn({ hangOn: 'tools/call' });
     const client = new McpStdioClient({ command: 'node', spawnImpl });
-    const promise = client.callTool('realm.search', {});
+    const promise = client.callTool('dataDomain.search', {});
     let settled = false;
     promise.then(
       () => {
@@ -192,7 +192,7 @@ describe('McpStdioClient', () => {
     const { spawnImpl, take } = fakeSpawn({ hangOn: 'tools/call' });
     const client = new McpStdioClient({ command: 'node', spawnImpl, maxWallSeconds: 1 });
     try {
-      const promise = client.callTool('realm.search', {});
+      const promise = client.callTool('dataDomain.search', {});
       promise.catch(() => {}); // handled below; keep the fake-clock rejection off the unhandled channel
       expect(take().spawnOptions.detached).toBe(true);
       await vi.advanceTimersByTimeAsync(1000);
@@ -213,7 +213,7 @@ describe('McpStdioClient', () => {
     const { spawnImpl, take } = fakeSpawn({ hangOn: 'tools/call' });
     const client = new McpStdioClient({ command: 'node', spawnImpl, maxWallSeconds: 1 });
     try {
-      const first = client.callTool('realm.search', {});
+      const first = client.callTool('dataDomain.search', {});
       take().child.emit('exit', 0);
       await expect(first).rejects.toThrow(/exited early/);
       // The client is reused after the natural exit: advance partway into the
@@ -221,7 +221,7 @@ describe('McpStdioClient', () => {
       // fire at t=1000ms against whatever child is current; it must have been
       // cleared at exit instead.
       await vi.advanceTimersByTimeAsync(100);
-      const second = client.callTool('realm.search', {});
+      const second = client.callTool('dataDomain.search', {});
       second.catch(() => {}); // handled below; keep the fake-clock rejection off the unhandled channel
       const respawnedPid = take().child.pid!;
       await vi.advanceTimersByTimeAsync(900);
@@ -249,7 +249,7 @@ describe('McpStdioClient', () => {
     async () => {
       const { spawnImpl } = fakeSpawn({ stdinError: new Error('write EPIPE') });
       const client = new McpStdioClient({ command: 'node', spawnImpl });
-      await expect(client.callTool('realm.search', {})).rejects.toThrow(/EPIPE/);
+      await expect(client.callTool('dataDomain.search', {})).rejects.toThrow(/EPIPE/);
       client.close();
     },
     // On the old implementation the callback-less write surfaces as an uncaught
@@ -282,7 +282,7 @@ describe('McpStdioClient', () => {
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(correlated).toBe(true);
     const caps = await ready;
-    expect(caps.tools).toEqual(['realm.search', 'realm.read']);
+    expect(caps.tools).toEqual(['dataDomain.search', 'dataDomain.read']);
     // An unsolicited frame with a server-owned string id must be ignored
     // without disturbing the channel.
     take().emitLine(JSON.stringify({ jsonrpc: '2.0', id: 'some-server-id', result: {} }));
@@ -292,7 +292,7 @@ describe('McpStdioClient', () => {
   it('keeps a bounded stderr tail on the early-exit error for local diagnostics', async () => {
     const { spawnImpl, take } = fakeSpawn({ hangOn: 'tools/call' });
     const client = new McpStdioClient({ command: 'node', spawnImpl });
-    const promise = client.callTool('realm.read', {});
+    const promise = client.callTool('dataDomain.read', {});
     take().emitStderr('fatal: connector boot failed\n');
     await new Promise(resolve => setImmediate(resolve));
     take().child.emit('exit', 1);

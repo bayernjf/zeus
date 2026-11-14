@@ -9,8 +9,8 @@
 
 | 能力 | 现状 | 边界 |
 | --- | --- | --- |
-| 状态快照 | RuntimeSnapshot 在优雅退出（SIGTERM）时全量落盘 0600：registry/oversight/orchestrator/realms/skills/memory/connectors/mentorships/org/grants | **只覆盖优雅退出**；kill -9、断电、OOM 时最后一次落盘之后的状态丢失 |
-| 启动恢复 | 重启从快照恢复名册、治理状态、Realm、记忆等（smoke 45 步含 restart 系列验证） | 恢复的是**静态治理状态**；在途意图的执行不自动续 |
+| 状态快照 | RuntimeSnapshot 在优雅退出（SIGTERM）时全量落盘 0600：registry/oversight/orchestrator/dataDomains/skills/memory/connectors/mentorships/org/grants | **只覆盖优雅退出**；kill -9、断电、OOM 时最后一次落盘之后的状态丢失 |
+| 启动恢复 | 重启从快照恢复名册、治理状态、DataDomain、记忆等（smoke 45 步含 restart 系列验证） | 恢复的是**静态治理状态**；在途意图的执行不自动续 |
 | 显式 resume | 操作者驱动：input-required 补参后 resume、失败分支 resumeNo 续跑，runId 谱系 `parent:executor:resumeN` | 需要人显式触发；没有崩溃后的自动判定 |
 | 幂等重放 | intentId 幂等，重放零出站（F2） | 是自动恢复**安全性**的前提，但本身不触发恢复 |
 | 归档 | out-window 意图进 archive，replay 可追溯 | 面向历史查询，不面向续跑 |

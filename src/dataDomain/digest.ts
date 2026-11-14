@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 export { sha256Hex } from '../util/crypto.js';
 import { sha256Hex } from '../util/crypto.js';
 
-/** Stable whole-realm fingerprint: order-independent over itemIds, sensitive
+/** Stable whole-dataDomain fingerprint: order-independent over itemIds, sensitive
  *  to both item paths and contents. Used as the backup/drift baseline. */
 export function digestManifest(entries: Array<{ itemId: string; content: Buffer | string }>): string {
   const hash = createHash('sha256');

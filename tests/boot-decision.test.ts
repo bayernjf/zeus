@@ -128,7 +128,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -187,7 +187,7 @@ describe('T-C bootRuntime decision backend wiring (end-to-end via SSE executors)
     });
     const result = await runtime.orchestrator.fanOut({
       skill: 'review',
-      realm: 'personal',
+      dataDomain: 'personal',
       params: { question: 'ship?' },
     });
     expect(choiceCalls.length).toBeGreaterThan(0);
@@ -206,7 +206,7 @@ describe('T-C bootRuntime decision backend wiring (end-to-end via SSE executors)
     });
     const result = await runtime.orchestrator.fanOut({
       skill: 'review',
-      realm: 'personal',
+      dataDomain: 'personal',
       params: { question: 'ship?' },
     });
     expect(choiceCalls.length).toBeGreaterThan(0);
@@ -223,7 +223,7 @@ describe('T-C bootRuntime decision backend wiring (end-to-end via SSE executors)
     });
     const result = await runtime.orchestrator.fanOut({
       skill: 'review',
-      realm: 'personal',
+      dataDomain: 'personal',
       params: { question: 'ship?' },
     });
     expect(choiceCalls).toHaveLength(0);

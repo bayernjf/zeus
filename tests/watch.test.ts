@@ -19,7 +19,7 @@ import type { DagRunner } from '../src/orchestrator/dag-runner.js';
 
 /**
  * design-self-host-loop §7 step 2: the trigger primitive with the metrics and
- * realm sources. The properties that matter are the ones a trigger can violate
+ * dataDomain sources. The properties that matter are the ones a trigger can violate
  * silently — firing more than once for one condition, spending budget twice
  * across a restart, or reading "unavailable" as "condition false".
  */
@@ -46,7 +46,7 @@ function metrics(overrides: Partial<Record<string, number>> = {}): MetricsSnapsh
 function baseInput(overrides: Partial<Parameters<WatchRegistry['register']>[0]> = {}) {
   return {
     owner: 'operator@bayjf',
-    realm: 'personal' as const,
+    dataDomain: 'personal' as const,
     predicate: { source: 'metrics' as const, op: 'above' as const, field: 'queueDepth', value: 2 },
     intent: { skill: 'review', subject: 'queue is deep', mode: 'plan' as const, maxFanOut: 1 },
     intervalSeconds: 60,
@@ -160,7 +160,7 @@ describe('predicate evaluation', () => {
   });
 
   it('does not fire on the first changed reading, only on an actual change', () => {
-    const predicate = { source: 'realm' as const, op: 'changed' as const, field: 'lastItemModifiedAt' };
+    const predicate = { source: 'dataDomain' as const, op: 'changed' as const, field: 'lastItemModifiedAt' };
     expect(evaluatePredicate(predicate, { kind: 'value', value: 'a' })).toBe(false);
     expect(evaluatePredicate(predicate, { kind: 'value', value: 'b' }, 'a')).toBe(true);
     expect(evaluatePredicate(predicate, { kind: 'value', value: 'b' }, 'b')).toBe(false);
@@ -303,7 +303,7 @@ describe('connector source (step 3)', () => {
   const connectorInput = (overrides: Partial<Parameters<WatchRegistry['register']>[0]> = {}) =>
     baseInput({
       predicate: { source: 'connector', op: 'above', field: 'queue.depth', value: 2 },
-      connector: { id: 'conn-1', tool: 'realm.search', args: { query: 'x' } },
+      connector: { id: 'conn-1', tool: 'dataDomain.search', args: { query: 'x' } },
       ...overrides,
     });
 
@@ -338,7 +338,7 @@ describe('connector source (step 3)', () => {
       submit: async (): Promise<WatchSubmitResult> => ({ ok: true }),
     });
     expect(report.fired).toEqual(['wc']);
-    expect(calls).toEqual([{ id: 'conn-1', tool: 'realm.search' }]);
+    expect(calls).toEqual([{ id: 'conn-1', tool: 'dataDomain.search' }]);
   });
 
   it('reports a jittering connector as unavailable and does not fire', async () => {
@@ -418,34 +418,34 @@ describe('watches survive a restart', () => {
   });
 });
 
-describe('realm source', () => {
+describe('dataDomain source', () => {
   it('reads entry metadata through the store and fires on a change', async () => {
     const registry = new WatchRegistry({ newId: () => 'wr' });
     registry.register({
       ...baseInput(),
-      realmId: 'realm-1',
-      predicate: { source: 'realm', op: 'above', field: 'entryCount', value: 1 },
+      dataDomainId: 'dataDomain-1',
+      predicate: { source: 'dataDomain', op: 'above', field: 'entryCount', value: 1 },
     });
     const report = await registry.runTick({
       now: () => NOW,
-      sources: { realm: async () => ({ entryCount: 3, lastItemModifiedAt: '2026-10-05T11:00:00.000Z' }) },
+      sources: { dataDomain: async () => ({ entryCount: 3, lastItemModifiedAt: '2026-10-05T11:00:00.000Z' }) },
       submit: async (): Promise<WatchSubmitResult> => ({ ok: true }),
     });
     expect(report.fired).toEqual(['wr']);
   });
 
-  it('reports unavailable, and never fires, when the realm is not mounted', async () => {
+  it('reports unavailable, and never fires, when the dataDomain is not mounted', async () => {
     const registry = new WatchRegistry({ newId: () => 'wr' });
     registry.register({
       ...baseInput(),
-      predicate: { source: 'realm', op: 'above', field: 'entryCount', value: 1 },
+      predicate: { source: 'dataDomain', op: 'above', field: 'entryCount', value: 1 },
     });
     const report = await registry.runTick({
       now: () => NOW,
-      sources: { realm: async () => ({ entryCount: 3 }) },
+      sources: { dataDomain: async () => ({ entryCount: 3 }) },
       submit: async (): Promise<WatchSubmitResult> => ({ ok: true }),
     });
-    // realmId missing: unreadable, so no fire — a watch on an unmounted realm
+    // dataDomainId missing: unreadable, so no fire — a watch on an unmounted dataDomain
     // must not look like a satisfied condition.
     expect(report.unavailable).toEqual(['wr']);
     expect(report.fired).toEqual([]);
@@ -555,7 +555,7 @@ describe('execute fires derive a child ticket (step 4)', () => {
       watchId: 'w1',
       delegationId: 'contract-1',
       skill: 'merge',
-      realm: 'personal',
+      dataDomain: 'personal',
       limitReason: 'revoked',
       tickSeq: 1,
     });
@@ -563,7 +563,7 @@ describe('execute fires derive a child ticket (step 4)', () => {
       watchId: 'w1',
       delegationId: 'contract-1',
       skill: 'merge',
-      realm: 'personal',
+      dataDomain: 'personal',
       limitReason: 'revoked',
       tickSeq: 1,
     });
@@ -574,7 +574,7 @@ describe('execute fires derive a child ticket (step 4)', () => {
       watchId: 'w1',
       delegationId: 'contract-1',
       skill: 'merge',
-      realm: 'personal',
+      dataDomain: 'personal',
       limitReason: 'revoked',
       tickSeq: 2,
     });

@@ -100,7 +100,7 @@ const agentServer = createServer((req, res) => {
         version: '1',
         swornTo: 'zeus',
         domain: 'reliability',
-        realms: ['personal'],
+        dataDomains: ['personal'],
         dataPolicy: 'read-task-scope',
         reportBack: true,
         escalationPolicy: 'on-failure',
@@ -152,9 +152,9 @@ const cardUrls = (prefix, count) => names(prefix, count).map(n => `http://127.0.
 // Work directory, keys, one boot per scenario.
 // ---------------------------------------------------------------------------
 const work = mkdtempSync(join(tmpdir(), 'zeus-reliability-'));
-const realmRoot = join(work, 'realm');
-mkdirSync(realmRoot, { recursive: true });
-writeFileSync(join(realmRoot, 'brief.md'), '# brief\nreliability harness fixture\n');
+const dataDomainRoot = join(work, 'dataDomain');
+mkdirSync(dataDomainRoot, { recursive: true });
+writeFileSync(join(dataDomainRoot, 'brief.md'), '# brief\nreliability harness fixture\n');
 execFileSync(process.execPath, [join(REPO, 'scripts/gen-rsk-key.mjs'), join(work, 'rel-key.pem')], { stdio: 'pipe' });
 
 /** @type {import('node:child_process').ChildProcess[]} */
@@ -182,7 +182,7 @@ async function boot(opts) {
     ZEUS_HOST: '127.0.0.1',
     ZEUS_PORT: String(port),
     ZEUS_INTERNAL_TOKEN: TOKEN,
-    ZEUS_REALM_ROOTS: realmRoot,
+    ZEUS_DATA_DOMAIN_ROOTS: dataDomainRoot,
     ZEUS_RSK_KEY_FILE: join(work, 'rel-key.pem'),
     ZEUS_RSK_KEY_ID: 'zeus-rsk-reliability',
     ...(opts.persist === false ? {} : { ZEUS_STATE_FILE: stateFile }),
@@ -276,7 +276,7 @@ async function measureGate() {
     scenario.requests = 0;
     const submitted = await proc.api('POST', '/api/intents', {
       skill: 'research',
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: names('g', width),
       aggregation: { kind: 'unanimous' },
       params: { subject: 'gate', predicate: 'verdict' },
@@ -363,7 +363,7 @@ async function measureEscalations() {
     for (const cardUrl of conflictCards) await proc.api('POST', '/api/executors', { cardUrl });
     const submitted = await proc.api('POST', '/api/intents', {
       skill: 'research',
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: names('c', 2),
       aggregation: { kind: 'unanimous' },
       params: { subject: 'conflict', predicate: 'verdict' },
@@ -433,7 +433,7 @@ async function measureStream() {
     const inflight = proc.api('POST', '/api/intents', {
       intentId,
       skill: 'research',
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: names('s', 2),
       aggregation: { kind: 'unanimous' },
       params: { subject: 'stream', predicate: 'verdict' },
@@ -566,7 +566,7 @@ async function measureGrowth() {
   const submitOne = async () => {
     const submitted = await proc.api('POST', '/api/intents', {
       skill: 'research',
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['w1'],
       aggregation: { kind: 'unanimous' },
       params: { subject: 'growth', predicate: 'verdict' },
@@ -607,7 +607,7 @@ async function measureGrowth() {
   for (let i = 0; i < 10; i++) {
     const submitted = await small.api('POST', '/api/intents', {
       skill: 'research',
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['w1'],
       aggregation: { kind: 'unanimous' },
       params: { subject: 'growth', predicate: 'verdict' },

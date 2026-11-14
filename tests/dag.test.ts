@@ -46,7 +46,7 @@ function loggingPort(routes: Record<string, { result: DispatchResult; delayMs?: 
 }
 
 const lookup = { findBySkill: () => [] };
-const baseSpec = (nodes: DagNode[], realm: 'personal' = 'personal'): DagSpec => ({ dagId: 'dag1', realm, nodes });
+const baseSpec = (nodes: DagNode[], dataDomain: 'personal' = 'personal'): DagSpec => ({ dagId: 'dag1', dataDomain, nodes });
 
 describe('DAG graph functions', () => {
   it('rejects duplicate ids, unknown dependencies and cycles', () => {
@@ -177,7 +177,7 @@ describe('DagRunner', () => {
 
 function fanOutFor(intentId: string): FanOutResult {
   return {
-    intentId, runId: 'r', skill: 's', realm: 'personal', branches: [], stream: [], positions: [],
+    intentId, runId: 'r', skill: 's', dataDomain: 'personal', branches: [], stream: [], positions: [],
     decision: { rule: 'unanimous', conclusion: 'go', positions: [], reason: 'ok' },
     conflicts: [], status: 'completed', createdAt: 't',
   };
@@ -206,7 +206,7 @@ describe('DagRunner lifecycle guards', () => {
       cancelIntent: async id => { cancelled.push(id); },
     });
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
-    const spec: DagSpec = { dagId: 'D-cancel', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+    const spec: DagSpec = { dagId: 'D-cancel', dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] };
 
     const running = runner.run(spec);
     await delay(0); // the node has started; its intent must already be registered
@@ -227,7 +227,7 @@ describe('DagRunner lifecycle guards', () => {
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
     const result = await runner.run({
       dagId: 'D-throw',
-      realm: 'personal',
+      dataDomain: 'personal',
       nodes: [
         { id: 'A', skill: 'a' },
         { id: 'B', skill: 'b' },
@@ -245,7 +245,7 @@ describe('DagRunner lifecycle guards', () => {
     let calls = 0;
     const orchestrator = stubOrchestrator({ fanOut: async req => { calls += 1; return fanOutFor(req.intentId!); } });
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
-    const spec: DagSpec = { dagId: 'D-reuse', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+    const spec: DagSpec = { dagId: 'D-reuse', dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] };
 
     await runner.run(spec);
     expect(calls).toBe(1);
@@ -259,7 +259,7 @@ describe('DagRunner lifecycle guards', () => {
     const gate = new Promise<void>(resolve => { release = resolve; });
     const orchestrator = stubOrchestrator({ fanOut: async req => { calls += 1; await gate; return fanOutFor(req.intentId!); } });
     const runner = new DagRunner(lookup, noopPort, { newRunId: () => 'r1' }, orchestrator);
-    const spec: DagSpec = { dagId: 'D-concurrent', realm: 'personal', nodes: [{ id: 'A', skill: 's' }] };
+    const spec: DagSpec = { dagId: 'D-concurrent', dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] };
 
     const first = runner.run(spec);
     const second = runner.run(spec);
@@ -271,7 +271,7 @@ describe('DagRunner lifecycle guards', () => {
 
   it('mints reproducible-proof dag and run ids (uuid, not Math.random)', async () => {
     const runner = new DagRunner(lookup, noopPort, {});
-    const result = await runner.run({ realm: 'personal', nodes: [{ id: 'A', skill: 's' }] });
+    const result = await runner.run({ dataDomain: 'personal', nodes: [{ id: 'A', skill: 's' }] });
     expect(result.dagId).toMatch(/^dag-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(result.runId).toMatch(/^run-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });

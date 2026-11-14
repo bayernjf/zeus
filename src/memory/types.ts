@@ -2,7 +2,7 @@
  * Memory Consolidation Protocol (design-memory-consolidation.md).
  *
  * P0: append-only event log + pure, deterministic consolidation
- * (dedupe / merge / supersede / dispute). No recall index, personal realm.
+ * (dedupe / merge / supersede / dispute). No recall index, personal dataDomain.
  * Agents append events; facts are produced only by the consolidator.
  */
 
@@ -10,12 +10,12 @@ export type MemoryKind = 'observation' | 'action' | 'decision' | 'claim';
 
 export interface MemoryEvent {
   eventId: string;
-  realmId: string;
+  dataDomainId: string;
   runId: string;
   source: { agentId: string; taskId?: string };
   kind: MemoryKind;
   content: unknown;
-  /** Source references (Realm itemId / evidence pointers). */
+  /** Source references (DataDomain itemId / evidence pointers). */
   refs: string[];
   /** Author self-reported confidence, 0..1. Never the sole weight in merging. */
   confidence: number;
@@ -52,13 +52,13 @@ export const DEFAULT_FACT_IMPORTANCE = 0.5;
  * later recall, where the assembler forwards it as the entry's provenance
  * (the consumer sees "another agent said this", not "the runtime/user
  * requires this"). Absent on facts written before this field existed
- * (old snapshots), where the assembler falls back to `runtime-resolved-realm`.
+ * (old snapshots), where the assembler falls back to `runtime-resolved-dataDomain`.
  */
-export type FactOrigin = 'agent-produced' | 'runtime-resolved-realm';
+export type FactOrigin = 'agent-produced' | 'runtime-resolved-dataDomain';
 
 export interface FactRecord {
   factId: string;
-  realmId: string;
+  dataDomainId: string;
   subject: string;
   predicate: string;
   object: unknown;
@@ -130,7 +130,7 @@ export interface ReliabilityCorrection {
  */
 export interface RetractionRecord {
   factId: string;
-  realmId: string;
+  dataDomainId: string;
   subject: string;
   reason: string;
   requestedBy: string;
@@ -140,19 +140,19 @@ export interface RetractionRecord {
 /**
  * Text embedder behind the recall index. Asynchronous since MemoryPort v1:
  * the hub-backed implementation (ruling D-1) performs an authorised
- * out-of-realm call, so embedding can no longer be a synchronous local
+ * out-of-dataDomain call, so embedding can no longer be a synchronous local
  * operation. The `dimension` stays synchronous — it describes the vector
  * space currently served, and a change of dimension (hub ↔ local fallback)
  * tells the store to rebuild the index.
  */
 /**
  * Per-call context for embed requests. The hub-backed embedder carries the
- * realm scope into its external-call audit lines (P2-5) so the operator can
- * tell which realm's memory an embedding call served; the local embedder
+ * dataDomain scope into its external-call audit lines (P2-5) so the operator can
+ * tell which dataDomain's memory an embedding call served; the local embedder
  * ignores it (no external call, no audit line).
  */
 export interface EmbedContext {
-  realmId?: string;
+  dataDomainId?: string;
 }
 
 export interface Embedder {
@@ -184,7 +184,7 @@ export type WritebackParam = 'selection-weight';
 
 export interface WritebackRecord {
   id: string;
-  realmId: string;
+  dataDomainId: string;
   createdAt: string;
   /** The stable pattern that produced this recommendation (read-only attribution). */
   source: { kind: string; target: string; confidence: 'stable' | 'suggestive' };

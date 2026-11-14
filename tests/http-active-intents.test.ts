@@ -86,7 +86,7 @@ describe('GET /api/active-intents (S15 V3, design-streaming §3.3)', () => {
       onProgress: e => hub.publish(e),
     });
     app = await server(orch, hub);
-    const flying = orch.fanOut({ intentId: 'intent-live', skill: 'review', params: {}, realm: 'personal' });
+    const flying = orch.fanOut({ intentId: 'intent-live', skill: 'review', params: {}, dataDomain: 'personal' });
     await gated.flush();
 
     const res = await app.inject({ method: 'GET', url: '/api/active-intents', headers: AUTH });
@@ -117,7 +117,7 @@ describe('GET /api/active-intents (S15 V3, design-streaming §3.3)', () => {
       onProgress: e => hub.publish(e),
     });
     app = await server(orch, hub);
-    await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, realm: 'enterprise' });
+    await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     const res = await app.inject({ method: 'GET', url: '/api/active-intents', headers: AUTH });
     const body = await res.json();

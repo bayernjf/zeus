@@ -15,7 +15,7 @@ import {
   mapDiaryError,
   mapRuntimeError,
   mapOrgError,
-  mapRealmQueryError,
+  mapDataDomainQueryError,
   DEFAULT_HTTP_HOST,
   DEFAULT_HTTP_PORT,
   startServer,
@@ -26,8 +26,8 @@ import { DuplicateSkillError, SkillNotFoundError } from '../src/skills/registry.
 import { OrgError } from '../src/org/types.js';
 import { ConnectorError } from '../src/mcp/connectors.js';
 import { DiaryBoundaryError, DiaryUnsupportedError } from '../src/diary/types.js';
-import { RealmNotConnectedError, UnauthorizedRealmWriteError, UnsupportedQueryError } from '../src/realm/types.js';
-import { RealmSourceError } from '../src/realm/source.js';
+import { DataDomainNotConnectedError, UnauthorizedDataDomainWriteError, UnsupportedQueryError } from '../src/dataDomain/types.js';
+import { DataDomainSourceError } from '../src/dataDomain/source.js';
 import type { AgentCard } from '../src/a2a/types.js';
 import type { SignedRosterSnapshot } from '../src/registry/signing.js';
 
@@ -41,7 +41,7 @@ function card(name: string, overrides: Record<string, unknown> = {}): AgentCard 
       version: '1',
       swornTo: 'zeus',
       domain: `${name}-domain`,
-      realms: ['enterprise'],
+      dataDomains: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -82,14 +82,14 @@ describe('HTTP H1 server', () => {
     app = undefined;
   });
 
-  it('GET /healthz returns liveness only, no executor or realm data', async () => {
+  it('GET /healthz returns liveness only, no executor or dataDomain data', async () => {
     const registry = await registryWithTwo();
     app = (await serverWith(registry)).app;
     const reply = await app.inject({ method: 'GET', url: '/healthz' });
     expect(reply.statusCode).toBe(200);
     const body = JSON.parse(reply.body) as Record<string, unknown>;
     expect(body).toEqual({ status: 'ok', ts: '2026-09-21T12:00:00.000Z' });
-    expect(JSON.stringify(body)).not.toMatch(/pr-helper|loom|realm|enterprise/);
+    expect(JSON.stringify(body)).not.toMatch(/pr-helper|loom|dataDomain|enterprise/);
   });
 
   it('GET /api/roster/public returns a signed snapshot that verifies offline and trims all internal fields', async () => {
@@ -183,7 +183,7 @@ describe('HTTP H1 server', () => {
     const noAuth = await app.inject({ method: 'GET', url: '/api/roster' });
     expect(noAuth.statusCode).toBe(401);
     // RFC 6750 §3: the challenge names the scheme; no credentials means no error
-    // code, only the realm-shaped challenge.
+    // code, only the dataDomain-shaped challenge.
     expect(noAuth.headers['www-authenticate']).toBe('Bearer');
     const wrongAuth = await app.inject({ method: 'GET', url: '/api/roster', headers: { authorization: 'Bearer nope' } });
     expect(wrongAuth.statusCode).toBe(401);
@@ -381,7 +381,7 @@ describe('domain error -> HTTP status classification', () => {
     expect((errors[0] as { err: Error }).err).toBe(secret);
   });
 
-  it('maps an untyped realm-query throw to the fixed problem-details body instead of rethrowing', () => {
+  it('maps an untyped dataDomain-query throw to the fixed problem-details body instead of rethrowing', () => {
     const errors: unknown[] = [];
     let code = 0;
     let sent: unknown;
@@ -392,7 +392,7 @@ describe('domain error -> HTTP status classification', () => {
       request: { url: '/api/v1/fan-out?mode=plan' },
     };
     const secret = new Error('sqlite: no such table: internal_secrets at /srv/db.sqlite');
-    mapRealmQueryError(reply as never, secret);
+    mapDataDomainQueryError(reply as never, secret);
     expect(code).toBe(500);
     expect(sent).toEqual({
       type: 'about:blank',
@@ -421,7 +421,7 @@ describe('domain error -> HTTP status classification', () => {
     expect(errors).toHaveLength(0);
   });
 
-  it('keeps diary and realm-query business errors on their envelopes', () => {
+  it('keeps diary and dataDomain-query business errors on their envelopes', () => {
     // The untyped fallback moved to the fixed problem-details 500; every typed
     // failure keeps the status and `{ error, detail }` body it had before.
     const reply = (requestUrl?: string) => {
@@ -440,10 +440,10 @@ describe('domain error -> HTTP status classification', () => {
     };
 
     const diaryCases: Array<[unknown, number, unknown]> = [
-      [new UnauthorizedRealmWriteError('grant missing', 'grant-missing'), 403, { error: 'forbidden', detail: 'grant missing' }],
-      [new DiaryUnsupportedError('RealmStore has no write capability'), 409, { error: 'conflict', detail: 'RealmStore has no write capability' }],
-      [new RealmNotConnectedError('realm not connected: r1'), 409, { error: 'conflict', detail: 'realm not connected: r1' }],
-      [new DiaryBoundaryError('Diary cannot mix events from multiple realms'), 400, { error: 'invalid_request', detail: 'Diary cannot mix events from multiple realms' }],
+      [new UnauthorizedDataDomainWriteError('grant missing', 'grant-missing'), 403, { error: 'forbidden', detail: 'grant missing' }],
+      [new DiaryUnsupportedError('DataDomainStore has no write capability'), 409, { error: 'conflict', detail: 'DataDomainStore has no write capability' }],
+      [new DataDomainNotConnectedError('dataDomain not connected: r1'), 409, { error: 'conflict', detail: 'dataDomain not connected: r1' }],
+      [new DiaryBoundaryError('Diary cannot mix events from multiple dataDomains'), 400, { error: 'invalid_request', detail: 'Diary cannot mix events from multiple dataDomains' }],
     ];
     for (const [thrown, status, body] of diaryCases) {
       const { reply: r, outcome } = reply();
@@ -451,14 +451,14 @@ describe('domain error -> HTTP status classification', () => {
       expect(outcome()).toMatchObject({ code: status, sent: body, logCount: 0 });
     }
 
-    const realmCases: Array<[unknown, number, unknown]> = [
+    const dataDomainCases: Array<[unknown, number, unknown]> = [
       [new UnsupportedQueryError('tag search is not supported in P0'), 400, { error: 'invalid_request', detail: 'tag search is not supported in P0' }],
-      [new RealmNotConnectedError('realm not connected: r2'), 404, { error: 'not_found', detail: 'realm not connected: r2' }],
-      [new RealmSourceError({ ok: false, reason: 'unknown-realm', detail: 'no such realm' }), 403, { error: 'realm_source_refused', detail: '[unknown-realm] no such realm' }],
+      [new DataDomainNotConnectedError('dataDomain not connected: r2'), 404, { error: 'not_found', detail: 'dataDomain not connected: r2' }],
+      [new DataDomainSourceError({ ok: false, reason: 'unknown-dataDomain', detail: 'no such dataDomain' }), 403, { error: 'dataDomain_source_refused', detail: '[unknown-dataDomain] no such dataDomain' }],
     ];
-    for (const [thrown, status, body] of realmCases) {
+    for (const [thrown, status, body] of dataDomainCases) {
       const { reply: r, outcome } = reply();
-      mapRealmQueryError(r as never, thrown);
+      mapDataDomainQueryError(r as never, thrown);
       expect(outcome()).toMatchObject({ code: status, sent: body, logCount: 0 });
     }
   });

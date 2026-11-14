@@ -10,7 +10,7 @@ Zeus 的决策内核新增一个**与具体模型解耦的"决策后端"抽象�
 
 ## 1. 为什么抽象成"模型无关"的决策层（而非绑定单一模型）
 
-决策是内核的高频动作，而模型形态在快速分化：**专用决策模型**（Jev 类：不生成文本、原生类型化输出、校准置信度）与**传统 LLM**（可生成论证、但慢且贵、置信度不可靠）各有所长。若把架构绑死在某一个模型上，换模型就是改内核；抽象层让**决策能力**（要什么结论）与**提供方**（谁给结论）分离，符合项目一贯的"可替换后端"惯例（如 Realm SearchBackend、handshake 签名器）。
+决策是内核的高频动作，而模型形态在快速分化：**专用决策模型**（Jev 类：不生成文本、原生类型化输出、校准置信度）与**传统 LLM**（可生成论证、但慢且贵、置信度不可靠）各有所长。若把架构绑死在某一个模型上，换模型就是改内核；抽象层让**决策能力**（要什么结论）与**提供方**（谁给结论）分离，符合项目一贯的"可替换后端"惯例（如 DataDomain SearchBackend、handshake 签名器）。
 
 | 维度 | 专用决策模型（Jev 类） | 传统 LLM（适配） |
 | --- | --- | --- |
@@ -82,7 +82,7 @@ Zeus 的决策内核新增一个**与具体模型解耦的"决策后端"抽象�
 
 ### 3.5 操作者意图识别（E2.6，2026-10-03 已落地）——识别位
 
-操作者一句自然语言指令 → 结构化 plan-only 意图：复用 `choice` 原语（候选技能 id 为 options、指令放 state 并声明 `stateKeys: ['instruction', 'realm']`），本地规则路径是确定性默认（零出域），`useModel: true` 才显式咨询后端。这是「三个融合点皆模型无关」的第四个应用点：Jev / OpenAI 兼容 LLM / rules-only 在识别位上完全互换，与 §0 的解耦承诺一致。fail-closed 语义（命名 reason 不臆断）与实现指针见 [prd.md](prd.md) E2.6 行。
+操作者一句自然语言指令 → 结构化 plan-only 意图：复用 `choice` 原语（候选技能 id 为 options、指令放 state 并声明 `stateKeys: ['instruction', 'dataDomain']`），本地规则路径是确定性默认（零出域），`useModel: true` 才显式咨询后端。这是「三个融合点皆模型无关」的第四个应用点：Jev / OpenAI 兼容 LLM / rules-only 在识别位上完全互换，与 §0 的解耦承诺一致。fail-closed 语义（命名 reason 不臆断）与实现指针见 [prd.md](prd.md) E2.6 行。
 
 ## 4. 端口设计（`src/decision/types.ts`，模型无关）
 
@@ -109,7 +109,7 @@ export type QuestionBase = {
   instructions: string;       // 判断标准（人话描述）
   /** 决策来源追踪。 */
   runId: string;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   maxWaitMs?: number;         // 单次调用超时；缺省：决策模型 1500 / LLM 15000
 };
 
@@ -168,14 +168,14 @@ export type DecisionTrace = {
 ## 7. 选择与降级（装配层职责，非内核）
 
 - 内核不感知后端具体是谁——调用方（编排器/监督台接线）从装配层拿 `DecisionBackend`（可为 null）。
-- **多后端并存**：装配层可注册多个后端（如 `{fast: Jev, slow: LLM}`），按策略 `resolveBackend({realm, skill, risk, needExplanation})` 选择；策略本体随 S14 切片，本设计只给选择维度。
+- **多后端并存**：装配层可注册多个后端（如 `{fast: Jev, slow: LLM}`），按策略 `resolveBackend({dataDomain, skill, risk, needExplanation})` 选择；策略本体随 S14 切片，本设计只给选择维度。
 - **统一降级**：任一后端错误/超时 → 不采纳该结果、按未配置处理；配置了慢层且时间允许时，可"快层失败 → 慢层兜底"（由装配策略决定，默认不自动兜底以免隐藏故障）。
 - 未配置任何后端时，全系统行为与 v0.1 之前完全一致。
 
 ## 8. 数据主权与安全（设计哲学硬线，模型无关）
 
-1. **state 最小化**：适配器只允许传 `stateKeys` 白名单内的字段；默认白名单为空 → 任何调用都需显式声明字段。Realm 内容、私密上下文**默认拒绝出域**。
-2. **enterprise 域默认不送**：`realm:'enterprise'` 的决策请求默认拒绝送外部模型（除非装配层显式开启 `allowEnterpriseExfiltration: true` 并逐 skill 声明——默认关）。LLM 与决策模型同样受限。
+1. **state 最小化**：适配器只允许传 `stateKeys` 白名单内的字段；默认白名单为空 → 任何调用都需显式声明字段。DataDomain 内容、私密上下文**默认拒绝出域**。
+2. **enterprise 域默认不送**：`dataDomain:'enterprise'` 的决策请求默认拒绝送外部模型（除非装配层显式开启 `allowEnterpriseExfiltration: true` 并逐 skill 声明——默认关）。LLM 与决策模型同样受限。
 3. **脱敏钩子**：装配层可注入 `redact(state)`，在送模型前清洗（人名/ID/token 替换）。
 4. **审计**：每次调用写 `DecisionTrace`（含 `backend/model`、`stateKeys` 而非原文），沿 runId 可回放，满足 E1.6。
 5. **可选本地后端**：端口允许任何实现——本地/自托管模型（决策模型或 LLM）经同一端口接入，数据不出域；这是"用户是底座、产品是插件"的体现（外部模型是插件，不是底座）。

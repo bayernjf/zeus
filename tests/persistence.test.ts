@@ -31,7 +31,7 @@ function cardFor(name: string) {
     skills: [{ id: `skill-${name}`, name: name, description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'test-domain', realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
+    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'test-domain', dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 const mockFetch = (name: string) => (async () => new Response(JSON.stringify(cardFor(name)), { status: 200, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
@@ -51,12 +51,12 @@ const lookup: TargetLookup = { findBySkill: () => [] };
 
 const taskInputEscalation: Escalation = {
   id: 'esc-task', kind: 'task-input', runId: 'r1', executor: 'loom', skill: 's1',
-  taskId: 'task-1', realm: 'personal', reason: 'need approval', options: ['proceed', 'abort'],
+  taskId: 'task-1', dataDomain: 'personal', reason: 'need approval', options: ['proceed', 'abort'],
   status: 'pending', createdAt: '2026-09-22T00:00:00.000Z',
 };
 const conflictEscalation: Escalation = {
   id: 'esc-conf', kind: 'intent-conflict', runId: 'r2', executor: '(intent)', skill: 's2',
-  realm: 'personal', reason: 'split', options: ['go', 'stop'], status: 'pending',
+  dataDomain: 'personal', reason: 'split', options: ['go', 'stop'], status: 'pending',
   createdAt: '2026-09-22T00:01:00.000Z', intentId: 'intent-x',
   stances: [{ stance: 'go', executors: ['a'] }, { stance: 'stop', executors: ['b'] }],
 };
@@ -101,13 +101,13 @@ describe('E5.3 component snapshots', () => {
     };
     const again = restored.ingest(
       { ok: true, task, events: [event], injectedHits: [] },
-      { executor: 'loom', skill: 's1', params: {}, realm: 'personal', runId: 'r1' }
+      { executor: 'loom', skill: 's1', params: {}, dataDomain: 'personal', runId: 'r1' }
     );
     expect(again?.id).toBe('esc-task');
 
     // conflict index rebuilt: same intent id returns the stored conflict escalation
     const reConflict = restored.ingestConflict({
-      intentId: 'intent-x', runId: 'r2', skill: 's2', realm: 'personal',
+      intentId: 'intent-x', runId: 'r2', skill: 's2', dataDomain: 'personal',
       conflict: { reason: 'split', stances: [{ stance: 'go', executors: ['a'] }, { stance: 'stop', executors: ['b'] }] },
     });
     expect(reConflict.id).toBe('esc-conf');
@@ -117,7 +117,7 @@ describe('E5.3 component snapshots', () => {
   it('orchestrator round-trips intents for idempotent replay and keeps requests for resume', async () => {
     const port = portFor({ loom: stanceResult('loom', 'go'), atlas: stanceResult('atlas', 'go') });
     const orch = new Orchestrator(lookup, port, { newIntentId: () => 'i1', newRunId: () => 'r1' });
-    await orch.fanOut({ intentId: 'intent-keep', skill: 's', executors: ['loom', 'atlas'], params: { ticket: 'OPS-1' }, realm: 'personal' });
+    await orch.fanOut({ intentId: 'intent-keep', skill: 's', executors: ['loom', 'atlas'], params: { ticket: 'OPS-1' }, dataDomain: 'personal' });
 
     // fresh orchestrator with a dispatcher that counts calls
     let dispatchCalls = 0;
@@ -133,7 +133,7 @@ describe('E5.3 component snapshots', () => {
 
     // A replay repeats the same request (F2 rejects a reused key that names a
     // different params payload); the point here is that no dispatch happens.
-    const replayed = await restored.fanOut({ intentId: 'intent-keep', skill: 's', executors: ['loom', 'atlas'], params: { ticket: 'OPS-1' }, realm: 'personal' });
+    const replayed = await restored.fanOut({ intentId: 'intent-keep', skill: 's', executors: ['loom', 'atlas'], params: { ticket: 'OPS-1' }, dataDomain: 'personal' });
     expect(replayed.replayed).toBe(true);
     expect(dispatchCalls).toBe(0); // idempotent: no re-dispatch after restart
 
@@ -165,7 +165,7 @@ describe('E5.3 FileRuntimeStateStore', () => {
     oversight.importState([conflictEscalation]);
     const port = portFor({ loom: stanceResult('loom', 'go') });
     const orchestrator = new Orchestrator(lookup, port, { newIntentId: () => 'i', newRunId: () => 'r' });
-    await orchestrator.fanOut({ intentId: 'intent-disk', skill: 's', executors: ['loom'], params: {}, realm: 'personal' });
+    await orchestrator.fanOut({ intentId: 'intent-disk', skill: 's', executors: ['loom'], params: {}, dataDomain: 'personal' });
     const live: RuntimeComponents = { registry, oversight, orchestrator, dagRunner: {} as DagRunner };
 
     const file = join(dir, 'runtime', 'state.json');

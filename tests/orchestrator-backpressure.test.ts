@@ -76,7 +76,7 @@ function build(names: string[], options: OrchestratorOptions = {}) {
   return { gated, metrics, orchestrator };
 }
 
-const request = { skill: 'review', realm: 'personal' as const, params: {} };
+const request = { skill: 'review', dataDomain: 'personal' as const, params: {} };
 const SIX = ['a', 'b', 'c', 'd', 'e', 'f'];
 
 describe('E1.5 bounded fan-out', () => {

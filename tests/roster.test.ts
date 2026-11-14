@@ -26,7 +26,7 @@ function card(name: string, description?: string): AgentCard {
       version: '1',
       swornTo: 'zeus',
       domain: `${name}-domain`,
-      realms: ['enterprise'],
+      dataDomains: ['enterprise'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'auto',
@@ -75,7 +75,7 @@ describe('RosterProjector', () => {
       cardUrl: 'http://a/api/a2a/agent-card',
       taskUrl: 'http://a/api/a2a/tasks',
     });
-    expect(atlas.commitments).toEqual({ realms: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' });
+    expect(atlas.commitments).toEqual({ dataDomains: ['enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' });
     expect(atlas.sla).toEqual({ ackSeconds: 5 });
     expect(atlas.skills[0]!.id).toBe('atlas-skill');
 
@@ -133,12 +133,12 @@ describe('RosterProjector', () => {
 
     const internal = projectInternalRoster(all, now);
     internal.entries[0]!.skills[0]!.tags.push('mutated');
-    internal.entries[0]!.commitments.realms.push('personal');
+    internal.entries[0]!.commitments.dataDomains.push('personal');
     const pub = projectPublicRoster(all, now);
     pub.entries[0]!.skills[0]!.tags.push('via-public');
 
     expect(source.skills[0]!.tags).toEqual(['original']);
-    expect(source['x-zeus-handshake']!.realms).toEqual(['enterprise']);
+    expect(source['x-zeus-handshake']!.dataDomains).toEqual(['enterprise']);
     // Re-projecting the same registry state reproduces the sealed digest.
     expect(canonicalDigest(projectInternalRoster(all, now))).toBe(before);
   });

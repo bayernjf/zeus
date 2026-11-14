@@ -85,7 +85,7 @@ function cardFor(options: Required<Pick<LlmAgentOptions, 'skill' | 'name'>>, por
       version: '1',
       swornTo: 'zeus',
       domain: 'model',
-      realms: ['personal'],
+      dataDomains: ['personal'],
       dataPolicy: 'read-task-scope',
       reportBack: true,
       escalationPolicy: 'on-failure',

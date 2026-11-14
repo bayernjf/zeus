@@ -299,8 +299,8 @@
                 <input id="rText" autocomplete="off" data-i18n-ph="recog.textPh" placeholder="如：帮我审一下 zeus 的 PR 并给合并建议">
               </div>
               <div class="row">
-                <label for="rRealm" data-i18n="common.realm">数据域</label>
-                <select id="rRealm"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
+                <label for="rDataDomain" data-i18n="common.dataDomain">数据域</label>
+                <select id="rDataDomain"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
               </div>
               <div class="row">
                 <label>&nbsp;</label>
@@ -321,8 +321,8 @@
                 <select id="dSkill"></select>
               </div>
               <div class="row">
-                <label for="dRealm" data-i18n="common.realm">数据域</label>
-                <select id="dRealm"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
+                <label for="dDataDomain" data-i18n="common.dataDomain">数据域</label>
+                <select id="dDataDomain"><option value="personal">personal</option><option value="enterprise">enterprise</option></select>
               </div>
             </div>
             <div class="row inline">
@@ -370,7 +370,7 @@
           <h2 class="hist-head"><span data-i18n="access.title">访问判定探针</span> <span class="hint" data-i18n="access.hint">GET /api/domains/access · 干跑，不触域内容</span></h2>
           <div class="body">
             <div class="audit-filter">
-              <select id="apRealm"></select>
+              <select id="apDataDomain"></select>
               <input id="apSubject" autocomplete="off" data-i18n-ph="access.subjectPh" placeholder="主体（executor 名 / 身份）" style="width:150px">
               <select id="apKind"><option value="operator">operator</option><option value="executor">executor</option><option value="agent">agent</option></select>
               <select id="apAccess"><option value="read">read</option><option value="write">write</option></select>
@@ -446,8 +446,8 @@
                 <input id="gSubject" autocomplete="off" data-i18n-ph="grant.subjectPh" placeholder="如 jev">
               </div>
               <div class="row">
-                <label for="gRealm" data-i18n="grant.realm">企业数据域</label>
-                <select id="gRealm"></select>
+                <label for="gDataDomain" data-i18n="grant.dataDomain">企业数据域</label>
+                <select id="gDataDomain"></select>
               </div>
               <div class="row inline">
                 <div class="row">
@@ -529,7 +529,7 @@
                 </div>
                 <div class="row">
                   <label for="wSource" data-i18n="watch.source">谓词源</label>
-                  <select id="wSource"><option value="metrics">metrics</option><option value="realm">realm</option><option value="connector">connector</option></select>
+                  <select id="wSource"><option value="metrics">metrics</option><option value="dataDomain">dataDomain</option><option value="connector">connector</option></select>
                 </div>
               </div>
               <div class="row inline">
@@ -629,7 +629,7 @@
         </div>
       </div>
       <div class="panel" style="margin-top:14px">
-        <h2><span data-i18n="cm.title">委任（上岗）管理</span> <span class="hint">GET/POST /api/org/departments/:id/commissions · <span data-i18n="cm.hint">席位 → 账户 → 授权 → 带教 → 上岗</span></span></h2>
+        <h2><span data-i18n="cm.title">委任（上岗）管理</span> <span class="hint">GET/POST /api/org/departments/:id/seatGrants · <span data-i18n="cm.hint">席位 → 账户 → 授权 → 带教 → 上岗</span></span></h2>
         <div class="body">
           <div class="audit-filter">
             <select id="cmDept"></select>
@@ -641,8 +641,8 @@
             <input id="cmAgent" autocomplete="off">
           </div>
           <div class="row">
-            <label for="cmRealm" data-i18n="cm.realmId">数据域 ID</label>
-            <input id="cmRealm" autocomplete="off">
+            <label for="cmDataDomain" data-i18n="cm.dataDomainId">数据域 ID</label>
+            <input id="cmDataDomain" autocomplete="off">
           </div>
           <div class="row">
             <label for="cmOpenedBy" data-i18n="cm.openedBy">开设人（openedBy）</label>
@@ -736,7 +736,7 @@
       <div class="panel" style="margin-bottom:14px">
         <h2><span data-i18n="mem.title">组织记忆</span> <span class="hint" data-i18n="mem.hint">事件 → 事实 → 混合检索 → 遗忘权 → 完整性；事实只经整理产生，没有公开写入口</span></h2>
         <div class="audit-filter">
-          <select id="memRealm"></select>
+          <select id="memDataDomain"></select>
           <button class="btn small" id="btnMemoryRefresh" data-i18n="top.refresh">刷新</button>
           <span class="af-count" id="memCount"></span>
         </div>
@@ -941,7 +941,7 @@
       "recog.title": "意图识别",
       "recog.hint": "E2.6 仅识别不派发",
       "recog.text": "操作者指令（自然语言）",
-      "common.realm": "数据域",
+      "common.dataDomain": "数据域",
       "recog.run": "识别",
       "dispatch.title": "派发意图",
       "common.skill": "技能",
@@ -968,7 +968,7 @@
       "esc.title": "待裁决队列",
       "grant.title": "签发跨域授权",
       "grant.subject": "主体（executor 名 / 身份）",
-      "grant.realm": "企业数据域",
+      "grant.dataDomain": "企业数据域",
       "grant.access": "访问级别",
       "grant.accessRead": "read（读）",
       "grant.accessWrite": "write（写）",
@@ -977,8 +977,8 @@
       "grant.run": "签发授权",
       "grant.active": "生效授权",
       "grant.needSubject": "必须给出主体（执行 Agent 名或身份）",
-      "grant.needRealm": "没有可授权的企业数据域——先挂载一个企业域",
-      "grant.confirm": "确定向 {subject} 开放企业域 {realm} 的 {access} 权限吗？这是一次跨域放行，会进审计。",
+      "grant.needDataDomain": "没有可授权的企业数据域——先挂载一个企业域",
+      "grant.confirm": "确定向 {subject} 开放企业域 {dataDomain} 的 {access} 权限吗？这是一次跨域放行，会进审计。",
       "grant.issued": "已签发授权：{id}",
       "grant.failed": "签发失败：{msg}",
       "contract.title": "签发委托契约",
@@ -1031,20 +1031,20 @@
       "cm.empty": "该部门暂无委任记录",
       "cm.count": "共 {n} 条",
       "cm.agentId": "Agent ID",
-      "cm.realmId": "数据域 ID",
+      "cm.dataDomainId": "数据域 ID",
       "cm.openedBy": "开设人（openedBy）",
       "cm.requiredSkills": "要求技能（逗号分隔，可空则需豁免带教）",
       "cm.openRun": "开设委任",
       "cm.needOpenFields": "请填 Agent ID、数据域 ID 与开设人",
-      "cm.confirmOpen": "确定为 {agent} 在 {dept} 开设委任（数据域 {realm}）吗？",
+      "cm.confirmOpen": "确定为 {agent} 在 {dept} 开设委任（数据域 {dataDomain}）吗？",
       "cm.opened": "已开设委任 {agent}",
       "cm.colAgent": "Agent",
-      "cm.colRealm": "数据域",
+      "cm.colDataDomain": "数据域",
       "cm.colStage": "阶段",
       "cm.colOpened": "开设时间",
       "cm.colActions": "操作",
       "cm.waive": "豁免带教",
-      "cm.commission": "签发上岗",
+      "cm.seatGrant": "签发上岗",
       "cm.withdraw": "撤回",
       "cm.waiveTitle": "豁免带教阶段",
       "cm.waiveBody": "委任 {id}：输入豁免理由。豁免是显式审计动作，带教未达标时这是唯一放行方式。",
@@ -1055,14 +1055,14 @@
       "cm.byPrompt": "操作人（by）",
       "cm.reasonPrompt": "理由（reason）",
       "cm.waived": "已豁免带教 {id}",
-      "cm.commissioned": "已签发上岗 {id}",
+      "cm.seatGranted": "已签发上岗 {id}",
       "cm.withdrawn": "已撤回 {id}",
       "cm.actionFailed": "{action}失败：{msg}",
       "cm.stage.opened": "席位",
       "cm.stage.account": "账户",
       "cm.stage.authorization": "授权",
       "cm.stage.mentorship": "带教",
-      "cm.stage.commissioned": "已上岗",
+      "cm.stage.seatGranted": "已上岗",
       "mt.title": "带教台账",
       "mt.hint": "认证才算胜任；委任的第四闸读的就是这里",
       "mt.waiting": "加载带教台账…",
@@ -1212,7 +1212,7 @@
       "skill.listLoadFailed": "技能列表加载失败：{msg}",
       "dispatch.needSkill": "请先选择技能",
       "dispatch.badJson": "参数不是合法 JSON",
-      "dispatch.confirm": "派发意图：{skill} @ {realm}{executors} ？",
+      "dispatch.confirm": "派发意图：{skill} @ {dataDomain}{executors} ？",
       "dispatch.dispatching": "派发中（同步等结算）…",
       "dispatch.ok": "已派发：{id}",
       "dispatch.failed": "派发失败：{msg}",
@@ -1449,7 +1449,7 @@
       "watch.confirmApprove": "为 {id} 签发仅 execute 的新契约（4 张 / 并发 1 / 24h）并换绑 watch 吗？",
       "watch.approved": "已签新契约 {contract} 并换绑 watch",
       "watch.approveFailed": "approve-contract 失败：{msg}",
-      "connect.noRealm": "（无企业数据域，先连接域）",
+      "connect.noDataDomain": "（无企业数据域，先连接域）",
       "connect.failed": "连接失败：{msg}",
       "connect.loadFailed": "加载失败：{msg}",
       "connect.ok": "已连接",
@@ -1516,7 +1516,7 @@
       "access.run": "判定",
       "access.subjectPh": "主体（executor 名 / 身份）",
       "access.tenantPh": "租户（可选）",
-      "access.needRealm": "没有已挂载的数据域——先连接一个数据域",
+      "access.needDataDomain": "没有已挂载的数据域——先连接一个数据域",
       "access.needSubject": "必须给出主体（执行 Agent 名或身份）",
       "access.allowed": "允许 · {via}",
       "access.denied": "拒绝 · {reason}",
@@ -1573,7 +1573,7 @@
       "mem.retractionsTitle": "遗忘台账",
       "mem.integrityTitle": "完整性",
       "mem.hint": "事件 → 事实 → 混合检索 → 遗忘权 → 完整性；事实只经整理产生，没有公开写入口",
-      "mem.needRealm": "没有已挂载的数据域——先连接一个数据域",
+      "mem.needDataDomain": "没有已挂载的数据域——先连接一个数据域",
       "mem.moreRows": "仅显示最近 {n} 条（共 {total} 条）",
       "mem.summaryActive": "生效事实",
       "mem.disputed": "争议",
@@ -1594,7 +1594,7 @@
       "mem.content": "内容",
       "mem.loadFailed": "读取失败：{msg}",
       "mem.origin.agent-produced": "执行 Agent 产出",
-      "mem.origin.runtime-resolved-realm": "内核解析（旧快照回退）",
+      "mem.origin.runtime-resolved-dataDomain": "内核解析（旧快照回退）",
       "mem.recallTitle": "混合检索",
       "mem.query": "检索词",
       "mem.queryPh": "如 typescript",
@@ -1709,7 +1709,7 @@
       "common.netFail": "Network/CORS failure: {msg}",
       "common.loading": "Loading…",
       "common.skill": "Skill",
-      "common.realm": "Realm",
+      "common.dataDomain": "DataDomain",
       "common.mode": "Mode",
       "common.grantedBy": "Granted by",
       "common.skillPh": "e.g. research",
@@ -1743,7 +1743,7 @@
       "dispatch.run": "Dispatch",
       "dispatch.needSkill": "Select a skill first",
       "dispatch.badJson": "Params are not valid JSON",
-      "dispatch.confirm": "Dispatch intent: {skill} @ {realm}{executors}?",
+      "dispatch.confirm": "Dispatch intent: {skill} @ {dataDomain}{executors}?",
       "dispatch.dispatching": "Dispatching (sync settle)…",
       "dispatch.ok": "Dispatched: {id}",
       "dispatch.failed": "Dispatch failed: {msg}",
@@ -1761,7 +1761,7 @@
       "state.intents": "intents ",
       "state.escalations": "escalations ",
       "state.skills": "skills ",
-      "state.domains": "realms ",
+      "state.domains": "dataDomains ",
       "state.backend": "Decision backend: ",
       "state.backendRulesOnly": "Decision backend: rules-only (local rule aggregation, no external model)",
       "hub.test": "Test hub connection (L3/L4)",
@@ -1809,11 +1809,11 @@
       "audit.noMatch": "No audit entries match the keyword",
       "audit.empty": "Audit empty (no fan-out / decision events yet)",
       "audit.loadFailed": "Failed to load audit: {msg}",
-      "domains.title": "Realms & cross-realm grants",
+      "domains.title": "DataDomains & cross-dataDomain grants",
       "domains.yes": "yes",
       "domains.no": "no",
-      "domains.empty": "No realms connected yet",
-      "domains.grantsTitle": "Cross-realm grants ({n})",
+      "domains.empty": "No dataDomains connected yet",
+      "domains.grantsTitle": "Cross-dataDomain grants ({n})",
       "recent.title": "Recent intents",
       "recent.hint": "Recorded by this browser",
       "recent.empty": "No dispatches recorded in this browser yet (recorded automatically after dispatch)",
@@ -1845,10 +1845,10 @@
       "esc.confirmAction": "{action} adjudication {id}?",
       "esc.needStance": "Select a stance first",
       "esc.confirmStance": "Resolve {id} with stance \"{stance}\"?",
-      "grant.title": "Issue cross-realm grant",
+      "grant.title": "Issue cross-dataDomain grant",
       "grant.subject": "Subject (executor name / identity)",
       "grant.subjectPh": "e.g. jev",
-      "grant.realm": "Enterprise realm",
+      "grant.dataDomain": "Enterprise dataDomain",
       "grant.access": "Access level",
       "grant.accessRead": "read",
       "grant.accessWrite": "write",
@@ -1857,12 +1857,12 @@
       "grant.run": "Issue grant",
       "grant.active": "Active grants",
       "grant.needSubject": "A subject (executor name or identity) is required",
-      "grant.needRealm": "No enterprise realm available to authorize - mount one first",
-      "grant.confirm": "Grant {access} access to {subject} on enterprise realm {realm}? This opens a cross-domain path and is audited.",
+      "grant.needDataDomain": "No enterprise dataDomain available to authorize - mount one first",
+      "grant.confirm": "Grant {access} access to {subject} on enterprise dataDomain {dataDomain}? This opens a cross-domain path and is audited.",
       "grant.issued": "Grant issued: {id}",
       "grant.failed": "Issuing failed: {msg}",
       "grant.count": "{n} total",
-      "grant.empty": "No active cross-realm grants",
+      "grant.empty": "No active cross-dataDomain grants",
       "grant.confirmRevoke": "Revoke grant {id} for {subject}?",
       "grant.revoked": "Revoked grant {id}",
       "grant.revokeFailed": "Revoke failed: {msg}",
@@ -1940,46 +1940,46 @@
       "org.removeMember": "Remove member",
       "org.confirmRemoveMember": "Remove {agent} from {dept}? If they are the lead, the department goes back to having no lead.",
       "org.memberRemoved": "{agent} removed from {dept}",
-      "cm.title": "Commissions",
-      "cm.hint": "seat → account → authorization → mentorship → commissioned",
-      "cm.waiting": "pick a department to view commissions",
-      "cm.empty": "no commissions in this department",
+      "cm.title": "SeatGrants",
+      "cm.hint": "seat → account → authorization → mentorship → seatGranted",
+      "cm.waiting": "pick a department to view seatGrants",
+      "cm.empty": "no seatGrants in this department",
       "cm.count": "{n} total",
       "cm.agentId": "Agent ID",
-      "cm.realmId": "Realm ID",
+      "cm.dataDomainId": "DataDomain ID",
       "cm.openedBy": "Opened by",
       "cm.requiredSkills": "Required skills (comma-separated; empty requires a mentorship waiver)",
-      "cm.openRun": "Open commission",
-      "cm.needOpenFields": "agent ID, realm ID and opened-by are required",
-      "cm.confirmOpen": "Open a commission for {agent} in {dept} (realm {realm})?",
-      "cm.opened": "commission opened for {agent}",
+      "cm.openRun": "Open seatGrant",
+      "cm.needOpenFields": "agent ID, dataDomain ID and opened-by are required",
+      "cm.confirmOpen": "Open a seatGrant for {agent} in {dept} (dataDomain {dataDomain})?",
+      "cm.opened": "seatGrant opened for {agent}",
       "cm.colAgent": "Agent",
-      "cm.colRealm": "Realm",
+      "cm.colDataDomain": "DataDomain",
       "cm.colStage": "Stage",
       "cm.colOpened": "Opened at",
       "cm.colActions": "Actions",
       "cm.waive": "Waive mentorship",
-      "cm.commission": "Sign off",
+      "cm.seatGrant": "Sign off",
       "cm.withdraw": "Withdraw",
       "cm.waiveTitle": "Waive the mentorship stage",
-      "cm.waiveBody": "Commission {id}: enter the waiver reason. Waiving is an explicit audited act — the only way through when certification is short.",
-      "cm.byTitle": "Sign off the commission",
-      "cm.byBody": "Commission {id}: enter who signs (by). The runtime re-verifies all four gates before signing; any failure refuses.",
-      "cm.withdrawTitle": "Withdraw the commission",
-      "cm.withdrawBody": "Commission {id}: enter the withdrawal reason. Withdrawal takes effect immediately; the seat can no longer take work.",
+      "cm.waiveBody": "SeatGrant {id}: enter the waiver reason. Waiving is an explicit audited act — the only way through when certification is short.",
+      "cm.byTitle": "Sign off the seatGrant",
+      "cm.byBody": "SeatGrant {id}: enter who signs (by). The runtime re-verifies all four gates before signing; any failure refuses.",
+      "cm.withdrawTitle": "Withdraw the seatGrant",
+      "cm.withdrawBody": "SeatGrant {id}: enter the withdrawal reason. Withdrawal takes effect immediately; the seat can no longer take work.",
       "cm.byPrompt": "Operator (by)",
       "cm.reasonPrompt": "Reason",
       "cm.waived": "mentorship waived {id}",
-      "cm.commissioned": "commissioned {id}",
+      "cm.seatGranted": "seatGranted {id}",
       "cm.withdrawn": "withdrawn {id}",
       "cm.actionFailed": "{action} failed: {msg}",
       "cm.stage.opened": "seat",
       "cm.stage.account": "account",
       "cm.stage.authorization": "authorization",
       "cm.stage.mentorship": "mentorship",
-      "cm.stage.commissioned": "commissioned",
+      "cm.stage.seatGranted": "seatGranted",
       "mt.title": "Mentorship ledger",
-      "mt.hint": "Certification, not attendance, makes a provider; this is the fourth commission gate",
+      "mt.hint": "Certification, not attendance, makes a provider; this is the fourth seatGrant gate",
       "mt.waiting": "Loading mentorships…",
       "mt.skill": "Skill",
       "mt.skillPh": "e.g. research",
@@ -2158,7 +2158,7 @@
       "task.acknowledged": "acknowledged",
       "task.timed_out": "timed out",
       "task.refused": "refused",
-      "connect.noRealm": "(no enterprise realm; connect a realm first)",
+      "connect.noDataDomain": "(no enterprise dataDomain; connect a dataDomain first)",
       "connect.failed": "Connection failed: {msg}",
       "connect.loadFailed": "Load failed: {msg}",
       "connect.ok": "Connected",
@@ -2170,7 +2170,7 @@
       "col.post": "Post",
       "col.skill": "Skill",
       "col.version": "Version",
-      "col.domain": "Realm",
+      "col.domain": "DataDomain",
       "col.status": "Status",
       "col.provider": "Provider",
       "col.perms": "Permissions",
@@ -2197,7 +2197,7 @@
       "col.health": "Health",
       "col.registered": "Registered",
       "col.governance": "Governance",
-      "col.domainId": "Realm ID",
+      "col.domainId": "DataDomain ID",
       "col.type": "Type",
       "col.readonly": "Readonly",
       "col.entries": "Entries",
@@ -2218,11 +2218,11 @@
       "col.firedBudget": "Fired/budget",
       "col.lastFiredState": "Last fired / status",
       "access.title": "Access verdict probe",
-      "access.hint": "GET /api/domains/access · dry run, realm content untouched",
+      "access.hint": "GET /api/domains/access · dry run, dataDomain content untouched",
       "access.run": "Probe",
       "access.subjectPh": "subject (executor name / identity)",
       "access.tenantPh": "tenant (optional)",
-      "access.needRealm": "no realm is connected - connect one first",
+      "access.needDataDomain": "no dataDomain is connected - connect one first",
       "access.needSubject": "a subject (execution agent name or identity) is required",
       "access.allowed": "allowed · {via}",
       "access.denied": "denied · {reason}",
@@ -2256,7 +2256,7 @@
       "brief.mentors": "Mentors",
       "brief.culture": "Org memory",
       "brief.facts": "{n} of {total} facts matched",
-      "brief.emptyCulture": "this realm's memory is empty",
+      "brief.emptyCulture": "this dataDomain's memory is empty",
       "brief.boundaries": "Boundaries",
       "brief.canRead": "can read",
       "brief.canWrite": "can write",
@@ -2279,15 +2279,15 @@
       "mem.retractionsTitle": "Retraction ledger",
       "mem.integrityTitle": "Integrity",
       "mem.hint": "events → facts → hybrid recall → right to be forgotten → integrity; facts are produced only by consolidation, there is no public write route",
-      "mem.needRealm": "no realm is connected - connect one first",
+      "mem.needDataDomain": "no dataDomain is connected - connect one first",
       "mem.moreRows": "showing the latest {n} of {total}",
       "mem.summaryActive": "active facts",
       "mem.disputed": "disputed",
       "mem.integrityOk": "no invariant violations",
       "mem.integrityBad": "{n} violations - derived indexes must not be trusted",
       "mem.integrityFailed": "failed to read the integrity face",
-      "mem.noFacts": "this realm has no facts yet",
-      "mem.noEvents": "this realm has no events yet",
+      "mem.noFacts": "this dataDomain has no facts yet",
+      "mem.noEvents": "this dataDomain has no events yet",
       "mem.noRetractions": "no retractions on record",
       "mem.provenance": "source events",
       "mem.refsUnit": "refs",
@@ -2300,7 +2300,7 @@
       "mem.content": "Content",
       "mem.loadFailed": "load failed: {msg}",
       "mem.origin.agent-produced": "agent-produced",
-      "mem.origin.runtime-resolved-realm": "runtime-resolved (legacy snapshot fallback)",
+      "mem.origin.runtime-resolved-dataDomain": "runtime-resolved (legacy snapshot fallback)",
       "mem.recallTitle": "Hybrid recall",
       "mem.query": "Query",
       "mem.queryPh": "e.g. typescript",
@@ -2592,7 +2592,7 @@
   async function dispatchIntent() {
     const skill = $('dSkill').value;
     if (!skill) { toast(t('dispatch.needSkill'), 'bad'); return; }
-    const realm = $('dRealm').value;
+    const dataDomain = $('dDataDomain').value;
     const executors = $('dExecutors').value.split(',').map(v => v.trim()).filter(Boolean);
     const mode = $('dMode').value;
     let params = {};
@@ -2600,7 +2600,7 @@
     if (raw) {
       try { params = JSON.parse(raw); } catch { toast(t('dispatch.badJson'), 'bad'); return; }
     }
-    if (!(await confirmDialog({ body: t('dispatch.confirm', { skill, realm, executors: executors.length ? ' → ' + executors.join(', ') : '' }) }))) return;
+    if (!(await confirmDialog({ body: t('dispatch.confirm', { skill, dataDomain, executors: executors.length ? ' → ' + executors.join(', ') : '' }) }))) return;
     const btn = $('btnDispatch');
     btn.disabled = true;
     const prevLabel = btn.textContent;
@@ -2612,7 +2612,7 @@
       // (design-streaming §1 gap 1). GET /api/intents/:id answers 404 until it
       // settles, which loadIntent already follows over SSE.
       const intentId = 'web-' + (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(16).slice(2));
-      const body = { intentId, skill, realm, params, ...(executors.length ? { executors } : {}), ...(mode === 'execute' ? { mode } : {}) };
+      const body = { intentId, skill, dataDomain, params, ...(executors.length ? { executors } : {}), ...(mode === 'execute' ? { mode } : {}) };
       location.hash = '#/intent/' + encodeURIComponent(intentId);
       const r = await api('POST', '/api/intents', body);
       const settledId = (r && r.intentId) || intentId;
@@ -2633,13 +2633,13 @@
   async function recognizeIntent() {
     const text = $('rText').value.trim();
     if (!text) { toast(t('recog.needInput'), 'bad'); return; }
-    const realm = $('rRealm').value;
+    const dataDomain = $('rDataDomain').value;
     const btn = $('btnRecognize');
     const out = $('recognizeResult');
     btn.disabled = true;
     btn.textContent = t('recog.running');
     try {
-      const r = await api('POST', '/api/intents/recognize', { text, realm });
+      const r = await api('POST', '/api/intents/recognize', { text, dataDomain });
       if (r && r.ok && r.intent) {
         const it = r.intent;
         out.innerHTML = `<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -2651,7 +2651,7 @@
         use.addEventListener('click', () => {
           // 预填派发表单并聚焦，由操作者确认后派发
           $('dSkill').value = it.skill;
-          $('dRealm').value = realm;
+          $('dDataDomain').value = dataDomain;
           $('dParams').value = JSON.stringify(it.params || {}, null, 2);
           $('dParams').focus();
           $('dParams').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2764,7 +2764,7 @@
     try {
       const data = await api('GET', '/api/org/chart');
       renderOrg(data);
-      await loadCommissions();
+      await loadSeatGrants();
       await loadMentorships();
     } catch (e) {
       if (e.status === 404) { el.innerHTML = emptyRow(t('org.noRegistry')); return; }
@@ -2775,7 +2775,7 @@
   // ===== 委任（上岗）：四段闸门的可见性与操作面 =====
   function cmStageBadge(stage, withdrawn) {
     if (withdrawn) return badge(t('cm.withdraw'), 'bad');
-    const cls = stage === 'commissioned' ? 'ok' : stage === 'mentorship' || stage === 'authorization' ? 'warn' : '';
+    const cls = stage === 'seatGranted' ? 'ok' : stage === 'mentorship' || stage === 'authorization' ? 'warn' : '';
     return badge(tl('cm.stage.' + stage, stage), cls);
   }
 
@@ -2790,27 +2790,27 @@
       const reason = check && check.reason ? check.reason : '';
       return `<span class="cm-gate ${ok ? 'ok' : 'blocked'}" title="${esc(t('cm.stage.' + stageKey) + (reason ? '：' + reason : ''))}">${esc(t('cm.stage.' + stageKey))}</span>`;
     }).join('');
-    const commissioned = checks.commission && checks.commission.ok === true;
-    return `<div class="cm-gatebar">${cells}<span class="cm-gate ${commissioned ? 'ok' : 'blocked'}" title="${esc(t('cm.stage.commissioned'))}">${esc(t('cm.stage.commissioned'))}</span></div>`;
+    const seatGranted = checks.seatGrant && checks.seatGrant.ok === true;
+    return `<div class="cm-gatebar">${cells}<span class="cm-gate ${seatGranted ? 'ok' : 'blocked'}" title="${esc(t('cm.stage.seatGranted'))}">${esc(t('cm.stage.seatGranted'))}</span></div>`;
   }
 
-  function renderCommissions(data) {
+  function renderSeatGrants(data) {
     const el = $('cmBody');
-    const list = (data && data.commissions) || [];
+    const list = (data && data.seatGrants) || [];
     state.cmList = list;
     $('cmCount').textContent = list.length ? t('cm.count', { n: list.length }) : '';
     if (!list.length) { el.innerHTML = emptyRow(t('cm.empty')); return; }
-    let html = '<table><colgroup><col style="width:18%"><col style="width:16%"><col style="width:14%"><col style="width:20%"><col style="width:32%"></colgroup><tr><th>' + esc(t('cm.colAgent')) + '</th><th>' + esc(t('cm.colRealm')) + '</th><th>' + esc(t('cm.colStage')) + '</th><th>' + esc(t('cm.colOpened')) + '</th><th>' + esc(t('cm.colActions')) + '</th></tr>';
+    let html = '<table><colgroup><col style="width:18%"><col style="width:16%"><col style="width:14%"><col style="width:20%"><col style="width:32%"></colgroup><tr><th>' + esc(t('cm.colAgent')) + '</th><th>' + esc(t('cm.colDataDomain')) + '</th><th>' + esc(t('cm.colStage')) + '</th><th>' + esc(t('cm.colOpened')) + '</th><th>' + esc(t('cm.colActions')) + '</th></tr>';
     for (const c of list) {
       const stage = (c.verdict && c.verdict.stage) || 'opened';
       let actions = '';
-      if (!c.withdrawn && stage !== 'commissioned') {
+      if (!c.withdrawn && stage !== 'seatGranted') {
         actions = `<button class="btn small" data-act="cm-waive" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.waive'))}</button> `
-          + `<button class="btn small primary" data-act="cm-commission" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.commission'))}</button>`;
+          + `<button class="btn small primary" data-act="cm-seatGrant" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.seatGrant'))}</button>`;
       } else if (!c.withdrawn) {
         actions = `<button class="btn small danger" data-act="cm-withdraw" data-id="${esc(c.departmentId)}" data-agent="${esc(c.agentId)}">${esc(t('cm.withdraw'))}</button>`;
       }
-      html += `<tr><td class="mono">${esc(c.agentId)}</td><td class="mono">${esc(c.realmId)}</td><td>${cmStageBadge(stage, c.withdrawn)}${cmGateBar(c.verdict, c.withdrawn)}</td><td class="mono">${fmtTime(c.openedAt)}</td><td>${actions}</td></tr>`;
+      html += `<tr><td class="mono">${esc(c.agentId)}</td><td class="mono">${esc(c.dataDomainId)}</td><td>${cmStageBadge(stage, c.withdrawn)}${cmGateBar(c.verdict, c.withdrawn)}</td><td class="mono">${fmtTime(c.openedAt)}</td><td>${actions}</td></tr>`;
     }
     el.innerHTML = html + '</table>';
   }
@@ -2887,11 +2887,11 @@
     return { checks, bad: null };
   }
 
-  async function loadCommissions() {
+  async function loadSeatGrants() {
     const deptId = $('cmDept') && $('cmDept').value;
     if (!deptId) { state.cmList = []; $('cmBody').innerHTML = emptyRow(t('cm.waiting')); $('cmCount').textContent = ''; return; }
     try {
-      renderCommissions(await api('GET', '/api/org/departments/' + encodeURIComponent(deptId) + '/commissions'));
+      renderSeatGrants(await api('GET', '/api/org/departments/' + encodeURIComponent(deptId) + '/seatGrants'));
     } catch (e) {
       $('cmBody').innerHTML = emptyRow(t('cm.actionFailed', { action: 'GET', msg: e.message }));
     }
@@ -3064,7 +3064,7 @@
         <td>${badge(s.kind, kindCls[s.kind] || '')}</td>
         <td class="mono">${esc(s.executor || '—')}</td>
         <td class="mono">${esc(s.skill || '—')}</td>
-        <td class="mono">${esc(s.realm || '—')}</td>
+        <td class="mono">${esc(s.dataDomain || '—')}</td>
         <td class="mono" style="font-size:11px">${fmtTime(s.startedAt)} → ${s.endedAt ? fmtTime(s.endedAt) : t('trace.open')}</td>
         <td>${s.outcome ? badge(s.outcome, statusClass(s.outcome)) : '—'}</td>
         <td style="font-size:11px">${evts || '<span style="color:var(--text-3)">' + esc(t('trace.noEvents')) + '</span>'}</td>
@@ -3145,7 +3145,7 @@
       ${kv('intentId', esc(r.intentId))}
       ${kv('runId', esc(r.runId || '—'))}
       ${kv('skill', esc(r.skill || '—'))}
-      ${kv('realm', esc(r.realm + (r.realmId ? ' · ' + r.realmId : '')))}
+      ${kv('dataDomain', esc(r.dataDomain + (r.dataDomainId ? ' · ' + r.dataDomainId : '')))}
       ${kv('createdAt', fmtTime(r.createdAt))}
       ${kv('status', badge(st, statusClass(st)))}
       ${r.replayed ? kv('replayed', t('replay.true')) : ''}
@@ -3563,7 +3563,7 @@
     bits.push(badge(t('state.intents') + (c.intents || 0)));
     bits.push(badge(t('state.escalations') + (c.escalations || 0), c.escalations ? 'warn' : ''));
     bits.push(badge(t('state.skills') + (c.skills || 0)));
-    bits.push(badge(t('state.domains') + (c.realms || 0)));
+    bits.push(badge(t('state.domains') + (c.dataDomains || 0)));
     el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:8px">${bits.join('')}</div>
       <div style="margin-top:10px;font-size:12px;color:var(--text-2);font-family:var(--mono)">
         keyId=${esc(s.rosterKey ? s.rosterKey.keyId : '—')} · source=${esc(s.rosterKey ? s.rosterKey.source : '—')}
@@ -3689,7 +3689,7 @@
     if (!a) { el.innerHTML = emptyRow(); return; }
     const entries = a.entries || [];
     const kw = (state.auditFilter.keyword || '').trim().toLowerCase();
-    const shown = kw ? entries.filter(e => [e.decision, e.executor, e.skill, e.detail, e.runId, e.realm].some(v => String(v || '').toLowerCase().includes(kw))) : entries;
+    const shown = kw ? entries.filter(e => [e.decision, e.executor, e.skill, e.detail, e.runId, e.dataDomain].some(v => String(v || '').toLowerCase().includes(kw))) : entries;
     const countEl = $('afCount');
     if (countEl) countEl.textContent = kw ? t('audit.countShown', { shown: shown.length, total: entries.length }) : t('audit.count', { n: entries.length });
     if (!shown.length) { el.innerHTML = emptyRow(kw ? t('audit.noMatch') : t('audit.empty')); return; }
@@ -3702,7 +3702,7 @@
         <span class="tl-body">
           <div class="tl-head">${esc(e.decision || 'event')} · ${esc(e.executor || '?')} · ${esc(e.skill || '')}</div>
           ${e.detail ? `<div class="tl-detail">${esc(e.detail)}</div>` : ''}
-          <div class="tl-detail">runId=${esc(e.runId || '—')} · realm=${esc(e.realm || '—')}</div>
+          <div class="tl-detail">runId=${esc(e.runId || '—')} · dataDomain=${esc(e.dataDomain || '—')}</div>
         </span>
       </li>`;
     }
@@ -3871,19 +3871,19 @@
   function renderDomains(d) {
     const el = $('domainsBody');
     if (!d) { el.innerHTML = emptyRow(); return; }
-    const realms = d.realms || [];
+    const dataDomains = d.dataDomains || [];
     const grants = d.grants || [];
-    const apRealm = $('apRealm');
-    if (apRealm) {
-      const prev = apRealm.value;
-      apRealm.innerHTML = realms.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} (${esc(r.type)})</option>`).join('');
-      if (prev && realms.some(r => r.realmId === prev)) apRealm.value = prev;
+    const apDataDomain = $('apDataDomain');
+    if (apDataDomain) {
+      const prev = apDataDomain.value;
+      apDataDomain.innerHTML = dataDomains.map(r => `<option value="${esc(r.dataDomainId)}">${esc(r.dataDomainId)} (${esc(r.type)})</option>`).join('');
+      if (prev && dataDomains.some(r => r.dataDomainId === prev)) apDataDomain.value = prev;
     }
     let html = '';
-    if (realms.length) {
+    if (dataDomains.length) {
       html += '<table><colgroup><col style="width:22%"><col style="width:12%"><col style="width:10%"><col style="width:10%"><col style="width:46%"></colgroup><tr><th>' + esc(t('col.domainId')) + '</th><th>' + esc(t('col.type')) + '</th><th>' + esc(t('col.readonly')) + '</th><th>' + esc(t('col.entries')) + '</th><th>' + esc(t('col.summary')) + '</th></tr>';
-      for (const r of realms) {
-        html += `<tr><td class="mono">${esc(r.realmId)}</td><td>${esc(r.type)}</td><td>${r.readOnly ? t('domains.yes') : t('domains.no')}</td><td class="num">${r.itemCount ?? 0}</td><td class="mono" style="font-size:11px">${esc(r.contentDigest || '—')}</td></tr>`;
+      for (const r of dataDomains) {
+        html += `<tr><td class="mono">${esc(r.dataDomainId)}</td><td>${esc(r.type)}</td><td>${r.readOnly ? t('domains.yes') : t('domains.no')}</td><td class="num">${r.itemCount ?? 0}</td><td class="mono" style="font-size:11px">${esc(r.contentDigest || '—')}</td></tr>`;
       }
       html += '</table>';
     } else {
@@ -3893,7 +3893,7 @@
       html += '<div style="margin-top:10px;font-size:12px;color:var(--text-2)">' + esc(t('domains.grantsTitle', { n: grants.length })) + '</div>';
       html += '<table style="margin-top:4px"><colgroup><col style="width:18%"><col style="width:24%"><col style="width:10%"><col style="width:14%"><col style="width:34%"></colgroup><tr><th>' + esc(t('col.subject')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('col.level')) + '</th><th>' + esc(t('col.grantedBy')) + '</th><th>' + esc(t('col.reason')) + '</th></tr>';
       for (const g of grants) {
-        html += `<tr><td class="mono">${esc(g.subject)}</td><td class="mono" style="font-size:12px">${esc(g.realmId)}</td><td>${esc(g.access)}</td><td class="mono">${esc(g.grantedBy)}</td><td>${esc(g.reason || '—')}</td></tr>`;
+        html += `<tr><td class="mono">${esc(g.subject)}</td><td class="mono" style="font-size:12px">${esc(g.dataDomainId)}</td><td>${esc(g.access)}</td><td class="mono">${esc(g.grantedBy)}</td><td>${esc(g.reason || '—')}</td></tr>`;
       }
       html += '</table>';
     }
@@ -3973,7 +3973,7 @@
       html += `<tr>
         <td class="mono" style="font-size:11.5px">${esc(g.grantId)}</td>
         <td>${esc(g.access)}</td>
-        <td class="mono" style="font-size:11.5px">${esc(g.realmId)}</td>
+        <td class="mono" style="font-size:11.5px">${esc(g.dataDomainId)}</td>
         <td class="mono">${esc(g.subject)}</td>
         <td class="mono" style="font-size:11.5px">${esc(g.grantedBy)} · ${fmtTime(g.grantedAt)}</td>
         <td><button class="btn small danger" data-act="revoke" data-id="${esc(g.grantId)}" data-subject="${esc(g.subject)}">${esc(t('roster.revoke'))}</button></td>
@@ -4093,7 +4093,7 @@
     if (!(interval > 0) || !(fires > 0)) { toast(t('watch.badNumbers'), 'bad'); return; }
     if (mode === 'execute' && !delegation) { toast(t('watch.needContract'), 'bad'); return; }
     const body = {
-      realm: 'personal',
+      dataDomain: 'personal',
       predicate: { source, op: 'above', field, ...(valueRaw !== '' ? { value: Number(valueRaw) } : {}) },
       intent: { skill, subject, mode, maxFanOut: 1 },
       intervalSeconds: interval,
@@ -4120,14 +4120,14 @@
   $('btnWatch').addEventListener('click', registerWatch);
   $('btnWatchTick').addEventListener('click', runWatchTick);
 
-  function renderRealmSelect(d) {
-    const sel = $('gRealm');
-    const enterprises = ((d && d.realms) || []).filter(r => r.type === 'enterprise');
+  function renderDataDomainSelect(d) {
+    const sel = $('gDataDomain');
+    const enterprises = ((d && d.dataDomains) || []).filter(r => r.type === 'enterprise');
     if (!enterprises.length) {
-      sel.innerHTML = '<option value="">' + esc(t('connect.noRealm')) + '</option>';
+      sel.innerHTML = '<option value="">' + esc(t('connect.noDataDomain')) + '</option>';
       return;
     }
-    sel.innerHTML = enterprises.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} · ${t('connect.items', { n: r.itemCount ?? 0 })}</option>`).join('');
+    sel.innerHTML = enterprises.map(r => `<option value="${esc(r.dataDomainId)}">${esc(r.dataDomainId)} · ${t('connect.items', { n: r.itemCount ?? 0 })}</option>`).join('');
   }
 
   // ===== 跨域授权的签发 =====
@@ -4136,17 +4136,17 @@
   // page could revoke a grant and could not issue one.
   async function issueGrant() {
     const subject = $('gSubject').value.trim();
-    const realmId = $('gRealm').value;
+    const dataDomainId = $('gDataDomain').value;
     const access = $('gAccess').value;
     const by = $('gGrantedBy').value.trim() || 'operator';
     const reason = $('gReason').value.trim();
     if (!subject) { toast(t('grant.needSubject'), 'bad'); return; }
-    if (!realmId) { toast(t('grant.needRealm'), 'bad'); return; }
-    if (!(await confirmDialog({ body: t('grant.confirm', { subject, realm: realmId, access }) }))) return;
+    if (!dataDomainId) { toast(t('grant.needDataDomain'), 'bad'); return; }
+    if (!(await confirmDialog({ body: t('grant.confirm', { subject, dataDomain: dataDomainId, access }) }))) return;
     try {
       const grant = await api('POST', '/api/domains/grants', {
         subject,
-        realmId,
+        dataDomainId,
         access,
         grantedBy: by,
         ...(reason ? { reason } : {}),
@@ -4239,20 +4239,20 @@
   }
   async function loadDomains() {
     const d = await api('GET', '/api/domains');
-    renderGrantList(d); renderRealmSelect(d);
+    renderGrantList(d); renderDataDomainSelect(d);
   }
 
   // ===== 访问判定探针（GET /api/domains/access 干跑；判定回答"放不放行"，不触域内容） =====
   async function probeAccess() {
     const body = $('accessProbeBody');
-    const realmId = $('apRealm').value;
+    const dataDomainId = $('apDataDomain').value;
     const subject = $('apSubject').value.trim();
-    if (!realmId) { body.innerHTML = emptyRow(t('access.needRealm')); return; }
+    if (!dataDomainId) { body.innerHTML = emptyRow(t('access.needDataDomain')); return; }
     if (!subject) { body.innerHTML = emptyRow(t('access.needSubject')); return; }
     const kind = $('apKind').value;
     const access = $('apAccess').value;
     const tenant = $('apTenant').value.trim();
-    let qs = '?realmId=' + encodeURIComponent(realmId) + '&subject=' + encodeURIComponent(subject) + '&kind=' + encodeURIComponent(kind) + '&access=' + encodeURIComponent(access);
+    let qs = '?dataDomainId=' + encodeURIComponent(dataDomainId) + '&subject=' + encodeURIComponent(subject) + '&kind=' + encodeURIComponent(kind) + '&access=' + encodeURIComponent(access);
     if (tenant) qs += '&tenant=' + encodeURIComponent(tenant);
     body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
     try {
@@ -4272,19 +4272,19 @@
   $('btnAccessProbe').addEventListener('click', probeAccess);
 
   // ===== 记忆（E8.5 操作者读数面：只读 + 检索；事实无公开写入口） =====
-  // The memory face is realm-scoped like the rest of the data domain, so the
+  // The memory face is dataDomain-scoped like the rest of the data domain, so the
   // selector is fed from the same /api/domains projection the monitor panel
   // renders. Long tables are capped with an honest row count: a silently
   // truncated table would read as "that is all there is".
   const MEM_MAX_ROWS = 50;
 
-  function populateMemoryRealm(d) {
-    const sel = $('memRealm');
+  function populateMemoryDataDomain(d) {
+    const sel = $('memDataDomain');
     if (!sel) return;
-    const realms = (d && d.realms) || [];
+    const dataDomains = (d && d.dataDomains) || [];
     const prev = sel.value;
-    sel.innerHTML = realms.map(r => `<option value="${esc(r.realmId)}">${esc(r.realmId)} (${esc(r.type)})</option>`).join('');
-    if (prev && realms.some(r => r.realmId === prev)) sel.value = prev;
+    sel.innerHTML = dataDomains.map(r => `<option value="${esc(r.dataDomainId)}">${esc(r.dataDomainId)} (${esc(r.type)})</option>`).join('');
+    if (prev && dataDomains.some(r => r.dataDomainId === prev)) sel.value = prev;
   }
 
   function memRowNote(shown, total) {
@@ -4368,7 +4368,7 @@
         <td style="font-size:11.5px">${esc(r.reason || '—')}</td>
         <td class="mono" style="font-size:11.5px">${esc(r.requestedBy)}</td>
         <td class="mono" style="font-size:11px">${fmtTime(r.at)}</td>
-        <td class="mono" style="font-size:11px">${esc(r.realmId)}</td>
+        <td class="mono" style="font-size:11px">${esc(r.dataDomainId)}</td>
       </tr>`;
     }
     el.innerHTML = html + '</table>';
@@ -4382,7 +4382,7 @@
     if (!integrity.ok) {
       html += '<table><colgroup><col style="width:26%"><col style="width:22%"><col style="width:22%"><col style="width:30%"></colgroup><tr><th>' + esc(t('mem.violation')) + '</th><th>' + esc(t('mem.factId')) + '</th><th>' + esc(t('col.domain')) + '</th><th>' + esc(t('mem.detail')) + '</th></tr>';
       for (const v of violations) {
-        html += `<tr><td class="mono" style="font-size:11.5px">${esc(v.code)}</td><td class="mono" style="font-size:11px">${esc(v.factId || '—')}</td><td class="mono" style="font-size:11px">${esc(v.realmId || '—')}</td><td style="font-size:11.5px">${esc(v.detail)}</td></tr>`;
+        html += `<tr><td class="mono" style="font-size:11.5px">${esc(v.code)}</td><td class="mono" style="font-size:11px">${esc(v.factId || '—')}</td><td class="mono" style="font-size:11px">${esc(v.dataDomainId || '—')}</td><td style="font-size:11.5px">${esc(v.detail)}</td></tr>`;
       }
       html += '</table>';
     }
@@ -4392,22 +4392,22 @@
   async function loadMemory() {
     let domains = null;
     try { domains = await api('GET', '/api/domains'); } catch { domains = null; }
-    populateMemoryRealm(domains);
-    const realmId = $('memRealm').value;
-    $('memCount').textContent = realmId || '';
-    if (!realmId) {
-      $('memSummary').innerHTML = emptyRow(t('mem.needRealm'));
+    populateMemoryDataDomain(domains);
+    const dataDomainId = $('memDataDomain').value;
+    $('memCount').textContent = dataDomainId || '';
+    if (!dataDomainId) {
+      $('memSummary').innerHTML = emptyRow(t('mem.needDataDomain'));
       $('memFactsBody').innerHTML = '';
       $('memEventsBody').innerHTML = '';
       $('memRetractionsBody').innerHTML = '';
       $('memIntegrityBody').innerHTML = '';
       return;
     }
-    // The four faces degrade independently: a realm whose events are readable
+    // The four faces degrade independently: a dataDomain whose events are readable
     // but whose integrity face is not must not blank the rest of the view.
     const [events, facts, retractions, integrity] = await Promise.allSettled([
-      api('GET', '/api/memory/events?realmId=' + encodeURIComponent(realmId)),
-      api('GET', '/api/memory/facts?realmId=' + encodeURIComponent(realmId)),
+      api('GET', '/api/memory/events?dataDomainId=' + encodeURIComponent(dataDomainId)),
+      api('GET', '/api/memory/facts?dataDomainId=' + encodeURIComponent(dataDomainId)),
       api('GET', '/api/memory/retractions'),
       api('GET', '/api/memory/integrity'),
     ]);
@@ -4427,13 +4427,13 @@
 
   async function probeMemoryRecall() {
     const body = $('memRecallBody');
-    const realmId = $('memRealm').value;
+    const dataDomainId = $('memDataDomain').value;
     const q = $('memQ').value.trim();
-    if (!realmId) { body.innerHTML = emptyRow(t('mem.needRealm')); return; }
+    if (!dataDomainId) { body.innerHTML = emptyRow(t('mem.needDataDomain')); return; }
     if (!q) { body.innerHTML = emptyRow(t('mem.needQuery')); return; }
     const limit = Number($('memLimit').value);
     const alpha = Number($('memAlpha').value);
-    let qs = '?realmId=' + encodeURIComponent(realmId) + '&q=' + encodeURIComponent(q);
+    let qs = '?dataDomainId=' + encodeURIComponent(dataDomainId) + '&q=' + encodeURIComponent(q);
     if (Number.isInteger(limit) && limit > 0) qs += '&limit=' + limit;
     if (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) qs += '&alpha=' + alpha;
     body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
@@ -4467,13 +4467,13 @@
 
   async function probeMemoryReplay() {
     const body = $('memReplayBody');
-    const realmId = $('memRealm').value;
+    const dataDomainId = $('memDataDomain').value;
     const runId = $('memRunId').value.trim();
-    if (!realmId) { body.innerHTML = emptyRow(t('mem.needRealm')); return; }
+    if (!dataDomainId) { body.innerHTML = emptyRow(t('mem.needDataDomain')); return; }
     if (!runId) { body.innerHTML = emptyRow(t('mem.needRun')); return; }
     body.innerHTML = '<div class="empty">' + esc(t('common.loading')) + '</div>';
     try {
-      const d = await api('GET', '/api/memory/replay?realmId=' + encodeURIComponent(realmId) + '&runId=' + encodeURIComponent(runId));
+      const d = await api('GET', '/api/memory/replay?dataDomainId=' + encodeURIComponent(dataDomainId) + '&runId=' + encodeURIComponent(runId));
       const events = (d && d.events) || [];
       const facts = (d && d.facts) || [];
       let html = '<div style="font-size:12px;color:var(--text-2);margin-bottom:4px">' + esc(t('mem.replayEvents', { n: events.length })) + ' · ' + esc(t('mem.replayFacts', { n: facts.length })) + '</div>';
@@ -4568,7 +4568,7 @@
     html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.competencies')) + ' ' + esc(t('brief.certified')) + ' ' + cert + ' · ' + esc(t('brief.missing')) + ' ' + esc((comp.missing || []).join(', ') || '—') + (comp.waived ? ' · ' + esc(t('brief.waived')) : '') + '</div>';
     html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.teammates')) + ' ' + mates + ' · ' + esc(t('brief.mentors')) + ' ' + mentors + '</div>';
     html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.culture')) + ' ' + esc(t('brief.facts', { n: (cul.facts || []).length, total: cul.totalFacts || 0 })) + (cul.empty ? ' · ' + esc(t('brief.emptyCulture')) : '') + '<div class="mono" style="font-size:11px;color:var(--text-3)">' + facts + '</div></div>';
-    html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.boundaries')) + ' <span class="mono">' + esc(bnd.realmId || '—') + '</span> ' + esc(bnd.realmType || '—') + (bnd.readOnly ? ' · ' + esc(t('col.readonly')) : '') + ' · ' + esc(t('brief.canRead')) + ' ' + (bnd.canRead ? '✓' : '✗') + ' · ' + esc(t('brief.canWrite')) + ' ' + (bnd.canWrite ? '✓' : '✗') + (bnd.writeNeedsGrant ? ' · ' + esc(t('brief.needsGrant')) : '') + ' · ' + esc((bnd.rules || []).join(' / ') || '—') + '</div>';
+    html += '<div style="font-size:12px;margin:2px 0">' + esc(t('brief.boundaries')) + ' <span class="mono">' + esc(bnd.dataDomainId || '—') + '</span> ' + esc(bnd.dataDomainType || '—') + (bnd.readOnly ? ' · ' + esc(t('col.readonly')) : '') + ' · ' + esc(t('brief.canRead')) + ' ' + (bnd.canRead ? '✓' : '✗') + ' · ' + esc(t('brief.canWrite')) + ' ' + (bnd.canWrite ? '✓' : '✗') + (bnd.writeNeedsGrant ? ' · ' + esc(t('brief.needsGrant')) : '') + ' · ' + esc((bnd.rules || []).join(' / ') || '—') + '</div>';
     html += gaps ? '<div style="font-size:12px;margin:4px 0 2px;color:var(--warn)">' + esc(t('brief.gaps')) + '</div><ul style="margin:2px 0 0 16px;padding:0;font-size:12px">' + gaps + '</ul>' : '<div style="font-size:12px;color:var(--text-3);margin:4px 0 0">' + esc(t('brief.noGaps')) + '</div>';
     html += '<div class="hint" style="margin-top:6px">' + esc(t('brief.digest')) + ' <span class="mono">' + esc(b.digest || '—') + '</span> · ' + fmtTime(b.generatedAt) + '</div>';
     return html;
@@ -4671,13 +4671,13 @@
         } catch (e) { toast(t('org.actionFailed', { action: t('org.removeMember'), msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-contract') {
-    } else if (act === 'cm-waive' || act === 'cm-commission' || act === 'cm-withdraw') {
+    } else if (act === 'cm-waive' || act === 'cm-seatGrant' || act === 'cm-withdraw') {
       const deptId = id;
       const agent = btn.getAttribute('data-agent') || '';
-      const verb = act === 'cm-waive' ? 'waive' : act === 'cm-commission' ? 'commission' : 'withdraw';
+      const verb = act === 'cm-waive' ? 'waive' : act === 'cm-seatGrant' ? 'seatGrant' : 'withdraw';
       const cmId = deptId + '::' + agent;
-      const titleKey = verb === 'commission' ? 'cm.byTitle' : 'cm.' + verb + 'Title';
-      const bodyKey = verb === 'commission' ? 'cm.byBody' : 'cm.' + verb + 'Body';
+      const titleKey = verb === 'seatGrant' ? 'cm.byTitle' : 'cm.' + verb + 'Title';
+      const bodyKey = verb === 'seatGrant' ? 'cm.byBody' : 'cm.' + verb + 'Body';
       const by = await promptDialog({
         title: t(titleKey),
         body: t(bodyKey, { id: cmId }),
@@ -4686,7 +4686,7 @@
       });
       if (by === null) return;
       let reason = '';
-      if (verb !== 'commission') {
+      if (verb !== 'seatGrant') {
         const r = await promptDialog({
           title: t(titleKey),
           body: t(bodyKey, { id: cmId }),
@@ -4699,9 +4699,9 @@
       const payload = { by: by.trim() || 'operator', ...(reason ? { reason } : {}) };
       (async () => {
         try {
-          await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/commissions/' + encodeURIComponent(agent) + '/' + verb, payload);
-          toast(t('cm.' + (verb === 'waive' ? 'waived' : verb === 'commission' ? 'commissioned' : 'withdrawn'), { id: agent }), 'ok');
-          await loadCommissions(deptId);
+          await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/seatGrants/' + encodeURIComponent(agent) + '/' + verb, payload);
+          toast(t('cm.' + (verb === 'waive' ? 'waived' : verb === 'seatGrant' ? 'seatGranted' : 'withdrawn'), { id: agent }), 'ok');
+          await loadSeatGrants(deptId);
         } catch (e) { toast(t('cm.actionFailed', { action: t('cm.' + verb), msg: e.message }), 'bad'); }
       })();
     } else if (act === 'revoke-contract') {
@@ -4756,7 +4756,7 @@
       const input = await promptDialog({
         title: t('skill.hardenTitle'),
         body: t('skill.hardenBody', { id, version }),
-        placeholder: 'realm:read\nfs:write',
+        placeholder: 'dataDomain:read\nfs:write',
         confirmLabel: t('skill.action.harden'),
       });
       if (input === null) return;
@@ -5038,23 +5038,23 @@
   });
 
   // ===== 委任：部门切换 + 开设 =====
-  $('cmDept').addEventListener('change', loadCommissions);
+  $('cmDept').addEventListener('change', loadSeatGrants);
   $('btnCmOpen').addEventListener('click', async function () {
     const deptId = $('cmDept').value;
     const agentId = $('cmAgent').value.trim();
-    const realmId = $('cmRealm').value.trim();
+    const dataDomainId = $('cmDataDomain').value.trim();
     const openedBy = $('cmOpenedBy').value.trim();
-    if (!deptId || !agentId || !realmId || !openedBy) { toast(t('cm.needOpenFields'), 'bad'); return; }
+    if (!deptId || !agentId || !dataDomainId || !openedBy) { toast(t('cm.needOpenFields'), 'bad'); return; }
     const skills = $('cmSkills').value.split(',').map(s => s.trim()).filter(Boolean);
     const deptName = $('cmDept').selectedOptions[0] ? $('cmDept').selectedOptions[0].textContent : deptId;
-    if (!(await confirmDialog({ body: t('cm.confirmOpen', { agent: agentId, dept: deptName, realm: realmId }) }))) return;
+    if (!(await confirmDialog({ body: t('cm.confirmOpen', { agent: agentId, dept: deptName, dataDomain: dataDomainId }) }))) return;
     try {
-      const body = { agentId, realmId, openedBy };
+      const body = { agentId, dataDomainId, openedBy };
       if (skills.length) body.requiredSkills = skills;
-      await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/commissions', body);
+      await api('POST', '/api/org/departments/' + encodeURIComponent(deptId) + '/seatGrants', body);
       toast(t('cm.opened', { agent: agentId }), 'ok');
-      $('cmAgent').value = ''; $('cmRealm').value = ''; $('cmSkills').value = '';
-      await loadCommissions();
+      $('cmAgent').value = ''; $('cmDataDomain').value = ''; $('cmSkills').value = '';
+      await loadSeatGrants();
     } catch (e) { toast(t('cm.actionFailed', { action: t('cm.openRun'), msg: e.message }), 'bad'); }
   });
 

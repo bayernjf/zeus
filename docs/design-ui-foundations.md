@@ -207,7 +207,7 @@ common.error.network
 以下内容必须保持机器值原样：
 
 - API 路径、HTTP 方法、环境变量、配置键、token key、日志字段。
-- `intentId`、`runId`、`eventId`、`executor`、`skill`、`realmId`、keyId、commit SHA。
+- `intentId`、`runId`、`eventId`、`executor`、`skill`、`dataDomainId`、keyId、commit SHA。
 - 审计动作的机器名称与权限词法（如 `mcp:tool-name`）。
 - API 返回的错误码；错误码可以有解释文案，但错误码本身不替换。
 

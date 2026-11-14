@@ -10,7 +10,7 @@ function cardFor(name: string): AgentCard {
     skills: [{ id: 'research', name: 'Research', description: '', tags: [] }],
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -69,7 +69,7 @@ describe('E2.2/E2.3/E2.4 skill governor on the fan-out path (boot, end-to-end)',
   it('auto-selection passes through for a card-advertised skill (catalogue active)', async () => {
     const calls: string[] = [];
     const runtime = await bootRuntime({ fetchImpl: fetchFor(['executor-a'], calls), executorSeeds: seeds(['executor-a']) });
-    const result = await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { q: 1 } });
+    const result = await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { q: 1 } });
     expect(result.status).toBe('completed');
     expect(result.refused).toBeUndefined();
     expect(calls).toContain('executor-a');
@@ -84,7 +84,7 @@ describe('E2.2/E2.3/E2.4 skill governor on the fan-out path (boot, end-to-end)',
       dispatchAudit: entry => audit.push({ ...entry }),
     });
     runtime.skillRegistry!.uninstall('research');
-    const result = await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { q: 1 } });
+    const result = await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { q: 1 } });
     expect(result.status).toBe('failed');
     expect(result.refused?.reason).toBe('skill-uninstalled');
     expect(calls).not.toContain('executor-a');
@@ -101,7 +101,7 @@ describe('E2.2/E2.3/E2.4 skill governor on the fan-out path (boot, end-to-end)',
     runtime.skillRegistry!.register({
       id: 'research', name: 'Research', description: '', version: '2.0.0', providedBy: ['executor-a'], tags: [],
     });
-    const result = await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { q: 1 } });
+    const result = await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { q: 1 } });
     expect(result.status).toBe('completed');
     expect(result.refused).toBeUndefined();
     expect(calls).toEqual(['executor-a']);
@@ -117,7 +117,7 @@ describe('E2.2/E2.3/E2.4 skill governor on the fan-out path (boot, end-to-end)',
     runtime.skillRegistry!.register({
       id: 'research', name: 'Research', description: '', version: '2.0.0', providedBy: ['some-other-agent'], tags: [],
     });
-    const result = await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { q: 1 } });
+    const result = await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { q: 1 } });
     expect(result.status).toBe('failed');
     expect(result.refused?.reason).toBe('no-active-provider');
     expect(calls).toEqual([]);
@@ -126,7 +126,7 @@ describe('E2.2/E2.3/E2.4 skill governor on the fan-out path (boot, end-to-end)',
   it('an unregistered skill stays a pass-through (no refusal)', async () => {
     const calls: string[] = [];
     const runtime = await bootRuntime({ fetchImpl: fetchFor(['executor-a'], calls), executorSeeds: seeds(['executor-a']) });
-    const result = await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { q: 1 } });
+    const result = await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { q: 1 } });
     expect(result.status).toBe('completed');
     expect(result.refused).toBeUndefined();
   });
@@ -136,7 +136,7 @@ describe('E2.2/E2.3/E2.4 skill governor on the fan-out path (boot, end-to-end)',
     const runtime = await bootRuntime({ fetchImpl: fetchFor(['executor-a'], calls), executorSeeds: seeds(['executor-a']) });
     runtime.skillRegistry!.uninstall('research');
     const result = await runtime.orchestrator.fanOut({
-      skill: 'research', realm: 'personal', params: { q: 1 }, executors: ['executor-a'],
+      skill: 'research', dataDomain: 'personal', params: { q: 1 }, executors: ['executor-a'],
     });
     expect(result.status).toBe('completed');
     expect(result.refused).toBeUndefined();

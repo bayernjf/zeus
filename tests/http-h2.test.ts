@@ -101,7 +101,7 @@ describe('HTTP H2 operator API — auth', () => {
       registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('k'),
     });
-    const reply = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', realm: 'personal', params: {} } });
+    const reply = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     expect(reply.statusCode).toBe(404);
     expect(await app.inject({ method: 'GET', url: '/api/escalations' })).toMatchObject({ statusCode: 404 });
     expect(await app.inject({ method: 'GET', url: '/api/metrics' })).toMatchObject({ statusCode: 404 });
@@ -110,7 +110,7 @@ describe('HTTP H2 operator API — auth', () => {
   it('rejects H2 requests without or with a wrong bearer token', async () => {
     const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    const noAuth = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', realm: 'personal', params: {} } });
+    const noAuth = await app.inject({ method: 'POST', url: '/api/intents', payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     expect(noAuth.statusCode).toBe(401);
     const wrong = await app.inject({
       method: 'GET',
@@ -140,7 +140,7 @@ describe('HTTP H2 operator API — intent lifecycle', () => {
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'review', realm: 'enterprise', params: {} },
+      payload: { skill: 'review', dataDomain: 'enterprise', params: {} },
     });
     expect(reply.statusCode).toBe(200);
     const body = JSON.parse(reply.body);
@@ -153,20 +153,20 @@ describe('HTTP H2 operator API — intent lifecycle', () => {
   it('rejects malformed intent requests with 400', async () => {
     const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    const noSkill = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { realm: 'personal', params: {} } });
+    const noSkill = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { dataDomain: 'personal', params: {} } });
     expect(noSkill.statusCode).toBe(400);
-    const badRealm = await app.inject({
+    const badDataDomain = await app.inject({
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'x', realm: 'cloud', params: {} },
+      payload: { skill: 'x', dataDomain: 'cloud', params: {} },
     });
-    expect(badRealm.statusCode).toBe(400);
+    expect(badDataDomain.statusCode).toBe(400);
     const badExecutors = await app.inject({
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'x', realm: 'personal', params: {}, executors: ['loom', 7] },
+      payload: { skill: 'x', dataDomain: 'personal', params: {}, executors: ['loom', 7] },
     });
     expect(badExecutors.statusCode).toBe(400);
   });
@@ -174,7 +174,7 @@ describe('HTTP H2 operator API — intent lifecycle', () => {
   it('reads a stored intent and 404s on an unknown one', async () => {
     const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', realm: 'personal', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     const ok = await app.inject({ method: 'GET', url: '/api/intents/intent-1', headers: AUTH });
     expect(ok.statusCode).toBe(200);
     expect(JSON.parse(ok.body).intentId).toBe('intent-1');
@@ -185,7 +185,7 @@ describe('HTTP H2 operator API — intent lifecycle', () => {
   it('replays an idempotent intent without re-dispatching', async () => {
     const harness = await operatorServer({ loom: okResult('loom') }, ['loom']);
     app = harness.app;
-    const payload = { intentId: 'fixed', skill: 'x', realm: 'personal', params: {} };
+    const payload = { intentId: 'fixed', skill: 'x', dataDomain: 'personal', params: {} };
     const first = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
     expect(first.statusCode).toBe(200);
     const second = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
@@ -203,7 +203,7 @@ describe('HTTP H2 operator API — intent lifecycle', () => {
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { intentId: 'cancel-me', skill: 'x', realm: 'enterprise', params: {} },
+      payload: { intentId: 'cancel-me', skill: 'x', dataDomain: 'enterprise', params: {} },
     });
     const reply = await app.inject({ method: 'POST', url: '/api/intents/cancel-me/cancel', headers: AUTH });
     expect(reply.statusCode).toBe(200);
@@ -234,7 +234,7 @@ describe('HTTP H2 operator API — conflict escalation and resolution', () => {
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { skill: 'review', realm: 'enterprise', params: {} },
+      payload: { skill: 'review', dataDomain: 'enterprise', params: {} },
     });
     expect(fan.statusCode).toBe(200);
     expect(JSON.parse(fan.body).status).toBe('needs-operator');
@@ -278,7 +278,7 @@ describe('HTTP H2 operator API — conflict escalation and resolution', () => {
       ['loom', 'atlas']
     );
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', realm: 'enterprise', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', dataDomain: 'enterprise', params: {} } });
 
     const missing = await app.inject({
       method: 'POST',
@@ -303,7 +303,7 @@ describe('HTTP H2 operator API — conflict escalation and resolution', () => {
       ['loom', 'atlas']
     );
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', realm: 'enterprise', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'review', dataDomain: 'enterprise', params: {} } });
     const first = await app.inject({ method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH, payload: { stance: 'approve' } });
     expect(first.statusCode).toBe(200);
     const again = await app.inject({ method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH, payload: { stance: 'reject' } });
@@ -315,7 +315,7 @@ describe('HTTP H2 operator API — conflict escalation and resolution', () => {
     app = harness.app;
     const created = harness.desk.ingest(
       okResult('loom', 'input-required'),
-      { executor: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+      { executor: 'loom', skill: 'review', dataDomain: 'enterprise', runId: 'run-1' } as DispatchRequest
     );
     const hit = await app.inject({ method: 'GET', url: `/api/escalations/${created!.id}`, headers: AUTH });
     expect(hit.statusCode).toBe(200);
@@ -330,7 +330,7 @@ describe('HTTP H2 operator API — conflict escalation and resolution', () => {
     app = harness.app;
     const created = harness.desk.ingest(
       okResult('loom', 'input-required'),
-      { executor: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+      { executor: 'loom', skill: 'review', dataDomain: 'enterprise', runId: 'run-1' } as DispatchRequest
     );
     expect(created).not.toBeNull();
     const reply = await app.inject({
@@ -348,10 +348,10 @@ describe('HTTP H2 operator API — conflict escalation and resolution', () => {
     app = harness.app;
     harness.desk.ingest(
       okResult('loom', 'input-required'),
-      { executor: 'loom', skill: 'review', realm: 'enterprise', runId: 'run-1' } as DispatchRequest
+      { executor: 'loom', skill: 'review', dataDomain: 'enterprise', runId: 'run-1' } as DispatchRequest
     );
     harness.desk.ingestMemoryDispute({
-      id: 'mem-1', runId: 'run-2', realm: 'personal', factId: 'fact-a',
+      id: 'mem-1', runId: 'run-2', dataDomain: 'personal', factId: 'fact-a',
       conflictingFacts: ['fact-b'], reason: 'two agents disagree about the release date',
     });
 
@@ -395,7 +395,7 @@ describe('HTTP H2 operator API — metrics', () => {
       ['loom', 'atlas']
     );
     app = harness.app;
-    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', realm: 'personal', params: {} } });
+    await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload: { skill: 'x', dataDomain: 'personal', params: {} } });
     const reply = await app.inject({ method: 'GET', url: '/api/metrics', headers: AUTH });
     expect(reply.statusCode).toBe(200);
     const snap = JSON.parse(reply.body);
@@ -411,7 +411,7 @@ describe('HTTP H2 operator API — metrics', () => {
     const dir = await mkdtemp(join(tmpdir(), 'zeus-metrics-history-'));
     try {
       // A directory at the file path makes readFile reject with EISDIR, whose
-      // raw message carries the realm-local absolute path.
+      // raw message carries the dataDomain-local absolute path.
       const filePath = join(dir, 'history.jsonl');
       await mkdir(filePath);
       app = await createHttpServer({
@@ -448,14 +448,14 @@ describe('HTTP H2 POST /api/intents — idempotency error classification (audit 
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { intentId: 'dup-key-1', skill: 'research', realm: 'personal', params: { q: 'A' }, executors: ['loom'] },
+      payload: { intentId: 'dup-key-1', skill: 'research', dataDomain: 'personal', params: { q: 'A' }, executors: ['loom'] },
     });
     expect(first.statusCode).toBe(200);
     const again = await app.inject({
       method: 'POST',
       url: '/api/intents',
       headers: AUTH,
-      payload: { intentId: 'dup-key-1', skill: 'research', realm: 'personal', params: { q: 'B' }, executors: ['loom'] },
+      payload: { intentId: 'dup-key-1', skill: 'research', dataDomain: 'personal', params: { q: 'B' }, executors: ['loom'] },
     });
     expect(again.statusCode).toBe(409);
     expect(again.json()).toMatchObject({ error: 'conflict' });
@@ -474,7 +474,7 @@ describe('HTTP H2 POST /api/intents — idempotency error classification (audit 
       ['loom'],
     );
     app = harness.app;
-    const payload = { intentId: 'replay-1', skill: 'research', realm: 'personal', params: { q: 'A' }, executors: ['loom'] };
+    const payload = { intentId: 'replay-1', skill: 'research', dataDomain: 'personal', params: { q: 'A' }, executors: ['loom'] };
     const first = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
     const again = await app.inject({ method: 'POST', url: '/api/intents', headers: AUTH, payload });
     expect(first.statusCode).toBe(200);

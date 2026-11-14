@@ -61,7 +61,7 @@ function harness(withAnchor = true) {
 function executeRequest(delegation?: FanOutRequest['executionDelegation']): FanOutRequest {
   return {
     skill: 'deployment-health',
-    realm: 'personal',
+    dataDomain: 'personal',
     params: {},
     mode: 'execute',
     ...(delegation ? { executionDelegation: delegation } : {}),
@@ -145,7 +145,7 @@ describe('deferred #33 execute-mode dispatch gate', () => {
 
   it('leaves the default plan mode unchanged: no delegation, dispatch proceeds', async () => {
     const { orchestrator, dispatchCalls, refused } = harness();
-    const result = await orchestrator.fanOut({ skill: 'deployment-health', realm: 'personal', params: {} });
+    const result = await orchestrator.fanOut({ skill: 'deployment-health', dataDomain: 'personal', params: {} });
     expect(refused).toHaveLength(0);
     expect(dispatchCalls).toHaveLength(1);
     expect(result.branches[0]?.ok).toBe(true);

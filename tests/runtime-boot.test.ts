@@ -37,7 +37,7 @@ function cardFor(name: string) {
     skills: [{ id: `skill-${name}`, name, description: '', tags: [] }],
     authentication: { schemes: ['bearer'] },
     preferredTransport: 'JSONRPC',
-    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'test-domain', realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
+    'x-zeus-handshake': { version: '1', swornTo: 'zeus', domain: 'test-domain', dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'auto' },
   };
 }
 const mockFetch = (name: string) =>
@@ -144,7 +144,7 @@ describe('E5.3 bootRuntime assembly', () => {
     first.oversight.importState([
       {
         id: 'esc-1', kind: 'task-input', runId: 'r1', executor: 'loom', skill: 's1',
-        taskId: 'task-1', realm: 'personal', reason: 'need approval', options: ['proceed'],
+        taskId: 'task-1', dataDomain: 'personal', reason: 'need approval', options: ['proceed'],
         status: 'pending', createdAt: '2026-09-22T00:00:00.000Z',
       },
     ]);
@@ -169,7 +169,7 @@ describe('E5.3 bootRuntime assembly', () => {
       newRunId: () => 'r1',
     });
     await orchestrator.fanOut({
-      intentId: 'intent-restore', skill: 's', executors: ['loom'], params: {}, realm: 'personal',
+      intentId: 'intent-restore', skill: 's', executors: ['loom'], params: {}, dataDomain: 'personal',
     });
     const store = new FileRuntimeStateStore(file);
     await store.save(collectRuntimeState({ registry, oversight, orchestrator, dagRunner: {} as DagRunner }));
@@ -180,7 +180,7 @@ describe('E5.3 bootRuntime assembly', () => {
     expect(restored.snapshot?.orchestrator.intents).toHaveLength(1);
     expect(restored.orchestrator.getIntent('intent-restore')?.status).toBe('completed');
     const replay = await restored.orchestrator.fanOut({
-      intentId: 'intent-restore', skill: 's', executors: ['loom'], params: {}, realm: 'personal',
+      intentId: 'intent-restore', skill: 's', executors: ['loom'], params: {}, dataDomain: 'personal',
     });
     expect(replay.replayed).toBe(true);
     expect(replay.status).toBe('completed');
@@ -257,7 +257,7 @@ describe('E5.3 bootRuntime assembly', () => {
       onAuditError: message => void warnings.push(message),
     });
 
-    const first = await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {}, executors: ['nope'] });
+    const first = await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {}, executors: ['nope'] });
     expect(first.branches[0]?.ok).toBe(false);
     expect(first.branches[0]?.reason).toMatch(/executor|skill/i);
     expect(readAuditLog(auditFile).length).toBeGreaterThan(0);
@@ -265,7 +265,7 @@ describe('E5.3 bootRuntime assembly', () => {
 
     // Pull the trail out from under the running process.
     await rm(auditDir, { recursive: true, force: true });
-    const second = await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {}, executors: ['nope'] });
+    const second = await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {}, executors: ['nope'] });
     expect(second.branches[0]?.reason).toMatch(/executor|skill/i);
     expect(second.branches[0]?.reason).not.toMatch(/ENOENT|EACCES|audit\.jsonl/);
 

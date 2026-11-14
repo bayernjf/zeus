@@ -4,9 +4,9 @@ import { existsSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FsRealmStore } from '../src/realm/store.js';
+import { FsDataDomainStore } from '../src/dataDomain/store.js';
 import { sha256Hex } from '../src/util/crypto.js';
-import { inventoryFromRealm } from '../src/backup/inventory.js';
+import { inventoryFromDataDomain } from '../src/backup/inventory.js';
 import { buildBackup } from '../src/backup/map.js';
 import { restoreDryRun } from '../src/backup/restore.js';
 import { liveSourceFor } from '../src/backup/inventory.js';
@@ -31,8 +31,8 @@ const SECRET_A = '# Alpha\nunique-secret-token-AAA\n';
 const SECRET_B = 'Bravo content BBB\n';
 
 let root: string;
-let store: FsRealmStore;
-let realmId: string;
+let store: FsDataDomainStore;
+let dataDomainId: string;
 let map: TreasureMap;
 
 beforeEach(async () => {
@@ -40,10 +40,10 @@ beforeEach(async () => {
   await mkdir(join(root, 'sub'), { recursive: true });
   await writeFile(join(root, 'a.md'), SECRET_A);
   await writeFile(join(root, 'sub', 'b.txt'), SECRET_B);
-  store = new FsRealmStore();
+  store = new FsDataDomainStore();
   const manifest = await store.connect(root, 'personal');
-  realmId = manifest.realmId;
-  map = await buildBackup(inventoryFromRealm(store, realmId));
+  dataDomainId = manifest.dataDomainId;
+  map = await buildBackup(inventoryFromDataDomain(store, dataDomainId));
 });
 
 afterEach(async () => {
@@ -105,8 +105,8 @@ describe('seal/open: authenticated encryption with separated key', () => {
 });
 
 describe('L0 in-place restore and drift detection', () => {
-  it('verifies an untouched realm as fully recoverable', async () => {
-    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
+  it('verifies an untouched dataDomain as fully recoverable', async () => {
+    const report = await restoreDryRun(map, liveSourceFor(new FsDataDomainStore()));
     expect(report.rootReachable).toBe(true);
     expect(report.recoverable).toBe(true);
     expect(report.ok).toHaveLength(2);
@@ -115,7 +115,7 @@ describe('L0 in-place restore and drift detection', () => {
 
   it('detects a changed file', async () => {
     await writeFile(join(root, 'a.md'), '# Alpha CHANGED\n');
-    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
+    const report = await restoreDryRun(map, liveSourceFor(new FsDataDomainStore()));
     expect(report.changed).toHaveLength(1);
     expect(report.changed[0]!.itemId).toBe('a.md');
     expect(report.recoverable).toBe(false);
@@ -124,21 +124,21 @@ describe('L0 in-place restore and drift detection', () => {
 
   it('detects a missing file', async () => {
     await rm(join(root, 'a.md'));
-    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
+    const report = await restoreDryRun(map, liveSourceFor(new FsDataDomainStore()));
     expect(report.missing).toEqual(['a.md']);
     expect(report.recoverable).toBe(false);
   });
 
   it('detects an unexpected new file', async () => {
     await writeFile(join(root, 'c.md'), 'new file\n');
-    const report = await restoreDryRun(map, liveSourceFor(new FsRealmStore()));
+    const report = await restoreDryRun(map, liveSourceFor(new FsDataDomainStore()));
     expect(report.unexpected).toEqual(['c.md']);
     expect(report.recoverable).toBe(true); // added files do not lose the mapped marks
   });
 
   it('reports an unreachable root and advises a bundle when mounted', async () => {
     const ghost: TreasureMap = { ...map, source: { ...map.source, root: join(root, 'does-not-exist') } };
-    const report = await restoreDryRun(ghost, liveSourceFor(new FsRealmStore()));
+    const report = await restoreDryRun(ghost, liveSourceFor(new FsDataDomainStore()));
     expect(report.rootReachable).toBe(false);
     expect(report.recoverable).toBe(false);
     expect(report.suggestion).toBe('reconnect-or-provide-bundle');
@@ -153,7 +153,7 @@ describe('L0 in-place restore and drift detection', () => {
 // fails on its own terms if the bundle stops round-tripping.
 describe('L1 full bundle: pack and portable restore', { timeout: 60_000 }, () => {
   it('packs map + bundle and round-trips the bundle', async () => {
-    const packed = await packFull(inventoryFromRealm(store, realmId), 'pw');
+    const packed = await packFull(inventoryFromDataDomain(store, dataDomainId), 'pw');
     expect(packed.map.bundle?.digest).toBe(packed.map.contentDigest);
     const bundle = openBundle(packed.sealedBundle, 'pw');
     expect(bundle.items.map(i => i.itemId)).toEqual(expect.arrayContaining(['a.md', 'sub/b.txt']));
@@ -161,7 +161,7 @@ describe('L1 full bundle: pack and portable restore', { timeout: 60_000 }, () =>
   });
 
   it('restores after the original directory is wiped', async () => {
-    const packed = await packFull(inventoryFromRealm(store, realmId), 'pw');
+    const packed = await packFull(inventoryFromDataDomain(store, dataDomainId), 'pw');
     await rm(root, { recursive: true, force: true });
     await mkdir(root, { recursive: true });
 
@@ -172,7 +172,7 @@ describe('L1 full bundle: pack and portable restore', { timeout: 60_000 }, () =>
   });
 
   it('restores into a brand-new location on another "machine"', async () => {
-    const packed = await packFull(inventoryFromRealm(store, realmId), 'pw');
+    const packed = await packFull(inventoryFromDataDomain(store, dataDomainId), 'pw');
     const target = await mkdtemp(join(tmpdir(), 'zeus-backup-target-'));
     try {
       const report = await restoreFromBundle(packed.map, packed.sealedBundle, target, 'pw');
@@ -184,13 +184,13 @@ describe('L1 full bundle: pack and portable restore', { timeout: 60_000 }, () =>
   });
 
   it('rejects a bundle that belongs to a different map (swapped bundle)', async () => {
-    const packed = await packFull(inventoryFromRealm(store, realmId), 'pw');
+    const packed = await packFull(inventoryFromDataDomain(store, dataDomainId), 'pw');
     const otherRoot = await mkdtemp(join(tmpdir(), 'zeus-backup-other-'));
     try {
-      await writeFile(join(otherRoot, 'x.md'), 'a wholly different realm\n');
-      const otherStore = new FsRealmStore();
+      await writeFile(join(otherRoot, 'x.md'), 'a wholly different dataDomain\n');
+      const otherStore = new FsDataDomainStore();
       const otherManifest = await otherStore.connect(otherRoot, 'personal');
-      const otherPacked = await packFull(inventoryFromRealm(otherStore, otherManifest.realmId), 'pw');
+      const otherPacked = await packFull(inventoryFromDataDomain(otherStore, otherManifest.dataDomainId), 'pw');
       await expect(
         restoreFromBundle(packed.map, otherPacked.sealedBundle, root, 'pw')
       ).rejects.toThrow(BackupBundleMismatchError);
@@ -200,7 +200,7 @@ describe('L1 full bundle: pack and portable restore', { timeout: 60_000 }, () =>
   });
 
   it('rejects a tampered bundle', async () => {
-    const packed = await packFull(inventoryFromRealm(store, realmId), 'pw');
+    const packed = await packFull(inventoryFromDataDomain(store, dataDomainId), 'pw');
     const tampered: SealedEnvelope = { ...packed.sealedBundle, tag: flipBase64(packed.sealedBundle.tag) };
     expect(() => openBundle(tampered, 'pw')).toThrow(BackupDecryptError);
   });

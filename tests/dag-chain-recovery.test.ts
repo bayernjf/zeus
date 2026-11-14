@@ -42,7 +42,7 @@ function scriptedPort(script: DispatchResult[], calls: Array<{ skill: string; ex
 }
 
 const lookup = { findBySkill: () => [] };
-const baseSpec = (nodes: DagNode[]): DagSpec => ({ dagId: 'dag1', realm: 'personal', nodes });
+const baseSpec = (nodes: DagNode[]): DagSpec => ({ dagId: 'dag1', dataDomain: 'personal', nodes });
 
 /** Candidate face by skill; defaults to the named providers. */
 function face(providers: Record<string, string[]>): (skillId: string) => DispatchCandidate[] {

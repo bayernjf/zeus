@@ -16,7 +16,7 @@ describe('audit sinks', () => {
     const path = join(dir, 'audit.jsonl');
     try {
       const sink = jsonlAuditSink(path);
-      sink({ ts: '2026-09-21T10:00:00.000Z', runId: 'run-1', executor: 'pr-helper', skill: 'create-pr', realm: 'enterprise', decision: 'dispatched' });
+      sink({ ts: '2026-09-21T10:00:00.000Z', runId: 'run-1', executor: 'pr-helper', skill: 'create-pr', dataDomain: 'enterprise', decision: 'dispatched' });
       revokeAuditBridge(sink)('pr-helper', '2026-09-21T11:00:00.000Z');
 
       const lines = readFileSync(path, 'utf8').trim().split('\n');
@@ -38,7 +38,7 @@ describe('audit sinks', () => {
         runId: 'run-1',
         executor: 'loom',
         skill: 'research',
-        realm: 'personal',
+        dataDomain: 'personal',
         decision: 'dispatch-failed',
         detail: 'POST http://ops:hunter2@10.0.0.9/card?token=abc123 failed: Bearer xyz789',
       });
@@ -60,7 +60,7 @@ describe('audit sinks', () => {
         runId: 'run-1',
         executor: 'loom',
         skill: 'research',
-        realm: 'personal',
+        dataDomain: 'personal',
         decision: 'dispatch-failed',
       });
       const second = JSON.parse(lines[1]!) as Record<string, unknown>;
@@ -92,7 +92,7 @@ describe('audit sinks', () => {
     try {
       writeFileSync(path, '', { mode: 0o644 });
       jsonlAuditSink(path);
-      // Audit lines name realms, executors and decisions; the state file already
+      // Audit lines name dataDomains, executors and decisions; the state file already
       // learned this lesson, and a fresh create would otherwise inherit the umask.
       // Windows has no POSIX mode bits (permissions live in ACLs); the mode assertion is POSIX-only.
       if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600);

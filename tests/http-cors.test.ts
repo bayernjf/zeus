@@ -69,6 +69,6 @@ describe('optional CORS allow-list (deferred #34 方案 A, ZEUS_CORS_ORIGINS)', 
     // m-15: every request header the server actually reads must be preflight-approved,
     // otherwise browser cross-origin callers carrying them fail the CORS preflight.
     expect(allowHeaders.toLowerCase()).toContain('x-zeus-caller-card');
-    expect(allowHeaders.toLowerCase()).toContain('x-zeus-realm-actor');
+    expect(allowHeaders.toLowerCase()).toContain('x-zeus-data-domain-actor');
   });
 });

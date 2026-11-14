@@ -29,7 +29,7 @@ export const evalCases = [
       { name: 'compliance', ...APPROVE },
       { name: 'scope', ...APPROVE },
     ],
-    request: { realm: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'publishable' } },
+    request: { dataDomain: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'publishable' } },
     expect: [
       { decision: o => o.status === 'completed' && o.decision.conclusion === 'approve', severity: 'block' },
       { evidence: { forbidBareAssertions: true }, severity: 'block' },
@@ -47,7 +47,7 @@ export const evalCases = [
       { name: 'compliance', ...VETO },
       { name: 'scope', ...APPROVE },
     ],
-    request: { realm: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'contested' } },
+    request: { dataDomain: 'personal', aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'contested' } },
     expect: [
       { decision: o => o.status === 'needs-operator' && o.conflicts.length >= 1, severity: 'block' },
       { escalation: { expected: true, level: 1 }, severity: 'block' },
@@ -65,7 +65,7 @@ export const evalCases = [
       { name: 'fact-b', ...APPROVE },
       { name: 'fact-c', ...REJECT },
     ],
-    request: { realm: 'personal', aggregation: { kind: 'majority' }, params: { subject: 'content-candidate', predicate: 'majority-rule' } },
+    request: { dataDomain: 'personal', aggregation: { kind: 'majority' }, params: { subject: 'content-candidate', predicate: 'majority-rule' } },
     expect: [
       { decision: o => o.status === 'completed' && o.decision.conclusion === 'approve', severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
@@ -83,7 +83,7 @@ export const evalCases = [
       { name: 'compliance', ...APPROVE },
       { name: 'scope', ...APPROVE },
     ],
-    request: { realm: 'personal', executors: ['fact', 'compliance'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'scoped-panel' } },
+    request: { dataDomain: 'personal', executors: ['fact', 'compliance'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'scoped-panel' } },
     expect: [
       { decision: o => o.status === 'completed' && o.decision.conclusion === 'approve', severity: 'block' },
       { selection: { mustInclude: ['fact', 'compliance'], mustExclude: ['scope'] }, severity: 'block' },
@@ -100,7 +100,7 @@ export const evalCases = [
       { name: 'fact', fail: true },
       { name: 'compliance', ...APPROVE },
     ],
-    request: { realm: 'personal', executors: ['fact'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'fails' } },
+    request: { dataDomain: 'personal', executors: ['fact'], aggregation: { kind: 'unanimous' }, params: { subject: 'content-candidate', predicate: 'fails' } },
     expect: [
       { decision: o => o.status === 'failed' && o.branches.some(b => b.state === 'failed'), severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
@@ -108,7 +108,7 @@ export const evalCases = [
   },
 
   // 6. Product facts may only reach a check when the runtime resolved them:
-  // caller-asserted realm hits are refused before dispatch (no phantom evidence).
+  // caller-asserted dataDomain hits are refused before dispatch (no phantom evidence).
   {
     id: 'content-review/self-asserted-product-facts-refused',
     skill: 'research',
@@ -117,11 +117,11 @@ export const evalCases = [
       { name: 'compliance', ...APPROVE, dataPolicy: 'read-task-scope' },
     ],
     request: {
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['fact', 'compliance'],
       aggregation: { kind: 'unanimous' },
-      realmHits: [{ itemId: 'product-fact-1', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'caller claimed spec' }],
-      realmHitsOrigin: 'caller-asserted',
+      dataDomainHits: [{ itemId: 'product-fact-1', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'caller claimed spec' }],
+      dataDomainHitsOrigin: 'caller-asserted',
       params: { subject: 'content-candidate', predicate: 'refused' },
     },
     expect: [
@@ -139,11 +139,11 @@ export const evalCases = [
       { name: 'fact', stance: 'approve', rationale: 'verified against brief.md: runtime-resolved product spec matches', dataPolicy: 'read-task-scope' },
     ],
     request: {
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['fact'],
       aggregation: { kind: 'unanimous' },
-      realmHits: [{ itemId: 'resolved-spec', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'runtime-resolved product spec' }],
-      realmHitsOrigin: 'runtime-resolved',
+      dataDomainHits: [{ itemId: 'resolved-spec', tags: [], modifiedAt: '2026-10-10T00:00:00.000Z', snippet: 'runtime-resolved product spec' }],
+      dataDomainHitsOrigin: 'runtime-resolved',
       params: { subject: 'content-candidate', predicate: 'injected' },
     },
     expect: [
@@ -162,7 +162,7 @@ export const evalCases = [
     ],
     costLimit: { maxWindowCost: 3, circuitWindowMs: 60_000 },
     request: {
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['fact'],
       aggregation: { kind: 'unanimous' },
       costEstimate: { tokens: 5 },

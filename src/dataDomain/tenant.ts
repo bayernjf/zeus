@@ -1,25 +1,25 @@
 /**
- * Enterprise realm tenancy (design-realm.md §8, E3.6).
+ * Enterprise dataDomain tenancy (design-dataDomain.md §8, E3.6).
  *
  * A tenant is a position in the enterprise hierarchy: org / department / member.
- * It exists ONLY on enterprise realms; the personal domain is not a tenant —
+ * It exists ONLY on enterprise dataDomains; the personal domain is not a tenant —
  * that distinction is what makes "个人域默认二极管隔离" checkable instead of
  * rhetorical.
  *
- * Hierarchy is a HARD boundary: a subject reaches an enterprise realm only when
- * its own scope is that realm's scope or an ancestor of it (an org may look
+ * Hierarchy is a HARD boundary: a subject reaches an enterprise dataDomain only when
+ * its own scope is that dataDomain's scope or an ancestor of it (an org may look
  * down into departments; a department may never look up at the org corpus, nor
  * sideways at a sibling). No grant loosens this — grants only cover the
  * personal <-> enterprise domain edge (see authorization.ts).
  */
 import type { TenantScope } from './types.js';
-import { RealmError } from './types.js';
+import { DataDomainError } from './types.js';
 
 const MAX_SEGMENT_CHARS = 120;
 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
-export class TenantError extends RealmError {
+export class TenantError extends DataDomainError {
   constructor(message: string) {
     super(message);
     this.name = 'TenantError';
@@ -79,12 +79,12 @@ export function parseTenant(raw: string): TenantScope {
 
 /** Render a scope for a message. An absent scope renders as '' — a display
  *  helper that throws on "no tenant" would be useless in exactly the audit line
- *  that explains why a realm has no boundary. */
+ *  that explains why a dataDomain has no boundary. */
 export function formatTenant(tenant?: TenantScope): string {
   return tenant ? segmentsOf(tenant).join('/') : '';
 }
 
-/** Validate without inventing a scope: only enterprise realms carry one. */
+/** Validate without inventing a scope: only enterprise dataDomains carry one. */
 export function normalizeTenant(tenant: string | TenantScope | undefined): TenantScope | undefined {
   if (tenant === undefined) return undefined;
   const scope = typeof tenant === 'string' ? parseTenant(tenant) : tenant;
@@ -97,7 +97,7 @@ export function normalizeTenant(tenant: string | TenantScope | undefined): Tenan
 }
 
 /**
- * The subtree rule: may a subject at `subject` reach a realm scoped `target`?
+ * The subtree rule: may a subject at `subject` reach a dataDomain scoped `target`?
  * Equal or strictly-broader subject scopes reach inward; a deeper or sideways
  * subject never reaches out. The segment comparison alone is the prefix test -
  * a separate `left.length > right.length` guard was removed after a defect plant

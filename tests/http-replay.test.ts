@@ -80,7 +80,7 @@ describe('E1.6 decision replay HTTP', () => {
   it('replays a stored decision with its dispatch input and timeline', async () => {
     app = await server(['loom', 'atlas']);
     await fanOut(app, {
-      skill: 'review', realm: 'personal', params: { stance: 'go', pr: 42 },
+      skill: 'review', dataDomain: 'personal', params: { stance: 'go', pr: 42 },
       aggregation: { kind: 'unanimous' },
     });
 
@@ -104,7 +104,7 @@ describe('E1.6 decision replay HTTP', () => {
 
   it('renders a human-readable timeline with ?format=text', async () => {
     app = await server(['loom']);
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
 
     const res = await app.inject({
       method: 'GET', url: '/api/intents/intent-1/replay?format=text', headers: AUTH,
@@ -118,7 +118,7 @@ describe('E1.6 decision replay HTTP', () => {
 
   it('shows the operator settlement in the replay after a conflict is resolved', async () => {
     app = await server(['loom', 'atlas'], splitPort);
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
 
     const settled = await app.inject({
       method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH,
@@ -140,7 +140,7 @@ describe('E1.6 decision replay HTTP', () => {
     const missing = await app.inject({ method: 'GET', url: '/api/intents/nope/replay', headers: AUTH });
     expect(missing.statusCode).toBe(404);
 
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
     const bad = await app.inject({
       method: 'GET', url: '/api/intents/intent-1/replay?format=html', headers: AUTH,
     });
@@ -149,7 +149,7 @@ describe('E1.6 decision replay HTTP', () => {
 
   it('fails loud (500) when the stored record cannot be replayed', async () => {
     app = await server(['loom']);
-    await fanOut(app, { skill: 'review', realm: 'personal', params: {} });
+    await fanOut(app, { skill: 'review', dataDomain: 'personal', params: {} });
 
     const snapshot = orchestrator.exportState();
     snapshot.intents[0]!.stream[0]!.source.runId = 'run-bogus';

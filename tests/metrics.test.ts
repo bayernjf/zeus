@@ -150,7 +150,7 @@ describe('E1.7 Orchestrator integration', () => {
     const orch = new Orchestrator(lookup(['loom', 'atlas']), port, {
       newIntentId: () => 'i1', newRunId: () => 'r1', metrics,
     });
-    const result = await orch.fanOut({ intentId: 'i1', skill: 's', params: {}, realm: 'personal' });
+    const result = await orch.fanOut({ intentId: 'i1', skill: 's', params: {}, dataDomain: 'personal' });
     expect(result.status).toBe('partial');
 
     const snap = metrics.snapshot();
@@ -170,7 +170,7 @@ describe('E1.7 Orchestrator integration', () => {
   it('is a no-op when no metrics collector is provided', async () => {
     const port = portFor({ loom: ok('loom') });
     const orch = new Orchestrator(lookup(['loom']), port, { newIntentId: () => 'i', newRunId: () => 'r' });
-    const result = await orch.fanOut({ intentId: 'i', skill: 's', params: {}, realm: 'personal' });
+    const result = await orch.fanOut({ intentId: 'i', skill: 's', params: {}, dataDomain: 'personal' });
     expect(result.status).toBe('completed');
   });
 });

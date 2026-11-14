@@ -11,7 +11,7 @@
 | 路线 | 形态 | 裁决 |
 |---|---|---|
 | 内核托管凭据 | Zeus 存长期外部 token，按技能代发 | **否决**：长期密钥落内核状态文件即成为最高价值目标，违反"数据主权 + 最小权限"，且重启/备份面扩大 |
-| **操作者一次性短时授权** | 每次不可逆写由操作者签发一张有界、签名、单次的授权票据 | **采纳**：与 design-realm §7 的 `OperatorWriteGrant`（一次性企业域写授权）同构，凭据不落盘，授权即审计事件 |
+| **操作者一次性短时授权** | 每次不可逆写由操作者签发一张有界、签名、单次的授权票据 | **采纳**：与 design-dataDomain §7 的 `OperatorWriteGrant`（一次性企业域写授权）同构，凭据不落盘，授权即审计事件 |
 
 这与设计约束第 4 条一致：跨边界动作需要**显式、签名、一次性**的授权。
 
@@ -50,8 +50,8 @@
 
 | | OperatorWriteGrant（E3.5） | ExecutionDelegation（#33） |
 |---|---|---|
-| 授权对象 | 内核 `Realm.write()` 写**企业域** | 执行 Agent 对**外部系统**做写 |
-| 绑定目标 | `realmId` | `skill` + 可选 `executor` + `capabilities` |
+| 授权对象 | 内核 `DataDomain.write()` 写**企业域** | 执行 Agent 对**外部系统**做写 |
+| 绑定目标 | `dataDomainId` | `skill` + 可选 `executor` + `capabilities` |
 | 消费方 | Zeus 内核自己 | 下游执行 Agent（跨进程） |
 | 状态 | 已接 HTTP + write 闸门 | **仅原语，未接线** |
 

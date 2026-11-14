@@ -77,7 +77,7 @@ describe('E9.3 accountability HTTP', () => {
     app = await server(establishment());
     await app.inject({
       method: 'POST', url: '/api/intents', headers: AUTH,
-      payload: { skill: 'review', realm: 'personal', params: {} },
+      payload: { skill: 'review', dataDomain: 'personal', params: {} },
     });
 
     const res = await app.inject({
@@ -104,7 +104,7 @@ describe('E9.3 accountability HTTP', () => {
     app = await server(establishment());
     await app.inject({
       method: 'POST', url: '/api/intents', headers: AUTH,
-      payload: { skill: 'review', realm: 'personal', params: {} },
+      payload: { skill: 'review', dataDomain: 'personal', params: {} },
     });
     const settled = await app.inject({
       method: 'POST', url: '/api/escalations/esc-1/resolve', headers: AUTH,

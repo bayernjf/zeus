@@ -1,4 +1,4 @@
-import type { AgentCardSkill, Handshake, RealmType } from '../a2a/types.js';
+import type { AgentCardSkill, Handshake, DataDomainType } from '../a2a/types.js';
 import type { ExecutorEntry } from './registry.js';
 
 /**
@@ -11,7 +11,7 @@ import type { ExecutorEntry } from './registry.js';
 export type RosterHealth = 'healthy' | 'unhealthy' | 'unknown';
 
 export type RosterCommitments = {
-  realms: RealmType[];
+  dataDomains: DataDomainType[];
   dataPolicy: Handshake['dataPolicy'];
   reportBack: boolean;
   escalationPolicy: Handshake['escalationPolicy'];
@@ -100,7 +100,7 @@ function toInternalEntry(entry: ListAllEntry): RosterEntry {
     // later snapshotDigest then differed from the one that was sealed.
     skills: structuredClone(card.skills),
     commitments: {
-      realms: [...handshake.realms],
+      dataDomains: [...handshake.dataDomains],
       dataPolicy: handshake.dataPolicy,
       reportBack: handshake.reportBack,
       escalationPolicy: handshake.escalationPolicy,

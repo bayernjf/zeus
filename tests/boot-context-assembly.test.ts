@@ -7,7 +7,7 @@ import type { ContextAppendixEntry } from '../src/context/assemble.js';
  * S1 context engineering V1 (design-context-engineering §10.6, assembly tier):
  * in a booted runtime the memory appendix is assembled once per intent at the
  * dispatch boundary and travels the existing outbound channel, so a executor
- * actually sees what context the runtime gave its branch. Cross-realm recall
+ * actually sees what context the runtime gave its branch. Cross-dataDomain recall
  * stays impossible at the `searchRecall` signature; an unconfigured runtime
  * dispatches with zero appendix and zero audit events.
  */
@@ -35,7 +35,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -86,7 +86,7 @@ const SEED = 'http://127.0.0.1/loom/api/a2a/agent-card';
 function claimEvent(id: string, subject: string, predicate: string, object: unknown) {
   return {
     eventId: id,
-    realmId: 'personal',
+    dataDomainId: 'personal',
     runId: 'seed-run',
     source: { agentId: 'seed' },
     kind: 'claim' as const,
@@ -107,7 +107,7 @@ async function bootedWithMemory() {
   });
   runtime.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
   runtime.memoryStore!.append(claimEvent('e2', 'user', 'edits', 'vim'));
-  await runtime.memoryStore!.consolidateRealm('personal');
+  await runtime.memoryStore!.consolidateDataDomain('personal');
   return { runtime, sent, audits };
 }
 
@@ -134,8 +134,8 @@ describe('S1 memory appendix in a booted runtime', () => {
     const result = await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
     });
     expect(result.branches[0]?.ok).toBe(true);
@@ -144,8 +144,8 @@ describe('S1 memory appendix in a booted runtime', () => {
     expect(appendix).toBeDefined();
     expect(appendix!.length).toBeGreaterThan(0);
     expect(appendix!.map(entry => entry.source)).toEqual(Array(appendix!.length).fill('memory-recall'));
-    // The recall was scoped to the dispatch realm — every entry carries it.
-    for (const entry of appendix!) expect(entry.realmId).toBe('personal');
+    // The recall was scoped to the dispatch dataDomain — every entry carries it.
+    for (const entry of appendix!) expect(entry.dataDomainId).toBe('personal');
     // The "typescript" query surfaced the matching claim first.
     expect(appendix![0]!.text).toContain('typescript');
   });
@@ -155,8 +155,8 @@ describe('S1 memory appendix in a booted runtime', () => {
     await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
     });
     const assembled = audits.filter(entry => entry.decision === 'context-assembled');
@@ -165,12 +165,12 @@ describe('S1 memory appendix in a booted runtime', () => {
     expect(assembled[0]!.detail).toContain('memory entries assembled');
   });
 
-  it('dispatches with zero appendix and zero assembly audit when no realm is named', async () => {
+  it('dispatches with zero appendix and zero assembly audit when no dataDomain is named', async () => {
     const { runtime, sent, audits } = await bootedWithMemory();
     const result = await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
+      dataDomain: 'personal',
       executors: ['loom'],
     });
     expect(result.branches[0]?.ok).toBe(true);
@@ -178,13 +178,13 @@ describe('S1 memory appendix in a booted runtime', () => {
     expect(audits.some(entry => entry.decision === 'context-assembled')).toBe(false);
   });
 
-  it('keeps the explicit realm payload untouched and threads it with the appendix', async () => {
+  it('keeps the explicit dataDomain payload untouched and threads it with the appendix', async () => {
     const { runtime, sent } = await bootedWithMemory();
     await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review my vim config', explicit: 'caller-owned' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
     });
     expect(sent[0]!.params.explicit).toBe('caller-owned');
@@ -196,9 +196,9 @@ describe('S1 memory appendix in a booted runtime', () => {
     const runtime = await bootRuntime({ fetchImpl, executorSeeds: [SEED] });
     const result = await runtime.orchestrator.fanOut({
       skill: 'review',
-      params: { message: 'an empty realm' },
-      realm: 'personal',
-      realmId: 'personal',
+      params: { message: 'an empty dataDomain' },
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
     });
     expect(result.branches[0]?.ok).toBe(true);
@@ -212,8 +212,8 @@ describe('S1 V2 skill-input assembly in a booted runtime', () => {
     await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review src/orchestrator.ts', code: 'src/orchestrator.ts', language: 'typescript' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
     });
     const skillInputs = sent[0]!.params.skillInputs as Array<{ name: string; source: string }> | undefined;
@@ -229,8 +229,8 @@ describe('S1 V2 skill-input assembly in a booted runtime', () => {
     await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'review this' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
     });
     const skillInputs = sent[0]!.params.skillInputs as Array<{ name: string; source: string }> | undefined;
@@ -248,20 +248,20 @@ describe('S1 V2 skill-input assembly in a booted runtime', () => {
     await runtime.orchestrator.fanOut({
       skill: 'editor',
       params: { message: 'edit this' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
     });
     expect(sent[0]!.params.skillInputs).toBeUndefined();
   });
 });
 
-function realmHit(itemId: string) {
+function dataDomainHit(itemId: string) {
   return { itemId, tags: [], snippet: `snippet ${itemId}`, modifiedAt: '2026-10-09T00:00:00.000Z' };
 }
 
 describe('S1 V3 per-branch context budget in a booted runtime', () => {
-  it('fills the budget with realm hits first and drops the memory appendix, auditing the source', async () => {
+  it('fills the budget with dataDomain hits first and drops the memory appendix, auditing the source', async () => {
     const cap = capturingFetch();
     const audits: AuditEntry[] = [];
     const runtime = await bootRuntime({
@@ -271,19 +271,19 @@ describe('S1 V3 per-branch context budget in a booted runtime', () => {
       contextOptions: { maxContextEntriesPerBranch: 3 },
     });
     runtime.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
-    await runtime.memoryStore!.consolidateRealm('personal');
+    await runtime.memoryStore!.consolidateDataDomain('personal');
     await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
-      realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3')],
-      realmHitsOrigin: 'runtime-resolved',
+      dataDomainHits: [dataDomainHit('r1'), dataDomainHit('r2'), dataDomainHit('r3')],
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     const outbound = cap.sent[0]!.params;
-    expect((outbound.realmHits as unknown[])).toHaveLength(3);
-    // Memory recall ranks below realm hits; the budget left no slot for it.
+    expect((outbound.dataDomainHits as unknown[])).toHaveLength(3);
+    // Memory recall ranks below dataDomain hits; the budget left no slot for it.
     expect(outbound.contextAppendix).toBeUndefined();
     const exceeded = audits.filter(
       entry => entry.decision === 'context-budget-exceeded' && (entry.detail ?? '').includes('branch context budget'),
@@ -291,7 +291,7 @@ describe('S1 V3 per-branch context budget in a booted runtime', () => {
     expect(exceeded.some(entry => (entry.detail ?? '').includes('memory'))).toBe(true);
   });
 
-  it('truncates realm hits to the remaining slots and drops memory under a tighter budget', async () => {
+  it('truncates dataDomain hits to the remaining slots and drops memory under a tighter budget', async () => {
     const cap = capturingFetch();
     const audits: AuditEntry[] = [];
     const runtime = await bootRuntime({
@@ -301,37 +301,37 @@ describe('S1 V3 per-branch context budget in a booted runtime', () => {
       contextOptions: { maxContextEntriesPerBranch: 2 },
     });
     runtime.memoryStore!.append(claimEvent('e1', 'user', 'prefers', 'typescript'));
-    await runtime.memoryStore!.consolidateRealm('personal');
+    await runtime.memoryStore!.consolidateDataDomain('personal');
     await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
-      realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3'), realmHit('r4'), realmHit('r5')],
-      realmHitsOrigin: 'runtime-resolved',
+      dataDomainHits: [dataDomainHit('r1'), dataDomainHit('r2'), dataDomainHit('r3'), dataDomainHit('r4'), dataDomainHit('r5')],
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     const outbound = cap.sent[0]!.params;
-    expect((outbound.realmHits as Array<{ itemId: string }>).map(h => h.itemId)).toEqual(['r1', 'r2']);
+    expect((outbound.dataDomainHits as Array<{ itemId: string }>).map(h => h.itemId)).toEqual(['r1', 'r2']);
     expect(outbound.contextAppendix).toBeUndefined();
     const detail = audits.map(entry => entry.detail ?? '').join('\n');
-    expect(detail).toContain('realm truncated');
+    expect(detail).toContain('dataDomain truncated');
     expect(detail).toContain('memory truncated');
   });
 
-  it('keeps realm hits and the appendix untouched under the default structural-guard budget', async () => {
+  it('keeps dataDomain hits and the appendix untouched under the default structural-guard budget', async () => {
     const { runtime, sent } = await bootedWithMemory();
     await runtime.orchestrator.fanOut({
       skill: 'review',
       params: { message: 'please review my typescript setup' },
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       executors: ['loom'],
-      realmHits: [realmHit('r1'), realmHit('r2'), realmHit('r3')],
-      realmHitsOrigin: 'runtime-resolved',
+      dataDomainHits: [dataDomainHit('r1'), dataDomainHit('r2'), dataDomainHit('r3')],
+      dataDomainHitsOrigin: 'runtime-resolved',
     });
     const outbound = sent[0]!.params;
-    expect((outbound.realmHits as unknown[])).toHaveLength(3);
+    expect((outbound.dataDomainHits as unknown[])).toHaveLength(3);
     expect(outbound.contextAppendix).toBeDefined();
   });
 });

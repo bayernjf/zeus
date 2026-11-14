@@ -24,7 +24,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -61,7 +61,7 @@ describe('the desk decisions land on the audit spine in a booted runtime', () =>
       dispatchAudit: entry => audits.push(entry),
     });
 
-    await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
     const pending = runtime.oversight.list('pending');
     expect(pending).toHaveLength(1);
     // The question reaching the desk is itself a governance fact.
@@ -85,7 +85,7 @@ describe('the desk decisions land on the audit spine in a booted runtime', () =>
       dispatchAudit: entry => audits.push(entry),
     });
 
-    await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
     const pending = runtime.oversight.list('pending');
     await runtime.oversight.reject(pending[0]!.id);
 
@@ -100,7 +100,7 @@ describe('the desk decisions land on the audit spine in a booted runtime', () =>
       dispatchAudit: entry => audits.push(entry),
     });
 
-    await runtime.orchestrator.fanOut({ skill: 'review', realm: 'personal', params: {} });
+    await runtime.orchestrator.fanOut({ skill: 'review', dataDomain: 'personal', params: {} });
 
     const row = audits.find(entry => entry.decision === 'tool-selected');
     expect(row).toBeDefined();

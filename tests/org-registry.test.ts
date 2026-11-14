@@ -11,7 +11,7 @@ function fanOut(partial: Partial<FanOutResult> & { branches: BranchOutcome[] }):
     intentId: 'intent-1',
     runId: 'run-1',
     skill: 'code-review',
-    realm: 'personal',
+    dataDomain: 'personal',
     stream: [],
     positions: [],
     decision: { rule: 'majority', conclusion: null, positions: [], reason: '' },

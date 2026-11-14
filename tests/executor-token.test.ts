@@ -15,7 +15,7 @@ function cardFor(name = EXECUTOR_NAME): AgentCard {
     skills: [{ id: 'research', name: 'Research', description: '', tags: [] }],
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal', 'enterprise'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'auto',
     },
   };
@@ -151,7 +151,7 @@ describe('E4.8 boot wiring: dispatcher attaches the seeded bearer on fan-out', (
       fetchImpl,
       executorSeeds: [{ cardUrl: CARD_URL, token: SECRET }],
     });
-    const result = await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { q: 1 } });
+    const result = await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { q: 1 } });
     expect(result.status).toBe('completed');
     expect(seenAuth).toContain(`Bearer ${SECRET}`);
   });
@@ -185,7 +185,7 @@ describe('E4.8 boot wiring: dispatcher attaches the seeded bearer on fan-out', (
       fetchImpl,
       executorSeeds: [CARD_URL],
     });
-    const result = await runtime.orchestrator.fanOut({ skill: 'research', realm: 'personal', params: { q: 1 } });
+    const result = await runtime.orchestrator.fanOut({ skill: 'research', dataDomain: 'personal', params: { q: 1 } });
     expect(result.status).toBe('completed');
     expect(seenAuth).toContain('(none)');
     expect(seenAuth.every(auth => auth === '(none)')).toBe(true);

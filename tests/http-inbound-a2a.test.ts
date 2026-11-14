@@ -37,7 +37,7 @@ const VALID_HANDSHAKE: Handshake = {
   version: '1',
   swornTo: 'zeus',
   domain: 'test-domain',
-  realms: ['personal'],
+  dataDomains: ['personal'],
   dataPolicy: 'read-task-scope',
   reportBack: true,
   escalationPolicy: 'on-failure',
@@ -52,7 +52,7 @@ function makeOrchestrator(status: FanOutResult['status']): Orchestrator {
         intentId: request.intentId ?? 'intent-1',
         runId: 'run-1',
         skill: request.skill,
-        realm: request.realm,
+        dataDomain: request.dataDomain,
         branches: [],
         stream: [],
         positions: [],
@@ -142,7 +142,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const res = await server.inject({
       method: 'POST',
       url: '/.well-known/agent-card.json',
-      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('rogue', { version: '1', swornTo: 'other', domain: 'x', realms: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'on-failure' })) },
+      headers: { ...TOKEN, 'x-zeus-caller-card': JSON.stringify(makeCard('rogue', { version: '1', swornTo: 'other', domain: 'x', dataDomains: ['personal'], dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'on-failure' })) },
       payload: rpc(1, 'tasks/send', { skills: ['summarize'] }),
     });
     expect(res.statusCode).toBe(403);
@@ -207,7 +207,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     expect(auditEntries.some(entry => entry.decision === 'inbound-task-accepted' && entry.executor === 'unverified:helper' && entry.taskId === 'caller-task-7')).toBe(true);
   });
 
-  it('defaults realm to personal and maps needs-operator to input-required', async () => {
+  it('defaults dataDomain to personal and maps needs-operator to input-required', async () => {
     const server = await mount('needs-operator');
     const res = await server.inject({
       method: 'POST',
@@ -219,7 +219,7 @@ describe('Inbound A2A face (design-inbound-a2a v0.1, deferred #19)', () => {
     const task = res.json();
     expect(task.status.state).toBe('input-required');
     const accepted = auditEntries.find(entry => entry.decision === 'inbound-task-accepted');
-    expect(accepted?.realm).toBe('personal');
+    expect(accepted?.dataDomain).toBe('personal');
   });
 
   it('admits an unregistered caller card on tier-1 and pins its dispatch to plan and read-only skills (PRD E9.4 V2)', async () => {

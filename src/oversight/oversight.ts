@@ -65,7 +65,7 @@ export class OversightDesk {
       executor: request.executor ?? result.task.metadata?.['executor']?.toString() ?? '(auto)',
       skill: request.skill,
       taskId: result.task.id,
-      realm: request.realm,
+      dataDomain: request.dataDomain,
       reason,
       options,
       status: 'pending',
@@ -89,7 +89,7 @@ export class OversightDesk {
     intentId?: string;
     runId: string;
     skill: string;
-    realm: Escalation['realm'];
+    dataDomain: Escalation['dataDomain'];
     conflict: Conflict;
   }): Escalation {
     const key = input.intentId ?? `${input.runId}::${input.skill}`;
@@ -102,7 +102,7 @@ export class OversightDesk {
       runId: input.runId,
       executor: '(intent)',
       skill: input.skill,
-      realm: input.realm,
+      dataDomain: input.dataDomain,
       reason: input.conflict.reason,
       options: input.conflict.stances.map(stance => stance.stance),
       status: 'pending',
@@ -127,8 +127,8 @@ export class OversightDesk {
   ingestMemoryDispute(input: {
     id: string;
     runId: string;
-    realm: Escalation['realm'];
-    realmId?: string;
+    dataDomain: Escalation['dataDomain'];
+    dataDomainId?: string;
     factId: string;
     conflictingFacts: string[];
     reason: string;
@@ -142,7 +142,7 @@ export class OversightDesk {
       runId: input.runId,
       executor: '(memory)',
       skill: '(memory)',
-      realm: input.realm,
+      dataDomain: input.dataDomain,
       reason: input.reason,
       options: input.conflictingFacts,
       status: 'pending',
@@ -153,7 +153,7 @@ export class OversightDesk {
       interruptLevel: QUEUE_DEFAULT_LEVEL,
       factId: input.factId,
       conflictingFacts: [...input.conflictingFacts],
-      ...(input.realmId ? { realmId: input.realmId } : {}),
+      ...(input.dataDomainId ? { dataDomainId: input.dataDomainId } : {}),
     };
     this.escalations.set(escalation.id, escalation);
     this.audit(escalation, 'escalated');
@@ -171,8 +171,8 @@ export class OversightDesk {
     watchId: string;
     delegationId?: string;
     skill: string;
-    realm: Escalation['realm'];
-    realmId?: string;
+    dataDomain: Escalation['dataDomain'];
+    dataDomainId?: string;
     limitReason: string;
     tickSeq: number;
     /** S10 V2: level from the watch tick's classifier run; defaults to the
@@ -189,7 +189,7 @@ export class OversightDesk {
       runId: `watch:${input.watchId}:${input.tickSeq}`,
       executor: '(watch)',
       skill: input.skill,
-      realm: input.realm,
+      dataDomain: input.dataDomain,
       reason:
         `watch ${input.watchId} execute fire refused by delegation ` +
         `${input.delegationId ?? '(none)'}: ${input.limitReason}. ` +
@@ -203,7 +203,7 @@ export class OversightDesk {
       watchId: input.watchId,
       ...(input.delegationId ? { delegationId: input.delegationId } : {}),
       limitReason: input.limitReason,
-      ...(input.realmId ? { realmId: input.realmId } : {}),
+      ...(input.dataDomainId ? { dataDomainId: input.dataDomainId } : {}),
     };
     this.escalations.set(escalation.id, escalation);
     this.conflictIndex.set(key, escalation.id);
@@ -222,8 +222,8 @@ export class OversightDesk {
     intentId: string;
     runId: string;
     skill: string;
-    realm: Escalation['realm'];
-    realmId?: string;
+    dataDomain: Escalation['dataDomain'];
+    dataDomainId?: string;
     executors: string[];
     boundary: string;
     signals: readonly string[];
@@ -239,7 +239,7 @@ export class OversightDesk {
       runId: input.runId,
       executor: executorList,
       skill: input.skill,
-      realm: input.realm,
+      dataDomain: input.dataDomain,
       reason:
         `execute intent ${input.intentId} assembled content that must not run ` +
         `automatically (${input.boundary}): the deterministic signals ` +
@@ -254,7 +254,7 @@ export class OversightDesk {
       intentId: input.intentId,
       signals: [...input.signals],
       boundary: input.boundary,
-      ...(input.realmId ? { realmId: input.realmId } : {}),
+      ...(input.dataDomainId ? { dataDomainId: input.dataDomainId } : {}),
     };
     this.escalations.set(escalation.id, escalation);
     this.conflictIndex.set(key, escalation.id);
@@ -427,10 +427,10 @@ export class OversightDesk {
  */
 export function conflictsToDesk(
   desk: OversightDesk
-): (conflicts: Conflict[], result: { intentId: string; runId: string; skill: string; realm: Escalation['realm'] }) => void {
+): (conflicts: Conflict[], result: { intentId: string; runId: string; skill: string; dataDomain: Escalation['dataDomain'] }) => void {
   return (conflicts, result) => {
     for (const conflict of conflicts) {
-      desk.ingestConflict({ intentId: result.intentId, runId: result.runId, skill: result.skill, realm: result.realm, conflict });
+      desk.ingestConflict({ intentId: result.intentId, runId: result.runId, skill: result.skill, dataDomain: result.dataDomain, conflict });
     }
   };
 }

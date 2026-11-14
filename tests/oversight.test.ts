@@ -8,7 +8,7 @@ const request: DispatchRequest = {
   executor: 'pr-helper',
   skill: 'merge-pr',
   params: { mode: 'execute' },
-  realm: 'enterprise',
+  dataDomain: 'enterprise',
   runId: 'zeus-run-1',
 };
 
@@ -38,7 +38,7 @@ function escalationEvent(reason = 'irreversible: merge to main', options = ['app
 }
 
 function failedResult(): DispatchResult {
-  return { ok: false, reason: 'boom', audit: { ts: 't', runId: 'r', executor: 'pr-helper', skill: 'merge-pr', realm: 'enterprise', decision: 'dispatch-failed' } };
+  return { ok: false, reason: 'boom', audit: { ts: 't', runId: 'r', executor: 'pr-helper', skill: 'merge-pr', dataDomain: 'enterprise', decision: 'dispatch-failed' } };
 }
 
 describe('OversightDesk.ingest', () => {
@@ -53,7 +53,7 @@ describe('OversightDesk.ingest', () => {
       executor: 'pr-helper',
       skill: 'merge-pr',
       taskId: 'task-1',
-      realm: 'enterprise',
+      dataDomain: 'enterprise',
       status: 'pending',
       reason: 'irreversible: merge to main',
       options: ['approve', 'reject'],
@@ -165,7 +165,7 @@ describe('S10 V2 interruption levels on the escalation queue', () => {
       intentId: 'intent-1',
       runId: 'run-1',
       skill: 'decide',
-      realm: 'personal',
+      dataDomain: 'personal',
       conflict: { reason: 'split', stances: [{ stance: 'approve', executors: ['a'] }, { stance: 'reject', executors: ['b'] }] },
     });
     expect(esc.interruptLevel).toBe(1);
@@ -175,8 +175,8 @@ describe('S10 V2 interruption levels on the escalation queue', () => {
     const esc = desk().ingestMemoryDispute({
       id: 'disp-1',
       runId: 'run-1',
-      realm: 'personal',
-      realmId: 'personal',
+      dataDomain: 'personal',
+      dataDomainId: 'personal',
       factId: 'f1',
       conflictingFacts: ['f1', 'f2'],
       reason: 'contradictory reliability',
@@ -186,12 +186,12 @@ describe('S10 V2 interruption levels on the escalation queue', () => {
 
   it('levels a delegation-limit escalation L1 by default and accepts the tick classifier verdict', () => {
     const defaulted = desk().ingestDelegationLimit({
-      watchId: 'w1', delegationId: 'c1', skill: 'merge', realm: 'personal',
+      watchId: 'w1', delegationId: 'c1', skill: 'merge', dataDomain: 'personal',
       limitReason: 'revoked', tickSeq: 1,
     });
     expect(defaulted.interruptLevel).toBe(1);
     const blocking = desk().ingestDelegationLimit({
-      watchId: 'w2', delegationId: 'c2', skill: 'merge', realm: 'personal',
+      watchId: 'w2', delegationId: 'c2', skill: 'merge', dataDomain: 'personal',
       limitReason: 'no-contract', tickSeq: 1, interruptLevel: 2,
     });
     expect(blocking.interruptLevel).toBe(2);

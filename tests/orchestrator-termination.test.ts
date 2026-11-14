@@ -57,7 +57,7 @@ function build(names: string[], options: OrchestratorOptions = {}, port: Dispatc
   return { orchestrator, port };
 }
 
-const request = { skill: 'review', realm: 'personal' as const, params: {} };
+const request = { skill: 'review', dataDomain: 'personal' as const, params: {} };
 
 describe('S4 termination guards (design-supervision §7.1)', () => {
   it('pure budget: cumulative cap trips at used >= limit', () => {

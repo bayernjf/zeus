@@ -14,7 +14,7 @@
  * request is supplied (e.g. when replaying from a runtime snapshot, which
  * persists both tables).
  */
-import type { RealmType, TaskState } from '../../a2a/types.js';
+import type { DataDomainType, TaskState } from '../../a2a/types.js';
 import type { OrchestratorSnapshot } from './orchestrator.js';
 import type {
   AggregatedDecision,
@@ -76,8 +76,8 @@ export type DecisionReplay = {
   intentId: string;
   runId: string;
   skill: string;
-  realm: RealmType;
-  realmId?: string;
+  dataDomain: DataDomainType;
+  dataDomainId?: string;
   status: FanOutStatus;
   createdAt: string;
   /** Original fan-out input; present only when the matching request was supplied. */
@@ -245,8 +245,8 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
     at: result.createdAt,
     detail: {
       skill: result.skill,
-      realm: result.realm,
-      ...(result.realmId ? { realmId: result.realmId } : {}),
+      dataDomain: result.dataDomain,
+      ...(result.dataDomainId ? { dataDomainId: result.dataDomainId } : {}),
       ...(request ? { input: request.params } : {}),
       ...(request?.aggregation ? { aggregation: request.aggregation } : {}),
       ...(request?.branchTimeoutMs !== undefined ? { branchTimeoutMs: request.branchTimeoutMs } : {}),
@@ -336,8 +336,8 @@ export function replayDecision(result: FanOutResult, request?: FanOutRequest): D
     intentId: result.intentId,
     runId: result.runId,
     skill: result.skill,
-    realm: result.realm,
-    ...(result.realmId ? { realmId: result.realmId } : {}),
+    dataDomain: result.dataDomain,
+    ...(result.dataDomainId ? { dataDomainId: result.dataDomainId } : {}),
     status: result.status,
     createdAt: result.createdAt,
     ...(request ? { input: request.params } : {}),
@@ -402,7 +402,7 @@ export function renderReplay(replay: DecisionReplay): string {
   const lines: string[] = [];
   lines.push(`Decision replay: intent ${replay.intentId} (run ${replay.runId})`);
   lines.push(
-    `  skill=${replay.skill} realm=${replay.realm}${replay.realmId ? ` realmId=${replay.realmId}` : ''} status=${replay.status}`,
+    `  skill=${replay.skill} dataDomain=${replay.dataDomain}${replay.dataDomainId ? ` dataDomainId=${replay.dataDomainId}` : ''} status=${replay.status}`,
   );
   lines.push(`  created=${replay.createdAt}${replay.replayed ? ' [served from idempotent replay]' : ''}`);
   if (replay.input) lines.push(`  input=${safeStringify(replay.input)}`);

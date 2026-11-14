@@ -44,7 +44,7 @@ type Summary = {
 describe('public audit summary', () => {
   it('answers on the public face without a token and aggregates by decision', async () => {
     const file = auditFileWith([
-      { ts: '2026-10-10T01:00:00.000Z', executor: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', realm: 'personal', taskId: 't1', detail: 'secret detail' },
+      { ts: '2026-10-10T01:00:00.000Z', executor: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', dataDomain: 'personal', taskId: 't1', detail: 'secret detail' },
       { ts: '2026-10-10T02:00:00.000Z', executor: 'agent-7', decision: 'dispatch-failed', runId: 'run-1', taskId: 't1' },
       { ts: '2026-10-10T03:00:00.000Z', executor: 'agent-8', decision: 'dispatch-failed', runId: 'run-2', taskId: 't2' },
     ]);
@@ -59,9 +59,9 @@ describe('public audit summary', () => {
     expect(body.byDecision).toEqual({ dispatched: 1, 'dispatch-failed': 2 });
   });
 
-  it('never leaks per-event fields (executor/runId/taskId/detail/realm)', async () => {
+  it('never leaks per-event fields (executor/runId/taskId/detail/dataDomain)', async () => {
     const file = auditFileWith([
-      { ts: '2026-10-10T01:00:00.000Z', executor: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', realm: 'personal', taskId: 't1', detail: 'secret detail' },
+      { ts: '2026-10-10T01:00:00.000Z', executor: 'agent-7', decision: 'dispatched', runId: 'run-1', skill: 'research', dataDomain: 'personal', taskId: 't1', detail: 'secret detail' },
     ]);
     const res = await (await mount(file)).inject({ method: 'GET', url: '/api/audit/summary' });
     const raw = res.body;

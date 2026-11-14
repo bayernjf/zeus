@@ -1,4 +1,4 @@
-import { digestManifest } from '../realm/digest.js';
+import { digestManifest } from '../dataDomain/digest.js';
 import { sha256Hex } from '../util/crypto.js';
 import {
   MAP_FORMAT,
@@ -47,7 +47,7 @@ function marksFrom(entries: Array<{ itemId: string; content: string; modifiedAt:
 /**
  * Validate an opened map and normalize it to the current version.
  *
- * v1 maps baked the source into a `realm` descriptor; they are rewritten into
+ * v1 maps baked the source into a `dataDomain` descriptor; they are rewritten into
  * `source` on read rather than rejected, because a sealed map is exactly the
  * kind of artifact people keep for years. A v1 enterprise map has no recorded
  * tenant scope, so the normalized source has none either - the caller then
@@ -56,7 +56,7 @@ function marksFrom(entries: Array<{ itemId: string; content: string; modifiedAt:
 export function assertMap(value: unknown): TreasureMap {
   if (!value || typeof value !== 'object') throw new BackupFormatError('map is not an object');
   const map = value as Partial<TreasureMap> & {
-    realm?: { realmId?: unknown; type?: unknown; root?: unknown; itemCount?: unknown };
+    dataDomain?: { dataDomainId?: unknown; type?: unknown; root?: unknown; itemCount?: unknown };
   };
   if (map.format !== MAP_FORMAT) throw new BackupFormatError(`not a treasure map: ${String(map.format)}`);
   const version = Number(map.version);
@@ -64,7 +64,7 @@ export function assertMap(value: unknown): TreasureMap {
     throw new BackupFormatError(`unsupported map version: ${String(map.version)}`);
   }
 
-  const source = version === 1 ? sourceFromV1Realm(map.realm) : assertSource(map.source);
+  const source = version === 1 ? sourceFromV1DataDomain(map.dataDomain) : assertSource(map.source);
   if (!Array.isArray(map.marks)) throw new BackupFormatError('map marks must be an array');
   for (const mark of map.marks) {
     if (!mark || typeof mark.itemId !== 'string' || typeof mark.digest !== 'string') {
@@ -84,33 +84,33 @@ export function assertMap(value: unknown): TreasureMap {
   };
 }
 
-function sourceFromV1Realm(realm: unknown): MapSource {
-  const legacy = realm as { realmId?: unknown; type?: unknown; root?: unknown } | undefined;
+function sourceFromV1DataDomain(dataDomain: unknown): MapSource {
+  const legacy = dataDomain as { dataDomainId?: unknown; type?: unknown; root?: unknown } | undefined;
   if (
     !legacy ||
-    typeof legacy.realmId !== 'string' ||
+    typeof legacy.dataDomainId !== 'string' ||
     typeof legacy.root !== 'string' ||
     (legacy.type !== 'personal' && legacy.type !== 'enterprise')
   ) {
-    throw new BackupFormatError('v1 map realm descriptor is incomplete');
+    throw new BackupFormatError('v1 map dataDomain descriptor is incomplete');
   }
-  return { kind: 'realm', realmId: legacy.realmId, type: legacy.type, root: legacy.root };
+  return { kind: 'dataDomain', dataDomainId: legacy.dataDomainId, type: legacy.type, root: legacy.root };
 }
 
 export function assertSource(value: unknown): MapSource {
   if (!value || typeof value !== 'object') throw new BackupFormatError('map source is missing');
   const source = value as Partial<MapSource> & { files?: unknown; tenant?: unknown };
-  if (source.kind === 'realm') {
-    if (typeof source.realmId !== 'string' || typeof source.root !== 'string') {
-      throw new BackupFormatError('realm source descriptor is incomplete');
+  if (source.kind === 'dataDomain') {
+    if (typeof source.dataDomainId !== 'string' || typeof source.root !== 'string') {
+      throw new BackupFormatError('dataDomain source descriptor is incomplete');
     }
     if (source.type !== 'personal' && source.type !== 'enterprise') {
-      throw new BackupFormatError(`realm source has an unknown type: ${String(source.type)}`);
+      throw new BackupFormatError(`dataDomain source has an unknown type: ${String(source.type)}`);
     }
     const tenant = source.tenant as { org?: unknown; department?: unknown; member?: unknown } | undefined;
     return {
-      kind: 'realm',
-      realmId: source.realmId,
+      kind: 'dataDomain',
+      dataDomainId: source.dataDomainId,
       type: source.type,
       root: source.root,
       ...(tenant && typeof tenant.org === 'string'

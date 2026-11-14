@@ -123,7 +123,7 @@ describe('POST /api/a2a/push-notifications (E4.11)', () => {
     app = await server({ internalToken: TOKEN, orchestrator: orch });
     let settled = false;
     const fanOut = orch
-      .fanOut({ skill: 'review', realm: 'personal', params: {}, pushNotification: true })
+      .fanOut({ skill: 'review', dataDomain: 'personal', params: {}, pushNotification: true })
       .then(result => { settled = true; return result; });
     await flush();
     expect(settled).toBe(false);

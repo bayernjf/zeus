@@ -65,7 +65,7 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'sla-ack-breached': 'warning',
   'executor-revoked': 'danger',
   'executor-reinstated': 'accent',
-  'refused-realm-policy': 'warning',
+  'refused-dataDomain-policy': 'warning',
   'refused-unknown-executor': 'warning',
   'refused-revoked': 'warning',
   'refused-skill-uninstalled': 'warning',
@@ -73,7 +73,7 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   'branch-diverted': 'info',
   'domain-read': 'info',
   'domain-refused': 'warning',
-  // design-realm §3.1: content admitted (info, like domain-read) and content
+  // design-dataDomain §3.1: content admitted (info, like domain-read) and content
   // refused by policy origin (warning, like the other policy-working refusals).
   'content-injected': 'info',
   'refused-data-policy': 'warning',
@@ -90,15 +90,15 @@ const AUDIT_TOKEN: Record<string, SemanticColor> = {
   // deferred #33: the execute gate refused a branch — warning, like the other
   // policy-working refusals (the refusal is the gate doing its job).
   'execution-delegation-denied': 'warning',
-  'realm-write': 'info',
-  'realm-disconnected': 'warning',
-  'realm-tenant-retargeted': 'warning',
-  'commission-granted': 'info',
-  'commission-waived': 'info',
-  'commission-withdrawn': 'warning',
-  'commission-refused': 'warning',
+  'dataDomain-write': 'info',
+  'dataDomain-disconnected': 'warning',
+  'dataDomain-tenant-retargeted': 'warning',
+  'seatGrant-granted': 'info',
+  'seatGrant-waived': 'info',
+  'seatGrant-withdrawn': 'warning',
+  'seatGrant-refused': 'warning',
   'memory-claim-skipped': 'warning',
-  // MemoryPort v1 §6: the settled conclusion that had nowhere to land (realm
+  // MemoryPort v1 §6: the settled conclusion that had nowhere to land (dataDomain
   // unmounted at settle time) — same family as the dropped-claim skip.
   'memory-writeback-skipped': 'warning',
   // MemoryPort v1 §4: a routine authorised hub embed (audited by hash); an

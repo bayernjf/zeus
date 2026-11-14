@@ -7,7 +7,7 @@ import { SkillNotFoundError } from './registry.js';
  * E2.5 Mentor skill transfer.
  *
  * A mentorship is the auditable path by which an existing provider (mentor)
- * teaches a skill to a learner: commission (mentor must already hold the
+ * teaches a skill to a learner: seatGrant (mentor must already hold the
  * skill) → teach (lessons recorded) → assess (competency checks, not
  * attendance) → certify. Only a certified learner is registered as a provider,
  * so "学习结果可验证" is enforced: a failed assessment leaves the learner off
@@ -43,7 +43,7 @@ export interface MentorshipRecord {
   version: string;
   mentorId: string;
   learnerId: string;
-  realmId?: string;
+  dataDomainId?: string;
   status: MentorshipStatus;
   lessons: LessonEntry[];
   checks: CompetencyCheck[];
@@ -55,12 +55,12 @@ export interface MentorshipRecord {
   failureReason?: string;
 }
 
-export interface CommissionMentorshipInput {
+export interface SeatGrantMentorshipInput {
   skillId: string;
   mentorId: string;
   learnerId: string;
   version?: string;
-  realmId?: string;
+  dataDomainId?: string;
 }
 
 export interface AssessOptions {
@@ -85,7 +85,7 @@ export class MentorshipLedger {
     private now: () => Date = () => new Date(),
   ) {}
 
-  commission(input: CommissionMentorshipInput): MentorshipRecord {
+  seatGrant(input: SeatGrantMentorshipInput): MentorshipRecord {
     const spec = input.version
       ? this.skillRegistry.get(input.skillId, input.version)
       : this.skillRegistry.get(input.skillId);
@@ -105,7 +105,7 @@ export class MentorshipLedger {
     ).slice(0, 12)}`;
     // C-audit 19: the id is a pure function of the tuple, so a dismissed pairing
     // collides with its own past forever and can never be re-opened. Only a
-    // dismissed record may be replaced by a fresh commission of the same tuple;
+    // dismissed record may be replaced by a fresh seatGrant of the same tuple;
     // a certified or failed one stays a conflict (its history is the record).
     const existing = this.records.get(id);
     if (existing && existing.status !== 'dismissed') {
@@ -118,7 +118,7 @@ export class MentorshipLedger {
       version: spec.version,
       mentorId: input.mentorId,
       learnerId: input.learnerId,
-      ...(input.realmId ? { realmId: input.realmId } : {}),
+      ...(input.dataDomainId ? { dataDomainId: input.dataDomainId } : {}),
       status: 'teaching',
       lessons: [],
       checks: [],

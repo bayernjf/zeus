@@ -2,7 +2,7 @@
 
 ## 0. 一句话
 
-给并发决策内核的每个分支（执行 Agent 调用）确定**装配什么上下文**：从调用方显式载荷、技能声明的输入要求、realm 只读内容与记忆检索结果中按优先级装配，受共享裁剪与预算分配约束；长任务提供压缩换入换出的接口设计。与记忆系统（design-memory-consolidation.md）一体两面——记忆是上下文的持久来源之一，上下文是记忆的消费面。
+给并发决策内核的每个分支（执行 Agent 调用）确定**装配什么上下文**：从调用方显式载荷、技能声明的输入要求、dataDomain 只读内容与记忆检索结果中按优先级装配，受共享裁剪与预算分配约束；长任务提供压缩换入换出的接口设计。与记忆系统（design-memory-consolidation.md）一体两面——记忆是上下文的持久来源之一，上下文是记忆的消费面。
 
 ## 1. 缺口与现状
 
@@ -11,22 +11,22 @@
 | 输入源 | 现状 | 装配点 |
 | --- | --- | --- |
 | 调用方显式载荷 | `FanOutRequest.params.message` / `a2aTaskId` / `a2aMetadata` / `a2aCaller`，原样透传 | `orchestrator.fanOutNew` → 分支 task 载荷 |
-| realm 只读内容 | `realmHits` 由调用方/内核检索产出，**是否进入出站载荷由 `dataPolicy` 四档判**（E4.5，`none` 档不入载荷） | `dispatcher` 出站边界 |
+| dataDomain 只读内容 | `dataDomainHits` 由调用方/内核检索产出，**是否进入出站载荷由 `dataPolicy` 四档判**（E4.5，`none` 档不入载荷） | `dispatcher` 出站边界 |
 | 技能声明的输入要求 | `SkillSpec.inputs` 存在但**从不参与装配**——声明的输入形状未用于校验或补全上下文 | 无（缺失） |
-| 记忆检索 | 记忆系统有混合检索（BM25+向量、`realmHits` 路径），**但检索结果不装配进分支上下文**——执行 Agent 看不到既往 claim/事实 | 无（缺失） |
+| 记忆检索 | 记忆系统有混合检索（BM25+向量、`dataDomainHits` 路径），**但检索结果不装配进分支上下文**——执行 Agent 看不到既往 claim/事实 | 无（缺失） |
 | 上下文预算 | 无——分支拿多少上下文无上限、无优先级、无截断 | 无（缺失） |
 | 长任务压缩 | 无——长任务不换出、不压缩、上下文不收敛 | 无（缺失） |
 
-**断点**：a2a 元数据透传是唯一的"显式上下文"通道；技能 `inputs` 声明是死字段；记忆只沉淀、不被消费；分支上下文无边界。后果：执行 Agent 的输入要么太少（无记忆、无 realm 只读、无技能输入补全），要么在 `dataPolicy` 非 `none` 档时无界（realmHits 全量进入载荷，S4 预算只防分支数、不防单分支上下文大小）。
+**断点**：a2a 元数据透传是唯一的"显式上下文"通道；技能 `inputs` 声明是死字段；记忆只沉淀、不被消费；分支上下文无边界。后果：执行 Agent 的输入要么太少（无记忆、无 dataDomain 只读、无技能输入补全），要么在 `dataPolicy` 非 `none` 档时无界（dataDomainHits 全量进入载荷，S4 预算只防分支数、不防单分支上下文大小）。
 
-**既有原语可复用**：`dataPolicy` 四档（出站内容边界，唯一出口闸）、`SkillRegistry`（技能声明查询）、记忆混合检索与 realm 边界（读路径已有域隔离）、S4 终止守卫（意图级分支数预算，与本设计的上下文预算正交）。
+**既有原语可复用**：`dataPolicy` 四档（出站内容边界，唯一出口闸）、`SkillRegistry`（技能声明查询）、记忆混合检索与 dataDomain 边界（读路径已有域隔离）、S4 终止守卫（意图级分支数预算，与本设计的上下文预算正交）。
 
 ## 2. 设计目标与边界
 
 目标：
 
 - 分支上下文**可判定、有边界、可审计**：每个分支的上下文来源、裁剪与预算消耗可解释。
-- 装配**不新增数据面旁路**：任何 realm 内容进入出站载荷仍只经 `dataPolicy` 闸；本设计只决定"装配什么"，不改变"放行什么"。
+- 装配**不新增数据面旁路**：任何 dataDomain 内容进入出站载荷仍只经 `dataPolicy` 闸；本设计只决定"装配什么"，不改变"放行什么"。
 
 显式不做（避免下次重新讨论）：
 
@@ -41,12 +41,12 @@
 
 1. **调用方显式载荷**（最高优先级）：`params.message` 与 `a2aMetadata` 原样保留——调用方显式交付的内容不得被裁剪（否则破坏调用契约）。
 2. **技能声明输入补全**：`SkillSpec.inputs` 声明缺失字段时，从以下源补全；无法补全的字段显式标 `unavailable`（不臆造值）。此步让 `inputs` 字段从"死声明"变为装配约束。
-3. **realm 只读内容**（受 `dataPolicy` 闸）：`realmHits` 按现行四档判——`none` 档完全不装配；其他档装配并按档位裁剪（见 §4）。
-4. **记忆检索结果**（受 realm 边界与预算约束）：按技能域/意图相关性从记忆系统检索 claim/事实，装配为只读附录。记忆装配**只读**——分支产生的立场回写仍走现行 memory producer（intent-finished → claim），不经本路径。
+3. **dataDomain 只读内容**（受 `dataPolicy` 闸）：`dataDomainHits` 按现行四档判——`none` 档完全不装配；其他档装配并按档位裁剪（见 §4）。
+4. **记忆检索结果**（受 dataDomain 边界与预算约束）：按技能域/意图相关性从记忆系统检索 claim/事实，装配为只读附录。记忆装配**只读**——分支产生的立场回写仍走现行 memory producer（intent-finished → claim），不经本路径。
 
 装配点：`orchestrator.fanOutNew` 分支构造处（与 S4 预算闸同层），装配结果作为只读字段进入分支 task 载荷；审计记录装配清单（源类型、条目数、裁剪/预算事件）。
 
-**数据二极管约束**：源 3/4 的 realm 归属必须与分支目标 realm 一致；跨域内容在装配前丢弃并审计（复用 realm 边界判定，design-realm §6.5）。
+**数据二极管约束**：源 3/4 的 dataDomain 归属必须与分支目标 dataDomain 一致；跨域内容在装配前丢弃并审计（复用 dataDomain 边界判定，design-dataDomain §6.5）。
 
 ## 4. 共享上下文裁剪
 
@@ -62,7 +62,7 @@
 
 - **单位**：条目/字节混合计量（先以条目数为准，字节数作为观测指标不设硬上限——数值待真实负载后定，同 #9 口径，不凭空拍）。
 - **预算面**：per-branch 上限 `maxContextEntriesPerBranch`（默认值结构守卫，校准挂 #9）。
-- **优先级分配**：调用方显式载荷 > 技能声明补全 > realm 只读 > 记忆检索。预算耗尽时从低优先级开始截断；截断记审计（`context-budget-exceeded` 类），不得静默。
+- **优先级分配**：调用方显式载荷 > 技能声明补全 > dataDomain 只读 > 记忆检索。预算耗尽时从低优先级开始截断；截断记审计（`context-budget-exceeded` 类），不得静默。
 - **与 S4 的关系**：S4 预算防"分支数"失控，本预算防"单分支上下文大小"失控——两个正交面，S4 的 `IntentBudget` 已落，本面独立实现。
 
 ## 6. 长任务压缩换入换出（接口设计，V3）
@@ -87,7 +87,7 @@
 ## 8. 关联
 
 - 记忆系统：[design-memory-consolidation.md](design-memory-consolidation.md)（来源与消费一体两面）。
-- 数据面：[design-realm.md](design-realm.md) §3.1/§6.5（dataPolicy 与 realm 边界）。
+- 数据面：[design-dataDomain.md](design-dataDomain.md) §3.1/§6.5（dataPolicy 与 dataDomain 边界）。
 - 终止守卫：[design-supervision.md](design-supervision.md) §7.1（S4，分支数预算，与上下文预算正交）。
 - 执行 Agent 协议：[design-executor-protocol.md](design-executor-protocol.md)（分支载荷形状）。
 
@@ -97,7 +97,7 @@
 - v0.2（2026-10-09）：补 V1 实现规格（§10）——记忆装配进分支上下文的可执行工程契约（装配器纯函数签名、装配点与数据流、预算默认值、审计事件表、幂等注记、不变量、测试与验收清单）；deferred #4/#8 触发条件按 #41 隔离实例裁定同步重审（见 deferred-items.md）。
 - v0.3（2026-10-09）：**§10 已落码（Active work 165）**——`src/context/assemble.ts` 实现（factId 去重取高分 / 凭证形态敏感面剔除 / 降序截断，事件三值 `context-assembled|context-trimmed|context-budget-exceeded`）+ `DispatchRequest.contextAppendix` 出站并入 + `AUDIT_DECISIONS` +3 + TUI token + boot 接线（memoryStore/contextOptions/onContextAssembled 审计桥）；基线 1352/122 → 1368/124（新测试 16 例、文件 +2）、冒烟 42 → 43；tech map S1 升"V1 已落地"。
 - v0.4（2026-10-09）：**§11 V2 已落码（Active work 166）**——`src/context/skill-inputs.ts` 装配器（技能 `inputs` 从死声明变装配约束：显式载荷补全 / 缺失标 `unavailable` 不臆造）+ 共享裁剪完整规则（去重改取最新 updatedAt、新增相关度闸 `minScore` 默认关闭、敏感面保留）+ `DispatchRequest.skillInputs` 出站并入 + boot `skillInputsProvider` 窄端口接线 + 审计 reason 扩 `unavailable|relevance`、`source` 分流措辞；基线 1368/124 → 1379/125（新测试 11 例、文件 +1）、冒烟 43 → 45；tech map S1 行更新、feature-inventory v0.44、review v0.36。
-- v0.5（2026-10-09）：**§5 V3 per-branch 预算分配已落码（A1 批）**——新建 `src/context/budget.ts` 纯函数 `allocateContextBudget`（`DEFAULT_BRANCH_CONTEXT_LIMIT=64`；四源优先级：显式载荷永不计数 > skillInputs > realmHits > contextAppendix；预算耗尽从最低优先级源截前缀，每源截断发带 `source` 的 `context-budget-exceeded` 事件）；orchestrator `fanOutNew` 四源装配后统一过预算、**只截出站副本**（内核内记忆/Realm 全量保留），`runTrackedBranch`/`runBranch` 加 `budgetedRealmHits?` 尾参，boot 加 `RuntimeBootOptions.contextOptions?`；新测试 `tests/context-budget.test.ts` 7 例 + `tests/boot-context-assembly.test.ts` 3 例（文件 +1、测试 +10）。**§6 长任务换入换出明示不落码**——换入换出阈值依赖真实长任务负载，挂 deferred #9 压测基准，不凭空拍数。A 档三批（A1/A2/A3）合批收尾基线 1410/126 → **1430/128**、冒烟 45/45、doc-consistency 18/18。
+- v0.5（2026-10-09）：**§5 V3 per-branch 预算分配已落码（A1 批）**——新建 `src/context/budget.ts` 纯函数 `allocateContextBudget`（`DEFAULT_BRANCH_CONTEXT_LIMIT=64`；四源优先级：显式载荷永不计数 > skillInputs > dataDomainHits > contextAppendix；预算耗尽从最低优先级源截前缀，每源截断发带 `source` 的 `context-budget-exceeded` 事件）；orchestrator `fanOutNew` 四源装配后统一过预算、**只截出站副本**（内核内记忆/DataDomain 全量保留），`runTrackedBranch`/`runBranch` 加 `budgetedDataDomainHits?` 尾参，boot 加 `RuntimeBootOptions.contextOptions?`；新测试 `tests/context-budget.test.ts` 7 例 + `tests/boot-context-assembly.test.ts` 3 例（文件 +1、测试 +10）。**§6 长任务换入换出明示不落码**——换入换出阈值依赖真实长任务负载，挂 deferred #9 压测基准，不凭空拍数。A 档三批（A1/A2/A3）合批收尾基线 1410/126 → **1430/128**、冒烟 45/45、doc-consistency 18/18。
 
 ## 10. V1 实现规格：记忆装配进分支上下文（2026-10-09，**V1 已落地，Active work 165，2026-10-09**）
 
@@ -115,12 +115,12 @@ export type ContextAppendixEntry = {
   claimId: string;   // 记忆 claim 锚，去重键
   text: string;      // 呈现文本（factText 输出）
   source: 'memory-recall';
-  realmId: string;   // 来源域，装配时已核
+  dataDomainId: string;   // 来源域，装配时已核
   score: number;     // 检索相关度（searchRecall 原值）
 };
 
 export type ContextAssemblyEvent =
-  | { kind: 'context-assembled'; appendixEntries: number; realmId?: string }
+  | { kind: 'context-assembled'; appendixEntries: number; dataDomainId?: string }
   | { kind: 'context-trimmed'; trimmed: number; reason: 'duplicate' | 'sensitive' }
   | { kind: 'context-budget-exceeded'; kept: number; limit: number };
 
@@ -141,15 +141,15 @@ export function assembleBranchContext(args: {
 
 - **装配点**：`orchestrator.fanOutNew` 分支构造处（与 S4 预算闸同层，设计稿 §3）。
 - **OrchestratorOptions 增可选字段**：
-  - `memoryStore?: MemoryStore`（窄端口：只依赖 `searchRecall(readerRealmId, targetRealmId, query, options)` 签名）；
+  - `memoryStore?: MemoryStore`（窄端口：只依赖 `searchRecall(readerDataDomainId, targetDataDomainId, query, options)` 签名）；
   - `contextOptions?: { maxEntries?: number }`（默认 20，结构守卫非性能标定）。
-- **数据流**：fanOutNew 每分支装配前先 `memoryStore.searchRecall(request.realmId, request.realmId, query, { limit: maxEntries })`——query 用技能名 + `params.message` 拼接词法检索；域隔离由 `searchRecall` 的 `readerRealmId !== targetRealmId` 拒绝强制（设计稿 §3 数据二极管，装配器不重复实现，只消费传入 hits）。
-- **载荷落点**：装配结果作为只读字段 `contextAppendix` 并入分支 `DispatchRequest`（与 `realmHits`/`realmHitsOrigin` 同层）；`FanOutRequest` 不加该字段（调用方不提供，由内核装配）。出站序列化随现有通道，不需要新传输。
+- **数据流**：fanOutNew 每分支装配前先 `memoryStore.searchRecall(request.dataDomainId, request.dataDomainId, query, { limit: maxEntries })`——query 用技能名 + `params.message` 拼接词法检索；域隔离由 `searchRecall` 的 `readerDataDomainId !== targetDataDomainId` 拒绝强制（设计稿 §3 数据二极管，装配器不重复实现，只消费传入 hits）。
+- **载荷落点**：装配结果作为只读字段 `contextAppendix` 并入分支 `DispatchRequest`（与 `dataDomainHits`/`dataDomainHitsOrigin` 同层）；`FanOutRequest` 不加该字段（调用方不提供，由内核装配）。出站序列化随现有通道，不需要新传输。
 - **boot 接线**：boot 已装配 memoryStore 时透传给 Orchestrator；未装配 → `contextOptions` 视为关闭，**零装配、零审计、派发照常**（与 skillGovernor 可选依赖同款优雅降级）。
 
 ### 10.4 幂等与重放
 
-- 装配是**派发时瞬时行为**；幂等命中/重放返回已存结果，不重装配（与 `realmHits` 同款注记："replay may omit them"）。
+- 装配是**派发时瞬时行为**；幂等命中/重放返回已存结果，不重装配（与 `dataDomainHits` 同款注记："replay may omit them"）。
 - 审计事件写入 `AUDIT_DECISIONS` 单一来源（新 decision 值 `context-assembled` / `context-trimmed` / `context-budget-exceeded`）+ TUI 语义 token，"分支拿到了什么"可回放。
 
 ### 10.5 不变量（测试钉死）

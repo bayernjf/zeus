@@ -49,7 +49,7 @@ describe('Orchestrator.activeIntents (S15 V3, design-streaming §3.3)', () => {
       newIntentId: () => 'intent-running',
       newRunId: () => 'run-1',
     });
-    const flying = orch.fanOut({ intentId: 'intent-running', skill: 'review', params: {}, realm: 'personal' });
+    const flying = orch.fanOut({ intentId: 'intent-running', skill: 'review', params: {}, dataDomain: 'personal' });
     await gated.flush();
 
     expect(orch.activeIntents()).toEqual([{ intentId: 'intent-running', skill: 'review', status: 'running' }]);
@@ -64,7 +64,7 @@ describe('Orchestrator.activeIntents (S15 V3, design-streaming §3.3)', () => {
       newIntentId: () => 'intent-done',
       newRunId: () => 'run-1',
     });
-    const flying = orch.fanOut({ intentId: 'intent-done', skill: 'review', params: {}, realm: 'personal' });
+    const flying = orch.fanOut({ intentId: 'intent-done', skill: 'review', params: {}, dataDomain: 'personal' });
     await gated.flush();
     gated.releaseAll();
     await flying;
@@ -83,7 +83,7 @@ describe('Orchestrator.activeIntents (S15 V3, design-streaming §3.3)', () => {
       newIntentId: () => 'intent-blocked',
       newRunId: () => 'run-1',
     });
-    const result = await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'intent-blocked', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('needs-operator');
     expect(orch.activeIntents()).toEqual([{ intentId: 'intent-blocked', skill: 'review', status: 'needs-operator' }]);

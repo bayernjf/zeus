@@ -17,8 +17,8 @@ import type { BackendArbitration, JudgeReview } from '../core/orchestrator/types
 import { DagRunner } from '../orchestrator/dag-runner.js';
 import { PlanFlow } from '../orchestrator/plan-flow.js';
 import { ConcurrencyMetrics } from '../orchestrator/metrics.js';
-import { FsRealmStore } from '../realm/store.js';
-import { OperatorGrantLedger, type OperatorGrantAuditEntry } from '../realm/grant.js';
+import { FsDataDomainStore } from '../dataDomain/store.js';
+import { OperatorGrantLedger, type OperatorGrantAuditEntry } from '../dataDomain/grant.js';
 import {
   ExecutionDelegationNonceLedger,
   type ExecutionDelegationAuditEntry,
@@ -29,12 +29,12 @@ import {
   deriveExecutionDelegation,
   type DelegationContractAuditEntry,
 } from '../delegation/delegation-contract.js';
-import { WatchRegistry, realmReading, connectorReading, type WatchTickReport } from '../watch/watch.js';
+import { WatchRegistry, dataDomainReading, connectorReading, type WatchTickReport } from '../watch/watch.js';
 import type { Ed25519MemorySigner } from '../registry/signing.js';
-import { DomainGrantRegistry, type GrantAuditEntry } from '../realm/authorization.js';
-import { normalizeTenant } from '../realm/tenant.js';
-import type { RealmAuditEntry } from '../realm/source.js';
-import type { RealmType, TenantScope } from '../realm/types.js';
+import { DomainGrantRegistry, type GrantAuditEntry } from '../dataDomain/authorization.js';
+import { normalizeTenant } from '../dataDomain/tenant.js';
+import type { DataDomainAuditEntry } from '../dataDomain/source.js';
+import type { DataDomainType, TenantScope } from '../dataDomain/types.js';
 import { ProgressHub, type ProgressEvent } from '../orchestrator/progress.js';
 import { buildTraceTree, type DecisionTraceBuffer, type TraceExporter } from '../observability/trace.js';
 import { JsonlTraceExporter } from '../observability/exporter.js';
@@ -56,7 +56,7 @@ import { MemoryStore, type MemoryAuditEntry } from '../memory/memory-store.js';
 import { createMemoryEmbedder } from '../memory/hub-embedder.js';
 import { branchVerdictClaims } from '../memory/producer.js';
 import { ConnectorRegistry, type ConnectorAuditEntry } from '../mcp/connectors.js';
-import { CommissionLedger, type CommissionAuditEntry } from '../onboarding/commission.js';
+import { SeatGrantLedger, type SeatGrantAuditEntry } from '../onboarding/seatGrant.js';
 import {
   FileRuntimeStateStore,
   applyRuntimeState,
@@ -102,12 +102,12 @@ export type RuntimeBoot = RuntimeComponents & {
   /** E4.7: JSONL dispatch audit log path, or null when the process writes none. */
   auditFile: string | null;
   /** E6.4: feeds cross-domain read/refusal records into the audit spine. */
-  realmAudit: (entry: RealmAuditEntry) => void;
+  dataDomainAudit: (entry: DataDomainAuditEntry) => void;
   /**
    * E3.5 / deferred #14: how enterprise writes are authorized here. 'signed'
    * means a grant must carry an Ed25519 signature by an accepted operator key;
    * 'shape-only' means the runtime holds no operator key and can only check a
-   * grant's shape, realm binding and expiry. Reported, never assumed.
+   * grant's shape, dataDomain binding and expiry. Reported, never assumed.
    */
   operatorGrantAuthority: 'signed' | 'shape-only';
   /** The operator key when one is configured; the HTTP face issues grants with it. */
@@ -205,11 +205,11 @@ export type RuntimeBootOptions = {
    *  E4.8: an entry may be `{ cardUrl, token? }` to seed the executor's outbound
    *  bearer; a plain string registers with no token. */
   executorSeeds?: Array<string | { cardUrl: string; token?: string }>;
-  /** G4: realm roots connected on boot. Strings are personal read-write roots;
+  /** G4: dataDomain roots connected on boot. Strings are personal read-write roots;
    *  objects may set type/readOnly/tenant (E3.6, enterprise scopes). Persisted
    *  roots are reconnected as well. */
-  realmRoots?: Array<string | { root: string; type?: RealmType; readOnly?: boolean; tenant?: string | TenantScope }>;
-  /** Audit sink for memory boundary violations (cross-realm read/append). */
+  dataDomainRoots?: Array<string | { root: string; type?: DataDomainType; readOnly?: boolean; tenant?: string | TenantScope }>;
+  /** Audit sink for memory boundary violations (cross-dataDomain read/append). */
   memoryAudit?: (entry: MemoryAuditEntry) => void;
   /** Audit sink for MCP connector lifecycle events. */
   connectorAudit?: (entry: ConnectorAuditEntry) => void;
@@ -280,7 +280,7 @@ export type RuntimeBootOptions = {
    * E3.5 / deferred #14: the operator key. When present, an enterprise write is
    * only honored on a grant this key signed (or one whose signer the runtime
    * accepts), and each grant nonce is consumed once. When absent, grants are
-   * checked for shape/realm/expiry only — a executor that can reach `write()`
+   * checked for shape/dataDomain/expiry only — a executor that can reach `write()`
    * could then author its own "authorization", which is why `RuntimeBoot` reports
    * the effective authority instead of hiding it.
    */
@@ -455,17 +455,17 @@ async function assembleRuntime(
         },
     onDecided: decided => {
       if (decided.kind !== 'memory-dispute' || !decided.factId) return;
-      // A dispute recorded before realmId was carried cannot resolve authors
-      // without a cross-realm scan, so its correction is skipped rather than
+      // A dispute recorded before dataDomainId was carried cannot resolve authors
+      // without a cross-dataDomain scan, so its correction is skipped rather than
       // guessed. New disputes always carry it (see consolidateFinishedMemory).
-      if (!decided.realmId) return;
+      if (!decided.dataDomainId) return;
       // Approve confirms the new fact: the conflicting facts were wrong. Reject
       // means the new fact itself was wrong. Either way the losing authors are
       // corrected, lowering their reliability in future consolidation.
       const losingFacts = decided.status === 'rejected'
         ? [decided.factId]
         : decided.conflictingFacts ?? [];
-      const authors = memoryStore.authorsOfFacts(decided.realmId, losingFacts);
+      const authors = memoryStore.authorsOfFacts(decided.dataDomainId, losingFacts);
       memoryStore.recordCorrections(authors, decided.runId);
     },
   });
@@ -480,7 +480,7 @@ async function assembleRuntime(
   let persistTail: Promise<void> = Promise.resolve();
   // E3.5 / deferred #14: the operator trust anchor. With a signer the runtime only
   // honors grants IT signed (or grants signed by a key it accepts) and consumes
-  // each nonce once; without one, a grant is checked for shape, realm binding and
+  // each nonce once; without one, a grant is checked for shape, dataDomain binding and
   // expiry only - which is why the authority is reported through stats instead of
   // being assumed.
   const operatorGrantLedger = new OperatorGrantLedger({
@@ -494,7 +494,7 @@ async function assembleRuntime(
     },
   });
   const operatorGrantAuthority: 'signed' | 'shape-only' = options.operatorSigner ? 'signed' : 'shape-only';
-  const realmStore = new FsRealmStore({
+  const dataDomainStore = new FsDataDomainStore({
     now,
     // The nonce ledger is wired in BOTH modes: single-use is a property of the
     // credential, not of how it was authenticated. Stopping at "we can't check
@@ -514,9 +514,9 @@ async function assembleRuntime(
       auditSink({
         ts: entry.at,
         executor: entry.grantedBy,
-        decision: 'realm-write',
-        realm: entry.realmType,
-        detail: `operator-authorized write ${entry.itemId} (${entry.bytes}B) into ${entry.realmId}`,
+        decision: 'dataDomain-write',
+        dataDomain: entry.dataDomainType,
+        detail: `operator-authorized write ${entry.itemId} (${entry.bytes}B) into ${entry.dataDomainId}`,
       });
     },
   });
@@ -527,8 +527,8 @@ async function assembleRuntime(
       ts: entry.at,
       executor: entry.subject,
       decision: entry.decision === 'grant-issued' ? 'domain-grant-issued' : 'domain-grant-revoked',
-      realm: 'enterprise',
-      detail: `${entry.decision} ${entry.grantId}: ${entry.access} ${entry.subject} -> ${entry.realmId} by ${entry.grantedBy}`,
+      dataDomain: 'enterprise',
+      detail: `${entry.decision} ${entry.grantId}: ${entry.access} ${entry.subject} -> ${entry.dataDomainId} by ${entry.grantedBy}`,
     });
     // Issuing or revoking a grant changes who may cross a domain boundary, so it
     // reaches disk now rather than at the next graceful shutdown: a crash would
@@ -538,7 +538,7 @@ async function assembleRuntime(
       (options.onStateSaveError ?? noop)(error instanceof Error ? error.message : String(error));
     });
   };
-  const realmAudit = (entry: RealmAuditEntry): void => {
+  const dataDomainAudit = (entry: DataDomainAuditEntry): void => {
     auditSink(entry);
   };
   // Issuance is audited separately from the write it authorizes: the moment a
@@ -548,8 +548,8 @@ async function assembleRuntime(
       ts: entry.at,
       executor: entry.grantedBy,
       decision: 'operator-grant-issued',
-      realm: 'enterprise',
-      detail: `operator grant for ${entry.realmId} by ${entry.grantedBy} (key ${entry.keyId}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
+      dataDomain: 'enterprise',
+      detail: `operator grant for ${entry.dataDomainId} by ${entry.grantedBy} (key ${entry.keyId}, expires ${entry.expiresAt})${entry.reason ? `: ${entry.reason}` : ''}`,
     });
   };
   // deferred #33: spent execution-delegation nonces. The ledger is wired to
@@ -570,29 +570,29 @@ async function assembleRuntime(
     });
   };
   const domainGrants = new DomainGrantRegistry(now, grantAudit);
-  // E9.1/E9.2: the commission gate reads its evidence from the layers that own
-  // it (org roster, live executor directory, realm boundary decisions, mentorship
+  // E9.1/E9.2: the seatGrant gate reads its evidence from the layers that own
+  // it (org roster, live executor directory, dataDomain boundary decisions, mentorship
   // certifications), so nothing here can go stale in the way a cached "is this
   // agent cleared?" flag would.
-  const commissionAudit = (entry: CommissionAuditEntry): void => {
+  const seatGrantAudit = (entry: SeatGrantAuditEntry): void => {
     auditSink({
       ts: entry.at,
       executor: entry.agentId,
       decision: entry.decision,
-      detail: `${entry.decision} ${entry.commissionId} by ${entry.by}: ${entry.detail}`,
+      detail: `${entry.decision} ${entry.seatGrantId} by ${entry.by}: ${entry.detail}`,
     });
   };
-  const commissionLedger = new CommissionLedger(
+  const seatGrantLedger = new SeatGrantLedger(
     {
       org: orgRegistry,
       executors: registry.asExecutorLookup(),
-      realms: realmStore,
+      dataDomains: dataDomainStore,
       grants: domainGrants,
       mentorships: mentorshipLedger,
       now,
     },
     now,
-    commissionAudit,
+    seatGrantAudit,
   );
   const memoryAudit: (entry: MemoryAuditEntry) => void = options.memoryAudit ?? noop;
   // MemoryPort v1 §4 (ruling D-1): hub-backed embedding with local fallback;
@@ -618,8 +618,8 @@ async function assembleRuntime(
         ts: now().toISOString(),
         executor: 'memory',
         decision: 'memory-embed-external',
-        // P2-5: the realm scope identifies whose memory the call served.
-        detail: `hash=${entry.hash} ok=${entry.ok} latencyMs=${entry.latencyMs}${entry.realmId ? ` realmId=${entry.realmId}` : ''}${entry.reason ? ` reason=${entry.reason}` : ''}`,
+        // P2-5: the dataDomain scope identifies whose memory the call served.
+        detail: `hash=${entry.hash} ok=${entry.ok} latencyMs=${entry.latencyMs}${entry.dataDomainId ? ` dataDomainId=${entry.dataDomainId}` : ''}${entry.reason ? ` reason=${entry.reason}` : ''}`,
       }),
   });
   const memoryStore = new MemoryStore(memoryAudit, now, { embedder: memoryEmbedder });
@@ -636,17 +636,17 @@ async function assembleRuntime(
     tokenFor: name => registry.tokenFor(name),
     // S8 V3 (design-guardrails §5): wire the DomainGrant registry into the
     // dispatcher as the content-grant port. A executor holds a content grant for
-    // a realm when it has a live (unrevoked, unexpired) grant entry whose
-    // realmId matches the hit's realm; an unexpired grant for realm A does not
-    // cover enterprise content from realm B. The gate is off until this port
+    // a dataDomain when it has a live (unrevoked, unexpired) grant entry whose
+    // dataDomainId matches the hit's dataDomain; an unexpired grant for dataDomain A does not
+    // cover enterprise content from dataDomain B. The gate is off until this port
     // exists; an unconfigured runtime keeps the V2 dispatch behaviour.
     ...(domainGrants
       ? {
-          contentGrant: (executor: string, realmId: string) =>
+          contentGrant: (executor: string, dataDomainId: string) =>
             domainGrants.list().some(
               grant =>
                 grant.subject === executor &&
-                grant.realmId === realmId &&
+                grant.dataDomainId === dataDomainId &&
                 (grant.expiresAt === undefined ||
                   Date.parse(grant.expiresAt) > now().getTime()),
             ),
@@ -672,7 +672,7 @@ async function assembleRuntime(
     // deferred #44 (design-memory-self-evolution §2.2): the runtime write-back
     // face — active selection-weight cards feed the auto-selection pool. A
     // store with no cards yields {} and dispatch stays at the baseline.
-    selectionWeightsProvider: realmId => memoryStore.selectionWeights(realmId),
+    selectionWeightsProvider: dataDomainId => memoryStore.selectionWeights(dataDomainId),
     // E4.11 (design-a2a-push): the push receiver config rides outbound
     // tasks/send for armed intents; push callbacks audit to the same spine as
     // dispatches.
@@ -685,11 +685,11 @@ async function assembleRuntime(
           executor: '(intent)',
           runId: entry.runId,
           skill: entry.skill,
-          realm: entry.realm,
+          dataDomain: entry.dataDomain,
           decision: event.kind,
           detail:
             event.kind === 'context-assembled'
-              ? `intent ${entry.intentId}: ${event.appendixEntries} memory entries assembled${entry.realmId ? ` (realm ${entry.realmId})` : ''}`
+              ? `intent ${entry.intentId}: ${event.appendixEntries} memory entries assembled${entry.dataDomainId ? ` (dataDomain ${entry.dataDomainId})` : ''}`
               : event.kind === 'guardrail-annotated'
                 ? `intent ${entry.intentId}: appendix entry ${event.entry} annotated (${event.boundary}${event.signals.length > 0 ? `, signals ${event.signals.join(',')}` : ''})`
                 : event.kind === 'guardrail-escalated'
@@ -730,7 +730,7 @@ async function assembleRuntime(
         ts: entry.at,
         executor: '(auto)',
         skill: entry.skill,
-        realm: entry.realm,
+        dataDomain: entry.dataDomain,
         decision: entry.reason === 'skill-uninstalled' ? 'refused-skill-uninstalled' : 'refused-no-active-provider',
         detail: entry.detail,
       });
@@ -743,7 +743,7 @@ async function assembleRuntime(
         ts: entry.at,
         executor: '(intent)',
         skill: entry.skill,
-        realm: entry.realm,
+        dataDomain: entry.dataDomain,
         decision: entry.reason === 'budget-exceeded' ? 'intent-branch-budget-exceeded' : 'intent-circuit-opened',
         detail: entry.detail,
       });
@@ -758,7 +758,7 @@ async function assembleRuntime(
           ts: entry.at,
           executor: '(intent)',
           skill: entry.skill,
-          realm: entry.realm,
+          dataDomain: entry.dataDomain,
           decision: entry.reason,
           detail: entry.detail,
         });
@@ -771,7 +771,7 @@ async function assembleRuntime(
         ts: entry.at,
         executor: entry.to,
         skill: entry.skill,
-        realm: entry.realm,
+        dataDomain: entry.dataDomain,
         decision: 'branch-diverted',
         detail: `target '${entry.from}' saturated/unavailable; diverted to '${entry.to}' for skill '${entry.skill}'`,
       });
@@ -784,7 +784,7 @@ async function assembleRuntime(
         ts: entry.at,
         executor: '(runtime)',
         skill: entry.skill,
-        realm: entry.realm,
+        dataDomain: entry.dataDomain,
         decision: 'tool-selected',
         detail: entry.pinned
           ? `candidate face for skill '${entry.skill}': ${entry.namedCount} operator-pinned name(s); pool not consulted`
@@ -800,7 +800,7 @@ async function assembleRuntime(
         ts: entry.at,
         executor: entry.executor,
         skill: entry.skill,
-        realm: entry.realm,
+        dataDomain: entry.dataDomain,
         decision: 'tool-failed',
         detail: `branch for skill '${entry.skill}' on executor '${entry.executor}' failed: ${entry.reason}`,
       });
@@ -809,7 +809,7 @@ async function assembleRuntime(
           ts: entry.at,
           executor: entry.executor,
           skill: entry.skill,
-          realm: entry.realm,
+          dataDomain: entry.dataDomain,
           decision: 'chain-retried',
           detail: `recovery chain decided retry for skill '${entry.skill}' on executor '${entry.executor}'`,
         });
@@ -818,7 +818,7 @@ async function assembleRuntime(
           ts: entry.at,
           executor: entry.alternateProvider ?? entry.executor,
           skill: entry.skill,
-          realm: entry.realm,
+          dataDomain: entry.dataDomain,
           decision: 'chain-switched',
           detail: `recovery chain decided switch from '${entry.executor}' to '${entry.alternateProvider}' for skill '${entry.skill}'`,
         });
@@ -827,7 +827,7 @@ async function assembleRuntime(
           ts: entry.at,
           executor: entry.executor,
           skill: entry.skill,
-          realm: entry.realm,
+          dataDomain: entry.dataDomain,
           decision: 'chain-degraded',
           detail: `recovery chain decided degrade (skip step) for skill '${entry.skill}' on executor '${entry.executor}'`,
         });
@@ -841,7 +841,7 @@ async function assembleRuntime(
         ts: entry.at,
         executor: entry.executor,
         skill: entry.skill,
-        realm: entry.realm,
+        dataDomain: entry.dataDomain,
         decision: 'execution-delegation-denied',
         detail: `execute refused for skill '${entry.skill}' executor '${entry.executor}': ${entry.reason}`,
       });
@@ -862,7 +862,7 @@ async function assembleRuntime(
     onProgress: event => {
       progressHub.publish(event);
       if (event.type === 'intent-finished') {
-        if (event.realmId) {
+        if (event.dataDomainId) {
           recordBranchVerdicts(event);
           consolidateFinishedMemory(event);
         }
@@ -961,7 +961,7 @@ async function assembleRuntime(
   };
 
   const components: RuntimeComponents = {
-    registry, oversight, orchestrator, dagRunner, planFlow, realmStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, commissionLedger, operatorGrantLedger, executionDelegationLedger, delegationContracts, watches,
+    registry, oversight, orchestrator, dagRunner, planFlow, dataDomainStore, skillRegistry, memoryStore, connectorRegistry, mentorshipLedger, orgRegistry, domainGrants, seatGrantLedger, operatorGrantLedger, executionDelegationLedger, delegationContracts, watches,
     // MemoryPort v1 §7: the HTTP consumer face writes its service-call lines
     // on the same audit spine; not part of any snapshot.
     auditSink,
@@ -1014,46 +1014,46 @@ async function assembleRuntime(
   // deferred #27: a finished fan-out's verdicts are the runtime's only memory
   // producer. Written one step before consolidation so an intent folds into
   // facts on the same tick it produced them. Claims go through
-  // appendFromRealm, never append, so the realm-boundary invariant cannot be
+  // appendFromDataDomain, never append, so the dataDomain-boundary invariant cannot be
   // bypassed by this new path.
   function recordBranchVerdicts(event: Extract<ProgressEvent, { type: 'intent-finished' }>): void {
-    const realmId = event.realmId;
-    if (!realmId) return;
+    const dataDomainId = event.dataDomainId;
+    if (!dataDomainId) return;
     const result = orchestrator.getIntent(event.intentId);
     const request = orchestrator.getRequest(event.intentId);
     if (!result || !request) return;
-    // A realm disconnected mid-flight (deferred #17) must not start receiving
+    // A dataDomain disconnected mid-flight (deferred #17) must not start receiving
     // claims afterwards: the mount table is the authority on what still exists.
-    const mounted = (realmStore?.connections() ?? []).some(connection => connection.realmId === realmId);
+    const mounted = (dataDomainStore?.connections() ?? []).some(connection => connection.dataDomainId === dataDomainId);
     if (!mounted) {
       auditSink({
         ts: now().toISOString(),
         executor: '(runtime)',
         skill: result.skill,
-        realm: result.realm,
+        dataDomain: result.dataDomain,
         decision: 'memory-claim-skipped',
-        detail: `intent ${result.intentId} finished on unmounted realm ${realmId}; ${result.positions.length} verdict(s) not recorded as claims`,
+        detail: `intent ${result.intentId} finished on unmounted dataDomain ${dataDomainId}; ${result.positions.length} verdict(s) not recorded as claims`,
       });
       return;
     }
-    for (const claim of branchVerdictClaims(result, request, { realmId, occurredAt: now().toISOString() })) {
+    for (const claim of branchVerdictClaims(result, request, { dataDomainId, occurredAt: now().toISOString() })) {
       try {
-        memoryStore.appendFromRealm(realmId, claim);
+        memoryStore.appendFromDataDomain(dataDomainId, claim);
       } catch (error) {
         auditSink({
           ts: now().toISOString(),
           executor: claim.source.agentId,
           skill: result.skill,
-          realm: result.realm,
+          dataDomain: result.dataDomain,
           decision: 'memory-claim-skipped',
-          detail: `claim ${claim.eventId} refused for realm ${realmId}: ${error instanceof Error ? error.message : String(error)}`,
+          detail: `claim ${claim.eventId} refused for dataDomain ${dataDomainId}: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
     }
   }
 
-  // Memory P1: when an intent operating on a connected realm reaches a terminal
-  // state, consolidate that realm's events; disputes become pending
+  // Memory P1: when an intent operating on a connected dataDomain reaches a terminal
+  // state, consolidate that dataDomain's events; disputes become pending
   // memory-dispute escalations rather than silent splits.
   function consolidateFinishedMemory(
     event: Extract<ProgressEvent, { type: 'intent-finished' }>,
@@ -1072,30 +1072,30 @@ async function assembleRuntime(
       // next same-kind intent recalls it at the dispatch boundary. The
       // event id is deterministic per (intentId, runId): a replayed settle
       // is append-deduped, never double-counted. The writeback obeys the
-      // same mount-table authority as the verdict claims above: a realm
+      // same mount-table authority as the verdict claims above: a dataDomain
       // disconnected mid-flight receives nothing, and the append goes
-      // through appendFromRealm so the realm-boundary invariant cannot be
+      // through appendFromDataDomain so the dataDomain-boundary invariant cannot be
       // bypassed by this path either.
       const intent = orchestrator.getIntent(event.intentId);
       const conclusion = intent?.decision?.conclusion;
-      const realmId = event.realmId;
-      const mounted = realmId !== undefined &&
-        (realmStore?.connections() ?? []).some(connection => connection.realmId === realmId);
-      if (intent && realmId !== undefined && !mounted) {
+      const dataDomainId = event.dataDomainId;
+      const mounted = dataDomainId !== undefined &&
+        (dataDomainStore?.connections() ?? []).some(connection => connection.dataDomainId === dataDomainId);
+      if (intent && dataDomainId !== undefined && !mounted) {
         auditSink({
           ts: now().toISOString(),
           executor: '(runtime)',
           skill: intent.skill,
-          realm: intent.realm,
+          dataDomain: intent.dataDomain,
           decision: 'memory-writeback-skipped',
-          detail: `intent ${intent.intentId} finished on unmounted realm ${realmId}; settled conclusion not written back as a decision memory`,
+          detail: `intent ${intent.intentId} finished on unmounted dataDomain ${dataDomainId}; settled conclusion not written back as a decision memory`,
         });
       }
-      if (intent && realmId !== undefined && mounted && typeof conclusion === 'string' && conclusion.length > 0) {
+      if (intent && dataDomainId !== undefined && mounted && typeof conclusion === 'string' && conclusion.length > 0) {
         try {
-          memoryStore.appendFromRealm(realmId, {
+          memoryStore.appendFromDataDomain(dataDomainId, {
             eventId: `mem-decision-${sha256Hex(`${event.intentId}|${event.runId}`).slice(0, 16)}`,
-            realmId,
+            dataDomainId,
             runId: event.runId,
             source: { agentId: 'zeus-runtime' },
             kind: 'claim',
@@ -1117,14 +1117,14 @@ async function assembleRuntime(
           // Fail-soft: a writeback failure must not block consolidation.
         }
       }
-      const result = await memoryStore.consolidateRealm(event.realmId!, { now, reliability });
-      const realm = orchestrator.getIntent(event.intentId)?.realm ?? 'personal';
+      const result = await memoryStore.consolidateDataDomain(event.dataDomainId!, { now, reliability });
+      const dataDomain = orchestrator.getIntent(event.intentId)?.dataDomain ?? 'personal';
       result.disputes.forEach((dispute, i) => {
         oversight.ingestMemoryDispute({
           id: result.escalations[i]!,
           runId: event.runId,
-          realm,
-          ...(event.realmId ? { realmId: event.realmId } : {}),
+          dataDomain,
+          ...(event.dataDomainId ? { dataDomainId: event.dataDomainId } : {}),
           factId: dispute.factId,
           conflictingFacts: dispute.conflicting,
           reason: dispute.reason,
@@ -1249,23 +1249,23 @@ async function assembleRuntime(
     await run;
   };
 
-  // G4: reconnect realms restored from the snapshot, then connect the roots
+  // G4: reconnect dataDomains restored from the snapshot, then connect the roots
   // supplied on this boot. Connect dedupes by realpath, so overlap is harmless.
   // A restored root that can no longer be reached fails boot loudly rather than
   // silently dropping a data domain (the recovery promise). The tenant scope is
-  // restored too — dropping it would silently widen an enterprise realm from
+  // restored too — dropping it would silently widen an enterprise dataDomain from
   // "this department" to "reachable by any subject with no declared tenant".
-  if (snapshot?.realms) {
-    for (const connection of snapshot.realms) {
-      await realmStore.connect(connection.root, connection.type, {
+  if (snapshot?.dataDomains) {
+    for (const connection of snapshot.dataDomains) {
+      await dataDomainStore.connect(connection.root, connection.type, {
         readOnly: connection.readOnly,
         ...(connection.tenant ? { tenant: connection.tenant } : {}),
       });
     }
   }
-  for (const entry of options.realmRoots ?? []) {
+  for (const entry of options.dataDomainRoots ?? []) {
     const connection = typeof entry === 'string' ? { root: entry } : entry;
-    await realmStore.connect(connection.root, connection.type ?? 'personal', {
+    await dataDomainStore.connect(connection.root, connection.type ?? 'personal', {
       ...(connection.readOnly !== undefined ? { readOnly: connection.readOnly } : {}),
       ...(connection.tenant !== undefined ? { tenant: connection.tenant } : {}),
     });
@@ -1303,8 +1303,8 @@ async function assembleRuntime(
       now: () => at ?? now(),
       sources: {
         metrics: () => metrics.snapshot(),
-        ...(realmStore
-          ? { realm: async (realmId: string) => realmReading(realmStore, realmId) }
+        ...(dataDomainStore
+          ? { dataDomain: async (dataDomainId: string) => dataDomainReading(dataDomainStore, dataDomainId) }
           : {}),
         // Step 3: the connector source reads through the declaration's own
         // boundary, so an undeclared tool is unreadable rather than empty.
@@ -1324,7 +1324,7 @@ async function assembleRuntime(
             intentId: request.intentId,
             skill: request.skill,
             params: { subject: request.subject },
-            realm: request.realm,
+            dataDomain: request.dataDomain,
             mode: request.mode,
             ...(request.executionDelegation !== undefined
               ? { executionDelegation: request.executionDelegation as ExecutionDelegation }
@@ -1374,8 +1374,8 @@ async function assembleRuntime(
           watchId: input.watchId,
           ...(input.delegationId ? { delegationId: input.delegationId } : {}),
           skill: input.skill,
-          realm: input.realm,
-          ...(input.realmId ? { realmId: input.realmId } : {}),
+          dataDomain: input.dataDomain,
+          ...(input.dataDomainId ? { dataDomainId: input.dataDomainId } : {}),
           limitReason: input.reason,
           tickSeq: input.tickSeq,
           // S10 V2: the watch tick already ran the classifier; the desk stores
@@ -1401,7 +1401,7 @@ async function assembleRuntime(
     runWatchTick,
     stateFile: options.stateFile ?? null,
     auditFile: options.auditFile ?? null,
-    realmAudit,
+    dataDomainAudit,
     operatorGrantAuthority,
     operatorGrantAudit,
     executionDelegationAudit,
@@ -1665,42 +1665,42 @@ export function resolveAuditConfig(env: NodeJS.ProcessEnv = process.env): Proces
 }
 
 /**
- * Realm mounts from env (G4 + E3.6).
+ * DataDomain mounts from env (G4 + E3.6).
  *
- * `ZEUS_REALM_ROOTS` stays what it always was: a comma list of personal roots.
+ * `ZEUS_DATA_DOMAIN_ROOTS` stays what it always was: a comma list of personal roots.
  * Enterprise mounts need a tenant scope, so they get their own variable rather
  * than an overloaded separator inside the personal one:
- * `ZEUS_REALM_ENTERPRISE="/srv/acme::acme,/srv/acme-eng::acme/eng"`. `::`
+ * `ZEUS_DATA_DOMAIN_ENTERPRISE="/srv/acme::acme,/srv/acme-eng::acme/eng"`. `::`
  * separates path from tenant because a Windows drive letter already owns the
- * single colon. An unusable tenant fails the boot: an enterprise realm mounted
+ * single colon. An unusable tenant fails the boot: an enterprise dataDomain mounted
  * WITHOUT its scope is a silently widened data domain, the opposite of what the
  * scope is for.
  */
-export type ProcessRealmConfig = {
-  realmRoots: NonNullable<RuntimeBootOptions['realmRoots']>;
+export type ProcessDataDomainConfig = {
+  dataDomainRoots: NonNullable<RuntimeBootOptions['dataDomainRoots']>;
 };
 
-export function resolveRealmConfig(env: NodeJS.ProcessEnv = process.env): ProcessRealmConfig {
-  const roots: ProcessRealmConfig['realmRoots'] = [];
-  for (const entry of splitEnvList(env.ZEUS_REALM_ROOTS)) roots.push(entry);
-  for (const entry of splitEnvList(env.ZEUS_REALM_ENTERPRISE)) {
+export function resolveDataDomainConfig(env: NodeJS.ProcessEnv = process.env): ProcessDataDomainConfig {
+  const roots: ProcessDataDomainConfig['dataDomainRoots'] = [];
+  for (const entry of splitEnvList(env.ZEUS_DATA_DOMAIN_ROOTS)) roots.push(entry);
+  for (const entry of splitEnvList(env.ZEUS_DATA_DOMAIN_ENTERPRISE)) {
     const separator = entry.indexOf('::');
     if (separator < 0) {
       throw new RuntimeBootError(
-        `ZEUS_REALM_ENTERPRISE entries are "<root>::<tenant>", got '${entry}' (the tenant is what keeps an enterprise realm from being org-visible)`,
+        `ZEUS_DATA_DOMAIN_ENTERPRISE entries are "<root>::<tenant>", got '${entry}' (the tenant is what keeps an enterprise dataDomain from being org-visible)`,
       );
     }
     const root = entry.slice(0, separator).trim();
     const tenant = entry.slice(separator + 2).trim();
-    if (!root) throw new RuntimeBootError(`ZEUS_REALM_ENTERPRISE entry has an empty root: '${entry}'`);
+    if (!root) throw new RuntimeBootError(`ZEUS_DATA_DOMAIN_ENTERPRISE entry has an empty root: '${entry}'`);
     try {
       normalizeTenant(tenant);
     } catch (error) {
-      throw new RuntimeBootError(`ZEUS_REALM_ENTERPRISE entry '${entry}' has an unusable tenant: ${(error as Error).message}`);
+      throw new RuntimeBootError(`ZEUS_DATA_DOMAIN_ENTERPRISE entry '${entry}' has an unusable tenant: ${(error as Error).message}`);
     }
     roots.push({ root, type: 'enterprise', tenant });
   }
-  return { realmRoots: roots };
+  return { dataDomainRoots: roots };
 }
 
 function splitEnvList(value: string | undefined): string[] {

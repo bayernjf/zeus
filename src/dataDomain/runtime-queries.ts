@@ -1,12 +1,12 @@
 /**
  * Adapter: live (read-only) runtime -> the PersonalRuntimeQueries port consumed by
- * the transport-agnostic MCP handler (src/realm/mcp.ts).
+ * the transport-agnostic MCP handler (src/dataDomain/mcp.ts).
  *
  * Contract (design P1-1):
  *  - read-only: these methods only read registries. plan goes through the local
  *    deterministic ranker (recognizeIntent without a backend), so zero bytes
  *    leave the machine and no execute originates here.
- *  - path non-disclosure: realms are projected to realmId/type/readOnly only;
+ *  - path non-disclosure: dataDomains are projected to dataDomainId/type/readOnly only;
  *    the absolute root never crosses the JSON-RPC boundary.
  *  - fail loud at assembly: a booted runtime missing one of the components the
  *    port reads from is a host wiring error, not a runtime "empty catalogue".
@@ -50,9 +50,9 @@ export function createPersonalRuntimeQueries(runtime: RuntimeBoot): PersonalRunt
   if (!skills) {
     throw new Error('personal runtime queries: runtime booted without a skill registry');
   }
-  const realmStore = runtime.realmStore;
-  if (!realmStore) {
-    throw new Error('personal runtime queries: runtime booted without a realm store');
+  const dataDomainStore = runtime.dataDomainStore;
+  if (!dataDomainStore) {
+    throw new Error('personal runtime queries: runtime booted without a dataDomain store');
   }
 
   return {
@@ -70,13 +70,13 @@ export function createPersonalRuntimeQueries(runtime: RuntimeBoot): PersonalRunt
       return spec ? skillRow(spec) : undefined;
     },
 
-    async plan({ text, realm }) {
+    async plan({ text, dataDomain }) {
       // Local ranker only: no backend, no model, no outbound call. The ranked
       // candidates are forwarded alongside the recognition verdict so the client
       // sees why a skill was (or was not) chosen.
       const catalog = skills.list().map(toCatalogEntry);
       const candidates = rankCandidates(catalog, text);
-      const result = await recognizeIntent({ text, catalog, realm: realm ?? 'personal' });
+      const result = await recognizeIntent({ text, catalog, dataDomain: dataDomain ?? 'personal' });
       if (result.ok) {
         return {
           ok: true,
@@ -96,13 +96,13 @@ export function createPersonalRuntimeQueries(runtime: RuntimeBoot): PersonalRunt
     },
 
     async status() {
-      const connections = realmStore.connections();
+      const connections = dataDomainStore.connections();
       const agents = runtime.registry.listAll().filter(entry => entry.status === 'active');
       return {
         ts: new Date().toISOString(),
-        // Projected on purpose: RealmConnection carries the absolute root, which
+        // Projected on purpose: DataDomainConnection carries the absolute root, which
         // must never be serialized to a client.
-        realms: connections.map(({ realmId, type, readOnly }) => ({ realmId, type, readOnly })),
+        dataDomains: connections.map(({ dataDomainId, type, readOnly }) => ({ dataDomainId, type, readOnly })),
         agents: {
           activeCount: agents.length,
           names: agents.map(entry => entry.card.name),

@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { createHttpServer } from '../src/http/server.js';
 import { ExecutorRegistry } from '../src/registry/registry.js';
 import { Ed25519MemorySigner } from '../src/registry/signing.js';
-import { FsRealmStore } from '../src/realm/store.js';
+import { FsDataDomainStore } from '../src/dataDomain/store.js';
 import { MemoryStore } from '../src/memory/memory-store.js';
 import type { MemoryEvent } from '../src/memory/types.js';
 
@@ -18,7 +18,7 @@ function event(partial: Partial<MemoryEvent> & { occurredAt: string }): MemoryEv
   seq += 1;
   return {
     eventId: `evt-${String(seq).padStart(3, '0')}`,
-    realmId: 'realm-test',
+    dataDomainId: 'dataDomain-test',
     runId: `run-${seq}`,
     source: { agentId: `agent-${seq}` },
     kind: 'observation',
@@ -35,26 +35,26 @@ afterEach(async () => {
 });
 
 async function setup(): Promise<{
-  app: FastifyInstance; realm: FsRealmStore; realmId: string;
+  app: FastifyInstance; dataDomain: FsDataDomainStore; dataDomainId: string;
 }> {
   root = await mkdtemp(join(tmpdir(), 'zeus-diary-http-'));
-  const realm = new FsRealmStore();
-  const manifest = await realm.connect(root, 'personal');
+  const dataDomain = new FsDataDomainStore();
+  const manifest = await dataDomain.connect(root, 'personal');
   const memoryStore = new MemoryStore();
   memoryStore.append(event({
-    realmId: manifest.realmId, eventId: 'evt-1',
+    dataDomainId: manifest.dataDomainId, eventId: 'evt-1',
     occurredAt: '2026-09-23T09:00:00.000Z', content: 'found 3 docs',
   }));
   memoryStore.append(event({
-    realmId: manifest.realmId, eventId: 'evt-2', kind: 'decision',
+    dataDomainId: manifest.dataDomainId, eventId: 'evt-2', kind: 'decision',
     occurredAt: '2026-09-23T10:00:00.000Z', content: 'approve the report', confidence: 0.9,
   }));
   const registry = new ExecutorRegistry();
   const signer = new Ed25519MemorySigner('zeus-rsk-test');
   const app = await createHttpServer({
-    registry, signer, internalToken: TOKEN, memoryStore, realmStore: realm,
+    registry, signer, internalToken: TOKEN, memoryStore, dataDomainStore: dataDomain,
   });
-  return { app, realm, realmId: manifest.realmId };
+  return { app, dataDomain, dataDomainId: manifest.dataDomainId };
 }
 
 describe('E8.3 diary HTTP read', () => {
@@ -89,20 +89,20 @@ describe('E8.3 diary HTTP read', () => {
 });
 
 describe('E8.3 diary HTTP generate', () => {
-  it('persists the diary through Realm.write and it lands on disk', async () => {
-    const { app, realm, realmId } = await setup();
+  it('persists the diary through DataDomain.write and it lands on disk', async () => {
+    const { app, dataDomain, dataDomainId } = await setup();
     const res = await app.inject({ method: 'POST', url: '/api/diary/generate', headers: AUTH, payload: {} });
     expect(res.statusCode).toBe(201);
     const { generated } = await res.json();
     expect(generated).toEqual([
-      { realmId, date: '2026-09-23', itemId: 'diary/2026-09-23.md' },
+      { dataDomainId, date: '2026-09-23', itemId: 'diary/2026-09-23.md' },
     ]);
-    const back = await realm.read(realmId, 'diary/2026-09-23.md');
+    const back = await dataDomain.read(dataDomainId, 'diary/2026-09-23.md');
     expect(back.content).toContain('# Diary · 2026-09-23');
     expect(back.content).toContain('event:evt-1');
   });
 
-  it('409s when no writable realm is connected', async () => {
+  it('409s when no writable dataDomain is connected', async () => {
     const memoryStore = new MemoryStore();
     memoryStore.append(event({ occurredAt: '2026-09-23T09:00:00.000Z', content: 'x' }));
     const app = await createHttpServer({
@@ -117,14 +117,14 @@ describe('E8.3 diary HTTP generate', () => {
 
   it('400s when there are no memory events', async () => {
     root = await mkdtemp(join(tmpdir(), 'zeus-diary-empty-'));
-    const realm = new FsRealmStore();
-    await realm.connect(root, 'personal');
+    const dataDomain = new FsDataDomainStore();
+    await dataDomain.connect(root, 'personal');
     const app = await createHttpServer({
       registry: new ExecutorRegistry(),
       signer: new Ed25519MemorySigner('zeus-rsk-test'),
       internalToken: TOKEN,
       memoryStore: new MemoryStore(),
-      realmStore: realm,
+      dataDomainStore: dataDomain,
     });
     const res = await app.inject({ method: 'POST', url: '/api/diary/generate', headers: AUTH, payload: {} });
     expect(res.statusCode).toBe(400);
@@ -145,13 +145,13 @@ describe('E8.3 diary export HTTP', () => {
     expect(again.body).toBe(exported.body);
   });
 
-  it('honours the realm and date selectors', async () => {
-    const { app, realmId } = await setup();
+  it('honours the dataDomain and date selectors', async () => {
+    const { app, dataDomainId } = await setup();
     const scoped = await app.inject({
-      method: 'GET', url: `/api/diary/export?realmId=${realmId}&date=2026-09-23`, headers: AUTH,
+      method: 'GET', url: `/api/diary/export?dataDomainId=${dataDomainId}&date=2026-09-23`, headers: AUTH,
     });
     expect(scoped.statusCode).toBe(200);
-    const entries = JSON.parse(scoped.body) as Array<{ realmId: string; date: string }>;
+    const entries = JSON.parse(scoped.body) as Array<{ dataDomainId: string; date: string }>;
     expect(entries).toHaveLength(1);
     expect(entries[0]!.date).toBe('2026-09-23');
   });

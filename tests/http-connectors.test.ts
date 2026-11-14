@@ -108,21 +108,21 @@ describe('E7 connector HTTP face', () => {
       url: '/api/connectors',
       headers: AUTH,
       payload: {
-        id: 'local-realm',
-        name: 'Local Realm',
+        id: 'local-dataDomain',
+        name: 'Local DataDomain',
         command: 'node',
-        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
-        env: { ZEUS_REALM_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
-        permissions: ['mcp:realm.search'],
+        args: ['dist/dataDomain/mcp-stdio.js', '/tmp/notes'],
+        env: { ZEUS_DATA_DOMAIN_ROOTS: '/tmp/notes', SECRET: 'hidden-value' },
+        permissions: ['mcp:dataDomain.search'],
       },
     });
     expect(res.statusCode).toBe(201);
     const body = await res.json();
-    expect(body).toMatchObject({ id: 'local-realm', status: 'declared', command: 'node' });
+    expect(body).toMatchObject({ id: 'local-dataDomain', status: 'declared', command: 'node' });
     expect(body.endpoint).toBeUndefined();
-    expect(body.envKeys).toEqual(['ZEUS_REALM_ROOTS', 'SECRET']);
+    expect(body.envKeys).toEqual(['ZEUS_DATA_DOMAIN_ROOTS', 'SECRET']);
     expect(res.body).not.toContain('hidden-value');
-    expect(body.args).toEqual(['dist/realm/mcp-stdio.js', '/tmp/notes']);
+    expect(body.args).toEqual(['dist/dataDomain/mcp-stdio.js', '/tmp/notes']);
   });
 
   it('accepts the S16 V2 isolation fields on a stdio connector declaration', async () => {
@@ -135,16 +135,16 @@ describe('E7 connector HTTP face', () => {
         id: 'local-isolated',
         name: 'Local Isolated',
         command: 'node',
-        args: ['dist/realm/mcp-stdio.js', '/tmp/notes'],
-        envAllowList: ['ZEUS_REALM_ROOTS', 'HOME'],
+        args: ['dist/dataDomain/mcp-stdio.js', '/tmp/notes'],
+        envAllowList: ['ZEUS_DATA_DOMAIN_ROOTS', 'HOME'],
         maxWallSeconds: 5,
-        permissions: ['mcp:realm.search'],
+        permissions: ['mcp:dataDomain.search'],
       },
     });
     expect(res.statusCode).toBe(201);
     expect(await res.json()).toMatchObject({
       id: 'local-isolated',
-      envAllowList: ['ZEUS_REALM_ROOTS', 'HOME'],
+      envAllowList: ['ZEUS_DATA_DOMAIN_ROOTS', 'HOME'],
       maxWallSeconds: 5,
     });
   });

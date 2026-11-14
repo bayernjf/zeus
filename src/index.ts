@@ -9,17 +9,17 @@
  *  - oversight A4 oversight desk (input-required escalation queue)
  *  - orchestrator E1 fan-out decision runtime (parallel dispatch, merge, aggregate, conflict)
  *  - memory   memory consolidation protocol (append-only event log, fact store via consolidator)
- *  - realm    D1 Realm P0 (read-only personal data domain, scan search)
+ *  - dataDomain    D1 DataDomain P0 (read-only personal data domain, scan search)
  *
  * Transport layers (MCP / HTTP) wrap this surface; they are not part of the
- * runtime and must not leak realm paths or registry internals.
+ * runtime and must not leak dataDomain paths or registry internals.
  */
 
 // --- A2A protocol: standard layer + x-zeus-* supersession extensions ---
 export { SUPPORTED_HANDSHAKE_VERSIONS } from './a2a/types.js';
 export { isFilePart, artifactFileUris } from './a2a/parts.js';
 export type {
-  RealmType,
+  DataDomainType,
   Handshake,
   AgentCardSkill,
   AgentCard,
@@ -259,7 +259,7 @@ export type {
   MentorshipStatus,
   CompetencyCheck,
   LessonEntry,
-  CommissionMentorshipInput,
+  SeatGrantMentorshipInput,
   AssessOptions,
 } from './skills/mentor.js';
 
@@ -323,31 +323,31 @@ export type {
   McpClientDeps,
 } from './mcp/types.js';
 
-// --- D1 Realm P0 ---
-export { FsRealmStore } from './realm/store.js';
-export { sha256Hex, digestManifest } from './realm/digest.js';
+// --- D1 DataDomain P0 ---
+export { FsDataDomainStore } from './dataDomain/store.js';
+export { sha256Hex, digestManifest } from './dataDomain/digest.js';
 export type {
-  RealmStore,
-  RealmManifest,
-  RealmBackupStrategy,
-  RealmBackupState,
-  RealmHit,
+  DataDomainStore,
+  DataDomainManifest,
+  DataDomainBackupStrategy,
+  DataDomainBackupState,
+  DataDomainHit,
   SearchQuery,
-  RealmItem,
-  RealmWriteItem,
-  RealmWriteResult,
+  DataDomainItem,
+  DataDomainWriteItem,
+  DataDomainWriteResult,
   OperatorWriteGrant,
   SignedOperatorWriteGrant,
   GrantVerification,
-} from './realm/types.js';
+} from './dataDomain/types.js';
 export {
-  RealmError,
-  RealmNotConnectedError,
+  DataDomainError,
+  DataDomainNotConnectedError,
   InvalidItemIdError,
   UnsupportedQueryError,
-  UnauthorizedRealmWriteError,
+  UnauthorizedDataDomainWriteError,
   UnsupportedWriteError,
-} from './realm/types.js';
+} from './dataDomain/types.js';
 export {
   verifyOperatorWriteGrant,
   issueOperatorWriteGrant,
@@ -356,72 +356,72 @@ export {
   OPERATOR_GRANT_DEFAULT_TTL_MS,
   OPERATOR_GRANT_MAX_TTL_MS,
   MAX_SPENT_GRANT_NONCES,
-} from './realm/grant.js';
+} from './dataDomain/grant.js';
 export type {
   OperatorGrantAuditEntry,
   OperatorGrantLedgerOptions,
   GrantVerificationContext,
   IssueOperatorGrantInput,
   IssueOperatorGrantOptions,
-} from './realm/grant.js';
-export type { RealmWriteAuditEntry, FsRealmStoreOptions, OperatorGrantAuthority } from './realm/store.js';
+} from './dataDomain/grant.js';
+export type { DataDomainWriteAuditEntry, FsDataDomainStoreOptions, OperatorGrantAuthority } from './dataDomain/store.js';
 
 // --- E3.6 tenancy + E6.4 cross-domain authorization and retrieval ---
-export { parseTenant, formatTenant, normalizeTenant, tenantKey, tenantReaches, TenantError } from './realm/tenant.js';
+export { parseTenant, formatTenant, normalizeTenant, tenantKey, tenantReaches, TenantError } from './dataDomain/tenant.js';
 export {
-  decideRealmAccess,
+  decideDataDomainAccess,
   verifyDomainGrant,
   DomainGrantRegistry,
   DomainGrantError,
-} from './realm/authorization.js';
-export type { ScopedRealm, GrantAuditEntry, DomainGrantState, GrantVerification as DomainGrantVerification } from './realm/authorization.js';
-export { resolveRealmSource, RealmSourceError } from './realm/source.js';
-export type { RealmSource, RealmAuditEntry, ResolvedRealmSource } from './realm/source.js';
+} from './dataDomain/authorization.js';
+export type { ScopedDataDomain, GrantAuditEntry, DomainGrantState, GrantVerification as DomainGrantVerification } from './dataDomain/authorization.js';
+export { resolveDataDomainSource, DataDomainSourceError } from './dataDomain/source.js';
+export type { DataDomainSource, DataDomainAuditEntry, ResolvedDataDomainSource } from './dataDomain/source.js';
 export type {
   TenantScope,
-  RealmActor,
-  RealmAccess,
+  DataDomainActor,
+  DataDomainAccess,
   DomainGrant,
   DomainDecision,
-} from './realm/types.js';
+} from './dataDomain/types.js';
 
-// --- E9.1/E9.2 onboarding: the commission gate and the day-one briefing ---
-export { CommissionLedger, verifyCommission } from './onboarding/commission.js';
-export type { CommissionDeps, CommissionAuditEntry, OpenCommissionInput } from './onboarding/commission.js';
+// --- E9.1/E9.2 onboarding: the seatGrant gate and the day-one briefing ---
+export { SeatGrantLedger, verifySeatGrant } from './onboarding/seatGrant.js';
+export type { SeatGrantDeps, SeatGrantAuditEntry, OpenSeatGrantInput } from './onboarding/seatGrant.js';
 export { composeBriefing } from './onboarding/briefing.js';
 export type { BriefingDeps, RoleBriefing } from './onboarding/briefing.js';
 export {
-  CommissionError,
-  commissionId,
+  SeatGrantError,
+  seatGrantId,
 } from './onboarding/types.js';
 export type {
-  CommissionRecord,
-  CommissionStage,
-  CommissionCheck,
-  CommissionVerdict,
-  CommissionGate,
+  SeatGrantRecord,
+  SeatGrantStage,
+  SeatGrantCheck,
+  SeatGrantVerdict,
+  SeatGrantGate,
   EvidenceGate,
   MentorshipCheck,
 } from './onboarding/types.js';
 
-// --- Realm MCP stdio scaffold (read-only; process entry is realm/mcp-stdio.ts) ---
+// --- DataDomain MCP stdio scaffold (read-only; process entry is dataDomain/mcp-stdio.ts) ---
 export {
-  createRealmMcpHandler,
+  createDataDomainMcpHandler,
   publicManifest,
   manifestUri,
   searchUri,
-  REALM_URI_SCHEME,
+  DATA_DOMAIN_URI_SCHEME,
   JSONRPC_VERSION,
   SUPPORTED_PROTOCOL_VERSIONS,
   JSON_RPC_CODES,
-} from './realm/mcp.js';
+} from './dataDomain/mcp.js';
 export type {
   JsonRpcId,
   JsonRpcRequest,
   JsonRpcResponse,
   JsonRpcError,
   McpHandlerDeps,
-} from './realm/mcp.js';
+} from './dataDomain/mcp.js';
 
 // --- G6: read-only runtime tool face over MCP (memory.recall / traces.query) ---
 export {
@@ -435,7 +435,7 @@ export type { RuntimeMcpActor, RuntimeToolsMcpDeps } from './mcp/runtime-tools.j
 export { buildBackup, parseMap, assertMap } from './backup/map.js';
 export { seal, open, validateEnvelopeShape } from './backup/cipher.js';
 export type { BackupKey } from './backup/cipher.js';
-export { inventoryFromRealm } from './backup/inventory.js';
+export { inventoryFromDataDomain } from './backup/inventory.js';
 export { restoreDryRun, restorePlan } from './backup/restore.js';
 export {
   packFull,
@@ -541,12 +541,12 @@ export type {
   DeriveResult,
 } from './delegation/delegation-contract.js';
 
-// --- Watch (design-self-host-loop §3): the trigger primitive, metrics + realm sources ---
+// --- Watch (design-self-host-loop §3): the trigger primitive, metrics + dataDomain sources ---
 export {
   WatchRegistry,
   WatchError,
   evaluatePredicate,
-  realmReading,
+  dataDomainReading,
   connectorReading,
   readPath,
   WATCH_SOURCES,

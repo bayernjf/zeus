@@ -20,7 +20,7 @@ export type TierConstraints = {
   mode: 'plan' | null;
   /** tier-1 never injects outbound credentials into the caller's task. */
   injectCredentials: boolean;
-  /** tier-1 pins realm-content entry into the outbound load to the strictest
+  /** tier-1 pins dataDomain-content entry into the outbound load to the strictest
    *  policy (none); null = leave the caller's request untouched. */
   dataPolicy: 'none' | null;
   /** Scale on the global resource defaults; 1/3 for tier-1. The runtime default

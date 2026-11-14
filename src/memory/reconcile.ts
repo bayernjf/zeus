@@ -12,10 +12,10 @@ import type {
  * Two operations:
  *  - reconcileMemoryStates diffs two point-in-time snapshots and reports what
  *    drifted (events appended, facts added/removed/changed, corrections and
- *    tombstones recorded), per realm.
+ *    tombstones recorded), per dataDomain.
  *  - verifyMemoryState checks the cross-section invariants the fact source
  *    must satisfy (rebuildable fact ids, resolvable provenance, retracted
- *    facts paired with a tombstone). It is the memory analogue of the Realm
+ *    facts paired with a tombstone). It is the memory analogue of the DataDomain
  *    digest reconciliation: silent corruption surfaces as a violation.
  */
 
@@ -25,7 +25,7 @@ function flattenFacts(state: MemoryState): Map<string, FlatFact> {
   const map = new Map<string, FlatFact>();
   for (const [, facts] of state.facts) {
     for (const fact of facts) {
-      map.set(`${fact.realmId}␟${fact.factId}`, fact);
+      map.set(`${fact.dataDomainId}␟${fact.factId}`, fact);
     }
   }
   return map;
@@ -38,14 +38,14 @@ export interface FactFieldChange {
 }
 
 export interface FactDrift {
-  realmId: string;
+  dataDomainId: string;
   factId: string;
   kind: 'added' | 'removed' | 'changed';
   changes?: FactFieldChange[];
 }
 
 export interface MemoryDriftReport {
-  realms: string[];
+  dataDomains: string[];
   eventsAppended: number;
   eventsRemoved: number;
   factsAdded: string[];
@@ -75,7 +75,7 @@ function diffFact(previous: FactRecord, current: FactRecord): FactDrift | null {
     if (before !== after) changes.push({ field, before, after });
   }
   if (changes.length === 0) return null;
-  return { realmId: current.realmId, factId: current.factId, kind: 'changed', changes };
+  return { dataDomainId: current.dataDomainId, factId: current.factId, kind: 'changed', changes };
 }
 
 /** Diff two snapshots; symmetric and pure. Events are compared by eventId. */
@@ -113,10 +113,10 @@ export function reconcileMemoryStates(previous: MemoryState, current: MemoryStat
   const prevRetractions = new Set((previous.retractions ?? []).map(retractionKey));
   const retractionsAdded = (current.retractions ?? []).filter(r => !prevRetractions.has(retractionKey(r))).length;
 
-  const realms = new Set<string>();
+  const dataDomains = new Set<string>();
   for (const state of [previous, current]) {
-    for (const e of state.events) realms.add(e.realmId);
-    for (const [realmId] of state.facts) realms.add(realmId);
+    for (const e of state.events) dataDomains.add(e.dataDomainId);
+    for (const [dataDomainId] of state.facts) dataDomains.add(dataDomainId);
   }
 
   const hasDrift =
@@ -125,7 +125,7 @@ export function reconcileMemoryStates(previous: MemoryState, current: MemoryStat
     correctionsAdded > 0 || retractionsAdded > 0;
 
   return {
-    realms: [...realms].sort(),
+    dataDomains: [...dataDomains].sort(),
     eventsAppended,
     eventsRemoved,
     factsAdded: factsAdded.sort(),
@@ -142,12 +142,12 @@ export interface MemoryConsistencyViolation {
     | 'duplicate-fact'
     | 'bad-fact-id'
     | 'unresolved-provenance'
-    | 'provenance-realm-mismatch'
+    | 'provenance-dataDomain-mismatch'
     | 'retracted-without-tombstone'
     | 'tombstone-without-retraction'
-    | 'fact-realm-mismatch';
+    | 'fact-dataDomain-mismatch';
   factId?: string;
-  realmId?: string;
+  dataDomainId?: string;
   detail: string;
 }
 
@@ -162,35 +162,35 @@ export function verifyMemoryState(state: MemoryState): MemoryConsistencyViolatio
   for (const r of state.retractions ?? []) tombstonesByFact.set(r.factId, r);
 
   const seen = new Set<string>();
-  for (const [bucketRealmId, facts] of state.facts) {
+  for (const [bucketDataDomainId, facts] of state.facts) {
     for (const fact of facts) {
-      const key = `${fact.realmId}␟${fact.factId}`;
+      const key = `${fact.dataDomainId}␟${fact.factId}`;
       if (seen.has(key)) {
-        violations.push({ code: 'duplicate-fact', factId: fact.factId, realmId: fact.realmId, detail: 'fact appears more than once' });
+        violations.push({ code: 'duplicate-fact', factId: fact.factId, dataDomainId: fact.dataDomainId, detail: 'fact appears more than once' });
       }
       seen.add(key);
 
-      if (fact.realmId !== bucketRealmId) {
-        violations.push({ code: 'fact-realm-mismatch', factId: fact.factId, realmId: fact.realmId, detail: `stored under realm ${bucketRealmId}` });
+      if (fact.dataDomainId !== bucketDataDomainId) {
+        violations.push({ code: 'fact-dataDomain-mismatch', factId: fact.factId, dataDomainId: fact.dataDomainId, detail: `stored under dataDomain ${bucketDataDomainId}` });
       }
 
-      const expectedId = factId(fact.realmId, fact.subject, fact.predicate, fact.object);
+      const expectedId = factId(fact.dataDomainId, fact.subject, fact.predicate, fact.object);
       if (expectedId !== fact.factId) {
-        violations.push({ code: 'bad-fact-id', factId: fact.factId, realmId: fact.realmId, detail: `fact id does not rebuild (expected ${expectedId})` });
+        violations.push({ code: 'bad-fact-id', factId: fact.factId, dataDomainId: fact.dataDomainId, detail: `fact id does not rebuild (expected ${expectedId})` });
       }
 
       for (const eventId of fact.provenance) {
         const event = eventById.get(eventId);
         if (!event) {
-          violations.push({ code: 'unresolved-provenance', factId: fact.factId, realmId: fact.realmId, detail: `event ${eventId} missing from log` });
-        } else if (event.realmId !== fact.realmId) {
-          violations.push({ code: 'provenance-realm-mismatch', factId: fact.factId, realmId: fact.realmId, detail: `event ${eventId} belongs to realm ${event.realmId}` });
+          violations.push({ code: 'unresolved-provenance', factId: fact.factId, dataDomainId: fact.dataDomainId, detail: `event ${eventId} missing from log` });
+        } else if (event.dataDomainId !== fact.dataDomainId) {
+          violations.push({ code: 'provenance-dataDomain-mismatch', factId: fact.factId, dataDomainId: fact.dataDomainId, detail: `event ${eventId} belongs to dataDomain ${event.dataDomainId}` });
         }
       }
 
       const hasTombstone = tombstonesByFact.has(fact.factId);
       if (fact.status === 'retracted' && !hasTombstone) {
-        violations.push({ code: 'retracted-without-tombstone', factId: fact.factId, realmId: fact.realmId, detail: 'retracted fact has no retraction record' });
+        violations.push({ code: 'retracted-without-tombstone', factId: fact.factId, dataDomainId: fact.dataDomainId, detail: 'retracted fact has no retraction record' });
       }
     }
   }
@@ -202,9 +202,9 @@ export function verifyMemoryState(state: MemoryState): MemoryConsistencyViolatio
   for (const [factId, record] of tombstonesByFact) {
     const fact = [...state.facts].flatMap(([, facts]) => facts).find(f => f.factId === factId);
     if (!fact) {
-      violations.push({ code: 'tombstone-without-retraction', factId, realmId: record.realmId, detail: 'tombstone references an absent fact' });
+      violations.push({ code: 'tombstone-without-retraction', factId, dataDomainId: record.dataDomainId, detail: 'tombstone references an absent fact' });
     } else if (fact.status !== 'retracted') {
-      violations.push({ code: 'tombstone-without-retraction', factId, realmId: record.realmId, detail: 'tombstone exists but fact is not retracted' });
+      violations.push({ code: 'tombstone-without-retraction', factId, dataDomainId: record.dataDomainId, detail: 'tombstone exists but fact is not retracted' });
     }
   }
 

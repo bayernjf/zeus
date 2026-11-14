@@ -201,22 +201,22 @@ function renderTimeline(palette: Palette, t: Translator, snapshot: DeckSnapshot)
 
 function renderDomains(palette: Palette, t: Translator, domains: DomainsView | null): string[] {
   if (domains === null) {
-    return [heading(palette, t('domains.title', { realms: 0, grants: 0 })), `  ${t('domains.unavailable')}`];
+    return [heading(palette, t('domains.title', { dataDomains: 0, grants: 0 })), `  ${t('domains.unavailable')}`];
   }
-  const lines: string[] = [heading(palette, t('domains.title', { realms: domains.realms.length, grants: domains.grants.length }))];
-  if (domains.realms.length === 0) {
+  const lines: string[] = [heading(palette, t('domains.title', { dataDomains: domains.dataDomains.length, grants: domains.grants.length }))];
+  if (domains.dataDomains.length === 0) {
     lines.push(`  ${t('domains.empty')}`);
     return lines;
   }
-  domains.realms.forEach((realm, realmIndex) => {
-    const typeLabel = t(realm.type === 'enterprise' ? 'domains.enterprise' : 'domains.personal');
-    const flags = [t('domains.items', { count: realm.itemCount })];
-    if (realm.readOnly) flags.push(t('domains.readOnly'));
-    if (realm.tenant) {
-      const tenantPath = [realm.tenant.org, realm.tenant.department, realm.tenant.member].filter(Boolean).join('/');
+  domains.dataDomains.forEach((dataDomain, dataDomainIndex) => {
+    const typeLabel = t(dataDomain.type === 'enterprise' ? 'domains.enterprise' : 'domains.personal');
+    const flags = [t('domains.items', { count: dataDomain.itemCount })];
+    if (dataDomain.readOnly) flags.push(t('domains.readOnly'));
+    if (dataDomain.tenant) {
+      const tenantPath = [dataDomain.tenant.org, dataDomain.tenant.department, dataDomain.tenant.member].filter(Boolean).join('/');
       flags.push(t('domains.tenant', { tenant: tenantPath }));
     }
-    lines.push(`  ${palette.paint('muted', `#${realmIndex + 1}`)} ${palette.paint(realm.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(safeText(realm.realmId))}  [${flags.join(' · ')}]`);
+    lines.push(`  ${palette.paint('muted', `#${dataDomainIndex + 1}`)} ${palette.paint(dataDomain.type === 'enterprise' ? 'attention' : 'info', typeLabel)}  ${palette.bold(safeText(dataDomain.dataDomainId))}  [${flags.join(' · ')}]`);
   });
   lines.push(`  ${t('domains.grantsTitle')}`);
   if (domains.grants.length === 0) {
@@ -224,7 +224,7 @@ function renderDomains(palette: Palette, t: Translator, domains: DomainsView | n
   } else {
     domains.grants.forEach((grant, grantIndex) => {
       const access = t(grant.access === 'write' ? 'domains.access.write' : 'domains.access.read');
-      lines.push(`    ${palette.paint('muted', `#${grantIndex + 1}`)} ${t('domains.grant', { subject: grant.subject, realmId: grant.realmId, access, grantedBy: grant.grantedBy })}`);
+      lines.push(`    ${palette.paint('muted', `#${grantIndex + 1}`)} ${t('domains.grant', { subject: grant.subject, dataDomainId: grant.dataDomainId, access, grantedBy: grant.grantedBy })}`);
     });
   }
   lines.push(`  ${palette.paint('muted', t('domains.grantPrompt'))}`);

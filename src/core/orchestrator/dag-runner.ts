@@ -37,7 +37,7 @@ export type DagNodeResult = {
 export type DagResult = {
   dagId: string;
   runId: string;
-  realm: DagSpec['realm'];
+  dataDomain: DagSpec['dataDomain'];
   nodes: DagNodeResult[];
   state: DagState;
   /** Longest dependency chain (node ids), for span/depth observability. */
@@ -83,7 +83,7 @@ export type ChainRecoveryAudit = {
   intentId: string;
   nodeId: string;
   skill: string;
-  realm: DagSpec['realm'];
+  dataDomain: DagSpec['dataDomain'];
   executor: string;
   action: 'retry' | 'switch' | 'degrade';
   detail: string;
@@ -199,7 +199,7 @@ export class DagRunner {
     const result: DagResult = {
       dagId,
       runId,
-      realm: spec.realm,
+      dataDomain: spec.dataDomain,
       nodes: ordered.map(node => nodeResults.get(node.id)!),
       state: aggregateDagState(nodeStates),
       criticalPath: criticalPath(ordered),
@@ -265,7 +265,7 @@ export class DagRunner {
           skill: node.skill,
           ...(executors !== undefined ? { executors } : {}),
           params,
-          realm: spec.realm,
+          dataDomain: spec.dataDomain,
           ...(node.aggregation ? { aggregation: node.aggregation } : {}),
           ...(spec.branchTimeoutMs !== undefined ? { branchTimeoutMs: spec.branchTimeoutMs } : {}),
         });
@@ -303,7 +303,7 @@ export class DagRunner {
           intentId,
           nodeId: node.id,
           skill: node.skill,
-          realm: spec.realm,
+          dataDomain: spec.dataDomain,
           executor: failedExecutor,
           action: 'degrade',
           detail: `node '${node.id}' degraded (optional step failed on '${failedExecutor}')`,
@@ -322,7 +322,7 @@ export class DagRunner {
         intentId,
         nodeId: node.id,
         skill: node.skill,
-        realm: spec.realm,
+        dataDomain: spec.dataDomain,
         executor: instruction.candidate.provider,
         action: instruction.action,
         detail:

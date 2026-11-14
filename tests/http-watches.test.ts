@@ -21,7 +21,7 @@ const NOW = new Date('2026-10-03T00:00:00.000Z');
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
     owner: 'pilot-operator',
-    realm: 'personal',
+    dataDomain: 'personal',
     predicate: { source: 'metrics', op: 'below', field: 'inFlight', value: 1 },
     intent: { skill: 'research', subject: 'nightly summary', mode: 'plan', maxFanOut: 2 },
     intervalSeconds: 60,
@@ -70,7 +70,7 @@ describe('HTTP watch operator face', () => {
     const body = res.json() as { watch: Record<string, unknown> };
     expect(body.watch).toMatchObject({
       owner: 'pilot-operator',
-      realm: 'personal',
+      dataDomain: 'personal',
       enabled: true,
       used: { fires: 0, executes: 0 },
     });
@@ -85,7 +85,7 @@ describe('HTTP watch operator face', () => {
     for (const body of [
       validBody({ predicate: undefined }),
       validBody({ intent: undefined }),
-      validBody({ realm: 'public' }),
+      validBody({ dataDomain: 'public' }),
       validBody({ intent: { skill: 'research', subject: 'x', mode: 'unattended', maxFanOut: 1 } }),
       validBody({ intervalSeconds: 0 }),
       validBody({ budget: { fires: 0, executes: 0 } }),

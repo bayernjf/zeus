@@ -13,19 +13,19 @@ const MANIFEST = {
   fs: { read: ['/r'], write: [] },
   network: 'off' as const,
   resources: { maxWallSeconds: 5 },
-  exec: { command: 'work-learn', args: ['--serve'], envAllowList: ['ZEUS_REALM_ROOT', 'HOME'] },
+  exec: { command: 'work-learn', args: ['--serve'], envAllowList: ['ZEUS_DATA_DOMAIN_ROOT', 'HOME'] },
 };
 
 describe('S16 V2 narrowSpawn', () => {
   it('copies only the allow-listed env vars that exist, never the full environment', () => {
     const narrowed = narrowSpawn({
       manifest: MANIFEST,
-      env: { ZEUS_REALM_ROOT: '/data/realm', HOME: '/Users/test', PATH: '/usr/bin', SECRET_TOKEN: 's3cret' },
+      env: { ZEUS_DATA_DOMAIN_ROOT: '/data/dataDomain', HOME: '/Users/test', PATH: '/usr/bin', SECRET_TOKEN: 's3cret' },
     });
     expect(narrowed.command).toBe('work-learn');
     expect(narrowed.args).toEqual(['--serve']);
-    expect(narrowed.env).toEqual({ ZEUS_REALM_ROOT: '/data/realm', HOME: '/Users/test' });
-    expect(narrowed.envAllowList).toEqual(['ZEUS_REALM_ROOT', 'HOME']);
+    expect(narrowed.env).toEqual({ ZEUS_DATA_DOMAIN_ROOT: '/data/dataDomain', HOME: '/Users/test' });
+    expect(narrowed.envAllowList).toEqual(['ZEUS_DATA_DOMAIN_ROOT', 'HOME']);
     // The caller's full environment never leaks into the narrowed spawn.
     expect(narrowed.env.SECRET_TOKEN).toBeUndefined();
     expect(narrowed.maxWallSeconds).toBe(5);
@@ -63,8 +63,8 @@ describe('S16 V2 stdio client spawn narrowing', () => {
     const client = new McpStdioClient({
       command: 'work-learn',
       args: ['--serve'],
-      envAllowList: ['ZEUS_REALM_ROOT'],
-      env: { ZEUS_REALM_ROOT: '/data/realm' },
+      envAllowList: ['ZEUS_DATA_DOMAIN_ROOT'],
+      env: { ZEUS_DATA_DOMAIN_ROOT: '/data/dataDomain' },
       spawnImpl,
     });
     await client.initialize().catch(() => undefined);
@@ -73,7 +73,7 @@ describe('S16 V2 stdio client spawn narrowing', () => {
     expect(captured?.command).toBe('work-learn');
     expect(captured?.args).toEqual(['--serve']);
     const env = captured?.options.env ?? {};
-    expect(env.ZEUS_REALM_ROOT).toBe('/data/realm');
+    expect(env.ZEUS_DATA_DOMAIN_ROOT).toBe('/data/dataDomain');
     // PATH and every other inherited variable are not passed through.
     expect(env.PATH).toBeUndefined();
   });

@@ -21,7 +21,7 @@ async function run(argv: string[], env: Record<string, string | undefined> = { Z
 
 beforeEach(async () => {
   work = await mkdtemp(join(tmpdir(), 'zeus-backup-cli-'));
-  root = join(work, 'realm');
+  root = join(work, 'dataDomain');
   outDir = join(work, 'backups');
   mapPath = join(outDir, 'manifest.map.json');
   await mkdir(join(root, 'sub'), { recursive: true });
@@ -34,7 +34,7 @@ afterEach(async () => {
 });
 
 describe('backup CLI: build + check (manifest-only, L0)', () => {
-  it('builds a sealed map and checks a healthy realm as recoverable (exit 0)', async () => {
+  it('builds a sealed map and checks a healthy dataDomain as recoverable (exit 0)', async () => {
     const built = await run(['build', '--root', root, '--out', mapPath]);
     expect(built.code).toBe(BACKUP_EXIT.ok);
     const envelope = JSON.parse(await readFile(mapPath, 'utf8'));
@@ -93,7 +93,7 @@ describe('backup CLI: build + check (manifest-only, L0)', () => {
 // fired, and the reds moved between cases, so this suite declares its own
 // headroom rather than leaving a load-dependent false red.
 describe('backup CLI: backup + restore (full bundle, L1)', { timeout: 60_000 }, () => {
-  it('packs map+bundle and restores a destroyed realm into a new target (exit 0)', async () => {
+  it('packs map+bundle and restores a destroyed dataDomain into a new target (exit 0)', async () => {
     const backup = await run(['backup', '--root', root, '--out-dir', outDir]);
     expect(backup.code).toBe(BACKUP_EXIT.ok);
     const files = backup.stdout;
@@ -125,7 +125,7 @@ describe('backup CLI: backup + restore (full bundle, L1)', { timeout: 60_000 }, 
     await run(['backup', '--root', root, '--out-dir', outDir, '--name', 'good']);
     const other = join(work, 'other');
     await mkdir(other, { recursive: true });
-    await writeFile(join(other, 'x.md'), 'totally different realm content\n');
+    await writeFile(join(other, 'x.md'), 'totally different dataDomain content\n');
     await run(['backup', '--root', other, '--out-dir', outDir, '--name', 'evil']);
     const restore = await run([
       'restore',

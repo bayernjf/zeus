@@ -7,13 +7,13 @@ import { OversightDesk } from '../oversight/oversight.js';
 import { Orchestrator, type OrchestratorSnapshot } from '../orchestrator/orchestrator.js';
 import type { DagRunner } from '../orchestrator/dag-runner.js';
 import type { PlanFlow } from '../orchestrator/plan-flow.js';
-import type { RealmConnection } from '../realm/types.js';
-import type { RealmStore } from '../realm/types.js';
-import type { DomainGrantState } from '../realm/authorization.js';
-import type { OperatorGrantLedger } from '../realm/grant.js';
-import { DomainGrantRegistry } from '../realm/authorization.js';
-import type { CommissionRecord } from '../onboarding/types.js';
-import { CommissionLedger } from '../onboarding/commission.js';
+import type { DataDomainConnection } from '../dataDomain/types.js';
+import type { DataDomainStore } from '../dataDomain/types.js';
+import type { DomainGrantState } from '../dataDomain/authorization.js';
+import type { OperatorGrantLedger } from '../dataDomain/grant.js';
+import { DomainGrantRegistry } from '../dataDomain/authorization.js';
+import type { SeatGrantRecord } from '../onboarding/types.js';
+import { SeatGrantLedger } from '../onboarding/seatGrant.js';
 import type { SkillSpec } from '../skills/types.js';
 import { SkillRegistry } from '../skills/registry.js';
 import type { MemoryState } from '../memory/types.js';
@@ -55,8 +55,8 @@ export type RuntimeSnapshot = {
   registry: ExecutorEntry[];
   oversight: Escalation[];
   orchestrator: OrchestratorSnapshot;
-  /** G4: connected realms. Optional for backward compat with v1 snapshots. */
-  realms?: RealmConnection[];
+  /** G4: connected dataDomains. Optional for backward compat with v1 snapshots. */
+  dataDomains?: DataDomainConnection[];
   /** E2.1: skill catalogue. Optional for backward compat. */
   skills?: SkillSpec[];
   /** Memory P1: event log and fact store. Optional for backward compat. */
@@ -69,8 +69,8 @@ export type RuntimeSnapshot = {
   org?: Department[];
   /** E6.4: cross-domain grants + spent nonces. Optional for backward compat. */
   domainGrants?: DomainGrantState;
-  /** E9.1/E9.2: commission files. Optional for backward compat. */
-  commissions?: CommissionRecord[];
+  /** E9.1/E9.2: seatGrant files. Optional for backward compat. */
+  seatGrants?: SeatGrantRecord[];
   /**
    * E3.5 / deferred #14: consumed operator write-grant nonces. Optional for
    * backward compat. Without this a restart would re-admit a grant that was
@@ -105,8 +105,8 @@ export type RuntimeComponents = {
   dagRunner: DagRunner;
   /** S12 V2: planning wired as fan-out over the runtime orchestrator. */
   planFlow?: PlanFlow;
-  /** G4: when assembled, its connected realms are snapshotted and reconnected. */
-  realmStore?: RealmStore;
+  /** G4: when assembled, its connected dataDomains are snapshotted and reconnected. */
+  dataDomainStore?: DataDomainStore;
   /** E2.1: when assembled, the skill catalogue is persisted and restored. */
   skillRegistry?: SkillRegistry;
   /** Memory P1: when assembled, events/facts are persisted and restored. */
@@ -119,8 +119,8 @@ export type RuntimeComponents = {
   orgRegistry?: OrgRegistry;
   /** E6.4: when assembled, cross-domain grants survive a restart. */
   domainGrants?: DomainGrantRegistry;
-  /** E9.1/E9.2: when assembled, commission files survive a restart. */
-  commissionLedger?: CommissionLedger;
+  /** E9.1/E9.2: when assembled, seatGrant files survive a restart. */
+  seatGrantLedger?: SeatGrantLedger;
   /** E3.5 / deferred #14: consumed operator write-grant nonces survive a restart. */
   operatorGrantLedger?: OperatorGrantLedger;
   /** deferred #33: consumed execution-delegation nonces survive a restart. */
@@ -142,14 +142,14 @@ export function collectRuntimeState(components: RuntimeComponents): Omit<Runtime
     registry: components.registry.exportState(),
     oversight: components.oversight.exportState(),
     orchestrator: components.orchestrator.exportState(),
-    ...(components.realmStore ? { realms: components.realmStore.connections() } : {}),
+    ...(components.dataDomainStore ? { dataDomains: components.dataDomainStore.connections() } : {}),
     ...(components.skillRegistry ? { skills: components.skillRegistry.exportState() } : {}),
     ...(components.memoryStore ? { memory: components.memoryStore.exportState() } : {}),
     ...(components.connectorRegistry ? { connectors: components.connectorRegistry.exportState() } : {}),
     ...(components.mentorshipLedger ? { mentorships: components.mentorshipLedger.exportState() } : {}),
     ...(components.orgRegistry ? { org: components.orgRegistry.exportState() } : {}),
     ...(components.domainGrants ? { domainGrants: components.domainGrants.exportState() } : {}),
-    ...(components.commissionLedger ? { commissions: components.commissionLedger.exportState() } : {}),
+    ...(components.seatGrantLedger ? { seatGrants: components.seatGrantLedger.exportState() } : {}),
     ...(components.operatorGrantLedger ? { writeGrantNonces: components.operatorGrantLedger.exportState() } : {}),
     ...(components.executionDelegationLedger
       ? { executionDelegationNonces: components.executionDelegationLedger.exportState() }
@@ -170,7 +170,7 @@ export function applyRuntimeState(components: RuntimeComponents, snapshot: Omit<
   if (components.mentorshipLedger && snapshot.mentorships) components.mentorshipLedger.importState(snapshot.mentorships);
   if (components.orgRegistry && snapshot.org) components.orgRegistry.importState(snapshot.org);
   if (components.domainGrants && snapshot.domainGrants) components.domainGrants.importState(snapshot.domainGrants);
-  if (components.commissionLedger && snapshot.commissions) components.commissionLedger.importState(snapshot.commissions);
+  if (components.seatGrantLedger && snapshot.seatGrants) components.seatGrantLedger.importState(snapshot.seatGrants);
   if (components.operatorGrantLedger && snapshot.writeGrantNonces) components.operatorGrantLedger.importState(snapshot.writeGrantNonces);
   if (components.executionDelegationLedger && snapshot.executionDelegationNonces) {
     components.executionDelegationLedger.importState(snapshot.executionDelegationNonces);
@@ -193,14 +193,14 @@ export class FileRuntimeStateStore {
       registry: state.registry,
       oversight: state.oversight,
       orchestrator: state.orchestrator,
-      ...(state.realms ? { realms: state.realms } : {}),
+      ...(state.dataDomains ? { dataDomains: state.dataDomains } : {}),
       ...(state.skills ? { skills: state.skills } : {}),
       ...(state.memory ? { memory: state.memory } : {}),
       ...(state.connectors ? { connectors: state.connectors } : {}),
       ...(state.mentorships ? { mentorships: state.mentorships } : {}),
       ...(state.org ? { org: state.org } : {}),
       ...(state.domainGrants ? { domainGrants: state.domainGrants } : {}),
-      ...(state.commissions ? { commissions: state.commissions } : {}),
+      ...(state.seatGrants ? { seatGrants: state.seatGrants } : {}),
       ...(state.writeGrantNonces ? { writeGrantNonces: state.writeGrantNonces } : {}),
       ...(state.executionDelegationNonces ? { executionDelegationNonces: state.executionDelegationNonces } : {}),
       ...(state.delegationContracts ? { delegationContracts: state.delegationContracts } : {}),

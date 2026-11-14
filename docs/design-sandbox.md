@@ -2,7 +2,7 @@
 
 - 状态：**现行 v0.1（2026-10-09）**：设计探索先行，未落码。本文按执行边界把"谁的代码在哪跑"分成四级，定义隔离需求分级纯函数；容器/microVM 是真机阶段的后置分期。
 - 演进：v0.1（2026-10-09）首版——现状盘点（外部 Agent 天然主机隔离、本地 stdio MCP 子进程是最大缺口、内置纯函数无需运行时隔离）+ 四级隔离模型 + `classifyIsolation`/隔离清单校验草案 + 分期。
-- 关联：tech map S16（容器/microVM 隔离、资源配额）；design-realm.md（Realm 目录授权面，沙箱文件系统可见性以此为界）；design-external-trust.md（tier 决定可触达面）；design-guardrails.md（S8 管内容，本设计管执行体）；design-execution-delegation.md（execute 授权）；design-backpressure.md（并发配额，本设计的资源配额与之同构）；design-cost-governance.md（S9 wall-time 上限可复用为执行超时）；`src/mcp/stdio-client.ts`（node:child_process spawn 本地 MCP，**核心缺口**）、`src/mcp/connectors.ts`、`src/util/outbound-dns.ts`（出站守卫，注意不覆盖子进程自身网络）。
+- 关联：tech map S16（容器/microVM 隔离、资源配额）；design-dataDomain.md（DataDomain 目录授权面，沙箱文件系统可见性以此为界）；design-external-trust.md（tier 决定可触达面）；design-guardrails.md（S8 管内容，本设计管执行体）；design-execution-delegation.md（execute 授权）；design-backpressure.md（并发配额，本设计的资源配额与之同构）；design-cost-governance.md（S9 wall-time 上限可复用为执行超时）；`src/mcp/stdio-client.ts`（node:child_process spawn 本地 MCP，**核心缺口**）、`src/mcp/connectors.ts`、`src/util/outbound-dns.ts`（出站守卫，注意不覆盖子进程自身网络）。
 - 本文是执行隔离的单一事实源；handoff 与 PRD 只索引。
 
 ## 1. 背景与现状
@@ -18,14 +18,14 @@ Zeus 内核本身是纯 TS 库，不执行 Agent 的模型代码；但"代码在
 
 **缺口归纳**：
 
-1. **stdio 子进程无最小权限面**：文件系统可见范围没有绑定到该连接器被授权的 Realm；环境变量可能携带内核侧敏感变量；没有资源配额与执行超时（失控连接器拖垮整机）。
+1. **stdio 子进程无最小权限面**：文件系统可见范围没有绑定到该连接器被授权的 DataDomain；环境变量可能携带内核侧敏感变量；没有资源配额与执行超时（失控连接器拖垮整机）。
 2. **子进程网络面不可见、不可控**：内核的出站安全（DNS 守卫、凭据策略）作用于内核自己发出的请求；spawn 出的子进程直接发网络，内核看不到。
 3. **无隔离需求声明**：连接器注册时不声明"我需要文件系统哪些路径、要不要网络、要多少资源"，内核无法在启动前判定该连接器能否被当前授权面容纳。
 4. **无强隔离升级路径**：从子进程到容器/microVM 的判定标准与降级策略未定义。
 
 ## 2. 目标与边界
 
-**目标**：为每个执行体在**启动前**确定性地得出隔离要求（文件系统面、网络面、资源配额、生命周期），并让本地 stdio 连接器在**不满足最小隔离条件时 fail-closed 拒绝启动**；为后续容器/microVM 强隔离预留同一形状的清单接口。原则：**授权面决定可见面**——连接器能碰到的文件/网络不超过它被授予的 Realm 与能力；隔离是注册/启动闸，不是运行时补丁。
+**目标**：为每个执行体在**启动前**确定性地得出隔离要求（文件系统面、网络面、资源配额、生命周期），并让本地 stdio 连接器在**不满足最小隔离条件时 fail-closed 拒绝启动**；为后续容器/microVM 强隔离预留同一形状的清单接口。原则：**授权面决定可见面**——连接器能碰到的文件/网络不超过它被授予的 DataDomain 与能力；隔离是注册/启动闸，不是运行时补丁。
 
 **边界（明确不做）**：
 
@@ -42,7 +42,7 @@ Zeus 内核本身是纯 TS 库，不执行 Agent 的模型代码；但"代码在
 | --- | --- | --- |
 | **L-none** | 内置纯函数/零 IO 消息处理 | 无需运行时隔离（类型+测试） |
 | **L-process** | 可信来源（tier-0/注册签名可信）的本地 stdio MCP | 独立子进程（已有）+ 最小 cwd/env + 资源配额 + 超时 + 声明的 fs/net 面 |
-| **L-process-restricted** | 一般信任（tier-1/2）本地 stdio MCP | L-process 全部 + 文件系统只挂授权 Realm（只读/只写按 tag）+ 默认禁网，需联网显式声明且经出站代理（使 DNS 守卫可覆盖） |
+| **L-process-restricted** | 一般信任（tier-1/2）本地 stdio MCP | L-process 全部 + 文件系统只挂授权 DataDomain（只读/只写按 tag）+ 默认禁网，需联网显式声明且经出站代理（使 DNS 守卫可覆盖） |
 | **L-container** | 低信任（tier-3）或声明需要广泛 fs/网的本地执行体 | OS 容器/microVM（V3+），独立文件系统视图、网络命名空间、硬配额；不可用时**拒绝注册**而非降级到 L-process |
 | **L-remote** | 外部 Agent / 远程 MCP | 协议约束（tier、凭据、dataPolicy、DNS），无本机隔离措施 |
 
@@ -51,13 +51,13 @@ Zeus 内核本身是纯 TS 库，不执行 Agent 的模型代码；但"代码在
 连接器/技能在注册时声明（与技能 spec、handshake 声明同处管理）：
 
 ```
-fs:      { read: [realmId/path...], write: [realmId/path...] }   // 必须是已授权 Realm 的子集
+fs:      { read: [dataDomainId/path...], write: [dataDomainId/path...] }   // 必须是已授权 DataDomain 的子集
 network: 'off' | 'proxy' | 'direct'   // 默认 off；proxy 经内核出站代理（覆盖 DNS 守卫）；direct 仅 L-container
 resources: { cpuShares?, memoryMb?, maxWallSeconds?, maxProcesses? }
 exec:    { command, args(固定形参), env(白名单) }                  // 不继承内核全部 env
 ```
 
-**启动前判定（fail-closed）**：fs 面超出授权 Realm → 拒绝；network=direct/proxy 但信任档不允许 → 拒绝；resources 缺省且无全局缺省 → 拒绝或按保守缺省（实施时定，不凭空拍配额数字，标定挂真实负载）；command 不在注册声明中 → 拒绝（防命令注入式拉起）。
+**启动前判定（fail-closed）**：fs 面超出授权 DataDomain → 拒绝；network=direct/proxy 但信任档不允许 → 拒绝；resources 缺省且无全局缺省 → 拒绝或按保守缺省（实施时定，不凭空拍配额数字，标定挂真实负载）；command 不在注册声明中 → 拒绝（防命令注入式拉起）。
 
 ### 3.3 与既有闸的关系
 
@@ -88,7 +88,7 @@ export function classifyIsolation(input: {
 export function validateIsolation(input: {
   level: IsolationLevel;
   manifest: IsolationManifest;
-  authorizedRealms: string[];
+  authorizedDataDomains: string[];
   containerRuntimeAvailable: boolean;
 }): { ok: true } | { ok: false; reasons: string[] };
 ```
@@ -103,4 +103,4 @@ export function validateIsolation(input: {
 - **V3（强隔离运行时）**：容器/microVM 后端（L-container），随真机/自托管交付阶段触发，在此之前低信任本地连接器一律拒绝注册。
 - **V4（可选）**：进程外用户插件运行时（若产品引入第三方本地技能），复用 L-container 路径。
 
-**验收（V1 实施时）**：每个拒绝条件正反例；"隔离级不足时永不降级放行"独立不变量（要求 L-container 不可用 → 拒绝而非 L-process）；manifest fs 面必须是授权 Realm 子集；全量与冒烟不回归（V1 零运行时行为变化）。
+**验收（V1 实施时）**：每个拒绝条件正反例；"隔离级不足时永不降级放行"独立不变量（要求 L-container 不可用 → 拒绝而非 L-process）；manifest fs 面必须是授权 DataDomain 子集；全量与冒烟不回归（V1 零运行时行为变化）。

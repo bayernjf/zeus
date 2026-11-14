@@ -26,10 +26,10 @@
  * …/agent-card → …/tasks) when the card declares nothing usable. Pass this when
  * a card declares the wrong endpoint or none at all: it wins over both.
  *
- * REALM (optional, default "personal"): the realm type the driven intent targets.
- * A executor only serves the data realms its handshake declares, so an agent whose
- * card says realms=["enterprise"] is refused a personal-realm intent — mount
- * the matching realm (ZEUS_REALM_ENTERPRISE) and pass REALM=enterprise.
+ * DATA_DOMAIN (optional, default "personal"): the dataDomain type the driven intent targets.
+ * A executor only serves the data dataDomains its handshake declares, so an agent whose
+ * card says dataDomains=["enterprise"] is refused a personal-dataDomain intent — mount
+ * the matching dataDomain (ZEUS_DATA_DOMAIN_ENTERPRISE) and pass DATA_DOMAIN=enterprise.
  *
  * PARAMS (optional, JSON object): the skill parameters to send. An execution
  * agent validates its own parameters, so the question-shaped default
@@ -85,7 +85,7 @@ function usageExit(reason) {
 }
 if (timeoutIndex >= 0 && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) usageExit(`--timeout must be a positive number of ms`);
 if (argv.includes('--help') || argv.includes('-h')) {
-  console.log(`usage: RUNTIME_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [TASK_URL=…] [SKILL=…] [REALM=personal|enterprise] [PARAMS='{"k":"v"}'] [EXPECT_STANCE=0|1] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
+  console.log(`usage: RUNTIME_URL=… ZEUS_INTERNAL_TOKEN=… CARD_URL=… [AGENT_TOKEN=…] [TASK_URL=…] [SKILL=…] [DATA_DOMAIN=personal|enterprise] [PARAMS='{"k":"v"}'] [EXPECT_STANCE=0|1] node scripts/acceptance-real-fanout.mjs [--revoke-test] [--timeout ms]`);
   process.exit(0);
 }
 
@@ -95,9 +95,9 @@ const CARD_URL = env.CARD_URL ?? '';
 const AGENT_TOKEN = env.AGENT_TOKEN ?? '';
 const TASK_URL = env.TASK_URL ?? '';
 const SKILL = env.SKILL ?? 'research';
-const REALM = env.REALM ?? 'personal';
+const DATA_DOMAIN = env.DATA_DOMAIN ?? 'personal';
 const EXPECT_STANCE = env.EXPECT_STANCE ?? '0';
-if (REALM !== 'personal' && REALM !== 'enterprise') usageExit(`REALM must be "personal" or "enterprise", got ${REALM}`);
+if (DATA_DOMAIN !== 'personal' && DATA_DOMAIN !== 'enterprise') usageExit(`DATA_DOMAIN must be "personal" or "enterprise", got ${DATA_DOMAIN}`);
 if (EXPECT_STANCE !== '0' && EXPECT_STANCE !== '1') usageExit(`EXPECT_STANCE must be "0" (the agent reports) or "1" (the agent votes), got ${EXPECT_STANCE}`);
 // A skill's params are its own: the runner cannot guess them, so it takes the
 // object verbatim when given one and only falls back to the question-shaped
@@ -164,7 +164,7 @@ async function call(method, path, { auth = false, body } = {}) {
   return { status: response.status, text, json };
 }
 const clip = (/** @type {unknown} */ value) => String(value ?? '').replace(/\s+/g, ' ').slice(0, 160);
-// The snapshot exports facts as [realmId, FactRecord[]] pairs, so a count has to
+// The snapshot exports facts as [dataDomainId, FactRecord[]] pairs, so a count has to
 // walk the pairs; reading a scalar field that is not there would report 0 and
 // look like "the producer is broken" when it is the reader that is wrong.
 const factCount = (/** @type {any} */ state) => (Array.isArray(state?.facts) ? state.facts : [])
@@ -233,11 +233,11 @@ async function main() {
   }
   record('no read view echoes the agent credential', AGENT_TOKEN ? echoes.length === 0 : true, AGENT_TOKEN ? (echoes.join(', ') || 'checked 3 views') : 'skipped: no AGENT_TOKEN supplied');
 
-  // 6. One fan-out through the real agent. The runtime requires body.realm, and a
-  //    memory claim only lands when the intent names the realm it worked in, so
-  //    the realmId is looked up rather than assumed.
+  // 6. One fan-out through the real agent. The runtime requires body.dataDomain, and a
+  //    memory claim only lands when the intent names the dataDomain it worked in, so
+  //    the dataDomainId is looked up rather than assumed.
   const domains = await call('GET', '/api/domains', { auth: true });
-  const target = (domains.json?.realms ?? []).find((/** @type {any} */ realm) => realm.type === REALM);
+  const target = (domains.json?.dataDomains ?? []).find((/** @type {any} */ dataDomain) => dataDomain.type === DATA_DOMAIN);
   const memoryBefore = await call('GET', '/api/memory/snapshot', { auth: true });
   const eventsBefore = memoryBefore.json?.state?.events?.length ?? -1;
   const factsBefore = factCount(memoryBefore.json?.state);
@@ -245,8 +245,8 @@ async function main() {
     auth: true,
     body: {
       skill: SKILL,
-      realm: REALM,
-      ...(target?.realmId ? { realmId: target.realmId } : {}),
+      dataDomain: DATA_DOMAIN,
+      ...(target?.dataDomainId ? { dataDomainId: target.dataDomainId } : {}),
       executors: [agentName],
       params: PARAMS ?? { subject: marker, predicate: 'verdict', prompt: `Zeus acceptance ${marker}: report one short factual stance.` },
     },
@@ -254,7 +254,7 @@ async function main() {
   const intentId = fanOut.json?.intentId;
   record('the intent is accepted', [200, 201, 202].includes(fanOut.status) && !!intentId, `status=${fanOut.status} ${clip(fanOut.text)}`);
   if (!intentId) return finish();
-  if (!target) console.log(`      NOTE  no ${REALM} realm on this deployment (memory claims are realm-scoped, so step "verdict became a claim" cannot pass; mount one with ZEUS_REALM_ROOTS / ZEUS_REALM_ENTERPRISE)`);
+  if (!target) console.log(`      NOTE  no ${DATA_DOMAIN} dataDomain on this deployment (memory claims are dataDomain-scoped, so step "verdict became a claim" cannot pass; mount one with ZEUS_DATA_DOMAIN_ROOTS / ZEUS_DATA_DOMAIN_ENTERPRISE)`);
   console.log(`      intentId=${intentId}${fanOut.json?.runId ? ` runId=${fanOut.json.runId}` : ''} target=${agentName}`);
 
   const deadline = Date.now() + timeoutMs;

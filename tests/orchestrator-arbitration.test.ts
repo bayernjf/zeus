@@ -79,7 +79,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
       onConflict: (_c, r) => escalated.push(r),
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('completed');
     expect(result.decision.conclusion).toBe('approve');
@@ -107,7 +107,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
       onConflict: (_c, r) => escalated.push(r),
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('needs-operator');
     expect(result.decision.conclusion).toBeNull();
@@ -124,7 +124,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
       onConflict: (_c, r) => escalated.push(r),
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'personal' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'personal' });
 
     expect(result.status).toBe('needs-operator');
     expect(escalated).toHaveLength(1);
@@ -138,7 +138,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
       allowUncalibratedArbitration: true,
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'personal' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'personal' });
 
     expect(result.status).toBe('completed');
     expect(result.decision.conclusion).toBe('approve');
@@ -153,7 +153,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
       onConflict: (_c, r) => escalated.push(r),
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('needs-operator');
     expect(escalated).toHaveLength(1);
@@ -168,7 +168,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
       onConflict: (_c, r) => escalated.push(r),
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('needs-operator');
     expect(escalated).toHaveLength(1);
@@ -179,7 +179,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
     const backend = mockBackend('decision-model', calibratedHigh);
     const orch = new Orchestrator(lookupFor(['loom', 'atlas']), splitPort(), { decisionBackend: backend });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
     expect(result.backendArbitration?.concluded).toBe(true);
     expect(orch.getIntent('X')?.backendArbitration?.concluded).toBe(true);
     expect(orch.exportState().intents[0]!.backendArbitration?.model).toBe('mock-jev');
@@ -193,7 +193,7 @@ describe('S2 backend arbitration on unresolved splits', () => {
       decisionBackend: backend,
     });
 
-    const first = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const first = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
     expect(first.status).toBe('completed');
 
     const resumed = await orch.resumeBranch('X', 'atlas', { note: 'redo' });

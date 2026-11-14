@@ -1,32 +1,32 @@
 import { describe, expect, it } from 'vitest';
 import {
   DomainGrantRegistry,
-  decideRealmAccess,
+  decideDataDomainAccess,
   verifyDomainGrant,
-} from '../src/realm/authorization.js';
-import type { DomainGrant, RealmActor } from '../src/realm/types.js';
+} from '../src/dataDomain/authorization.js';
+import type { DomainGrant, DataDomainActor } from '../src/dataDomain/types.js';
 
 const NOW = new Date('2026-09-25T00:00:00.000Z');
 const now = () => NOW;
 
-const operator: RealmActor = { kind: 'operator', id: 'operator' };
-const deptExecutor: RealmActor = { kind: 'executor', id: 'loom', tenant: { org: 'acme', department: 'eng' } };
-const orgExecutor: RealmActor = { kind: 'executor', id: 'pr-helper', tenant: { org: 'acme' } };
-const personalExecutor: RealmActor = { kind: 'executor', id: 'jev' };
+const operator: DataDomainActor = { kind: 'operator', id: 'operator' };
+const deptExecutor: DataDomainActor = { kind: 'executor', id: 'loom', tenant: { org: 'acme', department: 'eng' } };
+const orgExecutor: DataDomainActor = { kind: 'executor', id: 'pr-helper', tenant: { org: 'acme' } };
+const personalExecutor: DataDomainActor = { kind: 'executor', id: 'jev' };
 
-const deptRealm = { realmId: 'realm-dept', type: 'enterprise' as const, tenant: { org: 'acme', department: 'eng' }, readOnly: false };
-const mktRealm = { realmId: 'realm-mkt', type: 'enterprise' as const, tenant: { org: 'acme', department: 'mkt' }, readOnly: false };
-const orgRealm = { realmId: 'realm-org', type: 'enterprise' as const, tenant: { org: 'acme' }, readOnly: false };
-const unscopedRealm = { realmId: 'realm-plain', type: 'enterprise' as const, readOnly: false };
-const personalRealm = { realmId: 'realm-me', type: 'personal' as const, readOnly: false };
-const readOnlyPersonal = { realmId: 'realm-ro', type: 'personal' as const, readOnly: true };
+const deptDataDomain = { dataDomainId: 'dataDomain-dept', type: 'enterprise' as const, tenant: { org: 'acme', department: 'eng' }, readOnly: false };
+const mktDataDomain = { dataDomainId: 'dataDomain-mkt', type: 'enterprise' as const, tenant: { org: 'acme', department: 'mkt' }, readOnly: false };
+const orgDataDomain = { dataDomainId: 'dataDomain-org', type: 'enterprise' as const, tenant: { org: 'acme' }, readOnly: false };
+const unscopedDataDomain = { dataDomainId: 'dataDomain-plain', type: 'enterprise' as const, readOnly: false };
+const personalDataDomain = { dataDomainId: 'dataDomain-me', type: 'personal' as const, readOnly: false };
+const readOnlyPersonal = { dataDomainId: 'dataDomain-ro', type: 'personal' as const, readOnly: true };
 
 function grant(over: Partial<DomainGrant> = {}): DomainGrant {
   return {
     kind: 'domain-access',
     grantId: over.grantId ?? 'g1',
     subject: over.subject ?? 'jev',
-    realmId: over.realmId ?? 'realm-dept',
+    dataDomainId: over.dataDomainId ?? 'dataDomain-dept',
     access: over.access ?? 'read',
     grantedBy: over.grantedBy ?? 'operator',
     grantedAt: over.grantedAt ?? NOW.toISOString(),
@@ -36,56 +36,56 @@ function grant(over: Partial<DomainGrant> = {}): DomainGrant {
   };
 }
 
-describe('E6.4 decideRealmAccess: the hierarchy is structural', () => {
+describe('E6.4 decideDataDomainAccess: the hierarchy is structural', () => {
   it('lets an org subject reach down into its departments', () => {
-    expect(decideRealmAccess({ actor: orgExecutor, realm: deptRealm, access: 'read' })).toEqual({
+    expect(decideDataDomainAccess({ actor: orgExecutor, dataDomain: deptDataDomain, access: 'read' })).toEqual({
       ok: true,
       via: 'tenant-hierarchy',
     });
   });
 
   it('refuses a department looking up at the org corpus', () => {
-    const decision = decideRealmAccess({ actor: deptExecutor, realm: orgRealm, access: 'read' });
+    const decision = decideDataDomainAccess({ actor: deptExecutor, dataDomain: orgDataDomain, access: 'read' });
     expect(decision.ok).toBe(false);
     if (!decision.ok) expect(decision.reason).toBe('tenant-out-of-scope');
   });
 
   it('refuses a department looking sideways at its sibling', () => {
-    const decision = decideRealmAccess({ actor: deptExecutor, realm: mktRealm, access: 'read' });
+    const decision = decideDataDomainAccess({ actor: deptExecutor, dataDomain: mktDataDomain, access: 'read' });
     expect(decision.ok).toBe(false);
     if (!decision.ok) expect(decision.reason).toBe('tenant-out-of-scope');
   });
 
-  it('refuses a tenant-scoped subject on an unscoped enterprise realm', () => {
-    // An unscoped realm has nothing to match against, so only the operator may use
+  it('refuses a tenant-scoped subject on an unscoped enterprise dataDomain', () => {
+    // An unscoped dataDomain has nothing to match against, so only the operator may use
     // it; quietly letting any subject in would be the widened mount the tenant
     // exists to prevent.
-    const decision = decideRealmAccess({ actor: orgExecutor, realm: unscopedRealm, access: 'read' });
+    const decision = decideDataDomainAccess({ actor: orgExecutor, dataDomain: unscopedDataDomain, access: 'read' });
     expect(decision.ok).toBe(false);
     if (!decision.ok) expect(decision.reason).toBe('tenant-out-of-scope');
   });
 });
 
-describe('E6.4 decideRealmAccess: the domain edge', () => {
+describe('E6.4 decideDataDomainAccess: the domain edge', () => {
   it('never lets an enterprise subject read the personal domain, grant or not', () => {
-    const decision = decideRealmAccess({
+    const decision = decideDataDomainAccess({
       actor: deptExecutor,
-      realm: personalRealm,
+      dataDomain: personalDataDomain,
       access: 'read',
-      grants: [grant({ subject: 'loom', realmId: 'realm-me', access: 'read' })],
+      grants: [grant({ subject: 'loom', dataDomainId: 'dataDomain-me', access: 'read' })],
     });
     expect(decision.ok).toBe(false);
     if (!decision.ok) expect(decision.reason).toBe('enterprise-to-personal');
   });
 
   it('requires an explicit grant for a personal-side subject to read enterprise content', () => {
-    const without = decideRealmAccess({ actor: personalExecutor, realm: deptRealm, access: 'read' });
+    const without = decideDataDomainAccess({ actor: personalExecutor, dataDomain: deptDataDomain, access: 'read' });
     expect(without.ok).toBe(false);
     if (!without.ok) expect(without.reason).toBe('no-grant');
 
-    const withGrant = decideRealmAccess({
+    const withGrant = decideDataDomainAccess({
       actor: personalExecutor,
-      realm: deptRealm,
+      dataDomain: deptDataDomain,
       access: 'read',
       grants: [grant()],
       now,
@@ -94,9 +94,9 @@ describe('E6.4 decideRealmAccess: the domain edge', () => {
   });
 
   it('does not let a read grant authorize a write, and says which is missing', () => {
-    const decision = decideRealmAccess({
+    const decision = decideDataDomainAccess({
       actor: personalExecutor,
-      realm: deptRealm,
+      dataDomain: deptDataDomain,
       access: 'write',
       grants: [grant({ access: 'read' })],
       now,
@@ -105,55 +105,55 @@ describe('E6.4 decideRealmAccess: the domain edge', () => {
     if (!decision.ok) expect(decision.reason).toBe('access-not-granted');
   });
 
-  it('binds a grant to its subject and to its realm', () => {
-    const otherSubject = decideRealmAccess({
+  it('binds a grant to its subject and to its dataDomain', () => {
+    const otherSubject = decideDataDomainAccess({
       actor: { kind: 'executor', id: 'someone-else' },
-      realm: deptRealm,
+      dataDomain: deptDataDomain,
       access: 'read',
       grants: [grant()],
       now,
     });
     expect(otherSubject.ok).toBe(false);
 
-    const otherRealm = decideRealmAccess({
+    const otherDataDomain = decideDataDomainAccess({
       actor: personalExecutor,
-      realm: mktRealm,
+      dataDomain: mktDataDomain,
       access: 'read',
       grants: [grant()],
       now,
     });
-    expect(otherRealm.ok).toBe(false);
+    expect(otherDataDomain.ok).toBe(false);
   });
 
   it('stops honoring a grant the moment it expires', () => {
     const expired = grant({ expiresAt: new Date(NOW.getTime() - 1).toISOString() });
-    const decision = decideRealmAccess({
+    const decision = decideDataDomainAccess({
       actor: personalExecutor,
-      realm: deptRealm,
+      dataDomain: deptDataDomain,
       access: 'read',
       grants: [expired],
       now,
     });
     expect(decision.ok).toBe(false);
     if (!decision.ok) expect(decision.reason).toBe('grant-expired');
-    expect(verifyDomainGrant(expired, { subject: 'jev', realmId: 'realm-dept', access: 'read' }, now)).toEqual({
+    expect(verifyDomainGrant(expired, { subject: 'jev', dataDomainId: 'dataDomain-dept', access: 'read' }, now)).toEqual({
       ok: false,
       reason: 'expired',
     });
   });
 
-  it('refuses writes into a read-only realm even for the operator', () => {
-    const decision = decideRealmAccess({ actor: operator, realm: readOnlyPersonal, access: 'write' });
+  it('refuses writes into a read-only dataDomain even for the operator', () => {
+    const decision = decideDataDomainAccess({ actor: operator, dataDomain: readOnlyPersonal, access: 'write' });
     expect(decision.ok).toBe(false);
     if (!decision.ok) expect(decision.reason).toBe('read-only');
-    expect(decideRealmAccess({ actor: operator, realm: readOnlyPersonal, access: 'read' })).toEqual({
+    expect(decideDataDomainAccess({ actor: operator, dataDomain: readOnlyPersonal, access: 'read' })).toEqual({
       ok: true,
       via: 'same-domain',
     });
   });
 
   it('treats the operator as the authorizer (they own both domains)', () => {
-    expect(decideRealmAccess({ actor: operator, realm: deptRealm, access: 'read' })).toEqual({
+    expect(decideDataDomainAccess({ actor: operator, dataDomain: deptDataDomain, access: 'read' })).toEqual({
       ok: true,
       via: 'same-domain',
     });
@@ -161,7 +161,7 @@ describe('E6.4 decideRealmAccess: the domain edge', () => {
 });
 
 describe('E6.4 verifyDomainGrant shape rules', () => {
-  const expected = { subject: 'jev', realmId: 'realm-dept', access: 'read' as const };
+  const expected = { subject: 'jev', dataDomainId: 'dataDomain-dept', access: 'read' as const };
 
   it('rejects a credential that is missing any binding', () => {
     expect(verifyDomainGrant(grant({ nonce: '' }), expected, now)).toEqual({ ok: false, reason: 'malformed' });
@@ -174,7 +174,7 @@ describe('E6.4 verifyDomainGrant shape rules', () => {
   });
 
   it('separates a wrong binding from a wrong access', () => {
-    expect(verifyDomainGrant(grant({ realmId: 'other' }), expected, now)).toEqual({ ok: false, reason: 'wrong-realm' });
+    expect(verifyDomainGrant(grant({ dataDomainId: 'other' }), expected, now)).toEqual({ ok: false, reason: 'wrong-dataDomain' });
     expect(verifyDomainGrant(grant({ access: 'write' }), expected, now)).toEqual({ ok: false, reason: 'wrong-access' });
     expect(verifyDomainGrant(grant({ subject: 'x' }), expected, now)).toEqual({ ok: false, reason: 'wrong-subject' });
   });
@@ -184,7 +184,7 @@ describe('E6.4 grant registry lifecycle', () => {
   it('issues a grant, stamps it, and reports it in the audit trail', () => {
     const entries: string[] = [];
     const registry = new DomainGrantRegistry(now, entry => entries.push(`${entry.decision}:${entry.grantId}`));
-    const issued = registry.issue({ subject: 'jev', realmId: 'realm-dept', access: 'read', grantedBy: 'operator', nonce: 'n9' });
+    const issued = registry.issue({ subject: 'jev', dataDomainId: 'dataDomain-dept', access: 'read', grantedBy: 'operator', nonce: 'n9' });
     expect(issued).toMatchObject({ kind: 'domain-access', grantId: expect.stringMatching(/^grant-/), grantedAt: NOW.toISOString() });
     expect(registry.list()).toHaveLength(1);
     expect(entries).toEqual([`grant-issued:${issued.grantId}`]);
@@ -192,40 +192,40 @@ describe('E6.4 grant registry lifecycle', () => {
 
   it('mints a distinct nonce when the issuer supplies none, and refuses a replayed one', () => {
     const registry = new DomainGrantRegistry(now);
-    const a = registry.issue({ subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'operator' });
-    const b = registry.issue({ subject: 'jev', realmId: 'r', access: 'write', grantedBy: 'operator' });
+    const a = registry.issue({ subject: 'jev', dataDomainId: 'r', access: 'read', grantedBy: 'operator' });
+    const b = registry.issue({ subject: 'jev', dataDomainId: 'r', access: 'write', grantedBy: 'operator' });
     expect(a.nonce).toMatch(/[0-9a-f-]{20,}/);
     expect(a.nonce).not.toBe(b.nonce);
     // An explicitly supplied nonce is still a claim, and a claim cannot be made twice.
-    registry.issue({ grantId: 'a1', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'operator', nonce: 'same' });
-    expect(() => registry.issue({ grantId: 'b1', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'operator', nonce: 'same' }))
+    registry.issue({ grantId: 'a1', subject: 'jev', dataDomainId: 'r', access: 'read', grantedBy: 'operator', nonce: 'same' });
+    expect(() => registry.issue({ grantId: 'b1', subject: 'jev', dataDomainId: 'r', access: 'read', grantedBy: 'operator', nonce: 'same' }))
       .toThrow(/already used/);
   });
 
   it('refuses to overwrite a live grant id but never resurrects a spent nonce by revoking', () => {
     const registry = new DomainGrantRegistry(now);
-    registry.issue({ grantId: 'dup', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'operator', nonce: 'one' });
-    expect(() => registry.issue({ grantId: 'dup', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'operator', nonce: 'two' }))
+    registry.issue({ grantId: 'dup', subject: 'jev', dataDomainId: 'r', access: 'read', grantedBy: 'operator', nonce: 'one' });
+    expect(() => registry.issue({ grantId: 'dup', subject: 'jev', dataDomainId: 'r', access: 'read', grantedBy: 'operator', nonce: 'two' }))
       .toThrow(/already exists/);
     registry.revoke('dup');
-    expect(() => registry.issue({ grantId: 'again', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'operator', nonce: 'one' }))
+    expect(() => registry.issue({ grantId: 'again', subject: 'jev', dataDomainId: 'r', access: 'read', grantedBy: 'operator', nonce: 'one' }))
       .toThrow(/already used/);
     expect(() => registry.revoke('dup')).toThrow(/unknown grant/);
   });
 
   it('round-trips through the runtime snapshot, spent nonces included', () => {
     const registry = new DomainGrantRegistry(now);
-    const issued = registry.issue({ grantId: 'g', subject: 'jev', realmId: 'realm-dept', access: 'read', grantedBy: 'operator', nonce: 'n' });
+    const issued = registry.issue({ grantId: 'g', subject: 'jev', dataDomainId: 'dataDomain-dept', access: 'read', grantedBy: 'operator', nonce: 'n' });
     const restored = new DomainGrantRegistry(now);
     restored.importState(structuredClone(registry.exportState()));
     expect(restored.get('g')).toEqual(issued);
-    expect(() => restored.issue({ subject: 'jev', realmId: 'realm-dept', access: 'read', grantedBy: 'operator', nonce: 'n' }))
+    expect(() => restored.issue({ subject: 'jev', dataDomainId: 'dataDomain-dept', access: 'read', grantedBy: 'operator', nonce: 'n' }))
       .toThrow(/already used/);
   });
 
   it('hands the decider a defensive copy, so a caller cannot edit live grants', () => {
     const registry = new DomainGrantRegistry(now);
-    registry.issue({ grantId: 'g', subject: 'jev', realmId: 'r', access: 'read', grantedBy: 'operator', nonce: 'n' });
+    registry.issue({ grantId: 'g', subject: 'jev', dataDomainId: 'r', access: 'read', grantedBy: 'operator', nonce: 'n' });
     const list = registry.list();
     list[0]!.subject = 'attacker';
     expect(registry.get('g')?.subject).toBe('jev');

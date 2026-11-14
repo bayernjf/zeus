@@ -81,7 +81,7 @@ npm run daily -- "summarize the note" \
 | `--agent CARD` 或 `CARD｜TOKEN` | 派发前注册一个执行 Agent，可与 `ZEUS_EXECUTOR_SEEDS` 合并 |
 | `--spec FILE` | 派发前登记显式技能规格（JSON 对象或数组，字段与 `POST /api/skills` 同一条白名单）；这是入口侧唯一能声明 `aliases` 的途径 |
 | `--skill ID` / `--params JSON` | 跳过识别直接派发；技能参数 |
-| `--realm personal` 或 `enterprise` | 意图操作的数据域；企业域记录只写企业域 |
+| `--dataDomain personal` 或 `enterprise` | 意图操作的数据域；企业域记录只写企业域 |
 | `--model` | 本次允许咨询配置里的决策后端（默认零出域） |
 | `--state FILE` 或 `none` | 内核状态文件；`none` 保持纯内存，既不加载也不保存 |
 
@@ -95,7 +95,7 @@ npm run daily -- "summarize the note" \
 ZEUS_INTERNAL_TOKEN="$(openssl rand -hex 24)" \
 ZEUS_STATE_FILE=./data/runtime-state.json \
 ZEUS_AUDIT_FILE=./data/audit.jsonl \
-ZEUS_REALM_ROOTS=/path/to/your/dir \
+ZEUS_DATA_DOMAIN_ROOTS=/path/to/your/dir \
 npm start
 ```
 
@@ -133,7 +133,7 @@ import { createHttpServer } from 'zeus/http';
 
 const runtime = await bootRuntime({
   executorSeeds: ['https://agent.example/api/a2a/agent-card'],
-  realmRoots: ['/data/notes'],
+  dataDomainRoots: ['/data/notes'],
 });
 const app = await createHttpServer({
   registry: runtime.registry,
@@ -164,7 +164,7 @@ npm run verify:roster -- --url http://127.0.0.1:8787/api/roster/public --key rsk
 # 退出码 0=验签通过 / 1=被拒（附原因：版本不认识、摘要不绑定、签名不符、过期…）/ 2=参数或 I/O 错
 ```
 
-数据域经 MCP 对外暴露时有两条传输形态：stdio（宿主预连接并授权，协议不暴露 connect）与 streamable HTTP（`GET /mcp` 只出元信息、`POST /mcp` 需 bearer，会话级身份只能收窄宿主白名单）。内核另有只读工具面 `POST /api/mcp`（G6）：`memory.recall`（memory service token 绑定一个 namespace，跨 realm 拒绝）与 `traces.query`（仅 operator token），只读、无写工具——remember/forget 仍走 HTTP 消费面。对接细节见 [docs/mcp-integration.md](docs/mcp-integration.md)。
+数据域经 MCP 对外暴露时有两条传输形态：stdio（宿主预连接并授权，协议不暴露 connect）与 streamable HTTP（`GET /mcp` 只出元信息、`POST /mcp` 需 bearer，会话级身份只能收窄宿主白名单）。内核另有只读工具面 `POST /api/mcp`（G6）：`memory.recall`（memory service token 绑定一个 namespace，跨 dataDomain 拒绝）与 `traces.query`（仅 operator token），只读、无写工具——remember/forget 仍走 HTTP 消费面。对接细节见 [docs/mcp-integration.md](docs/mcp-integration.md)。
 
 ### 2.6 验证你的安装
 
@@ -216,7 +216,7 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 | 人工处理 | `src/oversight/` | 升级队列与 approve / reject / resolve、介入分级、裁决回写并重算状态 |
 | 能力目录 | `src/skills/` | 显式规格校验（版本 / 封闭权限词汇 / 依赖无环 / 别名声明）、多版本共存、检索与组队解析（歧义不静默选边）、装卸与权限收窄、能力认证台账 |
 | 决策后端 | `src/decision/` | 模型无关端口 + 规则 / 外部决策模型 / OpenAI 兼容适配器 + 降级；只在被显式咨询时出域 |
-| 数据域 | `src/realm/` | 连接即建检索索引、确定性 realmId、内容摘要基线、路径穿越与符号链接双检、原子写；三级租户范围与跨域授权判定、签名且一次性的企业写授权凭证；只读 MCP 服务端与 stdio 宿主 |
+| 数据域 | `src/dataDomain/` | 连接即建检索索引、确定性 dataDomainId、内容摘要基线、路径穿越与符号链接双检、原子写；三级租户范围与跨域授权判定、签名且一次性的企业写授权凭证；只读 MCP 服务端与 stdio 宿主 |
 | 外部系统连接器 | `src/mcp/` | 零 SDK 的 streamable-HTTP JSON-RPC 客户端；连接器声明 / 握手 / 吊销，最小权限精确裁剪——只有经握手发现且被声明保留的工具才可调用；子进程连接器的环境收窄 |
 | 记忆与叙事 | `src/memory/`、`src/diary/` | 只追加事件日志 + 纯函数派生事实、观察去重、矛盾默认争议、置信度按可靠度加权、混合检索、遗忘权与撤回；事件按日历天分桶成可读记录 |
 | 组织与自动触发 | `src/org/`、`src/onboarding/`、`src/watch/` | 部门与问责链；上岗四道门每次现算不缓存（签字后吊销 Agent 或撤出编制即自动失格）；watch 由调用方驱动计时，命中即派生意图 |
@@ -246,7 +246,7 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 | 决策回放 | 从持久化事实重建一次决策的参与方·输入·立场·聚合·裁决 |
 | 操作者 | 人类角色：监督、介入、给出最终裁决——不是被替代的手工执行者 |
 
-代码、环境变量与 HTTP 路径里保留了一批早期命名（`executor` / `handshake` / `roster` / `realm` / `runtime` / `operator` / `commission` / `mentorship` / `noul`）。它们是接口的一部分，含义与"为什么不能顺手改名"逐条记在 [docs/terminology.md](docs/terminology.md)；**这些名字不代表任何第三方系统或集成**（例如 `src/backup/` 与 HashiCorp Backup 无关），本文档不使用它们做叙述词。
+代码、环境变量与 HTTP 路径里保留了一批早期命名（`executor` / `handshake` / `roster` / `dataDomain` / `runtime` / `operator` / `seatGrant` / `mentorship` / `noul`）。它们是接口的一部分，含义与"为什么不能顺手改名"逐条记在 [docs/terminology.md](docs/terminology.md)；**这些名字不代表任何第三方系统或集成**（例如 `src/backup/` 与 HashiCorp Backup 无关），本文档不使用它们做叙述词。
 
 ### 3.6 现行判定与仍缺的外部条件
 
@@ -268,7 +268,7 @@ npm run evals        # 离线质量回归：31 例 / 十族指标，--baseline �
 | 部署、密钥、备份调度、上线检查清单 | [docs/deployment.md](docs/deployment.md)、[docs/pre-launch-checklist.md](docs/pre-launch-checklist.md) |
 | 对接 MCP（数据域服务端与连接器客户端） | [docs/mcp-integration.md](docs/mcp-integration.md) |
 | 执行 Agent 协议（卡片、握手、回传、升级、验收） | [docs/design-executor-protocol.md](docs/design-executor-protocol.md) |
-| 数据域契约（connect / search / read / write、租户、跨域授权） | [docs/design-realm.md](docs/design-realm.md) |
+| 数据域契约（connect / search / read / write、租户、跨域授权） | [docs/design-dataDomain.md](docs/design-dataDomain.md) |
 | 并发编排契约（派发与汇聚、合并流、幂等、取消、聚合、升级） | [docs/design-fan-out.md](docs/design-fan-out.md) |
 | 目录签名链与公钥发布、人工轮换手册 | [docs/design-handshake-signing.md](docs/design-handshake-signing.md) |
 | 备份与恢复协议 | [docs/design-backup.md](docs/design-backup.md) |

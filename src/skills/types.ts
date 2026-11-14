@@ -39,7 +39,7 @@ export type SkillSpec = {
   inputs?: Record<string, unknown>;
   /** Declared output shape. */
   outputs?: Record<string, unknown>;
-  /** Permission claims the skill requires, e.g. ['realm:read', 'execute']. */
+  /** Permission claims the skill requires, e.g. ['data-domain:read', 'execute']. */
   permissions?: string[];
   /** Other skill ids this one depends on. */
   dependencies?: string[];

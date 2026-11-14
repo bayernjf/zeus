@@ -30,7 +30,7 @@ import {
   resolveConcurrencyConfig,
   resolveCostConfig,
   resolveDecisionConfigWithHub,
-  resolveRealmConfig,
+  resolveDataDomainConfig,
   resolveExecutorSeedsConfig,
 } from '../state/boot.js';
 import { runtimeStats } from '../state/stats.js';
@@ -40,7 +40,7 @@ import { OtlpTraceExporter } from '../observability/exporter.js';
 import { JsonlEvalRunsStore } from '../evals/runs-store.js';
 import { parseRetentionMode } from '../state/archive.js';
 import { loadRskSigner, RskConfigError } from './rsk.js';
-import { RealmError } from '../realm/types.js';
+import { DataDomainError } from '../dataDomain/types.js';
 import { startServer } from './server.js';
 import { createLogger, redactText } from '../util/logger.js';
 import {
@@ -106,7 +106,7 @@ function parseIntPositive(name: string, raw: string): number {
   return value;
 }
 
-/** MemoryPort v1 §7: parse "realm:token,realm2:token2" into a lookup map. */
+/** MemoryPort v1 §7: parse "data-domain:token,dataDomain2:token2" into a lookup map. */
 function parseMemoryServiceTokens(raw: string | undefined): Record<string, string> | null {
   const value = raw?.trim();
   if (!value) return null;
@@ -191,8 +191,8 @@ async function main(): Promise<void> {
   const cost = resolveCostConfig(process.env);
   const audit = resolveAuditConfig(process.env);
   // E3.6: enterprise mounts carry their tenant scope; a malformed one aborts the
-  // boot here rather than mounting an org-visible realm.
-  const realm = resolveRealmConfig(process.env);
+  // boot here rather than mounting an org-visible dataDomain.
+  const dataDomain = resolveDataDomainConfig(process.env);
   if (process.env.ZEUS_JUDGE_ENABLED && !decision.backend) {
     log.warn('judge-disabled', 'ZEUS_JUDGE_ENABLED is set but no decision backend is configured; judge stays off');
   }
@@ -231,7 +231,7 @@ async function main(): Promise<void> {
     ...(process.env.ZEUS_EXECUTOR_SEEDS
       ? { executorSeeds: resolveExecutorSeedsConfig(process.env) }
       : {}),
-    ...(realm.realmRoots.length ? { realmRoots: realm.realmRoots } : {}),
+    ...(dataDomain.dataDomainRoots.length ? { dataDomainRoots: dataDomain.dataDomainRoots } : {}),
     ...(process.env.ZEUS_AUDIT_FILE ? { auditFile: process.env.ZEUS_AUDIT_FILE } : {}),
     // E4.11 (design-a2a-push): Zeus's own push receiver address. Armed intents
     // carry it as pushNotificationConfig; the callback endpoint is mounted with
@@ -307,15 +307,15 @@ async function main(): Promise<void> {
     log.warn('trace-export-needs-audit-file', 'ZEUS_TRACE_EXPORT_FILE is set but ZEUS_AUDIT_FILE is not; no trace will be exported');
   }
 
-  // The operator's first question after "is it up" is "which realms did it
+  // The operator's first question after "is it up" is "which dataDomains did it
   // mount, and under which ids" - the ids otherwise only appear on the
   // bearer face, which presupposes knowing the bearer face exists.
-  for (const connection of runtime.realmStore?.connections() ?? []) {
+  for (const connection of runtime.dataDomainStore?.connections() ?? []) {
     const scope = connection.tenant
       ? [connection.tenant.org, connection.tenant.department, connection.tenant.member].filter(Boolean).join('/')
       : undefined;
-    log.info('realm-mounted', undefined, {
-      realmId: connection.realmId,
+    log.info('dataDomain-mounted', undefined, {
+      dataDomainId: connection.dataDomainId,
       type: connection.type,
       ...(scope !== undefined ? { tenant: scope } : {}),
       writable: !connection.readOnly,
@@ -326,7 +326,7 @@ async function main(): Promise<void> {
     'enterprise-writes',
     runtime.operatorGrantAuthority === 'signed'
       ? `accepting only operator grants signed by "${runtime.operatorSigner?.keyId}"`
-      : 'NO operator key configured - grants are checked for shape/realm/expiry only, so anything that can call write() can author its own authorization'
+      : 'NO operator key configured - grants are checked for shape/dataDomain/expiry only, so anything that can call write() can author its own authorization'
   );
   if (runtime.stateFile) {
     if (runtime.restoredFromSnapshot) {
@@ -532,7 +532,7 @@ async function main(): Promise<void> {
     ...(runtime.orgRegistry ? { orgRegistry: runtime.orgRegistry } : {}),
     ...(runtime.memoryStore ? { memoryStore: runtime.memoryStore } : {}),
     // MemoryPort v1 §7: cross-agent consumer face; unset env = face not mounted.
-    // MemoryPort v1 §7: namespace-bound consumer tokens ("realm:token,..."
+    // MemoryPort v1 §7: namespace-bound consumer tokens ("data-domain:token,..."
     // comma-separated); unset env = face not mounted at all (fail-closed).
     ...(memoryServiceTokens ? { memoryServiceTokens } : {}),
     memoryServiceAudit: (decision: 'memory-service-call', detail: string) =>
@@ -544,11 +544,11 @@ async function main(): Promise<void> {
       }),
     // M-12: retract / forget-subject answer only once the erasure is durable.
     persistState: () => runtime.saveState(),
-    ...(runtime.realmStore ? { realmStore: runtime.realmStore } : {}),
-    ...(runtime.realmStore
+    ...(runtime.dataDomainStore ? { dataDomainStore: runtime.dataDomainStore } : {}),
+    ...(runtime.dataDomainStore
       ? {
-          realmMcp: {
-            realmIds: (runtime.realmStore.connections() ?? []).map(connection => connection.realmId),
+          dataDomainMcp: {
+            dataDomainIds: (runtime.dataDomainStore.connections() ?? []).map(connection => connection.dataDomainId),
           },
         }
       : {}),
@@ -584,7 +584,7 @@ async function main(): Promise<void> {
       : {}),
     // E6.4: the two data domains, their tenant scopes and the grants between them.
     ...(runtime.domainGrants ? { domainGrants: runtime.domainGrants } : {}),
-    realmAudit: runtime.realmAudit,
+    dataDomainAudit: runtime.dataDomainAudit,
     // E3.5 / deferred #14: enterprise write credentials (issue + replay ledger).
     ...(runtime.operatorGrantLedger ? { operatorGrantLedger: runtime.operatorGrantLedger } : {}),
     operatorGrantAuthority: runtime.operatorGrantAuthority,
@@ -599,8 +599,8 @@ async function main(): Promise<void> {
     ...(runtime.watches ? { watches: runtime.watches } : {}),
     runWatchTick: runtime.runWatchTick,
     delegationContractAudit: runtime.delegationContractAudit,
-    // E9.1/E9.2: the day-one briefing and the commission gate.
-    ...(runtime.commissionLedger ? { commissions: runtime.commissionLedger } : {}),
+    // E9.1/E9.2: the day-one briefing and the seatGrant gate.
+    ...(runtime.seatGrantLedger ? { seatGrants: runtime.seatGrantLedger } : {}),
     ...(runtime.connectorRegistry ? { connectorRegistry: runtime.connectorRegistry } : {}),
     ...(runtime.auditFile ? { auditFile: runtime.auditFile } : {}),
     // The route is conditional on the port being present, so this is the line
@@ -684,11 +684,11 @@ async function main(): Promise<void> {
 }
 
 main().catch(error => {
-  // A mistyped ZEUS_REALM_ROOTS, an unusable tenant string or an unwritable
+  // A mistyped ZEUS_DATA_DOMAIN_ROOTS, an unusable tenant string or an unwritable
   // audit path are configuration facts, not bugs: emit the one line that names
   // what to change and leave the stack to everything else. The structured log
   // keeps the same semantics: named event, error class, message, exit 1.
-  if (error instanceof RuntimeBootError || error instanceof RealmError || error instanceof RskConfigError) {
+  if (error instanceof RuntimeBootError || error instanceof DataDomainError || error instanceof RskConfigError) {
     log.error('boot-refused', error.message, { errorClass: error.constructor.name });
     process.exit(1);
   }

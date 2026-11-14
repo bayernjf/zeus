@@ -6,9 +6,9 @@
 
 ## 1. 缺口与现状
 
-- **声明有、机制无**：设计文档写明了「外客按最低信任处理（沙箱、脱敏、不可逆操作一律升级）」，但 `src/` 全库搜索 `sandbox` 零命中——该声明从未变成代码。现状是：**任何过了入站形状闸的调用方，与注册执行 Agent 享有同一套派发能力**（realm 缺省 personal、可触发 fanOut），没有档位差异。
+- **声明有、机制无**：设计文档写明了「外客按最低信任处理（沙箱、脱敏、不可逆操作一律升级）」，但 `src/` 全库搜索 `sandbox` 零命中——该声明从未变成代码。现状是：**任何过了入站形状闸的调用方，与注册执行 Agent 享有同一套派发能力**（dataDomain 缺省 personal、可触发 fanOut），没有档位差异。
 - **入站面已建立判档挂钩**：`src/http/serve.ts` 的入站 A2A 面（Active work 144）对 `x-zeus-caller-card` 跑 `handshakeOathProblem` 形状闸——**只验形状（版本闸 + 必填字段），不验签名锚**（真实信任锚 = bayjf 签名目录，R2 未公开）。无卡或形状不过 → fail-closed 403 + 审计，已实现。
-- **既有信任原语可复用**：`DomainGrant`/`decideRealmAccess`（E6.4，realm 级授权）、`dataPolicy` 四档判（E4.5，出站内容边界）、执行授权票据（#33，execute 能力钉）、注册表 active/revoked 状态、`AUDIT_DECISIONS` 单一来源。
+- **既有信任原语可复用**：`DomainGrant`/`decideDataDomainAccess`（E6.4，dataDomain 级授权）、`dataPolicy` 四档判（E4.5，出站内容边界）、执行授权票据（#33，execute 能力钉）、注册表 active/revoked 状态、`AUDIT_DECISIONS` 单一来源。
 - **PRD 出处**：E9.4（P2）「外部 Agent 信任分级与沙箱」，触发条件「首个矩阵外 Agent 接入**前**完成」——措辞是前置守卫而非后续增强（同 #6「个人/企业双域授权粒度」先例：等外部方到了再补边界，等于先把门装歪再拆）。
 
 ## 2. 信任分级模型（档位判定）
@@ -22,7 +22,7 @@
 | `tier-2` 注册执行者 | handshake 形状通过 **且** 已在注册表 active（现行出站协作方，如 pr-helper / loom / atlas） | 信任 = 注册时卡片深比对 + active 状态；沿用现行派发规则 |
 | `tier-3` 签名在册 | handshake 形状通过 **且** 签名验证通过（名册 attestation 在册且与携卡内容精确一致——**已实施 2026-10-16**：锚来源为 Zeus 自签名名册快照，bayjf R2 公开后平移到其公钥锚，判档函数不动） | 信任 = 密码学验证；最高档，与注册执行者同权或略高（附签名档案） |
 
-**判档不跨域判定内容**：realm 可见性与数据边界**不在本模型内**——仍由 `decideRealmAccess` 与 `dataPolicy` 现行规则单独判定（跨域授权面不得被信任档位旁路）。
+**判档不跨域判定内容**：dataDomain 可见性与数据边界**不在本模型内**——仍由 `decideDataDomainAccess` 与 `dataPolicy` 现行规则单独判定（跨域授权面不得被信任档位旁路）。
 
 ## 3. 沙箱边界（每档上限）
 
@@ -31,8 +31,8 @@
 | 面 | 维度 | tier-1（形状信任） | tier-2（注册执行者） | tier-3（签名在册） |
 | --- | --- | --- | --- | --- |
 | 能力面 | 可派发技能域 | **只读类技能白名单**（skill tags 含 `read-only` = `READ_ONLY_TAG`；tier-1 只放行只读 tag 技能，缺 registry / 未注册 / 非只读均拒绝） | 注册声明的技能域 | 同 tier-2 |
-| 数据面 | 出站内容边界 | `dataPolicy` 强制最严档（`none`：realmHits 不入出站载荷） | 现行 dataPolicy 声明档 | 现行 dataPolicy 声明档 |
-| 数据面 | realm 可见性 | 仅个人域、且无出站凭证注入 | 注册声明 + DomainGrant 现行规则 | 同 tier-2 |
+| 数据面 | 出站内容边界 | `dataPolicy` 强制最严档（`none`：dataDomainHits 不入出站载荷） | 现行 dataPolicy 声明档 | 现行 dataPolicy 声明档 |
+| 数据面 | dataDomain 可见性 | 仅个人域、且无出站凭证注入 | 注册声明 + DomainGrant 现行规则 | 同 tier-2 |
 | 资源面 | 并发分支上限 / 超时 / 回传字节 | 全局默认的 1/3（数值在启用时按实测定，不凭空拍） | 现行全局上限 | 现行全局上限 |
 | 操作面 | 不可逆操作 | **一律升级**：`execute` 能力不可达（只 `plan`），凭证代理不注入 | 现行执行授权票据规则（#33） | 同 tier-2 |
 

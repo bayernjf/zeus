@@ -3,9 +3,9 @@ import { selectTargets, formatExhausted, type DiversionInput } from '../src/orch
 import { ConcurrencyMetrics } from '../src/orchestrator/metrics.js';
 import { Orchestrator } from '../src/orchestrator/orchestrator.js';
 import type { DispatchPort } from '../src/orchestrator/types.js';
-import type { RealmType } from '../src/a2a/types.js';
+import type { DataDomainType } from '../src/a2a/types.js';
 
-const REALM: RealmType = 'personal';
+const DATA_DOMAIN: DataDomainType = 'personal';
 
 /** Build a selectTargets input with a fixed load/metric/health snapshot. */
 function input(overrides: Partial<DiversionInput> & Pick<DiversionInput, 'initialNames' | 'candidatePool'>): DiversionInput {
@@ -161,7 +161,7 @@ describe('orchestrator wiring (#9 diversion event + per-executor load)', () => {
       intentId: id,
       skill: 'code',
       params: {},
-      realm: REALM,
+      dataDomain: DATA_DOMAIN,
     });
 
     // First fan-out: A hangs in flight (saturated), B completes.
@@ -210,7 +210,7 @@ describe('orchestrator wiring (#9 diversion event + per-executor load)', () => {
       }
     );
 
-    const req = (id: string) => ({ intentId: id, skill: 'code', params: {}, realm: REALM });
+    const req = (id: string) => ({ intentId: id, skill: 'code', params: {}, dataDomain: DATA_DOMAIN });
 
     const first = orchestrator.fanOut(req('i1'));
     await new Promise(r => setTimeout(r, 0));
@@ -244,7 +244,7 @@ describe('orchestrator wiring (#9 diversion event + per-executor load)', () => {
       }
     );
 
-    const pending = orchestrator.fanOut({ intentId: 'i-pin', skill: 'code', params: {}, realm: REALM, executors: ['A'] });
+    const pending = orchestrator.fanOut({ intentId: 'i-pin', skill: 'code', params: {}, dataDomain: DATA_DOMAIN, executors: ['A'] });
     await new Promise(r => setTimeout(r, 0));
     expect(faces[0]).toMatchObject({ pinned: true, namedCount: 1, poolSize: 0, saturatedDropped: 0 });
     releaseA();

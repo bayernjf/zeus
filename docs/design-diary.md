@@ -2,14 +2,14 @@
 
 - 状态：**现行 v0.1**（2026-09-24）；**实现已落地（2026-10-08 核对）**——`src/diary/`（types/markdown/from-memory/persist/render/build 六模块 + `src/memory/` 事件源），PRD E8.3 状态列 ✅「已落地」；本篇为设计主文，实施进度记 [handoff.md](../handoff.md)
 - 对应 PRD：**E8.3 Diary 日记：记忆叙事化备份（P2）**
-- 关联：[design-memory-consolidation.md](design-memory-consolidation.md)（事件/事实）、[design-realm.md](design-realm.md)（Realm 数据域与 write）、[design-backup.md](design-backup.md)（备份清单/备份）、[product-portrait.md](product-portrait.md) §2.2 备份清单与记忆
-- 一句话：**把已经记录下来的事件，按天叙事成一篇人能读、句句能回溯到源事件、并能经 Realm 写回用户目录的日记；不编造、不跨域、不另建存储。**
+- 关联：[design-memory-consolidation.md](design-memory-consolidation.md)（事件/事实）、[design-dataDomain.md](design-dataDomain.md)（DataDomain 数据域与 write）、[design-backup.md](design-backup.md)（备份清单/备份）、[product-portrait.md](product-portrait.md) §2.2 备份清单与记忆
+- 一句话：**把已经记录下来的事件，按天叙事成一篇人能读、句句能回溯到源事件、并能经 DataDomain 写回用户目录的日记；不编造、不跨域、不另建存储。**
 
 ---
 
 ## 1. 背景与定位
 
-记忆层已有 append-only 事件日志（`MemoryEvent`）与整理出的事实（`FactRecord`），Realm 已具备 read 与 E3.5 write。但这些记忆对人是"结构化记录"，不是"能读的经历"：
+记忆层已有 append-only 事件日志（`MemoryEvent`）与整理出的事实（`FactRecord`），DataDomain 已具备 read 与 E3.5 write。但这些记忆对人是"结构化记录"，不是"能读的经历"：
 
 - 事件散在日志里，没有按时间组织成一段叙事；
 - 想把"某天发生了什么"留存、回看、导出，没有工程原语。
@@ -27,14 +27,14 @@ Diary 不替代 Backup，也不做全量备份；它让记忆"可读、可回溯
 
 1. **句句可回溯**：每条叙事行必锚定源 `eventId`；整篇 `provenance` 覆盖全部行，不丢证据链。
 2. **只呈现、不编造**：叙事文本只能由 `event.content` 经确定性渲染得到；不做情绪推断、不生成"今天感觉如何"这类内容里没有的句子。空内容显式占位，不虚构。
-3. **底层走 Realm**：持久化只经 `RealmStore.write` 写回用户目录，Diary 自身不碰文件系统、不另建存储。
-4. **单一数据域**：一篇日记只属一个 realm；跨 realm 输入直接拒绝（数据二极管）。
+3. **底层走 DataDomain**：持久化只经 `DataDomainStore.write` 写回用户目录，Diary 自身不碰文件系统、不另建存储。
+4. **单一数据域**：一篇日记只属一个 dataDomain；跨 dataDomain 输入直接拒绝（数据二极管）。
 5. **确定性 + 幂等**：同输入必得同 `id`/`digest`；同一天重写落同一 `itemId`，不产生重复文件。
 
 ## 3. 数据结构
 
 ```ts
-/** 确定性日记 id：diary:{realmId}:{date}。 */
+/** 确定性日记 id：diary:{dataDomainId}:{date}。 */
 export type DiaryId = string;
 
 /** 一条叙事行：由一个 MemoryEvent 渲染而来，保留回溯锚点。 */
@@ -66,7 +66,7 @@ export interface DiaryEntry {
   format: 'zeus-diary';
   version: 1;
   id: DiaryId;
-  realmId: string;
+  dataDomainId: string;
   date: string;             // YYYY-MM-DD
   windowStart: string;      // 当天首/末事件时间
   windowEnd: string;
@@ -103,7 +103,7 @@ export interface DiaryEntry {
 
 `buildDiary(events, options?)` 是**纯函数、零 I/O**：
 
-1. 空输入 → `[]`；校验所有事件同属一个 `realmId`，混域即抛 `DiaryBoundaryError`；
+1. 空输入 → `[]`；校验所有事件同属一个 `dataDomainId`，混域即抛 `DiaryBoundaryError`；
 2. 按 `dayBucket` 分桶；桶内按 `occurrendedAt` 升序、同刻按 `eventId` 稳定排序；
 3. 每事件经 `renderEventContent` 生成 `DiaryLine`；
 4. `options.facts`（`FactRecord[]`）提供时，把 `provenance` 命中当天事件、或 `updatedAt` 落在当天的事实纳入 `facts`；
@@ -128,7 +128,7 @@ export declare function buildDiary(events: MemoryEvent[], options?: BuildDiaryOp
 ```markdown
 # Diary · 2026-09-24
 
-> realm: r-abcdef · 6 events · window 09:12–17:40
+> dataDomain: r-abcdef · 6 events · window 09:12–17:40
 
 ## Timeline
 
@@ -152,17 +152,17 @@ export declare function buildDiary(events: MemoryEvent[], options?: BuildDiaryOp
 
 ### 6.1 写回用户目录 `persistDiary`
 
-经 Realm，不直接碰文件系统：
+经 DataDomain，不直接碰文件系统：
 
 ```ts
 export interface PersistDiaryOptions {
-  /** enterprise realm 必填的操作者写授权；personal 省略。 */
+  /** enterprise dataDomain 必填的操作者写授权；personal 省略。 */
   grant?: OperatorWriteGrant;
   /** 目录前缀，默认 'diary'；最终 itemId = `${dir}/${date}.md`。 */
   dir?: string;
 }
 export declare function persistDiary(
-  store: RealmStore,
+  store: DataDomainStore,
   entry: DiaryEntry,
   options?: PersistDiaryOptions,
 ): Promise<{ itemId: string }>;
@@ -170,22 +170,22 @@ export declare function persistDiary(
 
 - 写 `data = entry.markdown`（字符串原样），`itemId = diary/${date}.md`；
 - `store.write` 不存在 → 抛 `DiaryUnsupportedError`；
-- enterprise 无有效 grant / readOnly realm → 由 Realm E3.5 拒绝（错误上抛，不在 Diary 内绕过）；
+- enterprise 无有效 grant / readOnly dataDomain → 由 DataDomain E3.5 拒绝（错误上抛，不在 Diary 内绕过）；
 - 确定性 itemId 使同日重写为覆盖，幂等不重复。
 
 ### 6.2 结构化导出 `exportDiary`
 
 `exportDiary(entries)` → 稳定序列化的 JSON 字符串（键排序、含 provenance/digest），供用户另存或迁移；不内置 zip/云上传（与 Backup §9 边界一致）。
-  - **操作者面（2026-09-27）**：`GET /api/diary/export?realmId=&date=&timeZone=`，与读视图 `GET /api/diary` 共用同一个选择器解析（两条路由不会各自漂移），返回这份稳定 JSON；不经 Realm 写路径。
+  - **操作者面（2026-09-27）**：`GET /api/diary/export?dataDomainId=&date=&timeZone=`，与读视图 `GET /api/diary` 共用同一个选择器解析（两条路由不会各自漂移），返回这份稳定 JSON；不经 DataDomain 写路径。
 
 ## 7. 安全红线（测试必须逐条断言）
 
 1. **可回溯**：每条 line 有 `eventId`；`provenance` 恰好覆盖全部 lines（+facts）；不丢事件。
 2. **不臆造**：markdown/line 文本中除模板与 `content` 渲染结果外无新增叙述；空内容为 `(no content)`。
-3. **跨域拒绝**：混入不同 `realmId` 的事件抛 `DiaryBoundaryError`，不产出跨域日记。
+3. **跨域拒绝**：混入不同 `dataDomainId` 的事件抛 `DiaryBoundaryError`，不产出跨域日记。
 4. **确定性/幂等**：同输入两次 `buildDiary` 得逐字段相等结果（同 id/digest）；`persistDiary` 同日写同一 itemId。
 5. **排序稳定**：lines 按 occurredAt、同刻按 eventId 升序。
-6. **落盘只走 Realm**：`persistDiary` 仅调用 `store.write`；store 无 write 能力时报错；enterprise 无 grant 被拒。
+6. **落盘只走 DataDomain**：`persistDiary` 仅调用 `store.write`；store 无 write 能力时报错；enterprise 无 grant 被拒。
 7. **digest 敏感**：改动任一 line 文本/事件，digest 改变；digest 不含 markdown/digest 自身以免自指。
 8. 内容渲染对超长对象截断并标注，不抛异常、不无限增长。
 
@@ -193,8 +193,8 @@ export declare function persistDiary(
 
 - 不做情绪分析、总结性感想或 LLM 自动润色（默认渲染是确定性呈现；LLM 改写须显式注入并自担可回溯责任）。
 - 不做自动调度（何时生成日记由调用方或外部 cron 触发，与 Backup 一致）。
-- 不把 Diary 纳入 `RuntimeSnapshot`：产物落进用户 Realm、由用户持有，且可随时从事件重建（派生物）。
-- 不替代 Backup、不保证全量恢复；不跨 realm 汇编、不做多语言/富媒体/图片。
+- 不把 Diary 纳入 `RuntimeSnapshot`：产物落进用户 DataDomain、由用户持有，且可随时从事件重建（派生物）。
+- 不替代 Backup、不保证全量恢复；不跨 dataDomain 汇编、不做多语言/富媒体/图片。
 - E8.4 传承（dead-man switch、法律框架）仍为 P3，见 deferred #3。
 
 ## 9. 验收清单
@@ -204,6 +204,6 @@ export declare function persistDiary(
 - [ ] `renderDiaryMarkdown`：模板与时间格式正确，行内含 eventId；无 facts 时省略该段。
 - [ ] `persistDiary`：经 `store.write` 写到 `diary/YYYY-MM-DD.md`，同日重写幂等；无 write 能力、enterprise 无 grant 均报错。
 - [ ] `exportDiary`：稳定 JSON，含 provenance/digest。
-- [ ] 跨 realm 输入抛 `DiaryBoundaryError`。
+- [ ] 跨 dataDomain 输入抛 `DiaryBoundaryError`。
 - [ ] 全量 `vitest` 绿、`tsc --noEmit` 绿、`npm run build` 过。
 - [ ] PRD E8.3 升状态、README 模块表、handoff 与 docs/README 同步。

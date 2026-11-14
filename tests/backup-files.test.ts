@@ -2,9 +2,9 @@ import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { FsRealmStore } from '../src/realm/store.js';
+import { FsDataDomainStore } from '../src/dataDomain/store.js';
 import { assertMap, buildBackup } from '../src/backup/map.js';
-import { fileLiveSource, inventoryFromFiles, inventoryFromRealm, liveSourceFor, realmLiveSource } from '../src/backup/inventory.js';
+import { fileLiveSource, inventoryFromFiles, inventoryFromDataDomain, liveSourceFor, dataDomainLiveSource } from '../src/backup/inventory.js';
 import { restoreDryRun } from '../src/backup/restore.js';
 import { openBundle, openMap, packFull, restoreFromBundle } from '../src/backup/bundle.js';
 import { seal } from '../src/backup/cipher.js';
@@ -40,25 +40,25 @@ afterEach(async () => {
   await rm(sandbox, { recursive: true, force: true });
 });
 
-describe('E3.6 regression: a tenant-scoped realm map verifies against a mounted runtime', () => {
+describe('E3.6 regression: a tenant-scoped dataDomain map verifies against a mounted runtime', () => {
   it('keeps the scope in the map and no longer reports a false unreachable', async () => {
     const root = join(sandbox, 'eng');
     await mkdir(root, { recursive: true });
     await writeFile(join(root, 'charter.md'), 'how we ship\n');
 
-    const store = new FsRealmStore();
+    const store = new FsDataDomainStore();
     const manifest = await store.connect(root, 'enterprise', { tenant: 'acme/eng' });
-    const map = await buildBackup(inventoryFromRealm(store, manifest.realmId));
+    const map = await buildBackup(inventoryFromDataDomain(store, manifest.dataDomainId));
 
     // Before this change the map dropped the tenant entirely, and re-connecting
     // without it against an already-scoped store was swallowed as "root
     // unreachable" - the recovery tool crying wolf about a healthy corpus.
-    expect(map.source).toEqual({ kind: 'realm', realmId: manifest.realmId, type: 'enterprise', root: manifest.root, tenant: { org: 'acme', department: 'eng' } });
+    expect(map.source).toEqual({ kind: 'dataDomain', dataDomainId: manifest.dataDomainId, type: 'enterprise', root: manifest.root, tenant: { org: 'acme', department: 'eng' } });
 
-    const mounted = new FsRealmStore();
+    const mounted = new FsDataDomainStore();
     await mounted.connect(root, 'enterprise', { tenant: 'acme/eng' });
     const report = await restoreDryRun(map, liveSourceFor(mounted));
-    expect(report).toMatchObject({ sourceKind: 'realm', rootReachable: true, recoverable: true, contentDigestMatch: true });
+    expect(report).toMatchObject({ sourceKind: 'dataDomain', rootReachable: true, recoverable: true, contentDigestMatch: true });
     expect(report.unreachableReason).toBeUndefined();
   });
 
@@ -66,37 +66,37 @@ describe('E3.6 regression: a tenant-scoped realm map verifies against a mounted 
     const root = join(sandbox, 'gone');
     await mkdir(root, { recursive: true });
     await writeFile(join(root, 'a.md'), 'a\n');
-    const store = new FsRealmStore();
+    const store = new FsDataDomainStore();
     const manifest = await store.connect(root, 'personal');
-    const map = await buildBackup(inventoryFromRealm(store, manifest.realmId));
+    const map = await buildBackup(inventoryFromDataDomain(store, manifest.dataDomainId));
     const missing = { ...map, source: { ...map.source, root: join(sandbox, 'not-there') } };
-    const report = await restoreDryRun(missing, liveSourceFor(new FsRealmStore()));
+    const report = await restoreDryRun(missing, liveSourceFor(new FsDataDomainStore()));
     expect(report.rootReachable).toBe(false);
     expect(report.unreachableReason).toMatch(/not accessible|no such file/);
     expect(report.recoverable).toBe(false);
   });
 });
 
-describe('#13 a verification pass mounts the realm read-only', () => {
-  it('reconnects read-only, so a check cannot write to the realm it inspects', async () => {
+describe('#13 a verification pass mounts the dataDomain read-only', () => {
+  it('reconnects read-only, so a check cannot write to the dataDomain it inspects', async () => {
     const root = join(sandbox, 'ro');
     await mkdir(root, { recursive: true });
     await writeFile(join(root, 'a.md'), 'mine\n');
-    const store = new FsRealmStore();
+    const store = new FsDataDomainStore();
     const manifest = await store.connect(root, 'personal');
-    const map = await buildBackup(inventoryFromRealm(store, manifest.realmId));
+    const map = await buildBackup(inventoryFromDataDomain(store, manifest.dataDomainId));
 
-    const verifier = new FsRealmStore();
-    const report = await restoreDryRun(map, realmLiveSource(verifier));
+    const verifier = new FsDataDomainStore();
+    const report = await restoreDryRun(map, dataDomainLiveSource(verifier));
     expect(report.rootReachable).toBe(true);
     expect(report.recoverable).toBe(true);
     // The map is a read-only view of the treasure: verifying it must not mount
-    // the realm writable as a side effect.
+    // the dataDomain writable as a side effect.
     expect(verifier.connections()[0]!.readOnly).toBe(true);
   });
 });
 
-describe('#13 files source: backing up what no Realm covers', { timeout: SCRYPT_SUITE_TIMEOUT }, () => {
+describe('#13 files source: backing up what no DataDomain covers', { timeout: SCRYPT_SUITE_TIMEOUT }, () => {
   async function corpus() {
     const root = join(sandbox, 'data');
     await mkdir(root, { recursive: true });
@@ -197,18 +197,18 @@ describe('#13 the runtime state file survives a destroy-and-restore drill', { ti
   it('restores a state file the map says is there, and the runtime boots from it', async () => {
     const data = join(sandbox, 'data');
     await mkdir(data, { recursive: true });
-    const realmRoot = join(sandbox, 'realm');
-    await mkdir(realmRoot, { recursive: true });
-    await writeFile(join(realmRoot, 'a.md'), 'mine\n');
+    const dataDomainRoot = join(sandbox, 'dataDomain');
+    await mkdir(dataDomainRoot, { recursive: true });
+    await writeFile(join(dataDomainRoot, 'a.md'), 'mine\n');
     const stateFile = join(data, 'runtime.json');
 
-    const first = await bootRuntime({ stateFile, now, realmRoots: [realmRoot] });
+    const first = await bootRuntime({ stateFile, now, dataDomainRoots: [dataDomainRoot] });
     await first.saveState();
     const original = await readFile(stateFile, 'utf8');
     const originalDigest = sha256Hex(original);
-    // The state file carries memory/roster/org/commissions - and sits outside
-    // every connected Realm, i.e. precisely what the map could not reach before.
-    expect(JSON.parse(original)).toHaveProperty('commissions');
+    // The state file carries memory/roster/org/seatGrants - and sits outside
+    // every connected DataDomain, i.e. precisely what the map could not reach before.
+    expect(JSON.parse(original)).toHaveProperty('seatGrants');
     expect(first.restoredFromSnapshot).toBe(false);
 
     const built = await runBackupCli(
@@ -240,9 +240,9 @@ describe('#13 the runtime state file survives a destroy-and-restore drill', { ti
     expect(sha256Hex(await readFile(join(restoredDir, 'runtime.json'), 'utf8'))).toBe(originalDigest);
 
     // Booting from the restored file is the point of restoring it.
-    const revived = await bootRuntime({ stateFile: join(restoredDir, 'runtime.json'), now, realmRoots: [] });
+    const revived = await bootRuntime({ stateFile: join(restoredDir, 'runtime.json'), now, dataDomainRoots: [] });
     expect(revived.restoredFromSnapshot).toBe(true);
-    expect(runtimeStats(revived).counts.realms).toBe(1);
+    expect(runtimeStats(revived).counts.dataDomains).toBe(1);
   });
 });
 
@@ -251,15 +251,15 @@ describe('#13 v1 maps still open', { timeout: SCRYPT_SUITE_TIMEOUT }, () => {
     format: MAP_FORMAT,
     version: 1,
     createdAt: '2026-09-23T00:00:00.000Z',
-    realm: { realmId: 'realm-abc', type: 'personal', root, itemCount: 1 },
+    dataDomain: { dataDomainId: 'dataDomain-abc', type: 'personal', root, itemCount: 1 },
     marks: [{ itemId: 'a.md', digest: 'deadbeef', modifiedAt: '2026-09-23T00:00:00.000Z', bytes: 2 }],
     contentDigest: 'cafe',
   });
 
-  it('normalizes the realm descriptor into a source', () => {
+  it('normalizes the dataDomain descriptor into a source', () => {
     const normalized = assertMap(v1('/somewhere'));
     expect(normalized.version).toBe(BACKUP_VERSION);
-    expect(normalized.source).toEqual({ kind: 'realm', realmId: 'realm-abc', type: 'personal', root: '/somewhere' });
+    expect(normalized.source).toEqual({ kind: 'dataDomain', dataDomainId: 'dataDomain-abc', type: 'personal', root: '/somewhere' });
     expect(normalized.marks).toHaveLength(1);
   });
 
@@ -269,8 +269,8 @@ describe('#13 v1 maps still open', { timeout: SCRYPT_SUITE_TIMEOUT }, () => {
     await writeFile(join(root, 'a.md'), 'ok\n');
     const sealed = seal(JSON.stringify(v1(root)), MAP_FORMAT, KEY);
     const opened = openMap(sealed, KEY);
-    expect(opened.source.kind).toBe('realm');
-    const report = await restoreDryRun(opened, realmLiveSource(new FsRealmStore()));
+    expect(opened.source.kind).toBe('dataDomain');
+    const report = await restoreDryRun(opened, dataDomainLiveSource(new FsDataDomainStore()));
     // The digests cannot match (the v1 fixture is synthetic), but the source
     // resolves and the mark is checked against real content - which is all
     // "a v1 map still opens" has to mean.

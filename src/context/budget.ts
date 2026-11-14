@@ -1,4 +1,4 @@
-import type { RealmHit } from '../realm/types.js';
+import type { DataDomainHit } from '../dataDomain/types.js';
 import type { ContextAppendixEntry, ContextAssemblyEvent } from './assemble.js';
 import type { SkillInputEntry } from './skill-inputs.js';
 
@@ -10,7 +10,7 @@ import type { SkillInputEntry } from './skill-inputs.js';
  *   1. caller explicit payload (params.message / a2aMetadata) — never counted
  *      and never trimmed; it is not even an input to this allocator;
  *   2. skill-declared input assembly (SkillInputEntry[]);
- *   3. realm read-only hits (RealmHit[], already gated by dataPolicy upstream);
+ *   3. dataDomain read-only hits (DataDomainHit[], already gated by dataPolicy upstream);
  *   4. memory recall appendix (ContextAppendixEntry[]).
  *
  * When the per-branch entry budget is exhausted the lowest-priority source is
@@ -38,8 +38,8 @@ export const DEFAULT_BRANCH_CONTEXT_LIMIT = 64;
 export type BranchContextBudgetInput = {
   /** Source 2: skill-declared input assembly (highest budget priority). */
   skillInputs: SkillInputEntry[];
-  /** Source 3: realm read-only hits. */
-  realmHits: RealmHit[];
+  /** Source 3: dataDomain read-only hits. */
+  dataDomainHits: DataDomainHit[];
   /** Source 4: memory recall appendix (lowest budget priority). */
   contextAppendix: ContextAppendixEntry[];
   /** Per-branch total entry budget (maxContextEntriesPerBranch). */
@@ -48,7 +48,7 @@ export type BranchContextBudgetInput = {
 
 export type BranchContextBudget = {
   skillInputs: SkillInputEntry[];
-  realmHits: RealmHit[];
+  dataDomainHits: DataDomainHit[];
   contextAppendix: ContextAppendixEntry[];
   /** One `context-budget-exceeded` event per truncated source. */
   events: ContextAssemblyEvent[];
@@ -57,7 +57,7 @@ export type BranchContextBudget = {
 /**
  * Allocate one branch's context budget across sources 2–4 in priority order.
  * Each source keeps a prefix of its entries (sources are already ordered by
- * their own rules: memory by relevance desc, realm by the store's ranking);
+ * their own rules: memory by relevance desc, dataDomain by the store's ranking);
  * a source that does not fit is truncated to the remaining slots, and every
  * lower-priority source is dropped entirely when no slots remain.
  */
@@ -67,7 +67,7 @@ export function allocateContextBudget(args: BranchContextBudgetInput): BranchCon
 
   const take = <T>(
     entries: T[],
-    source: 'skill-inputs' | 'realm' | 'memory',
+    source: 'skill-inputs' | 'dataDomain' | 'memory',
   ): T[] => {
     if (entries.length <= remaining) {
       remaining -= entries.length;
@@ -88,8 +88,8 @@ export function allocateContextBudget(args: BranchContextBudgetInput): BranchCon
 
   // Priority high → low; the explicit payload (source 1) is never in scope.
   const skillInputs = take(args.skillInputs, 'skill-inputs');
-  const realmHits = take(args.realmHits, 'realm');
+  const dataDomainHits = take(args.dataDomainHits, 'dataDomain');
   const contextAppendix = take(args.contextAppendix, 'memory');
 
-  return { skillInputs, realmHits, contextAppendix, events };
+  return { skillInputs, dataDomainHits, contextAppendix, events };
 }

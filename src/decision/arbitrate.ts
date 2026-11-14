@@ -1,4 +1,4 @@
-import type { RealmType } from '../a2a/types.js';
+import type { DataDomainType } from '../a2a/types.js';
 import type { DecisionBackend, DecisionBackendError, DecisionBackendKind } from './types.js';
 import { DecisionBackendFailure } from './types.js';
 
@@ -25,7 +25,7 @@ export type ArbitrateInput = {
   /** The distinct stances the rule could not resolve (>=2). */
   stances: SplitStance[];
   runId: string;
-  realm: RealmType;
+  dataDomain: DataDomainType;
   /** Why the rule could not conclude; included in the decision context. */
   ruleReason: string;
   threshold?: number;
@@ -72,7 +72,7 @@ export async function arbitrateSplit(input: ArbitrateInput): Promise<ArbitrateOu
       stateKeys: ['ruleReason', 'stances'],
       options,
       runId: input.runId,
-      realm: input.realm,
+      dataDomain: input.dataDomain,
       ...(input.maxWaitMs !== undefined ? { maxWaitMs: input.maxWaitMs } : {}),
     });
     if (result.confidence < threshold) {

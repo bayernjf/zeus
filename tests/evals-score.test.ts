@@ -23,14 +23,14 @@ function trace(overrides: Partial<DecisionTrace> = {}): DecisionTrace {
 
 function outcome(overrides: Partial<FanOutResult> = {}): FanOutResult {
   return {
-    intentId: 'intent-1', runId: 'r1', skill: 'research', realm: 'personal', branches: [], stream: [], positions: [],
+    intentId: 'intent-1', runId: 'r1', skill: 'research', dataDomain: 'personal', branches: [], stream: [], positions: [],
     decision: { rule: 'unanimous', conclusion: null, positions: [], reason: '' }, conflicts: [], status: 'completed', createdAt: 't0',
     ...overrides,
   };
 }
 
 function request(): FanOutRequest {
-  return { skill: 'research', params: {}, realm: 'personal' };
+  return { skill: 'research', params: {}, dataDomain: 'personal' };
 }
 
 function case_(expect: EvalExpectation[], overrides: Partial<EvalCase> = {}): EvalCase {
@@ -127,7 +127,7 @@ describe('scoreEvalRun (S7 V1)', () => {
     const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
     const hit: AuditEntry = {
       ts: 't1', executor: '(intent)', decision: 'guardrail-annotated',
-      detail: 'intent x: appendix entry f1 annotated (data-boundary:runtime-resolved-realm, signals external-url)',
+      detail: 'intent x: appendix entry f1 annotated (data-boundary:runtime-resolved-dataDomain, signals external-url)',
     };
     const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
     expect(r.checks[0]!.passed).toBe(true);
@@ -137,7 +137,7 @@ describe('scoreEvalRun (S7 V1)', () => {
     const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
     const hit: AuditEntry = {
       ts: 't1', executor: '(intent)', decision: 'guardrail-annotated',
-      detail: 'intent x: appendix entry f1 annotated (data-boundary:runtime-resolved-realm)',
+      detail: 'intent x: appendix entry f1 annotated (data-boundary:runtime-resolved-dataDomain)',
     };
     const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
     expect(r.checks[0]!.passed).toBe(false);
@@ -151,7 +151,7 @@ describe('scoreEvalRun (S7 V1)', () => {
     const c = case_([{ guardrails: { expectedHandling: 'annotate', signals: ['external-url'] }, severity: 'block' }]);
     const hit: AuditEntry = {
       ts: 't1', executor: '(intent)', decision: 'guardrail-annotated',
-      detail: 'intent eval-guardrails-external-url-memory: appendix entry f1 annotated (data-boundary:runtime-resolved-realm)',
+      detail: 'intent eval-guardrails-external-url-memory: appendix entry f1 annotated (data-boundary:runtime-resolved-dataDomain)',
     };
     const r = scoreEvalRun(c, { outcome: outcome(), audit: [hit], events: [] });
     expect(r.checks[0]!.passed).toBe(false);

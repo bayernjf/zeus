@@ -2,7 +2,7 @@
  * Content-side guardrail decision chain (tech map S8, V1).
  *
  * Zeus already guards the identity / authorization / network sides; the content
- * side (Realm text and agent output that carry instructional content) had no
+ * side (DataDomain text and agent output that carry instructional content) had no
  * primitive. This module is the content-side chain: for every piece of content
  * crossing the runtime, decide handling from (provenance × destination ×
  * deterministic signals), and make "agent-produced content is always data —
@@ -19,7 +19,7 @@
  */
 
 export type ContentProvenance =
-  | 'runtime-resolved-realm'
+  | 'runtime-resolved-dataDomain'
   | 'operator-supplied'
   | 'agent-produced'
   | 'caller-asserted'

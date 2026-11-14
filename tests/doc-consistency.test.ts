@@ -181,7 +181,7 @@ function anchorFindings(text: string, read: (file: string) => string[]): string[
 }
 
 /** Code citations across the whole document set: a source file (full path, or the
- *  `realm/store.ts:178-199` short form the ledgers favour), a line or range, and
+ *  `dataDomain/store.ts:178-199` short form the ledgers favour), a line or range, and
  *  optionally the verification word that must appear inside that range. Documents
  *  listed in ANCHOR_CONTRACT_DOCS opted into the word for every citation they carry.
  *  Bare basenames (`registry.ts:210`) are out of scope on purpose: three files share
@@ -666,16 +666,16 @@ describe('documentation consistency', () => {
   it('resolves every relative markdown link to a file that exists', () => {
     // 356 relative .md links across the document set, and a link is the only
     // navigation a reader has in these files. The dead one this sweep found (and
-    // fixed in Active work 121) was handoff.md pointing at (design-realm.md) from
+    // fixed in Active work 121) was handoff.md pointing at (design-dataDomain.md) from
     // the repository root while the file lives in docs/ - no other check reads
     // link targets, so the next one of these lands silently.
     const links = DOC_FILES.flatMap(file => relativeMdLinks(visibleLines(file)).map(link => ({ ...link, file })));
     expect(links.length, 'the link population collapsed, so this check would pass by finding nothing').toBeGreaterThan(250);
     // Positive control: the dead shape must fail resolution while its fixed form
     // passes, so an empty `dead` below cannot come from a resolver that always hits.
-    expect(existsSync(resolve(dirname('handoff.md'), 'design-realm.md'))).toBe(false);
-    expect(existsSync(resolve(dirname('handoff.md'), 'docs/design-realm.md'))).toBe(true);
-    expect(existsSync(resolve(dirname('docs/design-realm.md'), 'mcp-integration.md'))).toBe(true);
+    expect(existsSync(resolve(dirname('handoff.md'), 'design-dataDomain.md'))).toBe(false);
+    expect(existsSync(resolve(dirname('handoff.md'), 'docs/design-dataDomain.md'))).toBe(true);
+    expect(existsSync(resolve(dirname('docs/design-dataDomain.md'), 'mcp-integration.md'))).toBe(true);
 
     const dead = links.filter(({ file, target }) => !existsSync(resolve(dirname(file), target.split('#')[0]!)));
     expect(
@@ -699,11 +699,11 @@ describe('documentation consistency', () => {
     // The clean sample points at SUPPORTED_PROTOCOL_VERSIONS wherever it lives
     // now - adding the write step moved it (Active work 238), and a control that
     // drifts stops testing the thing it was written for.
-    expect(anchorFindings(cite('src/realm/mcp.ts:58-58 #SUPPORTED_PROTOCOL_VERSIONS'), read), 'a clean anchor must pass').toEqual([]);
-    expect(anchorFindings(cite('src/realm/mcp.ts:47-48 #NOT_IN_RANGE'), read)).toEqual([expect.stringContaining('没有校验词')]);
-    expect(anchorFindings(cite('src/realm/mcp.ts:47-99999 #SUPPORTED_PROTOCOL_VERSIONS'), read)).toEqual([expect.stringContaining('超出文件长度')]);
-    expect(anchorFindings(cite('src/realm/nope.ts:1-2 #anything'), read)).toEqual([expect.stringContaining('锚点文件不存在')]);
-    expect(anchorFindings(cite('src/realm/mcp.ts:33-40'), read)).toEqual([expect.stringContaining('锚点缺校验词')]);
+    expect(anchorFindings(cite('src/dataDomain/mcp.ts:58-58 #SUPPORTED_PROTOCOL_VERSIONS'), read), 'a clean anchor must pass').toEqual([]);
+    expect(anchorFindings(cite('src/dataDomain/mcp.ts:47-48 #NOT_IN_RANGE'), read)).toEqual([expect.stringContaining('没有校验词')]);
+    expect(anchorFindings(cite('src/dataDomain/mcp.ts:47-99999 #SUPPORTED_PROTOCOL_VERSIONS'), read)).toEqual([expect.stringContaining('超出文件长度')]);
+    expect(anchorFindings(cite('src/dataDomain/nope.ts:1-2 #anything'), read)).toEqual([expect.stringContaining('锚点文件不存在')]);
+    expect(anchorFindings(cite('src/dataDomain/mcp.ts:33-40'), read)).toEqual([expect.stringContaining('锚点缺校验词')]);
     expect(anchorFindings('、' + cite(':149'), read)).toEqual([expect.stringContaining('续写形式')]);
 
     const doc = readFileSync('docs/mcp-integration.md', 'utf8');
@@ -715,7 +715,7 @@ describe('documentation consistency', () => {
 
   it('resolves every code citation in the whole document set', () => {
     // B-42: the anchor case above only sees `path:lines #word`. The rest of the repo cites
-    // code as plain `path:lines`, and the ledgers favour a short form (`realm/store.ts:178`);
+    // code as plain `path:lines`, and the ledgers favour a short form (`dataDomain/store.ts:178`);
     // a renamed or shortened file therefore keeps every earlier gate green while the reader
     // lands on nothing. This case resolves what it can across the whole document set, and
     // holds a document that adopted the verification-word contract to it throughout.
@@ -726,19 +726,19 @@ describe('documentation consistency', () => {
     // Controls first, on the same code path the real run uses: each failure shape is
     // reported, and the clean ones - including the short form, which has to resolve for
     // real rather than merely look like a path - are not.
-    expect(scan('docs/terminology.md', cite('src/realm/store.ts:199-224 #isInsideRoot')).findings, 'a clean citation must pass').toEqual([]);
-    expect(scan('docs/terminology.md', cite('realm/store.ts:199-224')).findings, 'a resolvable short form must pass').toEqual([]);
-    expect(scan('docs/terminology.md', cite('src/realm/gone.ts:12 #anything')).findings).toEqual([expect.stringContaining('解析不到文件')]);
-    expect(scan('docs/terminology.md', cite('realm/storre.ts:199-224')).findings).toEqual([expect.stringContaining('解析不到文件')]);
-    expect(scan('docs/terminology.md', cite('src/realm/store.ts:1-99999 #x')).findings).toEqual([expect.stringContaining('越界')]);
-    expect(scan('docs/terminology.md', cite('src/realm/store.ts:199-224 #NoSuchWord')).findings).toEqual([expect.stringContaining('没有校验词')]);
-    expect(scan('docs/terminology.md', [cite('src/realm/store.ts:199-224 #isInsideRoot'), cite('src/realm/store.ts:199-224')].join(' 与 ')).findings).toEqual([
+    expect(scan('docs/terminology.md', cite('src/dataDomain/store.ts:199-224 #isInsideRoot')).findings, 'a clean citation must pass').toEqual([]);
+    expect(scan('docs/terminology.md', cite('dataDomain/store.ts:199-224')).findings, 'a resolvable short form must pass').toEqual([]);
+    expect(scan('docs/terminology.md', cite('src/dataDomain/gone.ts:12 #anything')).findings).toEqual([expect.stringContaining('解析不到文件')]);
+    expect(scan('docs/terminology.md', cite('dataDomain/storre.ts:199-224')).findings).toEqual([expect.stringContaining('解析不到文件')]);
+    expect(scan('docs/terminology.md', cite('src/dataDomain/store.ts:1-99999 #x')).findings).toEqual([expect.stringContaining('越界')]);
+    expect(scan('docs/terminology.md', cite('src/dataDomain/store.ts:199-224 #NoSuchWord')).findings).toEqual([expect.stringContaining('没有校验词')]);
+    expect(scan('docs/terminology.md', [cite('src/dataDomain/store.ts:199-224 #isInsideRoot'), cite('src/dataDomain/store.ts:199-224')].join(' 与 ')).findings).toEqual([
       expect.stringContaining('契约只守了一半'),
     ]);
-    expect(scan('docs/terminology.md', cite('src/realm/store.ts:199-224 #isInsideRoot') + '、' + cite(':91')).findings).toEqual([expect.stringContaining('续写形式')]);
+    expect(scan('docs/terminology.md', cite('src/dataDomain/store.ts:199-224 #isInsideRoot') + '、' + cite(':91')).findings).toEqual([expect.stringContaining('续写形式')]);
     expect(scan('docs/terminology.md', cite('registry.ts:210')).findings).toEqual([expect.stringContaining('只写了文件名')]);
     // A ledger is held to resolving only, not to the all-or-nothing rules.
-    expect(scan('handoff.md', cite('src/realm/store.ts:199-224')).findings).toEqual([]);
+    expect(scan('handoff.md', cite('src/dataDomain/store.ts:199-224')).findings).toEqual([]);
     expect(scan('handoff.md', cite('registry.ts:210')).findings, 'bare basenames stay out of scope in ledgers').toEqual([]);
     // Multi-dot basenames are the shape this case's first regex silently dropped: with
     // `[\w\-]+\.ts` a citation to `tests/x.test.ts:N` matched nothing, so five anchors

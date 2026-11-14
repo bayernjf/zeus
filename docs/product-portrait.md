@@ -63,7 +63,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 
 | 概念 | 含义 |
 |---|---|
-| **Realm 数据域** | 用户指定的一个目录及其接口，分 Personal Realm / Enterprise Realm |
+| **DataDomain 数据域** | 用户指定的一个目录及其接口，分 Personal DataDomain / Enterprise DataDomain |
 | **Backup 备份域** | 数据域内被纳管、有备份策略的数据集合 |
 | **Map 备份清单** | 加密的数据清单 + 恢复指引；只存条目引用与指纹，不存数据正文 |
 | **Diary 叙事日志** | 记忆事件的按天可读记录，用于回溯与对外呈现 |
@@ -76,7 +76,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 | **Inheritance 移交与继承** | 数据域/备份清单按预设授权移交给指定对象（后期功能，含法律与密钥托管设计） |
 | **Operator 操作者** | 人类员工的角色：监督、介入、给出最终裁决，而非手工执行 |
 
-> 代码、环境变量、HTTP 路径与协议字段里保留了一批历史标识符（`executor` / `handshake` / `roster` / `backup` / `realm` / `runtime` / `commission` / `mentor` / `diary` / `noul` 等）。它们是接口的一部分，逐个含义见 [terminology.md](terminology.md)。
+> 代码、环境变量、HTTP 路径与协议字段里保留了一批历史标识符（`executor` / `handshake` / `roster` / `backup` / `dataDomain` / `runtime` / `seatGrant` / `mentor` / `diary` / `noul` 等）。它们是接口的一部分，逐个含义见 [terminology.md](terminology.md)。
 
 ## 4. 用户画像
 
@@ -118,7 +118,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 ├──────────────────────────────────────────────────┤
 │  连接层  MCP 连接器 · 外部 Agent(A2A) · 矩阵产品    │  外部系统集成
 ├──────────────────────────────────────────────────┤
-│  数据层  Realm 目录 · Backup 备份域 · Map 清单 · 备份│  数据主权
+│  数据层  DataDomain 目录 · Backup 备份域 · Map 清单 · 备份│  数据主权
 └──────────────────────────────────────────────────┘
 ```
 

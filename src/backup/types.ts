@@ -1,17 +1,17 @@
-import type { RealmType } from '../a2a/types.js';
-import type { TenantScope } from '../realm/types.js';
+import type { DataDomainType } from '../a2a/types.js';
+import type { TenantScope } from '../dataDomain/types.js';
 
 export const MAP_FORMAT = 'zeus-treasure-map' as const;
 export const BUNDLE_FORMAT = 'zeus-full-bundle' as const;
-/** v2 replaced the baked-in `realm` descriptor with `source`, so a map can
+/** v2 replaced the baked-in `dataDomain` descriptor with `source`, so a map can
  *  cover the runtime state file - the one thing users can lose and the treasure
  *  map could not previously reach. v1 maps are normalized on read (§ map.ts). */
 export const BACKUP_VERSION = 2 as const;
 
 /**
- * Where the treasure lives. A Realm is one kind; an explicit file whitelist is
+ * Where the treasure lives. A DataDomain is one kind; an explicit file whitelist is
  * the other, because `runtime.json` (roster, memory facts, connector declarations,
- * org establishment) sits OUTSIDE every connected Realm and was therefore
+ * org establishment) sits OUTSIDE every connected DataDomain and was therefore
  * unbackupable by the tool whose whole promise is "备份是第一公民".
  *
  * The files kind carries a whitelist, never a directory walk: pointing it at
@@ -19,9 +19,9 @@ export const BACKUP_VERSION = 2 as const;
  */
 export type MapSource =
   | {
-      kind: 'realm';
-      realmId: string;
-      type: RealmType;
+      kind: 'dataDomain';
+      dataDomainId: string;
+      type: DataDomainType;
       /** Absolute realpath; sealed inside the map, never printed. */
       root: string;
       /** E3.6 scope, kept so re-opening the map can re-establish the SAME mount. */
@@ -60,7 +60,7 @@ export type TreasureMap = {
   createdAt: string;
   source: MapSource;
   marks: MapMark[];
-  /** Whole-source fingerprint, same algorithm as RealmManifest.contentDigest. */
+  /** Whole-source fingerprint, same algorithm as DataDomainManifest.contentDigest. */
   contentDigest: string;
   bundle?: BundleRef;
 };
@@ -99,7 +99,7 @@ export type FullBundle = {
 
 /** Result of an in-place verification / restore plan. */
 export type RestoreReport = {
-  /** Identifier of the source that was checked (realmId, or `files:<label>`). */
+  /** Identifier of the source that was checked (dataDomainId, or `files:<label>`). */
   sourceId: string;
   sourceKind: MapSource['kind'];
   rootReachable: boolean;
@@ -127,9 +127,9 @@ export interface BackupInventory {
 
 /**
  * The live view of a source at check/restore time. L0 used to take a
- * `RealmStore` directly, which hard-wired the recovery protocol to one source
+ * `DataDomainStore` directly, which hard-wired the recovery protocol to one source
  * kind - and reconnected without the map's tenant scope, so verifying a
- * tenant-scoped enterprise realm against a running runtime reported the treasure
+ * tenant-scoped enterprise dataDomain against a running runtime reported the treasure
  * as missing.
  */
 export type LiveSource = (source: MapSource) => Promise<Array<{ itemId: string; content: string; modifiedAt: string; bytes: number }>>;

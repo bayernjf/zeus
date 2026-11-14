@@ -2,9 +2,9 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { TenantError, formatTenant, parseTenant, tenantKey, tenantReaches } from '../src/realm/tenant.js';
-import { FsRealmStore } from '../src/realm/store.js';
-import { RealmError } from '../src/realm/types.js';
+import { TenantError, formatTenant, parseTenant, tenantKey, tenantReaches } from '../src/dataDomain/tenant.js';
+import { FsDataDomainStore } from '../src/dataDomain/store.js';
+import { DataDomainError } from '../src/dataDomain/types.js';
 
 const t = (path: string) => parseTenant(path);
 
@@ -50,7 +50,7 @@ describe('E3.6 tenant hierarchy rule (tenantReaches)', () => {
 
   it('keeps a department and a member of the same name apart', () => {
     // Both scopes render as 'acme/eng'. Identity cannot be the rendered path, or
-    // a department-scoped subject would silently reach a member-scoped realm.
+    // a department-scoped subject would silently reach a member-scoped dataDomain.
     const department = { org: 'acme', department: 'eng' };
     const member = { org: 'acme', member: 'eng' };
     expect(formatTenant(department)).toBe(formatTenant(member));
@@ -72,7 +72,7 @@ describe('E3.6 connect records the tenant and refuses to mis-label a domain', ()
   let dept: string;
 
   beforeEach(() => {
-    sandbox = mkdtempSync(join(tmpdir(), 'zeus-realm-tenant-'));
+    sandbox = mkdtempSync(join(tmpdir(), 'zeus-dataDomain-tenant-'));
     org = join(sandbox, 'acme');
     dept = join(sandbox, 'acme-eng');
     mkdirSync(org, { recursive: true });
@@ -86,20 +86,20 @@ describe('E3.6 connect records the tenant and refuses to mis-label a domain', ()
   });
 
   it('stores the tenant on the manifest and on the connection', async () => {
-    const store = new FsRealmStore();
+    const store = new FsDataDomainStore();
     const manifest = await store.connect(dept, 'enterprise', { tenant: 'acme/eng' });
     expect(manifest.tenant).toEqual({ org: 'acme', department: 'eng' });
     expect(store.connections()[0]?.tenant).toEqual({ org: 'acme', department: 'eng' });
   });
 
-  it('refuses a tenant on a personal realm instead of ignoring it', async () => {
-    const store = new FsRealmStore();
-    await expect(store.connect(org, 'personal', { tenant: 'acme' })).rejects.toThrow(RealmError);
-    await expect(store.connect(org, 'personal', { tenant: 'acme' })).rejects.toThrow(/belongs to an enterprise realm/);
+  it('refuses a tenant on a personal dataDomain instead of ignoring it', async () => {
+    const store = new FsDataDomainStore();
+    await expect(store.connect(org, 'personal', { tenant: 'acme' })).rejects.toThrow(DataDomainError);
+    await expect(store.connect(org, 'personal', { tenant: 'acme' })).rejects.toThrow(/belongs to an enterprise dataDomain/);
   });
 
-  it('refuses a reconnect that would silently re-scope a mounted realm', async () => {
-    const store = new FsRealmStore();
+  it('refuses a reconnect that would silently re-scope a mounted dataDomain', async () => {
+    const store = new FsDataDomainStore();
     await store.connect(dept, 'enterprise', { tenant: 'acme/eng' });
     await expect(store.connect(dept, 'enterprise', { tenant: 'acme' })).rejects.toThrow(/would change its tenant scope/);
     // Reconnecting with the SAME tenant stays harmless (boot restores then seeds).
@@ -109,20 +109,20 @@ describe('E3.6 connect records the tenant and refuses to mis-label a domain', ()
   });
 
   it('refuses a reconnect and a retarget that move the boundary between levels', async () => {
-    const store = new FsRealmStore();
+    const store = new FsDataDomainStore();
     const mounted = await store.connect(dept, 'enterprise', { tenant: { org: 'acme', department: 'eng' } });
     // Same rendered path, different level: this is a re-scope, not a rename.
     await expect(store.connect(dept, 'enterprise', { tenant: { org: 'acme', member: 'eng' } }))
       .rejects.toThrow(/would change its tenant scope/);
-    await expect(store.retargetTenant(mounted.realmId, { org: 'acme', member: 'eng' }, { org: 'acme' }))
+    await expect(store.retargetTenant(mounted.dataDomainId, { org: 'acme', member: 'eng' }, { org: 'acme' }))
       .rejects.toThrow(/tenant drift/);
     // A case difference is still the same tenant, so the compare-swap accepts it.
-    await expect(store.retargetTenant(mounted.realmId, { org: 'ACME', department: 'ENG' }, { org: 'acme', department: 'eng' }))
+    await expect(store.retargetTenant(mounted.dataDomainId, { org: 'ACME', department: 'ENG' }, { org: 'acme', department: 'eng' }))
       .resolves.toBeUndefined();
   });
 
-  it('leaves an enterprise realm unscoped when no tenant is given, and says so', async () => {
-    const store = new FsRealmStore();
+  it('leaves an enterprise dataDomain unscoped when no tenant is given, and says so', async () => {
+    const store = new FsDataDomainStore();
     const manifest = await store.connect(org, 'enterprise');
     expect(manifest.tenant).toBeUndefined();
     expect(store.connections()[0]?.tenant).toBeUndefined();

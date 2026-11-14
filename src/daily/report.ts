@@ -45,7 +45,7 @@ export type DailyReportModel = {
   params: Record<string, unknown>;
   intentId?: string;
   runId?: string;
-  realm: { realmId: string; root: string; type: string; readOnly: boolean };
+  dataDomain: { dataDomainId: string; root: string; type: string; readOnly: boolean };
   agents: string[];
   status?: string;
   decision?: { rule: string; conclusion: string | null; reason: string };
@@ -55,12 +55,12 @@ export type DailyReportModel = {
   refused?: { reason: string; detail: string };
   /** Items this run put on the oversight desk. */
   escalations: Array<{ id: string; kind: string; reason: string; options: string[] }>;
-  /** The realm-relative path this run's page is stored at, when it was stored. */
+  /** The dataDomain-relative path this run's page is stored at, when it was stored. */
   itemId?: string;
   /** The record written back into the mounted directory. */
   record?: { itemId: string; bytes: number };
   writeError?: string;
-  /** The most recent stored page for the same skill in the same realm, so a run
+  /** The most recent stored page for the same skill in the same dataDomain, so a run
    *  can show what the previous one concluded. Read before dispatch, never part
    *  of the outbound load (see DailyPreviousRecord). */
   previous?: DailyPreviousRecord;
@@ -170,7 +170,7 @@ export function renderDailyReport(model: DailyReportModel): string {
   if (model.note) lines.push(`- **Note** ${model.note}`);
   lines.push(`- **Params** ${JSON.stringify(model.params)}`);
   lines.push(
-    `- **Realm** \`${model.realm.realmId}\` (${model.realm.type}, ${model.realm.readOnly ? 'read-only' : 'writable'}) — ${model.realm.root}`,
+    `- **DataDomain** \`${model.dataDomain.dataDomainId}\` (${model.dataDomain.type}, ${model.dataDomain.readOnly ? 'read-only' : 'writable'}) — ${model.dataDomain.root}`,
   );
   lines.push(`- **Agents** ${model.agents.length > 0 ? model.agents.map(a => `\`${a}\``).join(', ') : 'none registered'}`);
   if (model.intentId) {

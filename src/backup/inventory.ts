@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { lstat, open, readFile, realpath } from 'node:fs/promises';
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
-import type { RealmStore } from '../realm/types.js';
+import type { DataDomainStore } from '../dataDomain/types.js';
 import {
   BackupError,
   BackupUnreadableError,
@@ -14,21 +14,21 @@ import {
  *  an unbounded read into a backup would be its own incident). */
 export const DEFAULT_FILE_MAX_BYTES = 64 * 1024 * 1024;
 
-/** Adapt a connected Realm into the inventory port the map drawer consumes. */
-export function inventoryFromRealm(store: RealmStore, realmId: string): BackupInventory {
+/** Adapt a connected DataDomain into the inventory port the map drawer consumes. */
+export function inventoryFromDataDomain(store: DataDomainStore, dataDomainId: string): BackupInventory {
   return {
     async describe(): Promise<MapSource> {
-      const manifest = await store.manifest(realmId);
+      const manifest = await store.manifest(dataDomainId);
       return {
-        kind: 'realm',
-        realmId: manifest.realmId,
+        kind: 'dataDomain',
+        dataDomainId: manifest.dataDomainId,
         type: manifest.type,
         root: manifest.root,
         ...(manifest.tenant ? { tenant: manifest.tenant } : {}),
       };
     },
     async entries() {
-      return store.entries(realmId);
+      return store.entries(dataDomainId);
     },
   };
 }
@@ -46,7 +46,7 @@ type FilesSource = Extract<MapSource, { kind: 'files' }>;
 
 /**
  * Inventory over an explicit file whitelist - the shape needed to back up
- * `runtime.json`, which lives outside every connected Realm.
+ * `runtime.json`, which lives outside every connected DataDomain.
  *
  * A named file that is missing, escapes the root, is a symlink or is binary
  * throws instead of being skipped: a backup that quietly drops the one file you
@@ -140,18 +140,18 @@ async function readWhitelistedFile(realRoot: string, name: string, maxBytes: num
   };
 }
 
-/** Live-source resolver for a realm map: reconnect with the map's own scope. */
-export function realmLiveSource(store: RealmStore): LiveSource {
+/** Live-source resolver for a dataDomain map: reconnect with the map's own scope. */
+export function dataDomainLiveSource(store: DataDomainStore): LiveSource {
   return async source => {
-    if (source.kind !== 'realm') throw new BackupError(`this map needs a file source, not a realm: ${source.kind}`);
+    if (source.kind !== 'dataDomain') throw new BackupError(`this map needs a file source, not a dataDomain: ${source.kind}`);
     // Verification only reads. Reconnecting read-only means a recovery check
-    // cannot create directories, write an index or otherwise touch a realm the
+    // cannot create directories, write an index or otherwise touch a dataDomain the
     // operator mounted for inspection.
     const manifest = await store.connect(source.root, source.type, {
       ...(source.tenant ? { tenant: source.tenant } : {}),
       readOnly: true,
     });
-    return store.entries(manifest.realmId);
+    return store.entries(manifest.dataDomainId);
   };
 }
 
@@ -164,16 +164,16 @@ export function realmLiveSource(store: RealmStore): LiveSource {
  */
 export function fileLiveSource(): LiveSource {
   return async source => {
-    if (source.kind !== 'files') throw new BackupError(`this map needs a realm source, not files: ${source.kind}`);
+    if (source.kind !== 'files') throw new BackupError(`this map needs a dataDomain source, not files: ${source.kind}`);
     return readWhitelist(source, DEFAULT_FILE_MAX_BYTES, true);
   };
 }
 
 /** Pick the resolver that matches the map's own source kind. */
-export function liveSourceFor(store: RealmStore): LiveSource {
-  const realm = realmLiveSource(store);
+export function liveSourceFor(store: DataDomainStore): LiveSource {
+  const dataDomain = dataDomainLiveSource(store);
   const files = fileLiveSource();
-  return source => (source.kind === 'realm' ? realm(source) : files(source));
+  return source => (source.kind === 'dataDomain' ? dataDomain(source) : files(source));
 }
 
 function assertSafeRelativePath(name: string): void {

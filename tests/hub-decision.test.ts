@@ -124,14 +124,14 @@ describe('createHubDecisionBackend', () => {
       state: {},
       instructions: '',
       runId: 'r1',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
     });
     await backend.choice({
       state: {},
       instructions: '',
       runId: 'r2',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
       options: ['x'],
     });
@@ -139,7 +139,7 @@ describe('createHubDecisionBackend', () => {
       state: {},
       instructions: '',
       runId: 'r3',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
       levels: ['low'],
     });
@@ -166,7 +166,7 @@ describe('createHubDecisionBackend', () => {
       state: {},
       instructions: '',
       runId: 'r1',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
     });
     // The report is fired in the background; flush the task queue.
@@ -219,7 +219,7 @@ describe('createHubDecisionBackend', () => {
       state: {},
       instructions: '',
       runId: 'r1',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
     });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -256,7 +256,7 @@ describe('createHubDecisionBackend', () => {
       state: {},
       instructions: '',
       runId: 'r1',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
     });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -286,7 +286,7 @@ describe('createHubDecisionBackend', () => {
       state: {},
       instructions: '',
       runId: 'r1',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
     });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -314,7 +314,7 @@ describe('createHubDecisionBackend', () => {
       state: {},
       instructions: '',
       runId: 'r1',
-      realm: 'personal',
+      dataDomain: 'personal',
       question: 'q',
     });
     expect(result.probability).toBe(0.7);

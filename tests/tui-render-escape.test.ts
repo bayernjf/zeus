@@ -43,7 +43,7 @@ const poisoned: DeckSnapshot = {
       kind: 'intent-conflict',
       executor: PAYLOAD,
       skill: PAYLOAD,
-      realm: 'personal',
+      dataDomain: 'personal',
       reason: PAYLOAD_OSC,
       status: 'pending',
       options: [],
@@ -55,9 +55,9 @@ const poisoned: DeckSnapshot = {
     { ts: `00:00${PAYLOAD}`, executor: PAYLOAD, decision: `future${PAYLOAD}`, skill: PAYLOAD, state: PAYLOAD_OSC },
   ],
   domains: {
-    realms: [
+    dataDomains: [
       {
-        realmId: PAYLOAD,
+        dataDomainId: PAYLOAD,
         type: 'enterprise',
         tenant: { org: PAYLOAD, department: PAYLOAD_OSC, member: PAYLOAD },
         readOnly: false,
@@ -69,7 +69,7 @@ const poisoned: DeckSnapshot = {
       {
         grantId: PAYLOAD,
         subject: PAYLOAD,
-        realmId: PAYLOAD,
+        dataDomainId: PAYLOAD,
         access: 'read',
         grantedBy: PAYLOAD,
         grantedAt: '',
@@ -96,7 +96,7 @@ const poisoned: DeckSnapshot = {
       {
         id: PAYLOAD,
         owner: 'operator',
-        realm: 'personal',
+        dataDomain: 'personal',
         predicate: { source: PAYLOAD, op: 'change', field: PAYLOAD_OSC },
         intent: { skill: PAYLOAD, subject: 's', mode: 'plan', maxFanOut: 1 },
         intervalSeconds: 60,

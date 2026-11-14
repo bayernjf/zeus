@@ -12,7 +12,7 @@ export type ConnectorStatus = 'declared' | 'connected' | 'revoked';
  * - http:  a streamable-HTTP endpoint URL (default, backwards compatible)
  * - stdio: a local subprocess speaking newline-delimited JSON-RPC on its
  *          stdio. Local-first MCP servers (e.g. work-learn's stdio server,
- *          Zeus's own realm mcp-stdio) have no HTTP face.
+ *          Zeus's own dataDomain mcp-stdio) have no HTTP face.
  */
 export type ConnectorTransport =
   | { type?: 'http'; endpoint: string; token?: string }

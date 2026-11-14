@@ -47,7 +47,7 @@ describe('write-back cards (经验卡): S2 mechanical face', () => {
     expect(selectionWeightsFromWritebacks([])).toEqual({});
     const retracted: WritebackRecord = {
       id: 'w1',
-      realmId: 'r',
+      dataDomainId: 'r',
       createdAt: '2026-10-07T00:00:00.000Z',
       source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' },
       param: 'selection-weight',
@@ -61,8 +61,8 @@ describe('write-back cards (经验卡): S2 mechanical face', () => {
 
   it('selectionWeightsFromWritebacks overrides by target and newest wins', () => {
     const out = selectionWeightsFromWritebacks([
-      { id: 'a', realmId: 'r', createdAt: '2026-10-07T00:00:00.000Z', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: 0.3, reason: 'x', status: 'active' },
-      { id: 'b', realmId: 'r', createdAt: '2026-10-07T00:00:01.000Z', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: 0.5, reason: 'y', status: 'active' },
+      { id: 'a', dataDomainId: 'r', createdAt: '2026-10-07T00:00:00.000Z', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: 0.3, reason: 'x', status: 'active' },
+      { id: 'b', dataDomainId: 'r', createdAt: '2026-10-07T00:00:01.000Z', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: 0.5, reason: 'y', status: 'active' },
     ]);
     expect(out).toEqual({ [SLOW]: 0.5 });
   });
@@ -70,7 +70,7 @@ describe('write-back cards (经验卡): S2 mechanical face', () => {
   it('WritebackLedger clamps factor to (MIN, 1] and retract returns to baseline', () => {
     const ledger = new WritebackLedger(() => new Date('2026-10-07T00:00:00.000Z'));
     const card = ledger.record({
-      realmId: 'r',
+      dataDomainId: 'r',
       source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' },
       param: 'selection-weight',
       target: SLOW,
@@ -79,8 +79,8 @@ describe('write-back cards (经验卡): S2 mechanical face', () => {
     });
     expect(ledger.selectionWeights('r')).toEqual({ [SLOW]: 0.5 });
 
-    expect(() => ledger.record({ realmId: 'r', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: 1.5, reason: 'too high' })).toThrow(RangeError);
-    expect(() => ledger.record({ realmId: 'r', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: MIN_WRITEWEIGHT_FACTOR - 0.01, reason: 'too low' })).toThrow(RangeError);
+    expect(() => ledger.record({ dataDomainId: 'r', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: 1.5, reason: 'too high' })).toThrow(RangeError);
+    expect(() => ledger.record({ dataDomainId: 'r', source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' }, param: 'selection-weight', target: SLOW, factor: MIN_WRITEWEIGHT_FACTOR - 0.01, reason: 'too low' })).toThrow(RangeError);
 
     const retracted = ledger.retract(card.id);
     expect(retracted?.status).toBe('retracted');
@@ -91,7 +91,7 @@ describe('write-back cards (经验卡): S2 mechanical face', () => {
   it('MemoryStore round-trips write-back cards through export/import', () => {
     const store = new MemoryStore(() => new Date('2026-10-07T00:00:00.000Z'));
     store.recordWriteback({
-      realmId: 'r',
+      dataDomainId: 'r',
       source: { kind: 'executor-concentrated', target: SLOW, confidence: 'stable' },
       param: 'selection-weight',
       target: SLOW,
@@ -114,7 +114,7 @@ describe('write-back cards (经验卡): S2 mechanical face', () => {
 
     const store = new MemoryStore(() => new Date('2026-10-07T00:00:00.000Z'));
     store.recordWriteback({
-      realmId: 'r',
+      dataDomainId: 'r',
       source: { kind: stable!.kind, target: stable!.target, confidence: stable!.confidence },
       param: 'selection-weight',
       target: stable!.target,

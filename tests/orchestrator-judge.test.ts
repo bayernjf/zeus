@@ -74,7 +74,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       onConflict: (_c, r) => escalated.push(r),
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('completed');
     expect(result.decision.conclusion).toBe('approve');
@@ -99,7 +99,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       onConflict: (_c, r) => escalated.push(r),
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('needs-operator');
     expect(result.decision.conclusion).toBe('approve'); // rule conclusion preserved, not overwritten
@@ -123,7 +123,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEnabled: true,
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('completed');
     expect(result.conflicts).toEqual([]);
@@ -137,7 +137,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEnabled: true,
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'personal' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'personal' });
 
     expect(result.status).toBe('completed');
     expect(result.judgeReview).toMatchObject({ judged: false, reason: 'uncalibrated', calibrated: false });
@@ -151,7 +151,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       allowUncalibratedJudge: true,
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'personal' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'personal' });
 
     expect(result.status).toBe('needs-operator');
     expect(result.judgeReview).toMatchObject({ judged: true, agreesWithRule: false, escalated: true, calibrated: false });
@@ -164,7 +164,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEnabled: true,
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('completed');
     expect(result.judgeReview?.judged).toBe(false);
@@ -183,7 +183,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     const result = await orch.fanOut({
       skill: 'review',
       params: {},
-      realm: 'enterprise',
+      dataDomain: 'enterprise',
       aggregation: { kind: 'unanimous' },
     });
 
@@ -200,7 +200,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEnabled: true,
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('needs-operator');
     expect(backend.calls.choice).toHaveLength(1); // arbitration only
@@ -215,7 +215,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEnabled: true,
     });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('completed');
     expect(result.backendArbitration?.concluded).toBe(true);
@@ -231,7 +231,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEscalateOnDisagreement: false,
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('completed');
     expect(result.conflicts).toEqual([]);
@@ -242,7 +242,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
     const backend = mockBackend('decision-model', () => choiceResult('reject', 0.99, true));
     const orch = new Orchestrator(lookupFor(MAJORITY_NAMES), majorityPort(), { decisionBackend: backend });
 
-    const result = await orch.fanOut({ skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     expect(result.status).toBe('completed');
     expect(backend.calls.choice).toHaveLength(0);
@@ -256,7 +256,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEnabled: true,
     });
 
-    const first = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const first = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
     expect(first.judgeReview?.agreesWithRule).toBe(true);
 
     const resumed = await orch.resumeBranch('X', 'prhelper', { note: 'redo' });
@@ -272,7 +272,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       judgeEnabled: true,
     });
 
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
     expect(result.status).toBe('needs-operator');
 
     const settled = orch.resolveIntent('X', { escalationId: 'esc-1', stance: 'reject' });
@@ -288,7 +288,7 @@ describe('E1.3 LLM-as-judge adversarial review', () => {
       decisionBackend: backend,
       judgeEnabled: true,
     });
-    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, realm: 'enterprise' });
+    const result = await orch.fanOut({ intentId: 'X', skill: 'review', params: {}, dataDomain: 'enterprise' });
 
     const replay = replayDecision(result);
     const kinds = replay.timeline.map(step => step.kind);

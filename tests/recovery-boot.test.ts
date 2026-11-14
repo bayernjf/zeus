@@ -27,7 +27,7 @@ function cardFor(name: string) {
     preferredTransport: 'JSONRPC',
     'x-zeus-handshake': {
       version: '1', swornTo: 'zeus', domain: 'test-domain',
-      realms: ['personal'], dataPolicy: 'read-task-scope',
+      dataDomains: ['personal'], dataPolicy: 'read-task-scope',
       reportBack: true, escalationPolicy: 'on-failure',
     },
   };
@@ -76,7 +76,7 @@ describe('S13 V2 crash recovery in a booted runtime', () => {
       const { fetchImpl } = stanceFetch({ alpha: 'approve', beta: 'reject' });
       const first = await bootRuntime({ fetchImpl, stateFile, executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card', 'http://127.0.0.1/beta/api/a2a/agent-card'] });
       const result = await first.orchestrator.fanOut({
-        intentId: 'intent-needs-operator', skill: 'review', params: { message: 'x' }, realm: 'personal',
+        intentId: 'intent-needs-operator', skill: 'review', params: { message: 'x' }, dataDomain: 'personal',
         executors: ['alpha', 'beta'],
       });
       expect(result.status).toBe('needs-operator');
@@ -108,7 +108,7 @@ describe('S13 V2 crash recovery in a booted runtime', () => {
       const { fetchImpl } = stanceFetch({ alpha: 'fail' });
       const first = await bootRuntime({ fetchImpl, stateFile, executorSeeds: ['http://127.0.0.1/alpha/api/a2a/agent-card'] });
       const result = await first.orchestrator.fanOut({
-        intentId: 'intent-failed', skill: 'review', params: { message: 'x' }, realm: 'personal',
+        intentId: 'intent-failed', skill: 'review', params: { message: 'x' }, dataDomain: 'personal',
         executors: ['alpha'],
       });
       expect(result.status).toBe('failed');
@@ -146,7 +146,7 @@ describe('S13 V2 crash recovery in a booted runtime', () => {
     // Settle once (populates the F2 cache), then execute an auto-resume row
     // twice with the same intentId: the fan-out cache answers the second call.
     const original = await first.orchestrator.fanOut({
-      intentId: 'intent-resume', skill: 'review', params: { message: 'x' }, realm: 'personal',
+      intentId: 'intent-resume', skill: 'review', params: { message: 'x' }, dataDomain: 'personal',
       executors: ['alpha'],
     });
     expect(original.replayed).toBeUndefined();
@@ -176,7 +176,7 @@ describe('S13 V2 crash recovery in a booted runtime', () => {
         awaitOperator: () => {},
         autoResume: async intentId => {
           const resumed = await first.orchestrator.fanOut({
-            intentId, skill: 'review', params: { message: 'x' }, realm: 'personal', executors: ['alpha'],
+            intentId, skill: 'review', params: { message: 'x' }, dataDomain: 'personal', executors: ['alpha'],
           });
           expect(resumed.replayed).toBe(true);
         },

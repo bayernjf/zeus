@@ -71,7 +71,7 @@ const FAILURE_CATEGORY: Partial<Record<AuditDecision, FailureCategory>> = {
   'branch-aborted': 'abort',
   'refused-skill-uninstalled': 'refused-skill',
   'refused-no-active-provider': 'refused-skill',
-  'refused-realm-policy': 'refused-policy',
+  'refused-dataDomain-policy': 'refused-policy',
   'refused-data-policy': 'refused-policy',
   'domain-refused': 'refused-policy',
   'refused-unknown-executor': 'refused-unknown',
@@ -85,7 +85,7 @@ const FAILURE_CATEGORY: Partial<Record<AuditDecision, FailureCategory>> = {
 const SUCCESS_DECISIONS: ReadonlySet<AuditDecision> = new Set([
   'dispatched',
   'domain-read',
-  'realm-write',
+  'dataDomain-write',
 ]);
 
 function classify(decision: AuditDecision): { kind: 'ok' | 'fail' | 'skip'; category?: FailureCategory } {

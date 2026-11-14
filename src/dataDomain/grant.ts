@@ -3,9 +3,9 @@ import { canonicalJson, type RosterSigner, type RosterVerifier } from '../regist
 import type { OperatorWriteGrant, GrantVerification, SignedOperatorWriteGrant } from './types.js';
 
 /**
- * E3.5 operator write grants (design-realm §7.5, deferred #14).
+ * E3.5 operator write grants (design-dataDomain §7.5, deferred #14).
  *
- * A grant is a signed statement: "key K authorized a write into realm R until
+ * A grant is a signed statement: "key K authorized a write into dataDomain R until
  * time T, once". Before this module the runtime could only check a grant's
  * *shape*, which meant `verifyOperatorWriteGrant` trusted that the JSON it was
  * handed came from the operator - anyone able to reach `write()` could author an
@@ -22,7 +22,7 @@ export const OPERATOR_GRANT_DEFAULT_TTL_MS = 5 * 60_000;
 export const OPERATOR_GRANT_MAX_TTL_MS = 24 * 3600_000;
 
 export type IssueOperatorGrantInput = {
-  realmId: string;
+  dataDomainId: string;
   /** Who authorized it, as a human-readable identity (not a key id: `keyId` carries that). */
   grantedBy: string;
   reason?: string;
@@ -47,7 +47,7 @@ export class OperatorGrantError extends Error {}
 export type OperatorGrantAuditEntry = {
   at: string;
   decision: 'operator-grant-issued';
-  realmId: string;
+  dataDomainId: string;
   grantedBy: string;
   keyId: string;
   expiresAt: string;
@@ -61,9 +61,9 @@ function grantClaim(grant: OperatorWriteGrant): Record<string, unknown> {
 }
 
 /**
- * Mint and sign a single-use write grant for one enterprise realm.
+ * Mint and sign a single-use write grant for one enterprise dataDomain.
  *
- * Refuses an unknown realm type at the caller boundary is the transport's job;
+ * Refuses an unknown dataDomain type at the caller boundary is the transport's job;
  * this refuses malformed inputs and an unbounded lifetime, because those are the
  * two ways a "grant" stops meaning "one write".
  */
@@ -72,7 +72,7 @@ export async function issueOperatorWriteGrant(
   options: IssueOperatorGrantOptions
 ): Promise<SignedOperatorWriteGrant> {
   const now = (options.now ?? (() => new Date()))();
-  if (!input.realmId?.trim()) throw new OperatorGrantError('grant needs a realmId');
+  if (!input.dataDomainId?.trim()) throw new OperatorGrantError('grant needs a dataDomainId');
   if (!input.grantedBy?.trim()) throw new OperatorGrantError('grant needs a grantedBy identity');
   const ttlMs = input.ttlMs ?? OPERATOR_GRANT_DEFAULT_TTL_MS;
   const maxTtlMs = options.maxTtlMs ?? OPERATOR_GRANT_MAX_TTL_MS;
@@ -83,7 +83,7 @@ export async function issueOperatorWriteGrant(
 
   const grant: SignedOperatorWriteGrant = {
     kind: 'operator-write',
-    realmId: input.realmId.trim(),
+    dataDomainId: input.dataDomainId.trim(),
     grantedBy: input.grantedBy.trim(),
     ...(input.reason?.trim() ? { reason: input.reason.trim() } : {}),
     grantedAt: now.toISOString(),
@@ -189,7 +189,7 @@ export type GrantVerificationContext = {
 };
 
 /**
- * Verify a operator write grant against the realm about to be written.
+ * Verify a operator write grant against the dataDomain about to be written.
  *
  * Order matters: shape and binding first (cheap, and they say what is wrong),
  * then the signature (the expensive check that proves provenance), then expiry,
@@ -198,15 +198,15 @@ export type GrantVerificationContext = {
  */
 export async function verifyOperatorWriteGrant(
   grant: OperatorWriteGrant | undefined,
-  realmId: string,
+  dataDomainId: string,
   context: GrantVerificationContext = {}
 ): Promise<GrantVerification> {
   if (!grant) return { ok: false, reason: 'missing' };
 
   const malformed =
     grant.kind !== 'operator-write' ||
-    typeof grant.realmId !== 'string' ||
-    grant.realmId.length === 0 ||
+    typeof grant.dataDomainId !== 'string' ||
+    grant.dataDomainId.length === 0 ||
     typeof grant.grantedBy !== 'string' ||
     grant.grantedBy.length === 0 ||
     typeof grant.grantedAt !== 'string' ||
@@ -216,7 +216,7 @@ export async function verifyOperatorWriteGrant(
     (grant.expiresAt !== undefined && Number.isNaN(Date.parse(grant.expiresAt)));
   if (malformed) return { ok: false, reason: 'malformed' };
 
-  if (grant.realmId !== realmId) return { ok: false, reason: 'wrong-realm' };
+  if (grant.dataDomainId !== dataDomainId) return { ok: false, reason: 'wrong-dataDomain' };
 
   if (context.verifier) {
     if (typeof grant.sig !== 'string' || grant.sig.length === 0) return { ok: false, reason: 'unsigned' };

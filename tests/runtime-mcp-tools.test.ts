@@ -1,6 +1,6 @@
 // G6 (design-observability §5): the read-only runtime tool face over MCP.
 // POST /api/mcp serves memory.recall (namespace-bound, MemoryPort v1 §7
-// semantics, cross-realm refused through MemoryBoundaryError) and traces.query
+// semantics, cross-dataDomain refused through MemoryBoundaryError) and traces.query
 // (operator-only, transparent pass-through of the TracePort v1 §5 query).
 // Writes have no MCP surface: remember/forget stay on the HTTP consumer face.
 
@@ -19,14 +19,14 @@ import { buildTraceTree } from '../src/observability/trace.js';
 
 const OPERATOR_TOKEN = 'operator-secret';
 const MEMORY_TOKEN = 'consumer-secret-one';
-const REALM = 'realm-personal';
+const DATA_DOMAIN = 'dataDomain-personal';
 const OPERATOR_AUTH = { authorization: `Bearer ${OPERATOR_TOKEN}` };
 const CONSUMER_AUTH = { authorization: `Bearer ${MEMORY_TOKEN}` };
 
 function claim(eventId: string, subject: string, predicate: string, object: unknown): MemoryEvent {
   return {
     eventId,
-    realmId: REALM,
+    dataDomainId: DATA_DOMAIN,
     runId: `run-${eventId}`,
     source: { agentId: subject },
     kind: 'claim',
@@ -66,7 +66,7 @@ async function mount(options: {
   const store = new MemoryStore();
   store.append(claim('evt-1', 'pr-helper', 'language', 'typescript'));
   store.append(claim('evt-2', 'loom', 'language', 'python'));
-  await store.consolidateRealm(REALM);
+  await store.consolidateDataDomain(DATA_DOMAIN);
   const dir = mkdtempSync(join(tmpdir(), 'zeus-runtime-mcp-'));
   const exporter = new JsonlTraceExporter(join(dir, 'traces.jsonl'));
   await exporter.export(traceTree('t1', 'a1'));
@@ -75,7 +75,7 @@ async function mount(options: {
     registry: new ExecutorRegistry(),
     signer: new Ed25519MemorySigner('zeus-rsk-test'),
     internalToken: OPERATOR_TOKEN,
-    ...(options.consumerToken ? { memoryServiceTokens: { [REALM]: MEMORY_TOKEN, other: 'consumer-secret-two' } } : {}),
+    ...(options.consumerToken ? { memoryServiceTokens: { [DATA_DOMAIN]: MEMORY_TOKEN, other: 'consumer-secret-two' } } : {}),
     ...(options.memory ? { memoryStore: store } : {}),
     ...(options.traces ? { traceExporter: exporter } : {}),
     runtimeToolsMcp: true,
@@ -184,7 +184,7 @@ describe('G6 runtime tool face over MCP (POST /api/mcp)', () => {
   it('recalls memory for the operator with an explicit namespace', async () => {
     const h = await mount({ memory: true, consumerToken: true });
     try {
-      const res = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: REALM, query: 'typescript' } });
+      const res = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: DATA_DOMAIN, query: 'typescript' } });
       expect(res.statusCode).toBe(200);
       const body = toolJson(res);
       expect(body.hits).toHaveLength(1);
@@ -194,17 +194,17 @@ describe('G6 runtime tool face over MCP (POST /api/mcp)', () => {
       const noNamespace = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { query: 'typescript' } });
       expect(noNamespace.json().error.code).toBe(-32602);
 
-      const badArgs = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: REALM, query: 'x', k: 0 } });
+      const badArgs = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: DATA_DOMAIN, query: 'x', k: 0 } });
       expect(badArgs.json().error.code).toBe(-32602);
 
-      const unknownParam = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: REALM, query: 'x', write: true } });
+      const unknownParam = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: DATA_DOMAIN, query: 'x', write: true } });
       expect(unknownParam.json().error.code).toBe(-32602);
     } finally {
       await h.cleanup();
     }
   });
 
-  it('binds a memory consumer to its token namespace and refuses cross-realm claims', async () => {
+  it('binds a memory consumer to its token namespace and refuses cross-dataDomain claims', async () => {
     const h = await mount({ memory: true, consumerToken: true });
     try {
       // No namespace argument: the bound one is used.
@@ -213,14 +213,14 @@ describe('G6 runtime tool face over MCP (POST /api/mcp)', () => {
       expect(toolJson(bound).hits[0].subject).toBe('pr-helper');
 
       // Claiming the bound namespace explicitly is fine.
-      const explicit = await call(h.app, CONSUMER_AUTH, { name: 'memory.recall', arguments: { namespace: REALM, query: 'python' } });
+      const explicit = await call(h.app, CONSUMER_AUTH, { name: 'memory.recall', arguments: { namespace: DATA_DOMAIN, query: 'python' } });
       expect(toolJson(explicit).hits[0].subject).toBe('loom');
 
-      // Claiming another namespace is the cross-realm refusal, by the same
+      // Claiming another namespace is the cross-dataDomain refusal, by the same
       // error class the store raises everywhere else.
       const other = await call(h.app, CONSUMER_AUTH, { name: 'memory.recall', arguments: { namespace: 'other', query: 'x' } });
       expect(other.json().error.code).toBe(-32004);
-      expect(other.json().error.message).toContain(`realm ${REALM} cannot read memory of realm other`);
+      expect(other.json().error.message).toContain(`dataDomain ${DATA_DOMAIN} cannot read memory of dataDomain other`);
     } finally {
       await h.cleanup();
     }
@@ -229,10 +229,10 @@ describe('G6 runtime tool face over MCP (POST /api/mcp)', () => {
   it('filters recall hits by kind', async () => {
     const h = await mount({ memory: true, consumerToken: true });
     try {
-      const all = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: REALM, query: 'language' } });
+      const all = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: DATA_DOMAIN, query: 'language' } });
       const hits = toolJson(all).hits as Array<{ kind: string }>;
       expect(hits.length).toBeGreaterThan(0);
-      const filtered = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: REALM, query: 'language', kinds: 'preference' } });
+      const filtered = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: DATA_DOMAIN, query: 'language', kinds: 'preference' } });
       expect(toolJson(filtered).hits).toHaveLength(0);
     } finally {
       await h.cleanup();
@@ -242,7 +242,7 @@ describe('G6 runtime tool face over MCP (POST /api/mcp)', () => {
   it('fails memory.recall closed by name when no memory store is mounted', async () => {
     const h = await mount({ traces: true });
     try {
-      const res = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: REALM, query: 'x' } });
+      const res = await call(h.app, OPERATOR_AUTH, { name: 'memory.recall', arguments: { namespace: DATA_DOMAIN, query: 'x' } });
       expect(res.json().error.code).toBe(-32005);
       expect(res.json().error.message).toContain('not mounted');
     } finally {

@@ -28,9 +28,9 @@
 
 ```sh
 # 配置 trio 后（export 或 .env），脚本内 createJevBackendFromEnv 优先于 LLM：
-npm run verify:decision-backend -- --realm personal
+npm run verify:decision-backend -- --dataDomain personal
 # 对照路径（观察闸门行为差异）：
-npm run verify:decision-backend -- --realm enterprise
+npm run verify:decision-backend -- --dataDomain enterprise
 ```
 
 脚本行为（`scripts/verify-decision-backend.mjs:131 #createJevBackendFromEnv`）：`createJevBackendFromEnv(process.env) ?? createLlmBackend({...})`；真实 Orchestrator fan-out → S2 `maybeArbitrate` → 后端。Jev 适配器标 `calibrated: true`，默认闸门应采信；若实测置信度形状与声明不符，按 §5 处置。

@@ -12,7 +12,7 @@ const card: AgentCard = {
   url: 'https://executor.example',
   skills: [{ id: 'research', name: 'Research', description: 'researches', tags: ['web'] }],
   'x-zeus-handshake': {
-    version: '1', swornTo: 'zeus', domain: 'work', realms: ['personal'],
+    version: '1', swornTo: 'zeus', domain: 'work', dataDomains: ['personal'],
     dataPolicy: 'read-task-scope', reportBack: true, escalationPolicy: 'on-failure',
   },
 };
