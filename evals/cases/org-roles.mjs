@@ -37,6 +37,16 @@ export const evalCases = [
       { evidence: { forbidBareAssertions: true }, severity: 'block' },
       { artifacts: { everySettledBranchPositioned: true, uniquePositions: true }, severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
+      // D9-2: open-ended answer quality the boolean checks cannot express.
+      // warn-severity rollout: a below-bar real score is visible but never
+      // blocks the gate; an unavailable judge degrades to observe (fail-soft).
+      {
+        judge: {
+          rubric: 'A unanimous content-production approval is justified only when every position independently supports the outcome with a concrete, in-scope rationale. Score 1 only if all three positions are approvals with non-generic reasons and the conclusion matches.',
+          minScore: 0.7,
+        },
+        severity: 'warn',
+      },
     ],
   },
 
@@ -56,6 +66,13 @@ export const evalCases = [
       { decision: o => o.status === 'needs-operator' && o.conflicts.length >= 1, severity: 'block' },
       { artifacts: { everySettledBranchPositioned: true, uniquePositions: true }, severity: 'block' },
       { escalation: { expected: true, level: 1 }, severity: 'block' },
+      {
+        judge: {
+          rubric: 'A single compliance veto under a unanimous publish gate must surface the split for an operator rather than majority-voting it away. Score 1 only when the outcome is needs-operator, a conflict is recorded, and no position misrepresents the veto as an approval.',
+          minScore: 0.7,
+        },
+        severity: 'warn',
+      },
     ],
   },
 
@@ -109,6 +126,13 @@ export const evalCases = [
       { decision: o => o.status === 'failed' && o.branches.some(b => b.state === 'failed'), severity: 'block' },
       { artifacts: { noPositionForUnsettled: true }, severity: 'block' },
       { escalation: { expected: false }, severity: 'block' },
+      {
+        judge: {
+          rubric: 'A tool failure in an after-sales role must fail the task instead of silently publishing. Score 1 only when the status is failed, the failed branch is visible, and no stance artifact exists for the unsettled branch.',
+          minScore: 0.7,
+        },
+        severity: 'warn',
+      },
     ],
   },
 

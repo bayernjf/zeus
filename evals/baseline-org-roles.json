@@ -1,9 +1,9 @@
 {
-  "pinnedAt": "2026-11-14T05:27:36.831Z",
+  "pinnedAt": "2026-11-14T09:20:21.659Z",
   "suite": "org-roles",
   "report": {
     "caseCount": 6,
-    "passed": 18,
+    "passed": 21,
     "failed": 0,
     "blocked": 0,
     "warned": 0,
@@ -64,8 +64,8 @@
         "blocked": 0
       },
       "judge": {
-        "total": 0,
-        "passed": 0,
+        "total": 3,
+        "passed": 3,
         "blocked": 0
       }
     }
