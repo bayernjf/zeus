@@ -221,4 +221,28 @@ describe('eval-run.mjs baseline gate (S7 V3)', () => {
     }
     expect(lines[1]!.revision).toBe('abc123');
   });
+
+  // D9-2: the judge opts in via env, but the eval runner boots a scripted
+  // decision backend that never registers the process-wide hub resolver.
+  // With the flag on, judge-bearing cases and no hub wiring, the run must
+  // still exit 0 and say so — judge checks degrade to fail-soft instead of
+  // crashing the gate. The org-roles suite is used because its cases declare
+  // judge expectations (the filtered core case does not).
+  it('stays green when the judge is enabled without hub wiring', async () => {
+    const out = join(dir, 'judge-no-hub.json');
+    const r = await runScript(
+      [
+        '--suite-file', 'evals/cases/org-roles.mjs',
+        '--suite', 'org-roles',
+        '--baseline-file', fileURLToPath(new URL('../evals/baseline-org-roles.json', import.meta.url)),
+        '--out', out,
+      ],
+      {
+        ZEUS_EVAL_JUDGE_ENABLED: '1',
+        ZEUS_EVAL_JUDGE_ALIAS: 'judge',
+      },
+    );
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stderr).toContain('judge checks stay fail-soft');
+  });
 });

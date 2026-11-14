@@ -500,10 +500,44 @@ const results = [];
 // W4-1: the LLM-as-judge is opt-in (ZEUS_EVAL_JUDGE_ENABLED + a resolvable hub
 // alias). One judge per process, created lazily on the first case that needs
 // it; without it, judge checks degrade to observe (fail-soft) in the scorer.
+// D9-2: this runner boots a scripted decision backend, which never registers
+// the process-wide hub resolver (only serve.ts does). When the judge is opted
+// in, bootstrap a hub wiring here purely for endpoint resolution; every
+// failure stays fail-soft and a run without the flag is byte-for-byte
+// unchanged.
 /** @type {import('../dist/evals/judge.js').EvalJudge | null | undefined} */
 let evalJudge;
-function judgeFor() {
-  if (evalJudge === undefined) evalJudge = createEvalJudgeFromEnv(process.env);
+let judgeHubBootstrapped = false;
+const JUDGE_ENV_TRUE = new Set(['1', 'true', 'yes', 'on']);
+async function judgeFor() {
+  if (evalJudge !== undefined) return evalJudge;
+  const judgeEnabled =
+    JUDGE_ENV_TRUE.has((process.env.ZEUS_EVAL_JUDGE_ENABLED ?? '').trim().toLowerCase());
+  if (judgeEnabled && !judgeHubBootstrapped) {
+    judgeHubBootstrapped = true;
+    const hubUrl = process.env.MODEL_HUB_URL?.trim();
+    const token = process.env.MODEL_HUB_TOKEN?.trim();
+    if (!hubUrl || !token) {
+      console.warn(
+        'eval judge: ZEUS_EVAL_JUDGE_ENABLED set but MODELHUB_URL/TOKEN missing — judge checks stay fail-soft',
+      );
+    } else {
+      try {
+        const { createHubDecisionBackend } = await import('../dist/decision/hub-backend.js');
+        await createHubDecisionBackend({
+          hubUrl,
+          token,
+          cachePath: process.env.MODEL_HUB_CACHE_PATH?.trim() || './data/model-cache.json',
+        });
+        console.log('eval judge: process hub resolver bootstrapped');
+      } catch (error) {
+        console.warn(
+          `eval judge: hub bootstrap failed — judge checks stay fail-soft: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  evalJudge = createEvalJudgeFromEnv(process.env);
   return evalJudge;
 }
 for (const c of evalCases) {
@@ -519,7 +553,7 @@ for (const c of evalCases) {
     // hub outage slows the run but cannot flip its outcome.
     const judgeExpectations = c.expect.filter(ex => ex.judge !== undefined);
     if (judgeExpectations.length > 0) {
-      const judge = judgeFor();
+      const judge = await judgeFor();
       if (judge !== null) {
         /** @type {import('../dist/evals/judge.js').JudgeVerdict[]} */
         const verdicts = [];
