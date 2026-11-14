@@ -243,6 +243,16 @@ jobs:
           --suite content-review
           --baseline-file evals/baseline-content-review.json
 
+      # D9-1: third benchmark narrating the organization SOP roles (content D0
+      # auto, listing D3 human stop, after-sales D2) with its own case module
+      # and pinned baseline. Independent gate; the two suites above are unchanged.
+      - name: Eval run for the org-roles suite
+        run: >-
+          node scripts/eval-run.mjs
+          --suite-file evals/cases/org-roles.mjs
+          --suite org-roles
+          --baseline-file evals/baseline-org-roles.json
+
       # Idempotent upsert (one comment per PR, updated in place by marker).
       # always() so a block regression still gets its diff posted; the job's
       # conclusion stays red from the eval step. No-op on push builds and on
