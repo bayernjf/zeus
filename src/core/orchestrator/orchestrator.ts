@@ -30,7 +30,7 @@ import type { ProgressEvent } from './progress.js';
 import { appendStreamFrame, emptyStreamView, type StreamView } from './stream-merge.js';
 import type { DispatchRequest, DispatchResult, AuditEntry } from '../../dispatch/dispatcher.js';
 import { assembleBranchContext, type ContextAssemblyEvent } from '../../context/assemble.js';
-import { accumulateWatermark, watermarkDetail, type ContextWatermark } from './context-watermark.js';
+import { accumulateWatermark, estimateContextChars, watermarkDetail, type ContextWatermark } from './context-watermark.js';
 import { assembleSkillInputs } from '../../context/skill-inputs.js';
 import { allocateContextBudget, DEFAULT_BRANCH_CONTEXT_LIMIT } from '../../context/budget.js';
 import type { MemoryStore } from '../../memory/memory-store.js';
@@ -808,7 +808,12 @@ export class Orchestrator {
         : undefined;
       contextEvents = contextEvents.concat(budgeted.events);
       if (contextEvents.length > 0) {
-        this.contextWatermarks.set(runId, accumulateWatermark(this.contextWatermarks.get(runId), contextEvents));
+        const contextChars = estimateContextChars({
+          appendixTexts: contextAppendix.map(entry => entry.text),
+          skillInputs,
+          dataDomainHits: budgetedDataDomainHits ?? [],
+        });
+        this.contextWatermarks.set(runId, accumulateWatermark(this.contextWatermarks.get(runId), contextEvents, contextChars));
         this.options.onContextAssembled?.(contextEvents, {
           intentId,
           runId,

@@ -65,6 +65,7 @@ describe('run-level context watermark wiring (D3-2)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.runId).toBe(result.runId);
     expect(rows[0]!.detail).toContain('1 context entries assembled');
-    expect(rows[0]!.detail).toContain('across 1 branch(es)');
+    expect(rows[0]!.detail).toContain('~');
+    expect(rows[0]!.detail).toContain('tokens across 1 branch(es)');
   });
 });
