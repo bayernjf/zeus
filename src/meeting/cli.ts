@@ -1,8 +1,10 @@
 // Minimal CLI for the local meeting flow. It prints JSON so an agent (or the
 // owner in a shell) can drive a meeting without a UI; the web dialog comes later.
 
+import { readFile } from 'node:fs/promises';
 import { MeetingStore } from './store.js';
 import { advanceRound, claimGraph, createMeeting, decide, recordUtterance } from './protocol.js';
+import { convene, type DraftClaim } from './convene.js';
 import type { Evidence, EvidenceKind, SpeakerKind, Stance, Utterance } from './types.js';
 
 const DEFAULT_DIR = process.env.ZEUS_MEETING_DIR ?? '.zeus-meetings';
@@ -81,6 +83,32 @@ async function main(): Promise<void> {
   const meetingId = positional[0];
   if (!meetingId) throw new Error(`${command} requires a meeting id`);
 
+  if (command === 'convene') {
+    const draftsPath = one(flags, 'drafts');
+    if (!draftsPath) throw new Error('convene requires --drafts <file.json>');
+    const meeting = await store.load(meetingId);
+    const raw = JSON.parse(await readFile(draftsPath, 'utf8')) as { proposers?: unknown };
+    const proposers = Array.isArray(raw.proposers) ? raw.proposers : [];
+    const drafts = proposers.map((entry, index) => {
+      const record = (entry ?? {}) as { speakerId?: unknown; claims?: unknown };
+      const claims: DraftClaim[] = Array.isArray(record.claims)
+        ? record.claims.map((claim) => {
+            const item = (claim ?? {}) as { text?: unknown; evidence?: unknown };
+            const evidence = Array.isArray(item.evidence) ? (item.evidence as Evidence[]) : [];
+            return { text: typeof item.text === 'string' ? item.text : '', evidence };
+          })
+        : [];
+      return {
+        speakerId: typeof record.speakerId === 'string' ? record.speakerId : `proposer-${index + 1}`,
+        claims,
+      };
+    });
+    const result = await convene(meeting, async () => ({ drafts }));
+    await store.save(result.meeting);
+    print({ id: result.meeting.id, status: result.meeting.status, recorded: result.recorded, skipped: result.skipped });
+    return;
+  }
+
   if (command === 'show') {
     const meeting = await store.load(meetingId);
     print(one(flags, 'graph') === 'true' ? claimGraph(meeting) : meeting);
@@ -154,7 +182,7 @@ async function main(): Promise<void> {
   }
 
   process.stderr.write(
-    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | show <id> [--graph] | list\n',
+    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | show <id> [--graph] | list\n',
   );
   process.exitCode = 1;
 }
