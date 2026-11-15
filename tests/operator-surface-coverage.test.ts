@@ -120,6 +120,8 @@ const HTTP_ONLY: Record<string, string> = {
     'PRD F1 / design-meeting S4: speaking into a meeting is the same protocol call the CLI makes; console drives it over the bearer API',
   'POST /api/v1/meetings/:id/advance':
     'PRD F1 / design-meeting S4: round advancement is an operator action (the console button and the CLI `advance`)',
+  'POST /api/v1/meetings/:id/proposals':
+    'PRD F1 / design-meeting S4: the console convenes round 1 from operator-written drafts; a model-backed proposal source feeds the same route later',
   'POST /api/v1/meetings/:id/decision':
     'PRD F1 / design-meeting S4: the decision is the one action only a human can take; console posts it, CLI `decide` is the offline twin',
   'POST /api/org/departments/:id/first-task':
@@ -297,6 +299,7 @@ const READ_API_ONLY: Record<string, string> = {
   // mounted for the console's write path and for distant readers).
   'GET /api/v1/meetings': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting replay page)',
   'GET /api/v1/meetings/:id': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting replay page)',
+  'GET /api/v1/meetings/:id/markdown': 'tracked: PRD F1 / design-meeting S4 (ops-console meeting page downloads the minutes through its own endpoint)',
   // TracePort v1 §5 (D-5, W2-4): the cross-intent trace query face ships
   // API-only; the ops-console /app/traces BFF page (W2-5) is its reader.
   'GET /api/v1/traces': 'tracked: PRD F2 / D-5 (TracePort v1 section 5; ops-console reader lands with W2-5)',

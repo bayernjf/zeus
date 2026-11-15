@@ -303,6 +303,14 @@ export type AuditSink = (entry: AuditEntry) => void;
 export class Dispatcher {
   private lookup: ExecutorLookup;
 
+  /**
+   * ZEUS_DISPATCH_TIMEOUT_MS bounds how long dispatch waits for an executor's
+   * response headers. Unset keeps the client default (30s). A slow reasoning
+   * backend behind llm-agent can exceed that — measured 46s on one prompt —
+   * which surfaces as `tasks/sendSubscribe ... timed out after 30000ms`.
+   */
+  private readonly dispatchTimeoutMs: number | undefined;
+
   constructor(
     directory: ExecutorLookup | Map<string, ExecutorLike>,
     private options: {
@@ -327,6 +335,10 @@ export class Dispatcher {
     }
   ) {
     this.lookup = directory instanceof Map ? mapAsLookup(directory) : directory;
+    const rawTimeout = process.env.ZEUS_DISPATCH_TIMEOUT_MS?.trim();
+    const parsedTimeout = rawTimeout === undefined || rawTimeout === '' ? undefined : Number(rawTimeout);
+    this.dispatchTimeoutMs =
+      parsedTimeout !== undefined && Number.isFinite(parsedTimeout) && parsedTimeout > 0 ? parsedTimeout : undefined;
   }
 
   async dispatch(request: DispatchRequest): Promise<DispatchResult> {
@@ -526,6 +538,7 @@ export class Dispatcher {
               pushNotification: request.pushNotification,
             },
             this.options.fetchImpl,
+            this.dispatchTimeoutMs === undefined ? undefined : { timeoutMs: this.dispatchTimeoutMs },
           )
         : await sendTaskSubscribe(
         {
@@ -570,7 +583,8 @@ export class Dispatcher {
                   request.onBranchDelta!({ executor: executor.name, runId: delta.runId, seq: delta.seq, preview: delta.preview, at: delta.at }),
               }),
         },
-        this.options.fetchImpl
+        this.options.fetchImpl,
+        this.dispatchTimeoutMs === undefined ? undefined : { timeoutMs: this.dispatchTimeoutMs },
       );
     } catch (error) {
       // design-fan-out §7: an abort is a governance act (the operator cancelled the

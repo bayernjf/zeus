@@ -1,13 +1,14 @@
 // Minimal CLI for the local meeting flow. It prints JSON so an agent (or the
 // owner in a shell) can drive a meeting without a UI; the web dialog comes later.
 
-import { appendFile, readFile } from 'node:fs/promises';
+import { appendFile, readFile, writeFile } from 'node:fs/promises';
 import { MeetingStore } from './store.js';
 import { advanceRound, claimGraph, createMeeting, decide, recordUtterance } from './protocol.js';
 import { convene, type DraftClaim } from './convene.js';
 import { challenge, nextStep, projectClaims, selectTargets } from './challenge.js';
 import { decisionEvents } from './settle.js';
 import { meetingStats } from './stats.js';
+import { exportMarkdown } from './export.js';
 import type { Evidence, EvidenceKind, SpeakerKind, Stance, Utterance } from './types.js';
 
 const DEFAULT_DIR = process.env.ZEUS_MEETING_DIR ?? '.zeus-meetings';
@@ -268,8 +269,21 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === 'export') {
+    const meeting = await store.load(meetingId);
+    const markdown = exportMarkdown(meeting);
+    const out = flags.get('out')?.[0];
+    if (out) {
+      await writeFile(out, markdown, 'utf8');
+      process.stdout.write(`${out}\n`);
+    } else {
+      process.stdout.write(markdown);
+    }
+    return;
+  }
+
   process.stderr.write(
-    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | targets <id> [--limit] | challenge <id> --critics <file.json> [--target id] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | settle <id> --events <file.jsonl> | stats <id> | show <id> [--graph] | list\n',
+    'usage: open --topic <t> [--id] [--max-rounds] [--dir] | convene <id> --drafts <file.json> | targets <id> [--limit] | challenge <id> --critics <file.json> [--target id] | say <id> --speaker <s> [--stance] [--claim id|text] [--rebut id] [--evidence claimId|kind|ref|note] | advance <id> | decide <id> --chosen <id> --rationale <r> | settle <id> --events <file.jsonl> | stats <id> | export <id> [--out file] | show <id> [--graph] | list\n',
   );
   process.exitCode = 1;
 }

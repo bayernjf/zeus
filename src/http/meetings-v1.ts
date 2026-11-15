@@ -17,6 +17,8 @@ import {
   recordUtterance,
 } from '../meeting/protocol.js';
 import type { MeetingStore } from '../meeting/store.js';
+import { exportMarkdown } from '../meeting/export.js';
+import { convene, type DraftClaim, type ProposalDraft } from '../meeting/convene.js';
 import type { MeetingErrorCode } from '../meeting/protocol.js';
 import type { Claim, Meeting, Utterance } from '../meeting/types.js';
 
@@ -193,6 +195,56 @@ export async function decideRoute(store: MeetingStore, request: FastifyRequest, 
     });
     await store.save(next);
     return reply.code(201).send(next);
+  } catch (thrown) {
+    return sendError(reply, thrown);
+  }
+}
+
+/** GET /api/v1/meetings/:id/markdown — the meeting as minutes, for handoff. */
+export async function markdownRoute(store: MeetingStore, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    const { id } = request.params as { id: string };
+    const meeting = await loadOr404(store, id, reply);
+    if (!meeting) return reply;
+    return reply
+      .header('Content-Type', 'text/markdown; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="${meeting.id}.md"`)
+      .send(exportMarkdown(meeting));
+  } catch (thrown) {
+    return sendError(reply, thrown);
+  }
+}
+
+/**
+ * POST /api/v1/meetings/:id/proposals — fill round 1 from a batch of drafts.
+ * The console posts operator-written proposals here today; a model-backed
+ * source can feed the same shape later without touching the protocol.
+ */
+export async function conveneRoute(store: MeetingStore, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as { drafts?: unknown };
+    if (!Array.isArray(body.drafts) || body.drafts.length === 0) {
+      return badRequest(reply, 'drafts must be a non-empty array');
+    }
+    const drafts: ProposalDraft[] = [];
+    for (const raw of body.drafts as Array<Record<string, unknown>>) {
+      const speakerId = typeof raw.speakerId === 'string' ? raw.speakerId.trim() : '';
+      if (speakerId.length === 0) return badRequest(reply, 'each draft needs a speakerId');
+      const claims = Array.isArray(raw.claims) ? (raw.claims as DraftClaim[]) : [];
+      drafts.push({
+        speakerId,
+        claims: claims.map(claim => ({
+          text: typeof claim.text === 'string' ? claim.text : '',
+          evidence: Array.isArray(claim.evidence) ? claim.evidence : [],
+        })),
+      });
+    }
+    const meeting = await loadOr404(store, id, reply);
+    if (!meeting) return reply;
+    const result = await convene(meeting, async () => ({ drafts }), { kind: 'agent' });
+    await store.save(result.meeting);
+    return reply.code(201).send(result);
   } catch (thrown) {
     return sendError(reply, thrown);
   }
