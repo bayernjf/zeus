@@ -54,6 +54,11 @@ services:
       # ZEUS_AUDIT_FILE above (the tree is rebuilt from the audit spine);
       # without it no trace is written. Local JSONL, opt-in by path.
       ZEUS_TRACE_EXPORT_FILE: /data/trace-export.jsonl
+      # Meeting store shared by the /api/v1/meetings API and the `npm run
+      # meeting` CLI. /app is root-owned and not writable by the container
+      # user, so both must point at the writable /data volume instead of the
+      # `./data/meetings` default (which would EACCES on save).
+      ZEUS_MEETING_DIR: /data/meetings
       # Personal dataDomain root connected on boot, so the memory producer has a
       # mounted dataDomain to attribute claims to (W1-4 memory pilot e2e).
       ZEUS_DATA_DOMAIN_ROOTS: /data/dataDomain-personal
