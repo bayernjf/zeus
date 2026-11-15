@@ -19,6 +19,7 @@ import { MAX_QUERY_LIMIT, queryTraceTrees } from '../observability/trace-query.j
 import type { JsonlEvalRunsStore } from '../evals/runs-store.js';
 import { MAX_EVAL_RUN_QUERY_LIMIT, queryEvalRuns } from '../evals/runs-store.js';
 import type { MetricsHistory } from '../observability/metrics-history.js';
+import { PROMETHEUS_CONTENT_TYPE, renderPrometheusMetrics } from '../observability/prometheus.js';
 import type { OrgRegistry } from '../org/registry.js';
 import type { SkillRegistry } from '../skills/registry.js';
 import type { MentorshipLedger } from '../skills/mentor.js';
@@ -191,6 +192,13 @@ export type HttpDeps = {
   metrics?: ConcurrencyMetrics;
   /** S6 V3: metrics history writer (local JSONL); read back for trends. */
   metricsHistory?: MetricsHistory;
+  /**
+   * Bearer token for the scraper face (GET /metrics). Unset = open, so a local
+   * collector can scrape without a secret in its config; set it whenever the
+   * port is reachable beyond the trusted network. Independent of internalToken:
+   * a scraper must not hold the operator credential.
+   */
+  metricsToken?: string;
   /** H3: per-intent progress events for the SSE stream. */
   progressHub?: ProgressHub;
   /**
@@ -404,6 +412,31 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
     ...(deps.version ? { version: deps.version } : {}),
     ts: now().toISOString(),
   }));
+
+  // Scraper face (design-observability §6): the same snapshot /api/metrics
+  // answers as JSON, in Prometheus text format. Deliberately outside the
+  // internalToken block - a runtime booted without an operator token still
+  // reports its own health - and behind its own optional token, so a scraper
+  // never has to hold the operator credential.
+  if (deps.metrics) {
+    const metricsToken = deps.metricsToken;
+    app.get('/metrics', async (request, reply) => {
+      if (metricsToken) {
+        const header = request.headers.authorization ?? '';
+        const presented = header.startsWith('Bearer ') ? header.slice(7) : '';
+        if (!presented || !constantTimeEqual(presented, metricsToken)) {
+          return reply
+            .code(401)
+            .header('WWW-Authenticate', presented ? 'Bearer error="invalid_token"' : 'Bearer')
+            .send({ error: 'unauthorized' });
+        }
+      }
+      const body = renderPrometheusMetrics(deps.metrics!.snapshot(), {
+        ...(deps.version ? { version: deps.version } : {}),
+      });
+      return reply.type(PROMETHEUS_CONTENT_TYPE).send(body);
+    });
+  }
 
   // Public immutable signed snapshot (handshake-signing §4); revoked executors and
   // internal endpoints/probe details are already removed at the projector.

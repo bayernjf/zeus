@@ -300,6 +300,9 @@ async function main(): Promise<void> {
     traceExport: process.env.ZEUS_TRACE_EXPORT_FILE ?? 'off',
     metricsHistory: process.env.ZEUS_METRICS_HISTORY_FILE ?? 'off',
     otlpExport: otlpEndpoint ?? 'off',
+    // The gate's state, never its value: an operator needs to know whether a
+    // scraper must present a token, and the token itself must not reach a log.
+    metricsScrape: process.env.ZEUS_METRICS_TOKEN ? 'token' : 'open',
   });
   // The exported tree is rebuilt from the audit spine, so a trace file without
   // an audit file stays empty forever (src/state/boot.ts guards on both). Say it
@@ -506,6 +509,7 @@ async function main(): Promise<void> {
     dagRunner: runtime.dagRunner,
     oversight: runtime.oversight,
     metrics: runtime.metrics,
+    ...(process.env.ZEUS_METRICS_TOKEN ? { metricsToken: process.env.ZEUS_METRICS_TOKEN } : {}),
     progressHub: runtime.progressHub,
     ...(runtime.decisionTraceBuffer ? { decisionTraceBuffer: runtime.decisionTraceBuffer } : {}),
     // TracePort v1 §5 (D-5): same instance serves the cross-intent query face.

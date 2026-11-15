@@ -10,7 +10,7 @@
 
 ### #41 企业形态：隔离实例 vs 同实例多租户 ✅ 已销项（2026-10-08，决策裁定）
 - 议题：一家公司用 zeus 时，是**每个客户（或每个团队）一套进程**（隔离实例），还是**一套进程内跑多个租户**（同实例多租户）。这条决定会决定认证面、状态文件形状、备份清单粒度和运维模型，所以必须显式记，不能靠"以后再说"默认成某一边。
-- **现状（代码级，2026-10-05 测）**：租户**模型**已在库内——三级范围（org/部门/成员）与跨域一次性授权判定见 `src/dataDomain/authorization.ts:74-74 #decideDataDomainAccess`（#6 销项时落地）。但进程**只有一套身份**：H2 全操作面的挂载条件是单个 `ZEUS_INTERNAL_TOKEN`（注入 `src/http/serve.ts:500 #internalToken`，比较 `src/http/server.ts:511 #internalToken`），一份状态文件、一份审计文件。实测该面共 **78 条路由**，其中 3 条公开、**75 条共用同一个 bearer**。也就是：今天的实际隔离档位就是"一实例一租户"，租户范围只在**数据域内**收窄可见性，不区分"哪个客户在调这个进程"。
+- **现状（代码级，2026-10-05 测）**：租户**模型**已在库内——三级范围（org/部门/成员）与跨域一次性授权判定见 `src/dataDomain/authorization.ts:74-74 #decideDataDomainAccess`（#6 销项时落地）。但进程**只有一套身份**：H2 全操作面的挂载条件是单个 `ZEUS_INTERNAL_TOKEN`（注入 `src/http/serve.ts:503 #internalToken`，比较 `src/http/server.ts:544 #internalToken`），一份状态文件、一份审计文件。实测该面共 **78 条路由**，其中 3 条公开、**75 条共用同一个 bearer**。也就是：今天的实际隔离档位就是"一实例一租户"，租户范围只在**数据域内**收窄可见性，不区分"哪个客户在调这个进程"。
 - **A 隔离实例（当前倾向）**：
   - 代价：部署数量随客户数线性增长（每客户一套密钥、状态卷、备份计划、`ZEUS_*` 配置）；没有跨客户统一盘点/升级看板；版本要滚动 N 次；客户数上去之后运维是主要成本。
   - 收益：设计约束 4（个人域与企业域不互通）由**进程边界**保证，而不是由一段判定代码保证——判定代码出 bug 也越不过去；跨租户串数据这类事故的最坏情况被限制在单个进程内；一个客户的正文、名册、审计不会落在另一个客户的卷上；现有配置面**零改动**。
@@ -143,7 +143,7 @@
 - **原缺口**：E3.5 的 `OperatorWriteGrant` 只有**校验**端（形状/绑定域/有效期），没有任何签发路径，也没有签名——`verifyOperatorWriteGrant` 信的是"拿到的 JSON 就是操作者给的"。且 `FsDataDomainStore.write` 内部用 `new Date()` 判过期，端口层没有注入时钟，测试里"仍然有效"的凭证只能写成 `expiresAt: '2099-…'`。
 - **触发条件回顾**：写的是"MCP `tools/write` 暴露立项时一并定"。2026-09-25 决定提前做，理由与 #13 同类：一个**任何能摸到 `write()` 的代码都能自己伪造**的授权检查不是授权检查；等 MCP 暴露时才补，等于先把门装歪再拆。
 - **销项结论**（设计见 [design-dataDomain.md](design-dataDomain.md) §7.7）：`issueOperatorWriteGrant`（内核铸 nonce、盖时间戳、用 RSK 的 Ed25519 签 JCS，复用 `core/signing.ts`）、`verifyOperatorWriteGrant` 改 async 并按 形状→dataDomain 绑定→验签→有效期 判定（`unsigned`/`unknown-key`/`bad-signature`/`no-expiry`）、`OperatorGrantLedger` 在落盘前消费 nonce 且随内核快照持久化（`writeGrantNonces`）、`FsDataDomainStoreOptions.now` 注入时钟。操作者面 `POST /api/dataDomain/write-grants`、日记写凭证透传（缺授权 403）、审计事件流 `operator-grant-issued`/`dataDomain-write`、`GET /api/state` 报 `operatorGrants.authority`。
-- **不因本条销项而消失**：**MCP `tools/write` 暴露仍未做**（E3.4/E3.5 剩余半边），其 actor 判定归 **#18**；单 owner 部署下签发方=验签方，因此这条链目前证明的是"凭证出自签发路径"，不是"第三方操作者签的字"（外部操作者只需把公钥加进 `acceptedKeyIds`，判定与账本都不用动）。
+- **不因本条销项而消失**：MCP `dataDomain.write` 暴露**已完成**（`src/dataDomain/mcp.ts:303`，企业 dataDomain 仍需签名、一次性、绑定 dataDomainId 的 grant），主体判定随 **#18** 于 2026-10-08 销项（2026-11-15 复核）；单 owner 部署下签发方=验签方，因此这条链目前证明的是"凭证出自签发路径"，不是"第三方操作者签的字"（外部操作者只需把公钥加进 `acceptedKeyIds`，判定与账本都不用动）。
 
 ### #16 CI runner 镜像钉版 ✅ 已销项（2026-09-26）
 - **决定**：钉 `ubuntu-24.04`，不接受自动迁移。`.github/workflows/ci.yml:12` 的 `runs-on` 由浮动标签 `ubuntu-latest` 改为 `ubuntu-24.04`，并在同一处写下为什么要钉（2026-10-19 起该标签指向 Ubuntu 26.04，actions/runner-images#14748）。**代价已记账**：此后升镜像是手动动作，注释里写明"要有意地换、换完复验"。Node 矩阵（20.x/22.x）**不在本条范围内**，仍归 #15。

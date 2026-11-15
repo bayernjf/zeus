@@ -150,6 +150,7 @@ export type { TraceSpan, TraceSpanKind, TraceSpanEventKind, TraceTree, TraceExpo
 export { JsonlTraceExporter, OtlpTraceExporter } from './observability/exporter.js';
 export type { ExportedTraceRecord, OtlpTraceExporterOptions, OtlpExportPayload, OtlpSpan } from './observability/exporter.js';
 export { MetricsHistory } from './observability/metrics-history.js';
+export { renderPrometheusMetrics, PROMETHEUS_CONTENT_TYPE } from './observability/prometheus.js';
 // --- deferred #40 read-only half: execution-after failure attribution ---
 export { attributeFailures, participantsToEntries } from './reflection/failure-attribution.js';
 export type {
