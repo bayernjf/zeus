@@ -248,6 +248,11 @@ const readRoutes: Route[] = [...SERVER.matchAll(/app\.get\(\s*'([^']+)'/g)].map(
 /** Faces a remote peer or an offline verifier consumes, not an operator deck. */
 const READ_PROTOCOL_FACES = new Set([
   'GET /healthz',
+  // design-observability §6: the Prometheus scraper face. Its reader is the
+  // Tier0 OTel collector's prometheus receiver (observability repo,
+  // otel/collector-config.yaml), a machine consumer like /healthz's prober -
+  // not an operator deck. Gated by its own optional ZEUS_METRICS_TOKEN.
+  'GET /metrics',
   'GET /api/roster/public',
   'GET /api/roster/keys',
   'GET /api/audit/summary',
