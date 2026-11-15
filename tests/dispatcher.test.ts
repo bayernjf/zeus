@@ -439,4 +439,25 @@ describe('Dispatcher', () => {
       expect(audit.map((entry: AuditEntry) => entry.decision)).not.toContain('sla-ack-breached');
     });
   });
+
+  it('ZEUS_DISPATCH_TIMEOUT_MS bounds the header wait (env-configured)', async () => {
+    // A slow reasoning backend (llm-agent's upstream model) can take 46s to
+    // produce response headers — well past the 30s client default. This env
+    // knob is how an operator raises that ceiling without a code change.
+    const previous = process.env.ZEUS_DISPATCH_TIMEOUT_MS;
+    process.env.ZEUS_DISPATCH_TIMEOUT_MS = '40';
+    try {
+      const hung = async (_url: string, init?: RequestInit): Promise<Response> =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+        });
+      const { dispatcherInstance } = dispatcher(new Map([['pr-helper', executor()]]), hung);
+      const result = await dispatcherInstance.dispatch({ skill: 'create-pr', params: {}, dataDomain: 'enterprise' });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toContain('timed out after 40ms');
+    } finally {
+      if (previous === undefined) delete process.env.ZEUS_DISPATCH_TIMEOUT_MS;
+      else process.env.ZEUS_DISPATCH_TIMEOUT_MS = previous;
+    }
+  });
 });
