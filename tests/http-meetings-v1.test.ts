@@ -171,4 +171,59 @@ describe('Meeting API v1', () => {
     const response = await app.inject({ method: 'GET', url: '/api/v1/meetings/m-nope/markdown', headers: AUTH });
     expect(response.statusCode).toBe(404);
   });
+
+  it('convenes round 1 from a batch of drafts', async () => {
+    const app = await server(await dir());
+    await app.inject({ method: 'POST', url: '/api/v1/meetings', headers: AUTH, payload: { topic: '自动提案', maxRounds: 2, id: 'm-convene' } });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meetings/m-convene/proposals',
+      headers: AUTH,
+      payload: {
+        drafts: [
+          { speakerId: 'planner-a', claims: [{ text: '先做回放', evidence: [{ kind: 'reference', ref: 'design-meeting.md', note: '' }] }] },
+          { speakerId: 'planner-b', claims: [{ text: '先做自动提案', evidence: [] }] },
+        ],
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    const body = JSON.parse(response.body) as {
+      recorded: Array<{ speakerId: string; claimIds: string[] }>;
+      meeting: { utterances: Array<{ speakerId: string; claims: Array<{ id: string }> }> };
+    };
+    expect(body.recorded.map(entry => entry.claimIds)).toEqual([['c1'], ['c2']]);
+    expect(body.meeting.utterances.map(utterance => utterance.speakerId)).toEqual(['planner-a', 'planner-b']);
+  });
+
+  it('refuses an empty draft batch', async () => {
+    const app = await server(await dir());
+    await app.inject({ method: 'POST', url: '/api/v1/meetings', headers: AUTH, payload: { topic: '空提案', maxRounds: 1, id: 'm-empty' } });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meetings/m-empty/proposals',
+      headers: AUTH,
+      payload: { drafts: [] },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('refuses to convene a meeting that already left round 1', async () => {
+    const app = await server(await dir());
+    await app.inject({ method: 'POST', url: '/api/v1/meetings', headers: AUTH, payload: { topic: '已推进', maxRounds: 2, id: 'm-late' } });
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/meetings/m-late/utterances',
+      headers: AUTH,
+      payload: { speakerId: 'a', stance: 'propose', claims: [{ text: '先做 A' }] },
+    });
+    await app.inject({ method: 'POST', url: '/api/v1/meetings/m-late/advance', headers: AUTH, payload: {} });
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/meetings/m-late/proposals',
+      headers: AUTH,
+      payload: { drafts: [{ speakerId: 'b', claims: [{ text: '补一条' }] }] },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toContain('cannot convene a challenging meeting');
+  });
 });

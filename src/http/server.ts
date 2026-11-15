@@ -49,6 +49,7 @@ import {
 } from './decision-v1.js';
 import {
   advanceRoute as advanceMeetingRoute,
+  conveneRoute as conveneMeetingRoute,
   decideRoute as decideMeetingRoute,
   getMeetingRoute,
   listMeetingsRoute,
@@ -3290,6 +3291,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         decideMeetingRoute(meetings, request, reply));
       app.get('/api/v1/meetings/:id/markdown', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         markdownMeetingRoute(meetings, request, reply));
+      app.post('/api/v1/meetings/:id/proposals', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        conveneMeetingRoute(meetings, request, reply));
     }
 
     // Org API v1 (Tier0 M2, design §4.4): organizations, departments,

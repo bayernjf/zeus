@@ -120,6 +120,8 @@ const HTTP_ONLY: Record<string, string> = {
     'PRD F1 / design-meeting S4: speaking into a meeting is the same protocol call the CLI makes; console drives it over the bearer API',
   'POST /api/v1/meetings/:id/advance':
     'PRD F1 / design-meeting S4: round advancement is an operator action (the console button and the CLI `advance`)',
+  'POST /api/v1/meetings/:id/proposals':
+    'PRD F1 / design-meeting S4: the console convenes round 1 from operator-written drafts; a model-backed proposal source feeds the same route later',
   'POST /api/v1/meetings/:id/decision':
     'PRD F1 / design-meeting S4: the decision is the one action only a human can take; console posts it, CLI `decide` is the offline twin',
   'POST /api/org/departments/:id/first-task':
