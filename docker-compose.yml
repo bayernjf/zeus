@@ -23,6 +23,11 @@ services:
       ZEUS_RSK_KEY_FILE: /data/rsk.key
       ZEUS_RSK_KEY_ID: ${ZEUS_RSK_KEY_ID:-local-rsk}
       ZEUS_STATE_FILE: /data/runtime-state.json
+      # Decision records, graded policy, webhook subscriptions and org state
+      # in SQLite. Left unset, zeus runs the in-memory demo mode: every
+      # restart dropped decisions while callers (commerce-os, growth-agent)
+      # still held their decision ids, so pending approvals could not settle.
+      ZEUS_DB_FILE: /data/zeus.db
       # model-hub is the only model source (the W7-3 kill switch for
       # non-hub providers is gone). Address it by service name on tier0-net:
       # inside the container localhost is the container itself, so the
