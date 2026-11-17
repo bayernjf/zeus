@@ -476,6 +476,14 @@ export class OrgService {
     return this.store.getGoal(id)!;
   }
 
+  /** Delete a goal registration outright (hard delete; archive is a status). */
+  deleteGoal(id: string): void {
+    if (!this.store.getGoal(id)) {
+      throw new OrgServiceError(EC.GOAL_NOT_FOUND, `goal not found: ${id}`);
+    }
+    this.store.deleteGoal(id);
+  }
+
   /** Match the position the task should dispatch to: explicit id, else skill. */
   private matchPosition(task: OrgTask): Position {
     if (task.positionId) {

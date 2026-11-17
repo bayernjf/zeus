@@ -47,6 +47,8 @@ export interface OrgStore {
   putGoal(goal: OrgGoal): void;
   getGoal(id: string): OrgGoal | undefined;
   listGoals(organizationId?: string): OrgGoal[];
+  /** Delete a goal by id; false when it did not exist. */
+  deleteGoal(id: string): boolean;
 
   exportSnapshot(): OrgSnapshot;
   importSnapshot(snapshot: OrgSnapshot): void;
@@ -131,6 +133,9 @@ export class MemoryOrgStore implements OrgStore {
     return [...this.goals.values()]
       .filter(g => organizationId === undefined || g.organizationId === organizationId)
       .map(v => structuredClone(v));
+  }
+  deleteGoal(id: string): boolean {
+    return this.goals.delete(id);
   }
 
   exportSnapshot(): OrgSnapshot {

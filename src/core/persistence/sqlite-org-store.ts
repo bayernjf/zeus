@@ -345,6 +345,11 @@ export class SqliteOrgStore implements OrgStore {
     return rows.map(goalFromRow);
   }
 
+  deleteGoal(id: string): boolean {
+    const result = this.db.prepare('DELETE FROM org_goals WHERE id = ?').run(id);
+    return Number(result.changes) > 0;
+  }
+
   exportSnapshot(): OrgSnapshot {
     return {
       organizations: this.listOrganizations(),

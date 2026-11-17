@@ -71,6 +71,7 @@ import {
   getOrganizationRoute,
   getTaskRoute,
   createGoalRoute,
+  deleteGoalRoute,
   getGoalRoute,
   listDepartmentsRoute,
   listExperienceRoute,
@@ -3387,6 +3388,8 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         getGoalRoute(orgV1, request, reply));
       app.patch('/api/v1/org/goals/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         updateGoalRoute(orgV1, request, reply));
+      app.delete('/api/v1/org/goals/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        deleteGoalRoute(orgV1, request, reply));
     }
   }
 

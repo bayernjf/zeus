@@ -10,7 +10,7 @@
  *   POST/GET /api/v1/org/tasks, GET /api/v1/org/tasks/:id
  *   POST     /api/v1/org/tasks/:id/dispatch | /resume
  *   POST     /api/v1/org/policy/thresholds
- *   POST/GET /api/v1/org/goals, GET/PATCH /api/v1/org/goals/:id
+ *   POST/GET /api/v1/org/goals, GET/PATCH/DELETE /api/v1/org/goals/:id
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -244,6 +244,15 @@ export async function updateGoalRoute(org: OrgService, request: FastifyRequest, 
   try {
     const id = (request.params as { id: string }).id;
     return reply.send(org.updateGoal(id, (request.body ?? {}) as UpdateOrgGoalInput));
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+export async function deleteGoalRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    org.deleteGoal((request.params as { id: string }).id);
+    return reply.code(204).send();
   } catch (thrown) {
     return sendOrgError(reply, thrown);
   }
