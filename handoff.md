@@ -7,6 +7,7 @@
 - ✅ `src/http/serve.ts` 装配改造：默认**同时装配所有已配置外部臂**（agent-world + agent-dev）+ 内置模板执行器 + `TaskWorker`，不再二选一；`ZEUS_ORG_TASK_EXECUTOR=agent-world|agent-dev` 仍可钉单一外部臂。无任何外部臂时保持原语义：不装配 worker，dispatch 仍 503 fail-closed；模板执行器不单独启动。
 - ✅ 测试 +12 例 / +1 文件：新建 `src/core/org/execution/template-executor.test.ts` 11 例（collect/summarize/review approve/reject/content draft/缺臂 business/三类路由/tool 前缀路由）；`src/core/org/scheduling/template-execution.test.ts` 从 1 例扩为 2 例——weekly-report 真实 SQLite 跑通 collect→summarize→D2 停等→owner approve→resume done，content-review 用 delegated content 臂跑通 draft→D2 review。本批后全量 **241 文件 / 2710 用例**。
 - ✅ 门禁：typecheck 0 error；lint 1323 warnings / 0 errors（新增 1 个 `prefer-const` 已修）；全量 **241 文件 / 2710 用例**；doc-consistency 18/18（`docs/audit-2026-09.md` 锚点 803→837、`docs/deferred-items.md` 606→640 重钉）；build 绿；`smoke:core` 50/50。
+- ✅ 提交与 CI：`648712d` 配置、`35c1675` 执行器/路由/serve 装配、`05d8da4` 测试、`c36b291` 文档；dev CI `44090425544` success。
 - ✅ 明确边界：`content-review.draft` 仍要求 `ZEUS_AGENT_WORLD_BASE_URL` 已配置，且派发岗位 `allowedTools` 含 `agent-world:run-graph` / `agent-world:get-run`（SOP content-production 闸），否则任务在 claim 阶段 unmatched/409；`weekly-report.collect/summarize` 是本地确定性汇总，不接外部数据源/LLM；模板目录本身未改 payload，执行语义全部在 executor 内。
 
 ## 2026-11-17 M5 F1.3 agent-dev CLI 第二执行臂
