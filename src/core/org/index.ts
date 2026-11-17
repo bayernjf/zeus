@@ -26,7 +26,7 @@ export type {
 } from './experience/index.js';
 
 // F5.2 in-process scheduling over registered goals
-export { CronOrgScheduler, goalOccurrence, goalRunKey } from './scheduling/index.js';
+export { CronOrgScheduler, resolveOrgSchedulerIntervalMs, goalOccurrence, goalRunKey } from './scheduling/index.js';
 export type {
   CronOrgSchedulerDeps,
   OrgScheduleDelivery,
