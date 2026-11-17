@@ -88,6 +88,15 @@ interface StartRunArgs {
   trigger?: string;
   /** Forwarded as the `Idempotency-Key` header so agent-world dedupes replays. */
   idempotencyKey?: string;
+  /**
+   * Tier0 org M3 F3.2: org attribution agent-world stamps onto every usage
+   * report, so the hub ledger can price this task/position/department.
+   */
+  usageDimensions?: {
+    taskId?: string;
+    positionId?: string;
+    departmentId?: string;
+  } | undefined;
 }
 
 export class AgentWorldClient {
@@ -156,6 +165,7 @@ export class AgentWorldClient {
         graphId: args.graphId,
         input: args.input,
         ...(args.trigger ? { trigger: args.trigger } : {}),
+        ...(args.usageDimensions ? { usageDimensions: args.usageDimensions } : {}),
       }),
       ...(args.idempotencyKey ? { headers: { 'Idempotency-Key': args.idempotencyKey } } : {}),
     });

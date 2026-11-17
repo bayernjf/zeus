@@ -89,6 +89,7 @@ export class AgentWorldToolInvoker implements ToolInvoker {
       ...(typeof args.name === 'string' && args.name ? { name: args.name } : {}),
       ...(isStringRecord(args.fieldValues) ? { fieldValues: args.fieldValues } : {}),
     });
+    const dims = usageDimensionsOf(args.usageDimensions);
     const run = await this.client.startRun({
       graphId: graph.graphId,
       input: requireString(args.input),
@@ -96,6 +97,7 @@ export class AgentWorldToolInvoker implements ToolInvoker {
       ...(typeof args.idempotencyKey === 'string' && args.idempotencyKey
         ? { idempotencyKey: args.idempotencyKey }
         : {}),
+      ...(dims ? { usageDimensions: dims } : {}),
     });
     return { graphId: graph.graphId, runId: run.runId, replay: run.replay };
   }
@@ -179,4 +181,20 @@ function requireString(v: unknown): string {
 function isStringRecord(v: unknown): v is Record<string, string> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
     && Object.values(v as Record<string, unknown>).every(x => typeof x === 'string');
+}
+
+/**
+ * Read `usageDimensions` off a tool-call argument bag. Only the three known
+ * org ids are forwarded; anything else is dropped rather than passed into
+ * agent-world's strict run-create validation (which would reject the run).
+ */
+function usageDimensionsOf(
+  v: unknown,
+): { taskId?: string; positionId?: string; departmentId?: string } | undefined {
+  if (!isStringRecord(v)) return undefined;
+  const dims: { taskId?: string; positionId?: string; departmentId?: string } = {};
+  if (v.taskId) dims.taskId = v.taskId;
+  if (v.positionId) dims.positionId = v.positionId;
+  if (v.departmentId) dims.departmentId = v.departmentId;
+  return Object.keys(dims).length > 0 ? dims : undefined;
 }
