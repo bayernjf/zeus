@@ -189,6 +189,66 @@ describe('createHubDecisionBackend', () => {
     expect((reports[0]?.ts as string).length).toBeGreaterThan(0);
   });
 
+  it('forwards org usage dimensions declared on the request (M3 F3.2)', async () => {
+    const calls: Array<{ model: string }> = [];
+    const reports: Array<Record<string, unknown>> = [];
+    const fetchImpl = routingFetch(calls, reports);
+    const { backend } = await createHubDecisionBackend({
+      hubUrl: 'https://hub.local',
+      token: 'tok',
+      cachePath: join(dir, 'cache.json'),
+      fetchImpl,
+    });
+
+    await backend.choice({
+      state: {},
+      instructions: '',
+      runId: 'r-org',
+      dataDomain: 'personal',
+      question: 'q',
+      options: ['x', 'y'],
+      usageDimensions: {
+        positionId: 'pos_01',
+        departmentId: 'dep_01',
+        taskId: 'task_01',
+      },
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatchObject({
+      position_id: 'pos_01',
+      department_id: 'dep_01',
+      task_id: 'task_01',
+    });
+  });
+
+  it('omits org dimensions entirely when the request declares none (M3 F3.2)', async () => {
+    const calls: Array<{ model: string }> = [];
+    const reports: Array<Record<string, unknown>> = [];
+    const fetchImpl = routingFetch(calls, reports);
+    const { backend } = await createHubDecisionBackend({
+      hubUrl: 'https://hub.local',
+      token: 'tok',
+      cachePath: join(dir, 'cache.json'),
+      fetchImpl,
+    });
+
+    await backend.noul({
+      state: {},
+      instructions: '',
+      runId: 'r-org-none',
+      dataDomain: 'personal',
+      question: 'q',
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).not.toHaveProperty('position_id');
+    expect(reports[0]).not.toHaveProperty('department_id');
+    expect(reports[0]).not.toHaveProperty('task_id');
+  });
+
   it('reports reasoning and cache-read tokens when the provider provides them', async () => {
     const calls: Array<{ model: string }> = [];
     const reports: Array<Record<string, unknown>> = [];

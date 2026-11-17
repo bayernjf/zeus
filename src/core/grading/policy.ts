@@ -5,6 +5,7 @@
  * 也不包含存储（文件/DB 版本化存储在外壳装配，core 只提供 MemoryPolicyStore）。
  */
 import type { Grade, Impact, Reversibility } from '../types.js';
+import type { UsageDimensions } from '../../decision/types.js';
 
 /**
  * 金额条件：闭区间 [min, max]，currency 必须与请求金额一致（不同币种不匹配）。
@@ -74,6 +75,11 @@ export interface DecisionRequest {
   proposal?: unknown;
   /** 幂等键，同键重复提交返回同一决策（服务层去重）。 */
   idempotencyKey?: string;
+  /**
+   * M3 F3.2：组织维度归因（岗位/部门/任务）。分级规则不读它，只随请求透传，
+   * 供执行臂在调用模型时把成本记到对应岗位/部门/任务上。
+   */
+  usageDimensions?: UsageDimensions;
 }
 
 /** gradeDecision 纯函数结果。 */

@@ -1,5 +1,28 @@
 # Handoff
 
+## 2026-11-17 M3 F3.2 组织维度 usage 透传（decision 链）
+
+- ✅ 决策调用链带上 org 归因，供 model-hub 账本把成本记到岗位/部门/任务：
+  `QuestionBase.usageDimensions?`（positionId/departmentId/taskId）→
+  `LlmConfig.onUsage` 新增第二参 `{ usageDimensions }`（`completeJson` 从请求透传）→
+  `hub-backend.reportUsage` 映射为 snake_case 三字段 → model-kit
+  `UsageInput.usageDimensions` → `POST /pub/v1/usage`。缺省不发送任何字段，
+  旧调用方上报字节不变。
+- org runner 的 `requestDecision` 自动注入：`taskId = task.id`、
+  `positionId = task.positionId`、`departmentId = position.departmentId`；
+  调用方显式给的 dims 优先。
+- `DecisionRequest` 与 `validateDecisionRequest` 接受 `usageDimensions`（形状
+  严格校验：只允许三键、非空字符串；分级规则不读它，决策记录不存它）。
+- 验证：`tsc --noEmit` 0、`eslint .` 0 error（1263 既有 warning）、
+  `vitest run` **235 文件 / 2651 用例全绿**（基线 2649 + 2：带 dims 上报三字段 /
+  不带 dims 不发送三字段）。
+- **结构事实（勿当 GATE 过）**：zeus 内 org 任务的决策点走 rules grading，
+  **不调用模型**；真正调 hub 模型的只有 orchestrator judge / arbitrate（intent
+  执行，无 org task 上下文）。agent-world 执行臂自持 token 直连 hub，拿不到
+  zeus taskId。因此本轮交付的是「通路就绪」，真实 org 任务产生 `task_id` 行
+  仍依赖 agent-world 侧读取归因或 zeus 新增 org 内模型调用，二者都不在本轮
+  范围内。
+
 ## 2026-11-17 org 持久化补洞（M2 验收发现）
 
 - ✅ SQLite durable org store 之前漏了三列，F1.1/F1.2/F4.1 的数据在 `ZEUS_DB_FILE` 模式下

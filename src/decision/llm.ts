@@ -8,6 +8,7 @@ import type {
   QuestionBase,
   ScoreRequest,
   ScoreResult,
+  UsageDimensions,
 } from './types.js';
 import { DecisionBackendFailure } from './types.js';
 import { guardedFetch } from '../util/outbound-dns.js';
@@ -43,7 +44,15 @@ export type LlmConfig = BackendOptions & {
    * token counts taken from the response (estimated when the provider omits
    * usage). Observer failures never break the decision call.
    */
-  onUsage?: (usage: LlmUsageReport) => void;
+  /**
+   * M3 F3.2: the second argument carries the org attribution declared on the
+   * request, so a hub reporter can stamp position/department/task on the
+   * usage row. Optional and additive — existing observers keep working.
+   */
+  onUsage?: (
+    usage: LlmUsageReport,
+    context?: { usageDimensions?: UsageDimensions }
+  ) => void;
 };
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -154,7 +163,10 @@ export function createLlmBackend(config: LlmConfig): DecisionBackend {
     };
     if (config.onUsage) {
       try {
-        config.onUsage({ kind, latencyMs, ...tokens });
+        config.onUsage(
+          { kind, latencyMs, ...tokens },
+          request.usageDimensions ? { usageDimensions: request.usageDimensions } : undefined
+        );
       } catch {
         /* usage observers are optional; the decision call wins */
       }
