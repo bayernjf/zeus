@@ -9,6 +9,7 @@ import type {
   Position,
   OrgTask,
   OrgTaskFailureKind,
+  OrgTaskOutcome,
   OrgTaskProgress,
   OrgTaskTransition,
 } from '../org/types.js';
@@ -36,16 +37,18 @@ export class SqliteOrgStore implements OrgStore {
   putOrganization(org: Organization): void {
     this.db
       .prepare(
-        `INSERT INTO organizations (id, name, scale_tier, parent_id, created_at)
-         VALUES (@id, @name, @scale_tier, @parent_id, @created_at)
+        `INSERT INTO organizations (id, name, scale_tier, parent_id, concurrency_limit, created_at)
+         VALUES (@id, @name, @scale_tier, @parent_id, @concurrency_limit, @created_at)
          ON CONFLICT(id) DO UPDATE SET
-           name=@name, scale_tier=@scale_tier, parent_id=@parent_id`,
+           name=@name, scale_tier=@scale_tier, parent_id=@parent_id,
+           concurrency_limit=@concurrency_limit`,
       )
       .run({
         id: org.id,
         name: org.name,
         scale_tier: org.scaleTier,
         parent_id: opt(org.parentId),
+        concurrency_limit: opt(org.concurrencyLimit),
         created_at: org.createdAt,
       });
   }
@@ -62,6 +65,9 @@ export class SqliteOrgStore implements OrgStore {
           name: String(row.name),
           scaleTier: row.scale_tier as Organization['scaleTier'],
           ...(row.parent_id ? { parentId: String(row.parent_id) } : {}),
+          ...(typeof row.concurrency_limit === 'number'
+            ? { concurrencyLimit: row.concurrency_limit }
+            : {}),
           createdAt: String(row.created_at),
         }
       : undefined;
@@ -193,12 +199,14 @@ export class SqliteOrgStore implements OrgStore {
           id, organization_id, title, payload_json, required_skill, position_id,
           assigned_agent_id, run_id, status, decision_id, result_json, error,
           attempts, failed_kind, progress_json, next_attempt_at, deadline_at,
-          idempotency_key, unmatched_reason, transitions_json, created_at, updated_at
+          idempotency_key, unmatched_reason, workspace_path, outcome_json,
+          transitions_json, created_at, updated_at
         ) VALUES (
           @id, @organization_id, @title, @payload_json, @required_skill, @position_id,
           @assigned_agent_id, @run_id, @status, @decision_id, @result_json, @error,
           @attempts, @failed_kind, @progress_json, @next_attempt_at, @deadline_at,
-          @idempotency_key, @unmatched_reason, @transitions_json, @created_at, @updated_at
+          @idempotency_key, @unmatched_reason, @workspace_path, @outcome_json,
+          @transitions_json, @created_at, @updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
           assigned_agent_id=@assigned_agent_id, run_id=@run_id, status=@status,
@@ -206,6 +214,7 @@ export class SqliteOrgStore implements OrgStore {
           attempts=@attempts, failed_kind=@failed_kind, progress_json=@progress_json,
           next_attempt_at=@next_attempt_at, deadline_at=@deadline_at,
           idempotency_key=@idempotency_key, unmatched_reason=@unmatched_reason,
+          workspace_path=@workspace_path, outcome_json=@outcome_json,
           transitions_json=@transitions_json, updated_at=@updated_at`,
       )
       .run({
@@ -228,6 +237,8 @@ export class SqliteOrgStore implements OrgStore {
         deadline_at: opt(task.deadlineAt),
         idempotency_key: opt(task.idempotencyKey),
         unmatched_reason: opt(task.unmatchedReason),
+        workspace_path: opt(task.workspacePath),
+        outcome_json: opt(task.outcome ? JSON.stringify(task.outcome) : undefined),
         transitions_json: JSON.stringify(task.transitions),
         created_at: task.createdAt,
         updated_at: task.updatedAt,
@@ -264,6 +275,10 @@ export class SqliteOrgStore implements OrgStore {
           ...(row.idempotency_key ? { idempotencyKey: String(row.idempotency_key) } : {}),
           ...(row.unmatched_reason
             ? { unmatchedReason: String(row.unmatched_reason) }
+            : {}),
+          ...(row.workspace_path ? { workspacePath: String(row.workspace_path) } : {}),
+          ...(row.outcome_json
+            ? { outcome: parse<OrgTaskOutcome>(String(row.outcome_json)) }
             : {}),
           transitions: parse<OrgTaskTransition[]>(row.transitions_json as string),
           createdAt: String(row.created_at),

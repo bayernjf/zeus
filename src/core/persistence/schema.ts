@@ -16,6 +16,7 @@ export const MIGRATION_0002_ORG_TASK_EXECUTION = '0002_org_task_execution';
 export const MIGRATION_0003_ORG_TASK_ACTIONS = '0003_org_task_actions';
 export const MIGRATION_0004_POSITION_CREDENTIALS = '0004_position_credentials';
 export const MIGRATION_0005_DECISION_WEBHOOKS = '0005_decision_webhooks';
+export const MIGRATION_0006_ORG_FIELD_GAPS = '0006_org_field_gaps';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -75,6 +76,7 @@ CREATE TABLE IF NOT EXISTS organizations (
   name TEXT NOT NULL,
   scale_tier TEXT NOT NULL,
   parent_id TEXT,
+  concurrency_limit INTEGER,
   created_at TEXT NOT NULL
 );
 
@@ -124,6 +126,8 @@ CREATE TABLE IF NOT EXISTS org_tasks (
   deadline_at TEXT,
   idempotency_key TEXT,
   unmatched_reason TEXT,
+  workspace_path TEXT,
+  outcome_json TEXT,
   transitions_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -229,6 +233,18 @@ const INCREMENTAL_MIGRATIONS: Migration[] = [
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );`);
+    },
+  },
+  {
+    // F1.1/F1.2/F4.1 additions that were missing from the durable store: an
+    // org's concurrencyLimit and a task's per-task workspace + outcome. Without
+    // these columns SQLite silently dropped them and every worker fell back to
+    // the default limit of 2.
+    id: MIGRATION_0006_ORG_FIELD_GAPS,
+    up: (db) => {
+      addColumnIfMissing(db, 'organizations', 'concurrency_limit', 'INTEGER');
+      addColumnIfMissing(db, 'org_tasks', 'workspace_path', 'TEXT');
+      addColumnIfMissing(db, 'org_tasks', 'outcome_json', 'TEXT');
     },
   },
 ];
