@@ -21,6 +21,9 @@
  * — restarts invalidate every signature, and with it the published key).
  */
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import {
   bootRuntime,
   concurrencyBootOptions,
@@ -53,6 +56,9 @@ import {
   AgentWorldClient,
   AgentWorldToolInvoker,
   AgentWorldOrgTaskExecutor,
+  AgentDevClient,
+  AgentDevToolInvoker,
+  AgentDevOrgTaskExecutor,
   createLocalSecretBackend,
   type OrgTaskExecutor,
 } from '../core/index.js';
@@ -475,7 +481,58 @@ async function main(): Promise<void> {
     // T-M7-02: the first real channel adapter. Opt-in via ZEUS_AGENT_WORLD_BASE_URL;
     // unconfigured keeps the honest 503 (no fake execution, no anonymous calls).
     const agentWorldBaseUrl = process.env.ZEUS_AGENT_WORLD_BASE_URL?.trim();
-    if (agentWorldBaseUrl) {
+    // F1.3: the second execution arm. ZEUS_ORG_TASK_EXECUTOR=agent-dev selects it
+    // explicitly; otherwise agent-world stays the default when both are configured.
+    const agentDevBaseUrl = process.env.ZEUS_AGENT_DEV_BASE_URL?.trim();
+    const requestedExecutor = process.env.ZEUS_ORG_TASK_EXECUTOR?.trim();
+    const wantsAgentDev =
+      requestedExecutor === 'agent-dev'
+      || (requestedExecutor !== 'agent-world' && !agentWorldBaseUrl && Boolean(agentDevBaseUrl));
+    if (wantsAgentDev) {
+      if (!agentDevBaseUrl) {
+        log.warn('org-service', 'ZEUS_ORG_TASK_EXECUTOR=agent-dev requires ZEUS_AGENT_DEV_BASE_URL; executor not assembled');
+        orgService = new OrgService(orgDeps);
+      } else {
+        const tokenPath = process.env.ZEUS_AGENT_DEV_TOKEN_PATH?.trim()
+          ?? join(homedir(), '.agent-dev', 'daemon-token');
+        let token = '';
+        try {
+          token = readFileSync(tokenPath, 'utf8').trim();
+        } catch (error) {
+          log.warn('org-service', 'agent-dev token file is unreadable; executor not assembled', {
+            tokenPath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+        if (token) {
+          const client = new AgentDevClient({ baseUrl: agentDevBaseUrl, token });
+          const toolInvoker = new AgentDevToolInvoker({ client });
+          orgExecutor = new AgentDevOrgTaskExecutor();
+          orgDeps.toolInvoker = toolInvoker;
+          orgService = new OrgService(orgDeps);
+          orgTaskWorker = new TaskWorker({
+            org: orgService,
+            executor: orgExecutor,
+            onError: (taskId, error) =>
+              log.error('org-task-worker', 'runClaimed rejected', {
+                taskId,
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+              }),
+          });
+          orgTaskWorker.start();
+          log.info('org-service', 'assembled', {
+            durability,
+            taskExecutor: 'agent-dev',
+            baseUrl: agentDevBaseUrl,
+            actionStore: db ? 'sqlite' : 'memory',
+          });
+        } else {
+          orgService = new OrgService(orgDeps);
+          log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
+        }
+      }
+    } else if (agentWorldBaseUrl) {
       const secrets = createLocalSecretBackend();
       const client = new AgentWorldClient({ baseUrl: agentWorldBaseUrl });
       const toolInvoker = new AgentWorldToolInvoker({ client, secrets });

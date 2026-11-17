@@ -206,6 +206,13 @@ export {
   AGENT_WORLD_LOGIN_REF,
   createLocalSecretBackend,
 } from './org/index.js';
+// F1.3 agent-dev adapter (second real ToolInvoker/executor).
+export {
+  AgentDevClient,
+  AgentDevToolInvoker,
+  AgentDevOrgTaskExecutor,
+  AGENT_DEV_TOOLS,
+} from './org/index.js';
 export type {
   OrgServiceDeps,
   OrgTaskExecutor,

@@ -123,6 +123,14 @@ export {
   AGENT_WORLD_TOOLS,
   AGENT_WORLD_LOGIN_REF,
 } from './adapters/agent-world/index.js';
+// F1.3 agent-dev adapter (the second real ToolInvoker/executor).
+export {
+  AgentDevClient,
+  AgentDevApiError,
+  AgentDevToolInvoker,
+  AgentDevOrgTaskExecutor,
+  AGENT_DEV_TOOLS,
+} from './adapters/agent-dev/index.js';
 export type {
   AgentWorldClientOptions,
   AgentWorldLogin,
@@ -134,6 +142,19 @@ export type {
   AgentWorldTaskPayload,
   AgentWorldOrgTaskExecutorOptions,
 } from './adapters/agent-world/index.js';
+export type {
+  AgentDevClientOptions,
+  AgentDevRunStatus,
+  AgentDevFeatureTask,
+  AgentDevRuntimeRun,
+  AgentDevGitEvidence,
+  AgentDevLastCommit,
+  GetFeatureTaskArgs,
+  PrepareRuntimeArgs,
+  ExecuteRuntimeArgs,
+  AgentDevToolInvokerOptions,
+  AgentDevTaskPayload,
+} from './adapters/agent-dev/index.js';
 export type {
   Json,
   ScaleTier,
