@@ -44,6 +44,8 @@ class FakeAgentWorld {
   runSeq = 0;
   calls = { login: 0, createGraph: 0, startRun: 0, timeline: 0, artifacts: 0, resume: 0 };
   startRunKeys: string[] = [];
+  /** Bodies posted to POST /api/runs (one per start). */
+  startRunBodies: Array<Record<string, unknown>> = [];
   /** When set, every timeline read returns this state (scripted halt/done). */
   stateOverride: FakeRun | null = null;
   /** Hook fired on resume so a test can flip the run to done. */
@@ -98,6 +100,7 @@ class FakeAgentWorld {
     if (route === 'POST /api/runs') {
       this.calls.startRun += 1;
       this.startRunKeys.push(req.headers['idempotency-key'] as string);
+      this.startRunBodies.push(JSON.parse(body) as Record<string, unknown>);
       const runId = `run-${++this.runSeq}`;
       this.runs.set(runId, { status: 'running', haltedNodeId: null, haltedReason: null });
       res.end(JSON.stringify({ runId, replay: false }));
@@ -352,3 +355,69 @@ function ctx(position: Position, credentialRefs: string[]) {
     credentialRefs,
   } as unknown as Parameters<AgentWorldToolInvoker['invoke']>[2];
 }
+
+// ---- org usage attribution (Tier0 org M3 F3.2 a2) -------------------------
+// agent-world reports its own model spend to the hub; the ids stamped here are
+// the only thing that lets the ledger attribute it to a task/position/department.
+describe('org usage attribution on run create', () => {
+  it('stamps task, position and department ids onto the run-create body', async () => {
+    fake = await FakeAgentWorld.start();
+    const { invoker } = makeInvoker(fake);
+    const position = makePosition(ALL_TOOLS);
+    position.departmentId = 'dep-m3';
+    const task = makeTask({ workflow: 'content', input: '推广香薰蜡烛' }, 'task-m3');
+    task.positionId = 'pos-m3';
+    fake.stateOverride = { status: 'done', haltedNodeId: null, haltedReason: null };
+
+    const settlement = await runTask({
+      task,
+      position,
+      agentId: 'agent-1',
+      credentialRefs: ['agent-world:login'],
+      executor: new AgentWorldOrgTaskExecutor({ pollIntervalMs: 1 }),
+      toolInvoker: invoker,
+      decisions: makeDecisions(),
+      retryPolicy: { maxAttempts: 1, baseBackoffMs: 1, maxBackoffMs: 1, factor: 1, jitter: 0 },
+      deadlineMs: 20_000,
+    });
+
+    expect(settlement.outcome).toBe('complete');
+    expect(fake.startRunBodies).toHaveLength(1);
+    expect(fake.startRunBodies[0]).toMatchObject({
+      usageDimensions: { taskId: 'task-m3', positionId: 'pos-m3', departmentId: 'dep-m3' },
+    });
+  });
+
+  it('still stamps the task id when the task has no position or the position no department', async () => {
+    fake = await FakeAgentWorld.start();
+    const { invoker } = makeInvoker(fake);
+    const position = makePosition(ALL_TOOLS);
+    const task = makeTask({ workflow: 'content', input: 'x' }, 'task-only');
+    fake.stateOverride = { status: 'done', haltedNodeId: null, haltedReason: null };
+
+    await runTask({
+      task,
+      position,
+      agentId: 'agent-1',
+      credentialRefs: ['agent-world:login'],
+      executor: new AgentWorldOrgTaskExecutor({ pollIntervalMs: 1 }),
+      toolInvoker: invoker,
+      decisions: makeDecisions(),
+      retryPolicy: { maxAttempts: 1, baseBackoffMs: 1, maxBackoffMs: 1, factor: 1, jitter: 0 },
+      deadlineMs: 20_000,
+    });
+
+    expect(fake.startRunBodies[0]?.usageDimensions).toEqual({ taskId: 'task-only' });
+  });
+
+  it('omits usageDimensions entirely when the tool caller supplies none', async () => {
+    fake = await FakeAgentWorld.start();
+    const { invoker } = makeInvoker(fake);
+    await invoker.invoke(
+      'agent-world:run-graph',
+      { template: 'tpl-x', input: 'hi' },
+      ctx(makePosition(ALL_TOOLS), ['agent-world:login']),
+    );
+    expect(fake.startRunBodies[0]).not.toHaveProperty('usageDimensions');
+  });
+});
