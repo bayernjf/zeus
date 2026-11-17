@@ -29,7 +29,8 @@
   `#content` 139→140、`#internalToken` 552→553、`#setTimeout` 3950→3953）。
 - 明确边界（未做）：依赖只认 `done`，前序 failed/blocked 不会链式失败或标记 blocked；同窗口已有任务按幂等键复用，
   模板变更不迁移/清理旧任务；模板 step 与 F4.2 可执行 SOP step 仍是两套数据模型；只承诺展开与待执行，
-  未验证 `claim + worker.enqueue` 的真实执行闭环。CI/PR 待推送后补记。
+  未验证 `claim + worker.enqueue` 的真实执行闭环。已推 origin/dev（`4e7d3db`/`bdb30b4`/`128d3e6`），CI `44071290842` success（8 job）；
+  未创建 PR、未合并、未推 main（按授权边界）。
 
 ## 2026-11-17 M5 F5.2 排班触发（OrgScheduler + CronOrgScheduler）
 
