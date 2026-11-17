@@ -30,7 +30,8 @@
   DELETE 204 → GET 404 → 无 bearer DELETE 401；`sqlite3` 行数 0。
 - ✅ 提交推送：`055b33c` feat / `190fa23` test / `fbc0430` docs 已推 origin/dev；
   CI run `44041778696` 8 job 全绿（Node 22/24、image smoke、container verify、acceptance、
-  dependency、capacity、eval）。DELETE 补齐批（store/service/route/tests/docs）待提交。
+  dependency、capacity、eval）。DELETE 补齐批 `c3187ea` feat / `0d2b104` test / `a5608e5` docs
+  已推；CI run `44042518355` 8 job 全绿。
 
 ## 2026-11-17 M4 F4.2 SOP 经验候选 + 人审提升
 
