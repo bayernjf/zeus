@@ -112,9 +112,21 @@ export type {
   OrgTaskFailureKind,
   OrgTaskProgress,
   OrgTaskTransition,
+  OrgTaskOutcome,
   CreateOrganizationInput,
   CreateDepartmentInput,
   CreatePositionInput,
   AssignAgentInput,
   CreateOrgTaskInput,
 } from './types.js';
+
+// F1.2 workspace isolation
+export { GitWorktreeManager } from './workspace/git-worktree.js';
+export type { GitWorktreeManagerOptions } from './workspace/git-worktree.js';
+export { WorkspaceError } from './workspace/manager.js';
+export type {
+  AcquiredWorkspace,
+  WorkspaceManager,
+  WorkspacePolicy,
+  WorkspaceRequest,
+} from './workspace/manager.js';

@@ -181,3 +181,126 @@ describe('TaskWorker (T-M7-01/#11 async execution)', () => {
     expect(errors.some(e => e.startsWith('task-does-not-exist'))).toBe(true);
   });
 });
+
+/** F1.1: two bound positions in one org, optional concurrency limit. */
+function parallelSetup(concurrencyLimit?: number) {
+  const decisions = makeDecisionService();
+  let seq = 0;
+  const service = new OrgService({
+    decisions,
+    clock: () => '2026-10-22T00:00:00.000Z',
+    newId: prefix => `${prefix}-${++seq}`,
+    retryPolicy: { ...FAST_RETRY },
+    taskDeadlineMs: 60_000,
+  });
+  const org = service.createOrganization({
+    name: '并行',
+    scaleTier: 'small',
+    ...(concurrencyLimit !== undefined ? { concurrencyLimit } : {}),
+  });
+  const dept = service.createDepartment({ organizationId: org.id, name: '运营', mission: 'm' });
+  const positionA = service.createPosition({
+    organizationId: org.id,
+    departmentId: dept.id,
+    name: '专员A',
+    requiredSkills: ['s-a'],
+    allowedTools: [],
+    decisionScope: 'D0',
+  });
+  const positionB = service.createPosition({
+    organizationId: org.id,
+    departmentId: dept.id,
+    name: '专员B',
+    requiredSkills: ['s-b'],
+    allowedTools: [],
+    decisionScope: 'D0',
+  });
+  service.assignAgent(positionA.id, { agentId: 'agent-a' });
+  service.assignAgent(positionB.id, { agentId: 'agent-b' });
+  return { service, org, positionA, positionB };
+}
+
+function timelineExecutor(holdMs: number) {
+  const log: { id: string; phase: 'start' | 'end'; at: number }[] = [];
+  const executor: OrgTaskExecutor = {
+    run: async ctx => {
+      log.push({ id: ctx.task.id, phase: 'start', at: Date.now() });
+      await new Promise<void>(resolve => setTimeout(resolve, holdMs));
+      log.push({ id: ctx.task.id, phase: 'end', at: Date.now() });
+      return { outcome: 'complete' };
+    },
+  };
+  return { log, executor };
+}
+
+function spanOf(log: { id: string; phase: 'start' | 'end'; at: number }[], id: string) {
+  const start = log.find(e => e.id === id && e.phase === 'start');
+  const end = log.find(e => e.id === id && e.phase === 'end');
+  expect(start).toBeDefined();
+  expect(end).toBeDefined();
+  return { start: start!.at, end: end!.at };
+}
+
+describe('TaskWorker (F1.1 bounded per-position concurrency)', () => {
+  it('overlaps different positions while keeping same-position order', async () => {
+    const { service, org } = parallelSetup();
+    const { log, executor } = timelineExecutor(25);
+    const worker = new TaskWorker({ org: service, executor, intervalMs: 50 });
+    worker.start();
+
+    const a1 = service.createTask({ organizationId: org.id, title: 'A1', payload: {}, requiredSkill: 's-a' });
+    const b1 = service.createTask({ organizationId: org.id, title: 'B1', payload: {}, requiredSkill: 's-b' });
+    const a2 = service.createTask({ organizationId: org.id, title: 'A2', payload: {}, requiredSkill: 's-a' });
+    const b2 = service.createTask({ organizationId: org.id, title: 'B2', payload: {}, requiredSkill: 's-b' });
+    for (const task of [a1, b1, a2, b2]) {
+      service.claim(task.id);
+      worker.enqueue(task.id);
+    }
+    await worker.drain();
+    worker.stop();
+
+    // Same position never overlaps: A2 starts only after A1 settled.
+    const a1Span = spanOf(log, a1.id);
+    const a2Span = spanOf(log, a2.id);
+    expect(a2Span.start).toBeGreaterThanOrEqual(a1Span.end);
+    const b1Span = spanOf(log, b1.id);
+    const b2Span = spanOf(log, b2.id);
+    expect(b2Span.start).toBeGreaterThanOrEqual(b1Span.end);
+
+    // Different positions overlap inside the default two-slot window.
+    expect(a1Span.start < b1Span.end && b1Span.start < a1Span.end).toBe(true);
+    for (const task of [a1, b1, a2, b2]) expect(service.getTask(task.id).status).toBe('done');
+  });
+
+  it('concurrencyLimit=1 reproduces the serial drain', async () => {
+    const { service, org } = parallelSetup(1);
+    const { log, executor } = timelineExecutor(20);
+    const worker = new TaskWorker({ org: service, executor, intervalMs: 50 });
+    worker.start();
+
+    const a1 = service.createTask({ organizationId: org.id, title: 'A1', payload: {}, requiredSkill: 's-a' });
+    const b1 = service.createTask({ organizationId: org.id, title: 'B1', payload: {}, requiredSkill: 's-b' });
+    for (const task of [a1, b1]) {
+      service.claim(task.id);
+      worker.enqueue(task.id);
+    }
+    await worker.drain();
+    worker.stop();
+
+    const a = spanOf(log, a1.id);
+    const b = spanOf(log, b1.id);
+    // No overlap in either order: one task fully settles before the other starts.
+    expect(a.start < b.end && b.start < a.end).toBe(false);
+  });
+
+  it('rejects an out-of-range concurrencyLimit', () => {
+    const decisions = makeDecisionService();
+    const service = new OrgService({
+      decisions,
+      clock: () => '2026-10-22T00:00:00.000Z',
+      newId: prefix => `${prefix}-x`,
+    });
+    expect(() => service.createOrganization({ name: 'x', concurrencyLimit: 0 })).toThrow(/concurrencyLimit/);
+    expect(() => service.createOrganization({ name: 'y', concurrencyLimit: 9 })).toThrow(/concurrencyLimit/);
+  });
+});

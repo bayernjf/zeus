@@ -30,6 +30,11 @@ export interface Organization {
   scaleTier: ScaleTier;
   /** Optional parent organization (franchise/grouping); cycles rejected. */
   parentId?: string;
+  /**
+   * F1.1: max org tasks this deployment executes concurrently. 1 falls back to
+   * the original serial behaviour; absent means the worker default (2).
+   */
+  concurrencyLimit?: number;
   createdAt: string;
 }
 
@@ -95,6 +100,23 @@ export interface OrgTaskProgress {
   at: string;
 }
 
+/** F4.1: settlement record kept on the task for ledger/experience review. */
+export interface OrgTaskOutcome {
+  status: 'done' | 'failed';
+  attempts: number;
+  failedKind?: OrgTaskFailureKind;
+  error?: string;
+  /** Decision checkpoints the run touched, oldest first. */
+  decisions: { id: string; status: string }[];
+  /** When the final run entered running. */
+  startedAt?: string;
+  settledAt: string;
+  durationMs?: number;
+  workspace?: { path: string; artifact?: string; policy: 'archive' | 'discard' };
+  /** First 200 chars of the JSON result, for quick scanning. */
+  resultSummary?: string;
+}
+
 export interface OrgTaskTransition {
   status: OrgTaskStatus;
   at: string;
@@ -130,8 +152,18 @@ export interface OrgTask {
   nextAttemptAt?: string;
   /** T-M7-01: task-level wall-clock deadline (ISO). */
   deadlineAt?: string;
+  /** F1.2: base repo the task's isolated worktree is created from. */
+  workspaceBaseRepo?: string;
+  /** F1.2: git ref the worktree is checked out at; HEAD when absent. */
+  workspaceBaseRef?: string;
+  /** F1.2: settlement handling for the worktree; defaults to discard. */
+  workspacePolicy?: 'archive' | 'discard';
+  /** F1.2: absolute worktree path, set once acquired during claim. */
+  workspacePath?: string;
   /** Set when no position matches; task remains pending for human handling. */
   unmatchedReason?: string;
+  /** F4.1: settlement record written when the task reaches done/failed. */
+  outcome?: OrgTaskOutcome;
   transitions: OrgTaskTransition[];
   createdAt: string;
   updatedAt: string;
@@ -142,6 +174,8 @@ export interface CreateOrganizationInput {
   name: string;
   scaleTier?: ScaleTier;
   parentId?: string;
+  /** F1.1: bounded task concurrency; 1 = serial. Defaults to 2. */
+  concurrencyLimit?: number;
 }
 
 export interface CreateDepartmentInput {
@@ -177,6 +211,12 @@ export interface CreateOrgTaskInput {
   /** T-M7-01: idempotency key; a repeat create with the same key returns the
    *  existing task instead of creating a duplicate. */
   idempotencyKey?: string;
+  /** F1.2: run inside a git worktree of baseRepo (allow-listed, fail-closed). */
+  workspace?: {
+    baseRepo: string;
+    baseRef?: string;
+    policy?: 'archive' | 'discard';
+  };
 }
 
 export class OrgServiceError extends DecisionError {
