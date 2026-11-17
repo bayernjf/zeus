@@ -1,5 +1,13 @@
 # Handoff
 
+## 2026-11-17 M5 P2 调度扫描间隔加上下限
+
+- ✅ `src/core/org/scheduling/cron-scheduler.ts`：新增导出 `ORG_SCHEDULER_MIN_INTERVAL_MS = 1000`（1s，防误配疯狂扫描）、`ORG_SCHEDULER_MAX_INTERVAL_MS = 86400000`（24h，防 daily goal 饿死）与 `resolveOrgSchedulerIntervalMs(raw)`（未设回退 `DEFAULT_INTERVAL_MS = 60000`；非正整数或越界抛带变量名与合法窗口的错误）。
+- ✅ `src/http/serve.ts`：调度间隔改由 `resolveOrgSchedulerIntervalMs` 解析，非法值包成 `RuntimeBootError` 在 boot 期拒绝启动（与既有 env 校验口径一致）；`parseIntPositive` 保持原样供其他变量使用。
+- ✅ 测试 +5 例（`src/core/org/scheduling/scheduling.test.ts` 6 → 11 例，新增 `resolveOrgSchedulerIntervalMs` describe）：缺省回退、默认值、恰好上下界、非正/小数/非数字拒绝、越界拒绝。
+- ✅ `.env.example` 注释更新为 1000..86400000 窗口；`docs/audit-2026-09.md` / `docs/deferred-items.md` 的 serve 行号锚点重钉为 `650 #internalToken` / `847 #RuntimeBootError`。
+- 边界：仅影响配置解析；调度行为、UTC 窗口、幂等键均未改变。
+
 ## 2026-11-17 M5 P2 Feature Task 创建/审批边界评估（维持现状，销项）
 
 - ✅ 结论：agent-dev 适配器维持"只读已审批 Feature Task"边界，不扩展动态创建/审批能力；待办销项，无代码改动。
