@@ -16,8 +16,7 @@
   仅 taskId / 无 dims 时 body 不出现该键）、`npm run build` 绿。
 - 端到端已实跑（2026-11-17，临时 SQLite 库 + 临时端口，不碰 dev 数据）：
   `ZEUS_AGENT_WORLD_BASE_URL` 一设即装配 worker，凭证走
-  `ZEUS_SECRET_AGENT_WORLD_LOGIN`（JSON `{"email","password"}`；**不能用 shell 直接
-  source 该 JSON 环境变量，花括号会被展开**，要写成单引号脚本）。建组织/部门/岗位/
+  `ZEUS_SECRET_AGENT_WORLD_LOGIN`（JSON `{"email","password"}`）。注意**不能用 shell 直接 source 该 JSON 环境变量**（花括号会被展开），要写成单引号脚本。建组织/部门/岗位/
   agent 后派发 `after-sales`（`tpl-customer-service`）任务 `task-mwkbqw2l-1ofb8` →
   任务 **done**，agent-world 打本地 webhook 收尾；账本落 2 行 `textgen`，
   `task_id/position_id/department_id` 全齐，`cost_micros` 3405 + 4448 = 7853。
