@@ -64,6 +64,7 @@ import {
   SqlitePolicyStore,
   SqliteDecisionStore,
   SqliteOrgStore,
+  SqliteExperienceStore,
   SqliteActionStore,
   SqliteDecisionWebhookStore,
   ENV_SEED_WEBHOOK_ID,
@@ -464,6 +465,9 @@ async function main(): Promise<void> {
       ...(db
         ? { actionStoreFactory: (taskId: string) => new SqliteActionStore(db, taskId) }
         : {}),
+      // F4.2 candidates survive restart on the same database; demo mode keeps
+      // them in memory like the rest of the org store.
+      ...(db ? { experience: new SqliteExperienceStore(db) } : {}),
     };
 
     // T-M7-02: the first real channel adapter. Opt-in via ZEUS_AGENT_WORLD_BASE_URL;
@@ -476,7 +480,19 @@ async function main(): Promise<void> {
       orgExecutor = new AgentWorldOrgTaskExecutor();
       orgDeps.toolInvoker = toolInvoker;
       orgService = new OrgService(orgDeps);
-      orgTaskWorker = new TaskWorker({ org: orgService, executor: orgExecutor });
+      orgTaskWorker = new TaskWorker({
+        org: orgService,
+        executor: orgExecutor,
+        // A rejected runClaimed used to disappear without a trace (the task
+        // stayed `running` forever). Surface it loudly; the task id is the
+        // handle an operator needs.
+        onError: (taskId, error) =>
+          log.error('org-task-worker', 'runClaimed rejected', {
+            taskId,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          }),
+      });
       orgTaskWorker.start();
       log.info('org-service', 'assembled', {
         durability,

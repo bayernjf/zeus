@@ -248,4 +248,6 @@ export const ORG_ERROR_CODES = {
   SOP_MISSING: 'SOP_MISSING',
   /** T-M7-03: the matched position cannot cover the resolved SOP (missing grants / low scope). */
   SOP_INCOMPATIBLE: 'SOP_INCOMPATIBLE',
+  /** F4.2: experience candidate id does not exist. */
+  EXPERIENCE_NOT_FOUND: 'EXPERIENCE_NOT_FOUND',
 } as const;
