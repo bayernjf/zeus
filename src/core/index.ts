@@ -215,5 +215,10 @@ export type {
   CreatePositionInput,
   AssignAgentInput,
   CreateOrgTaskInput,
+  OrgGoal,
+  OrgGoalPeriod,
+  OrgGoalStatus,
+  CreateOrgGoalInput,
+  UpdateOrgGoalInput,
   TaskWorkerDeps,
 } from './org/index.js';

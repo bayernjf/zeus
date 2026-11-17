@@ -12,6 +12,9 @@ import type {
   OrgTaskOutcome,
   OrgTaskProgress,
   OrgTaskTransition,
+  OrgGoal,
+  OrgGoalPeriod,
+  OrgGoalStatus,
 } from '../org/types.js';
 import type { OrgStore, OrgSnapshot } from '../org/store.js';
 
@@ -303,12 +306,52 @@ export class SqliteOrgStore implements OrgStore {
     return rows.map((r) => this.getTask(r.id)!);
   }
 
+  // ── F5.1 goals ────────────────────────────────────────────────────────
+  putGoal(goal: OrgGoal): void {
+    this.db
+      .prepare(
+        `INSERT INTO org_goals
+           (id, organization_id, title, period, status, project_id, created_at, updated_at)
+         VALUES (@id, @organization_id, @title, @period, @status, @project_id, @created_at, @updated_at)
+         ON CONFLICT(id) DO UPDATE SET
+           title=@title, period=@period, status=@status, project_id=@project_id,
+           updated_at=@updated_at`,
+      )
+      .run({
+        id: goal.id,
+        organization_id: goal.organizationId,
+        title: goal.title,
+        period: goal.period,
+        status: goal.status,
+        project_id: opt(goal.projectId),
+        created_at: goal.createdAt,
+        updated_at: goal.updatedAt,
+      });
+  }
+
+  getGoal(id: string): OrgGoal | undefined {
+    const row = this.db.prepare('SELECT * FROM org_goals WHERE id = ?').get(id) as
+      | Record<string, string | null>
+      | undefined;
+    return row ? goalFromRow(row) : undefined;
+  }
+
+  listGoals(organizationId?: string): OrgGoal[] {
+    const rows = (organizationId === undefined
+      ? this.db.prepare('SELECT * FROM org_goals ORDER BY created_at, id').all()
+      : this.db
+          .prepare('SELECT * FROM org_goals WHERE organization_id = ? ORDER BY created_at, id')
+          .all(organizationId)) as unknown as Record<string, string | null>[];
+    return rows.map(goalFromRow);
+  }
+
   exportSnapshot(): OrgSnapshot {
     return {
       organizations: this.listOrganizations(),
       departments: this.listDepartments(),
       positions: this.listPositions(),
       tasks: this.listTasks(),
+      goals: this.listGoals(),
     };
   }
 
@@ -317,5 +360,22 @@ export class SqliteOrgStore implements OrgStore {
     for (const dept of snapshot.departments) this.putDepartment(dept);
     for (const pos of snapshot.positions) this.putPosition(pos);
     for (const task of snapshot.tasks) this.putTask(task);
+    for (const goal of snapshot.goals ?? []) this.putGoal(goal);
   }
+}
+
+
+function goalFromRow(row: Record<string, string | null>): OrgGoal {
+  return {
+    format: 'zeus-org-goal',
+    version: 1,
+    id: String(row.id),
+    organizationId: String(row.organization_id),
+    title: String(row.title),
+    period: String(row.period) as OrgGoalPeriod,
+    status: String(row.status) as OrgGoalStatus,
+    ...(row.project_id ? { projectId: String(row.project_id) } : {}),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
 }

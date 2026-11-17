@@ -38,6 +38,25 @@ export interface Organization {
   createdAt: string;
 }
 
+/** F5.1: a recurring unit of intent the org schedules against. */
+export type OrgGoalPeriod = 'daily' | 'weekly' | 'once';
+
+export type OrgGoalStatus = 'active' | 'paused' | 'done' | 'archived';
+
+export interface OrgGoal {
+  format: 'zeus-org-goal';
+  version: 1;
+  id: string;
+  organizationId: string;
+  title: string;
+  period: OrgGoalPeriod;
+  status: OrgGoalStatus;
+  /** Optional project binding (hub project id); F5.2 consumes it later. */
+  projectId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Department {
   format: 'zeus-department-v1';
   version: 1;
@@ -219,6 +238,23 @@ export interface CreateOrgTaskInput {
   };
 }
 
+/** F5.1: create a goal record (flat intent, no OKR hierarchy). */
+export interface CreateOrgGoalInput {
+  organizationId: string;
+  title: string;
+  period?: OrgGoalPeriod;
+  projectId?: string;
+  status?: OrgGoalStatus;
+}
+
+/** F5.1: patch a goal; `projectId: null` clears the binding. */
+export interface UpdateOrgGoalInput {
+  title?: string;
+  period?: OrgGoalPeriod;
+  projectId?: string | null;
+  status?: OrgGoalStatus;
+}
+
 export class OrgServiceError extends DecisionError {
   constructor(
     code: string,
@@ -250,4 +286,6 @@ export const ORG_ERROR_CODES = {
   SOP_INCOMPATIBLE: 'SOP_INCOMPATIBLE',
   /** F4.2: experience candidate id does not exist. */
   EXPERIENCE_NOT_FOUND: 'EXPERIENCE_NOT_FOUND',
+  /** F5.1: goal id does not exist. */
+  GOAL_NOT_FOUND: 'GOAL_NOT_FOUND',
 } as const;

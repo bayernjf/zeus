@@ -8,6 +8,7 @@ import type {
   Department,
   Position,
   OrgTask,
+  OrgGoal,
 } from './types.js';
 
 export interface OrgSnapshot {
@@ -15,6 +16,8 @@ export interface OrgSnapshot {
   departments: Department[];
   positions: Position[];
   tasks: OrgTask[];
+  /** F5.1: absent in pre-F5.1 snapshots (import treats it as empty). */
+  goals?: OrgGoal[];
 }
 
 /**
@@ -40,6 +43,11 @@ export interface OrgStore {
   getTaskByIdempotencyKey(organizationId: string, idempotencyKey: string): OrgTask | undefined;
   listTasks(organizationId?: string): OrgTask[];
 
+  // F5.1 goals: recurring intent records, no OKR hierarchy.
+  putGoal(goal: OrgGoal): void;
+  getGoal(id: string): OrgGoal | undefined;
+  listGoals(organizationId?: string): OrgGoal[];
+
   exportSnapshot(): OrgSnapshot;
   importSnapshot(snapshot: OrgSnapshot): void;
 }
@@ -49,6 +57,7 @@ export class MemoryOrgStore implements OrgStore {
   private departments = new Map<string, Department>();
   private positions = new Map<string, Position>();
   private tasks = new Map<string, OrgTask>();
+  private goals = new Map<string, OrgGoal>();
 
   // Organizations
   putOrganization(org: Organization): void {
@@ -110,12 +119,27 @@ export class MemoryOrgStore implements OrgStore {
     return found ? structuredClone(found) : undefined;
   }
 
+  // Goals
+  putGoal(goal: OrgGoal): void {
+    this.goals.set(goal.id, structuredClone(goal));
+  }
+  getGoal(id: string): OrgGoal | undefined {
+    const v = this.goals.get(id);
+    return v ? structuredClone(v) : undefined;
+  }
+  listGoals(organizationId?: string): OrgGoal[] {
+    return [...this.goals.values()]
+      .filter(g => organizationId === undefined || g.organizationId === organizationId)
+      .map(v => structuredClone(v));
+  }
+
   exportSnapshot(): OrgSnapshot {
     return {
       organizations: this.listOrganizations(),
       departments: this.listDepartments(),
       positions: this.listPositions(),
       tasks: this.listTasks(),
+      goals: this.listGoals(),
     };
   }
 
@@ -138,5 +162,6 @@ export class MemoryOrgStore implements OrgStore {
     this.departments = new Map(snapshot.departments.map(d => [d.id, structuredClone(d)]));
     this.positions = new Map(snapshot.positions.map(p => [p.id, structuredClone(p)]));
     this.tasks = new Map(snapshot.tasks.map(t => [t.id, structuredClone(t)]));
+    this.goals = new Map((snapshot.goals ?? []).map(g => [g.id, structuredClone(g)]));
   }
 }
