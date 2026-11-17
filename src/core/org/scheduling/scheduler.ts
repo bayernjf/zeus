@@ -70,7 +70,10 @@ export function goalOccurrence(goal: OrgGoal, now: Date): Date | undefined {
   return new Date(occurrence);
 }
 
-/** Stable idempotency key: one goal window maps to exactly one task. */
-export function goalRunKey(goalId: string, occurrence: Date): string {
-  return `goal:${goalId}:${occurrence.toISOString()}`;
+/** Stable idempotency key: one goal window + step maps to exactly one task.
+ *  The step suffix is omitted for the legacy F5.2 single-task path so existing
+ *  keys and tests keep their shape. */
+export function goalRunKey(goalId: string, occurrence: Date, stepId?: string): string {
+  const base = `goal:${goalId}:${occurrence.toISOString()}`;
+  return stepId ? `${base}:${stepId}` : base;
 }

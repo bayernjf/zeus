@@ -34,6 +34,16 @@ export type {
   OrgScheduler,
 } from './scheduling/index.js';
 
+// F5.3 built-in goal templates (code-owned catalog + expansion)
+export {
+  GOAL_TEMPLATES,
+  expandGoalSteps,
+  goalTemplateById,
+  listGoalTemplates,
+  validateGoalTemplate,
+} from './goal-templates.js';
+export type { ExpandedGoalStep } from './goal-templates.js';
+
 // T-M7-01 hardened execution contract
 export { runTask, InMemoryActionStore } from './execution/index.js';
 export {
@@ -146,6 +156,8 @@ export type {
   OrgGoalStatus,
   OrgGoalSchedule,
   OrgGoalTaskTemplate,
+  OrgGoalTemplate,
+  OrgGoalTemplateStep,
   CreateOrgGoalInput,
   UpdateOrgGoalInput,
 } from './types.js';

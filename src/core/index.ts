@@ -191,6 +191,11 @@ export {
   CronOrgScheduler,
   goalOccurrence,
   goalRunKey,
+  GOAL_TEMPLATES,
+  expandGoalSteps,
+  goalTemplateById,
+  listGoalTemplates,
+  validateGoalTemplate,
 } from './org/index.js';
 // T-M7-02 agent-world adapter (first real ToolInvoker/executor).
 export {
@@ -229,6 +234,8 @@ export type {
   OrgGoalStatus,
   OrgGoalSchedule,
   OrgGoalTaskTemplate,
+  OrgGoalTemplate,
+  OrgGoalTemplateStep,
   CreateOrgGoalInput,
   UpdateOrgGoalInput,
   TaskWorkerDeps,

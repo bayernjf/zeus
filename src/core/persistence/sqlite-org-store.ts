@@ -205,13 +205,13 @@ export class SqliteOrgStore implements OrgStore {
           assigned_agent_id, run_id, status, decision_id, result_json, error,
           attempts, failed_kind, progress_json, next_attempt_at, deadline_at,
           idempotency_key, unmatched_reason, workspace_path, outcome_json,
-          transitions_json, created_at, updated_at
+          depends_on_json, transitions_json, created_at, updated_at
         ) VALUES (
           @id, @organization_id, @title, @payload_json, @required_skill, @position_id,
           @assigned_agent_id, @run_id, @status, @decision_id, @result_json, @error,
           @attempts, @failed_kind, @progress_json, @next_attempt_at, @deadline_at,
           @idempotency_key, @unmatched_reason, @workspace_path, @outcome_json,
-          @transitions_json, @created_at, @updated_at
+          @depends_on_json, @transitions_json, @created_at, @updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
           position_id=@position_id, assigned_agent_id=@assigned_agent_id, run_id=@run_id, status=@status,
@@ -220,7 +220,8 @@ export class SqliteOrgStore implements OrgStore {
           next_attempt_at=@next_attempt_at, deadline_at=@deadline_at,
           idempotency_key=@idempotency_key, unmatched_reason=@unmatched_reason,
           workspace_path=@workspace_path, outcome_json=@outcome_json,
-          transitions_json=@transitions_json, updated_at=@updated_at`,
+          depends_on_json=@depends_on_json, transitions_json=@transitions_json,
+          updated_at=@updated_at`,
       )
       .run({
         id: task.id,
@@ -244,6 +245,7 @@ export class SqliteOrgStore implements OrgStore {
         unmatched_reason: opt(task.unmatchedReason),
         workspace_path: opt(task.workspacePath),
         outcome_json: opt(task.outcome ? JSON.stringify(task.outcome) : undefined),
+        depends_on_json: opt(task.dependsOn?.length ? JSON.stringify(task.dependsOn) : undefined),
         transitions_json: JSON.stringify(task.transitions),
         created_at: task.createdAt,
         updated_at: task.updatedAt,
@@ -285,6 +287,9 @@ export class SqliteOrgStore implements OrgStore {
           ...(row.outcome_json
             ? { outcome: parse<OrgTaskOutcome>(String(row.outcome_json)) }
             : {}),
+          ...(row.depends_on_json
+            ? { dependsOn: parse<string[]>(String(row.depends_on_json)) }
+            : {}),
           transitions: parse<OrgTaskTransition[]>(row.transitions_json as string),
           createdAt: String(row.created_at),
           updatedAt: String(row.updated_at),
@@ -314,13 +319,13 @@ export class SqliteOrgStore implements OrgStore {
       .prepare(
         `INSERT INTO org_goals
            (id, organization_id, title, period, status, project_id, schedule_json,
-            task_template_json, created_at, updated_at)
+            task_template_json, template_ref, created_at, updated_at)
          VALUES (@id, @organization_id, @title, @period, @status, @project_id, @schedule_json,
-            @task_template_json, @created_at, @updated_at)
+            @task_template_json, @template_ref, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            title=@title, period=@period, status=@status, project_id=@project_id,
            schedule_json=@schedule_json, task_template_json=@task_template_json,
-           updated_at=@updated_at`,
+           template_ref=@template_ref, updated_at=@updated_at`,
       )
       .run({
         id: goal.id,
@@ -331,6 +336,7 @@ export class SqliteOrgStore implements OrgStore {
         project_id: opt(goal.projectId),
         schedule_json: opt(goal.schedule ? JSON.stringify(goal.schedule) : undefined),
         task_template_json: opt(goal.taskTemplate ? JSON.stringify(goal.taskTemplate) : undefined),
+        template_ref: opt(goal.templateRef),
         created_at: goal.createdAt,
         updated_at: goal.updatedAt,
       });
@@ -393,6 +399,7 @@ function goalFromRow(row: Record<string, string | null>): OrgGoal {
     ...(row.task_template_json
       ? { taskTemplate: parse<OrgGoalTaskTemplate>(String(row.task_template_json)) }
       : {}),
+    ...(row.template_ref ? { templateRef: String(row.template_ref) } : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

@@ -80,6 +80,7 @@ import {
   listPositionsRoute,
   listSopsRoute,
   listTasksRoute,
+  listGoalTemplatesRoute,
   promoteExperienceRoute,
   resumeTaskRoute,
   updateGoalRoute,
@@ -3379,7 +3380,9 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
       app.get('/api/v1/org/sops', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         listSopsRoute(orgV1, request, reply));
       // F5.1 goals: flat intent records (no OKR hierarchy). PATCH is the
-      // update path; there is deliberately no delete (archival is a status).
+      // update path; DELETE is a hard delete, while archival remains a status.
+      app.get('/api/v1/org/goal-templates', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listGoalTemplatesRoute(orgV1, request, reply));
       app.post('/api/v1/org/goals', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         createGoalRoute(orgV1, request, reply));
       app.get('/api/v1/org/goals', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>

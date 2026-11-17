@@ -11,6 +11,7 @@
  *   POST     /api/v1/org/tasks/:id/dispatch | /resume
  *   POST     /api/v1/org/policy/thresholds
  *   POST/GET /api/v1/org/goals, GET/PATCH/DELETE /api/v1/org/goals/:id
+ *   GET      /api/v1/org/goal-templates (F5.3 built-in template catalog)
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -23,6 +24,7 @@ import {
   type CreateOrganizationInput,
   type CreateOrgTaskInput,
   type CreatePositionInput,
+  listGoalTemplates,
   type OrgTaskExecutor,
   type UpdateOrgGoalInput,
 } from '../core/index.js';
@@ -34,6 +36,7 @@ function statusForOrgError(code: string): number {
   if (code === 'VALIDATION_FAILED') return 400;
   if (code === 'NO_MATCHING_POSITION' || code === 'POSITION_UNBOUND') return 409;
   if (code === 'SOP_MISSING' || code === 'SOP_INCOMPATIBLE') return 409;
+  if (code === 'TASK_BLOCKED') return 409;
   if (code === 'HIERARCHY_CYCLE') return 409;
   if (code.endsWith('_CONFLICT') || code === 'TASK_CONFLICT') return 409;
   return 400;
@@ -214,6 +217,11 @@ export async function resumeTaskRoute(
 }
 
 // ── Goals (F5.1) ──────────────────────────────────────────────────────────
+
+/** F5.3: read-only built-in template catalog for operator discovery. */
+export async function listGoalTemplatesRoute(_org: OrgService, _request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  return reply.send({ templates: listGoalTemplates() });
+}
 
 export async function createGoalRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
   try {

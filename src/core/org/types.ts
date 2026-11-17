@@ -54,12 +54,31 @@ export interface OrgGoalSchedule {
   weekdayUtc?: number;
 }
 
-/** F5.2 minimal one-task template; F5.3 expands this into dependency chains. */
+/** F5.2 minimal one-task template; retained as the single-task compatibility path. */
 export interface OrgGoalTaskTemplate {
   title?: string;
   payload?: Json;
   requiredSkill?: string;
   positionId?: string;
+}
+
+/** One step of a built-in F5.3 goal template. `dependsOn` names earlier step ids. */
+export interface OrgGoalTemplateStep {
+  /** Stable step id; used in the per-window task idempotency key. */
+  id: string;
+  title?: string;
+  payload?: Json;
+  requiredSkill?: string;
+  positionId?: string;
+  dependsOn?: string[];
+}
+
+/** A code-owned, versionless built-in template a goal can reference by id. */
+export interface OrgGoalTemplate {
+  id: string;
+  title: string;
+  description?: string;
+  steps: OrgGoalTemplateStep[];
 }
 
 export interface OrgGoal {
@@ -76,6 +95,11 @@ export interface OrgGoal {
   schedule?: OrgGoalSchedule;
   /** Absent means the scheduler uses the goal title + a default payload. */
   taskTemplate?: OrgGoalTaskTemplate;
+  /**
+   * F5.3: code-owned template id. Mutually exclusive with `taskTemplate`;
+   * the scheduler expands it into one task per step in the same window.
+   */
+  templateRef?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -190,6 +214,11 @@ export interface OrgTask {
   progress?: OrgTaskProgress[];
   /** T-M7-01: caller-supplied idempotency key; unique within an organization. */
   idempotencyKey?: string;
+  /**
+   * F5.3: task ids that must reach `done` before this task is claimable.
+   * Missing dependencies are treated as not done (fail-closed).
+   */
+  dependsOn?: string[];
   /** T-M7-01: when a retryable task is next eligible to run (async worker). */
   nextAttemptAt?: string;
   /** T-M7-01: task-level wall-clock deadline (ISO). */
@@ -253,6 +282,8 @@ export interface CreateOrgTaskInput {
   /** T-M7-01: idempotency key; a repeat create with the same key returns the
    *  existing task instead of creating a duplicate. */
   idempotencyKey?: string;
+  /** F5.3: task ids that must settle `done` before this task can be claimed. */
+  dependsOn?: string[];
   /** F1.2: run inside a git worktree of baseRepo (allow-listed, fail-closed). */
   workspace?: {
     baseRepo: string;
@@ -270,6 +301,8 @@ export interface CreateOrgGoalInput {
   status?: OrgGoalStatus;
   schedule?: OrgGoalSchedule;
   taskTemplate?: OrgGoalTaskTemplate;
+  /** F5.3: built-in template id; mutually exclusive with `taskTemplate`. */
+  templateRef?: string;
 }
 
 /** F5.1: patch a goal; `projectId: null` clears the binding. */
@@ -282,6 +315,8 @@ export interface UpdateOrgGoalInput {
   schedule?: OrgGoalSchedule | null;
   /** `null` clears the template; omitted leaves it untouched. */
   taskTemplate?: OrgGoalTaskTemplate | null;
+  /** `null` clears the template reference; omitted leaves it untouched. */
+  templateRef?: string | null;
 }
 
 export class OrgServiceError extends DecisionError {
@@ -317,4 +352,6 @@ export const ORG_ERROR_CODES = {
   EXPERIENCE_NOT_FOUND: 'EXPERIENCE_NOT_FOUND',
   /** F5.1: goal id does not exist. */
   GOAL_NOT_FOUND: 'GOAL_NOT_FOUND',
+  /** F5.3: a task's declared dependencies have not all settled `done`. */
+  TASK_BLOCKED: 'TASK_BLOCKED',
 } as const;

@@ -20,6 +20,7 @@ export const MIGRATION_0006_ORG_FIELD_GAPS = '0006_org_field_gaps';
 export const MIGRATION_0007_ORG_EXPERIENCE = '0007_org_experience';
 export const MIGRATION_0008_ORG_GOALS = '0008_org_goals';
 export const MIGRATION_0009_ORG_GOAL_SCHEDULES = '0009_org_goal_schedules';
+export const MIGRATION_0010_ORG_GOAL_TEMPLATES = '0010_org_goal_templates';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -299,6 +300,16 @@ const INCREMENTAL_MIGRATIONS: Migration[] = [
     up: (db) => {
       db.exec('ALTER TABLE org_goals ADD COLUMN schedule_json TEXT;');
       db.exec('ALTER TABLE org_goals ADD COLUMN task_template_json TEXT;');
+    },
+  },
+  {
+    // F5.3: a goal may reference a built-in template, and a task may declare
+    // dependencies on earlier tasks. `addColumnIfMissing` keeps a retried
+    // migration idempotent if one ALTER succeeded before another failed.
+    id: MIGRATION_0010_ORG_GOAL_TEMPLATES,
+    up: (db) => {
+      addColumnIfMissing(db, 'org_goals', 'template_ref', 'TEXT');
+      addColumnIfMissing(db, 'org_tasks', 'depends_on_json', 'TEXT');
     },
   },
 ];
