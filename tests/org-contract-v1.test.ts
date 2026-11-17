@@ -330,6 +330,34 @@ describe('org contract: task dispatch (T-M2-03)', () => {
       await app2.close();
     }
   });
+  it('returns 409 TASK_BLOCKED when a task dependency is not done', async () => {
+    const { org } = await bootstrapOrg();
+    const first = await api('/api/v1/org/tasks', {
+      method: 'POST',
+      body: { organizationId: org.id, title: '采集', payload: {}, requiredSkill: 'ops' },
+    });
+    const second = await api('/api/v1/org/tasks', {
+      method: 'POST',
+      body: {
+        organizationId: org.id,
+        title: '汇总',
+        payload: {},
+        requiredSkill: 'ops',
+        dependsOn: [first.body.id],
+      },
+    });
+    expect(second.status).toBe(201);
+    expect(second.body.dependsOn).toEqual([first.body.id]);
+
+    const blocked = await api(`/api/v1/org/tasks/${second.body.id}/dispatch`, { method: 'POST' });
+    expect(blocked.status).toBe(409);
+    expect(blocked.body).toMatchObject({
+      code: 'TASK_BLOCKED',
+      retryable: true,
+      details: { blockedBy: [first.body.id] },
+    });
+    expect((await api(`/api/v1/org/tasks/${second.body.id}`)).body.status).toBe('pending');
+  });
 });
 
 describe('org contract: experience review gate (F4.2)', () => {
@@ -406,6 +434,56 @@ describe('org contract: goals (F5.1)', () => {
     expect((await api(`/api/v1/org/goals/${created.body.id}`)).status).toBe(404);
   });
 
+  it('serves the built-in template catalog and accepts a templateRef goal', async () => {
+    const org = (await api('/api/v1/org/organizations', { method: 'POST', body: orgBody() })).body;
+    const catalog = await api('/api/v1/org/goal-templates');
+    expect(catalog.status).toBe(200);
+    expect(catalog.body.templates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'weekly-report',
+          steps: expect.arrayContaining([
+            expect.objectContaining({ id: 'collect' }),
+            expect.objectContaining({ id: 'summarize', dependsOn: ['collect'] }),
+          ]),
+        }),
+      ]),
+    );
+
+    const created = await api('/api/v1/org/goals', {
+      method: 'POST',
+      body: {
+        organizationId: org.id,
+        title: '周报流水线',
+        period: 'daily',
+        schedule: { hourUtc: 6, minuteUtc: 0 },
+        templateRef: 'weekly-report',
+      },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.templateRef).toBe('weekly-report');
+    expect(created.body.taskTemplate).toBeUndefined();
+
+    const unknown = await api('/api/v1/org/goals', {
+      method: 'POST',
+      body: { organizationId: org.id, title: 'x', templateRef: 'no-such-template' },
+    });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.code).toBe('VALIDATION_FAILED');
+
+    const both = await api('/api/v1/org/goals', {
+      method: 'POST',
+      body: {
+        organizationId: org.id,
+        title: 'x',
+        templateRef: 'weekly-report',
+        taskTemplate: { title: '单任务' },
+      },
+    });
+    expect(both.status).toBe(400);
+    expect(both.body.code).toBe('VALIDATION_FAILED');
+  });
+
   it('maps bad input to 400 and unknown ids to 404', async () => {
     const org = (await api('/api/v1/org/organizations', { method: 'POST', body: orgBody() })).body;
     const bad = await api('/api/v1/org/goals', {
@@ -438,6 +516,7 @@ describe('org contract: goals (F5.1)', () => {
       ['POST', '/api/v1/org/goals'],
       ['GET', '/api/v1/org/goals'],
       ['GET', '/api/v1/org/goals/goal-1'],
+      ['GET', '/api/v1/org/goal-templates'],
       ['PATCH', '/api/v1/org/goals/goal-1'],
       ['DELETE', '/api/v1/org/goals/goal-1'],
     ] as const) {

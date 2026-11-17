@@ -9,6 +9,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { DecisionService } from '../decision-service/service.js';
 import {
   ExecutorError,
+  MemoryOrgStore,
   OrgService,
   ORG_ERROR_CODES,
   type OrgTaskExecutor,
@@ -34,14 +35,16 @@ const FAST_RETRY = { maxAttempts: 3, baseBackoffMs: 1, maxBackoffMs: 1, factor: 
 
 function makeService(decisions?: DecisionService) {
   let seq = 0;
+  const store = new MemoryOrgStore();
   const service = new OrgService({
+    store,
     ...(decisions ? { decisions } : {}),
     clock: () => '2026-10-22T00:00:00.000Z',
     newId: prefix => `${prefix}-${++seq}`,
     retryPolicy: { ...FAST_RETRY },
     taskDeadlineMs: 60_000,
   });
-  return { service, org: service.createOrganization({ name: '自营电商', scaleTier: 'small' }) };
+  return { service, store, org: service.createOrganization({ name: '自营电商', scaleTier: 'small' }) };
 }
 
 describe('OrgService organizations/departments/positions (T-M2-01/02)', () => {
@@ -135,6 +138,7 @@ describe('OrgService organizations/departments/positions (T-M2-01/02)', () => {
 
 describe('OrgService dispatcher (T-M2-03)', () => {
   let service: OrgService;
+  let store: MemoryOrgStore;
   let orgId: string;
   let positionId: string;
 
@@ -142,6 +146,7 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     const decisions = makeDecisionService();
     const built = makeService(decisions);
     service = built.service;
+    store = built.store;
     orgId = built.org.id;
     const dept = service.createDepartment({ organizationId: orgId, name: '运营', mission: 'm' });
     positionId = service.createPosition({
@@ -356,6 +361,105 @@ describe('OrgService dispatcher (T-M2-03)', () => {
     const other = service.createOrganization({ name: '另一组织', scaleTier: 'small' });
     const c = service.createTask({ organizationId: other.id, title: '任务 C', payload: {}, idempotencyKey: 'key-1' });
     expect(c.id).not.toBe(a.id);
+  });
+
+  it('gates claim on dependencies and rejects malformed dependency declarations', () => {
+    const first = service.createTask({
+      organizationId: orgId, title: '采集', payload: {}, requiredSkill: 'ops',
+    });
+    const second = service.createTask({
+      organizationId: orgId, title: '汇总', payload: {}, requiredSkill: 'ops', dependsOn: [first.id],
+    });
+    expect(second.dependsOn).toEqual([first.id]);
+
+    // Duplicate, missing, and cross-organization dependencies are rejected.
+    expect(() =>
+      service.createTask({
+        organizationId: orgId, title: '重复依赖', payload: {}, dependsOn: [first.id, first.id],
+      }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    expect(() =>
+      service.createTask({
+        organizationId: orgId, title: '缺依赖', payload: {}, dependsOn: ['task-missing'],
+      }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    const other = service.createOrganization({ name: '跨组织', scaleTier: 'small' });
+    const foreign = service.createTask({ organizationId: other.id, title: '外部任务', payload: {} });
+    expect(() =>
+      service.createTask({
+        organizationId: orgId, title: '跨组织依赖', payload: {}, dependsOn: [foreign.id],
+      }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+
+    // The dependency gate precedes position matching: the task stays pending.
+    expect(() => service.claim(second.id)).toThrow(
+      expect.objectContaining({
+        code: ORG_ERROR_CODES.TASK_BLOCKED,
+        retryable: true,
+        details: { blockedBy: [first.id] },
+      }),
+    );
+    expect(service.getTask(second.id).status).toBe('pending');
+
+    // Mark the dependency done, bind the position, then the same task claims.
+    const firstNow = service.getTask(first.id);
+    store.putTask({
+      ...firstNow,
+      status: 'done',
+      transitions: [...firstNow.transitions, { status: 'done', at: firstNow.createdAt }],
+    });
+    service.assignAgent(positionId, { agentId: 'agent-ops-1' });
+    expect(service.claim(second.id).status).toBe('running');
+  });
+});
+
+describe('OrgService goals and templates (F5.1/F5.3)', () => {
+  it('accepts a built-in templateRef, validates it, and keeps the source exclusive', () => {
+    const { service, org } = makeService();
+    const goal = service.createGoal({
+      organizationId: org.id,
+      title: '每周周报',
+      period: 'weekly',
+      schedule: { hourUtc: 9, minuteUtc: 0, weekdayUtc: 1 },
+      templateRef: 'weekly-report',
+    });
+    expect(goal.templateRef).toBe('weekly-report');
+    expect(goal.taskTemplate).toBeUndefined();
+
+    expect(() =>
+      service.createGoal({
+        organizationId: org.id,
+        title: '未知模板',
+        templateRef: 'missing-template',
+      }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    expect(() =>
+      service.createGoal({
+        organizationId: org.id,
+        title: '双模板来源',
+        templateRef: 'weekly-report',
+        taskTemplate: { title: '单任务' },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: ORG_ERROR_CODES.VALIDATION_FAILED,
+        message: 'taskTemplate and templateRef are mutually exclusive',
+      }),
+    );
+
+    // Clearing the ref and switching to the single-task path is one patch.
+    const switched = service.updateGoal(goal.id, {
+      templateRef: null,
+      taskTemplate: { title: '单任务周报' },
+    });
+    expect(switched.templateRef).toBeUndefined();
+    expect(switched.taskTemplate).toEqual({ title: '单任务周报' });
+
+    // Re-introducing a ref while the retained single template is still set
+    // fails instead of silently keeping two expansion sources.
+    expect(() => service.updateGoal(goal.id, { templateRef: 'weekly-report' })).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }),
+    );
   });
 });
 

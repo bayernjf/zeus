@@ -18,6 +18,7 @@ import {
   MIGRATION_0007_ORG_EXPERIENCE,
   MIGRATION_0008_ORG_GOALS,
   MIGRATION_0009_ORG_GOAL_SCHEDULES,
+  MIGRATION_0010_ORG_GOAL_TEMPLATES,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
@@ -110,6 +111,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0007_ORG_EXPERIENCE,
       MIGRATION_0008_ORG_GOALS,
       MIGRATION_0009_ORG_GOAL_SCHEDULES,
+      MIGRATION_0010_ORG_GOAL_TEMPLATES,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
@@ -122,6 +124,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0007_ORG_EXPERIENCE,
       MIGRATION_0008_ORG_GOALS,
       MIGRATION_0009_ORG_GOAL_SCHEDULES,
+      MIGRATION_0010_ORG_GOAL_TEMPLATES,
     ]);
     db.close();
   });
@@ -155,7 +158,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     expect(appliedMigrations(db)).toContain(MIGRATION_0002_ORG_TASK_EXECUTION);
     const cols = (db.prepare('PRAGMA table_info(org_tasks)').all() as { name: string }[])
       .map((c) => c.name);
-    for (const col of ['attempts', 'failed_kind', 'progress_json', 'next_attempt_at', 'deadline_at', 'idempotency_key']) {
+    for (const col of ['attempts', 'failed_kind', 'progress_json', 'next_attempt_at', 'deadline_at', 'idempotency_key', 'depends_on_json']) {
       expect(cols).toContain(col);
     }
     // The pre-existing row survives and reads with the new defaults.
@@ -427,11 +430,12 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
 
 
 describe('SqliteOrgStore goals (F5.1/F5.2)', () => {
-  it('runs migrations 0008-0009 and round-trips a scheduled goal', () => {
+  it('runs migrations 0008-0010 and round-trips a scheduled goal', () => {
     const db = openSqlite(':memory:');
     migrate(db);
     expect(appliedMigrations(db)).toContain(MIGRATION_0008_ORG_GOALS);
     expect(appliedMigrations(db)).toContain(MIGRATION_0009_ORG_GOAL_SCHEDULES);
+    expect(appliedMigrations(db)).toContain(MIGRATION_0010_ORG_GOAL_TEMPLATES);
 
     const store = new SqliteOrgStore(db);
     store.putOrganization(sampleOrg());
@@ -485,6 +489,53 @@ describe('SqliteOrgStore goals (F5.1/F5.2)', () => {
     expect(restored.deleteGoal('goal-1')).toBe(true);
     expect(restored.getGoal('goal-1')).toBeUndefined();
     expect(restored.deleteGoal('goal-1')).toBe(false);
+  });
+
+  it('round-trips a templateRef goal and task dependencies (0010)', () => {
+    const db = openSqlite(':memory:');
+    migrate(db);
+    const store = new SqliteOrgStore(db);
+    store.putOrganization(sampleOrg());
+
+    store.putGoal({
+      format: 'zeus-org-goal',
+      version: 1,
+      id: 'goal-template',
+      organizationId: 'org-1',
+      title: '周报流水线',
+      period: 'weekly',
+      status: 'active',
+      templateRef: 'weekly-report',
+      createdAt: TS,
+      updatedAt: TS,
+    });
+    expect(store.getGoal('goal-template')?.templateRef).toBe('weekly-report');
+
+    const dependency: OrgTask = {
+      format: 'zeus-org-task',
+      version: 1,
+      id: 'task-collect',
+      organizationId: 'org-1',
+      title: '采集',
+      payload: {},
+      status: 'done',
+      transitions: [{ status: 'done', at: TS }],
+      createdAt: TS,
+      updatedAt: TS,
+    };
+    const dependent: OrgTask = {
+      ...dependency,
+      id: 'task-summarize',
+      title: '汇总',
+      status: 'pending',
+      dependsOn: ['task-collect'],
+      transitions: [{ status: 'pending', at: TS }],
+    };
+    store.putTask(dependency);
+    store.putTask(dependent);
+    expect(store.getTask('task-summarize')?.dependsOn).toEqual(['task-collect']);
+    expect(store.listTasks('org-1')).toHaveLength(2);
+    db.close();
   });
 });
 

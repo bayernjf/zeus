@@ -1,16 +1,19 @@
 /**
- * F5.2 in-process scheduler. Scans active daily/weekly goals, computes their
- * latest UTC window, and creates one org task per window through the same
- * `OrgService.createTask` path used by the HTTP API. The idempotency key is
- * `goal:<id>:<window ISO>`, so replaying a tick (including after a restart)
- * returns the existing task instead of creating a second one.
+ * F5.2/F5.3 in-process scheduler. Scans active daily/weekly goals, computes
+ * their latest UTC window, and creates one org task per window — or one task
+ * per step when the goal references a built-in F5.3 template. The idempotency
+ * key is `goal:<id>:<window ISO>` for the legacy single-task path and
+ * `goal:<id>:<window ISO>:<stepId>` for template steps, so replaying a tick
+ * (including after a restart) returns existing tasks instead of duplicates.
  *
- * Optional `deliver` hands a freshly created task to the async worker; without
- * an executor the scheduler still registers the task and leaves it pending,
- * which keeps scheduling independent from execution.
+ * Optional `deliver` hands a task to the async worker. Template steps are only
+ * delivered when all their dependencies are `done`; a blocked step stays
+ * pending and is retried on the next tick. Without an executor the scheduler
+ * still registers tasks and leaves them pending.
  */
 import type { OrgService } from '../org-service.js';
-import type { Json, OrgGoal } from '../types.js';
+import type { Json, OrgGoal, OrgTask } from '../types.js';
+import { expandGoalSteps, type ExpandedGoalStep } from '../goal-templates.js';
 import {
   goalOccurrence,
   goalRunKey,
@@ -98,26 +101,65 @@ export class CronOrgScheduler implements OrgScheduler {
       if (!occurrence) continue;
       result.due += 1;
 
-      const key = goalRunKey(goal.id, occurrence);
-      const existing = this.org
-        .listTasks(goal.organizationId)
-        .find(task => task.idempotencyKey === key);
-      if (existing) {
-        result.duplicates.push(existing.id);
+      let steps: ExpandedGoalStep[];
+      try {
+        steps = expandGoalSteps(goal);
+      } catch (error) {
+        this.reportFailure(goal, error, result);
         continue;
       }
 
-      try {
-        const task = this.org.createTask(this.taskInput(goal, occurrence, key));
-        result.created.push(task.id);
+      const taskByStep = new Map<string, OrgTask>();
+      const createdIds = new Set<string>();
+      let creationError: unknown;
+      for (const step of steps) {
+        const stepKey = step.stepId ?? '';
+        const key = goalRunKey(goal.id, occurrence, step.stepId);
+        const existing = this.org
+          .listTasks(goal.organizationId)
+          .find(task => task.idempotencyKey === key);
+        if (existing) {
+          result.duplicates.push(existing.id);
+          taskByStep.set(stepKey, existing);
+          continue;
+        }
+        if (creationError) break;
+        try {
+          const dependsOn = step.dependsOn.map((dependency) => {
+            const dependencyTask = taskByStep.get(dependency);
+            if (!dependencyTask) {
+              throw new Error(
+                `template step ${step.stepId ?? '(legacy)'} depends on unresolved step ${dependency}`,
+              );
+            }
+            return dependencyTask.id;
+          });
+          const task = this.org.createTask(
+            this.taskInput(goal, occurrence, key, step, dependsOn),
+          );
+          result.created.push(task.id);
+          createdIds.add(task.id);
+          taskByStep.set(stepKey, task);
+        } catch (error) {
+          creationError = error;
+        }
+      }
+
+      for (const step of steps) {
+        const task = taskByStep.get(step.stepId ?? '');
+        if (!task || task.status !== 'pending') continue;
+        if (!this.dependenciesDone(task)) continue;
+        // Legacy F5.2 goals hand off only a freshly created task, preserving
+        // the old "no re-delivery of existing pending tasks" behaviour.
+        if (goal.templateRef === undefined && !createdIds.has(task.id)) continue;
         try {
           this.deliver?.({ goal, taskId: task.id, occurrence: occurrence.toISOString() });
         } catch (error) {
           this.reportFailure(goal, error, result);
         }
-      } catch (error) {
-        this.reportFailure(goal, error, result);
       }
+
+      if (creationError) this.reportFailure(goal, creationError, result);
     }
 
     return result;
@@ -137,23 +179,49 @@ export class CronOrgScheduler implements OrgScheduler {
     }
   }
 
-  private taskInput(goal: OrgGoal, occurrence: Date, idempotencyKey: string) {
-    const template = goal.taskTemplate;
-    const payload: Json = template?.payload ?? {
+  private taskInput(
+    goal: OrgGoal,
+    occurrence: Date,
+    idempotencyKey: string,
+    step: ExpandedGoalStep,
+    dependsOn: string[],
+  ) {
+    const basePayload: Json = {
       goalId: goal.id,
       goalTitle: goal.title,
       period: goal.period,
       scheduledFor: occurrence.toISOString(),
       ...(goal.projectId ? { projectId: goal.projectId } : {}),
+      ...(goal.templateRef ? { templateRef: goal.templateRef } : {}),
+      ...(step.stepId ? { stepId: step.stepId } : {}),
     };
+    // Template steps merge their declared payload over the run metadata so
+    // every expanded task carries goal/period/step provenance. The legacy
+    // single-task template keeps its payload byte-for-byte (F5.2 contract).
+    const payload: Json =
+      step.payload === undefined
+        ? basePayload
+        : goal.templateRef !== undefined && isJsonObject(step.payload)
+          ? { ...basePayload, ...step.payload }
+          : step.payload;
     return {
       organizationId: goal.organizationId,
-      title: template?.title ?? goal.title,
+      title: step.title,
       payload,
-      ...(template?.requiredSkill ? { requiredSkill: template.requiredSkill } : {}),
-      ...(template?.positionId ? { positionId: template.positionId } : {}),
+      ...(step.requiredSkill ? { requiredSkill: step.requiredSkill } : {}),
+      ...(step.positionId ? { positionId: step.positionId } : {}),
+      ...(dependsOn.length ? { dependsOn } : {}),
       idempotencyKey,
     };
+  }
+
+  /** A dependency that is missing or not `done` blocks the handoff (fail-closed). */
+  private dependenciesDone(task: OrgTask): boolean {
+    for (const dependencyId of task.dependsOn ?? []) {
+      const dependency = this.org.getTask(dependencyId);
+      if (dependency.status !== 'done') return false;
+    }
+    return true;
   }
 
   private reportFailure(goal: OrgGoal, error: unknown, result: OrgScheduleTickResult): void {
@@ -161,4 +229,8 @@ export class CronOrgScheduler implements OrgScheduler {
     result.failed.push({ goalId: goal.id, error: message });
     this.onError?.(goal.id, error);
   }
+}
+
+function isJsonObject(value: Json): value is { [key: string]: Json } {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

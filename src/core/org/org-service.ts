@@ -61,6 +61,7 @@ import {
 } from './types.js';
 import { fitPositionToSop, sopBySkill, sopByWorkflow } from './sop/index.js';
 import type { PositionSop } from './sop/index.js';
+import { goalTemplateById } from './goal-templates.js';
 import { catalogWithAdvisories } from './experience/catalog-overlay.js';
 import { deriveCandidateDrafts } from './experience/rules.js';
 import { MemoryExperienceStore, type ExperienceStore } from './experience/store.js';
@@ -356,6 +357,7 @@ export class OrgService {
       const existing = this.store.getTaskByIdempotencyKey(input.organizationId, idempotencyKey);
       if (existing) return existing;
     }
+    const dependsOn = this.normalizeTaskDependencies(input.dependsOn, input.organizationId);
     const now = this.clock();
     const id = this.newId('task');
     const task: OrgTask = {
@@ -368,6 +370,7 @@ export class OrgService {
       ...(input.requiredSkill ? { requiredSkill: input.requiredSkill } : {}),
       ...(input.positionId ? { positionId: input.positionId } : {}),
       ...(idempotencyKey ? { idempotencyKey } : {}),
+      ...(dependsOn.length ? { dependsOn } : {}),
       ...(input.workspace
         ? {
             workspaceBaseRepo: input.workspace.baseRepo,
@@ -382,6 +385,38 @@ export class OrgService {
     };
     this.store.putTask(task);
     return this.store.getTask(id)!;
+  }
+
+  /**
+   * F5.3: a dependency must already exist in the same organization. Duplicates
+   * are rejected rather than silently collapsed, so a malformed caller learns
+   * about it at create time. The new task cannot introduce a cycle because
+   * dependencies are fixed at creation and must predate the new task.
+   */
+  private normalizeTaskDependencies(
+    dependsOn: string[] | undefined,
+    organizationId: string,
+  ): string[] {
+    if (dependsOn === undefined) return [];
+    const ids: string[] = [];
+    for (const raw of dependsOn) {
+      const id = requireString(raw, 'dependsOn[]');
+      if (ids.includes(id)) {
+        throw new OrgServiceError(EC.VALIDATION_FAILED, `duplicate dependency: ${id}`);
+      }
+      const dependency = this.store.getTask(id);
+      if (!dependency) {
+        throw new OrgServiceError(EC.VALIDATION_FAILED, `dependency task not found: ${id}`);
+      }
+      if (dependency.organizationId !== organizationId) {
+        throw new OrgServiceError(
+          EC.VALIDATION_FAILED,
+          `dependency task belongs to another organization: ${id}`,
+        );
+      }
+      ids.push(id);
+    }
+    return ids;
   }
 
   getTask(id: string): OrgTask {
@@ -416,6 +451,8 @@ export class OrgService {
     const projectId = input.projectId?.trim() || undefined;
     const schedule = this.normalizeGoalSchedule(input.schedule, period);
     const taskTemplate = this.normalizeGoalTaskTemplate(input.taskTemplate, input.organizationId);
+    const templateRef = this.normalizeGoalTemplateRef(input.templateRef);
+    this.assertGoalTemplateSource(taskTemplate, templateRef);
     const now = this.clock();
     const goal: OrgGoal = {
       format: 'zeus-org-goal',
@@ -428,6 +465,7 @@ export class OrgService {
       ...(projectId ? { projectId } : {}),
       ...(schedule ? { schedule } : {}),
       ...(taskTemplate ? { taskTemplate } : {}),
+      ...(templateRef ? { templateRef } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -483,6 +521,13 @@ export class OrgService {
         : patch.taskTemplate === null
           ? undefined
           : this.normalizeGoalTaskTemplate(patch.taskTemplate, goal.organizationId);
+    const templateRef =
+      patch.templateRef === undefined
+        ? goal.templateRef
+        : patch.templateRef === null
+          ? undefined
+          : this.normalizeGoalTemplateRef(patch.templateRef);
+    this.assertGoalTemplateSource(taskTemplate, templateRef);
     const next: OrgGoal = {
       ...goal,
       title,
@@ -491,11 +536,13 @@ export class OrgService {
       ...(projectId ? { projectId } : {}),
       ...(schedule ? { schedule } : {}),
       ...(taskTemplate ? { taskTemplate } : {}),
+      ...(templateRef ? { templateRef } : {}),
       updatedAt: this.clock(),
     };
     if (!projectId) delete next.projectId;
     if (!schedule) delete next.schedule;
     if (!taskTemplate) delete next.taskTemplate;
+    if (!templateRef) delete next.templateRef;
     this.store.putGoal(next);
     return this.store.getGoal(id)!;
   }
@@ -542,7 +589,7 @@ export class OrgService {
     return { hourUtc: schedule.hourUtc, minuteUtc: schedule.minuteUtc };
   }
 
-  /** F5.2: a minimal one-task template; F5.3 will expand it into a chain. */
+  /** F5.2: a minimal one-task template; F5.3 adds the templateRef branch above. */
   private normalizeGoalTaskTemplate(
     template: OrgGoalTaskTemplate | undefined,
     organizationId: string,
@@ -566,6 +613,30 @@ export class OrgService {
       ...(requiredSkill ? { requiredSkill } : {}),
       ...(positionId ? { positionId } : {}),
     };
+  }
+
+  /** F5.3: resolve a built-in template id; unknown refs fail at create/update. */
+  private normalizeGoalTemplateRef(templateRef: string | undefined): string | undefined {
+    if (templateRef === undefined) return undefined;
+    const id = requireString(templateRef, 'templateRef').trim();
+    if (!id) throw new OrgServiceError(EC.VALIDATION_FAILED, 'templateRef is empty');
+    if (!goalTemplateById(id)) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `unknown templateRef: ${id}`);
+    }
+    return id;
+  }
+
+  /** A goal expands from exactly one source: a single task template or a template ref. */
+  private assertGoalTemplateSource(
+    taskTemplate: OrgGoalTaskTemplate | undefined,
+    templateRef: string | undefined,
+  ): void {
+    if (taskTemplate && templateRef) {
+      throw new OrgServiceError(
+        EC.VALIDATION_FAILED,
+        'taskTemplate and templateRef are mutually exclusive',
+      );
+    }
   }
 
   /** Delete a goal registration outright (hard delete; archive is a status). */
@@ -668,6 +739,18 @@ export class OrgService {
   claim(taskId: string): OrgTask {
     const existing = this.getTask(taskId);
     if (existing.status !== 'pending') return existing;
+    // F5.3: dependency gate precedes position matching, SOP checks and the
+    // workspace side effect. A blocked task stays pending and retryable.
+    const blockedBy = (existing.dependsOn ?? []).filter((dependencyId) => {
+      const dependency = this.store.getTask(dependencyId);
+      return !dependency || dependency.status !== 'done';
+    });
+    if (blockedBy.length) {
+      throw new OrgServiceError(EC.TASK_BLOCKED, `task blocked by dependencies: ${blockedBy.join(', ')}`, {
+        retryable: true,
+        details: { blockedBy },
+      });
+    }
     const position = this.matchPosition(existing);
     if (!position.agentId) {
       throw new OrgServiceError(EC.POSITION_UNBOUND, `position ${position.id} has no agent bound`);
