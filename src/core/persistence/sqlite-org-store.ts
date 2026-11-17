@@ -209,7 +209,7 @@ export class SqliteOrgStore implements OrgStore {
           @transitions_json, @created_at, @updated_at
         )
         ON CONFLICT(id) DO UPDATE SET
-          assigned_agent_id=@assigned_agent_id, run_id=@run_id, status=@status,
+          position_id=@position_id, assigned_agent_id=@assigned_agent_id, run_id=@run_id, status=@status,
           decision_id=@decision_id, result_json=@result_json, error=@error,
           attempts=@attempts, failed_kind=@failed_kind, progress_json=@progress_json,
           next_attempt_at=@next_attempt_at, deadline_at=@deadline_at,
