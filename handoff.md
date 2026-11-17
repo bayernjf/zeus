@@ -1,5 +1,12 @@
 # Handoff
 
+## 2026-11-17 M5 P2 Feature Task 创建/审批边界评估（维持现状，销项）
+
+- ✅ 结论：agent-dev 适配器维持"只读已审批 Feature Task"边界，不扩展动态创建/审批能力；待办销项，无代码改动。
+- 评估事实：agent-dev daemon 已有 `POST /api/projects/:projectId/feature-task`（创建 draft）与 `/feature-task/approve`（审批）路由，Studio 侧创建/审批闭环完整；`createFeatureTask` 在同一 project/revision 下幂等返回旧 task；审批落 `TASK_APPROVAL.md`，声明 acceptance criteria 为治理性人审批边界；zeus 决策流 `DecisionResult.approver` 可作 `approvedBy` 来源（审计链可衔接）。
+- 维持理由：① 审批边界单一留在 agent-dev Studio（人审批），zeus 是调度层，不重复拥有任务定义权；② zeus 代创建会撞 `createFeatureTask` 幂等语义（返回旧 task 导致 featureTaskId 漂移），需先改 agent-dev 语义（跨仓前置）；③ zeus 代审批会出现 Studio / zeus 决策流双审批入口，审批责任不清；④ F1.3 选型（下方 2026-11-17 条目）已明确此边界，无新事实推翻。
+- 重新激活条件：出现第一个真实场景要求 org 流程自动创建/审批 Feature Task，或 Studio 人工路径成为操作瓶颈。届时建议：优先在 agent-dev 侧扩展（如 Studio 模板创建）；zeus 仅在明确需要"org 决策流即审批流"时扩展，且前置修改 `createFeatureTask` 幂等语义。
+
 ## 2026-11-17 M5 P2 调度扫描间隔可配置
 
 - ✅ `src/http/serve.ts`：`CronOrgScheduler` 的 `intervalMs` 不再硬编码 60000，改由 `ZEUS_ORG_SCHEDULER_INTERVAL_MS` 配置；沿用 `parseIntPositive`，非正整数在启动期直接 `RuntimeBootError`，缺省仍为 60000；`org-scheduler assembled` 日志打印实际生效值。
