@@ -189,6 +189,7 @@ export {
   OrgServiceError,
   TaskWorker,
   CronOrgScheduler,
+  resolveOrgSchedulerIntervalMs,
   goalOccurrence,
   goalRunKey,
   GOAL_TEMPLATES,

@@ -53,6 +53,7 @@ import {
   OrgService,
   TaskWorker,
   CronOrgScheduler,
+  resolveOrgSchedulerIntervalMs,
   AgentWorldClient,
   AgentWorldToolInvoker,
   AgentWorldOrgTaskExecutor,
@@ -600,11 +601,15 @@ async function main(): Promise<void> {
 
     // F5.2: scan registered daily/weekly goals on UTC windows. The cadence is
     // an operator setting: a test or a small deployment can scan faster, while
-    // the default stays the one-minute production cadence.
-    const orgSchedulerIntervalMs =
-      process.env.ZEUS_ORG_SCHEDULER_INTERVAL_MS !== undefined
-        ? parseIntPositive('ZEUS_ORG_SCHEDULER_INTERVAL_MS', process.env.ZEUS_ORG_SCHEDULER_INTERVAL_MS)
-        : 60_000;
+    // the default stays the one-minute production cadence. Bounds reject
+    // mistyped values that would either hammer the scan (sub-second) or starve
+    // goal delivery (over a day).
+    let orgSchedulerIntervalMs: number;
+    try {
+      orgSchedulerIntervalMs = resolveOrgSchedulerIntervalMs(process.env.ZEUS_ORG_SCHEDULER_INTERVAL_MS);
+    } catch (error) {
+      throw new RuntimeBootError(error instanceof Error ? error.message : String(error));
+    }
     const service = orgService;
     orgScheduler = new CronOrgScheduler({
       intervalMs: orgSchedulerIntervalMs,

@@ -36,7 +36,29 @@ export interface CronOrgSchedulerDeps {
   clearIntervalFn?: (handle: ReturnType<typeof setInterval>) => void;
 }
 
-const DEFAULT_INTERVAL_MS = 60_000;
+export const ORG_SCHEDULER_MIN_INTERVAL_MS = 1_000;
+export const ORG_SCHEDULER_MAX_INTERVAL_MS = 86_400_000; // 24h
+export const DEFAULT_INTERVAL_MS = 60_000;
+
+/**
+ * Parse the operator-supplied scheduler cadence. Unset falls back to the
+ * production default; sub-second values would hammer the goal scan and
+ * over-a-day values would starve daily goal delivery, so both are refused
+ * with a message naming the variable and the accepted window.
+ */
+export function resolveOrgSchedulerIntervalMs(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_INTERVAL_MS;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`ZEUS_ORG_SCHEDULER_INTERVAL_MS must be a positive integer, got ${JSON.stringify(raw)}`);
+  }
+  if (value < ORG_SCHEDULER_MIN_INTERVAL_MS || value > ORG_SCHEDULER_MAX_INTERVAL_MS) {
+    throw new Error(
+      `ZEUS_ORG_SCHEDULER_INTERVAL_MS must be within ${ORG_SCHEDULER_MIN_INTERVAL_MS}..${ORG_SCHEDULER_MAX_INTERVAL_MS} ms, got ${value}`,
+    );
+  }
+  return value;
+}
 
 export class CronOrgScheduler implements OrgScheduler {
   private readonly org: OrgService;
