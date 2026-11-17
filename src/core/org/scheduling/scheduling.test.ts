@@ -13,7 +13,13 @@ import { SqliteOrgStore } from '../../persistence/sqlite-org-store.js';
 import type { OrgStore } from '../store.js';
 import { MemoryOrgStore } from '../store.js';
 import { OrgService } from '../org-service.js';
-import { CronOrgScheduler } from './cron-scheduler.js';
+import {
+  CronOrgScheduler,
+  DEFAULT_INTERVAL_MS,
+  ORG_SCHEDULER_MAX_INTERVAL_MS,
+  ORG_SCHEDULER_MIN_INTERVAL_MS,
+  resolveOrgSchedulerIntervalMs,
+} from './cron-scheduler.js';
 import { goalOccurrence, goalRunKey } from './scheduler.js';
 
 let reopenSeq = 0;
@@ -38,6 +44,32 @@ function markDone(store: OrgStore, taskId: string): void {
     transitions: [...task.transitions, { status: 'done', at: task.createdAt }],
   });
 }
+
+describe('resolveOrgSchedulerIntervalMs', () => {
+  it('falls back to the production default when the env is unset', () => {
+    expect(resolveOrgSchedulerIntervalMs(undefined)).toBe(DEFAULT_INTERVAL_MS);
+  });
+
+  it('accepts the default cadence', () => {
+    expect(resolveOrgSchedulerIntervalMs('60000')).toBe(60_000);
+  });
+
+  it('accepts the exact lower and upper bounds', () => {
+    expect(resolveOrgSchedulerIntervalMs(String(ORG_SCHEDULER_MIN_INTERVAL_MS))).toBe(ORG_SCHEDULER_MIN_INTERVAL_MS);
+    expect(resolveOrgSchedulerIntervalMs(String(ORG_SCHEDULER_MAX_INTERVAL_MS))).toBe(ORG_SCHEDULER_MAX_INTERVAL_MS);
+  });
+
+  it('rejects non-positive, fractional and non-numeric values', () => {
+    for (const raw of ['0', '-1', '1.5', 'abc', '']) {
+      expect(() => resolveOrgSchedulerIntervalMs(raw)).toThrow(/positive integer/);
+    }
+  });
+
+  it('rejects values outside the sane operating window', () => {
+    expect(() => resolveOrgSchedulerIntervalMs('999')).toThrow(/within 1000\.\.86400000 ms/);
+    expect(() => resolveOrgSchedulerIntervalMs('86400001')).toThrow(/within 1000\.\.86400000 ms/);
+  });
+});
 
 describe('CronOrgScheduler (F5.2)', () => {
   it('fires a daily goal once per UTC window and suppresses the same window', () => {
