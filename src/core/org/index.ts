@@ -47,6 +47,11 @@ export type { ExpandedGoalStep } from './goal-templates.js';
 // T-M7-01 hardened execution contract
 export { runTask, InMemoryActionStore } from './execution/index.js';
 export {
+  TemplateOrgTaskExecutor,
+  RoutingOrgTaskExecutor,
+  RoutingToolInvoker,
+} from './execution/index.js';
+export {
   ExecutorError,
   ToolDeniedError,
   ExecutorTimeoutError,
@@ -89,6 +94,9 @@ export type {
   CredentialRef,
   SecretBackend,
   ResolvedCredential,
+  TemplateOrgTaskExecutorOptions,
+  RoutingOrgTaskExecutorOptions,
+  RoutingToolInvokerOptions,
 } from './execution/index.js';
 
 export {

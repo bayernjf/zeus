@@ -2,6 +2,13 @@
  * Tier0 M7 (T-M7-01) hardened execution contract public surface.
  */
 export { runTask } from './runner.js';
+export { TemplateOrgTaskExecutor } from './template-executor.js';
+export type { TemplateOrgTaskExecutorOptions } from './template-executor.js';
+export { RoutingOrgTaskExecutor, RoutingToolInvoker } from './router.js';
+export type {
+  RoutingOrgTaskExecutorOptions,
+  RoutingToolInvokerOptions,
+} from './router.js';
 export {
   InMemoryActionStore,
   type ActionResultStore,
