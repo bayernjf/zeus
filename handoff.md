@@ -14,9 +14,15 @@
 - 验证：`tsc --noEmit` 0、`eslint .` 0 error（1263 既有 warning）、`vitest run`
   **235 文件 / 2654 用例全绿**（基线 2651 + 3：task+position+department 全带 /
   仅 taskId / 无 dims 时 body 不出现该键）、`npm run build` 绿。
-- 结构事实（勿当端到端验收）：本地 zeus 未装配 executor，真实 org 任务仍跑不到
-  agent-world；本轮的取证是 fake agent-world 抓取 `POST /api/runs` body + agent-world
-  侧真实 hub 上报（见该仓 handoff）。
+- 端到端已实跑（2026-11-17，临时 SQLite 库 + 临时端口，不碰 dev 数据）：
+  `ZEUS_AGENT_WORLD_BASE_URL` 一设即装配 worker，凭证走
+  `ZEUS_SECRET_AGENT_WORLD_LOGIN`（JSON `{"email","password"}`）。注意**不能用 shell 直接 source 该 JSON 环境变量**（花括号会被展开），要写成单引号脚本。建组织/部门/岗位/
+  agent 后派发 `after-sales`（`tpl-customer-service`）任务 `task-mwkbqw2l-1ofb8` →
+  任务 **done**，agent-world 打本地 webhook 收尾；账本落 2 行 `textgen`，
+  `task_id/position_id/department_id` 全齐，`cost_micros` 3405 + 4448 = 7853。
+  这是 F3.2 原文验收的实际取证（此前只能给到契约级单测）。
+- 附带发现：模板图默认 `model: ""`，首次派发若模板含 imageGen 会 422「未配置模型」；
+  `after-sales` 模板只有 textGen，`resolveModelSlots` 会用默认文本模型填上，可直跑。
 
 ## 2026-11-17 M3 F3.2 组织维度 usage 透传（decision 链）
 
