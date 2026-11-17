@@ -30,6 +30,11 @@ export interface Organization {
   scaleTier: ScaleTier;
   /** Optional parent organization (franchise/grouping); cycles rejected. */
   parentId?: string;
+  /**
+   * F1.1: max org tasks this deployment executes concurrently. 1 falls back to
+   * the original serial behaviour; absent means the worker default (2).
+   */
+  concurrencyLimit?: number;
   createdAt: string;
 }
 
@@ -130,6 +135,14 @@ export interface OrgTask {
   nextAttemptAt?: string;
   /** T-M7-01: task-level wall-clock deadline (ISO). */
   deadlineAt?: string;
+  /** F1.2: base repo the task's isolated worktree is created from. */
+  workspaceBaseRepo?: string;
+  /** F1.2: git ref the worktree is checked out at; HEAD when absent. */
+  workspaceBaseRef?: string;
+  /** F1.2: settlement handling for the worktree; defaults to discard. */
+  workspacePolicy?: 'archive' | 'discard';
+  /** F1.2: absolute worktree path, set once acquired during claim. */
+  workspacePath?: string;
   /** Set when no position matches; task remains pending for human handling. */
   unmatchedReason?: string;
   transitions: OrgTaskTransition[];
@@ -142,6 +155,8 @@ export interface CreateOrganizationInput {
   name: string;
   scaleTier?: ScaleTier;
   parentId?: string;
+  /** F1.1: bounded task concurrency; 1 = serial. Defaults to 2. */
+  concurrencyLimit?: number;
 }
 
 export interface CreateDepartmentInput {
@@ -177,6 +192,12 @@ export interface CreateOrgTaskInput {
   /** T-M7-01: idempotency key; a repeat create with the same key returns the
    *  existing task instead of creating a duplicate. */
   idempotencyKey?: string;
+  /** F1.2: run inside a git worktree of baseRepo (allow-listed, fail-closed). */
+  workspace?: {
+    baseRepo: string;
+    baseRef?: string;
+    policy?: 'archive' | 'discard';
+  };
 }
 
 export class OrgServiceError extends DecisionError {

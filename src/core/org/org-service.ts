@@ -23,6 +23,7 @@ import type { Grade } from '../types.js';
 import { parsePolicy } from '../grading/policy-loader.js';
 import { sha256Hex } from '../../util/crypto.js';
 import { MemoryOrgStore, type OrgStore } from './store.js';
+import type { WorkspaceManager } from './workspace/manager.js';
 import {
   DEFAULT_RETRY_POLICY,
   DEFAULT_TASK_DEADLINE_MS,
@@ -42,6 +43,7 @@ import {
   type CreateOrgTaskInput,
   type CreatePositionInput,
   type Department,
+  type Json,
   type Organization,
   type OrgTask,
   type OrgTaskProgress,
@@ -80,6 +82,11 @@ export interface OrgServiceDeps {
    * results survive restart and side effects are not replayed.
    */
   actionStoreFactory?: (taskId: string) => ActionResultStore;
+  /**
+   * F1.2 workspace isolation. When absent, tasks run in place (the pre-F1.2
+   * shape) and a task that requests a workspace fails closed at claim.
+   */
+  workspaces?: WorkspaceManager;
 }
 
 /**
@@ -125,6 +132,8 @@ export class OrgService {
   private readonly maxDecisionHops: number;
   private readonly actionStoreFactory: ((taskId: string) => ActionResultStore) | undefined;
   private readonly toolInvoker: ToolInvoker | undefined;
+  /** F1.2: creates/archives per-task isolated worktrees when configured. */
+  private readonly workspaces: WorkspaceManager | undefined;
   /** Per-task idempotent action results for the default in-memory wiring. */
   private readonly actionStores = new Map<string, ActionResultStore>();
   private counter = 0;
@@ -139,6 +148,7 @@ export class OrgService {
     this.maxDecisionHops = deps.maxDecisionHops ?? DEFAULT_MAX_DECISION_HOPS;
     this.actionStoreFactory = deps.actionStoreFactory;
     this.toolInvoker = deps.toolInvoker;
+    this.workspaces = deps.workspaces;
   }
 
   // ── Organizations ──────────────────────────────────────────────────────
@@ -155,6 +165,12 @@ export class OrgService {
       }
     }
     const now = this.clock();
+    const concurrencyLimit = input.concurrencyLimit;
+    if (concurrencyLimit !== undefined) {
+      if (!Number.isInteger(concurrencyLimit) || concurrencyLimit < 1 || concurrencyLimit > 8) {
+        throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid concurrencyLimit: ${concurrencyLimit}`);
+      }
+    }
     const id = input.id?.trim() || (() => {
       const s = asciiSlug(name);
       return `org:${s || sha256Hex(`org:${name}:${now}`).slice(0, 8)}`;
@@ -169,6 +185,7 @@ export class OrgService {
       name,
       scaleTier,
       ...(input.parentId ? { parentId: input.parentId } : {}),
+      ...(concurrencyLimit !== undefined ? { concurrencyLimit } : {}),
       createdAt: now,
     };
     this.store.putOrganization(org);
@@ -327,6 +344,13 @@ export class OrgService {
       ...(input.requiredSkill ? { requiredSkill: input.requiredSkill } : {}),
       ...(input.positionId ? { positionId: input.positionId } : {}),
       ...(idempotencyKey ? { idempotencyKey } : {}),
+      ...(input.workspace
+        ? {
+            workspaceBaseRepo: input.workspace.baseRepo,
+            ...(input.workspace.baseRef ? { workspaceBaseRef: input.workspace.baseRef } : {}),
+            workspacePolicy: input.workspace.policy ?? 'discard',
+          }
+        : {}),
       status: 'pending',
       transitions: [{ status: 'pending', at: now }],
       createdAt: now,
@@ -446,16 +470,41 @@ export class OrgService {
     // matched position can run it. Failures persist unmatchedReason and leave
     // the task pending (never silently dispatched).
     this.assertSopFits(existing, position);
+    // F1.2: acquire the isolated worktree before leaving pending so a bad or
+    // disallowed repo fails the task instead of running it in place.
+    let workspacePath: string | undefined;
+    if (existing.workspaceBaseRepo) {
+      if (!this.workspaces) {
+        return this.failWorkspace(existing, 'no workspace manager configured');
+      }
+      try {
+        workspacePath = this.workspaces.acquire({
+          organizationId: existing.organizationId,
+          taskId: existing.id,
+          baseRepo: existing.workspaceBaseRepo,
+          ...(existing.workspaceBaseRef ? { baseRef: existing.workspaceBaseRef } : {}),
+        }).path;
+      } catch (error) {
+        return this.failWorkspace(existing, error instanceof Error ? error.message : String(error));
+      }
+    }
     const now = this.clock();
     const dispatched: OrgTask = {
       ...existing,
       positionId: position.id,
       assignedAgentId: position.agentId,
+      ...(workspacePath ? { workspacePath } : {}),
       status: 'dispatched',
       updatedAt: now,
       transitions: [...existing.transitions, { status: 'dispatched', at: now, note: position.id }],
     };
     return this.transition(dispatched, 'running', `agent ${position.agentId}`);
+  }
+
+  /** Fail a pending task because its workspace could not be prepared. */
+  private failWorkspace(task: OrgTask, message: string): OrgTask {
+    const failed = this.transition({ ...task, error: message, failedKind: 'business' }, 'failed', message);
+    return failed;
   }
 
   /**
@@ -488,6 +537,8 @@ export class OrgService {
     const existing = this.getTask(taskId);
     if (existing.status !== 'pending') return { task: existing };
     const claimed = this.claim(taskId);
+    // F1.2: a workspace failure settles the task at claim; nothing to run.
+    if (claimed.status !== 'running') return { task: claimed };
     return this.runClaimed(claimed.id, executor);
   }
 
@@ -545,13 +596,19 @@ export class OrgService {
     const progressPatch = progress.length ? { progress } : {};
 
     if (settlement.outcome === 'complete') {
+      const workspaceArtifact = this.settleWorkspace(task);
+      const result = workspaceArtifact
+        ? typeof settlement.result === 'object' && settlement.result !== null && !Array.isArray(settlement.result)
+          ? { ...(settlement.result as Record<string, Json>), workspaceArtifact }
+          : { workspaceArtifact }
+        : settlement.result;
       const done = this.transition(
         {
           ...task,
           ...progressPatch,
           attempts: settlement.attempts,
           runId: task.runId ?? this.newId('run'),
-          ...(settlement.result !== undefined ? { result: settlement.result } : {}),
+          ...(result !== undefined ? { result } : {}),
         },
         'done',
       );
@@ -578,7 +635,24 @@ export class OrgService {
       'failed',
       settlement.error,
     );
+    this.settleWorkspace(task);
     return { task: this.store.getTask(failed.id)! };
+  }
+
+  /**
+   * F1.2: archive or discard the task worktree at settlement. Cleanup never
+   * flips a settled task — a failure here is recorded but not re-raised.
+   */
+  private settleWorkspace(task: OrgTask): string | undefined {
+    if (!task.workspacePath || !this.workspaces) return undefined;
+    const workspacePath = task.workspacePath;
+    try {
+      if (task.workspacePolicy === 'archive') return this.workspaces.archive(workspacePath);
+      this.workspaces.release(workspacePath);
+    } catch {
+      // leave the directory for manual inspection; task state stays settled
+    }
+    return undefined;
   }
 
   /** Per-task idempotent action store; durable when a factory is wired. */
