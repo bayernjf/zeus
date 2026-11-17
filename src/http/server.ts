@@ -70,14 +70,19 @@ import {
   dispatchTaskRoute,
   getOrganizationRoute,
   getTaskRoute,
+  createGoalRoute,
+  deleteGoalRoute,
+  getGoalRoute,
   listDepartmentsRoute,
   listExperienceRoute,
+  listGoalsRoute,
   listOrganizationsRoute,
   listPositionsRoute,
   listSopsRoute,
   listTasksRoute,
   promoteExperienceRoute,
   resumeTaskRoute,
+  updateGoalRoute,
 } from './org-v1.js';
 import type { RuntimeStats } from '../state/stats.js';
 import type { IntentArchiveLookup, RetentionMode } from '../state/archive.js';
@@ -3373,6 +3378,18 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         promoteExperienceRoute(orgV1, request, reply));
       app.get('/api/v1/org/sops', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         listSopsRoute(orgV1, request, reply));
+      // F5.1 goals: flat intent records (no OKR hierarchy). PATCH is the
+      // update path; there is deliberately no delete (archival is a status).
+      app.post('/api/v1/org/goals', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        createGoalRoute(orgV1, request, reply));
+      app.get('/api/v1/org/goals', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listGoalsRoute(orgV1, request, reply));
+      app.get('/api/v1/org/goals/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        getGoalRoute(orgV1, request, reply));
+      app.patch('/api/v1/org/goals/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        updateGoalRoute(orgV1, request, reply));
+      app.delete('/api/v1/org/goals/:id', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        deleteGoalRoute(orgV1, request, reply));
     }
   }
 

@@ -419,6 +419,76 @@ describe('OrgService threshold configuration (T-M2-04)', () => {
   });
 });
 
+describe('OrgService goals (F5.1)', () => {
+  it('registers a flat goal and lists it per organization', () => {
+    const { service, org } = makeService();
+    const goal = service.createGoal({
+      organizationId: org.id,
+      title: '  每周补货复盘  ',
+      period: 'weekly',
+      projectId: 'prj_40e0',
+    });
+    expect(goal).toMatchObject({
+      format: 'zeus-org-goal',
+      version: 1,
+      organizationId: org.id,
+      title: '每周补货复盘',
+      period: 'weekly',
+      status: 'active',
+      projectId: 'prj_40e0',
+    });
+    expect(goal.id).toMatch(/^goal-/);
+    expect(service.listGoals(org.id)).toHaveLength(1);
+  });
+
+  it('defaults to daily/active and rejects an unknown organization or empty title', () => {
+    const { service, org } = makeService();
+    const goal = service.createGoal({ organizationId: org.id, title: '日报' });
+    expect(goal.period).toBe('daily');
+    expect(goal.status).toBe('active');
+    expect(() =>
+      service.createGoal({ organizationId: 'org:nope', title: 'x' }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.ORGANIZATION_NOT_FOUND }));
+    expect(() =>
+      service.createGoal({ organizationId: org.id, title: '   ' }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    expect(() =>
+      service.listGoals('org:nope'),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.ORGANIZATION_NOT_FOUND }));
+  });
+
+  it('patches status/period/title, clears projectId with null, and keeps unknown ids 404', () => {
+    const { service, org } = makeService();
+    const goal = service.createGoal({
+      organizationId: org.id,
+      title: '周报',
+      projectId: 'prj_a',
+    });
+    const patched = service.updateGoal(goal.id, {
+      title: '周报（改）',
+      period: 'once',
+      status: 'paused',
+      projectId: null,
+    });
+    expect(patched).toMatchObject({ title: '周报（改）', period: 'once', status: 'paused' });
+    expect(patched.projectId).toBeUndefined();
+    expect(patched.updatedAt).toBe('2026-10-22T00:00:00.000Z');
+    expect(() => service.getGoal('goal-nope')).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.GOAL_NOT_FOUND }),
+    );
+    expect(() =>
+      service.updateGoal(goal.id, { period: 'monthly' as never }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    service.deleteGoal(goal.id);
+    expect(() => service.getGoal(goal.id)).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.GOAL_NOT_FOUND }),
+    );
+    expect(() => service.deleteGoal(goal.id)).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.GOAL_NOT_FOUND }),
+    );
+  });
+});
+
 describe('OrgService snapshots', () => {
   it('round-trips organizations/departments/positions through a snapshot', () => {
     const { service, org } = makeService();
@@ -430,6 +500,7 @@ describe('OrgService snapshots', () => {
       requiredSkills: ['ops'],
     });
     service.assignAgent(pos.id, { agentId: 'a1' });
+    const goal = service.createGoal({ organizationId: org.id, title: '每周复盘', period: 'weekly' });
     const snapshot = service.exportSnapshot();
 
     const decisions = makeDecisionService();
@@ -445,5 +516,7 @@ describe('OrgService snapshots', () => {
     const pos2 = restored.listPositions(org.id)[0]!;
     expect(pos2.agentId).toBe('a1');
     expect(pos2.requiredSkills).toEqual(['ops']);
+    expect(restored.listGoals(org.id)).toHaveLength(1);
+    expect(restored.getGoal(goal.id)).toMatchObject({ title: '每周复盘', period: 'weekly', status: 'active' });
   });
 });

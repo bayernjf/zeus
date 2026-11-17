@@ -18,6 +18,7 @@ export const MIGRATION_0004_POSITION_CREDENTIALS = '0004_position_credentials';
 export const MIGRATION_0005_DECISION_WEBHOOKS = '0005_decision_webhooks';
 export const MIGRATION_0006_ORG_FIELD_GAPS = '0006_org_field_gaps';
 export const MIGRATION_0007_ORG_EXPERIENCE = '0007_org_experience';
+export const MIGRATION_0008_ORG_GOALS = '0008_org_goals';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -270,6 +271,25 @@ const INCREMENTAL_MIGRATIONS: Migration[] = [
       );`);
       db.exec(`CREATE INDEX IF NOT EXISTS idx_sop_candidates_org
         ON sop_experience_candidates(organization_id, status);`);
+    },
+  },
+  {
+    // F5.1: goal registration. Deliberately flat: id/org/title/period/status
+    // plus an optional project binding — no OKR hierarchy.
+    id: MIGRATION_0008_ORG_GOALS,
+    up: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS org_goals (
+        id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        period TEXT NOT NULL,
+        status TEXT NOT NULL,
+        project_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_org_goals_org
+        ON org_goals(organization_id, status);`);
     },
   },
 ];

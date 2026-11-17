@@ -10,6 +10,7 @@
  *   POST/GET /api/v1/org/tasks, GET /api/v1/org/tasks/:id
  *   POST     /api/v1/org/tasks/:id/dispatch | /resume
  *   POST     /api/v1/org/policy/thresholds
+ *   POST/GET /api/v1/org/goals, GET/PATCH/DELETE /api/v1/org/goals/:id
  */
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import {
@@ -18,10 +19,12 @@ import {
   TaskWorker,
   type AssignAgentInput,
   type CreateDepartmentInput,
+  type CreateOrgGoalInput,
   type CreateOrganizationInput,
   type CreateOrgTaskInput,
   type CreatePositionInput,
   type OrgTaskExecutor,
+  type UpdateOrgGoalInput,
 } from '../core/index.js';
 import type { ApprovalRequest } from '../core/decision-service/types.js';
 import type { Grade } from '../core/types.js';
@@ -205,6 +208,51 @@ export async function resumeTaskRoute(
     }
     const res = await org.resume(id, executor, approval);
     return reply.send(res);
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+// ── Goals (F5.1) ──────────────────────────────────────────────────────────
+
+export async function createGoalRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    return reply.code(201).send(org.createGoal(request.body as CreateOrgGoalInput));
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+export async function listGoalsRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    const organizationId = (request.query as { organizationId?: string }).organizationId;
+    return reply.send({ goals: org.listGoals(organizationId) });
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+export async function getGoalRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    return reply.send(org.getGoal((request.params as { id: string }).id));
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+export async function updateGoalRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    const id = (request.params as { id: string }).id;
+    return reply.send(org.updateGoal(id, (request.body ?? {}) as UpdateOrgGoalInput));
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+export async function deleteGoalRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    org.deleteGoal((request.params as { id: string }).id);
+    return reply.code(204).send();
   } catch (thrown) {
     return sendOrgError(reply, thrown);
   }

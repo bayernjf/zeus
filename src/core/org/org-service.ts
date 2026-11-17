@@ -39,18 +39,23 @@ import {
   OrgServiceError,
   type AssignAgentInput,
   type CreateDepartmentInput,
+  type CreateOrgGoalInput,
   type CreateOrganizationInput,
   type CreateOrgTaskInput,
   type CreatePositionInput,
   type Department,
   type Json,
   type Organization,
+  type OrgGoal,
+  type OrgGoalPeriod,
+  type OrgGoalStatus,
   type OrgTask,
   type OrgTaskFailureKind,
   type OrgTaskOutcome,
   type OrgTaskProgress,
   type Position,
   type ScaleTier,
+  type UpdateOrgGoalInput,
 } from './types.js';
 import { fitPositionToSop, sopBySkill, sopByWorkflow } from './sop/index.js';
 import type { PositionSop } from './sop/index.js';
@@ -60,6 +65,8 @@ import { MemoryExperienceStore, type ExperienceStore } from './experience/store.
 import type { ExperienceCandidate, PositionSopView } from './experience/types.js';
 
 const VALID_SCALES: ScaleTier[] = ['single', 'small', 'team', 'division', 'enterprise'];
+const VALID_GOAL_PERIODS: OrgGoalPeriod[] = ['daily', 'weekly', 'once'];
+const VALID_GOAL_STATUSES: OrgGoalStatus[] = ['active', 'paused', 'done', 'archived'];
 const VALID_GRADES: Grade[] = ['D0', 'D1', 'D2', 'D3'];
 /** Default cap on distinct decision points a task may traverse. */
 const DEFAULT_MAX_DECISION_HOPS = 10;
@@ -383,6 +390,98 @@ export class OrgService {
 
   listTasks(organizationId?: string): OrgTask[] {
     return this.store.listTasks(organizationId);
+  }
+
+  // ── F5.1 goals ──────────────────────────────────────────────────────────
+
+  /** Register a recurring intent; intentionally flat (no OKR hierarchy). */
+  createGoal(input: CreateOrgGoalInput): OrgGoal {
+    if (!this.store.getOrganization(input.organizationId)) {
+      throw new OrgServiceError(
+        EC.ORGANIZATION_NOT_FOUND,
+        `organization not found: ${input.organizationId}`,
+      );
+    }
+    const title = requireString(input.title, 'title');
+    const period = input.period ?? 'daily';
+    if (!VALID_GOAL_PERIODS.includes(period)) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid period: ${period}`);
+    }
+    const status = input.status ?? 'active';
+    if (!VALID_GOAL_STATUSES.includes(status)) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid status: ${status}`);
+    }
+    const projectId = input.projectId?.trim() || undefined;
+    const now = this.clock();
+    const goal: OrgGoal = {
+      format: 'zeus-org-goal',
+      version: 1,
+      id: this.newId('goal'),
+      organizationId: input.organizationId,
+      title,
+      period,
+      status,
+      ...(projectId ? { projectId } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.store.putGoal(goal);
+    return this.store.getGoal(goal.id)!;
+  }
+
+  listGoals(organizationId?: string): OrgGoal[] {
+    if (organizationId && !this.store.getOrganization(organizationId)) {
+      throw new OrgServiceError(EC.ORGANIZATION_NOT_FOUND, `organization not found: ${organizationId}`);
+    }
+    return this.store.listGoals(organizationId);
+  }
+
+  getGoal(id: string): OrgGoal {
+    const goal = this.store.getGoal(id);
+    if (!goal) throw new OrgServiceError(EC.GOAL_NOT_FOUND, `goal not found: ${id}`);
+    return goal;
+  }
+
+  /**
+   * Patch a goal. `projectId: null` clears the binding; omitted fields stay
+   * untouched. Status changes are free-form (no workflow around finish).
+   */
+  updateGoal(id: string, patch: UpdateOrgGoalInput): OrgGoal {
+    const goal = this.getGoal(id);
+    const title = patch.title !== undefined ? requireString(patch.title, 'title') : goal.title;
+    const period = patch.period ?? goal.period;
+    if (!VALID_GOAL_PERIODS.includes(period)) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid period: ${period}`);
+    }
+    const status = patch.status ?? goal.status;
+    if (!VALID_GOAL_STATUSES.includes(status)) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid status: ${status}`);
+    }
+    const projectId =
+      patch.projectId === undefined
+        ? goal.projectId
+        : patch.projectId === null
+          ? undefined
+          : patch.projectId.trim() || undefined;
+    const next: OrgGoal = {
+      ...goal,
+      title,
+      period,
+      status,
+      ...(projectId ? { projectId } : {}),
+      updatedAt: this.clock(),
+    };
+    if (!projectId) delete next.projectId;
+    this.store.putGoal(next);
+    return this.store.getGoal(id)!;
+  }
+
+  /** Delete a goal registration outright (hard delete; archive is a status). */
+  deleteGoal(id: string): void {
+    if (!this.store.getGoal(id)) {
+      throw new OrgServiceError(EC.GOAL_NOT_FOUND, `goal not found: ${id}`);
+    }
+    this.store.deleteGoal(id);
   }
 
   /** Match the position the task should dispatch to: explicit id, else skill. */

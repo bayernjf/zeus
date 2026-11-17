@@ -356,6 +356,74 @@ describe('org contract: experience review gate (F4.2)', () => {
   });
 });
 
+describe('org contract: goals (F5.1)', () => {
+  it('creates, reads, lists and updates a goal over bearer HTTP', async () => {
+    const org = (await api('/api/v1/org/organizations', { method: 'POST', body: orgBody() })).body;
+
+    const created = await api('/api/v1/org/goals', {
+      method: 'POST',
+      body: { organizationId: org.id, title: '每周补货复盘', period: 'weekly', projectId: 'prj_a' },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      format: 'zeus-org-goal',
+      organizationId: org.id,
+      title: '每周补货复盘',
+      period: 'weekly',
+      status: 'active',
+      projectId: 'prj_a',
+    });
+
+    const list = await api(`/api/v1/org/goals?organizationId=${encodeURIComponent(org.id)}`);
+    expect(list.status).toBe(200);
+    expect(list.body.goals).toHaveLength(1);
+
+    const single = await api(`/api/v1/org/goals/${created.body.id}`);
+    expect(single.status).toBe(200);
+    expect(single.body.id).toBe(created.body.id);
+
+    const patched = await api(`/api/v1/org/goals/${created.body.id}`, {
+      method: 'PATCH',
+      body: { status: 'archived', projectId: null },
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.body.status).toBe('archived');
+    expect(patched.body.projectId).toBeUndefined();
+
+    const deleted = await api(`/api/v1/org/goals/${created.body.id}`, { method: 'DELETE' });
+    expect(deleted.status).toBe(204);
+    expect((await api(`/api/v1/org/goals/${created.body.id}`)).status).toBe(404);
+  });
+
+  it('maps bad input to 400 and unknown ids to 404', async () => {
+    const org = (await api('/api/v1/org/organizations', { method: 'POST', body: orgBody() })).body;
+    const bad = await api('/api/v1/org/goals', {
+      method: 'POST',
+      body: { organizationId: org.id, title: 'x', period: 'monthly' },
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.code).toBe('VALIDATION_FAILED');
+
+    expect((await api('/api/v1/org/goals/goal-nope')).status).toBe(404);
+    const patchMissing = await api('/api/v1/org/goals/goal-nope', { method: 'PATCH', body: { title: 'x' } });
+    expect(patchMissing.status).toBe(404);
+    expect(patchMissing.body.code).toBe('GOAL_NOT_FOUND');
+  });
+
+  it('rejects unauthenticated goal reads and writes', async () => {
+    for (const [method, path] of [
+      ['POST', '/api/v1/org/goals'],
+      ['GET', '/api/v1/org/goals'],
+      ['GET', '/api/v1/org/goals/goal-1'],
+      ['PATCH', '/api/v1/org/goals/goal-1'],
+      ['DELETE', '/api/v1/org/goals/goal-1'],
+    ] as const) {
+      const res = await api(path, { method, token: null, ...(method !== 'GET' ? { body: {} } : {}) });
+      expect(res.status, `${method} ${path}`).toBe(401);
+    }
+  });
+});
+
 describe('GATE-M2: one organization-level closed loop', () => {
   it('建组织 → 岗位 → 绑定 Agent → 派发 → D2 决策点同步审批 → 完成，全程审计可回放', async () => {
     const { org, position } = await bootstrapOrg('退款专员', 'refund', 'D2');

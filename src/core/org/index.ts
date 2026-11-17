@@ -132,6 +132,11 @@ export type {
   CreatePositionInput,
   AssignAgentInput,
   CreateOrgTaskInput,
+  OrgGoal,
+  OrgGoalPeriod,
+  OrgGoalStatus,
+  CreateOrgGoalInput,
+  UpdateOrgGoalInput,
 } from './types.js';
 
 // F1.2 workspace isolation
