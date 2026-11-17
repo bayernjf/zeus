@@ -213,11 +213,19 @@ export {
   AgentDevOrgTaskExecutor,
   AGENT_DEV_TOOLS,
 } from './org/index.js';
+// P0 built-in goal-template executor + payload-routed composite arms.
+export {
+  TemplateOrgTaskExecutor,
+  RoutingOrgTaskExecutor,
+  RoutingToolInvoker,
+  ExecutorError,
+} from './org/index.js';
 export type {
   OrgServiceDeps,
   OrgTaskExecutor,
   OrgTaskExecutorV2,
   ExecutorContext,
+  ToolInvoker,
   TaskSettlement,
   DispatchResult,
   OrgSnapshot,
@@ -246,4 +254,7 @@ export type {
   CreateOrgGoalInput,
   UpdateOrgGoalInput,
   TaskWorkerDeps,
+  TemplateOrgTaskExecutorOptions,
+  RoutingOrgTaskExecutorOptions,
+  RoutingToolInvokerOptions,
 } from './org/index.js';

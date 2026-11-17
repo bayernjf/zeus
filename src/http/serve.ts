@@ -59,8 +59,13 @@ import {
   AgentDevClient,
   AgentDevToolInvoker,
   AgentDevOrgTaskExecutor,
+  TemplateOrgTaskExecutor,
+  RoutingOrgTaskExecutor,
+  RoutingToolInvoker,
+  ExecutorError,
   createLocalSecretBackend,
   type OrgTaskExecutor,
+  type ToolInvoker,
 } from '../core/index.js';
 import { MemoryPolicyStore } from '../core/grading/policy-loader.js';
 import { MeetingStore } from '../meeting/store.js';
@@ -478,70 +483,94 @@ async function main(): Promise<void> {
       ...(db ? { experience: new SqliteExperienceStore(db) } : {}),
     };
 
-    // T-M7-02: the first real channel adapter. Opt-in via ZEUS_AGENT_WORLD_BASE_URL;
-    // unconfigured keeps the honest 503 (no fake execution, no anonymous calls).
+    // T-M7-02 / F1.3 / P0: execution arms are opt-in by base URL. A single
+    // process can now assemble more than one arm; RoutingOrgTaskExecutor
+    // chooses by task payload (templateRef / system=agent-dev / workflow).
+    // ZEUS_ORG_TASK_EXECUTOR still pins a single external arm when set; the
+    // default assembles every configured arm so template tasks and both
+    // channel adapters coexist.
     const agentWorldBaseUrl = process.env.ZEUS_AGENT_WORLD_BASE_URL?.trim();
-    // F1.3: the second execution arm. ZEUS_ORG_TASK_EXECUTOR=agent-dev selects it
-    // explicitly; otherwise agent-world stays the default when both are configured.
     const agentDevBaseUrl = process.env.ZEUS_AGENT_DEV_BASE_URL?.trim();
     const requestedExecutor = process.env.ZEUS_ORG_TASK_EXECUTOR?.trim();
-    const wantsAgentDev =
-      requestedExecutor === 'agent-dev'
-      || (requestedExecutor !== 'agent-world' && !agentWorldBaseUrl && Boolean(agentDevBaseUrl));
-    if (wantsAgentDev) {
-      if (!agentDevBaseUrl) {
-        log.warn('org-service', 'ZEUS_ORG_TASK_EXECUTOR=agent-dev requires ZEUS_AGENT_DEV_BASE_URL; executor not assembled');
-        orgService = new OrgService(orgDeps);
-      } else {
-        const tokenPath = process.env.ZEUS_AGENT_DEV_TOKEN_PATH?.trim()
-          ?? join(homedir(), '.agent-dev', 'daemon-token');
-        let token = '';
-        try {
-          token = readFileSync(tokenPath, 'utf8').trim();
-        } catch (error) {
-          log.warn('org-service', 'agent-dev token file is unreadable; executor not assembled', {
-            tokenPath,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-        if (token) {
-          const client = new AgentDevClient({ baseUrl: agentDevBaseUrl, token });
-          const toolInvoker = new AgentDevToolInvoker({ client });
-          orgExecutor = new AgentDevOrgTaskExecutor();
-          orgDeps.toolInvoker = toolInvoker;
-          orgService = new OrgService(orgDeps);
-          orgTaskWorker = new TaskWorker({
-            org: orgService,
-            executor: orgExecutor,
-            onError: (taskId, error) =>
-              log.error('org-task-worker', 'runClaimed rejected', {
-                taskId,
-                error: error instanceof Error ? error.message : String(error),
-                stack: error instanceof Error ? error.stack : undefined,
-              }),
-          });
-          orgTaskWorker.start();
-          log.info('org-service', 'assembled', {
-            durability,
-            taskExecutor: 'agent-dev',
-            baseUrl: agentDevBaseUrl,
-            actionStore: db ? 'sqlite' : 'memory',
-          });
-        } else {
-          orgService = new OrgService(orgDeps);
-          log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
-        }
-      }
-    } else if (agentWorldBaseUrl) {
+    const useAgentWorld = requestedExecutor !== 'agent-dev' && Boolean(agentWorldBaseUrl);
+    const useAgentDev = requestedExecutor !== 'agent-world' && Boolean(agentDevBaseUrl);
+
+    const armExecutors: {
+      agentWorld?: OrgTaskExecutor;
+      agentDev?: OrgTaskExecutor;
+    } = {};
+    const armInvokers: {
+      agentWorld?: ToolInvoker;
+      agentDev?: ToolInvoker;
+    } = {};
+
+    if (useAgentWorld && agentWorldBaseUrl) {
       const secrets = createLocalSecretBackend();
       const client = new AgentWorldClient({ baseUrl: agentWorldBaseUrl });
-      const toolInvoker = new AgentWorldToolInvoker({ client, secrets });
-      orgExecutor = new AgentWorldOrgTaskExecutor();
-      orgDeps.toolInvoker = toolInvoker;
-      orgService = new OrgService(orgDeps);
+      armExecutors.agentWorld = new AgentWorldOrgTaskExecutor();
+      armInvokers.agentWorld = new AgentWorldToolInvoker({ client, secrets });
+    }
+    if (requestedExecutor === 'agent-dev' && !agentDevBaseUrl) {
+      log.warn('org-service', 'ZEUS_ORG_TASK_EXECUTOR=agent-dev requires ZEUS_AGENT_DEV_BASE_URL; executor not assembled');
+    }
+    if (useAgentDev && agentDevBaseUrl) {
+      const tokenPath = process.env.ZEUS_AGENT_DEV_TOKEN_PATH?.trim()
+        ?? join(homedir(), '.agent-dev', 'daemon-token');
+      let token = '';
+      try {
+        token = readFileSync(tokenPath, 'utf8').trim();
+      } catch (error) {
+        log.warn('org-service', 'agent-dev token file is unreadable; executor not assembled', {
+          tokenPath,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      if (token) {
+        const client = new AgentDevClient({ baseUrl: agentDevBaseUrl, token });
+        armExecutors.agentDev = new AgentDevOrgTaskExecutor();
+        armInvokers.agentDev = new AgentDevToolInvoker({ client });
+      }
+    }
+
+    const hasExternalArm = Boolean(armExecutors.agentWorld || armExecutors.agentDev);
+    let templateExecutor: TemplateOrgTaskExecutor | undefined;
+    const templateOrgRef: { current?: OrgService } = {};
+    if (hasExternalArm) {
+      templateExecutor = new TemplateOrgTaskExecutor({
+        listTasks: organizationId => {
+          if (!templateOrgRef.current) {
+            throw ExecutorError.business('template executor ran before OrgService was assembled');
+          }
+          return templateOrgRef.current.listTasks(organizationId);
+        },
+        getTask: taskId => {
+          if (!templateOrgRef.current) {
+            throw ExecutorError.business('template executor ran before OrgService was assembled');
+          }
+          return templateOrgRef.current.getTask(taskId);
+        },
+        ...(armExecutors.agentWorld ? { contentExecutor: armExecutors.agentWorld } : {}),
+      });
+    }
+
+    const routedToolInvoker: ToolInvoker | undefined =
+      armInvokers.agentWorld && armInvokers.agentDev
+        ? new RoutingToolInvoker({ agentWorld: armInvokers.agentWorld, agentDev: armInvokers.agentDev })
+        : armInvokers.agentDev ?? armInvokers.agentWorld;
+    if (routedToolInvoker) orgDeps.toolInvoker = routedToolInvoker;
+
+    orgService = new OrgService(orgDeps);
+    templateOrgRef.current = orgService;
+
+    if (hasExternalArm && templateExecutor) {
+      const executor = new RoutingOrgTaskExecutor({
+        ...armExecutors,
+        template: templateExecutor,
+      });
+      orgExecutor = executor;
       orgTaskWorker = new TaskWorker({
         org: orgService,
-        executor: orgExecutor,
+        executor,
         // A rejected runClaimed used to disappear without a trace (the task
         // stayed `running` forever). Surface it loudly; the task id is the
         // handle an operator needs.
@@ -555,12 +584,17 @@ async function main(): Promise<void> {
       orgTaskWorker.start();
       log.info('org-service', 'assembled', {
         durability,
-        taskExecutor: 'agent-world',
-        baseUrl: agentWorldBaseUrl,
+        taskExecutor: 'routed',
+        arms: [
+          ...(armExecutors.agentWorld ? ['agent-world'] : []),
+          ...(armExecutors.agentDev ? ['agent-dev'] : []),
+          'template',
+        ],
+        agentWorldBaseUrl: agentWorldBaseUrl ?? null,
+        agentDevBaseUrl: agentDevBaseUrl ?? null,
         actionStore: db ? 'sqlite' : 'memory',
       });
     } else {
-      orgService = new OrgService(orgDeps);
       log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
     }
 
