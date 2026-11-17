@@ -158,6 +158,8 @@ const HTTP_ONLY: Record<string, string> = {
     'Tier0 组织层五缺口方案 M5 / F5.1: goal registration is an operator-defined intent record; the bearer API is its only entry in the self-use slice',
   'PATCH /api/v1/org/goals/:id':
     'Tier0 组织层五缺口方案 M5 / F5.1: goal status/period/project updates are deliberate operator edits; the bearer API is their only face',
+  'DELETE /api/v1/org/goals/:id':
+    'Tier0 组织层五缺口方案 M5 / F5.1: removing a goal registration is a deliberate operator action; archival remains available as a non-destructive status update',
   'POST /api/v1/memory/recall':
     'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent is the operator over the bearer API, namespace is its dataDomain',
   'POST /api/v1/memory/remember':

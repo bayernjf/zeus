@@ -389,6 +389,10 @@ describe('org contract: goals (F5.1)', () => {
     expect(patched.status).toBe(200);
     expect(patched.body.status).toBe('archived');
     expect(patched.body.projectId).toBeUndefined();
+
+    const deleted = await api(`/api/v1/org/goals/${created.body.id}`, { method: 'DELETE' });
+    expect(deleted.status).toBe(204);
+    expect((await api(`/api/v1/org/goals/${created.body.id}`)).status).toBe(404);
   });
 
   it('maps bad input to 400 and unknown ids to 404', async () => {
@@ -412,6 +416,7 @@ describe('org contract: goals (F5.1)', () => {
       ['GET', '/api/v1/org/goals'],
       ['GET', '/api/v1/org/goals/goal-1'],
       ['PATCH', '/api/v1/org/goals/goal-1'],
+      ['DELETE', '/api/v1/org/goals/goal-1'],
     ] as const) {
       const res = await api(path, { method, token: null, ...(method !== 'GET' ? { body: {} } : {}) });
       expect(res.status, `${method} ${path}`).toBe(401);

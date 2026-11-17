@@ -479,6 +479,13 @@ describe('OrgService goals (F5.1)', () => {
     expect(() =>
       service.updateGoal(goal.id, { period: 'monthly' as never }),
     ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    service.deleteGoal(goal.id);
+    expect(() => service.getGoal(goal.id)).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.GOAL_NOT_FOUND }),
+    );
+    expect(() => service.deleteGoal(goal.id)).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.GOAL_NOT_FOUND }),
+    );
   });
 });
 

@@ -474,6 +474,9 @@ describe('SqliteOrgStore goals (F5.1)', () => {
     const restored = new SqliteOrgStore(db);
     restored.importSnapshot({ ...snapshot, organizations: [], departments: [], positions: [], tasks: [] });
     expect(restored.getGoal('goal-1')?.title).toBe('每周复盘（改）');
+    expect(restored.deleteGoal('goal-1')).toBe(true);
+    expect(restored.getGoal('goal-1')).toBeUndefined();
+    expect(restored.deleteGoal('goal-1')).toBe(false);
   });
 });
 
