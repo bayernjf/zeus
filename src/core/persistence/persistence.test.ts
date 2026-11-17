@@ -13,6 +13,7 @@ import {
   MIGRATION_0003_ORG_TASK_ACTIONS,
   MIGRATION_0004_POSITION_CREDENTIALS,
   MIGRATION_0005_DECISION_WEBHOOKS,
+  MIGRATION_0006_ORG_FIELD_GAPS,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
@@ -101,6 +102,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0003_ORG_TASK_ACTIONS,
       MIGRATION_0004_POSITION_CREDENTIALS,
       MIGRATION_0005_DECISION_WEBHOOKS,
+      MIGRATION_0006_ORG_FIELD_GAPS,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
@@ -109,6 +111,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0003_ORG_TASK_ACTIONS,
       MIGRATION_0004_POSITION_CREDENTIALS,
       MIGRATION_0005_DECISION_WEBHOOKS,
+      MIGRATION_0006_ORG_FIELD_GAPS,
     ]);
     db.close();
   });
@@ -150,6 +153,73 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     const legacy = store.getTask('task-legacy');
     expect(legacy?.status).toBe('pending');
     expect(legacy?.attempts).toBeUndefined();
+    db.close();
+  });
+
+  it('upgrades a legacy database with the org field gaps (0006)', async () => {
+    const file = await freshFile();
+    const db = openSqlite(file);
+    // 0001-era schema plus 0002 columns, but no concurrency_limit / workspace /
+    // outcome: exactly what the F1.1/F1.2/F4.1 code silently dropped before.
+    db.exec(`
+      CREATE TABLE schema_migrations (id TEXT PRIMARY KEY, applied_at TEXT NOT NULL);
+      CREATE TABLE organizations (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, scale_tier TEXT NOT NULL,
+        parent_id TEXT, created_at TEXT NOT NULL);
+      CREATE TABLE org_tasks (
+        id TEXT PRIMARY KEY, organization_id TEXT NOT NULL, title TEXT NOT NULL,
+        payload_json TEXT NOT NULL, required_skill TEXT, position_id TEXT,
+        assigned_agent_id TEXT, run_id TEXT, status TEXT NOT NULL, decision_id TEXT,
+        result_json TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+        failed_kind TEXT, progress_json TEXT, next_attempt_at TEXT, deadline_at TEXT,
+        idempotency_key TEXT, unmatched_reason TEXT,
+        transitions_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+      INSERT INTO schema_migrations (id, applied_at) VALUES
+        ('${MIGRATION_ID}', '${TS}'),
+        ('0002_org_task_execution', '${TS}'),
+        ('0003_org_task_actions', '${TS}'),
+        ('0004_position_credentials', '${TS}'),
+        ('0005_decision_webhooks', '${TS}');
+      INSERT INTO organizations (id, name, scale_tier, created_at)
+        VALUES ('org-1', '自营', 'small', '${TS}');
+    `);
+    expect(migrate(db)).toBe(true);
+    expect(appliedMigrations(db)).toContain(MIGRATION_0006_ORG_FIELD_GAPS);
+    const orgCols = (db.prepare('PRAGMA table_info(organizations)').all() as { name: string }[])
+      .map((c) => c.name);
+    expect(orgCols).toContain('concurrency_limit');
+    const taskCols = (db.prepare('PRAGMA table_info(org_tasks)').all() as { name: string }[])
+      .map((c) => c.name);
+    expect(taskCols).toContain('workspace_path');
+    expect(taskCols).toContain('outcome_json');
+    expect(new SqliteOrgStore(db).getOrganization('org-1')?.concurrencyLimit).toBeUndefined();
+    db.close();
+  });
+
+  it('persists and reloads the org/task observability fields (0006)', async () => {
+    const file = await freshFile();
+    const db = openSqlite(file);
+    migrate(db);
+    const store = new SqliteOrgStore(db);
+    store.putOrganization({ ...sampleOrg(), concurrencyLimit: 5 });
+    const task: OrgTask = {
+      ...sampleTask(),
+      id: 'task-obs',
+      workspacePath: '/tmp/ws/org-1/task-obs',
+      outcome: {
+        status: 'failed',
+        attempts: 2,
+        failedKind: 'timeout',
+        decisions: [{ id: 'dec-1', status: 'awaiting_approval' }],
+        durationMs: 4200,
+        settledAt: '2026-10-23T02:00:00.000Z',
+      },
+    };
+    store.putTask(task);
+    expect(store.getOrganization('org-1')?.concurrencyLimit).toBe(5);
+    const reloaded = store.getTask('task-obs');
+    expect(reloaded?.workspacePath).toBe('/tmp/ws/org-1/task-obs');
+    expect(reloaded?.outcome).toEqual(task.outcome);
     db.close();
   });
 
