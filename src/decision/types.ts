@@ -16,6 +16,17 @@ export type DecisionBackend = {
   score(request: ScoreRequest): Promise<ScoreResult>;
 };
 
+/**
+ * Tier0 org M3 F3.2: optional org attribution forwarded with a decision call so
+ * the model-hub usage ledger can attribute spend to a position / department /
+ * task. Absent outside an org task; every legacy caller stays unattributed.
+ */
+export type UsageDimensions = {
+  positionId?: string;
+  departmentId?: string;
+  taskId?: string;
+};
+
 export type QuestionBase = {
   /** Minimal state needed for the judgement only (see design §8). */
   state: Record<string, unknown> | string;
@@ -33,6 +44,11 @@ export type QuestionBase = {
   dataDomain: DataDomainType;
   /** Per-call timeout; defaults: decision model 1500ms / LLM 15000ms. */
   maxWaitMs?: number;
+  /**
+   * M3 F3.2: org ledger attribution. Backends that report usage to model-hub
+   * forward it; pure decision models ignore it.
+   */
+  usageDimensions?: UsageDimensions;
 };
 
 export type NoulRequest = QuestionBase & { question: string };

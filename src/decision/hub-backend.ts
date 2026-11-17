@@ -11,6 +11,7 @@ import {
   DecisionBackendFailure,
   type BackendOptions,
   type DecisionBackend,
+  type UsageDimensions,
 } from './types.js';
 import { guardedFetch } from '../util/outbound-dns.js';
 
@@ -107,7 +108,20 @@ export async function createHubDecisionBackend(
   // Fire-and-forget usage report after each successful decision call, mirroring
   // model-kit's own chat() reporting for transports that bypass it. postUsage
   // swallows transport failures, so the decision path is never affected.
-  function reportUsage(resolved: ResolvedModel, usage: LlmUsageReport): void {
+  function reportUsage(
+    resolved: ResolvedModel,
+    usage: LlmUsageReport,
+    dimensions?: UsageDimensions
+  ): void {
+    // M3 F3.2: camelCase decision-side dims → the hub's snake_case payload.
+    // Absent dims stay absent (not null) so old callers report byte-identically.
+    const usageDimensions = dimensions
+      ? {
+          ...(dimensions.positionId ? { position_id: dimensions.positionId } : {}),
+          ...(dimensions.departmentId ? { department_id: dimensions.departmentId } : {}),
+          ...(dimensions.taskId ? { task_id: dimensions.taskId } : {}),
+        }
+      : undefined;
     void reportUsageInBackground(options.hubUrl, options.token, usageFetch, {
       project: HUB_PROJECT_SLUG,
       // D-7: the feature field distinguishes the primitive behind the call.
@@ -119,6 +133,7 @@ export async function createHubDecisionBackend(
       reasoningTokens: usage.reasoningTokens,
       cacheReadTokens: usage.cacheReadTokens,
       httpStatus: 200,
+      ...(usageDimensions && Object.keys(usageDimensions).length > 0 ? { usageDimensions } : {}),
     });
   }
 
@@ -164,7 +179,7 @@ export async function createHubDecisionBackend(
       ...(resolved.pricing?.output_usd_per_million !== undefined
         ? { outputUsdPerMillion: resolved.pricing.output_usd_per_million }
         : {}),
-      onUsage: (usage) => reportUsage(resolved, usage),
+      onUsage: (usage, context) => reportUsage(resolved, usage, context?.usageDimensions),
     });
   }
 

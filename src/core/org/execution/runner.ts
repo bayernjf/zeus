@@ -182,7 +182,19 @@ export async function runTask(params: RunTaskParams): Promise<TaskSettlement> {
         }
         decisionHops += 1;
         const domain = req.domain ?? `org:${task.organizationId}`;
-        const decision = await params.decisions.createDecision({ ...req, domain });
+        // M3 F3.2: stamp the org axes from the running task so any model call
+        // made downstream of this decision carries position/department/task.
+        // Caller-provided dims win; the task id is always this task.
+        const usageDimensions = req.usageDimensions ?? {
+          ...(task.positionId ? { positionId: task.positionId } : {}),
+          ...(position.departmentId ? { departmentId: position.departmentId } : {}),
+          taskId: task.id,
+        };
+        const decision = await params.decisions.createDecision({
+          ...req,
+          domain,
+          usageDimensions,
+        });
         assertLive();
         if (decision.status === 'decided') {
           resolvedDecisions.set(key, decision);

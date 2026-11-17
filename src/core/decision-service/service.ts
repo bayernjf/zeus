@@ -67,7 +67,22 @@ export function validateDecisionRequest(value: unknown): string[] {
   }
   const body = value as Record<string, unknown>;
   for (const key of Object.keys(body)) {
-    if (!['intent', 'domain', 'amount', 'riskTags', 'impact', 'reversibility', 'proposal', 'idempotencyKey', 'requester'].includes(key)) {
+    if (
+      ![
+        'intent',
+        'domain',
+        'amount',
+        'riskTags',
+        'impact',
+        'reversibility',
+        'proposal',
+        'idempotencyKey',
+        'requester',
+        // M3 F3.2: org ledger attribution rides along with the request; it does
+        // not influence grading, so it is accepted and passed through, not stored.
+        'usageDimensions',
+      ].includes(key)
+    ) {
       out.push(`request.${key}: unknown field`);
     }
   }
@@ -97,6 +112,26 @@ export function validateDecisionRequest(value: unknown): string[] {
   }
   if (body.idempotencyKey !== undefined && (typeof body.idempotencyKey !== 'string' || body.idempotencyKey === '')) {
     out.push('request.idempotencyKey: expected a non-empty string');
+  }
+  // M3 F3.2: optional org attribution; reject malformed shapes early so a bad
+  // caller cannot smuggle junk through to the usage ledger.
+  if (body.usageDimensions !== undefined) {
+    const dims = body.usageDimensions;
+    if (typeof dims !== 'object' || dims === null || Array.isArray(dims)) {
+      out.push('request.usageDimensions: expected an object');
+    } else {
+      const record = dims as Record<string, unknown>;
+      for (const dimKey of Object.keys(record)) {
+        if (!['positionId', 'departmentId', 'taskId'].includes(dimKey)) {
+          out.push(`request.usageDimensions.${dimKey}: unknown field`);
+        } else if (
+          record[dimKey] !== undefined &&
+          (typeof record[dimKey] !== 'string' || record[dimKey] === '')
+        ) {
+          out.push(`request.usageDimensions.${dimKey}: expected a non-empty string`);
+        }
+      }
+    }
   }
   return out;
 }
