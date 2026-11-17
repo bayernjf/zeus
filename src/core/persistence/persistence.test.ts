@@ -16,6 +16,7 @@ import {
   MIGRATION_0005_DECISION_WEBHOOKS,
   MIGRATION_0006_ORG_FIELD_GAPS,
   MIGRATION_0007_ORG_EXPERIENCE,
+  MIGRATION_0008_ORG_GOALS,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
@@ -106,6 +107,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0005_DECISION_WEBHOOKS,
       MIGRATION_0006_ORG_FIELD_GAPS,
       MIGRATION_0007_ORG_EXPERIENCE,
+      MIGRATION_0008_ORG_GOALS,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
@@ -116,6 +118,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0005_DECISION_WEBHOOKS,
       MIGRATION_0006_ORG_FIELD_GAPS,
       MIGRATION_0007_ORG_EXPERIENCE,
+      MIGRATION_0008_ORG_GOALS,
     ]);
     db.close();
   });
@@ -419,6 +422,60 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
   });
 });
 
+
+describe('SqliteOrgStore goals (F5.1)', () => {
+  it('runs migration 0008 and round-trips a goal with update semantics', () => {
+    const db = openSqlite(':memory:');
+    migrate(db);
+    expect(appliedMigrations(db)).toContain(MIGRATION_0008_ORG_GOALS);
+
+    const store = new SqliteOrgStore(db);
+    store.putOrganization(sampleOrg());
+    const goal = {
+      format: 'zeus-org-goal' as const,
+      version: 1 as const,
+      id: 'goal-1',
+      organizationId: 'org-1',
+      title: '每周复盘',
+      period: 'weekly' as const,
+      status: 'active' as const,
+      projectId: 'prj_a',
+      createdAt: TS,
+      updatedAt: TS,
+    };
+    store.putGoal(goal);
+    expect(store.getGoal('goal-1')).toMatchObject({
+      id: 'goal-1',
+      title: '每周复盘',
+      period: 'weekly',
+      status: 'active',
+      projectId: 'prj_a',
+    });
+
+    // Upsert keeps createdAt, updates mutable fields, and a missing projectId
+    // round-trips as cleared (SQL NULL, not the string "undefined").
+    const { projectId: _cleared, ...goalWithoutProject } = goal;
+    store.putGoal({
+      ...goalWithoutProject,
+      title: '每周复盘（改）',
+      status: 'paused',
+      updatedAt: '2026-11-17T01:00:00.000Z',
+    });
+    const reread = store.getGoal('goal-1')!;
+    expect(reread.createdAt).toBe(TS);
+    expect(reread).toMatchObject({ title: '每周复盘（改）', status: 'paused' });
+    expect(reread.projectId).toBeUndefined();
+    expect(store.listGoals('org-1')).toHaveLength(1);
+    expect(store.listGoals('org-2')).toHaveLength(0);
+
+    // Snapshot carries goals so a restored process keeps its registrations.
+    const snapshot = store.exportSnapshot();
+    expect(snapshot.goals).toHaveLength(1);
+    const restored = new SqliteOrgStore(db);
+    restored.importSnapshot({ ...snapshot, organizations: [], departments: [], positions: [], tasks: [] });
+    expect(restored.getGoal('goal-1')?.title).toBe('每周复盘（改）');
+  });
+});
 
 describe('SqliteExperienceStore (F4.2)', () => {
   it('round-trips a candidate and enforces the (task_id, rule_id) dedupe key', () => {
