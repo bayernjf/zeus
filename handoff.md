@@ -29,6 +29,8 @@
   说明：每日连续两个“同一 goal”的窗口由单测控制时钟覆盖；真进程覆盖的是两个相邻窗口、同日重复 tick 与重启同库。
 - 门禁：typecheck / lint **1298 warnings / 0 errors** / 全量 **237 文件 2678 用例** / build / smoke:core **50/50** /
   doc-consistency **18/18**（serve.ts 行号漂移已重钉 715→746、519→549）。
+- CI/PR：dev 推送 `f69eec3` 后 run `44055984684`（push）与 `44056033908`（PR #211）**8 job 全绿**；
+  PR #211 `dev → main` 已开、`mergeable=MERGEABLE` / `mergeStateStatus=CLEAN`，**尚未合并**（按仓库规则等待明确授权）。
 - 明确边界（未做）：只支持 daily/weekly + UTC，不支持 cron 表达式/本地时区/DST；只投最近窗口，错过的多个历史窗口不补；
   单进程内存扫描，无跨进程锁/leader 选举；无手动 tick 或调度状态 HTTP 端点；重启后已存在的 pending 任务不会自动 claim；
   goal 无 `lastRun` 字段，幂等证据在任务 `idempotencyKey`；F5.3 模板分解未开工。
