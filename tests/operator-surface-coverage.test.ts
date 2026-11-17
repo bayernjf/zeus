@@ -152,6 +152,8 @@ const HTTP_ONLY: Record<string, string> = {
     'Tier0 T-M8 / Active work 276: remove a decision-event push subscription; same bearer API face as the register route, no operator deck planned',
   'POST /api/v1/org/policy/thresholds':
     'Tier0 PRD §11 / T-M2-04: per-organization D0-D3 threshold configuration; low-frequency high-blast-radius config action',
+  'POST /api/v1/org/experience/:id/promote':
+    'Tier0 组织层五缺口方案 M4 / F4.2: the human review gate itself - promoting a rule-derived candidate into a catalog advisory is a deliberate human action; the bearer API is its only face in the self-use slice',
   'POST /api/v1/memory/recall':
     'MemoryPort v1 §7 (ruling D-6): cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the calling agent is the operator over the bearer API, namespace is its dataDomain',
   'POST /api/v1/memory/remember':
@@ -277,6 +279,10 @@ const READ_PROTOCOL_FACES = new Set([
   'GET /api/v1/org/positions',
   'GET /api/v1/org/tasks',
   'GET /api/v1/org/tasks/:id',
+  // F4.2 experience: machine reads for the ops console / calling org system;
+  // the review gate is the bearer POST registered HTTP_ONLY above.
+  'GET /api/v1/org/experience',
+  'GET /api/v1/org/sops',
   // Memory API v1 (MemoryPort v1 §7, ruling D-6): machine-to-machine reads
   // for the cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the
   // calling agent is the reader, namespace is its dataDomain. No operator deck.
