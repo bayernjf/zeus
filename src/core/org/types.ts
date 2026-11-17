@@ -43,6 +43,25 @@ export type OrgGoalPeriod = 'daily' | 'weekly' | 'once';
 
 export type OrgGoalStatus = 'active' | 'paused' | 'done' | 'archived';
 
+/**
+ * F5.2 trigger: UTC wall-clock window for a daily/weekly goal. The goal's
+ * `period` selects the cadence; `weekdayUtc` is required only for weekly.
+ */
+export interface OrgGoalSchedule {
+  hourUtc: number;
+  minuteUtc: number;
+  /** 0=Sunday .. 6=Saturday; required for weekly and absent for daily. */
+  weekdayUtc?: number;
+}
+
+/** F5.2 minimal one-task template; F5.3 expands this into dependency chains. */
+export interface OrgGoalTaskTemplate {
+  title?: string;
+  payload?: Json;
+  requiredSkill?: string;
+  positionId?: string;
+}
+
 export interface OrgGoal {
   format: 'zeus-org-goal';
   version: 1;
@@ -51,8 +70,12 @@ export interface OrgGoal {
   title: string;
   period: OrgGoalPeriod;
   status: OrgGoalStatus;
-  /** Optional project binding (hub project id); F5.2 consumes it later. */
+  /** Optional project binding (hub project id); scheduler carries it into tasks. */
   projectId?: string;
+  /** Absent means registered but not scheduled (manual goals). */
+  schedule?: OrgGoalSchedule;
+  /** Absent means the scheduler uses the goal title + a default payload. */
+  taskTemplate?: OrgGoalTaskTemplate;
   createdAt: string;
   updatedAt: string;
 }
@@ -245,6 +268,8 @@ export interface CreateOrgGoalInput {
   period?: OrgGoalPeriod;
   projectId?: string;
   status?: OrgGoalStatus;
+  schedule?: OrgGoalSchedule;
+  taskTemplate?: OrgGoalTaskTemplate;
 }
 
 /** F5.1: patch a goal; `projectId: null` clears the binding. */
@@ -253,6 +278,10 @@ export interface UpdateOrgGoalInput {
   period?: OrgGoalPeriod;
   projectId?: string | null;
   status?: OrgGoalStatus;
+  /** `null` clears the trigger; omitted leaves it untouched. */
+  schedule?: OrgGoalSchedule | null;
+  /** `null` clears the template; omitted leaves it untouched. */
+  taskTemplate?: OrgGoalTaskTemplate | null;
 }
 
 export class OrgServiceError extends DecisionError {

@@ -17,6 +17,7 @@ import {
   MIGRATION_0006_ORG_FIELD_GAPS,
   MIGRATION_0007_ORG_EXPERIENCE,
   MIGRATION_0008_ORG_GOALS,
+  MIGRATION_0009_ORG_GOAL_SCHEDULES,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
@@ -108,6 +109,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0006_ORG_FIELD_GAPS,
       MIGRATION_0007_ORG_EXPERIENCE,
       MIGRATION_0008_ORG_GOALS,
+      MIGRATION_0009_ORG_GOAL_SCHEDULES,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
@@ -119,6 +121,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0006_ORG_FIELD_GAPS,
       MIGRATION_0007_ORG_EXPERIENCE,
       MIGRATION_0008_ORG_GOALS,
+      MIGRATION_0009_ORG_GOAL_SCHEDULES,
     ]);
     db.close();
   });
@@ -423,11 +426,12 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
 });
 
 
-describe('SqliteOrgStore goals (F5.1)', () => {
-  it('runs migration 0008 and round-trips a goal with update semantics', () => {
+describe('SqliteOrgStore goals (F5.1/F5.2)', () => {
+  it('runs migrations 0008-0009 and round-trips a scheduled goal', () => {
     const db = openSqlite(':memory:');
     migrate(db);
     expect(appliedMigrations(db)).toContain(MIGRATION_0008_ORG_GOALS);
+    expect(appliedMigrations(db)).toContain(MIGRATION_0009_ORG_GOAL_SCHEDULES);
 
     const store = new SqliteOrgStore(db);
     store.putOrganization(sampleOrg());
@@ -440,6 +444,8 @@ describe('SqliteOrgStore goals (F5.1)', () => {
       period: 'weekly' as const,
       status: 'active' as const,
       projectId: 'prj_a',
+      schedule: { hourUtc: 9, minuteUtc: 30, weekdayUtc: 1 },
+      taskTemplate: { title: '采集周报数据', payload: { kind: 'weekly-report' }, requiredSkill: 'reporting' },
       createdAt: TS,
       updatedAt: TS,
     };
@@ -450,6 +456,8 @@ describe('SqliteOrgStore goals (F5.1)', () => {
       period: 'weekly',
       status: 'active',
       projectId: 'prj_a',
+      schedule: { hourUtc: 9, minuteUtc: 30, weekdayUtc: 1 },
+      taskTemplate: { title: '采集周报数据', payload: { kind: 'weekly-report' }, requiredSkill: 'reporting' },
     });
 
     // Upsert keeps createdAt, updates mutable fields, and a missing projectId

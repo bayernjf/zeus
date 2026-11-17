@@ -48,7 +48,9 @@ import {
   type Organization,
   type OrgGoal,
   type OrgGoalPeriod,
+  type OrgGoalSchedule,
   type OrgGoalStatus,
+  type OrgGoalTaskTemplate,
   type OrgTask,
   type OrgTaskFailureKind,
   type OrgTaskOutcome,
@@ -412,6 +414,8 @@ export class OrgService {
       throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid status: ${status}`);
     }
     const projectId = input.projectId?.trim() || undefined;
+    const schedule = this.normalizeGoalSchedule(input.schedule, period);
+    const taskTemplate = this.normalizeGoalTaskTemplate(input.taskTemplate, input.organizationId);
     const now = this.clock();
     const goal: OrgGoal = {
       format: 'zeus-org-goal',
@@ -422,6 +426,8 @@ export class OrgService {
       period,
       status,
       ...(projectId ? { projectId } : {}),
+      ...(schedule ? { schedule } : {}),
+      ...(taskTemplate ? { taskTemplate } : {}),
       createdAt: now,
       updatedAt: now,
     };
@@ -463,17 +469,103 @@ export class OrgService {
         : patch.projectId === null
           ? undefined
           : patch.projectId.trim() || undefined;
+    // Re-validate the retained schedule against the (possibly changed) period:
+    // weekly -> daily must drop weekdayUtc, daily -> weekly must add it, and
+    // switching to once must drop the trigger entirely.
+    const scheduleSource = patch.schedule === undefined ? goal.schedule : patch.schedule;
+    const schedule =
+      scheduleSource === undefined || scheduleSource === null
+        ? undefined
+        : this.normalizeGoalSchedule(scheduleSource, period);
+    const taskTemplate =
+      patch.taskTemplate === undefined
+        ? goal.taskTemplate
+        : patch.taskTemplate === null
+          ? undefined
+          : this.normalizeGoalTaskTemplate(patch.taskTemplate, goal.organizationId);
     const next: OrgGoal = {
       ...goal,
       title,
       period,
       status,
       ...(projectId ? { projectId } : {}),
+      ...(schedule ? { schedule } : {}),
+      ...(taskTemplate ? { taskTemplate } : {}),
       updatedAt: this.clock(),
     };
     if (!projectId) delete next.projectId;
+    if (!schedule) delete next.schedule;
+    if (!taskTemplate) delete next.taskTemplate;
     this.store.putGoal(next);
     return this.store.getGoal(id)!;
+  }
+
+  /**
+   * F5.2: validate the UTC trigger. Daily uses hour/minute only; weekly also
+   * requires weekdayUtc (0=Sunday). A one-off goal cannot carry a recurrence.
+   */
+  private normalizeGoalSchedule(
+    schedule: OrgGoalSchedule | undefined,
+    period: OrgGoalPeriod,
+  ): OrgGoalSchedule | undefined {
+    if (schedule === undefined) return undefined;
+    if (period === 'once') {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, 'schedule requires period daily or weekly');
+    }
+    if (!Number.isInteger(schedule.hourUtc) || schedule.hourUtc < 0 || schedule.hourUtc > 23) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid schedule.hourUtc: ${schedule.hourUtc}`);
+    }
+    if (!Number.isInteger(schedule.minuteUtc) || schedule.minuteUtc < 0 || schedule.minuteUtc > 59) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `invalid schedule.minuteUtc: ${schedule.minuteUtc}`);
+    }
+    if (period === 'weekly') {
+      if (
+        schedule.weekdayUtc === undefined ||
+        !Number.isInteger(schedule.weekdayUtc) ||
+        schedule.weekdayUtc < 0 ||
+        schedule.weekdayUtc > 6
+      ) {
+        throw new OrgServiceError(
+          EC.VALIDATION_FAILED,
+          'weekly schedule requires weekdayUtc 0-6 (0=Sunday)',
+        );
+      }
+      return {
+        hourUtc: schedule.hourUtc,
+        minuteUtc: schedule.minuteUtc,
+        weekdayUtc: schedule.weekdayUtc,
+      };
+    }
+    if (schedule.weekdayUtc !== undefined) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, 'daily schedule must not set weekdayUtc');
+    }
+    return { hourUtc: schedule.hourUtc, minuteUtc: schedule.minuteUtc };
+  }
+
+  /** F5.2: a minimal one-task template; F5.3 will expand it into a chain. */
+  private normalizeGoalTaskTemplate(
+    template: OrgGoalTaskTemplate | undefined,
+    organizationId: string,
+  ): OrgGoalTaskTemplate | undefined {
+    if (template === undefined) return undefined;
+    const title = template.title !== undefined ? requireString(template.title, 'taskTemplate.title') : undefined;
+    const requiredSkill = template.requiredSkill?.trim() || undefined;
+    const positionId = template.positionId?.trim() || undefined;
+    if (positionId) {
+      const position = this.getPosition(positionId);
+      if (position.organizationId !== organizationId) {
+        throw new OrgServiceError(
+          EC.VALIDATION_FAILED,
+          `taskTemplate.positionId belongs to another organization: ${positionId}`,
+        );
+      }
+    }
+    return {
+      ...(title ? { title } : {}),
+      ...(template.payload !== undefined ? { payload: template.payload } : {}),
+      ...(requiredSkill ? { requiredSkill } : {}),
+      ...(positionId ? { positionId } : {}),
+    };
   }
 
   /** Delete a goal registration outright (hard delete; archive is a status). */

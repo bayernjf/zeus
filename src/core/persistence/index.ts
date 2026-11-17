@@ -8,6 +8,7 @@ export {
   MIGRATION_0003_ORG_TASK_ACTIONS,
   MIGRATION_0007_ORG_EXPERIENCE,
   MIGRATION_0008_ORG_GOALS,
+  MIGRATION_0009_ORG_GOAL_SCHEDULES,
 } from './schema.js';
 export { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 export { SqliteOrgStore } from './sqlite-org-store.js';
