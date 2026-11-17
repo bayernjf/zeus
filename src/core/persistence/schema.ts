@@ -17,6 +17,7 @@ export const MIGRATION_0003_ORG_TASK_ACTIONS = '0003_org_task_actions';
 export const MIGRATION_0004_POSITION_CREDENTIALS = '0004_position_credentials';
 export const MIGRATION_0005_DECISION_WEBHOOKS = '0005_decision_webhooks';
 export const MIGRATION_0006_ORG_FIELD_GAPS = '0006_org_field_gaps';
+export const MIGRATION_0007_ORG_EXPERIENCE = '0007_org_experience';
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -245,6 +246,30 @@ const INCREMENTAL_MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, 'organizations', 'concurrency_limit', 'INTEGER');
       addColumnIfMissing(db, 'org_tasks', 'workspace_path', 'TEXT');
       addColumnIfMissing(db, 'org_tasks', 'outcome_json', 'TEXT');
+    },
+  },
+  {
+    // F4.2: rule-derived SOP experience candidates. Inert until a human
+    // promotes one; the unique key keeps a replayed settlement from
+    // duplicating candidates for the same rule.
+    id: MIGRATION_0007_ORG_EXPERIENCE,
+    up: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS sop_experience_candidates (
+        id TEXT PRIMARY KEY,
+        organization_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        skill_id TEXT,
+        rule_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        promoted_at TEXT,
+        UNIQUE (task_id, rule_id)
+      );`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_sop_candidates_org
+        ON sop_experience_candidates(organization_id, status);`);
     },
   },
 ];

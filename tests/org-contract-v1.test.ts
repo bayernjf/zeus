@@ -332,6 +332,30 @@ describe('org contract: task dispatch (T-M2-03)', () => {
   });
 });
 
+describe('org contract: experience review gate (F4.2)', () => {
+  it('serves the candidate list and catalog view, with pending entries invisible', async () => {
+    const org = (await api('/api/v1/org/organizations', { method: 'POST', body: orgBody() })).body;
+
+    const candidates = await api(`/api/v1/org/experience?organizationId=${encodeURIComponent(org.id)}`);
+    expect(candidates.status).toBe(200);
+    expect(candidates.body.candidates).toEqual([]);
+
+    const sops = await api(`/api/v1/org/sops?organizationId=${encodeURIComponent(org.id)}&skillId=content-production`);
+    expect(sops.status).toBe(200);
+    expect(sops.body.sops).toHaveLength(1);
+    expect(sops.body.sops[0].advisories).toEqual([]);
+  });
+
+  it('maps a missing candidate to 404 and rejects unauthenticated reads', async () => {
+    const missing = await api('/api/v1/org/experience/exp-nope/promote', { method: 'POST', body: {} });
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe('EXPERIENCE_NOT_FOUND');
+
+    const anonymous = await api('/api/v1/org/experience', { token: null });
+    expect(anonymous.status).toBe(401);
+  });
+});
+
 describe('GATE-M2: one organization-level closed loop', () => {
   it('建组织 → 岗位 → 绑定 Agent → 派发 → D2 决策点同步审批 → 完成，全程审计可回放', async () => {
     const { org, position } = await bootstrapOrg('退款专员', 'refund', 'D2');

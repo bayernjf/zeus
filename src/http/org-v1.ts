@@ -210,6 +210,33 @@ export async function resumeTaskRoute(
   }
 }
 
+// ── Experience candidates (F4.2) ──────────────────────────────────────────
+
+export async function listExperienceRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    const organizationId = (request.query as { organizationId?: string }).organizationId;
+    return reply.send({ candidates: org.listExperience(organizationId) });
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+/** Human review gate: a candidate only reaches the catalog through this call. */
+export async function promoteExperienceRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  try {
+    const id = (request.params as { id: string }).id;
+    const body = (request.body ?? {}) as { skillId?: string };
+    return reply.send(org.promoteExperience(id, body.skillId));
+  } catch (thrown) {
+    return sendOrgError(reply, thrown);
+  }
+}
+
+export async function listSopsRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {
+  const query = request.query as { organizationId?: string; skillId?: string };
+  return reply.send({ sops: org.catalogView(query.organizationId, query.skillId) });
+}
+
 // ── Threshold configuration (T-M2-04) ─────────────────────────────────────
 
 export async function applyThresholdsRoute(org: OrgService, request: FastifyRequest, reply: FastifyReply): Promise<unknown> {

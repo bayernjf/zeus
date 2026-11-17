@@ -11,6 +11,20 @@ export type {
 export { MemoryOrgStore } from './store.js';
 export type { OrgSnapshot } from './store.js';
 
+// F4.2 experience candidates (auto stage + human review gate)
+export {
+  MemoryExperienceStore,
+  deriveCandidateDrafts,
+  catalogWithAdvisories,
+} from './experience/index.js';
+export type {
+  ExperienceStore,
+  ExperienceCandidate,
+  ExperienceCandidateKind,
+  PositionSopView,
+  SopAdvisory,
+} from './experience/index.js';
+
 // T-M7-01 hardened execution contract
 export { runTask, InMemoryActionStore } from './execution/index.js';
 export {

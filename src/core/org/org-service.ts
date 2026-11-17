@@ -54,6 +54,10 @@ import {
 } from './types.js';
 import { fitPositionToSop, sopBySkill, sopByWorkflow } from './sop/index.js';
 import type { PositionSop } from './sop/index.js';
+import { catalogWithAdvisories } from './experience/catalog-overlay.js';
+import { deriveCandidateDrafts } from './experience/rules.js';
+import { MemoryExperienceStore, type ExperienceStore } from './experience/store.js';
+import type { ExperienceCandidate, PositionSopView } from './experience/types.js';
 
 const VALID_SCALES: ScaleTier[] = ['single', 'small', 'team', 'division', 'enterprise'];
 const VALID_GRADES: Grade[] = ['D0', 'D1', 'D2', 'D3'];
@@ -89,6 +93,12 @@ export interface OrgServiceDeps {
    * shape) and a task that requests a workspace fails closed at claim.
    */
   workspaces?: WorkspaceManager;
+  /**
+   * F4.2 experience candidates. When absent an in-memory store is used, so
+   * rule-derived candidates are always recorded; durable wiring passes the
+   * SQLite implementation.
+   */
+  experience?: ExperienceStore;
 }
 
 /**
@@ -136,6 +146,8 @@ export class OrgService {
   private readonly toolInvoker: ToolInvoker | undefined;
   /** F1.2: creates/archives per-task isolated worktrees when configured. */
   private readonly workspaces: WorkspaceManager | undefined;
+  /** F4.2: settlement → candidate recording and catalog read overlays. */
+  private readonly experience: ExperienceStore;
   /** Per-task idempotent action results for the default in-memory wiring. */
   private readonly actionStores = new Map<string, ActionResultStore>();
   private counter = 0;
@@ -151,6 +163,7 @@ export class OrgService {
     this.actionStoreFactory = deps.actionStoreFactory;
     this.toolInvoker = deps.toolInvoker;
     this.workspaces = deps.workspaces;
+    this.experience = deps.experience ?? new MemoryExperienceStore();
   }
 
   // ── Organizations ──────────────────────────────────────────────────────
@@ -505,7 +518,18 @@ export class OrgService {
 
   /** Fail a pending task because its workspace could not be prepared. */
   private failWorkspace(task: OrgTask, message: string): OrgTask {
-    const failed = this.transition({ ...task, error: message, failedKind: 'business' }, 'failed', message);
+    // A claim-time business failure still has a settle record worth learning
+    // from (F4.2), so it carries an outcome like any other failed settlement.
+    const outcome = this.buildOutcome(task, 'failed', 0, this.clock(), {
+      failedKind: 'business',
+      error: message,
+    });
+    const failed = this.transition(
+      { ...task, error: message, failedKind: 'business', outcome },
+      'failed',
+      message,
+    );
+    this.recordExperience(task, outcome);
     return failed;
   }
 
@@ -620,6 +644,7 @@ export class OrgService {
         },
         'done',
       );
+      this.recordExperience(task, outcome);
       return { task: this.store.getTask(done.id)! };
     }
 
@@ -633,6 +658,10 @@ export class OrgService {
     }
 
     const settledAt = this.clock();
+    const outcome = this.buildOutcome(task, 'failed', settlement.attempts, settledAt, {
+      failedKind: settlement.failureKind,
+      error: settlement.error,
+    });
     const failed = this.transition(
       {
         ...task,
@@ -640,16 +669,97 @@ export class OrgService {
         attempts: settlement.attempts,
         failedKind: settlement.failureKind,
         error: settlement.error,
-        outcome: this.buildOutcome(task, 'failed', settlement.attempts, settledAt, {
-          failedKind: settlement.failureKind,
-          error: settlement.error,
-        }),
+        outcome,
       },
       'failed',
       settlement.error,
     );
     this.settleWorkspace(task);
+    this.recordExperience(task, outcome);
     return { task: this.store.getTask(failed.id)! };
+  }
+
+  // ── Experience candidates (F4.2) ───────────────────────────────────────
+
+  /** Candidates for one organization (or all when omitted). Newest last. */
+  listExperience(organizationId?: string): ExperienceCandidate[] {
+    if (organizationId && !this.store.getOrganization(organizationId)) {
+      throw new OrgServiceError(EC.ORGANIZATION_NOT_FOUND, `organization not found: ${organizationId}`);
+    }
+    return this.experience.listCandidates(organizationId);
+  }
+
+  /**
+   * Human review gate: promote a pending candidate to an advisory on its
+   * SOP. Idempotent — promoting twice returns the same record with the
+   * original promotedAt. `skillId` can supply the target when the task's
+   * skill did not map to a catalog SOP.
+   */
+  promoteExperience(id: string, skillId?: string): ExperienceCandidate {
+    const candidate = this.experience.getCandidate(id);
+    if (!candidate) {
+      throw new OrgServiceError(EC.EXPERIENCE_NOT_FOUND, `experience candidate not found: ${id}`);
+    }
+    const target = skillId ?? candidate.skillId;
+    if (!target || !sopBySkill(target)) {
+      throw new OrgServiceError(EC.VALIDATION_FAILED, `candidate has no catalog SOP; pass a valid skillId`);
+    }
+    if (candidate.status === 'promoted') return candidate;
+    const promoted: ExperienceCandidate = {
+      ...candidate,
+      skillId: target,
+      status: 'promoted',
+      promotedAt: this.clock(),
+    };
+    this.experience.putCandidate(promoted);
+    return promoted;
+  }
+
+  /**
+   * Catalog view with promoted advisories merged in. Candidates still pending
+   * are invisible here — that is the negative half of the review gate.
+   */
+  catalogView(organizationId?: string, skillId?: string): PositionSopView[] {
+    const candidates = organizationId ? this.experience.listCandidates(organizationId) : this.experience.listCandidates();
+    return catalogWithAdvisories(candidates, skillId);
+  }
+
+  /**
+   * Auto stage: derive candidates from one settlement and persist those that
+   * do not exist yet. Never updates an existing candidate (promotion state
+   * must survive replayed settlements).
+   */
+  private recordExperience(task: OrgTask, outcome: OrgTaskOutcome): void {
+    const skillId = this.skillIdForTask(task);
+    for (const draft of deriveCandidateDrafts(task, outcome)) {
+      if (this.experience.findCandidate(task.id, draft.ruleId)) continue;
+      this.experience.putCandidate({
+        format: 'zeus-experience-candidate',
+        version: 1,
+        id: this.newId('exp'),
+        organizationId: task.organizationId,
+        taskId: task.id,
+        ...(skillId ? { skillId } : {}),
+        ruleId: draft.ruleId,
+        kind: draft.kind,
+        title: draft.title,
+        detail: draft.detail,
+        createdAt: this.clock(),
+        status: 'pending',
+      });
+    }
+  }
+
+  /** Map a task's declared skill/workflow to a catalog SOP skill id. */
+  private skillIdForTask(task: OrgTask): string | undefined {
+    const bySkill = sopBySkill(task.requiredSkill);
+    if (bySkill) return bySkill.skillId;
+    const payload = task.payload;
+    if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
+      const workflow = (payload as Record<string, unknown>).workflow;
+      if (typeof workflow === 'string') return sopByWorkflow(workflow)?.skillId;
+    }
+    return undefined;
   }
 
   /**

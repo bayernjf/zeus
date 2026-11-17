@@ -71,9 +71,12 @@ import {
   getOrganizationRoute,
   getTaskRoute,
   listDepartmentsRoute,
+  listExperienceRoute,
   listOrganizationsRoute,
   listPositionsRoute,
+  listSopsRoute,
   listTasksRoute,
+  promoteExperienceRoute,
   resumeTaskRoute,
 } from './org-v1.js';
 import type { RuntimeStats } from '../state/stats.js';
@@ -3362,6 +3365,14 @@ export async function createHttpServer(deps: HttpDeps): Promise<FastifyInstance>
         resumeTaskRoute(orgV1, orgExecutor, request, reply, orgTaskWorker));
       app.post('/api/v1/org/policy/thresholds', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
         applyThresholdsRoute(orgV1, request, reply));
+      // F4.2: rule-derived candidates, the human review gate, and the catalog
+      // read view where promoted candidates surface as advisories.
+      app.get('/api/v1/org/experience', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listExperienceRoute(orgV1, request, reply));
+      app.post('/api/v1/org/experience/:id/promote', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        promoteExperienceRoute(orgV1, request, reply));
+      app.get('/api/v1/org/sops', { preHandler: requireBearer }, (request: FastifyRequest, reply: FastifyReply) =>
+        listSopsRoute(orgV1, request, reply));
     }
   }
 

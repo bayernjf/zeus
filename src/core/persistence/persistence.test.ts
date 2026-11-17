@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { openSqlite } from './sqlite-db.js';
+import { SqliteExperienceStore } from './sqlite-experience-store.js';
 import {
   migrate,
   appliedMigrations,
@@ -14,6 +15,7 @@ import {
   MIGRATION_0004_POSITION_CREDENTIALS,
   MIGRATION_0005_DECISION_WEBHOOKS,
   MIGRATION_0006_ORG_FIELD_GAPS,
+  MIGRATION_0007_ORG_EXPERIENCE,
 } from './schema.js';
 import { SqlitePolicyStore, SqliteDecisionStore } from './sqlite-decision-store.js';
 import { SqliteOrgStore } from './sqlite-org-store.js';
@@ -103,6 +105,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0004_POSITION_CREDENTIALS,
       MIGRATION_0005_DECISION_WEBHOOKS,
       MIGRATION_0006_ORG_FIELD_GAPS,
+      MIGRATION_0007_ORG_EXPERIENCE,
     ]);
     expect(migrate(db)).toBe(false);
     expect(appliedMigrations(db)).toEqual([
@@ -112,6 +115,7 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
       MIGRATION_0004_POSITION_CREDENTIALS,
       MIGRATION_0005_DECISION_WEBHOOKS,
       MIGRATION_0006_ORG_FIELD_GAPS,
+      MIGRATION_0007_ORG_EXPERIENCE,
     ]);
     db.close();
   });
@@ -220,6 +224,22 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     const reloaded = store.getTask('task-obs');
     expect(reloaded?.workspacePath).toBe('/tmp/ws/org-1/task-obs');
     expect(reloaded?.outcome).toEqual(task.outcome);
+    db.close();
+  });
+
+  it('persists position_id through the claim update (survives reload)', () => {
+    const db = openSqlite(':memory:');
+    migrate(db);
+    new SqliteOrgStore(db).putOrganization(sampleOrg());
+    const store = new SqliteOrgStore(db);
+    const created = sampleTask();
+    store.putTask(created); // pending, no position yet
+    store.putTask({ ...created, positionId: 'pos-1', assignedAgentId: 'agent-1', status: 'running' });
+
+    const reloaded = store.getTask(created.id);
+    expect(reloaded?.positionId).toBe('pos-1');
+    expect(reloaded?.assignedAgentId).toBe('agent-1');
+    expect(reloaded?.status).toBe('running');
     db.close();
   });
 
@@ -395,6 +415,45 @@ describe('zeus SQLite persistence (T-M6-01)', () => {
     db.exec('CREATE VIEW schema_migrations AS SELECT 1 AS id;');
     expect(() => migrate(db)).toThrow();
     expect(appliedMigrations(db)).not.toContain(MIGRATION_ID);
+    db.close();
+  });
+});
+
+
+describe('SqliteExperienceStore (F4.2)', () => {
+  it('round-trips a candidate and enforces the (task_id, rule_id) dedupe key', () => {
+    const db = openSqlite(':memory:');
+    migrate(db);
+    const store = new SqliteExperienceStore(db);
+    const base = {
+      format: 'zeus-experience-candidate' as const,
+      version: 1 as const,
+      organizationId: 'org-1',
+      taskId: 'task-1',
+      skillId: 'content-production',
+      ruleId: 'failure.timeout',
+      kind: 'failure-avoidance' as const,
+      title: 't',
+      detail: 'd',
+      createdAt: '2026-11-17T00:00:00.000Z',
+      status: 'pending' as const,
+    };
+
+    store.putCandidate({ ...base, id: 'exp-1' });
+    const read = store.getCandidate('exp-1');
+    expect(read).toMatchObject({ id: 'exp-1', skillId: 'content-production', status: 'pending' });
+    expect(store.findCandidate('task-1', 'failure.timeout')?.id).toBe('exp-1');
+    expect(store.listCandidates('org-1')).toHaveLength(1);
+
+    // A second row with the same (task, rule) but a different id violates the
+    // unique key — the durable half of "replayed settlement cannot duplicate".
+    expect(() => store.putCandidate({ ...base, id: 'exp-2' })).toThrowError();
+
+    store.putCandidate({ ...base, id: 'exp-1', status: 'promoted', promotedAt: '2026-11-17T01:00:00.000Z' });
+    expect(store.getCandidate('exp-1')).toMatchObject({
+      status: 'promoted',
+      promotedAt: '2026-11-17T01:00:00.000Z',
+    });
     db.close();
   });
 });
