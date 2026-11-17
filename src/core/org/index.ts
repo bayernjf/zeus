@@ -112,6 +112,7 @@ export type {
   OrgTaskFailureKind,
   OrgTaskProgress,
   OrgTaskTransition,
+  OrgTaskOutcome,
   CreateOrganizationInput,
   CreateDepartmentInput,
   CreatePositionInput,

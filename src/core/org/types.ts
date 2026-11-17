@@ -100,6 +100,23 @@ export interface OrgTaskProgress {
   at: string;
 }
 
+/** F4.1: settlement record kept on the task for ledger/experience review. */
+export interface OrgTaskOutcome {
+  status: 'done' | 'failed';
+  attempts: number;
+  failedKind?: OrgTaskFailureKind;
+  error?: string;
+  /** Decision checkpoints the run touched, oldest first. */
+  decisions: { id: string; status: string }[];
+  /** When the final run entered running. */
+  startedAt?: string;
+  settledAt: string;
+  durationMs?: number;
+  workspace?: { path: string; artifact?: string; policy: 'archive' | 'discard' };
+  /** First 200 chars of the JSON result, for quick scanning. */
+  resultSummary?: string;
+}
+
 export interface OrgTaskTransition {
   status: OrgTaskStatus;
   at: string;
@@ -145,6 +162,8 @@ export interface OrgTask {
   workspacePath?: string;
   /** Set when no position matches; task remains pending for human handling. */
   unmatchedReason?: string;
+  /** F4.1: settlement record written when the task reaches done/failed. */
+  outcome?: OrgTaskOutcome;
   transitions: OrgTaskTransition[];
   createdAt: string;
   updatedAt: string;

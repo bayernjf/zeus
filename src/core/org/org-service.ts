@@ -46,6 +46,8 @@ import {
   type Json,
   type Organization,
   type OrgTask,
+  type OrgTaskFailureKind,
+  type OrgTaskOutcome,
   type OrgTaskProgress,
   type Position,
   type ScaleTier,
@@ -602,6 +604,11 @@ export class OrgService {
           ? { ...(settlement.result as Record<string, Json>), workspaceArtifact }
           : { workspaceArtifact }
         : settlement.result;
+      const settledAt = this.clock();
+      const outcome = this.buildOutcome(task, 'done', settlement.attempts, settledAt, {
+        ...(result !== undefined ? { result } : {}),
+        ...(workspaceArtifact ? { workspaceArtifact } : {}),
+      });
       const done = this.transition(
         {
           ...task,
@@ -609,6 +616,7 @@ export class OrgService {
           attempts: settlement.attempts,
           runId: task.runId ?? this.newId('run'),
           ...(result !== undefined ? { result } : {}),
+          outcome,
         },
         'done',
       );
@@ -624,6 +632,7 @@ export class OrgService {
       return { task: this.store.getTask(paused.id)!, decision: settlement.decision };
     }
 
+    const settledAt = this.clock();
     const failed = this.transition(
       {
         ...task,
@@ -631,6 +640,10 @@ export class OrgService {
         attempts: settlement.attempts,
         failedKind: settlement.failureKind,
         error: settlement.error,
+        outcome: this.buildOutcome(task, 'failed', settlement.attempts, settledAt, {
+          failedKind: settlement.failureKind,
+          error: settlement.error,
+        }),
       },
       'failed',
       settlement.error,
@@ -653,6 +666,55 @@ export class OrgService {
       // leave the directory for manual inspection; task state stays settled
     }
     return undefined;
+  }
+
+  /**
+   * F4.1: settlement record (attempts, failure kind, decision checkpoints,
+   * wall clock and workspace artifact) written with done/failed.
+   */
+  private buildOutcome(
+    task: OrgTask,
+    status: 'done' | 'failed',
+    attempts: number,
+    settledAt: string,
+    extra: {
+      failedKind?: OrgTaskFailureKind;
+      error?: string;
+      result?: Json;
+      workspaceArtifact?: string;
+    },
+  ): OrgTaskOutcome {
+    const runningAt = [...task.transitions].reverse().find(t => t.status === 'running')?.at;
+    const startedMs = runningAt ? Date.parse(runningAt) : Number.NaN;
+    const settledMs = Date.parse(settledAt);
+    const durationMs =
+      Number.isFinite(startedMs) && Number.isFinite(settledMs)
+        ? Math.max(0, settledMs - startedMs)
+        : undefined;
+    const decisions = task.transitions
+      .filter(t => t.status === 'awaiting_decision' && t.note)
+      .map(t => ({ id: t.note as string, status: 'decided' }));
+    const resultSummary = extra.result !== undefined ? JSON.stringify(extra.result).slice(0, 200) : undefined;
+    return {
+      status,
+      attempts,
+      ...(extra.failedKind ? { failedKind: extra.failedKind } : {}),
+      ...(extra.error ? { error: extra.error.slice(0, 500) } : {}),
+      decisions,
+      ...(runningAt ? { startedAt: runningAt } : {}),
+      settledAt,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      ...(task.workspacePath
+        ? {
+            workspace: {
+              path: task.workspacePath,
+              ...(extra.workspaceArtifact ? { artifact: extra.workspaceArtifact } : {}),
+              policy: task.workspacePolicy ?? 'discard',
+            },
+          }
+        : {}),
+      ...(resultSummary ? { resultSummary } : {}),
+    };
   }
 
   /** Per-task idempotent action store; durable when a factory is wired. */
