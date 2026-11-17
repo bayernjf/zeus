@@ -598,11 +598,16 @@ async function main(): Promise<void> {
       log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
     }
 
-    // F5.2: scan registered daily/weekly goals every minute on UTC windows.
-    // Scheduling is independent from execution: without an agent-world worker
-    // it still registers pending tasks; with one it claims and enqueues them.
+    // F5.2: scan registered daily/weekly goals on UTC windows. The cadence is
+    // an operator setting: a test or a small deployment can scan faster, while
+    // the default stays the one-minute production cadence.
+    const orgSchedulerIntervalMs =
+      process.env.ZEUS_ORG_SCHEDULER_INTERVAL_MS !== undefined
+        ? parseIntPositive('ZEUS_ORG_SCHEDULER_INTERVAL_MS', process.env.ZEUS_ORG_SCHEDULER_INTERVAL_MS)
+        : 60_000;
     const service = orgService;
     orgScheduler = new CronOrgScheduler({
+      intervalMs: orgSchedulerIntervalMs,
       org: service,
       ...(orgExecutor && orgTaskWorker
         ? {
@@ -621,7 +626,7 @@ async function main(): Promise<void> {
     });
     orgScheduler.start();
     log.info('org-scheduler', 'assembled', {
-      intervalMs: 60_000,
+      intervalMs: orgSchedulerIntervalMs,
       timezone: 'UTC',
       execution: orgTaskWorker ? 'worker' : 'pending-only',
     });
