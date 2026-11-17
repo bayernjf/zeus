@@ -66,6 +66,23 @@ const WORKFLOW_CHECKPOINT: Record<AgentWorldWorkflow, { grade: Grade; impact: 'e
   'after-sales': { grade: 'D2', impact: 'org', reversibility: 'hard' },
 };
 
+/**
+ * Tier0 org M3 F3.2: org attribution the execution arm stamps onto its model
+ * usage rows. agent-world reports to the hub with its own token, so these ids
+ * are the only way the ledger can answer "what did this task cost".
+ */
+function usageDimensionsFor(ctx: ExecutorContext): {
+  taskId: string;
+  positionId?: string;
+  departmentId?: string;
+} {
+  return {
+    taskId: ctx.task.id,
+    ...(ctx.task.positionId ? { positionId: ctx.task.positionId } : {}),
+    ...(ctx.position.departmentId ? { departmentId: ctx.position.departmentId } : {}),
+  };
+}
+
 export interface AgentWorldOrgTaskExecutorOptions {
   /** Poll interval ms while the run is active. */
   pollIntervalMs?: number;
@@ -101,6 +118,7 @@ export class AgentWorldOrgTaskExecutor implements OrgTaskExecutorV2 {
         input: payload.input,
         ...(payload.trigger ? { trigger: payload.trigger } : {}),
         idempotencyKey: ctx.task.id,
+        usageDimensions: usageDimensionsFor(ctx),
       }),
     )) as unknown as { graphId: string; runId: string; replay: boolean };
 
