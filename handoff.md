@@ -1,5 +1,17 @@
 # Handoff
 
+## 2026-11-17 org 持久化补洞（M2 验收发现）
+
+- ✅ SQLite durable org store 之前漏了三列，F1.1/F1.2/F4.1 的数据在 `ZEUS_DB_FILE` 模式下
+  实际不落库：`organizations.concurrency_limit`（并发上限恒回退默认 2）、
+  `org_tasks.workspace_path`、`org_tasks.outcome_json`（工作区与结局重启即丢）。
+- 修法：baseline schema 补三列 + 新增增量迁移 `0006_org_field_gaps`（老库
+  `addColumnIfMissing` 幂等升级），`SqliteOrgStore.put/get` 补读写。
+- 验证：`0006` 在 0001 基线库上实跑升级；`concurrencyLimit=2` 建组织后
+  `GET /api/v1/org/organizations` 返回该字段（修前为空）；`tsc --noEmit` 0、
+  `eslint .` 0 error（1263 既有 warning）、`vitest run` 265 文件 2649 用例全绿、
+  `npm run build` 成功。新增 2 例持久化测试（迁移 + round-trip）。
+
 > **2026-11-06 补登：dev → main 已于 2026-11-05 经 PR #182 合并（合并前 CI 全绿）；实测 origin/main 与 origin/dev 内容完全一致（git diff 为空）。**
 
 > **2026-11-17 Tier0 组织层 M1/M4 首批（F1.1/F1.2/F4.1，src+tests 批：路由、迁移、export 均不变；基线 2634/233 → **2647/235**（+13 测试 / +2 文件：新建 `src/core/org/workspace/git-worktree.test.ts` 7 例与 `src/core/org/org-outcome.test.ts` 3 例，`src/core/org/task-worker.test.ts` +3 例）——① **F1.1 有界并发 worker**：队列按 position 分桶（同岗位严格保序、跨岗位并行），全局并发受 org 级 `concurrencyLimit`（默认 2，=1 回退旧串行 drain）约束；未知任务仍走 onError 路径；② **F1.2 每任务工作区**：新建 `src/core/org/workspace/{manager,git-worktree}.ts`——claim 时 `git worktree add --detach <root>/<orgId>/<taskId>`，settle 按 policy archive（tar.gz 路径写入 `result.workspaceArtifact`）或 discard；base repo 经 realpath 白名单校验，名单外 fail-closed（任务 failed/business，零目录创建）；③ **F4.1 结局记录**：done/failed 落 `task.outcome`（attempts / failedKind / error / 决策点列表 / 起止与耗时 / 工作区产物 / 结果摘要前 200 字），状态机零改动。门：tsc exit 0、eslint 0 error（1263 既有 warning）/build exit 0、全量 **2647/2647 绿 / 235 文件**、`smoke:core` **50/50**（Node 22.23.2 本机实测）。已知限制：runner 的重试退避仍占槽，释放槽位留后续 slice；已推 origin/dev（`d32e96f`/`ccac87a`/`d9a5102`/`b50ce41`）。**
