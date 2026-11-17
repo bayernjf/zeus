@@ -25,6 +25,15 @@ export type {
   SopAdvisory,
 } from './experience/index.js';
 
+// F5.2 in-process scheduling over registered goals
+export { CronOrgScheduler, goalOccurrence, goalRunKey } from './scheduling/index.js';
+export type {
+  CronOrgSchedulerDeps,
+  OrgScheduleDelivery,
+  OrgScheduleTickResult,
+  OrgScheduler,
+} from './scheduling/index.js';
+
 // T-M7-01 hardened execution contract
 export { runTask, InMemoryActionStore } from './execution/index.js';
 export {
@@ -135,6 +144,8 @@ export type {
   OrgGoal,
   OrgGoalPeriod,
   OrgGoalStatus,
+  OrgGoalSchedule,
+  OrgGoalTaskTemplate,
   CreateOrgGoalInput,
   UpdateOrgGoalInput,
 } from './types.js';

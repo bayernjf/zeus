@@ -14,7 +14,9 @@ import type {
   OrgTaskTransition,
   OrgGoal,
   OrgGoalPeriod,
+  OrgGoalSchedule,
   OrgGoalStatus,
+  OrgGoalTaskTemplate,
 } from '../org/types.js';
 import type { OrgStore, OrgSnapshot } from '../org/store.js';
 
@@ -311,10 +313,13 @@ export class SqliteOrgStore implements OrgStore {
     this.db
       .prepare(
         `INSERT INTO org_goals
-           (id, organization_id, title, period, status, project_id, created_at, updated_at)
-         VALUES (@id, @organization_id, @title, @period, @status, @project_id, @created_at, @updated_at)
+           (id, organization_id, title, period, status, project_id, schedule_json,
+            task_template_json, created_at, updated_at)
+         VALUES (@id, @organization_id, @title, @period, @status, @project_id, @schedule_json,
+            @task_template_json, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            title=@title, period=@period, status=@status, project_id=@project_id,
+           schedule_json=@schedule_json, task_template_json=@task_template_json,
            updated_at=@updated_at`,
       )
       .run({
@@ -324,6 +329,8 @@ export class SqliteOrgStore implements OrgStore {
         period: goal.period,
         status: goal.status,
         project_id: opt(goal.projectId),
+        schedule_json: opt(goal.schedule ? JSON.stringify(goal.schedule) : undefined),
+        task_template_json: opt(goal.taskTemplate ? JSON.stringify(goal.taskTemplate) : undefined),
         created_at: goal.createdAt,
         updated_at: goal.updatedAt,
       });
@@ -380,6 +387,12 @@ function goalFromRow(row: Record<string, string | null>): OrgGoal {
     period: String(row.period) as OrgGoalPeriod,
     status: String(row.status) as OrgGoalStatus,
     ...(row.project_id ? { projectId: String(row.project_id) } : {}),
+    ...(row.schedule_json
+      ? { schedule: parse<OrgGoalSchedule>(String(row.schedule_json)) }
+      : {}),
+    ...(row.task_template_json
+      ? { taskTemplate: parse<OrgGoalTaskTemplate>(String(row.task_template_json)) }
+      : {}),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

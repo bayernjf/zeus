@@ -182,7 +182,16 @@ export type {
 } from './orchestrator/types.js';
 
 // ── Org (Tier0 M2; M7 hardened executor) ─────────────────────────────────
-export { OrgService, MemoryOrgStore, ORG_ERROR_CODES, OrgServiceError, TaskWorker } from './org/index.js';
+export {
+  OrgService,
+  MemoryOrgStore,
+  ORG_ERROR_CODES,
+  OrgServiceError,
+  TaskWorker,
+  CronOrgScheduler,
+  goalOccurrence,
+  goalRunKey,
+} from './org/index.js';
 // T-M7-02 agent-world adapter (first real ToolInvoker/executor).
 export {
   AgentWorldClient,
@@ -218,6 +227,8 @@ export type {
   OrgGoal,
   OrgGoalPeriod,
   OrgGoalStatus,
+  OrgGoalSchedule,
+  OrgGoalTaskTemplate,
   CreateOrgGoalInput,
   UpdateOrgGoalInput,
   TaskWorkerDeps,

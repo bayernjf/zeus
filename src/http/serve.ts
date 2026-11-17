@@ -49,6 +49,7 @@ import {
   MemoryDecisionStore,
   OrgService,
   TaskWorker,
+  CronOrgScheduler,
   AgentWorldClient,
   AgentWorldToolInvoker,
   AgentWorldOrgTaskExecutor,
@@ -373,6 +374,7 @@ async function main(): Promise<void> {
   // ZEUS_AGENT_WORLD_BASE_URL is configured; dispatch then stays 503-fail-closed).
   let orgExecutor: OrgTaskExecutor | undefined;
   let orgTaskWorker: TaskWorker | undefined;
+  let orgScheduler: CronOrgScheduler | undefined;
   if (process.env.ZEUS_INTERNAL_TOKEN) {
     // Durable mode (T-M6-01) when ZEUS_DB_FILE is set: open SQLite, migrate
     // (idempotent), hydrate policy/records/org from disk. Without it, the
@@ -504,6 +506,34 @@ async function main(): Promise<void> {
       orgService = new OrgService(orgDeps);
       log.info('org-service', 'assembled', { durability, taskExecutor: 'not-assembled' });
     }
+
+    // F5.2: scan registered daily/weekly goals every minute on UTC windows.
+    // Scheduling is independent from execution: without an agent-world worker
+    // it still registers pending tasks; with one it claims and enqueues them.
+    const service = orgService;
+    orgScheduler = new CronOrgScheduler({
+      org: service,
+      ...(orgExecutor && orgTaskWorker
+        ? {
+            deliver: ({ taskId }: { taskId: string }) => {
+              const claimed = service.claim(taskId);
+              if (claimed.status === 'running') orgTaskWorker?.enqueue(taskId);
+            },
+          }
+        : {}),
+      onError: (goalId, error) =>
+        log.error('org-scheduler', 'goal delivery failed', {
+          goalId,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        }),
+    });
+    orgScheduler.start();
+    log.info('org-scheduler', 'assembled', {
+      intervalMs: 60_000,
+      timezone: 'UTC',
+      execution: orgTaskWorker ? 'worker' : 'pending-only',
+    });
   }
 
   // The start primitive owns the bind defaults (loopback:8787, design-http-transport
@@ -692,6 +722,7 @@ async function main(): Promise<void> {
     } catch (error) {
       log.error('runtime-state-unlock-failed', error instanceof Error ? error.message : String(error));
     }
+    orgScheduler?.stop();
     await app.close();
     process.exit(exitCode);
   };
