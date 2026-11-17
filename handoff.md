@@ -1,5 +1,11 @@
 # Handoff
 
+## 2026-11-17 M5 P2 调度扫描间隔可配置
+
+- ✅ `src/http/serve.ts`：`CronOrgScheduler` 的 `intervalMs` 不再硬编码 60000，改由 `ZEUS_ORG_SCHEDULER_INTERVAL_MS` 配置；沿用 `parseIntPositive`，非正整数在启动期直接 `RuntimeBootError`，缺省仍为 60000；`org-scheduler assembled` 日志打印实际生效值。
+- ✅ `.env.example` 登记该变量与默认值；`docs/deferred-items.md` / `docs/audit-2026-09.md` 的 serve 行号锚点随本次改动重钉为 `645 #internalToken` / `842 #RuntimeBootError`。
+- 边界：仅影响扫描节奏；UTC 窗口计算、`goal:<id>:<ISO>` 幂等键、pending-only 与 worker 两种装配语义均未改变。
+
 ## 2026-11-17 M5 P0 模板执行闭环（真进程可执行）
 
 - ✅ 新增 `src/core/org/execution/template-executor.ts`：`TemplateOrgTaskExecutor` 按 `payload.templateRef + stepId` 执行内置模板步骤。`weekly-report.collect` 从 `OrgService.listTasks` 汇总同一 goal/occurrence 的任务快照；`summarize` 读取 collect 依赖的 `result.report` 生成 Markdown；`human-review` / `content-review.review` 走 `ctx.requestDecision`（D2，org/hard，幂等键 `<taskId>:review`），rejected/timed-out 判 business；`content-review.draft` 复用 runner 上下文（工具授权/预算/action store 原样保留）委托 agent-world `content` workflow，未配置 agent-world 时 business fail-closed。
