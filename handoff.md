@@ -1,5 +1,23 @@
 # Handoff
 
+## 2026-11-17 M3 F3.2 a2 执行臂下发 org 归因（zeus → agent-world）
+
+- ✅ 执行臂启动 run 时把 org 三 id 带给 agent-world，让它在自己的 hub 上报里
+  带上归因（agent-world 自持 token，zeus 无法替它记账）：
+  `AgentWorldOrgTaskExecutor` 新增 `usageDimensionsFor(ctx)`（`taskId = ctx.task.id`，
+  有则带 `positionId = ctx.task.positionId`、`departmentId = ctx.position.departmentId`），
+  作为 `ctx.tool(runGraph, …)` 的 `usageDimensions` 传入；
+- `tools.ts` 的 `usageDimensionsOf()` 只透传三键、非字符串记录整体丢弃（避免把
+  脏参数送进 agent-world 的严格校验导致整条 run 被 400），键全缺则不发该字段；
+  `client.ts` 的 `StartRunArgs.usageDimensions?: {…} | undefined` 与 body 条件展开
+  （`exactOptionalPropertyTypes` 下必须显式 `| undefined`）。
+- 验证：`tsc --noEmit` 0、`eslint .` 0 error（1263 既有 warning）、`vitest run`
+  **235 文件 / 2654 用例全绿**（基线 2651 + 3：task+position+department 全带 /
+  仅 taskId / 无 dims 时 body 不出现该键）、`npm run build` 绿。
+- 结构事实（勿当端到端验收）：本地 zeus 未装配 executor，真实 org 任务仍跑不到
+  agent-world；本轮的取证是 fake agent-world 抓取 `POST /api/runs` body + agent-world
+  侧真实 hub 上报（见该仓 handoff）。
+
 ## 2026-11-17 M3 F3.2 组织维度 usage 透传（decision 链）
 
 - ✅ 决策调用链带上 org 归因，供 model-hub 账本把成本记到岗位/部门/任务：
