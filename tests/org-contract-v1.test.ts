@@ -362,7 +362,14 @@ describe('org contract: goals (F5.1)', () => {
 
     const created = await api('/api/v1/org/goals', {
       method: 'POST',
-      body: { organizationId: org.id, title: '每周补货复盘', period: 'weekly', projectId: 'prj_a' },
+      body: {
+        organizationId: org.id,
+        title: '每周补货复盘',
+        period: 'weekly',
+        projectId: 'prj_a',
+        schedule: { hourUtc: 9, minuteUtc: 30, weekdayUtc: 1 },
+        taskTemplate: { title: '采集补货数据', payload: { kind: 'restock-review' }, requiredSkill: 'ops' },
+      },
     });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({
@@ -372,6 +379,8 @@ describe('org contract: goals (F5.1)', () => {
       period: 'weekly',
       status: 'active',
       projectId: 'prj_a',
+      schedule: { hourUtc: 9, minuteUtc: 30, weekdayUtc: 1 },
+      taskTemplate: { title: '采集补货数据', payload: { kind: 'restock-review' }, requiredSkill: 'ops' },
     });
 
     const list = await api(`/api/v1/org/goals?organizationId=${encodeURIComponent(org.id)}`);
@@ -384,11 +393,13 @@ describe('org contract: goals (F5.1)', () => {
 
     const patched = await api(`/api/v1/org/goals/${created.body.id}`, {
       method: 'PATCH',
-      body: { status: 'archived', projectId: null },
+      body: { status: 'archived', projectId: null, schedule: null, taskTemplate: null },
     });
     expect(patched.status).toBe(200);
     expect(patched.body.status).toBe('archived');
     expect(patched.body.projectId).toBeUndefined();
+    expect(patched.body.schedule).toBeUndefined();
+    expect(patched.body.taskTemplate).toBeUndefined();
 
     const deleted = await api(`/api/v1/org/goals/${created.body.id}`, { method: 'DELETE' });
     expect(deleted.status).toBe(204);
@@ -403,6 +414,18 @@ describe('org contract: goals (F5.1)', () => {
     });
     expect(bad.status).toBe(400);
     expect(bad.body.code).toBe('VALIDATION_FAILED');
+
+    const badWeekly = await api('/api/v1/org/goals', {
+      method: 'POST',
+      body: {
+        organizationId: org.id,
+        title: 'x',
+        period: 'weekly',
+        schedule: { hourUtc: 9, minuteUtc: 0 },
+      },
+    });
+    expect(badWeekly.status).toBe(400);
+    expect(badWeekly.body.code).toBe('VALIDATION_FAILED');
 
     expect((await api('/api/v1/org/goals/goal-nope')).status).toBe(404);
     const patchMissing = await api('/api/v1/org/goals/goal-nope', { method: 'PATCH', body: { title: 'x' } });

@@ -457,6 +457,80 @@ describe('OrgService goals (F5.1)', () => {
     ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.ORGANIZATION_NOT_FOUND }));
   });
 
+  it('stores a UTC weekly trigger and a one-task template', () => {
+    const { service, org } = makeService();
+    const goal = service.createGoal({
+      organizationId: org.id,
+      title: '周报生成',
+      period: 'weekly',
+      schedule: { hourUtc: 9, minuteUtc: 30, weekdayUtc: 1 },
+      taskTemplate: {
+        title: '采集周报数据',
+        payload: { kind: 'weekly-report' },
+        requiredSkill: 'reporting',
+      },
+    });
+    expect(goal.schedule).toEqual({ hourUtc: 9, minuteUtc: 30, weekdayUtc: 1 });
+    expect(goal.taskTemplate).toEqual({
+      title: '采集周报数据',
+      payload: { kind: 'weekly-report' },
+      requiredSkill: 'reporting',
+    });
+  });
+
+  it('rejects invalid windows and clears schedule/template through null patches', () => {
+    const { service, org } = makeService();
+    expect(() =>
+      service.createGoal({
+        organizationId: org.id,
+        title: 'x',
+        period: 'weekly',
+        schedule: { hourUtc: 9, minuteUtc: 0 },
+      }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    expect(() =>
+      service.createGoal({
+        organizationId: org.id,
+        title: 'x',
+        period: 'daily',
+        schedule: { hourUtc: 9, minuteUtc: 0, weekdayUtc: 2 },
+      }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+    expect(() =>
+      service.createGoal({
+        organizationId: org.id,
+        title: 'x',
+        period: 'once',
+        schedule: { hourUtc: 9, minuteUtc: 0 },
+      }),
+    ).toThrow(expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }));
+
+    const goal = service.createGoal({
+      organizationId: org.id,
+      title: '日报',
+      schedule: { hourUtc: 8, minuteUtc: 0 },
+      taskTemplate: { requiredSkill: 'ops' },
+    });
+    expect(() => service.updateGoal(goal.id, { period: 'weekly' })).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }),
+    );
+    expect(() => service.updateGoal(goal.id, { period: 'once' })).toThrow(
+      expect.objectContaining({ code: ORG_ERROR_CODES.VALIDATION_FAILED }),
+    );
+    const weekly = service.updateGoal(goal.id, {
+      period: 'weekly',
+      schedule: { hourUtc: 8, minuteUtc: 0, weekdayUtc: 1 },
+    });
+    expect(weekly.schedule).toEqual({ hourUtc: 8, minuteUtc: 0, weekdayUtc: 1 });
+    const cleared = service.updateGoal(goal.id, {
+      schedule: null,
+      taskTemplate: null,
+      period: 'daily',
+    });
+    expect(cleared.schedule).toBeUndefined();
+    expect(cleared.taskTemplate).toBeUndefined();
+  });
+
   it('patches status/period/title, clears projectId with null, and keeps unknown ids 404', () => {
     const { service, org } = makeService();
     const goal = service.createGoal({
