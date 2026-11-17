@@ -293,6 +293,8 @@ const READ_PROTOCOL_FACES = new Set([
   // the bearer-only operator faces registered HTTP_ONLY above.
   'GET /api/v1/org/goals',
   'GET /api/v1/org/goals/:id',
+  // F5.3 template catalog: read-only discovery for the bearer API caller.
+  'GET /api/v1/org/goal-templates',
   // Memory API v1 (MemoryPort v1 §7, ruling D-6): machine-to-machine reads
   // for the cross-agent consumer face behind ZEUS_MEMORY_SERVICE_TOKEN; the
   // calling agent is the reader, namespace is its dataDomain. No operator deck.

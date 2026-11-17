@@ -11,21 +11,32 @@ import { openSqlite } from '../../persistence/sqlite-db.js';
 import { migrate } from '../../persistence/schema.js';
 import { SqliteOrgStore } from '../../persistence/sqlite-org-store.js';
 import type { OrgStore } from '../store.js';
+import { MemoryOrgStore } from '../store.js';
 import { OrgService } from '../org-service.js';
 import { CronOrgScheduler } from './cron-scheduler.js';
-import { goalOccurrence } from './scheduler.js';
+import { goalOccurrence, goalRunKey } from './scheduler.js';
 
 let reopenSeq = 0;
 
 function makeService(store?: OrgStore) {
   let seq = 0;
+  const resolvedStore = store ?? new MemoryOrgStore();
   const service = new OrgService({
-    ...(store ? { store } : {}),
+    store: resolvedStore,
     clock: () => '2026-11-16T00:00:00.000Z',
     newId: prefix => `${prefix}-${++seq}`,
   });
   const org = service.createOrganization({ name: '排班验收', scaleTier: 'small' });
-  return { service, org };
+  return { service, store: resolvedStore, org };
+}
+
+function markDone(store: OrgStore, taskId: string): void {
+  const task = store.getTask(taskId)!;
+  store.putTask({
+    ...task,
+    status: 'done',
+    transitions: [...task.transitions, { status: 'done', at: task.createdAt }],
+  });
 }
 
 describe('CronOrgScheduler (F5.2)', () => {
@@ -189,5 +200,74 @@ describe('CronOrgScheduler (F5.2)', () => {
     expect(tick.failed).toHaveLength(1);
     expect(failures).toHaveLength(1);
     expect(service.listTasks(org.id)).toHaveLength(1);
+  });
+
+  it('expands a templateRef goal into ordered tasks and delivers only ready steps', () => {
+    const { service, store, org } = makeService();
+    const goal = service.createGoal({
+      organizationId: org.id,
+      title: '周报流水线',
+      period: 'daily',
+      schedule: { hourUtc: 6, minuteUtc: 0 },
+      templateRef: 'weekly-report',
+    });
+    const at = new Date('2026-11-16T06:00:00.000Z');
+    const deliveries: string[] = [];
+    // Simulate the production handoff: claim moves the task out of pending,
+    // so the scheduler does not re-deliver it on the next tick.
+    const deliver = (delivery: { taskId: string }) => {
+      const task = service.getTask(delivery.taskId);
+      store.putTask({
+        ...task,
+        status: 'running',
+        transitions: [...task.transitions, { status: 'running', at: task.createdAt }],
+      });
+      deliveries.push(task.id);
+    };
+    const scheduler = new CronOrgScheduler({ org: service, deliver });
+
+    const first = scheduler.tick(at);
+    expect(first.created).toHaveLength(3);
+    expect(first.failed).toEqual([]);
+    const tasks = service.listTasks(org.id);
+    const collect = tasks.find(task => task.idempotencyKey === goalRunKey(goal.id, at, 'collect'))!;
+    const summarize = tasks.find(task => task.idempotencyKey === goalRunKey(goal.id, at, 'summarize'))!;
+    const review = tasks.find(task => task.idempotencyKey === goalRunKey(goal.id, at, 'human-review'))!;
+    expect([collect.title, summarize.title, review.title]).toEqual([
+      '采集周报数据',
+      '汇总周报',
+      '人工复核周报',
+    ]);
+    expect(collect.dependsOn).toBeUndefined();
+    expect(summarize.dependsOn).toEqual([collect.id]);
+    expect(review.dependsOn).toEqual([summarize.id]);
+    expect(summarize.payload).toMatchObject({
+      goalId: goal.id,
+      goalTitle: '周报流水线',
+      period: 'daily',
+      scheduledFor: '2026-11-16T06:00:00.000Z',
+      templateRef: 'weekly-report',
+      stepId: 'summarize',
+      template: 'weekly-report',
+      phase: 'summarize',
+    });
+    expect(deliveries).toEqual([collect.id]);
+
+    // A restarted scheduler over the same store sees the same three keys and
+    // advances only the step whose dependency just settled.
+    markDone(store, collect.id);
+    const restarted = new CronOrgScheduler({ org: service, deliver });
+    const second = restarted.tick(at);
+    expect(second.created).toHaveLength(0);
+    expect(second.duplicates).toHaveLength(3);
+    expect(deliveries).toEqual([collect.id, summarize.id]);
+
+    const stillBlocked = restarted.tick(at);
+    expect(stillBlocked.created).toHaveLength(0);
+    expect(deliveries).toEqual([collect.id, summarize.id]);
+
+    markDone(store, summarize.id);
+    restarted.tick(at);
+    expect(deliveries).toEqual([collect.id, summarize.id, review.id]);
   });
 });
