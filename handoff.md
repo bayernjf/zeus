@@ -1,5 +1,15 @@
 # Handoff
 
+## 待办登记（标准）
+
+> 本段是本产品唯一活跃待办入口；详细背景见下方原有章节。完成一项改 `[x]`，并在“最近变更 / Recently shipped”留证据。
+> 最近同步：2026-11-19
+
+- [ ] **`prepareRuntimeRun` 复用旧 run（P1）** — 状态：open；下一步：补回归用例后修，避免同一 project/revision 的后续 org task 复用已完成 run。
+- [ ] **compaction/writeback 真实长会话数据** — 状态：open；当前 `/data` 零条 context-watermark；下一步：用真实长会话产生样本并验证。
+- [ ] **真实组织数据 / 真实任务 dogfood** — 状态：open；下一步：让组织账本、成本分面、审批流跑非测试样本。
+- [ ] **Personal MCP η：CLI chat + daemon（T8/T9）** — 状态：open；来源：Active work #274；下一步：按并行计划 η 排期。
+
 ## 2026-11-17 M5 P2 调度扫描间隔加上下限
 
 - ✅ `src/core/org/scheduling/cron-scheduler.ts`：新增导出 `ORG_SCHEDULER_MIN_INTERVAL_MS = 1000`（1s，防误配疯狂扫描）、`ORG_SCHEDULER_MAX_INTERVAL_MS = 86400000`（24h，防 daily goal 饿死）与 `resolveOrgSchedulerIntervalMs(raw)`（未设回退 `DEFAULT_INTERVAL_MS = 60000`；非正整数或越界抛带变量名与合法窗口的错误）。
@@ -562,4 +572,3 @@ State of Zeus as of 2026-10-17.
 | 2026-10-01 | **E2.3 harden 语义修正：只给约束的加固不再清空权限声明（2 commit，全量 1011 → 1012 绿 / 94 文件，typecheck/build exit 0）**：`SkillRegistry.harden()` 原按 `bounds.permissions ?? []` 重建声明集，**只传 `constraints` 的调用会把技能仍持有的 claims 全抹成 `[]`**——加一道约束等于静默吊销全部权限（新用例先坐实旧实现：`dataDomain:read` 变 `[]`）。现改为省略 `permissions` 时沿用既有有效声明（加固后的声明，否则规格自身声明），约束照旧叠加（`f9d9958`）；**校验仍只覆盖本次实际传入的声明**，故这条路径无法扩权。回归用例落在 `tests/skills-lifecycle.test.ts`（`6d0ed89`），源码与测试按原子规则分两个提交。**活基线已随本条重钉**：篇首 / Current state / 代码索引 / README / checklist 由 **990 / 94** 改为实测 **1012 / 94**（`npm test` 退出码 0、`smoke:core` 36/36、typecheck exit 0）——990 是 B 级批读数，同日后续提交带来的 +22 此前未记入日志，PRD v0.68 与 audit 里的 990 属该批历史读数，不改。项目文档同步：PRD 升 **v0.69**（E2.3 验收句改写、测试计数 8 → 9 项、新增演进行）、feature-inventory 的 harden 行与自述基线同步 |
 | 2026-10-01 | **首轮代码审计 B 级 34 条缺陷全部修复（Active work 88；纯修复 + 文档，全量 909/92 → 990/94）**：按 [docs/audit-2026-09.md](docs/audit-2026-09.md) §4 台账分六批逐条收口，沿用 A 级纪律（每条先做**缺陷植入验证**：临时让守卫失效、确认新增测试变红、再恢复）——b41 §4.1 接口层 11 条、b42 §4.2 派发传输 11 条（row3 数据二极管口径待定，未擅自改设计文档）、b43 §4.3 名册与签名 6 条、b44 §4.4 编排与决策 13 条、b45 §4.5 数据域/记忆/备份 16 行（dataDomain `29981a1` / backup `e9bf689` / mcp `92b2a5d` / memory `63bfd1c`）、b46 §4.6 配置与工程 3 条（`b5fb0b6` 启 `noUnusedLocals` + 收 vitest 配置进 typecheck + 清 18 处死代码、`9dc2e66` CI concurrency/timeout + Dockerfile RSK 说明），共 **32 个 commit**。植入证据举例：b45 五条新测试在 pre-fix HEAD 上**恰好 5 红**（21 绿）；b46 `noUnusedLocals` 让 18 处死代码现形（TS2322/6133）。未闭合如实标注：§4.2 row3 与 §4.5 记忆组两处有意保留（见 audit §8）。能安全闭环的闭环，其余登记 **deferred #36–#39**（TS 另三 flag / scripts checkJs / CI 静态质量闸门 / CI 线上验收闸门）。文档同步 audit v0.3 / PRD v0.68 / README / checklist / docs README / deferred。门禁：doc-consistency 9/9、typecheck/build exit 0、`npm test` **990/94/0**、`smoke:core` 36/36。**未 push（等用户授权）** |
 | 2026-10-01 | **首轮代码审计 A 级 12 条缺陷全部修复（Active work 87；纯修复 + 文档，全量 863/91 → 909/92）**：按 [docs/audit-2026-09.md](docs/audit-2026-09.md) §8 优先级清单逐条收口，每条先做**缺陷植入验证**（临时让守卫失效、确认新增测试变红、再恢复）后修复——A-01 `serve.ts` 透传 `ZEUS_MAX_CONCURRENT_PER_EXECUTOR`（`87056a0`）、A-02 吊销粘性（`bb9a38b`）、A-10 槽位租约纳入 try/finally（`a518a88`）、A-06+A-07 撤回事实不再复活（`054a9fe`/`79b20a9`）、A-05 重连收紧 `type` 与 `readOnly`（`b193d0d`）、A-03+A-04 nonce 防重放落盘与接进决策路径（`4fe069a`/`5747bc1`）、A-11 意图提前落最小可取消态并回写取消结果（`f16a6de`）、A-08 JSON-RPC 按 id 匹配 + A-09 空权限 fail-closed（`f20ef18`/`e9bbb64`）、A-12 出站 URL 公共地址白名单守卫（`b1cf1a6`）。A-12 口径：环回 `127/8` 与 `::1` 按本地优先默认放行、禁 RFC 6890 特殊用途段与 IPv6 ULA/link-local/multicast 及各类 IPv4 映射编码、逃生舱 `ZEUS_OUTBOUND_ALLOW_HOSTS`，**DNS 重绑定未覆盖，登记 deferred #35**。另修 handoff 顶部 676 行截断重复副本（`d7c98a6`）。文档同步 audit v0.2 / feature-inventory v0.2 / PRD v0.67 / README / checklist / deferred。**未 push（等用户授权）** |
-
