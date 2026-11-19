@@ -16,7 +16,7 @@
  * CLI:
  *   node scripts/backup.mjs --db ./data/zeus.db \
  *     [--audit ./data/audit.jsonl] [--state-dir ./data] \
- *     --dir ./data/backups [--keep 7] [--allow-missing-key]
+ *     --dir ./data/backups [--keep 30] [--allow-missing-key]
  */
 import { createRequire } from 'node:module';
 import {
@@ -154,7 +154,7 @@ export function pruneSnapshots(backupDir, keep) {
  */
 function parseArgs(argv) {
   /** @type {{db?: string, audit?: string, dir?: string, stateDir?: string, keep: number, allowMissingKey: boolean}} */
-  const args = { keep: 7, allowMissingKey: false };
+  const args = { keep: 30, allowMissingKey: false };
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i];
     if (key === '--db') args.db = argv[++i] ?? '';
