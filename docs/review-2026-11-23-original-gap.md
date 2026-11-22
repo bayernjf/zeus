@@ -105,11 +105,13 @@
 - `docs/design-inbound-a2a.md` v0.2（2026-10-07）写：Zeus 发布自己的 agent card 并接收入站 `tasks/send`，落到 H2 意图面；机制已于 2026-10-07 落地。
 - `docs/feature-inventory.md` 已把入站 A2A 面标 ✅。
 - 结论：**「不做 A2A server」是滞后/冲突表述**；当前真实缺口不是 server，而是「本地/内网上游调用者 + 在册名册验签信任锚」；公网 A2A 不作为阻塞。
+- **Z-01 收口（2026-11-23）**：`docs/prd.md` §2.2 已改为「入站机制已实现，缺真实调用者/信任锚」，旧表述以括注保留可追溯；feature-inventory §2.1 口径统一为 150 条（5 公开＋145 bearer），由 doc-consistency 实测钉住。
 - `docs/design-a2a-push.md` 的 `POST /api/a2a/push-notifications` 是**出站长任务结果回调接收侧**，不是入站 A2A server；两者不要混为一谈。
 
 ### 5.2 product-portrait 落后
 
 - `docs/product-portrait.md` v0.10（2026-10-01）仍以「高并发、多 Agent 协同决策的平台」为主叙事。
+- **Z-01 收口（2026-11-23）**：portrait 升 v0.11，一句话定位改为「决策 + 组织执行 runtime」，演进日志留痕；不缩回纯决策平台。
 - `docs/feature-inventory.md` v1.14（2026-11-17）已经是「AI 原生的多 Agent 团队运行时」。
 - v0.10 没有覆盖 M5 的 org goal/task/scheduling/template executor、agent-world/agent-dev 执行臂、M6 持久化与备份、M7 操作面。产品叙事落后约一个半月。
 
