@@ -128,6 +128,17 @@
 - `handoff.md` 2026-10-25 变更表也写「T8/T9 已完成」。
 - 结论：**机制已完成**；本文落盘时已把顶部该行改为 `[x]`，不要再把 η 当新建任务。
 
+### 5.5 Z-02 真实组织 dogfood 执行记录（2026-11-23）
+
+- 运行实例：本机独立 Zeus `127.0.0.1:8897`（独立 SQLite），复用本机 agent-world `127.0.0.1:8899`；`taskExecutor=routed`、`arms=[agent-world,template]`、调度 interval 60s。
+- 组织：`org:z02-bayjf`；部门 `dept:z02-ops/dev/content`；岗位 `pos:z02:1-ops`（运营/D2）、`pos:z02:2-dev`（开发/D2）、`pos:z02:3-content`（内容/D0，skills=[content-production]，tools=[agent-world:run-graph, agent-world:get-run]）。
+- 排班：两个 weekly goal（每周运营周报 `weekly-report`、内容生产周任务 `content-review`），`{hourUtc:2,minuteUtc:13,weekdayUtc:1}`；02:13:38Z tick 展开 5 个任务。
+- 运营岗：collect、summarize 同 tick 串行 done；human-review 于 02:15:38Z 投递并停在 D2（`dec_mwsmvxdl_1`），人工 approve 后 done。
+- 内容岗：首次 draft 因 agent-world 内容图两个 imageGen 节点缺图片模型而 `POST /api/runs` 422 失败（`task-mwsmtcso-52wnj`）；补写 fake text/image provider 与 `modelOrder` 后，手动 run 8/8 done。失败任务不可重 claim，故新建补跑 `task-mwsn1314-cavdi` → agent-world `runId 144cbd02-4ef5-45f2-b034-a1cb37d44dee` / `graphId f2b91605-ea73-4459-8c16-41591e2bf5f7`，done（2078ms）。
+- 开发岗：承接内容审核复核 `task-mwsn2d4k-excg0`（`dependsOn` 补跑 draft），产生 D2 决策 `dec_mwsn2fsj_2`，人工 approve 后 done；三岗位均有 assignedAgentId 与结算。
+- 口径：本次 text/image 均为 agent-world 本地 fake provider，文本/图片是合成占位；真实的是调度、状态机、D2 决策、agent-world 执行臂与 run 生命周期。证据目录 `zeus/outputs/z02-org-dogfood/`（`10-summary.md` 为索引）。
+- 已知缺口：agent-world `/api/health` `ok:false`（`jwtSecret=missing`）；真实 Ark 文本模型此前在「笔记排版」节点 HTTP 400，模板参数仍需调。
+
 ## 6. 待办（P0 / P1 / P2）
 
 > P0 = 不做就无法把 Zeus 当「本地自用组织执行 runtime」真正用起来；P1 = 明显影响可靠性/体验，但不阻塞跑通；P2 = 后期或外部条件。所有 P0/P1/P2 均为追加式，不删现有入口/组织执行能力。
@@ -136,8 +147,8 @@
 
 | ID | 待办 | 为什么要做 | 完成判据 |
 |---|---|---|---|
-| Z-01 | **产品口径收口（不删现有能力）** | 当前 PRD 说「不做 A2A server」、portrait 说「决策平台」、feature-inventory 说「runtime」；不拍板会导致下一批继续按旧叙事做 | 三处统一：product-portrait 升版为「决策 + 组织执行 runtime」；PRD §2.2 的 A2A server 表述改为「入站机制已实现，缺真实调用者/信任锚」；feature-inventory 路由数 150/134 只保留一个口径；保留现有组织执行 runtime、执行臂与全部入口，不缩回纯决策平台。改动前由 owner 拍板定位 |
-| Z-02 | **真实组织 dogfood** | 现有 `e2e:m7` 是 fake worker 可重复闭环；真实组织数据/真实任务没有跑过，无法证明 M5 的模板执行在真实业务里可用 | 选一个真实组织（2–3 个岗位），真实 goal → 排班 → `weekly-report` 模板 → agent-world/agent-dev 执行 → D2 人工审批 → 产出；证据落 `outputs/` 或 `docs/`，列出每一步真实输入、产出、失败点 |
+| Z-01 ✅ | **产品口径收口（不删现有能力）** | 当前 PRD 说「不做 A2A server」、portrait 说「决策平台」、feature-inventory 说「runtime」；不拍板会导致下一批继续按旧叙事做 | 三处统一：product-portrait 升版为「决策 + 组织执行 runtime」；PRD §2.2 的 A2A server 表述改为「入站机制已实现，缺真实调用者/信任锚」；feature-inventory 路由数 150/134 只保留一个口径；保留现有组织执行 runtime、执行臂与全部入口，不缩回纯决策平台。改动前由 owner 拍板定位 |
+| Z-02 ✅ | **真实组织 dogfood** | 现有 `e2e:m7` 是 fake worker 可重复闭环；真实组织数据/真实任务没有跑过，无法证明 M5 的模板执行在真实业务里可用 | 选一个真实组织（2–3 个岗位），真实 goal → 排班 → `weekly-report` 模板 → agent-world/agent-dev 执行 → D2 人工审批 → 产出；证据落 `outputs/` 或 `docs/`，列出每一步真实输入、产出、失败点 |
 | Z-03 | **单入口定位（现有入口全保留）** | 原立项承诺「用户只面对 Zeus 一个入口」；当前 daily/TUI/Web/HTTP/MCP/chat CLI/daemon 并存，用户需要自己选；要解决的是「默认从哪进」，不是删面 | 选定一个主入口（建议 `npm run daily` 或 chat CLI + daemon），其余面全部保留并明确标为 operator/dev/自动化面；不删除、不合并掉任何现有入口；文档写清「日常从哪进、什么时候用哪个面」 |
 
 ### P1

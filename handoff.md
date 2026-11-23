@@ -7,8 +7,8 @@
 
 - [x] **`prepareRuntimeRun` 复用旧 run（P1）** — 已确认修复（2026-11-21）：`storage-webapp` 在 completed/cancelled 后新建 run 并记录 `previousRunId`；回归用例 `starts a fresh run after a completed or cancelled run` 通过（storage-webapp 32/32）。
 - [ ] **compaction/writeback 真实长会话数据** — 状态：open；当前 `/data` 零条 context-watermark；下一步：用真实长会话产生样本并验证。
-- [ ] **真实组织数据 / 真实任务 dogfood** — 状态：open；下一步：让组织账本、成本分面、审批流跑非测试样本。
-- [ ] **立项差距台账（docs/review-2026-11-23-original-gap.md）** — 状态：open；P0 = Z-01 产品口径收口 / Z-02 真实组织 dogfood / Z-03 单入口定位（入口全保留）；迭代纪律：现有入口/组织执行能力全保留，Z-03 只定主入口、不删入口；明细见文档。
+- [x] **真实组织数据 / 真实任务 dogfood（Z-02）** — 已完成（2026-11-23）：本机独立 Zeus 实例 + agent-world 真实执行臂，运营/开发/内容三岗位各产生 done 任务；内容岗 run `144cbd02-4ef5-45f2-b034-a1cb37d44dee` 8/8 节点 done；证据 `outputs/z02-org-dogfood/10-summary.md`。口径：text/image 为本地 fake provider（合成占位），真实的是调度/状态机/D2 审批/执行臂。
+- [ ] **立项差距台账（docs/review-2026-11-23-original-gap.md）** — 状态：open；P0 = Z-01 产品口径收口 ✅ / Z-02 真实组织 dogfood ✅ / Z-03 单入口定位（入口全保留，待办）；迭代纪律：现有入口/组织执行能力全保留，Z-03 只定主入口、不删入口；明细见文档。
 - [x] **Personal MCP η：CLI chat + daemon（T8/T9）** — 已落码（2026-10-27 Active work 276 销记：5da90b8/082afaf/525d252/944ee6c 在 dev）；顶部原 open 行是台账滞后，不重开开发。
 
 ## 2026-11-17 M5 P2 调度扫描间隔加上下限

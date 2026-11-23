@@ -1,0 +1,608 @@
+{
+    "tasks": [
+        {
+            "format": "zeus-org-task",
+            "version": 1,
+            "id": "task-mwsmtcs0-24dgc",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u91c7\u96c6\u5468\u62a5\u6570\u636e",
+            "payload": {
+                "goalId": "goal-mwsmq6f3-00rqw",
+                "goalTitle": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5",
+                "period": "weekly",
+                "scheduledFor": "2026-11-23T02:13:00.000Z",
+                "templateRef": "weekly-report",
+                "stepId": "collect",
+                "template": "weekly-report",
+                "phase": "collect"
+            },
+            "positionId": "pos:z02:1-ops",
+            "assignedAgentId": "agent:z02-ops",
+            "runId": "run-mwsmtct8-7qf07",
+            "status": "done",
+            "result": {
+                "system": "template",
+                "templateRef": "weekly-report",
+                "stepId": "collect",
+                "report": {
+                    "goalId": "goal-mwsmq6f3-00rqw",
+                    "goalTitle": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5",
+                    "scheduledFor": "2026-11-23T02:13:00.000Z",
+                    "generatedAt": "2026-11-23T02:13:38.951Z",
+                    "tasks": [
+                        {
+                            "id": "task-mwsmtcs0-24dgc",
+                            "title": "\u91c7\u96c6\u5468\u62a5\u6570\u636e",
+                            "status": "running",
+                            "stepId": "collect",
+                            "updatedAt": "2026-11-23T02:13:38.948Z"
+                        },
+                        {
+                            "id": "task-mwsmtcs7-4f2aa",
+                            "title": "\u4eba\u5de5\u590d\u6838\u5468\u62a5",
+                            "status": "pending",
+                            "stepId": "human-review",
+                            "updatedAt": "2026-11-23T02:13:38.935Z"
+                        },
+                        {
+                            "id": "task-mwsmtcs2-36u74",
+                            "title": "\u6c47\u603b\u5468\u62a5",
+                            "status": "pending",
+                            "stepId": "summarize",
+                            "updatedAt": "2026-11-23T02:13:38.930Z"
+                        }
+                    ]
+                }
+            },
+            "attempts": 1,
+            "progress": [
+                {
+                    "stage": "template:weekly-report:collect",
+                    "data": {
+                        "templateRef": "weekly-report",
+                        "stepId": "collect",
+                        "goalId": "goal-mwsmq6f3-00rqw"
+                    },
+                    "at": "2026-11-23T02:13:38.951Z"
+                }
+            ],
+            "idempotencyKey": "goal:goal-mwsmq6f3-00rqw:2026-11-23T02:13:00.000Z:collect",
+            "outcome": {
+                "status": "done",
+                "attempts": 1,
+                "decisions": [],
+                "startedAt": "2026-11-23T02:13:38.948Z",
+                "settledAt": "2026-11-23T02:13:38.972Z",
+                "durationMs": 24,
+                "resultSummary": "{\"system\":\"template\",\"templateRef\":\"weekly-report\",\"stepId\":\"collect\",\"report\":{\"goalId\":\"goal-mwsmq6f3-00rqw\",\"goalTitle\":\"\u6bcf\u5468\u8fd0\u8425\u5468\u62a5\",\"scheduledFor\":\"2026-11-23T02:13:00.000Z\",\"generatedAt\":\"2026-11-23T"
+            },
+            "transitions": [
+                {
+                    "status": "pending",
+                    "at": "2026-11-23T02:13:38.928Z"
+                },
+                {
+                    "status": "dispatched",
+                    "at": "2026-11-23T02:13:38.948Z",
+                    "note": "pos:z02:1-ops"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:13:38.948Z",
+                    "note": "agent agent:z02-ops"
+                },
+                {
+                    "status": "done",
+                    "at": "2026-11-23T02:13:38.972Z"
+                }
+            ],
+            "createdAt": "2026-11-23T02:13:38.928Z",
+            "updatedAt": "2026-11-23T02:13:38.972Z"
+        },
+        {
+            "format": "zeus-org-task",
+            "version": 1,
+            "id": "task-mwsmtcs7-4f2aa",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u4eba\u5de5\u590d\u6838\u5468\u62a5",
+            "payload": {
+                "goalId": "goal-mwsmq6f3-00rqw",
+                "goalTitle": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5",
+                "period": "weekly",
+                "scheduledFor": "2026-11-23T02:13:00.000Z",
+                "templateRef": "weekly-report",
+                "stepId": "human-review",
+                "template": "weekly-report",
+                "phase": "human-review"
+            },
+            "positionId": "pos:z02:1-ops",
+            "assignedAgentId": "agent:z02-ops",
+            "runId": "run-mwsn0t55-aelbx",
+            "status": "done",
+            "decisionId": "dec_mwsmvxdl_1",
+            "result": {
+                "system": "template",
+                "templateRef": "weekly-report",
+                "stepId": "human-review",
+                "decisionId": "dec_mwsmvxdl_1",
+                "decisionOutcome": "approved"
+            },
+            "attempts": 1,
+            "progress": [
+                {
+                    "stage": "template:weekly-report:human-review",
+                    "data": {
+                        "templateRef": "weekly-report",
+                        "stepId": "human-review",
+                        "goalId": "goal-mwsmq6f3-00rqw"
+                    },
+                    "at": "2026-11-23T02:15:38.934Z"
+                },
+                {
+                    "stage": "template:weekly-report:human-review",
+                    "data": {
+                        "templateRef": "weekly-report",
+                        "stepId": "human-review",
+                        "goalId": "goal-mwsmq6f3-00rqw"
+                    },
+                    "at": "2026-11-23T02:19:26.729Z"
+                }
+            ],
+            "idempotencyKey": "goal:goal-mwsmq6f3-00rqw:2026-11-23T02:13:00.000Z:human-review",
+            "outcome": {
+                "status": "done",
+                "attempts": 1,
+                "decisions": [
+                    {
+                        "id": "dec_mwsmvxdl_1",
+                        "status": "decided"
+                    }
+                ],
+                "startedAt": "2026-11-23T02:19:26.729Z",
+                "settledAt": "2026-11-23T02:19:26.729Z",
+                "durationMs": 0,
+                "resultSummary": "{\"system\":\"template\",\"templateRef\":\"weekly-report\",\"stepId\":\"human-review\",\"decisionId\":\"dec_mwsmvxdl_1\",\"decisionOutcome\":\"approved\"}"
+            },
+            "dependsOn": [
+                "task-mwsmtcs2-36u74"
+            ],
+            "transitions": [
+                {
+                    "status": "pending",
+                    "at": "2026-11-23T02:13:38.935Z"
+                },
+                {
+                    "status": "dispatched",
+                    "at": "2026-11-23T02:15:38.930Z",
+                    "note": "pos:z02:1-ops"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:15:38.930Z",
+                    "note": "agent agent:z02-ops"
+                },
+                {
+                    "status": "awaiting_decision",
+                    "at": "2026-11-23T02:15:38.940Z",
+                    "note": "dec_mwsmvxdl_1"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:19:26.729Z",
+                    "note": "resumed after decision"
+                },
+                {
+                    "status": "done",
+                    "at": "2026-11-23T02:19:26.729Z"
+                }
+            ],
+            "createdAt": "2026-11-23T02:13:38.935Z",
+            "updatedAt": "2026-11-23T02:19:26.729Z"
+        },
+        {
+            "format": "zeus-org-task",
+            "version": 1,
+            "id": "task-mwsmtcs2-36u74",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u6c47\u603b\u5468\u62a5",
+            "payload": {
+                "goalId": "goal-mwsmq6f3-00rqw",
+                "goalTitle": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5",
+                "period": "weekly",
+                "scheduledFor": "2026-11-23T02:13:00.000Z",
+                "templateRef": "weekly-report",
+                "stepId": "summarize",
+                "template": "weekly-report",
+                "phase": "summarize"
+            },
+            "positionId": "pos:z02:1-ops",
+            "assignedAgentId": "agent:z02-ops",
+            "runId": "run-mwsmun2z-9byfk",
+            "status": "done",
+            "result": {
+                "system": "template",
+                "templateRef": "weekly-report",
+                "stepId": "summarize",
+                "sourceTaskId": "task-mwsmtcs0-24dgc",
+                "taskCount": 3,
+                "summary": "# \u6bcf\u5468\u8fd0\u8425\u5468\u62a5\n\nOccurrence: 2026-11-23T02:13:00.000Z\nGenerated at: 2026-11-23T02:13:38.951Z\n\n## Tasks (3)\n\n- [running] \u91c7\u96c6\u5468\u62a5\u6570\u636e (collect)\n- [pending] \u4eba\u5de5\u590d\u6838\u5468\u62a5 (human-review)\n- [pending] \u6c47\u603b\u5468\u62a5 (summarize)"
+            },
+            "attempts": 1,
+            "progress": [
+                {
+                    "stage": "template:weekly-report:summarize",
+                    "data": {
+                        "templateRef": "weekly-report",
+                        "stepId": "summarize",
+                        "goalId": "goal-mwsmq6f3-00rqw"
+                    },
+                    "at": "2026-11-23T02:14:38.935Z"
+                }
+            ],
+            "idempotencyKey": "goal:goal-mwsmq6f3-00rqw:2026-11-23T02:13:00.000Z:summarize",
+            "outcome": {
+                "status": "done",
+                "attempts": 1,
+                "decisions": [],
+                "startedAt": "2026-11-23T02:14:38.930Z",
+                "settledAt": "2026-11-23T02:14:38.939Z",
+                "durationMs": 9,
+                "resultSummary": "{\"system\":\"template\",\"templateRef\":\"weekly-report\",\"stepId\":\"summarize\",\"sourceTaskId\":\"task-mwsmtcs0-24dgc\",\"taskCount\":3,\"summary\":\"# \u6bcf\u5468\u8fd0\u8425\u5468\u62a5\\n\\nOccurrence: 2026-11-23T02:13:00.000Z\\nGenerated at: 20"
+            },
+            "dependsOn": [
+                "task-mwsmtcs0-24dgc"
+            ],
+            "transitions": [
+                {
+                    "status": "pending",
+                    "at": "2026-11-23T02:13:38.930Z"
+                },
+                {
+                    "status": "dispatched",
+                    "at": "2026-11-23T02:14:38.930Z",
+                    "note": "pos:z02:1-ops"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:14:38.930Z",
+                    "note": "agent agent:z02-ops"
+                },
+                {
+                    "status": "done",
+                    "at": "2026-11-23T02:14:38.939Z"
+                }
+            ],
+            "createdAt": "2026-11-23T02:13:38.930Z",
+            "updatedAt": "2026-11-23T02:14:38.939Z"
+        },
+        {
+            "format": "zeus-org-task",
+            "version": 1,
+            "id": "task-mwsmtcso-52wnj",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u751f\u6210\u5185\u5bb9\u8349\u7a3f",
+            "payload": {
+                "goalId": "goal-mwsmq6f3-16bpm",
+                "goalTitle": "\u5185\u5bb9\u751f\u4ea7\u5468\u4efb\u52a1",
+                "period": "weekly",
+                "scheduledFor": "2026-11-23T02:13:00.000Z",
+                "templateRef": "content-review",
+                "stepId": "draft",
+                "template": "content-review",
+                "phase": "draft"
+            },
+            "requiredSkill": "content-production",
+            "positionId": "pos:z02:3-content",
+            "assignedAgentId": "agent:z02-content",
+            "status": "failed",
+            "error": "agent-world POST /api/runs failed (422)",
+            "attempts": 1,
+            "failedKind": "business",
+            "progress": [
+                {
+                    "stage": "template:content-review:draft",
+                    "data": {
+                        "templateRef": "content-review",
+                        "stepId": "draft",
+                        "goalId": "goal-mwsmq6f3-16bpm"
+                    },
+                    "at": "2026-11-23T02:13:38.953Z"
+                },
+                {
+                    "stage": "template:content-review:draft",
+                    "data": {
+                        "delegatedTo": "agent-world",
+                        "workflow": "content"
+                    },
+                    "at": "2026-11-23T02:13:38.954Z"
+                },
+                {
+                    "stage": "agent-world:start",
+                    "data": {
+                        "workflow": "content",
+                        "template": "tpl-xiaohongshu"
+                    },
+                    "at": "2026-11-23T02:13:38.954Z"
+                }
+            ],
+            "idempotencyKey": "goal:goal-mwsmq6f3-16bpm:2026-11-23T02:13:00.000Z:draft",
+            "outcome": {
+                "status": "failed",
+                "attempts": 1,
+                "failedKind": "business",
+                "error": "agent-world POST /api/runs failed (422)",
+                "decisions": [],
+                "startedAt": "2026-11-23T02:13:38.953Z",
+                "settledAt": "2026-11-23T02:13:39.292Z",
+                "durationMs": 339
+            },
+            "transitions": [
+                {
+                    "status": "pending",
+                    "at": "2026-11-23T02:13:38.952Z"
+                },
+                {
+                    "status": "dispatched",
+                    "at": "2026-11-23T02:13:38.953Z",
+                    "note": "pos:z02:3-content"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:13:38.953Z",
+                    "note": "agent agent:z02-content"
+                },
+                {
+                    "status": "failed",
+                    "at": "2026-11-23T02:13:39.292Z",
+                    "note": "agent-world POST /api/runs failed (422)"
+                }
+            ],
+            "createdAt": "2026-11-23T02:13:38.952Z",
+            "updatedAt": "2026-11-23T02:13:39.292Z"
+        },
+        {
+            "format": "zeus-org-task",
+            "version": 1,
+            "id": "task-mwsmtcsp-6jv1f",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u4eba\u5de5\u5ba1\u6838\u5185\u5bb9",
+            "payload": {
+                "goalId": "goal-mwsmq6f3-16bpm",
+                "goalTitle": "\u5185\u5bb9\u751f\u4ea7\u5468\u4efb\u52a1",
+                "period": "weekly",
+                "scheduledFor": "2026-11-23T02:13:00.000Z",
+                "templateRef": "content-review",
+                "stepId": "review",
+                "template": "content-review",
+                "phase": "review"
+            },
+            "status": "pending",
+            "idempotencyKey": "goal:goal-mwsmq6f3-16bpm:2026-11-23T02:13:00.000Z:review",
+            "dependsOn": [
+                "task-mwsmtcso-52wnj"
+            ],
+            "transitions": [
+                {
+                    "status": "pending",
+                    "at": "2026-11-23T02:13:38.953Z"
+                }
+            ],
+            "createdAt": "2026-11-23T02:13:38.953Z",
+            "updatedAt": "2026-11-23T02:13:38.953Z"
+        },
+        {
+            "format": "zeus-org-task",
+            "version": 1,
+            "id": "task-mwsn1314-cavdi",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u751f\u6210\u5185\u5bb9\u8349\u7a3f\uff08\u8865\u8dd1\uff09",
+            "payload": {
+                "workflow": "content",
+                "input": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5\u590d\u76d8\uff1a\u672c\u5468\u7ebf\u7d22\u91c7\u96c6\u4e0e\u8f6c\u5316\u60c5\u51b5\uff0c\u4ea7\u51fa\u5c0f\u7ea2\u4e66\u98ce\u683c\u5185\u5bb9\u8349\u7a3f",
+                "graphName": "zeus-content-z02-r2",
+                "goalId": "goal-mwsmq6f3-16bpm"
+            },
+            "requiredSkill": "content-production",
+            "positionId": "pos:z02:3-content",
+            "assignedAgentId": "agent:z02-content",
+            "runId": "run-mwsn16xx-dftk0",
+            "status": "done",
+            "result": {
+                "system": "agent-world",
+                "workflow": "content",
+                "template": "tpl-xiaohongshu",
+                "graphId": "f2b91605-ea73-4459-8c16-41591e2bf5f7",
+                "runId": "144cbd02-4ef5-45f2-b034-a1cb37d44dee",
+                "finalStatus": "done",
+                "checkpointGrade": "D0",
+                "artifacts": [
+                    {
+                        "id": "144cbd02-intake-8y9d4-text",
+                        "kind": "text"
+                    },
+                    {
+                        "id": "144cbd02-banner-sthd6-img-0",
+                        "kind": "image",
+                        "label": "AI \u914d\u56fe"
+                    },
+                    {
+                        "id": "144cbd02-scene-xzxhr-img-0",
+                        "kind": "image",
+                        "label": "AI \u573a\u666f\u56fe"
+                    },
+                    {
+                        "id": "144cbd02-sellin-tqnoz-text",
+                        "kind": "text"
+                    },
+                    {
+                        "id": "144cbd02-copy-n2pmq-text",
+                        "kind": "text"
+                    },
+                    {
+                        "id": "144cbd02-layout-ve9p2-text",
+                        "kind": "text"
+                    },
+                    {
+                        "id": "144cbd02-qc-9gabg-text",
+                        "kind": "text"
+                    },
+                    {
+                        "id": "144cbd02-depot-wm3g6-text",
+                        "kind": "text"
+                    }
+                ]
+            },
+            "attempts": 1,
+            "progress": [
+                {
+                    "stage": "agent-world:start",
+                    "data": {
+                        "workflow": "content",
+                        "template": "tpl-xiaohongshu"
+                    },
+                    "at": "2026-11-23T02:19:42.535Z"
+                },
+                {
+                    "stage": "agent-world:done",
+                    "data": {
+                        "runId": "144cbd02-4ef5-45f2-b034-a1cb37d44dee",
+                        "nodes": null
+                    },
+                    "at": "2026-11-23T02:19:44.613Z"
+                }
+            ],
+            "idempotencyKey": "z02-content-retry-1",
+            "outcome": {
+                "status": "done",
+                "attempts": 1,
+                "decisions": [],
+                "startedAt": "2026-11-23T02:19:42.535Z",
+                "settledAt": "2026-11-23T02:19:44.613Z",
+                "durationMs": 2078,
+                "resultSummary": "{\"system\":\"agent-world\",\"workflow\":\"content\",\"template\":\"tpl-xiaohongshu\",\"graphId\":\"f2b91605-ea73-4459-8c16-41591e2bf5f7\",\"runId\":\"144cbd02-4ef5-45f2-b034-a1cb37d44dee\",\"finalStatus\":\"done\",\"checkpoi"
+            },
+            "transitions": [
+                {
+                    "status": "pending",
+                    "at": "2026-11-23T02:19:39.544Z"
+                },
+                {
+                    "status": "dispatched",
+                    "at": "2026-11-23T02:19:42.535Z",
+                    "note": "pos:z02:3-content"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:19:42.535Z",
+                    "note": "agent agent:z02-content"
+                },
+                {
+                    "status": "done",
+                    "at": "2026-11-23T02:19:44.613Z"
+                }
+            ],
+            "createdAt": "2026-11-23T02:19:39.544Z",
+            "updatedAt": "2026-11-23T02:19:44.613Z"
+        },
+        {
+            "format": "zeus-org-task",
+            "version": 1,
+            "id": "task-mwsn2d4k-excg0",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u4eba\u5de5\u5ba1\u6838\u5185\u5bb9\uff08\u5f00\u53d1\u5c97\u590d\u6838\uff09",
+            "payload": {
+                "goalId": "goal-mwsmq6f3-16bpm",
+                "goalTitle": "\u5185\u5bb9\u751f\u4ea7\u5468\u4efb\u52a1",
+                "period": "weekly",
+                "scheduledFor": "2026-11-23T02:13:00.000Z",
+                "templateRef": "content-review",
+                "stepId": "review",
+                "template": "content-review",
+                "phase": "review"
+            },
+            "positionId": "pos:z02:2-dev",
+            "assignedAgentId": "agent:z02-dev",
+            "runId": "run-mwsn2lrs-fkn1h",
+            "status": "done",
+            "decisionId": "dec_mwsn2fsj_2",
+            "result": {
+                "system": "template",
+                "templateRef": "content-review",
+                "stepId": "review",
+                "decisionId": "dec_mwsn2fsj_2",
+                "decisionOutcome": "approved"
+            },
+            "attempts": 1,
+            "progress": [
+                {
+                    "stage": "template:content-review:review",
+                    "data": {
+                        "templateRef": "content-review",
+                        "stepId": "review",
+                        "goalId": "goal-mwsmq6f3-16bpm"
+                    },
+                    "at": "2026-11-23T02:20:42.739Z"
+                },
+                {
+                    "stage": "template:content-review:review",
+                    "data": {
+                        "templateRef": "content-review",
+                        "stepId": "review",
+                        "goalId": "goal-mwsmq6f3-16bpm"
+                    },
+                    "at": "2026-11-23T02:20:50.488Z"
+                }
+            ],
+            "idempotencyKey": "z02-content-review-retry-1",
+            "outcome": {
+                "status": "done",
+                "attempts": 1,
+                "decisions": [
+                    {
+                        "id": "dec_mwsn2fsj_2",
+                        "status": "decided"
+                    }
+                ],
+                "startedAt": "2026-11-23T02:20:50.488Z",
+                "settledAt": "2026-11-23T02:20:50.488Z",
+                "durationMs": 0,
+                "resultSummary": "{\"system\":\"template\",\"templateRef\":\"content-review\",\"stepId\":\"review\",\"decisionId\":\"dec_mwsn2fsj_2\",\"decisionOutcome\":\"approved\"}"
+            },
+            "dependsOn": [
+                "task-mwsn1314-cavdi"
+            ],
+            "transitions": [
+                {
+                    "status": "pending",
+                    "at": "2026-11-23T02:20:39.284Z"
+                },
+                {
+                    "status": "dispatched",
+                    "at": "2026-11-23T02:20:42.738Z",
+                    "note": "pos:z02:2-dev"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:20:42.738Z",
+                    "note": "agent agent:z02-dev"
+                },
+                {
+                    "status": "awaiting_decision",
+                    "at": "2026-11-23T02:20:42.739Z",
+                    "note": "dec_mwsn2fsj_2"
+                },
+                {
+                    "status": "running",
+                    "at": "2026-11-23T02:20:50.488Z",
+                    "note": "resumed after decision"
+                },
+                {
+                    "status": "done",
+                    "at": "2026-11-23T02:20:50.488Z"
+                }
+            ],
+            "createdAt": "2026-11-23T02:20:39.284Z",
+            "updatedAt": "2026-11-23T02:20:50.488Z"
+        }
+    ]
+}

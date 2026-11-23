@@ -1,0 +1,54 @@
+{
+  "defaultProvider": "z02-fake-text",
+  "defaultModel": "fake",
+  "modelOrder": [
+    "z02-fake-text::fake",
+    "z02-fake-image::z02-fake-image"
+  ],
+  "modelSlots": null,
+  "providers": {
+    "fake": {
+      "type": "fake",
+      "models": [],
+      "modalities": null,
+      "enabled": null,
+      "source": null
+    },
+    "z02-fake-text": {
+      "type": "fake",
+      "models": [
+        "fake"
+      ],
+      "modalities": {
+        "fake": "text"
+      },
+      "enabled": true,
+      "source": null
+    },
+    "z02-fake-image": {
+      "type": "fake",
+      "models": [
+        "z02-fake-image"
+      ],
+      "modalities": {
+        "z02-fake-image": "image"
+      },
+      "enabled": true,
+      "source": null
+    },
+    "hub-ark": {
+      "type": "openai-compatible",
+      "models": [
+        "ark-code-latest",
+        "doubao-seed-evolving",
+        "doubao-seed-evolving"
+      ],
+      "modalities": {
+        "ark-code-latest": "text",
+        "doubao-seed-evolving": "text"
+      },
+      "enabled": true,
+      "source": "builtin"
+    }
+  }
+}

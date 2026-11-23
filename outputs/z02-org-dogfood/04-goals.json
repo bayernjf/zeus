@@ -1,0 +1,38 @@
+{
+    "goals": [
+        {
+            "format": "zeus-org-goal",
+            "version": 1,
+            "id": "goal-mwsmq6f3-00rqw",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5",
+            "period": "weekly",
+            "status": "active",
+            "schedule": {
+                "hourUtc": 2,
+                "minuteUtc": 13,
+                "weekdayUtc": 1
+            },
+            "templateRef": "weekly-report",
+            "createdAt": "2026-11-23T02:11:10.719Z",
+            "updatedAt": "2026-11-23T02:11:10.719Z"
+        },
+        {
+            "format": "zeus-org-goal",
+            "version": 1,
+            "id": "goal-mwsmq6f3-16bpm",
+            "organizationId": "org:z02-bayjf",
+            "title": "\u5185\u5bb9\u751f\u4ea7\u5468\u4efb\u52a1",
+            "period": "weekly",
+            "status": "active",
+            "schedule": {
+                "hourUtc": 2,
+                "minuteUtc": 13,
+                "weekdayUtc": 1
+            },
+            "templateRef": "content-review",
+            "createdAt": "2026-11-23T02:11:10.719Z",
+            "updatedAt": "2026-11-23T02:11:10.719Z"
+        }
+    ]
+}
