@@ -1,0 +1,398 @@
+{
+    "run": {
+        "id": "144cbd02-4ef5-45f2-b034-a1cb37d44dee",
+        "graphId": "f2b91605-ea73-4459-8c16-41591e2bf5f7",
+        "status": "done",
+        "trigger": "manual",
+        "startedAt": 1795400382547,
+        "endedAt": 1795400384133,
+        "budgetUsd": null,
+        "haltedNodeId": null,
+        "haltedReason": null,
+        "input": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5\u590d\u76d8\uff1a\u672c\u5468\u7ebf\u7d22\u91c7\u96c6\u4e0e\u8f6c\u5316\u60c5\u51b5\uff0c\u4ea7\u51fa\u5c0f\u7ea2\u4e66\u98ce\u683c\u5185\u5bb9\u8349\u7a3f"
+    },
+    "nodeMeta": {
+        "intake-8y9d4": {
+            "name": "\u539f\u6599\u53f0",
+            "kind": "source"
+        },
+        "sellin-tqnoz": {
+            "name": "\u5356\u70b9\u63d0\u70bc",
+            "kind": "textGen"
+        },
+        "copy-n2pmq": {
+            "name": "\u79cd\u8349\u6587\u6848",
+            "kind": "textGen"
+        },
+        "layout-ve9p2": {
+            "name": "\u7b14\u8bb0\u6392\u7248",
+            "kind": "textGen"
+        },
+        "qc-9gabg": {
+            "name": "\u8d28\u68c0\u7ad9",
+            "kind": "gate"
+        },
+        "banner-sthd6": {
+            "name": "AI \u914d\u56fe",
+            "kind": "imageGen"
+        },
+        "scene-xzxhr": {
+            "name": "AI \u573a\u666f\u56fe",
+            "kind": "imageGen"
+        },
+        "depot-wm3g6": {
+            "name": "\u6210\u54c1\u5e93",
+            "kind": "sink"
+        }
+    },
+    "timeline": {
+        "nodes": [
+            {
+                "nodeId": "intake-8y9d4",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400382551,
+                        "finishedAt": 1795400382551,
+                        "durationMs": 0,
+                        "outputPreview": "\u6bcf\u5468\u8fd0\u8425\u5468\u62a5\u590d\u76d8\uff1a\u672c\u5468\u7ebf\u7d22\u91c7\u96c6\u4e0e\u8f6c\u5316\u60c5\u51b5\uff0c\u4ea7\u51fa\u5c0f\u7ea2\u4e66\u98ce\u683c\u5185\u5bb9\u8349\u7a3f",
+                        "outputTruncated": false,
+                        "tokensIn": 0,
+                        "tokensOut": 0,
+                        "costUsd": 0,
+                        "model": null,
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    }
+                ],
+                "firstStartedAt": 1795400382551,
+                "status": "done"
+            },
+            {
+                "nodeId": "sellin-tqnoz",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400382552,
+                        "finishedAt": 1795400382830,
+                        "durationMs": 278,
+                        "outputPreview": "[\u5356\u70b9\u63d0\u70bc] attempt 1 consuming 32 chars of input -> producing artifact",
+                        "outputTruncated": false,
+                        "tokensIn": 8,
+                        "tokensOut": 17,
+                        "costUsd": 0.000279,
+                        "model": "fake",
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    }
+                ],
+                "firstStartedAt": 1795400382552,
+                "status": "done"
+            },
+            {
+                "nodeId": "banner-sthd6",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400382552,
+                        "finishedAt": 1795400382555,
+                        "durationMs": 3,
+                        "outputPreview": "",
+                        "outputTruncated": false,
+                        "tokensIn": 0,
+                        "tokensOut": 0,
+                        "costUsd": 0,
+                        "model": "z02-fake-image",
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 0
+                    }
+                ],
+                "firstStartedAt": 1795400382552,
+                "status": "done"
+            },
+            {
+                "nodeId": "scene-xzxhr",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400382552,
+                        "finishedAt": 1795400382556,
+                        "durationMs": 4,
+                        "outputPreview": "",
+                        "outputTruncated": false,
+                        "tokensIn": 0,
+                        "tokensOut": 0,
+                        "costUsd": 0,
+                        "model": "z02-fake-image",
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 0
+                    }
+                ],
+                "firstStartedAt": 1795400382552,
+                "status": "done"
+            },
+            {
+                "nodeId": "copy-n2pmq",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400382831,
+                        "finishedAt": 1795400383106,
+                        "durationMs": 275,
+                        "outputPreview": "[\u79cd\u8349\u6587\u6848] attempt 1 consuming 66 chars of input -> producing artifact",
+                        "outputTruncated": false,
+                        "tokensIn": 17,
+                        "tokensOut": 17,
+                        "costUsd": 0.000306,
+                        "model": "fake",
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    },
+                    {
+                        "attempt": 2,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400383478,
+                        "finishedAt": 1795400383753,
+                        "durationMs": 275,
+                        "outputPreview": "[\u79cd\u8349\u6587\u6848] attempt 2 consuming 177 chars of input -> producing artifact",
+                        "outputTruncated": false,
+                        "tokensIn": 45,
+                        "tokensOut": 17,
+                        "costUsd": 0.00039,
+                        "model": "fake",
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    }
+                ],
+                "firstStartedAt": 1795400382831,
+                "status": "done"
+            },
+            {
+                "nodeId": "layout-ve9p2",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400383106,
+                        "finishedAt": 1795400383385,
+                        "durationMs": 279,
+                        "outputPreview": "[\u7b14\u8bb0\u6392\u7248] attempt 1 consuming 211 chars of input -> producing artifact",
+                        "outputTruncated": false,
+                        "tokensIn": 53,
+                        "tokensOut": 17,
+                        "costUsd": 0.000414,
+                        "model": "fake",
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    },
+                    {
+                        "attempt": 2,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400383753,
+                        "finishedAt": 1795400384031,
+                        "durationMs": 278,
+                        "outputPreview": "[\u7b14\u8bb0\u6392\u7248] attempt 2 consuming 212 chars of input -> producing artifact",
+                        "outputTruncated": false,
+                        "tokensIn": 53,
+                        "tokensOut": 17,
+                        "costUsd": 0.000414,
+                        "model": "fake",
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    }
+                ],
+                "firstStartedAt": 1795400383106,
+                "status": "done"
+            },
+            {
+                "nodeId": "qc-9gabg",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "running",
+                        "startedAt": 1795400383385,
+                        "finishedAt": null,
+                        "durationMs": null,
+                        "outputPreview": null,
+                        "outputTruncated": false,
+                        "tokensIn": 0,
+                        "tokensOut": 0,
+                        "costUsd": 0,
+                        "model": null,
+                        "score": 3,
+                        "gate": {
+                            "passed": false,
+                            "reason": "Criterion not met: \u5fc5\u987b\u8f93\u51fa\u5408\u6cd5\u7684 product-json\uff0c\u542b\u5438\u775b\u6807\u9898\u3001\u81f3\u5c11 3 \u4e2a\u5206\u70b9\u3001\u6b63\u6587\u548c\u5e26\u8bdd\u9898\u6807\u7b7e\u7684 CTA\uff1b\u8bed\u6c14\u81ea\u7136\uff0c\u65e0\u786c\u5e7f\u6781\u9650\u8bcd\u3002\n\u8865\u5145\u5224\u5b9a\u89c4\u5219\uff1a\u51e1 URL \u8def\u5f84\u4e2d\u5305",
+                            "score": 3
+                        },
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 0
+                    },
+                    {
+                        "attempt": 2,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400384031,
+                        "finishedAt": 1795400384125,
+                        "durationMs": 94,
+                        "outputPreview": "Meets criterion: \u5fc5\u987b\u8f93\u51fa\u5408\u6cd5\u7684 product-json\uff0c\u542b\u5438\u775b\u6807\u9898\u3001\u81f3\u5c11 3 \u4e2a\u5206\u70b9\u3001\u6b63\u6587\u548c\u5e26\u8bdd\u9898\u6807\u7b7e\u7684 CTA\uff1b\u8bed\u6c14\u81ea\u7136\uff0c\u65e0\u786c\u5e7f\u6781\u9650\u8bcd\u3002\n\u8865\u5145\u5224\u5b9a\u89c4\u5219\uff1a\u51e1 URL \u8def\u5f84\u4e2d\u5305",
+                        "outputTruncated": false,
+                        "tokensIn": 0,
+                        "tokensOut": 0,
+                        "costUsd": 0,
+                        "model": null,
+                        "score": 9,
+                        "gate": {
+                            "passed": true,
+                            "reason": "Meets criterion: \u5fc5\u987b\u8f93\u51fa\u5408\u6cd5\u7684 product-json\uff0c\u542b\u5438\u775b\u6807\u9898\u3001\u81f3\u5c11 3 \u4e2a\u5206\u70b9\u3001\u6b63\u6587\u548c\u5e26\u8bdd\u9898\u6807\u7b7e\u7684 CTA\uff1b\u8bed\u6c14\u81ea\u7136\uff0c\u65e0\u786c\u5e7f\u6781\u9650\u8bcd\u3002\n\u8865\u5145\u5224\u5b9a\u89c4\u5219\uff1a\u51e1 URL \u8def\u5f84\u4e2d\u5305",
+                            "score": 9
+                        },
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    }
+                ],
+                "firstStartedAt": 1795400383385,
+                "status": "done"
+            },
+            {
+                "nodeId": "depot-wm3g6",
+                "attempts": [
+                    {
+                        "attempt": 1,
+                        "variant": "main",
+                        "status": "done",
+                        "startedAt": 1795400384125,
+                        "finishedAt": 1795400384125,
+                        "durationMs": 0,
+                        "outputPreview": "[\u7b14\u8bb0\u6392\u7248] attempt 2 consuming 212 chars of input -> producing artifact",
+                        "outputTruncated": false,
+                        "tokensIn": 0,
+                        "tokensOut": 0,
+                        "costUsd": 0,
+                        "model": null,
+                        "score": null,
+                        "gate": null,
+                        "error": null,
+                        "errorCode": null,
+                        "skipReason": null,
+                        "degradedReason": null,
+                        "remoteJob": null,
+                        "degradedAccepted": false,
+                        "toolCalls": 0,
+                        "artifacts": 1
+                    }
+                ],
+                "firstStartedAt": 1795400384125,
+                "status": "done"
+            }
+        ],
+        "totals": {
+            "nodes": 8,
+            "done": 8,
+            "failed": 0,
+            "skipped": 0,
+            "running": 0,
+            "reviewing": 0,
+            "degraded": 0,
+            "tokensIn": 106,
+            "tokensOut": 51,
+            "costUsd": 0.001083
+        },
+        "budget": {
+            "budgetUsd": null,
+            "totalCostUsd": 0.001803,
+            "tripped": false,
+            "warnings": 0
+        }
+    }
+}

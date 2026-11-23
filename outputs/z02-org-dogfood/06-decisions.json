@@ -1,0 +1,88 @@
+[
+  {
+    "id": "dec_mwsmvxdl_1",
+    "intent": "weekly-report human-review: review \"人工复核周报\"",
+    "domain": "org:org:z02-bayjf",
+    "impact": "org",
+    "reversibility": "hard",
+    "proposal": {
+      "system": "template",
+      "templateRef": "weekly-report",
+      "stepId": "human-review",
+      "taskId": "task-mwsmtcs7-4f2aa",
+      "goalId": "goal-mwsmq6f3-00rqw",
+      "goalTitle": "每周运营周报",
+      "scheduledFor": "2026-11-23T02:13:00.000Z"
+    },
+    "idempotencyKey": "task-mwsmtcs7-4f2aa:review",
+    "grade": "D2",
+    "mode": "approve-sync",
+    "status": "decided",
+    "ruleId": "d2-org",
+    "gradeReason": "matched rule \"d2-org\": impact=org ∈ [org] → D2",
+    "policyVersion": 1,
+    "slaHours": 24,
+    "createdAt": "2026-11-23T02:15:38.936Z",
+    "updatedAt": "2026-11-23T02:19:26.728Z",
+    "auditSeq": 1,
+    "decidedAt": "2026-11-23T02:19:26.728Z",
+    "timeoutAt": "2026-11-24T02:15:38.936Z",
+    "result": {
+      "outcome": "approved",
+      "at": "2026-11-23T02:19:26.728Z",
+      "approver": "Feng",
+      "comment": "Z-02 dogfood 人工复核通过"
+    },
+    "approvals": [
+      {
+        "approver": "Feng",
+        "verdict": "approve",
+        "comment": "Z-02 dogfood 人工复核通过",
+        "at": "2026-11-23T02:19:26.728Z"
+      }
+    ]
+  },
+  {
+    "id": "dec_mwsn2fsj_2",
+    "intent": "content-review review: review \"人工审核内容（开发岗复核）\"",
+    "domain": "org:org:z02-bayjf",
+    "impact": "org",
+    "reversibility": "hard",
+    "proposal": {
+      "system": "template",
+      "templateRef": "content-review",
+      "stepId": "review",
+      "taskId": "task-mwsn2d4k-excg0",
+      "goalId": "goal-mwsmq6f3-16bpm",
+      "goalTitle": "内容生产周任务",
+      "scheduledFor": "2026-11-23T02:13:00.000Z"
+    },
+    "idempotencyKey": "task-mwsn2d4k-excg0:review",
+    "grade": "D2",
+    "mode": "approve-sync",
+    "status": "decided",
+    "ruleId": "d2-org",
+    "gradeReason": "matched rule \"d2-org\": impact=org ∈ [org] → D2",
+    "policyVersion": 1,
+    "slaHours": 24,
+    "createdAt": "2026-11-23T02:20:42.739Z",
+    "updatedAt": "2026-11-23T02:20:50.487Z",
+    "auditSeq": 3,
+    "decidedAt": "2026-11-23T02:20:50.487Z",
+    "timeoutAt": "2026-11-24T02:20:42.739Z",
+    "result": {
+      "outcome": "approved",
+      "at": "2026-11-23T02:20:50.487Z",
+      "approver": "Feng",
+      "comment": "开发岗复核通过：内容草稿来自 agent-world 真实 run，允许入库"
+    },
+    "approvals": [
+      {
+        "approver": "Feng",
+        "verdict": "approve",
+        "comment": "开发岗复核通过：内容草稿来自 agent-world 真实 run，允许入库",
+        "at": "2026-11-23T02:20:50.487Z"
+      }
+    ]
+  }
+]

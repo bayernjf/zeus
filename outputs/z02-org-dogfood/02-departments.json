@@ -1,0 +1,31 @@
+{
+    "departments": [
+        {
+            "format": "zeus-department-v1",
+            "version": 1,
+            "id": "dept:z02-ops",
+            "organizationId": "org:z02-bayjf",
+            "name": "\u8fd0\u8425\u90e8",
+            "mission": "\u5468\u62a5\u4e0e\u5185\u5bb9\u590d\u6838",
+            "createdAt": "2026-11-23T02:11:10.711Z"
+        },
+        {
+            "format": "zeus-department-v1",
+            "version": 1,
+            "id": "dept:z02-dev",
+            "organizationId": "org:z02-bayjf",
+            "name": "\u5f00\u53d1\u90e8",
+            "mission": "\u5f00\u53d1\u4e0e\u5ba1\u6279",
+            "createdAt": "2026-11-23T02:11:10.712Z"
+        },
+        {
+            "format": "zeus-department-v1",
+            "version": 1,
+            "id": "dept:z02-content",
+            "organizationId": "org:z02-bayjf",
+            "name": "\u5185\u5bb9\u90e8",
+            "mission": "\u5185\u5bb9\u751f\u4ea7",
+            "createdAt": "2026-11-23T02:11:10.713Z"
+        }
+    ]
+}

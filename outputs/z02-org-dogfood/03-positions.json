@@ -1,0 +1,60 @@
+{
+    "positions": [
+        {
+            "format": "zeus-position",
+            "version": 1,
+            "id": "pos:z02:1-ops",
+            "organizationId": "org:z02-bayjf",
+            "departmentId": "dept:z02-ops",
+            "name": "\u8fd0\u8425\u5c97",
+            "responsibilities": [
+                "\u8fd0\u8425\u5c97"
+            ],
+            "requiredSkills": [],
+            "allowedTools": [],
+            "decisionScope": "D2",
+            "agentId": "agent:z02-ops",
+            "createdAt": "2026-11-23T02:11:10.713Z"
+        },
+        {
+            "format": "zeus-position",
+            "version": 1,
+            "id": "pos:z02:2-dev",
+            "organizationId": "org:z02-bayjf",
+            "departmentId": "dept:z02-dev",
+            "name": "\u5f00\u53d1\u5c97",
+            "responsibilities": [
+                "\u5f00\u53d1\u5c97"
+            ],
+            "requiredSkills": [],
+            "allowedTools": [],
+            "decisionScope": "D2",
+            "agentId": "agent:z02-dev",
+            "createdAt": "2026-11-23T02:11:10.715Z"
+        },
+        {
+            "format": "zeus-position",
+            "version": 1,
+            "id": "pos:z02:3-content",
+            "organizationId": "org:z02-bayjf",
+            "departmentId": "dept:z02-content",
+            "name": "\u5185\u5bb9\u5c97",
+            "responsibilities": [
+                "\u5185\u5bb9\u5c97"
+            ],
+            "requiredSkills": [
+                "content-production"
+            ],
+            "allowedTools": [
+                "agent-world:run-graph",
+                "agent-world:get-run"
+            ],
+            "credentialRefs": [
+                "agent-world:login"
+            ],
+            "decisionScope": "D0",
+            "agentId": "agent:z02-content",
+            "createdAt": "2026-11-23T02:11:10.716Z"
+        }
+    ]
+}

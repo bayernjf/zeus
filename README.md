@@ -40,13 +40,13 @@
 
 | 面 | 入口 | 用途 |
 | --- | --- | --- |
-| 产品入口 | `npm run daily` | 一句话走完「指令 → 意图 → 派发 → 决策与依据 → 待裁决项」，并把这一页 markdown 写回你自己的目录 |
+| **日常默认入口** | `npm run daily` | 一句话走完「指令 → 意图 → 派发 → 决策与依据 → 待裁决项」，并把这一页 markdown 写回你自己的目录 |
 | 终端监督台 | `npm run tui` | 监视、裁决、名册治理、意图识别、连接器驱动，复用既有 bearer HTTP 面 |
 | Web 监督台 | `web/supervisor/index.html` | 多视图工作台：监控 / 名册 / 裁决 / 技能目录 / 审计 / 数据域与授权 / 组织 / 连接器 |
-| 操作者 HTTP API | `npm start` | 132 条路由（4 条公开、128 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
+| 操作者 HTTP API | `npm start` | 150 条路由（5 条公开、145 条 bearer）；三个使用者面与 curl 走同一组端点、进同一条审计日志 |
 | 协议面 | `/.well-known/agent-card.json`、`/mcp`、`/api/mcp` | 入站 A2A（外部 Agent 派单进来）、数据域 MCP（外部宿主读你的目录）与内核只读工具 MCP（G6：`memory.recall` 按绑定 namespace、`traces.query` 仅 operator token） |
 
-端点逐条清单与操作者可驱动面见 [docs/feature-inventory.md](docs/feature-inventory.md)。
+日常默认从 `npm run daily` 进；TUI / Web / HTTP 是操作者面，daemon / MCP / A2A 是自动化与协议面，全部保留。完整场景分工见 [docs/entrypoints.md](docs/entrypoints.md)，端点逐条清单见 [docs/feature-inventory.md](docs/feature-inventory.md)。
 
 ---
 

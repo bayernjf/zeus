@@ -1,0 +1,12 @@
+{
+    "organizations": [
+        {
+            "format": "zeus-organization",
+            "version": 1,
+            "id": "org:z02-bayjf",
+            "name": "BayJF \u672c\u673a\u5355\u4eba\u7ec4\u7ec7",
+            "scaleTier": "small",
+            "createdAt": "2026-11-23T02:11:10.710Z"
+        }
+    ]
+}

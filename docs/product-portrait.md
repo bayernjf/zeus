@@ -1,13 +1,13 @@
 # Zeus 产品画像（Product Portrait）
 
 > 一份可迭代的活文档。产品的每一次定位演进都记录在文末「演进日志」中。
-> 最新版本：**v0.10**（2026-10-01，W2 atlas 同波协议级真机联调通过并完成纯标准 A2A 客户端守护：零 A2A 代码的 atlas 按 §7A 已定型协议从零接入 `src/atlas/a2a/`，Zeus 侧零协议改动；守护脚本首跑抓到 atlas/loom「只认 data part、纯标准 text 调用被 -32602 拒」的超集缺口，atlas 已按 pr-helper 口径加 text 首分词兜底并复跑 exit 0，loom 同源缺口待对账仓库修。loom 验证「对已有独立实现的对账」、atlas 验证「对新仓库的可复制接入」。两仓生产栈验收未做、loom 守护未过，W2 不关账。定位未变，仍是 v0.4 的"高并发多 Agent 协同决策"。**v0.1–v0.9 的日志行保留原文不改**，因为其中记录的是当时的判断与被推翻的说法。）
+> 最新版本：**v0.11**（2026-11-23，Z-01 口径收口：定位由「高并发多 Agent 协同决策平台」扩为「决策 + 组织执行 runtime」，保留全部既有能力与入口；A2A 表述改为「入站机制已实现，缺真实调用者/在册名册信任锚」；HTTP 路由口径统一为实测 150 条＝5 公开＋145 bearer）。上一条 v0.10（2026-10-01，W2 atlas 同波协议级真机联调通过并完成纯标准 A2A 客户端守护：零 A2A 代码的 atlas 按 §7A 已定型协议从零接入 `src/atlas/a2a/`，Zeus 侧零协议改动；守护脚本首跑抓到 atlas/loom「只认 data part、纯标准 text 调用被 -32602 拒」的超集缺口，atlas 已按 pr-helper 口径加 text 首分词兜底并复跑 exit 0，loom 同源缺口待对账仓库修。loom 验证「对已有独立实现的对账」、atlas 验证「对新仓库的可复制接入」。两仓生产栈验收未做、loom 守护未过，W2 不关账。定位未变，仍是 v0.4 的"高并发多 Agent 协同决策"。**v0.1–v0.9 的日志行保留原文不改**，因为其中记录的是当时的判断与被推翻的说法。）
 
 ---
 
 ## 0. 一句话定位
 
-**Zeus 是一个高并发、多 Agent 协同决策的平台，以用户自己的数据目录为数据基础层：一个任务意图可并行分发给多个 Agent 执行，并聚合为可追溯的决策。对个人，它提供可验证的数据保全与跨代人移交；对企业，它提供一支可按需组建、可审计、可对业务结果负责的 Agent 团队。**
+**Zeus 是一个多 Agent 协同的决策与组织执行 runtime，以用户自己的数据目录为数据基础层：一个任务意图可并行分发给多个 Agent 执行，并聚合为可追溯的决策；组织编制、带教与执行臂把决策落成真实交付。对个人，它提供可验证的数据保全与跨代人移交；对企业，它提供一支可按需组建、可审计、可对业务结果负责的 Agent 团队。**
 
 ## 1. 愿景与使命
 
@@ -204,6 +204,7 @@ Zeus 不是又一个 AI 助手，而是一次**部署形态与信任关系的翻
 | v0.7 | 2026-09-29 | W1 波次出口达成 | §7.1 W1（pr-helper）出口标准标注为已达成：2026-09-29 真机扇出 15/15 exit 0、内容回传 / 审计 / 吊销均演示（A1 销项；plan 模式，不含不可逆写，证据见 review v0.20 与 handoff Active work 75）。**定位、波次计划与跨波规则未变**：W1 关闭后 W2（loom/atlas）前置条件成立，但仓库外联调仍须负责人点工 |
 | v0.8 | 2026-10-01 | 全产品矩阵盘点后扩列 | 对 `000mycodes/` 下全部产品按三条接入通道分类：§7.1 新增 W4（know-collect，矩阵外执行 Agent）与一条非执行 Agent 配套行（work-learn，首个 MCP + Skill 参考接入样板，与 W2 并行、不占波次）；明确 MCP/Skill 接入与执行 Agent 接入是两条独立通道。其余产品分类（one-code/termana 为传感器或操作者入口，word-base/word-picker/splity 等语料类连接器待真实场景，one-world/vfx-todo/soft-desk/toclick 不纳入）见本次盘点记录，不进波次表 |
 | v0.9 | 2026-10-01 | W2 loom 协议级真机联调 | loom 后端 `app/core/a2a/`（Q150 第一阶段）与 Zeus 真实客户端在本机完成端到端：well-known 卡片经 Zeus 注册闸（handshake version `1`/enterprise/read-task-scope/auto 全在受控词表内）、卡片声明的 `url` 直接解析为任务端点、sendSubscribe SSE 四事件（submitted/working/artifact/completed）+ `x-zeus-report`（summary/evidence/cost）、缺参 input-required、非流式 send 对照全部成立，loom 零改动。范围诚实标注：本机用最小 uvicorn 服务挂真实 router、override 了鉴权与审计两个 DB 依赖，**不是** loom 生产栈（PG/Agent Key/审计）验收；atlas 未接、标准客户端超集守护未复验，W2 不关账 |
+| v0.11 | 2026-11-23 | Z-01 定位与口径收口 | 负责人拍板：定位扩为「决策 + 组织执行 runtime」，不缩回纯决策平台、不删现有能力；PRD §2.2 的 A2A 表述改为「入站机制已实现，缺真实调用者/在册名册信任锚」；feature-inventory 路由口径统一为实测 150（5 公开 + 145 bearer）；产品入口维持 `npm run daily`（Z-03）。 |
 | v0.10 | 2026-10-01 | W2 atlas 同波协议级真机联调 | atlas（此前零 A2A 代码）新增 `src/atlas/a2a/`（card/skills/rpc/router）从零按 §7A 已定型形状接入，Zeus 侧零协议改动：三卡片发现端点经注册闸，handshake 仅 `domain=ops-orchestration` 区别于 loom（验证按域路由、不为产品预设职责），SSE 四帧＋收尾帧、`x-zeus-report`（plan `llmTokens=0`）、缺参 input-required、send 等价全部成立；两个 skill 全 plan-only（不起 run/不改图/不调 LLM/不裁决审批），任务端点独立 `ATLAS_A2A_TASK_TOKEN` Bearer（prod fail-closed）。atlas 侧 11 项单测＋后端全量回归 2159 passed/136 skipped、Zeus 真实注册器/派发客户端真机联调过，证据见协议设计 §7B 与 atlas 仓 docs/90（ADR T32）。至此 loom（对账已有独立实现）与 atlas（复制到新仓库）两个可复制性方向均验证；**W2 仍不关账**：两仓生产栈验收与纯标准 A2A 客户端超集守护复验未做 |
 
 ---
