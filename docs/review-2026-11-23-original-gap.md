@@ -139,6 +139,13 @@
 - 口径：本次 text/image 均为 agent-world 本地 fake provider，文本/图片是合成占位；真实的是调度、状态机、D2 决策、agent-world 执行臂与 run 生命周期。证据目录 `zeus/outputs/z02-org-dogfood/`（`10-summary.md` 为索引）。
 - 已知缺口：agent-world `/api/health` `ok:false`（`jwtSecret=missing`）；真实 Ark 文本模型此前在「笔记排版」节点 HTTP 400，模板参数仍需调。
 
+### 5.6 Z-03 单入口定位记录（2026-11-23）
+
+- 新增 `docs/entrypoints.md`：**日常默认入口为 `npm run daily`**；`npm run chat`、TUI、Web 监督台、`npm start` HTTP API、`npm run daemon`、MCP、A2A、验证脚本全部保留，按「日常 / 操作者 / 自动化 / 协议 / 开发」五类标注场景与边界。
+- README §1.4 表格把 daily 标为「日常默认入口」，补场景分工说明；顺手把过期的 132 条路由（4 公开 + 128 bearer）改为实测 150 条（5 公开 + 145 bearer），与 feature-inventory/PRD 口径统一。
+- 保留承诺写进入口文档：daily 成为默认不等于其他入口降级或待删；任何入口都不绕过决策分级、审计链、名册验签与数据域授权；入口数量不再扩张，新需求优先在既有面加命令/视图。
+- 完成判据满足：主入口已定；其余面全部保留并标注；文档写清「日常从哪进、什么时候用哪个面」；未删除、未合并任何入口。
+
 ## 6. 待办（P0 / P1 / P2）
 
 > P0 = 不做就无法把 Zeus 当「本地自用组织执行 runtime」真正用起来；P1 = 明显影响可靠性/体验，但不阻塞跑通；P2 = 后期或外部条件。所有 P0/P1/P2 均为追加式，不删现有入口/组织执行能力。
@@ -149,7 +156,7 @@
 |---|---|---|---|
 | Z-01 ✅ | **产品口径收口（不删现有能力）** | 当前 PRD 说「不做 A2A server」、portrait 说「决策平台」、feature-inventory 说「runtime」；不拍板会导致下一批继续按旧叙事做 | 三处统一：product-portrait 升版为「决策 + 组织执行 runtime」；PRD §2.2 的 A2A server 表述改为「入站机制已实现，缺真实调用者/信任锚」；feature-inventory 路由数 150/134 只保留一个口径；保留现有组织执行 runtime、执行臂与全部入口，不缩回纯决策平台。改动前由 owner 拍板定位 |
 | Z-02 ✅ | **真实组织 dogfood** | 现有 `e2e:m7` 是 fake worker 可重复闭环；真实组织数据/真实任务没有跑过，无法证明 M5 的模板执行在真实业务里可用 | 选一个真实组织（2–3 个岗位），真实 goal → 排班 → `weekly-report` 模板 → agent-world/agent-dev 执行 → D2 人工审批 → 产出；证据落 `outputs/` 或 `docs/`，列出每一步真实输入、产出、失败点 |
-| Z-03 | **单入口定位（现有入口全保留）** | 原立项承诺「用户只面对 Zeus 一个入口」；当前 daily/TUI/Web/HTTP/MCP/chat CLI/daemon 并存，用户需要自己选；要解决的是「默认从哪进」，不是删面 | 选定一个主入口（建议 `npm run daily` 或 chat CLI + daemon），其余面全部保留并明确标为 operator/dev/自动化面；不删除、不合并掉任何现有入口；文档写清「日常从哪进、什么时候用哪个面」 |
+| Z-03 ✅ | **单入口定位（现有入口全保留）** | 原立项承诺「用户只面对 Zeus 一个入口」；当前 daily/TUI/Web/HTTP/MCP/chat CLI/daemon 并存，用户需要自己选；要解决的是「默认从哪进」，不是删面 | 选定一个主入口（建议 `npm run daily` 或 chat CLI + daemon），其余面全部保留并明确标为 operator/dev/自动化面；不删除、不合并掉任何现有入口；文档写清「日常从哪进、什么时候用哪个面」 |
 
 ### P1
 
