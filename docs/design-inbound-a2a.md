@@ -1,8 +1,8 @@
-# 入站 A2A 面设计裁定（deferred #19，v0.2，2026-10-07）
+# 入站 A2A 面设计裁定（deferred #19，v0.3，2026-11-23）
 
 ## 0. 一句话
 
-Zeus 发布自己的 agent card 并接收入站 `tasks/send`，落到 H2 意图面（同一内核 fanOut 路径与审计事件流）；本设计裁定固化方向，**机制已于 2026-10-07 落地（Active work 144），真实信任锚（在册名册验签）仍待真实上游调用者出现**（原触发条件见 §5）。
+Zeus 发布自己的 agent card 并接收入站 `tasks/send`，落到 H2 意图面（同一内核 fanOut 路径与审计事件流）；本设计裁定固化方向，**机制已于 2026-10-07 落地（Active work 144）；2026-11-23 Z-05 已补本地/内网真实调用者与名册信任锚证据，公网真实上游仍待出现**（原触发条件见 §5）。
 
 ## 1. 缺口与现状
 
@@ -34,9 +34,18 @@ Zeus 发布自己的 agent card 并接收入站 `tasks/send`，落到 H2 意图�
 
 ① Zeus↔loom 真机联调时 loom 需要反向派任务给 Zeus；② bayjf 想让公开签名目录上的其它执行 Agent 调用 Zeus 的聚合能力；③ 出现多 Zeus 实例协作的需求。
 
-**触发条件语义不变，机制已先行落地**（2026-10-07，Active work 144，按 #6 先例）：`GET /.well-known/agent-card.json`（公开卡片）+ 同路径 `POST`（bearer 保护 JSON-RPC `tasks/send` 落 H2 意图面）；调用方 `x-zeus-caller-card` 过与注册同源的 handshake 形状闸（`handshakeOathProblem` 由 registry 导出复用；无卡则 bearer 即人工在环操作者本人，fail-closed 403+审计）；`dataDomain` 缺省 personal；调用方 taskId 兼作幂等键；审计 `inbound-task-accepted`/`inbound-task-refused` 入 AUDIT_DECISIONS 单一来源；回标准 A2A 收据 `{kind: "task", id, contextId, status}`；不做入站 SSE。`tests/http-inbound-a2a.test.ts` 10 例全绿。**剩余缺口 = 真实上游调用者 + 在册名册验签信任锚**——触发条件①/②/③ 里任一条满足时闭合。
+**触发条件语义不变，机制已先行落地**（2026-10-07，Active work 144，按 #6 先例）：`GET /.well-known/agent-card.json`（公开卡片）+ 同路径 `POST`（bearer 保护 JSON-RPC `tasks/send` 落 H2 意图面）；调用方 `x-zeus-caller-card` 过与注册同源的 handshake 形状闸（`handshakeOathProblem` 由 registry 导出复用；无卡则 bearer 即人工在环操作者本人，fail-closed 403+审计）；`dataDomain` 缺省 personal；调用方 taskId 兼作幂等键；审计 `inbound-task-accepted`/`inbound-task-refused` 入 AUDIT_DECISIONS 单一来源；回标准 A2A 收据 `{kind: "task", id, contextId, status}`；不做入站 SSE。`tests/http-inbound-a2a.test.ts` 10 例全绿。
+
+## 5.1 Z-05 本地上游真实调用者验收（2026-11-23）
+
+- **真实 socket**：`tests/http-inbound-a2a-live.test.ts` 5 例——`127.0.0.1:0` 起真实 Fastify server，用全局 `fetch` 发 `tasks/send`，覆盖 tier-3 在册命中、tier-1 未知卡、tier-2 内容失配、无公钥锚时不得 tier-3、畸形 handshake 403 零派发。
+- **可执行调用者**：`scripts/acceptance-inbound-a2a.mjs`（`npm run acceptance:inbound`）——操作者用真实 Agent Card 文件对运行中的 Zeus 发 `tasks/send`；`tests/acceptance-inbound-a2a-script.test.ts` 2 例在真实 server 上 spawn 该脚本并断言 PASS，缺卡时 fail-closed exit 1。
+- **边界**：公网 A2A 与外部真实上游仍不在本批范围；本批只证明“本地/内网真实调用者 + 在册名册验签”这条验收线闭合。
+
+**剩余缺口 = 公网真实上游 + 外部名册**——触发条件①/②/③ 里任一条满足时再验。
 
 ## 6. 演进日志
 
+- v0.3（2026-11-23）：Z-05 本地/内网真实 A2A 调用者验收；名册命中/失配/无锚 fail-closed 均有真实 socket 证据（+7 测试 / +1 脚本）。
 - v0.2（2026-10-07）：机制实现落地（Active work 144）；真实信任锚仍待对端出现。
 - v0.1（2026-10-03）：裁定入库，方向固化；实现待触发条件。
