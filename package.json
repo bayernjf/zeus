@@ -45,6 +45,7 @@
     "verify:reliability": "node scripts/verify-runtime-reliability.mjs",
     "verify:personal-mcp": "node scripts/verify-personal-mcp.mjs",
     "acceptance:fanout": "node scripts/acceptance-real-fanout.mjs",
+    "acceptance:inbound": "node scripts/acceptance-inbound-a2a.mjs",
     "acceptance:loom": "node scripts/acceptance-loom-interop.mjs",
     "smoke:core": "node scripts/smoke-core.mjs",
     "e2e:m7": "node scripts/e2e-m7.mjs",
