@@ -165,7 +165,7 @@
 | Z-04 | **compaction/writeback 真实长会话** | 机制已有，但没有真实长会话数据；本地自用若长期跑，记忆不写回会越用越薄 | 用真实长会话（≥ 一周/ ≥ 20 轮）跑 compaction + writeback；验证事实不丢、旧事实可追溯、写回不污染决策；证据落库 |
 | Z-05 ✅ | **A2A 本地/内网上游 + 名册信任锚** | 入站 server 已实现，但没有真实调用者与在册名册验签，等于只有门没有访客 | 已完成（2026-11-23）：真实 socket 的本地上游调用者 `tests/http-inbound-a2a-live.test.ts` 5 例（tier-3 在册命中 / tier-1 未知卡 / tier-2 内容失配 / 无公钥锚 fail-closed / 畸形 handshake 403）；可执行验收脚本 `npm run acceptance:inbound` 经真实 HTTP 打 `tasks/send`，脚本自身 2 例（含缺卡 fail-closed）；公网 A2A 仍不作为阻塞。 |
 | Z-06 | **MCP E3.4 OAuth subject 复核（外部条件，本地不出现读 Agent 即不阻塞）** | 当前 E3.4 只剩「首次出现读 Agent 时复核 OAuth subject」这一外部条件；本地自用没有读 Agent 时可直接后置 | 首次出现读 Agent 时完成 subject 复核；拒绝/放行两路有测试；E3.4 标 ✅ |
-| Z-07 | **矩阵真实 run 逐条验收** | agent-world/agent-dev 只是两条臂；其他矩阵产品的 A2A/协议接入不能按「通了」推定「业务通了」 | 列出矩阵产品 × 执行臂矩阵；每条至少一个真实 run 或明确「未接」；不把 plan-only 当完成 |
+| Z-07 ✅ | **矩阵真实 run 逐条验收** | agent-world/agent-dev 只是两条臂；其他矩阵产品的 A2A/协议接入不能按「通了」推定「业务通了」 | 已完成（2026-11-24）：逐条台账 `docs/z07-matrix-acceptance.md`。`agent-world` Z-02 run `144cbd02-4ef5-45f2-b034-a1cb37d44dee` 8/8 done；`agent-dev` F1.3 run `6625249d-3530-4a0d-9618-6b168895d257` completed；`atlas` A2A `run-graph` 3 个真实 run；`pr-helper`/`loom` 明确 plan-only 未接业务执行；`job-agent` 仅 stdio MCP、明确未接 A2A；`bayjf` 非执行臂。没有把 plan-only 当完成。 |
 
 ### P2
 
