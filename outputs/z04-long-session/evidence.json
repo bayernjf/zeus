@@ -1,0 +1,83 @@
+{
+  "ok": true,
+  "generatedAt": "2026-11-24T11:48:59.832Z",
+  "criterion": "Z-04: ≥20 real CLI rounds; compaction/watermark + writeback; facts preserved, old facts traceable, writeback does not pollute decisions",
+  "caveat": "20+ round branch used; this is not one week of wall-clock use. 24 rounds against a local deterministic reference peer.",
+  "rounds": 24,
+  "startedAt": "2026-11-24T11:48:54.214Z",
+  "finishedAt": "2026-11-24T11:48:59.810Z",
+  "cardUrl": "http://127.0.0.1:61358/api/a2a/agent-card",
+  "stateFile": "$SESSION/state.json",
+  "auditFile": "$SESSION/audit.jsonl",
+  "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+  "counts": {
+    "sessionRows": 24,
+    "uniqueIntentIds": 24,
+    "uniqueRunIds": 24,
+    "watermarkRows": 24,
+    "decisionEvents": 24,
+    "claimEvents": 48,
+    "activeFacts": 25,
+    "settledDecisionFacts": 1,
+    "disputedFacts": 0,
+    "writebackSkipped": 0,
+    "consolidationFailed": 0
+  },
+  "watermark": {
+    "assembledMax": 20,
+    "trimmedTotal": 0,
+    "budgetTotal": 0,
+    "sampleFirst": "intent intent-ba4d5af0-3841-4d56-8818-896c1948ca9e: run context watermark — 0 context entries assembled, 0 trimmed, 0 over budget, ~1 tokens across 1 branch(es)",
+    "sampleLast": "intent intent-c100a91e-77db-4ffa-9bc1-f8905f86c8fe: run context watermark — 20 context entries assembled, 0 trimmed, 0 over budget, ~267 tokens across 1 branch(es)"
+  },
+  "checks": {
+    "roundsCompleted": true,
+    "everyRunSettledHealthy": true,
+    "roundsHaveUniqueIntents": true,
+    "roundsHaveUniqueRuns": true,
+    "watermarkPerRun": true,
+    "writebackPerRun": true,
+    "noWritebackSkipped": true,
+    "noConsolidationFailure": true,
+    "factsNotLost": true,
+    "oldFactTraceable": true,
+    "oldFactRecallable": true,
+    "writebackDidNotPolluteDecision": true,
+    "settledDecisionProvenanceComplete": true,
+    "capObserved": true
+  },
+  "missingSubjects": [],
+  "firstRound": {
+    "subject": "project:zeus-z04:round-01",
+    "intentId": "intent-ba4d5af0-3841-4d56-8818-896c1948ca9e",
+    "runId": "zeus-run-8652d044-ea55-4ca8-8a9c-34108606e6f5",
+    "factId": "62fac7e58e3ccb37eed33b53",
+    "factProvenance": [
+      "f7758c731c7c45fab8a5eb53e06f0f1ab176712078537e6a188cb905b1e46d10"
+    ],
+    "claimRunId": "zeus-run-8652d044-ea55-4ca8-8a9c-34108606e6f5",
+    "recallTop": [
+      {
+        "factId": "62fac7e58e3ccb37eed33b53",
+        "subject": "project:zeus-z04:round-01",
+        "object": "healthy",
+        "score": 0.7766992952647331
+      },
+      {
+        "factId": "8585082c388f6588c02457ff",
+        "subject": "project:zeus-z06:round-22",
+        "object": "healthy",
+        "score": 0.40251891062639034
+      },
+      {
+        "factId": "8c44234b74cf77017d75ccfa",
+        "subject": "project:zeus-z05:round-21",
+        "object": "healthy",
+        "score": 0.40251891062639034
+      }
+    ]
+  },
+  "settledDecisionConclusions": [
+    "healthy"
+  ]
+}
