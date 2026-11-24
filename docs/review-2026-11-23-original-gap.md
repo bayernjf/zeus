@@ -4,14 +4,14 @@
 > 口径：只算「本机单人自用」真正影响使用的差距。生产多副本、公网多租户、SLA、正式运营体系不算硬缺口，只列为后置项。
 > 2026-11-23 追加口径：对外开放、上线、生产相关任务一律不作为阻塞项；P0/P1/P2 只按本机自用跑通与效益排序，外部投递/公网接入只作可行性观察。
 > 2026-11-23 追加约束：现有功能全部保留，只做追加式迭代；不删除、不替换、不回退当前已有能力。当前组织执行 runtime、agent-world/agent-dev 执行臂，以及 daily/TUI/Web/HTTP/MCP/chat CLI/daemon 全部在保留范围内；“对齐”只补缺口，不做破坏性重构。
-> 事实源：当前能力以 `docs/feature-inventory.md` v1.15（2026-11-23）为主，当前待办以 `handoff.md` 顶部为主；原立项以 `docs/product-portrait.md` v0.12（2026-11-23）为主。两者有明显时差，引用时已标注。
-> 结论时点：2026-11-23。测试数字引用 2026-11-22 的 BayJF 本地 MVP 证据，本轮未重跑全量测试。
+> 事实源：当前能力以 `docs/feature-inventory.md` v1.16（2026-11-24）为主，当前待办以 `handoff.md` 顶部为主；原立项以 `docs/product-portrait.md` v0.12（2026-11-23）为主。两者有明显时差，引用时已标注。
+> 结论时点：2026-11-23（2026-11-24 增补 Z-04 ✅ 与 2724/243 实测）。测试数字以本轮全量实测为准。
 
 ## 0. 一句话结论
 
 - **核心主张没有偏**：Zeus 仍然是「用户只面对一个决策/执行入口」，仍然保留 D0–D3 决策分级、可审计决策链、个人数据主权与备份、企业按需组建 Agent 团队这些底层主张。
 - **边界偏了**：立项时写的是「高并发、多 Agent 协同决策的平台」，当前实际已经扩成「AI 原生的多 Agent 团队运行时」——除了决策，还做组织目标、任务、排班、模板执行、agent-world/agent-dev 执行臂。
-- **本地自用下最大的缺口不是高并发**，而是：真实组织 dogfood、真实长会话 memory compaction/writeback、A2A 本地/内网上游调用者与名册信任锚、单入口定位（不删入口），以及 PRD/product-portrait 的口径滞后。
+- **本地自用下最大的缺口不是高并发**，而是：真实组织 dogfood、A2A 本地/内网上游调用者与名册信任锚、单入口定位（不删入口），以及 PRD/product-portrait 的口径滞后。真实长会话 memory compaction/writeback 已于 2026-11-24 按 20+ 轮分支闭合（见 `docs/z04-long-session-acceptance.md`）。
 - 一句话：**Zeus 的内核比立项时更完整，但产品叙事还停在「决策平台」，没有跟上「组织执行 runtime」的实际形态。**
 - 本轮不是回退到纯决策平台：当前组织目标/任务/排班/模板执行、agent-world/agent-dev 执行臂，以及 daily/TUI/Web/HTTP/MCP/chat CLI/daemon 全部保留；对齐只统一叙事、定主入口、补缺口。
 
@@ -93,7 +93,7 @@
 - E4.10 背压：需要 ≥3 个执行 Agent 真实负载验证。
 - E4.9 生产 RSK 托管 + 带外指纹公告（仓库外动作）。
 - E10.2 真实部署 pr-helper + Zeus facade（外部真实部署）。
-- compaction/writeback 真实长会话数据；当前只有机制，没有真实长会话证据。
+- ~~compaction/writeback 真实长会话数据；当前只有机制，没有真实长会话证据。~~ 已于 2026-11-24 闭合（20+ 轮分支，24 个独立 `daily` 进程；见 `docs/z04-long-session-acceptance.md`）。
 - 真实组织数据 / 真实任务 dogfood。
 - 生产多副本、7×24、公网多租户、SLA（本地自用非目标）。
 
@@ -162,10 +162,10 @@
 
 | ID | 待办 | 为什么要做 | 完成判据 |
 |---|---|---|---|
-| Z-04 | **compaction/writeback 真实长会话** | 机制已有，但没有真实长会话数据；本地自用若长期跑，记忆不写回会越用越薄 | 用真实长会话（≥ 一周/ ≥ 20 轮）跑 compaction + writeback；验证事实不丢、旧事实可追溯、写回不污染决策；证据落库 |
+| Z-04 ✅ | **compaction/writeback 真实长会话** | 机制已有，但没有真实长会话数据；本地自用若长期跑，记忆不写回会越用越薄 | 已完成（2026-11-24，20+ 轮分支）：`npm run acceptance:long-session` 跑 24 个独立 `daily` 进程；24 条 context watermark（assembled max 20 / trimmed 0 / over budget 0）、24 条 decision writeback、25 条 active facts（settled decision 1 条、provenance 24）、disputed 0、旧事实 traceable + recallable；证据 `outputs/z04-long-session/`。边界：不是一周自然使用，未实现摘要式 compaction。 |
 | Z-05 ✅ | **A2A 本地/内网上游 + 名册信任锚** | 入站 server 已实现，但没有真实调用者与在册名册验签，等于只有门没有访客 | 已完成（2026-11-23）：真实 socket 的本地上游调用者 `tests/http-inbound-a2a-live.test.ts` 5 例（tier-3 在册命中 / tier-1 未知卡 / tier-2 内容失配 / 无公钥锚 fail-closed / 畸形 handshake 403）；可执行验收脚本 `npm run acceptance:inbound` 经真实 HTTP 打 `tasks/send`，脚本自身 2 例（含缺卡 fail-closed）；公网 A2A 仍不作为阻塞。 |
 | Z-06 | **MCP E3.4 OAuth subject 复核（外部条件，本地不出现读 Agent 即不阻塞）** | 当前 E3.4 只剩「首次出现读 Agent 时复核 OAuth subject」这一外部条件；本地自用没有读 Agent 时可直接后置 | 首次出现读 Agent 时完成 subject 复核；拒绝/放行两路有测试；E3.4 标 ✅ |
-| Z-07 | **矩阵真实 run 逐条验收** | agent-world/agent-dev 只是两条臂；其他矩阵产品的 A2A/协议接入不能按「通了」推定「业务通了」 | 列出矩阵产品 × 执行臂矩阵；每条至少一个真实 run 或明确「未接」；不把 plan-only 当完成 |
+| Z-07 ✅ | **矩阵真实 run 逐条验收** | agent-world/agent-dev 只是两条臂；其他矩阵产品的 A2A/协议接入不能按「通了」推定「业务通了」 | 已完成（2026-11-24）：逐条台账 `docs/z07-matrix-acceptance.md`。`agent-world` Z-02 run `144cbd02-4ef5-45f2-b034-a1cb37d44dee` 8/8 done；`agent-dev` F1.3 run `6625249d-3530-4a0d-9618-6b168895d257` completed；`atlas` A2A `run-graph` 3 个真实 run；`pr-helper`/`loom` 明确 plan-only 未接业务执行；`job-agent` 仅 stdio MCP、明确未接 A2A；`bayjf` 非执行臂。没有把 plan-only 当完成。 |
 
 ### P2
 
@@ -182,7 +182,7 @@
 
 1. **先做 Z-01**。口径不收，Z-02/Z-03 会反复被「我们是决策平台还是 runtime」打断。
 2. **再做 Z-02 + Z-03**。真实组织跑一遍，才知道入口、模板、审批、执行臂哪里真的卡。
-3. **Z-04 跟着真实使用走**。没有真实长会话，不要凭空调 compaction 参数。
+3. **Z-04 已按 20+ 轮分支闭合**（2026-11-24）。后续真实使用继续积累自然长周期样本；没有新证据前不要凭空调 compaction 参数。
 4. **Z-05 已在本地闭合；Z-06 等真实读 Agent 出现再做**。本地/内网调用者与名册信任锚已有真实 HTTP 证据，公网 A2A 仍不提前造访客。
 5. **Z-07 按矩阵优先级排**，不要一次全接。
 6. **Z-08 以后再说**；本地自用不需要跨代移交。
@@ -194,6 +194,7 @@
 - 需求状态：`docs/prd.md` §2.2、E3.4/E3.8/E4.9/E4.10/E8.4/E10.2
 - A2A：`docs/design-inbound-a2a.md` v0.3、`docs/design-a2a-push.md`
 - Z-05 真实调用者：`tests/http-inbound-a2a-live.test.ts` 5 例 + `tests/acceptance-inbound-a2a-script.test.ts` 2 例 + `scripts/acceptance-inbound-a2a.mjs`（`npm run acceptance:inbound`）
+- Z-04 长会话：`scripts/acceptance-long-session.mjs`（`npm run acceptance:long-session`）+ `tests/daily-entry.test.ts` 2 例回归 + `outputs/z04-long-session/{evidence.json,01-summary.md,session.jsonl,audit.jsonl,memory.json}`
 - 当前待办：`handoff.md` 顶部
 - 本地 MVP 证据：`/Users/jiangfeng/000mycodes/bayjf/docs/tier0/evidence/2026-11-22-local-mvp.md`
-- 本批已重跑全量：**2722 tests / 243 files**（2026-11-23，Z-05 本批 +7 测试 / +2 文件；上一条 2715/241 为 BayJF 2026-11-22 证据）。
+- 本批已重跑全量：**2724 tests / 243 files**（2026-11-24，Z-04 本批 +2 测试、测试文件数不变；上一条 2722/243 为 2026-11-23 Z-05 批）。

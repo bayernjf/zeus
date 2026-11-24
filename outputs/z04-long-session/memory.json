@@ -1,0 +1,1516 @@
+{
+  "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+  "facts": [
+    {
+      "factId": "0401e6f6c051c764e8a6397c",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:bayjf-tier0:round-11",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "1898f5da8f60b397b482c82189632a5b7298f80e92602141a2900fc5adb0b58c"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:56.612Z",
+      "lastAccessAt": "2026-11-24T11:48:59.519Z"
+    },
+    {
+      "factId": "0b3fa6e100abd9686a933337",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:commerce-os:round-13",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "2ab3d1faec0a790badbf5f5da6790367fcedf46dba9a7af7aa1df5dae975de0a"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:57.054Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "0e16bf3924f0975ec65f9f73",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:atlas-a02:round-23",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "f8ce8888c063a2b73491e82ade41cd058f62d011d9ab0bf2de73ef47d3722ecc"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:59.552Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "1b73cf945de41d1b67cb0a9d",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:loom-l04:round-08",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "a2199b7f52e34184c3e742dc3d4857be79467ecf605df083450e68e87eb47f6b"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:55.929Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "1bd0b3b8e5771fd209b86704",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:argus:round-18",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "e7e1c7ff9b240653fd7b88a5f68ec8070a120aacd1338d36eacb817f6e39e8bd"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:58.315Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "1c5e67b019866b747f682957",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:loom-l01:round-06",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "449e9ab408371b1849b2132e54c2eabfe8dbe9bdfb37014137f9c39e675ac9c3"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:55.496Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "3f031375d8d71969c9caa2d6",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:job-agent:round-17",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "eb2ed35e72681346592c247e3ce78fc4e5f6979b23da755e1285a29c3aa40449"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:58.034Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "53daad0f388ec9df1c8568a8",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:atlas-t7:round-05",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "434871d52753069501fa2760d527daad99345e9ba4c2398f01076a7b59038d31"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:55.281Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "5cfb710fd55d8d688e360162",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:tier0-ledger:round-20",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "53ea982434c33af964b729b63cdaa2cfdf4a16063babcba871351478192a48ae"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:58.864Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "62fac7e58e3ccb37eed33b53",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:zeus-z04:round-01",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "f7758c731c7c45fab8a5eb53e06f0f1ab176712078537e6a188cb905b1e46d10"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:54.419Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "8585082c388f6588c02457ff",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:zeus-z06:round-22",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "985da9c03dfd022efe7689c50c23cb35a1caa29d882232ba626bb1f10df48dba"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:59.329Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "8ab56cbfd8a8a18837c85bad",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:code-audit:round-15",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "da4631247df859f4083d72b338288f160b393db9ba3d11467aa9831169282fe7"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:57.501Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "8c44234b74cf77017d75ccfa",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:zeus-z05:round-21",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "03bc2b36e8a677d515ee01ab373ed9fe1b4b18600eac0550ea4566f5aa6ac529"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:59.091Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "9bb091b4c62bb710f7305aac",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:bayjf-p2a:round-12",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "48356458ef9b80db6d989fc533c2efd7fa69b7d0d24959f2494291fc399d3adc"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:56.829Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "9c2ec6c0c108e1b5e8997296",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:loom-l03:round-07",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "83fbb0a8988d076f84ea0d734bdc6d1dde75bf4893b71494c8873edced109a24"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:55.709Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "b081e29022bb326f34e304b8",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "deployment-health",
+      "predicate": "settled-decision",
+      "object": {
+        "conclusion": "healthy",
+        "conflicts": 0
+      },
+      "status": "active",
+      "provenance": [
+        "mem-decision-adbb8d74309b7f55",
+        "mem-decision-7d94c534a69cde28",
+        "mem-decision-dde8c913c992ed52",
+        "mem-decision-a7ffa3e54ec5a158",
+        "mem-decision-51e651a64744ace1",
+        "mem-decision-bb283a4973cd499c",
+        "mem-decision-ace932c29292a005",
+        "mem-decision-a258af9bbdb7ee3e",
+        "mem-decision-0c952cf77f579c37",
+        "mem-decision-ff34e554f22fc662",
+        "mem-decision-aa875f15f36c12eb",
+        "mem-decision-60d1dbee04f966ed",
+        "mem-decision-c15729a3ca1a48db",
+        "mem-decision-8b7b6dcf7fdb507e",
+        "mem-decision-13170dc8a45a165e",
+        "mem-decision-f5d0186ba122c92b",
+        "mem-decision-bcaf9065018733ed",
+        "mem-decision-cf2df649b0fc2c30",
+        "mem-decision-eb6f54b1bbcab00e",
+        "mem-decision-d24e4563e509f347",
+        "mem-decision-a847e251892430ab",
+        "mem-decision-0b353007956e8481",
+        "mem-decision-75572ef9a9b40522",
+        "mem-decision-0f35f229ca498bb3"
+      ],
+      "origin": "agent-produced",
+      "kind": "decision",
+      "importance": 0.9,
+      "confidence": 1,
+      "version": 24,
+      "updatedAt": "2026-11-24T11:48:59.786Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "b4b089f724a0adec6d48eaf3",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:personal-harness:round-19",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "24e5ac17829791da6326f3c81c94e42b434747b91a100a303367e9412b884489"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:58.620Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "b87e2f2736f8b3ee533c03eb",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:pr-helper:round-16",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "fb192ddee99173081a6c48f7d9c0d6ad6aa175ca7ffb71b31eafed814710f6c8"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:57.733Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "bb6dbde2af307bd2d068aeed",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:zeus-z07:round-02",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "04895f9773ee21f02942fb37f25aa528d74f38ea01a0f9b5170aabf522783bb4"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:54.647Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "c9559093bbff28b52b147d3f",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:atlas-a06:round-24",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "8619a5a311d6df0f6d84737fbc4c15a63b3a9b0a7d2d592bdb6072abe93ce0cc"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:59.787Z"
+    },
+    {
+      "factId": "cd0de360fc97e687f75d9900",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:atlas-t5:round-03",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "d9e3352828b5121e9610ada919bd61ec9ca44702dbab7743dfc6a70cd28f4ca0"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:54.862Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    },
+    {
+      "factId": "d2ccdd973a976b857ef491cf",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:agent-ops-f7:round-10",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "0525ba9550c4a5076710db04b3c8523c65471163e064a21cbc5a2458a1cc0eb6"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:56.396Z",
+      "lastAccessAt": "2026-11-24T11:48:59.296Z"
+    },
+    {
+      "factId": "dd73f526154ea2bfdc47debe",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:atlas-t6:round-04",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "eca45eb5f38311a9c4cb3138cace8320bb2155352a9ddfd2cf3ed4e1b44d03a5"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:55.075Z",
+      "lastAccessAt": "2026-11-24T11:48:58.826Z"
+    },
+    {
+      "factId": "de5b0514b719652564456fc8",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:agent-ops-f6:round-09",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "8f539523077d30854700ebff303d3539bc3a5ea315bf38770a89856ee0f4f6de"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:56.164Z",
+      "lastAccessAt": "2026-11-24T11:48:59.060Z"
+    },
+    {
+      "factId": "e8888130cfe9e6c60a4d6fe4",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "subject": "project:growth-os:round-14",
+      "predicate": "deployment-health",
+      "object": "healthy",
+      "status": "active",
+      "provenance": [
+        "55c7005d28cb484fba9b044cab1692d4c266ba20bd5eb6d7b0163a57a46276d7"
+      ],
+      "origin": "agent-produced",
+      "confidence": 0.5,
+      "version": 1,
+      "updatedAt": "2026-11-24T11:48:57.281Z",
+      "lastAccessAt": "2026-11-24T11:48:59.751Z"
+    }
+  ],
+  "events": [
+    {
+      "eventId": "f7758c731c7c45fab8a5eb53e06f0f1ab176712078537e6a188cb905b1e46d10",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-8652d044-ea55-4ca8-8a9c-34108606e6f5",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520934414-4f5515"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:zeus-z04:round-01",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-ba4d5af0-3841-4d56-8818-896c1948ca9e",
+        "zeus-run-8652d044-ea55-4ca8-8a9c-34108606e6f5"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:54.418Z"
+    },
+    {
+      "eventId": "mem-decision-adbb8d74309b7f55",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-8652d044-ea55-4ca8-8a9c-34108606e6f5",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-ba4d5af0-3841-4d56-8818-896c1948ca9e",
+        "zeus-run-8652d044-ea55-4ca8-8a9c-34108606e6f5"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:54.418Z"
+    },
+    {
+      "eventId": "04895f9773ee21f02942fb37f25aa528d74f38ea01a0f9b5170aabf522783bb4",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-dcc5b5fa-268d-43b1-94e2-d37c1d029bae",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520934639-732e4d"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:zeus-z07:round-02",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-5b74a18c-6eb4-49ea-a035-e9f663db592e",
+        "zeus-run-dcc5b5fa-268d-43b1-94e2-d37c1d029bae"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:54.646Z"
+    },
+    {
+      "eventId": "mem-decision-7d94c534a69cde28",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-dcc5b5fa-268d-43b1-94e2-d37c1d029bae",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-5b74a18c-6eb4-49ea-a035-e9f663db592e",
+        "zeus-run-dcc5b5fa-268d-43b1-94e2-d37c1d029bae"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:54.646Z"
+    },
+    {
+      "eventId": "d9e3352828b5121e9610ada919bd61ec9ca44702dbab7743dfc6a70cd28f4ca0",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-8ba60713-8317-4021-9f55-fc4f4980369e",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520934854-7c4cfe"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:atlas-t5:round-03",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-f302f9ae-0e1b-439a-b3da-6f1350c10cde",
+        "zeus-run-8ba60713-8317-4021-9f55-fc4f4980369e"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:54.861Z"
+    },
+    {
+      "eventId": "mem-decision-dde8c913c992ed52",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-8ba60713-8317-4021-9f55-fc4f4980369e",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-f302f9ae-0e1b-439a-b3da-6f1350c10cde",
+        "zeus-run-8ba60713-8317-4021-9f55-fc4f4980369e"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:54.861Z"
+    },
+    {
+      "eventId": "eca45eb5f38311a9c4cb3138cace8320bb2155352a9ddfd2cf3ed4e1b44d03a5",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-187d7d5a-c4f6-4594-85b5-f1044eec00e3",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520935066-e45fbd"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:atlas-t6:round-04",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-f0bf20e8-5e99-440d-97cd-da096cf4fa14",
+        "zeus-run-187d7d5a-c4f6-4594-85b5-f1044eec00e3"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:55.073Z"
+    },
+    {
+      "eventId": "mem-decision-a7ffa3e54ec5a158",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-187d7d5a-c4f6-4594-85b5-f1044eec00e3",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-f0bf20e8-5e99-440d-97cd-da096cf4fa14",
+        "zeus-run-187d7d5a-c4f6-4594-85b5-f1044eec00e3"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:55.074Z"
+    },
+    {
+      "eventId": "434871d52753069501fa2760d527daad99345e9ba4c2398f01076a7b59038d31",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-bd752351-e368-48bb-a58b-d56421cc2152",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520935272-89acd0"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:atlas-t7:round-05",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-03422868-aabc-4c7b-a5a3-229baa44ebb1",
+        "zeus-run-bd752351-e368-48bb-a58b-d56421cc2152"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:55.279Z"
+    },
+    {
+      "eventId": "mem-decision-51e651a64744ace1",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-bd752351-e368-48bb-a58b-d56421cc2152",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-03422868-aabc-4c7b-a5a3-229baa44ebb1",
+        "zeus-run-bd752351-e368-48bb-a58b-d56421cc2152"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:55.279Z"
+    },
+    {
+      "eventId": "449e9ab408371b1849b2132e54c2eabfe8dbe9bdfb37014137f9c39e675ac9c3",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-40597273-acd8-4e2a-8d93-f93b9d8ae403",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520935486-1ce15c"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:loom-l01:round-06",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-42d40c48-9a21-4d63-82d4-b3c002a2cbcb",
+        "zeus-run-40597273-acd8-4e2a-8d93-f93b9d8ae403"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:55.494Z"
+    },
+    {
+      "eventId": "mem-decision-bb283a4973cd499c",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-40597273-acd8-4e2a-8d93-f93b9d8ae403",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-42d40c48-9a21-4d63-82d4-b3c002a2cbcb",
+        "zeus-run-40597273-acd8-4e2a-8d93-f93b9d8ae403"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:55.494Z"
+    },
+    {
+      "eventId": "83fbb0a8988d076f84ea0d734bdc6d1dde75bf4893b71494c8873edced109a24",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-f5f4613f-2419-473f-9dc1-27476997c365",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520935700-3fbbed"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:loom-l03:round-07",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-02d0d893-b711-49b5-9751-22870acd8775",
+        "zeus-run-f5f4613f-2419-473f-9dc1-27476997c365"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:55.707Z"
+    },
+    {
+      "eventId": "mem-decision-ace932c29292a005",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-f5f4613f-2419-473f-9dc1-27476997c365",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-02d0d893-b711-49b5-9751-22870acd8775",
+        "zeus-run-f5f4613f-2419-473f-9dc1-27476997c365"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:55.708Z"
+    },
+    {
+      "eventId": "a2199b7f52e34184c3e742dc3d4857be79467ecf605df083450e68e87eb47f6b",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-748fda3a-6e68-4f1e-babf-1ad9b0f94d6a",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520935920-2eaff4"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:loom-l04:round-08",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-445e52d1-7629-4058-9a20-ed2ec7adaab4",
+        "zeus-run-748fda3a-6e68-4f1e-babf-1ad9b0f94d6a"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:55.927Z"
+    },
+    {
+      "eventId": "mem-decision-a258af9bbdb7ee3e",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-748fda3a-6e68-4f1e-babf-1ad9b0f94d6a",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-445e52d1-7629-4058-9a20-ed2ec7adaab4",
+        "zeus-run-748fda3a-6e68-4f1e-babf-1ad9b0f94d6a"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:55.928Z"
+    },
+    {
+      "eventId": "8f539523077d30854700ebff303d3539bc3a5ea315bf38770a89856ee0f4f6de",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-a201b468-3efa-4a27-a78b-5857ce8a3e2c",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520936151-de3ca3"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:agent-ops-f6:round-09",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-a33a94c0-b8c8-4b3d-9af8-98e922daebed",
+        "zeus-run-a201b468-3efa-4a27-a78b-5857ce8a3e2c"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:56.161Z"
+    },
+    {
+      "eventId": "mem-decision-0c952cf77f579c37",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-a201b468-3efa-4a27-a78b-5857ce8a3e2c",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-a33a94c0-b8c8-4b3d-9af8-98e922daebed",
+        "zeus-run-a201b468-3efa-4a27-a78b-5857ce8a3e2c"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:56.162Z"
+    },
+    {
+      "eventId": "0525ba9550c4a5076710db04b3c8523c65471163e064a21cbc5a2458a1cc0eb6",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-4119214b-a731-44ab-b5b4-f5d958364a55",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520936387-6f70e3"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:agent-ops-f7:round-10",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-bb10404a-c00b-417b-9b93-5185a8ed3f5b",
+        "zeus-run-4119214b-a731-44ab-b5b4-f5d958364a55"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:56.394Z"
+    },
+    {
+      "eventId": "mem-decision-ff34e554f22fc662",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-4119214b-a731-44ab-b5b4-f5d958364a55",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-bb10404a-c00b-417b-9b93-5185a8ed3f5b",
+        "zeus-run-4119214b-a731-44ab-b5b4-f5d958364a55"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:56.394Z"
+    },
+    {
+      "eventId": "1898f5da8f60b397b482c82189632a5b7298f80e92602141a2900fc5adb0b58c",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-d364ab66-1e10-4f11-bbc2-5aca21531854",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520936602-4e827d"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:bayjf-tier0:round-11",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-f466e2bf-624e-411c-8694-d109cc221923",
+        "zeus-run-d364ab66-1e10-4f11-bbc2-5aca21531854"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:56.610Z"
+    },
+    {
+      "eventId": "mem-decision-aa875f15f36c12eb",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-d364ab66-1e10-4f11-bbc2-5aca21531854",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-f466e2bf-624e-411c-8694-d109cc221923",
+        "zeus-run-d364ab66-1e10-4f11-bbc2-5aca21531854"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:56.610Z"
+    },
+    {
+      "eventId": "48356458ef9b80db6d989fc533c2efd7fa69b7d0d24959f2494291fc399d3adc",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-25a7ea6e-c018-499a-9f01-f4d93d4d445d",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520936820-2f1162"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:bayjf-p2a:round-12",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-50f1f644-6125-4d08-92bc-7d861eb453dc",
+        "zeus-run-25a7ea6e-c018-499a-9f01-f4d93d4d445d"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:56.827Z"
+    },
+    {
+      "eventId": "mem-decision-60d1dbee04f966ed",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-25a7ea6e-c018-499a-9f01-f4d93d4d445d",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-50f1f644-6125-4d08-92bc-7d861eb453dc",
+        "zeus-run-25a7ea6e-c018-499a-9f01-f4d93d4d445d"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:56.828Z"
+    },
+    {
+      "eventId": "2ab3d1faec0a790badbf5f5da6790367fcedf46dba9a7af7aa1df5dae975de0a",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-99682b0e-ee43-4933-8916-f11e35bae78e",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520937044-3b00c2"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:commerce-os:round-13",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-50556ca5-0589-413e-acf5-a4806f023a07",
+        "zeus-run-99682b0e-ee43-4933-8916-f11e35bae78e"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:57.052Z"
+    },
+    {
+      "eventId": "mem-decision-c15729a3ca1a48db",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-99682b0e-ee43-4933-8916-f11e35bae78e",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-50556ca5-0589-413e-acf5-a4806f023a07",
+        "zeus-run-99682b0e-ee43-4933-8916-f11e35bae78e"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:57.053Z"
+    },
+    {
+      "eventId": "55c7005d28cb484fba9b044cab1692d4c266ba20bd5eb6d7b0163a57a46276d7",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-f5be7fa2-0133-496a-b34d-e4f2371db89c",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520937271-67bfd8"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:growth-os:round-14",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-eb987ff1-06c7-4d42-b427-39ea116661d9",
+        "zeus-run-f5be7fa2-0133-496a-b34d-e4f2371db89c"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:57.279Z"
+    },
+    {
+      "eventId": "mem-decision-8b7b6dcf7fdb507e",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-f5be7fa2-0133-496a-b34d-e4f2371db89c",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-eb987ff1-06c7-4d42-b427-39ea116661d9",
+        "zeus-run-f5be7fa2-0133-496a-b34d-e4f2371db89c"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:57.279Z"
+    },
+    {
+      "eventId": "da4631247df859f4083d72b338288f160b393db9ba3d11467aa9831169282fe7",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-b748864b-3db1-426f-af05-ef98145385d9",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520937490-b75695"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:code-audit:round-15",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-85b774e3-ea75-4a9b-b83c-ce50c252d349",
+        "zeus-run-b748864b-3db1-426f-af05-ef98145385d9"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:57.499Z"
+    },
+    {
+      "eventId": "mem-decision-13170dc8a45a165e",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-b748864b-3db1-426f-af05-ef98145385d9",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-85b774e3-ea75-4a9b-b83c-ce50c252d349",
+        "zeus-run-b748864b-3db1-426f-af05-ef98145385d9"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:57.499Z"
+    },
+    {
+      "eventId": "fb192ddee99173081a6c48f7d9c0d6ad6aa175ca7ffb71b31eafed814710f6c8",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-a18479b3-c53f-4441-871d-c6f5b7a34e46",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520937721-c55cbe"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:pr-helper:round-16",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-a7801df7-e911-4bee-bdb6-2d9fc1e02de9",
+        "zeus-run-a18479b3-c53f-4441-871d-c6f5b7a34e46"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:57.731Z"
+    },
+    {
+      "eventId": "mem-decision-f5d0186ba122c92b",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-a18479b3-c53f-4441-871d-c6f5b7a34e46",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-a7801df7-e911-4bee-bdb6-2d9fc1e02de9",
+        "zeus-run-a18479b3-c53f-4441-871d-c6f5b7a34e46"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:57.731Z"
+    },
+    {
+      "eventId": "eb2ed35e72681346592c247e3ce78fc4e5f6979b23da755e1285a29c3aa40449",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-d6da31d8-f1e2-48b2-b9ad-51fa0e8cd38e",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520938025-a8b74d"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:job-agent:round-17",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-95bd17f9-d64e-42c8-bc74-ff3a7f8f01ac",
+        "zeus-run-d6da31d8-f1e2-48b2-b9ad-51fa0e8cd38e"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:58.032Z"
+    },
+    {
+      "eventId": "mem-decision-bcaf9065018733ed",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-d6da31d8-f1e2-48b2-b9ad-51fa0e8cd38e",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-95bd17f9-d64e-42c8-bc74-ff3a7f8f01ac",
+        "zeus-run-d6da31d8-f1e2-48b2-b9ad-51fa0e8cd38e"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:58.033Z"
+    },
+    {
+      "eventId": "e7e1c7ff9b240653fd7b88a5f68ec8070a120aacd1338d36eacb817f6e39e8bd",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-05acd9e3-5c8f-4ebf-a3c2-cb06f778d4f6",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520938302-3213f8"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:argus:round-18",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-d3adc55d-0ef1-4d59-b69a-9caf6cc4ed7f",
+        "zeus-run-05acd9e3-5c8f-4ebf-a3c2-cb06f778d4f6"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:58.311Z"
+    },
+    {
+      "eventId": "mem-decision-cf2df649b0fc2c30",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-05acd9e3-5c8f-4ebf-a3c2-cb06f778d4f6",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-d3adc55d-0ef1-4d59-b69a-9caf6cc4ed7f",
+        "zeus-run-05acd9e3-5c8f-4ebf-a3c2-cb06f778d4f6"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:58.311Z"
+    },
+    {
+      "eventId": "24e5ac17829791da6326f3c81c94e42b434747b91a100a303367e9412b884489",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-c0eff002-cf3a-449f-b00d-7f6649b80f57",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520938609-f4f9f0"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:personal-harness:round-19",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-e03d1e88-7506-4b90-b73d-2525759eaef4",
+        "zeus-run-c0eff002-cf3a-449f-b00d-7f6649b80f57"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:58.618Z"
+    },
+    {
+      "eventId": "mem-decision-eb6f54b1bbcab00e",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-c0eff002-cf3a-449f-b00d-7f6649b80f57",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-e03d1e88-7506-4b90-b73d-2525759eaef4",
+        "zeus-run-c0eff002-cf3a-449f-b00d-7f6649b80f57"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:58.618Z"
+    },
+    {
+      "eventId": "53ea982434c33af964b729b63cdaa2cfdf4a16063babcba871351478192a48ae",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-1217fee5-dcbf-48cc-8429-4d74f11899e9",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520938849-8dc22a"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:tier0-ledger:round-20",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-ec085e0c-f5f6-4fcb-9479-40d99adf474b",
+        "zeus-run-1217fee5-dcbf-48cc-8429-4d74f11899e9"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:58.862Z"
+    },
+    {
+      "eventId": "mem-decision-d24e4563e509f347",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-1217fee5-dcbf-48cc-8429-4d74f11899e9",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-ec085e0c-f5f6-4fcb-9479-40d99adf474b",
+        "zeus-run-1217fee5-dcbf-48cc-8429-4d74f11899e9"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:58.862Z"
+    },
+    {
+      "eventId": "03bc2b36e8a677d515ee01ab373ed9fe1b4b18600eac0550ea4566f5aa6ac529",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-0787d441-d427-4b82-bdda-81c2e1b10676",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520939082-bdaa97"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:zeus-z05:round-21",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-eeb5732a-493b-4f8f-bdc9-19e2b3cf3be9",
+        "zeus-run-0787d441-d427-4b82-bdda-81c2e1b10676"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:59.089Z"
+    },
+    {
+      "eventId": "mem-decision-a847e251892430ab",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-0787d441-d427-4b82-bdda-81c2e1b10676",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-eeb5732a-493b-4f8f-bdc9-19e2b3cf3be9",
+        "zeus-run-0787d441-d427-4b82-bdda-81c2e1b10676"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:59.089Z"
+    },
+    {
+      "eventId": "985da9c03dfd022efe7689c50c23cb35a1caa29d882232ba626bb1f10df48dba",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-bddb5f4d-561b-4ee4-a3ed-32f9298e5ce5",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520939318-23ba06"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:zeus-z06:round-22",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-370215a3-4ac8-4542-851b-c2e985b803ae",
+        "zeus-run-bddb5f4d-561b-4ee4-a3ed-32f9298e5ce5"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:59.327Z"
+    },
+    {
+      "eventId": "mem-decision-0b353007956e8481",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-bddb5f4d-561b-4ee4-a3ed-32f9298e5ce5",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-370215a3-4ac8-4542-851b-c2e985b803ae",
+        "zeus-run-bddb5f4d-561b-4ee4-a3ed-32f9298e5ce5"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:59.327Z"
+    },
+    {
+      "eventId": "f8ce8888c063a2b73491e82ade41cd058f62d011d9ab0bf2de73ef47d3722ecc",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-313d7876-a6b3-4672-b8a9-dbd29ca1b3a0",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520939540-44f5a7"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:atlas-a02:round-23",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-eacac146-16fc-426c-8117-461904f6eaa7",
+        "zeus-run-313d7876-a6b3-4672-b8a9-dbd29ca1b3a0"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:59.550Z"
+    },
+    {
+      "eventId": "mem-decision-75572ef9a9b40522",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-313d7876-a6b3-4672-b8a9-dbd29ca1b3a0",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-eacac146-16fc-426c-8117-461904f6eaa7",
+        "zeus-run-313d7876-a6b3-4672-b8a9-dbd29ca1b3a0"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:59.550Z"
+    },
+    {
+      "eventId": "8619a5a311d6df0f6d84737fbc4c15a63b3a9b0a7d2d592bdb6072abe93ce0cc",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-07dc3f1f-5061-4ce6-967d-0457b27e0205",
+      "source": {
+        "agentId": "z04-reference-agent",
+        "taskId": "z04-task-1795520939774-8136f5"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "project:atlas-a06:round-24",
+        "predicate": "deployment-health",
+        "object": "healthy"
+      },
+      "refs": [
+        "intent-c100a91e-77db-4ffa-9bc1-f8905f86c8fe",
+        "zeus-run-07dc3f1f-5061-4ce6-967d-0457b27e0205"
+      ],
+      "confidence": 0.5,
+      "occurredAt": "2026-11-24T11:48:59.784Z"
+    },
+    {
+      "eventId": "mem-decision-0f35f229ca498bb3",
+      "dataDomainId": "dataDomain-e3343dbbf0bc53e8",
+      "runId": "zeus-run-07dc3f1f-5061-4ce6-967d-0457b27e0205",
+      "source": {
+        "agentId": "zeus-runtime"
+      },
+      "kind": "claim",
+      "content": {
+        "subject": "deployment-health",
+        "predicate": "settled-decision",
+        "object": {
+          "conclusion": "healthy",
+          "conflicts": 0
+        },
+        "category": "decision"
+      },
+      "refs": [
+        "intent-c100a91e-77db-4ffa-9bc1-f8905f86c8fe",
+        "zeus-run-07dc3f1f-5061-4ce6-967d-0457b27e0205"
+      ],
+      "confidence": 1,
+      "occurredAt": "2026-11-24T11:48:59.785Z"
+    }
+  ],
+  "corrections": [],
+  "retractions": []
+}
