@@ -419,6 +419,64 @@ describe('npm run daily', () => {
     expect(state.orchestrator.intents.map(intent => intent.intentId)).toContain(intentId);
   });
 
+  it('durably writes the settled conclusion back before the one-shot run returns', async () => {
+    const root = tempRoot('writeback');
+    const result = await runDailyCli(
+      ['--root', root, '--agent', agentUrl('demo-agent'), '--state', join(root, 'state.json'), '--record', 'zeus-daily/writeback.md', 'check the deployment health'],
+      cleanEnv(),
+    );
+    expect(result.stderr).toBe('');
+    expect(result.code).toBe(0);
+
+    // Z-04: the write-back is produced by the intent-finished progress event
+    // and consolidation is asynchronous. A one-shot entry saves and exits
+    // immediately after fanOut, so this assertion only holds if saveState()
+    // waits for the memory work instead of racing it.
+    const state = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as {
+      dataDomains: Array<{ dataDomainId: string; root: string }>;
+      memory: {
+        events: Array<{ eventId: string; dataDomainId: string }>;
+        facts: Array<[string, Array<{ subject: string; predicate: string; object: unknown; provenance: string[] }>]>;
+      };
+    };
+    const domainId = state.dataDomains[0]!.dataDomainId;
+    const decision = state.memory.events.find(
+      event => event.dataDomainId === domainId && event.eventId.startsWith('mem-decision-'),
+    );
+    expect(decision).toBeDefined();
+    const facts = state.memory.facts.find(([id]) => id === domainId)?.[1] ?? [];
+    const settled = facts.find(fact => fact.subject === 'deployment-health' && fact.predicate === 'settled-decision');
+    expect(settled?.object).toMatchObject({ conclusion: 'healthy', conflicts: 0 });
+    expect(settled?.provenance).toContain(decision!.eventId);
+  });
+
+  it('consolidates repeated settled decisions instead of inventing disputes', async () => {
+    const root = tempRoot('decision-consolidation');
+    const argv = ['--root', root, '--agent', agentUrl('demo-agent'), '--state', join(root, 'state.json'), 'check the deployment health'];
+    const first = await runDailyCli(argv, cleanEnv());
+    expect(first.code, first.stderr).toBe(0);
+    const second = await runDailyCli(argv, cleanEnv());
+    expect(second.code, second.stderr).toBe(0);
+
+    const state = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8')) as {
+      dataDomains: Array<{ dataDomainId: string }>;
+      memory: {
+        facts: Array<[string, Array<{ subject: string; predicate: string; object: Record<string, unknown>; status: string; provenance: string[] }>]>;
+      };
+    };
+    const domainId = state.dataDomains[0]!.dataDomainId;
+    const facts = state.memory.facts.find(([id]) => id === domainId)?.[1] ?? [];
+    const settled = facts.filter(fact => fact.subject === 'deployment-health' && fact.predicate === 'settled-decision');
+    // A per-intent value in the claim object made the same "healthy" verdict
+    // look different on every run; consolidation then called it a dispute.
+    // Repetition is corroboration, so the two runs must share one active fact.
+    expect(settled).toHaveLength(1);
+    expect(settled[0]!.status).toBe('active');
+    expect(settled[0]!.object).toEqual({ conclusion: 'healthy', conflicts: 0 });
+    expect(settled[0]!.provenance).toHaveLength(2);
+    expect(facts.some(fact => fact.status === 'disputed')).toBe(false);
+  });
+
   it('closes the read loop: a second run cites the first run\'s page for the same skill', async () => {
     const root = tempRoot('loop');
     const first = await runDailyCli(

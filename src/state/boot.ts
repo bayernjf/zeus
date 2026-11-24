@@ -478,6 +478,12 @@ async function assembleRuntime(
   // overlapping saves can interleave content or lose a rename (the loser's tmp
   // is already gone) - chaining them keeps the file equal to the newest state.
   let persistTail: Promise<void> = Promise.resolve();
+  // Tail of the memory-consolidation chain. Consolidation is asynchronous
+  // (embedding), while a one-shot entry saves its state immediately after the
+  // fan-out returns. Without this tail a `daily` process can exit after the
+  // record write but before the decision write-back and consolidation land, so
+  // the memory is silently lost even though the run reported success.
+  let memoryWorkTail: Promise<void> = Promise.resolve();
   // E3.5 / deferred #14: the operator trust anchor. With a signer the runtime only
   // honors grants IT signed (or grants signed by a key it accepts) and consumes
   // each nonce once; without one, a grant is checked for shape, dataDomain binding and
@@ -1066,7 +1072,9 @@ async function assembleRuntime(
     // Consolidation embeds facts through the (possibly hub-backed) embedder,
     // so it is asynchronous; the progress boundary stays synchronous and
     // fail-soft — a consolidation failure must not break the event stream.
-    void (async () => {
+    // It is chained so a one-shot entry's saveState() can wait for the
+    // write-back to land before the process exits (see persistLiveState).
+    memoryWorkTail = memoryWorkTail.then(async () => {
       // MemoryPort v1 §6: the settled conclusion is written back as a
       // decision memory (category=decision) before consolidation, so the
       // next same-kind intent recalls it at the dispatch boundary. The
@@ -1105,11 +1113,15 @@ async function assembleRuntime(
               object: {
                 conclusion,
                 conflicts: intent.conflicts.length,
-                intentId: event.intentId,
               },
               category: 'decision',
             },
-            refs: [event.runId],
+            // The intent id is provenance, not part of the claim: putting a
+            // per-intent value in the object made every repeated "healthy"
+            // decision look like a different answer, so consolidation turned
+            // ordinary repetition into disputes. Refs keep the trace without
+            // inventing disagreement.
+            refs: [event.intentId, event.runId],
             confidence: 1,
             occurredAt: now().toISOString(),
           });
@@ -1130,7 +1142,7 @@ async function assembleRuntime(
           reason: dispute.reason,
         });
       });
-    })().catch((err: unknown) => {
+    }).catch((err: unknown) => {
       // Fail-soft at the progress boundary, but never silent: the audit spine
       // must show why memory stopped updating.
       auditSink({
@@ -1236,6 +1248,15 @@ async function assembleRuntime(
     // Serialize: the next snapshot is collected only after the previous save has
     // landed, so a burst of governance changes cannot race on one `.tmp` file.
     const run = persistTail.then(async () => {
+      // Z-04: a one-shot entry saves immediately after fanOut returns. The
+      // decision write-back and consolidation are async; drain them first so
+      // the snapshot contains the memory the run just produced, not the state
+      // from before it. Loop because a consolidation can enqueue another one.
+      while (true) {
+        const pending = memoryWorkTail;
+        await pending;
+        if (pending === memoryWorkTail) break;
+      }
       await runRetention();
       await target.save(collectRuntimeState(components));
       // S6 V3: one metrics snapshot per save, keyed by capturedAt. Landed inside

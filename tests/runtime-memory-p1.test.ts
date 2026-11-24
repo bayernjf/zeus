@@ -200,9 +200,13 @@ describe('memory P1 decision writeback', () => {
       expect(decisionEvent!.content).toMatchObject({
         subject: 'research',
         predicate: 'settled-decision',
-        object: { conclusion: 'approve', intentId },
+        object: { conclusion: 'approve' },
         category: 'decision',
       });
+      // Z-04: the intent id is provenance, not part of the claim. Keeping it
+      // out of `object` stops repeated identical decisions from looking like
+      // conflicting answers during consolidation.
+      expect(decisionEvent!.refs).toEqual([intentId, result.runId]);
 
       // Consolidation fixed the category onto the fact, ready for the next
       // same-kind intent's dispatch-boundary recall.
