@@ -5,11 +5,21 @@
 > 本段是本产品唯一活跃待办入口；详细背景见下方原有章节。完成一项改 `[x]`，并在“最近变更 / Recently shipped”留证据。
 > 最近同步：2026-11-24
 
+<!-- tier0:todos v1 -->
+| id | title | status | priority | owner | next | evidence | updated |
+|---|---|---|---|---|---|---|---|
+| Z-06 | MCP E3.4 OAuth subject 复核 | blocked | p1 | external | 本地出现读 Agent 时复核；拒绝/放行两路测试 | `zeus/docs/z07-matrix-acceptance.md` | 2026-11-24 |
+<!-- /tier0:todos -->
+
+> 立项差距台账：P0 Z-01–Z-03 已完成；P1 Z-04/Z-05/Z-07 已完成；仅剩 Z-06（外部条件）。详见 `zeus/docs/review-2026-11-23-original-gap.md`。
+
+### 已完成（历史）
+
 - [x] **`prepareRuntimeRun` 复用旧 run（P1）** — 已确认修复（2026-11-21）：`storage-webapp` 在 completed/cancelled 后新建 run 并记录 `previousRunId`；回归用例 `starts a fresh run after a completed or cancelled run` 通过（storage-webapp 32/32）。
 - [x] **compaction/writeback 真实长会话数据** — 已完成（2026-11-24，20+ 轮分支）：`npm run acceptance:long-session` 跑 24 个独立 `daily` 进程，24 个唯一 intent/run、24 条 context watermark、24 条 decision writeback；active facts 25（1 条 settled decision，provenance 24）、disputed 0、旧事实可追溯且可召回；证据 `outputs/z04-long-session/`，口径见 `docs/z04-long-session-acceptance.md`。明确边界：不是一周自然使用，未声称摘要式 compaction。
 - [x] **真实组织数据 / 真实任务 dogfood（Z-02）** — 已完成（2026-11-23）：本机独立 Zeus 实例 + agent-world 真实执行臂，运营/开发/内容三岗位各产生 done 任务；内容岗 run `144cbd02-4ef5-45f2-b034-a1cb37d44dee` 8/8 节点 done；证据 `outputs/z02-org-dogfood/10-summary.md`。口径：text/image 为本地 fake provider（合成占位），真实的是调度/状态机/D2 审批/执行臂。
-- [ ] **立项差距台账（docs/review-2026-11-23-original-gap.md）** — 状态：open；P0 = Z-01 产品口径收口 ✅ / Z-02 真实组织 dogfood ✅ / Z-03 单入口定位 ✅（`npm run daily` 日常默认，其余面全保留）；P1 = Z-05 本地/内网 A2A 真实调用者 + 名册信任锚 ✅（2026-11-23，真实 socket + `npm run acceptance:inbound`）、Z-07 矩阵真实 run ✅（2026-11-24，逐条台账 `docs/z07-matrix-acceptance.md`：agent-world/agent-dev 真实 run，atlas 真实 A2A 图 run，pr-helper/loom 明确 plan-only 未接，job-agent 未接 A2A）、Z-04 长会话 compaction/writeback ✅（2026-11-24，24 轮独立 `daily` 进程 + 证据 `outputs/z04-long-session/`）；剩余 P1：Z-06 读 Agent OAuth（外部条件）；迭代纪律：现有入口/组织执行能力全保留，Z-03 只定主入口、不删入口；明细见文档。
 - [x] **Personal MCP η：CLI chat + daemon（T8/T9）** — 已落码（2026-10-27 Active work 276 销记：5da90b8/082afaf/525d252/944ee6c 在 dev）；顶部原 open 行是台账滞后，不重开开发。
+
 
 ## 2026-11-24 Z-04 长会话 compaction/writeback 验收
 
