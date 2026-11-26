@@ -19,7 +19,20 @@
 - [x] **compaction/writeback 真实长会话数据** — 已完成（2026-11-24，20+ 轮分支）：`npm run acceptance:long-session` 跑 24 个独立 `daily` 进程，24 个唯一 intent/run、24 条 context watermark、24 条 decision writeback；active facts 25（1 条 settled decision，provenance 24）、disputed 0、旧事实可追溯且可召回；证据 `outputs/z04-long-session/`，口径见 `docs/z04-long-session-acceptance.md`。明确边界：不是一周自然使用，未声称摘要式 compaction。
 - [x] **真实组织数据 / 真实任务 dogfood（Z-02）** — 已完成（2026-11-23）：本机独立 Zeus 实例 + agent-world 真实执行臂，运营/开发/内容三岗位各产生 done 任务；内容岗 run `144cbd02-4ef5-45f2-b034-a1cb37d44dee` 8/8 节点 done；证据 `outputs/z02-org-dogfood/10-summary.md`。口径：text/image 为本地 fake provider（合成占位），真实的是调度/状态机/D2 审批/执行臂。
 - [x] **Personal MCP η：CLI chat + daemon（T8/T9）** — 已落码（2026-10-27 Active work 276 销记：5da90b8/082afaf/525d252/944ee6c 在 dev）；顶部原 open 行是台账滞后，不重开开发。
+- [x] **W2 AM-01 分层 memory 索引生成器** — 已完成（2026-11-27）：`src/memory/memory-index.ts` 纯函数确定性重建顶层索引 + topic 文件；详见下方日期段。
 
+
+## 2026-11-27 W2 AM-01 分层 memory 索引生成器
+
+- ✅ 新增 `src/memory/memory-index.ts`：`buildMemoryIndex(dataDomainId, facts)` 纯函数，从
+  `active`/`disputed` fact store 确定性重建 `memory-index.md` + `topics/<slug>.md`。
+- ✅ 顶层索引双预算：≤200 行、≤25KiB，超限截断并报告 omitted 数量（Anthropic MEMORY.md 口径）。
+- ✅ topic 归并：`project:x:round-N` → `project:x`；slug 文件安全 + 冲突去重，链接不悬空。
+- ✅ 只索引 `active`/`disputed`，`superseded`/`retracted` 不入索引；fact 排序确定性。
+- ✅ 回归：`tests/memory-index.test.ts` 12 例全绿；全量 244 文件 / 2736 tests 全绿、
+  typecheck 0 错、lint 0 error。`recall.ts` 的 `INDEXABLE_STATUSES` 改为 export 供索引复用。
+- ⬜ 未接：context assemble 注入顶层索引、与 `searchRecall` 的 A/B 评估（AM-05 评估集前置；
+  当前 `z04-long-session` 仅 25 facts / 24 同质 transcript，不足文档 §6.2 的 50+ facts 门槛）。
 
 ## 2026-11-24 Z-04 长会话 compaction/writeback 验收
 
