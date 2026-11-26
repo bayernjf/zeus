@@ -39,7 +39,7 @@ const BM25_B = 0.75;
 const IMPORTANCE_WEIGHT = 0.3;
 
 /** Facts in these statuses participate in recall; dead facts never do. */
-const INDEXABLE_STATUSES: ReadonlySet<FactStatus> = new Set(['active', 'disputed']);
+export const INDEXABLE_STATUSES: ReadonlySet<FactStatus> = new Set(['active', 'disputed']);
 
 /**
  * How many dirty facts sync embeds at once. The hub embed call is an
